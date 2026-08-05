@@ -25,6 +25,13 @@ use std::cell::{Cell, RefCell};
 thread_local! {
     /// The one game this page is playing.
     static SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
+    /// Latest persistent roster supplied by the local desktop host.
+    ///
+    /// The public static build has no such host and falls back to the shipped
+    /// snapshot. The desktop channel refreshes this before the first world and
+    /// after every rated result, so the next game both displays and seats from
+    /// the ratings the previous game just changed.
+    static HOST_LEAGUE: RefCell<Option<crate::league::League>> = const { RefCell::new(None) };
     /// Why the module last died.
     ///
     /// A panic on `wasm32-unknown-unknown` unwinds nowhere: it aborts, and the
@@ -41,8 +48,14 @@ thread_local! {
     static HOOKED: Cell<bool> = const { Cell::new(false) };
     /// What the socket build keeps in atomics on `Shared`. Nothing in this
     /// build reads them but the page that set them.
-    static PACE: Cell<u64> = const { Cell::new(0) };
+    static PACE: Cell<u64> = const { Cell::new(1_000) };
+    static BETWEEN_GAME_COUNTDOWN_MS: Cell<u64> =
+        const { Cell::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS) };
     static PAUSED: Cell<bool> = const { Cell::new(false) };
+    /// Monotonic identity of the frame most recently completed for this page.
+    /// Multiple player turns share one game turn at Blitz and slower, so
+    /// `(seed, turn, finished)` no longer identifies every paint boundary.
+    static FRAME_SEQUENCE: Cell<u64> = const { Cell::new(0) };
     /// The seed the opening world is rolled from.
     ///
     /// A module has no clock and no entropy of its own, and this one imports
@@ -60,7 +73,8 @@ thread_local! {
 /// the one that needs no decisions from a visitor who has just arrived.
 fn opening_params() -> Params {
     let size = MapSize::for_players(6);
-    let (width, height) = size.dimensions(MapTopology::Flat);
+    let map_topology = MapTopology::Planet;
+    let (width, height) = size.dimensions(map_topology);
     Params {
         num_players: 6,
         width,
@@ -68,11 +82,14 @@ fn opening_params() -> Params {
         seed: OPENING_SEED.with(Cell::get),
         base_ruleset: BaseRuleset::Civ6,
         start_era: 0,
+        // The world a visitor arrives on is the stock game, at both ends of
+        // it: the lobby is where a different Future Era is asked for.
+        future_era: FutureEra::Classic,
         map_script: MapScript::Continents,
-        map_topology: MapTopology::Flat,
+        map_topology,
         map_poles: MapPoles::Poles,
-        game_speed: GameSpeed::Standard,
-        max_turns: 500,
+        game_speed: GameSpeed::Online,
+        max_turns: GameSpeed::Online.turn_limit(),
         victory_conditions: VictoryConditions {
             science: true,
             culture: true,
@@ -84,7 +101,7 @@ fn opening_params() -> Params {
         num_city_states: size.default_city_states,
         spectate: true,
         difficulty: "prince".to_string(),
-        speed: "standard".to_string(),
+        speed: GameSpeed::Online.id().to_string(),
         teams: Vec::new(),
         leader_pool: LeaderPool::Civ6,
         civs: Vec::new(),
@@ -95,13 +112,40 @@ fn opening_params() -> Params {
     }
 }
 
+fn browser_session(params: Params) -> Session {
+    let league = HOST_LEAGUE
+        .with(|held| held.borrow().clone())
+        .or_else(crate::league::shipped_league);
+    Session::new_with_league(params, league, true)
+}
+
+fn start_automatic_browser_next_game(session: &mut Session, queued: Option<Params>) {
+    let next_seed = automatic_successor_seed(session.params.seed);
+    let mut params = queued.unwrap_or_else(|| session.params.clone());
+    params.seed = next_seed;
+    *session = browser_session(params);
+}
+
+fn reseat_browser_session_from_host(session: &mut Session) {
+    let view = session.view_player;
+    let params = session.params.clone();
+    let mut next = browser_session(params);
+    next.view_player = view.filter(|pid| {
+        next.game
+            .players
+            .get(*pid)
+            .is_some_and(|player| !player.is_minor && !player.is_barbarian)
+    });
+    *session = next;
+}
+
 /// Run `f` against this page's session, creating the opening world the first
 /// time anything asks for it.
 fn with_session<T>(f: impl FnOnce(&mut Session) -> T) -> T {
     SESSION.with(|cell| {
         let mut held = cell.borrow_mut();
         if held.is_none() {
-            *held = Some(Session::new(opening_params()));
+            *held = Some(browser_session(opening_params()));
         }
         f(held.as_mut().expect("the session was just created"))
     })
@@ -109,19 +153,15 @@ fn with_session<T>(f: impl FnOnce(&mut Session) -> T) -> T {
 
 /// The frame a page is looking at: what the stepper calls a completed turn.
 fn current_frame(session: &Session) -> SpectatorFrame {
-    SpectatorFrame {
-        seed: session.game.seed,
-        turn: session.game.turn,
-        finished: session.game.winner.is_some(),
-    }
+    spectator_frame(&session.game, FRAME_SEQUENCE.with(Cell::get))
 }
 
 /// Play the world on until it is no longer the frame the page is holding.
 ///
 /// This is [`auto_step_loop`](super::auto_step_loop)'s inner move: take one
-/// seat at a time and stop the moment `(seed, turn, finished)` differs, which
-/// is what makes every turn a frame somebody can see rather than a batch that
-/// paints once at the end.
+/// seat at a time and stop at the next publication boundary. Lightning keeps
+/// one frame per round; Blitz and every slower offered pace stop after the
+/// first seat, so each major, city-state, and barbarian moves in its own frame.
 ///
 /// It returns without playing anything when the page is holding a frame that
 /// is not the one on the table — a stale tab, or a world it has not caught up
@@ -140,7 +180,17 @@ fn advance_one_frame(session: &mut Session, held: SpectatorFrame) {
     // sits well above the largest roster the lobby can seat.
     const STEP_CAP: usize = 1024;
     for _ in 0..STEP_CAP {
+        let turn_before = session.game.turn;
+        let finished_before = session.game.winner.is_some();
         session.step();
+        if spectator_step_completes_frame(
+            PACE.with(Cell::get),
+            turn_before,
+            finished_before,
+            &session.game,
+        ) {
+            FRAME_SEQUENCE.with(|sequence| sequence.set(sequence.get().wrapping_add(1)));
+        }
         if current_frame(session) != held {
             return;
         }
@@ -150,7 +200,9 @@ fn advance_one_frame(session: &mut Session, held: SpectatorFrame) {
 /// The fields [`decorate`](super::decorate) adds from `Shared`'s atomics.
 fn decorate_browser(o: &mut Value) {
     o["pace"] = json!(PACE.with(Cell::get));
+    o["between_game_countdown_ms"] = json!(BETWEEN_GAME_COUNTDOWN_MS.with(Cell::get));
     o["paused"] = json!(PAUSED.with(Cell::get));
+    o["frame_sequence"] = json!(FRAME_SEQUENCE.with(Cell::get));
     // The setup panel reads its own staged choices back out of `/state`, and
     // the queue no longer lives in the session, so it is attached here for the
     // same reason the server's `decorate` attaches it.
@@ -173,10 +225,28 @@ fn route(method: &str, target: &str, body: &str) -> Value {
     let path = request_path(target);
 
     match (method, path) {
+        // A local static-file host is the browser module's filesystem. Accept
+        // its current authoritative roster before a session is created; the
+        // public /beta build never calls this route and stays read-only.
+        ("POST", "/host-league") => {
+            match serde_json::from_value::<crate::league::League>(parsed) {
+                Ok(league) if !league.strategies.is_empty() => {
+                    let round = league.round;
+                    let strategies = league.strategies.len();
+                    HOST_LEAGUE.with(|held| *held.borrow_mut() = Some(league));
+                    json!({"ok": true, "round": round, "strategies": strategies})
+                }
+                Ok(_) => json!({"error": "the host league has no strategies"}),
+                Err(error) => json!({"error": format!("invalid host league: {error}")}),
+            }
+        }
+
         ("GET", "/runtime") => json!({
             "server_instance": process_identity(),
             "seed": with_session(|s| s.game.seed),
             "commit": runtime_commit("unknown"),
+            "commit_time": runtime_commit_time(),
+            "built_at": runtime_built_at(),
         }),
 
         // No per-viewer tile delta: the page is told the whole world every
@@ -209,12 +279,17 @@ fn route(method: &str, target: &str, body: &str) -> Value {
         // here when it reaches zero.
         ("POST", "/next-game") => with_session(|session| {
             let queued = NEXT_GAME_PARAMS.with(|cell| cell.borrow_mut().take());
-            session.start_automatic_next_game(queued);
+            start_automatic_browser_next_game(session, queued);
             let mut o = session.state();
             o["error"] = Value::Null;
             decorate_browser(&mut o);
             o
         }),
+
+        // A published browser build has no permission to inspect the machine
+        // that hosts it. Keep the response shape, but say that plainly rather
+        // than substituting the tab's own incomplete measurements.
+        ("GET", "/machine-metrics") => machine_metrics_json(),
 
         ("GET", "/status") => with_session(|session| {
             json!({
@@ -223,6 +298,9 @@ fn route(method: &str, target: &str, body: &str) -> Value {
                 "winner": session.game.winner,
                 "paused": PAUSED.with(Cell::get),
                 "server_instance": process_identity(),
+                "commit": runtime_commit("unknown"),
+                "commit_time": runtime_commit_time(),
+                "built_at": runtime_built_at(),
             })
         }),
 
@@ -238,7 +316,9 @@ fn route(method: &str, target: &str, body: &str) -> Value {
                 "wonders": r.wonders,
                 "projects": r.projects,
                 "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
+                "city_state_limit": r.city_states.roster.len(),
                 "civ6_leaders": crate::game::CIV6_LEADER_POOL.as_slice(),
+                "leader_pools": crate::leader_roster::browser_pools(),
                 "great_people": r.great_people, "governors": r.governors,
                 "map_sizes": CIV6_MAP_SIZES,
                 "difficulties": r.difficulties, "speeds": r.speeds,
@@ -269,11 +349,31 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             if let Some(ms) = parsed["ms"].as_u64() {
                 PACE.with(|pace| pace.set(ms));
             }
+            let countdown_error = parsed["between_game_countdown_ms"]
+                .as_u64()
+                .and_then(|value| match valid_between_game_countdown_ms(value) {
+                    Some(value) => {
+                        BETWEEN_GAME_COUNTDOWN_MS.with(|countdown| countdown.set(value));
+                        None
+                    }
+                    None => Some(
+                        "between-game countdown must be one of 0, 3000, 5000, or 10000 milliseconds",
+                    ),
+                });
             if let Some(paused) = parsed["paused"].as_bool() {
                 PAUSED.with(|held| held.set(paused));
-                with_session(|session| session.spectator_paused = paused);
             }
-            json!({"pace": PACE.with(Cell::get), "paused": PAUSED.with(Cell::get)})
+            with_session(|session| {
+                if let Some(paused) = parsed["paused"].as_bool() {
+                    session.spectator_paused = paused;
+                }
+                let mut out = session.state();
+                decorate_browser(&mut out);
+                if let Some(error) = countdown_error {
+                    out["error"] = json!(error);
+                }
+                out
+            })
         }
 
         ("POST", "/action") => with_session(|session| {
@@ -325,6 +425,11 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             if session.params.spectate {
                 let count = parsed["count"].as_u64().unwrap_or(1) as usize;
                 let steps = session.step_many(count);
+                if !steps.is_empty() {
+                    FRAME_SEQUENCE.with(|sequence| {
+                        sequence.set(sequence.get().wrapping_add(1))
+                    });
+                }
                 out = session.state();
                 let visible_steps: Vec<_> = steps
                     .iter()
@@ -474,6 +579,7 @@ fn route(method: &str, target: &str, body: &str) -> Value {
         ("POST", "/new") | ("POST", "/supervisor-new") => with_session(|session| {
             let result = session.start_new_game(&parsed);
             if result.is_ok() {
+                reseat_browser_session_from_host(session);
                 let paused = parsed["paused"]
                     .as_bool()
                     .unwrap_or_else(|| PAUSED.with(Cell::get));
@@ -624,4 +730,22 @@ pub unsafe extern "C" fn civvis_request(ptr: *mut u8, len: usize) -> *mut u8 {
     let answer = serde_json::to_string(&route(&method, &target, &body))
         .unwrap_or_else(|error| format!("{{\"error\":\"cannot serialise the answer: {error}\"}}"));
     sized(answer.into_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::opening_params;
+    use crate::setup::{MapSize, MapTopology};
+
+    #[test]
+    fn opening_exhibition_defaults_to_planet() {
+        let params = opening_params();
+        let size = MapSize::for_players(params.num_players);
+
+        assert_eq!(params.map_topology, MapTopology::Planet);
+        assert_eq!(
+            (params.width, params.height),
+            size.dimensions(MapTopology::Planet)
+        );
+    }
 }

@@ -74,15 +74,20 @@ launchctl load -w ~/Library/LaunchAgents/com.civvis.spectator.plist
 On a bare Linux host, `nohup python3 tools/spectator_supervisor.py … &` under a
 systemd unit or a `while` wrapper works the same way.
 
-## One complete frame per turn
+## One complete frame per published turn boundary
 
 **Martin-requested simulation requirement:** every turn the exhibition plays
 must be shown in at least one complete frame before the simulation advances.
-That frame must carry the whole updated turn from one snapshot: HUD, player
-stats, victory tracker, world map, minimap, units, sidebars, controls, overlays,
-and every other turn-bound surface. A partial update, a state merely delivered
-to a socket, or two turns composited into one visible refresh does not satisfy
-the requirement.
+At **Blitz, Fast, Standard, and Slow** watch paces, “turn” here means each
+living player's completed turn: major players in seat order, then city-states,
+then Free Cities/barbarians. That makes each civilization's unit movement
+visible before the next civilization acts. **Lightning** retains one frame at
+the completed round boundary so its unlimited-throughput contract remains
+intact. Every frame carries the whole updated boundary from one snapshot: HUD, player
+stats, victory tracker, world map, minimap, units, sidebars, controls,
+overlays, and every other turn-bound surface. A partial update, a state merely
+delivered to a socket, or two published boundaries composited into one visible
+refresh does not satisfy the requirement.
 
 The server enforces the requirement by holding a finished turn until every
 active viewer acknowledges painting that exact snapshot — at **every** pace,
@@ -93,15 +98,15 @@ paints slower than the budget used to lose turns silently.
 
 Only a page that paints holds the simulation to a turn. The browser reports the
 frame it last drew on each `/state` poll
-(`?painted=<turn>&world=<seed>&finished=<0-or-1>`), so the keeper's refresh check
+(`?painted=<turn>&world=<seed>&finished=<0-or-1>&frame=<sequence>`), so the keeper's refresh check
 and any `curl` read the same state without dragging the exhibition down to their
-own cadence. The terminal bit matters because a seat can decide a victory in
-the middle of a round without incrementing the turn; that result must wake and
-paint as a distinct frame rather than wait for the long-poll timeout. A viewer
-that stops asking is dropped after a few seconds and costs the unattended
-exhibition exactly one turn's delay.
+own cadence. The sequence distinguishes player-turn frames that share the same
+world turn; the terminal bit distinguishes a result decided without incrementing
+that turn. Both must wake and paint as distinct frames rather than wait for the
+long-poll timeout. A viewer that stops asking is dropped after a few seconds and
+costs the unattended exhibition exactly one frame's delay.
 
-**Every viewer is owed every turn, and each paint is waited for on its own.** Two tabs
+**Every viewer is owed every published frame, and each paint is waited for on its own.** Two tabs
 on one exhibition used to take alternate turns: the stepper released a turn as
 soon as either had been handed it, so each saw half the game — and the audit,
 reading the same single cursor, called it perfect, because between them they had
@@ -110,15 +115,15 @@ The cost is that a turn now waits for the slowest tab watching to acknowledge
 its completed same-snapshot render, which is the promise working rather than
 failing.
 
-**A turn reaches the glass, not just the socket.** The page draws at most one
-turn per animation frame. Two turns drawn inside one display refresh are
-composited into one, so a turn drawn faster than the screen can show it is still
-a turn nobody saw. Running on the display's clock also removed the fixed 100ms
+**A frame reaches the glass, not just the socket.** The page draws at most one
+published state per animation frame. Two player turns drawn inside one display
+refresh are composited into one, so a frame drawn faster than the screen can
+show it is still a frame nobody saw. Running on the display's clock also removed the fixed 100ms
 between polls, which was a ceiling of ten turns a second however fast the world
 could be played.
 
 **The map is sent as a patch.** A page says which tile array it is holding
-(`&have=<world>:<turn>:<finished>`) and is sent only the tiles that changed —
+(`&have=<world>:<turn>:<finished>:<sequence>`) and is sent only the tiles that changed —
 about a dozen of 2252 on a standard turn, so a poll costs ~157 KB instead of
 ~1.36 MB, an 89% saving. Saying so is also what parks the poll until there *is*
 a next frame, so a finished turn or same-turn victory is written to a socket
@@ -129,12 +134,15 @@ whole map.
 That report is also what makes the promise auditable while it runs. `/status`
 carries:
 
-- `frames_missed` — turns simulated that some attached viewer never drew. **Zero**
+- `frames_missed` — published frames that some attached viewer never drew. **Zero**
   on a healthy exhibition, and kept for the server's whole run rather than reset
   when the tab that missed them closes.
 - `frames_painted` — the last turn a viewer reported drawing, or `null` when
   nobody is watching. Zero misses with nothing painted means nobody was there,
   which is not the same as the promise being kept.
+- `frame_sequence` / `frames_painted_sequence` — the exact published and last
+  painted frame counters. Their difference is visible even when several Blitz
+  player turns share one value of `turn`.
 - `viewers` — how many pages that promise is being kept to, and so how many
   paints a turn costs before the next one starts.
 - `autoplay_turns` — turns `POST /autoplay` has simulated, which is the count

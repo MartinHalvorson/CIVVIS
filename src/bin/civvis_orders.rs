@@ -106,6 +106,7 @@ fn civ6_unit_type(name: &civvis::name::Name) -> String {
     let id = match name.as_str() {
         "tagma" => "BYZANTINE_TAGMA",
         "legion" => "ROMAN_LEGION",
+        "nau" => "PORTUGUESE_NAU",
         "hoplite" => "GREEK_HOPLITE",
         "eagle_warrior" => "AZTEC_EAGLE_WARRIOR",
         "war_cart" => "SUMERIAN_WAR_CART",
@@ -115,6 +116,7 @@ fn civ6_unit_type(name: &civvis::name::Name) -> String {
         "keshig" => "MONGOLIAN_KESHIG",
         "winged_hussar" => "POLISH_HUSSAR",
         "oromo_cavalry" => "ETHIOPIAN_OROMO_CAVALRY",
+        "toa" => "MAORI_TOA",
         "crouching_tiger" => "CHINESE_CROUCHING_TIGER",
         "anti_air_gun" => "ANTIAIR_GUN",
         other => return format!("UNIT_{}", other.to_ascii_uppercase()),
@@ -125,6 +127,7 @@ fn civ6_unit_type(name: &civvis::name::Name) -> String {
 fn civ6_improvement_type(name: &civvis::name::Name) -> String {
     let id = match name.as_str() {
         "seaside_resort" => "BEACH_RESORT",
+        "qhapaq_nan" => "MOUNTAIN_ROAD",
         "nubian_pyramid" => "PYRAMID",
         other => return format!("IMPROVEMENT_{}", other.to_ascii_uppercase()),
     };
@@ -137,14 +140,83 @@ fn civ6_improvement_type(name: &civvis::name::Name) -> String {
 /// outbound boundary symmetric: live turns 165-219 refused 200 production orders
 /// for the nonexistent `BUILDING_MEDIEVAL_WALLS`, leaving three or four queues idle
 /// per turn.  The shipped Buildings.xml names the tiers WALLS, CASTLE, and STAR_FORT.
+/// ⚠⚠ THE WALL TIERS WERE NOT THE ONLY THREE. `mirror::civvis_node_name` carries a
+/// nineteen-entry inbound alias table for exactly this vocabulary gap, and only the
+/// walls half of it was ever mirrored back out. Every other entry was still being
+/// uppercased into a name the shipped database does not contain, and the mod that
+/// resolves against `GameInfo.Buildings` refused each one. Counted over the runs under
+/// `civvis-civ6-runs/control` on 2026-08-02:
+///
+/// ```text
+/// unknown_BUILDING_ARCHAEOLOGICAL_MUSEUM  449
+/// unknown_DISTRICT_GOVERNMENT_PLAZA       310
+/// unknown_BUILDING_MEDIEVAL_WALLS         275   (already fixed; runs predate it)
+/// unknown_TECH_WHEEL                      110
+/// unknown_BUILDING_ART_MUSEUM             108
+/// unknown_DISTRICT_THEATER_SQUARE          24
+/// unknown_BUILDING_OIL_POWER_PLANT         10
+/// ```
+///
+/// The culture cost is direct and it is the whole reason this was found. A Museum is
+/// the third step of the only culture chain in the game — Theater Square →
+/// Amphitheater → Art/Archaeological Museum → Broadcast Center — and it carries +2
+/// Culture and **three Great Work slots**, the largest late-game culture source there
+/// is. Across 45 live runs that reached turn 150, **not one city ever finished a
+/// Museum**, and the empire held a median of **zero Great Works**. The order went out
+/// 507 times and was refused every time.
+///
+/// ⚠ Every replacement here was read out of the shipped
+/// `Cache/DebugGameplay.sqlite`, not inferred from the display name: there is no
+/// `BUILDING_ART_MUSEUM` in Civilization VI, the row is `BUILDING_MUSEUM_ART`, and the
+/// nine Government Plaza buildings are named for their *tier* (`BUILDING_GOV_TALL`)
+/// rather than their subject. Keep this table the exact inverse of
+/// `mirror::civvis_node_name`'s — a name that only translates one way is the defect
+/// this pair of tables exists to prevent.
 fn civ6_building_type(name: &civvis::name::Name) -> String {
     let id = match name.as_str() {
         "ancient_walls" => "WALLS",
         "medieval_walls" => "CASTLE",
         "renaissance_walls" => "STAR_FORT",
+        "art_museum" => "MUSEUM_ART",
+        "archaeological_museum" => "MUSEUM_ARTIFACT",
+        "oil_power_plant" => "FOSSIL_FUEL_POWER_PLANT",
+        "nuclear_power_plant" => "POWER_PLANT",
+        "mausoleum_at_halicarnassus" => "HALICARNASSUS_MAUSOLEUM",
+        "statue_of_liberty" => "STATUE_LIBERTY",
+        "university_of_sankore" => "UNIVERSITY_SANKORE",
+        // The Government Plaza tier buildings. Firaxis names the slot, not the
+        // building: `gov_culture` is the National History Museum.
+        "audience_chamber" => "GOV_TALL",
+        "ancestral_hall" => "GOV_WIDE",
+        "warlords_throne" => "GOV_CONQUEST",
+        "foreign_ministry" => "GOV_CITYSTATES",
+        "grand_masters_chapel" => "GOV_FAITH",
+        "intelligence_agency" => "GOV_SPIES",
+        "national_history_museum" => "GOV_CULTURE",
+        "royal_society" => "GOV_SCIENCE",
+        "war_department" => "GOV_MILITARY",
         other => return format!("BUILDING_{}", other.to_ascii_uppercase()),
     };
     format!("BUILDING_{id}")
+}
+
+/// Civilization VI truncates two district names and spells a third differently.
+///
+/// `DISTRICT_THEATER_SQUARE` and `DISTRICT_GOVERNMENT_PLAZA` are CIVVIS spellings; the
+/// shipped rows are `DISTRICT_THEATER` and `DISTRICT_GOVERNMENT`. The inbound reader
+/// already recovers both — `civvis_node_name`'s unique-prefix rule was added for
+/// `DISTRICT_GOVERNMENT` specifically — so this is the missing outbound half.
+fn civ6_district_type(name: &civvis::name::Name) -> String {
+    let id = match name.as_str() {
+        "theater_square" => "THEATER",
+        "government_plaza" => "GOVERNMENT",
+        "water_park" => "WATER_ENTERTAINMENT_COMPLEX",
+        // Brazil's Water Park replacement; `data/districts.json` records
+        // `"replaces": "water_park"`, so it takes the water spelling.
+        "copacabana" => "WATER_STREET_CARNIVAL",
+        other => return format!("DISTRICT_{}", other.to_ascii_uppercase()),
+    };
+    format!("DISTRICT_{id}")
 }
 
 fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
@@ -153,8 +225,15 @@ fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
     match item {
         Item::Unit { unit } => Some(civ6_unit_type(unit)),
         Item::Building { building } => Some(civ6_building_type(building)),
-        Item::District { district, .. } => Some(format!("DISTRICT_{}", upper(district))),
-        Item::Wonder { wonder, .. } => Some(format!("BUILDING_{}", upper(wonder))),
+        Item::District { district, .. } => Some(civ6_district_type(district)),
+        // ⚠ A WONDER IS A BUILDING AND MUST USE THE BUILDING TABLE. #959 put the
+        // divergent spellings in `civ6_building_type`, but this arm still formatted its
+        // own name, so the three wonders Civilization VI spells differently
+        // — `BUILDING_HALICARNASSUS_MAUSOLEUM`, `BUILDING_STATUE_LIBERTY`,
+        // `BUILDING_UNIVERSITY_SANKORE` — kept going out mechanically uppercased and
+        // kept being refused. Two arms formatting the same table one line apart is the
+        // shape that made this a bug twice.
+        Item::Wonder { wonder, .. } => Some(civ6_building_type(wonder)),
         // ⚠ CIVVIS'S DISTRICT PROJECTS ARE NOT NAMED LIKE CIVILIZATION VI'S, and the
         // mechanical uppercase below produced names the game has never heard of.
         //
@@ -175,8 +254,23 @@ fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
                 "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE".to_string()
             }
             "theater_square_festival" => "PROJECT_ENHANCE_DISTRICT_THEATER".to_string(),
+            // ⚠ The space-race projects diverge too, and in four different ways: the
+            // shipped rows are LAUNCH_EXOPLANET_EXPEDITION (CIVVIS drops the verb),
+            // LAUNCH_MARS_BASE (CIVVIS says colony), and the two lasers are
+            // TERRESTRIAL_LASER / ORBITAL_LASER with no "station" and no Lagrange.
+            "exoplanet_expedition" => "PROJECT_LAUNCH_EXOPLANET_EXPEDITION".to_string(),
+            "launch_mars_colony" => "PROJECT_LAUNCH_MARS_BASE".to_string(),
+            "terrestrial_laser_station" => "PROJECT_TERRESTRIAL_LASER".to_string(),
+            "lagrange_laser_station" => "PROJECT_ORBITAL_LASER".to_string(),
+            // ⚠ `repair_encampment` is DELIBERATELY not translated, though it is the
+            // second-largest refusal class at 342. Civilization VI has no encampment
+            // repair project — a pillaged Encampment is repaired by ordering the
+            // district again, which needs the plot this arm cannot see. Mapping it to
+            // `DISTRICT_ENCAMPMENT` here would only trade `unknown_` refusals for
+            // `build_no_plot` ones. It belongs on the `Item::Repair` path in
+            // `civ6_live_build_name`, which already recovers the plot from the mirror.
             // The rest ARE mechanical: `build_nuclear_device` really is
-            // `PROJECT_BUILD_NUCLEAR_DEVICE`. Only the district projects diverge.
+            // `PROJECT_BUILD_NUCLEAR_DEVICE`.
             _ => format!("PROJECT_{}", upper(project)),
         }),
         _ => None,
@@ -195,11 +289,23 @@ fn civ6_live_build_name(
 ) -> Option<String> {
     use civvis::game::Item;
     match item {
+        // ⚠ THIS ARM MUST USE `civ6_district_type`, NOT ITS OWN UPPERCASE.
+        //
+        // It formatted its own name and so re-introduced every divergent
+        // district spelling the rest of this file had already repaired. Live run
+        // `civvis-20260803T094641Z` emitted `DISTRICT_GOVERNMENT_PLAZA` **26
+        // times** on a revision where `civ6_district_type` had mapped it to
+        // `DISTRICT_GOVERNMENT` for hours; the host discarded all 26.
+        //
+        // This is the third time the same shape has cost a live game: #959 put
+        // the wonder spellings in `civ6_building_type` while `Item::Wonder`
+        // still formatted its own, and #983's map export was rejected wholesale
+        // for a related reason. **One table, one formatter.**
         Item::Repair { repair, pos } if repair == "district" => game
             .map
             .get(*pos)
             .and_then(|tile| tile.district.as_ref())
-            .map(|district| format!("DISTRICT_{}", district.as_str().to_ascii_uppercase())),
+            .map(civ6_district_type),
         Item::Repair { repair, .. } => Some(civ6_building_type(repair)),
         _ => civ6_build_name(item),
     }
@@ -219,8 +325,23 @@ fn civ6_build_pos(item: &civvis::game::Item) -> Option<(i32, i32)> {
     }
 }
 
+/// ⚠ THE TWO RULESETS DISAGREE ON ARTICLES, AND IT COSTS A WHOLE TECHNOLOGY.
+///
+/// `mirror::civvis_node_name` documents the inbound half: Civ 6's `TECH_THE_WHEEL` is
+/// CIVVIS's `wheel`, and it strips the leading article to cross. Outbound never put it
+/// back, so every research order for the Wheel went out as `TECH_WHEEL` and was
+/// refused — **110 times** across the runs under `civvis-civ6-runs/control`. The Wheel
+/// gates Horseback Riding, Bronze Working's siege line and the Water Mill, so a seat
+/// that could never select it was steering around a hole in its own tech tree.
+///
+/// The article is the only divergence in the 77-row technology table (audited against
+/// `Cache/DebugGameplay.sqlite` on 2026-08-02) and civics diverge nowhere, so this
+/// stays an exact list rather than a prefix rule.
 fn civ6_tech_name(civvis: &str) -> String {
-    format!("TECH_{}", civvis.to_ascii_uppercase())
+    match civvis {
+        "wheel" => "TECH_THE_WHEEL".to_string(),
+        other => format!("TECH_{}", other.to_ascii_uppercase()),
+    }
 }
 
 fn civ6_civic_name(civvis: &str) -> String {
@@ -342,9 +463,38 @@ fn host_city_target(
 /// unit workflow. The host supplies both the current activation verdict and every
 /// legal activation plot; choosing the nearest legal plot is path actuation, not a
 /// second strategy layer.
-fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, usize) {
+/// Why a Great Person standing on the board produced no order this turn.
+///
+/// ⚠ These are not the same thing and the single counter they replace could not
+/// tell them apart. `on_cooldown` is the deliberate, benign case documented
+/// below: the person already occupies an activation plot and Firaxis has not
+/// re-offered the command yet, so waiting is correct and the next export will
+/// activate them. `no_activation_plot` is a **loss** — the host offers nowhere
+/// at all to use this individual, and they will stand there for the rest of the
+/// game unless the empire builds the district their class needs.
+///
+/// The distinction is not cosmetic for the science question. A Great Scientist
+/// activates on a Campus; an empire with one Campus and two Scientists has one
+/// of them permanently stranded, and the merged counter reported that
+/// identically to a Writer waiting a single frame. Live brain logs show this
+/// reaching 3 and 6, and nothing said which kind.
+#[derive(Default, Clone, Copy)]
+struct GreatPersonStall {
+    on_cooldown: usize,
+    no_activation_plot: usize,
+}
+
+impl GreatPersonStall {
+    fn total(self) -> usize {
+        self.on_cooldown + self.no_activation_plot
+    }
+}
+
+fn great_person_orders(
+    state: &civvis::mirror::StateSnapshot,
+) -> (Vec<Order>, GreatPersonStall) {
     let mut orders = Vec::new();
-    let mut waiting_without_target = 0;
+    let mut stall = GreatPersonStall::default();
     for unit in &state.units {
         let Some(person) = &unit.great_person else {
             continue;
@@ -369,7 +519,7 @@ fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, us
         // different city. Qu Yuan otherwise bounced Theater -> capital on the
         // cooldown frame after creating his first work.
         if person.activation_plots.iter().any(|plot| plot.distance == 0) {
-            waiting_without_target += 1;
+            stall.on_cooldown += 1;
             continue;
         }
         let target = person
@@ -384,10 +534,12 @@ fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, us
                 pos: Some((target.x, target.y)),
             });
         } else {
-            waiting_without_target += 1;
+            // The host offered no plot anywhere. This individual has nothing to
+            // do until the empire builds the district their class activates on.
+            stall.no_activation_plot += 1;
         }
     }
-    (orders, waiting_without_target)
+    (orders, stall)
 }
 
 /// Keep every physical Great Person hex clear for the current Lua batch.
@@ -618,19 +770,125 @@ fn reserve_live_barbarian_defenders(planned_game: &mut civvis::game::Game, pid: 
     targets.len()
 }
 
+/// The skipped-reason key for a move whose destination is the unit's own tile.
+///
+/// ★★★★ NAME THE ANONYMOUS COUNT. `self_tile_move` is the largest single waste
+/// class on the ladder — **25,387 dropped orders across 43 live runs, on 3,803
+/// turns with at least one** — and as a bare total it cannot say whether that is
+/// one stuck Settler, the whole army, or a Trader with nowhere to go. Those are
+/// completely different repairs, and this project has three times found the
+/// standing hypothesis about an anonymous count to be wrong: `no_params` x221
+/// was one district, `move_refused` x33 was one trader, and 146 blocked upgrades
+/// were two resource gaps rather than gold.
+///
+/// It answered immediately. Replaying five finished runs through the fixed
+/// binary: **249 self-tile moves, 100% military** — warrior 59, heavy_chariot
+/// 53, field_cannon 52, pike_and_shot 32, archer 23, and a tail of galley,
+/// crossbowman, cuirassier, trebuchet, spec_ops and slinger. **Zero settlers,
+/// zero builders, zero traders**, against a prediction of ~2% settlers.
+///
+/// ⚠ Keep the `self_tile_move` PREFIX. Existing readers match on it, and the
+/// unit kind is a suffix so a total is still recoverable by prefix.
+fn self_tile_move_key(mirror_state: &civvis::mirror::LiveMirror, unit: u32) -> String {
+    mirror_state
+        .game
+        .units
+        .get(&unit)
+        .map(|unit| format!("self_tile_move:{}", unit.kind))
+        .unwrap_or_else(|| "self_tile_move".to_string())
+}
+
+/// Turn one live-bridge treatment back off, by the same kebab name the Elo
+/// registry uses for its `live_without_*` arms.
+///
+/// ★★★★★ THE LIVE BRIDGE HAS NEVER BEEN MEASURED, AND THIS IS WHY. Every repair
+/// in `AdvancedAi::enable_live_bridge` is registered in `src/elo.rs` with a
+/// matching `live_without_<flag>` arm, so `ai_eval` can isolate it — but
+/// `ai_eval` plays headless CIVVIS, where several of those mechanisms cannot act
+/// at all. `closed_borders` and `host_observed` are populated only by
+/// `mirror.rs` and are empty by construction in self-play; the whole 20-axis
+/// composite scores **+9 Elo (CI −53..+71)** against plain `advanced`, and
+/// individual arms come back at ±0 with 40 of 40 paired maps neutral because the
+/// branch under test fires roughly **18 times per 10,000** tactical steps there.
+///
+/// Meanwhile the LIVE harness had no way to hold a treatment off at all:
+/// `civ6_play.py` starts `civvis_orders --serve` and takes whatever the binary
+/// does. So the one regime where these mechanisms actually fire was also the one
+/// regime in which no control arm could be run. Every live claim in this lane is
+/// therefore an instrumented mechanism check — foreign-tile move orders
+/// 115/432 → 0/349, embarkation leaving the refusal census — and never a paired
+/// outcome.
+///
+/// `--without <treatment>` closes that. Repeat it to hold several off. An
+/// unknown name is a hard error rather than a warning: a typo that silently
+/// produced a control identical to the treatment would report a null and look
+/// exactly like a real one.
+fn withhold_live_treatment(
+    ai: &mut civvis::ai::AdvancedAi,
+    treatment: &str,
+) -> Result<(), String> {
+    match treatment {
+        "home-defense" => ai.disable_home_defense(),
+        "solvent-faith-army" => ai.disable_solvent_faith_army(),
+        "siege-muster" => ai.disable_siege_muster(),
+        "district-coverage" => ai.disable_district_coverage(),
+        "loyalty-rate-alarm" => ai.disable_loyalty_rate_alarm(),
+        "bounded-recovery" => ai.disable_bounded_recovery(),
+        "army-target-weighs-enemy" => ai.disable_army_target_weighs_the_enemy(),
+        "siege-tracks-wall" => ai.disable_siege_tracks_the_wall(),
+        "blind-objective-strength" => ai.disable_blind_objective_strength(),
+        "blind-objective-units" => ai.disable_blind_objective_units(),
+        "siege-role" => ai.disable_siege_role(),
+        "come-ashore" => ai.disable_come_ashore(),
+        "relief-targets-the-siege" => ai.disable_relief_targets_the_siege(),
+        "suzerain-cards" => ai.disable_suzerain_cards_need_a_suzerainty(),
+        // Landed on main while this branch sat unstaged. The invariant below —
+        // a `disable_*` alongside every `enable_*` is picked up here for free —
+        // only holds if the merge actually picks them up.
+        "housing-districts" => ai.disable_housing_districts(),
+        "housing-cards" => ai.disable_housing_cards(),
+        "housing-research" => ai.disable_housing_research(),
+        "campus-every-city" => ai.disable_campus_every_city(),
+        "muster-at-command-radius" => ai.disable_muster_at_command_radius(),
+        other => {
+            return Err(format!(
+                "unknown --without treatment {other:?}; this binary can withhold: \
+                 home-defense, solvent-faith-army, siege-muster, district-coverage, \
+                 loyalty-rate-alarm, bounded-recovery, army-target-weighs-enemy, \
+                 siege-tracks-wall, blind-objective-strength, blind-objective-units, \
+                 siege-role, come-ashore, relief-targets-the-siege, suzerain-cards, \
+                 housing-districts, housing-cards, housing-research, campus-every-city, \
+                 muster-at-command-radius"
+            ))
+        }
+    }
+    Ok(())
+}
+
 fn decide(
     mirror_state: &mut civvis::mirror::LiveMirror,
     ai: &mut civvis::ai::AdvancedAi,
     snapshot: &civvis::mirror::Snapshot,
     state: &civvis::mirror::StateSnapshot,
     war_from_plan: bool,
+    withheld: &[String],
     ours: &mut std::collections::BTreeMap<i64, String>,
 ) -> String {
     // Only the live bridge has Firaxis's non-walking Trader representation and
     // host-city religious purchase rule. Enable those narrow adapters before
     // the AI simulates its turn; the tournament controller stays frozen.
-    ai.enable_live_trader_route_adapter();
-    ai.enable_live_religious_purchase_guard();
+    // Every live-bridge adapter and repair, in one place so the headless
+    // measurement arms can play the SAME controller the bridge deploys.
+    // See `AdvancedAi::enable_live_bridge`.
+    ai.enable_live_bridge();
+    // Held off AFTER the composite is applied, so `--without` names exactly one
+    // mechanism against the deployed configuration. See `withhold_live_treatment`.
+    for treatment in withheld {
+        if let Err(why) = withhold_live_treatment(ai, treatment) {
+            eprintln!("civvis-orders: {why}");
+            std::process::exit(2);
+        }
+    }
     // `Ai::take_turn` is a full CIVVIS turn simulation: it changes queues, spends
     // resources, ends the turn, and can complete a queued unit.  None of those
     // mutations happened in Firaxis merely because we asked for a recommendation.
@@ -709,7 +967,35 @@ fn decide(
         std::collections::BTreeMap::new();
     let mut skipped_examples: Vec<String> = Vec::new();
     let mut note_bits: Vec<String> = Vec::new();
+    {
+        let blind = civvis::ai::AdvancedAi::blind_tiles_charged();
+        if blind > 0 {
+            note_bits.push(format!("blind_ranged_tiles_charged={blind}"));
+        }
+    }
+    // ⚠ Which rule is refusing the army its attacks. 45 of 87 declined attacks
+    // on a replay of run `civvis-20260803T005930Z` were the forward model
+    // rejecting the action outright rather than judging it bad, 27 of them a
+    // Field Cannon, and `do_ranged` alone refuses for seven distinct reasons.
+    // Naming them is the difference between "the army does not attack" and a
+    // fixable rule.
+    {
+        let census = civvis::ai::AdvancedAi::illegal_attack_census();
+        if !census.is_empty() {
+            let named: Vec<String> = census
+                .iter()
+                .take(6)
+                .map(|(why, count)| format!("{why}={count}"))
+                .collect();
+            note_bits.push(format!("illegal_attacks [{}]", named.join("; ")));
+        }
+    }
     let mut policy_changed = false;
+    if !withheld.is_empty() {
+        // ⚠ A control arm that does not say so in its own run log is a control
+        // arm nobody can trust afterwards. Wall-clock is not provenance.
+        note_bits.push(format!("withheld=[{}]", withheld.join(",")));
+    }
     if !pre_traders.is_empty() {
         note_bits.push(format!(
             "traders capacity={} active={} [{}]",
@@ -783,8 +1069,31 @@ fn decide(
                     Action::Produce { .. } => "produce_not_mapped",
                     _ => "",
                 };
+                // ★★★★ NAME THE ANONYMOUS COUNT. `self_tile_move` is the largest
+                // single waste class on the ladder — **25,387 dropped orders across
+                // 43 live runs, on 3,803 turns with at least one** — and as a bare
+                // total it cannot say whether that is one stuck Settler, the whole
+                // army, or a Trader with nowhere to go. Those are completely
+                // different repairs, and this project has three times found that
+                // the standing hypothesis about an anonymous count was wrong:
+                // `no_params` x221 was one district, `move_refused` x33 was one
+                // trader, and 146 blocked upgrades were two resource gaps, not gold.
+                //
+                // The expansion half is already measured and it is worth naming:
+                // live settlers cross 0.78 tiles/turn on 2 movement points, stand
+                // still on 45% of their turn-transitions, and **0 of 1455** of those
+                // standstills carry a `move_refused` while 91% fall on a turn whose
+                // journal says the settler is marching. Whether the settler's own
+                // step is computing its own tile is exactly what this key answers.
                 let why = if why.is_empty() {
                     action_variant(action)
+                } else if why == "self_tile_move" {
+                    match action {
+                        Action::MoveTo { unit, .. } | Action::Move { unit, .. } => {
+                            self_tile_move_key(mirror_state, *unit)
+                        }
+                        _ => why.to_string(),
+                    }
                 } else {
                     why.to_string()
                 };
@@ -796,14 +1105,20 @@ fn decide(
         orders.push(policy_deck_order(&planned_game, 0));
     }
 
-    let (person_orders, great_people_without_target) = great_person_orders(state);
+    let (person_orders, great_person_stall) = great_person_orders(state);
     if !person_orders.is_empty() {
         note_bits.push(format!("great_people_orders={}", person_orders.len()));
         orders.extend(person_orders);
     }
-    if great_people_without_target > 0 {
+    if great_person_stall.total() > 0 {
+        // Kept under the old key so existing log readers still find it, with the
+        // split alongside: one of these two numbers is a cooldown frame and the
+        // other is a Great Person the empire cannot use at all.
         note_bits.push(format!(
-            "great_people_without_activation_target={great_people_without_target}"
+            "great_people_without_activation_target={} (cooldown={} no_plot={})",
+            great_person_stall.total(),
+            great_person_stall.on_cooldown,
+            great_person_stall.no_activation_plot,
         ));
     }
 
@@ -1582,6 +1897,28 @@ fn main() {
         "per_civ": rated.as_ref().map(|c| c.per_civ),
         "lane": rated.as_ref().and_then(|c| c.lane.clone()),
         "victory": victory.clone(),
+        // ⚠⚠ SAY WHAT THIS BINARY ACTUALLY CARRIES, EVERY RUN.
+        //
+        // A stale binary is invisible: `summary.json` records no revision, and
+        // three of thirty-two recent live runs were executing a pre-fix build,
+        // each losing most of a city's production to a defect already fixed on
+        // `main`. They were identifiable only because they emitted a build name
+        // a later commit had corrected — an accident that will not repeat for
+        // the next stale build.
+        //
+        // `LIVE_BRIDGE_TREATMENTS` is the canonical list of what
+        // `enable_live_bridge` turns on, and a test already forces the two to
+        // agree. So a binary that predates a repair emits a SHORTER list, and
+        // the difference names exactly which repairs were missing. That also
+        // gives any A/B the one thing it needs and has never had: which
+        // treatments were actually live in the arm it measured.
+        //
+        // `revision` beside it is the supervisor's label when there is one —
+        // `CIVVIS_COMMIT`, or a promoted `civvis-<sha>` executable name. It is
+        // `null` for an ordinary development build, which is honest: the
+        // treatment list is the identity that always reports.
+        "revision": civvis::server::runtime_commit_or_none(),
+        "treatments": civvis::elo::LIVE_BRIDGE_TREATMENTS,
     }));
 
     // ★★★★ HOLD THE SITE ACROSS A TURN THE SETTLER COULD NOT MOVE.
@@ -1628,6 +1965,24 @@ fn main() {
     };
     let fresh_ai = args.iter().any(|a| a == "--fresh-ai");
     let war_from_plan = args.iter().any(|a| a == "--war-from-plan");
+    // Repeatable: `--without come-ashore --without home-defense`.
+    let withheld: Vec<String> = args
+        .windows(2)
+        .filter(|pair| pair[0] == "--without")
+        .map(|pair| pair[1].clone())
+        .collect();
+    // Validate before a single turn is driven. Discovering a typo on turn 1 of a
+    // four-hour live run is discovering it too late.
+    {
+        let mut probe = civvis::ai::AdvancedAi::new();
+        probe.enable_live_bridge();
+        for treatment in &withheld {
+            if let Err(why) = withhold_live_treatment(&mut probe, treatment) {
+                eprintln!("civvis-orders: {why}");
+                std::process::exit(2);
+            }
+        }
+    }
     let fresh_board = args.iter().any(|a| a == "--fresh-board");
 
     // Read the board fresh each time: the mod appends to this file every turn.
@@ -1668,6 +2023,178 @@ fn main() {
     //   res  whether the name resolved at all. An unresolved name does not error: the
     //        tile silently keeps whatever `Game::new` generated, which is a wrong
     //        terrain wearing a right one's clothes.
+    // ★★★★★ WHY THERE IS NO SETTLER, ANSWERED FOR A RECORDED RUN.
+    //
+    // The empire-level failure this project keeps measuring is EXPANSION: runs
+    // end with one city while the plan asks for seven or eight. The Strategy
+    // journal says "short of cities with land still open" every turn, and the
+    // Cities journal says "starts heavy chariot" every turn, and NOTHING says
+    // which of the settler gate's five conditions refused.
+    //
+    // Live on `civvis-20260804T041525Z`: one settler in 130 turns (built t9,
+    // lost t28), then 90 consecutive turns of military while `desired_cities`
+    // stood at 7. Reading the code cannot distinguish "the site search found
+    // nothing" from "the branch was never reached", because the gate is a
+    // single `&&` chain with no journal line of its own.
+    //
+    // This evaluates each condition separately on the reconstructed board and
+    // prints them, so the answer is a measurement rather than an inference.
+    if args.iter().any(|a| a == "--explain-settler") {
+        let want_turn: Option<u32> = arg_text(&args, "--turn").and_then(|v| v.parse().ok());
+        let Some((snapshot, state)) = load(want_turn) else {
+            println!("no revealed terrain or no state yet");
+            return;
+        };
+        let (mirror_players, mirror_turns) = mirror_setup(&state, players, max_turns);
+        let live = civvis::mirror::LiveMirror::new(
+            &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
+        );
+        let g = &live.game;
+        // ⚠⚠ THE PROBE MUST PLAY THE GENOME THE LIVE RUN PLAYED.
+        //
+        // The first version of this diagnostic used stock `AdvancedAi::new()`
+        // weights and reported `mil_per_city` 1.0, while the live journal for the
+        // same run printed **1.4**. A probe answering with a different genome than
+        // the deployment cannot be used to say the live decider is wrong — it is a
+        // different agent. `--strategy auto` resolves the league genome exactly as
+        // the live decider does, and the header line below names which one played
+        // so a stock fallback can never be mistaken for the deployment.
+        let mut advanced = civvis::ai::AdvancedAi::new();
+        let chosen = resolve_strategy(&args);
+        if let Some(chosen) = &chosen {
+            advanced.reweight(chosen.weights.clone());
+        }
+        println!(
+            "genome: {}",
+            chosen
+                .as_ref()
+                .map(|c| format!("{} (from {})", c.name, c.source))
+                .unwrap_or_else(|| "stock AdvancedAi::new — NOT the deployment".to_string())
+        );
+        let w = advanced.weights().clone();
+        let ai = civvis::ai::BasicAi::with_weights(w.clone());
+        let pid = 0usize;
+        let n_cities = g.player_city_ids(pid).len();
+        let settlers = g
+            .units
+            .values()
+            .filter(|u| u.owner == pid && u.kind == "settler")
+            .count();
+        let city_pop = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.cities[&cid].pop)
+            .max()
+            .unwrap_or(0);
+        println!("turn {}  cities {n_cities}  settlers {settlers}  best city pop {city_pop}", g.turn);
+        println!("settler gate, condition by condition:");
+        println!(
+            "  (cities+settlers) < city_target      {:>5}   {} < {:.1}",
+            ((n_cities + settlers) as f64) < w.city_target,
+            n_cities + settlers,
+            w.city_target
+        );
+        println!("  settlers == 0                        {:>5}   {settlers}", settlers == 0);
+        println!(
+            "  city_pop >= settler_min_pop          {:>5}   {city_pop} >= {:.1}",
+            (city_pop as f64) >= w.settler_min_pop,
+            w.settler_min_pop
+        );
+        println!(
+            "  turn < settler_stop_turn             {:>5}   {} < {:.0}",
+            (g.turn as f64) < w.settler_stop_turn,
+            g.turn,
+            w.settler_stop_turn
+        );
+        // The military branch sits ABOVE the settler gate in `pick_item` and
+        // returns first when it fires, so the gate passing means nothing on its
+        // own. Recompute its floor from outside: `mil_per_city * cities`, raised
+        // by visible besiegers within 3 of a city, capped at +3.
+        let military = g
+            .units
+            .values()
+            .filter(|u| u.owner == pid && g.rules.units[u.kind].class == "military")
+            .count();
+        let besiegers = {
+            let homes: Vec<_> = g
+                .player_city_ids(pid)
+                .into_iter()
+                .map(|cid| g.cities[&cid].pos)
+                .collect();
+            g.units
+                .values()
+                .filter(|u| u.owner != pid && g.rules.units[u.kind].class == "military")
+                .filter(|u| homes.iter().any(|h| g.wdist(*h, u.pos) <= 3))
+                .count()
+        };
+        let floor = (w.mil_per_city * n_cities as f64).max(if besiegers == 0 {
+            0.0
+        } else {
+            w.mil_per_city * n_cities as f64 + besiegers.min(3) as f64
+        });
+        println!(
+            "military branch: hold {military}, floor {floor:.1} (besiegers within 3: {besiegers}) -> fires {}",
+            (military as f64) < floor
+        );
+        // End the inference: ask the chooser itself.
+        {
+            let cid = g.player_city_ids(pid).into_iter().next();
+            if let Some(cid) = cid {
+                let mut probe = g.clone();
+                let melee = g
+                    .units
+                    .values()
+                    .filter(|u| u.owner == pid && g.rules.units[u.kind].class == "military")
+                    .count();
+                let chosen = ai.pick_item(
+                    &mut probe, pid, cid, n_cities, settlers, 0, 0, 0, military, melee, 0,
+                );
+                println!("pick_item returns: {chosen:?}");
+            }
+        }
+        let practical = ai.has_practical_settle_site(g, pid);
+        println!("  has_practical_settle_site            {practical:>5}");
+        // When the site search refuses, say WHICH rule refused each candidate:
+        // "no site" and "every site too close to a city we already own" are
+        // different defects and only one of them is about the map.
+        if !practical {
+            let mut water = 0;
+            let mut impassable = 0;
+            let mut too_close = 0;
+            let mut foreign = 0;
+            let mut wonder = 0;
+            let mut ok = 0;
+            for (pos, tile) in g.map.tiles.iter() {
+                if g.rules.is_water(tile) {
+                    water += 1;
+                } else if !g.rules.is_passable(tile) {
+                    impassable += 1;
+                } else if g.tile_is_natural_wonder(tile) {
+                    wonder += 1;
+                } else if g
+                    .cities
+                    .values()
+                    .any(|city| (g.wdist(city.pos, *pos) as f64) < w.min_city_dist)
+                {
+                    too_close += 1;
+                } else if tile
+                    .owner_city
+                    .is_some_and(|cid| g.cities[&cid].owner != pid)
+                {
+                    foreign += 1;
+                } else {
+                    ok += 1;
+                }
+            }
+            println!(
+                "  known tiles {}: water {water}, impassable {impassable}, natural wonder {wonder}, within min_city_dist {:.0} of a city {too_close}, foreign-owned {foreign}, VALID {ok}",
+                g.map.tiles.len(),
+                w.min_city_dist
+            );
+            println!("  ⚠ VALID > 0 with practical=false means the site exists but the 8-step walk cannot REACH it");
+        }
+        return;
+    }
     if args.iter().any(|a| a == "--dump-mirror") {
         let want_turn: Option<u32> = arg_text(&args, "--turn").and_then(|v| v.parse().ok());
         let Some((snapshot, state)) = load(want_turn) else {
@@ -1869,7 +2396,7 @@ fn main() {
         // One-shot: there is no next turn to be self-limiting against, so this starts
         // empty and every foreign choice is released once.
         let mut ours = std::collections::BTreeMap::new();
-        let reply = decide(&mut live, &mut ai, &snapshot, &state, war_from_plan, &mut ours);
+        let reply = decide(&mut live, &mut ai, &snapshot, &state, war_from_plan, &withheld, &mut ours);
         // ⚠ `--explain` USED TO WORK ONLY UNDER `--serve`, which is the mode you cannot
         // debug in. Replaying one recorded turn is the fast loop — seconds, no game,
         // no lock — and it was the one path that could not say why it chose anything.
@@ -1950,6 +2477,12 @@ fn main() {
                     // circles could never fire in this bridge at all.
                     let previous: Option<std::collections::BTreeMap<u32, i64>> =
                         live.as_ref().map(|board| board.civ6_of.clone());
+                    // The treasury baseline dies with the old board unless it is
+                    // handed over: see `LiveMirror::carry_treasury_baseline`. Without
+                    // this, `gold_per_turn` is 0 for the whole game and every
+                    // bankruptcy response that reads it is dead.
+                    let carried_treasury =
+                        live.as_ref().and_then(|board| board.treasury_baseline());
                     let mut board = civvis::mirror::LiveMirror::new(
                         &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
                     );
@@ -1965,7 +2498,8 @@ fn main() {
                         }
                         None => ai.forget_unit_memory(),
                     }
-                    let reply = decide(&mut board, &mut ai, &snapshot, &state, war_from_plan, &mut ours);
+                    board.carry_treasury_baseline(carried_treasury);
+                    let reply = decide(&mut board, &mut ai, &snapshot, &state, war_from_plan, &withheld, &mut ours);
                     live = Some(board);
                     reply
                 } else {
@@ -1974,7 +2508,7 @@ fn main() {
                         let mut fresh = civvis::mirror::LiveMirror::new(
                             &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
                         );
-                        let reply = decide(&mut fresh, &mut ai, &snapshot, &state, war_from_plan, &mut ours);
+                        let reply = decide(&mut fresh, &mut ai, &snapshot, &state, war_from_plan, &withheld, &mut ours);
                         live = Some(fresh);
                         reply
                     }
@@ -1995,9 +2529,9 @@ fn main() {
                                 _ => civvis::ai::AdvancedAi::targeting(
                                     civvis::ai::VictoryTarget::Domination),
                             };
-                            decide(existing, &mut throwaway, &snapshot, &state, war_from_plan, &mut ours)
+                            decide(existing, &mut throwaway, &snapshot, &state, war_from_plan, &withheld, &mut ours)
                         } else {
-                            decide(existing, &mut ai, &snapshot, &state, war_from_plan, &mut ours)
+                            decide(existing, &mut ai, &snapshot, &state, war_from_plan, &withheld, &mut ours)
                         }
                     }
                 }
@@ -2100,6 +2634,53 @@ fn action_label(action: &Action) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    /// ★★★★★ A CONTROL ARM THE LIVE HARNESS CAN ACTUALLY RUN.
+    ///
+    /// Every live-bridge repair has a `live_without_*` arm in `src/elo.rs`, but
+    /// `ai_eval` plays headless CIVVIS where several of them cannot act at all —
+    /// `closed_borders` and `host_observed` are populated only by `mirror.rs`,
+    /// and the 20-axis composite measures +9 Elo (CI −53..+71) against plain
+    /// `advanced`. The live harness, meanwhile, had no way to hold a treatment
+    /// off: `civ6_play.py` starts `--serve` and takes whatever the binary does.
+    /// So the one regime where these mechanisms fire had no control arm.
+    ///
+    /// ⚠ The unknown-name case is asserted deliberately. A typo that silently
+    /// produced a control identical to the treatment would report a null that
+    /// looks exactly like a real one.
+    #[test]
+    fn a_live_treatment_can_be_withheld_by_name() {
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_live_bridge();
+        assert!(
+            ai.blind_objective_strength,
+            "the composite must set the flag before we can meaningfully hold it off"
+        );
+
+        withhold_live_treatment(&mut ai, "blind-objective-strength")
+            .expect("a registered treatment can be withheld");
+        assert!(
+            !ai.blind_objective_strength,
+            "--without must actually clear the flag, or the control arm is the treatment"
+        );
+
+        // Holding one off must not disturb its neighbours.
+        assert!(
+            ai.blind_objective_units,
+            "withholding one treatment must leave the rest of the composite intact"
+        );
+
+        let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
+        assert!(
+            bad.is_err(),
+            "an unknown name must be a hard error; a silent no-op would report a \
+             null that is indistinguishable from a real one"
+        );
+        assert!(
+            bad.unwrap_err().contains("come-ashore"),
+            "the error must name what this binary can actually withhold"
+        );
+    }
+
     use super::*;
     use civvis::mirror::{
         Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateGreatPerson,
@@ -2146,6 +2727,45 @@ mod tests {
     /// rebuild seeds that choice into CIVVIS's queue as work in progress, and CIVVIS —
     /// which only produces for a city whose queue is empty — says nothing. Measured at
     /// 13% of turns carrying a produce order against 100% carrying research and civic.
+    /// The largest waste class on the ladder must say WHICH unit it is.
+    ///
+    /// `self_tile_move` totalled 25,387 across 43 live runs as one anonymous
+    /// number. Named, five replayed runs answered it in one pass: 249 events,
+    /// **100% military**, zero settlers — which is the opposite of what the
+    /// expansion-tempo reading predicted and sends the repair somewhere else.
+    ///
+    /// ⚠ Two-sided: the key must carry the kind AND keep the `self_tile_move`
+    /// prefix, because existing readers match on that prefix and a bare total
+    /// has to stay recoverable.
+    #[test]
+    fn a_self_tile_move_names_the_unit_that_asked_for_it() {
+        let (snapshot, state) = local_barbarian_defense_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        // ⚠ DISCOVERED, not hardcoded: the point is that whatever unit the board
+        // carries, its kind reaches the key. Naming one would make this fail on a
+        // fixture change rather than on anything to do with the instrument.
+        let unit = *mirror
+            .game
+            .units
+            .keys()
+            .next()
+            .expect("this board carries units");
+        let kind = mirror.game.units[&unit].kind.to_string();
+        assert!(!kind.is_empty(), "fixture precondition: the unit has a kind");
+
+        let key = self_tile_move_key(&mirror, unit);
+        assert!(
+            key.starts_with("self_tile_move"),
+            "the prefix is load-bearing for every existing reader, got {key}"
+        );
+        assert_eq!(key, format!("self_tile_move:{kind}"));
+
+        // A unit the bridge cannot map back still has to be counted, not dropped:
+        // an unnamed refusal is the exact failure this key exists to end.
+        let missing = mirror.game.units.keys().copied().max().unwrap_or(0) + 1_000;
+        assert_eq!(self_tile_move_key(&mirror, missing), "self_tile_move");
+    }
+
     #[test]
     fn a_build_civvis_did_not_choose_is_handed_back_to_it() {
         let (snapshot, state) = production_board();
@@ -2330,6 +2950,7 @@ mod tests {
             &snapshot,
             &state,
             false,
+            &[],
             &mut ours,
         ))
         .unwrap();
@@ -2390,9 +3011,9 @@ mod tests {
             ..StateSnapshot::default()
         };
 
-        let (orders, waiting) = great_person_orders(&state);
+        let (orders, stall) = great_person_orders(&state);
 
-        assert_eq!(waiting, 0);
+        assert_eq!(stall.total(), 0);
         assert_eq!(orders.len(), 2);
         assert_eq!(orders[0].subject, Some(70));
         assert_eq!(orders[0].verb.as_deref(), Some("ACTIVATE_GREAT_PERSON"));
@@ -2429,10 +3050,47 @@ mod tests {
             ..StateSnapshot::default()
         };
 
-        let (orders, waiting) = great_person_orders(&state);
+        let (orders, stall) = great_person_orders(&state);
 
         assert!(orders.is_empty());
-        assert_eq!(waiting, 1);
+        assert_eq!(stall.on_cooldown, 1, "standing on a plot is the benign wait");
+        assert_eq!(
+            stall.no_activation_plot, 0,
+            "and must not be reported as an unusable Great Person"
+        );
+    }
+
+    /// The case the merged counter hid. A Great Person the host offers nowhere
+    /// to activate is not waiting a frame — they are stranded until the empire
+    /// builds the district their class needs, which for a Great Scientist is a
+    /// Campus. Live brain logs reached 3 and 6 under the old key with no way to
+    /// tell this apart from a Writer pausing for one export.
+    #[test]
+    fn a_great_person_with_nowhere_to_activate_is_named_separately() {
+        let state = StateSnapshot {
+            units: vec![StateUnit {
+                id: 73,
+                kind: "UNIT_GREAT_SCIENTIST".to_string(),
+                great_person: Some(StateGreatPerson {
+                    charges: 1,
+                    can_activate: false,
+                    activation_plots: Vec::new(),
+                    ..StateGreatPerson::default()
+                }),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let (orders, stall) = great_person_orders(&state);
+
+        assert!(orders.is_empty(), "there is nowhere to send them");
+        assert_eq!(
+            stall.no_activation_plot, 1,
+            "a Great Scientist with no Campus to use is a loss, not a wait"
+        );
+        assert_eq!(stall.on_cooldown, 0);
+        assert_eq!(stall.total(), 1, "the old key keeps its meaning");
     }
 
     #[test]
@@ -3011,6 +3669,7 @@ mod tests {
             &snapshot,
             &state,
             false,
+            &[],
             &mut Default::default(),
         ))
         .expect("the decision is JSON");
@@ -3047,6 +3706,12 @@ mod tests {
         let oromo = civvis::game::Item::Unit {
             unit: civvis::name!("oromo_cavalry"),
         };
+        let nau = civvis::game::Item::Unit {
+            unit: civvis::name!("nau"),
+        };
+        let toa = civvis::game::Item::Unit {
+            unit: civvis::name!("toa"),
+        };
         assert_eq!(
             civ6_build_name(&winged_hussar).as_deref(),
             Some("UNIT_POLISH_HUSSAR")
@@ -3060,8 +3725,20 @@ mod tests {
             Some("UNIT_ETHIOPIAN_OROMO_CAVALRY")
         );
         assert_eq!(
+            civ6_build_name(&nau).as_deref(),
+            Some("UNIT_PORTUGUESE_NAU")
+        );
+        assert_eq!(
+            civ6_build_name(&toa).as_deref(),
+            Some("UNIT_MAORI_TOA")
+        );
+        assert_eq!(
             civ6_improvement_type(&civvis::name!("seaside_resort")),
             "IMPROVEMENT_BEACH_RESORT"
+        );
+        assert_eq!(
+            civ6_improvement_type(&civvis::name!("qhapaq_nan")),
+            "IMPROVEMENT_MOUNTAIN_ROAD"
         );
 
         let district = civvis::game::Item::District {
@@ -3168,7 +3845,7 @@ mod tests {
         let before = serde_json::to_value(&mirror.game).expect("mirror game serializes");
         let mut ai = civvis::ai::AdvancedAi::new();
 
-        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false, &mut Default::default());
+        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false, &[], &mut Default::default());
 
         assert!(reply.contains("\"turn\":4"));
         assert_eq!(
@@ -3239,6 +3916,7 @@ mod tests {
             &snapshot,
             &state,
             false,
+            &[],
             &mut Default::default(),
         ))
         .expect("the decision is JSON");
@@ -3305,7 +3983,7 @@ mod tests {
         }));
 
         let mut ai = civvis::ai::AdvancedAi::new();
-        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false, &mut Default::default());
+        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false, &[], &mut Default::default());
 
         assert!(
             reply.contains("\"verb\":\"TRADE_ROUTE\"") && reply.contains("\"subject\":42"),
@@ -3383,5 +4061,379 @@ mod tests {
         );
         assert_eq!(planning.active_routes(0), 1,
             "removing the visual stand-in must not erase the real route's economic state");
+    }
+
+    /// Every name here was refused by the live mod, and the count is from the ledger.
+    ///
+    /// The right-hand side is the row in `Cache/DebugGameplay.sqlite`, not a guess from
+    /// the display name — that distinction is the whole bug. `BUILDING_ART_MUSEUM` reads
+    /// perfectly and does not exist.
+    #[test]
+    fn a_build_order_names_the_row_civilization_vi_actually_ships() {
+        use civvis::game::Item;
+        use civvis::name::Name;
+
+        let building = |n: &str| civ6_building_type(&Name::new(n));
+        let district = |n: &str| {
+            civ6_build_name(&Item::District {
+                district: Name::new(n),
+                pos: (0, 0),
+            })
+            .expect("a district always names something")
+        };
+        let project = |n: &str| {
+            civ6_build_name(&Item::Project {
+                project: Name::new(n),
+            })
+            .expect("a project always names something")
+        };
+
+        // The culture chain. 507 Museum orders across 45 runs, every one refused, and
+        // not one city in any of them ever finished a Museum or held a Great Work.
+        assert_eq!(building("art_museum"), "BUILDING_MUSEUM_ART");
+        assert_eq!(building("archaeological_museum"), "BUILDING_MUSEUM_ARTIFACT");
+        assert_eq!(district("theater_square"), "DISTRICT_THEATER");
+        // 310 refusals, and the inbound reader already had to grow a unique-prefix
+        // rule to recover this one coming the other way.
+        assert_eq!(district("government_plaza"), "DISTRICT_GOVERNMENT");
+        assert_eq!(building("national_history_museum"), "BUILDING_GOV_CULTURE");
+        // 110 refusals: an entire technology the seat could never select.
+        assert_eq!(civ6_tech_name("wheel"), "TECH_THE_WHEEL");
+
+        // The rest of the Government Plaza tier, named for the slot not the subject.
+        assert_eq!(building("audience_chamber"), "BUILDING_GOV_TALL");
+        assert_eq!(building("ancestral_hall"), "BUILDING_GOV_WIDE");
+        assert_eq!(building("warlords_throne"), "BUILDING_GOV_CONQUEST");
+        assert_eq!(building("foreign_ministry"), "BUILDING_GOV_CITYSTATES");
+        assert_eq!(building("grand_masters_chapel"), "BUILDING_GOV_FAITH");
+        assert_eq!(building("intelligence_agency"), "BUILDING_GOV_SPIES");
+        assert_eq!(building("royal_society"), "BUILDING_GOV_SCIENCE");
+        assert_eq!(building("war_department"), "BUILDING_GOV_MILITARY");
+
+        assert_eq!(building("oil_power_plant"), "BUILDING_FOSSIL_FUEL_POWER_PLANT");
+        assert_eq!(building("nuclear_power_plant"), "BUILDING_POWER_PLANT");
+        assert_eq!(
+            building("mausoleum_at_halicarnassus"),
+            "BUILDING_HALICARNASSUS_MAUSOLEUM"
+        );
+        assert_eq!(building("statue_of_liberty"), "BUILDING_STATUE_LIBERTY");
+        assert_eq!(building("university_of_sankore"), "BUILDING_UNIVERSITY_SANKORE");
+
+        assert_eq!(district("water_park"), "DISTRICT_WATER_ENTERTAINMENT_COMPLEX");
+        assert_eq!(district("copacabana"), "DISTRICT_WATER_STREET_CARNIVAL");
+
+        assert_eq!(project("exoplanet_expedition"), "PROJECT_LAUNCH_EXOPLANET_EXPEDITION");
+        assert_eq!(project("launch_mars_colony"), "PROJECT_LAUNCH_MARS_BASE");
+        assert_eq!(project("terrestrial_laser_station"), "PROJECT_TERRESTRIAL_LASER");
+        assert_eq!(project("lagrange_laser_station"), "PROJECT_ORBITAL_LASER");
+
+        // ⚠ The mechanical path still has to carry the other ~230 names untouched. A
+        // translation table that starts rewriting things it was not asked to rewrite is
+        // the same defect pointed the other way.
+        assert_eq!(building("monument"), "BUILDING_MONUMENT");
+        assert_eq!(building("amphitheater"), "BUILDING_AMPHITHEATER");
+        assert_eq!(district("campus"), "DISTRICT_CAMPUS");
+        assert_eq!(civ6_tech_name("mining"), "TECH_MINING");
+        assert_eq!(civ6_civic_name("drama_poetry"), "CIVIC_DRAMA_POETRY");
+        assert_eq!(project("build_nuclear_device"), "PROJECT_BUILD_NUCLEAR_DEVICE");
+        // Already fixed before this change; keep it pinned so the table stays whole.
+        assert_eq!(building("medieval_walls"), "BUILDING_CASTLE");
+        assert_eq!(project("campus_research_grants"), "PROJECT_ENHANCE_DISTRICT_CAMPUS");
+    }
+
+    /// ⚠ A wonder reaches Civilization VI as a BUILDING, so it must use the building
+    /// table — #959 added the divergent spellings but left `Item::Wonder` formatting its
+    /// own name one line away, so all three kept going out wrong. This asserts the two
+    /// arms agree, which is the property that was actually missing.
+    #[test]
+    fn a_wonder_and_a_building_translate_through_the_same_table() {
+        use civvis::game::Item;
+        use civvis::name::Name;
+
+        for name in ["mausoleum_at_halicarnassus", "statue_of_liberty",
+                     "university_of_sankore", "stonehenge", "great_bath"] {
+            let as_wonder = civ6_build_name(&Item::Wonder {
+                wonder: Name::new(name),
+                pos: (0, 0),
+            })
+            .expect("a wonder always names something");
+            assert_eq!(
+                as_wonder,
+                civ6_building_type(&Name::new(name)),
+                "{name} must translate the same way whichever Item variant carries it"
+            );
+        }
+
+        assert_eq!(
+            civ6_build_name(&Item::Wonder {
+                wonder: Name::new("mausoleum_at_halicarnassus"),
+                pos: (0, 0)
+            })
+            .as_deref(),
+            Some("BUILDING_HALICARNASSUS_MAUSOLEUM")
+        );
+        // The plot is part of the decision and must survive the shared table.
+        assert_eq!(
+            civ6_build_pos(&Item::Wonder {
+                wonder: Name::new("stonehenge"),
+                pos: (3, 4)
+            }),
+            Some(civvis::hex::axial_to_offset(3, 4))
+        );
+    }
+
+    /// The outbound table must not silently shrink relative to CIVVIS's own ruleset.
+    ///
+    /// This is the check that would have caught the original defect: it walks every
+    /// building and district CIVVIS can order and fails on any whose translated name is
+    /// still the mechanical uppercase when the shipped database has no such row. The
+    /// known-divergent list is spelled out because CI has no Civilization VI install —
+    /// if a ruleset entry joins that list, this test is where it gets recorded.
+    #[test]
+    fn every_name_civilization_vi_spells_differently_is_translated() {
+        use civvis::name::Name;
+
+        // Read out of `Cache/DebugGameplay.sqlite` on 2026-08-02 by comparing every
+        // `data/*.json` key against Buildings/Districts/Projects/Technologies.
+        const DIVERGENT_BUILDINGS: &[&str] = &[
+            "ancient_walls", "medieval_walls", "renaissance_walls",
+            "art_museum", "archaeological_museum", "oil_power_plant", "nuclear_power_plant",
+            "mausoleum_at_halicarnassus", "statue_of_liberty", "university_of_sankore",
+            "audience_chamber", "ancestral_hall", "warlords_throne", "foreign_ministry",
+            "grand_masters_chapel", "intelligence_agency", "national_history_museum",
+            "royal_society", "war_department",
+        ];
+        const DIVERGENT_DISTRICTS: &[&str] =
+            &["theater_square", "government_plaza", "water_park", "copacabana"];
+
+        for name in DIVERGENT_BUILDINGS {
+            let mapped = civ6_building_type(&Name::new(name));
+            assert_ne!(
+                mapped,
+                format!("BUILDING_{}", name.to_ascii_uppercase()),
+                "{name} is known to be spelled differently in Civilization VI, so the \
+                 mechanical uppercase is exactly the name the mod refuses"
+            );
+        }
+        for name in DIVERGENT_DISTRICTS {
+            let mapped = civ6_district_type(&Name::new(name));
+            assert_ne!(
+                mapped,
+                format!("DISTRICT_{}", name.to_ascii_uppercase()),
+                "{name} is known to be spelled differently in Civilization VI"
+            );
+        }
+    }
+}
+
+/// Every Civilization VI type name this binary can emit must be one the game
+/// actually ships.
+///
+/// ## Why this is a test and not a review note
+///
+/// The outbound mapping is a `match` with a fallthrough that uppercases CIVVIS's
+/// own name. When the two rulesets happen to agree that is correct and free;
+/// when they disagree the host **silently discards the order**. Nothing in the
+/// telemetry says so — the order is written, `orders_source` still reads
+/// `civvis`, and the city simply builds nothing.
+///
+/// That is not hypothetical. Three separate rounds of it are recorded in the
+/// doc comments above:
+///
+/// - `BUILDING_MEDIEVAL_WALLS`, 200 refused orders over live turns 165-219;
+/// - `PROJECT_CAMPUS_RESEARCH_GRANTS` and its six siblings, all seven silently
+///   unbuildable;
+/// - `BUILDING_ARCHAEOLOGICAL_MUSEUM`, **248 orders across turns 118-250 of run
+///   `civvis-20260803T014330Z`, in all three of that empire's main cities**,
+///   which finished the game holding the building in none of them. Civilization
+///   VI calls it `BUILDING_MUSEUM_ARTIFACT`.
+///
+/// Each was repaired by adding one more arm. None of them added a way to find
+/// the next one, and each cost most of a game's production to notice. This
+/// closes the class: `data/civ6_type_names.json` is harvested from the shipped
+/// rule files by `tools/civ6_type_names.py`, and every name the mapping can
+/// produce is checked against it.
+///
+/// ⚠ The snapshot deliberately excludes `DLC/CivvisControl`. Our control mod is
+/// installed *into* the game's Assets tree, so a scan that includes it reads our
+/// own invented names back as proof the game has them — which is how
+/// `BUILDING_ARCHAEOLOGICAL_MUSEUM` looked legitimate on first inspection.
+#[cfg(test)]
+mod civ6_name_audit {
+    use super::*;
+    use civvis::game::Item;
+    use civvis::rules::Rules;
+    use std::collections::BTreeSet;
+
+    fn shipped() -> BTreeSet<String> {
+        let raw = include_str!("../../data/civ6_type_names.json");
+        serde_json::from_str::<Vec<String>>(raw)
+            .expect("the type-name snapshot parses")
+            .into_iter()
+            .collect()
+    }
+
+    /// CIVVIS concepts Civilization VI has no build order for at all.
+    ///
+    /// A National Park is not an Improvement row in the shipped ruleset, an
+    /// Antiquity Site and a Shipwreck are Resources an Archaeologist consumes,
+    /// and a Rock Concert is a unit ability. Naming them here says "checked, and
+    /// there is deliberately nothing to map" rather than leaving them to the
+    /// uppercase fallthrough, which would emit a name and have it dropped.
+    /// `PROJECT_REPAIR_ENCAMPMENT` is the one entry here that is a *deferral*
+    /// rather than an absence: Civilization VI repairs a pillaged Encampment by
+    /// ordering the district again, which needs a plot the `Item::Project` arm
+    /// cannot see. `civ6_build_name` records why it is left untranslated and
+    /// where the repair belongs. Listing it keeps that decision declared instead
+    /// of indistinguishable from a name nobody has checked.
+    const NO_CIV6_EQUIVALENT: [&str; 5] = [
+        "IMPROVEMENT_NATIONAL_PARK",
+        "IMPROVEMENT_ARCHAEOLOGICAL_DIG",
+        "IMPROVEMENT_SHIPWRECK_EXCAVATION",
+        "IMPROVEMENT_ROCK_CONCERT",
+        "PROJECT_REPAIR_ENCAMPMENT",
+    ];
+
+    /// The exact regression, pinned: repairing a pillaged Government Plaza
+    /// must not re-introduce CIVVIS's own spelling.
+    ///
+    /// Live run `civvis-20260803T094641Z` emitted `DISTRICT_GOVERNMENT_PLAZA`
+    /// 26 times while `civ6_district_type` had already mapped it to
+    /// `DISTRICT_GOVERNMENT` — because the repair arm formatted its own name.
+    #[test]
+    fn repairing_a_district_uses_the_same_spelling_as_building_one() {
+        use civvis::game::{Game, Item};
+        let mut board = Game::new(2, 8, 8, 7, 100, 0);
+        let pos = (3, 3);
+        board
+            .map
+            .tiles
+            .get_mut(&pos)
+            .expect("a tile")
+            .district = Some(civvis::name::Name::new("government_plaza"));
+
+        let repaired = civ6_live_build_name(
+            &Item::Repair { repair: civvis::name::Name::new("district"), pos },
+            &board,
+        )
+        .expect("a district repair names a district");
+
+        assert_eq!(
+            repaired, "DISTRICT_GOVERNMENT",
+            "the repair path must use civ6_district_type, not its own uppercase"
+        );
+        assert_eq!(
+            repaired,
+            civ6_district_type(&civvis::name::Name::new("government_plaza")),
+            "one table, one formatter"
+        );
+        assert!(
+            shipped().contains(&repaired),
+            "and the result must be a name Civilization VI actually ships"
+        );
+    }
+
+    #[test]
+    fn the_snapshot_is_the_shipped_ruleset_and_not_our_own_mod() {
+        let shipped = shipped();
+        assert!(
+            shipped.len() > 400,
+            "the snapshot has {} names, too few to be Civilization VI's ruleset",
+            shipped.len()
+        );
+        assert!(
+            shipped.contains("BUILDING_MUSEUM_ARTIFACT"),
+            "the real name of the building 248 live orders never built"
+        );
+        assert!(
+            !shipped.contains("BUILDING_ARCHAEOLOGICAL_MUSEUM"),
+            "CIVVIS's own spelling is in the snapshot, so the harvest read our \
+             control mod back as evidence about the game — rerun \
+             tools/civ6_type_names.py, which excludes DLC/CivvisControl"
+        );
+    }
+
+    #[test]
+    fn every_name_the_order_channel_can_emit_exists_in_civilization_vi() {
+        let rules = Rules::shipped();
+        let shipped = shipped();
+        let mut missing: Vec<(&str, String, String)> = Vec::new();
+
+        let mut check = |kind: &'static str, name: &str, emitted: String| {
+            if !shipped.contains(&emitted)
+                && !NO_CIV6_EQUIVALENT.contains(&emitted.as_str())
+            {
+                missing.push((kind, name.to_string(), emitted));
+            }
+        };
+
+        // ⚠ Drive `civ6_build_name`, the function the order channel actually
+        // calls, rather than the per-kind helpers. Dispatch is where this has
+        // gone wrong before: #959 put three divergent wonder spellings into
+        // `civ6_building_type` while the `Item::Wonder` arm still formatted its
+        // own name one line away, so the repair never reached the path that
+        // emitted them. A test that reproduces the mapping instead of invoking
+        // it reproduces that mistake too — this one wrote out the same stale
+        // uppercase and reported three false failures against correct code.
+        let anywhere: civvis::Pos = (0, 0);
+        for name in rules.units.keys() {
+            let item = Item::Unit { unit: *name };
+            check("unit", name.as_str(), civ6_build_name(&item).expect("a unit name"));
+        }
+        for name in rules.districts.keys() {
+            let item = Item::District { district: *name, pos: anywhere };
+            check("district", name.as_str(), civ6_build_name(&item).expect("a district name"));
+        }
+        for name in rules.buildings.keys() {
+            let item = Item::Building { building: *name };
+            check("building", name.as_str(), civ6_build_name(&item).expect("a building name"));
+        }
+        for name in rules.wonders.keys() {
+            let item = Item::Wonder { wonder: *name, pos: anywhere };
+            check("wonder", name.as_str(), civ6_build_name(&item).expect("a wonder name"));
+        }
+        for name in rules.projects.keys() {
+            let item = Item::Project { project: *name };
+            check("project", name.as_str(), civ6_build_name(&item).expect("a project name"));
+        }
+        // Improvements are ordered by builders, not produced in a city, so they
+        // reach the wire through their own helper rather than `civ6_build_name`.
+        for name in rules.improvements.keys() {
+            check("improvement", name.as_str(), civ6_improvement_type(name));
+        }
+        // ⚠ AND THE REPAIR PATH, which is a DIFFERENT FUNCTION.
+        //
+        // The first version of this audit drove `civ6_build_name` only. That
+        // missed `civ6_live_build_name`'s `Item::Repair` arm, which formatted
+        // its own uppercase — and live run `civvis-20260803T094641Z` then
+        // emitted `DISTRICT_GOVERNMENT_PLAZA` 26 times, all discarded, on a
+        // revision where every other path spelled it `DISTRICT_GOVERNMENT`.
+        //
+        // A name audit is only worth what it covers. Drive every function that
+        // can put a name on the wire, not the one that is easiest to reach.
+        let board = civvis::game::Game::new(2, 8, 8, 1, 100, 0);
+        for name in rules.districts.keys() {
+            let repaired = civ6_district_type(name);
+            check("district-repair", name.as_str(), repaired);
+        }
+        for name in rules.buildings.keys() {
+            let item = Item::Repair { repair: *name, pos: (0, 0) };
+            if let Some(emitted) = civ6_live_build_name(&item, &board) {
+                check("building-repair", name.as_str(), emitted);
+            }
+        }
+
+        assert!(
+            missing.is_empty(),
+            "these names would be written to the order channel and silently \
+             discarded by the host — add an arm to the matching civ6_*_type \
+             function, or to NO_CIV6_EQUIVALENT if the game genuinely has no \
+             build order for it:\n{}",
+            missing
+                .iter()
+                .map(|(kind, name, emitted)| format!("  {kind:11} {name:32} -> {emitted}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
     }
 }

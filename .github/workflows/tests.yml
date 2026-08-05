@@ -50,6 +50,16 @@ jobs:
       # slowest step in the merge path.
       - run: cargo test --profile ci --locked
 
+      # ⚠ The worktree audit is the only guard against a whole class of loss
+      # that is invisible to every other gate here: finished work left unstaged
+      # in an agent worktree, which lives on exactly one disk and has already
+      # cost this project four PRs. CI has no fleet to inspect, so the audit
+      # builds a throwaway repo with a real remote, a real worktree and a real
+      # unstaged edit, and asserts it catches it — and that `--rescue` moves the
+      # bytes to the remote without touching the tree an agent may be editing.
+      - name: The worktree audit still catches unstaged work
+        run: python3 tools/civvis_worktree_audit.py --selftest
+
   # The published build at civvis.ai/beta compiles this same crate for the
   # browser (`src/wasm.rs`, gated to wasm32). `cargo test` never builds that
   # target, so a perfectly ordinary change to `Params` or to `server.rs` breaks
@@ -81,3 +91,115 @@ jobs:
           restore-keys: |
             cargo-wasm-${{ runner.os }}-
       - run: cargo check --lib --locked --target wasm32-unknown-unknown
+
+  # The control mod is ~7k lines of Lua that no gate has ever compiled. It runs
+  # inside Civ 6, so a syntax error does not fail a build — it fails a GAME, on
+  # a machine with a 45-minute feedback loop, and the run just wedges. Cheap
+  # insurance: `luac -p` every mod script, then run the one piece of agent logic
+  # that has an argument rather than an engine call.
+  control-mod:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      # ⚠⚠ 5.1 SPECIFICALLY, NOT "SOME LUA". Civilization VI's script runtime is
+      # Lua 5.1, and the gap is not academic: `goto`/labels arrived in 5.2, so a
+      # `goto continue` passes `luac5.4 -p` cleanly and then silently refuses to
+      # load in the game. That exact mistake cost run settler-20260729T224210Z,
+      # which sat in a configured game for half an hour emitting only autoclose
+      # events because CivvisControlAgent.lua never loaded. A gate on the wrong
+      # version would have called that commit green.
+      - run: sudo apt-get update && sudo apt-get install -y lua5.1
+      - name: Compile every mod script under the game's Lua version
+        run: |
+          set -eu
+          find tools/civ6_control/mod tools/civ6_mod -name '*.lua' -print0 \
+            | xargs -0 -n1 luac5.1 -p
+      # ⚠⚠⚠ `_G` IS FATAL IN THE GAME AND COMPILES FINE EVERYWHERE ELSE.
+      # Civilization VI's UI Lua sandbox does not expose `_G`, so indexing it
+      # raises at CHUNK LOAD and the agent never loads — no `loaded` event, no
+      # seat, no orders, and a game that just sits there. It is valid Lua, so
+      # `luac5.1 -p` above passes it, and `check_lua51.py` only looks for
+      # post-5.1 constructs.
+      #
+      # This has now cost the project twice. `CivvisGrounding.lua` records it
+      # ("the sandbox has no `_G`") and `CivvisControlAutoClose.lua` ends its
+      # warning with "if anybody reaches for `_G` again" — and then #1047 did,
+      # bricking every live game until #1052 reverted it on evidence alone,
+      # unable to name the cause. Two prose warnings did not hold. This does.
+      #
+      # Bare globals are fine and the agent already uses them; only `_G` is
+      # fatal. `grep -w` matters: a bare `_G` pattern also matches YIELD_GOLD,
+      # DISTRICT_GARRISON and every PARAM_GOVERNOR_* constant. Comments are
+      # excluded so the warnings themselves may keep naming it.
+      - name: Reject `_G` in mod scripts
+        run: |
+          set -eu
+          # `*_test.lua` is excluded: it runs under lua5.1 in this job, never
+          # inside the game, and it uses `_G` deliberately to read the export.
+          hits=$(find tools/civ6_control/mod tools/civ6_mod -name '*.lua' \
+            ! -name '*_test.lua' -exec grep -nHw '_G' {} + \
+            | grep -v '^[^:]*:[0-9]*:[[:space:]]*--' || true)
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo
+            echo "Civ 6's UI Lua sandbox does not expose _G; indexing it kills the script at load."
+            exit 1
+          fi
+          echo "no _G references outside comments"
+      # ⚠⚠⚠ A LADDER ENTRY THE GAME HAS NO TYPE FOR IS INVISIBLE — the ladder
+      # just moves to the next line, every request still logs `applied: true`,
+      # and nothing anywhere says the entry can never fire.
+      #
+      # This class has now appeared FIVE times in these scripts:
+      # `BUILDING_ANCIENT_WALLS` (no such type; the development rung's only
+      # defensive entry, unbuildable on every turn of every run),
+      # `BUILDING_ART_MUSEUM` and `BUILDING_ARCHAEOLOGICAL_MUSEUM` (the rows
+      # read subject-last — `BUILDING_MUSEUM_ART`, `BUILDING_MUSEUM_ARTIFACT`),
+      # the floor's obsolete units in #748, and the seven district entries below
+      # an open-ended gate. Each was repaired by fixing that one name. None of
+      # them added a way to find the next one, and the `BUILDING_WALLS` comment
+      # describing the trap sat three lines below two live instances of it.
+      #
+      # `civvis_orders` closed this class on the Rust side in #959 with
+      # `every_name_the_order_channel_can_emit_exists_in_civilization_vi`. That
+      # guards the lane deciding 20.8% of live builds. This guards the other
+      # 79.2%.
+      #
+      # ⚠ Comments are stripped first, deliberately: the warnings above name the
+      # bad spellings on purpose and must stay legible.
+      - name: Every type the ladder names exists in Civilization VI
+        run: |
+          set -eu
+          python3 - <<'PY'
+          import json, pathlib, re, sys
+
+          shipped = set(json.loads(pathlib.Path("data/civ6_type_names.json").read_text()))
+          # Harvested from the shipped rule files by tools/civ6_type_names.py, which
+          # excludes DLC/CivvisControl — our own mod is installed into the game's
+          # Assets tree, so a scan including it reads our invented names back as
+          # proof the game has them. That is exactly how BUILDING_ARCHAEOLOGICAL_MUSEUM
+          # looked legitimate on first inspection.
+          if len(shipped) < 400:
+              sys.exit(f"snapshot has only {len(shipped)} names; it is not the shipped ruleset")
+
+          bad = []
+          for path in sorted(pathlib.Path("tools").glob("civ6*/**/*.lua")):
+              code = "\n".join(re.sub(r"--.*$", "", line) for line in path.read_text().splitlines())
+              for name in sorted(set(re.findall(r'"((?:DISTRICT|BUILDING|UNIT|PROJECT|IMPROVEMENT)_[A-Z0-9_]+)"', code))):
+                  if name not in shipped:
+                      bad.append(f"{path}: {name}")
+
+          if bad:
+              print("\n".join(bad))
+              sys.exit(
+                  "\nCivilization VI ships no such type. A ladder entry that cannot fire is "
+                  "invisible -- the ladder moves to the next line and the run looks healthy. "
+                  "Check the shipped spelling in Cache/DebugGameplay.sqlite."
+              )
+          print("every ladder type literal exists in Civilization VI")
+          PY
+      - name: Envoy spend order
+        run: lua5.1 tools/civ6_control/mod/envoy_spend_test.lua
+      - name: Stranded settler gate
+        run: lua5.1 tools/civ6_control/mod/stranded_settler_test.lua

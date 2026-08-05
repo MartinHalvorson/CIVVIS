@@ -21,6 +21,7 @@ import atexit
 import json
 import os
 import subprocess
+import textwrap
 import sys
 import tempfile
 import time
@@ -112,24 +113,6 @@ def hold_macos_awake() -> bool:
     return True
 
 
-def load_settle_plan(path: str | None) -> list[dict] | None:
-    """CIVVIS's ranked sites, or None when the agent should use its own search."""
-    if not path:
-        return None
-    try:
-        doc = json.loads(Path(path).read_text())
-    except Exception as error:
-        print(f"cannot read settle plan {path}: {error}", file=sys.stderr)
-        return None
-    sites = [
-        {"x": int(site["x"]), "y": int(site["y"])}
-        for site in doc.get("sites", [])
-        if "x" in site and "y" in site
-    ]
-    print(f"settle plan: {len(sites)} CIVVIS-ranked sites from {path}")
-    return sites or None
-
-
 def state_export_enabled(args: argparse.Namespace) -> bool:
     """Whether this run must publish an authoritative board each turn."""
     # A CIVVIS decision worker cannot make an informed decision without a state
@@ -157,8 +140,10 @@ def build_config(args: argparse.Namespace) -> dict:
         "MapSize": args.map_size,
         "Difficulty": args.difficulty,
         "GameSpeed": args.speed,
-        "MapSeed": args.seed,
-        "GameSeed": args.seed,
+        # The seed rows are a diagnostic probe only. They are omitted from normal
+        # runs because this build demonstrably ignores them at world generation.
+        "MapSeed": args.seed if args.seed_probe else None,
+        "GameSeed": args.seed if args.seed_probe else None,
         "MaxTurns": args.max_turns,
         "HumanPlayers": 1,
         # Explicit, every run, so a mode can never be inherited from whatever
@@ -177,23 +162,22 @@ def build_config(args: argparse.Namespace) -> dict:
         # actively costs cities — one run went 4 cities to 3 while besieging.
         # So peace is a real strategy here, not a concession, and it is one flag.
         "MakeWar": args.make_war,
+        # ★ The largest measured headroom in the project and the one lane that
+        # is switched off. An oracle granted suzerainty wins 56.7% against
+        # 22.7%; headless the same agent places 18.1 envoys and holds 0.71
+        # suzerainties per seat against a live median of 1 and 0 over 36 runs.
+        # Live turn 231 of civvis-20260803T191900Z: 56 envoys held, 0
+        # suzerainties, and all four met city-states flying a rival's flag.
+        "EnvoyEnabled": args.envoys,
+        "EnvoyPlace": args.envoy_place,
+        "EnvoyLevy": args.envoy_levy,
+        "EnvoyConsider": args.envoy_consider,
         # How many units are aimed at the city plot each turn. Each MOVE_TO onto
         # an enemy city is an attack that bounces back unless it captures, so
         # this is attacks per turn — and a city heals between turns, so too few
         # attackers means a siege that never resolves.
         "AssaultWidth": args.assault_width,
         "SettlersInFlight": args.settlers_in_flight,
-        # How many of CIVVIS's top-ranked settle sites the settler may choose the
-        # NEAREST of. 1 reproduces the old behaviour exactly — always the highest
-        # ranked unoccupied plot — which makes it the control arm.
-        #
-        # Measured over twelve runs at window 1: 484 `move_to_site` orders against
-        # 48 `found_city`, about ten turns of walking per city. One settler in
-        # flight at one city per ~15 turns caps the empire at 3-4 over the ~100
-        # turns a run actually survives, and the observed median IS 3. That
-        # arithmetic starves the army, which is why war is declared in only 19 of
-        # 47 runs and no capital has ever been taken.
-        "PlanNearWindow": args.plan_near_window,
         # How much a rival being STRONGER than us costs in the war-target score,
         # expressed in tiles of walking per unit of score ratio. `findWarTarget` used
         # to weigh only proximity, so it declared on the runaway leader: the deepest
@@ -240,6 +224,25 @@ def build_config(args: argparse.Namespace) -> dict:
         # each sink from outside: the channel is whichever field reports the nonce
         # back. Diagnostic only, and off by default.
         "ProbeChannels": args.probe_channels,
+        # ⚠⚠ WITHOUT THIS LINE THE PROBE COULD NEVER BE TURNED ON. #1098 added
+        # `probeCitizenSlots` to the mod behind `cfg.ProbeCitizens`, and nothing
+        # ever put that key in the config -- so `cfg.ProbeCitizens` was nil in
+        # every game and the whole function was unreachable. That is the same
+        # class as a ladder entry the engine has no type for: shipped, invisible,
+        # and silently never running.
+        #
+        # It answers the one question blocking the last untouched science lane.
+        # Only 8 of 50 live campus cities carry a specialist on the Campus, and
+        # 45% of all specialists sit on Commercial Hubs, because CIVVIS has never
+        # issued a citizen order. The probe asks `CityManager.CanStartCommand`
+        # with four candidate `PARAM_MANAGE_CITIZEN` values and emits the verdict
+        # WITHOUT acting, so one game settles whether the lane is actuable.
+        "ProbeCitizens": args.probe_citizens,
+        # ⭐ The probe answered yes, so this is the lane it opened. A citizen is
+        # moved into a Campus specialist slot only where a Library already
+        # stands, at most one per city, `CanStartCommand` first and the outcome
+        # emitted either way. See `fillCampusSpecialists`.
+        "CampusSpecialist": args.campus_specialist,
         # A SQLite file THIS process owns, offered to the mod's `DB.Query` via
         # ATTACH. If that works it is the live inbound channel the architecture
         # needs, and it is safer than the game's own `DebugGameplay.sqlite`, which
@@ -280,14 +283,14 @@ def build_config(args: argparse.Namespace) -> dict:
         # and far too slow for a decision loop: newly explored ground is exactly
         # what changes where the army and the next city should go.
         "TileExportEvery": args.tile_export_every,
-        # CIVVIS's own settle ranking, produced by `civvis-advise --plan` from a
-        # previous run's exported map. Baked in because the mod has no runtime
-        # inbound channel: no `io`, and FireTuner answered none of seven framings
-        # against a live game. Valid only for the SEED it was planned on — the
-        # world is a function of the seed, so the same seed is the same map.
-        "SettlePlan": load_settle_plan(args.settle_plan),
         "AnnouncementSeconds": args.announcement_seconds,
         "EraAnnouncementSeconds": args.era_announcement_seconds,
+        # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
+        # it had no clock of its own — so it took the general announcement one,
+        # which the climb sets to 0.05s so popups never sit on the map the operator
+        # is comparing against CIVVIS. The result a whole run exists to produce was
+        # on screen for a twentieth of a second.
+        "EndGameSeconds": args.end_game_seconds,
         "StartDelayFrames": args.start_delay_frames,
         "TickFrames": args.tick_frames,
     }
@@ -342,9 +345,20 @@ SETUP_X = 0.500
 # changes the normalized coordinate (measured at 0.277 on 1474x949 and 0.294 on
 # the taller full-screen setup).
 LEADER_PICKER_OFFSET = 0.056
-LEADER_SCROLL_STEPS = 100
-LEADER_SCROLL_RESET = 10_000
-LEADER_SCROLL_AMOUNT = -30
+# ⚠ RETUNED 2026-08-03 when scrolling started working at all — see
+# `macos_input.scroll`, which was emitting line-unit events Civilization VI
+# ignores. These are wheel NOTCHES now, and they are measured, not guessed:
+#
+#   20 notches up      returns the list to `Random Leader` from anywhere in it
+#    2 notches down    advances ~10 rows against ~10 visible: page by page
+#    3 notches down    advances ~11 against 10 visible: it SKIPS rows
+#
+# At 2 the sweep saw 73 distinct rows in 6 steps — the whole installed roster —
+# and found Trajan. `STEPS` stays generous because overshooting the bottom costs
+# one wasted screenshot and undershooting costs the run.
+LEADER_SCROLL_STEPS = 40
+LEADER_SCROLL_RESET = 20
+LEADER_SCROLL_AMOUNT = -2
 
 # Each dropdown's closed box, as a fraction of window height.
 DROPDOWN = {
@@ -450,24 +464,52 @@ GAME_VFRACTION = 1.0
 
 
 def desktop_size() -> tuple[int, int] | None:
-    """Logical desktop size in points, or None if it cannot be read.
+    """Logical size of the MAIN display in points, or None if unreadable.
 
-    There is no supported scripting route to the screen size, so this asks
-    Finder for its desktop scroll area and treats a failure as "leave the
-    window alone" — never as a guess. `system_profiler` reports the *physical*
-    resolution (3456x2234 on this Mac) and window geometry is in points
-    (1728x1117), so mixing the two would place the game off-screen.
+    ⚠⚠ NOT the desktop's total area. This asked Finder for its desktop scroll
+    area, which spans EVERY attached display — and on 2026-08-04 an external
+    2560x1440 monitor was plugged in beside the built-in Retina. Finder then
+    reported **3225x2557**, the union. `place_game` halved that, placed Civ 6
+    1612 points wide at y=1333 (below a 1117-point screen), and the setup vision
+    could no longer read the difficulty dropdown:
+
+        [setup] difficulty: current value was not readable (attempt 1)
+        [setup] difficulty: refusing to click an unverified coordinate
+        NO GAME -- could not start a game from the main menu
+
+    Every attempt in the batch failed that way. The old docstring warned that
+    mixing coordinate spaces "would place the game off-screen"; the same hazard
+    arrived through a second display rather than through DPI.
+
+    `NSScreen` answers for one screen, which is the quantity `place_game` needs.
+    The screen at origin (0,0) is the one holding the menu bar; `NSScreen.main`
+    is the fallback and follows the key window, so it is second choice.
     """
-    out = subprocess.run(
-        ["osascript", "-e",
-         'tell application "System Events" to get size of scroll area 1 '
-         'of process "Finder"'],
-        capture_output=True, text=True)
+    swift = textwrap.dedent("""
+        import AppKit
+        if let s = NSScreen.screens.first(where: { $0.frame.origin == .zero })
+                    ?? NSScreen.main {
+            print("\\(Int(s.frame.width)),\\(Int(s.frame.height))")
+        }
+    """)
+    try:
+        out = subprocess.run(["swift", "-"], input=swift,
+                             capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
     parts = [p.strip() for p in out.stdout.split(",") if p.strip()]
     if len(parts) != 2 or not all(p.isdigit() for p in parts):
         return None
     width, height = (int(p) for p in parts)
-    return (width, height) if width > 800 and height > 600 else None
+    # ⚠ Keep the sanity floor AND add a ceiling, as the last line of defence if
+    # the source ever reports a display UNION again. The bound is principled
+    # rather than arbitrary: the largest Apple display is a Pro Display XDR at
+    # 6016x3384 pixels, which is **3008x1692 POINTS**, and window geometry is in
+    # points. Anything taller than ~1700 points is therefore two screens stacked,
+    # not one screen — the observed union was 3225x2557.
+    if not (800 < width <= 4000 and 600 < height <= 2000):
+        return None
+    return (width, height)
 
 
 def place_game(side: str = "left", fraction: float = 0.5,
@@ -1808,6 +1850,8 @@ def _play(args: argparse.Namespace) -> int:
             "--strategy", args.civvis_strategy,
             "--seconds", str(max(21600.0, args.timeout + 3600.0)),
         ]
+        if args.civvis_war_from_plan:
+            command.append("--war-from-plan")
         brain = subprocess.Popen(
             command,
             cwd=REPO_ROOT,
@@ -1815,8 +1859,12 @@ def _play(args: argparse.Namespace) -> int:
             stderr=subprocess.STDOUT,
             text=True,
         )
+        # ⚠ Print the WHOLE configuration, not a chosen subset. `--war-from-plan`
+        # was carried by a second, undeclared brain for as long as it existed, and a
+        # banner naming only strategy and victory could not have shown that.
         print(f"CIVVIS decision worker pid={brain.pid} strategy={args.civvis_strategy} "
-              f"victory={args.civvis_victory}")
+              f"victory={args.civvis_victory} "
+              f"war_from_plan={args.civvis_war_from_plan} bin={binary}")
 
     def stop_brain() -> None:
         nonlocal brain, brain_log
@@ -2125,6 +2173,32 @@ def _play(args: argparse.Namespace) -> int:
     # board, while the old agreement checker compared only the two stale files
     # and reported success. Stop the process before publishing the summary so a
     # completed run has one unambiguous last frame.
+    # ⚠⚠⚠ HOLD THE FINAL SCREEN HERE, NOT IN THE MOD — THE MOD CANNOT DO IT.
+    #
+    # `CivvisControlAutoClose` gained an `EndGameSeconds` clock for `EndGameMenu` in
+    # #1041 and it is INERT. Measured across every run on this machine:
+    #
+    #     250 runs, 145 `autoclose_armed` for EndGameMenu, ZERO `autoclose`
+    #
+    # The shim never closes that screen, and the reason is structural: Civilization
+    # VI halts the Game Core when it shows the end-of-game screen, so the shim is
+    # ticking off a frame loop that has just stopped. A Lua clock cannot run there.
+    #
+    # ⚠ The same absent event is what `civ6_civvis_climb.outcome_of` keys
+    # `reached_end_screen` on, which is why that column has been `None` on all 250
+    # runs while claiming to record whether the game reached its end screen.
+    #
+    # So the thing that actually decides how long the operator sees the result is
+    # THIS gap — between `finished()` breaking the loop above and `launcher.stop()`
+    # killing the game below. Unheld it is a second or two.
+    #
+    # ⚠ Only when the game actually ENDED. A stall, a timeout, or a wrong-modes
+    # refusal has nothing on screen worth looking at, and holding there would add
+    # ten seconds to every failure in a batch.
+    if state["outcome"] and args.end_game_seconds > 0:
+        print(f"holding the final screen for {args.end_game_seconds:.0f}s",
+              flush=True)
+        time.sleep(args.end_game_seconds)
     game_stopped = launcher.stop()
     stop_brain()
     if not game_stopped:
@@ -2137,7 +2211,11 @@ def _play(args: argparse.Namespace) -> int:
         "difficulty": config["Difficulty"],
         "map_size": config["MapSize"],
         "speed": config["GameSpeed"],
-        "seed": config["MapSeed"],
+        # A normal real-Civ6 run has no seed value: the control setup has no
+        # working world-generation channel. Keep a probe request distinct from
+        # a game-world seed so downstream reports cannot mistake it for one.
+        "seed_probe": args.seed_probe,
+        "seed_request": config["MapSeed"],
         "max_turns": config["MaxTurns"],
         # A run stopped because the game had the wrong modes never played; it
         # is a refusal, not a result. Recording it as `stopped` would file it
@@ -2224,7 +2302,11 @@ def main(argv: list[str] | None = None) -> int:
     # unless they match what was asked, so this is checked rather than assumed.
     ap.add_argument("--map-size", default="MAPSIZE_SMALL")
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
-    ap.add_argument("--seed", type=int, default=424242)
+    ap.add_argument("--seed", type=int, default=424242,
+                    help="candidate map/game seed, written only with --seed-probe")
+    ap.add_argument("--seed-probe", action="store_true", default=False,
+                    help="write requested map/game seeds for civ6_seed_check; does not "
+                         "make the real-Civ6 world reproducible")
     ap.add_argument("--max-turns", type=int, default=150)
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", help="exact Firaxis leader type to select and verify")
@@ -2242,11 +2324,30 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--explore-until-turn", type=int, default=12)
     ap.add_argument("--make-war", dest="make_war", action="store_true", default=True)
     ap.add_argument("--no-war", dest="make_war", action="store_false")
+    # The envoy lane. OFF by default because `chooseEnvoy` is blamed for three
+    # game-core SIGSEGVs (3-for-3 against 0-for-2 across repeated requested-seed
+    # runs) and the fix for the handle defect behind them is a hypothesis, not a
+    # verified result.
+    # Until an isolation batch clears it, the known-stable skip stands.
+    #
+    # It is exposed here because the Lua comment asks for exactly this
+    # experiment -- "a CONFIG change, not a code change: place-only, then
+    # consider-only, across independent random-world samples" -- and there was
+    # no way to run it without
+    # hand-editing the mod. `EnvoyPlace`/`EnvoyLevy`/`EnvoyConsider` switch the
+    # three mutations independently, so one variable moves at a time.
+    ap.add_argument("--envoys", dest="envoys", action="store_true", default=False)
+    ap.add_argument("--no-envoys", dest="envoys", action="store_false")
+    ap.add_argument("--envoy-place", dest="envoy_place", action="store_true", default=True)
+    ap.add_argument("--no-envoy-place", dest="envoy_place", action="store_false")
+    ap.add_argument("--envoy-levy", dest="envoy_levy", action="store_true", default=True)
+    ap.add_argument("--no-envoy-levy", dest="envoy_levy", action="store_false")
+    ap.add_argument(
+        "--envoy-consider", dest="envoy_consider", action="store_true", default=True
+    )
+    ap.add_argument("--no-envoy-consider", dest="envoy_consider", action="store_false")
     ap.add_argument("--assault-width", type=int, default=2)
     ap.add_argument("--settlers-in-flight", type=int, default=1)
-    # 1 = the shipped behaviour (always CIVVIS's top-ranked unoccupied site),
-    # which is what makes it a usable control arm for the near-window A/B.
-    ap.add_argument("--plan-near-window", type=int, default=6)
     ap.add_argument("--strength-weight", type=int, default=20)
     ap.add_argument("--army-cap", type=int, default=18)
     ap.add_argument("--siege-units", type=int, default=4)
@@ -2257,6 +2358,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--export-state", action="store_true", default=False)
     ap.add_argument("--probe-channels", action="store_true", default=False,
                     help="ask every candidate inbound API what it holds, once a turn")
+    ap.add_argument("--campus-specialist", action="store_true", default=False,
+                    help="move one citizen into a Campus specialist slot in cities that "
+                         "already hold a Library (at most one per city per firing)")
+    ap.add_argument("--probe-citizens", action="store_true", default=False,
+                    help="ask whether this UI context may assign a citizen to a district "
+                         "(read-only; emits civvis_citizen_probe and issues no command)")
     ap.add_argument("--orders-db", default=None,
                     help="SQLite file offered to the mod via ATTACH as the inbound channel; "
                          "defaults to <run-dir>/orders.sqlite")
@@ -2304,6 +2411,13 @@ def main(argv: list[str] | None = None) -> int:
                     help="victory objective passed to the supervised CIVVIS worker")
     ap.add_argument("--civvis-strategy", default="auto",
                     help="rated CIVVIS strategy name; auto selects the strongest bound")
+    # ⚠ This flag existed on `civ6_brain.py` and had no route here, so the only way
+    # to turn it on was to start a SECOND brain beside this one — which is exactly
+    # what `civ6_civvis_climb.py` did, and the two then raced over one orders.sqlite.
+    # A decider option with no path through its own launcher grows a second launcher.
+    ap.add_argument("--civvis-war-from-plan", action="store_true", default=False,
+                    help="declare on CIVVIS's plan target, since a board rebuilt "
+                         "each turn can never mature a casus belli")
     ap.add_argument("--governor-appoint", action="store_true", default=False,
                     help="spend governor titles (KNOWN to segfault the Game Core)")
     ap.add_argument("--governor-assign", action="store_true", default=False,
@@ -2316,14 +2430,18 @@ def main(argv: list[str] | None = None) -> int:
                     help="polls before giving up on CIVVIS and running the built-ins")
     ap.add_argument("--orders-max-stale", type=int, default=4,
                     help="how many turns behind a reusable CIVVIS answer may be")
-    ap.add_argument("--settle-plan", default=None,
-                    help="JSON from `civvis-advise --plan`: CIVVIS decides where "
-                         "cities go. Only valid for the seed it was planned on.")
     ap.add_argument("--window-vfrac", type=float, default=1.0,
                     help="share of screen height for the game window; 0.5 puts "
                          "it in a quadrant so CIVVIS can own the other half")
     ap.add_argument("--announcement-seconds", type=float, default=1.0)
     ap.add_argument("--era-announcement-seconds", type=float, default=0.5)
+    # ⚠ Deliberately NOT tied to --announcement-seconds. Every other screen is made
+    # fast because something is waiting behind it; nothing is waiting behind this
+    # one, because the game is over. The operator's standing brief asks for ten
+    # seconds on the final screen and this is the only knob that can grant it.
+    ap.add_argument("--end-game-seconds", type=float, default=10.0,
+                    help="how long the victory/defeat screen is held before the "
+                         "autoclose shim dismisses it")
     ap.add_argument("--survey", action="store_true", default=True)
     ap.add_argument("--no-survey", dest="survey", action="store_false")
     ap.add_argument("--survey-enums", action="store_true",

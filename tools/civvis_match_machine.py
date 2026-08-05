@@ -67,6 +67,9 @@ SHED_HEADLESS_MARGIN = 10.0
 RESUME_MARGIN = 20.0
 RESUME_COOLDOWN_SECONDS = 15.0
 RESUME_STEP_SECONDS = 5.0
+BUILD_CPU_DUTY_CYCLE_SECONDS = 0.4
+BUILD_CPU_MAX_DUTY = 0.35
+BUILD_CPU_TARGET_MARGIN = SHED_ONE_MARGIN + 2.0
 _resource_sample_lock = threading.Lock()
 
 
@@ -440,6 +443,23 @@ def resource_action(sample: Resources, limit: float) -> str:
     return "hold"
 
 
+def build_cpu_duty_cycle(cpu: float | None, limit: float) -> float:
+    """Return a safe run fraction for a build that may saturate every CPU.
+
+    Cargo's job limit controls concurrent rustc processes, but one optimized
+    rustc invocation can still use every core.  Model that worst case and keep
+    its cycle-averaged host CPU below the normal shed-one threshold with a
+    small additional margin.
+    """
+    if cpu is None:
+        return 0.0
+    target = max(0.0, limit - BUILD_CPU_TARGET_MARGIN)
+    if cpu >= target:
+        return 0.0
+    available_fraction = (target - cpu) / max(1.0, 100.0 - cpu)
+    return min(BUILD_CPU_MAX_DUTY, max(0.0, available_fraction))
+
+
 @dataclass
 class GameProcess:
     process: subprocess.Popen[str]
@@ -484,6 +504,7 @@ class MatchMachine:
         self.build_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="civvis-build")
         self.next_sync = 0.0
         self.next_resource_log = 0.0
+        self.resume_visible_next = False
         self.completed = 0
         self.failed = 0
         self.visible_started = False
@@ -718,11 +739,17 @@ class MatchMachine:
         timeout: float,
         purpose: str,
         log_path: Path,
+        prefer_visible: bool = False,
     ) -> subprocess.CompletedProcess[str] | None:
         """Run long work while preserving terminal, deadline, and host limits."""
         log_path.parent.mkdir(parents=True, exist_ok=True)
         started = time.monotonic()
         paused = False
+        admission_pending = False
+        cpu_throttled = purpose == "build"
+        pressure_paused = False
+        yielding_for_visible = False
+        visible_recovery_not_before: float | None = None
         with log_path.open("w", encoding="utf-8") as output:
             process = subprocess.Popen(
                 args,
@@ -733,6 +760,27 @@ class MatchMachine:
                 start_new_session=True,
                 text=True,
             )
+            # Popen begins executing immediately. Stop every resource-capped
+            # process before the first host sample so even a validator cannot
+            # burst past the ceiling during its admission check. A very short
+            # command may finish in the race between poll and SIGSTOP; that is
+            # already complete work, not a failed safety gate.
+            if process.poll() is None:
+                if not set_paused(process, True):
+                    if process.poll() is None:
+                        stop_process(process, timeout=2)
+                        raise RuntimeError("cannot engage the initial resource gate")
+                else:
+                    paused = True
+                    admission_pending = True
+            if cpu_throttled and paused:
+                self.event(
+                    "work_cpu_throttle_started",
+                    purpose=purpose,
+                    pid=process.pid,
+                    cycle_seconds=BUILD_CPU_DUTY_CYCLE_SECONDS,
+                    max_duty=BUILD_CPU_MAX_DUTY,
+                )
             while process.poll() is None:
                 now = time.monotonic()
                 if self.stopping:
@@ -751,39 +799,160 @@ class MatchMachine:
                     stop_process(process, timeout=2)
                     raise subprocess.TimeoutExpired(args, timeout)
 
+                if prefer_visible:
+                    visible_games = [game for game in self.games if game.visible]
+                    visible_waiting = not visible_games or any(
+                        game.paused for game in visible_games
+                    )
+                    if visible_waiting:
+                        # The operator loop and background builder otherwise
+                        # race for the same narrow recovery window.  A build
+                        # pulse can repeatedly win and leave the sole visible
+                        # match stopped even though both processes are alive.
+                        if not paused:
+                            if not set_paused(process, True):
+                                stop_process(process, timeout=2)
+                                raise RuntimeError(
+                                    "cannot yield background work to visible game"
+                                )
+                            paused = True
+                        if not yielding_for_visible:
+                            yielding_for_visible = True
+                            self.event(
+                                "work_yielded_for_visible",
+                                purpose=purpose,
+                                pid=process.pid,
+                            )
+                        visible_recovery_not_before = None
+                        time.sleep(self.args.poll)
+                        continue
+                    if yielding_for_visible:
+                        if visible_recovery_not_before is None:
+                            visible_recovery_not_before = now + RESUME_STEP_SECONDS
+                        if now < visible_recovery_not_before:
+                            time.sleep(self.args.poll)
+                            continue
+                        yielding_for_visible = False
+                        visible_recovery_not_before = None
+                        self.event(
+                            "work_resumed_after_visible",
+                            purpose=purpose,
+                            pid=process.pid,
+                            grace_seconds=RESUME_STEP_SECONDS,
+                        )
+
                 sample = resources(self.runtime)
                 must_pause = (
                     sample.cpu is None
                     or sample.thermal_pressure is True
                     or sample.maximum() >= self.args.limit - SHED_ONE_MARGIN
                 )
-                if must_pause and not paused and set_paused(process, True):
-                    paused = True
-                    self.event(
-                        "work_paused_for_resources",
-                        purpose=purpose,
-                        pid=process.pid,
-                        resources=asdict(sample),
+                if cpu_throttled:
+                    duty = build_cpu_duty_cycle(sample.cpu, self.args.limit)
+                    must_pause = must_pause or duty <= 0.0
+                    if must_pause:
+                        if not paused:
+                            if not set_paused(process, True):
+                                stop_process(process, timeout=2)
+                                raise RuntimeError("cannot pause resource-capped build")
+                            paused = True
+                        if not pressure_paused:
+                            pressure_paused = True
+                            self.event(
+                                "work_paused_for_resources",
+                                purpose=purpose,
+                                pid=process.pid,
+                                resources=asdict(sample),
+                            )
+                        time.sleep(self.args.poll)
+                        continue
+                    comfortable = sample.comfortably_below(
+                        self.args.limit, margin=RESUME_MARGIN
                     )
-                elif (
-                    paused
-                    and sample.comfortably_below(self.args.limit, margin=RESUME_MARGIN)
-                    and set_paused(process, False)
+                    if (pressure_paused or admission_pending) and not comfortable:
+                        # Once pressure trips the gate, require the same
+                        # recovery headroom as the game governor. The initial
+                        # admission gate uses that headroom too. Resuming at the
+                        # shed threshold creates stop/start oscillation and
+                        # leaves no room for the next build pulse.
+                        if not pressure_paused:
+                            pressure_paused = True
+                            self.event(
+                                "work_paused_for_resources",
+                                purpose=purpose,
+                                pid=process.pid,
+                                resources=asdict(sample),
+                            )
+                        time.sleep(self.args.poll)
+                        continue
+                    if pressure_paused:
+                        pressure_paused = False
+                        self.event(
+                            "work_resumed",
+                            purpose=purpose,
+                            pid=process.pid,
+                            resources=asdict(sample),
+                        )
+                    admission_pending = False
+                    if paused:
+                        if not set_paused(process, False):
+                            if process.poll() is None:
+                                stop_process(process, timeout=2)
+                                raise RuntimeError("cannot resume resource-capped build")
+                            continue
+                        paused = False
+                    time.sleep(BUILD_CPU_DUTY_CYCLE_SECONDS * duty)
+                    if process.poll() is None:
+                        if not set_paused(process, True):
+                            stop_process(process, timeout=2)
+                            raise RuntimeError("cannot re-pause resource-capped build")
+                        paused = True
+                    time.sleep(BUILD_CPU_DUTY_CYCLE_SECONDS * (1.0 - duty))
+                    continue
+                comfortable = sample.comfortably_below(
+                    self.args.limit, margin=RESUME_MARGIN
+                )
+                if must_pause or (
+                    (pressure_paused or admission_pending) and not comfortable
                 ):
+                    if not paused:
+                        if not set_paused(process, True):
+                            if process.poll() is None:
+                                stop_process(process, timeout=2)
+                                raise RuntimeError("cannot pause resource-capped work")
+                            continue
+                        paused = True
+                    if not pressure_paused:
+                        pressure_paused = True
+                        self.event(
+                            "work_paused_for_resources",
+                            purpose=purpose,
+                            pid=process.pid,
+                            resources=asdict(sample),
+                        )
+                elif paused and comfortable:
+                    if not set_paused(process, False):
+                        if process.poll() is None:
+                            stop_process(process, timeout=2)
+                            raise RuntimeError("cannot resume resource-capped work")
+                        continue
                     paused = False
-                    self.event(
-                        "work_resumed",
-                        purpose=purpose,
-                        pid=process.pid,
-                        resources=asdict(sample),
-                    )
+                    admission_pending = False
+                    if pressure_paused:
+                        pressure_paused = False
+                        self.event(
+                            "work_resumed",
+                            purpose=purpose,
+                            pid=process.pid,
+                            resources=asdict(sample),
+                        )
                 time.sleep(self.args.poll)
             returncode = process.returncode
 
         captured = log_path.read_text(encoding="utf-8", errors="replace")
         return subprocess.CompletedProcess(args, returncode, captured)
 
-    def compile_build(self, revision: str) -> Path | None:
+    def compile_build(self, revision: str, prefer_visible: bool = False) -> Path | None:
         self.event("build_started", revision=revision, jobs=self.args.build_jobs)
         reset = command("git", "reset", "--hard", revision, cwd=self.source)
         if reset.returncode != 0:
@@ -798,6 +967,7 @@ class MatchMachine:
             timeout=self.args.build_timeout,
             purpose="build",
             log_path=self.runtime / "logs" / f"build-{revision[:12]}.log",
+            prefer_visible=prefer_visible,
         )
         if result is None:
             return None
@@ -820,6 +990,7 @@ class MatchMachine:
             timeout=180,
             purpose="validation",
             log_path=self.runtime / "logs" / f"validation-{revision[:12]}.log",
+            prefer_visible=prefer_visible,
         )
         if check is None:
             promoted.unlink(missing_ok=True)
@@ -852,7 +1023,7 @@ class MatchMachine:
 
     def start_head_build(self, revision: str) -> None:
         self.build_revision = revision
-        self.build_future = self.build_executor.submit(self.compile_build, revision)
+        self.build_future = self.build_executor.submit(self.compile_build, revision, True)
 
     def poll_head_build(self, now: float) -> None:
         future = self.build_future
@@ -1145,9 +1316,28 @@ class MatchMachine:
                 candidate.paused = True
                 self.event("game_paused_for_resources", seed=candidate.seed, resources=asdict(sample))
         elif action == "resume" and now >= self.resume_not_before:
-            candidate = next((game for game in self.games if game.paused), None)
+            paused = [game for game in self.games if game.paused]
+            candidate = paused[0] if paused else None
+            if paused and (self.pending_revision or self.build_future is not None):
+                # A bursty host may expose only one restart window at a time.
+                # Alternating classes prevents the always-first visible game
+                # from starving the old headless fleet that must drain before
+                # the pending HEAD can build, without starving the spectator
+                # while that transition is waiting.
+                preferred = next(
+                    (
+                        game
+                        for game in paused
+                        if game.visible == self.resume_visible_next
+                    ),
+                    None,
+                )
+                if preferred is not None:
+                    candidate = preferred
             if candidate and set_paused(candidate.process, False):
                 candidate.paused = False
+                if self.pending_revision or self.build_future is not None:
+                    self.resume_visible_next = not candidate.visible
                 self.resume_not_before = now + RESUME_STEP_SECONDS
                 self.event("game_resumed", seed=candidate.seed, resources=asdict(sample))
 

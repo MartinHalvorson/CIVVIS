@@ -1,5 +1,5 @@
 //! Zero-dependency local HTTP server for the human-vs-AI browser GUI.
-//! Endpoints: GET / (page), GET /cinematic3d.js, GET /state, GET /save, GET /rules, GET /pedia,
+//! Endpoints: GET / (page), GET /state, GET /machine-metrics, GET /save, GET /rules, GET /pedia,
 //! POST /action, POST /step, POST /autoplay, POST /view,
 //! POST /spectator-status, POST /next-game-settings, POST /new,
 //! POST /supervisor-new.
@@ -8,6 +8,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+#[cfg(target_os = "macos")]
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 #[cfg(not(target_arch = "wasm32"))]
@@ -21,13 +23,14 @@ use crate::civ6;
 use crate::game::{
     Action, Game, GameOptions, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
 };
+use crate::leader_roster;
 use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::name::Name;
 use crate::rules::Rules;
 use crate::setup::{
-    start_era_from_id, start_era_id, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize,
-    MapTopology, BASE_RULESETS, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, MAP_POLES,
-    MAP_TOPOLOGIES, START_ERAS,
+    future_era_from_id, future_era_id, start_era_from_id, start_era_id, BaseRuleset, FutureEra,
+    GameSpeed, MapPoles, MapScript, MapSize, MapTopology, BASE_RULESETS, CIV6_GAME_SPEEDS,
+    CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, FUTURE_ERAS, MAP_POLES, MAP_TOPOLOGIES, START_ERAS,
 };
 use crate::Pos;
 
@@ -59,6 +62,12 @@ fn process_identity() -> u32 {
 
 #[cfg(not(target_arch = "wasm32"))]
 static LAUNCHED_COMMIT: OnceLock<Option<String>> = OnceLock::new();
+#[cfg(not(target_arch = "wasm32"))]
+static LAUNCHED_COMMIT_TIME: OnceLock<Option<String>> = OnceLock::new();
+#[cfg(not(target_arch = "wasm32"))]
+static LAUNCHED_BUILT_AT: OnceLock<Option<String>> = OnceLock::new();
+#[cfg(not(target_arch = "wasm32"))]
+static LAUNCHED_ARTIFACT_BYTES: OnceLock<Option<u64>> = OnceLock::new();
 
 #[cfg(not(target_arch = "wasm32"))]
 fn promoted_binary_commit(name: &str) -> Option<String> {
@@ -79,15 +88,52 @@ fn launched_commit() -> Option<String> {
         })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn launched_commit_time() -> Option<String> {
+    std::env::var("CIVVIS_COMMIT_TIME")
+        .ok()
+        .filter(|commit_time| !commit_time.is_empty())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn launched_built_at() -> Option<String> {
+    std::env::var("CIVVIS_BUILT_AT")
+        .ok()
+        .filter(|built_at| !built_at.is_empty())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn launched_artifact_bytes() -> Option<u64> {
+    std::env::current_exe()
+        .ok()?
+        .metadata()
+        .ok()
+        .map(|metadata| metadata.len())
+}
+
 /// The revision of the code a supervisor selected for this process.
 ///
 /// This deliberately reads the launch environment or promoted executable name
 /// instead of `option_env!`: a compile-time revision would force a complete
 /// optimized rebuild even when the source code itself has not changed.
+/// The revision a supervisor selected, or `None` for an unstamped build.
+///
+/// ⚠ Deliberately NOT `runtime_commit("unknown")`: a run log that says
+/// `"revision": "unknown"` reads like a failed lookup, while `null` says
+/// plainly that nobody stamped this build. The identity that always reports is
+/// the treatment list emitted beside it — see `civvis_orders`'s genome line.
+pub fn runtime_commit_or_none() -> Option<String> {
+    let commit = runtime_commit("");
+    (!commit.is_empty()).then_some(commit)
+}
+
 pub(crate) fn runtime_commit(fallback: &str) -> String {
     #[cfg(target_arch = "wasm32")]
     {
-        fallback.to_owned()
+        option_env!("CIVVIS_COMMIT")
+            .filter(|commit| !commit.is_empty())
+            .unwrap_or(fallback)
+            .to_owned()
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -98,17 +144,281 @@ pub(crate) fn runtime_commit(fallback: &str) -> String {
     }
 }
 
+/// When the selected revision was committed, as an ISO-8601 timestamp.
+///
+/// The desktop launcher supplies this beside `CIVVIS_COMMIT`; a published
+/// browser build bakes both into its pinned module. An unstamped development
+/// build returns `None` rather than presenting its compile time as source age.
+pub(crate) fn runtime_commit_time() -> Option<String> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        option_env!("CIVVIS_COMMIT_TIME")
+            .filter(|commit_time| !commit_time.is_empty())
+            .map(str::to_owned)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        LAUNCHED_COMMIT_TIME
+            .get_or_init(launched_commit_time)
+            .clone()
+    }
+}
+
+/// When this exact artifact was built, as an ISO-8601 timestamp.
+///
+/// This stays separate from the revision's commit time: rebuilding current
+/// source makes a fresh artifact, but does not rewrite Git history.
+pub(crate) fn runtime_built_at() -> Option<String> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        option_env!("CIVVIS_BUILT_AT")
+            .filter(|built_at| !built_at.is_empty())
+            .map(str::to_owned)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        LAUNCHED_BUILT_AT.get_or_init(launched_built_at).clone()
+    }
+}
+
+/// Size of the exact artifact serving this page, in bytes.
+///
+/// A native process can inspect its own executable. The browser WASM module
+/// has no filesystem path, so the published shim supplies its optimized byte
+/// count from the matching lane manifest after publication.
+pub(crate) fn runtime_artifact_bytes() -> Option<u64> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        None
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        *LAUNCHED_ARTIFACT_BYTES.get_or_init(launched_artifact_bytes)
+    }
+}
+
+/// The kind of artifact whose size is reported beside the build ages.
+pub(crate) const fn runtime_artifact_kind() -> &'static str {
+    if cfg!(target_arch = "wasm32") {
+        "WASM"
+    } else {
+        "native"
+    }
+}
+
+/// The two host-wide measurements the viewer needs to make its rendering
+/// choices legible.  They deliberately expose percentages only: the display
+/// settings need pressure, not a machine inventory.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct MachineMetrics {
+    cpu_percent: Option<f64>,
+    memory_percent: Option<f64>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn bounded_percent(value: f64) -> Option<f64> {
+    value.is_finite().then(|| value.clamp(0.0, 100.0))
+}
+
+fn machine_metrics_value(metrics: MachineMetrics) -> Value {
+    // One decimal place is precise enough for a display choice while avoiding
+    // a falsely exact-looking value from a short host sample.
+    let rounded = |value: Option<f64>| value.map(|value| (value * 10.0).round() / 10.0);
+    json!({
+        "cpu_percent": rounded(metrics.cpu_percent),
+        "memory_percent": rounded(metrics.memory_percent),
+    })
+}
+
+fn machine_metrics_json() -> Value {
+    #[cfg(not(target_arch = "wasm32"))]
+    let metrics = sampled_machine_metrics();
+    #[cfg(target_arch = "wasm32")]
+    let metrics = MachineMetrics::default();
+    machine_metrics_value(metrics)
+}
+
+// A metrics request is cheap from the browser's point of view, but sampling a
+// host can require a platform utility.  Reuse a short-lived answer for every
+// open viewer so the load gauge cannot become the load it reports.
+#[cfg(not(target_arch = "wasm32"))]
+const MACHINE_METRICS_SAMPLE_INTERVAL: Duration = Duration::from_secs(2);
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy)]
+struct MachineMetricsSnapshot {
+    sampled_at: Instant,
+    metrics: MachineMetrics,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+static MACHINE_METRICS_CACHE: OnceLock<Mutex<Option<MachineMetricsSnapshot>>> = OnceLock::new();
+
+#[cfg(not(target_arch = "wasm32"))]
+fn sampled_machine_metrics() -> MachineMetrics {
+    let cache = MACHINE_METRICS_CACHE.get_or_init(|| Mutex::new(None));
+    let now = Instant::now();
+    let mut held = cache.lock().unwrap();
+    if let Some(snapshot) = *held {
+        if now.duration_since(snapshot.sampled_at) < MACHINE_METRICS_SAMPLE_INTERVAL {
+            return snapshot.metrics;
+        }
+    }
+    let metrics = MachineMetrics {
+        cpu_percent: host_cpu_percent(),
+        memory_percent: host_memory_percent(),
+    };
+    *held = Some(MachineMetricsSnapshot {
+        sampled_at: now,
+        metrics,
+    });
+    metrics
+}
+
+#[cfg(target_os = "linux")]
+fn linux_cpu_ticks(report: &str) -> Option<(u64, u64)> {
+    let values: Vec<u64> = report
+        .lines()
+        .find(|line| line.starts_with("cpu "))?
+        .split_whitespace()
+        .skip(1)
+        .map(str::parse)
+        .collect::<Result<_, _>>()
+        .ok()?;
+    let idle = *values.get(3)? + values.get(4).copied().unwrap_or(0);
+    Some((values.iter().sum(), idle))
+}
+
+#[cfg(target_os = "linux")]
+fn cpu_percent_from_ticks(previous: (u64, u64), current: (u64, u64)) -> Option<f64> {
+    let total = current.0.checked_sub(previous.0)?;
+    let idle = current.1.checked_sub(previous.1)?;
+    (total > 0 && idle <= total).then(|| 100.0 * (total - idle) as f64 / total as f64)
+}
+
+#[cfg(target_os = "linux")]
+fn host_cpu_percent() -> Option<f64> {
+    static PREVIOUS: OnceLock<Mutex<Option<(u64, u64)>>> = OnceLock::new();
+    let current = linux_cpu_ticks(&std::fs::read_to_string("/proc/stat").ok()?)?;
+    let mut held = PREVIOUS.get_or_init(|| Mutex::new(None)).lock().unwrap();
+    let measured = (*held).and_then(|previous| cpu_percent_from_ticks(previous, current));
+    *held = Some(current);
+    measured.and_then(bounded_percent)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_top_cpu_percent(report: &str) -> Option<f64> {
+    let idle = report.lines().rev().find_map(|line| {
+        let fragment = line.split(',').find(|part| part.contains("% idle"))?;
+        fragment.split('%').next()?.trim().parse::<f64>().ok()
+    })?;
+    bounded_percent(100.0 - idle)
+}
+
+#[cfg(target_os = "macos")]
+fn host_cpu_percent() -> Option<f64> {
+    let output = Command::new("top").args(["-l", "1", "-n", "0"]).output().ok()?;
+    macos_top_cpu_percent(&String::from_utf8_lossy(&output.stdout))
+}
+
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(any(target_os = "linux", target_os = "macos"))
+))]
+fn host_cpu_percent() -> Option<f64> {
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn memory_percent_from_meminfo(report: &str) -> Option<f64> {
+    let mut total = None;
+    let mut available = None;
+    for line in report.lines() {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        let Some(amount) = value
+            .split_whitespace()
+            .next()
+            .and_then(|amount| amount.parse::<u64>().ok())
+        else {
+            continue;
+        };
+        match name {
+            "MemTotal" => total = Some(amount),
+            "MemAvailable" => available = Some(amount),
+            _ => {}
+        }
+    }
+    let total = total?;
+    let available = available?;
+    (total > 0 && available <= total)
+        .then(|| 100.0 * (total - available) as f64 / total as f64)
+}
+
+#[cfg(target_os = "linux")]
+fn host_memory_percent() -> Option<f64> {
+    memory_percent_from_meminfo(&std::fs::read_to_string("/proc/meminfo").ok()?)
+        .and_then(bounded_percent)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_physical_memory_bytes() -> Option<u64> {
+    static TOTAL: OnceLock<Option<u64>> = OnceLock::new();
+    TOTAL
+        .get_or_init(|| {
+            let output = Command::new("sysctl").args(["-n", "hw.memsize"]).output().ok()?;
+            String::from_utf8_lossy(&output.stdout).trim().parse().ok()
+        })
+        .to_owned()
+}
+
+#[cfg(target_os = "macos")]
+fn macos_vm_stat_pages(report: &str, name: &str) -> Option<u64> {
+    report.lines().find_map(|line| {
+        let line = line.trim_start();
+        let value = line.strip_prefix(name)?.trim_start_matches(':').trim();
+        value.trim_end_matches('.').parse().ok()
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn macos_memory_percent(report: &str, total: u64) -> Option<f64> {
+    let page_size = report.lines().find_map(|line| {
+        line.split("page size of ")
+            .nth(1)?
+            .split_whitespace()
+            .next()?
+            .parse::<u64>()
+            .ok()
+    })?;
+    let available_pages = ["Pages free", "Pages inactive", "Pages speculative"]
+        .iter()
+        .filter_map(|name| macos_vm_stat_pages(report, name))
+        .sum::<u64>();
+    let available = available_pages.saturating_mul(page_size).min(total);
+    (total > 0).then(|| 100.0 * (total - available) as f64 / total as f64)
+}
+
+#[cfg(target_os = "macos")]
+fn host_memory_percent() -> Option<f64> {
+    let total = macos_physical_memory_bytes()?;
+    let output = Command::new("vm_stat").output().ok()?;
+    macos_memory_percent(&String::from_utf8_lossy(&output.stdout), total).and_then(bounded_percent)
+}
+
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(any(target_os = "linux", target_os = "macos"))
+))]
+fn host_memory_percent() -> Option<f64> {
+    None
+}
+
 const EMBEDDED_INDEX: &str = include_str!("../web/index.html");
-const EMBEDDED_CINEMATIC_3D: &str = include_str!("../web/cinematic3d.js");
-const EMBEDDED_TERRAIN_ATLAS: &[u8] = include_bytes!("../web/assets/terrain-atlas.png");
 const EMBEDDED_FEATURE_ATLAS: &[u8] = include_bytes!("../web/assets/feature-atlas.png");
 const EMBEDDED_ENVIRONMENT_FEATURE_ATLAS: &[u8] =
     include_bytes!("../web/assets/environment-feature-atlas.png");
-const EMBEDDED_NATURAL_WONDER_ATLAS: &[u8] =
-    include_bytes!("../web/assets/natural-wonder-atlas.png");
-const EMBEDDED_WORLD_WONDER_ATLAS: &[u8] =
-    include_bytes!("../web/assets/world-wonder-atlas.png");
-const EMBEDDED_MOUNTAIN_ATLAS: &[u8] = include_bytes!("../web/assets/mountain-atlas.png");
 const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] =
     include_bytes!("../web/assets/hidden-map-monsters.png");
 const EMBEDDED_CIV6_UNIT_FLAGS: &[u8] =
@@ -138,6 +448,9 @@ pub struct Params {
     /// [`crate::rules::ERA_NAMES`]. Only a rung the rules have a tree for ever
     /// reaches here; see [`new_game_params`].
     pub start_era: usize,
+    /// Which rules the far end of the game is played by. Only an era somebody
+    /// has built ever reaches here; see [`new_game_params`].
+    pub future_era: FutureEra,
     pub map_script: MapScript,
     /// What shape the world is, chosen independently of what fills it.
     pub map_topology: MapTopology,
@@ -913,12 +1226,24 @@ pub struct Shared {
     /// the whole restart behind it too.
     next_game_params: Mutex<Option<Params>>,
     pub pace_ms: AtomicU64,
+    /// How long a completed spectator game remains on its result screen.
+    /// This is a viewer preference, not part of the simulated world: each
+    /// browser persists and reasserts its choice when the supervisor starts a
+    /// fresh process.
+    pub between_game_countdown_ms: AtomicU64,
     pub paused: AtomicBool,
     pub restart_in: AtomicU64, // ms until auto-restart; u64::MAX = not pending
     /// Measured wall time of a full game turn, including pacing sleeps.
     pub turn_us: AtomicU64,
     /// The same turn with the sleeps taken out: what the unlimited pace costs.
     pub turn_compute_us: AtomicU64,
+    /// Monotonic identity of the last spectator frame the stepper completed.
+    ///
+    /// `turn` alone is not enough once Blitz and slower paces publish after
+    /// every player's turn: every seat in a round shares the same world turn.
+    /// This counter advances only when a frame is actually published, so the
+    /// unpaced Lightning loop can still play a whole round into one frame.
+    frame_sequence: AtomicU64,
     frame_delivery: Mutex<FrameDelivery>,
     frame_painted: Condvar,
     /// Serializes a displayed-state handoff with the start of an automatic AI
@@ -948,6 +1273,9 @@ struct SpectatorFrame {
     /// A victory may be decided by a seat in the middle of a round, without
     /// advancing `turn`. That terminal state is still a distinct frame.
     finished: bool,
+    /// A server-local, monotonic publication sequence. Several player-turn
+    /// frames can share `turn`; skipped Lightning seat steps share this value.
+    sequence: u64,
 }
 
 /// One page, tracked apart from every other page.
@@ -1069,8 +1397,8 @@ impl FrameDelivery {
         }
         let mut lost = 0;
         if let Some(previous) = seat.painted {
-            if attached && previous.seed == frame.seed && frame.turn > previous.turn {
-                lost = u64::from(frame.turn - previous.turn - 1);
+            if attached && previous.seed == frame.seed && frame.sequence > previous.sequence {
+                lost = frame.sequence - previous.sequence - 1;
                 seat.missed += lost;
             }
         }
@@ -1124,22 +1452,12 @@ impl FrameDelivery {
     }
 }
 
-/// The result screen counts down for ten seconds before the next world. Not
-/// "at least ten", not "ten by default" — ten.
-///
-/// Ten is the whole product's one answer to "how long does a finished game
-/// stay up", and the browser's own countdown on a single-player finale is the
-/// same constant.
-///
-/// **This deliberately has no input.** It used to be `--restart-ms`, floored
-/// by the server and fed by the supervisor's `--cooldown`, and the number the
-/// viewer read was whichever value had won that chain. Twice in one evening
-/// the exhibition put a countdown on screen that nobody had chosen — first two
-/// minutes, then, once a ceiling was added, exactly that ceiling. A dial whose
-/// only effect is a number on a screen, and which every layer can override, is
-/// not a setting; it is a way for the screen to be wrong. `--restart-ms` and
-/// `--cooldown` are now accepted and ignored.
-const RESULT_COUNTDOWN_MS: u64 = 10_000;
+/// The result screen starts at ten seconds, with the exact choices offered in
+/// the observer settings. Keeping this short, closed set prevents a stale
+/// client or an arbitrary HTTP request from turning the result screen into an
+/// unexpectedly long hold.
+const DEFAULT_BETWEEN_GAME_COUNTDOWN_MS: u64 = 10_000;
+const BETWEEN_GAME_COUNTDOWN_OPTIONS_MS: [u64; 4] = [0, 3_000, 5_000, 10_000];
 /// How long after its last request a viewer is still considered present, and
 /// so still owed a frame for every turn.
 ///
@@ -1162,13 +1480,48 @@ const STATE_LONG_POLL: Duration = Duration::from_millis(1_000);
 /// The unlimited pace still hands the accept loop a slot this often, so the
 /// page keeps loading state while the stepper saturates a core.
 const UNLIMITED_BREATH_MS: u64 = 100;
+/// Blitz is the first watch pace where every player's completed turn becomes
+/// its own frame. Faster custom paces retain Lightning's one-frame-per-round
+/// throughput; every offered pace at or above this threshold is seat-by-seat.
+const PLAYER_TURN_FRAME_MIN_PACE_MS: u64 = 1_000;
 /// Minor civilizations and barbarians take a quarter of a major's slice.
 const MINOR_SHARE: f64 = 0.25;
 
-/// Ten seconds, whatever anybody asked for. Kept as a function so the two
-/// places that arm the countdown cannot each grow their own idea of it.
-fn final_countdown_ms() -> u64 {
-    RESULT_COUNTDOWN_MS
+fn publishes_player_turn_frames(pace_ms: u64) -> bool {
+    pace_ms >= PLAYER_TURN_FRAME_MIN_PACE_MS
+}
+
+fn spectator_frame(game: &Game, sequence: u64) -> SpectatorFrame {
+    SpectatorFrame {
+        seed: game.seed,
+        turn: game.turn,
+        finished: game.winner.is_some(),
+        sequence,
+    }
+}
+
+fn spectator_step_completes_frame(
+    pace_ms: u64,
+    turn_before: u32,
+    finished_before: bool,
+    game: &Game,
+) -> bool {
+    publishes_player_turn_frames(pace_ms)
+        || game.turn != turn_before
+        || game.winner.is_some() != finished_before
+}
+
+/// The result countdown can only use the four values the viewer can select.
+fn valid_between_game_countdown_ms(value: u64) -> Option<u64> {
+    BETWEEN_GAME_COUNTDOWN_OPTIONS_MS
+        .contains(&value)
+        .then_some(value)
+}
+
+/// Read the viewer-selected hold through one helper so both places that arm
+/// and advance the countdown agree on the active value.
+fn final_countdown_ms(sh: &Shared) -> u64 {
+    sh.between_game_countdown_ms.load(Ordering::Relaxed)
 }
 
 /// Give an unrated AI seat a compact, deterministic handle. The first half of
@@ -1262,11 +1615,10 @@ impl Shared {
             // while ringing it, so taking them in this order is safe.
             let current = {
                 let session = self.session.lock().unwrap();
-                SpectatorFrame {
-                    seed: session.game.seed,
-                    turn: session.game.turn,
-                    finished: session.game.winner.is_some(),
-                }
+                spectator_frame(
+                    &session.game,
+                    self.frame_sequence.load(Ordering::Relaxed),
+                )
             };
             if current != held {
                 return;
@@ -1296,22 +1648,21 @@ impl Shared {
         self.frame_painted.notify_all();
     }
 
-    /// Turns this server simulated that some viewer never drew, the last turn
-    /// one reported drawing, and how many pages are watching. The second reads
-    /// the first: no painted turn at all means nobody was watching, which is a
-    /// different thing from a promise being kept. The third says how many
-    /// pages that "no turns missed" is a promise to. The fourth is auto-play's
-    /// own denominator: turns it has simulated, so that its zero can be told
-    /// apart from a game where nobody ever pressed it.
-    fn frame_audit(&self) -> (u64, Option<u32>, usize, u64) {
+    /// Frames this server published that some viewer never drew, the newest
+    /// exact frame one reported drawing, and how many pages are watching. No
+    /// painted frame at all means nobody was watching, which is a different
+    /// thing from a promise being kept. The fourth result is auto-play's own
+    /// denominator: turns it simulated, so zero can be told apart from a game
+    /// where nobody ever pressed it.
+    fn frame_audit(&self) -> (u64, Option<SpectatorFrame>, usize, u64) {
         let mut delivery = self.frame_delivery.lock().unwrap();
         delivery.retire_departed(Instant::now());
         let missed = delivery.missed;
         let painted = delivery
             .seats
             .values()
-            .filter_map(|seat| seat.painted.map(|frame| frame.turn))
-            .max();
+            .filter_map(|seat| seat.painted)
+            .max_by_key(|frame| frame.sequence);
         (missed, painted, delivery.seats.len(), delivery.autoplayed)
     }
 
@@ -1535,6 +1886,23 @@ impl Shared {
     }
 }
 
+/// Derive the next unattended-world seed without leaving JavaScript's exact
+/// integer range.
+///
+/// Spectator pages return the seed in `world=` when acknowledging a painted
+/// frame. JSON parses an integer above 2^53 - 1 as a rounded JavaScript
+/// `Number`, so a full-width successor seed can never match the server's u64
+/// and the opening frame remains gated. The low 53 bits of this full-period
+/// LCG are themselves a full-period sequence, retaining deterministic variety
+/// while keeping the browser/server identity round-trip exact.
+const MAX_EXACT_JAVASCRIPT_INTEGER: u64 = (1_u64 << 53) - 1;
+
+fn automatic_successor_seed(seed: u64) -> u64 {
+    seed.wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407)
+        & MAX_EXACT_JAVASCRIPT_INTEGER
+}
+
 impl Session {
     /// Seat AIs plus each seat's league identity. With a roster to seat from,
     /// each major gets a rank-weighted sample from the top three proven winners
@@ -1727,6 +2095,21 @@ impl Session {
     }
 
     pub fn new(params: Params) -> Session {
+        let (league, seat_from_roster) = Self::load_params_league(&params);
+        Self::new_with_league(params, league, seat_from_roster)
+    }
+
+    /// Construct a world against a roster supplied by its host.
+    ///
+    /// Native sessions normally load from `Params::league_dir`. A browser
+    /// module has no filesystem, so the local desktop host hands it the same
+    /// live roster as the native spectator and asks it to seat directly from
+    /// that snapshot.
+    fn new_with_league(
+        params: Params,
+        mut league: Option<crate::league::League>,
+        seat_from_roster: bool,
+    ) -> Session {
         // Seat 0 is the person at the keyboard, which is what decides who the
         // difficulty hands its bonuses to. A spectated game has nobody there.
         let human_seats = if params.spectate {
@@ -1737,6 +2120,7 @@ impl Session {
         let mut game = Game::new_with(GameOptions {
             base_ruleset: params.base_ruleset,
             start_era: params.start_era,
+            future_era: params.future_era,
             map_script: params.map_script,
             map_topology: params.map_topology,
             map_poles: params.map_poles,
@@ -1760,7 +2144,6 @@ impl Session {
         // The hierarchical agent is the stock major-civilization default when
         // no league strategy is seated. Minors/barbarians retain the cheaper
         // baseline because they do not need empire-level planning.
-        let (mut league, seat_from_roster) = Self::load_params_league(&params);
         let (mut ais, mut seat_strategy) = Self::ai_fleet(
             &game,
             league.as_ref(),
@@ -1823,6 +2206,7 @@ impl Session {
         params.seed = game.seed;
         params.base_ruleset = game.base_ruleset;
         params.start_era = game.start_era;
+        params.future_era = game.future_era;
         params.map_script = game.map_script;
         params.map_topology = if game.map.topology == crate::world::Topology::Cylinder {
             MapTopology::Flat
@@ -1978,11 +2362,7 @@ impl Session {
     /// setup control that must never wait on the simulation, so it lives
     /// beside the session rather than inside it.
     fn start_automatic_next_game(&mut self, queued: Option<Params>) {
-        let next_seed = self
-            .params
-            .seed
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
+        let next_seed = automatic_successor_seed(self.params.seed);
         let mut params = queued.unwrap_or_else(|| self.params.clone());
         params.seed = next_seed;
         *self = Session::new(params);
@@ -2078,6 +2458,33 @@ impl Session {
                 "readiness": (force.readiness * 100.0).round() / 100.0,
                 "strength_ratio": (force.strength_ratio * 100.0).round() / 100.0,
             })).collect::<Vec<_>>(),
+            "war": plan.war.as_ref().map(|war| json!({
+                "enabled": war.enabled,
+                "selective": war.selective,
+                "rapid": war.rapid,
+                "active": war.active,
+                "phase": war.phase,
+                "target_player": war.target_player,
+                "objective_city": city(war.objective_city),
+                "breakthrough_tech": war.breakthrough_tech,
+                "assault_unit": war.assault_unit,
+                "predecessor": war.predecessor,
+                "breach_unit": war.breach_unit,
+                "required_bodies": war.required_bodies,
+                "ready_bodies": war.ready_bodies,
+                "staged_bodies": war.staged_bodies,
+                "breach_ready": war.breach_ready,
+                "upgrade_gold_reserved": (war.upgrade_gold_reserved * 10.0).round() / 10.0,
+                "appointed_turn": war.appointed_turn,
+                "appointments": war.appointments,
+                "breakthroughs": war.breakthroughs,
+                "mobilizations": war.mobilizations,
+                "declarations": war.declarations,
+                "complete_package_declarations": war.complete_package_declarations,
+                "objectives_captured": war.objectives_captured,
+                "objectives_captured_within_ten": war.objectives_captured_within_ten,
+                "aborts": war.aborts,
+            })),
         })
     }
 
@@ -2201,6 +2608,13 @@ impl Session {
             // per-seat name from `name_ai_players` reads better and is just
             // as true.
             if let (true, Some(s)) = (self.seat_from_roster, self.seat_entry(id)) {
+                // Stable rating identity, distinct from both the friendly
+                // username and the controller's one-word tactical label.
+                // Hosted browser games return this exact value when filing
+                // the terminal result into the persistent league.
+                if !s.human {
+                    player["ai_player_strategy"] = json!(s.name);
+                }
                 player["ai_username"] = json!(s.username);
                 player["ai_strat_label"] = json!(s.label());
             }
@@ -2292,7 +2706,7 @@ impl Session {
                         player["ai_plan"] = self.plan_json(&plan);
                     }
                     // What this civilization is actually spending its science
-                    // and culture on, for the Active AI strategy panel. The
+                    // and culture on, for the AI strategy dossier. The
                     // observation only ever carries the *observed* seat's, in
                     // `me`, and above the world there is no observed seat.
                     //
@@ -2343,6 +2757,10 @@ impl Session {
             // rebuilt/restarted between games and reload the latest UI.
             o["server_instance"] = json!(process_identity());
             o["server_commit"] = json!(runtime_commit("unknown"));
+            o["server_commit_time"] = json!(runtime_commit_time());
+            o["server_built_at"] = json!(runtime_built_at());
+            o["server_artifact_bytes"] = json!(runtime_artifact_bytes());
+            o["server_artifact_kind"] = json!(runtime_artifact_kind());
             return o;
         }
         let mut o = observation(&self.game, 0);
@@ -2362,6 +2780,10 @@ impl Session {
         o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
         o["server_instance"] = json!(process_identity());
         o["server_commit"] = json!(runtime_commit("unknown"));
+        o["server_commit_time"] = json!(runtime_commit_time());
+        o["server_built_at"] = json!(runtime_built_at());
+        o["server_artifact_bytes"] = json!(runtime_artifact_bytes());
+        o["server_artifact_kind"] = json!(runtime_artifact_kind());
         o
     }
 
@@ -2685,16 +3107,6 @@ fn index_html() -> Vec<u8> {
     EMBEDDED_INDEX.as_bytes().to_vec()
 }
 
-fn cinematic_3d_js() -> Vec<u8> {
-    std::fs::read("web/cinematic3d.js")
-        .unwrap_or_else(|_| EMBEDDED_CINEMATIC_3D.as_bytes().to_vec())
-}
-
-fn terrain_atlas() -> Vec<u8> {
-    std::fs::read("web/assets/terrain-atlas.png")
-        .unwrap_or_else(|_| EMBEDDED_TERRAIN_ATLAS.to_vec())
-}
-
 fn feature_atlas() -> Vec<u8> {
     std::fs::read("web/assets/feature-atlas.png")
         .unwrap_or_else(|_| EMBEDDED_FEATURE_ATLAS.to_vec())
@@ -2703,21 +3115,6 @@ fn feature_atlas() -> Vec<u8> {
 fn environment_feature_atlas() -> Vec<u8> {
     std::fs::read("web/assets/environment-feature-atlas.png")
         .unwrap_or_else(|_| EMBEDDED_ENVIRONMENT_FEATURE_ATLAS.to_vec())
-}
-
-fn natural_wonder_atlas() -> Vec<u8> {
-    std::fs::read("web/assets/natural-wonder-atlas.png")
-        .unwrap_or_else(|_| EMBEDDED_NATURAL_WONDER_ATLAS.to_vec())
-}
-
-fn world_wonder_atlas() -> Vec<u8> {
-    std::fs::read("web/assets/world-wonder-atlas.png")
-        .unwrap_or_else(|_| EMBEDDED_WORLD_WONDER_ATLAS.to_vec())
-}
-
-fn mountain_atlas() -> Vec<u8> {
-    std::fs::read("web/assets/mountain-atlas.png")
-        .unwrap_or_else(|_| EMBEDDED_MOUNTAIN_ATLAS.to_vec())
 }
 
 fn hidden_map_monsters() -> Vec<u8> {
@@ -2859,6 +3256,10 @@ fn request_path(target: &str) -> &str {
     target.split_once('?').map_or(target, |(path, _)| path)
 }
 
+fn viewer_path(path: &str) -> bool {
+    matches!(path, "/" | "/index.html" | "/rust" | "/rust/")
+}
+
 /// One parameter out of a request target's query, or `None` if the request
 /// did not carry the key at all. A key present with an empty value reads as
 /// `Some("")`: the page announces itself as a viewer on its very first poll,
@@ -2924,11 +3325,12 @@ fn tile_mark(tile: &Value) -> u64 {
 }
 
 /// The frame a page says its own copy of the tiles is built from, written
-/// `world:turn:finished`. All three parts matter: a victory may be decided
-/// during a seat's step without incrementing the turn, and the terminal map is
-/// not the non-terminal map from the same turn. Legacy two-part tokens remain
-/// valid non-terminal baselines. Anything unparseable simply means no
-/// baseline, and the page is sent the whole map.
+/// `world:turn:finished:sequence`. All four parts matter: a victory may be
+/// decided during a seat's step without incrementing the turn, and at Blitz
+/// and slower several completed player turns share one world turn. Legacy
+/// two- and three-part tokens name sequence zero, which remains the opening
+/// frame of a process. Anything unparseable simply means no baseline, and the
+/// page is sent the whole map.
 fn held_frame(token: &str) -> Option<SpectatorFrame> {
     let mut fields = token.split(':');
     let seed = fields.next()?.parse().ok()?;
@@ -2938,6 +3340,10 @@ fn held_frame(token: &str) -> Option<SpectatorFrame> {
         Some("1") => true,
         Some(_) => return None,
     };
+    let sequence = match fields.next() {
+        None => 0,
+        Some(sequence) => sequence.parse().ok()?,
+    };
     if fields.next().is_some() {
         return None;
     }
@@ -2945,6 +3351,7 @@ fn held_frame(token: &str) -> Option<SpectatorFrame> {
         seed,
         turn,
         finished,
+        sequence,
     })
 }
 
@@ -2975,6 +3382,7 @@ fn simulation_settings(params: &Params) -> Value {
     .filter_map(|(enabled, name)| enabled.then_some(name))
     .collect::<Vec<_>>();
     json!({
+        "seed": params.seed,
         "players": params.num_players,
         "width": params.width,
         "height": params.height,
@@ -2982,6 +3390,7 @@ fn simulation_settings(params: &Params) -> Value {
         "turns": params.max_turns,
         "base_ruleset": params.base_ruleset.id(),
         "start_era": start_era_id(params.start_era),
+        "future_era": future_era_id(params.future_era),
         "map": params.map_script.id(),
         "shape": params.map_topology.id(),
         "poles": params.map_poles.id(),
@@ -3038,6 +3447,16 @@ fn strategy_roster(session: &Session) -> Value {
     json!(rows)
 }
 
+/// An explicit turn cap is a real configuration value, not a cast through an
+/// arbitrary JSON number. Zero cannot produce a playable game and a number
+/// wider than the engine's `u32` cap used to wrap into a surprising length.
+fn requested_turn_limit(request: &Value) -> Option<u32> {
+    request["max_turns"]
+        .as_u64()
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value > 0)
+}
+
 fn new_game_params(current: &Params, request: &Value) -> Params {
     let mut p = current.clone();
     if let Some(v) = request["num_players"].as_u64() {
@@ -3061,6 +3480,11 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     // stands and the client can see it did.
     if let Some(era) = request["start_era"].as_str().and_then(start_era_from_id) {
         p.start_era = era;
+    }
+    // Same contract for the other end of the game: an era nobody has built is
+    // refused rather than quietly played as the classic one.
+    if let Some(era) = request["future_era"].as_str().and_then(future_era_from_id) {
+        p.future_era = era;
     }
     if let Some(v) = request["map_script"].as_str().and_then(MapScript::from_id) {
         p.map_script = v;
@@ -3100,12 +3524,16 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         p.speed = v.id().to_string();
         p.max_turns = v.turn_limit();
     }
-    if let Some(v) = request["max_turns"].as_u64() {
-        p.max_turns = v as u32;
+    if let Some(v) = requested_turn_limit(request) {
+        p.max_turns = v;
     }
     if let Some(v) = request["leader_pool"].as_str().and_then(LeaderPool::from_id) {
-        p.leader_pool = v;
+        p.leader_pool = v.available_or_default();
     }
+    let selected_pool = p.leader_pool;
+    p.civs.retain(|civ| {
+        leader_roster::entry(civ).is_some_and(|entry| entry.available && entry.pool == selected_pool)
+    });
     // The two settings a Civ 6 lobby asks for that this protocol could not
     // carry: how hard the rivals play, and who the player is. Both are
     // validated against the live ruleset rather than trusted, because the
@@ -3117,11 +3545,14 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         }
     }
     if let Some(civs) = request["civs"].as_array() {
-        let rules = Rules::shared();
+        let selected_pool = p.leader_pool;
         p.civs = civs
             .iter()
             .filter_map(|civ| civ.as_str())
-            .filter(|civ| rules.civs.contains_key(civ))
+            .filter(|civ| {
+                leader_roster::entry(civ)
+                    .is_some_and(|entry| entry.available && entry.pool == selected_pool)
+            })
             .map(str::to_string)
             .collect();
     }
@@ -3150,7 +3581,12 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         p.height = v as i32;
     }
     if let Some(v) = request["num_city_states"].as_u64() {
-        p.num_city_states = v as usize;
+        // Each city-state needs a distinct identity and Suzerain bonus. The
+        // same cap is exposed through `/rules` for the browser and applies to
+        // direct clients as a final guard.
+        p.num_city_states = usize::try_from(v)
+            .unwrap_or(usize::MAX)
+            .min(Rules::shared().city_states.roster.len());
     }
     if let Some(v) = request["spectate"].as_bool() {
         p.spectate = v;
@@ -3176,7 +3612,7 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
             p.game_speed = GameSpeed::from_id(v).unwrap_or(GameSpeed::Standard);
             // A speed carries its own turn budget; adopt it unless the client
             // asked for a specific one in the same request.
-            p.max_turns = request["max_turns"].as_u64().unwrap_or(spec.turns as u64) as u32;
+            p.max_turns = requested_turn_limit(request).unwrap_or(spec.turns);
         }
     }
     p
@@ -3244,11 +3680,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
         let simulation_frame_gate = loop {
             let current_frame = {
                 let s = sh.session.lock().unwrap();
-                SpectatorFrame {
-                    seed: s.game.seed,
-                    turn: s.game.turn,
-                    finished: s.game.winner.is_some(),
-                }
+                spectator_frame(&s.game, sh.frame_sequence.load(Ordering::Relaxed))
             };
             sh.wait_for_turn_frame(current_frame);
             let gate = sh.simulation_frame_gate.lock().unwrap();
@@ -3284,8 +3716,8 @@ fn auto_step_loop(sh: Arc<Shared>) {
             }
             if s.game.winner.is_some() {
                 let t0 = *over_since.get_or_insert_with(Instant::now);
-                let left =
-                    final_countdown_ms().saturating_sub(t0.elapsed().as_millis() as u64);
+                let left = final_countdown_ms(&sh)
+                    .saturating_sub(t0.elapsed().as_millis() as u64);
                 sh.restart_in.store(left, Ordering::Relaxed);
                 if left == 0 {
                     s.start_automatic_next_game(sh.take_next_game_params());
@@ -3300,11 +3732,8 @@ fn auto_step_loop(sh: Arc<Shared>) {
                     // starting position — settlers before their capitals —
                     // and the first thing a viewer ever sees of a new world is
                     // already several turns into it.
-                    completed_frame = Some(SpectatorFrame {
-                        seed: s.game.seed,
-                        turn: s.game.turn,
-                        finished: false,
-                    });
+                    let sequence = sh.frame_sequence.fetch_add(1, Ordering::Relaxed) + 1;
+                    completed_frame = Some(spectator_frame(&s.game, sequence));
                 }
                 delay = 200;
                 waiting = true;
@@ -3312,31 +3741,25 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 over_since = None;
                 sh.restart_in.store(u64::MAX, Ordering::Relaxed);
                 let step_started = Instant::now();
-                let frame_before = SpectatorFrame {
-                    seed: s.game.seed,
-                    turn: s.game.turn,
-                    finished: false,
-                };
+                let turn_before = s.game.turn;
+                let finished_before = s.game.winner.is_some();
                 let (pid, _) = s.step();
                 turn_compute_us += step_started.elapsed().as_micros() as u64;
-                let frame_after = SpectatorFrame {
-                    seed: s.game.seed,
-                    turn: s.game.turn,
-                    finished: s.game.winner.is_some(),
-                };
-                if frame_after != frame_before {
-                    completed_frame = Some(frame_after);
+                if spectator_step_completes_frame(pace, turn_before, finished_before, &s.game) {
+                    let sequence = sh.frame_sequence.fetch_add(1, Ordering::Relaxed) + 1;
+                    completed_frame = Some(spectator_frame(&s.game, sequence));
                 }
                 // The step that ends a game has to hand the viewer its
                 // countdown in the same breath. Arming it on the next pass
                 // instead left `/state` reporting no countdown at all for a
                 // beat, so the result screen opened on "preparing the next
-                // world" and only then began counting down from ten — and the
-                // window in which "one more turn" can be pressed is exactly
-                // the window the countdown describes.
+                // world" and only then began counting. The viewer must get
+                // every millisecond of the selected window to choose one more
+                // turn.
                 if s.game.winner.is_some() {
                     over_since = Some(Instant::now());
-                    sh.restart_in.store(final_countdown_ms(), Ordering::Relaxed);
+                    sh.restart_in
+                        .store(final_countdown_ms(&sh), Ordering::Relaxed);
                 }
                 // A turn is one step per seat, so a seat waits for its own
                 // share of the turn budget and the round adds up to the pace.
@@ -3364,11 +3787,9 @@ fn auto_step_loop(sh: Arc<Shared>) {
             }
         }
         // An active browser paints exactly one complete, same-snapshot frame
-        // before the next round starts, at every pace. This makes Lightning as
-        // fast as the viewer can paint without letting it skip whole turns,
-        // and it stops the paced settings from skipping them too — a turn
-        // budget says how long a turn lasts, not that anyone saw its updated
-        // HUD, victory tracker, map, and remaining turn-bound surfaces.
+        // before simulation continues. Lightning publishes at the end of the
+        // round; Blitz and slower publish here after every player's turn, so
+        // majors move one frame at a time before city-states and barbarians do.
         //
         // The wait comes before the cadence sleep on purpose. `elapsed_ms`
         // below measures from the top of the step, so a viewer who answers
@@ -3418,10 +3839,18 @@ fn staged_next_game_params(base: &Params, request: &Value) -> Params {
 fn decorate(o: &mut Value, sh: &Shared) {
     let r = sh.restart_in.load(Ordering::Relaxed);
     if r != u64::MAX {
+        // `restart_in` remains the compact, backwards-compatible display
+        // value. The browser also needs the unrounded remainder so it can
+        // paint the seconds between these expensive full-state responses
+        // instead of using their one-second long-poll cadence as a clock.
+        o["restart_in_ms"] = json!(r);
         o["restart_in"] = json!(r.div_ceil(1000));
     }
     o["pace"] = json!(sh.pace_ms.load(Ordering::Relaxed));
+    o["between_game_countdown_ms"] =
+        json!(sh.between_game_countdown_ms.load(Ordering::Relaxed));
     o["paused"] = json!(sh.paused.load(Ordering::Relaxed));
+    o["frame_sequence"] = json!(sh.frame_sequence.load(Ordering::Relaxed));
     // Both in milliseconds per game turn: what the current pace is actually
     // delivering, and what it would cost with every wait removed.
     let measured = sh.turn_us.load(Ordering::Relaxed);
@@ -3476,34 +3905,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
     let parsed: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
 
     match (method.as_str(), path.as_str()) {
-        ("GET", "/") | ("GET", "/index.html") => {
+        ("GET", path) if viewer_path(path) => {
             respond(stream, "200 OK", "text/html; charset=utf-8", &index_html());
-        }
-        ("GET", "/cinematic3d.js") => {
-            respond(
-                stream,
-                "200 OK",
-                "text/javascript; charset=utf-8",
-                &cinematic_3d_js(),
-            );
-        }
-        ("GET", "/assets/terrain-atlas.png") => {
-            respond(stream, "200 OK", "image/png", &terrain_atlas());
         }
         ("GET", "/assets/feature-atlas.png") => {
             respond(stream, "200 OK", "image/png", &feature_atlas());
         }
         ("GET", "/assets/environment-feature-atlas.png") => {
             respond(stream, "200 OK", "image/png", &environment_feature_atlas());
-        }
-        ("GET", "/assets/natural-wonder-atlas.png") => {
-            respond(stream, "200 OK", "image/png", &natural_wonder_atlas());
-        }
-        ("GET", "/assets/world-wonder-atlas.png") => {
-            respond(stream, "200 OK", "image/png", &world_wonder_atlas());
-        }
-        ("GET", "/assets/mountain-atlas.png") => {
-            respond(stream, "200 OK", "image/png", &mountain_atlas());
         }
         ("GET", "/assets/hidden-map-monsters.png") => {
             respond(stream, "200 OK", "image/png", &hidden_map_monsters());
@@ -3521,6 +3930,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "server_instance": process_identity(),
                     "seed": sh.current_seed.load(Ordering::Relaxed),
                     "commit": runtime_commit("unknown"),
+                    "commit_time": runtime_commit_time(),
+                    "built_at": runtime_built_at(),
+                    "artifact_bytes": runtime_artifact_bytes(),
+                    "artifact_kind": runtime_artifact_kind(),
                     // The supervisor's only view of a restart used to be
                     // `/state`, which is exactly what a long AI turn makes
                     // unavailable. This probe takes no lock the simulation
@@ -3568,16 +3981,19 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     reported.parse::<u32>(),
                     query_value(&request_target, "world").map(str::parse::<u64>),
                     query_value(&request_target, "finished"),
+                    query_value(&request_target, "frame").map(str::parse::<u64>),
                 ) {
-                    (Ok(turn), Some(Ok(seed)), Some("0") | None) => Some(SpectatorFrame {
+                    (Ok(turn), Some(Ok(seed)), Some("0") | None, Some(Ok(sequence))) => Some(SpectatorFrame {
                         seed,
                         turn,
                         finished: false,
+                        sequence,
                     }),
-                    (Ok(turn), Some(Ok(seed)), Some("1")) => Some(SpectatorFrame {
+                    (Ok(turn), Some(Ok(seed)), Some("1"), Some(Ok(sequence))) => Some(SpectatorFrame {
                         seed,
                         turn,
                         finished: true,
+                        sequence,
                     }),
                     _ => None, // a page that has painted nothing yet
                 };
@@ -3595,12 +4011,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 .map(|cursor| cursor.parse::<u64>().unwrap_or(0));
             let (mut o, frame) = {
                 let session = sh.session.lock().unwrap();
-                let frame = SpectatorFrame {
-                    seed: session.game.seed,
-                    turn: session.game.turn,
-                    finished: session.game.winner.is_some(),
-                };
+                let frame = spectator_frame(
+                    &session.game,
+                    sh.frame_sequence.load(Ordering::Relaxed),
+                );
                 let mut observed = session.state();
+                observed["frame_sequence"] = json!(frame.sequence);
                 if wants_planet {
                     if let Some(geometry) = crate::obs::planet_geometry(&session.game) {
                         observed["map"]["planet"] = geometry;
@@ -3623,6 +4039,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 sh.note_frame_delivered(&viewer, frame);
             }
         }
+        // The panel polls this independently of the game state: sampling the
+        // host must never make a viewer serialize its whole map just to decide
+        // whether to prefer a lighter display treatment.
+        ("GET", "/machine-metrics") => {
+            respond_json(stream, &machine_metrics_json());
+        }
         // Everything a supervisor needs to know - is there a game, is it over -
         // without building the whole observation. /state runs close to a
         // megabyte of JSON on a standard map, and something polling it every
@@ -3639,16 +4061,15 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "winner": game.winner,
                     "victory_type": game.victory_type,
                     "spectate": session.params.spectate,
-                    // Turns this server simulated that no viewer ever drew.
-                    // Every turn is supposed to reach the page as one whole
-                    // frame, and the page reports the turns it paints, so the
-                    // promise is measured rather than assumed. A healthy
-                    // exhibition holds this at zero.
+                    // Published frames no viewer ever drew. At Blitz and
+                    // slower this counts player turns, not only round turns.
                     "frames_missed": frames_missed,
                     // The last turn a viewer reported drawing; null when
                     // nobody is watching, which is why zero misses on its own
                     // is not yet good news.
-                    "frames_painted": frames_painted,
+                    "frames_painted": frames_painted.map(|frame| frame.turn),
+                    "frames_painted_sequence": frames_painted.map(|frame| frame.sequence),
+                    "frame_sequence": sh.frame_sequence.load(Ordering::Relaxed),
                     // How many pages that promise is being kept to. Each is
                     // waited for separately, so this is also the number of
                     // paints a turn now costs before the next one starts.
@@ -3670,6 +4091,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     // it when it launches the promoted binary; an unstamped
                     // build reports unknown.
                     "commit": runtime_commit("unknown"),
+                    "commit_time": runtime_commit_time(),
+                    "built_at": runtime_built_at(),
                 }),
             );
         }
@@ -3679,6 +4102,18 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 sh.pace_ms.store(v.min(60_000), Ordering::Relaxed);
                 sh.turn_us.store(0, Ordering::Relaxed); // re-measure at the new pace
             }
+            let countdown_error = parsed["between_game_countdown_ms"]
+                .as_u64()
+                .and_then(|value| match valid_between_game_countdown_ms(value) {
+                    Some(value) => {
+                        sh.between_game_countdown_ms
+                            .store(value, Ordering::Relaxed);
+                        None
+                    }
+                    None => Some(
+                        "between-game countdown must be one of 0, 3000, 5000, or 10000 milliseconds",
+                    ),
+                });
             if let Some(v) = parsed["paused"].as_bool() {
                 sh.paused.store(v, Ordering::Relaxed);
             }
@@ -3689,6 +4124,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             let mut o = session.state();
             drop(session);
             decorate(&mut o, sh);
+            if let Some(error) = countdown_error {
+                o["error"] = json!(error);
+            }
             respond_json(stream, &o);
         }
         ("GET", "/save") => {
@@ -3861,12 +4299,15 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "wonders": r.wonders,
                     "projects": r.projects,
                     "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
+                    "city_state_limit": r.city_states.roster.len(),
                     "civ6_leaders": CIV6_LEADER_POOL.as_slice(),
+                    "leader_pools": leader_roster::browser_pools(),
                     "great_people": r.great_people, "governors": r.governors,
                     "map_sizes": CIV6_MAP_SIZES,
                     "difficulties": r.difficulties, "speeds": r.speeds,
                     "base_rulesets": BASE_RULESETS,
                     "start_eras": START_ERAS,
+                    "future_eras": FUTURE_ERAS,
                     "map_scripts": CIV6_MAP_SCRIPTS,
                     "map_topologies": MAP_TOPOLOGIES,
                     "map_poles": MAP_POLES,
@@ -4016,9 +4457,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("POST", "/step") => {
             let mut session = sh.session.lock().unwrap();
             let mut out;
+            let mut completed_frame = None;
             if session.params.spectate {
                 let count = parsed["count"].as_u64().unwrap_or(1) as usize;
                 let steps = session.step_many(count);
+                if !steps.is_empty() {
+                    let sequence = sh.frame_sequence.fetch_add(1, Ordering::Relaxed) + 1;
+                    completed_frame = Some(spectator_frame(&session.game, sequence));
+                }
                 out = session.state();
                 // An omniscient observer can narrate every AI decision. A
                 // civilization view only receives that civilization's own
@@ -4059,6 +4505,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 out["error"] = json!("not in spectate mode");
             }
             drop(session);
+            if let Some(frame) = completed_frame {
+                sh.note_turn_ready(frame);
+            }
             decorate(&mut out, sh);
             respond_json(stream, &out);
         }
@@ -4164,9 +4613,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // a question about the machine and another game's files, and a page
         // watching a simulation must be able to ask it between turns.
         //
-        // The mode is offered on every computer and refused on the ones that
-        // cannot run it, so this always answers. A silent no is what made a
-        // dead Steam client cost eleven ladder attempts.
+        // The verification-only mode is available on every computer and
+        // refused on the ones that cannot run it, so this always answers. A
+        // silent no is what made a dead Steam client cost eleven ladder
+        // attempts.
         ("GET", "/civ6") => {
             let host = civ6::Host::probe();
             respond_json(
@@ -4237,27 +4687,147 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{
-        chronicle_world_events, final_countdown_ms, held_frame, new_game_params, query_value,
-        request_path, save_path, seat_delay_ms, strategy_roster, tile_mark, ChronicleSnapshot,
-        ChronicleState, FrameDelivery, Params,
-        Session, Shared, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_CIV6_UNIT_FLAGS,
-        EMBEDDED_INDEX, RESULT_COUNTDOWN_MS,
-        EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL,
-        VIEWER_ACTIVE,
+        automatic_successor_seed, chronicle_world_events, final_countdown_ms, held_frame,
+        new_game_params, publishes_player_turn_frames, query_value, request_path, save_path,
+        seat_delay_ms, spectator_frame, spectator_step_completes_frame, staged_next_game_params,
+        strategy_roster, tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot,
+        ChronicleState, FrameDelivery, Params, Session, Shared, SpectatorFrame,
+        BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, DEFAULT_BETWEEN_GAME_COUNTDOWN_MS,
+        EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX,
+        MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
     };
     use crate::game::{
         Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
     };
     use crate::server::{generated_ai_name, simulation_settings};
     use crate::setup::{
-        start_era_from_id, BaseRuleset, GameSpeed, MapPoles, MapScript, MapTopology, MAP_POLES,
+        future_era_from_id, start_era_from_id, BaseRuleset, FutureEra, GameSpeed, MapPoles,
+        MapScript, MapTopology, MAP_POLES,
     };
     use serde_json::{json, Value};
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
-    use std::sync::atomic::{AtomicBool, AtomicU64};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{mpsc, Arc, Condvar, Mutex};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn machine_metric_values_are_bounded_and_only_expose_percentages() {
+        assert_eq!(super::bounded_percent(f64::NAN), None);
+        assert_eq!(super::bounded_percent(-5.0), Some(0.0));
+        assert_eq!(super::bounded_percent(140.0), Some(100.0));
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(
+                super::cpu_percent_from_ticks((100, 70), (200, 120)),
+                Some(50.0)
+            );
+            assert_eq!(super::cpu_percent_from_ticks((100, 70), (100, 70)), None);
+            assert_eq!(
+                super::memory_percent_from_meminfo(
+                    "MemTotal:       1000 kB\nMemAvailable:    250 kB\n",
+                ),
+                Some(75.0)
+            );
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let cpu = super::macos_top_cpu_percent(
+                "CPU usage: 12.00% user, 3.00% sys, 85.00% idle\n",
+            )
+            .expect("CPU usage line should parse");
+            assert!((cpu - 15.0).abs() < f64::EPSILON);
+            assert_eq!(
+                super::macos_memory_percent(
+                    "Mach Virtual Memory Statistics: (page size of 4096 bytes)\n\
+                     Pages free: 25.\nPages inactive: 25.\nPages speculative: 0.\n",
+                    409_600,
+                ),
+                Some(50.0)
+            );
+        }
+        assert_eq!(
+            super::machine_metrics_value(super::MachineMetrics {
+                cpu_percent: Some(12.31),
+                memory_percent: None,
+            }),
+            json!({"cpu_percent": 12.3, "memory_percent": Value::Null})
+        );
+        assert_eq!(
+            super::machine_metrics_value(super::MachineMetrics::default()),
+            json!({"cpu_percent": Value::Null, "memory_percent": Value::Null})
+        );
+    }
+
+    #[test]
+    fn browser_offers_host_load_caps_and_display_guidance() {
+        assert!(EMBEDDED_INDEX.contains("<span>Display Settings</span>"));
+        for kind in ["cpu", "memory"] {
+            assert!(EMBEDDED_INDEX.contains(&format!("id=\"{kind}-load-row\"")));
+            assert!(EMBEDDED_INDEX.contains(&format!("id=\"{kind}-load-cap\"")));
+        }
+        for kind in ["cpu", "memory"] {
+            let options = EMBEDDED_INDEX
+                .split_once(&format!("id=\"{kind}-load-cap\""))
+                .expect("load cap select")
+                .1
+                .split_once("</select>")
+                .expect("load cap select closes")
+                .0;
+            assert_eq!(options.matches("<option").count(), 9);
+            for percent in (10..=90).step_by(10) {
+                assert!(
+                    options.contains(&format!("<option value=\"{percent}\"")),
+                    "{kind} cap should offer {percent}%"
+                );
+            }
+        }
+        for contract in [
+            "DISPLAY_RESOURCE_CAPS_STORAGE_KEY",
+            "fetchJSON(\"/machine-metrics\", {cache: \"no-store\"}, 3000)",
+            "Prefer Performance resolution",
+            "Machine telemetry is unavailable here.",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(contract), "missing display load contract: {contract}");
+        }
+    }
+
+    #[test]
+    fn browser_gives_every_shipped_improvement_a_named_tile_marker() {
+        let markers = EMBEDDED_INDEX
+            .split_once("const IMPROVEMENT_MARKERS = Object.freeze({")
+            .expect("the improvement marker registry")
+            .1
+            .split_once("\n});")
+            .expect("the end of the improvement marker registry")
+            .0;
+        for improvement in crate::rules::Rules::embedded().improvements.keys() {
+            assert!(
+                markers.contains(&format!("\n  {}:", improvement.as_str())),
+                "{improvement} has no deliberate browser tile marker"
+            );
+        }
+
+        let renderer = EMBEDDED_INDEX
+            .split_once("function drawImprovement(t, x, y) {")
+            .expect("the improvement renderer")
+            .1
+            .split_once("\n// Every city drew")
+            .expect("the end of the improvement renderer")
+            .0;
+        assert!(renderer.contains("const marker = IMPROVEMENT_MARKERS[imp] || \"unknown\";"));
+        let marker_branch = renderer
+            .find("} else if (marker !== \"unknown\") {")
+            .expect("the named-marker branch");
+        let anonymous_fallback = renderer
+            .find("// Everything rarer still reads as a built installation")
+            .expect("the anonymous fallback");
+        assert!(
+            marker_branch < anonymous_fallback,
+            "known improvements must reach their marker before the generic fallback"
+        );
+        assert!(renderer.contains("paintImprovementMarker(marker, t, x, y, dir);"));
+    }
 
     /// The pace a viewer picks is what a turn costs, so the seats' waits have
     /// to add back up to it — at any player count, with minors on their
@@ -4282,24 +4852,152 @@ mod tests {
         assert_eq!(seat_delay_ms(0, 8, 12, false), 0);
     }
 
-    /// Ten seconds, and nothing can ask for anything else.
-    ///
-    /// This was a dial — `--restart-ms`, floored by the server, fed by the
-    /// supervisor's `--cooldown`. The number a viewer read was whichever value
-    /// had won that chain, and twice in one evening the exhibition counted
-    /// down from a duration nobody had chosen: first two minutes, then, once a
-    /// ceiling existed, exactly that ceiling. The dial is gone. The one thing
-    /// this must never again be is *configurable*.
     #[test]
-    fn the_result_countdown_is_ten_seconds_with_no_input() {
-        assert_eq!(final_countdown_ms(), 10_000);
-        assert_eq!(RESULT_COUNTDOWN_MS, 10_000);
-        // The browser's own finale countdown is the same ten seconds, so a
-        // person and the exhibition are offered the identical window.
-        assert!(EMBEDDED_INDEX.contains(&format!(
-            "const FINALE_RESTART_SECONDS = {};",
-            RESULT_COUNTDOWN_MS / 1_000
-        )));
+    fn player_turn_frames_begin_at_blitz() {
+        assert!(!publishes_player_turn_frames(0), "Lightning stays round-by-round");
+        assert!(!publishes_player_turn_frames(999));
+        for pace in [1_000, 2_000, 4_000, 10_000, 60_000] {
+            assert!(
+                publishes_player_turn_frames(pace),
+                "{pace}ms is Blitz or slower"
+            );
+        }
+    }
+
+    /// The simulation already seats Civ-style: majors first, then
+    /// city-states, then its barbarian seat. At Blitz every one of those
+    /// `Session::step` boundaries must become a distinct frame, while
+    /// Lightning waits for the wrap. Capturing unit positions around the same
+    /// boundary proves a movement is present in the acting player's frame,
+    /// not deferred into the next civilization's paint.
+    #[test]
+    fn blitz_frames_follow_major_city_state_barbarian_turn_order() {
+        let mut params = current();
+        params.spectate = true;
+        params.num_players = 3;
+        params.num_city_states = 2;
+        params.width = 30;
+        params.height = 20;
+        params.seed = 20_260_802;
+        let mut session = Session::new(params);
+
+        let expected: Vec<usize> = session
+            .game
+            .players
+            .iter()
+            .filter(|player| player.alive)
+            .map(|player| player.id)
+            .collect();
+        let kinds: Vec<&str> = expected
+            .iter()
+            .map(|pid| {
+                let player = &session.game.players[*pid];
+                if !player.is_minor && !player.is_barbarian {
+                    "major"
+                } else if player.is_minor && !player.is_barbarian {
+                    "city-state"
+                } else {
+                    "barbarian"
+                }
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            ["major", "major", "major", "city-state", "city-state", "barbarian"],
+            "the live roster itself must follow Civilization's phase order"
+        );
+
+        let opening_turn = session.game.turn;
+        let mut seen = Vec::new();
+        let mut sequence = 0;
+        let mut frames = Vec::new();
+        let mut movement_seen = false;
+        while session.game.turn == opening_turn && session.game.winner.is_none() {
+            let acting = session.game.current;
+            let positions = session
+                .game
+                .units
+                .iter()
+                .map(|(id, unit)| (*id, (unit.owner, unit.pos)))
+                .collect::<std::collections::BTreeMap<_, _>>();
+            let turn_before = session.game.turn;
+            let finished_before = session.game.winner.is_some();
+            let (stepped, _) = session.step();
+            assert_eq!(stepped, acting);
+            seen.push(stepped);
+
+            assert!(spectator_step_completes_frame(
+                1_000,
+                turn_before,
+                finished_before,
+                &session.game,
+            ));
+            sequence += 1;
+            frames.push(spectator_frame(&session.game, sequence));
+
+            for (id, unit) in &session.game.units {
+                if positions
+                    .get(id)
+                    .is_some_and(|(_, before)| *before != unit.pos)
+                {
+                    assert_eq!(
+                        unit.owner, acting,
+                        "seat {acting}'s frame included another player's unit movement"
+                    );
+                    movement_seen = true;
+                }
+            }
+
+            let lightning_boundary = spectator_step_completes_frame(
+                0,
+                turn_before,
+                finished_before,
+                &session.game,
+            );
+            assert_eq!(
+                lightning_boundary,
+                session.game.turn != turn_before || session.game.winner.is_some(),
+                "Lightning should publish only the round/result boundary"
+            );
+        }
+
+        assert_eq!(seen, expected);
+        assert!(
+            frames.windows(2).all(|pair| pair[1].sequence == pair[0].sequence + 1),
+            "each completed seat must receive its own frame identity"
+        );
+        assert!(movement_seen, "the opening round exercised no unit movement");
+    }
+
+    /// The setting is intentionally narrow: these are the exact choices on
+    /// the page, and no arbitrary browser request can turn a result into an
+    /// unbounded hold.
+    #[test]
+    fn between_game_countdown_is_limited_to_the_four_lobby_choices() {
+        assert_eq!(BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, [0, 3_000, 5_000, 10_000]);
+        for value in BETWEEN_GAME_COUNTDOWN_OPTIONS_MS {
+            assert_eq!(valid_between_game_countdown_ms(value), Some(value));
+        }
+        for value in [1, 2_999, 3_001, 7_000, 10_001] {
+            assert_eq!(valid_between_game_countdown_ms(value), None);
+        }
+
+        let shared = shared_for(Session::new(current()));
+        assert_eq!(final_countdown_ms(&shared), DEFAULT_BETWEEN_GAME_COUNTDOWN_MS);
+        for value in BETWEEN_GAME_COUNTDOWN_OPTIONS_MS {
+            shared
+                .between_game_countdown_ms
+                .store(value, Ordering::Relaxed);
+            assert_eq!(final_countdown_ms(&shared), value);
+        }
+
+        assert!(EMBEDDED_INDEX.contains("id=\"between-game-countdown\""));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"0\">None</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"3000\">3s</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"5000\">5s</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"10000\" selected>10s</option>"));
+        assert!(EMBEDDED_INDEX.contains("const BETWEEN_GAME_COUNTDOWN_KEY"));
+        assert!(EMBEDDED_INDEX.contains("betweenGameCountdownMs()"));
     }
 
     #[test]
@@ -4326,16 +5024,25 @@ mod tests {
             seed: 41,
             turn: 7,
             finished: false,
+            sequence: 0,
         };
         let won = SpectatorFrame {
             seed: 41,
             turn: 7,
             finished: true,
+            sequence: 0,
         };
         assert_ne!(playing, won);
         assert_eq!(held_frame("41:7"), Some(playing));
         assert_eq!(held_frame("41:7:0"), Some(playing));
         assert_eq!(held_frame("41:7:1"), Some(won));
+        assert_eq!(
+            held_frame("41:7:0:23"),
+            Some(SpectatorFrame {
+                sequence: 23,
+                ..playing
+            })
+        );
         assert_eq!(held_frame("41:7:maybe"), None);
     }
 
@@ -4352,10 +5059,12 @@ mod tests {
             next_game_params: Mutex::new(session.take_resumed_next_game_params()),
             session: Mutex::new(session),
             pace_ms: AtomicU64::new(0),
+            between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
             paused: AtomicBool::new(false),
             restart_in: AtomicU64::new(u64::MAX),
             turn_us: AtomicU64::new(0),
             turn_compute_us: AtomicU64::new(0),
+            frame_sequence: AtomicU64::new(0),
             frame_delivery: Mutex::new(FrameDelivery::default()),
             frame_painted: Condvar::new(),
             simulation_frame_gate: Mutex::new(()),
@@ -4366,6 +5075,7 @@ mod tests {
             seed,
             turn: 7,
             finished: false,
+            sequence: 0,
         };
         let won = SpectatorFrame {
             finished: true,
@@ -4400,16 +5110,19 @@ mod tests {
             seed: 41,
             turn: 7,
             finished: false,
+            sequence: 7,
         };
         let turn_8 = SpectatorFrame {
             seed: 41,
             turn: 8,
             finished: false,
+            sequence: 8,
         };
         let next_world = SpectatorFrame {
             seed: 42,
             turn: 7,
             finished: false,
+            sequence: 0,
         };
         let final_turn_7 = SpectatorFrame {
             finished: true,
@@ -4458,6 +5171,7 @@ mod tests {
             seed: 41,
             turn: 7,
             finished: false,
+            sequence: 7,
         };
         let mut delivery = FrameDelivery::default();
 
@@ -4489,6 +5203,7 @@ mod tests {
             seed: 41,
             turn: 8,
             finished: false,
+            sequence: 8,
         };
         delivery.viewer_request("one", None, later);
         delivery.frame_delivered("one", turn_8, later);
@@ -4504,16 +5219,19 @@ mod tests {
             seed: 41,
             turn: 7,
             finished: false,
+            sequence: 7,
         };
         let turn_8 = SpectatorFrame {
             seed: 41,
             turn: 8,
             finished: false,
+            sequence: 8,
         };
         let other_world = SpectatorFrame {
             seed: 42,
             turn: 7,
             finished: false,
+            sequence: 0,
         };
         let mut delivery = FrameDelivery::default();
 
@@ -4665,6 +5383,7 @@ mod tests {
                 seed: 41,
                 turn,
                 finished: false,
+                sequence: turn as u64,
             })
         };
         let mut now = Instant::now();
@@ -4695,6 +5414,7 @@ mod tests {
                 seed: 41,
                 turn,
                 finished: false,
+                sequence: turn as u64,
             })
         };
         let mut now = Instant::now();
@@ -4737,6 +5457,7 @@ mod tests {
                 seed: 42,
                 turn: 40,
                 finished: false,
+                sequence: 40,
             }),
             beat,
         );
@@ -4746,6 +5467,7 @@ mod tests {
                 seed: 42,
                 turn: 40,
                 finished: false,
+                sequence: 40,
             }),
             beat,
         );
@@ -4755,10 +5477,32 @@ mod tests {
                 seed: 42,
                 turn: 41,
                 finished: false,
+                sequence: 41,
             }),
             beat,
         );
         assert_eq!(missed(&delivery), 3);
+    }
+
+    #[test]
+    fn audit_counts_a_missing_player_frame_inside_one_turn() {
+        let now = Instant::now();
+        let first = SpectatorFrame {
+            seed: 41,
+            turn: 12,
+            finished: false,
+            sequence: 40,
+        };
+        let third = SpectatorFrame {
+            sequence: 42,
+            ..first
+        };
+        let mut delivery = FrameDelivery::default();
+        delivery.frame_delivered("tab", first, now);
+        delivery.viewer_request("tab", Some(first), now);
+        delivery.frame_delivered("tab", third, now + Duration::from_millis(50));
+        delivery.viewer_request("tab", Some(third), now + Duration::from_millis(50));
+        assert_eq!(delivery.missed, 1, "sequence 41 was never painted");
     }
 
     /// Only a page that paints holds the simulation to a turn. The keeper's
@@ -4814,6 +5558,17 @@ mod tests {
         )
     }
 
+    fn next_painted_state(viewer: &str, state: &Value) -> String {
+        let seed = state["seed"].as_u64().expect("a world");
+        let turn = state["turn"].as_u64().expect("a turn");
+        let finished = u8::from(!state["winner"].is_null());
+        let frame = state["frame_sequence"].as_u64().expect("a frame sequence");
+        format!(
+            "/state?painted={turn}&world={seed}&finished={finished}&frame={frame}\
+             &viewer={viewer}&have={seed}:{turn}:{finished}:{frame}"
+        )
+    }
+
     /// The promise itself, end to end, against a real server over a real
     /// socket. A page that paints slower than the turn budget is the case that
     /// used to lose turns silently — five of twenty-eight on the default pace
@@ -4846,22 +5601,21 @@ mod tests {
         // The browser's loop at its worst: one request in flight at a time,
         // and a paint that costs twice what the whole turn was budgeted.
         let mut seen: Vec<u32> = Vec::new();
-        let mut painted: Option<(u64, u32)> = None;
+        let mut painted: Option<Value> = None;
         for _ in 0..24 {
-            let target = match painted {
-                None => "/state?painted=".to_string(),
-                Some((seed, turn)) => format!("/state?painted={turn}&world={seed}"),
+            let target = match painted.as_ref() {
+                None => "/state?painted=&viewer=slow-paint".to_string(),
+                Some(state) => next_painted_state("slow-paint", state),
             };
             let body = http_get(port, &target).expect("a state to draw");
             let state: Value = serde_json::from_str(&body).expect("state is JSON");
             let turn = state["turn"].as_u64().expect("a turn") as u32;
-            let seed = state["seed"].as_u64().expect("a world");
             std::thread::sleep(Duration::from_millis(250)); // the paint
             seen.push(turn);
-            painted = Some((seed, turn));
+            painted = Some(state);
         }
-        if let Some((seed, turn)) = painted {
-            http_get(port, &format!("/state?painted={turn}&world={seed}"));
+        if let Some(state) = painted.as_ref() {
+            http_get(port, &next_painted_state("slow-paint", state));
         }
         http_post(port, "/pace", "{\"paused\":true}"); // stop stepping this game
 
@@ -4920,23 +5674,18 @@ mod tests {
         // this viewer every turn and will wait for it; the question is only
         // whether it waits with the door held shut behind it.
         let watcher = std::thread::spawn(move || {
-            let mut painted: Option<(u64, u32)> = None;
+            let mut painted: Option<Value> = None;
             for _ in 0..8 {
-                let target = match painted {
+                let target = match painted.as_ref() {
                     None => "/state?painted=&viewer=watcher".to_string(),
-                    Some((seed, turn)) => {
-                        format!("/state?painted={turn}&world={seed}&viewer=watcher")
-                    }
+                    Some(state) => next_painted_state("watcher", state),
                 };
                 let Some(body) = http_get(port, &target) else {
                     return;
                 };
                 let state: Value = serde_json::from_str(&body).expect("state is JSON");
                 std::thread::sleep(Duration::from_millis(1_500)); // the paint
-                painted = Some((
-                    state["seed"].as_u64().expect("a world"),
-                    state["turn"].as_u64().expect("a turn") as u32,
-                ));
+                painted = Some(state);
             }
         });
         std::thread::sleep(Duration::from_millis(600)); // let it take its seat
@@ -4981,6 +5730,7 @@ mod tests {
         .expect("state is JSON");
         let seed = first["seed"].as_u64().expect("a world");
         let turn = first["turn"].as_u64().expect("a turn") as u32;
+        let frame = first["frame_sequence"].as_u64().expect("a frame sequence");
         http_post(port, "/pace", "{\"ms\":0,\"paused\":false}").expect("set unlimited pace");
 
         // The response has been delivered, but the test viewer deliberately
@@ -5000,13 +5750,99 @@ mod tests {
         let next: Value = serde_json::from_str(
             &http_get(
                 port,
-                &format!("/state?painted={turn}&world={seed}&viewer=paint-gate&have={seed}:{turn}"),
+                &format!(
+                    "/state?painted={turn}&world={seed}&finished=0&frame={frame}\
+                     &viewer=paint-gate&have={seed}:{turn}:0:{frame}"
+                ),
             )
             .expect("the next state"),
         )
         .expect("state is JSON");
         assert_eq!(next["turn"], json!(turn + 1));
         http_post(port, "/pace", "{\"paused\":true}");
+    }
+
+    /// The socket path, not only the helper that decides its policy: at Blitz
+    /// each response is the state immediately after the seat named by the
+    /// preceding response's `current` field acted. The sequence advances by
+    /// one, player ids advance in the roster's Civ-style order, and any unit
+    /// that changed position belongs to that acting seat.
+    #[test]
+    fn blitz_server_posts_each_players_completed_turn() {
+        let port = exhibition(20_260_802);
+        http_post(port, "/pace", "{\"paused\":true}").expect("pause before attaching");
+        std::thread::sleep(Duration::from_millis(200));
+        let mut state: Value = serde_json::from_str(
+            &http_get(port, "/state?painted=&viewer=player-turns").expect("opening frame"),
+        )
+        .expect("state is JSON");
+        let living: Vec<usize> = state["players"]
+            .as_array()
+            .expect("players")
+            .iter()
+            .filter(|player| player["alive"].as_bool().unwrap_or(false))
+            .map(|player| player["id"].as_u64().expect("player id") as usize)
+            .collect();
+        assert!(living.len() >= 5, "the exhibition roster is too small: {living:?}");
+        http_post(port, "/pace", "{\"ms\":1000,\"paused\":false}")
+            .expect("run at Blitz");
+
+        let mut movement_seen = false;
+        for _ in 0..living.len() * 2 {
+            let acting = state["current"].as_u64().expect("acting player") as usize;
+            let sequence = state["frame_sequence"].as_u64().expect("frame sequence");
+            let positions = state["units"]
+                .as_array()
+                .expect("units")
+                .iter()
+                .filter_map(|unit| {
+                    Some((
+                        unit["id"].as_u64()?,
+                        (
+                            unit["owner"].as_u64()? as usize,
+                            unit["pos"].clone(),
+                        ),
+                    ))
+                })
+                .collect::<std::collections::BTreeMap<_, _>>();
+            let next: Value = serde_json::from_str(
+                &http_get(port, &next_painted_state("player-turns", &state))
+                    .expect("the next player-turn frame"),
+            )
+            .expect("state is JSON");
+            assert_eq!(
+                next["frame_sequence"],
+                json!(sequence + 1),
+                "one Blitz seat must produce exactly one new frame"
+            );
+            let at = living.iter().position(|pid| *pid == acting).expect("living seat");
+            let expected_next = living[(at + 1) % living.len()];
+            assert_eq!(
+                next["current"],
+                json!(expected_next),
+                "the frame after player {acting} skipped or reordered a seat"
+            );
+            for unit in next["units"].as_array().expect("units") {
+                let Some(id) = unit["id"].as_u64() else { continue };
+                if positions
+                    .get(&id)
+                    .is_some_and(|(_, before)| *before != unit["pos"])
+                {
+                    assert_eq!(
+                        unit["owner"],
+                        json!(acting),
+                        "player {acting}'s frame moved another player's unit"
+                    );
+                    movement_seen = true;
+                }
+            }
+            state = next;
+        }
+        http_post(port, "/pace", "{\"paused\":true}");
+        assert!(movement_seen, "two complete rounds showed no unit movement");
+        let status: Value = serde_json::from_str(&http_get(port, "/status").expect("status"))
+            .expect("status is JSON");
+        assert_eq!(status["frames_missed"], json!(0));
     }
 
     /// Start a spectator on its own port and wait for it to answer.
@@ -5101,6 +5937,11 @@ mod tests {
         assert_eq!(runtime["server_instance"], state["server_instance"]);
         assert_eq!(runtime["seed"], state["seed"]);
         assert_eq!(runtime["commit"], state["server_commit"]);
+        assert_eq!(runtime["commit_time"], state["server_commit_time"]);
+        assert_eq!(runtime["built_at"], state["server_built_at"]);
+        assert_eq!(runtime["artifact_bytes"], state["server_artifact_bytes"]);
+        assert_eq!(runtime["artifact_kind"], state["server_artifact_kind"]);
+        assert!(runtime["artifact_bytes"].as_u64().unwrap_or(0) > 0);
         // The supervisor's whole view of a pending restart. It rides here
         // rather than only on `/state` because a long AI turn is exactly when
         // a restart is asked for and exactly when `/state` cannot be built.
@@ -5115,6 +5956,32 @@ mod tests {
             runtime_body.len() * 10 < state_body.len(),
             "the identity probe should not resemble a full observation"
         );
+    }
+
+    #[test]
+    fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
+        assert!(EMBEDDED_INDEX.contains("id=\"buildmark\""));
+        assert!(EMBEDDED_INDEX.contains("function updateBuildMarker(st = state)"));
+        assert!(EMBEDDED_INDEX.contains("st?.server_commit_time"));
+        assert!(EMBEDDED_INDEX.contains("st?.server_built_at"));
+        assert!(EMBEDDED_INDEX.contains("st?.server_artifact_bytes"));
+        assert!(EMBEDDED_INDEX.contains("st?.server_artifact_kind"));
+        assert!(EMBEDDED_INDEX.contains("function formatBuildSize(bytes)"));
+        assert!(EMBEDDED_INDEX.contains("(bytes / 1048576).toFixed(1)} MiB"));
+        assert!(EMBEDDED_INDEX.contains("(artifactSize ? ` · Build size ${artifactSize}` : \"\")"));
+        assert!(EMBEDDED_INDEX.contains("commit.slice(0, 7)"));
+        assert!(EMBEDDED_INDEX.contains("id=\"buildmark-commit\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "https://github.com/MartinHalvorson/CIVVIS/commit/${encodeURIComponent(commit)}"
+        ));
+        assert!(EMBEDDED_INDEX.contains("View commit ${shortCommit} on GitHub"));
+        assert!(EMBEDDED_INDEX.contains("return parts.join(\" \") || \"0m\""));
+        assert!(EMBEDDED_INDEX.contains("Commit is ${formatBuildAge(commitDate)} old"));
+        assert!(EMBEDDED_INDEX.contains("Build is ${formatBuildAge(buildDate)} old"));
+        assert!(EMBEDDED_INDEX.contains(
+            "#buildmark {\n    /* The authored World minimap owns the lower-right corner at z-index 6."
+        ));
+        assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -5135,8 +6002,8 @@ mod tests {
     /// The countdown used to be armed on the stepper's *next* pass, so for a
     /// beat `/state` carried a winner and no `restart_in` at all and the
     /// result screen opened on "preparing the next world" before it started
-    /// counting. That beat is the difference between ten seconds to press
-    /// "one more turn" and however much of ten seconds is left over.
+    /// counting. That beat is the difference between the selected window to
+    /// press "one more turn" and however much of it is left over.
     #[test]
     fn a_result_arrives_with_its_countdown_and_can_be_played_past() {
         let port = TcpListener::bind(("127.0.0.1", 0))
@@ -5159,6 +6026,13 @@ mod tests {
             assert!(Instant::now() < deadline, "spectator server never came up");
             std::thread::sleep(Duration::from_millis(50));
         }
+        let configured: Value = serde_json::from_str(
+            &http_post(port, "/pace", "{\"between_game_countdown_ms\":3000}")
+                .expect("configure result countdown"),
+        )
+        .expect("countdown configuration is JSON");
+        assert_eq!(configured["error"], Value::Null);
+        assert_eq!(configured["between_game_countdown_ms"], json!(3_000));
 
         let read = |target: &str| -> Value {
             serde_json::from_str(&http_get(port, target).expect("a state")).expect("state is JSON")
@@ -5172,11 +6046,22 @@ mod tests {
             assert!(Instant::now() < deadline, "the short game never ended");
             std::thread::sleep(Duration::from_millis(20));
         };
-        // Every state that carries a winner carries the countdown with it.
+        // Every state that carries a winner carries the selected countdown
+        // with it, including its unrounded remainder for the page's own clock.
         assert_eq!(
             decided["restart_in"],
-            json!(RESULT_COUNTDOWN_MS / 1_000),
-            "a result was published without the ten seconds it is owed"
+            json!(3),
+            "a result was published without the selected three seconds"
+        );
+        assert_eq!(decided["between_game_countdown_ms"], json!(3_000));
+        let restart_in_ms = decided["restart_in_ms"]
+            .as_u64()
+            .expect("the page receives an unrounded remainder");
+        assert!(restart_in_ms > 0 && restart_in_ms <= 3_000);
+        assert_eq!(
+            restart_in_ms.div_ceil(1_000),
+            decided["restart_in"].as_u64().unwrap(),
+            "the precise and backwards-compatible countdowns describe one deadline"
         );
 
         let played_on: Value = serde_json::from_str(
@@ -5205,6 +6090,7 @@ mod tests {
             json!("until_next_victory")
         );
         assert!(played_on["restart_in"].is_null());
+        assert!(played_on["restart_in_ms"].is_null());
         assert!(played_on["turn_limit"].is_null(), "there is no new cap");
         assert_eq!(played_on["max_turns"], json!(3), "setup stays intact");
         assert_eq!(played_on["seed"], decided["seed"], "the same world");
@@ -5220,6 +6106,64 @@ mod tests {
         assert_eq!(held["turn"], played_on["turn"]);
         assert!(held["winner"].is_null());
         assert_eq!(held["paused"], json!(true));
+    }
+
+    #[test]
+    fn no_between_game_countdown_starts_the_successor_without_a_result_hold() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = current();
+        params.spectate = true;
+        params.num_players = 2;
+        params.num_city_states = 1;
+        params.width = 24;
+        params.height = 16;
+        params.seed = 20_260_804;
+        params.max_turns = 1;
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+
+        let runtime = |port| -> Value {
+            serde_json::from_str(&http_get(port, "/runtime").expect("runtime"))
+                .expect("runtime is JSON")
+        };
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let initial_seed = loop {
+            if let Some(seed) = http_get(port, "/runtime")
+                .and_then(|body| serde_json::from_str::<Value>(&body).ok())
+                .and_then(|state| state["seed"].as_u64())
+            {
+                break seed;
+            }
+            assert!(Instant::now() < deadline, "spectator server never came up");
+            std::thread::sleep(Duration::from_millis(25));
+        };
+        let configured: Value = serde_json::from_str(
+            &http_post(
+                port,
+                "/pace",
+                "{\"ms\":0,\"between_game_countdown_ms\":0}",
+            )
+            .expect("configure no result hold"),
+        )
+        .expect("countdown configuration is JSON");
+        assert_eq!(configured["error"], Value::Null);
+        assert_eq!(configured["between_game_countdown_ms"], json!(0));
+
+        let deadline = Instant::now() + Duration::from_secs(8);
+        loop {
+            let successor_seed = runtime(port)["seed"].as_u64().expect("runtime seed");
+            if successor_seed != initial_seed {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the zero-second setting left the finished game on screen"
+            );
+            std::thread::sleep(Duration::from_millis(25));
+        }
     }
 
     /// Two tabs on one exhibition are two promises, not one.
@@ -5244,23 +6188,20 @@ mod tests {
         let watch = |name: &'static str, paint: u64| {
             std::thread::spawn(move || {
                 let mut seen: Vec<u32> = Vec::new();
-                let mut painted: Option<(u64, u32)> = None;
+                let mut painted: Option<Value> = None;
                 while Instant::now() < until {
-                    let target = match painted {
+                    let target = match painted.as_ref() {
                         None => format!("/state?painted=&viewer={name}"),
-                        Some((seed, turn)) => {
-                            format!("/state?painted={turn}&world={seed}&viewer={name}")
-                        }
+                        Some(state) => next_painted_state(name, state),
                     };
                     let Some(body) = http_get(port, &target) else {
                         continue;
                     };
                     let state: Value = serde_json::from_str(&body).expect("state is JSON");
                     let turn = state["turn"].as_u64().expect("a turn") as u32;
-                    let seed = state["seed"].as_u64().expect("a world");
                     std::thread::sleep(Duration::from_millis(paint)); // the paint
                     seen.push(turn);
-                    painted = Some((seed, turn));
+                    painted = Some(state);
                 }
                 seen
             })
@@ -5346,8 +6287,11 @@ mod tests {
         let now = read("/state?painted=&viewer=one");
         let seed = now["seed"].as_u64().expect("a world");
         let turn = now["turn"].as_u64().expect("a turn") as u32;
-        let holding =
-            format!("/state?painted={turn}&world={seed}&viewer=one&have={seed}:{turn}");
+        let frame = now["frame_sequence"].as_u64().expect("a frame sequence");
+        let holding = format!(
+            "/state?painted={turn}&world={seed}&finished=0&frame={frame}\
+             &viewer=one&have={seed}:{turn}:0:{frame}"
+        );
 
         // Nothing is being simulated, so a page holding the current turn is
         // held until the cap and then answered with what it already had.
@@ -5399,6 +6343,7 @@ mod tests {
         let first = read("/state?painted=&viewer=one");
         let seed = first["seed"].as_u64().expect("a world");
         let base = first["turn"].as_u64().expect("a turn") as u32;
+        let frame = first["frame_sequence"].as_u64().expect("a frame sequence");
         let mut held: Vec<Value> = first["map"]["tiles"]
             .as_array()
             .expect("the whole map, the first time")
@@ -5412,7 +6357,8 @@ mod tests {
         }
 
         let patched = read(&format!(
-            "/state?painted={base}&world={seed}&viewer=one&have={seed}:{base}"
+            "/state?painted={base}&world={seed}&finished=0&frame={frame}\
+             &viewer=one&have={seed}:{base}:0:{frame}"
         ));
         assert!(
             patched["map"]["tiles"].is_null(),
@@ -5447,8 +6393,9 @@ mod tests {
         // And a page whose baseline the server does not share gets the map
         // back whole rather than a patch it cannot apply.
         let stale = read(&format!(
-            "/state?painted={base}&world={seed}&viewer=one&have={seed}:{}",
-            base + 9_000
+            "/state?painted={base}&world={seed}&finished=0&frame={frame}\
+             &viewer=one&have={seed}:{}:0:{frame}",
+            base + 9_000,
         ));
         assert!(stale["map"]["tiles"].is_array());
         assert!(stale["map"]["tiles_changed"].is_null());
@@ -5478,20 +6425,38 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("Connecting to the server — retrying (attempt ${attempt})"));
     }
 
-    /// A finished game holds the screen for the same length of time whoever
-    /// was playing it. The browser counts a single-player finale down itself
-    /// and the server counts the exhibition's, so the two numbers live in
-    /// different languages and had already drifted to ten and five — one
-    /// result screen unhurried, the other hustling the verdict away.
+    /// Both result paths use the selected setting: a human finale reads the
+    /// control directly, while the exhibition paints the exact server value.
     #[test]
-    fn the_page_counts_a_finale_down_from_the_same_ten_seconds_the_server_does() {
-        assert!(
-            EMBEDDED_INDEX.contains(&format!(
-                "const FINALE_RESTART_SECONDS = {};",
-                RESULT_COUNTDOWN_MS / 1_000
-            )),
-            "the browser's finale countdown must be the server's countdown"
-        );
+    fn the_page_counts_a_finale_down_from_the_selected_between_game_interval() {
+        assert!(EMBEDDED_INDEX.contains(
+            "finaleCountdownDeadline = Date.now() + betweenGameCountdownMs();"
+        ));
+        assert!(EMBEDDED_INDEX.contains("Number(st.restart_in_ms)"));
+        assert!(EMBEDDED_INDEX.contains("between_game_countdown_ms"));
+    }
+
+    /// A full spectator state intentionally waits for either the next frame or
+    /// a one-second cap. That transport cadence cannot also be the visible
+    /// clock: boundary jitter made 10 linger for two seconds and skipped other
+    /// numbers. The page paints from the precise server remainder between
+    /// snapshots, while duplicate or delayed replies can only shorten its
+    /// deadline.
+    #[test]
+    fn exhibition_countdown_paints_between_full_state_responses() {
+        let sync = EMBEDDED_INDEX
+            .split_once("function syncExhibitionCountdown(st) {")
+            .expect("exhibition countdown synchronizer")
+            .1
+            .split_once("\n}\n\nfor (const gesture")
+            .expect("end of exhibition countdown synchronizer")
+            .0;
+        assert!(sync.contains("Number(st.restart_in_ms)"));
+        assert!(sync.contains("Math.min(exhibitionCountdownDeadline, candidateDeadline)"));
+        assert!(sync.contains("setInterval(paintExhibitionCountdown, 100)"));
+        assert!(EMBEDDED_INDEX.contains("Math.ceil(milliseconds / 1000)"));
+        assert!(EMBEDDED_INDEX.contains("The next world is beginning"));
+        assert!(!EMBEDDED_INDEX.contains("countdownTime.textContent = `${st.restart_in}s`;"));
     }
 
     #[test]
@@ -5608,21 +6573,21 @@ mod tests {
             "a new turn must repaint the side panel whatever the clock says"
         );
 
-        // And the page tells the server which turn it painted, both so that
-        // only a painting page holds the simulation to a turn and so that
-        // turns nobody drew can be counted instead of assumed away.
+        // And the page tells the server which exact frame it painted. The
+        // sequence distinguishes several player-turn frames inside one turn,
+        // both for the simulation gate and for the missed-frame audit.
         assert!(EMBEDDED_INDEX.contains("paintedFrame = {seed:st.seed, turn:st.turn,"));
         assert!(EMBEDDED_INDEX
             .contains("finished:st.winner !== null && st.winner !== undefined"));
         assert!(EMBEDDED_INDEX
-            .contains("`&finished=${paintedFrame.finished ? 1 : 0}`"));
+            .contains("&frame=${paintedFrame.sequence}"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/state\" + paintedQuery())"));
         // Two tabs are two promises, so a page says which one it is, and what
         // it holds is asked separately from what it drew — a state can arrive,
         // patch the tiles and still fail to paint.
         assert!(EMBEDDED_INDEX.contains("&viewer=${VIEWER_ID}"));
         assert!(EMBEDDED_INDEX
-            .contains("&have=${tileStore.seed}:${tileStore.turn}:${tileStore.finished ? 1 : 0}"));
+            .contains("&have=${tileStore.seed}:${tileStore.turn}:${tileStore.finished ? 1 : 0}:${tileStore.sequence}"));
 
         // And it draws one turn per animation frame, on the display's clock
         // rather than a timer of its own. Two turns painted inside one refresh
@@ -5768,21 +6733,31 @@ mod tests {
     }
 
     #[test]
-    fn browser_lets_an_observer_narrow_the_reasoning_log() {
-        // The panel is only useful if a reader can ask a narrower question
-        // than "everything every civilization thought": whose reasoning, how
-        // deep into it, and about what.
-        assert!(EMBEDDED_INDEX.contains("<span>AI reasoning log</span>"));
-        assert!(EMBEDDED_INDEX.contains("id=\"reasonplayer\""));
+    fn browser_keeps_ai_strategy_and_its_decision_factors_together() {
+        // One civilization picker anchors the current plan, research, civics,
+        // and the factors behind its decisions. A second, unrelated civ filter
+        // would let a reader inspect a plan for one empire beside another's
+        // evidence, so it is deliberately absent.
+        assert!(EMBEDDED_INDEX.contains("<span>AI strategy</span>"));
+        assert!(EMBEDDED_INDEX.contains("id=\"strategysec\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"strategyplayer\""));
+        assert!(!EMBEDDED_INDEX.contains("id=\"reasonsec\""));
+        assert!(!EMBEDDED_INDEX.contains("id=\"reasonplayer\""));
         assert!(EMBEDDED_INDEX.contains("id=\"reasonlevel\""));
         assert!(EMBEDDED_INDEX.contains("id=\"reasontopic\""));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All civilizations</option>"));
-        // Anything the combined log can show, the civ filter can isolate. A
-        // Free City keeps developing the cities it inherited and so keeps
-        // making production decisions; without this it appeared under "All
-        // civilizations" with no way to select it.
-        assert!(EMBEDDED_INDEX.contains("for (const thought of reasoningLog.thoughts) listed.add(thought.player);"));
-        assert!(EMBEDDED_INDEX.contains("function logSeatNote(id)"));
+        assert!(EMBEDDED_INDEX.contains("id=\"reasonmore\""));
+        assert!(EMBEDDED_INDEX.contains("const player = strategyViewSeat();"));
+        assert!(EMBEDDED_INDEX.contains("function showMoreReasoning()"));
+        assert!(EMBEDDED_INDEX.contains("const REASON_KEEP = 6000;"));
+        // The engine reassesses grand strategy more often than it changes it.
+        // Preserve that activity, but call out only an actual doctrine
+        // transition and name the prior doctrine for readers following why a
+        // new decision was made.
+        assert!(EMBEDDED_INDEX.contains("function strategyShiftOrigins(player)"));
+        assert!(EMBEDDED_INDEX.contains("const match = /^Grand strategy:\\s*(.+)$/.exec("));
+        assert!(EMBEDDED_INDEX.contains("strategyShiftFrom"));
+        assert!(EMBEDDED_INDEX.contains("Shift from ${reasonEscape(thought.strategyShiftFrom)}"));
+        assert!(EMBEDDED_INDEX.contains("saved[\"ai-reasoning\"]"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All topics</option>"));
         // Depth is a floor, not an equality — a decision read without the plan
         // it serves explains nothing — and the three rungs are the ones the
@@ -5811,35 +6786,25 @@ mod tests {
         // a change of world does. `reasoning_json` stops sending a rival's
         // thoughts the moment Watch as is entered, but the page had absorbed
         // them while it was above the world — so without this the redaction is
-        // defeated by having watched first, and the log under the Active
-        // strategy panel names every civilization while the panel names one.
+        // defeated by having watched first.
         assert!(EMBEDDED_INDEX.contains("const viewer = st.view_player ?? null;"));
         assert!(EMBEDDED_INDEX
             .contains("if (newWorld || reasoningLog.viewer !== viewer) {"));
-        // A log that is not the whole story says so.
-        assert!(EMBEDDED_INDEX.contains("Earlier reasoning has been discarded"));
-        // The three logs share the sidebar's spare height. Each floor is
-        // header + padding + border + what the panel holds, and every one of
-        // them now has to cover a filter bar as well as its list — measured in
-        // the page, because a section squeezed under its floor does not clip:
-        // its list paints straight over the panel below it. The reasoning
-        // log's bar is three rows (97px); the war and event logs' are two
-        // (66px), and that bar is the whole difference between these numbers
-        // and the ones that were here before the filters — each list keeps the
-        // height it had.
-        assert!(EMBEDDED_INDEX.contains("#reasonsec[open] { flex: 3 0 0; min-height: 300px; }"));
+        // A factor trail that no longer reaches the first decision says so.
+        assert!(EMBEDDED_INDEX.contains("Earlier decision factors have been discarded"));
+        // The single dossier has the spare height formerly allocated to a
+        // separate reasoning card. Its trail scrolls inside the dossier while
+        // the world chronicles keep their measured floors.
+        assert!(EMBEDDED_INDEX.contains("#strategysec[open] { flex: 3 0 0; min-height: 460px; }"));
         assert!(EMBEDDED_INDEX.contains("#eventsec[open] { flex: 2 0 0; min-height: 302px; }"));
         assert!(EMBEDDED_INDEX.contains("#warsec[open] { flex: 2 0 0; min-height: 266px; }"));
         assert!(EMBEDDED_INDEX.contains(".reason-list { flex: 1 1 auto; min-height: 132px;"));
-        // One filter bar, worn in the same place by every panel that narrows
-        // by civilization — the three logs and the Active AI strategy card above
-        // them. A second copy of this chrome under another name is how four
-        // pickers drift into four shapes.
+        // The compact filter language is shared with the two world chronicles;
+        // only depth and topic remain because civilization is selected once.
         assert!(EMBEDDED_INDEX.contains(".log-filters { flex: 0 0 auto;"));
+        assert!(EMBEDDED_INDEX.contains(".strategy-reason-filters { flex: 0 0 auto;"));
         assert!(!EMBEDDED_INDEX.contains(".reason-filter"));
-        assert!(EMBEDDED_INDEX.contains(
-            "<label class=\"log-filter\"><span>Civ</span>\n            <select id=\"strategyplayer\""
-        ));
+        assert!(EMBEDDED_INDEX.contains("Recorded factors behind ${civ.civ}'s plan and decisions"));
     }
 
     /// The war log and the game event log are narrowed the same way.
@@ -5856,9 +6821,9 @@ mod tests {
                 "the log filters are missing {control}"
             );
         }
-        // All three logs name a seat with one vocabulary and correct a
-        // selection that has left the list the same way, so a filter can never
-        // strand a reader on an empty panel with no way back out of it.
+        // The two world chronicles name a seat with one vocabulary and correct
+        // a selection that has left the list the same way, so a filter can
+        // never strand a reader on an empty panel with no way back out of it.
         assert!(EMBEDDED_INDEX.contains("function syncCivFilterOptions(select, seats, allLabel, chosen)"));
         assert!(EMBEDDED_INDEX
             .contains("const kept = chosen !== \"all\" && !seats.includes(Number(chosen)) ? \"all\" : chosen;"));
@@ -5923,12 +6888,12 @@ mod tests {
         // spectator's feed rotates through the seats between frames, so the
         // combined log's entries come from all of them.
         assert!(EMBEDDED_INDEX.contains("event.category, [event.player ?? eventViewPlayer(next)]"));
-        // A choice is answered on the frame it is made on, and survives the
-        // tab being closed.
+        // A dossier or chronicle choice is answered on the frame it is made
+        // on, and survives the tab being closed.
         assert!(EMBEDDED_INDEX
             .contains("function applyLogFilter(filters, storageKey, field, value, listId, redraw)"));
         for key in [
-            "civvis-reasoning-filters-v1",
+            "civvis-ai-strategy-filters-v1",
             "civvis-war-filters-v1",
             "civvis-event-filters-v1",
         ] {
@@ -6157,6 +7122,7 @@ mod tests {
             map_poles: MapPoles::Poles,
             base_ruleset: BaseRuleset::Civ6,
             start_era: 0,
+            future_era: FutureEra::Classic,
             num_players: 2,
             width: 20,
             height: 14,
@@ -6250,7 +7216,7 @@ mod tests {
     #[test]
     fn a_saved_game_reloads_onto_the_same_turn() {
         let mut params = current();
-        params.leader_pool = LeaderPool::Expanded;
+        params.leader_pool = LeaderPool::ExpandedHistorical;
         let mut session = Session::new(params);
         for _ in 0..3 {
             session.act(&json!({"type": "end_turn"}));
@@ -6262,11 +7228,11 @@ mod tests {
             serde_json::from_value(serde_json::to_value(&session.game).unwrap()).unwrap();
         assert_eq!(round_tripped.turn, turn);
         assert_eq!(round_tripped.seed, session.game.seed);
-        assert_eq!(round_tripped.leader_pool, LeaderPool::Expanded);
+        assert_eq!(round_tripped.leader_pool, LeaderPool::ExpandedHistorical);
 
         let mut restored = Session::from_game(session.params.clone(), round_tripped);
         assert_eq!(restored.game.turn, turn);
-        assert_eq!(restored.params.leader_pool, LeaderPool::Expanded);
+        assert_eq!(restored.params.leader_pool, LeaderPool::ExpandedHistorical);
         assert!(restored.act(&json!({"type": "end_turn"})).is_none());
         assert!(restored.game.turn > turn, "a loaded game plays on");
     }
@@ -6322,6 +7288,70 @@ mod tests {
         );
         assert_eq!(custom.game_speed, GameSpeed::Marathon);
         assert_eq!(custom.max_turns, 99);
+
+        // The browser's custom cap is shared by single player and the
+        // exhibition. Invalid values must not wrap the engine's u32 field or
+        // turn a playable match into a zero-turn result.
+        for invalid in [0, u64::from(u32::MAX) + 1] {
+            let ignored = new_game_params(
+                &current(),
+                &json!({"game_speed": "quick", "max_turns": invalid}),
+            );
+            assert_eq!(ignored.max_turns, GameSpeed::Quick.turn_limit());
+        }
+    }
+
+    /// The shared lobby fields are not spectator-only metadata. They shape a
+    /// human world in exactly the same way as an AI exhibition, and the
+    /// normalized state is what the native supervisor and wasm router both
+    /// hand back to the browser after staging.
+    #[test]
+    fn shared_world_setup_round_trips_city_states_turn_cap_and_seed() {
+        let request = json!({
+            "num_players": 6,
+            "num_city_states": 2,
+            "game_speed": "epic",
+            "max_turns": 1_234,
+            "seed": 8_765_432,
+            "spectate": false,
+        });
+        let params = new_game_params(&current(), &request);
+        assert_eq!(params.num_city_states, 2);
+        assert_eq!(params.max_turns, 1_234);
+        assert_eq!(params.seed, 8_765_432);
+        assert!(!params.spectate);
+
+        let settings = simulation_settings(&params);
+        assert_eq!(settings["city_states"], json!(2));
+        assert_eq!(settings["turns"], json!(1_234));
+        assert_eq!(settings["seed"], json!(8_765_432));
+
+        // Staging retains world settings but leaves the active world's mode
+        // alone; an automatic successor may never silently turn into a game
+        // nobody is controlling.
+        let staged = staged_next_game_params(&current(), &request);
+        assert!(staged.spectate == current().spectate);
+        assert_eq!(simulation_settings(&staged), settings);
+    }
+
+    #[test]
+    fn planetary_future_era_world_is_supported() {
+        let params = new_game_params(
+            &current(),
+            &json!({
+                "map_topology": "planet",
+                "map_script": "true_start_earth",
+                "start_era": "future",
+            }),
+        );
+        assert_eq!(params.map_topology, MapTopology::Planet);
+        assert_eq!(params.map_script, MapScript::TrueStartEarth);
+        assert_eq!(params.start_era, start_era_from_id("future").unwrap());
+
+        let session = Session::new(params);
+        assert_eq!(session.game.map_script, MapScript::TrueStartEarth);
+        assert_eq!(session.game.start_era, start_era_from_id("future").unwrap());
+        assert_eq!(session.game.world_era, start_era_from_id("future").unwrap());
     }
 
     /// The first question the lobby asks. One ruleset is modeled, so the
@@ -6358,10 +7388,13 @@ mod tests {
         assert_eq!(medieval.start_era, start_era_from_id("medieval").unwrap());
         assert_eq!(simulation_settings(&medieval)["start_era"], "medieval");
 
-        // The Stone Age is on the ladder but has no tree behind it; "future"
-        // is an era of the ruleset that is not offered as a start; the rest
+        let future = new_game_params(&medieval, &json!({"start_era": "future"}));
+        assert_eq!(future.start_era, start_era_from_id("future").unwrap());
+        assert_eq!(simulation_settings(&future)["start_era"], "future");
+
+        // The Stone Age is on the ladder but has no tree behind it; the rest
         // are not rungs at all. Every one of them leaves the setting alone.
-        for refused in ["stone_age", "future", "dinosaur", "holocene", ""] {
+        for refused in ["stone_age", "dinosaur", "holocene", ""] {
             let asked = new_game_params(&medieval, &json!({"start_era": refused}));
             assert_eq!(
                 asked.start_era, medieval.start_era,
@@ -6369,6 +7402,40 @@ mod tests {
             );
             assert_eq!(simulation_settings(&asked)["start_era"], "medieval");
         }
+    }
+
+    /// The other end of the game is asked for the same way, is refused the
+    /// same way, and — unlike the start era — changes the rules rather than
+    /// the world, so the ruleset the session ends up holding is the test.
+    #[test]
+    fn the_lobby_can_ask_for_the_modified_future_era() {
+        let stock = current();
+        assert_eq!(stock.future_era, FutureEra::Classic);
+        assert_eq!(simulation_settings(&stock)["future_era"], "classic");
+
+        let modified = new_game_params(&stock, &json!({"future_era": "modified"}));
+        assert_eq!(modified.future_era, future_era_from_id("modified").unwrap());
+        assert_eq!(simulation_settings(&modified)["future_era"], "modified");
+
+        for refused in ["martin", "gathering_storm", ""] {
+            let asked = new_game_params(&modified, &json!({"future_era": refused}));
+            assert_eq!(
+                asked.future_era, modified.future_era,
+                "{refused:?} moved the Future Era"
+            );
+            assert_eq!(simulation_settings(&asked)["future_era"], "modified");
+        }
+
+        // And the setting reaches the rules: the Moon has ore on it and there
+        // is something to throw the ore with.
+        let session = Session::new(modified);
+        assert_eq!(session.game.future_era, FutureEra::Modified);
+        assert!(session.game.rules.projects.contains_key("mass_driver"));
+        assert!(!session.game.moon_deposits.is_empty());
+
+        let classic = Session::new(new_game_params(&stock, &json!({})));
+        assert!(!classic.game.rules.projects.contains_key("mass_driver"));
+        assert!(classic.game.moon_deposits.is_empty());
     }
 
     /// The setting has to reach the world, survive being read back off it, and
@@ -6397,19 +7464,46 @@ mod tests {
         assert_eq!(restored.params.base_ruleset, BaseRuleset::Civ6);
     }
 
+    /// A named scenario belongs in the public setup only after it owns the
+    /// country roster, geographic state, and launch path it promises. The
+    /// ordinary Earth and Future-era controls remain usable independently.
     #[test]
-    fn leader_pool_defaults_to_civ6_and_accepts_expanded_explicitly() {
+    fn browser_does_not_offer_the_incomplete_earth_today_preset() {
+        for piece in [
+            "id=\"scenario\"",
+            "<option value=\"earth_today\">Earth Today</option>",
+            "const GAME_SCENARIOS = Object.freeze({",
+            "function applySelectedScenario()",
+            "function syncScenarioFromSettings()",
+        ] {
+            assert!(
+                !EMBEDDED_INDEX.contains(piece),
+                "the incomplete Earth Today preset is still public through {piece}"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains(
+            "const basic = [\"gamemode\", \"mapshape\", \"maptype\","
+        ));
+    }
+
+    #[test]
+    fn leader_pool_defaults_to_civ6_and_normalizes_legacy_expanded_to_historical() {
         let stock = current();
         assert_eq!(stock.leader_pool, LeaderPool::Civ6);
 
         let ignored = new_game_params(&stock, &json!({"leader_pool": "unknown"}));
         assert_eq!(ignored.leader_pool, LeaderPool::Civ6);
 
-        let expanded = new_game_params(&stock, &json!({"leader_pool": "expanded"}));
-        assert_eq!(expanded.leader_pool, LeaderPool::Expanded);
-        let session = Session::new(expanded);
-        assert_eq!(session.game.leader_pool, LeaderPool::Expanded);
-        assert_eq!(session.state()["leader_pool"], "expanded");
+        let historical = new_game_params(&stock, &json!({"leader_pool": "historical"}));
+        assert_eq!(historical.leader_pool, LeaderPool::ExpandedHistorical);
+        let session = Session::new(historical);
+        assert_eq!(session.game.leader_pool, LeaderPool::ExpandedHistorical);
+        assert_eq!(session.state()["leader_pool"], "historical");
+
+        let legacy = new_game_params(&stock, &json!({"leader_pool": "expanded"}));
+        assert_eq!(legacy.leader_pool, LeaderPool::ExpandedHistorical);
+        let unavailable_today = new_game_params(&stock, &json!({"leader_pool": "today"}));
+        assert_eq!(unavailable_today.leader_pool, LeaderPool::Civ6);
 
         let stock_session = Session::new(stock);
         assert!(stock_session
@@ -6418,6 +7512,27 @@ mod tests {
             .iter()
             .filter(|player| !player.is_minor && !player.is_barbarian)
             .all(|player| CIV6_LEADER_POOL.contains(&player.civ.as_str())));
+    }
+
+    #[test]
+    fn leader_choices_must_belong_to_the_selected_available_tier() {
+        let historical = new_game_params(
+            &current(),
+            &json!({
+                "leader_pool": "historical",
+                "civs": ["Denmark", "Rome", "Romania"],
+            }),
+        );
+        assert_eq!(historical.civs, vec!["Denmark"]);
+
+        let civ6 = new_game_params(
+            &current(),
+            &json!({
+                "leader_pool": "civ6",
+                "civs": ["Denmark", "Rome"],
+            }),
+        );
+        assert_eq!(civ6.civs, vec!["Rome"]);
     }
 
     #[test]
@@ -6513,6 +7628,122 @@ mod tests {
         }
     }
 
+    /// Map search is deliberately a client-side read of the observation the
+    /// browser already owns. It must use exact sight rather than remembered
+    /// tiles, understand the named things that can occupy a tile, and paint
+    /// the same result on both supported map projections.
+    #[test]
+    fn browser_search_lights_every_matching_visible_tile() {
+        let sidebar = EMBEDDED_INDEX
+            .split_once("<div id=\"side\">")
+            .expect("left command deck")
+            .1
+            .split_once("<div id=\"buildmark\"")
+            .expect("end of left command deck")
+            .0;
+        let lenses_at = sidebar
+            .find("id=\"map-lenses\"")
+            .expect("map lens menu in the deck");
+        let search_at = sidebar
+            .find("id=\"map-search\"")
+            .expect("map search control in the deck");
+        let shortcuts_at = sidebar
+            .find("<summary>Keyboard shortcuts</summary>")
+            .expect("keyboard shortcuts");
+        assert!(
+            lenses_at < search_at && search_at < shortcuts_at,
+            "map lenses should sit above visible-tile search, immediately before keyboard shortcuts"
+        );
+        assert!(sidebar.contains("id=\"map-search-input\" type=\"search\""));
+        assert!(sidebar.contains("id=\"map-search-civ\""));
+        assert!(sidebar.contains("aria-live=\"polite\""));
+        assert!(sidebar.contains(
+            "<details class=\"sidebar-section\" id=\"maplensessec\" data-section=\"map-lenses\">"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "#map-search {\n    position: absolute; z-index: 2; left: 0; bottom: calc(100% + var(--panel-gap));"
+        ));
+
+        let matcher = EMBEDDED_INDEX
+            .split_once("function computeMapSearchMatches(st, query, civFilter = mapSearchCivId) {")
+            .expect("map search matcher")
+            .1
+            .split_once("\nfunction mapSearchMatches() {")
+            .expect("end of map search matcher")
+            .0;
+        assert!(matcher.contains("new Set((st.visible || []).map(key))"));
+        assert!(
+            !matcher.contains("turn_visible"),
+            "search must not reveal remembered tiles outside exact sight"
+        );
+        for field in [
+            "tile.terrain",
+            "tile.feature",
+            "tile.resource",
+            "tile.improvement",
+            "tile.district",
+            "tile.planned_district",
+            "tile.wonder",
+            "st.cities",
+            "st.units",
+            "st.camps",
+        ] {
+            assert!(matcher.contains(field), "map search ignores {field}");
+        }
+        assert!(matcher.contains("RULES?.districts?.[district]?.replaces"));
+        assert!(matcher.contains("if (selectedCiv && String(owner) !== selectedCiv) return;"));
+        assert!(matcher.contains("if (!needle || mapSearchTextMatches(values, needle)) matches.add(at);"));
+        assert!(EMBEDDED_INDEX.contains("function mapSearchVisibleCivilizations(st)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "player && !player.is_barbarian && player.civ && owners.has(String(player.id))"
+        ));
+        assert!(EMBEDDED_INDEX.contains("if (Array.isArray(pos) && visible.has(key(pos))"));
+        let civilization_sync = EMBEDDED_INDEX
+            .split_once("function syncMapSearchCivilizations(st = state) {")
+            .expect("civilization-filter synchronizer")
+            .1
+            .split_once("\nfunction computeMapSearchMatches(")
+            .expect("end of civilization-filter synchronizer")
+            .0;
+        assert!(civilization_sync.contains(
+            "const optionsChanged = !mapSearchCivilizationOptions(select, entries);"
+        ));
+        assert!(civilization_sync.contains(
+            "if (optionsChanged && document.activeElement === select) return false;"
+        ));
+        assert!(civilization_sync.contains(
+            "if (optionsChanged) {\n    select.replaceChildren(...entries.map"
+        ));
+        assert_eq!(
+            civilization_sync.matches("select.replaceChildren").count(),
+            1,
+            "the native civilization picker must stay intact when the visible roster is unchanged"
+        );
+        assert!(EMBEDDED_INDEX.contains(
+            "mapSearchCiv.addEventListener(\"blur\", () => {\n  // Apply a roster change held back while the native picker was expanded.\n  if (!syncMapSearchCivilizations()) return;"
+        ));
+        assert!(EMBEDDED_INDEX.contains("syncMapSearchCivilizations(st);"));
+        assert!(EMBEDDED_INDEX.contains("drawFlatMapSearchHighlights(tiles);"));
+        assert!(EMBEDDED_INDEX.contains("drawPlanetMapSearchHighlights(cells);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "TMAP = new Map(st.map.tiles.map(t => [key(t.pos), t]));\n  syncMapSearchCivilizations(st);\n  syncMapSearchStatus();"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const selected = mapSearchCivId && select?.selectedOptions?.[0]?.textContent;"
+        ));
+        let lens_setter = EMBEDDED_INDEX
+            .split_once("function setMapLens(next) {")
+            .expect("lens setter")
+            .1
+            .split_once("\nfunction modeline() {")
+            .expect("end of lens setter")
+            .0;
+        assert!(
+            !lens_setter.contains("mapSearch"),
+            "a lens must not clear an active visible-tile search"
+        );
+    }
+
     /// Every lobby setting is answered before a game starts: each select
     /// offers only real values, and a victory condition is the two states a
     /// checkbox knows. Nothing in the panel stands in for a decision that has
@@ -6523,6 +7754,7 @@ mod tests {
             "baseruleset",
             "gamemode",
             "startera",
+            "futureera",
             "leaderpool",
             "leader",
             "difficulty",
@@ -6544,6 +7776,12 @@ mod tests {
                 "the {setting} setting still offers a non-answer"
             );
         }
+        for input in ["citystates", "turnlimit", "mapseed"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("id=\"{input}\" type=\"number\"")),
+                "browser setup is missing the {input} numeric input"
+            );
+        }
         for victory in ["science", "culture", "religious", "diplomatic", "domination", "score"] {
             assert!(EMBEDDED_INDEX.contains(&format!(
                 "id=\"victory-{victory}\" checked>"
@@ -6552,9 +7790,12 @@ mod tests {
         // The lobby reads its own controls once, with no resolving pass and no
         // remembered marks between the panel and the payload.
         assert!(EMBEDDED_INDEX.contains("const payload = selectedSimulationSettings();"));
-        assert!(EMBEDDED_INDEX.contains("return {...selectedSimulationSettings(),"));
+        assert!(EMBEDDED_INDEX.contains("const settings = selectedSimulationSettings();"));
+        assert!(EMBEDDED_INDEX.contains("seed: settings.seed ?? Math.floor(Math.random() * 1e9)"));
         assert!(EMBEDDED_INDEX.contains("const changed = human || (activeSimulationSettingsKey"));
         assert!(EMBEDDED_INDEX.contains("spectate: gameMode === \"ai_sim\","));
+        assert!(EMBEDDED_INDEX.contains("num_city_states: cityStates"));
+        assert!(EMBEDDED_INDEX.contains("max_turns: turnLimit"));
         // None of the machinery that used to stand in for an unmade decision
         // survives anywhere in the client.
         for gone in [
@@ -6706,7 +7947,28 @@ mod tests {
     }
 
     #[test]
-    fn browser_orders_settings_event_log_and_strategy() {
+    fn globe_tilt_rotates_the_camera_without_squashing_its_limb() {
+        // A flat chart is allowed to use a ground-plane projection.  Once the
+        // world is known to be round, pitch must instead be part of the 3D view
+        // basis, so the orthographic ocean, rim, tiles, and hit cells retain a
+        // circular silhouette at every tilt.
+        assert!(EMBEDDED_INDEX.contains("function planetCameraBase()"));
+        assert!(EMBEDDED_INDEX.contains("function planetTiltBasis(basis, tilt = cam.tilt)"));
+        assert!(EMBEDDED_INDEX.contains("planetSpin(basis, basis.right, angle)"));
+        assert!(EMBEDDED_INDEX.contains("function planetUntiltBasis(basis, tilt = cam.tilt)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "...planetBasisCamera(planetTiltBasis(planetViewBasis(camera)))"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const view = planetBasisCamera(planetUntiltBasis(basis));"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function planetGroundProjection()"));
+        assert!(EMBEDDED_INDEX.contains("return knowsGlobe() ? 1 : cameraTiltProjection();"));
+        assert!(EMBEDDED_INDEX.contains("const projection = planetGroundProjection();"));
+    }
+
+    #[test]
+    fn browser_orders_controls_interface_setup_and_logs() {
         // Readability is a shared interface contract, not a collection of
         // one-off enlargements. Panels inherit one system stack and a named
         // scale with a 9px floor; map labels use the same platform-native
@@ -6762,10 +8024,19 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("start_eon"));
         assert!(EMBEDDED_INDEX.contains("id=\"leaderpool\""));
         assert!(EMBEDDED_INDEX.contains(">Civ 6 Leaders</option>"));
-        assert!(EMBEDDED_INDEX.contains(">Expanded</option>"));
+        assert!(EMBEDDED_INDEX.contains(">Expanded Historical Figures</option>"));
+        assert!(EMBEDDED_INDEX.contains(">Today's Leaders — roster pending</option>"));
+        assert!(
+            EMBEDDED_INDEX.find(">Civ 6 Leaders</option>")
+                < EMBEDDED_INDEX.find(">Expanded Historical Figures</option>")
+                && EMBEDDED_INDEX.find(">Expanded Historical Figures</option>")
+                    < EMBEDDED_INDEX.find(">Today's Leaders — roster pending</option>"),
+            "leader tiers must remain Civ 6, historical, then today"
+        );
         assert!(EMBEDDED_INDEX.contains("leader_pool: leaderPool"));
         assert!(EMBEDDED_INDEX.contains("function syncLeaderPool()"));
-        assert!(EMBEDDED_INDEX.contains("RULES.civ6_leaders"));
+        assert!(EMBEDDED_INDEX.contains("RULES.leader_pools"));
+        assert!(EMBEDDED_INDEX.contains("True Start:"));
         assert!(EMBEDDED_INDEX.contains("id=\"maptype\""));
         // The globe has its own renderer, and it is the only one: both globe
         // scripts are drawn by it, so neither needs a projection of its own.
@@ -6803,8 +8074,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function planetMiniScale(width, height)"));
         assert!(EMBEDDED_INDEX.contains("id=\"compass\""));
         assert!(EMBEDDED_INDEX.contains("id=\"compass-needle\""));
-        assert!(EMBEDDED_INDEX.contains("resetMapFacing(DEFAULT_CINEMA_YS - cinematicYS)"));
-        assert!(!EMBEDDED_INDEX.contains("orbitCamera(-cam.rot, DEFAULT_CINEMA_YS"));
+        assert!(EMBEDDED_INDEX.contains("resetMapFacing()"));
         // The globe's yaw is a bearing, not a second way to spin it eastward.
         assert!(EMBEDDED_INDEX.contains("roll:cam.rot"));
         // A globe is turned, not slid. Longitude and latitude cannot express a
@@ -6819,9 +8089,10 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function planetBasisCamera(basis)"));
         assert!(EMBEDDED_INDEX.contains("function planetTurnAxis(basis, dx, dy)"));
         assert!(EMBEDDED_INDEX.contains("function applyPlanetBasis(basis)"));
-        assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(dragState.basis, dx, dy))"));
-        assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(touchGesture.basis, dx, dy))"));
-        assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(basis, -screenX, -screenY))"));
+        assert!(EMBEDDED_INDEX.contains("function planetGroundDrag(dx, dy)"));
+        assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(dragState.basis, turnX, turnY))"));
+        assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(touchGesture.basis, turnX, turnY))"));
+        assert!(EMBEDDED_INDEX.contains("applyPlanetBasis(planetTurn(basis, dx, dy))"));
         assert!(EMBEDDED_INDEX.contains("spin:planetGlide(released.vpx, released.vpy)"));
         // Zooming shares that turn too, and it aims at a world rather than at a
         // pixel. Out in the system a body is a few pixels across — the Moon is
@@ -6908,9 +8179,27 @@ mod tests {
         // star's ceiling and the zoom ends while the planet is still a bead.
         // Keyed to the planet alone the arrival never got past 0.46.
         assert!(EMBEDDED_INDEX.contains("const star = skyTarget(st)?.star;"));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
-        assert!(EMBEDDED_INDEX
-            .contains("<option value=\"true_start_earth\">True Start Earth</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"planet\" selected>Planet</option>"));
+        let map_menu = EMBEDDED_INDEX
+            .split("id=\"maptype\"")
+            .nth(1)
+            .and_then(|tail| tail.split("</select>").next())
+            .expect("browser map selector");
+        for option in [
+            "<option value=\"earth\">Earth</option>",
+            "<option value=\"true_start_earth\">True Start Earth</option>",
+            "<option value=\"fjords\">Fjords</option>",
+        ] {
+            assert!(map_menu.contains(option), "missing {option}");
+        }
+        let option_at = |value: &str| map_menu.find(value).expect("map option");
+        assert!(
+            option_at("value=\"earth\"")
+                < option_at("value=\"true_start_earth\"")
+                && option_at("value=\"true_start_earth\"") < option_at("value=\"continents\"")
+                && option_at("value=\"small_continents\"") < option_at("value=\"fjords\""),
+            "Earth, True Start Earth, Continents, Small Continents, and Fjords must keep their requested order"
+        );
         // The world's shape and its poles are settings of their own, and the
         // renderer picks its projection from the shape the world reports
         // rather than from the world type it was filled with.
@@ -6920,6 +8209,14 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("<option value=\"land_only\">Land Only</option>"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"water_world\">Water World</option>"));
         assert!(EMBEDDED_INDEX.contains("RULES.map_topologies"));
+        assert!(EMBEDDED_INDEX.contains("const chosen = select.value;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const defaultValue = id === \"mapshape\" && list.some(entry => entry.id === \"planet\")"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if ([...select.options].some(option => option.value === chosen)) select.value = chosen;"
+        ));
+        assert!(EMBEDDED_INDEX.contains("st.map.shape || \"planet\""));
         assert!(EMBEDDED_INDEX.contains("shape.disabled = false"));
         assert!(!EMBEDDED_INDEX.contains("if (earth) shape.value = \"planet\""));
         assert!(EMBEDDED_INDEX.contains("id=\"gamespeed\""));
@@ -7055,8 +8352,10 @@ mod tests {
             "maptype",
             "mappoles",
             "np",
+            "citystates",
             "startera",
             "gamespeed",
+            "futureera",
         ]
         .map(|setting| {
             EMBEDDED_INDEX
@@ -7065,9 +8364,140 @@ mod tests {
         });
         assert!(
             order.windows(2).all(|pair| pair[0] < pair[1]),
-            "lobby order must read ruleset/pool, mode/teams, seat, shape/map, thermal/size, era/speed"
+            "lobby order must read ruleset/pool, mode/teams, seat, shape/map, thermal/size/city-states, eras/speed"
         );
         let thermal_setting = order[8];
+        // The advanced drawer starts with the global rules, roster, teams and
+        // climate. Shape and both eras are ordinary setup choices, while the
+        // victory switches stay above the drawer with the rest of the game.
+        for advanced in [
+            "class=\"small game-advanced-setting\" data-advanced-order=\"10\">Base game ruleset",
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"20\">Leader Pool",
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\">Teams",
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\">Thermal distribution",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(advanced), "missing advanced setting: {advanced}");
+        }
+        for normal in [
+            "class=\"small civ6-hidden\">World shape",
+            "class=\"small civ6-hidden\">Start era",
+            "class=\"small civ6-hidden\">Future Era",
+            "class=\"victory-options civ6-hidden\" id=\"victory-options\"",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(normal), "missing normal setting: {normal}");
+        }
+        assert!(EMBEDDED_INDEX.contains(
+            "const basic = [\"gamemode\", \"mapshape\", \"maptype\", \"leader\", \"difficulty\", \"np\", \"citystates\","
+        ));
+        assert!(EMBEDDED_INDEX.contains("\"startera\", \"gamespeed\", \"futureera\"]"));
+        assert!(EMBEDDED_INDEX.contains(
+            "basic.push(document.getElementById(\"victory-options\"), document.getElementById(\"saves-group\"));"
+        ));
+        // Display Settings keeps its map and spaceflight switches together
+        // at the head of its advanced drawer, before the overlay layout controls.
+        let display_advanced = [
+            "class=\"setting-row display-advanced-setting\" data-advanced-order=\"10\"><span><input type=\"checkbox\" id=\"gridchk\"",
+            "class=\"setting-row display-advanced-setting\" data-advanced-order=\"20\"><span><input type=\"checkbox\" id=\"reschk\"",
+            "class=\"speed-row display-advanced-setting resource-display-setting\" data-advanced-order=\"25\"",
+            "class=\"setting-row display-advanced-setting\" data-advanced-order=\"30\"><span><input type=\"checkbox\" id=\"yieldchk\"",
+            "class=\"setting-row display-advanced-setting\" data-advanced-order=\"40\"><span><input type=\"checkbox\" id=\"artifactchk\"",
+            "class=\"setting-row display-advanced-setting\" data-advanced-order=\"45\"><span><input type=\"checkbox\" id=\"rocketanimchk\" checked> Show rocket &amp; satellite animations",
+            "class=\"overlay-options display-advanced-setting\" data-advanced-order=\"50\"",
+        ];
+        assert!(
+            display_advanced.windows(2).all(|pair| {
+                EMBEDDED_INDEX.find(pair[0]).unwrap() < EMBEDDED_INDEX.find(pair[1]).unwrap()
+            }),
+            "map and spaceflight switches should lead Display Settings advanced controls"
+        );
+        // Resource names are the default detailed-map treatment, but the
+        // existing compact symbol stays an explicit, persisted choice and the
+        // only treatment at survey scale.
+        for resource_display in [
+            "id=\"resourcedisplay\" aria-label=\"Resource display\"",
+            "<option value=\"symbol_word\" selected>Symbol &amp; word</option>",
+            "<option value=\"symbol\">Symbol</option>",
+            ".resource-display-setting { grid-template-columns: minmax(0, 1fr); gap: 4px; }",
+            ".resource-display-setting > select { width: 100%; }",
+            ".advanced-settings-body > .resource-display-setting { grid-column: 1 / -1; }",
+            "const RESOURCE_DISPLAY_STORAGE_KEY = \"civvis-resource-display\";",
+            "let RESOURCE_DISPLAY = localStorage.getItem(RESOURCE_DISPLAY_STORAGE_KEY) === \"symbol\"",
+            "function setResourceDisplay(mode) {",
+            "resourceDisplay.onchange = () => setResourceDisplay(resourceDisplay.value);",
+            "function drawResourceWordBadge(t, x, y, rim = resourceBadgeRim(t)) {",
+            "drawResourcePictogram(t.resource, rx, iconY - .1, RES_WORD_ICON_SIZE);",
+            "cx.strokeText(label, rx, textY, RES_WORD_MAX_WIDTH);",
+            "if (!resourceIsImproved(t)) return \"#fffdf3\";",
+            "? jerseyLanes(owner)[1] : rim;",
+            "function drawResourcePillageStrike(x, y, halfWidth, ink) {",
+            "if (RESOURCE_DISPLAY === \"symbol_word\" && cam.scale >= RES_WORD_LABEL_SCALE) {",
+            "drawResourceSymbolBadge(t, x, y, rim);",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(resource_display),
+                "resource display contract is missing: {resource_display}"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains(
+            "let SHOW_ROCKET_ANIMATIONS = localStorage.getItem(\"civvis-show-rocket-animations\") !== \"0\";"
+        ));
+        // The map's painter order is part of its interaction contract: roads
+        // are ground infrastructure, resource marks sit below command tokens,
+        // and the optional yield overlay is the reader's top-most map layer.
+        // Keep both projections in lockstep so switching to the globe does not
+        // invert the information hierarchy.
+        let flat_map = EMBEDDED_INDEX.find("function draw() {").unwrap();
+        let flat = &EMBEDDED_INDEX[flat_map..];
+        let flat_roads = flat.find("drawFlatStrategicRoads(tiles);").unwrap();
+        let flat_borders = flat.find("// --- territory borders:").unwrap();
+        let flat_resources = flat
+            .find("if (resourceMarkerVisible(t)) drawResourceBadge(t, x, y);")
+            .unwrap();
+        let flat_units = flat.find("// --- units").unwrap();
+        let flat_yields = flat
+            .find("drawFlatTileYieldOverlay(tiles, workedSet, visSet);")
+            .unwrap();
+        assert!(
+            flat_roads < flat_borders
+                && flat_borders < flat_resources
+                && flat_resources < flat_units
+                && flat_units < flat_yields,
+            "flat-map painter order must be roads, borders/resources, units, then yields"
+        );
+        let globe_map = EMBEDDED_INDEX.find("function drawPlanetMap() {").unwrap();
+        let globe = &EMBEDDED_INDEX[globe_map..];
+        let globe_roads = globe
+            .find("drawPlanetStrategicRoads(cells, turnVisible, spectator);")
+            .unwrap();
+        let globe_borders = globe
+            .find("if (radius >= SKY_MARKERS) drawPlanetFrontiers(cells);")
+            .unwrap();
+        let globe_terrain = globe
+            .find("drawPlanetStrategicTerrain(cells, turnVisible, spectator);")
+            .unwrap();
+        let globe_units = globe.find("const visibleUnits").unwrap();
+        let globe_yields = globe
+            .find("drawPlanetTileYieldOverlay(cells, turnVisible, spectator);")
+            .unwrap();
+        assert!(
+            globe_roads < globe_borders
+                && globe_borders < globe_terrain
+                && globe_terrain < globe_units
+                && globe_units < globe_yields,
+            "globe painter order must match the flat map's road/resource/unit/yield hierarchy"
+        );
+        assert!(EMBEDDED_INDEX.contains("const LUMBER_MILL_ICON_SCALE = 1.3;"));
+        for satellite_animation in [
+            "function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {\n  if (!SHOW_ROCKET_ANIMATIONS) return;",
+            "function drawFlatSatellites(now) {\n  if (!SHOW_ROCKET_ANIMATIONS) return;",
+            "return (SHOW_ROCKET_ANIMATIONS && crews.satellite.length > 0) || crews.expedition.length > 0;",
+            "return SHOW_ROCKET_ANIMATIONS && (activeSkyLaunches().length > 0 ||",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(satellite_animation),
+                "rocket animation setting must also govern satellites: {satellite_animation}"
+            );
+        }
         // Teams are a division of the table, so they sit beside the setting
         // that says who is at it. A world opens free-for-all, and the splits a
         // size can seat are named in the option rather than left to be found
@@ -7078,8 +8508,9 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("option.disabled = !split;"));
         // The world size decides which splits exist, so it re-fits them before
         // the panel's own delegated listener stages what is now selected.
-        assert!(EMBEDDED_INDEX
-            .contains("document.getElementById(\"np\").addEventListener(\"change\", syncTeams);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.getElementById(\"np\").addEventListener(\"change\", () => {\n  syncTeams();\n  syncWorldSetupInputs();\n});"
+        ));
         // The server is handed the seat-by-seat assignment, never the rule
         // that produced it; a world on screen is read back the other way.
         assert!(EMBEDDED_INDEX.contains("teams: teamAssignment(np, readSetting(\"teams\")),"));
@@ -7114,11 +8545,20 @@ mod tests {
             );
         }
 
+        let title = EMBEDDED_INDEX
+            .find("<div class=\"side-head\">")
+            .expect("sidebar title");
+        let sidebar = EMBEDDED_INDEX
+            .find("<div class=\"side-scroll\">")
+            .expect("scrolling sidebar");
         let game_settings = EMBEDDED_INDEX
-            .find("id=\"game-settings\"")
+            .find("<details class=\"sidebar-section\" id=\"setupsec\"")
             .expect("game settings panel");
-        let display_settings = EMBEDDED_INDEX
-            .find("id=\"display-settings\"")
+        let simulation_controls = EMBEDDED_INDEX
+            .find("<div class=\"side-actions\" aria-label=\"Simulation controls\">")
+            .expect("simulation controls");
+        let interface_settings = EMBEDDED_INDEX
+            .find("<details class=\"sidebar-section\" data-section=\"display-settings\">")
             .expect("display settings panel");
         let event_log = EMBEDDED_INDEX
             .find("<span>Game event log</span>")
@@ -7126,29 +8566,49 @@ mod tests {
         let war_log = EMBEDDED_INDEX
             .find("<span>War log</span>")
             .expect("war log");
-        let reasoning_log = EMBEDDED_INDEX
-            .find("<span>AI reasoning log</span>")
-            .expect("AI reasoning log");
         let strategy = EMBEDDED_INDEX
-            .find("<span>Active AI strategy</span>")
-            .expect("active strategy section");
-        // The column runs deepest-cause first — what a civilization is trying
-        // to do now, why it acted, the wars that reasoning started, then the
-        // world's record of what happened — so reading the column downward
-        // reads a turn in the order it was decided. Active AI strategy leads
-        // because it is the standing plan every entry below it is an instance
-        // of: the reasoning log is an account over turns, and this is the
-        // current answer.
+            .find("<span>AI strategy</span>")
+            .expect("AI strategy section");
+        let government = EMBEDDED_INDEX
+            .find("data-section=\"government\"")
+            .expect("government section");
+        let keyboard_shortcuts = EMBEDDED_INDEX
+            .find("<summary>Keyboard shortcuts</summary>")
+            .expect("keyboard shortcuts");
+        let map_lenses = EMBEDDED_INDEX
+            .find("<details class=\"sidebar-section\" id=\"maplensessec\" data-section=\"map-lenses\">")
+            .expect("collapsible map lens section");
+        let map_utility = EMBEDDED_INDEX
+            .find("<div id=\"map-utility-panel\"")
+            .expect("map utility band");
+        let visible_tile_search = EMBEDDED_INDEX
+            .find("<div id=\"map-search\"")
+            .expect("visible tile search");
+        // The controls must be ready before the settings they act on: first
+        // the buttons, then the interface controls, then the game setup.
+        assert!(title < sidebar && sidebar < simulation_controls);
+        assert!(simulation_controls < interface_settings && interface_settings < game_settings);
+        assert!(game_settings < strategy);
+        // The column runs deepest-cause first — a civilization's active plan
+        // and its decision factors, then wars, then the world's record of what
+        // happened — so reading the column downward keeps each answer beside
+        // the reasons that formed it.
         assert!(
-            game_settings < display_settings
-                && display_settings < strategy
-                && strategy < reasoning_log
-                && reasoning_log < war_log
-                && war_log < event_log,
-            "left panel should show game setup, display settings, \
-             the active AI strategy and then the three logs"
+            strategy < war_log
+                && war_log < event_log
+                && event_log < government
+                && government < map_lenses
+                && map_lenses < map_utility
+                && map_lenses < visible_tile_search
+                && visible_tile_search < keyboard_shortcuts,
+            "left panel should show controls, display settings, game setup, the AI strategy dossier, \
+             world logs, government, map lenses, visible-tile search and then keyboard shortcuts"
         );
-        assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
+        assert!(EMBEDDED_INDEX.contains("<span>Display Settings</span>"));
+        assert!(!EMBEDDED_INDEX.contains("<span>Interface Settings</span>"));
+        assert!(EMBEDDED_INDEX.contains(
+            "order: -1; width: clamp(220px, 18vw, 332px); min-width: clamp(220px, 18vw, 332px);"
+        ));
         for overlay in ["players", "victory", "minimap", "controls", "lenses"] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("data-overlay-close=\"{overlay}\"")),
@@ -7187,26 +8647,44 @@ mod tests {
             "the switches read down the rail, then the map dock in the far corner"
         );
         assert!(EMBEDDED_INDEX.contains("id=\"map-lens-exit\""));
-        assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #map-lenses"));
-        // The lenses scroll sideways inside the bar. Their dismiss control is a
-        // sibling of that scroller, not its last item, so it neither rides away
-        // with the buttons nor comes to rest on top of one.
-        let lens_bar = EMBEDDED_INDEX
-            .split_once("<div id=\"map-lenses\"")
-            .expect("map lens bar")
-            .1;
-        let strip = lens_bar.find("<div id=\"map-lens-strip\"").expect("lens scroller");
-        let strip_end = lens_bar.find("</div>").expect("end of lens scroller");
-        let close = lens_bar
+        assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #maplensessec"));
+        // Lenses are a first-class deck section: collapsed by default, saved
+        // with the other disclosures, and expanded only when the viewer wants
+        // to change the map perspective. Search stays in the lower utility
+        // band, so a query remains reachable without opening the lens grid.
+        let lens_section = &EMBEDDED_INDEX[map_lenses..map_utility];
+        let lens_opening = lens_section
+            .split_once('>')
+            .expect("map lens section opening tag")
+            .0;
+        let lenses = lens_section.find("<div id=\"map-lenses\"").expect("map lens menu");
+        let strip = lens_section.find("<div id=\"map-lens-strip\"").expect("lens grid");
+        let close = lens_section
             .find("data-overlay-close=\"lenses\"")
             .expect("lens dismiss control");
         assert!(
-            strip < strip_end && strip_end < close,
-            "the lens bar's close control belongs outside the strip that scrolls"
+            lenses < strip && close < strip,
+            "the collapsible menu header holds its dismiss control and the lens grid follows it"
         );
-        assert!(EMBEDDED_INDEX.contains("#map-lens-strip::-webkit-scrollbar { display: none; }"));
+        assert!(lens_section.contains("<summary class=\"section-label\">"));
+        assert!(lens_section.contains("data-section=\"map-lenses\""));
+        assert!(
+            !lens_opening.contains(" open"),
+            "a fresh profile should start with the map lens section collapsed"
+        );
+        let utility = &EMBEDDED_INDEX[map_utility..];
+        assert!(utility.contains("<div id=\"map-search\""));
+        assert!(
+            !utility.contains("<div id=\"map-lenses\""),
+            "the fixed utility band should not duplicate the collapsible lens section"
+        );
+        assert!(EMBEDDED_INDEX.contains(
+            "#map-lens-strip {\n    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));"
+        ));
+        assert!(utility.contains("id=\"map-search-civ\""));
         assert!(EMBEDDED_INDEX
             .contains("document.getElementById(\"map-lens-exit\").onclick = () => setMapLens(null);"));
+        assert!(EMBEDDED_INDEX.contains("close.closest(\"#maplensessec\")"));
         // One instrument, one name. The switch, the title bar it is dragged by
         // and the label that follows it across the map all say "World minimap",
         // so nothing in the interface reads as a second, separate world map —
@@ -7252,40 +8730,67 @@ mod tests {
         // needs both offsets, staggered by one row per row held above it.
         assert!(EMBEDDED_INDEX.contains("top: calc(var(--pin-head, 0) * var(--hud-row-pitch));"));
         assert!(EMBEDDED_INDEX.contains("bottom: calc(var(--pin-tail, 0) * var(--hud-row-pitch));"));
-        // The standings grow from one consolidated row through eight readable
-        // rows. A twelve-player exhibition then scrolls even on a tall screen
-        // instead of continuing to consume the world below it.
-        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: min(38vh, 280px);"));
-        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38"));
-        assert!(EMBEDDED_INDEX.contains("const requestedHeight = Math.max(154, 50 + rows * 28);"));
-        assert!(EMBEDDED_INDEX
-            .contains("const requestedWidth = 854 + Math.max(0, rows - 1) * 100;"));
+        // The standings grow through every civilization shown in the ribbon,
+        // with a two-seat floor that keeps the turn counter visible before
+        // enough rows exist to do so on their own.
+        assert!(EMBEDDED_INDEX.contains("--player-hud-content-height: 106px;"));
         assert!(EMBEDDED_INDEX.contains(
-            "mapArea.style.setProperty(\"--player-hud-width\", `${requestedWidth}px`);"
+            "--player-hud-max-height: min(var(--player-hud-content-height), calc(100% - 8px));"
         ));
+        assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_MIN_ROWS = 2;"));
+        assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_ROW_PITCH = PLAYER_HUD_ROW_HEIGHT + PLAYER_HUD_ROW_GAP;"));
+        assert!(EMBEDDED_INDEX.contains("function playerHudRowPitch()"));
+        assert!(EMBEDDED_INDEX.contains("return Math.max(PLAYER_HUD_MIN_HEIGHT, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());"));
+        assert!(EMBEDDED_INDEX.contains("maxHeight:playerHudMaxContentHeight"));
+        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38, avoidsSidebar:true"));
+        assert!(EMBEDDED_INDEX.contains("const requestedHeight = playerHudContentHeight(rows);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "mapArea.style.setProperty(\"--player-hud-content-height\", `${requestedHeight}px`);"
+        ));
+        assert!(EMBEDDED_INDEX.contains("if (state && hudLayoutGesture?.name !== \"players\") drawPlayerHud();"));
         assert!(EMBEDDED_INDEX.contains(
             "const playerScroll = hud.querySelector(\".diplomacy-ribbon\")?.scrollTop || 0;"
         ));
         assert!(EMBEDDED_INDEX.contains("playerRibbon.scrollTop = playerScroll;"));
-        // The masthead grows toward the victory tracker but never beneath it,
-        // and the tracker is the only instrument beside it along the top edge.
-        // Measuring that seam against --hud-rail-width — the wider reservation
-        // the minimap needs in the bottom corner — left 192px of empty map
-        // between the two panels at 1600px while the values were squeezed to
-        // 27px each. The rail width still governs the minimap.
-        assert!(EMBEDDED_INDEX.contains("--hud-rail-width:"));
+        // The wide-screen default has three exact seams: the player HUD fills
+        // from its live clear-left edge through the victory tracker's left
+        // edge, the tracker owns ten percent of screen width and reaches the
+        // minimap's top, and the lower-right world minimap measures its frame
+        // diagonal against the screen diagonal. Custom drag layouts still
+        // override these values inline, but an uncustomized viewer always
+        // returns here.
+        assert!(EMBEDDED_INDEX.contains("--victory-hud-width: clamp(156px, 15vw, 280px);"));
         assert!(EMBEDDED_INDEX.contains(
-            "width: min(var(--player-hud-width, 100%),\n      \
-             calc(100% - var(--victory-hud-width) - 20px));"
+            "right: var(--panel-edge); top: var(--panel-edge);"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "width: min(var(--hud-rail-width), var(--hud-rail-share)); \
-             height: var(--minimap-height);"
+            "width: var(--world-minimap-width); height: var(--minimap-height);"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "height: min(var(--victory-hud-height, 100%),\n      \
-             calc(100% - var(--minimap-height) - 32px));"
+            "bottom: calc(var(--minimap-height) + var(--panel-gap) + var(--panel-edge));"
         ));
+        assert!(EMBEDDED_INDEX.contains("width: var(--victory-hud-width); height: auto;"));
+        assert!(EMBEDDED_INDEX.contains("const WORLD_MINIMAP_DIAGONAL_SHARE = .17;"));
+        assert!(EMBEDDED_INDEX.contains("const WORLD_MINIMAP_REFERENCE = {"));
+        assert!(EMBEDDED_INDEX.contains("flat: {width:336, height:168},"));
+        assert!(EMBEDDED_INDEX.contains("planet: {width:240, height:216},"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const referenceDiagonal = Math.hypot(reference.width, reference.height);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const diagonalWidth = WORLD_MINIMAP_DIAGONAL_SHARE * Math.hypot(viewportWidth, viewportHeight)"
+        ));
+        assert!(EMBEDDED_INDEX.contains("const viewport = window.visualViewport;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "HUD_WIDGETS?.minimap?.element?.classList.toggle(\"minimap-world-planet\", shape === \"planet\");"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            ".minimap-frame.minimap-world-planet { width: 164px; height: 150px; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "position: absolute; z-index: 1; right: 10px; bottom: 9px;"
+        ));
+        assert!(!EMBEDDED_INDEX.contains("--player-hud-width"));
         // Every path keeps its top three plus the player's own civilization
         // when that row is lower in this particular victory race.
         assert!(EMBEDDED_INDEX.contains("const focusId = SPEC ? state.view_player : state.player;"));
@@ -7310,18 +8815,20 @@ mod tests {
         //
         // Every data column is now a share rather than a pixel count, and each
         // of these two enclosing tracks is the exact *sum* of the columns
-        // inside it — 7 identity columns totalling 11.387 against 12 value
-        // columns of 1. That identity is not decoration: it is what lets the
+        // inside it — 8 data identity columns totalling 12.087, plus the fixed
+        // Watch-as action, against 12 value columns of 1. That identity is not
+        // decoration: it is what lets the
         // bar between the two blocks move width across itself, and it is the
         // ratio the table uses at every width. Changing one number here without
         // the other silently re-weights the whole masthead.
         //
-        // The floor is 5 label columns, the ELO figure and the wider odds cell,
-        // whose two named numeric tracks flank a narrow trend track.
+        // The floor is the rank track, 5 label columns, the ELO figure and the
+        // wider odds cell, whose two named numeric tracks flank a narrow trend
+        // track.
         assert!(EMBEDDED_INDEX.contains(
             "--hud-identity-column: minmax(\n      \
-             calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min)\n           \
-             + var(--hud-ident-odds-min)), 11.387fr);"
+             calc(var(--hud-rank-min) + var(--hud-ident-min) * 5\n           \
+             + var(--hud-ident-num-min) + var(--hud-ident-odds-min)), 12.087fr);"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "--hud-stats-column: minmax(\n      \
@@ -7350,13 +8857,13 @@ mod tests {
             "grid-template-columns: minmax(0, 1fr) 11px minmax(0, 1fr);"
         ), "Start and Now flank one fixed-width trend column");
         assert!(EMBEDDED_INDEX.contains(
-            "<span title=\"Win odds at the start of the game, per cent\">START</span>"
+            "playerHudSortHead(\"win_start\", \"START\", \"Win odds at the start of the game\")"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "<span class=\"odds-trend-head\" title=\"Trend from start to now\">Δ</span>"
+            "playerHudSortHead(\"win_delta\", \"Δ\", \"Change in win odds\", \"odds-trend-head\")"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "<span title=\"Win odds now, per cent\">NOW</span>"
+            "playerHudSortHead(\"win\", \"NOW\", \"Current win odds\")"
         ));
         assert_eq!(EMBEDDED_INDEX.matches("--hud-identity-column:").count(), 1,
             "the identity track is written once and then only from the column model");
@@ -7400,7 +8907,7 @@ mod tests {
             .split_once("const PLAYER_HUD_COLUMNS = [")
             .expect("player HUD column model")
             .1
-            .split_once("];\n// One bar per seam")
+            .split_once("];\n")
             .expect("end of player HUD column model")
             .0;
         assert_hud_stat_order(stat_columns, "player HUD column model");
@@ -7434,7 +8941,7 @@ mod tests {
         ), "the five identity columns inside one button are the parent's own tracks");
         assert!(!EMBEDDED_INDEX.contains("minmax(0, .55fr) minmax(0, .55fr)"),
             "a second copy of the identity ratios is exactly what subgrid replaced");
-        // The rows carry a 1px border that says allied, at war or defeated, and
+        // The rows carry a 1px border that says at war or defeated, and
         // both boxes are border-box — so the heading carries a transparent one
         // or it divides two more pixels than a row does and every head sits off
         // its own figures by up to a pixel, in opposite directions at the two
@@ -7462,6 +8969,62 @@ mod tests {
         // One bar per seam between two adjacent data columns, dragged to move
         // width from the column on its left into the column on its right.
         assert!(EMBEDDED_INDEX.contains("const HUD_COLUMN_STORAGE_KEY = \"civvis-hud-columns-v1\";"));
+        // Every fact in the player HUD can order its rows. Rank is the first
+        // dedicated standings column and is derived from the score standing,
+        // while Watch-as and lock cells are actions, deliberately outside the
+        // model, so an operator never has to sort a meaningless column just to
+        // reach ELO, a yield, or an active plan.
+        assert!(EMBEDDED_INDEX.contains(
+            "...PLAYER_HUD_COLUMNS.map(column => column.key), \"win_start\", \"win_delta\","
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "{key:\"rank\", label:\"Score rank\", block:\"identity\", head:0, min:\"--hud-rank-min\", width:.7},"
+        ), "rank should be a measured, draggable identity column");
+        assert!(EMBEDDED_INDEX.contains("const HUD_SORT_STORAGE_KEY = \"civvis-player-hud-sort-v1\";"));
+        assert!(EMBEDDED_INDEX.contains("function playerHudSortValue(player, key, stats, rankById)"));
+        assert!(EMBEDDED_INDEX.contains("if (key === \"rank\") return rankById.get(player.id) ?? null;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "return key === \"rank\" || PLAYER_HUD_TEXT_SORT_COLUMNS.has(key) ? \"asc\" : \"desc\";"
+        ), "rank should initially put #1 first");
+        assert!(EMBEDDED_INDEX.contains("function sortedPlayerHudPlayers(players, statsByPlayer, rankById)"));
+        assert!(EMBEDDED_INDEX.contains("function togglePlayerHudSort(key)"));
+        assert!(EMBEDDED_INDEX.contains("if (leftValue === null || rightValue === null) {"));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (leftValue !== rightValue) return leftValue === null ? 1 : -1;"
+        ), "unavailable values stay below observed values in either sort direction");
+        assert!(EMBEDDED_INDEX.contains(
+            "if (rawValue === null || rawValue === undefined || rawValue === \"\") return null;"
+        ), "a missing statistic is distinct from a numeric zero when sorting");
+        assert!(EMBEDDED_INDEX.contains("if (key === \"win_start\") return oddsValue(player.odds_start);"));
+        assert!(EMBEDDED_INDEX.contains("if (key === \"win_delta\") {"));
+        assert!(EMBEDDED_INDEX.contains("return oddsValue(player.odds_now);"),
+            "the NOW Win heading should order by its current estimate");
+        for key in ["rank", "civ", "leader", "player", "elo", "win_start", "win_delta", "win", "age", "plan"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("playerHudSortHead(\"{key}\"")),
+                "the {key} heading should be sortable"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains("playerHudSortHead(kind, label, title, kind)"),
+            "every generated statistic heading should be sortable");
+        assert!(!EMBEDDED_INDEX.contains("playerHudSortHead(\"watch\""),
+            "Watch-as stays an action instead of a sort target");
+        assert!(EMBEDDED_INDEX.contains("class=\"hud-sort-head\" data-hud-sort=\"${key}\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "playerHudSortHead(\"rank\", \"RANK\", \"Score rank\")"
+        ), "the rank figures need their own named sort header");
+        assert!(EMBEDDED_INDEX.contains(
+            "minmax(var(--hud-rank-min), .7fr) minmax(var(--hud-ident-min), 2.035fr)"
+        ), "the rank heading should occupy its own first identity track");
+        assert!(EMBEDDED_INDEX.contains(
+            "#playerhud .diplomacy-rank { grid-column: 1; grid-row: 1; }"
+        ), "the rank figure should align under its own heading");
+        assert!(EMBEDDED_INDEX.contains("const sort = ev.target.closest?.(\"[data-hud-sort]\");"));
+        assert!(EMBEDDED_INDEX.contains("#playerhud .hud-sort-cell[data-hud-sort-active=\"true\"]"));
+        assert!(EMBEDDED_INDEX.contains("const scoreRankedMajors = state.players"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer, rankById);"
+        ));
         assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1)"));
         assert!(EMBEDDED_INDEX.contains("function aimPlayerHudSeam(seam, targetWidth)"));
         assert!(EMBEDDED_INDEX.contains("class=\"hud-col-grip\" type=\"button\" data-hud-column-seam="));
@@ -7501,7 +9064,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function dismissOverlay(name, source)"));
         assert!(EMBEDDED_INDEX.contains("addEventListener(\"pointerdown\", event =>"));
         assert!(EMBEDDED_INDEX.contains("overlay-return-flash .24s ease-in-out 3"));
-        assert!(EMBEDDED_INDEX.contains("restore in Display settings"));
+        assert!(EMBEDDED_INDEX.contains("restore it in Display Settings"));
         assert_eq!(
             EMBEDDED_INDEX
                 .matches("class=\"sidebar-section\"")
@@ -7511,8 +9074,22 @@ mod tests {
         );
         assert!(EMBEDDED_INDEX.contains("function initSidebarSections()"));
         assert!(EMBEDDED_INDEX.contains("civvis-sidebar-sections-v1"));
+        assert!(EMBEDDED_INDEX.contains("section.id === \"maplensessec\" && section.open"));
+        assert!(EMBEDDED_INDEX.contains("const revealMapLensSection = () => {"));
+        assert!(EMBEDDED_INDEX.contains("const scheduleMapLensSectionReveal = () => {"));
+        assert!(EMBEDDED_INDEX.contains(
+            "section.scrollIntoView({block:\"nearest\", inline:\"nearest\"})"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "for (const delay of [0, 250, 750]) {"
+        ));
+        assert!(EMBEDDED_INDEX.contains("window.setTimeout(revealMapLensSection, delay);"));
+        assert!(EMBEDDED_INDEX.contains("scheduleMapLensSectionReveal();"));
+        assert!(EMBEDDED_INDEX.contains(
+            "window.addEventListener(\"resize\", revealMapLensSection, {passive:true});"
+        ));
         // Collapsing the command deck collapses the deck alone. Every map
-        // overlay is switched from the deck's display settings instead, so the
+        // overlay is switched from the deck's Display Settings instead, so the
         // two controls stay independent and the deck's width can be handed to
         // the map without losing the instruments on it.
         for (overlay, element) in [
@@ -7523,7 +9100,7 @@ mod tests {
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("body.overlay-{overlay}-hidden {element}")),
-                "display settings should hide the {element} map overlay"
+                "Display Settings should hide the {element} map overlay"
             );
         }
         for element in [
@@ -7578,7 +9155,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("p.ai_plan"));
         assert!(EMBEDDED_INDEX.contains(".civ-dossier {"));
         assert!(EMBEDDED_INDEX.contains("changed its grand strategy from"));
-        // Active AI strategy speaks for one civilization at a time, and which
+        // The AI strategy dossier speaks for one civilization at a time, and which
         // civilizations it may speak for is the observation's answer, not the
         // panel's: `view_player` names a seat in a played game and in Watch as,
         // and is null only for the view entitled to read every plan.
@@ -7595,94 +9172,47 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("e.important && now - e.at < 6000"));
         assert!(EMBEDDED_INDEX.contains("const CAP = 60, FRESH = 12"));
         assert!(EMBEDDED_INDEX.contains("SERVER_EVENT_VALUES"));
-        assert!(EMBEDDED_INDEX.contains("const floor = active ? (SPEC ? 32 : 16) : MODE.idle"));
-        // The repaint rate answers to what a frame actually costs, so the
-        // expensive style degrades to a slower picture rather than a stalled one
-        // on a box that is also running the game.
+        assert!(EMBEDDED_INDEX.contains("const floor = active ? (SPEC ? 32 : 16) : 0"));
+        // The repaint rate answers to what a frame actually costs.
         assert!(EMBEDDED_INDEX.contains("const MAX_ANIMATION_PAINT_SHARE = .5"));
         assert!(EMBEDDED_INDEX
             .contains("Math.max(floor, drawCost / MAX_ANIMATION_PAINT_SHARE)"));
-        // Three map styles, and the browser must be able to name each of them.
-        // The idle repaint rate is a property of the style rather than a
-        // constant now: strategic never repaints on its own, balanced ticks
-        // slowly for the pulsing markers, cinematic runs its weather.
-        for style in ["strategic", "balanced", "cinematic"] {
+        // The command map is the only presentation surface. There is no style
+        // selector, persisted mode, cinematic module, or painted atlas path.
+        assert!(EMBEDDED_INDEX.contains("const MAP_PROJECTION = 0.92"));
+        for removed in [
+            "id=\"viewsel\"",
+            "const VIEW_MODES",
+            "civvis-view-v3",
+            "Painted 2D",
+            "Cinematic 3D",
+            "/cinematic3d.js",
+            "globalThis.Cinematic3D",
+            "TERRAIN_ATLAS",
+            "NATURAL_WONDER_ATLAS",
+            "WORLD_WONDER_ATLAS",
+            "const MODE =",
+            "MODE.painted",
+            "cinemaActive",
+            "drawCinematic",
+            "function stageAttack(",
+            "const SHOT_KIND = {",
+            "anim.shots",
+            "anim.motes",
+        ] {
             assert!(
-                EMBEDDED_INDEX.contains(&format!("<option value=\"{style}\"")),
-                "map style {style} missing from the view selector"
-            );
-            assert!(
-                EMBEDDED_INDEX.contains(&format!("  {style}:")),
-                "map style {style} missing from VIEW_MODES"
+                !EMBEDDED_INDEX.contains(removed),
+                "obsolete presentation code remains: {removed}"
             );
         }
-        assert!(EMBEDDED_INDEX.contains("const VIEW_MODES = {"));
-        assert!(EMBEDDED_INDEX.contains(
-            "const VIEW_LEVELS = [\"strategic\", \"balanced\", \"cinematic\"]"
-        ));
-        let strategic_option = EMBEDDED_INDEX
-            .find("<option value=\"strategic\">Strategic")
-            .unwrap();
-        let painted_option = EMBEDDED_INDEX
-            .find("<option value=\"balanced\">Painted")
-            .unwrap();
-        let cinematic_option = EMBEDDED_INDEX
-            .find("<option value=\"cinematic\">Cinematic")
-            .unwrap();
-        assert!(strategic_option < painted_option && painted_option < cinematic_option);
-        assert!(EMBEDDED_INDEX.contains("if (old === \"cinematic\") return \"balanced\";"));
-        assert!(EMBEDDED_INDEX.contains("return \"strategic\";"));
-        // Painted and Cinematic are different geometries, not the same raised
-        // board with a post-process pass: the former is a top-down painted
-        // plane, while the latter lowers the camera and extrudes the terrain.
-        assert!(
-            EMBEDDED_INDEX.contains("balanced:  { relief:0,   projection:1.00, skirt:0")
-        );
-        assert!(
-            EMBEDDED_INDEX.contains("cinematic: { relief:1.8, projection:0.70, skirt:9")
-        );
-        assert!(EMBEDDED_INDEX.contains(
-            "YS = VIEW === \"cinematic\" ? cinematicYS : MODE.projection"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "else setRot(cam.rot, false);  // recompute screen-space light"
-        ));
-        // Reducing visual complexity is a deliberate return to the atlas, not
-        // merely a material swap on whatever close-up the cinematic director
-        // happened to leave behind.
-        assert!(EMBEDDED_INDEX.contains(
-            "const movingDown = VIEW_LEVELS.indexOf(v) < VIEW_LEVELS.indexOf(VIEW);"
-        ));
-        assert!(EMBEDDED_INDEX.contains("if (movingDown) setFullWorldView();"));
-        assert!(EMBEDDED_INDEX.contains("function setFullWorldView()"));
-        // The atlas view returns to whatever "up" means in this world, which is
-        // north only for a civilization that has found it.
-        assert!(EMBEDDED_INDEX.contains("takeCameraControl();\n  setRot(restingRot());"));
-        assert!(EMBEDDED_INDEX.contains("const centers = state.map.tiles.map"));
-        assert!(
-            EMBEDDED_INDEX.contains("if (beau && MODE.relief > 0 && !water) drawWalls(")
-        );
-        assert!(EMBEDDED_INDEX.contains("localStorage.setItem(\"civvis-view-v3\", v)"));
-        // Preserve the old Cinematic-to-Painted rename for returning browsers;
-        // a browser with no saved preference starts in Strategic instead.
-        assert!(EMBEDDED_INDEX.contains("localStorage.getItem(\"civvis-view\")"));
-        // Ground is baked once per style/terrain/relief/variant and blitted
-        // through the world plane; the per-frame clip-and-gradient path it
-        // replaced is what made a full-size map cost eighty milliseconds a
-        // frame. Both halves have to ship together to mean anything.
-        assert!(EMBEDDED_INDEX.contains("function bakeTileArt("));
-        assert!(EMBEDDED_INDEX.contains("function tileArt("));
-        assert!(EMBEDDED_INDEX.contains("cx.drawImage(art, -artR, -artR, artR * 2, artR * 2)"));
-        assert!(EMBEDDED_INDEX.contains("TERRAIN_ATLAS.onload"));
-        assert!(EMBEDDED_INDEX.contains("ATLAS_READY = true; TILE_ART.clear()"));
         // Only what the camera can reach is drawn.
         assert!(EMBEDDED_INDEX.contains("const onscreen = []"));
-        // Combat is staged rather than marked: a weapon, a flight, an impact.
-        assert!(EMBEDDED_INDEX.contains("function stageAttack("));
-        assert!(EMBEDDED_INDEX.contains("const SHOT_KIND = {"));
-        assert!(EMBEDDED_INDEX.contains("const SHOT_STYLE = {"));
-        assert!(EMBEDDED_INDEX.contains("function drawAtmosphere("));
-        assert!(EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
+        // Strategic combat stays diagrammatic: damage labels and compact hit
+        // sparks, without a second cinematic effects renderer.
+        assert!(EMBEDDED_INDEX
+            .contains("anim.floats.push({ x, y: y - 16, txt: \"-\" + dmg"));
+        assert!(EMBEDDED_INDEX.contains("anim.sparks.push({ x, y, t0: now });"));
+        assert!(EMBEDDED_INDEX.contains(".diplomacy-card.at-war"));
         assert!(EMBEDDED_INDEX.contains("function cameraYBounds"));
         assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
         assert!(EMBEDDED_INDEX.contains("const focusBounds = mapFocusBounds();"));
@@ -7769,7 +9299,6 @@ mod tests {
         // was a word from no part of this game.
         assert!(EMBEDDED_INDEX.contains("<span></span><span>Capitals</span>"));
         assert!(!EMBEDDED_INDEX.contains("HQs"));
-        assert!(EMBEDDED_INDEX.contains("<span>Terrain</span>"));
         assert!(EMBEDDED_INDEX.contains("<span>Watch as</span>"));
         assert_eq!(
             EMBEDDED_INDEX
@@ -7824,7 +9353,7 @@ mod tests {
             .split("function setObservedPlayersView(smooth = false)")
             .nth(1)
             .unwrap()
-            .split("function actionViewingAnchor(focus)")
+            .split("function mainLandmassAnchor()")
             .next()
             .unwrap();
         assert!(observed_view.contains("if (planetMap() && !watched) { fitPlanetView(); return; }"));
@@ -7841,7 +9370,6 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("const atWarFront"));
         assert!(EMBEDDED_INDEX.contains("Number(unit.formation) > 0"));
         assert!(EMBEDDED_INDEX.contains("Number(unit.level) >= 3"));
-        assert!(EMBEDDED_INDEX.contains("directorGoal.kind === \"empire\""));
         assert!(EMBEDDED_INDEX.contains("player log"));
         assert!(EMBEDDED_INDEX.contains("Spectator · combined summary"));
         assert!(EMBEDDED_INDEX.contains("let eventLogs = new Map()"));
@@ -8035,7 +9563,7 @@ mod tests {
         assert!(!EMBEDDED_INDEX
             .contains("civilization${summaries.length === 1 ? \"\" : \"s\"} completed"));
         assert!(EMBEDDED_INDEX.contains("id=\"strategysec\""));
-        // Active AI strategy is no longer withheld from the omniscient spectator.
+        // AI strategy is no longer withheld from the omniscient spectator.
         // It was, for as long as the panel could only ever speak for `state.me`
         // and above the world there is no single "me"; it now names the
         // civilization it is speaking for, so the one view that can read every
@@ -8048,7 +9576,9 @@ mod tests {
             .contains("document.getElementById(\"strategysec\").style.display = fullMapSpectator"));
         assert!(EMBEDDED_INDEX.contains("if (!fullMapSpectator && (SPEC || govs.length"));
         assert!(EMBEDDED_INDEX.contains(".sort((a, b) => b.score - a.score || a.id - b.id)"));
-        assert!(EMBEDDED_INDEX.contains("class=\"diplomacy-rank\">#${rank}"));
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"diplomacy-rank\" title=\"Score rank ${rank}\">#${rank}"
+        ));
         // The sidebar sits left of the map. Match the declaration rather than
         // its formatting, so restyling the block cannot fail the rule.
         let side_rule = EMBEDDED_INDEX
@@ -8059,6 +9589,71 @@ mod tests {
         assert!(side_rule.contains("order: -1"));
         assert!(EMBEDDED_INDEX.contains("<strong>${reportedTurn()}</strong>"));
         assert!(!EMBEDDED_INDEX.contains("${state.turn}/${maxTurns}"));
+    }
+
+    #[test]
+    fn browser_keeps_the_resizable_command_deck_anchored_and_the_player_hud_clear() {
+        // The deck's normal desktop declaration remains the first flex track,
+        // while the added seam changes only its width/flex basis. This prevents
+        // a resize gesture from becoming a draggable panel.
+        assert!(EMBEDDED_INDEX.contains(
+            "order: -1; width: clamp(220px, 18vw, 332px); min-width: clamp(220px, 18vw, 332px);"
+        ));
+        assert!(EMBEDDED_INDEX.contains("flex: 0 0 clamp(220px, 18vw, 332px);"));
+        assert!(EMBEDDED_INDEX.contains("id=\"side-resize-handle\" type=\"button\" role=\"separator\""));
+        assert!(EMBEDDED_INDEX.contains("Resize the command deck from its right edge"));
+        assert!(EMBEDDED_INDEX.contains("const SIDEBAR_WIDTH_STORAGE_KEY = \"civvis-sidebar-width-v1\";"));
+        assert!(EMBEDDED_INDEX.contains("function setSidebarWidth(width, persist = false)"));
+        assert!(EMBEDDED_INDEX.contains("sidebarDeck.classList.add(\"sidebar-width-custom\")"));
+        assert!(EMBEDDED_INDEX.contains("function resetSidebarWidth()"));
+
+        // On desktop the flex sibling leaves no overlap; in the compact fixed
+        // arrangement the same live rectangle supplies the HUD's safe left
+        // anchor. A narrowed map also receives the same full-width HUD topology
+        // as a naturally narrow viewport.
+        assert!(EMBEDDED_INDEX.contains("function playerHudSidebarInset()"));
+        assert!(EMBEDDED_INDEX.contains("area.style.setProperty(\"--player-hud-left\", `${inset}px`);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "left: max(var(--panel-edge), var(--player-hud-left, 0px));"
+        ));
+        assert!(EMBEDDED_INDEX.contains("area.classList.toggle(\"player-hud-compact\", width <= PLAYER_HUD_COMPACT_WIDTH);"));
+        assert!(EMBEDDED_INDEX.contains("#maparea.player-hud-compact #playerhud"));
+        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38, avoidsSidebar:true"));
+        assert!(EMBEDDED_INDEX.contains(
+            "function hudWidgetMinX(config, margin = hudWidgetMargin())"
+        ));
+    }
+
+    /// Player-row color is reserved for a current war. Friendships and
+    /// alliances remain available in the row's text and dossier, but must not
+    /// paint green state frames that compete with the red danger signal. The
+    /// omniscient spectator uses the public conflict ledger so both sides —
+    /// including active allied parties — stay red regardless of whose turn it
+    /// is, while a played or Watch-as view remains relative to that seat.
+    #[test]
+    fn browser_player_rows_use_relationship_color_only_for_active_wars() {
+        assert!(!EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
+        assert!(!EMBEDDED_INDEX.contains(".diplomacy-card.friend"));
+        assert!(!EMBEDDED_INDEX.contains("const relationClass ="));
+        assert!(EMBEDDED_INDEX.contains("function activeWarPlayerIds()"));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (war.ended !== null && war.ended !== undefined) continue;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (party.exited === null || party.exited === undefined) players.add(party.player);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const activeWarPlayers = SPEC && !Number.isInteger(state.view_player)"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const atWar = activeWarPlayers ? activeWarPlayers.has(p.id) : p.at_war_with_me;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const stateClass = `${atWar ? \"at-war\" : \"\"} ${p.alive ? \"\" : \"dead\"}`;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(".diplomacy-card.expanded:not(.at-war)"));
+        assert!(EMBEDDED_INDEX.contains(".diplomacy-card:hover:not(.at-war)"));
+        assert!(EMBEDDED_INDEX.contains("#playerhud .diplomacy-card.pinned.at-war"));
     }
 
     /// A defeated civilization all but disappears from the masthead — its row
@@ -8102,200 +9697,85 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("${p.alive ? \"\" : \"dead\"}"));
     }
 
-    /// The viewer's controls are Civilization VI's, read out of the game's own
-    /// `InputConfiguration.xml` (`InputActionDefaultGestures`, plus the rows
-    /// the two expansions add). Every pair below is one row of that table, so
-    /// a binding cannot be quietly moved or dropped without this failing.
-    /// `docs/CIV6_KEYBINDINGS.md` carries the same table in prose, including
-    /// the Civ 6 actions this build has nothing to bind to.
+    /// The operator intentionally keeps a small, closed action map. These
+    /// assertions make every added shortcut an explicit product decision.
     #[test]
-    fn browser_key_bindings_are_civ6s_own() {
+    fn browser_key_bindings_match_the_requested_set() {
         for (action, key) in [
-            // UI
-            ("ToggleTechTree", "t"),
-            ("ToggleCivicsTree", "c"),
-            ("ToggleGovernment", "F7"),
-            ("ToggleReligion", "l"),
-            ("ToggleGreatPeople", "o"),
-            ("ToggleCityStates", "F2"),
-            ("ToggleEspionage", "F3"),
-            ("ToggleTradeRoutes", "F4"),
-            ("ToggleGovernors", "F10"),
-            ("OpenCivilopedia", "F9"),
-            ("ToggleFSMap", "End"),
-            // Units
-            ("FoundCity", "b"),
-            ("MoveTo", "m"),
+            ("NextAction", "1"),
+            ("SettlerLens", "2"),
+            ("PlaceTack", "3"),
             ("Fortify", "f"),
-            ("FortifyUntilHeal", "h"),
-            ("Attack", "a"),
-            ("RangedAttack", "r"),
-            ("AutoExplore", "e"),
-            ("SkipTurn", " "),
-            ("Sleep", "z"),
-            ("Alert", "v"),
-            // Global
-            ("EndTurn", "Enter"),
-            ("ToggleGrid", "g"),
-            ("ToggleResources", "q"),
-            ("ToggleYield", "y"),
-            ("Toggle2DView", "+"),
-            ("PauseMenu", "Home"),
-            ("QuickSave", "F5"),
-            ("QuickLoad", "F6"),
-            ("OnlinePause", "p"),
-            ("PrevUnit", ","),
-            ("NextUnit", "."),
-            ("PrevCity", "["),
-            ("NextCity", "]"),
-            ("CapitalCity", "\\\\"),
-            // Camera
-            ("CameraPanLeft", "ArrowLeft"),
-            ("CameraPanRight", "ArrowRight"),
-            ("CameraPanUp", "ArrowUp"),
-            ("CameraPanDown", "ArrowDown"),
-            ("ZoomIn", "NumpadAdd"),
-            ("ZoomOut", "NumpadSubtract"),
+            ("Alert", "a"),
+            ("PreviousCity", "ArrowLeft"),
+            ("NextCity", "ArrowRight"),
         ] {
             let row = format!("{{id: \"{action}\", key: \"{key}\"");
             assert!(
                 EMBEDDED_INDEX.contains(&row),
-                "Civ 6's {action} must stay on {key}: no `{row}` in the viewer"
+                "required {action} is missing from the {key} shortcut"
             );
         }
-        // The pedia's history is Civ 6's only chorded pair.
-        assert!(EMBEDDED_INDEX
-            .contains("{id: \"CivilopediaBack\", key: \",\", ctrl: true"));
-        assert!(EMBEDDED_INDEX
-            .contains("{id: \"CivilopediaForward\", key: \".\", ctrl: true"));
+        let shortcuts = EMBEDDED_INDEX
+            .split_once("const CIVVIS_SHORTCUTS = [")
+            .and_then(|(_, tail)| {
+                tail.split_once("];\n// One lookup per key.")
+                    .map(|(rows, _)| rows)
+            })
+            .expect("the closed shortcut table");
+        assert_eq!(shortcuts.matches("{id: \"").count(), 7);
+        assert!(!EMBEDDED_INDEX.contains("const CIV6_BINDINGS = ["));
+        assert!(!EMBEDDED_INDEX.contains("let altTap"));
+        let legend = EMBEDDED_INDEX
+            .split_once("<summary>Keyboard shortcuts</summary>")
+            .and_then(|(_, tail)| tail.split_once("</details>").map(|(panel, _)| panel))
+            .expect("the keyboard shortcut legend");
+        assert_eq!(legend.matches("<kbd>").count(), 7);
+        assert_eq!(EMBEDDED_INDEX.matches("<kbd>").count(), 7);
+        assert!(legend.contains("<span><kbd>3</kbd>Add a map tack</span>"));
+        assert!(EMBEDDED_INDEX.contains(
+            "return myCities().slice().sort((left, right) => Number(left.id) - Number(right.id));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "? cities.find(city => city.is_capital) || cities[0]"
+        ));
+        assert!(EMBEDDED_INDEX.contains(": cities[cities.length - 1];"));
 
-        // Three keys are the operator's deliberate overrides and keep their
-        // CIVVIS meaning; Civ 6 spends them on lenses that do not exist here.
-        for (action, key) in [("NextAction", "1"), ("SettlerLens", "2"), ("PlaceTack", "3")] {
-            assert!(
-                EMBEDDED_INDEX.contains(&format!("{{id: \"{action}\", key: \"{key}\"")),
-                "the {key} override must stay {action}"
-            );
-        }
-        // Everything CIVVIS adds sits on a chord or a key Civ 6 leaves free,
-        // so arriving from Civ 6 cannot find a shadowed binding.
-        for chord in [
-            "{id: \"AutoPlay\", key: \"a\", ctrl: true",
-            "{id: \"ResetFacing\", key: \"r\", ctrl: true",
-            "{id: \"HidePanel\", key: \"u\", ctrl: true",
-            "{id: \"QuickDeals\", key: \"d\", ctrl: true",
-        ] {
-            assert!(EMBEDDED_INDEX.contains(chord), "missing CIVVIS chord: {chord}");
-        }
-        assert!(EMBEDDED_INDEX.contains("{id: \"Diplomacy\", key: \"F8\""));
-
-        // Movement: a left drag pans, the right button moves units, and the
-        // middle one centres. Merely resting near an edge must not move the map.
+        // Movement: a left click only selects, a left drag pans, a secondary
+        // press/release moves units, and the middle button centres. This is the
+        // event split in Civ 6's shipped WorldInput.lua.
         assert!(!EMBEDDED_INDEX.contains("updateEdgePan"));
         assert!(!EMBEDDED_INDEX.contains("edgepanchk"));
         assert!(!EMBEDDED_INDEX.contains("civvis-edge-pan"));
+        assert!(EMBEDDED_INDEX.contains("const MAC_POINTER_PLATFORM = /mac/i.test("));
+        assert!(EMBEDDED_INDEX.contains("function isSecondaryMapButton(ev)"));
+        assert!(EMBEDDED_INDEX.contains("function issueSelectedUnitOrder(pos)"));
+        assert!(EMBEDDED_INDEX.contains("issueSelectedUnitOrder(pos);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "for (const p of (sel.reachable || [])) hl[key(p)] = 1;"
+        ));
+        let ordinary_click = EMBEDDED_INDEX
+            .split_once("cv.addEventListener(\"click\", ev => {")
+            .expect("the map must have an ordinary click handler")
+            .1
+            .split_once("\nfunction issueSelectedUnitOrder(pos)")
+            .expect("the selection handler must end before the movement handler")
+            .0;
+        assert!(!ordinary_click.contains("move_to"));
+        assert!(!ordinary_click.contains("orderTravel("));
+        assert!(ordinary_click.contains("const here = state.units.filter"));
+        assert!(!EMBEDDED_INDEX.contains(
+            "sel = here.find(u => u.moves_left > 0) || here[0]"
+        ));
         assert!(EMBEDDED_INDEX.contains("else if (ev.button === 1) {"));
-        // Command belongs to the browser on a Mac; only Control chords are ours.
-        assert!(EMBEDDED_INDEX.contains("if (ev.metaKey) return undefined;"));
-    }
-
-    #[test]
-    fn browser_includes_the_cinematic_spectator_director() {
-        for id in [
-            "cinemachk",
-            "cinema-atmosphere",
-            "cinema-lighting",
-            "cinema-frame",
-            "cinema-transition",
-            "cinema-prologue",
-            "cinema-story",
-            "cinema-audio",
-            "cinema-follow",
-        ] {
-            assert!(
-                EMBEDDED_INDEX.contains(&format!("id=\"{id}\"")),
-                "cinematic spectator element {id} is missing"
-            );
-        }
-        for function in [
-            "function applyCinemaMode()",
-            "function showCinemaPrologue(st)",
-            "function showCinemaChapter(cue)",
-            "function createCinemaAudioGraph()",
-            "function playCinemaCue(cue = {})",
-            "function showDirectorStory(cue)",
-            "function cinematicDisasterStory(disaster, next)",
-            "function cinematicWarContext(st)",
-            "function cinematicWarFront(st, war)",
-            "function drawCinematicDisasterField(sceneTime)",
-            "function recentCombatActions(st)",
-            "const lethalBattle = MODE.fx && lethalTrace",
-            "const deathAt = lethalBattle?.impactAt || now",
-            "function directorCue(prev, next)",
-            "function cinematicShotGoal(goal, variation = 0)",
-            "function directorSurveyGoal()",
-            "function directorAmbientCue()",
-            "function advanceDirector(now = performance.now())",
-            "function advanceUserCameraMotion(now = performance.now())",
-            "function advanceCameraFollow(now = performance.now())",
-            "function startCameraFollow(unitId)",
-            // Both defaults are `null`: a standalone subject uses the copies
-            // nearest the camera, while a caller chaining a path can name the
-            // point it wants the next leg drawn beside across either seam.
-            "function unitMapPoint(p, nearX = null, nearY = null)",
-            "function sampleUnitMove(mv, now = performance.now())",
-            "function cinematicUnitMapPoint(unit, now = performance.now())",
-            "function unitMoveDuration(unitId, steps)",
-            "function drawCinematicSubjectMarker(u, x, y, now)",
-            "function drawCinematicSubjectBrackets(u, x, y, now)",
-            "function drawUnitCompany(u, x, y, now, moving)",
-            "function beginTouchTransform()",
-            "function cinematicSurveyUnits(units)",
-            "function drawWalls(t, x, ytop, baseColor, tileElevation)",
-        ] {
-            assert!(
-                EMBEDDED_INDEX.contains(function),
-                "cinematic spectator behavior {function} is missing"
-            );
-        }
-        for story in [
-            "A new world awakens",
-            "Nature unleashed",
-            "The world enters the ${eraName} Era",
-            "A civilization falls",
-            "History has a victor",
-            "City captured",
-            "War declared",
-            "Battlefield losses",
-            "The war continues",
-            "Wonder completed",
-        ] {
-            assert!(
-                EMBEDDED_INDEX.contains(story),
-                "cinematic spectator story cue {story} is missing"
-            );
-        }
-        assert!(EMBEDDED_INDEX.contains("civvis-cinema-audio-v1"));
-        assert!(EMBEDDED_INDEX.contains("REDUCED_MOTION_QUERY.matches"));
-        assert!(EMBEDDED_INDEX.contains("touch-action: none"));
-        assert!(EMBEDDED_INDEX
-            .contains("kind:battle ? \"battle\" : (tracksUnit ? \"character\" : \"event\")"));
-        assert!(EMBEDDED_INDEX.contains("side.units_lost"));
-        assert!(EMBEDDED_INDEX.contains("action.type === \"theological_attack\""));
-        assert!(EMBEDDED_INDEX.contains("front:\"war front\""));
-        assert!(EMBEDDED_INDEX.contains("kind:cue.kind || \"portrait\""));
-        assert!(!EMBEDDED_INDEX.contains("kicker:\"Casualty of war\""));
-        assert!(EMBEDDED_INDEX.contains("class=\"winner-content\""));
-        assert!(EMBEDDED_INDEX.contains("cinema-finale"));
-        assert!(
-            EMBEDDED_INDEX.contains("DEFAULT_CINEMA_YS = VIEW_MODES.cinematic.projection")
-        );
-        assert!(EMBEDDED_INDEX.contains("function drawUnitFormationBadge"));
-        assert!(EMBEDDED_INDEX.contains("<script src=\"/cinematic3d.js\"></script>"));
-        assert!(EMBEDDED_INDEX.contains("globalThis.Cinematic3D?.supports(family)"));
-        assert!(EMBEDDED_INDEX.contains("Cinematic3D.draw({"));
-        assert!(EMBEDDED_INDEX.contains("specular glints travel"));
-        assert!(EMBEDDED_INDEX.contains("cx.lineDashOffset = dash.length"));
+        // macOS Control-click is a platform secondary click; Command belongs to
+        // the browser, and never becomes a map binding.
+        assert!(EMBEDDED_INDEX.contains(
+            "(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey) return undefined;"
+        ));
     }
 
     #[test]
@@ -8323,54 +9803,98 @@ mod tests {
         let renderer = EMBEDDED_INDEX
             .split("function drawUnitPictogram")
             .nth(1)
-            .and_then(|tail| tail.split("function drawUnitFormationBadge").next())
             .expect("strategic unit pictogram renderer");
         assert!(renderer.contains("const official = civ6UnitIconSprite(type, color)"));
         assert!(renderer.contains("cx.drawImage(official"));
         assert!(EMBEDDED_INDEX.contains("const COMMAND_UNIT_ICON_K = () => 1 + .32"));
         assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(u.type, x, y,"));
-        assert!(!EMBEDDED_INDEX.contains("u.embarked ? \"galley\" : u.type"));
+        assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(unit.type, ux, uy,"));
+        assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(d.type, d.x, d.y,"));
+        assert!(!EMBEDDED_INDEX.contains("embarked ? \"galley\""));
         assert!(EMBEDDED_INDEX.contains("rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk"));
     }
 
     #[test]
-    fn cinematic_world_wonders_use_a_complete_sprite_atlas() {
-        assert!(EMBEDDED_WORLD_WONDER_ATLAS.starts_with(b"\x89PNG\r\n\x1a\n"));
-        assert!(EMBEDDED_WORLD_WONDER_ATLAS.len() > 1_000_000);
-        assert!(
-            EMBEDDED_INDEX.contains("WORLD_WONDER_ATLAS.src = \"/assets/world-wonder-atlas.png\"")
-        );
-
-        let ids = EMBEDDED_INDEX
-            .split("const WORLD_WONDER_IDS = [")
-            .nth(1)
-            .and_then(|tail| tail.split("];\nconst WORLD_WONDER_CELL").next())
-            .expect("ordered World Wonder sprite IDs");
-        let rules = crate::rules::Rules::embedded();
-        assert_eq!(ids.matches('"').count() / 2, rules.wonders.len());
-        for wonder in rules.wonders.keys() {
-            assert!(
-                ids.contains(&format!("\"{wonder}\"")),
-                "World Wonder {wonder} has no sprite cell"
-            );
-        }
-
+    fn unit_health_bars_only_label_damage() {
         let renderer = EMBEDDED_INDEX
-            .split("function drawWorldWonderSprite")
+            .split("function drawStrategicUnitHealth")
             .nth(1)
-            .and_then(|tail| tail.split("function drawWonder").next())
-            .expect("World Wonder sprite renderer");
-        assert!(renderer.contains("!MODE.atmosphere"));
-        assert!(renderer.contains("SHX * S * .42"));
-        assert!(EMBEDDED_INDEX.contains("t.wonder && !drawWorldWonderSprite(t.wonder, x, y)"));
+            .and_then(|tail| tail.split("// The Civ VI atlas cells").next())
+            .expect("strategic unit health renderer");
+        assert!(EMBEDDED_INDEX.contains(
+            "const CAPTURE_ONLY_CIVILIAN_UNITS = new Set([\"settler\", \"builder\"]);"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function unitHasHealth(unit) {"));
+        assert!(renderer.contains("if (!Number.isFinite(hp)) return;"));
+        assert!(renderer.contains("Math.round(hp)"));
+        assert!(renderer.contains("health >= 100"));
+        assert!(renderer.contains("cx.strokeText(String(health), x, by + bh / 2)"));
+        assert!(renderer.contains("cx.fillText(String(health), x, by + bh / 2)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const status = unitHasHealth(u) ? `hp ${u.hp}` : \"capturable\";"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const unitStatus = unitHasHealth(unit) ? `${fmtYield(unit.hp)} HP` : \"capturable\";"
+        ));
+        assert_eq!(
+            EMBEDDED_INDEX.matches("drawStrategicUnitHealth(").count(),
+            3,
+            "the shared damage-only health renderer should serve the flat map and globe"
+        );
+    }
+
+    #[test]
+    fn city_icons_are_shared_by_flat_globe_and_minimaps() {
+        let icon = EMBEDDED_INDEX
+            .split("function drawCityIcon")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawSettlement").next())
+            .expect("shared city icon renderer");
+        assert!(icon.contains(
+            "const base = y + r * .45, wallTop = y + r * .06;"
+        ));
+        assert!(icon.contains("context.moveTo(x - r * .72, base);"));
+        assert!(icon.contains("capital && r >= 2.6"));
+        for call in [
+            "drawCityIcon(cx, cell.center.x, cell.center.y, r, bannerColor,",
+            "drawCityIcon(cx, x, y + cityIconRadius * .16, cityIconRadius,",
+            "drawCityIcon(mx2, cell.center.x, cell.center.y, cityRadius,",
+            "drawCityIcon(mx2, x, y, citySize * (cityState ? .55 : .62),",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(call), "missing city icon path: {call}");
+        }
+    }
+
+    #[test]
+    fn empire_city_names_use_the_light_jersey_lane() {
+        assert!(EMBEDDED_INDEX.contains(
+            "function cityNameInk(owner, fallback) {\n  return mapLens === \"empire\" ? jerseyLanes(owner)[1] : fallback;\n}"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "cityNameInk(city.owner, cityState ? \"#d8ddd9\" : \"#fff4d4\")"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "cityNameInk(c.owner, minorPlate ? \"#d8ddd9\" : \"#fff3cf\")"
+        ));
     }
 
     #[test]
     fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.starts_with(b"\x89PNG\r\n\x1a\n"));
-        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() > 1_000_000);
+        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() > 500_000);
+        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() < 1_000_000);
+        assert_eq!(
+            u32::from_be_bytes(EMBEDDED_HIDDEN_MAP_MONSTERS[16..20].try_into().unwrap()),
+            1536
+        );
+        assert_eq!(
+            u32::from_be_bytes(EMBEDDED_HIDDEN_MAP_MONSTERS[20..24].try_into().unwrap()),
+            1280
+        );
         assert!(EMBEDDED_INDEX
             .contains("HIDDEN_MAP_MONSTER_ATLAS.src = \"/assets/hidden-map-monsters.png\""));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_MONSTER_CELL = 256"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_MONSTER_VARIANTS = 30"));
 
         let parchment = EMBEDDED_INDEX
             .split("function drawHiddenMapParchment")
@@ -8387,7 +9911,40 @@ mod tests {
             .and_then(|tail| tail.split("function drawHiddenMapFrontier").next())
             .expect("hidden-map monster placement");
         assert!(monsters.contains("hiddenMapIsDeep"));
-        assert!(monsters.contains("MODE.painted ? .48 : .41"));
+        assert!(monsters.contains("hiddenMapMonsterSeat"));
+        assert!(!monsters.contains("strideColumns"));
+        assert!(!monsters.contains("cam.scale"), "zoom must not thin stable tale seats");
+        assert!(!monsters.contains("const lod"));
+        assert!(monsters.contains("cell.x +"));
+        assert!(monsters.contains("cell.y +"));
+        assert!(monsters.contains("HIDDEN_MAP_TALE_SIZE_MIN"));
+        assert!(monsters.contains("HIDDEN_MAP_TALE_SIZE_RANGE"));
+        assert!(monsters.contains("HIDDEN_MAP_MONSTER_VARIANTS"));
+        assert!(monsters.contains(".26"));
+
+        let seating = EMBEDDED_INDEX
+            .split("function hiddenMapMonsterSeat")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawHiddenMapMonster").next())
+            .expect("minimum-distance hidden-map monster seating");
+        assert!(seating.contains("radius = 8"));
+        assert!(seating.contains("priority >= .04"));
+        assert!(seating.contains("hiddenMapMonsterPriority"));
+        assert!(seating.contains("other < priority"));
+        let viewport = EMBEDDED_INDEX
+            .split("function hiddenMapViewport")
+            .nth(1)
+            .and_then(|tail| tail.split("function hiddenMapSeedWords").next())
+            .expect("hidden-map viewport and stable large-tale margin");
+        assert!(viewport.contains("monsterCells"));
+        assert!(viewport.contains("HIDDEN_MAP_TALE_REACH"));
+        let planet_tales = EMBEDDED_INDEX
+            .split("function drawPlanetChartMarginalia")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawPlanetMap").next())
+            .expect("pre-globe chart marginalia");
+        assert!(planet_tales.contains("candidates.slice(0, 1)"));
+        assert!(planet_tales.contains("const size = 3 *"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapParchment(hiddenMap);\n  drawHiddenMapMonsters(hiddenMap);"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapFrontier(tiles);"));
         assert!(EMBEDDED_INDEX.contains("if (camera.chart && !spectator)"));
@@ -8426,8 +9983,8 @@ mod tests {
         );
         assert!(hidden.contains("const veiled = !open && mapEdgeVeiled();"));
         assert!(
-            hidden.contains("const span = open || veiled ? framedHexBounds(3)"),
-            "a veiled sheet is spanned by the frame, not by the map's rectangle"
+            hidden.contains("const span = open || veiled ? framedHexBounds(12)"),
+            "a veiled sheet and its large marginalia are spanned by the frame, not by the map's rectangle"
         );
         assert!(hidden.contains("const [x, y] = open || veiled ? hexXYRaw(q, row) : hexXY(q, row);"));
         // Only one copy of a wrapping world is drawn, so the background either
@@ -8437,7 +9994,7 @@ mod tests {
         assert!(hidden.contains("const test = veiled ? (q, r) => !veilDrawsGroundAt(q, r)"));
         // A canvas compound path costs quadratic time in its own size, so a
         // sheet that covers a whole frame has to be drawn as its rectangle.
-        assert!(hidden.contains("return {open, solid:veiled, cells, test};"));
+        assert!(hidden.contains("return {open, solid:veiled, cells, monsterCells, test};"));
         assert!(EMBEDDED_INDEX
             .contains("if (layer.solid) cx.rect(minX, minY, maxX - minX, maxY - minY);"));
 
@@ -8478,117 +10035,11 @@ mod tests {
     }
 
     #[test]
-    fn cinematic_3d_module_covers_every_unit_renderer_family() {
-        for family in [
-            "embarked",
-            "naval",
-            "air",
-            "rotor",
-            "balloon",
-            "drone",
-            "robot",
-            "armor",
-            "gun",
-            "siege",
-            "mounted",
-            "religious",
-            "civilian",
-            "infantry",
-        ] {
-            assert!(
-                EMBEDDED_CINEMATIC_3D.contains(&format!("\"{family}\"")),
-                "cinematic 3D model family {family} is missing"
-            );
-        }
-        for behavior in [
-            "class Scene",
-            "this.items.sort((a, b) => a.depth - b.depth)",
-            "const direct = Math.max(0, dot(normal, this.light))",
-            "function human(scene, options",
-            "function drawMounted(scene, o)",
-            "function drawChariot(scene, o)",
-            "function drawArmor(scene, o)",
-            "function drawRobot(scene, o)",
-            "function drawGun(scene, o)",
-            "function drawSiege(scene, o)",
-            "function drawNaval(scene, o, embarked = false)",
-            "function drawAir(scene, o)",
-            "function drawRotor(scene, o)",
-            "function drawBalloon(scene, o)",
-            "function drawDrone(scene, o)",
-            "function drawConvoy(scene, o)",
-            "type === \"slinger\"",
-            "type === \"scout\"",
-            "global.Cinematic3D = Object.freeze",
-        ] {
-            assert!(
-                EMBEDDED_CINEMATIC_3D.contains(behavior),
-                "cinematic 3D behavior {behavior} is missing"
-            );
-        }
-    }
-
-    #[test]
-    fn browser_blends_atlas_art_only_across_compatible_tile_footprints() {
-        let atlas_drawer = EMBEDDED_INDEX
-            .split("function drawAtlasFeatureCell")
-            .nth(1)
-            .and_then(|tail| tail.split("function drawFeatureSprite").next())
-            .expect("shared atlas feature renderer");
-        assert!(atlas_drawer.contains("tileArtPath(footprint"));
-        assert!(atlas_drawer.contains("cx.clip()"));
-
-        let blend_footprint = EMBEDDED_INDEX
-            .split("function blendedTileFootprint")
-            .nth(1)
-            .and_then(|tail| tail.split("function featureBlendKind").next())
-            .expect("compatible-neighbor footprint builder");
-        assert!(blend_footprint.contains("if (!neighbor || !accepts(neighbor)) continue"));
-        assert!(EMBEDDED_INDEX.contains("featureBlendKind(neighbor.feature) === baseFeature"));
-        assert!(EMBEDDED_INDEX.contains("neighbor.terrain === \"mountain\""));
-
-        let terrain_texture = EMBEDDED_INDEX
-            .split("function drawTerrainTexture")
-            .nth(1)
-            .and_then(|tail| tail.split("function drawTerrainBlend").next())
-            .expect("terrain material renderer");
-        assert!(terrain_texture.contains("drawContinuousTerrain(t, x, y"));
-        assert!(!terrain_texture.contains("hexPath(x, y"));
-        let terrain_blend = EMBEDDED_INDEX
-            .split("function drawTerrainBlend")
-            .nth(1)
-            .and_then(|tail| tail.split("function drawAtlasFeatureCell").next())
-            .expect("terrain transition renderer");
-        assert!(terrain_blend.contains("drawFeathered(t, x, y"));
-        assert!(EMBEDDED_INDEX.contains("function drawContinuousTerrain(t, x, y, alpha)"));
-        assert!(EMBEDDED_INDEX.contains("cx.createPattern(c, \"repeat\")"));
-
-        let mountain_drawer = EMBEDDED_INDEX
-            .split("function drawMountainSprite")
-            .nth(1)
-            .and_then(|tail| tail.split("function tri(").next())
-            .expect("mountain sprite renderer");
-        assert!(mountain_drawer.contains("tileArtPath(footprint, true"));
-        assert!(mountain_drawer.contains("cx.clip()"));
-
-        let wonder_placement = EMBEDDED_INDEX
-            .split("function buildNaturalWonderPlacements")
-            .nth(1)
-            .and_then(|tail| tail.split("function drawTileYields").next())
-            .expect("natural wonder footprint builder");
-        assert!(wonder_placement.contains("footprint:points.map"));
-        assert!(EMBEDDED_INDEX.contains("placement.footprint"));
-
-        assert!(!EMBEDDED_INDEX.contains("const w = S * 2.55"));
-        assert!(!EMBEDDED_INDEX.contains("width: volcano ? 2.32"));
-    }
-
-    #[test]
     fn browser_draws_one_perimeter_around_each_natural_wonder_footprint() {
         let continuation = EMBEDDED_INDEX
             .split("function naturalWonderContinues")
             .nth(1)
-            .and_then(|tail| tail.split("const NATURAL_WONDER_ATLAS").next())
+            .and_then(|tail| tail.split("function drawNaturalWonderPerimeters").next())
             .expect("natural wonder adjacency rule");
         assert!(continuation.contains("neighbor.feature === tile.feature"));
 
@@ -8654,6 +10105,55 @@ mod tests {
     }
 
     #[test]
+    fn browser_minimap_highlights_the_camera_footprint_for_both_map_shapes() {
+        assert!(EMBEDDED_INDEX
+            .contains("function paintMiniViewportFootprint(points, clip = null)"));
+        assert!(EMBEDDED_INDEX
+            .contains("mx2.fillStyle = \"rgba(255, 223, 133, .18)\""));
+
+        let flat = EMBEDDED_INDEX
+            .split("function drawFlatMiniViewportFootprint")
+            .nth(1)
+            .and_then(|tail| tail.split("function miniHexPath").next())
+            .expect("flat minimap viewport footprint");
+        assert!(flat.contains("screenToWorld(sx, sy)"));
+        assert!(flat.contains("miniViewportScreenCorners().map"));
+        assert!(EMBEDDED_INDEX.contains("drawFlatMiniViewportFootprint(layout);"));
+
+        let planet = EMBEDDED_INDEX
+            .split("function drawPlanetMiniViewportFootprint")
+            .nth(1)
+            .and_then(|tail| tail.split("function planetMiniScale").next())
+            .expect("planet minimap viewport footprint");
+        assert!(planet.contains("const mainRadius = mainCamera.radius * cam.scale;"));
+        assert!(planet.contains("planetGroundInputY(sy, mainCenterY)"));
+        assert!(planet.contains("mainCamera.chart ? null : () => mx2.arc"));
+        assert!(EMBEDDED_INDEX.contains(
+            "drawPlanetMiniViewportFootprint(camera, scale, centerX, centerY);"
+        ));
+    }
+
+    #[test]
+    fn browser_tile_yields_are_numbered_in_centered_semantic_rows() {
+        assert!(EMBEDDED_INDEX.contains(
+            "[\"science\", \"culture\", \"faith\"],\n  [\"food\", \"production\", \"gold\"],"
+        ));
+
+        let renderer = EMBEDDED_INDEX
+            .split("function drawTileYields")
+            .nth(1)
+            .and_then(|tail| tail.split("function tri(").next())
+            .expect("tile-yield renderer");
+        assert!(renderer.contains(".filter(([, amount]) => amount >= 1)"));
+        assert!(renderer.contains("(i - (entries.length - 1) / 2) * step"));
+        assert!(renderer.contains("cx.fillStyle = YPIP[kind]"));
+        assert!(renderer.contains("cx.fillText(label, px, py + .5)"));
+        assert!(renderer.contains("const label = fmtYield(amount)"));
+        assert!(!renderer.contains("YICON[kind]"));
+        assert!(!renderer.contains("yieldGlyph"));
+    }
+
+    #[test]
     fn strategic_volcanic_soil_splats_from_the_volcano_facing_edge() {
         let splat = EMBEDDED_INDEX
             .split("function drawStrategicVolcanicSoil")
@@ -8664,9 +10164,10 @@ mod tests {
         assert!(splat.contains("neighbor?.feature === \"volcano\""));
         assert!(splat.contains("cx.rotate(Math.atan2(sourceY, sourceX))"));
         assert!(splat.contains("hexPath(x, y, S); cx.clip();"));
+        assert!(splat.contains("const soilFan = cx.createLinearGradient(0, 0, S + 2, 0)"));
         assert!(splat.contains("cx.moveTo(S + 2, -S)"));
-        assert!(splat.contains("cx.bezierCurveTo(6, -9, 2, -5, 0, 0)"));
-        assert!(splat.contains("cx.bezierCurveTo(18, 13, 25, 18, S + 2, S)"));
+        assert!(splat.contains("cx.bezierCurveTo(4, -7, 1, -3, -1, 0)"));
+        assert!(splat.contains("cx.bezierCurveTo(21, 14, 29, 18, S + 2, S)"));
         assert!(!splat.contains("performance.now"));
         assert!(!splat.contains("requestAnimationFrame"));
 
@@ -8687,51 +10188,69 @@ mod tests {
     }
 
     #[test]
-    fn strategic_mountains_and_volcanoes_share_a_fifty_percent_larger_icon() {
+    fn strategic_mountains_and_volcanoes_use_minimal_vector_glyphs() {
         let icon = EMBEDDED_INDEX
-            .split("const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.5;")
+            .split("function drawStrategicMountainIcon")
             .nth(1)
             .and_then(|tail| tail.split("function drawFeatureEffects").next())
-            .expect("shared strategic mountain icon renderer");
-        assert!(icon.contains(
-            "cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE)"
-        ));
-        assert!(icon.contains("tri(-14, 10, 0, -14, 14, 10)"));
-        assert!(icon.contains("cx.ellipse(0, -9, 4.5, 2.2"));
-        assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, true)"));
-        assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, false)"));
+            .expect("minimal strategic mountain icon renderer");
+        assert!(icon.contains("drawMinimalVolcanoCaldera(x, y, STRATEGIC_MOUNTAIN_ICON_SCALE * size)"));
+        assert!(icon.contains("drawMinimalMountainGlyph(x, y, STRATEGIC_MOUNTAIN_ICON_SCALE * size)"));
+        assert!(!icon.contains("Atlas"));
+        let mountain = EMBEDDED_INDEX
+            .split("function drawMinimalMountainGlyph")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawMinimalVolcanoCaldera").next())
+            .expect("minimal mountain silhouette renderer");
+        assert!(mountain.contains("const silhouette = () =>"));
+        assert!(mountain.contains("cx.fillStyle = \"#8c9991\""));
+        assert!(mountain.contains("cx.strokeStyle = \"#263a36\""));
+        let volcano = EMBEDDED_INDEX
+            .split("function drawMinimalVolcanoCaldera")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawStrategicMountainIcon").next())
+            .expect("minimal volcano caldera renderer");
+        assert!(volcano.contains("cx.ellipse(0, 1, 9.5, 5.2"));
+        assert!(volcano.contains("if (!ice)"));
+
+        let wonder = EMBEDDED_INDEX
+            .split("  volcano(x, y, k, art) {")
+            .nth(1)
+            .and_then(|tail| tail.split("  ruins(x, y, k, art) {").next())
+            .expect("minimal Natural Wonder volcano renderer");
+        assert!(wonder.contains("drawMinimalVolcanoCaldera(x, y, k, art.ice, art.tint)"));
+        assert!(!wonder.contains("drawStrategicVolcanoAtlas"));
+
+        let effects = EMBEDDED_INDEX
+            .split("function drawFeatureEffects")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawStrategicMarsh").next())
+            .expect("volcano feature effects renderer");
+        assert!(effects.contains("const erupting = t.volcano_state === 2;"));
+        assert!(effects.contains("cx.beginPath(); cx.arc(x, y, 11, 0, Math.PI * 2); cx.stroke();"));
+        assert!(effects.contains("cx.arc(x, y - 8, 1.35, 0, Math.PI * 2)"));
     }
 
     #[test]
-    fn painted_planet_blends_terrain_without_revealing_the_hex_mesh() {
-        let underpaint = EMBEDDED_INDEX
-            .split("function planetTerrainUnderpaint")
-            .nth(1)
-            .and_then(|tail| tail.split("function drawPlanetShoreline").next())
-            .expect("painted planet terrain foundation");
-        assert!(underpaint.contains("isWater(tile)"));
-        assert!(underpaint.contains("#174b61"));
-        assert!(underpaint.contains("#747655"));
+    fn mountain_and_volcano_tiles_use_minimal_vector_art() {
+        assert!(EMBEDDED_INDEX.contains("const MOUNTAIN_TILE_COLOR = \"#49453e\";"));
+        assert!(EMBEDDED_INDEX.contains("const VOLCANO_TILE_COLOR = \"#292421\";"));
+        assert!(EMBEDDED_INDEX.contains("tile.feature === \"volcano\""));
+        assert!(EMBEDDED_INDEX.contains("tileGroundColor(cell.tile, \"#4b5960\")"));
+        assert!(EMBEDDED_INDEX.contains("const base = tileGroundColor(t);"));
+        assert!(EMBEDDED_INDEX.contains("tileGroundColor(cell.tile, \"#44545a\")"));
+        assert!(EMBEDDED_INDEX.contains("const terrainColor = tileGroundColor(t);"));
 
-        let ground = EMBEDDED_INDEX
-            .split("function drawPlanetGround")
-            .nth(1)
-            .and_then(|tail| tail.split("function drawPlanetSurfaceDetail").next())
-            .expect("planet terrain renderer");
-        assert!(ground.contains("painted ? planetTerrainUnderpaint(cell.tile)"));
-        assert!(ground.contains("const blend = Math.max(1.2, Math.min(5.2"));
-        assert!(ground.contains("cx.filter = `blur(${blend.toFixed(2)}px)`"));
-        assert!(ground.contains("cx.globalCompositeOperation = \"soft-light\""));
-        assert!(ground.contains("drawPlanetShoreline(knownCells)"));
-
-        let shoreline = EMBEDDED_INDEX
-            .split("function drawPlanetShoreline")
-            .nth(1)
-            .and_then(|tail| tail.split("function drawPlanetGround").next())
-            .expect("painted planet shoreline renderer");
-        assert!(shoreline.contains("const painted = new Set(cells.map"));
-        assert!(shoreline.contains("painted.has(cell.nbrs[side])"));
-        assert!(shoreline.contains("cx.quadraticCurveTo(mx, my, bx, by)"));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.04;"));
+        assert!(EMBEDDED_INDEX.contains("function drawMinimalMountainGlyph"));
+        assert!(EMBEDDED_INDEX.contains("function drawMinimalVolcanoCaldera"));
+        assert!(!EMBEDDED_INDEX.contains("MOUNTAIN_ATLAS"));
+        assert!(!EMBEDDED_INDEX.contains("drawStrategicAtlasCell"));
+        assert!(!EMBEDDED_INDEX.contains("drawStrategicMountainFallback"));
+        assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, true);"));
+        assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, false);"));
+        assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(0, 0, true, .78);"));
+        assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(0, 0, false, .78);"));
     }
 
     #[test]
@@ -8740,6 +10259,14 @@ mod tests {
         assert_eq!(request_path("/?instance=9232"), "/");
         assert_eq!(request_path("/?instance=9232&game=17"), "/");
         assert_eq!(request_path("/state?instance=9232"), "/state");
+    }
+
+    #[test]
+    fn native_channel_routes_to_the_embedded_page() {
+        assert!(viewer_path("/rust"));
+        assert!(viewer_path("/rust/"));
+        assert!(viewer_path(request_path("/rust?instance=9232&game=17")));
+        assert!(!viewer_path("/wasm"));
     }
 
     #[test]
@@ -8794,7 +10321,7 @@ mod tests {
             "num_players": 6,
             "map_script": "continents",
             "game_speed": "quick",
-            "leader_pool": "expanded",
+            "leader_pool": "historical",
             "victory_conditions": {"culture": false, "score": false},
         }));
 
@@ -8807,6 +10334,7 @@ mod tests {
         assert_eq!(
             decorated_state(&shared)["next_game_settings"],
             json!({
+                "seed": 1,
                 "players": 6,
                 "width": 74,
                 "height": 46,
@@ -8814,11 +10342,12 @@ mod tests {
                 "turns": 330,
                 "base_ruleset": "civ6",
                 "start_era": "ancient",
+                "future_era": "classic",
                 "map": "continents",
                 "shape": "flat",
                 "poles": "poles",
                 "speed": "quick",
-                "leader_pool": "expanded",
+                "leader_pool": "historical",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
@@ -8836,12 +10365,29 @@ mod tests {
         assert_eq!(session.params.num_players, 6);
         assert_eq!(session.params.map_script, MapScript::Continents);
         assert_eq!(session.params.game_speed, GameSpeed::Quick);
-        assert_eq!(session.params.leader_pool, LeaderPool::Expanded);
+        assert_eq!(session.params.leader_pool, LeaderPool::ExpandedHistorical);
         assert!(!session.game.victory_conditions.culture);
         assert!(!session.game.victory_conditions.score);
         drop(session);
         // The queue is spent: the world after this one is this one's settings.
         assert!(decorated_state(&shared)["next_game_settings"].is_null());
+    }
+
+    #[test]
+    fn automatic_successor_seed_round_trips_exactly_through_javascript() {
+        // This is the predecessor from the live failure. Its old full-width
+        // successor was 7_959_629_191_918_103_844, which JavaScript rounded
+        // before returning it in the painted-frame acknowledgement.
+        let predecessor: u64 = 1_785_694_281;
+        let old_full_width = predecessor
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        assert!(old_full_width > MAX_EXACT_JAVASCRIPT_INTEGER);
+
+        let successor = automatic_successor_seed(predecessor);
+        assert_eq!(successor, old_full_width & MAX_EXACT_JAVASCRIPT_INTEGER);
+        assert!(successor <= MAX_EXACT_JAVASCRIPT_INTEGER);
+        assert_eq!(successor as f64 as u64, successor);
     }
 
     /// The setup panel writes on every `change`, and `startNewSimulation`
@@ -8879,10 +10425,12 @@ mod tests {
             next_game_params: Mutex::new(session.take_resumed_next_game_params()),
             session: Mutex::new(session),
             pace_ms: AtomicU64::new(0),
+            between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
             paused: AtomicBool::new(false),
             restart_in: AtomicU64::new(u64::MAX),
             turn_us: AtomicU64::new(0),
             turn_compute_us: AtomicU64::new(0),
+            frame_sequence: AtomicU64::new(0),
             frame_delivery: Mutex::new(FrameDelivery::default()),
             frame_painted: Condvar::new(),
             simulation_frame_gate: Mutex::new(()),
@@ -8919,7 +10467,7 @@ mod tests {
                 "num_players": 4,
                 "map_script": "continents",
                 "game_speed": "quick",
-                "leader_pool": "expanded",
+                "leader_pool": "historical",
                 "victory_conditions": {"culture": false, "score": false},
             }))
             .unwrap();
@@ -8945,6 +10493,7 @@ mod tests {
         assert_eq!(
             state["supervisor_request"]["settings"],
             json!({
+                "seed": 1,
                 "players": 4,
                 "width": 60,
                 "height": 38,
@@ -8952,11 +10501,12 @@ mod tests {
                 "turns": 330,
                 "base_ruleset": "civ6",
                 "start_era": "ancient",
+                "future_era": "classic",
                 "map": "continents",
                 "shape": "flat",
                 "poles": "poles",
                 "speed": "quick",
-                "leader_pool": "expanded",
+                "leader_pool": "historical",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
@@ -9240,7 +10790,72 @@ mod tests {
         assert!(plan["forces"].is_array());
     }
 
-    /// The Active AI strategy panel reads one civilization's plan beside what it
+    #[test]
+    fn unified_war_plan_crosses_the_json_and_browser_contract() {
+        let session = Session::new(current());
+        let plan = crate::ai::PlanReport {
+            strategy: "conquest",
+            victory_target: None,
+            rush: false,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: 37,
+            peace_offers: Vec::new(),
+            forces: Vec::new(),
+            war: Some(crate::ai::WarPlanReport {
+                enabled: true,
+                selective: true,
+                rapid: true,
+                active: true,
+                phase: Some("strike"),
+                target_player: Some(1),
+                objective_city: None,
+                breakthrough_tech: Some(crate::name!("apprenticeship")),
+                assault_unit: Some(crate::name!("man_at_arms")),
+                predecessor: Some(crate::name!("swordsman")),
+                breach_unit: Some(crate::name!("battering_ram")),
+                required_bodies: 4,
+                ready_bodies: 4,
+                staged_bodies: 3,
+                breach_ready: true,
+                upgrade_gold_reserved: 123.46,
+                appointed_turn: Some(21),
+                appointments: 2,
+                breakthroughs: 2,
+                mobilizations: 1,
+                declarations: 1,
+                complete_package_declarations: 1,
+                objectives_captured: 0,
+                objectives_captured_within_ten: 0,
+                appointment_to_tech_turns: 12,
+                tech_to_declaration_turns: 4,
+                declaration_to_capture_turns: 0,
+                appointment_to_tech_samples: vec![12],
+                tech_to_declaration_samples: vec![4],
+                declaration_to_capture_samples: Vec::new(),
+                aborts: std::collections::BTreeMap::from([("target no longer alive", 2)]),
+            }),
+        };
+
+        let wire = session.plan_json(&plan);
+        assert_eq!(wire["war"]["selective"], json!(true));
+        assert_eq!(wire["war"]["rapid"], json!(true));
+        assert_eq!(wire["war"]["phase"], json!("strike"));
+        assert_eq!(wire["war"]["breakthrough_tech"], json!("apprenticeship"));
+        assert_eq!(wire["war"]["ready_bodies"], json!(4));
+        assert_eq!(wire["war"]["staged_bodies"], json!(3));
+        assert_eq!(wire["war"]["upgrade_gold_reserved"], json!(123.5));
+        assert_eq!(wire["war"]["aborts"]["target no longer alive"], json!(2));
+        assert!(EMBEDDED_INDEX.contains("const warPlan = plan?.war || null;"));
+        assert!(EMBEDDED_INDEX.contains("warPlan.selective"));
+        assert!(EMBEDDED_INDEX.contains("warPlan.rapid"));
+        assert!(EMBEDDED_INDEX.contains("row(\"Attack phase\""));
+        assert!(EMBEDDED_INDEX.contains("row(\"Strike package\""));
+    }
+
+    /// The AI strategy dossier reads one civilization's plan beside what it
     /// is actually spending its science and culture on. The observation only
     /// ever carries the *observed* seat's study, in `me`, and above the world
     /// there is no observed seat — so the omniscient view names every major's.
@@ -9661,6 +11276,9 @@ mod tests {
         for piece in [
             "id=\"leader\"",
             "id=\"difficulty\"",
+            "id=\"citystates\"",
+            "id=\"turnlimit\"",
+            "id=\"mapseed\"",
             "id=\"saves-group\"",
             "function syncSetupMode()",
             "async function refreshSaves()",
@@ -9672,8 +11290,9 @@ mod tests {
                 "the setup screen is missing {piece}"
             );
         }
-        // Both selects are filled from the live ruleset, never a hardcoded list.
-        assert!(EMBEDDED_INDEX.contains("RULES.civs && typeof RULES.civs === \"object\""));
+        // The leader picker follows the live roster API, while difficulty is
+        // still supplied by the active ruleset; neither is a hardcoded list.
+        assert!(EMBEDDED_INDEX.contains("RULES.leader_pools"));
         assert!(EMBEDDED_INDEX
             .contains("RULES.difficulties && typeof RULES.difficulties === \"object\""));
         // A spectated world has nobody to hand a leader or a handicap to, and
@@ -9683,6 +11302,12 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "...(gameMode === \"ai_sim\" ? {} : {civs: civ6 || !leader ? [] : [leader], difficulty})"
         ));
+        // City-state count, turn cap and seed are common world settings. They
+        // remain available for both CIVVIS modes, while the leader and
+        // difficulty above remain the single-player additions.
+        assert!(EMBEDDED_INDEX.contains("class=\"small civ6-hidden\">City-states"));
+        assert!(EMBEDDED_INDEX.contains("function syncWorldSetupInputs()"));
+        assert!(EMBEDDED_INDEX.contains("setOptionalWorldNumber(\"mapseed\", st.seed);"));
         // A build without the save endpoints hides the group rather than
         // offering one that cannot work.
         assert!(EMBEDDED_INDEX.contains("catch (error) { group.style.display = \"none\";"));
@@ -9734,7 +11359,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("document.body.classList.toggle(\"watching-sim\", SPEC);"));
         // Leader and difficulty still do follow the selection. The leader row
         // carries a second class because a third mode hides it for a different
-        // reason — see `browser_offers_the_civilization_vi_mode`.
+        // reason — see `browser_keeps_the_civilization_vi_mode_available_for_verification`.
         assert!(EMBEDDED_INDEX.contains("body.spectating .human-setting { display: none; }"));
         assert!(EMBEDDED_INDEX.contains("class=\"small human-setting civ6-hidden\">Leader"));
         assert!(EMBEDDED_INDEX.contains("class=\"small human-setting\">Difficulty"));
@@ -9744,8 +11369,8 @@ mod tests {
             .contains("if (SPEC) document.getElementById(\"gamemode\").value = \"ai_sim\";"));
     }
 
-    /// The third mode plays the other game, so the panel it is chosen in has
-    /// to stop describing one of ours.
+    /// The verification-only mode plays the other game, so the panel it is
+    /// chosen in has to stop describing one of ours.
     ///
     /// Every assertion here is a setting that would otherwise stay on screen
     /// and be silently dropped. `CivvisControlSetup.lua` writes ruleset, map,
@@ -9754,10 +11379,11 @@ mod tests {
     /// is a promise about the run that the run does not keep — and the run
     /// takes hours to disprove it.
     #[test]
-    fn browser_offers_the_civilization_vi_mode() {
-        // The mode is in the list, named after what it does.
+    fn browser_keeps_the_civilization_vi_mode_available_for_verification() {
+        // This route remains selectable by verification, but it is not a
+        // public choice in the left-panel game-mode list.
         assert!(EMBEDDED_INDEX.contains(
-            "<option value=\"civ6\">Play Firaxis Civ 6 with computer control</option>"
+            "<option value=\"civ6\" hidden>Play Firaxis Civ 6 with computer control</option>"
         ));
         // A third body state, not a variation on either of the other two.
         assert!(EMBEDDED_INDEX
@@ -9769,11 +11395,14 @@ mod tests {
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"20\"", // leader pool
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\"", // teams
             "class=\"small human-setting civ6-hidden\">Leader",
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\"", // world shape
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"50\"", // thermal
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"60\"", // start era
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"70\"", // future era
-            "class=\"victory-options game-advanced-setting civ6-hidden\"",
+            "class=\"small civ6-hidden\">World shape",
+            "class=\"small civ6-hidden\">City-states",
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\"", // thermal
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"50\"", // turn limit
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"60\"", // map seed
+            "class=\"small civ6-hidden\">Start era",
+            "class=\"small civ6-hidden\">Future Era",
+            "class=\"victory-options civ6-hidden\"",
             "class=\"mod-options game-advanced-setting civ6-hidden\"",
         ] {
             assert!(EMBEDDED_INDEX.contains(row), "{row} is not hidden in the Civ 6 mode");
@@ -9792,12 +11421,13 @@ mod tests {
         // starts is how a dead Steam client cost eleven ladder attempts.
         assert!(EMBEDDED_INDEX.contains("civ6Status = await fetchJSON(\"/civ6\");"));
         assert!(EMBEDDED_INDEX.contains("`Cannot start: ${status.blocked}`"));
-        assert!(EMBEDDED_INDEX.contains("button.disabled = blocked;"));
+        assert!(EMBEDDED_INDEX.contains("button.disabled = blocked || !!setupError;"));
     }
 
-    /// The mode is offered on every computer and refused on the ones that
-    /// cannot run it, so both of its endpoints always answer — and the refusal
-    /// is a sentence a person can act on rather than a missing response.
+    /// The verification-only mode is available on every computer and refused
+    /// on the ones that cannot run it, so both of its endpoints always answer
+    /// — and the refusal is a sentence a person can act on rather than a
+    /// missing response.
     #[test]
     fn the_civ6_endpoints_answer_on_any_host() {
         let port = TcpListener::bind(("127.0.0.1", 0))
@@ -9945,12 +11575,12 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("openCityScreen(city.id);"));
     }
 
-    /// Clicking a distant tile is Civ 6's "go there", and it cannot be built
-    /// on `move_to`: `path_to` seeds its search with the unit's remaining
-    /// movement, so anything further is `"unreachable"`. `/route` exposes the
-    /// long-range router the AI already uses, one step at a time, and the
-    /// client still sends a normal Move for that step — so the engine stays
-    /// the authority on whether the move is legal now.
+    /// Secondary-clicking a distant tile is Civ 6's "go there", and it cannot
+    /// be built on `move_to`: `path_to` seeds its search with the unit's
+    /// remaining movement, so anything further is `"unreachable"`. `/route`
+    /// exposes the long-range router the AI already uses, one step at a time,
+    /// and the client still sends a normal Move for that step — so the engine
+    /// stays the authority on whether the move is legal now.
     #[test]
     fn route_offers_one_step_of_a_journey_the_current_turn_cannot_finish() {
         let session = Session::new(current());
@@ -10066,10 +11696,12 @@ mod tests {
     /// A spectated finale is counted down by the supervisor. A finished human
     /// game has nobody driving it, so its own result screen counts down to the
     /// next game — and every way of saying "I am still here" has to stop it,
-    /// or the offer to keep the world is only an offer for ten seconds.
+    /// or the offer to keep the world is only an offer for the selected hold.
     #[test]
     fn a_human_finale_counts_itself_down_to_the_next_game() {
-        assert!(EMBEDDED_INDEX.contains("const FINALE_RESTART_SECONDS = 10;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "finaleCountdownDeadline = Date.now() + betweenGameCountdownMs();"
+        ));
         assert!(EMBEDDED_INDEX.contains("id=\"finale-restart\""));
         assert!(EMBEDDED_INDEX
             .contains("button.textContent = `${FINALE_RESTART_LABEL} (${left})`;"));
@@ -10204,6 +11836,11 @@ mod tests {
             .unwrap();
         assert_eq!(session.seat_strategy[0], Some(target));
         assert_eq!(session.seat_entry(0).unwrap().name, "strategic");
+        assert_eq!(
+            session.state()["players"][0]["ai_player_strategy"],
+            json!("strategic"),
+            "terminal evidence carries the stable league identity"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -10823,6 +12460,56 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function wakeSleepers()"));
     }
 
+    #[test]
+    fn browser_next_action_prefers_nearby_unvisited_units_before_revisiting() {
+        let start = EMBEDDED_INDEX
+            .find("const nextActionVisited = new Set();")
+            .expect("next action should retain a visited-unit pass");
+        let end = EMBEDDED_INDEX[start..]
+            .find("// Civ 6's explicit previous/next-unit controls")
+            .map(|offset| start + offset)
+            .expect("the ordinary unit cycle should remain separate from next action");
+        let action_pass = &EMBEDDED_INDEX[start..end];
+
+        // Mark the current unit before looking for candidates, so the action
+        // moves onward instead of selecting the unit already under review.
+        let mark_current = action_pass
+            .find("if (origin) nextActionVisited.add(origin.id);")
+            .expect("next action should mark the current unit visited");
+        let fresh_candidates = action_pass
+            .find("let candidates = waiting.filter(unit => !nextActionVisited.has(unit.id));")
+            .expect("next action should prefer unvisited units");
+        assert!(
+            mark_current < fresh_candidates,
+            "the current unit must be visited before the fresh candidate set is made"
+        );
+        let revisit = action_pass
+            .find("if (!candidates.length) {")
+            .expect("next action should reopen visited units after a full pass");
+        assert!(
+            fresh_candidates < revisit,
+            "visited units may be reconsidered only after every fresh candidate"
+        );
+        assert!(action_pass.contains("nextActionVisited.clear();"));
+        assert!(action_pass.contains("candidates = waiting.filter(unit => !origin || unit.id !== origin.id);"));
+        // `whexDist` keeps the nearest-unit promise true across wrapped map
+        // seams instead of measuring the long way around the world.
+        assert!(action_pass.contains(
+            "whexDist(origin.pos, first.pos) - whexDist(origin.pos, second.pos)"
+        ));
+        assert!(action_pass.contains("nextActionVisited.add(sel.id);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "function nextAction() {\n  if (!state || SPEC) return;\n  advanceToNextActionUnit(true);"
+        ));
+        // The requested fixed action map invokes the new selector from key 1;
+        // unit roster cycling is no longer a global keyboard shortcut.
+        assert!(EMBEDDED_INDEX.contains("if (step > 0) { advanceToNextUnit(true); return; }"));
+        assert!(EMBEDDED_INDEX.contains(
+            "{id: \"NextAction\", key: \"1\", run: () => nextAction()},"
+        ));
+        assert!(!EMBEDDED_INDEX.contains("id: \"NextUnitTab\""));
+    }
+
     /// Resting over a tile reports it, the way Civ 6's plot tooltip does — and
     /// it keeps doing so after the map has been panned or the simulation advances.
     ///
@@ -10852,27 +12539,104 @@ mod tests {
         for piece in [
             "function tileMoveCost(t)",
             "function tileDefense(t)",
-            "function tileGroundLevel(t)",
-            "function tileCoverLevel(t)",
-            "function sightTipLine(t)",
             "function appealBand(appeal)",
-            // The four lines the panel gains: cost to cross, worth defending,
-            // how it looks, and what it lets a unit see past.
-            "🥾 \" + (mp % 1 ? mp.toFixed(1) : mp) + \" MP\"",
-            "\" defense\"",
-            "\"🌸 appeal \"",
-            "lines.push(sightTipLine(t));",
+            "function tileYieldMarkers(yields)",
+            "function tileDetailYieldWords(yields, sign = false)",
+            "const TILE_TIP_YIELD_ORDER = [\"food\", \"production\", \"gold\", \"science\", \"culture\", \"faith\"];",
+            "class=\"tip-yield-marker\"",
+            "style=\"--tip-yield-fill:${YPIP[kind]};--tip-yield-ink:${YINK[kind]}\"",
+            "function tileBuiltTipLines(t, city)",
+            "function districtTipLines(t)",
+            "Base district yields:",
+            "adjacencyLines(t.adjacency, \"Adjacency yields\", t.district)",
+            "Total district yields:",
+            "function tileResourceTipLine(t)",
+            "★ ${cityName} ★",
+            " · <span class=\"tip-yields\">${yieldMarkers}</span>",
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(piece),
                 "the tile tooltip is missing {piece}"
             );
         }
-        // Ground level is terrain alone; only the cover a tile offers others
-        // picks up the feature on top of it.
-        assert!(EMBEDDED_INDEX
-            .contains("t.terrain === \"mountain\" ? 2 : (t.hills ? 1 : 0)"));
-        assert!(EMBEDDED_INDEX.contains("sight_through"));
+        let tip_start = EMBEDDED_INDEX
+            .find("function tileTipLines(t, pos, tileKey) {")
+            .expect("the map detail formatter is declared");
+        let tip_end = EMBEDDED_INDEX[tip_start..]
+            .find("\n// tooltip")
+            .map(|offset| tip_start + offset)
+            .expect("the map detail formatter ends before tooltip lifecycle code");
+        let details = &EMBEDDED_INDEX[tip_start..tip_end];
+
+        // These are intentionally a stable reading order: unit, the thing built
+        // on the tile and its yield ledger, owning empire/city, the ground and
+        // its total yields, movement, defense, then appeal.
+        let ordered = [
+            "lines.push(`<span class=\"tip-unit\">${civPossessive(civ)} ${titleCase(unit.type)} - ",
+            "lines.push(...tileBuiltTipLines(t, city));",
+            "const owner = tileOwnershipTipLine(t);",
+            "lines.push(tileTerrainTipLine(t));",
+            "const resource = tileResourceTipLine(t);",
+            "lines.push(...tileBaseYieldLines(t));",
+            "const yields = tileTotalYields(t);",
+            "lines.push(`Movement: ${movement}`);",
+            "lines.push(`Defense: ${defenseText}`);",
+            "lines.push(\"Appeal: \" + (t.appeal > 0 ? \"+\" : \"\") + t.appeal +",
+        ];
+        let mut previous = 0;
+        for piece in ordered {
+            let at = details
+                .find(piece)
+                .unwrap_or_else(|| panic!("the map-detail order is missing {piece}"));
+            assert!(
+                at >= previous,
+                "{piece} must follow the preceding map-detail row"
+            );
+            previous = at;
+        }
+        assert!(details.contains("${civPossessive(civ)} ${titleCase(unit.type)} - "));
+        assert!(details.contains(
+            "const unitStatus = unitHasHealth(unit) ? `${fmtYield(unit.hp)} HP` : \"capturable\";"
+        ));
+        assert!(details.contains("unitStatus + \"</span>\""));
+        assert!(details.contains("? (tileImpassable(t) ? \"Impassable\" : \"Unknown\")"));
+        assert!(details.contains("const defenseText = (defense > 0 ? \"+\" : \"\") + defense;"));
+        assert!(!details.contains(" MP"));
+        assert!(!details.contains("Capital: "));
+        assert!(!details.contains("<b>"));
+        assert!(
+            !details.contains("districtLensLabel("),
+            "supplemental lens details use words rather than the old emoji-yield helper"
+        );
+        let terrain_start = EMBEDDED_INDEX
+            .find("function tileTerrainTipLine(t) {")
+            .expect("the terrain detail formatter is declared");
+        let terrain_end = EMBEDDED_INDEX[terrain_start..]
+            .find("\nfunction tileResourceTipLine")
+            .map(|offset| terrain_start + offset)
+            .expect("the terrain detail formatter ends before resources");
+        let terrain = &EMBEDDED_INDEX[terrain_start..terrain_end];
+        let feature = terrain.find("if (t.feature)").expect("features are included first");
+        let ground = terrain.find("geography.push(titleCase(t.terrain)").expect("terrain is included");
+        let continent = terrain.find("if (t.continent").expect("continents are included last");
+        assert!(feature < ground && ground < continent, "feature, terrain, continent order");
+        let development_start = terrain_end;
+        let development_end = EMBEDDED_INDEX[development_start..]
+            .find("\nfunction tileTipLines")
+            .map(|offset| development_start + offset)
+            .expect("the resource formatter ends before details");
+        let development = &EMBEDDED_INDEX[development_start..development_end];
+        assert!(
+            development.contains("function tileResourceTipLine(t)")
+                && development.contains("Resource: "),
+            "resources are named after the terrain"
+        );
+        for emoji in ["●", "🥾", "🛡", "🌸", "👁", "♜", "✦", "⌂", "⬡", "🏗", "🛤", "🏛", "⚑", "⚡"] {
+            assert!(
+                !details.contains(emoji),
+                "map details should use text and map yield markers, not {emoji}"
+            );
+        }
     }
 
     /// The map's own overlays must be siblings, not each other's children.
@@ -10914,16 +12678,17 @@ mod tests {
 
     /// The map controls read left to right in the order a viewer reaches for
     /// them: collapse the command deck, set the map area, face north, zoom in,
-    /// zoom out, dismiss. Dismissal is last because it is the only one that
-    /// removes the bar, and it hides itself while the deck is collapsed —
-    /// Display settings is the only way back and it lives inside the deck.
+    /// zoom out, choose a sky route when one is available, dismiss.
+    /// Dismissal is last because it is the only one that removes the bar, and
+    /// it hides itself while the deck is collapsed — Display Settings is the
+    /// only way back and it lives inside the deck.
     #[test]
     fn the_map_controls_run_from_collapse_to_dismiss() {
         let dock = EMBEDDED_INDEX
-            .split_once("<div id=\"zoomctl\">")
+            .split_once("<div id=\"map-controls-dock\">")
             .expect("the map control dock")
             .1
-            .split_once("</div>")
+            .split_once("<div id=\"map-area-editor\"")
             .expect("the end of the map control dock")
             .0;
         let mut previous = 0usize;
@@ -10934,6 +12699,7 @@ mod tests {
             "id=\"compass\"",
             "id=\"zin\"",
             "id=\"zout\"",
+            "id=\"skynav\"",
             "data-overlay-close=\"controls\"",
         ] {
             let at = dock
@@ -10957,30 +12723,36 @@ mod tests {
     /// Gearing the wheel made fourteen orders of magnitude *reachable*; it did
     /// not make them navigable. Sixty-five notches is a distance nobody
     /// scrolls, and every one of them has to be aimed over empty space. So the
-    /// sky carries its own way about: the four places the gearing already
-    /// calls arrivals, the shots that hold a whole scale, and the zoom laid
-    /// out end to end as a ladder — one bar, standing over the zoom buttons,
-    /// up only while there is a sky to cross.
+    /// sky carries its own way about: the places the gearing already calls
+    /// arrivals, the shots that hold a whole scale, and the zoom laid out end
+    /// to end as a ladder — one complete route inside the map controls, up
+    /// only while there is a sky to cross.
     #[test]
     fn the_sky_carries_its_own_way_about() {
-        // It is part of the map controls: the same dock, the same dismissal.
-        // It stands *above* the zoom buttons rather than in the dock's flow,
-        // because the dock's height is ground the framing already reserves and
-        // a second row in the flow would move the world every time the camera
-        // left the globe.
+        // It is part of the map controls: the same dock, same row, and same
+        // dismissal. The complete labelled route follows zoom-out and precedes
+        // the exit, rather than splitting compact world glyphs by the compass
+        // from the solar-system route above the map.
         let dock = EMBEDDED_INDEX
             .split_once("<div id=\"map-controls-dock\">")
             .expect("the map control dock")
             .1;
         let bar = dock.find("id=\"skynav\"").expect("the sky navigator");
         let zoom = dock.find("<div id=\"zoomctl\">").expect("the zoom controls");
+        let minus = dock.find("id=\"zout\"").expect("the zoom-out control");
+        let exit = dock
+            .find("data-overlay-close=\"controls\"")
+            .expect("the map-control dismissal");
         assert!(
-            bar < zoom,
-            "the sky navigator reads before the zoom buttons it stands over"
+            zoom < bar,
+            "the sky navigator belongs inside the map-control strip"
         );
-        assert!(EMBEDDED_INDEX.contains("body.overlay-controls-hidden #skynav"));
+        assert!(
+            minus < bar && bar < exit,
+            "the complete sky route follows minus and precedes map-control exit"
+        );
         assert!(EMBEDDED_INDEX.contains("#skynav[hidden] { display: none; }"));
-        assert!(EMBEDDED_INDEX.contains("bottom: calc(100% + 6px)"));
+        assert!(EMBEDDED_INDEX.contains("bottom: calc(100% + var(--panel-gap))"));
         for part in [
             "id=\"skynav-worlds\"",
             "id=\"skynav-scales\"",
@@ -10992,6 +12764,10 @@ mod tests {
                 "the sky navigator is missing {part}"
             );
         }
+        assert!(
+            !EMBEDDED_INDEX.contains("id=\"skyworlds\""),
+            "the compact icon-only skyworlds strip is gone"
+        );
         // Only home takes the bar down, and only while home fills the frame:
         // home is the one world with a board on it. Every other world is
         // somewhere to get back off, and two readings of that rule cost a pass
@@ -11075,21 +12851,32 @@ mod tests {
         // framed — every constant, every trace and the caption that read off
         // them, so nothing is left drawing a hundred thousand light-years that
         // no zoom can now reach.
-        assert!(EMBEDDED_INDEX.contains("label:\"Solar system\", mark:\"☉\""));
+        assert!(EMBEDDED_INDEX.contains("label:\"Solar System\", mark:\"☉\""));
         assert!(EMBEDDED_INDEX.contains("stops.push({id:\"voyage\", label:\"Voyage\""));
-        // And the bar reads outward in one order — Earth, Moon, Mars, Solar
-        // system, Voyage, Exoplanet. The divider is no longer the difference
-        // between a world and a shot: it falls where the sky stops being
-        // somewhere anyone has stood, so the destination sits with the far
-        // pictures rather than beside the Moon.
-        assert!(EMBEDDED_INDEX
-            .contains("    const near = worlds.filter(stop => stop.id !== \"exo\");"));
+        // The complete old route lives in the control row in the order a
+        // journey reads: the local arrivals Earth, Moon, and Mars; the solar
+        // system and Voyage shots; then the destination called Exoplanet. The
+        // destination is still a world flight, even though it follows the
+        // scale shots in the row.
         assert!(EMBEDDED_INDEX.contains(
-            "                 ...worlds.filter(stop => stop.id === \"exo\").map(stop => [\"world\", stop])];"
+            "const local = worlds.filter(stop => stop.id !== \"exo\");"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "    skyNavScaleRow.replaceChildren(...far.map(([kind, stop]) => skyNavButton(kind, stop)));"
+            "const onward = [...scales, ...worlds.filter(stop => stop.id === \"exo\")];"
         ));
+        assert!(EMBEDDED_INDEX.contains(
+            "skyNavWorldRow.replaceChildren(...local.map(stop => skyNavButton(\"world\", stop)));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "skyNavScaleRow.replaceChildren(...onward.map(stop =>"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "skyNavButton(stop.body ? \"world\" : \"scale\", stop)"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.querySelectorAll(\"#skynav [data-sky-stop]\")"
+        ));
+        assert!(EMBEDDED_INDEX.contains("button.setAttribute(\"aria-label\", stop.label);"));
         // A switch takes three times as long as it first shipped at, both ways.
         // The distances are the content, and at the old pace the crossing was
         // over before it had said anything about what lay between the two ends.
@@ -11113,24 +12900,20 @@ mod tests {
                 "the galaxy view is dropped, but {gone} is still in the client"
             );
         }
-        // The destination is a button called Exoplanet, not one called whatever
-        // that game's survey happened to turn up: the same control reads
-        // `Teegarden's Star b` in one game and `82 Eridani d` in the next, and
-        // a control that renames itself between games is one nobody learns.
-        // The real name stays on the tooltip and on the world's own captions.
+        // These controls stay practical and stable: each button is named only
+        // for its destination, with no changing survey name or hover copy.
         assert!(EMBEDDED_INDEX
-            .contains("const SKY_STOP_LABELS = {earth:\"Earth\", exo:\"Exoplanet\"};"));
+            .contains("const SKY_STOP_LABELS = {earth:\"Earth\", moon:\"Moon\", mars:\"Mars\", exo:\"Exoplanet\"};"));
         assert!(EMBEDDED_INDEX.contains(
-            "                label:SKY_STOP_LABELS[id] || body.name.replace(/^The /, \"\"),"
+            "                label:SKY_STOP_LABELS[id] || body.name.replace(/^The /, \"\")});"
         ));
-        assert!(EMBEDDED_INDEX.contains("                                     : `Fly to ${body.name}`});"));
-        // And the bar's rebuild key carries the title, because the labels no
-        // longer move: `Exoplanet` and `Voyage` read the same whichever world
-        // the expedition settled on, so keyed on the labels alone the bar would
-        // never rebuild when the destination was chosen and both tooltips would
-        // name the pre-launch default for the rest of the game.
+        assert!(EMBEDDED_INDEX.contains("button.title = stop.label;"));
+        assert!(!EMBEDDED_INDEX.contains("Fly to ${body.name}"));
+        // The labels are fixed, so they are all the rebuild key needs.
         assert!(EMBEDDED_INDEX
-            .contains(".map(stop => `${stop.id}/${stop.label}/${stop.title}`).join(\",\");"));
+            .contains(".map(stop => `${stop.id}/${stop.label}`).join(\",\");"));
+        assert!(!EMBEDDED_INDEX.contains("function skySceneCaption"));
+        assert!(EMBEDDED_INDEX.contains("function mapControlsBox(viewRect)"));
         // Short of the ceiling on purpose: a jump that lands exactly on the
         // stop leaves the zoom-in button dead in the hand on arrival.
         assert!(EMBEDDED_INDEX.contains("const SKY_STOP_FILL = .8;"));
@@ -11216,11 +12999,66 @@ mod tests {
         ));
         assert!(!EMBEDDED_INDEX.contains("Math.max(1e-6, cam.scale)"));
 
-        // The sky keeps its captions clear of the bar the way it does of every
-        // other widget, and the block that says what the picture is a picture
-        // of is measured off the same edge the bar is.
+        // The practical ruler sits beside the map controls whenever that space
+        // fits, and otherwise rises above them without covering a button.
         assert!(EMBEDDED_INDEX.contains("  const nav = skyNavBox(viewRect);"));
-        assert!(EMBEDDED_INDEX.contains("const nav = skyNavBox(cv.getBoundingClientRect());"));
+        assert!(EMBEDDED_INDEX.contains("const controls = mapControlsBox(viewRect);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const right = mapScaleRightEdge(viewRect, controls, frame.right - 12);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const beside = controls && controls.right + 14 + width <= right;"
+        ));
+    }
+
+    /// Mercury, Ceres, Callisto, and Titan are surveyable tiled worlds. Their
+    /// resource marks use already-known Civ resource IDs, but remain separate
+    /// from the game rules until an off-world economy is deliberately designed.
+    #[test]
+    fn tiled_sky_resource_worlds_are_zoomable_without_navigation_buttons() {
+        let worlds = [
+            ("mercury", "iron"),
+            ("ceres", "salt"),
+            ("callisto", "iron"),
+            ("titan", "oil"),
+        ];
+        for (world, resource) in worlds {
+            let spec = EMBEDDED_INDEX
+                .split_once(&format!("id:\"{world}\""))
+                .unwrap_or_else(|| panic!("{world} is absent from the sky catalogue"))
+                .1
+                .split_once("},")
+                .unwrap_or_else(|| panic!("{world} sky catalogue entry is not closed"))
+                .0;
+            assert!(
+                spec.contains(&format!("skyResources:[\"{resource}\"]")),
+                "{world} must use the existing {resource} resource marker"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains(
+            "const SKY_TILED_RESOURCE_WORLDS = [\"mercury\", \"ceres\", \"callisto\", \"titan\"];"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const SKY_ZOOMABLE_WORLDS = [...SKY_ARRIVALS, ...SKY_TILED_RESOURCE_WORLDS];"
+        ));
+        assert!(EMBEDDED_INDEX.contains("const ids = [...SKY_ZOOMABLE_WORLDS];"));
+        assert!(EMBEDDED_INDEX.contains("function skyResourceCells(body, cells)"));
+        assert!(
+            EMBEDDED_INDEX.contains("function drawSkyResourceBadge(resource, x, y, size, alpha)")
+        );
+        assert!(EMBEDDED_INDEX.contains("drawResourcePictogram(resource, x, y, size * 1.35);"));
+
+        // A world stop is a navigation button. These bodies are deliberately
+        // excluded from that list even though their zoom approach is paced.
+        let world_stops = EMBEDDED_INDEX
+            .split_once("function skyWorldStops()")
+            .expect("the sky navigation stop builder")
+            .1
+            .split_once("function skyScaleStops()")
+            .expect("the sky scale stop builder")
+            .0;
+        assert!(world_stops.contains("for (const id of SKY_ARRIVALS)"));
+        assert!(!world_stops.contains("SKY_ZOOMABLE_WORLDS"));
     }
 
     /// The world is drawn into a rectangle of the map area rather than into
@@ -11397,10 +13235,12 @@ pub fn serve_with_game(
         next_game_params: Mutex::new(session.take_resumed_next_game_params()),
         session: Mutex::new(session),
         pace_ms: AtomicU64::new(1_000), // one second per turn by default
+        between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
         paused: AtomicBool::new(initially_paused),
         restart_in: AtomicU64::new(u64::MAX),
         turn_us: AtomicU64::new(0),
         turn_compute_us: AtomicU64::new(0),
+        frame_sequence: AtomicU64::new(0),
         frame_delivery: Mutex::new(FrameDelivery::default()),
         frame_painted: Condvar::new(),
         simulation_frame_gate: Mutex::new(()),

@@ -611,6 +611,43 @@ class PolicyTests(unittest.TestCase):
         )
         self.assertEqual(coordinated, [])
 
+    def test_a_pin_only_collision_does_not_fail_a_ready_pr(self):
+        """End-to-end: the exemption must be wired into validate_pr, not just exist.
+
+        Two PRs both re-pinning ADVANCED_V1_SOURCE_CONTRACT_FNV collide on that
+        one line by construction. Without the exemption this is a hard error on
+        a ready PR and the author is told to coordinate — with a set that
+        changes again on the next merge.
+        """
+        pin_only = [
+            "/// #999 gates a thing. A compatibility re-pin.",
+            "const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xdead_beef_dead_beef;",
+        ]
+        errors = collab.validate_pr(
+            pr(self.branch, body(paths="`src/main.rs`"), draft=False),
+            files=["src/main.rs"],
+            commit_subjects=[],
+            other_files={5: {"src/main.rs"}},
+            added_lines={"src/main.rs": pin_only},
+        )
+        self.assertEqual(errors, [])
+
+    def test_a_real_main_rs_collision_still_fails_a_ready_pr(self):
+        """The exemption is for the pin line, not for src/main.rs generally."""
+        errors = collab.validate_pr(
+            pr(self.branch, body(paths="`src/main.rs`"), draft=False),
+            files=["src/main.rs"],
+            commit_subjects=[],
+            other_files={5: {"src/main.rs"}},
+            added_lines={
+                "src/main.rs": [
+                    "const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xdead_beef_dead_beef;",
+                    "    let entrants = parse_tournament_entrants(spec)?;",
+                ]
+            },
+        )
+        self.assertTrue(any("collide with PR #5" in error for error in errors), errors)
+
     def test_a_draft_reports_collisions_without_failing(self):
         advisories = []
         errors = collab.validate_pr(
@@ -655,6 +692,23 @@ class PolicyTests(unittest.TestCase):
             other_ranges={5: {"src/game.rs": [(130, 160)]}},
         )
         self.assertEqual(errors, [])
+
+    def test_a_newer_prs_coordination_acknowledges_an_older_ready_pr(self):
+        """A later task cannot be named by an older PR's already-ready body."""
+        advisories = []
+        errors = collab.validate_pr(
+            pr(self.branch, body(), draft=False),
+            files=["src/game.rs"],
+            commit_subjects=[],
+            ranges={"src/game.rs": [(100, 140)]},
+            other_ranges={5: {"src/game.rs": [(130, 160)]}},
+            other_coordination={5: {9}},
+            advisories=advisories,
+        )
+        self.assertEqual(errors, [])
+        self.assertTrue(
+            any("PR #5 already declares coordination with PR #9" in note for note in advisories)
+        )
 
     def test_ready_pr_must_complete_checkboxes(self):
         errors = collab.validate_pr(
@@ -959,6 +1013,49 @@ Added the fast shipping path.
             collab.required_check_state(failed),
             ("failed", ["collaboration-policy"]),
         )
+
+    def test_a_pin_only_edit_is_not_a_real_collision(self):
+        """The source-contract pin collides by construction; see SOURCE_CONTRACT_PIN."""
+        pin_only = [
+            "/// #999 does a thing behind a flag. A compatibility re-pin.",
+            "const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xdead_beef_dead_beef;",
+        ]
+        self.assertTrue(collab.is_pin_only_edit(pin_only))
+        self.assertEqual(
+            collab.drop_pin_only_collisions(
+                ["src/main.rs"], {"src/main.rs": pin_only}
+            ),
+            [],
+        )
+
+    def test_a_real_main_rs_edit_still_collides(self):
+        """Exempting the pin must not exempt the file it lives in."""
+        with_real_code = [
+            "const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xdead_beef_dead_beef;",
+            "    let entrants = parse_tournament_entrants(spec)?;",
+        ]
+        self.assertFalse(collab.is_pin_only_edit(with_real_code))
+        self.assertEqual(
+            collab.drop_pin_only_collisions(
+                ["src/main.rs"], {"src/main.rs": with_real_code}
+            ),
+            ["src/main.rs"],
+        )
+
+    def test_other_files_are_never_exempted(self):
+        """Only src/main.rs carries the pin; nothing else may claim the exemption."""
+        self.assertEqual(
+            collab.drop_pin_only_collisions(
+                ["src/elo.rs"],
+                {"src/elo.rs": ["const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1;"]},
+            ),
+            ["src/elo.rs"],
+        )
+
+    def test_an_edit_that_never_touches_the_pin_is_not_pin_only(self):
+        """A doc-comment-only change to main.rs is a real edit, not a re-pin."""
+        self.assertFalse(collab.is_pin_only_edit(["/// just a comment"]))
+        self.assertFalse(collab.is_pin_only_edit([]))
 
     def test_exact_live_revision_is_accepted_without_git_lookup(self):
         self.assertTrue(

@@ -176,26 +176,83 @@ impl Game {
     /// contributes nothing rather than a penalty: the planner simply would
     /// not build it there.
     pub fn settlement_adjacency_summary(&self, pid: usize, center: Pos, radius: i32) -> Yields {
+        let positions = self.wdisk(center, radius);
+        self.settlement_adjacency_summary_from_positions(pid, center, &positions)
+    }
+
+    pub(crate) fn settlement_adjacency_summary_from_positions(
+        &self,
+        pid: usize,
+        center: Pos,
+        positions: &[Pos],
+    ) -> Yields {
         let assume = PlanAssumption {
             city_center: Some(center),
             foundations: true,
         };
-        let candidates = self.settlement_candidates(center, radius);
-        let mut summary = Yields::default();
-        for district in self.plannable_districts(pid, true) {
-            let mut best = 0.0;
-            let mut best_yields = Yields::default();
-            for pos in candidates
+        let districts: Vec<(Name, Name)> = self
+            .plannable_districts(pid, true)
+            .into_iter()
+            .map(|district| (district, self.district_family(district)))
+            .collect();
+        let mut bests: Vec<(f64, Yields)> = districts
+            .iter()
+            .map(|_| (0.0, Yields::default()))
+            .collect();
+        for pos in positions
+            .iter()
+            .copied()
+            .filter(|pos| *pos != center && self.plot_could_hold_a_district(*pos))
+        {
+            let candidate_neighbors = self.nbrs(pos);
+            let mut neighbor_tiles = [None; 6];
+            for (index, neighbor) in candidate_neighbors.iter().copied().enumerate() {
+                neighbor_tiles[index] = self.map.get(neighbor);
+            }
+            let gaul = self
+                .map
+                .get(pos)
+                .and_then(|tile| tile.owner_city)
+                .and_then(|city_id| self.cities.get(&city_id))
+                .is_some_and(|city| self.players[city.owner].civ == "Gaul");
+            let district_count = neighbor_tiles
                 .iter()
-                .copied()
-                .filter(|pos| self.plot_fits_placement(pid, district, *pos, center))
-            {
-                let yields = self.district_adjacency_assuming(district, pos, Some(&assume), None);
-                if yields.total() > best {
-                    best = yields.total();
-                    best_yields = yields;
+                .flatten()
+                .filter(|tile| {
+                    !gaul
+                        && (tile.district.is_some()
+                            || self.city_at(tile.pos).is_some()
+                            || assume.treats_as_city_center(tile.pos)
+                            || (assume.foundations && tile.district_foundation.is_some()))
+                })
+                .count();
+            for (district_index, (district, family)) in districts.iter().copied().enumerate() {
+                if !self.plot_fits_placement_with_neighbors(
+                    pid,
+                    district,
+                    pos,
+                    center,
+                    &candidate_neighbors,
+                ) {
+                    continue;
+                }
+                let yields = self
+                    .district_adjacency_assuming_with_family_and_neighbors_and_district_count(
+                        district,
+                        pos,
+                        Some(&assume),
+                        None,
+                        family,
+                        &neighbor_tiles,
+                        district_count,
+                    );
+                if yields.total() > bests[district_index].0 {
+                    bests[district_index] = (yields.total(), yields);
                 }
             }
+        }
+        let mut summary = Yields::default();
+        for (_, best_yields) in bests {
             summary.add(best_yields);
         }
         summary
@@ -260,6 +317,18 @@ impl Game {
     /// reach this (no adjacency rules), so their branches answer `false`
     /// rather than approximating hydrology the settler cannot see anyway.
     fn plot_fits_placement(&self, pid: usize, district: Name, pos: Pos, center: Pos) -> bool {
+        let neighbors = self.nbrs(pos);
+        self.plot_fits_placement_with_neighbors(pid, district, pos, center, &neighbors)
+    }
+
+    fn plot_fits_placement_with_neighbors(
+        &self,
+        pid: usize,
+        district: Name,
+        pos: Pos,
+        center: Pos,
+        neighbors: &crate::hex::Neighbors,
+    ) -> bool {
         let spec = &self.rules.districts[district];
         let tile = &self.map.tiles[&pos];
         let is_water = self.rules.is_water(tile);
@@ -272,7 +341,6 @@ impl Game {
         {
             return false;
         }
-        let neighbors = self.nbrs(pos);
         let adjacent_land = neighbors.iter().any(|neighbor| {
             self.map
                 .get(*neighbor)

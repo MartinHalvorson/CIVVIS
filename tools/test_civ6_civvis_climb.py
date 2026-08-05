@@ -13,6 +13,7 @@ from pathlib import Path
 import json
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -360,7 +361,7 @@ class WedgedAttempt(unittest.TestCase):
         def kill(self):
             self._dead = True
 
-    def _run(self, turns, frozen_s):
+    def _run(self, turns, frozen_s, locked_probe=None):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "run").mkdir()
@@ -371,10 +372,73 @@ class WedgedAttempt(unittest.TestCase):
             climb.RUN_ROOT = root
             try:
                 play = self._Play()
-                why = climb.wait_watching_the_turn(play, "run", 3.0, frozen_s)
+                why = climb.wait_watching_the_turn(
+                    play, "run", 3.0, frozen_s,
+                    locked_probe=locked_probe or (lambda: False))
                 return why, play.signalled
             finally:
                 climb.RUN_ROOT = original
+
+    def test_a_locked_screen_does_not_kill_a_healthy_attempt(self):
+        """⚠⚠ A LOCKED SCREEN IS NOT A STALLED GAME.
+
+        `civ6_play` waits at the macOS authentication boundary instead of
+        scripting past it. Neither timer here knew that: `deadline` is wall
+        clock and `last_turn_at` cannot advance while the game is not being
+        driven, so a long enough lock killed a healthy attempt.
+
+        Live: run `civvis-20260804T102440Z` reached turn 82 with 4 cities and
+        score 185, then was stopped by "attempt exceeded its own timeout" after
+        the session locked mid-game.
+
+        With the screen reported LOCKED and `frozen_s=0`, the pre-fix code kills
+        the attempt immediately. It must not.
+        """
+        original_cap = climb.LOCK_CREDIT_CAP_S
+        # A ZERO cap keeps the test bounded: the first locked slice exceeds it.
+        # Without ANY cap the loop spins forever, because every locked slice
+        # extends the deadline it is racing — precisely what the first version
+        # of this fix did, and the fake `play.wait` returns instantly so almost
+        # no wall clock accrues to reach a larger cap.
+        climb.LOCK_CREDIT_CAP_S = 0.0
+        started = time.time()
+        try:
+            why, signalled = self._run([1, 2, 206], frozen_s=0.0,
+                                        locked_probe=lambda: True)
+        finally:
+            climb.LOCK_CREDIT_CAP_S = original_cap
+        self.assertNotEqual(
+            why, "frozen",
+            "a locked screen must not be read as a frozen turn")
+        self.assertEqual(
+            why, "locked",
+            "past the credit cap the attempt must end, and must SAY it was the lock")
+
+    def test_a_permanent_lock_cannot_hang_the_attempt_forever(self):
+        """⚠ An unbounded pause holds the game hostage on a machine left locked.
+
+        Every locked slice extends the deadline it is racing, so without a cap
+        this loop never terminates. Bounded here by construction: the call must
+        return rather than run past the test's own patience.
+        """
+        original_cap = climb.LOCK_CREDIT_CAP_S
+        climb.LOCK_CREDIT_CAP_S = 0.0
+        started = time.time()
+        try:
+            why, signalled = self._run([1, 2, 206], frozen_s=600.0,
+                                        locked_probe=lambda: True)
+        finally:
+            climb.LOCK_CREDIT_CAP_S = original_cap
+        self.assertEqual(why, "locked")
+        self.assertLess(time.time() - started, 30.0,
+                        "the capped wait must resolve promptly, not spin")
+
+    def test_an_unlocked_frozen_turn_is_still_killed(self):
+        """The pause must be conditional — with the screen UNLOCKED the guard stands."""
+        why, signalled = self._run([1, 2, 206], frozen_s=0.0,
+                                   locked_probe=lambda: False)
+        self.assertEqual(why, "frozen")
+        self.assertEqual(signalled, climb.signal.SIGTERM)
 
     def test_a_frozen_turn_is_killed_from_outside(self):
         why, signalled = self._run([1, 2, 206], frozen_s=0.0)
@@ -406,25 +470,20 @@ class SettingsDealt(unittest.TestCase):
     which is why it has to be RECORDED rather than watched for.
     """
 
-    @staticmethod
-    def _mismatch(asked, dealt):
-        """The comparison the climb performs, in the same shape."""
-        return {
-            field: {"asked": a, "dealt": dealt.get(key)}
-            for field, key, a in (
-                ("difficulty", "difficulty", asked["difficulty"]),
-                ("map_size", "size", asked["map_size"]),
-                ("speed", "speed", asked["speed"]),
-            )
-            if dealt.get(key) is not None and dealt.get(key) != a
-        }
+    # ⚠ This used to be a local re-declaration "in the same shape" as the climb's
+    # inline comparison. It was a second copy of a rule, and a second copy of a rule
+    # is a test that goes green while the shipped one changes underneath it. Call
+    # the shipped function.
+    _mismatch = staticmethod(climb.settings_mismatch)
 
     ASKED = {"difficulty": "DIFFICULTY_SETTLER", "map_size": "MAPSIZE_SMALL",
-             "speed": "GAMESPEED_ONLINE"}
+             "speed": "GAMESPEED_ONLINE", "leader": "LEADER_TRAJAN"}
+
+    DEALT = {"difficulty": "DIFFICULTY_SETTLER", "size": "MAPSIZE_SMALL",
+             "speed": "GAMESPEED_ONLINE", "leader": "LEADER_TRAJAN"}
 
     def test_the_rung_the_game_actually_dealt_is_recorded(self):
-        dealt = {"difficulty": "DIFFICULTY_PRINCE", "size": "MAPSIZE_SMALL",
-                 "speed": "GAMESPEED_ONLINE"}
+        dealt = {**self.DEALT, "difficulty": "DIFFICULTY_PRINCE"}
         found = self._mismatch(self.ASKED, dealt)
         self.assertIn("difficulty", found)
         self.assertEqual(found["difficulty"]["dealt"], "DIFFICULTY_PRINCE")
@@ -432,9 +491,23 @@ class SettingsDealt(unittest.TestCase):
 
     def test_a_matching_game_records_nothing(self):
         """⚠ A field that always fires says nothing. Silence is the healthy case."""
-        dealt = {"difficulty": "DIFFICULTY_SETTLER", "size": "MAPSIZE_SMALL",
-                 "speed": "GAMESPEED_ONLINE"}
-        self.assertEqual(self._mismatch(self.ASKED, dealt), {})
+        self.assertEqual(self._mismatch(self.ASKED, self.DEALT), {})
+
+    def test_a_seat_dealt_the_wrong_leader_is_recorded(self):
+        """The 2026-08-03 census: 190 runs, Trajan 4 of them, and no row said so.
+
+        The picker verifies its own click, so this should never fire — which is
+        exactly the argument for recording it rather than trusting it.
+        """
+        found = self._mismatch(self.ASKED, {**self.DEALT, "leader": "LEADER_TOKUGAWA"})
+        self.assertEqual(found["leader"],
+                         {"asked": "LEADER_TRAJAN", "dealt": "LEADER_TOKUGAWA"})
+
+    def test_asking_for_no_leader_accepts_whatever_is_dealt(self):
+        """`--leader ""` is a deliberate random deal, not a field to police."""
+        asked = {**self.ASKED, "leader": ""}
+        self.assertEqual(self._mismatch(asked, {**self.DEALT, "leader": "LEADER_GORGO"}),
+                         {})
 
     def test_a_seat_that_could_not_be_read_is_not_a_mismatch(self):
         """⚠ Absent is not wrong. An old export naming nothing must not be
@@ -481,3 +554,306 @@ class BatchPinStalenessTests(unittest.TestCase):
         before = source[start - 700:start]
         self.assertIn("commits_behind_main()", before)
         self.assertIn("behind origin/main", before)
+
+
+class OneDeciderTests(_Harness, unittest.TestCase):
+    """The climb must not start a decider; it must configure the one `civ6_play` runs.
+
+    ⚠⚠⚠ Measured live 2026-08-03 on `civvis-20260803T185256Z`: TWO `civ6_brain.py`
+    processes on one run dir, one `orders.sqlite` and one `why.log` —
+
+        pid 81760   civ6_brain.py ...                 (spawned by civ6_play)
+        pid 81772   civ6_brain.py --war-from-plan     (spawned by the climb)
+
+    It hid because both deciders are deterministic over the same `events.jsonl`, so
+    their logs agreed turn for turn, and nothing compared the two CONFIGURATIONS —
+    which differed on exactly the flag the operator had just turned on.
+    """
+
+    def _play_argv(self):
+        """The argv the climb hands to `civ6_play.py`, and every other spawn."""
+        seen = []
+
+        class Recording(FakeProc):
+            def __init__(self, argv, *args, **kwargs):
+                seen.append(list(argv))
+                super().__init__(argv, *args, **kwargs)
+
+        climb.subprocess.Popen = Recording
+        try:
+            self.climb_with([{"last_turn": 40}], attempts=1)
+        finally:
+            climb.subprocess.Popen = FakeProc
+        return seen
+
+    def test_the_climb_starts_exactly_one_process_and_it_is_not_a_brain(self):
+        spawned = self._play_argv()
+        brains = [argv for argv in spawned
+                  if any("civ6_brain.py" in str(word) for word in argv)]
+        self.assertEqual(brains, [], "the climb must not spawn its own decider")
+        plays = [argv for argv in spawned
+                 if any("civ6_play.py" in str(word) for word in argv)]
+        self.assertEqual(len(plays), 1)
+
+    def test_every_decider_setting_reaches_the_process_that_runs_it(self):
+        """A setting the climb keeps to itself is a setting that grew a second brain."""
+        play = next(argv for argv in self._play_argv()
+                    if any("civ6_play.py" in str(word) for word in argv))
+        words = [str(word) for word in play]
+        self.assertIn("--civvis-decides", words)
+        # ⚠ NOT `--civvis-war-from-plan`. That is the one setting the climb must
+        # NOT pass: `civ6_play` refuses it as replay-only, the climb's own second
+        # brain was the only thing that ever applied it live, and asking for it is
+        # now refused before any of this runs. See `WarFromPlanGuardTests`.
+        self.assertNotIn("--civvis-war-from-plan", words)
+        self.assertIn("--civvis-victory", words)
+        self.assertIn("--civvis-strategy", words)
+        # `--orders-bin` used to reach only the climb's own brain, so `civ6_play`
+        # fell back to its repo-relative default and a worktree without a build died
+        # with "CIVVIS decision binary does not exist" while the flag naming a real
+        # binary sat on the command line.
+        self.assertIn("--civvis-bin", words)
+        self.assertEqual(words[words.index("--civvis-bin") + 1], str(self.orders_bin))
+
+    def test_civ6_play_forwards_the_war_flag_to_the_brain(self):
+        """The far end of the same wire. A flag `civ6_play` accepts and drops is worse
+        than one it does not accept: the climb would look configured and not be."""
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn('"--civvis-war-from-plan"', source)
+        self.assertIn("if args.civvis_war_from_plan:", source)
+        self.assertIn('command.append("--war-from-plan")', source)
+
+
+class WarFromPlanGuardTests(_Harness, unittest.TestCase):
+    """`--war-from-plan` must not reach a live game behind `civ6_play`'s back.
+
+    ⚠⚠⚠ `civ6_play.main` refuses `--civvis-war-from-plan` and says why: the override
+    declares on a plan's preferred rival even when the planner DECLINED war, and
+    live run `live-loop-rome-20260802-0800` forced one under a Religion plan on turn
+    37, spent 213 turns in Recovery asking for peace, and finished 400-1081.
+
+    The climb bypassed that guard for a day — not deliberately, but because it ran
+    its OWN `civ6_brain.py`, which takes the flag directly. Removing the second
+    decider is what made the conflict visible; this keeps it visible.
+    """
+
+    def test_asking_for_war_from_plan_refuses_the_batch(self):
+        code, rows = self.climb_with([{"last_turn": 40}], attempts=1,
+                                     argv_extra=("--war-from-plan",))
+        self.assertEqual(code, 4, "a refused configuration is not a played batch")
+        self.assertEqual(rows, [], "and it must not spend a rung or write a row")
+
+    def test_the_default_batch_still_runs(self):
+        """⚠ A guard that refuses everything is not a guard. Silence is the healthy case."""
+        code, rows = self.climb_with([{"last_turn": 40}], attempts=1)
+        self.assertEqual(code, 1)
+        self.assertEqual(len(rows), 1)
+
+    def test_civ6_play_still_holds_the_guard_this_one_defers_to(self):
+        """If that guard is ever lifted, this refusal is stale and must go with it."""
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn('if "--civvis-war-from-plan" in raw_argv:', source)
+        self.assertIn("replay-only", source)
+
+
+class EndScreenEvidenceTests(unittest.TestCase):
+    """`reached_end_screen` was keyed on an event that has NEVER been emitted.
+
+    ⚠⚠⚠ Measured across every run on this machine: 250 runs, 145
+    `autoclose_armed` for `EndGameMenu`, and ZERO `autoclose`. `armed` fires when
+    the context registers its handler — at game START, line 19 of a real run — and
+    the `autoclose` this looked for cannot happen at all, because Civilization VI
+    halts the Game Core when it shows the end-of-game screen and the shim ticks off
+    the frame loop that just stopped.
+
+    So the column read `None` on all 250 rows while its name promised the opposite.
+    """
+
+    # ⚠ NOT `_outcome`: `unittest.TestCase` uses `self._outcome` for its own
+    # `_Outcome` result recorder, so that name silently shadows the framework
+    # and every call fails with "'_Outcome' object is not callable".
+    def _row(self, events, tmp):
+        run = Path(tmp) / "civvis-x"
+        run.mkdir()
+        (run / "events.jsonl").write_text(
+            "\n".join(json.dumps(e) for e in events) + "\n")
+        saved = climb.RUN_ROOT
+        climb.RUN_ROOT = Path(tmp)
+        try:
+            return climb.outcome_of("civvis-x")
+        finally:
+            climb.RUN_ROOT = saved
+
+    def test_a_terminal_event_means_the_game_reached_its_end(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            record = self._row([
+                {"kind": "turn", "turn": 250, "score": 479},
+                {"kind": "victory", "turn": 251, "won": False, "team": 4},
+            ], tmp)
+        self.assertTrue(record["reached_end_screen"])
+        self.assertEqual(record["end_screen_turn"], 251)
+
+    def test_a_rivals_victory_still_counts_as_the_game_ending(self):
+        """⚠ The question is 'did the game reach its end', not 'did we win'.
+        `won()` remains the only thing that decides whose victory it was."""
+        with tempfile.TemporaryDirectory() as tmp:
+            record = self._row([
+                {"kind": "victory", "turn": 251, "won": False, "team": 4},
+            ], tmp)
+        self.assertTrue(record["reached_end_screen"])
+        self.assertFalse(climb.won(record))
+
+    def test_the_armed_event_alone_is_not_an_ending(self):
+        """⚠ `autoclose_armed` fires at game START. Counting it would mark every
+        run as having reached its end screen, including the ones that hung."""
+        with tempfile.TemporaryDirectory() as tmp:
+            record = self._row([
+                {"kind": "autoclose_armed", "screen": "EndGameMenu", "seconds": 10.0},
+                {"kind": "turn", "turn": 42},
+            ], tmp)
+        self.assertIsNone(record["reached_end_screen"])
+
+    def test_a_hung_run_is_not_reported_as_ended(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            record = self._row([{"kind": "turn", "turn": 87}], tmp)
+        self.assertIsNone(record["reached_end_screen"])
+
+
+class FinalScreenHoldTests(unittest.TestCase):
+    """The hold has to live in the harness, because the mod's clock cannot run."""
+
+    def test_the_harness_holds_before_it_stops_the_game(self):
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        hold = source.index("holding the final screen")
+        stop = source.index("game_stopped = launcher.stop()")
+        self.assertLess(hold, stop,
+                        "holding after the game is killed holds nothing")
+
+    def test_the_hold_only_happens_when_the_game_actually_ended(self):
+        """⚠ A stall or a wrong-modes refusal has nothing worth looking at, and
+        holding there would add ten seconds to every failure in a batch."""
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn('if state["outcome"] and args.end_game_seconds > 0:', source)
+
+
+class IdleSettlerTests(unittest.TestCase):
+    """A settler nobody ordered is invisible on every other column in the row.
+
+    ⚠⚠⚠ Measured across the archive 2026-08-03: 54 of 142 runs of >=50 turns (38%)
+    park a settler for >=15 consecutive turns at FULL movement — median streak 37,
+    worst 143. The applied-order rate never dips, because no order is issued to
+    fail, and `why.log` actively reports it as "marching".
+    """
+
+    def _run(self, states, tmp):
+        run = Path(tmp) / "r"
+        run.mkdir()
+        (run / "events.jsonl").write_text(
+            "\n".join(json.dumps(s) for s in states) + "\n")
+        return climb.longest_idle_settler(run / "events.jsonl")
+
+    @staticmethod
+    def _state(turn, x, y, moves, uid=7):
+        return {"kind": "state", "turn": turn,
+                "units": [{"kind": "UNIT_SETTLER", "id": uid,
+                           "x": x, "y": y, "moves": moves}]}
+
+    def test_a_settler_that_sits_at_full_movement_is_counted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            states = [self._state(t, 5, 5, 2) for t in range(1, 12)]
+            self.assertEqual(self._run(states, tmp), 10)
+
+    def test_a_settler_that_moves_is_not_idle(self):
+        """⚠ The healthy case must read zero, or the column says nothing."""
+        with tempfile.TemporaryDirectory() as tmp:
+            states = [self._state(t, 5, 5 + t, 1) for t in range(1, 12)]
+            self.assertEqual(self._run(states, tmp), 0)
+
+    def test_a_settler_out_of_movement_is_NOT_idle(self):
+        """⚠⚠ THE WHOLE POINT OF THE TEST. A unit that SPENT its movement was
+        asked to act and failed — that is blocked, which is a different defect and
+        a legitimate outcome. Only a unit still holding movement was never asked."""
+        with tempfile.TemporaryDirectory() as tmp:
+            states = [self._state(t, 5, 5, 0) for t in range(1, 12)]
+            self.assertEqual(self._run(states, tmp), 0)
+
+    def test_the_streak_resets_when_the_settler_finally_moves(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            states = ([self._state(t, 5, 5, 2) for t in range(1, 6)]
+                      + [self._state(6, 6, 5, 2)]
+                      + [self._state(t, 6, 5, 2) for t in range(7, 10)])
+            self.assertEqual(self._run(states, tmp), 4, "longest streak, not the last")
+
+    def test_two_settlers_are_tracked_apart(self):
+        """⚠ A shared counter would let a moving settler clear a parked one's streak."""
+        with tempfile.TemporaryDirectory() as tmp:
+            states = []
+            for t in range(1, 10):
+                states.append({"kind": "state", "turn": t, "units": [
+                    {"kind": "UNIT_SETTLER", "id": 1, "x": 5, "y": 5, "moves": 2},
+                    {"kind": "UNIT_SETTLER", "id": 2, "x": 9, "y": t, "moves": 2},
+                ]})
+            self.assertEqual(self._run(states, tmp), 8)
+
+    def test_no_settlers_reads_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            states = [{"kind": "state", "turn": t, "units": []} for t in range(1, 5)]
+            self.assertEqual(self._run(states, tmp), 0)
+
+
+class PassThroughFlagsReachTheGame(unittest.TestCase):
+    """Every boolean flag this loop defines must actually be FORWARDED.
+
+    ⚠⚠ THE CHAIN IS FOUR LINKS AND THE FOURTH IS THE ONE THAT BREAKS. The mod
+    reads a `cfg` key, `civ6_play.py` sets it from a flag, and this loop builds a
+    FIXED argument list — so a flag can exist at every other layer and still be
+    unreachable from a live game. `#1098` shipped exactly that way, and the
+    envoy lane sat behind the same gap: `civ6_play.py` has taken `--envoys` all
+    along and nothing could pass it.
+
+    This is a source-level assertion rather than a behavioural one because the
+    argument list is built inside the attempt loop, and a test that had to reach
+    it would be testing the harness rather than the chain. The failure it exists
+    to catch is textual: a flag declared and never forwarded.
+    """
+
+    SOURCE = (Path(__file__).resolve().parent / "civ6_civvis_climb.py").read_text()
+    PLAY = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+
+    def test_every_flag_civ6_play_also_accepts_is_actually_forwarded(self) -> None:
+        """A flag both layers know about, that this loop never passes on, is #1098."""
+        import re
+
+        declared = set(
+            re.findall(r'ap\.add_argument\("--([a-z0-9-]+)", action="store_true"', self.SOURCE)
+        )
+        self.assertIn("envoys", declared)
+
+        missing = []
+        for flag in sorted(declared):
+            # Only flags the FAR END understands can be forwarded at all; the
+            # rest are this loop's own business.
+            if f'"--{flag}"' not in self.PLAY:
+                continue
+            if f'(["--{flag}"] if args.{flag.replace("-", "_")} else [])' not in self.SOURCE:
+                missing.append(flag)
+        self.assertEqual(
+            [], missing,
+            f"declared here and understood by civ6_play, but never forwarded: {missing}",
+        )
+
+    def test_envoys_is_forwarded_and_civ6_play_accepts_it(self) -> None:
+        self.assertIn('(["--envoys"] if args.envoys else [])', self.SOURCE)
+        # The far end of the link must exist, or forwarding it is a crash.
+        self.assertIn('"--envoys"', self.PLAY)
+
+    def test_envoys_defaults_off_because_the_lane_can_segfault(self) -> None:
+        self.assertIn(
+            'ap.add_argument("--envoys", action="store_true", default=False',
+            self.SOURCE,
+            "the envoy lane must stay opt-in while chooseEnvoy has a SIGSEGV history",
+        )

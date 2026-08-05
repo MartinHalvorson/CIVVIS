@@ -161,6 +161,7 @@
   "plunder_type": "faith",
   "plunder_amount": 25,
   "unique_to": "Armagh",
+  "housing": 1,
   "same_adjacent_valid": false,
   "yields": {
    "faith": 2
@@ -892,5 +893,548 @@
    "snow",
    "tundra"
   ]
+ },
+ "chateau": {
+  "plunder_type": "culture",
+  "plunder_amount": 25,
+  "civic": "humanism",
+  "unique_to": "France",
+  "same_adjacent_valid": false,
+  "yields": {
+   "culture": 2,
+   "gold": 1
+  },
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "feature": [
+   "floodplains",
+   "grassland_floodplains",
+   "plains_floodplains",
+   "volcanic_soil"
+  ],
+  "requires_adjacent_resource_classes": [
+   "bonus",
+   "luxury"
+  ],
+  "effects": {
+   "adjacent_appeal": 1,
+   "adjacent_wonder_culture": 1,
+   "adjacent_wonder_culture_after_flight": 2,
+   "river_gold": 2
+  }
+ },
+ "chemamull": {
+  "plunder_type": "culture",
+  "plunder_amount": 25,
+  "civic": "craftsmanship",
+  "unique_to": "Mapuche",
+  "yields": {
+   "production": 1
+  },
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "feature": [
+   "floodplains",
+   "grassland_floodplains",
+   "plains_floodplains",
+   "volcanic_soil"
+  ],
+  "min_appeal": 4,
+  "effects": {
+   "appeal_culture_percent": 75
+  }
+ },
+ "feitoria": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
+  "tech": "cartography",
+  "unique_to": "Portugal",
+  "same_adjacent_valid": false,
+  "builder_buildable": false,
+  "unit_pillageable": false,
+  "water": true,
+  "terrain": [
+   "coast",
+   "lake"
+  ],
+  "yields": {
+   "production": 1,
+   "gold": 4
+  },
+  "requires_adjacent_resource_classes": [
+   "bonus",
+   "luxury"
+  ],
+  "requires_adjacent_passable_land": 1,
+  "requires_foreign_territory": true,
+  "requires_open_borders": true,
+  "effects": {
+   "foreign_route_gold": 4,
+   "foreign_route_production": 1
+  }
+ },
+ "golf_course": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
+  "civic": "reformed_church",
+  "unique_to": "Scotland",
+  "one_per_city": true,
+  "yields": {
+   "gold": 2
+  },
+  "terrain": [
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "effects": {
+   "amenity": 2,
+   "adjacent_appeal": 1,
+   "adjacent_city_center_culture": 1,
+   "adjacent_entertainment_complex_culture": 1
+  }
+ },
+ "hacienda": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
+  "civic": "mercantilism",
+  "unique_to": "Gran Colombia",
+  "yields": {
+   "production": 1,
+   "gold": 2
+  },
+  "housing": 0.5,
+  "terrain": [
+   "grassland",
+   "plains"
+  ],
+  "effects": {
+   "adjacent_plantation_pair_food": 1,
+   "adjacent_plantation_food_after_replaceable_parts": 1,
+   "adjacent_hacienda_pair_production": 1,
+   "adjacent_hacienda_production_after_rapid_deployment": 1
+  }
+ },
+ "ice_hockey_rink": {
+  "plunder_type": "culture",
+  "plunder_amount": 25,
+  "civic": "colonialism",
+  "unique_to": "Canada",
+  "one_per_city": true,
+  "yields": {
+   "culture": 1
+  },
+  "terrain": [
+   "snow",
+   "tundra"
+  ],
+  "effects": {
+   "amenity": 1,
+   "adjacent_appeal": 2,
+   "adjacent_tundra_snow_culture": 1,
+   "food_after_professional_sports": 2,
+   "production_after_professional_sports": 2,
+   "adjacent_stadium_culture": 4
+  }
+ },
+ "kampung": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
+  "tech": "shipbuilding",
+  "unique_to": "Indonesia",
+  "water": true,
+  "terrain": [
+   "coast",
+   "lake"
+  ],
+  "yields": {
+   "production": 1
+  },
+  "housing": 1,
+  "requires_adjacent_water_resource": true,
+  "effects": {
+   "adjacent_fishing_boats_food": 1,
+   "production_after_civil_engineering": 1,
+   "housing_after_civil_engineering": 1,
+   "tourism_after_flight": 1
+  }
+ },
+ "mission": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
+  "tech": "education",
+  "unique_to": "Spain",
+  "yields": {
+   "faith": 2
+  },
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "feature": [
+   "floodplains",
+   "grassland_floodplains",
+   "plains_floodplains",
+   "volcanic_soil"
+  ],
+  "effects": {
+   "foreign_continent_faith": 2,
+   "foreign_continent_food": 1,
+   "foreign_continent_production": 1,
+   "adjacent_campus_holy_site_science": 1,
+   "science_after_cultural_heritage": 2,
+   "foreign_continent_city_loyalty": 2
+  }
+ },
+ "open_air_museum": {
+  "plunder_type": "culture",
+  "plunder_amount": 25,
+  "civic": "nationalism",
+  "unique_to": "Sweden",
+  "one_per_city": true,
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "effects": {
+   "city_loyalty": 2,
+   "city_distinct_terrain_culture": 2
+  }
+ },
+ "outback_station": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
+  "civic": "guilds",
+  "unique_to": "Australia",
+  "yields": {
+   "food": 1,
+   "production": 1
+  },
+  "housing": 0.5,
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains"
+  ],
+  "effects": {
+   "adjacent_pasture_food": 1,
+   "adjacent_outback_pair_production_after_steam_power": 1,
+   "adjacent_outback_pair_food_after_rapid_deployment": 1
+  }
+ },
+ "polder": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
+  "civic": "guilds",
+  "unique_to": "Netherlands",
+  "water": true,
+  "terrain": [
+   "coast",
+   "lake"
+  ],
+  "yields": {
+   "food": 1,
+   "production": 1
+  },
+  "housing": 0.5,
+  "requires_adjacent_passable_land": 3,
+  "effects": {
+   "adjacent_polder_food": 1,
+   "adjacent_polder_food_after_replaceable_parts": 2,
+   "adjacent_polder_production_after_replaceable_parts": 1,
+   "gold_after_civil_engineering": 4
+  }
+ },
+ "maori_pa": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
+  "unique_to": "Maori",
+  "builder_buildable": false,
+  "unit_pillageable": false,
+  "requires_hills": true,
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "effects": {
+   "defense": 4,
+   "grant_fortification": 2,
+   "hostile_movement_penalty": 1,
+   "maori_heal_after_action": 1
+  }
+ },
+ "qhapaq_nan": {
+  "civic": "foreign_trade",
+  "unique_to": "Inca",
+  "terrain": [
+   "mountain"
+  ],
+  "unit_pillageable": false,
+  "effects": {
+   "passage": 1
+  }
+ },
+ "roman_fort": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
+  "unique_to": "Rome",
+  "builder_buildable": false,
+  "unit_pillageable": false,
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "feature": [
+   "volcanic_soil"
+  ],
+  "effects": {
+   "defense": 4,
+   "grant_fortification": 2,
+   "hostile_movement_penalty": 1
+  }
+ },
+ "stepwell": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
+  "tech": "irrigation",
+  "unique_to": "India",
+  "same_adjacent_valid": false,
+  "requires_flat": true,
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "feature": [
+   "floodplains",
+   "grassland_floodplains",
+   "plains_floodplains",
+   "volcanic_soil"
+  ],
+  "yields": {
+   "food": 1
+  },
+  "housing": 1,
+  "effects": {
+   "adjacent_holy_site_faith": 1,
+   "adjacent_farm_food": 1,
+   "faith_after_feudalism": 1,
+   "food_after_professional_sports": 1,
+   "drought_food_protection": 1
+  }
+ },
+ "terrace_farm": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
+  "unique_to": "Inca",
+  "requires_hills": true,
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains"
+  ],
+  "yields": {
+   "food": 1
+  },
+  "housing": 1,
+  "effects": {
+   "adjacent_mountain_food": 1,
+   "adjacent_aqueduct_production": 2,
+   "fresh_water_production": 1,
+   "adjacent_farm_pair_food": 1,
+   "adjacent_farm_food_after_replaceable_parts": 1
+  }
+ },
+ "colossal_head": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
+  "unique_to": "La Venta",
+  "yields": {
+   "faith": 2
+  },
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "tundra"
+  ],
+  "effects": {
+   "adjacent_woods_rainforest_pair_faith": 1,
+   "adjacent_woods_rainforest_faith_after_humanism": 1,
+   "faith_tourism_after_flight": 1
+  }
+ },
+ "mahavihara": {
+  "plunder_type": "science",
+  "plunder_amount": 25,
+  "unique_to": "Nalanda",
+  "same_adjacent_valid": false,
+  "requires_flat": true,
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "yields": {
+   "science": 2
+  },
+  "housing": 1,
+  "effects": {
+   "adjacent_holy_site_faith": 1,
+   "adjacent_campus_science": 1,
+   "adjacent_campus_science_after_scientific_theory": 2,
+   "first_build_random_tech": 1
+  }
+ },
+ "moai": {
+  "plunder_type": "culture",
+  "plunder_amount": 25,
+  "unique_to": "Rapa Nui",
+  "yields": {
+   "culture": 1
+  },
+  "terrain": [
+   "grassland",
+   "plains"
+  ],
+  "feature": [
+   "volcanic_soil"
+  ],
+  "forbids_adjacent_features": [
+   "forest",
+   "jungle"
+  ],
+  "effects": {
+   "adjacent_moai_pair_culture": 1,
+   "adjacent_moai_culture_after_medieval_faires": 1,
+   "volcanic_adjacent_or_on_culture": 2,
+   "adjacent_coast_lake_culture": 1
+  }
+ },
+ "nazca_line": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
+  "unique_to": "Nazca",
+  "requires_flat": true,
+  "terrain": [
+   "desert"
+  ],
+  "effects": {
+   "unworkable": 1,
+   "adjacent_appeal": 1,
+   "adjacent_tile_faith": 1,
+   "adjacent_resource_faith": 1,
+   "adjacent_desert_food_after_civil_service": 1,
+   "adjacent_flat_production_after_mass_production": 1,
+   "ai_value": 5
+  }
+ },
+ "ancient_tower_defense": {
+  "unbuildable": true,
+  "unit_pillageable": false,
+  "effects": {
+   "scenario_only": 1,
+   "defense": 4
+  }
+ },
+ "ancient_trap_defense": {
+  "unbuildable": true,
+  "unit_pillageable": false,
+  "effects": {
+   "scenario_only": 1
+  }
+ },
+ "buried_treasure": {
+  "unbuildable": true,
+  "unit_pillageable": false,
+  "effects": {
+   "scenario_only": 1
+  }
+ },
+ "floating_treasure": {
+  "unbuildable": true,
+  "unit_pillageable": false,
+  "water": true,
+  "effects": {
+   "scenario_only": 1
+  }
+ },
+ "grieving_gift": {
+  "unbuildable": true,
+  "unit_pillageable": false,
+  "effects": {
+   "scenario_only": 1
+  }
+ },
+ "improvised_trap": {
+  "unbuildable": true,
+  "unit_pillageable": false,
+  "effects": {
+   "scenario_only": 1
+  }
+ },
+ "modern_tower_defense": {
+  "unbuildable": true,
+  "unit_pillageable": false,
+  "effects": {
+   "scenario_only": 1,
+   "defense": 6
+  }
+ },
+ "modern_trap_defense": {
+  "unbuildable": true,
+  "unit_pillageable": false,
+  "effects": {
+   "scenario_only": 1
+  }
+ },
+ "popped_goody": {
+  "unbuildable": true,
+  "unit_pillageable": false,
+  "effects": {
+   "scenario_only": 1
+  }
+ },
+ "supply_drop": {
+  "unbuildable": true,
+  "unit_pillageable": false,
+  "effects": {
+   "scenario_only": 1
+  }
+ },
+ "vampire_castle": {
+  "unbuildable": true,
+  "unit_pillageable": false,
+  "effects": {
+   "scenario_only": 1,
+   "defense": 4
+  }
  }
 }

@@ -103,6 +103,35 @@ never reused, including after its PR is merged. Avoid persistent branches named
 only `fix/foo`, `session-x`, or `agent/name`; their ownership and lifetime are
 ambiguous.
 
+Every commit also names the computer that produced it, in a `Computer:` trailer
+on the last line:
+
+```text
+Computer: mbp-m5-max-128
+```
+
+For now that value is simply the device's own name — `scutil --get ComputerName`
+on macOS, `hostname` elsewhere — not a curated identifier. It may therefore
+differ from the short `<machine-id>` in the branch name, and that is fine: the
+branch component is chosen once and stays stable for claims and ownership
+checks, while the trailer says which physical machine actually ran the work.
+When the fleet outgrows device names, replace the value with a stronger computer
+ID and keep the trailer where it is.
+
+The trailer does **not** reach `main` on its own. This repository squash-merges
+with `squash_merge_commit_message = PR_BODY`, so the commit that lands on `main`
+is titled by the PR title and bodied by the PR description; the branch's own
+messages and its `<machine-id>` are discarded with the branch. Repeat the same
+line in the PR ownership block so it survives the squash:
+
+```text
+- Computer: `mbp-m5-max-128`
+```
+
+`Machine ID` in that block stays as it is — `check-pr` compares it to the branch
+name literally and fails on anything else. `Computer` is an extra line the
+checker ignores.
+
 ## Start a task
 
 Start from a stable base checkout used only to manage worktrees. Do not edit in
@@ -175,7 +204,8 @@ At the beginning and end of each work period:
 git status --short --branch
 git diff --check
 git add -- path/to/file another/path
-git commit -m "Describe one coherent change"
+git commit -m "Describe one coherent change" \
+  -m "Computer: $(scutil --get ComputerName 2>/dev/null || hostname)"
 git push
 ```
 
@@ -408,6 +438,45 @@ development checkout or task branch.
 The spectator supervisor already follows the right shape: it builds canonical
 `origin/main` in a private worktree and preserves active developer checkouts.
 Keep runtime files and generated outputs ignored and local.
+
+### The worktree audit
+
+`tools/civvis_worktree_audit.py` is the one automated service that exists to
+protect work rather than to consume it. Every fifteen minutes
+`tools/civvis_sync.sh` runs it with `--rescue`; it reports two things and fixes
+one of them:
+
+| finding | meaning |
+|---|---|
+| `DIRTY-ABANDONED` | uncommitted files in a worktree nobody has edited recently |
+| `DIRTY-ACTIVE` | uncommitted files in a worktree an agent is still editing |
+| `COMMIT-NOT-ON-GITHUB` | a commit reachable from no remote ref |
+| `MISSING` | a registered worktree whose directory is gone |
+
+`--rescue` pushes each dirty worktree to `refs/civvis/wip/<branch>` using a
+throwaway index and `commit-tree`, so the owning agent's HEAD, index and files
+are never touched — an agent mid-edit cannot be disturbed by it, and its bytes
+reach GitHub anyway.
+
+⚠ The namespace is load-bearing. The `pre-push` hook rejects any `refs/heads/`
+name that is not `agent/<machine>/<agent>/<task>-<UTC>-<nonce>`, so a snapshot
+written to `refs/heads/wip/...` is refused and the rescue silently does nothing
+while still reporting success — worse than no rescue at all. `refs/civvis/` sits
+outside that check, next to the `refs/civvis/recovery/main/` this document
+already specifies.
+
+Two rules this encodes, both learned by getting them wrong:
+
+- **Fetch `+refs/pull/*/head` before judging anything.** A closed PR keeps its
+  content at `refs/pull/N/head` forever, so a worktree whose PR was closed is
+  not stranded. Without those refs the audit condemns work that is safe.
+- **Reachability, not merge status.** Squash merge gives landed content a new
+  commit and a new patch-id, so `git branch --merged` and `git cherry` both
+  report long-landed branches as unlanded — measured at 98 false alarms across
+  110 worktrees. `git for-each-ref --contains <sha> refs/remotes` is the test.
+
+A `wip/` ref is a rescue, not a contribution. Nothing merges from one; the
+owning agent commits its own work properly or the branch is discarded.
 
 ## Hotspots and conflict reduction
 

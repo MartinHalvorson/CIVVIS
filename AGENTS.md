@@ -73,6 +73,13 @@ python3 tools/civvis_collab.py start <task-slug> --machine <machine-id> \
   shared repository.
 - Make descriptive checkpoint commits and push them to the task branch. A push
   is the cross-machine backup and handoff mechanism; `git stash` is not.
+- Name the computer in every commit. End the message with a `Computer:` trailer
+  carrying this device's own name (`scutil --get ComputerName` on macOS,
+  `hostname` elsewhere), so `git log` alone says which machine in the fleet
+  produced a commit. The device name is deliberately the whole identifier for
+  now; a richer computer ID can replace the value later without moving it. Put
+  the same `- Computer:` line in the PR ownership block too — squash merge
+  writes the PR body onto `main` and throws the branch's own messages away.
 - Do not force-push. Do not rebase a branch after it has been pushed. To update
   a task branch, fetch and merge `origin/main` into it once, resolve carefully,
   rerun validation, and push normally.
@@ -109,5 +116,22 @@ python3 tools/civvis_collab.py start <task-slug> --machine <machine-id> \
   completed work waiting silently in a draft PR.
 - Merge only through a green PR using squash merge. Delete the remote task
   branch after merge and remove the local worktree.
+- **Never leave work only in a worktree.** Uncommitted changes in a worktree
+  exist on exactly one disk, and this fleet has lost them: four PRs once read
+  `+0/-0` on GitHub while their finished implementations sat unstaged locally,
+  and two were closed as abandoned before anyone looked. Commit and push before
+  you stop, even mid-task — a WIP commit on your own branch is always cheaper
+  than the work disappearing. `tools/civvis_worktree_audit.py --rescue` is the
+  backstop, not the plan; it snapshots dirty worktrees to `wip/<branch>` so
+  nothing is lost, but a `wip/` ref is a rescue, not a contribution.
+- **Before deleting a worktree or branch, ask whether GitHub has the content**,
+  not whether it was merged. Squash merge rewrites commits, so `git branch
+  --merged` and `git cherry` both call long-landed work unlanded; a closed PR
+  keeps its content at `refs/pull/N/head` forever, so "closed" does not mean
+  lost. The check that answers it, after fetching `+refs/pull/*/head`:
+
+  ```bash
+  git for-each-ref --contains <sha> --count=1 refs/remotes   # empty => only copy
+  ```
 - If a conflict is semantic or ownership is unclear, stop and coordinate. Do
   not resolve a whole file with `--ours` or `--theirs` merely to make Git pass.

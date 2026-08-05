@@ -102,3 +102,12 @@ effect. Lifting that ceiling is what
 
 `mods/swift-legions/` in this repository is a complete two-file mod, and the
 tests in `src/mods.rs` are the specification for everything above.
+
+`mods/modified-future-era/` is the other kind of example: a mod the engine also
+ships as a lobby setting. Its two overlay files put ore on the Moon and add the
+mass driver that throws it down, and the same folder is both what
+`--mods mods/modified-future-era` loads off disk and what the Future Era
+setting embeds. It is what a mod looks like when the effect keys it needs — a
+lunar deposit, a driver — had to be built into the engine first, which is the
+ceiling described above seen from the other side. See
+[MODIFIED_FUTURE_ERA.md](MODIFIED_FUTURE_ERA.md).

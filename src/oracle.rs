@@ -4,7 +4,8 @@
 //! is documented in `docs/AI_GAPS.md`: the evaluator could not see the
 //! decision it was ranking, so no amount of training could rank it. The
 //! second is the same error one level up — the change addressed a constraint
-//! that was not binding. `advanced_relief_scoped` is the worked example: it
+//! that was not binding. The former scoped-relief experiment is the worked
+//! example: it
 //! cut the force groups frozen far from an emergency from 19.0% of
 //! force-group turns to 10.4%, exactly as designed, and measured
 //! Elo-equivalent -6 over 120 mirrored maps.
@@ -750,26 +751,41 @@ mod tests {
     /// A grant that never fires would measure the stock agent under another
     /// name — the failure `elo.rs`'s provenance work exists to prevent. The
     /// harness reports the count; this pins that it is not always zero.
+    ///
+    /// ⚠ Sampled over several seeds rather than pinned to one. A grant fires
+    /// only if the empire is still holding units it could upgrade, so a single
+    /// game is really asserting *that empire survived and fell behind*, and any
+    /// change to the agent reshuffles that. On seed 8101 the agent ends with no
+    /// cities and no units — in both arms of a research-economy A/B, so the
+    /// pinned seed was already measuring an unrelated wipeout. What the test
+    /// means to claim is that the grant is not inert, and that is a claim about
+    /// ordinary games, not about one of them.
     #[test]
     fn the_modernity_grant_actually_fires() {
-        let mut g = Game::new(4, 28, 18, 8_101, 140, 2);
-        let mut oracle = Oracle::new(AdvancedAi::new(), Grant::Modernity);
-        let mut others = AdvancedAi::fleet(&g);
-        while g.winner.is_none() && g.turn <= g.max_turns {
-            let pid = g.current;
-            if pid == 0 {
-                oracle.take_turn(&mut g, pid);
-            } else {
-                others[pid].take_turn(&mut g, pid);
+        let mut fired = 0u64;
+        let mut surveyed = 0usize;
+        for seed in 8_101..8_106u64 {
+            let mut g = Game::new(4, 28, 18, seed, 140, 2);
+            let mut oracle = Oracle::new(AdvancedAi::new(), Grant::Modernity);
+            let mut others = AdvancedAi::fleet(&g);
+            while g.winner.is_none() && g.turn <= g.max_turns {
+                let pid = g.current;
+                if pid == 0 {
+                    oracle.take_turn(&mut g, pid);
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &crate::game::Action::EndTurn);
+                }
             }
-            if g.winner.is_none() && g.current == pid {
-                let _ = g.apply(pid, &crate::game::Action::EndTurn);
-            }
+            surveyed += 1;
+            fired += oracle.fired();
         }
         assert!(
-            oracle.fired() > 0,
-            "the modernity grant never upgraded anything, so the run would \
-             have measured the stock agent under an oracle's name"
+            fired > 0,
+            "the modernity grant never upgraded anything across {surveyed} games, \
+             so a run would have measured the stock agent under an oracle's name"
         );
     }
 

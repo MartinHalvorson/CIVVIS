@@ -1,7 +1,7 @@
 # Unit battling: the state of the art, what CIVVIS does, and what changed
 
-2026-07-31. Companion to `src/ai/tactics.rs`, `src/skirmish.rs` and
-`src/bin/battle_bench.rs`.
+2026-07-31. Historical record of the removed tactical-search experiment;
+companion to `src/skirmish.rs` and `src/bin/battle_bench.rs`.
 
 ## 1. What the published state of the art is for this problem
 
@@ -79,11 +79,11 @@ before the next is considered. That commitment rule costs four things:
    depth-to-target, adjacent support and incoming threat; nothing scores it for
    the shot it opens. This is the largest of the four by a wide margin — see §4.
 
-## 3. What was built
+## 3. What was built, then removed
 
-`src/ai/tactics.rs` — a bounded **Portfolio Online Evolution** over the
-engagement, behind `AdvancedAi::joint_tactics`, reachable as the
-`advanced_joint_tactics` entrant.
+The removed experiment was a bounded **Portfolio Online Evolution** over the
+engagement. It was evaluated as an optional entrant and never became part of
+the production controller.
 
 - **Portfolio.** Each engaged unit gets a short list of candidate *lines* — an
   attack from where it stands, a step onto an adjacent tile followed by the
@@ -185,9 +185,9 @@ treatment that never fired says nothing about the game.
 ### Combat, where the change acts
 
 `battle_bench`, 24 turns, 28×20, armies of six, each seed played twice with
-seats swapped. `advanced_joint_tactics` against `advanced`, **2000 seeds a
-cell, on seed blocks fresh to the final configuration** — disjoint from every
-block used to choose the forfeit weight or the search budget.
+seats swapped. The removed experiment was compared against `advanced`, **2000
+seeds a cell, on seed blocks fresh to the final configuration** — disjoint from
+every block used to choose the forfeit weight or the search budget.
 
 | composition | exchange ratio (ours vs theirs) | paired material swing | sign p |
 |---|---|---|---|
@@ -313,10 +313,9 @@ Consistent direction, but wins are what the gate reads.
   bound, which a single null cannot give: turning the tactical dial an order of
   magnitude produced no response at all.
 
-So it ships **off by default**, registered as `advanced_joint_tactics`, with the
-null recorded — the same disposition as `advanced_relief_scoped` and
-`advanced_lane_reachable`. It is there to be re-measured when the constraint
-moves, rather than re-derived from scratch.
+The experiment was removed after the whole-game gate remained inconclusive.
+Its null result remains recorded here so the same unproven search is not
+reintroduced by accident.
 
 **If someone picks this up**, the ranked list is:
 
@@ -342,3 +341,28 @@ moves, rather than re-derived from scratch.
    fortification, and the general shape of that lesson — *the missing term was a
    future option the unit gave up, not a property of the position it reached* —
    is the one worth carrying to the next evaluator.
+
+## 8. Production tactical role basics (2026-08-03)
+
+The production `AdvancedAi` now assigns the ordinary unit classes to explicit
+battlefield jobs. This is separate from the optional joint search described
+above and applies to both its exact per-unit evaluator and its bounded portfolio
+candidate pruning:
+
+- melee prefers anti-cavalry, anti-cavalry prefers light or heavy cavalry, and
+  both cavalry classes prefer melee when exchanges are otherwise close;
+- ranged units value shots outside the defender's direct return-fire range, and
+  movement prices the enemy's next move-and-attack envelope instead of only its
+  current attack radius;
+- siege prefers districts with standing walls;
+- melee and anti-cavalry prefer a walled assault when an era-compatible
+  battering ram or siege tower is adjacent, while those support units follow
+  only a class that can actually use their aura and hold once they reach the
+  wall;
+- light cavalry pillages before routine combat; heavy cavalry attacks first and
+  uses pillaging as its fallback.
+
+The bonuses assign close choices; exact damage, kills, captures, and enemy reply
+damage still dominate decisive exchanges. The feature is enabled by the
+production constructor and remains off in the frozen Basic and `advanced_v1`
+controls so historical evaluator identities do not change silently.
