@@ -2831,9 +2831,33 @@ mod tests {
         // Farm (0.5) both under-counted housing against a DB that stores the figure
         // DOUBLED — a ratio checked across all 16 housing improvements before either
         // was touched, since matching the raw column would have doubled every one.
+        //
+        // Moved again by the ELEVEN remaining `civ6_fidelity` divergences, ten of
+        // which are corrected here and each confirmed by querying the shipped
+        // database directly: `pike_and_shot` maintenance 3 -> 4;
+        // `eyjafjallajokull` adjacent food 2 -> 1; `chemamull`, `mission` and
+        // `stepwell` had feature lists the host does not give them at all;
+        // `chateau` carried an extra `volcanic_soil`; `colossal_head` and
+        // `terrace_farm` were MISSING the `volcanic_soil` the host does give
+        // them; `ice_hockey_rink` claimed a culture yield the host prices at
+        // zero; `rock_hewn_church` needed `requires_hills`, since every host
+        // terrain for it is a `*_HILLS` variant.
+        //
+        // ⚠ `vampire_castle` is deliberately NOT corrected. The audit wants a
+        // terrain list on it, but CIVVIS marks it `unbuildable` and
+        // `scenario_only`, so a terrain list would be noise on an improvement
+        // that can never be built. The audit therefore stands at 1, not 0, on
+        // purpose.
+        //
+        // `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed
+        // 31337 --jobs 1 --deployment-comparison` was BYTE-IDENTICAL with the
+        // change stashed and applied from this worktree — every entry touched is
+        // another civilization's unique or a natural wonder, so Rome's frozen
+        // path never reads one. Compatibility re-pin; the Elo protocol does not
+        // move.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:42b0c451bc2ace55"
+            "fnv1a64:141dd7e0b8db0cdc"
         );
     }
 
