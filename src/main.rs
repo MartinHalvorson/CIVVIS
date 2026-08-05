@@ -652,8 +652,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// on clean main and the candidate (SHA-256
 /// `34c8ccea34d4bf3a8b60ae1b713f82bffbce77a5f1614f07d69db591d6287b24`).
 /// Compatibility re-pin; the Elo protocol does not move.
+///
+/// #1241 moves the friendly-city ownership check ahead of the static movement
+/// predicate in `BasicAi::patrol_tile`. The predicate is unchanged; the new
+/// order rejects the overwhelmingly common unowned map tile before asking the
+/// traversal cache, so the frozen controller's source contract is re-pinned
+/// after the fixed-prefix comparison below.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1877_ea6e_7dfe_cb8c;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xce62_1e34_ff30_2cbf;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
