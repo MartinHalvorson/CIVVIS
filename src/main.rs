@@ -7,6 +7,7 @@ use civvis::game::{
     default_difficulty, default_speed, Game, GameOptions, LeaderPool, VictoryConditions,
     WarRecord, DEFAULT_DISASTER_INTENSITY, GAME_MODES,
 };
+use civvis::leader_roster;
 use civvis::rules::Rules;
 use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
 
@@ -395,6 +396,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// legacy and Elo agent wants exactly the army it always wanted. A
 /// compatibility re-pin.
 ///
+/// #1056 skips policy cards that multiply a suzerainty count of zero, behind
+/// `suzerain_cards_need_a_suzerainty`, `false` in `AdvancedAi::new()` and set
+/// only by `enable_live_bridge`. `strategic_policies` reorders nothing on that
+/// flag before it counts a single city-state, so every configured, legacy and
+/// Elo agent picks exactly the deck it always picked. A compatibility re-pin.
+///
 /// #981 adds `BasicAi::loyalty_emergency`, which ranks loyalty trouble by TURNS
 /// TO FLIP rather than by level, behind the new `loyalty_rate_alarm` flag. The
 /// flag is `false` in both `BasicAi` constructors and `loyalty_emergency`
@@ -459,8 +466,134 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// reasoning journal, which is observer-only by contract. No RNG is drawn and no
 /// board state is touched, so the anchor plays the identical game and only its
 /// journal differs. A compatibility re-pin.
+/// #1026 keeps the land army out of the water, behind `come_ashore` — `false`
+/// in both `BasicAi` constructors and set only by `enable_live_bridge`. Every
+/// one of its paths short-circuits on the flag before reading anything:
+/// `explore_step`'s `dry_only` and `step_toward_range`'s and
+/// `coordinated_tactical_step`'s `prefer_dry` are each `come_ashore && …`, both
+/// `disembark_step` call sites are guarded by `if …come_ashore`, and
+/// `peacetime_step`'s new `at_war` parameter is folded through
+/// `at_war && self.come_ashore`, which reproduces the historical hardcoded
+/// `false` exactly. So every configured, legacy and Elo agent explores and
+/// moves exactly as it always did. A compatibility re-pin.
+///
+/// #1087 lets the baseline governor raise the housing ceiling — the Aqueduct
+/// and the Neighborhood — behind `BasicAi::housing_districts`. That field is
+/// `false` in both `BasicAi` constructors and is set only by
+/// `enable_live_bridge`; the added block in `pick_item` short-circuits on it
+/// before it reads a city, so `advanced_v1` ranks the same district families in
+/// the same order. `Game::city_housing` is refactored onto `city_water` and
+/// `city_housing_floor` without changing a single band, so the housing it
+/// returns is unchanged for every caller. A compatibility re-pin.
+///
+/// #1095 keeps asking for a Campus in every city that can still repay one,
+/// behind `AdvancedAi::campus_every_city` — `false` in the constructor and set
+/// only by `enable_live_bridge`. Both of its paths short-circuit on the flag:
+/// `balanced_core`'s exemption is `campus_every_city && family == "campus"`,
+/// which is `false` for every legacy agent and reproduces the half-empire cliff
+/// exactly, and the coverage term keeps `research_horizon` unless the flag is
+/// set. So `advanced_v1` prices every district exactly as it did. A
+/// compatibility re-pin.
+///
+/// #1099 puts `medina_quarter` and `insulae` in the deck when a city is short
+/// of housing, behind `AdvancedAi::housing_cards` — `false` in the constructor
+/// and set only by `enable_live_bridge`. The block short-circuits on the flag
+/// before it reads a city, so every legacy and Elo agent slots exactly the cards
+/// it always slotted. `Game::city_specialty_district_count` only widens from
+/// private to `pub(crate)`. A compatibility re-pin.
+///
+/// ⚠ Re-pinned twice in this PR. The first version was inert — it patched
+/// `BasicAi::tactical_step`, which a live probe showed the deployed controller
+/// never calls; the working change is in
+/// `AdvancedAi::coordinated_tactical_step`. Both edits touch anchored source,
+/// so both moved this hash.
+///
+/// ⚠ And again for `blind_objective_units`, which is `false` in both `BasicAi`
+/// constructors' downstream `AdvancedAi` defaults and set only by
+/// `enable_live_bridge`. `local_strength_ratio`'s new term is
+/// `if self.blind_objective_units { … } else { 0.0 }`, so with the flag off the
+/// sum is arithmetically identical to before. A compatibility re-pin.
+///
+/// ⚠ And a third time on merging `origin/main`, which had re-pinned the same
+/// constant for the `tactical_strategy` branch documented below. Neither hash
+/// survives a merge of the two — the anchored source is now different from
+/// both — so the value here is the one the test computes over the merged tree.
+/// Both gating arguments still hold independently, which is what makes the
+/// re-pin a compatibility one rather than a ledger break.
+/// The tactical-role branch adds class assignments, projected return-fire,
+/// wall/support coordination, and cavalry action priority behind
+/// `BasicAi::tactical_strategy`. Both Basic constructors leave it `false`, and
+/// `AdvancedAi::promoted_policy_envoy` alone enables it for the production
+/// controller, so frozen Basic, configured, legacy and `advanced_v1` entrants
+/// retain their old branches. A compatibility re-pin.
+///
+/// ⚠ And again for a warning fix. `science_goal_for_campus` bound a building's
+/// name it never read; the loop now iterates the map's values. The anchor
+/// hashes whole files, so a change that cannot alter behaviour still moves it.
+/// That this one cannot was checked rather than argued: the same
+/// `BTreeMap<String, BuildingSpec>` in the same key order, with the binding the
+/// compiler proved unused removed. Seed 1002 was then played to completion on
+/// both revisions through the same routes — turn 206, player 4, religious, all
+/// six scores equal (Arabia 994, Aztec 592, Ethiopia 651, Georgia 1012, Khmer
+/// 706, Maya 464), and the same 254 requests to get there. A compatibility
+/// re-pin.
+/// ⚠ And again for `relief_targets_the_siege`, which is `false` in every
+/// `AdvancedAi` default and set only by `enable_live_bridge`. Its whole effect is
+/// the leading component of one `min_by_key` in `domain_objective`, and with the
+/// flag off that component is the constant `0` — so the ordering, and therefore
+/// every objective any legacy or Elo entrant receives, is bit-for-bit what it was.
+/// A compatibility re-pin.
+///
+/// ⚠ And again for the pantheon price, which now reads `Game::pantheon_faith_cost()`
+/// instead of a bare `25.0` in the `ai.rs` gate. `pantheon_faith_cost` is
+/// `game_speed.scale(PANTHEON_FAITH_STANDARD)`, and `GameSpeed::default()` is
+/// `Standard`, whose `cost_percent` is 100 — so at the speed every legacy and Elo
+/// entrant plays, the expression evaluates to exactly `25.0` and the gate is
+/// bit-for-bit what it was. Only Online, Quick, Epic and Marathon move, and those
+/// were charging a price the game does not.
+/// ⚠ The value below is recomputed over the MERGED sources: main re-pinned this
+/// constant for its own change while this branch was open, so neither side's
+/// number is right after the merge — only a fresh fingerprint is.
+/// `elo_anchor_speed_is_standard_so_the_pantheon_repin_is_free` checks the
+/// Standard-speed claim rather than asserting it.
+/// ⚠ Re-pinned for the unified timed-war appointment. The behavior is behind
+/// `AdvancedAi::timed_war`, initialized `false` by `configured` and enabled
+/// only by the evaluator-only `AdvancedAi::timing_attack` constructor. Every
+/// shared call site short-circuits on an absent `war_plan`; frozen legacy and
+/// `advanced_v1` therefore retain the same research, spending, production,
+/// diplomacy, movement, and upgrade decisions. Focused construction tests
+/// additionally assert that `advanced` reports the treatment off.
+/// ⚠ Re-pinned for selective timing v2. Its additional chooser and launch
+/// gates require both `timed_war` and `selective_timed_war`; both initialize
+/// `false`, and only the evaluator-only `selective_timing_attack` constructor
+/// enables them. The typed-arm test checks production `advanced`, v1, and v2
+/// independently, while focused tests cover the selective-only branches.
+/// ⚠ Re-pinned again for ready-force v3. `rapid_timed_war` also initializes
+/// `false`, is enabled only by the evaluator constructor, and only narrows the
+/// already-gated chooser before a `WarPlan` exists.
+/// ⚠ And again for `settler_blocked_turns` surviving a retarget. That reset lives
+/// AFTER `advanced_settler_step`'s `if !self.settler_commit { return moved; }`
+/// early return, and `settler_commit` is `false` in every default constructor —
+/// only `civvis_orders` turns it on for the live bridge. So the legacy and Elo
+/// entrants return before the changed line is ever reached and the anchor's
+/// behaviour is bit-for-bit what it was. A compatibility re-pin;
+/// `elo_anchor_never_reaches_the_settler_commit_path` checks the claim.
+/// ⚠ Re-pinned for test-only seeded-map fixture hardening after Natural
+/// Wonder silhouettes changed. Both edits are inside `#[cfg(test)]` modules;
+/// no controller path is compiled into an Elo game.
+/// ⚠ Re-pinned for production unit-objective memory. The full objective,
+/// danger, and retreat path is behind `BasicAi::unit_objective_memory`, which
+/// initializes false in Basic and `AdvancedAi::legacy()` and true only in the
+/// production Advanced constructor. The focused regression test asserts that
+/// split and the production assignment; the frozen anchor never takes either
+/// new movement branch.
+/// ⚠ #1162 routes the charged Toa, Legion, and Nau through shared improvement
+/// planning. `AdvancedAi::legacy()` and `BasicAi` can now select real new
+/// improvement actions, so this is deliberately a protocol-v6 change rather
+/// than a compatibility re-pin; the fresh source fingerprint documents that
+/// the new ledger starts from this exact shared controller.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf242_8e15_bd4a_88e9;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x9775_d53a_c3f6_ff15;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -638,14 +771,9 @@ fn auto_dimension(args: &[String], key: &str, players: i64, width: bool) -> i32 
 /// Fixed geography changes where the land comes from, not which shape it is
 /// sampled onto: even True Start Earth can be a flat atlas or a globe.
 fn map_topology(args: &[String]) -> MapTopology {
-    // `--map planet` named a world type before the globe became a shape of its
-    // own, and still means both halves of what it meant then.
-    let default = if arg_text(args, "--map", "pangaea") == "planet" {
-        MapTopology::Planet
-    } else {
-        MapTopology::Flat
-    };
-    MapTopology::from_id(&arg_text(args, "--shape", default.id())).unwrap_or(default)
+    // New games open on a globe; Flat remains an explicit opt-in shape.
+    MapTopology::from_id(&arg_text(args, "--shape", MapTopology::Planet.id()))
+        .unwrap_or(MapTopology::Planet)
 }
 
 /// Whether the world has cold ends.
@@ -677,6 +805,25 @@ fn start_era(args: &[String]) -> usize {
         } else {
             eprintln!("unknown start era {id:?}; choose one of: {}", playable.join(", "));
         }
+        std::process::exit(2);
+    })
+}
+
+/// Which rules the far end of the game is played by.
+///
+/// Same contract as `--start-era`: an era that is declared but not built is
+/// refused rather than quietly played as the classic one. The Modified Future
+/// Era can also be had as what it is made of — `--mods
+/// mods/modified-future-era` loads the same overlay off disk.
+fn future_era(args: &[String]) -> setup::FutureEra {
+    let id = arg_text(args, "--future-era", setup::FutureEra::default().id());
+    setup::future_era_from_id(&id).unwrap_or_else(|| {
+        let playable: Vec<&str> = setup::FUTURE_ERAS
+            .iter()
+            .filter(|spec| spec.is_playable())
+            .map(|spec| spec.id)
+            .collect();
+        eprintln!("unknown Future Era {id:?}; choose one of: {}", playable.join(", "));
         std::process::exit(2);
     })
 }
@@ -737,9 +884,22 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
         }
         teams
     };
+    let leader_pool = {
+        let id = arg_text(args, "--leader-pool", LeaderPool::default().id());
+        let pool = LeaderPool::from_id(&id).unwrap_or_else(|| {
+            eprintln!("unknown leader pool {id:?}; choose civ6, historical, or today");
+            std::process::exit(2);
+        });
+        if !pool.is_available() {
+            eprintln!("leader pool {id:?} has no supplied roster data yet");
+            std::process::exit(2);
+        }
+        pool
+    };
     GameOptions {
         base_ruleset: base_ruleset(args),
         start_era: start_era(args),
+        future_era: future_era(args),
         map_script: MapScript::from_id(&arg_text(args, "--map", "pangaea"))
             .unwrap_or(MapScript::Pangaea),
         map_topology: map_topology(args),
@@ -753,17 +913,11 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
             .filter_map(|seat| seat.trim().parse().ok())
             .collect(),
         teams,
-        leader_pool: {
-            let id = arg_text(args, "--leader-pool", LeaderPool::default().id());
-            LeaderPool::from_id(&id).unwrap_or_else(|| {
-                eprintln!("unknown leader pool {id:?}; choose civ6 or expanded");
-                std::process::exit(2);
-            })
-        },
+        leader_pool,
         // Who the player is. `--civ Egypt` seats Egypt at seat 0; `--civs
         // Egypt,Rome` names the leading seats in order. Anything unnamed
-        // falls back to the stock roster, and a name the ruleset does not
-        // know is refused here rather than silently ignored downstream.
+        // falls back to the selected stock roster, and a name outside that
+        // roster is refused here rather than silently ignored downstream.
         civs: {
             let named = arg_text(args, "--civs", &arg_text(args, "--civ", ""));
             let chosen: Vec<String> = named
@@ -772,10 +926,18 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
                 .filter(|civ| !civ.is_empty())
                 .collect();
             for civ in &chosen {
-                if !rules.civs.contains_key(civ) {
-                    let mut known: Vec<&str> = rules.civs.keys().map(|name| name.as_str()).collect();
+                if !leader_roster::entry(civ).is_some_and(|entry| {
+                    entry.available && entry.pool == leader_pool
+                }) {
+                    let mut known: Vec<&str> = leader_pool
+                        .entries()
+                        .map(|entry| entry.civ.as_str())
+                        .collect();
                     known.sort_unstable();
-                    eprintln!("unknown civilization {civ:?}; choose one of {known:?}");
+                    eprintln!(
+                        "civilization {civ:?} is not available in {}: choose one of {known:?}",
+                        leader_pool.name()
+                    );
                     std::process::exit(2);
                 }
             }
@@ -1439,6 +1601,8 @@ fn main() {
                 eprintln!("unknown map script {map_id:?}; choose pangaea, continents, or archipelago");
                 std::process::exit(2);
             });
+            // Ratings are a persistent experiment. Keep its historical flat
+            // default unless the operator explicitly selects a globe.
             let topology_default = if map_id == "planet" { "planet" } else { "flat" };
             let topology_id = arg_text(&args, "--shape", topology_default);
             let tournament_topology = MapTopology::from_id(&topology_id).unwrap_or_else(|| {
@@ -1644,6 +1808,65 @@ fn main() {
                 }
             }
         }
+        "league-init" => {
+            let dir = arg_text(&args, "--league", "");
+            let Some(league) = (!dir.is_empty())
+                .then(|| civvis::league::initialize_shipped_league(&dir))
+                .flatten()
+            else {
+                eprintln!("league-init needs a writable --league directory");
+                std::process::exit(2);
+            };
+            println!("{}", serde_json::json!({
+                "status": "ready",
+                "round": league.round,
+                "strategies": league.strategies.len(),
+            }));
+        }
+        "rate-game" => {
+            let dir = arg_text(&args, "--league", "");
+            if dir.is_empty() {
+                eprintln!("rate-game needs a writable --league directory");
+                std::process::exit(2);
+            }
+            let report: civvis::league::LiveGameReport =
+                match serde_json::from_reader(std::io::stdin().lock()) {
+                    Ok(report) => report,
+                    Err(error) => {
+                        eprintln!("invalid live-game report: {error}");
+                        std::process::exit(2);
+                    }
+                };
+            if civvis::league::initialize_shipped_league(&dir).is_none() {
+                eprintln!("could not initialize the live league at {dir}");
+                std::process::exit(1);
+            }
+            let Some(record) = civvis::league::record_ranked_game_once(
+                &dir,
+                &report.result_id,
+                &report.seats,
+                report.seed,
+                report.turn,
+                &report.victory,
+            ) else {
+                eprintln!("the live-game report is invalid or names an unknown strategy");
+                std::process::exit(2);
+            };
+            let league = record.league();
+            println!("{}", serde_json::json!({
+                "status": record.status(),
+                "round": league.round,
+                "strategies": report.seats.iter().filter_map(|seat| {
+                    league.strategies.iter().find(|strategy| strategy.name == seat.strategy)
+                }).map(|strategy| serde_json::json!({
+                    "name": strategy.name,
+                    "rating": strategy.rating,
+                    "rd": strategy.rd,
+                    "games": strategy.games,
+                    "wins": strategy.wins,
+                })).collect::<Vec<_>>(),
+            }));
+        }
         "evolve" => {
             let players = arg(&args, "--players", 4);
             civvis::evolve::evolve(&civvis::evolve::EvoCfg {
@@ -1840,6 +2063,7 @@ fn main() {
                     seed,
                     base_ruleset: play_options.base_ruleset,
                     start_era: play_options.start_era,
+                    future_era: play_options.future_era,
                     map_script,
                     map_topology,
                     map_poles,
@@ -1992,16 +2216,16 @@ fn main() {
         }
         _ => {
             println!(
-                "usage: civvis <simulate|soak|benchmark|tournament|league|rating|play|evolve|validate|pedia> \
+                "usage: civvis <simulate|soak|benchmark|tournament|league|league-init|rate-game|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais [identity=]controller,...] [--anchor identity|none] [--ratings path] [--standings] [--port N] [--no-open] \
-                      [--map land_only|lakes|inland_sea|grand_canals|grand_canals_2|pangaea|continents|small_continents|islands|water_world|true_start_earth] \
+                      [--map land_only|lakes|inland_sea|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world] \
                       [--shape flat|planet] [--poles poles|randomized] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
                       [--disasters 0|1|2|3|4] [--barbarians on|off] \
                       [--game-modes apocalypse,secret_societies] \
-                      [--leader-pool civ6|expanded] \
+                      [--leader-pool civ6|historical|today] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
                       [--spectate] [--supervised] [--force-strategy NAME] [--resume checkpoint.json] [--strict] \
@@ -2016,11 +2240,29 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        jobs_arg, parse_tournament_entrants, single_simulation_jobs_arg, strict_f64_arg,
-        strict_i64_arg, ADVANCED_V1_SOURCE_CONTRACT_FNV, DEFAULT_TOURNAMENT_ENTRANTS,
-        SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
+        game_options, jobs_arg, map_topology, parse_tournament_entrants,
+        single_simulation_jobs_arg, strict_f64_arg, strict_i64_arg,
+        ADVANCED_V1_SOURCE_CONTRACT_FNV,
+        DEFAULT_TOURNAMENT_ENTRANTS, SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
     };
     use civvis::game::{Action, Game};
+    use civvis::setup::{MapSize, MapTopology};
+
+    #[test]
+    fn omitted_map_shape_defaults_to_planet() {
+        assert_eq!(map_topology(&[]), MapTopology::Planet);
+
+        let options = game_options(&[], 2, 71_004);
+        let size = MapSize::for_players(2);
+        assert_eq!(options.map_topology, MapTopology::Planet);
+        assert_eq!(
+            (options.width, options.height),
+            size.dimensions(MapTopology::Planet)
+        );
+
+        let flat = vec!["--shape".to_string(), "flat".to_string()];
+        assert_eq!(map_topology(&flat), MapTopology::Flat);
+    }
 
     #[test]
     fn tournament_entrants_separate_immutable_identity_from_controller() {
@@ -2055,6 +2297,70 @@ mod tests {
         let explicit = vec!["simulate".to_string(), "--jobs".to_string(), "9".to_string()];
         assert_eq!(jobs_arg(&explicit), 9);
         assert_eq!(single_simulation_jobs_arg(&explicit), 9);
+    }
+
+    /// The re-pin above claims the pantheon change is free for the Elo anchor
+    /// because every legacy entrant plays at Standard, where the scaled price is
+    /// exactly the old literal. ⚠ That is a load-bearing claim guarding a whole
+    /// ratings ledger, and prose does not hold — the `_G` incident on 2026-08-03
+    /// had TWO prose warnings in the repo and still shipped. Check it.
+    #[test]
+    fn elo_anchor_speed_is_standard_so_the_pantheon_repin_is_free() {
+        use civvis::setup::GameSpeed;
+        assert_eq!(
+            GameSpeed::default(),
+            GameSpeed::Standard,
+            "if the default speed ever moves, the re-pin above stops being free and \
+             ELO_PROTOCOL_VERSION must be bumped instead"
+        );
+        assert_eq!(
+            GameSpeed::Standard.scale(civvis::game::PANTHEON_FAITH_STANDARD),
+            25.0,
+            "the scaled price must equal the literal it replaced, or the anchor's \
+             behaviour changed and this is not a compatibility re-pin"
+        );
+    }
+
+    /// The re-pin above claims the `settler_blocked_turns` change is free for the
+    /// Elo anchor because the edited line sits behind `settler_commit`, which every
+    /// default constructor leaves off. ⚠ That is load-bearing for a ratings ledger,
+    /// and prose does not hold — check it.
+    #[test]
+    fn elo_anchor_never_reaches_the_settler_commit_path() {
+        // ⚠ THE ANCHOR IS `legacy()`, NOT `new()` — `league.rs` maps
+        // "advanced_v1" => AdvancedAi::legacy(). I first asserted this on `new()`,
+        // which sets `settler_commit = true`, and this test failed and corrected me.
+        // That is the whole reason the claim is checked rather than written down.
+        assert!(
+            !civvis::ai::AdvancedAi::legacy().settler_commit,
+            "advanced_v1 is legacy(); if it ever reaches the settler_commit path the \
+             re-pin above stops being free and ELO_PROTOCOL_VERSION must be bumped"
+        );
+        // ⚠ And record the other half honestly: `advanced` DOES set it, so that
+        // entrant's settler pipeline genuinely changes. The anchor pins the scale
+        // and is untouched, which is what this guard asks about — but v5 rows for
+        // `advanced` straddle this change.
+        assert!(civvis::ai::AdvancedAi::new().settler_commit);
+        // ⚠ SAME QUESTION, ASKED AGAIN FOR THE GARRISON-LOYALTY ARM.
+        //
+        // The `limitanei` portfolio insert in `strategic_policies` is guarded by
+        // `self.garrison_loyalty_policy`, and BOTH the anchor and the stock
+        // entrant leave it false — only the eval-only arm
+        // `advanced_garrison_loyalty` turns it on. So the source fingerprint
+        // moved while the legacy path did not, and the re-pin below is free.
+        //
+        // Checked rather than asserted in a comment, because the last time this
+        // was written down instead of tested the written claim was wrong.
+        assert!(
+            !civvis::ai::AdvancedAi::legacy().garrison_loyalty_policy,
+            "advanced_v1 must not slot limitanei; if it ever does, the re-pin is \
+             no longer free and ELO_PROTOCOL_VERSION must be bumped"
+        );
+        assert!(
+            !civvis::ai::AdvancedAi::new().garrison_loyalty_policy,
+            "the stock entrant must not slot limitanei either — the arm measured \
+             a null and ships OFF"
+        );
     }
 
     #[test]

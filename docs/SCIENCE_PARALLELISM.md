@@ -2,6 +2,14 @@
 
 Status: **development screen stopped; retain the shipped controller**.
 
+## Archive status
+
+The evaluator is preserved at `experiments/closed/science_parallelism_eval.rs`
+and is not part of the default Cargo target set. To reproduce an historical
+check, add `--features closed-experiments` to the recorded `cargo test` or
+`cargo build` command. A new treatment needs a new preregistration rather than
+a rerun or retune of this closed screen.
+
 ## Prospective horizon amendment
 
 This amendment was frozen before running the null at seed 9,982,000 or either

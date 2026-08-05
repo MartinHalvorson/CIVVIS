@@ -1,0 +1,325 @@
+#!/bin/zsh
+
+set -u
+
+# This file is rendered by tools/civvis_desktop_apps.py. Keep the Rust and
+# WASM bundles on this one launch path so process replacement, tab reuse, and
+# provenance checks cannot silently drift apart.
+readonly civvis_mode="@@MODE@@"
+readonly civvis_label="@@LABEL@@"
+readonly civvis_commit="@@COMMIT@@"
+readonly civvis_commit_time="@@COMMIT_TIME@@"
+readonly civvis_built_at="@@BUILT_AT@@"
+readonly civvis_repo="@@REPO@@"
+
+case "${civvis_mode}" in
+  rust)
+    readonly civvis_port="8785"
+    readonly civvis_channel="rust"
+    readonly civvis_legacy_channel=""
+    ;;
+  wasm)
+    readonly civvis_port="8790"
+    readonly civvis_channel="wasm"
+    readonly civvis_legacy_channel="beta"
+    ;;
+  *) exit 2 ;;
+esac
+
+readonly civvis_url="http://127.0.0.1:${civvis_port}/${civvis_channel}/"
+readonly civvis_legacy_url="http://127.0.0.1:${civvis_port}/${civvis_legacy_channel}"
+readonly contents_dir="${0:A:h:h}"
+readonly log_dir="${HOME}/Library/Logs"
+readonly log_file="${log_dir}/${civvis_label}.log"
+readonly refresh_log="${log_dir}/CIVVIS Desktop Refresh.log"
+readonly state_dir="${HOME}/.local/share/civvis-desktop"
+readonly refresh_lock="${state_dir}/desktop-apps.lock"
+readonly supervisor_pid_file="${state_dir}/${civvis_mode}-supervisor.pid"
+readonly watcher_script="${contents_dir}/Resources/CIVVIS Tab Watcher.zsh"
+
+refresh_desktop_pair() {
+    local refresh_tool="${civvis_repo}/tools/civvis_desktop_apps.py"
+    local refresh_pid=""
+    [[ ! -f "${refresh_tool}" ]] && return 0
+
+    # The paired installer writes its PID before taking the build lock. New
+    # launchers opened by that installer must not recursively start another
+    # refresh while it is still verifying their listeners.
+    if [[ -f "${refresh_lock}" ]]; then
+        refresh_pid="$(/bin/cat "${refresh_lock}" 2>/dev/null || true)"
+        if [[ "${refresh_pid}" == <-> ]] && /bin/kill -0 "${refresh_pid}" 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    /bin/mkdir -p "${log_dir}"
+    /usr/bin/nohup /usr/bin/python3 "${refresh_tool}" refresh \
+        --repo "${civvis_repo}" --max-build-age-minutes 20 --no-launch \
+        >>"${refresh_log}" 2>&1 </dev/null &
+}
+
+start_tab_watcher() {
+    [[ ! -x "${watcher_script}" ]] && return 0
+    /usr/bin/nohup /bin/zsh "${watcher_script}" \
+        "${civvis_label}" "${civvis_mode}" "${civvis_url}" \
+        "${civvis_port}" "${state_dir}" \
+        >>"${log_file}" 2>&1 </dev/null &
+}
+
+show_civvis_dialog() {
+    /usr/bin/osascript - "$1" "$2" <<'APPLESCRIPT'
+on run argv
+    if (item 2 of argv) is "stop" then
+        display dialog (item 1 of argv) buttons {"OK"} default button "OK" with icon stop
+    else
+        display dialog (item 1 of argv) buttons {"OK"} default button "OK" with icon caution
+    end if
+end run
+APPLESCRIPT
+}
+
+read_civvis_status() {
+    if [[ "${civvis_mode}" == "rust" ]]; then
+        /usr/bin/curl -fsS --max-time 1 "http://127.0.0.1:${civvis_port}/status" 2>/dev/null || true
+    else
+        /usr/bin/curl -fsS --max-time 1 "${civvis_url}build.json" 2>/dev/null || true
+    fi
+}
+
+status_matches_build() {
+    local response="$1"
+    [[ ("${response}" == *"\"commit\":\"${civvis_commit}\""* || \
+        "${response}" == *"\"commit\": \"${civvis_commit}\""*) && \
+       ("${response}" == *"\"built_at\":\"${civvis_built_at}\""* || \
+        "${response}" == *"\"built_at\": \"${civvis_built_at}\""*) ]]
+}
+
+rust_supervisor_live() {
+    local supervisor_pid command="$1"
+    [[ "${civvis_mode}" != "rust" || "${command}" != *'"commit"'* || \
+       "${command}" != *'"built_at"'* ]] && return 1
+    supervisor_pid="$(/bin/cat "${supervisor_pid_file}" 2>/dev/null || true)"
+    [[ "${supervisor_pid}" != <-> ]] && return 1
+    command="$(/bin/ps -p "${supervisor_pid}" -o command= 2>/dev/null || true)"
+    [[ "${command}" == *"spectator_supervisor.py"*"--port ${civvis_port}"* ]]
+}
+
+open_civvis_page() {
+    local reload_existing="${1:-false}"
+    local target_url="${civvis_url}"
+    if [[ "${reload_existing}" == "true" ]]; then
+        target_url="${civvis_url}?build=${civvis_commit}&built=${civvis_built_at}"
+    fi
+    if [[ -d "/Applications/Google Chrome.app" ]]; then
+        local focus_result
+        focus_result="$(/usr/bin/osascript - "${civvis_mode}" "${civvis_url}" "${civvis_legacy_url}" "${target_url}" "${reload_existing}" <<'APPLESCRIPT'
+on run argv
+    set civvis_mode to item 1 of argv
+    set base_url to item 2 of argv
+    set legacy_url to item 3 of argv
+    set target_url to item 4 of argv
+    set reload_existing to item 5 of argv
+    tell application "Google Chrome"
+        repeat with chrome_window in windows
+            set tab_number to 0
+            repeat with chrome_tab in tabs of chrome_window
+                set tab_number to tab_number + 1
+                set chrome_url to URL of chrome_tab
+                set is_civvis to chrome_url starts with base_url
+                if civvis_mode is "rust" then
+                    set is_civvis to is_civvis or chrome_url is legacy_url or chrome_url starts with (legacy_url & "?")
+                else
+                    set is_civvis to is_civvis or chrome_url starts with (legacy_url & "/")
+                end if
+                if is_civvis then
+                    if reload_existing is "true" then set URL of chrome_tab to target_url
+                    set active tab index of chrome_window to tab_number
+                    set minimized of chrome_window to false
+                    set index of chrome_window to 1
+                    activate
+                    return "focused"
+                end if
+            end repeat
+        end repeat
+        if (count windows) is 0 then
+            make new window
+            set URL of active tab of front window to target_url
+        else
+            tell front window to make new tab with properties {URL:target_url}
+        end if
+        activate
+        return "focused"
+    end tell
+end run
+APPLESCRIPT
+)"
+        if [[ "${focus_result}" == "focused" ]]; then return 0; fi
+        /usr/bin/open -a "Google Chrome" "${target_url}"
+    else
+        /usr/bin/open "${target_url}"
+    fi
+}
+
+release_previous_civvis_build() {
+    local listeners command listener_pid supervisor_pid
+    if [[ "${civvis_mode}" == "rust" ]]; then
+        supervisor_pid="$(/bin/cat "${supervisor_pid_file}" 2>/dev/null || true)"
+        if [[ "${supervisor_pid}" == <-> ]]; then
+            command="$(/bin/ps -p "${supervisor_pid}" -o command= 2>/dev/null || true)"
+            if [[ "${command}" == *"spectator_supervisor.py"*"--port ${civvis_port}"* ]]; then
+                /bin/kill -TERM "${supervisor_pid}" 2>/dev/null || true
+                /bin/sleep 0.5
+            fi
+        fi
+    fi
+    listeners="$(/usr/sbin/lsof -nP -t -iTCP:"${civvis_port}" -sTCP:LISTEN 2>/dev/null || true)"
+    [[ -z "${listeners}" ]] && return 0
+
+    # Stop only a listener launched by the matching CIVVIS desktop bundle.
+    # An unrelated owner of the port remains a hard conflict.
+    for listener_pid in ${(f)listeners}; do
+        command="$(/bin/ps -p "${listener_pid}" -o command= 2>/dev/null || true)"
+        if [[ "${civvis_mode}" == "rust" ]]; then
+            if [[ ("${command}" != *"${state_dir}/rust-runtime/target/spectator/civvis"* && \
+                   "${command}" != *"/Rust CIVVIS.app/Contents/Resources/civvis-"*) || \
+                  "${command}" != *" play "* || \
+                  "${command}" != *" --port ${civvis_port}"* ]]; then
+                return 1
+            fi
+        elif [[ ("${command}" != *"/CIVVIS Wasm.app/Contents/Resources/serve.py "* && \
+                 "${command}" != *"/WASM CIVVIS.app/Contents/Resources/serve.py "*) || \
+                ("${command}" != *"/CIVVIS Wasm.app/Contents/Resources/site ${civvis_port}"* && \
+                 "${command}" != *"/WASM CIVVIS.app/Contents/Resources/site ${civvis_port}"*) ]]; then
+            return 1
+        fi
+    done
+
+    for listener_pid in ${(f)listeners}; do
+        /bin/kill -TERM "${listener_pid}" 2>/dev/null || true
+    done
+    for stop_check in {1..50}; do
+        if ! /usr/sbin/lsof -nP -iTCP:"${civvis_port}" -sTCP:LISTEN >/dev/null 2>&1; then
+            return 0
+        fi
+        /bin/sleep 0.1
+    done
+    for listener_pid in ${(f)listeners}; do
+        /bin/kill -KILL "${listener_pid}" 2>/dev/null || true
+    done
+    for stop_check in {1..20}; do
+        if ! /usr/sbin/lsof -nP -iTCP:"${civvis_port}" -sTCP:LISTEN >/dev/null 2>&1; then
+            return 0
+        fi
+        /bin/sleep 0.1
+    done
+    return 1
+}
+
+seed_rust_runtime() {
+    local runtime_dir="${state_dir}/rust-runtime/target/spectator"
+    local staged_binary="${runtime_dir}/civvis.new"
+    local staged_metadata="${runtime_dir}/build.json.new"
+    /bin/mkdir -p "${runtime_dir}"
+    /bin/cp "${civvis_binary}" "${staged_binary}" || return 1
+    /bin/chmod 755 "${staged_binary}" || return 1
+    /bin/cp "${contents_dir}/Resources/spectator-build.json" "${staged_metadata}" || return 1
+    /bin/mv -f "${staged_binary}" "${runtime_dir}/civvis" || return 1
+    /bin/mv -f "${staged_metadata}" "${runtime_dir}/build.json" || return 1
+}
+
+if [[ "${civvis_mode}" == "rust" ]]; then
+    readonly civvis_binary="${contents_dir}/Resources/civvis-${civvis_commit}"
+    readonly supervisor_script="${contents_dir}/Resources/spectator_supervisor.py"
+    if [[ ! -x "${civvis_binary}" || ! -x "${supervisor_script}" || \
+          ! -f "${contents_dir}/Resources/spectator-build.json" ]]; then
+        show_civvis_dialog "The Rust CIVVIS launcher is missing its optimized game binary." "stop"
+        exit 1
+    fi
+else
+    readonly site_root="${contents_dir}/Resources/site"
+    readonly server_script="${contents_dir}/Resources/serve.py"
+    readonly rating_binary="${contents_dir}/Resources/civvis-rating-${civvis_commit}"
+    readonly rating_league="${state_dir}/rust-source/league"
+    if [[ ! -f "${site_root}/beta/civvis.wasm" || ! -x "${server_script}" || \
+          ! -x "${rating_binary}" || ! -x "${watcher_script}" ]]; then
+        show_civvis_dialog "The WASM CIVVIS launcher is missing its optimized local site." "stop"
+        exit 1
+    fi
+fi
+if [[ ! -x "${watcher_script}" ]]; then
+    show_civvis_dialog "${civvis_label} is missing its Chrome-tab lifecycle watcher." "stop"
+    exit 1
+fi
+
+# Opening either icon is instant, but also makes the pair converge on current
+# GitHub main in the background. The installer owns one lock and swaps both
+# bundles together, so clicking both icons cannot produce mixed revisions.
+refresh_desktop_pair
+
+civvis_status="$(read_civvis_status)"
+if status_matches_build "${civvis_status}"; then
+    # A live file server can begin serving a newly installed bundle from the
+    # same path before this launcher runs. Refresh the reused tab so its page,
+    # WASM module, title, and provenance all come from the matching bundle.
+    open_civvis_page true
+    start_tab_watcher
+    exit 0
+fi
+if rust_supervisor_live "${civvis_status}"; then
+    # A newer native runtime is promoted independently and only adopted at a
+    # game boundary. Never tear that supervised match down because this icon's
+    # paired bundle has not caught up yet.
+    open_civvis_page false
+    start_tab_watcher
+    exit 0
+fi
+
+if ! release_previous_civvis_build; then
+    show_civvis_dialog "${civvis_label} could not start because local port ${civvis_port} belongs to another application." "stop"
+    exit 1
+fi
+
+/bin/mkdir -p "${log_dir}"
+cd "${HOME}"
+if [[ "${civvis_mode}" == "rust" ]]; then
+    if ! seed_rust_runtime; then
+        show_civvis_dialog "CIVVIS Rust could not stage its verified runtime." "stop"
+        exit 1
+    fi
+    export CIVVIS_DEPLOY_ROOT="${civvis_repo}"
+    export CIVVIS_RUNTIME_ROOT="${state_dir}/rust-runtime"
+    export CIVVIS_SUPERVISOR_SOURCE="${state_dir}/rust-source"
+    export CIVVIS_SPECTATOR_LOG="${log_file}"
+    export CARGO_BUILD_JOBS="2"
+    /usr/bin/nohup /usr/bin/python3 "${supervisor_script}" \
+        --port "${civvis_port}" \
+        --players 6 --width 74 --height 46 --city-states 9 \
+        --turns 250 --speed online --map continents --shape flat --poles poles \
+        --victories science,culture,religious,diplomatic,domination,score \
+        --fixed-setup --source-check-interval 1200 \
+        --live-refresh-grace 315360000 --no-open \
+        >>"${log_file}" 2>&1 </dev/null &
+    print -r -- "$!" >| "${supervisor_pid_file}"
+else
+    /usr/bin/nohup /usr/bin/python3 "${server_script}" "${site_root}" "${civvis_port}" \
+        "${rating_binary}" "${rating_league}" \
+        >>"${log_file}" 2>&1 </dev/null &
+fi
+readonly civvis_pid="$!"
+
+for launch_check in {1..60}; do
+    civvis_status="$(read_civvis_status)"
+    if status_matches_build "${civvis_status}"; then
+        open_civvis_page true
+        start_tab_watcher
+        exit 0
+    fi
+    /bin/sleep 1
+done
+
+if /bin/kill -0 "${civvis_pid}" 2>/dev/null; then
+    show_civvis_dialog "${civvis_label} is still starting. Double-click the icon again in a moment." "caution"
+else
+    show_civvis_dialog "${civvis_label} could not start. Details are in Library/Logs/${civvis_label}.log." "stop"
+fi
+exit 1

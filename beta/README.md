@@ -11,26 +11,43 @@ viewer is not a reimplementation: it is `web/index.html`, copied byte for byte
 apart from the asset paths a subdirectory forces.
 
 ```
-civvis.ai            forwards to youtube.com/@civvis
+civvis.ai            the STABLE lane — the promoted build, moved by a person
+civvis.ai/test       the HEAD lane — latest main, republished automatically
 civvis.ai/home       the landing page with build and project links
 civvis.ai/rust       the latest published native Rust release
 civvis.ai/wasm       the latest published WASM build
-civvis.ai/beta       the published build, open to anyone
 civvis.ai/download   the native binaries, from the latest GitHub release
 ```
 
+**The site is the same viewer twice, from two commits.** `/test` follows
+`main` on a schedule so the newest engine is always playable without anyone
+deciding anything; `/` is whatever the `site-stable` tag names and moves only
+when somebody runs the **to-prod-manual-only** workflow, because whether a build is
+worth being the front page is a judgement no gate can make. Each lane states
+its commit in its own `build.json`. Both lanes ship in every deployment —
+Pages deployments are immutable snapshots of a whole directory, so there is no
+such thing as updating half a site; a promotion is nothing but moving the tag
+and deploying again.
+
+Repeat visitors cannot be left on an earlier deployment. Each lane's HTML is a
+moving pointer and revalidates on every visit. The publisher gives `shim.js`,
+`worker.js`, `civvis.wasm`, and every referenced atlas a query version derived
+from that file's bytes. A changed file therefore has a new URL and is fetched
+after the fresh page arrives; an unchanged file keeps its URL and can be reused
+from cache. Legacy unversioned URLs also revalidate. An already-open tab keeps
+running its loaded build until it is reloaded.
+
 `/rust` and `/wasm` are the stable build channels. They use uncached temporary
-redirects to `/download/` and `/beta/`, respectively, so those short addresses
+redirects to `/download/` and `/test/`, respectively, so those short addresses
 keep following each newly published artifact without trapping a past visitor
 on one release. A query on `/wasm`, including `?game=<n>`, survives the redirect.
 
-The domain's job is to be the channel's address — somebody typing `civvis.ai`
-wants the videos. So `/` is a **302** to the channel and the landing page moved
-to `/home`. A 302 rather than a 301 because browsers cache a permanent redirect
-effectively for ever, and the day this becomes a real front page every past
-visitor would still be sent to YouTube. Setting `ROOT_REDIRECT` in the Pages
-environment changes the destination, or `off` serves the landing page at `/`
-again — neither needs a deploy.
+`/` serves the product directly. Setting `ROOT_REDIRECT` in the Pages
+environment turns the root into a **302** to anywhere — the escape hatch that
+once pointed the domain at the YouTube channel — and unsetting it (or `off`)
+serves the site again; neither needs a deploy. The redirect is deliberately
+temporary: browsers cache a 301 effectively for ever, and this pointer exists
+to be movable.
 
 ## How it fits together
 
@@ -38,12 +55,13 @@ again — neither needs a deploy.
 | --- | --- |
 | `src/wasm.rs` | The engine's request router for the browser. A child module of `server`, `cfg`-gated to wasm, answering the same endpoints over the same JSON. |
 | `beta/worker.js` | Runs the module off the main thread. A turn is not a quick call, and the viewer paints on `requestAnimationFrame`; on the page's own thread the engine would stall the frames it exists to produce. |
-| `beta/shim.js` | Intercepts `fetch` before it reaches the network. Also owns the three things that genuinely became the page's job: the turn clock, the ten-second finale countdown, and saved games in `localStorage`. |
-| `beta/_worker.js` | The password on `/beta`, the forward on `/`, plus the response headers for the whole site. |
+| `beta/shim.js` | Intercepts `fetch` before it reaches the network. Also owns the three things that genuinely became the page's job: the turn clock, the selected between-game finale countdown, and saved games in `localStorage`. |
+| `beta/_worker.js` | The whole site's routing: the two lanes, the `/rust` and `/wasm` pointers, the optional gates on `/` and `/test`, and the response headers. |
 | `beta/landing.html` | `civvis.ai/home`. |
 | `beta/download.html` | `civvis.ai/download`. Links `releases/latest/download/<asset>`, so it never needs republishing when a release is cut. |
 | `.github/workflows/release.yml` | Builds those assets for Windows, macOS (both architectures) and Linux on a `v*` tag. |
-| `.github/workflows/publish-site.yml` | Builds, checks and deploys the whole thing from CI, so publishing needs a decision rather than a particular laptop. |
+| `.github/workflows/to-test-auto-30.yml` | Builds both lanes, checks them, and deploys — half-hourly behind the gate, and on demand. Without the Cloudflare secrets it degrades to a dry run, so the schedule is safe before the account exists. |
+| `.github/workflows/to-prod-manual-only.yml` | Moves the `site-stable` tag to a chosen revision, then runs to-test-auto-30 — the only way `/` changes. |
 | `beta/publish.sh` | Assembles `beta/dist/` from a named revision. |
 | `beta/verify.py` | Opens the assembled bundle in a real browser, watches it play, and walks through the password door. |
 | `beta/worker_test.py` | Calls `_worker.js` directly — the forward, the password, the headers — needing only Chrome. |
@@ -78,7 +96,7 @@ pretending Git history changed.
 
 The world is **different every visit**. The engine is deterministic per seed and
 imports nothing, so it cannot vary on its own — the page rolls a seed per load
-and hands it over with the first request. `civvis.ai/beta/?game=<n>` pins one,
+and hands it over with the first request. `civvis.ai/test/?game=<n>` pins one,
 which is how a world worth showing gets shared.
 
 ### One property worth knowing
@@ -94,26 +112,43 @@ frame-per-turn contract holds here by construction rather than by enforcement.
 `verify.py` still measures it, because a property you never check is a property
 you are guessing about.
 
-## Cutting a build
+## Publishing
 
-Every few days, when `main` is in a state worth showing: **Actions →
-publish-site → Run workflow**, on the revision you want. It installs the
-toolchain, assembles the bundle, runs both checks and deploys, and it uploads
-the bundle as an artifact whether or not the deploy runs. Unticking *deploy*
-makes it a dry run.
+Nobody cuts test builds. `to-test-auto-30` fires **every half hour** (and on the
+Actions button), and a gate decides in seconds whether a deploy is worth
+twenty minutes of building: if `/test` already serves the current head it
+skips, and scheduled runs pace themselves against **440 of Cloudflare's 500
+deployments a month** — pro rata by day — so the other 60 always remain for
+promotions and manual runs, which are never gated. When it does run, it
+rebuilds both lanes — `/test` from the head of `main`, `/` from the
+`site-stable` tag — checks that each plays, and deploys them as one site.
 
-Publishing stays manual on purpose. The gates prove a build is not broken; they
-cannot tell whether a whole game is worth watching, and that is the actual
-question.
+The effect: on a quiet day `/test` is fresh within about half an hour of a
+commit; in a week of round-the-clock merging the governor stretches spacing
+toward ~100 minutes instead of exhausting the month. The arithmetic that
+forces a governor at all: this repository has merged several hundred commits a
+day, and an ungoverned half-hour cadence is ~1,440 deployments a month against
+a cap of 500.
 
-By hand, which is the same sequence:
+**Promoting** is the human act. When `main` is in a state worth being the
+front page: **Actions → to-prod-manual-only → Run workflow**, ref = the sha you have
+been watching on `/test` (or `main`). It moves the tag and runs the same
+publish job the schedule runs — one code path, no drift. The gates prove a
+build is not broken; whether a whole game is worth watching is the judgement
+being exercised here, usually after simply watching `/test` for a while.
+
+By hand, the equivalent of one scheduled run:
 
 ```bash
-./beta/publish.sh --commit <sha>   # build the bundle from a pinned revision
-./beta/worker_test.py              # prove the forward and the door behave
-./beta/verify.py                   # prove it plays, and walk through the door
-./beta/serve.sh                    # optional: look at it yourself
-npx wrangler pages deploy beta/dist --project-name civvis
+./beta/publish.sh --commit <stable-sha> --out lane-stable
+./beta/publish.sh --commit <head-sha>   --out lane-test
+cp -R lane-test site && mkdir site/home && mv site/index.html site/home/index.html
+cp -R lane-stable/test/. site/           # the viewer is relative-pathed; it
+                                         # mounts at the root unchanged
+./beta/worker_test.py                    # prove the routing behaves
+./beta/verify.py --dist site --mount root
+./beta/verify.py --dist site --mount test --no-gate
+npx wrangler pages deploy site --project-name civvis
 ```
 
 `worker_test.py` exists because `_worker.js` is the only part of the site a
@@ -168,49 +203,45 @@ Both steps are optional and both are the first thing to reach for when the
 budget bites. After them the bundle is dominated by art, so the next real lever
 is the atlases themselves rather than anything this directory does.
 
-**A revision is publishable when all of these hold:**
+**A revision is promotable when all of these hold** (the schedule enforces
+1–5 for the test lane on its own; promotion adds the sixth):
 
 1. It is on `origin/main` and its CI run is green.
 2. `cargo test --profile ci` passes at that revision.
 3. `./beta/publish.sh --commit <sha>` completes, inside the size budget.
 4. `./beta/worker_test.py` reports `the site routes correctly`.
-5. `./beta/verify.py` reports `this build plays`.
-6. A whole game is worth watching — the checks above prove it runs, not that it
-   is good. That judgement is the point of publishing every few days rather
-   than every commit.
+5. `./beta/verify.py` reports `this build plays` — in both lanes.
+6. A whole game is worth watching — the checks above prove it runs, not that
+   it is good. Watching it play on `/test` for a while is the honest test,
+   and is exactly what the test lane is for.
 
-`beta/dist/beta/build.json` records the commit and build time, so anything on
-civvis.ai can always be traced back to a revision.
+Each lane's `build.json` records its commit and build time, so anything on
+civvis.ai can always be traced back to a revision — `/build.json` for the
+front page, `/test/build.json` for the head lane.
 
 ## One-time setup
 
 ### 1. The host
 
 Cloudflare Pages, on the free plan. It is chosen over the alternatives because
-it is the only free host that can check the password **on the server** — the
-gate is not shipped to the browser — and because it serves the 6 MB module
-brotli-compressed at about 1.4 MB.
+it is the only free host that can run the site's routing **on the server** —
+`_worker.js` is not shipped to the browser — and because it serves the module
+brotli-compressed at roughly a fifth of its size.
 
-```bash
-npm install -g wrangler      # or use npx
-wrangler login               # opens a browser once
-wrangler pages project create civvis --production-branch main
-wrangler pages deploy beta/dist --project-name civvis
-```
-
-That already gives a working URL at `civvis.pages.dev`.
-
-Then, so nobody has to do that again, two repository secrets under **Settings →
-Secrets and variables → Actions**:
+No machine needs wrangler or Node. The whole host-side setup is two repository
+secrets under **Settings → Secrets and variables → Actions**:
 
 | Secret | Where it comes from |
 | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | My Profile → API Tokens → Create Token → **Edit Cloudflare Workers** template, scoped to this account. Pages deploys use the Workers permission. |
-| `CLOUDFLARE_ACCOUNT_ID` | The right-hand column of the account's overview page, or `wrangler whoami`. |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare dashboard → My Profile → API Tokens → Create Token → **Create Custom Token**: one permission, `Account → Cloudflare Pages → Edit`, scoped to the account. (The "Edit Cloudflare Workers" template is the commonly suggested shortcut, but Pages deploys need the Pages permission, not the Workers one.) |
+| `CLOUDFLARE_ACCOUNT_ID` | The right-hand column of the account's overview page in the dashboard. |
 
-`publish-site.yml` runs without them — it builds, checks, and keeps the bundle
-as an artifact — and fails with a clear message if asked to deploy while they
-are missing, rather than appearing to publish and doing nothing.
+The first deploying run of `to-test-auto-30` creates the `civvis` Pages project
+itself if it does not exist, then deploys into it — which gives a working URL
+at `civvis.pages.dev` before the domain is attached. Without the secrets the
+workflow still builds and checks both lanes and keeps the site as an artifact,
+and fails with a clear message if asked to deploy — rather than appearing to
+publish and doing nothing.
 
 ### 2. The domain
 
@@ -241,7 +272,7 @@ unwanted, at the cost of the URL being the one asked for.
    `www.civvis.ai`. The records and the certificate are created for you.
 
 Nothing else needs a DNS record. The apex and `www` are the whole site;
-`/beta` and `/download` are paths on it, not hostnames, which is why there is
+`/test` and `/download` are paths on it, not hostnames, which is why there is
 no `beta.civvis.ai` to set up.
 
 ### The mail on this domain
@@ -263,18 +294,18 @@ If that ever changes, the replacement is **Cloudflare Email Routing** — free,
 in the same dashboard under Email, and configured in the place the DNS now
 lives.
 
-### 3. The beta is open
+### 3. The test lane is open
 
-`/beta` asks for nothing. It was behind a shared password while it was a thing
+`/test` asks for nothing. It was behind a shared password while it was a thing
 not meant to be found; it is now the thing the channel points people at.
 
-Setting **`BETA_PASSWORD`** in the Pages project's environment variables
+Setting **`TEST_PASSWORD`** in the Pages project's environment variables
 (Production *and* Preview) closes it again with no deploy. There is
 deliberately **no fallback password in the code**: the old one was a literal in
 this public repository, which is not a password but a speed bump with a
 published height. Either the environment names a secret or there is no gate.
 
-Everything under `/beta` is still sent `X-Robots-Tag: noindex`. Open to anyone
+Everything under `/test` is still sent `X-Robots-Tag: noindex`. Open to anyone
 following a link is not the same as wanting an unfinished build to be the first
 search result for the project's name.
 
@@ -285,7 +316,7 @@ the deploy from one level up and the whole file is quietly left behind, the
 upload succeeds, and the site looks like it works. That happened here once. A
 `_worker.js` lives *inside* the deployed directory and cannot be separated from
 it — and both checks now ask the routing rather than trusting it, including
-that `BETA_PASSWORD` has not been left set by accident.
+that `TEST_PASSWORD` has not been left set by accident.
 
 ### 4. The channel
 
@@ -320,9 +351,12 @@ a tag is public.
 - **The league roster is in the bundle**, compiled in like every other file
   under `data/`, so seats carry the same ratings they do on the desktop build.
   It was read from disk until then, and there is no disk here, so every seat
-  showed the provisional 1500 that means "never heard of this player". What is
-  still missing is the other direction: nothing is recorded, so a game played
-  here moves no rating.
+  showed the provisional 1500 that means "never heard of this player". The
+  public static `/test/` site remains read-only. The installed desktop `/wasm/`
+  channel has a trusted local host instead: it shares the native spectator's
+  live roster, records every seated AI strategy through the native Glicko
+  writer, deduplicates retries in `league.json`, and supplies the updated table
+  to the module before the next game.
 - **Every poll carries the whole world.** The socket build sends a tile *patch*
   — about 157 KB against 1.36 MB — because it keeps a per-viewer fingerprint of
   the map. Here the page is told the world whole every turn, which is the

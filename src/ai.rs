@@ -17,6 +17,23 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 /// stepping into a dangerous attack envelope.
 const FIRST_MOVE_SCORE_BONUS: f64 = 4.0;
 
+/// Assignment value for putting the right front-line class into its favorable
+/// matchup. The engine still resolves the real combat modifiers; this is the
+/// smaller commander's preference that stops two otherwise-comparable units
+/// from choosing one another's jobs.
+const TACTICAL_COUNTER_ASSIGNMENT: f64 = 12.0;
+
+/// Value of firing from outside the defender's current return-fire range.
+/// This is deliberately smaller than a kill or a class counter: safety breaks
+/// close choices without making a ranged unit ignore a decisive target.
+const SAFE_RANGED_FIRE: f64 = 10.0;
+
+/// Standing walls are the siege arm's job. Melee can still attack them, but
+/// it should wait for the ram/tower that makes the blow useful when possible.
+const SIEGE_WALL_ASSIGNMENT: f64 = 22.0;
+const SUPPORTED_WALL_ASSAULT: f64 = 16.0;
+const UNSUPPORTED_WALL_ASSAULT: f64 = 12.0;
+
 /// How many turns of a unit's recent whereabouts to keep. A livelock is not
 /// visible in one decision — every individual step looks like the best one
 /// available — so it can only be recognized from a unit's own recent past.
@@ -45,9 +62,39 @@ const LIVELOCK_STAND_DOWN_AFTER: u32 = 2 * LIVELOCK_WINDOW as u32;
 /// loop to have moved on before the unit tries again.
 const LIVELOCK_STAND_DOWN_TURNS: u32 = 4;
 
+/// A sighting that makes the next tile a bad commitment is useful for longer
+/// than the individual movement choice that discovered it. Keep it just long
+/// enough for a unit to withdraw and reconsider from a safer square; longer
+/// would make a vanished enemy freeze an otherwise healthy advance.
+const UNIT_DANGER_MEMORY_TURNS: u32 = 3;
+
+/// A unit that decides an approach would leave it below its withdrawal floor
+/// gets two whole turns to create distance. The objective remains intact, so
+/// this is a pause to survive rather than a silent abandonment of the campaign.
+const UNIT_RETREAT_TURNS: u32 = 2;
+
 /// Unlevied city-state forces defend the state and its immediate approaches;
 /// ownership transfers to the Suzerain while levied, so those units naturally
 /// use the major civilization's unrestricted tactical doctrine instead.
+/// What a land unit gives up by taking its march across water instead of around.
+///
+/// `tactical_step`'s score is distance-to-objective plus adjacent threat and
+/// support, with no terrain term — and a sea tile is both closer to an
+/// objective across a bay and free of the adjacent-enemy penalty, because the
+/// enemies stand on land. Open water therefore scored as the fastest and
+/// safest road simultaneously. An embarked unit cannot attack, cannot fortify,
+/// and defends at the era's flat `embarked_strength`, so the true cost of that
+/// tile is most of the unit.
+///
+/// Ships fixed rather than as a gene: the genome is pinned at 40 with a
+/// committed champion on that length, so `from_vec` indexing `v[40]` would
+/// panic. Earn a gene on evidence.
+pub(crate) const WATER_MARCH_PENALTY: f64 = 18.0;
+
+/// Probe: how many times the deployed controller reaches `garrison_step`.
+pub static GARRISON_STEP_CALLS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 const MINOR_DEFENSE_RADIUS: i32 = 6;
 
 /// How near one of our own cities an enemy has to stand before the empire owes
@@ -77,7 +124,7 @@ const HOME_DEFENSE_RECALL_RANGE: i32 = 10;
 /// How near a city a hostile must come before that city wants somebody actually
 /// standing in it. Three tiles is one turn's move for most classical units, so a
 /// garrison ordered at this range is in place before the attacker arrives.
-const GARRISON_ALERT_RADIUS: i32 = 3;
+pub(crate) const GARRISON_ALERT_RADIUS: i32 = 3;
 
 /// How close a visible hostile must be before a city musters against it. A
 /// horseman three tiles out reaches the city next turn; a wanderer beyond that
@@ -148,6 +195,18 @@ const CIVIC_PRIORITY: [&str; 8] = [
 ];
 const DISTRICT_PRIORITY: [&str; 4] = ["campus", "commercial_hub", "holy_site", "theater_square"];
 
+/// The two district families that raise a city's housing ceiling, cheapest
+/// first. Deliberately NOT in `DISTRICT_PRIORITY`: those four are ranked by a
+/// bred genome weight that expresses a lane preference, while these two are
+/// ranked by the housing they would actually deliver into a measured shortfall,
+/// and they disappear entirely from the ranking once the city has headroom.
+const HOUSING_DISTRICTS: [&str; 2] = ["aqueduct", "neighborhood"];
+
+/// The headroom a city is steered to keep. `Game::housing_growth_mult` pays
+/// full growth at 2 and half at 1, so 2 is the first value that is not a
+/// penalty — not a margin of comfort, the break-even point.
+const HOUSING_HEADROOM_TARGET: f64 = 2.0;
+
 /// One coordinated force as an observer sees it: what it is, where it is
 /// going, and how ready it is to fight when it gets there.
 #[derive(Clone, Debug, PartialEq)]
@@ -158,6 +217,51 @@ pub struct ForceReport {
     pub objective: Pos,
     pub readiness: f64,
     pub strength_ratio: f64,
+}
+
+/// Observer-only state for one unified, appointed military campaign.
+///
+/// The controller owns the mutable plan. This report exposes both the current
+/// package and cumulative lifecycle counters so evaluators can distinguish a
+/// plan that formed from one that researched, mobilized, declared, and took
+/// its objective quickly. Nothing in play reads this type.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WarPlanReport {
+    pub enabled: bool,
+    /// Whether appointment and launch use the preregistered selective-v2
+    /// policy. The mutable campaign still lives in the same `WarPlan`.
+    pub selective: bool,
+    /// Whether appointment additionally requires the preregistered v3
+    /// ready-force package and short estimated launch window.
+    pub rapid: bool,
+    pub active: bool,
+    pub phase: Option<&'static str>,
+    pub target_player: Option<usize>,
+    pub objective_city: Option<u32>,
+    pub breakthrough_tech: Option<Name>,
+    pub assault_unit: Option<Name>,
+    pub predecessor: Option<Name>,
+    pub breach_unit: Option<Name>,
+    pub required_bodies: usize,
+    pub ready_bodies: usize,
+    pub staged_bodies: usize,
+    pub breach_ready: bool,
+    pub upgrade_gold_reserved: f64,
+    pub appointed_turn: Option<u32>,
+    pub appointments: u32,
+    pub breakthroughs: u32,
+    pub mobilizations: u32,
+    pub declarations: u32,
+    pub complete_package_declarations: u32,
+    pub objectives_captured: u32,
+    pub objectives_captured_within_ten: u32,
+    pub appointment_to_tech_turns: u32,
+    pub tech_to_declaration_turns: u32,
+    pub declaration_to_capture_turns: u32,
+    pub appointment_to_tech_samples: Vec<u32>,
+    pub tech_to_declaration_samples: Vec<u32>,
+    pub declaration_to_capture_samples: Vec<u32>,
+    pub aborts: BTreeMap<&'static str, u32>,
 }
 
 /// Everything an agent is willing to say about its own medium-term
@@ -186,6 +290,9 @@ pub struct PlanReport {
     /// preference upgraded into one.
     pub peace_offers: Vec<usize>,
     pub forces: Vec<ForceReport>,
+    /// The one authority spanning target selection, research, production,
+    /// treasury, staging, declaration, and exploitation.
+    pub war: Option<WarPlanReport>,
 }
 
 pub trait Ai {
@@ -1308,6 +1415,59 @@ impl UnitMotion {
     }
 }
 
+/// The durable, unit-local job the AI has committed to.
+///
+/// This lives in the controller rather than in [`crate::game::Unit`]: it is
+/// reasoning state, not a game rule, and it must survive the Civilization VI
+/// mirror rebuilding its board with fresh internal unit IDs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnitObjective {
+    /// This unit is part of the force trying to take this specific city.
+    CaptureCity {
+        city: u32,
+        target: Pos,
+        started_turn: u32,
+        last_confirmed_turn: u32,
+    },
+}
+
+impl UnitObjective {
+    /// The physical destination associated with this objective.
+    pub fn target(self) -> Pos {
+        match self {
+            Self::CaptureCity { target, .. } => target,
+        }
+    }
+}
+
+/// A dangerous approach remembered by one unit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UnitDangerMemory {
+    /// The tile the unit deliberately declined to enter.
+    pub position: Pos,
+    /// Conservative expected counter-damage from the enemies visible to this
+    /// planner when the warning was recorded.
+    pub expected_damage: u32,
+    pub observed_turn: u32,
+    /// Exclusive turn at which the sighting is no longer trusted.
+    pub expires_turn: u32,
+}
+
+/// Inspectable, multi-turn memory owned by one individual unit.
+///
+/// An objective, a danger warning, and a temporary retreat are independent:
+/// taking a safe step backward must not erase the city this unit was helping
+/// to capture. Callers receive a copy through [`BasicAi::unit_memory`], so
+/// observers cannot mutate the controller's reasoning state.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct UnitMemory {
+    pub objective: Option<UnitObjective>,
+    pub danger: Option<UnitDangerMemory>,
+    /// Exclusive turn through which the unit must prefer getting safe over
+    /// resuming its objective.
+    pub retreat_until: Option<u32>,
+}
+
 #[derive(Clone)]
 pub struct BasicAi {
     minor: bool,
@@ -1349,6 +1509,46 @@ pub struct BasicAi {
     /// Off for the frozen native controllers, whose recorded ladders would
     /// otherwise shift underneath them.
     pub(crate) amenity_districts: bool,
+    /// Let this governor build the districts that raise the housing ceiling —
+    /// the Aqueduct and the Neighborhood.
+    ///
+    /// ⚠⚠ Amenities are not the only band on growth, and they are not the
+    /// tighter one. `Game::housing_growth_mult` **halves** growth the moment
+    /// headroom falls below 2 and **quarters** it below 1, where the Amenity
+    /// cliff needs a −5 surplus to bite that hard. Population is what science
+    /// is — roughly 1.16 science per citizen, measured across three live games
+    /// at 7/5/6 cities — so the housing ceiling is the science ceiling.
+    ///
+    /// Measured over **12,969 host-exported city-turns** (`GetHousing()`, not
+    /// CIVVIS's model) across **every one of the 18 live runs that carries the
+    /// export**:
+    ///
+    /// | headroom | growth | share of city-turns |
+    /// |---|---|---|
+    /// | ≥ 2 | 1.00x | 28.8% |
+    /// | 1..2 | **0.50x** | 22.5% |
+    /// | −4..1 | **0.25x** | **45.8%** |
+    /// | ≤ −4 | **0.00x** | 2.9% |
+    ///
+    /// **71.2% of city-turns are throttled**, the median headroom is **1** —
+    /// already inside the half-growth band — and the mean growth multiplier is
+    /// **0.515**. At pop ≥ 8 (n = 6,122) it is **87.9%** throttled on a mean
+    /// headroom of −0.52.
+    ///
+    /// And the repair is not merely out-ranked, it is barely reached at all.
+    /// Over the same 18 runs, of **485 district orders**: Aqueduct **4**, its
+    /// Roman unique Bath **4**, Neighborhood **0** — **1.65%** together,
+    /// against 92 Commercial Hubs, 79 Campuses and 76 Entertainment Complexes.
+    /// The empire builds the districts that produce science and not the one
+    /// that raises the population the science is computed from.
+    ///
+    /// It is also **late**: the Aqueduct's median order turn is **164** and the
+    /// Bath's **214**, against a Campus at 131 — the repair arrives long after
+    /// the growth it was meant to unlock was needed.
+    ///
+    /// Off for the frozen native controllers, whose recorded ladders would
+    /// otherwise shift underneath them.
+    pub(crate) housing_districts: bool,
     /// Scale each district family by how much of the empire still lacks it.
     pub(crate) district_coverage: bool,
     pursue_religion: bool,
@@ -1365,6 +1565,21 @@ pub struct BasicAi {
     /// Let the unit chooser ask for SIEGE as a role. Off for the frozen native
     /// controllers. See `best_military_role` and `siege_is_the_missing_arm`.
     siege_role: bool,
+    /// Keep the land army out of the water: exclude water from a land unit's
+    /// exploration goals, bring an already-embarked unit ashore whether or not
+    /// it has an upgrade waiting, and let `peacetime_step` know when
+    /// `military_step` fell through to it *at war*.
+    ///
+    /// Measured across 133 live runs: land combat units spend a mean 15% of
+    /// their unit-turns embarked (p90 48%, worst run 84%), and **21.7% mean —
+    /// 92.8% at worst — while one of our own cities is taking damage**. An
+    /// embarked unit cannot attack and defends at `embarked_strength`. See
+    /// `disembark_step`.
+    ///
+    /// Off for the frozen native controllers, whose recorded ladders would
+    /// otherwise shift underneath them, and enabled explicitly by the
+    /// Civilization VI bridge.
+    come_ashore: bool,
     /// Let threats standing in our own territory claim units before the
     /// offensive does. Off for the frozen native controllers, whose recorded
     /// ladders would otherwise shift underneath them, and enabled explicitly by
@@ -1389,6 +1604,21 @@ pub struct BasicAi {
     /// call sites are shared with the frozen `advanced_v1` anchor, whose
     /// recorded ladders must keep replaying move-for-move.
     recorded_tactical_step: bool,
+    /// Use explicit combined-arms roles when assigning attacks and movement:
+    /// the melee/anti-cavalry/cavalry counter cycle, safe ranged standoff,
+    /// siege against walls, compatible ram/tower escorts, and distinct light-
+    /// versus-heavy cavalry jobs.
+    ///
+    /// Off for the frozen Basic/`advanced_v1` tournament controls and enabled
+    /// by the production Advanced controller.
+    tactical_strategy: bool,
+    /// Let the production controller retain one unit's campaign objective,
+    /// dangerous approaches, and a short retreat commitment across turns.
+    ///
+    /// This stays off for Basic and the frozen `advanced_v1` anchor: those
+    /// controllers keep their historical step-by-step choices while production
+    /// Advanced can use the richer state.
+    unit_objective_memory: bool,
     w: Weights,
     book_pos: usize, // opening-book progress (capital builds played so far)
     /// Units that have withdrawn from combat stay in recovery until they are
@@ -1405,6 +1635,10 @@ pub struct BasicAi {
     /// only a short local radius each step strands settlers on shorelines and
     /// can make them reverse course after embarking.
     settler_targets: HashMap<u32, Pos>,
+    /// The complete objective/threat/retreat ledger for individual units.
+    /// `RefCell` lets both serial and snapshot tactical planners update only
+    /// their own unit's entry without changing the broad movement API.
+    unit_memories: RefCell<BTreeMap<u32, UnitMemory>>,
     /// The source of each generic path step taken this turn. Do not immediately
     /// traverse the same edge backward: a greedy step into a cul-de-sac would
     /// otherwise be undone by A* with the unit's next movement point, and the
@@ -1440,6 +1674,7 @@ pub(crate) struct BasicUnitPlanState {
     recovering: bool,
     patrol_target: Option<Pos>,
     settler_target: Option<Pos>,
+    memory: Option<UnitMemory>,
     last_path_step: Option<(u32, Pos)>,
     patrol_posts: HashMap<String, Vec<Pos>>,
 }
@@ -1476,6 +1711,226 @@ impl BasicAi {
             "naval_carrier" => UnitDoctrine::Carrier,
             _ => UnitDoctrine::Assault,
         }
+    }
+
+    /// Innate class strength the rules engine applies against one opponent.
+    /// Keep tactical projections on the same counter cycle as combat itself.
+    pub(crate) fn class_matchup_strength(g: &Game, attacker: u32, defender: u32) -> f64 {
+        let unit = &g.units[&attacker];
+        let other_unit = &g.units[&defender];
+        let spec = &g.rules.units[unit.kind];
+        let other = &g.rules.units[other_unit.kind];
+        if spec.promotion_class == "anti_cavalry"
+            && (matches!(
+                other.promotion_class.as_str(),
+                "light_cavalry" | "heavy_cavalry"
+            ) || (other.cavalry && other.promotion_class == "ranged"))
+            && other_unit.kind != "war_cart"
+        {
+            10.0
+        } else if spec.promotion_class == "melee" && other.promotion_class == "anti_cavalry" {
+            5.0
+        } else {
+            0.0
+        }
+    }
+
+    fn wall_levels(g: &Game, cid: u32) -> usize {
+        let city = &g.cities[&cid];
+        city.buildings
+            .iter()
+            .filter(|building| !city.pillaged_buildings.contains(*building))
+            .filter(|building| g.rules.buildings[*building].outer_defense > 0)
+            .count()
+    }
+
+    fn siege_support_works_for_city(g: &Game, kind: &str, cid: u32) -> bool {
+        let city = &g.cities[&cid];
+        if g.players[city.owner].techs.contains(&crate::name!("steel")) {
+            return false;
+        }
+        match (kind, Self::wall_levels(g, cid)) {
+            ("battering_ram", 1) => true,
+            ("siege_tower", 1..=2) => true,
+            _ => false,
+        }
+    }
+
+    /// Rams and towers only empower the promotion classes the engine accepts.
+    /// Other support formations retain the ordinary any-military escort rule.
+    fn support_escort_compatible(&self, g: &Game, support: u32, escort: u32) -> bool {
+        let support_unit = &g.units[&support];
+        let escort_unit = &g.units[&escort];
+        let escort_spec = &g.rules.units[escort_unit.kind];
+        if escort_spec.class != "military" {
+            return false;
+        }
+        if !self.tactical_strategy
+            || !matches!(support_unit.kind.as_str(), "battering_ram" | "siege_tower")
+        {
+            return true;
+        }
+        matches!(escort_spec.promotion_class.as_str(), "melee" | "anti_cavalry")
+    }
+
+    fn active_breach_support(g: &Game, pid: usize, cid: u32, target: Pos) -> bool {
+        g.nbrs(target).into_iter().any(|position| {
+            g.units_at(position).into_iter().any(|support| {
+                let unit = &g.units[&support];
+                unit.owner == pid
+                    && matches!(unit.kind.as_str(), "battering_ram" | "siege_tower")
+                    && Self::siege_support_works_for_city(g, unit.kind.as_str(), cid)
+            })
+        })
+    }
+
+    /// Extra assignment value for the tactical job this action performs.
+    /// Damage, casualties and captures remain valued by the normal exchange or
+    /// exact forward model; this directs close choices to the correct role.
+    pub(crate) fn tactical_action_bonus(
+        &self,
+        g: &Game,
+        uid: u32,
+        target: Pos,
+        ranged: bool,
+    ) -> f64 {
+        self.tactical_action_bonus_from(g, uid, g.units[&uid].pos, target, ranged)
+    }
+
+    pub(crate) fn tactical_action_bonus_from(
+        &self,
+        g: &Game,
+        uid: u32,
+        from: Pos,
+        target: Pos,
+        ranged: bool,
+    ) -> f64 {
+        if !self.tactical_strategy {
+            return 0.0;
+        }
+        let attacker = &g.units[&uid];
+        let spec = &g.rules.units[attacker.kind];
+
+        if let Some(cid) = g.city_at(target).or_else(|| g.encampment_at(target)) {
+            let city = &g.cities[&cid];
+            let wall_hp = if g.city_at(target) == Some(cid) {
+                city.wall_hp
+            } else {
+                city.encampment_wall_hp
+            };
+            if wall_hp > 0 {
+                if spec.siege {
+                    return SIEGE_WALL_ASSIGNMENT;
+                }
+                if !ranged
+                    && matches!(spec.promotion_class.as_str(), "melee" | "anti_cavalry")
+                {
+                    return if Self::active_breach_support(g, attacker.owner, cid, target) {
+                        SUPPORTED_WALL_ASSAULT
+                    } else {
+                        -UNSUPPORTED_WALL_ASSAULT
+                    };
+                }
+            }
+            return 0.0;
+        }
+
+        let defender = g
+            .units_at(target)
+            .into_iter()
+            .filter(|other| {
+                let other = &g.units[other];
+                other.owner != attacker.owner
+                    && g.is_at_war(attacker.owner, other.owner)
+                    && g.rules.units[other.kind].class == "military"
+            })
+            .max_by(|left, right| {
+                let strength = |id: &u32| {
+                    let unit = &g.units[id];
+                    effective_strength(g.unit_strength(unit, true), unit.hp)
+                };
+                strength(left)
+                    .partial_cmp(&strength(right))
+                    .unwrap_or(Ordering::Equal)
+            });
+        let Some(defender) = defender else {
+            return 0.0;
+        };
+        let defender_spec = &g.rules.units[g.units[&defender].kind];
+        let favorable = match spec.promotion_class.as_str() {
+            "melee" => defender_spec.promotion_class == "anti_cavalry",
+            "anti_cavalry" => {
+                matches!(
+                    defender_spec.promotion_class.as_str(),
+                    "light_cavalry" | "heavy_cavalry"
+                ) && g.units[&defender].kind != "war_cart"
+            }
+            "light_cavalry" | "heavy_cavalry" => defender_spec.promotion_class == "melee",
+            _ => false,
+        };
+        let mut value = if favorable {
+            TACTICAL_COUNTER_ASSIGNMENT
+        } else {
+            0.0
+        };
+        if ranged {
+            let return_range = if defender_spec.has_ranged_attack() {
+                g.unit_attack_range(defender).max(1)
+            } else {
+                1
+            };
+            if g.wdist(from, target) > return_range {
+                value += SAFE_RANGED_FIRE;
+            }
+        }
+        value
+    }
+
+    /// Expected damage enemies could deliver after one approach step. Ranged
+    /// and siege units use this to prefer standoff tiles outside return reach.
+    pub(crate) fn projected_counter_damage(
+        &self,
+        g: &Game,
+        uid: u32,
+        tile: Pos,
+        hostile_units: &[u32],
+    ) -> f64 {
+        let defender = &g.units[&uid];
+        hostile_units
+            .iter()
+            .filter_map(|enemy| g.units.get(enemy).map(|unit| (*enemy, unit)))
+            .filter(|(_, enemy)| {
+                let spec = &g.rules.units[enemy.kind];
+                spec.class == "military"
+                    && (spec.is_melee_capable() || spec.has_ranged_attack())
+            })
+            .filter_map(|(enemy_id, enemy)| {
+                let enemy_spec = &g.rules.units[enemy.kind];
+                let ranged = enemy_spec.has_ranged_attack();
+                let attack_range = if ranged {
+                    g.unit_attack_range(enemy_id).max(1)
+                } else {
+                    1
+                };
+                // Price the enemy's next turn, when movement refreshes; its
+                // leftover points from the previous turn are irrelevant.
+                // Ordinary land units can take at least one approach step,
+                // while siege cannot move and fire without a promotion.
+                let approach = (!enemy_spec.siege) as i32;
+                (g.wdist(tile, enemy.pos) <= attack_range + approach).then(|| {
+                    let attack = if ranged {
+                        g.unit_ranged_attack_strength(enemy)
+                    } else {
+                        g.unit_strength(enemy, false)
+                    } + Self::class_matchup_strength(g, enemy_id, uid);
+                    let defense = g.unit_strength(defender, true)
+                        + Self::class_matchup_strength(g, uid, enemy_id);
+                    let attack = effective_strength(attack, enemy.hp);
+                    let defense = effective_strength(defense, defender.hp);
+                    30.0 * ((attack - defense) / 25.0).exp()
+                })
+            })
+            .sum()
     }
 
     pub(crate) fn city_is_coastal(g: &Game, cid: u32) -> bool {
@@ -1925,6 +2380,9 @@ impl BasicAi {
         let role = match doctrine {
             UnitDoctrine::Recon => 14.0,
             UnitDoctrine::Assault => -2.0,
+            // Light cavalry raids first and takes only favorable field trades;
+            // heavy cavalry remains Assault and presses attacks first.
+            UnitDoctrine::Mobile if self.tactical_strategy => 2.0,
             UnitDoctrine::Mobile => -5.0,
             UnitDoctrine::Ranged => 0.0,
             UnitDoctrine::Siege => 5.0,
@@ -2201,26 +2659,49 @@ impl BasicAi {
         }
     }
 
+    /// Heavy cavalry attacks first, but remains a strong fallback pillager.
+    /// Light cavalry reaches Pillage through `doctrine_action` before combat.
+    pub(crate) fn heavy_cavalry_pillage_action(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+    ) -> Option<Action> {
+        if !self.tactical_strategy
+            || g.rules.units[g.units[&uid].kind].promotion_class != "heavy_cavalry"
+        {
+            return None;
+        }
+        g.legal_doctrine_actions(pid, uid)
+            .into_iter()
+            .find(|action| matches!(action, Action::Pillage { unit } if *unit == uid))
+    }
+
     pub fn new() -> BasicAi {
         BasicAi {
             minor: false,
             barb: false,
             culture_focus: false,
             amenity_districts: false,
+            housing_districts: false,
             district_coverage: false,
             pursue_religion: true,
             live_religious_purchase_guard: false,
             siege_muster: false,
             siege_role: false,
+            come_ashore: false,
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
+            tactical_strategy: false,
+            unit_objective_memory: false,
             w: Weights::default(),
             book_pos: 0,
             recovering_units: HashSet::new(),
             patrol_targets: HashMap::new(),
             patrol_posts: HashMap::new(),
             settler_targets: HashMap::new(),
+            unit_memories: RefCell::new(BTreeMap::new()),
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
@@ -2234,20 +2715,25 @@ impl BasicAi {
             barb: false,
             culture_focus: false,
             amenity_districts: false,
+            housing_districts: false,
             district_coverage: false,
             pursue_religion: true,
             live_religious_purchase_guard: false,
             siege_muster: false,
             siege_role: false,
+            come_ashore: false,
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
+            tactical_strategy: false,
+            unit_objective_memory: false,
             w,
             book_pos: 0,
             recovering_units: HashSet::new(),
             patrol_targets: HashMap::new(),
             patrol_posts: HashMap::new(),
             settler_targets: HashMap::new(),
+            unit_memories: RefCell::new(BTreeMap::new()),
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
@@ -2322,6 +2808,194 @@ impl BasicAi {
 }
 
 impl BasicAi {
+    /// Return a snapshot of one unit's durable reasoning state.
+    ///
+    /// This is intentionally observer-facing: a spectator, evaluator, or
+    /// bridge can explain why one individual unit is moving without getting a
+    /// mutable handle to the controller's internal maps.
+    pub fn unit_memory(&self, uid: u32) -> Option<UnitMemory> {
+        self.unit_memories.borrow().get(&uid).cloned()
+    }
+
+    /// Assign a military unit to the city the current campaign means to take.
+    /// Reconfirming the same job preserves its original start turn, which is
+    /// how an observer can distinguish a long-running siege from a retarget.
+    pub(crate) fn remember_capture_objective(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        city: u32,
+    ) {
+        if !self.unit_objective_memory
+            || !g.units.get(&uid).is_some_and(|unit| unit.owner == pid)
+        {
+            return;
+        }
+        let Some(target_city) = g.cities.get(&city).filter(|city| city.owner != pid) else {
+            return;
+        };
+        let target = target_city.pos;
+        let mut memories = self.unit_memories.borrow_mut();
+        let memory = memories.entry(uid).or_default();
+        match &mut memory.objective {
+            Some(UnitObjective::CaptureCity {
+                city: known_city,
+                target: known_target,
+                last_confirmed_turn,
+                ..
+            }) if *known_city == city && *known_target == target => {
+                *last_confirmed_turn = g.turn;
+            }
+            _ => {
+                memory.objective = Some(UnitObjective::CaptureCity {
+                    city,
+                    target,
+                    started_turn: g.turn,
+                    last_confirmed_turn: g.turn,
+                });
+            }
+        }
+    }
+
+    /// A remembered capture objective is actionable only while the city still
+    /// belongs to a hostile civilization. It can be retained before a formal
+    /// declaration, but never pulls a unit through a peace treaty.
+    pub(crate) fn capture_objective_target(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+    ) -> Option<Pos> {
+        if !self.unit_objective_memory {
+            return None;
+        }
+        let objective = self.unit_memories.borrow().get(&uid)?.objective?;
+        let UnitObjective::CaptureCity { city, target, .. } = objective;
+        g.cities
+            .get(&city)
+            .filter(|known| {
+                known.owner != pid && known.pos == target && g.is_at_war(pid, known.owner)
+            })
+            .map(|_| target)
+    }
+
+    /// Remember that entering `position` would expose this unit to a serious
+    /// counterattack. The warning always survives briefly; it becomes a real
+    /// retreat when that damage would cross the controller's own withdrawal
+    /// floor.
+    pub(crate) fn remember_dangerous_approach(
+        &self,
+        g: &Game,
+        uid: u32,
+        position: Pos,
+        expected_damage: f64,
+    ) -> bool {
+        if !self.unit_objective_memory || !expected_damage.is_finite() || expected_damage <= 0.0 {
+            return false;
+        }
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        let expected_damage = expected_damage.ceil().clamp(0.0, u32::MAX as f64) as u32;
+        let withdraw_floor = self.w.withdraw_hp.round();
+        let requires_retreat = expected_damage as f64
+            >= (f64::from(unit.hp) - withdraw_floor).max(0.0);
+        let mut memories = self.unit_memories.borrow_mut();
+        let memory = memories.entry(uid).or_default();
+        memory.danger = Some(UnitDangerMemory {
+            position,
+            expected_damage,
+            observed_turn: g.turn,
+            expires_turn: g.turn.saturating_add(UNIT_DANGER_MEMORY_TURNS),
+        });
+        if requires_retreat {
+            let until = g.turn.saturating_add(UNIT_RETREAT_TURNS);
+            memory.retreat_until = Some(memory.retreat_until.unwrap_or(until).max(until));
+        }
+        requires_retreat
+    }
+
+    /// Honor a remembered retreat before resuming a campaign. A retreat chooses
+    /// the neighbor that reduces expected counter-damage, opens distance from
+    /// the dangerous approach, and improves healing. It never discards the
+    /// objective that will be resumed after the short cooldown.
+    pub(crate) fn retreat_step(&self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
+        if !self.unit_objective_memory {
+            return None;
+        }
+        let danger = self.unit_memories.borrow().get(&uid).and_then(|memory| {
+            memory
+                .retreat_until
+                .filter(|until| g.turn < *until)
+                .and(memory.danger)
+        })?;
+        let here = g.units.get(&uid)?.pos;
+        let hostiles: Vec<u32> = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner != pid
+                    && g.is_at_war(pid, unit.owner)
+                    && g.unit_visible_to(unit.id, pid)
+            })
+            .map(|unit| unit.id)
+            .collect();
+        let value = |position: Pos| {
+            -4.0 * self.projected_counter_damage(g, uid, position, &hostiles)
+                + 3.0 * g.wdist(position, danger.position) as f64
+                + 0.5 * g.healing_location(pid, position).rate() as f64
+        };
+        let holding = value(here);
+        let next = g
+            .nbrs(here)
+            .into_iter()
+            .filter(|position| g.can_move(uid, *position))
+            .max_by(|left, right| {
+                value(*left)
+                    .total_cmp(&value(*right))
+                    .then_with(|| right.cmp(left))
+            });
+        match next {
+            Some(next) if value(next) > holding + 1e-9 => Some(
+                self.tactical_apply_move(g, pid, uid, next)
+                    || self.fortify_or_stop(g, pid, uid),
+            ),
+            _ => Some(self.fortify_or_stop(g, pid, uid)),
+        }
+    }
+
+    /// Remove stale observations, completed objectives, and entries for units
+    /// that no longer belong to this player. This must run before any unit
+    /// moves, just like the older motion ledger it complements.
+    fn refresh_unit_memories(&self, g: &Game, pid: usize) {
+        self.unit_memories.borrow_mut().retain(|uid, memory| {
+            let Some(unit) = g.units.get(uid) else {
+                return false;
+            };
+            if unit.owner != pid {
+                return false;
+            }
+            if let Some(UnitObjective::CaptureCity { city, target, .. }) = memory.objective {
+                if g.cities.get(&city).is_none_or(|known| {
+                    known.owner == pid || known.pos != target
+                }) {
+                    memory.objective = None;
+                }
+            }
+            if memory
+                .danger
+                .is_some_and(|danger| g.turn >= danger.expires_turn)
+            {
+                memory.danger = None;
+            }
+            if memory.retreat_until.is_some_and(|until| g.turn >= until) {
+                memory.retreat_until = None;
+            }
+            memory.objective.is_some() || memory.danger.is_some() || memory.retreat_until.is_some()
+        });
+    }
+
     /// Drop everything this agent remembers ABOUT INDIVIDUAL UNITS, keeping the rest.
     ///
     /// ★★★★★ FOR MIRRORING A GAME WHOSE UNIT IDS ARE REASSIGNED EVERY TURN.
@@ -2348,6 +3022,7 @@ impl BasicAi {
         self.patrol_targets.clear();
         self.patrol_posts.clear();
         self.settler_targets.clear();
+        self.unit_memories.get_mut().clear();
         self.unit_motion.clear();
     }
 
@@ -2387,6 +3062,11 @@ impl BasicAi {
         // claims on ground rather than memory about a unit.
         self.patrol_posts.clear();
         self.settler_targets = remap(&self.settler_targets, map);
+        let unit_memories = std::mem::take(self.unit_memories.get_mut());
+        *self.unit_memories.get_mut() = unit_memories
+            .into_iter()
+            .filter_map(|(uid, memory)| map.get(&uid).map(|new| (*new, memory)))
+            .collect();
         self.unit_motion = self
             .unit_motion
             .iter()
@@ -2404,6 +3084,7 @@ impl BasicAi {
     /// the expensive all-map candidate scan does not need to.
     pub(crate) fn begin_movement_turn(&mut self, g: &Game, pid: usize) {
         self.patrol_posts.clear();
+        self.refresh_unit_memories(g, pid);
         self.observe_unit_motion(g, pid);
     }
 
@@ -2412,6 +3093,7 @@ impl BasicAi {
             recovering: self.recovering_units.contains(&uid),
             patrol_target: self.patrol_targets.get(&uid).copied(),
             settler_target: self.settler_targets.get(&uid).copied(),
+            memory: self.unit_memory(uid),
             last_path_step: self.last_path_step_from.borrow().get(&uid).copied(),
             patrol_posts: self.patrol_posts.clone(),
         }
@@ -2437,6 +3119,14 @@ impl BasicAi {
             }
             None => {
                 self.settler_targets.remove(&uid);
+            }
+        }
+        match state.memory {
+            Some(memory) => {
+                self.unit_memories.get_mut().insert(uid, memory);
+            }
+            None => {
+                self.unit_memories.get_mut().remove(&uid);
             }
         }
         match state.last_path_step {
@@ -2926,7 +3616,18 @@ impl BasicAi {
                 },
             );
         }
-        if !self.minor && g.players[pid].pantheon.is_none() && g.players[pid].faith >= 25.0 {
+        // ⚠⚠⚠ THE THIRD SPELLING OF THE SAME RULE, and the one that actually
+        // decides. #1044 fixed the legality gate and the affordability check in
+        // `game.rs` and missed this, so on Online — where the real price is 12.5 —
+        // the AI sat waiting for 25 faith while Civilization VI had already raised
+        // `ENDTURN_BLOCKING_PANTHEON`, and the mod's fallback picked instead.
+        // Measured live on `civvis-20260803T231038Z`: faith passed 12.5 on turn 19,
+        // the host asked on turn 25, and replaying turns 21 and 23 emitted 7 and 8
+        // orders with NO pantheon among them.
+        if !self.minor
+            && g.players[pid].pantheon.is_none()
+            && g.players[pid].faith >= g.pantheon_faith_cost()
+        {
             for (rank, b) in [
                 "divine_spark",
                 "fertility_rites",
@@ -4461,13 +5162,12 @@ impl BasicAi {
             return false;
         }
         for cid in city_ids {
-            if !g.can_produce(
-                pid,
-                *cid,
-                &Item::Unit {
-                    unit: Name::new(unit),
-                },
-            ) {
+            let item = Item::Unit {
+                unit: Name::new(unit),
+            };
+            // `can_produce` answers "can this city BUILD it"; a host purchase
+            // refusal is a different set. Both must pass before spending gold.
+            if !g.can_produce(pid, *cid, &item) || g.purchase_is_blocked(*cid, &item) {
                 continue;
             }
             if g.apply(
@@ -4517,6 +5217,7 @@ impl BasicAi {
                     let price = spec.cost * 4.0;
                     if price > budget + 1e-9
                         || !g.can_produce(pid, *cid, &Item::Unit { unit: *name })
+                        || g.purchase_is_blocked(*cid, &Item::Unit { unit: *name })
                     {
                         continue;
                     }
@@ -4583,6 +5284,12 @@ impl BasicAi {
                 if spec.wonder
                     || !g.can_produce(
                         pid,
+                        *cid,
+                        &Item::Building {
+                            building: *building,
+                        },
+                    )
+                    || g.purchase_is_blocked(
                         *cid,
                         &Item::Building {
                             building: *building,
@@ -5125,7 +5832,7 @@ impl BasicAi {
             })
     }
 
-    fn pick_item(
+    pub fn pick_item(
         &self,
         g: &Game,
         pid: usize,
@@ -5270,6 +5977,17 @@ impl BasicAi {
                 self.combined_arms_unit(g, pid, cid, melee, ranged)
             };
             if let Some(m) = picked {
+                // ⚠ THE BRANCH THAT WINS MUST SAY SO.
+                //
+                // A one-city run built 18 heavy chariots across 90 turns while its
+                // own plan asked for seven cities, and NOTHING in the journal said
+                // which branch of `pick_item` took the choice. An offline probe with
+                // the deployment genome returned a settler for the same board, so
+                // the two disagreed with no way to tell which was wrong.
+                think!(self.journal, Cities, Detail,
+                       "Military floor takes the build";
+                       "holding {military} against a floor of {military_floor:.1}{}",
+                       if missing_siege_arm { ", and the siege arm is missing" } else { "" });
                 return Some(Item::Unit { unit: Name::new(&m) });
             }
         }
@@ -5351,17 +6069,46 @@ impl BasicAi {
                 return Some(Item::Unit { unit: Name::new(&unit) });
             }
         }
-        if !self.minor
-            && !self.barb
-            && ((n_cities + settlers) as f64) < self.w.city_target
-            && settlers == 0
-            && (city_pop as f64) >= self.w.settler_min_pop
-            && (g.turn as f64) < self.w.settler_stop_turn
-            && self.has_practical_settle_site(g, pid)
-        {
-            return Some(Item::Unit {
-                unit: crate::name!("settler"),
-            });
+        // ⚠ Five conditions in one `&&` chain, and an empire that ends the game
+        // with one city cannot say which of them refused. Named individually so
+        // "the site search found nothing" is distinguishable from "the window
+        // closed" without attaching a debugger to a finished run.
+        if !self.minor && !self.barb {
+            let room = ((n_cities + settlers) as f64) < self.w.city_target;
+            let none_in_flight = settlers == 0;
+            let grown = (city_pop as f64) >= self.w.settler_min_pop;
+            let in_window = (g.turn as f64) < self.w.settler_stop_turn;
+            if room && none_in_flight && grown && in_window {
+                if self.has_practical_settle_site(g, pid) {
+                    return Some(Item::Unit {
+                        unit: crate::name!("settler"),
+                    });
+                }
+                think!(self.journal, Cities, Detail,
+                       "No settler: every reachable site is refused";
+                       "{n_cities} cities against a target of {:.1}, and the site \
+                        search found nothing within reach",
+                       self.w.city_target);
+            } else if self.journal.wants(crate::reasoning::Level::Detail) {
+                let mut why: Vec<&str> = Vec::new();
+                if !room {
+                    why.push("already at the city target");
+                }
+                if !none_in_flight {
+                    why.push("a settler is already in flight");
+                }
+                if !grown {
+                    why.push("the city is below settler_min_pop");
+                }
+                if !in_window {
+                    why.push("past settler_stop_turn");
+                }
+                think!(self.journal, Cities, Detail,
+                       "No settler: {}", why.join(", ");
+                       "{n_cities} cities and {settlers} settlers against a target \
+                        of {:.1}, turn {} of {:.0}",
+                       self.w.city_target, g.turn, self.w.settler_stop_turn);
+            }
         }
         if (builders as f64) < self.w.builder_per_city * n_cities as f64
             && Self::has_builder_work(g, pid)
@@ -5433,11 +6180,48 @@ impl BasicAi {
         // the actual deficit, so this outranks the lane's own families only
         // while the multiplier is genuinely being paid and disappears the
         // moment the city is neutral.
+        // ⚠ Taken BEFORE either repair is pushed, so the two repairs are each
+        // ranked against the LANE and then against EACH OTHER by their own
+        // magnitudes. Reading it after the Amenity push would stack the housing
+        // repair on top of the Amenity one and make housing win by construction
+        // — wrong in exactly the case that matters most, because
+        // `amenity_growth_mult` is **0.0** below −4 and an Aqueduct handed to a
+        // city that is not growing at all buys nothing.
+        let lane_top = dpri.iter().map(|(_, w)| *w).fold(0.0_f64, f64::max);
         if self.amenity_districts && !self.minor {
             let deficit = (-g.city_amenity_surplus(&g.cities[&cid])).max(0) as f64;
             if deficit > 0.0 {
-                let top = dpri.iter().map(|(_, w)| *w).fold(0.0_f64, f64::max);
-                dpri.push(("entertainment_complex", top + deficit));
+                dpri.push(("entertainment_complex", lane_top + deficit));
+            }
+        }
+        // And a city that has run out of HOUSING asks for the districts that
+        // raise the ceiling, for the same reason and on a tighter band: below
+        // headroom 2 `Game::housing_growth_mult` halves growth and below 1 it
+        // quarters it, and population is what science is. See
+        // `BasicAi::housing_districts` for the corpus — 78.4% of live
+        // city-turns sit under that ceiling while the two districts that lift
+        // it take 1.6% of district orders.
+        //
+        // Weighted by the housing each family would ACTUALLY add rather than by
+        // the shortfall alone: an Aqueduct is +4 to a dry inland city and only
+        // +2 to one already on a river, and a flat weight cannot tell those
+        // apart. Capped by the shortfall so a city one short of the target does
+        // not outrank its whole lane to over-build by three.
+        //
+        // Against the Amenity repair this then reads the way it should: a city
+        // at surplus −6 scores that repair 6 and this one at most 3, and the
+        // −6 city has growth 0.00 so housing genuinely cannot help it yet. A
+        // city merely displeased at −1 scores the Amenity repair 1 and a real
+        // housing block 2, and housing correctly goes first.
+        if self.housing_districts && !self.minor {
+            let shortfall = HOUSING_HEADROOM_TARGET - g.city_housing_headroom(&g.cities[&cid]);
+            if shortfall > 0.0 {
+                for family in HOUSING_DISTRICTS {
+                    let gain = Self::housing_gain(g, pid, cid, family);
+                    if gain > 0.0 {
+                        dpri.push((family, lane_top + shortfall.min(gain)));
+                    }
+                }
             }
         }
         if self.minor {
@@ -5768,10 +6552,12 @@ impl BasicAi {
                     let b_spec = &game.rules.units[b.kind];
                     let support = (a_spec.class == "support"
                         && a.kind != "military_engineer"
-                        && b_spec.class == "military")
+                        && b_spec.class == "military"
+                        && self.support_escort_compatible(game, a.id, b.id))
                         || (b_spec.class == "support"
                             && b.kind != "military_engineer"
-                            && a_spec.class == "military");
+                            && a_spec.class == "military"
+                            && self.support_escort_compatible(game, b.id, a.id));
                     let naval_settler = (a_spec.domain.as_deref() == Some("sea")
                         && b.kind == "settler")
                         || (b_spec.domain.as_deref() == Some("sea") && a.kind == "settler");
@@ -5788,8 +6574,11 @@ impl BasicAi {
                         let a = &g.rules.units[g.units[unit].kind];
                         let b = &g.rules.units[g.units[with].kind];
                         let support = (a.class == "support"
-                            && g.units[unit].kind != "military_engineer")
-                            || (b.class == "support" && g.units[with].kind != "military_engineer");
+                            && g.units[unit].kind != "military_engineer"
+                            && self.support_escort_compatible(g, *unit, *with))
+                            || (b.class == "support"
+                                && g.units[with].kind != "military_engineer"
+                                && self.support_escort_compatible(g, *with, *unit));
                         let naval_settler = (a.domain.as_deref() == Some("sea")
                             && g.units[with].kind == "settler")
                             || (b.domain.as_deref() == Some("sea")
@@ -5817,9 +6606,29 @@ impl BasicAi {
         enemy_ids: &[usize],
         attack_range: i32,
     ) -> bool {
+        // Get out of the water before marching anywhere. The penalty in
+        // `score` below stops a unit WALKING INTO the sea, but it cannot
+        // recover one already out there: every neighbour of a tile in open
+        // water is also water, so a uniform penalty cancels and the unit keeps
+        // swimming toward the objective. This is the half that reaches the
+        // eleven-of-twelve afloat on run `civvis-20260803T130831Z`.
+        //
+        // It sits in `tactical_step` rather than `military_step` because the
+        // Advanced campaign path calls `tactical_step` directly and would
+        // otherwise miss the rule entirely — the same "reachable only on one
+        // path" mistake that left the #955 defence layer inert.
+        if self.come_ashore
+            && g.rules.units[g.units[&uid].kind].domain.as_deref() != Some("sea")
+            && g.is_embarked(&g.units[&uid])
+            && self.disembark_step(g, pid, uid)
+        {
+            return true;
+        }
         let upos = g.units[&uid].pos;
         let u = &g.units[&uid];
         let my_def = effective_strength(g.unit_strength(u, true), u.hp);
+        let prefer_dry =
+            self.come_ashore && g.rules.units[u.kind].domain.as_deref() != Some("sea");
         let doctrine = Self::unit_doctrine(g, uid);
         let (preferred_range, progress, threat_caution) = match doctrine {
             UnitDoctrine::Recon => (2, 0.60, 1.35),
@@ -5829,6 +6638,30 @@ impl BasicAi {
             UnitDoctrine::Siege => (attack_range.max(1), 0.80, 1.25),
             UnitDoctrine::Support | UnitDoctrine::Carrier => (2, 0.65, 1.40),
             UnitDoctrine::AirDefense | UnitDoctrine::AirStrike => (attack_range.max(1), 1.0, 1.0),
+        };
+        let hostile_units: Vec<u32> = if self.tactical_strategy || self.unit_objective_memory {
+            g.units
+                .values()
+                .filter(|enemy| enemy_ids.contains(&enemy.owner))
+                .map(|enemy| enemy.id)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        // A memory entry is an observation, not privileged map knowledge.
+        // Keep the legacy tactical score above exactly as it is, while only
+        // allowing the new durable warning to use enemies this civilization
+        // can actually see now.
+        let danger_hostiles: Vec<u32> = if self.unit_objective_memory {
+            g.units
+                .values()
+                .filter(|enemy| {
+                    enemy_ids.contains(&enemy.owner) && g.unit_visible_to(enemy.id, pid)
+                })
+                .map(|enemy| enemy.id)
+                .collect()
+        } else {
+            Vec::new()
         };
         let score = |g: &Game, tile: Pos| -> f64 {
             let depth_error = (g.wdist(tile, target) - preferred_range).abs();
@@ -5842,7 +6675,7 @@ impl BasicAi {
                     }
                     if o.owner == pid && oid != uid {
                         adjacent_support += 1;
-                    } else if enemy_ids.contains(&o.owner) {
+                    } else if !self.tactical_strategy && enemy_ids.contains(&o.owner) {
                         let att = effective_strength(g.unit_strength(o, false), o.hp);
                         s -= self.w.mv_threat
                             * threat_caution
@@ -5851,11 +6684,39 @@ impl BasicAi {
                     }
                 }
             }
+            if self.tactical_strategy {
+                s -= self.w.mv_threat
+                    * threat_caution
+                    * self.projected_counter_damage(g, uid, tile, &hostile_units);
+            }
             // A pair of neighbors is enough to hold a coherent line. Giving
             // every extra adjacent unit the full bonus makes dense armies
             // refuse to leave their initial cluster even when a safe campaign
             // route is open.
             s += self.w.mv_support * adjacent_support.min(2) as f64;
+            // ⭐ The score above has no terrain term at all, and open water is
+            // doubly attractive because of it: a sea tile is usually the
+            // geometrically shorter road to an objective across a bay, AND it
+            // carries no adjacent-enemy threat because the enemies are on
+            // land. So the safest, fastest route was always the sea — and an
+            // embarked land unit cannot attack (`Game::apply` refuses it),
+            // cannot fortify, and defends at the era's flat
+            // `embarked_strength` instead of its own.
+            //
+            // This is the wartime mover, and it is the one that mattered: on
+            // live run `civvis-20260803T130831Z` at t174, eleven of twelve land
+            // combat units were afloat while the capital sat at 179/200 damage,
+            // and the journal read "A land force of 12 will advance | objective
+            // (22,21)" — an objective on our OWN landmass. They were not
+            // crossing to reach it; they were swimming along it.
+            //
+            // Sized to outweigh the few tiles of `depth_error` a detour around
+            // a bay costs, without removing the option: `route_step` below is
+            // untouched, so a real crossing still happens when the land route
+            // does not exist.
+            if prefer_dry && g.map.get(tile).is_some_and(|t| g.rules.is_water(t)) {
+                s -= WATER_MARCH_PENALTY;
+            }
             s + self.livelock_penalty(uid, tile)
         };
         let stay = score(g, upos);
@@ -5883,6 +6744,14 @@ impl BasicAi {
                     self.move_beats_holding(g, uid, sc, stay)
                 } =>
             {
+                if self.unit_objective_memory {
+                    let danger = self.projected_counter_damage(g, uid, n, &danger_hostiles);
+                    if self.remember_dangerous_approach(g, uid, n, danger) {
+                        return self
+                            .retreat_step(g, pid, uid)
+                            .unwrap_or_else(|| self.fortify_or_stop(g, pid, uid));
+                    }
+                }
                 // ⚠ Through `path_move`, never `g.apply` directly: a unit with
                 // movement left is stepped again this same turn, and a raw
                 // apply records nothing — so round two happily re-entered the
@@ -5902,8 +6771,18 @@ impl BasicAi {
                     _ => return false,
                 };
                 let routed = score(g, n) + 2.5;
-                self.move_beats_holding(g, uid, routed, stay)
-                    && self.tactical_apply_move(g, pid, uid, n)
+                if !self.move_beats_holding(g, uid, routed, stay) {
+                    return false;
+                }
+                if self.unit_objective_memory {
+                    let danger = self.projected_counter_damage(g, uid, n, &danger_hostiles);
+                    if self.remember_dangerous_approach(g, uid, n, danger) {
+                        return self
+                            .retreat_step(g, pid, uid)
+                            .unwrap_or_else(|| self.fortify_or_stop(g, pid, uid));
+                    }
+                }
+                self.tactical_apply_move(g, pid, uid, n)
             }
         }
     }
@@ -6039,7 +6918,30 @@ impl BasicAi {
             .into_iter()
             .filter(|p| g.can_move(uid, *p))
             .collect();
-        local.sort_by_key(|p| (g.wdist(*p, target), *p));
+        // Dry land first for a land unit. This greedy step ranked neighbours on
+        // geometric distance alone, and `can_move` says yes to open water for
+        // every land unit once embarkation unlocks — so a straight line across
+        // a bay always beat walking around it, and the army marched into the
+        // sea. Embarked it cannot attack (`Game::apply` refuses it) or fortify.
+        //
+        // ⚠ The loop below `break`s on the first neighbour that fails to make
+        // progress, which is only sound while the order is by distance. So the
+        // non-improving neighbours are dropped here rather than re-sorted
+        // behind the dry ones — otherwise a dry tile that moves away from the
+        // target would cut off the improving water tiles behind it and the
+        // unit would simply stop. A water step is still reachable: it sorts
+        // last, and the A* fallback below is untouched, so a genuine ocean
+        // crossing still happens when no dry neighbour makes progress.
+        let prefer_dry = self.come_ashore
+            && g.rules.units[g.units[&uid].kind].domain.as_deref() != Some("sea");
+        if prefer_dry {
+            let here = g.wdist(cur, target);
+            local.retain(|p| g.wdist(*p, target) < here);
+        }
+        local.sort_by_key(|p| {
+            let wet = prefer_dry && g.map.get(*p).is_some_and(|tile| g.rules.is_water(tile));
+            (wet, g.wdist(*p, target), *p)
+        });
         for next in local {
             if g.wdist(next, target) >= g.wdist(cur, target) {
                 break; // sorted: no remaining neighbor makes progress
@@ -6089,7 +6991,7 @@ impl BasicAi {
         total
     }
 
-    fn valid_settle_site(&self, g: &Game, pid: usize, pos: Pos) -> bool {
+    pub fn valid_settle_site(&self, g: &Game, pid: usize, pos: Pos) -> bool {
         let Some(tile) = g.map.get(pos) else {
             return false;
         };
@@ -6105,7 +7007,7 @@ impl BasicAi {
                 .is_none_or(|cid| g.cities[&cid].owner == pid)
     }
 
-    fn has_practical_settle_site(&self, g: &Game, pid: usize) -> bool {
+    pub fn has_practical_settle_site(&self, g: &Game, pid: usize) -> bool {
         let shipbuilding = g.players[pid].techs.contains(&crate::name!("shipbuilding"));
         let cartography = g.players[pid].techs.contains(&crate::name!("cartography"));
         // Before embarkation, a city only commits to a site close enough to
@@ -6365,29 +7267,42 @@ impl BasicAi {
             .values()
             .filter(|c| c.owner != pid && g.is_at_war(pid, c.owner))
             .filter(|c| {
-                let walls = c
-                    .buildings
-                    .iter()
-                    .filter(|b| *b == "walls" || *b == "medieval_walls")
-                    .count();
-                walls > 0 && (support_kind == "siege_tower" || walls == 1)
+                if self.tactical_strategy {
+                    c.wall_hp > 0 && Self::siege_support_works_for_city(g, support_kind, c.id)
+                } else {
+                    let walls = c
+                        .buildings
+                        .iter()
+                        .filter(|b| *b == "walls" || *b == "medieval_walls")
+                        .count();
+                    walls > 0 && (support_kind == "siege_tower" || walls == 1)
+                }
             })
             .map(|c| c.pos)
             .collect();
         if targets.is_empty() {
             return false;
         }
+        if self.tactical_strategy && targets.iter().any(|target| g.wdist(upos, *target) <= 1) {
+            return false;
+        }
 
-        // Follow the melee unit closest to a compatible walled target. Newer
-        // support units normally act after the army, so they naturally step
-        // onto the tile their escort just vacated or currently occupies.
+        // Follow a melee/anti-cavalry unit: only those classes can use the aura.
         let escort = g
             .units
             .values()
             .filter(|u| u.owner == pid && u.id != uid)
             .filter(|u| {
-                let spec = &g.rules.units[u.kind];
-                spec.class == "military" && spec.ranged_strength <= 0.0 && !spec.siege
+                if self.tactical_strategy {
+                    self.support_escort_compatible(g, uid, u.id)
+                        && matches!(
+                            g.rules.units[u.kind].promotion_class.as_str(),
+                            "melee" | "anti_cavalry"
+                        )
+                } else {
+                    let spec = &g.rules.units[u.kind];
+                    spec.class == "military" && spec.ranged_strength <= 0.0 && !spec.siege
+                }
             })
             .min_by_key(|u| {
                 let front = targets.iter().map(|t| g.wdist(u.pos, *t)).min().unwrap();
@@ -6461,6 +7376,32 @@ impl BasicAi {
     /// replacement where it has one, otherwise the stock district. The engine
     /// blocks the base district for civilizations with a replacement, exactly
     /// as it does for unique units.
+    /// The housing a not-yet-built member of `family` would add to this city.
+    /// Zero when the city already has one, or when there is nowhere legal to
+    /// put it — a district with no site buys nothing however short the city is.
+    ///
+    /// The two families answer differently on purpose. An Aqueduct's worth is
+    /// fixed by the city centre's own water (+2 fresh, +3 coastal, +4 dry) and
+    /// `Game::aqueduct_housing_gain` states it beside the model that pays it. A
+    /// Neighborhood's is its site's Appeal, anywhere from 2 to 6, so the map is
+    /// asked instead of assumed: on a poor site it is 2 housing for 54
+    /// production and should lose to the lane, and on a good one it is 6 and
+    /// should not.
+    fn housing_gain(g: &Game, pid: usize, cid: u32, family: &str) -> f64 {
+        let city = &g.cities[&cid];
+        if g.city_has_district_family(city, Name::new(family)) {
+            return 0.0;
+        }
+        if family == "aqueduct" {
+            return g.aqueduct_housing_gain(city);
+        }
+        let dname = Self::civ_district(g, pid, family);
+        g.district_sites(cid, dname)
+            .into_iter()
+            .map(|pos| g.district_housing(dname.as_str(), pos))
+            .fold(0.0_f64, f64::max)
+    }
+
     pub(crate) fn civ_district(g: &Game, pid: usize, family: &str) -> Name {
         let civ = g.players[pid].civ.as_str();
         g.rules
@@ -6610,6 +7551,83 @@ impl BasicAi {
             Some((_, _, pos)) => self.step_toward(g, pid, uid, pos),
             None => false,
         }
+    }
+
+    /// Improvements this particular unit can actually spend one of its own
+    /// charges to create on `pos`. Builders use `builder_buildable`; the few
+    /// military uniques that carry build charges instead name their actions in
+    /// their unit rule. Keeping the intersection here makes every caller obey
+    /// the same placement, ownership, Open Borders, and civilization checks.
+    pub(crate) fn special_unit_improvements(
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        pos: Pos,
+    ) -> Vec<Name> {
+        let Some(unit) = g.units.get(&uid) else {
+            return Vec::new();
+        };
+        if unit.owner != pid || unit.charges <= 0 {
+            return Vec::new();
+        }
+        let builds = &g.rules.units[unit.kind].builds;
+        if builds.is_empty() {
+            return Vec::new();
+        }
+        g.valid_improvements(pid, pos)
+            .into_iter()
+            .filter(|improvement| builds.contains(improvement))
+            .collect()
+    }
+
+    /// Spend a unique military unit's improvement charge when that is a real
+    /// legal job, or walk it toward the nearest reachable job. `None` means
+    /// this unit has no such job and lets ordinary military behavior continue.
+    ///
+    /// This intentionally searches the whole map rather than only owned city
+    /// tiles: a Nau's Feitoria is useful precisely because it must be placed in
+    /// foreign territory with Open Borders.
+    pub(crate) fn special_improver_step(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+    ) -> Option<bool> {
+        let current = g.units.get(&uid)?.pos;
+        let here = Self::special_unit_improvements(g, pid, uid, current);
+        if let Some(improvement) = Self::best_improvement(g, current, &here) {
+            return g
+                .apply(
+                    pid,
+                    &Action::Improve {
+                        unit: uid,
+                        improvement,
+                    },
+                )
+                .ok()
+                .map(|_| true);
+        }
+
+        let targets = {
+            // `valid_improvements` asks several empire-wide questions. The
+            // special units are rare, but a memo scope still keeps this map
+            // scan proportional to tiles rather than repeated rule queries.
+            let _memo = g.query_memo();
+            g.map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|position| {
+                    *position != current
+                        && !Self::special_unit_improvements(g, pid, uid, *position).is_empty()
+                })
+                .collect::<HashSet<_>>()
+        };
+        g.route_step_to_any(uid, &targets).and_then(|to| {
+            g.apply(pid, &Action::Move { unit: uid, to })
+                .ok()
+                .map(|_| true)
+        })
     }
 
     /// Whether this tile holds a strategic deposit that is not yet connected
@@ -6945,6 +7963,7 @@ impl BasicAi {
     /// Walk the assigned defender to its city and hold it. Standing on the tile
     /// IS the job, so arriving means fortifying rather than looking for a fight.
     fn garrison_step(&mut self, g: &mut Game, pid: usize, uid: u32, enemy_ids: &[usize]) -> bool {
+        GARRISON_STEP_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some((_, city)) = self
             .garrison_assignments(g, pid, enemy_ids)
             .into_iter()
@@ -7301,6 +8320,13 @@ impl BasicAi {
 
     fn explore_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let upos = g.units[&uid].pos;
+        // `unit_can_traverse` says yes to open water for every land unit the
+        // moment embarkation unlocks, so from that turn on the unexplored
+        // ocean is a legal exploration goal for the whole army. That is how a
+        // Crossbowman leaves the capital tile and spends the next 47 turns
+        // pacing between two sea hexes. A land unit explores land.
+        let dry_only = self.come_ashore
+            && g.rules.units[g.units[&uid].kind].domain.as_deref() != Some("sea");
         // The nearest hidden tile is almost always a few hexes away, so walk
         // outward in rings and stop at the first one that holds a candidate
         // instead of testing all nine hundred tiles. The rings partition the
@@ -7327,7 +8353,10 @@ impl BasicAi {
                 found = ring
                     .into_iter()
                     .filter(|pos| {
-                        !g.players[pid].explored.contains(pos) && g.unit_can_traverse(uid, *pos)
+                        !g.players[pid].explored.contains(pos)
+                            && g.unit_can_traverse(uid, *pos)
+                            && (!dry_only
+                                || g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile)))
                     })
                     .min();
                 radius += 1;
@@ -7351,8 +8380,10 @@ impl BasicAi {
             g.map
                 .tiles
                 .iter()
-                .filter(|(pos, _)| {
-                    !g.players[pid].explored.contains(pos) && g.unit_can_traverse(uid, **pos)
+                .filter(|(pos, tile)| {
+                    !g.players[pid].explored.contains(pos)
+                        && g.unit_can_traverse(uid, **pos)
+                        && (!dry_only || !g.rules.is_water(tile))
                 })
                 .map(|(pos, _)| *pos)
                 .collect()
@@ -7365,6 +8396,97 @@ impl BasicAi {
         // honour the same refusals — otherwise a Scout barred from retreading
         // its loop by the cheap path takes the identical step here.
         self.path_move(g, pid, uid, next)
+    }
+
+    /// Walk an embarked land unit back onto dry land, preferring our own
+    /// territory.
+    ///
+    /// The pre-existing come-ashore rule in `peacetime_step` is welded to
+    /// `modernization_step`, which returns `false` before it does anything at
+    /// all when `unit_upgrade_target` is `None`. So the only embarked units
+    /// ever told to land were the ones that happened to have an unlocked,
+    /// affordable successor waiting; everything else stayed at sea for the
+    /// rest of the game. Measured across 133 live runs, land combat units
+    /// spend a mean **15%** of their unit-turns embarked (p90 48%, worst run
+    /// 84%) — and **21.7% mean while one of our own cities is taking damage**,
+    /// 92.8% in the worst case. An embarked unit cannot attack at all and
+    /// defends at `embarked_strength`, so those turns are not merely
+    /// misplaced, they are spent as a non-combatant.
+    ///
+    /// The nearest shore is chosen by distance and walked with `step_toward`,
+    /// the same mover `modernization_step` uses to bring a unit home — the
+    /// exhaustive `route_step_to_any` is only the fallback, because a
+    /// water-to-land step is a disembarkation and the cheap route search
+    /// handles that transition where a raw goal-set flood does not.
+    pub(crate) fn disembark_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        if g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("sea")
+            || !g.is_embarked(&g.units[&uid])
+        {
+            return false;
+        }
+        // A landing site has to be one the unit can actually end its move on.
+        // Occupied tiles are excluded deliberately: our own territory is
+        // usually one small city whose tile the garrison already holds, and
+        // aiming at it parks the castaway one hex offshore forever — closing
+        // to shore distance 1 and never landing, which is the defect wearing
+        // a different hat.
+        let (home, any): (HashSet<Pos>, HashSet<Pos>) = {
+            let _memo = g.query_memo();
+            let landable: Vec<(Pos, bool)> = g
+                .map
+                .tiles
+                .iter()
+                .filter(|(pos, tile)| {
+                    !g.rules.is_water(tile)
+                        && g.rules.is_passable(tile)
+                        && g.unit_can_traverse(uid, **pos)
+                        && g.units_at(**pos).is_empty()
+                })
+                .map(|(pos, tile)| {
+                    let ours = tile
+                        .owner_city
+                        .and_then(|cid| g.cities.get(&cid))
+                        .is_some_and(|city| city.owner == pid);
+                    (*pos, ours)
+                })
+                .collect();
+            (
+                landable
+                    .iter()
+                    .filter(|(_, ours)| *ours)
+                    .map(|(pos, _)| *pos)
+                    .collect(),
+                landable.iter().map(|(pos, _)| *pos).collect(),
+            )
+        };
+        // Home first, then any shore at all — a castaway whose territory is
+        // unreachable still has to get out of the water before it can do
+        // anything, so the fallback runs when the preferred set fails to move
+        // it, not merely when that set is empty.
+        for goals in [home, any] {
+            if goals.is_empty() {
+                continue;
+            }
+            let upos = g.units[&uid].pos;
+            if let Some(shore) = goals
+                .iter()
+                .copied()
+                .min_by_key(|pos| (g.wdist(upos, *pos), *pos))
+            {
+                if self.step_toward(g, pid, uid, shore) && g.units[&uid].pos != upos {
+                    return true;
+                }
+            }
+            if let Some(next) = g
+                .route_step_to_any(uid, &goals)
+                .filter(|pos| g.can_move(uid, *pos))
+            {
+                if self.path_move(g, pid, uid, next) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     fn patrol_tile(&self, g: &Game, pid: usize, uid: u32, pos: Pos) -> bool {
@@ -7544,6 +8666,11 @@ impl BasicAi {
         if let Some(acted) = self.healing_step(g, pid, uid) {
             return acted;
         }
+        if self.unit_objective_memory {
+            if let Some(acted) = self.retreat_step(g, pid, uid) {
+                return acted;
+            }
+        }
         let upos = g.units[&uid].pos;
         let rules = std::sync::Arc::clone(&g.rules);
         let spec = &rules.units[g.units[&uid].kind];
@@ -7649,6 +8776,7 @@ impl BasicAi {
                     } else {
                         self.exchange_score(g, uid, pos, ranged)
                             - self.attack_threshold(g, uid, pos)
+                            + self.tactical_action_bonus(g, uid, pos, ranged)
                             + if capture { 500.0 } else { 0.0 }
                     };
                     if best
@@ -7664,6 +8792,11 @@ impl BasicAi {
             }
             if let Some((utility, _, action)) = best {
                 if utility > 0.0 && g.apply(pid, &action).is_ok() {
+                    return true;
+                }
+            }
+            if let Some(action) = self.heavy_cavalry_pillage_action(g, pid, uid) {
+                if g.apply(pid, &action).is_ok() {
                     return true;
                 }
             }
@@ -7704,13 +8837,14 @@ impl BasicAi {
             // definition standing next to the enemy.
             return match self
                 .home_defense_objective(g, pid, uid, &enemy_ids)
+                .or_else(|| self.capture_objective_target(g, pid, uid))
                 .or_else(|| self.nearest_enemy_for_unit(g, pid, uid, &enemy_ids))
             {
                 Some(t) => self.tactical_step(g, pid, uid, t, &enemy_ids, radius),
-                None => self.peacetime_step(g, pid, uid),
+                None => self.peacetime_step(g, pid, uid, true),
             };
         }
-        self.peacetime_step(g, pid, uid)
+        self.peacetime_step(g, pid, uid, false)
     }
 
     /// Civilian capture is movement, not combat. Feeding an undefended
@@ -7766,8 +8900,17 @@ impl BasicAi {
     }
 
     /// Minors guard home; majors explore, then garrison the nearest city.
-    fn peacetime_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
+    ///
+    /// `at_war` is threaded in because `military_step` *falls through to here*
+    /// when it can find no objective — which at war is the common case, since
+    /// `nearest_enemy_for_unit` needs a visible enemy and a besieging stack is
+    /// routinely fogged. The old call site passed a hardcoded `false`, so
+    /// `should_explore`'s opening `if at_war { return false }` was dead by
+    /// construction and a unit whose homeland was under attack went
+    /// exploring. Off, the historical `false` is preserved exactly.
+    fn peacetime_step(&mut self, g: &mut Game, pid: usize, uid: u32, at_war: bool) -> bool {
         let upos = g.units[&uid].pos;
+        let at_war = at_war && self.come_ashore;
         if self.minor {
             let cities = g.player_city_ids(pid);
             if cities.is_empty() {
@@ -7791,6 +8934,9 @@ impl BasicAi {
                 return self.fortify_or_stop(g, pid, uid);
             }
         }
+        if let Some(acted) = self.special_improver_step(g, pid, uid) {
+            return acted;
+        }
         // Coming ashore outranks exploring. A Recon unit explores for as long
         // as any unseen tile remains, which on an ocean map is forever, so
         // Scouts and Skirmishers walked off across the water and never came
@@ -7802,7 +8948,13 @@ impl BasicAi {
         if g.is_embarked(&g.units[&uid]) && self.modernization_step(g, pid, uid) {
             return true;
         }
-        if self.should_explore(g, pid, uid, false) && self.explore_step(g, pid, uid) {
+        // ...and coming ashore has to outrank exploring for the units that
+        // have no upgrade waiting too, which is most of them. See
+        // `disembark_step`.
+        if self.come_ashore && self.disembark_step(g, pid, uid) {
+            return true;
+        }
+        if self.should_explore(g, pid, uid, at_war) && self.explore_step(g, pid, uid) {
             return true;
         }
         if self.modernization_step(g, pid, uid) {
@@ -7948,6 +9100,168 @@ mod tests {
             g.turn += 1;
         }
         (ai, g, ground, scout)
+    }
+
+    #[test]
+    fn unit_memory_keeps_a_campaign_and_warning_across_turns_and_id_remap() {
+        let mut game = Game::new_full(2, 24, 16, 91_482, 80, 0, false);
+        let enemy_settler = game
+            .player_unit_ids(1)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .expect("fixture starts player one with a Settler");
+        let city_pos = game.units[&enemy_settler].pos;
+        let city = game.found_city_for(1, city_pos, None);
+        game.remove_unit(enemy_settler);
+        let land: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(pos, tile)| {
+                game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.city_at(**pos).is_none()
+            })
+            .map(|(pos, _)| *pos)
+            .collect();
+        let unit = game.spawn_test_unit("warrior", 0, land[0]);
+        let replacement = game.spawn_test_unit("warrior", 0, land[1]);
+        let mut ai = BasicAi::new();
+        ai.unit_objective_memory = true;
+
+        ai.remember_capture_objective(&game, 0, unit, city);
+        assert!(
+            !ai.remember_dangerous_approach(&game, unit, land[2], 20.0),
+            "a merely risky tile is retained without forcing a full retreat"
+        );
+        let first = ai.unit_memory(unit).expect("the unit owns a memory");
+        assert!(matches!(
+            first.objective,
+            Some(UnitObjective::CaptureCity {
+                city: remembered,
+                target,
+                started_turn,
+                last_confirmed_turn,
+            }) if remembered == city
+                && target == city_pos
+                && started_turn == game.turn
+                && last_confirmed_turn == game.turn
+        ));
+        assert_eq!(first.danger.map(|danger| danger.position), Some(land[2]));
+
+        game.turn += 1;
+        ai.remember_capture_objective(&game, 0, unit, city);
+        let refreshed = ai.unit_memory(unit).expect("memory persists into the next turn");
+        assert!(matches!(
+            refreshed.objective,
+            Some(UnitObjective::CaptureCity {
+                started_turn,
+                last_confirmed_turn,
+                ..
+            }) if started_turn + 1 == last_confirmed_turn
+        ));
+
+        let planned = ai.unit_plan_state(unit);
+        let mut committed = BasicAi::new();
+        committed.unit_objective_memory = true;
+        committed.merge_unit_plan_state(replacement, planned);
+        assert_eq!(
+            committed.unit_memory(replacement),
+            Some(refreshed.clone()),
+            "a parallel unit plan returns only its own durable memory to the serial board"
+        );
+
+        ai.remap_unit_memory(&std::collections::BTreeMap::from([(unit, replacement)]));
+        assert!(ai.unit_memory(unit).is_none(), "the old mirror ID is gone");
+        let remapped = ai
+            .unit_memory(replacement)
+            .expect("the new mirror ID inherits the same campaign");
+        assert_eq!(remapped.objective, refreshed.objective);
+        assert_eq!(remapped.danger, refreshed.danger);
+
+        game.cities.get_mut(&city).unwrap().owner = 0;
+        ai.begin_movement_turn(&game, 0);
+        let after_capture = ai
+            .unit_memory(replacement)
+            .expect("the warning remains until its short expiry");
+        assert!(after_capture.objective.is_none(), "capturing the city resolves the job");
+    }
+
+    #[test]
+    fn a_dangerous_approach_causes_a_short_retreat_without_losing_the_memory() {
+        let mut game = Game::new_full(2, 24, 16, 91_483, 80, 0, false);
+        game.units.clear();
+        game.at_war.insert((0, 1));
+        let positions: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(pos, tile)| {
+                game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.city_at(**pos).is_none()
+            })
+            .map(|(pos, _)| *pos)
+            .collect();
+        let (threat, origin, refuge) = positions
+            .iter()
+            .copied()
+            .find_map(|threat| {
+                game.nbrs(threat).into_iter().find_map(|origin| {
+                    if !positions.contains(&origin) {
+                        return None;
+                    }
+                    game.nbrs(origin)
+                        .into_iter()
+                        .find(|refuge| {
+                            positions.contains(refuge)
+                                && game.wdist(*refuge, threat) > game.wdist(origin, threat)
+                        })
+                        .map(|refuge| (threat, origin, refuge))
+                })
+            })
+            .expect("fixture needs a land tile with a retreat route");
+        let unit = game.spawn_test_unit("warrior", 0, origin);
+        let enemy = game.spawn_test_unit("warrior", 1, threat);
+        game.units.get_mut(&unit).unwrap().hp = 60;
+        let mut ai = BasicAi::new();
+        ai.unit_objective_memory = true;
+
+        let expected = ai.projected_counter_damage(&game, unit, threat, &[enemy]);
+        assert!(expected > 0.0, "the route must have a real hostile counterattack");
+        assert!(
+            ai.remember_dangerous_approach(&game, unit, threat, expected),
+            "damage that crosses the withdrawal floor becomes a retreat"
+        );
+        let before = game.units[&unit].pos;
+        assert_eq!(ai.retreat_step(&mut game, 0, unit), Some(true));
+        let after = game.units[&unit].pos;
+        assert!(
+            game.wdist(after, threat) > game.wdist(before, threat),
+            "retreat moves away from the exact dangerous approach"
+        );
+        assert!(
+            game.wdist(after, threat) >= game.wdist(refuge, threat),
+            "the unit selects a route at least as far from danger as the known escape"
+        );
+        let memory = ai.unit_memory(unit).expect("retreat retains the warning");
+        assert_eq!(memory.danger.map(|danger| danger.position), Some(threat));
+        assert_eq!(memory.retreat_until, Some(game.turn + UNIT_RETREAT_TURNS));
+
+        // Retreat is deliberately shorter than the warning: the unit can resume its
+        // campaign once it has backed off, but it must not immediately forget why.
+        game.turn += UNIT_RETREAT_TURNS;
+        ai.begin_movement_turn(&game, 0);
+        let cooling = ai.unit_memory(unit).expect("danger survives the retreat window");
+        assert!(cooling.danger.is_some());
+        assert_eq!(cooling.retreat_until, None);
+
+        game.turn += 1;
+        ai.begin_movement_turn(&game, 0);
+        assert!(
+            ai.unit_memory(unit).is_none(),
+            "short-lived danger is removed once its observation expires"
+        );
     }
 
     #[test]
@@ -8418,7 +9732,7 @@ mod tests {
         let before = g.wdist(target, source);
 
         let mut ai = BasicAi::new();
-        ai.peacetime_step(&mut g, 0, stranded);
+        ai.peacetime_step(&mut g, 0, stranded, false);
 
         let after = g.wdist(g.units[&stranded].pos, source);
         assert!(after < before, "before={before} after={after}");
@@ -8463,11 +9777,104 @@ mod tests {
         let before = g.wdist(at_sea, source);
 
         let mut ai = BasicAi::new();
-        ai.peacetime_step(&mut g, 0, castaway);
+        ai.peacetime_step(&mut g, 0, castaway, false);
 
         assert!(
             g.wdist(g.units[&castaway].pos, source) < before,
             "an embarked unit heads for shore instead of exploring on"
+        );
+    }
+
+    /// The come-ashore rule above only reaches units that have an upgrade
+    /// waiting: `modernization_step` returns before it does anything when
+    /// `unit_upgrade_target` is `None`. Everything else stayed at sea, where
+    /// it cannot attack at all and defends at `embarked_strength`. Measured
+    /// across 133 live runs, land combat units spend a mean 15% of their
+    /// unit-turns embarked and 21.7% while one of our own cities is taking
+    /// damage; on run `civvis-20260803T130831Z` a Crossbowman left the capital
+    /// tile and paced between two sea hexes for 47 turns while that capital
+    /// sat at 179/200 damage.
+    #[test]
+    fn a_castaway_with_no_upgrade_waiting_still_comes_ashore() {
+        let (mut g, source, _target) = island_colony_game(1);
+        grant_tech_with_prerequisites(&mut g, 0, "shipbuilding");
+        // No iron, no gold, no unlocked successor: the modernization path
+        // cannot fire, which is the whole point of the case.
+        g.players[0].gold = 0.0;
+        let at_sea = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| g.rules.is_water(&g.map.tiles[pos]))
+            .filter(|pos| g.wdist(*pos, source) >= 3)
+            .min_by_key(|pos| (g.wdist(*pos, source), *pos))
+            .expect("the colony sits in an ocean");
+        // The claim is "heads for shore", so measure distance to the nearest
+        // dry tile — not to the city, which a unit rounding a headland can
+        // move away from while still doing exactly the right thing.
+        let dry_tiles: Vec<Pos> = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !g.rules.is_water(tile) && g.rules.is_passable(tile))
+            .map(|(pos, _)| *pos)
+            .collect();
+        assert!(!dry_tiles.is_empty(), "the island has land on it");
+        let to_shore = |g: &Game, pos: Pos| {
+            dry_tiles
+                .iter()
+                .map(|dry| g.wdist(pos, *dry))
+                .min()
+                .expect("dry_tiles is non-empty")
+        };
+        let before = to_shore(&g, at_sea);
+
+        // The two arms get their own unit: a step spends `moves_left`, so
+        // replaying one unit through both would measure an exhausted turn
+        // rather than the flag.
+        let frozen_unit = g.spawn_test_unit("warrior", 0, at_sea);
+        assert!(
+            g.is_embarked(&g.units[&frozen_unit]),
+            "the case needs a unit at sea"
+        );
+        let mut frozen = BasicAi::new();
+        // The pre-existing come-ashore path is unreachable here — that is the
+        // defect, not an artifact of the setup.
+        assert!(!frozen.modernization_step(&mut g, 0, frozen_unit));
+
+        let castaway = g.spawn_test_unit("warrior", 0, at_sea);
+        let mut ai = BasicAi::new();
+        ai.come_ashore = true;
+
+        // Walk both arms the same number of turns. One step is not the claim —
+        // rounding a headland can leave shore distance flat for a turn — so
+        // give each the same budget and compare where they end up.
+        for _ in 0..12 {
+            g.turn += 1;
+            for uid in [frozen_unit, castaway] {
+                let unit = g.units.get_mut(&uid).expect("arm alive");
+                unit.moves_left = 2.0;
+                unit.moved = false;
+                unit.acted = false;
+                unit.fortified = false;
+            }
+            frozen.peacetime_step(&mut g, 0, frozen_unit, false);
+            ai.peacetime_step(&mut g, 0, castaway, false);
+        }
+
+        let swam = g.units[&frozen_unit].pos;
+        let landed = g.units[&castaway].pos;
+        assert!(
+            g.is_embarked(&g.units[&frozen_unit]),
+            "frozen behaviour keeps the castaway at sea; it reached {swam:?}"
+        );
+        assert!(
+            !g.is_embarked(&g.units[&castaway]),
+            "a castaway with nothing to upgrade into still comes ashore: \
+             went {at_sea:?} -> {landed:?} (shore distance was {before}, now {}); \
+             its frozen twin swam to {swam:?}",
+            to_shore(&g, landed)
         );
     }
 
@@ -10650,6 +12057,217 @@ mod tests {
     }
 
     #[test]
+    fn tactical_assignment_forms_the_melee_anti_cavalry_cavalry_cycle() {
+        fn chosen_target(
+            seed: u64,
+            attacker_kind: &str,
+            favored_kind: &str,
+            other_kind: &str,
+        ) -> (Pos, Pos) {
+            let mut g = Game::new_full(2, 24, 16, seed, 30, 0, false);
+            for unit in g.units.keys().copied().collect::<Vec<_>>() {
+                g.remove_unit(unit);
+            }
+            g.at_war.insert((0, 1));
+            let (origin, targets) = g
+                .map
+                .tiles
+                .iter()
+                .filter(|(_, tile)| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                .find_map(|(origin, _)| {
+                    let targets: Vec<Pos> = g
+                        .nbrs(*origin)
+                        .into_iter()
+                        .filter(|position| {
+                            g.map.get(*position).is_some_and(|tile| {
+                                g.rules.is_passable(tile) && !g.rules.is_water(tile)
+                            })
+                        })
+                        .take(2)
+                        .collect();
+                    (targets.len() == 2).then_some((*origin, targets))
+                })
+                .expect("test map has a two-target tactical ring");
+            let attacker = g.spawn_test_unit(attacker_kind, 0, origin);
+            let favored = g.spawn_test_unit(favored_kind, 1, targets[0]);
+            let other = g.spawn_test_unit(other_kind, 1, targets[1]);
+            g.units.get_mut(&favored).unwrap().hp = 1;
+            g.units.get_mut(&other).unwrap().hp = 1;
+
+            let mut ai = BasicAi::new();
+            ai.tactical_strategy = true;
+            assert!(ai.military_step(&mut g, 0, attacker));
+            let chosen = match g.log.last() {
+                Some((0, Action::Attack { target, .. })) => *target,
+                action => panic!("expected a class-assigned melee attack, got {action:?}"),
+            };
+            (chosen, targets[0])
+        }
+
+        for result in [
+            chosen_target(37_101, "swordsman", "spearman", "warrior"),
+            chosen_target(37_102, "spearman", "horseman", "warrior"),
+            chosen_target(37_103, "heavy_chariot", "warrior", "horseman"),
+        ] {
+            assert_eq!(result.0, result.1);
+        }
+    }
+
+    #[test]
+    fn ranged_standoff_prices_move_and_attack_return_fire() {
+        let mut g = Game::new_full(2, 24, 16, 37_104, 30, 0, false);
+        for unit in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(unit);
+        }
+        g.at_war.insert((0, 1));
+        let enemy_pos = *g
+            .map
+            .tiles
+            .iter()
+            .find(|(_, tile)| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            .map(|(position, _)| position)
+            .unwrap();
+        let exposed = g
+            .wdisk(enemy_pos, 2)
+            .into_iter()
+            .find(|position| g.wdist(*position, enemy_pos) == 2)
+            .unwrap();
+        let safe = g
+            .wdisk(enemy_pos, 3)
+            .into_iter()
+            .find(|position| g.wdist(*position, enemy_pos) == 3)
+            .unwrap();
+        let archer = g.spawn_test_unit("archer", 0, safe);
+        let warrior = g.spawn_test_unit("warrior", 1, enemy_pos);
+        g.units.get_mut(&warrior).unwrap().moves_left = 0.0;
+        let mut ai = BasicAi::new();
+        ai.tactical_strategy = true;
+
+        assert!(ai.projected_counter_damage(&g, archer, exposed, &[warrior]) > 0.0);
+        assert_eq!(ai.projected_counter_damage(&g, archer, safe, &[warrior]), 0.0);
+        assert_eq!(
+            ai.tactical_action_bonus_from(&g, archer, exposed, enemy_pos, true),
+            SAFE_RANGED_FIRE,
+            "a range-two shot is outside a melee defender's direct return fire"
+        );
+    }
+
+    #[test]
+    fn siege_and_compatible_support_own_standing_walls() {
+        let (mut g, _, enemy) = walled_war_game(37_105);
+        let target = g.cities[&enemy].pos;
+        g.cities.get_mut(&enemy).unwrap().wall_hp = 100;
+        let melee = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| g.rules.units[g.units[unit].kind].promotion_class == "melee")
+            .unwrap();
+        let open: Vec<Pos> = g
+            .nbrs(target)
+            .into_iter()
+            .filter(|position| g.units_at(*position).is_empty())
+            .take(3)
+            .collect();
+        assert_eq!(open.len(), 3);
+        let siege = g.spawn_test_unit("catapult", 0, open[0]);
+        let cavalry = g.spawn_test_unit("heavy_chariot", 0, open[1]);
+        let mut ai = BasicAi::new();
+        ai.tactical_strategy = true;
+
+        assert_eq!(ai.tactical_action_bonus(&g, siege, target, true), SIEGE_WALL_ASSIGNMENT);
+        assert_eq!(
+            ai.tactical_action_bonus(&g, melee, target, false),
+            -UNSUPPORTED_WALL_ASSAULT
+        );
+        let ram = g.spawn_test_unit("battering_ram", 0, open[2]);
+        assert_eq!(
+            ai.tactical_action_bonus(&g, melee, target, false),
+            SUPPORTED_WALL_ASSAULT
+        );
+        assert_eq!(
+            ai.tactical_action_bonus(&g, cavalry, target, false),
+            0.0,
+            "cavalry cannot use a ram or tower in the combat rules"
+        );
+
+        g.cities
+            .get_mut(&enemy)
+            .unwrap()
+            .buildings
+            .push(crate::name!("medieval_walls"));
+        assert_eq!(
+            ai.tactical_action_bonus(&g, melee, target, false),
+            -UNSUPPORTED_WALL_ASSAULT,
+            "a ram is obsolete against Medieval Walls"
+        );
+        g.remove_unit(ram);
+        g.spawn_test_unit("siege_tower", 0, open[2]);
+        assert_eq!(
+            ai.tactical_action_bonus(&g, melee, target, false),
+            SUPPORTED_WALL_ASSAULT
+        );
+    }
+
+    #[test]
+    fn light_cavalry_raids_first_while_heavy_cavalry_attacks_first() {
+        let mut g = Game::new_full(2, 24, 16, 37_106, 30, 0, false);
+        for unit in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(unit);
+        }
+        g.at_war.insert((0, 1));
+        let (heavy_position, enemy_position, light_position) = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            .find_map(|(position, _)| {
+                let neighbors: Vec<Pos> = g
+                    .nbrs(*position)
+                    .into_iter()
+                    .filter(|neighbor| {
+                        g.map.get(*neighbor).is_some_and(|tile| {
+                            g.rules.is_passable(tile) && !g.rules.is_water(tile)
+                        })
+                    })
+                    .take(2)
+                    .collect();
+                (neighbors.len() == 2).then_some((*position, neighbors[0], neighbors[1]))
+            })
+            .expect("test map needs two open neighbors");
+        let light = g.spawn_test_unit("horseman", 0, light_position);
+        let heavy = g.spawn_test_unit("heavy_chariot", 0, heavy_position);
+        let enemy = g.spawn_test_unit("warrior", 1, enemy_position);
+        g.units.get_mut(&enemy).unwrap().hp = 1;
+        for position in [light_position, heavy_position] {
+            g.map.tiles.get_mut(&position).unwrap().improvement =
+                Some(crate::name!("barbarian_camp"));
+        }
+        let mut ai = BasicAi::new();
+        ai.tactical_strategy = true;
+
+        assert!(matches!(
+            ai.doctrine_action(&g, 0, light),
+            Some(Action::Pillage { unit }) if unit == light
+        ));
+        assert_eq!(ai.doctrine_action(&g, 0, heavy), None);
+        assert!(matches!(
+            ai.heavy_cavalry_pillage_action(&g, 0, heavy),
+            Some(Action::Pillage { unit }) if unit == heavy
+        ));
+        assert!(ai.military_step(&mut g, 0, heavy));
+        assert!(matches!(
+            g.log.last(),
+            Some((0, Action::Attack { unit, target }))
+                if *unit == heavy && *target == enemy_position
+        ));
+        assert_eq!(
+            g.map.tiles[&heavy_position].improvement.as_deref(),
+            Some("barbarian_camp"),
+            "heavy cavalry should leave pillaging until after an attack opportunity"
+        );
+    }
+
+    #[test]
     fn scout_explores_while_strong_assault_unit_attacks() {
         let mut g = Game::new_full(2, 24, 16, 38, 30, 0, false);
         g.at_war.insert((0, 1));
@@ -11114,6 +12732,23 @@ mod tests {
         let cid = g.player_city_ids(0)[0];
         let ai = BasicAi::new();
 
+        // This is a treasury test, so give it explicit Builder work instead of
+        // depending on which features a seeded map happens to draw nearby.
+        let work = g.cities[&cid]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != g.cities[&cid].pos)
+            .unwrap();
+        {
+            let tile = g.map.tiles.get_mut(&work).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.hills = false;
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+
         // One city keeps 125 gold and spends 200 on its missing builder.
         g.players[0].gold = 325.0;
         assert!(ai.spend_gold(&mut g, 0, &[cid], 0, 0, 0, 1, 1, 0));
@@ -11175,6 +12810,77 @@ mod tests {
             Action::BuyBuilding { building, currency, .. }
                 if building == "monument" && currency == "gold"
         )));
+    }
+
+    /// ⚠⚠ A HOST PURCHASE REFUSAL MUST REACH THE BUYERS THAT NEVER ENUMERATE.
+    ///
+    /// `purchase_action_is_blocked` was applied only where legal actions are
+    /// enumerated, but `buy_gold_infrastructure`, `buy_gold_unit` and
+    /// `buy_gold_military` each build an `Action::Buy*` themselves and call
+    /// `apply` directly. They gated on `can_produce`, which reads
+    /// `blocked_production` — a DIFFERENT set meaning "cannot build here", not
+    /// "the host will not sell this here".
+    ///
+    /// Live run `civvis-20260804T091315Z` re-bought the same Granary in the same
+    /// city on turns 114, 117, 121, 122, 123 and 128; 8 of that game's 9
+    /// purchases were refused. Replaying those turns after this change, the
+    /// Granary is gone and the gold goes to a Shrine instead.
+    #[test]
+    fn a_refused_purchase_is_not_re_offered_to_the_direct_buyers() {
+        let mut g = Game::new_full(1, 20, 14, 320, 30, 0, false);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|id| g.units[id].kind == "settler")
+            .unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = g.player_city_ids(0)[0];
+        g.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .retain(|building| building != "monument");
+        let ai = BasicAi::new();
+        g.players[0].gold = 365.0;
+
+        // Baseline: the Monument is both priced and reachable by the direct buyer.
+        assert!(
+            g.building_gold_purchase_cost(0, cid, "monument").is_some(),
+            "precondition: the Monument is purchasable before the host refuses it"
+        );
+
+        // Now the host refuses to sell a Monument in this city.
+        g.replace_blocked_purchases(std::collections::BTreeMap::from([(
+            cid,
+            std::collections::BTreeSet::from(["building:monument".to_string()]),
+        )]));
+
+        assert_eq!(
+            g.building_gold_purchase_cost(0, cid, "monument"),
+            None,
+            "a refused purchase must stop being priced — this is the choke point \
+             every buyer reaches the offer through"
+        );
+        assert!(
+            !g.legal_actions(0).iter().any(|action| matches!(
+                action,
+                Action::BuyBuilding { building, .. } if building == "monument"
+            )),
+            "and it must leave the enumeration too"
+        );
+
+        // The direct buyer must not spend gold on it either — this is the path
+        // that bypassed the enumeration and re-proposed it every turn.
+        let before = g.players[0].gold;
+        ai.spend_gold(&mut g, 0, &[cid], 1, 1, 1, 2, 1, 1);
+        assert!(
+            !g.cities[&cid].buildings.iter().any(|b| b == "monument"),
+            "the direct gold buyer must respect a host purchase refusal"
+        );
+        assert!(
+            g.players[0].gold <= before,
+            "and must not have paid for the refused building"
+        );
     }
 
     #[test]
@@ -11741,7 +13447,8 @@ mod tests {
 
     #[test]
     fn siege_support_catches_up_and_stacks_with_melee_escort() {
-        let (mut g, home, _) = walled_war_game(34);
+        let (mut g, home, enemy) = walled_war_game(34);
+        g.cities.get_mut(&enemy).unwrap().wall_hp = 100;
         g.players[0].techs.insert(crate::name!("masonry"));
         g.players[0].gold = 1_000.0;
         g.apply(
@@ -11779,7 +13486,19 @@ mod tests {
         .unwrap();
         assert_ne!(g.units[&ram].pos, g.units[&warrior].pos);
 
-        assert!(BasicAi::new().siege_support_step(&mut g, 0, ram));
+        // A closer cavalry unit is a tempting but useless escort: the engine
+        // grants Ram/Tower effects only to melee and anti-cavalry classes.
+        let enemy_pos = g.cities[&enemy].pos;
+        let cavalry_pos = g
+            .nbrs(enemy_pos)
+            .into_iter()
+            .find(|position| g.units_at(*position).is_empty())
+            .unwrap();
+        g.spawn_test_unit("heavy_chariot", 0, cavalry_pos);
+
+        let mut ai = BasicAi::new();
+        ai.tactical_strategy = true;
+        assert!(ai.siege_support_step(&mut g, 0, ram));
         assert_eq!(g.units[&ram].pos, g.units[&warrior].pos);
     }
 
@@ -12407,6 +14126,160 @@ mod amenity_district_tests {
         assert!(
             game.city_amenity_surplus(&game.cities[&city]) >= 0,
             "back to neutral, where an extra Amenity multiplies nothing"
+        );
+    }
+
+    /// The omission this repairs: neither district that raises the housing
+    /// ceiling is in the baseline list, so the governor making most of a
+    /// deployed empire's builds could not ask for one.
+    #[test]
+    fn the_baseline_district_list_has_no_housing_district() {
+        for family in HOUSING_DISTRICTS {
+            assert!(
+                !DISTRICT_PRIORITY.contains(&family),
+                "if {family} ever joins the lane list, this treatment is redundant"
+            );
+        }
+        assert_eq!(HOUSING_DISTRICTS, ["aqueduct", "neighborhood"]);
+    }
+
+    /// Off in both constructors, so every frozen native controller and every
+    /// recorded tournament ladder keeps building what it always built. The
+    /// live bridge is the only thing that turns it on — asserted in
+    /// `ai::advanced`, where the field is visible.
+    #[test]
+    fn the_housing_treatment_is_off_for_the_frozen_controllers() {
+        assert!(!BasicAi::new().housing_districts);
+        assert!(!BasicAi::with_weights(Weights::default()).housing_districts);
+    }
+
+    /// The target is the break-even of the engine's own growth band, not a
+    /// comfort margin: `housing_growth_mult` pays 1.0 at 2 and 0.5 at 1.
+    #[test]
+    fn the_headroom_target_is_where_the_growth_penalty_stops() {
+        assert_eq!(HOUSING_HEADROOM_TARGET, 2.0);
+    }
+
+    /// ⚠ The two repairs are ranked against the LANE, not stacked on each
+    /// other. A city deep in the Amenity band is not growing AT ALL —
+    /// `amenity_growth_mult` is 0.0 below −4 — so an Aqueduct there buys
+    /// nothing and must not outrank the repair that restores growth. A merely
+    /// displeased city with a real housing block is the other way round.
+    ///
+    /// This reproduces the weights `pick_item` assigns rather than reaching
+    /// into it, because the ordering is the whole claim.
+    #[test]
+    fn the_amenity_repair_outranks_housing_exactly_when_growth_is_already_zero() {
+        let lane_top = 4.0_f64;
+        let weigh = |amenity_surplus: i64, headroom: f64, gain: f64| {
+            let deficit = (-amenity_surplus).max(0) as f64;
+            let shortfall = HOUSING_HEADROOM_TARGET - headroom;
+            (lane_top + deficit, lane_top + shortfall.min(gain))
+        };
+
+        // Unrest at −6: growth is 0.00, so the Amenity repair must go first.
+        let (amenity, housing) = weigh(-6, -1.0, 4.0);
+        assert!(
+            amenity > housing,
+            "at surplus −6 growth is zero and an Aqueduct cannot help: {amenity} vs {housing}"
+        );
+
+        // Displeased at −1 with the housing ceiling genuinely reached: growth
+        // is still 0.85 from amenities but only 0.25 from housing.
+        let (amenity, housing) = weigh(-1, 0.0, 4.0);
+        assert!(
+            housing > amenity,
+            "a real housing block beats mild unhappiness: {housing} vs {amenity}"
+        );
+
+        // And both stay above the lane whenever they fire at all.
+        assert!(amenity > lane_top && housing > lane_top);
+    }
+
+    /// An Aqueduct is worth twice as much to a dry city as to a river one, and
+    /// nothing at all once it is standing. That spread is the whole reason the
+    /// chooser is handed the gain instead of a flat weight.
+    #[test]
+    fn an_aqueduct_is_worth_most_to_the_city_that_has_no_water() {
+        let mut game = Game::new(2, 32, 24, 9_101, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &crate::game::Action::FoundCity { unit: settler })
+            .expect("found city");
+        let cid = game.player_city_ids(0)[0];
+        let city = &game.cities[&cid];
+
+        // Whatever water this start happens to have, the gain must be the
+        // difference between the two housing floors — never negative, never
+        // more than the dry city's +4.
+        let gain = game.aqueduct_housing_gain(city);
+        assert!(
+            (2.0..=4.0).contains(&gain),
+            "an Aqueduct raises the floor by 2 (fresh), 3 (coastal) or 4 (dry): got {gain}"
+        );
+
+        // And it is exactly the housing the city would gain, which is the
+        // claim the chooser actually relies on.
+        let before = game.city_housing(city);
+        let with = crate::game::Game::city_housing_floor(true, true, true)
+            - crate::game::Game::city_housing_floor(true, true, false);
+        assert_eq!(with, 2.0, "a fresh-water city gains 2");
+        assert_eq!(
+            crate::game::Game::city_housing_floor(false, true, true)
+                - crate::game::Game::city_housing_floor(false, true, false),
+            3.0,
+            "a coastal city gains 3"
+        );
+        assert_eq!(
+            crate::game::Game::city_housing_floor(false, false, true)
+                - crate::game::Game::city_housing_floor(false, false, false),
+            4.0,
+            "a dry inland city gains 4 — the largest early housing step there is"
+        );
+        assert!(before > 0.0);
+    }
+
+    /// The treatment is inert while the city still has room to grow, and asks
+    /// only once population has reached the band that throttles it. A city with
+    /// headroom is not paying anything, so an Aqueduct there buys no growth.
+    #[test]
+    fn the_housing_repair_is_asked_for_only_once_growth_is_throttled() {
+        let mut game = Game::new(2, 32, 24, 9_101, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &crate::game::Action::FoundCity { unit: settler })
+            .expect("found city");
+        let cid = game.player_city_ids(0)[0];
+
+        game.cities.get_mut(&cid).unwrap().pop = 1;
+        assert!(
+            game.city_housing_headroom(&game.cities[&cid]) >= HOUSING_HEADROOM_TARGET,
+            "a size-1 city has room to grow and must not be steered at housing"
+        );
+
+        // Grow it until the engine's own band bites, then confirm the headroom
+        // the chooser reads agrees that it is being throttled.
+        let throttled_pop = (2..40)
+            .find(|pop| {
+                game.cities.get_mut(&cid).unwrap().pop = *pop;
+                game.city_housing_headroom(&game.cities[&cid]) < HOUSING_HEADROOM_TARGET
+            })
+            .expect("some population overruns this city's housing");
+        game.cities.get_mut(&cid).unwrap().pop = throttled_pop;
+        let headroom = game.city_housing_headroom(&game.cities[&cid]);
+        assert!(
+            headroom < HOUSING_HEADROOM_TARGET,
+            "below {HOUSING_HEADROOM_TARGET} the engine halves this city's growth: got {headroom}"
+        );
+        assert!(
+            game.aqueduct_housing_gain(&game.cities[&cid]) > 0.0,
+            "and the repair is available to it"
         );
     }
 }

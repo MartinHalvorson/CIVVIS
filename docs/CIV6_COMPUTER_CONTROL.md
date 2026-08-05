@@ -102,7 +102,8 @@ the SELECT returned **23 distinct payloads** tracking a nonce an outside process
 rewrote every second. The value FOLLOWED the external writer — that is the check that
 matters, not that the name resolves.
 
-So CIVVIS decides per turn and this mod actuates. See `tools/civ6_brain.py`,
+So CIVVIS decides per turn and this mod actuates. The stale baked settle-plan path
+was removed rather than retained beside this supported route. See `tools/civ6_brain.py`,
 `src/bin/civvis_orders.rs`, and `tools/civ6_civvis_status.py` for the fires-check.
 
 **Measured DEAD on this build — do not spend time on these again:**

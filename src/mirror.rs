@@ -290,6 +290,47 @@ impl Snapshot {
 
 #[cfg(test)]
 mod tests {
+
+    /// ⚠ AN ENEMY UNIT CIVVIS CANNOT SEE IS WORSE THAN A COSMETIC GAP.
+    ///
+    /// Civilization VI names uniques by CIVILIZATION. Stripping that qualifier
+    /// from `UNIT_EGYPTIAN_CHARIOT_ARCHER` gives `chariot_archer`, but
+    /// `data/units.json` calls it **maryannu_chariot_archer**, so neither
+    /// spelling matched and the unit vanished from the board. Live on
+    /// `civvis-20260804T233745Z`:
+    ///
+    ///     UNITDATA ⚠ UNIT_EGYPTIAN_CHARIOT_ARCHER@(39, 24) count Civ6=1 CIVVIS=0
+    #[test]
+    fn a_unique_unit_resolves_through_its_noun() {
+        let rules = crate::rules::Rules::embedded();
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, "UNIT_EGYPTIAN_CHARIOT_ARCHER").as_deref(),
+            Some("maryannu_chariot_archer"),
+            "the observed live failure must resolve"
+        );
+        // The ordinary paths must keep working exactly as before.
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, "UNIT_WARRIOR").as_deref(),
+            Some("warrior")
+        );
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, "UNIT_ROMAN_LEGION").as_deref(),
+            Some("legion"),
+            "the civ-qualifier fallback already handled this and must not regress"
+        );
+        // A Great Person is a MODELLING gap, not a naming one — there is no
+        // entry to find and inventing one would be worse than reporting none.
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, "UNIT_GREAT_SCIENTIST").as_deref(),
+            None
+        );
+        // And a name that matches nothing must stay unresolved.
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, "UNIT_NOT_A_REAL_UNIT").as_deref(),
+            None
+        );
+    }
+
     use super::*;
 
     fn plot(x: i32, y: i32, t: &str) -> Plot {
@@ -4038,6 +4079,218 @@ mod tests {
         );
     }
 
+    /// ★★★★★ THE EXPORT IS THE HOST'S VISIBILITY ANSWER, AND WE RE-DERIVED IT.
+    ///
+    /// Civilization VI exports a rival's units only under CURRENT visibility, the
+    /// bridge plants exactly those, and then `player_vision_now` recomputes what
+    /// the seat can see from this engine's sight radii on a reconstructed map.
+    /// Where the two disagree, an enemy the host is showing us is invisible to the
+    /// agent deciding whether to shoot it — and `ForcePosture` only reaches
+    /// `Engage` through `g.sees(..) && battlefront_unit_visible(..)`.
+    ///
+    /// ⚠⚠⚠ Measured on live run `civvis-20260803T191900Z` across the 49 turns of
+    /// Kongo's war (t203-250), which cost Arpinum and Arretium and ended the game
+    /// at 479 against the winner's 1214: an enemy was in the export on 49 of 49
+    /// turns, our units stood adjacent to one on 95 unit-turns and within range 2
+    /// on 197. **37 attacks were issued** -- 81% of the shots the host was showing
+    /// the army were declined, and the force logged "still gathering" instead.
+    ///
+    /// ⚠ The second assertion is the one that keeps this honest. The inference
+    /// "a foreign unit is on the board, so we must be able to see it" is sound
+    /// ONLY for a mirrored board. Applied to an ordinary game it would hand every
+    /// AI perfect vision of the world, so the set must stay empty there.
+    #[test]
+    fn a_rival_the_host_exported_is_visible_however_sight_is_derived() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 12,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(15, 15, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 12,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 10,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 5,
+            y: 5,
+            hp: 100.0,
+            ..StateUnit::default()
+        });
+        // Ten hexes away — far outside anything our own sight model reaches, and
+        // in the export only because Civilization VI can see it.
+        state.rivals.push(StateRival {
+            player: 3,
+            at_war: true,
+            units: vec![StateUnit {
+                id: 20,
+                kind: "UNIT_WARRIOR".to_string(),
+                x: 15,
+                y: 15,
+                hp: 100.0,
+                ..StateUnit::default()
+            }],
+            ..StateRival::default()
+        });
+
+        let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let enemy = crate::hex::offset_to_axial(15, 15);
+        let empty = crate::hex::offset_to_axial(18, 18);
+
+        assert!(
+            mirror.game.units.values().any(|unit| unit.owner != 0 && unit.pos == enemy),
+            "the exported rival must reach the board at all — the rest of this test \
+             is about whether the agent is allowed to notice it"
+        );
+        assert!(
+            mirror.game.player_can_see(0, enemy),
+            "a unit Civilization VI exported is a unit Civilization VI is showing \
+             us; before this fix the engine re-derived sight on a reconstructed map \
+             and answered no, and the army declined 81% of its shots in a war it lost"
+        );
+        assert!(
+            !mirror.game.player_can_see(0, empty),
+            "and only that ground: far tiles with nothing exported on them must stay \
+             dark, or the repair is just omniscience wearing a fix's clothes"
+        );
+
+        // ★ The invariant that keeps ordinary play honest. A native game holds the
+        // FULL simulation, so foreign units on the board prove nothing about sight.
+        let native = crate::game::Game::new(4, 20, 20, 7, 500, 0);
+        assert!(
+            native.host_observed.is_empty(),
+            "an ordinary CIVVIS game must leave this set empty; reading the board the \
+             mirrored way there would give every AI player perfect vision"
+        );
+    }
+
+    /// ★★★★★ A RIVAL'S BORDER IS INVISIBLE PRECISELY BECAUSE IT IS IN THE WAY.
+    ///
+    /// `can_enter` reads `territory_owner_at`, which resolves a plot through
+    /// `owner_city -> cities -> owner`. A rival whose cities this seat has never
+    /// SEEN owns no city on the mirrored board, so their border resolves to `None`
+    /// and reads as free ground — and we cannot see the city that would fix that,
+    /// because the border is what stops us walking to it.
+    ///
+    /// ⚠⚠⚠ Measured on live run `civvis-20260803T191900Z` (Rome, SETTLER, small).
+    /// Scout `196608` reached offset (12,24) on turn 42 and was ordered
+    /// `MOVE_TO (11,24)` — one hex — on **74 separate turns** without ever moving.
+    /// (11,24) is exported `o: 4`: Kongo's, with no war and no open borders.
+    /// **81 of 670 `MOVE_TO` orders targeted foreign ground and all 81 were
+    /// counted `applied`** — a blocked move is a silent no-op, not a refusal, so
+    /// every turn read as healthy while the empire went blind. Exploration
+    /// flatlined at 283 of 3404 tiles, no rival city was seen in 96 snapshots,
+    /// `plan.target_city` stayed `None`, and forty turns of `strategy=conquest`
+    /// with `war_legal=9` produced no war at all.
+    ///
+    /// ⚠ Asserted through `can_move`, not against `closed_borders` directly, for
+    /// the same reason the border-growth test above asserts through
+    /// `valid_improvements`: the field only matters where it is consulted, and a
+    /// test on the field alone would pass on a set nothing reads.
+    #[test]
+    fn a_rival_border_whose_city_is_unseen_still_stops_the_unit() {
+        let owned = |x: i32, y: i32, owner: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = owner;
+            p
+        };
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 12,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![owned(5, 5, 0), owned(5, 6, 3), owned(4, 5, -1)],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 12,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 10,
+            kind: "UNIT_SCOUT".to_string(),
+            x: 5,
+            y: 5,
+            hp: 100.0,
+            ..StateUnit::default()
+        });
+        // Met, nameable, and NOT at war — but not one of their cities is in sight,
+        // which is the whole condition. `cities` is deliberately empty.
+        state.rivals.push(StateRival {
+            player: 3,
+            at_war: false,
+            cities: Vec::new(),
+            ..StateRival::default()
+        });
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let theirs = crate::hex::offset_to_axial(5, 6);
+        let neutral = crate::hex::offset_to_axial(4, 5);
+        let scout = *mirror
+            .game
+            .player_unit_ids(0)
+            .first()
+            .expect("the scout must reach the board");
+
+        assert!(
+            mirror.game.map.get(theirs).is_some_and(|t| t.owner_city.is_none()),
+            "their plot has no owning city on this board — that is the premise, not \
+             the defect: we have never seen the city that holds it"
+        );
+        assert!(
+            !mirror.game.can_move(scout, theirs),
+            "a rival's ground must stop the unit even when the mirror cannot name the \
+             city that owns it — before this fix the step was legal on CIVVIS's board, \
+             was ordered 74 times on one live run, and silently did nothing every time"
+        );
+        assert!(
+            mirror.game.can_move(scout, neutral),
+            "genuinely neutral ground must stay open, or the fix would seal the empire \
+             in instead of the border out"
+        );
+
+        // ★ And war must OPEN it again on the next sync. The seat is named, so its
+        // diplomacy is answerable even with its cities unseen; sealing ground we have
+        // just declared war on would lock our own invasion out — which is a worse
+        // failure than the one being repaired.
+        state.rivals[0].at_war = true;
+        state.turn = 13;
+        mirror.sync(&snapshot, &state, 0);
+        let scout = *mirror
+            .game
+            .player_unit_ids(0)
+            .first()
+            .expect("the scout survives the sync");
+        assert!(
+            !mirror.game.closed_borders.contains(&theirs),
+            "war opens the border: the seal is recomputed from the export every turn \
+             and must not outlive the peace that justified it"
+        );
+        assert!(
+            mirror.game.can_move(scout, theirs),
+            "once at war the unit must be able to cross — the repair must not cost us \
+             the invasion it exists to make possible"
+        );
+    }
+
     #[test]
     fn sync_discards_units_that_only_civvis_simulated_from_production() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -5832,6 +6085,15 @@ where
     enum MapOrSequence {
         Map(BTreeMap<String, f64>),
         /// Only ever empty in practice; a populated array has no key to carry.
+        ///
+        /// The payload is never read, and rustc offers to replace it with `()`
+        /// to say so. **Taking that suggestion puts the outage above back.**
+        /// In an untagged enum the field's *type* is the matcher: only
+        /// `Vec<_>` accepts a JSON array, and `()` accepts `null` — which the
+        /// `Null` variant below already claims. Change it and `[]` matches no
+        /// variant, the whole `StateSnapshot` fails, and the board is lost
+        /// again. The field earns its place by its type, not its value.
+        #[allow(dead_code)]
         Sequence(Vec<serde_json::Value>),
         Null,
     }
@@ -5852,6 +6114,21 @@ pub struct StateSnapshot {
     pub techs: Vec<String>,
     #[serde(default)]
     pub civics: Vec<String>,
+    /// Civ 6 type names whose **boost is triggered but which are NOT yet
+    /// researched** — the eureka discount waiting to be collected.
+    ///
+    /// ⚠⚠ 62 of 77 technologies carry a boost worth 40-50% of their cost, and
+    /// `AdvancedAi::tech_value` already pays +28 for a boosted tech — but until
+    /// this field existed nothing ever sent the fact, so the live agent's
+    /// `boosted_techs` was whatever its own simulation derived rather than what
+    /// Civilization VI granted. Same class as the Amenity export (#967) and the
+    /// Housing export (#1007): the valuation is right and the input is absent.
+    ///
+    /// `#[serde(default)]` so an older mod that sends neither still parses.
+    #[serde(default)]
+    pub boosted_techs: Vec<String>,
+    #[serde(default)]
+    pub boosted_civics: Vec<String>,
     /// The active Civilization VI technology and the accumulated beakers on it.
     /// Completed technologies alone do not tell the planner whether changing
     /// course discards a nearly finished choice.
@@ -6704,6 +6981,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
 
     const STATE: &[&str] = &[
         "kind", "event", "run", "ctx", "turn", "techs", "civics", "research",
+        "boosted_techs", "boosted_civics",
         "research_progress", "civic", "civic_progress", "government", "pantheon",
         "founded_religion", "founded_religions", "religion_beliefs",
         "taken_religion_beliefs", "prophet_pending",
@@ -7122,8 +7400,41 @@ fn resolved_civvis_unit_name(
     if rules.units.contains_key(&direct) {
         return Some(direct);
     }
-    civvis_unit_name_unqualified(civ6)
-        .filter(|bare| rules.units.contains_key(bare))
+    let bare = civvis_unit_name_unqualified(civ6);
+    if let Some(bare) = bare.as_deref().filter(|bare| rules.units.contains_key(*bare)) {
+        return Some(bare.to_string());
+    }
+    // ⚠ A UNIQUE UNIT WHOSE CIVVIS NAME CARRIES AN EPITHET.
+    //
+    // Civilization VI names uniques by CIVILIZATION — `UNIT_EGYPTIAN_CHARIOT_ARCHER`
+    // — and stripping that qualifier gives `chariot_archer`, which is not what
+    // CIVVIS calls it: `data/units.json` has **maryannu_chariot_archer**. Neither
+    // spelling matches, so the unit resolved to nothing and vanished from the
+    // board. Caught live by `civ6_mirror_check` on run `civvis-20260804T233745Z`:
+    //
+    //     UNITDATA ⚠ UNIT_EGYPTIAN_CHARIOT_ARCHER@(39, 24) count Civ6=1 CIVVIS=0
+    //
+    // An ENEMY unit CIVVIS cannot see is worse than a cosmetic gap: threat
+    // assessment, settler safety and every tactical decision read a board with a
+    // chariot archer missing from it.
+    //
+    // Rather than a hand-written table of host names — which would mean GUESSING
+    // spellings for civilizations never yet observed — resolve by the noun: accept
+    // the modelled unit whose name ENDS WITH the unqualified name. Exactly two
+    // units in `data/units.json` need it (`maryannu_chariot_archer` and
+    // `winged_hussar`), and only the Egyptian one has actually been seen.
+    //
+    // ⚠ Required to be UNAMBIGUOUS. If two modelled units share a suffix the
+    // answer is refused, because a wrong unit on the board is worse than a
+    // missing one — it would carry the wrong strength, movement and abilities.
+    let bare = bare?;
+    let suffix = format!("_{bare}");
+    let mut matches = rules
+        .units
+        .keys()
+        .filter(|name| name.as_str().ends_with(suffix.as_str()));
+    let only = matches.next()?;
+    matches.next().is_none().then(|| only.to_string())
 }
 
 /// The one qualifier measured being mistaken for a civilization.
@@ -9550,6 +9861,12 @@ pub fn rebuild_from_state(
     game.replace_blocked_production(blocked_production);
     let blocked_purchases =
         blocked_production_from(&state.refused_purchases, &city_ids, &game.rules);
+    if std::env::var("CIVVIS_DEBUG_PURCHASE_BLOCK").is_ok() {
+        eprintln!(
+            "[purchase-block] rebuild: refused_purchases={:?} city_ids={:?} -> blocked={:?}",
+            state.refused_purchases, city_ids, blocked_purchases
+        );
+    }
     game.replace_blocked_purchases(blocked_purchases);
     // ⚠ Wired on BOTH the rebuild (here) and the refresh path. `--fresh-board`
     // reconstructs the board every turn and never runs the refresh, so wiring only
@@ -9557,6 +9874,7 @@ pub fn rebuild_from_state(
     game.blocked_promotions =
         blocked_promotions_from(&state.refused_promotions, &unit_ids, &game.rules);
 
+    record_host_observed(&mut game);
     Reconstruction {
         game,
         unit_ids,
@@ -9570,6 +9888,27 @@ pub fn rebuild_from_state(
         unmapped,
         dropped_units: dropped,
     }
+}
+
+/// Record the ground Civilization VI has just proved this seat can see.
+///
+/// Every foreign unit standing on this board arrived from the export, and the
+/// export carries a rival's or a minor's units **only under current visibility**
+/// — `StateMinor`'s own doc says so, and `state.hostiles` is the same channel for
+/// barbarians. So each of their tiles is a tile Civilization VI is showing us
+/// right now, whatever this engine's sight model would derive on a reconstructed
+/// map. See [`crate::game::Game::host_observed`] for what the disagreement cost.
+///
+/// Taken from the board rather than from the three planting loops so it cannot
+/// fall out of step with them: rivals, city-states and barbarians all land here,
+/// and a fourth channel added later is covered without being remembered.
+fn record_host_observed(game: &mut crate::game::Game) {
+    game.host_observed = game
+        .units
+        .values()
+        .filter(|unit| unit.owner != crate::game::MIRRORED_SEAT)
+        .map(|unit| unit.pos)
+        .collect();
 }
 
 /// Give every revealed plot the owner Civilization VI says it has.
@@ -9626,6 +9965,12 @@ fn apply_territory(
     let mut assign: Vec<(crate::Pos, Option<u32>)> = Vec::new();
     // Ground somebody else holds that we cannot attribute to a mirrored seat.
     let mut blocked: std::collections::BTreeSet<crate::Pos> = Default::default();
+    // The same ground, minus whatever this seat may already walk through. See
+    // [`crate::game::Game::closed_borders`]: `blocked` answers "cannot found
+    // here", which is not the same question as "cannot enter here" — war and
+    // open borders open the second while leaving the first shut, and a settler
+    // barred by loyalty is barred from founding on ground it may cross freely.
+    let mut sealed: std::collections::BTreeSet<crate::Pos> = Default::default();
     for y in 0..snapshot.height.max(1) {
         for x in 0..snapshot.width.max(1) {
             let Some(plot) = snapshot.plot((x, y)) else {
@@ -9665,6 +10010,18 @@ fn apply_territory(
                 // we do not know where their city is and a phantom owner is worse than
                 // a known prohibition.
                 blocked.insert(pos);
+                // Nobody we can name holds it, so there is no diplomacy to
+                // consult and no war that could have opened it. A city-state's
+                // land is shut to us until we are its Suzerain, which is the
+                // conservative reading and the one that matches the settler
+                // stall this arm was written for.
+                sealed.insert(pos);
+                // ⚠ And it is certainly not OURS. `place_city` hands a mirrored
+                // city its whole first ring, so a rival or minor plot that falls
+                // inside one reads back as our own territory — worse than the
+                // "reads unowned" error this function was written to fix, because
+                // it inflates the yields and workable tiles we plan on. Strip it.
+                assign.push((pos, None));
                 continue;
             };
             // The city that would work it: the owner's nearest. Civ 6 records only
@@ -9684,10 +10041,34 @@ fn apply_territory(
                 // would re-open the exact hole the unattributable arm above
                 // closes.
                 blocked.insert(pos);
+                // ...and not ours to walk into either, unless we are at war.
+                // Asking here rather than in `can_enter` is what keeps a
+                // declaration of war from sealing our own invasion out: the seat
+                // is named, so `at_war` is answerable from the export even
+                // though their cities are unseen.
+                //
+                // ⚠ `has_open_borders` is deliberately NOT consulted. It returns
+                // TRUE whenever the owner has no `open_borders` tree effect —
+                // the correct Civ 6 rule that a civ without Early Empire has no
+                // enforced border — and this mirror does not model a RIVAL's
+                // civics, so it answers "free passage" for every rival by
+                // default. Consulting it would defeat the seal in exactly the
+                // live case it exists for. Sealing ground we could in truth have
+                // crossed costs a peacetime shortcut; not sealing it cost 74
+                // turns of a scout re-sending one blocked step.
+                if !game.is_at_war(0, seat) {
+                    sealed.insert(pos);
+                }
+                // Nor ours to count as territory — see the arm above.
+                assign.push((pos, None));
             }
         }
     }
     game.blocked_city_sites.extend(blocked);
+    // Assigned, not extended: recomputed from the export every turn, so ground
+    // that opens — a war declared, borders granted, or simply their city coming
+    // into view so the ordinary gate takes over — stops being sealed next turn.
+    game.closed_borders = sealed;
     for (pos, owner) in assign {
         let previous = game.map.tiles.get(&pos).and_then(|tile| tile.owner_city);
         if previous == owner {
@@ -10170,6 +10551,22 @@ impl LiveMirror {
                 self.game.players[0].civics.insert(crate::name::Name::new(&name));
             }
         }
+        // ⚠ REPLACED, not merged. A boost is spent the moment its technology is
+        // researched, and the host reports only the ones still outstanding — so
+        // carrying last turn's set forward would keep paying `tech_value`'s +28
+        // for discounts that no longer exist.
+        self.game.players[0].boosted_techs = state
+            .boosted_techs
+            .iter()
+            .filter_map(|civ6| civvis_node_name(&self.game.rules.techs, civ6, "TECH_"))
+            .map(|name| crate::name::Name::new(&name))
+            .collect();
+        self.game.players[0].boosted_civics = state
+            .boosted_civics
+            .iter()
+            .filter_map(|civ6| civvis_node_name(&self.game.rules.civics, civ6, "CIVIC_"))
+            .map(|name| crate::name::Name::new(&name))
+            .collect();
         self.game.players[0].research = match &state.research {
             Some(civ6) => match civvis_node_name(&self.game.rules.techs, civ6, "TECH_") {
                 Some(name) => Some(name),
@@ -10822,6 +11219,10 @@ impl LiveMirror {
         apply_governor_state(&mut self.game, state, &mut self.unmapped);
         apply_observed_host_metrics(&mut self.game, state, &mut self.unmapped);
         block_loyalty_doomed_settler_sites(&mut self.game);
+        // Last, because it reads the finished board: every rival, minor and
+        // barbarian for this turn has been re-planted by now, and the previous
+        // turn's sightings were removed with them.
+        record_host_observed(&mut self.game);
     }
 }
 
@@ -10974,6 +11375,31 @@ mod host_fact_tests {
     /// function of, so it is worth pinning that it parses rather than assuming
     /// it — the last host field I added took every live game down because an
     /// empty value serialised in a shape serde would not read (#983 → #996).
+    /// ⚠ The eureka discount must survive the wire, and an older mod that sends
+    /// neither field must still parse — a hard error here takes the WHOLE
+    /// StateSnapshot down, not just this field (#983 → #996).
+    #[test]
+    fn the_eureka_reaches_the_planner_from_the_host() {
+        let raw = r#"{"turn": 40, "techs": ["TECH_POTTERY"],
+                      "boosted_techs": ["TECH_WRITING", "TECH_MASONRY"],
+                      "boosted_civics": ["CIVIC_CRAFTSMANSHIP"]}"#;
+        let state: StateSnapshot = serde_json::from_str(raw).expect("boosts parse");
+        assert_eq!(state.boosted_techs, ["TECH_WRITING", "TECH_MASONRY"]);
+        assert_eq!(state.boosted_civics, ["CIVIC_CRAFTSMANSHIP"]);
+
+        // An empty list is the ordinary case on turn 1 and must be a SEQUENCE.
+        let empty: StateSnapshot =
+            serde_json::from_str(r#"{"turn": 1, "boosted_techs": [], "boosted_civics": []}"#)
+                .expect("an empty boost list parses");
+        assert!(empty.boosted_techs.is_empty());
+
+        // And an older mod that sends neither field still parses.
+        let absent: StateSnapshot =
+            serde_json::from_str(r#"{"turn": 1}"#).expect("an older mod still parses");
+        assert!(absent.boosted_techs.is_empty());
+        assert!(absent.boosted_civics.is_empty());
+    }
+
     #[test]
     fn housing_reaches_the_planner_from_the_host() {
         let raw = r#"{"id": 1, "x": 3, "y": 4, "pop": 12,

@@ -377,9 +377,10 @@ impl JointTactics {
             // Attacks available from where the unit already stands.
             for (target, action) in Self::strikes_from(g, pid, uid, unit.pos, range) {
                 let ranged = matches!(action, Action::Ranged { .. });
+                let role_bonus = base.tactical_action_bonus(g, uid, target, ranged);
                 lines.push(Line {
-                    prior: Self::strike_prior(g, pid, uid, target, ranged, w),
-                    toll: base.attack_threshold(g, uid, target) + wounded_margin,
+                    prior: Self::strike_prior(g, pid, uid, target, ranged, w) + role_bonus,
+                    toll: base.attack_threshold(g, uid, target) + wounded_margin - role_bonus,
                     actions: vec![action],
                 });
             }
@@ -393,10 +394,16 @@ impl JointTactics {
                     }
                     for (target, action) in Self::strikes_from(g, pid, uid, to, range) {
                         let ranged = matches!(action, Action::Ranged { .. });
-                        let prior = Self::strike_prior(g, pid, uid, target, ranged, w) - 4.0;
+                        let role_bonus = base.tactical_action_bonus_from(
+                            g, uid, to, target, ranged,
+                        );
+                        let prior = Self::strike_prior(g, pid, uid, target, ranged, w)
+                            + role_bonus
+                            - 4.0;
                         lines.push(Line {
                             prior,
-                            toll: base.attack_threshold(g, uid, target) + wounded_margin,
+                            toll: base.attack_threshold(g, uid, target) + wounded_margin
+                                - role_bonus,
                             actions: vec![Action::Move { unit: uid, to }, action],
                         });
                     }
@@ -476,7 +483,7 @@ impl JointTactics {
                     let city = &g.cities[&cid];
                     city.owner != pid && g.is_at_war(pid, city.owner)
                 });
-            let hostile_unit = g.units_at(target).into_iter().any(|oid| {
+            let hostile_unit = g.unit_ids_at(target).iter().any(|oid| {
                 let other = &g.units[&oid];
                 other.owner != pid
                     && g.is_at_war(pid, other.owner)
@@ -531,15 +538,15 @@ impl JointTactics {
         }
 
         let defender = g
-            .units_at(target)
-            .into_iter()
+            .unit_ids_at(target)
+            .iter()
             .filter(|oid| {
                 let other = &g.units[oid];
                 other.owner != pid && g.rules.units[other.kind].class == "military"
             })
             .max_by(|a, b| {
-                let strength = |id: &u32| {
-                    let unit = &g.units[id];
+                let strength = |id: &&u32| {
+                    let unit = &g.units[*id];
                     effective_strength(g.unit_strength(unit, true), unit.hp)
                 };
                 strength(a)
@@ -965,7 +972,7 @@ mod tests {
                     .get(*pos)
                     .is_some_and(|tile| !g.rules.is_water(tile) && g.rules.is_passable(tile))
                     && g.city_at(*pos).is_none()
-                    && g.units_at(*pos).is_empty()
+                    && g.unit_ids_at(*pos).is_empty()
             })
             .collect();
         // Ours stand together; theirs stand within the archers' reach of both.
@@ -1072,6 +1079,58 @@ mod tests {
                 plan.greedy_score
             );
         }
+    }
+
+    #[test]
+    fn portfolio_pruning_keeps_the_class_counter_assignment() {
+        let (mut g, _, _) = firing_line(100, 100);
+        for uid in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(uid);
+        }
+        let (origin, targets) = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                g.city_at(**position).is_none()
+                    && g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+            })
+            .find_map(|(origin, _)| {
+                let targets: Vec<crate::Pos> = g
+                    .nbrs(*origin)
+                    .into_iter()
+                    .filter(|position| g.city_at(*position).is_none())
+                    .take(2)
+                    .collect();
+                (targets.len() == 2).then_some((*origin, targets))
+            })
+            .expect("test map has a two-target pocket");
+        let cavalry = g.spawn_unit("heavy_chariot", 0, origin);
+        let melee = g.spawn_unit("warrior", 1, targets[0]);
+        let other = g.spawn_unit("horseman", 1, targets[1]);
+        let warrior = g.rules.units["warrior"].clone();
+        let rules = std::sync::Arc::make_mut(&mut g.rules);
+        rules.units.get_mut("horseman").unwrap().strength = warrior.strength;
+        rules.units.get_mut("horseman").unwrap().cost = warrior.cost;
+        g.units.get_mut(&melee).unwrap().hp = 1;
+        g.units.get_mut(&other).unwrap().hp = 1;
+
+        let mut base = BasicAi::new();
+        base.tactical_strategy = true;
+        let search = JointTactics {
+            max_lines: 2,
+            ..JointTactics::default()
+        };
+        let portfolio = search
+            .portfolios(&g, 0, &base)
+            .into_iter()
+            .find(|portfolio| portfolio.unit == cavalry)
+            .unwrap();
+        assert!(matches!(
+            portfolio.lines[0].actions.last(),
+            Some(Action::Attack { target, .. }) if *target == targets[0]
+        ));
     }
 
     /// A single engaged unit has no joint problem to solve, so the cheaper

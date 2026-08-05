@@ -46,6 +46,24 @@ local ERA_SCREENS = {
 	-- unattended run and both sit over the map while they play.
 	HistoricMoments = true, EraProgressPanel = true,
 };
+
+-- ⚠⚠ THE ONE SCREEN THAT MUST NOT BE RUSHED, AND IT WAS THE MOST RUSHED OF ALL.
+--
+-- `EndGameMenu` is the victory/defeat screen — the only screen in a whole run
+-- that states the OUTCOME. It had no clock of its own, so it took the general
+-- announcement one, and `civ6_civvis_climb` sets that to 0.05s deliberately (a
+-- popup must not sit on a map the operator is comparing against CIVVIS). The
+-- result the run existed to produce was on screen for a twentieth of a second.
+--
+-- The operator's standing brief asks for ten seconds on the final screen, and the
+-- reasoning that makes the other screens fast is exactly why this one is slow:
+-- nothing is waiting behind it. The game is over.
+--
+-- ⚠ Held, not left open. The harness needs the screen CLOSED to tear the attempt
+-- down and start the next one, and `reached_end_screen` keys on this very
+-- `autoclose` event — so this changes when it fires, never whether it fires.
+local END_SECONDS = tonumber(cfg.EndGameSeconds) or 10.0;
+local END_SCREENS = { EndGameMenu = true };
 -- ⚠ The era clock is applied further down, AFTER `NAME` is declared. It used to
 -- be applied right here, twelve lines before `local NAME` existed, so `NAME` was
 -- the nil global and `ERA_SCREENS[nil]` was nil: the branch never once ran and
@@ -74,6 +92,13 @@ pcall(function() NAME = ContextPtr:GetID() or "unknown"; end);
 -- Now that this context knows its own name, the era screens can get their
 -- shorter clock. This must stay below `local NAME`.
 if ERA_SCREENS[NAME] then SECONDS = ERA_SECONDS; end
+-- ⚠ AFTER the era line and BEFORE the dialogue `math.min` below, and both of
+-- those orderings are load-bearing. The era table can only shorten a clock, and
+-- the dialogue rule takes a MINIMUM — so an end screen that ever matched it
+-- would be clamped back to 0.25s and the hold would silently not happen. This
+-- is also why `NAME` has to be declared above: `ERA_SCREENS[nil]` reads as nil
+-- without complaint, which is how the era clock went a whole project unapplied.
+if END_SCREENS[NAME] then SECONDS = END_SECONDS; end
 -- Leader/deal views are interactive overlays rather than readable completion
 -- cards. When one refuses its first exit path we need to reach the later response
 -- rungs promptly; twenty one-second probes left a real leader screen up for twenty

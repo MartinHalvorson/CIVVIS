@@ -15,16 +15,20 @@ let ready = null;
 function boot(wasmUrl) {
   if (!ready) {
     // The module imports nothing, so there is no glue to keep in step with it
-    // and nothing to pass in.
-    ready = WebAssembly.instantiateStreaming(fetch(wasmUrl), {})
-      .catch(() =>
-        // `instantiateStreaming` refuses anything not served as
-        // application/wasm. A static host that mistypes the file should cost a
-        // millisecond, not the whole page.
-        fetch(wasmUrl)
-          .then((response) => response.arrayBuffer())
-          .then((bytes) => WebAssembly.instantiate(bytes, {})),
-      )
+    // and nothing to pass in. Decide from the response MIME type before
+    // trying streaming: a basic static host that mistypes the module can fall
+    // straight back to bytes instead of downloading the whole module again.
+    ready = fetch(wasmUrl)
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`could not load CIVVIS (${response.status})`);
+        const mime = (response.headers.get("Content-Type") || "")
+          .split(";", 1)[0].trim().toLowerCase();
+        if (mime === "application/wasm" &&
+            typeof WebAssembly.instantiateStreaming === "function") {
+          return WebAssembly.instantiateStreaming(Promise.resolve(response), {});
+        }
+        return WebAssembly.instantiate(await response.arrayBuffer(), {});
+      })
       .then((result) => {
         engine = result.instance.exports;
         return engine;

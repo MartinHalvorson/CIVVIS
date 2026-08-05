@@ -1,0 +1,214 @@
+-- Offline test for the envoy spend order.
+--
+-- ⚠ It loads the SHIPPED `CivvisControlAgent.lua` and calls the function the
+-- agent itself calls. A test that re-implemented the sort would have passed
+-- while the agent kept its old behaviour -- the same trap that let a name fixed
+-- in one emitter fail live in three others.
+--
+-- `CivvisControlAgent.lua` is a Civ 6 UI script: it indexes globals the game
+-- provides (`Players`, `UI`, `Events`, ...) at load time. The stub metatable
+-- below answers any global with a permissive dummy so the chunk can run to the
+-- point where it defines its functions. Nothing here calls into the engine.
+--
+-- Run: lua tools/civ6_control/mod/envoy_spend_test.lua
+
+local here = arg[0]:match("(.*)/[^/]*$") or "."
+
+-- Any unknown global returns a table that is callable, indexable, and
+-- comparable, so top-level code in the agent neither errors nor branches on it.
+local dummy = {}
+local function stub()
+	return setmetatable({}, {
+		__index = function() return stub() end,
+		__call = function() return stub() end,
+		__newindex = function() end,
+	})
+end
+setmetatable(_G, { __index = function(_, k)
+	if k == "CivvisEnvoySpendOrder" or k == "CivvisEnvoyIsALostAuction" then
+		return rawget(_G, k)
+	end
+	return stub()
+end })
+
+local chunk, err = loadfile(here .. "/CivvisControlAgent.lua")
+assert(chunk, "could not load agent: " .. tostring(err))
+
+-- ⚠⚠ REPORT THE PCALL RESULT. The first version of this test wrote
+-- `pcall(chunk)` and threw the result away, so a chunk that DIED at load still
+-- passed as long as the export had already happened — and that is exactly the
+-- failure it should have caught: #1047 shipped an agent that raises at load and
+-- this gate called it green. A check that swallows the error it exists to catch
+-- is worse than no check.
+local ran, runtime_err = pcall(chunk)
+assert(ran, "CivvisControlAgent.lua raised at chunk load: " .. tostring(runtime_err))
+
+-- ⚠ `rawget`, not `_G.x`: the agent must never be able to pass this test by
+-- doing something the game's sandbox forbids. See the bare-global note beside
+-- the export itself.
+local spendOrder = rawget(_G, "CivvisEnvoySpendOrder")
+assert(type(spendOrder) == "function",
+	"CivvisControlAgent.lua did not export CivvisEnvoySpendOrder")
+
+local failures = 0
+local function check(name, got, want)
+	if got ~= want then
+		failures = failures + 1
+		print(string.format("FAIL %s: got %s want %s", name, tostring(got), tostring(want)))
+	else
+		print(string.format("ok   %s = %s", name, tostring(got)))
+	end
+end
+
+-- Walk the order the way `chooseEnvoy` does: spend `need` on each target while
+-- tokens last, and spend the remainder on the next one when a flip is out of
+-- reach. Mirrors the caller's clamp, which is the part the engine bounds.
+local function simulate(seen, tokens)
+	local flips, spent, first = 0, 0, nil
+	for _, m in ipairs(spendOrder(seen)) do
+		if tokens < 1 then break end
+		local want = m.need
+		if want < 1 or want > tokens then want = tokens end
+		if want >= m.need and m.need >= 1 then flips = flips + 1 end
+		tokens = tokens - want
+		spent = spent + want
+		first = first or m.id
+	end
+	return flips, spent, tokens, first
+end
+
+-- The live board: civvis-20260803T191900Z, turn 231. Four met city-states, all
+-- held by rivals, 56 envoys in hand. Needs are (most_envoys + 1) - mine.
+local live = {
+	{ id = 6,  mine = 0, need = 14, ours = false, takes = true },  -- Bologna, Kongo
+	{ id = 7,  mine = 1, need = 13, ours = false, takes = true },  -- Kandy, Phoenicia
+	{ id = 8,  mine = 5, need = 7,  ours = false, takes = true },  -- Kumasi, Phoenicia
+	{ id = 12, mine = 1, need = 7,  ours = false, takes = true },  -- Akkad, Norway
+}
+
+local flips, spent, leftover, first = simulate(live, 56)
+check("live board: suzerainties bought", flips, 4)
+check("live board: envoys spent", spent, 41)
+check("live board: envoys left over", leftover, 15)
+-- Cheapest first, and Kumasi (5 invested) outranks Akkad at the same need.
+check("live board: first target is Kumasi", first, 8)
+
+-- The delta this change exists for, measured rather than asserted. The old loop
+-- picked one `best` and ran `for _ = 1, tokens` on it, so it bought one flip and
+-- sank the rest into a minor it already led.
+local function simulateOldLoop(seen, tokens)
+	local best
+	for _, m in ipairs(seen) do
+		if m.takes and not m.ours then
+			if best == nil or m.need < best.need
+				or (m.need == best.need and m.mine > best.mine) then
+				best = m
+			end
+		end
+	end
+	if best == nil then return 0, 0 end
+	local flipped = tokens >= best.need and 1 or 0
+	return flipped, tokens, tokens - best.need   -- flips, spent, wasted
+end
+
+local oldFlips, _, wasted = simulateOldLoop(live, 56)
+check("old loop bought", oldFlips, 1)
+check("old loop wasted", wasted, 49)
+check("new loop buys more", flips - oldFlips, 3)
+
+-- A purse that covers one flip and no more must still buy that one.
+check("tight purse buys the cheapest flip", (simulate(live, 7)), 1)
+
+-- A purse below every flip price buys nothing but must not hoard: the tokens
+-- go into the cheapest partial claim rather than expiring with the game.
+local f2, s2, l2 = simulate(live, 3)
+check("short purse: flips", f2, 0)
+check("short purse: still spends", s2, 3)
+check("short purse: nothing hoarded", l2, 0)
+
+-- Minors we already hold are not re-bought, and illegal targets are skipped.
+local mixed = {
+	{ id = 1, mine = 9, need = 0, ours = true,  takes = true },
+	{ id = 2, mine = 0, need = 3, ours = false, takes = false },
+	{ id = 3, mine = 2, need = 2, ours = false, takes = true },
+}
+local f3, s3 = simulate(mixed, 10)
+check("held and illegal minors skipped: flips", f3, 1)
+check("held and illegal minors skipped: spent", s3, 2)
+
+-- Determinism: equal need and equal investment resolve by id, so the order does
+-- not drift with survey order between turns.
+local tied = {
+	{ id = 9, mine = 2, need = 4, ours = false, takes = true },
+	{ id = 4, mine = 2, need = 4, ours = false, takes = true },
+}
+check("ties resolve by id", spendOrder(tied)[1].id, 4)
+
+
+-- ⚠⚠ THE CALL MUST BE IN `beginTurn`, NOT `playTurn`. Deployment runs with
+-- `--civvis-decides`, so `playTurn` never executes; a spend added there would be
+-- inert in exactly the configuration that matters. This is a structural check on
+-- the shipped source — it cannot run the engine, but it can prove the call sits
+-- in the function that deployment actually reaches, and after `chooseEnvoy` is
+-- defined so the name resolves.
+local src = assert(io.open(here .. "/CivvisControlAgent.lua")):read("*a")
+local defAt = src:find("local function chooseEnvoy", 1, true)
+local beginAt = src:find("local function beginTurn", 1, true)
+local playAt = src:find("local function playTurn", 1, true)
+check("chooseEnvoy is defined", defAt ~= nil, true)
+check("beginTurn exists", beginAt ~= nil, true)
+check("chooseEnvoy is defined before beginTurn", defAt < beginAt, true)
+
+-- The spend call, wherever it is.
+local callAt = src:find("chooseEnvoy(player, pid, turn)", beginAt, true)
+check("beginTurn spends envoys", callAt ~= nil, true)
+-- It must land inside beginTurn, i.e. before playTurn starts.
+check("the spend is in beginTurn, not playTurn",
+	callAt ~= nil and playAt ~= nil and callAt < playAt, true)
+
+
+-- ⚠⚠⚠ THE LOST AUCTION. `need` is `most + 1 - mine`, recomputed every turn, so a
+-- city-state a rival keeps outbidding shows need 1-2 forever and looks like the
+-- cheapest flip on the board every turn. The first full live run with the lane
+-- working placed **113 envoys and held ONE suzerainty**: Jakarta swallowed 28
+-- and was never ours (ours=28, most=30), Cardiff 10 against 12, Vatican City 8
+-- against 13. 46 envoys — four flips — into three auctions we lost.
+local lost = rawget(_G, "CivvisEnvoyIsALostAuction")
+check("lost-auction predicate is exported", type(lost) == "function", true)
+
+-- A fresh or cheap claim is never a lost auction, however far behind.
+check("no investment yet is not a lost auction", lost({ mine = 0, need = 9 }), false)
+check("small investment is not a lost auction", lost({ mine = 5, need = 9 }), false)
+-- Invested but WINNING (or nearly) is not a lost auction either.
+check("invested and 1 behind is not lost", lost({ mine = 20, need = 1 }), false)
+check("invested and 2 behind is not lost", lost({ mine = 20, need = 2 }), false)
+-- The real ones, from the run.
+check("Jakarta (28 in, 3 behind) is lost", lost({ mine = 28, need = 3 }), true)
+check("Vatican City (8 in, 6 behind) is lost", lost({ mine = 8, need = 6 }), true)
+check("boundary: 6 in and 3 behind is lost", lost({ mine = 6, need = 3 }), true)
+
+-- End to end: a lost auction must not be OFFERED while a winnable flip exists.
+local board = {
+  { id = 1, mine = 28, need = 3, ours = false, takes = true },  -- Jakarta
+  { id = 2, mine = 8,  need = 6, ours = false, takes = true },  -- Vatican City
+  { id = 3, mine = 0,  need = 4, ours = false, takes = true },  -- a fresh claim
+}
+local ordered = spendOrder(board)
+check("only the winnable claim is offered", #ordered, 1)
+check("and it is the fresh one", ordered[1].id, 3)
+
+-- ⚠ If EVERY claim is a lost auction the token still has to go somewhere — an
+-- envoy held at the end of the game bought nothing. Closest to flipping wins.
+local allLost = {
+  { id = 1, mine = 28, need = 5, ours = false, takes = true },
+  { id = 2, mine = 9,  need = 3, ours = false, takes = true },
+}
+local fallback = spendOrder(allLost)
+check("all-lost board still spends", #fallback, 2)
+check("fallback takes the closest to flipping", fallback[1].id, 2)
+
+if failures > 0 then
+	print(string.format("\n%d check(s) failed", failures))
+	os.exit(1)
+end
+print("\nall envoy spend-order checks passed")
