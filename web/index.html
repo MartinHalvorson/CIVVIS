@@ -3351,10 +3351,7 @@
   <div id="dossier-windows" aria-label="Open player dossiers"></div>
   <div id="map-controls-dock">
     <!-- Left to right: collapse the deck, set the map area, face north, zoom
-         in, zoom out, navigate the solar system, and dismiss. The full sky
-         route begins immediately after minus and ends immediately before
-         dismiss; Display Settings is the way back and that is inside the
-         deck. -->
+         in, zoom out, choose a sky destination, and dismiss. -->
     <div id="zoomctl">
       <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
       <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
@@ -3362,14 +3359,13 @@
       <button id="compass" type="button" title="Face north" aria-label="Face north"><span id="compass-needle"></span></button>
       <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
       <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
-      <div id="skynav" hidden role="group" aria-label="Sky navigation">
-        <div class="skynav-group" id="skynav-worlds" role="group" aria-label="Fly to local worlds"></div>
-        <div class="skynav-group" id="skynav-scales" role="group" aria-label="Solar-system route"></div>
+      <div id="skynav" hidden role="group" aria-label="Sky controls">
+        <div class="skynav-group" id="skynav-worlds" role="group" aria-label="Worlds"></div>
+        <div class="skynav-group" id="skynav-scales" role="group" aria-label="Route"></div>
         <div class="skynav-group skynav-rungs">
           <input id="skyladder" type="range" min="0" max="1000" step="1" value="1000"
-            aria-label="How far out the camera stands"
-            title="The whole zoom, end to end — left is the far stop, right is the ground">
-          <span id="skyspan" title="How wide the stage is">—</span>
+            aria-label="Scale">
+          <span id="skyspan">—</span>
         </div>
       </div>
       <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display Settings" title="Hide map controls · restore in Display Settings">✕</button>
@@ -4365,12 +4361,19 @@ const RES_WORD_MAX_WIDTH = S * SQ3 * .72;
 // small; at this size it decides whether the badge leans into the next hex.
 const RES_BADGE_SEAT = 1 - (RES_BADGE_R + 1.2) / (S * SQ3 / 2);
 const ARTIFACT_RESOURCES = new Set(["antiquity_site", "shipwreck"]);
-// Units that cannot fight — captured rather than killed, and the things an
-// empire has to escort. They carry their own plate shape so a glance separates
-// an army from what it is protecting.
+// Civilian-layer units carry their own plate shape so a glance separates an
+// army from what it is protecting. Religious civilians still use theological
+// health; the two capture-only civilian types are named separately below.
 const CIVILIAN_UNITS = new Set(["settler", "builder", "trader", "naturalist",
   "archaeologist", "rock_band", "spy", "missionary", "apostle", "guru",
   "inquisitor"]);
+// A hostile melee unit captures these by entering their tile. They never take
+// combat damage, so presenting an HP total would imply a fight that cannot
+// occur.
+const CAPTURE_ONLY_CIVILIAN_UNITS = new Set(["settler", "builder"]);
+function unitHasHealth(unit) {
+  return !!unit && !CAPTURE_ONLY_CIVILIAN_UNITS.has(unit.type) && Number.isFinite(unit.hp);
+}
 // The command map uses Civilization VI's own unit glyphs. Their order is the
 // order of the cells in civ6-unit-flags.png and is kept beside the renderer so
 // a missing ruleset unit cannot silently borrow another unit's picture.
@@ -5174,7 +5177,7 @@ function animateDiff(prev, next) {
                                 t0: now, dur:unitMoveDuration(nu.id, steps) });
       }
     }
-    if (nu.hp < pu.hp) {
+    if (unitHasHealth(nu) && unitHasHealth(pu) && nu.hp < pu.hp) {
       const dmg = pu.hp - nu.hp;
       const [x, y] = worldXY(nu.pos);
       anim.floats.push({ x, y: y - 16, txt: "-" + dmg, col: "#ff6252", t0: now });
@@ -5185,7 +5188,7 @@ function animateDiff(prev, next) {
     if (nextU.has(pu.id)) continue;
     // Low-HP disappearance is the fog-safe signal that this was a casualty,
     // rather than a unit simply leaving the observer's current sight.
-    if (pu.hp <= 55) {
+    if (unitHasHealth(pu) && pu.hp <= 55) {
       const [x, y] = worldXY(pu.pos);
       const deathAt = now;
       anim.deaths.push({ x, y, owner: pu.owner, type: pu.type,
@@ -13449,7 +13452,8 @@ function strategicUnitTokenPath(civilian, x, y, r) {
 // label. Its largest corner is still inside the token's enclosing circle, so
 // the same inradius calculation that contains the unit contains its health.
 function drawStrategicUnitHealth(x, y, r, hp, now) {
-  const health = Math.max(0, Math.min(100, Math.round(hp ?? 100)));
+  if (!Number.isFinite(hp)) return;
+  const health = Math.max(0, Math.min(100, Math.round(hp)));
   if (!(r > 0) || health >= 100) return;
   cx.save();
   const frac = health / 100;
@@ -16282,19 +16286,10 @@ function skyWorldStopScale(body) {
   return Math.max(planetMinScale(),
                   Math.min(planetMaxScale(SKY_PAN, body), want));
 }
-// The four places. A world is only offered once this civilization can see it,
-// by the same roster everything else out here is drawn from, so the bar can
-// never point at something the sky is withholding.
-//
-// The destination is labelled **Exoplanet** rather than by its catalogue name.
-// Which world it is depends on what that civilization surveyed, so the same
-// button reads `Teegarden's Star b` in one game and `82 Eridani d` in the next
-// — and a control whose name changes between games is one nobody ever learns
-// the position of. The real name is a fact and it is kept in all three places a
-// fact belongs: the button's own tooltip, the caption under the world, and the
-// scene caption that comes up on arrival with the distance and the catch.
+// The four practical destinations. A world is offered only once this
+// civilization can see it, by the same roster everything else out here uses.
 const SKY_STOP_MARKS = {earth:"◉", moon:"☾", mars:"♂", exo:"✧"};
-const SKY_STOP_LABELS = {earth:"Earth", exo:"Exoplanet"};
+const SKY_STOP_LABELS = {earth:"Earth", moon:"Moon", mars:"Mars", exo:"Exoplanet"};
 function skyWorldStops() {
   const known = new Set(skyKnownWorlds().map(body => body.id));
   const stops = [];
@@ -16303,9 +16298,7 @@ function skyWorldStops() {
     const body = skyBody(id);
     if (!body) continue;
     stops.push({id, body, mark:SKY_STOP_MARKS[id] || "◉",
-                label:SKY_STOP_LABELS[id] || body.name.replace(/^The /, ""),
-                title:id === "earth" ? "Home — the whole globe, and the board on it"
-                                     : `Fly to ${body.name}`});
+                label:SKY_STOP_LABELS[id] || body.name.replace(/^The /, "")});
   }
   return stops;
 }
@@ -16325,16 +16318,10 @@ function skyScaleStops() {
   const edge = SKY_SYSTEM.find(body =>
     body.id === (seesOuterSystem() ? "neptune" : "saturn"));
   if (edge)
-    stops.push({id:"system", label:"Solar system", mark:"☉", x:sx, y:sy,
-                reach:edge.orbitRadius * 1.16,
-                title:`The solar system, out past ${edge.name}`});
+    stops.push({id:"system", label:"Solar System", mark:"☉", x:sx, y:sy,
+                reach:edge.orbitRadius * 1.16});
   if (knowsNeighbourhood()) {
-    const target = seesDestination() ? skyTarget() : null;
-    stops.push({id:"voyage", label:"Voyage", mark:"⇢", ...skyVoyageFrame(),
-                title:target
-                  ? `The whole trip: the Sun, ${target.name}, and the ` +
-                    `${target.ly.toFixed(2)} light-years between them`
-                  : `${SKY_STOP_LY} light-years of sky, and every star in it`});
+    stops.push({id:"voyage", label:"Voyage", mark:"⇢", ...skyVoyageFrame()});
   }
   return stops;
 }
@@ -16610,9 +16597,9 @@ function skyNavButton(kind, stop) {
   const button = document.createElement("button");
   button.type = "button";
   button.dataset.skyStop = `${kind}:${stop.id}`;
-  button.title = stop.title;
+  button.title = stop.label;
   button.setAttribute("aria-pressed", "false");
-  button.setAttribute("aria-label", kind === "world" ? `Fly to ${stop.label}` : `Frame ${stop.label}`);
+  button.setAttribute("aria-label", stop.label);
   const mark = document.createElement("span");
   mark.className = "skynav-mark";
   mark.setAttribute("aria-hidden", "true");
@@ -16638,19 +16625,12 @@ function syncSkyNav() {
   }
   if (!showing) return;
   const worlds = skyWorldStops(), scales = skyScaleStops();
-  // The title is in the key and it has to be, now that the labels are fixed
-  // words. `Exoplanet` and `Voyage` read the same whichever world the expedition
-  // settled on, and the world's name lives on their tooltips — so keyed on the
-  // labels alone the bar would never rebuild when the destination was chosen and
-  // both tooltips would go on naming the pre-launch default for the rest of the
-  // game. It used to be keyed on the label safely because the label *was* the
-  // catalogue name.
   const key = [...worlds, ...scales]
-    .map(stop => `${stop.id}/${stop.label}/${stop.title}`).join(",");
+    .map(stop => `${stop.id}/${stop.label}`).join(",");
   if (key !== SKY_NAV_KEY) {
     SKY_NAV_KEY = key; SKY_NAV_MARK = "";
     // The old route is deliberately one readable sequence in the control bar:
-    // Earth, Moon, Mars, Solar system, Voyage, Exoplanet. The distant world
+    // Earth, Moon, Mars, Solar System, Voyage, Exoplanet. The distant world
     // follows the two whole-route shots, rather than leaving an icon-only
     // shortcut up by the compass and making the route read in two places.
     const local = worlds.filter(stop => stop.id !== "exo");
@@ -17136,78 +17116,57 @@ function skyScaleChoice(radius, want) {
   }
   return null;
 }
-// What this picture is a picture of, in three words, and the one number that
-// makes it mean something. This is where the view answers the question it is
-// built around: at the far end it says out loud how far the expedition is
-// going, and the picture behind the words is showing exactly that.
-function skySceneCaption(radius) {
-  const span = skyStageSpan();
-  const across = span / Math.max(1e-30, radius);   // Earth radii across the stage
-  // Standing over the destination, the caption is the destination: its name,
-  // how far the trip was, and the thing that is wrong with it. That last part
-  // is the whole payoff of the survey — a civilization that looked harder is
-  // standing over a better world, and it should be able to read why.
-  const target = skyTarget();
-  if (across < 40 * target.size && skyRungAtLeast("space")) {
-    const [exoX, exoY] = skyBodyPos(skyExoBody());
-    if (Math.hypot(exoX - SKY_PAN.x, exoY - SKY_PAN.y) < across)
-      return [target.name, `${target.ly.toFixed(2)} light-years. ${target.note}`];
-  }
-  if (across > 3 * LIGHT_YEAR)
-    return ["The solar neighbourhood",
-            `${SKY_STOP_LY} light-years across, and the expedition is going to ` +
-            `one of these stars`];
-  if (across > 120 * AU)
-    return ["Interstellar space",
-            `The nearest star is ${SKY_STARS[0].ly.toFixed(2)} light-years away — ` +
-            `${Math.round(SKY_STARS[0].ly * LIGHT_YEAR / AU).toLocaleString()} times the Earth's orbit`];
-  if (across > 3 * AU)
-    return ["The solar system", "Sunlight takes eight minutes to reach the Earth"];
-  if (across > 600)
-    return ["The Earth's orbit", "One astronomical unit: 149.6 million kilometres"];
-  if (across > 12)
-    return ["The Earth and the Moon",
-            "Sixty Earths apart, and every other world in the game is further"];
-  return null;
+function mapControlsBox(viewRect) {
+  const controls = document.getElementById("zoomctl");
+  if (!controls) return null;
+  const box = controls.getBoundingClientRect();
+  if (!(box.width && box.height)) return null;
+  return {
+    left:box.left - viewRect.left, right:box.right - viewRect.left,
+    top:box.top - viewRect.top, bottom:box.bottom - viewRect.top,
+  };
+}
+function mapScaleRightEdge(viewRect, controls, fallback) {
+  const minimap = document.querySelector(".minimap-frame");
+  if (!minimap) return fallback;
+  const box = minimap.getBoundingClientRect();
+  const left = box.left - viewRect.left;
+  return box.width && (!controls || left > controls.right) ? left - 12 : fallback;
 }
 function drawSkyScale(radius, alpha) {
   if (alpha <= .02) return;
   const frame = observedFrameRect();
-  const want = Math.min(150, (frame.right - frame.left) * .16);
+  const viewRect = cv.getBoundingClientRect();
+  const controls = mapControlsBox(viewRect);
+  const want = Math.min(125, (frame.right - frame.left) * .16);
   const choice = skyScaleChoice(radius, want);
-  const caption = skySceneCaption(radius);
-  if (!choice && !caption) return;
-  const x = frame.left + 18;
-  // Both this block and the sky's own control bar are measured off the bottom
-  // of the map, so the block moves up by exactly what the bar takes. It is the
-  // caption that says what the picture is a picture of; hiding half of it
-  // behind the buttons that got you there is the worst trade in the view.
-  const nav = skyNavBox(cv.getBoundingClientRect());
-  const overlaps = nav && nav.right > x && nav.left < x + 320;
-  const y = overlaps ? Math.min(frame.bottom - 20, nav.top - 12) : frame.bottom - 20;
+  if (!choice) return;
   cx.save();
   cx.globalAlpha = alpha;
   cx.textAlign = "left";
-  if (choice) {
-    cx.strokeStyle = "rgba(214,235,241,.72)";
-    cx.lineWidth = 1;
-    cx.beginPath();
-    cx.moveTo(x, y - 5); cx.lineTo(x, y); cx.lineTo(x + choice.drawn, y);
-    cx.lineTo(x + choice.drawn, y - 5);
-    cx.stroke();
-    cx.fillStyle = "rgba(226,240,246,.86)";
-    cx.font = "600 10px system-ui, sans-serif";
-    const amount = choice.step >= 1 ? choice.step.toLocaleString() : String(choice.step);
-    cx.fillText(`${amount} ${choice.unit.name}`, x + choice.drawn + 7, y);
-  }
-  if (caption) {
-    cx.fillStyle = "rgba(232,244,250,.92)";
-    cx.font = "600 12px system-ui, sans-serif";
-    cx.fillText(caption[0], x, y - 30);
-    cx.fillStyle = "rgba(200,220,232,.66)";
-    cx.font = "11px system-ui, sans-serif";
-    cx.fillText(caption[1], x, y - 15);
-  }
+  cx.font = "600 10px system-ui, sans-serif";
+  const amount = choice.step >= 1 ? choice.step.toLocaleString() : String(choice.step);
+  const label = `${amount} ${choice.unit.name}`;
+  const width = choice.drawn + 7 + cx.measureText(label).width;
+  const right = mapScaleRightEdge(viewRect, controls, frame.right - 12);
+  const beside = controls && controls.right + 14 + width <= right;
+  const x = beside ? controls.right + 14 : frame.left + 18;
+  // A wide map keeps the practical ruler in the same lower strip, immediately
+  // after the map controls. On a narrow map it rises just above them instead
+  // of covering either the buttons or the map.
+  const y = beside
+    ? Math.max(frame.top + 16, Math.min(frame.bottom - 12, controls.bottom - 16))
+    : controls
+    ? Math.max(frame.top + 16, Math.min(frame.bottom - 12, controls.top - 12))
+    : frame.bottom - 20;
+  cx.strokeStyle = "rgba(214,235,241,.72)";
+  cx.lineWidth = 1;
+  cx.beginPath();
+  cx.moveTo(x, y - 5); cx.lineTo(x, y); cx.lineTo(x + choice.drawn, y);
+  cx.lineTo(x + choice.drawn, y - 5);
+  cx.stroke();
+  cx.fillStyle = "rgba(226,240,246,.86)";
+  cx.fillText(label, x + choice.drawn + 7, y);
   cx.restore();
 }
 
@@ -19673,7 +19632,7 @@ function drawPlanetMap() {
     cx.fill(); cx.stroke();
     drawUnitPictogram(unit.embarked ? "galley" : unit.type, ux, uy,
                       r * 1.48, tokenInk);
-    drawStrategicUnitHealth(ux, uy, r, unit.hp, now);
+    if (unitHasHealth(unit)) drawStrategicUnitHealth(ux, uy, r, unit.hp, now);
     if (commandTokenClip) cx.restore();
     cx.restore();
   }
@@ -20538,7 +20497,7 @@ function draw() {
     cx.stroke();
     drawUnitPictogram(u.type, x, y, rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk);
     cx.globalAlpha = unitAlpha;
-    drawStrategicUnitHealth(x, y, rr, u.hp, now);
+    if (unitHasHealth(u)) drawStrategicUnitHealth(x, y, rr, u.hp, now);
     if (u.level > 1) {
       const count = u.level - 1;
       const pipRadius = Math.min(2, rr * .12);
@@ -23434,7 +23393,8 @@ function drawUbar() {
   const linked = u.linked_to !== null && u.linked_to !== undefined;
   const escortPeer = linked && state.units.find(candidate => candidate.id === u.linked_to);
   const escortName = escortPeer ? titleCase(escortPeer.type) : null;
-  let h = `<b>${u.type}</b> <span class="small">hp ${u.hp} · mp ${u.moves_left}` +
+  const status = unitHasHealth(u) ? `hp ${u.hp}` : "capturable";
+  let h = `<b>${u.type}</b> <span class="small">${status} · mp ${u.moves_left}` +
     (u.level > 1 ? ` · lvl ${u.level}` : "") + (u.fortified ? " · ⛨ fortified" : "") +
     (u.formation ? ` · ${formationName(u.type, u.formation)}` : "") +
     (linked ? ` · escort with ${escortName || `#${u.linked_to}`}` : "") +
@@ -27519,13 +27479,14 @@ function tileDevelopmentTipLine(t) {
 function tileTipLines(t, pos, tileKey) {
   const lines = [];
   // Who is standing here is what a hover over an occupied tile is asking, so
-  // the units lead and state their remaining health in the compact map-detail
-  // form: Empire's unit - xx HP.
+  // the units lead and state their health or capture status in the compact
+  // map-detail form: Empire's unit - xx HP/capturable.
   for (const unit of state.units) {
     if (key(unit.pos) !== tileKey) continue;
     const civ = state.players[unit.owner]?.civ || `Player ${unit.owner}`;
+    const unitStatus = unitHasHealth(unit) ? `${fmtYield(unit.hp)} HP` : "capturable";
     lines.push(`<span class="tip-unit">${civPossessive(civ)} ${titleCase(unit.type)} - ` +
-      fmtYield(unit.hp) + " HP</span>");
+      unitStatus + "</span>");
   }
   const owner = tileOwnershipTipLine(t);
   if (owner) lines.push(owner);
