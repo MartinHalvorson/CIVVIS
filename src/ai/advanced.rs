@@ -15147,6 +15147,71 @@ impl AdvancedAi {
                "{} tiles away, the site is worth {:.1}",
                g.wdist(current, target), self.settle_value(g, pid, target); target);
         let moved = self.settler_step_toward_safe(g, pid, uid, target);
+        // ★★★★ "marching" is printed ABOVE, before the step is attempted, so the
+        // journal has never been able to tell a march from a hold. Measured on the
+        // live ladder: settlers cross **0.78 tiles/turn on 2 movement points**,
+        // stand still on **45%** of their turn-transitions, and **91% of those
+        // standstills carry that very "marching" line** — because it prints either
+        // way. Nothing recorded that the step failed, and nothing recorded why.
+        //
+        // It is not the engine refusing: **0 of 1455** settler standstills carry a
+        // `move_refused`, and **84%** emit no `MOVE_TO` at all. It is not a
+        // self-tile step either — naming `self_tile_move` by unit kind (#950)
+        // returned 249 events, 100% military, **zero settlers**. So the cause is
+        // here, on our own board, and this is the only place that can say it.
+        //
+        // Gated on the journal level: the reason costs a second `route_step`, and
+        // A* is not worth paying for on a turn nobody is reading.
+        if !moved && self.journal().wants(crate::reasoning::Level::Detail) {
+            // ⚠ Name the BLOCKER, not just the fact of blocking. Replaying four
+            // live runs with only the coarse reason returned 83 holds against 292
+            // march attempts, and 67 of them — 81% — were "the next tile refuses
+            // the unit", which is a symptom and not yet a repair.
+            // ⚠ `route_step` returns `None` for three different reasons and only
+            // one of them is a routing failure: it also returns `None` when the
+            // unit already stands on `target` (`wdist <= range`, with range 0),
+            // and when a zone of control has it locked in formation. Folding
+            // those into "no route" would repeat the very mistake this block
+            // exists to fix — the coarse reason bucketed 67 of 83 holds into a
+            // symptom rather than a cause.
+            //
+            // The already-arrived case is separated below. The ZoC lock is NOT
+            // yet distinguishable from here: `formation_movement_locked_by_zoc`
+            // is private to `game`, so a settler held by a zone of control
+            // still reports "no route". Read that bucket as "no route OR ZoC
+            // lock" until the predicate is exposed.
+            let why = if current == target {
+                "it is already standing on its target".to_string()
+            } else {
+                match g.route_step(uid, target, 0) {
+                None => "no route to it on our own board".to_string(),
+                Some(step) if !g.can_move(uid, step) => {
+                    let occupant = g
+                        .units_at(step)
+                        .into_iter()
+                        .filter(|other| *other != uid)
+                        .find_map(|other| {
+                            g.units.get(&other).map(|unit| (unit.owner, unit.kind))
+                        });
+                    match occupant {
+                        Some((owner, kind)) if owner == pid => {
+                            format!("our own {kind} is standing on the next tile")
+                        }
+                        Some((_, kind)) => format!("a foreign {kind} holds the next tile"),
+                        None if g.units[&uid].moves_left <= 0.0 => {
+                            "it had no movement left".to_string()
+                        }
+                        None => "the next tile refuses it and nothing is standing there"
+                            .to_string(),
+                    }
+                }
+                Some(_) => "the safe-step guard rejected every neighbour".to_string(),
+                }
+            };
+            think!(self.journal(), Expansion, Detail, "Settler HELD short of {target:?}";
+                   "{} tiles away and it did not move — {why}",
+                   g.wdist(current, target); target);
+        }
         if !self.settler_commit {
             if moved {
                 self.settler_stalls.remove(&uid);
