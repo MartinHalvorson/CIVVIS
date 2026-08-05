@@ -401,20 +401,12 @@ fn main() {
     // is the one-flag experiment that says whether that is the barbarians or
     // the rivals, so it is a flag rather than a separate tool.
     let barbarians = number(&args, "--barbarians", 1) != 0;
-    let parallel_settlers = args.iter().any(|arg| arg == "--parallel-settlers");
     let census_civ_blind = args.iter().any(|arg| arg == "--civ-blind");
     let settler_commit = args.iter().any(|arg| arg == "--settler-commit");
-    let food_first = args
-        .iter()
-        .position(|arg| arg == "--food-bias")
-        .and_then(|i| args.get(i + 1))
-        .and_then(|v| v.parse::<f64>().ok())
-        .unwrap_or(0.0);
 
     println!(
         "opening_census: {maps} maps x {players} players, {width}x{height}, {turns} turns, \
-         window {window}, depth {depth}, seed {seed0}, barbarians {barbarians}, \
-         parallel_settlers {parallel_settlers}"
+         window {window}, depth {depth}, seed {seed0}, barbarians {barbarians}"
     );
 
     let games = parallel::map(maps, jobs, move |index| {
@@ -430,12 +422,9 @@ fn main() {
             ..GameOptions::new(players, width, height, seed, turns, 0)
         });
         let mut fleet: Vec<AdvancedAi> = AdvancedAi::fleet(&game);
-        // Fires-check for the treatment: the cadence table above is what it
-        // is meant to move, so it is the right place to prove it moves.
+        // Apply retained diagnostic switches before collecting the census.
         for agent in fleet.iter_mut() {
-            agent.parallel_settlers = parallel_settlers;
             agent.civ_blind = census_civ_blind;
-            agent.food_first = food_first;
             agent.settler_commit = settler_commit;
         }
         let majors: Vec<usize> = (0..game.players.len())
