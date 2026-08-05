@@ -462,16 +462,18 @@
     background: linear-gradient(145deg, #172723fa, #0b1714fc);
     box-shadow: 0 -12px 32px #0008;
   }
-  /* Search is a compact, always-available map tool at the deck's lower edge.
-     Lenses live with the other collapsible command-deck sections above it, so
-     a viewer can reclaim the grid until they want to change perspective. */
+  /* These are the map tools a viewer reaches for while reading the command
+     deck. They stay at its lower edge, immediately before the keyboard
+     drawer: lenses first, then the visible-tile search that can refine an
+     active lens without replacing it. */
   #map-utility-panel {
     position: relative; z-index: 3; flex: 0 0 auto; padding: 8px 10px 10px;
     border-top: 1px solid #355047; background: linear-gradient(180deg, #101d1a, #091310);
     box-shadow: 0 -10px 28px #0005;
   }
   #map-lenses {
-    min-width: 0;
+    min-width: 0; padding: 7px; border: 1px solid #3c554c; border-radius: 11px;
+    background: #0a1512df; box-shadow: inset 0 1px #ffffff08, 0 7px 18px #0004;
   }
   .map-lens-head {
     display: flex; align-items: center; gap: 5px; min-height: 22px; margin-bottom: 6px;
@@ -553,7 +555,7 @@
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   #map-search {
-    min-width: 0; padding: 6px 7px; border: 1px solid #3c554c; border-radius: 11px;
+    min-width: 0; margin-top: 7px; padding: 6px 7px; border: 1px solid #3c554c; border-radius: 11px;
     background: #0a1512df; box-shadow: inset 0 1px #ffffff08, 0 7px 18px #0004;
   }
   #map-search:focus-within {
@@ -2785,7 +2787,7 @@
   body.overlay-victory-hidden #victoryhud,
   body.overlay-minimap-hidden .minimap-frame,
   body.overlay-controls-hidden #zoomctl,
-  body.overlay-lenses-hidden #maplensessec { display: none !important; }
+  body.overlay-lenses-hidden #map-lenses { display: none !important; }
   body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
   #collapsepause[hidden] { display: none; }
 
@@ -3917,12 +3919,8 @@
       <div class="sec"><div id="gov"></div></div>
     </details>
 
-    <details class="sidebar-section" id="maplensessec" data-section="map-lenses">
-      <summary class="section-label">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">◐</span><span>Map lenses</span></span>
-        <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
-      </summary>
-      <div class="sec">
+  </div>
+  <div id="map-utility-panel" aria-label="Map tools">
         <div id="map-lenses" role="toolbar" aria-label="Map lenses">
           <div class="map-lens-head">
             <span class="map-lens-title">Map lenses</span>
@@ -3994,11 +3992,6 @@
             </details>
           </div>
         </div>
-      </div>
-    </details>
-
-  </div>
-  <div id="map-utility-panel" aria-label="Map tools">
     <div id="map-search" role="search" aria-label="Search visible map tiles">
       <div class="map-search-entry">
         <span id="map-search-icon" aria-hidden="true">⌕</span>
@@ -4039,19 +4032,6 @@ function initSidebarSections() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(SIDEBAR_SECTION_STATE_KEY) || "{}"); }
   catch (_) { saved = {}; }
-  const revealMapLensSection = () => {
-    const section = document.getElementById("maplensessec");
-    if (!section?.open) return;
-    requestAnimationFrame(() => section.scrollIntoView({block:"nearest", inline:"nearest"}));
-  };
-  const scheduleMapLensSectionReveal = () => {
-    // Browsers can restore a <details> disclosure after this script's first
-    // layout pass. These bounded retries see that late open state; a closed
-    // fresh profile is a no-op because revealMapLensSection returns first.
-    for (const delay of [0, 250, 750]) {
-      window.setTimeout(revealMapLensSection, delay);
-    }
-  };
   for (const section of document.querySelectorAll("#side details.sidebar-section[data-section]")) {
     const key = section.dataset.section;
     if (Object.prototype.hasOwnProperty.call(saved, key)) {
@@ -4066,20 +4046,8 @@ function initSidebarSections() {
     section.addEventListener("toggle", () => {
       saved[key] = section.open;
       localStorage.setItem(SIDEBAR_SECTION_STATE_KEY, JSON.stringify(saved));
-      // The lens grid is intentionally taller than a closed deck row. It sits
-      // at the bottom of the scrolling command sections, so reveal it in that
-      // scroll container when opened instead of leaving its controls behind
-      // the fixed search and keyboard drawers below.
-      if (section.id === "maplensessec" && section.open) {
-        revealMapLensSection();
-      }
     });
   }
-  // A saved disclosure is applied before its toggle listener is attached. It
-  // needs the same reveal as an interactive opening, otherwise a persisted
-  // lower-deck lens grid can reload just beneath the scroll viewport.
-  scheduleMapLensSectionReveal();
-  window.addEventListener("resize", revealMapLensSection, {passive:true});
 }
 initSidebarSections();
 function initAdvancedSettings() {
@@ -4981,7 +4949,7 @@ function runOverlayDismiss(event) {
   const name = close.dataset.overlayClose;
   const source = name === "minimap" ? close.closest(".minimap-frame")
     : name === "controls" ? close.closest("#zoomctl")
-    : name === "lenses" ? close.closest("#maplensessec")
+    : name === "lenses" ? close.closest("#map-lenses")
     : document.getElementById(name === "players" ? "playerhud" : "victoryhud");
   dismissOverlay(name, source);
   return true;
