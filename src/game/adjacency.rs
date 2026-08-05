@@ -176,11 +176,20 @@ impl Game {
     /// contributes nothing rather than a penalty: the planner simply would
     /// not build it there.
     pub fn settlement_adjacency_summary(&self, pid: usize, center: Pos, radius: i32) -> Yields {
+        let positions = self.wdisk(center, radius);
+        self.settlement_adjacency_summary_from_positions(pid, center, &positions)
+    }
+
+    pub(crate) fn settlement_adjacency_summary_from_positions(
+        &self,
+        pid: usize,
+        center: Pos,
+        positions: &[Pos],
+    ) -> Yields {
         let assume = PlanAssumption {
             city_center: Some(center),
             foundations: true,
         };
-        let candidates = self.settlement_candidates(center, radius);
         let districts: Vec<(Name, Name)> = self
             .plannable_districts(pid, true)
             .into_iter()
@@ -190,7 +199,11 @@ impl Game {
             .iter()
             .map(|_| (0.0, Yields::default()))
             .collect();
-        for pos in candidates {
+        for pos in positions
+            .iter()
+            .copied()
+            .filter(|pos| *pos != center && self.plot_could_hold_a_district(*pos))
+        {
             let candidate_neighbors = self.nbrs(pos);
             let mut neighbor_tiles = [None; 6];
             for (index, neighbor) in candidate_neighbors.iter().copied().enumerate() {
