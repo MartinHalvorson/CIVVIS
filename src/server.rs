@@ -1,5 +1,5 @@
 //! Zero-dependency local HTTP server for the human-vs-AI browser GUI.
-//! Endpoints: GET / (page), GET /state, GET /save, GET /rules, GET /pedia,
+//! Endpoints: GET / (page), GET /state, GET /machine-metrics, GET /save, GET /rules, GET /pedia,
 //! POST /action, POST /step, POST /autoplay, POST /view,
 //! POST /spectator-status, POST /next-game-settings, POST /new,
 //! POST /supervisor-new.
@@ -8,6 +8,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+#[cfg(target_os = "macos")]
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 #[cfg(not(target_arch = "wasm32"))]
@@ -21,6 +23,7 @@ use crate::civ6;
 use crate::game::{
     Action, Game, GameOptions, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
 };
+use crate::leader_roster;
 use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::name::Name;
 use crate::rules::Rules;
@@ -165,6 +168,215 @@ pub(crate) fn runtime_built_at() -> Option<String> {
     {
         LAUNCHED_BUILT_AT.get_or_init(launched_built_at).clone()
     }
+}
+
+/// The two host-wide measurements the viewer needs to make its rendering
+/// choices legible.  They deliberately expose percentages only: the display
+/// settings need pressure, not a machine inventory.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct MachineMetrics {
+    cpu_percent: Option<f64>,
+    memory_percent: Option<f64>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn bounded_percent(value: f64) -> Option<f64> {
+    value.is_finite().then(|| value.clamp(0.0, 100.0))
+}
+
+fn machine_metrics_value(metrics: MachineMetrics) -> Value {
+    // One decimal place is precise enough for a display choice while avoiding
+    // a falsely exact-looking value from a short host sample.
+    let rounded = |value: Option<f64>| value.map(|value| (value * 10.0).round() / 10.0);
+    json!({
+        "cpu_percent": rounded(metrics.cpu_percent),
+        "memory_percent": rounded(metrics.memory_percent),
+    })
+}
+
+fn machine_metrics_json() -> Value {
+    #[cfg(not(target_arch = "wasm32"))]
+    let metrics = sampled_machine_metrics();
+    #[cfg(target_arch = "wasm32")]
+    let metrics = MachineMetrics::default();
+    machine_metrics_value(metrics)
+}
+
+// A metrics request is cheap from the browser's point of view, but sampling a
+// host can require a platform utility.  Reuse a short-lived answer for every
+// open viewer so the load gauge cannot become the load it reports.
+#[cfg(not(target_arch = "wasm32"))]
+const MACHINE_METRICS_SAMPLE_INTERVAL: Duration = Duration::from_secs(2);
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy)]
+struct MachineMetricsSnapshot {
+    sampled_at: Instant,
+    metrics: MachineMetrics,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+static MACHINE_METRICS_CACHE: OnceLock<Mutex<Option<MachineMetricsSnapshot>>> = OnceLock::new();
+
+#[cfg(not(target_arch = "wasm32"))]
+fn sampled_machine_metrics() -> MachineMetrics {
+    let cache = MACHINE_METRICS_CACHE.get_or_init(|| Mutex::new(None));
+    let now = Instant::now();
+    let mut held = cache.lock().unwrap();
+    if let Some(snapshot) = *held {
+        if now.duration_since(snapshot.sampled_at) < MACHINE_METRICS_SAMPLE_INTERVAL {
+            return snapshot.metrics;
+        }
+    }
+    let metrics = MachineMetrics {
+        cpu_percent: host_cpu_percent(),
+        memory_percent: host_memory_percent(),
+    };
+    *held = Some(MachineMetricsSnapshot {
+        sampled_at: now,
+        metrics,
+    });
+    metrics
+}
+
+#[cfg(target_os = "linux")]
+fn linux_cpu_ticks(report: &str) -> Option<(u64, u64)> {
+    let values: Vec<u64> = report
+        .lines()
+        .find(|line| line.starts_with("cpu "))?
+        .split_whitespace()
+        .skip(1)
+        .map(str::parse)
+        .collect::<Result<_, _>>()
+        .ok()?;
+    let idle = *values.get(3)? + values.get(4).copied().unwrap_or(0);
+    Some((values.iter().sum(), idle))
+}
+
+#[cfg(target_os = "linux")]
+fn cpu_percent_from_ticks(previous: (u64, u64), current: (u64, u64)) -> Option<f64> {
+    let total = current.0.checked_sub(previous.0)?;
+    let idle = current.1.checked_sub(previous.1)?;
+    (total > 0 && idle <= total).then(|| 100.0 * (total - idle) as f64 / total as f64)
+}
+
+#[cfg(target_os = "linux")]
+fn host_cpu_percent() -> Option<f64> {
+    static PREVIOUS: OnceLock<Mutex<Option<(u64, u64)>>> = OnceLock::new();
+    let current = linux_cpu_ticks(&std::fs::read_to_string("/proc/stat").ok()?)?;
+    let mut held = PREVIOUS.get_or_init(|| Mutex::new(None)).lock().unwrap();
+    let measured = (*held).and_then(|previous| cpu_percent_from_ticks(previous, current));
+    *held = Some(current);
+    measured.and_then(bounded_percent)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_top_cpu_percent(report: &str) -> Option<f64> {
+    let idle = report.lines().rev().find_map(|line| {
+        let fragment = line.split(',').find(|part| part.contains("% idle"))?;
+        fragment.split('%').next()?.trim().parse::<f64>().ok()
+    })?;
+    bounded_percent(100.0 - idle)
+}
+
+#[cfg(target_os = "macos")]
+fn host_cpu_percent() -> Option<f64> {
+    let output = Command::new("top").args(["-l", "1", "-n", "0"]).output().ok()?;
+    macos_top_cpu_percent(&String::from_utf8_lossy(&output.stdout))
+}
+
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(any(target_os = "linux", target_os = "macos"))
+))]
+fn host_cpu_percent() -> Option<f64> {
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn memory_percent_from_meminfo(report: &str) -> Option<f64> {
+    let mut total = None;
+    let mut available = None;
+    for line in report.lines() {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        let Some(amount) = value
+            .split_whitespace()
+            .next()
+            .and_then(|amount| amount.parse::<u64>().ok())
+        else {
+            continue;
+        };
+        match name {
+            "MemTotal" => total = Some(amount),
+            "MemAvailable" => available = Some(amount),
+            _ => {}
+        }
+    }
+    let total = total?;
+    let available = available?;
+    (total > 0 && available <= total)
+        .then(|| 100.0 * (total - available) as f64 / total as f64)
+}
+
+#[cfg(target_os = "linux")]
+fn host_memory_percent() -> Option<f64> {
+    memory_percent_from_meminfo(&std::fs::read_to_string("/proc/meminfo").ok()?)
+        .and_then(bounded_percent)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_physical_memory_bytes() -> Option<u64> {
+    static TOTAL: OnceLock<Option<u64>> = OnceLock::new();
+    TOTAL
+        .get_or_init(|| {
+            let output = Command::new("sysctl").args(["-n", "hw.memsize"]).output().ok()?;
+            String::from_utf8_lossy(&output.stdout).trim().parse().ok()
+        })
+        .to_owned()
+}
+
+#[cfg(target_os = "macos")]
+fn macos_vm_stat_pages(report: &str, name: &str) -> Option<u64> {
+    report.lines().find_map(|line| {
+        let line = line.trim_start();
+        let value = line.strip_prefix(name)?.trim_start_matches(':').trim();
+        value.trim_end_matches('.').parse().ok()
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn macos_memory_percent(report: &str, total: u64) -> Option<f64> {
+    let page_size = report.lines().find_map(|line| {
+        line.split("page size of ")
+            .nth(1)?
+            .split_whitespace()
+            .next()?
+            .parse::<u64>()
+            .ok()
+    })?;
+    let available_pages = ["Pages free", "Pages inactive", "Pages speculative"]
+        .iter()
+        .filter_map(|name| macos_vm_stat_pages(report, name))
+        .sum::<u64>();
+    let available = available_pages.saturating_mul(page_size).min(total);
+    (total > 0).then(|| 100.0 * (total - available) as f64 / total as f64)
+}
+
+#[cfg(target_os = "macos")]
+fn host_memory_percent() -> Option<f64> {
+    let total = macos_physical_memory_bytes()?;
+    let output = Command::new("vm_stat").output().ok()?;
+    macos_memory_percent(&String::from_utf8_lossy(&output.stdout), total).and_then(bounded_percent)
+}
+
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(any(target_os = "linux", target_os = "macos"))
+))]
+fn host_memory_percent() -> Option<f64> {
+    None
 }
 
 const EMBEDDED_INDEX: &str = include_str!("../web/index.html");
@@ -2459,7 +2671,7 @@ impl Session {
                         player["ai_plan"] = self.plan_json(&plan);
                     }
                     // What this civilization is actually spending its science
-                    // and culture on, for the Active AI strategy panel. The
+                    // and culture on, for the AI strategy dossier. The
                     // observation only ever carries the *observed* seat's, in
                     // `me`, and above the world there is no observed seat.
                     //
@@ -3282,8 +3494,12 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         p.max_turns = v;
     }
     if let Some(v) = request["leader_pool"].as_str().and_then(LeaderPool::from_id) {
-        p.leader_pool = v;
+        p.leader_pool = v.available_or_default();
     }
+    let selected_pool = p.leader_pool;
+    p.civs.retain(|civ| {
+        leader_roster::entry(civ).is_some_and(|entry| entry.available && entry.pool == selected_pool)
+    });
     // The two settings a Civ 6 lobby asks for that this protocol could not
     // carry: how hard the rivals play, and who the player is. Both are
     // validated against the live ruleset rather than trusted, because the
@@ -3295,11 +3511,14 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         }
     }
     if let Some(civs) = request["civs"].as_array() {
-        let rules = Rules::shared();
+        let selected_pool = p.leader_pool;
         p.civs = civs
             .iter()
             .filter_map(|civ| civ.as_str())
-            .filter(|civ| rules.civs.contains_key(civ))
+            .filter(|civ| {
+                leader_roster::entry(civ)
+                    .is_some_and(|entry| entry.available && entry.pool == selected_pool)
+            })
             .map(str::to_string)
             .collect();
     }
@@ -3787,6 +4006,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 sh.note_frame_delivered(&viewer, frame);
             }
         }
+        // The panel polls this independently of the game state: sampling the
+        // host must never make a viewer serialize its whole map just to decide
+        // whether to prefer a lighter display treatment.
+        ("GET", "/machine-metrics") => {
+            respond_json(stream, &machine_metrics_json());
+        }
         // Everything a supervisor needs to know - is there a game, is it over -
         // without building the whole observation. /state runs close to a
         // megabyte of JSON on a standard map, and something polling it every
@@ -4043,6 +4268,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
                     "city_state_limit": r.city_states.roster.len(),
                     "civ6_leaders": CIV6_LEADER_POOL.as_slice(),
+                    "leader_pools": leader_roster::browser_pools(),
                     "great_people": r.great_people, "governors": r.governors,
                     "map_sizes": CIV6_MAP_SIZES,
                     "difficulties": r.difficulties, "speeds": r.speeds,
@@ -4451,6 +4677,87 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{mpsc, Arc, Condvar, Mutex};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn machine_metric_values_are_bounded_and_only_expose_percentages() {
+        assert_eq!(super::bounded_percent(f64::NAN), None);
+        assert_eq!(super::bounded_percent(-5.0), Some(0.0));
+        assert_eq!(super::bounded_percent(140.0), Some(100.0));
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(
+                super::cpu_percent_from_ticks((100, 70), (200, 120)),
+                Some(50.0)
+            );
+            assert_eq!(super::cpu_percent_from_ticks((100, 70), (100, 70)), None);
+            assert_eq!(
+                super::memory_percent_from_meminfo(
+                    "MemTotal:       1000 kB\nMemAvailable:    250 kB\n",
+                ),
+                Some(75.0)
+            );
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let cpu = super::macos_top_cpu_percent(
+                "CPU usage: 12.00% user, 3.00% sys, 85.00% idle\n",
+            )
+            .expect("CPU usage line should parse");
+            assert!((cpu - 15.0).abs() < f64::EPSILON);
+            assert_eq!(
+                super::macos_memory_percent(
+                    "Mach Virtual Memory Statistics: (page size of 4096 bytes)\n\
+                     Pages free: 25.\nPages inactive: 25.\nPages speculative: 0.\n",
+                    409_600,
+                ),
+                Some(50.0)
+            );
+        }
+        assert_eq!(
+            super::machine_metrics_value(super::MachineMetrics {
+                cpu_percent: Some(12.31),
+                memory_percent: None,
+            }),
+            json!({"cpu_percent": 12.3, "memory_percent": Value::Null})
+        );
+        assert_eq!(
+            super::machine_metrics_value(super::MachineMetrics::default()),
+            json!({"cpu_percent": Value::Null, "memory_percent": Value::Null})
+        );
+    }
+
+    #[test]
+    fn browser_offers_host_load_caps_and_display_guidance() {
+        assert!(EMBEDDED_INDEX.contains("<span>Display Settings</span>"));
+        for kind in ["cpu", "memory"] {
+            assert!(EMBEDDED_INDEX.contains(&format!("id=\"{kind}-load-row\"")));
+            assert!(EMBEDDED_INDEX.contains(&format!("id=\"{kind}-load-cap\"")));
+        }
+        for kind in ["cpu", "memory"] {
+            let options = EMBEDDED_INDEX
+                .split_once(&format!("id=\"{kind}-load-cap\""))
+                .expect("load cap select")
+                .1
+                .split_once("</select>")
+                .expect("load cap select closes")
+                .0;
+            assert_eq!(options.matches("<option").count(), 9);
+            for percent in (10..=90).step_by(10) {
+                assert!(
+                    options.contains(&format!("<option value=\"{percent}\"")),
+                    "{kind} cap should offer {percent}%"
+                );
+            }
+        }
+        for contract in [
+            "DISPLAY_RESOURCE_CAPS_STORAGE_KEY",
+            "fetchJSON(\"/machine-metrics\", {cache: \"no-store\"}, 3000)",
+            "Prefer Performance resolution",
+            "Machine telemetry is unavailable here.",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(contract), "missing display load contract: {contract}");
+        }
+    }
 
     #[test]
     fn browser_gives_every_shipped_improvement_a_named_tile_marker() {
@@ -6380,21 +6687,31 @@ mod tests {
     }
 
     #[test]
-    fn browser_lets_an_observer_narrow_the_reasoning_log() {
-        // The panel is only useful if a reader can ask a narrower question
-        // than "everything every civilization thought": whose reasoning, how
-        // deep into it, and about what.
-        assert!(EMBEDDED_INDEX.contains("<span>AI reasoning log</span>"));
-        assert!(EMBEDDED_INDEX.contains("id=\"reasonplayer\""));
+    fn browser_keeps_ai_strategy_and_its_decision_factors_together() {
+        // One civilization picker anchors the current plan, research, civics,
+        // and the factors behind its decisions. A second, unrelated civ filter
+        // would let a reader inspect a plan for one empire beside another's
+        // evidence, so it is deliberately absent.
+        assert!(EMBEDDED_INDEX.contains("<span>AI strategy</span>"));
+        assert!(EMBEDDED_INDEX.contains("id=\"strategysec\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"strategyplayer\""));
+        assert!(!EMBEDDED_INDEX.contains("id=\"reasonsec\""));
+        assert!(!EMBEDDED_INDEX.contains("id=\"reasonplayer\""));
         assert!(EMBEDDED_INDEX.contains("id=\"reasonlevel\""));
         assert!(EMBEDDED_INDEX.contains("id=\"reasontopic\""));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All civilizations</option>"));
-        // Anything the combined log can show, the civ filter can isolate. A
-        // Free City keeps developing the cities it inherited and so keeps
-        // making production decisions; without this it appeared under "All
-        // civilizations" with no way to select it.
-        assert!(EMBEDDED_INDEX.contains("for (const thought of reasoningLog.thoughts) listed.add(thought.player);"));
-        assert!(EMBEDDED_INDEX.contains("function logSeatNote(id)"));
+        assert!(EMBEDDED_INDEX.contains("id=\"reasonmore\""));
+        assert!(EMBEDDED_INDEX.contains("const player = strategyViewSeat();"));
+        assert!(EMBEDDED_INDEX.contains("function showMoreReasoning()"));
+        assert!(EMBEDDED_INDEX.contains("const REASON_KEEP = 6000;"));
+        // The engine reassesses grand strategy more often than it changes it.
+        // Preserve that activity, but call out only an actual doctrine
+        // transition and name the prior doctrine for readers following why a
+        // new decision was made.
+        assert!(EMBEDDED_INDEX.contains("function strategyShiftOrigins(player)"));
+        assert!(EMBEDDED_INDEX.contains("const match = /^Grand strategy:\\s*(.+)$/.exec("));
+        assert!(EMBEDDED_INDEX.contains("strategyShiftFrom"));
+        assert!(EMBEDDED_INDEX.contains("Shift from ${reasonEscape(thought.strategyShiftFrom)}"));
+        assert!(EMBEDDED_INDEX.contains("saved[\"ai-reasoning\"]"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All topics</option>"));
         // Depth is a floor, not an equality — a decision read without the plan
         // it serves explains nothing — and the three rungs are the ones the
@@ -6423,35 +6740,25 @@ mod tests {
         // a change of world does. `reasoning_json` stops sending a rival's
         // thoughts the moment Watch as is entered, but the page had absorbed
         // them while it was above the world — so without this the redaction is
-        // defeated by having watched first, and the log under the Active
-        // strategy panel names every civilization while the panel names one.
+        // defeated by having watched first.
         assert!(EMBEDDED_INDEX.contains("const viewer = st.view_player ?? null;"));
         assert!(EMBEDDED_INDEX
             .contains("if (newWorld || reasoningLog.viewer !== viewer) {"));
-        // A log that is not the whole story says so.
-        assert!(EMBEDDED_INDEX.contains("Earlier reasoning has been discarded"));
-        // The three logs share the sidebar's spare height. Each floor is
-        // header + padding + border + what the panel holds, and every one of
-        // them now has to cover a filter bar as well as its list — measured in
-        // the page, because a section squeezed under its floor does not clip:
-        // its list paints straight over the panel below it. The reasoning
-        // log's bar is three rows (97px); the war and event logs' are two
-        // (66px), and that bar is the whole difference between these numbers
-        // and the ones that were here before the filters — each list keeps the
-        // height it had.
-        assert!(EMBEDDED_INDEX.contains("#reasonsec[open] { flex: 3 0 0; min-height: 300px; }"));
+        // A factor trail that no longer reaches the first decision says so.
+        assert!(EMBEDDED_INDEX.contains("Earlier decision factors have been discarded"));
+        // The single dossier has the spare height formerly allocated to a
+        // separate reasoning card. Its trail scrolls inside the dossier while
+        // the world chronicles keep their measured floors.
+        assert!(EMBEDDED_INDEX.contains("#strategysec[open] { flex: 3 0 0; min-height: 460px; }"));
         assert!(EMBEDDED_INDEX.contains("#eventsec[open] { flex: 2 0 0; min-height: 302px; }"));
         assert!(EMBEDDED_INDEX.contains("#warsec[open] { flex: 2 0 0; min-height: 266px; }"));
         assert!(EMBEDDED_INDEX.contains(".reason-list { flex: 1 1 auto; min-height: 132px;"));
-        // One filter bar, worn in the same place by every panel that narrows
-        // by civilization — the three logs and the Active AI strategy card above
-        // them. A second copy of this chrome under another name is how four
-        // pickers drift into four shapes.
+        // The compact filter language is shared with the two world chronicles;
+        // only depth and topic remain because civilization is selected once.
         assert!(EMBEDDED_INDEX.contains(".log-filters { flex: 0 0 auto;"));
+        assert!(EMBEDDED_INDEX.contains(".strategy-reason-filters { flex: 0 0 auto;"));
         assert!(!EMBEDDED_INDEX.contains(".reason-filter"));
-        assert!(EMBEDDED_INDEX.contains(
-            "<label class=\"log-filter\"><span>Civ</span>\n            <select id=\"strategyplayer\""
-        ));
+        assert!(EMBEDDED_INDEX.contains("Recorded factors behind ${civ.civ}'s plan and decisions"));
     }
 
     /// The war log and the game event log are narrowed the same way.
@@ -6468,9 +6775,9 @@ mod tests {
                 "the log filters are missing {control}"
             );
         }
-        // All three logs name a seat with one vocabulary and correct a
-        // selection that has left the list the same way, so a filter can never
-        // strand a reader on an empty panel with no way back out of it.
+        // The two world chronicles name a seat with one vocabulary and correct
+        // a selection that has left the list the same way, so a filter can
+        // never strand a reader on an empty panel with no way back out of it.
         assert!(EMBEDDED_INDEX.contains("function syncCivFilterOptions(select, seats, allLabel, chosen)"));
         assert!(EMBEDDED_INDEX
             .contains("const kept = chosen !== \"all\" && !seats.includes(Number(chosen)) ? \"all\" : chosen;"));
@@ -6535,12 +6842,12 @@ mod tests {
         // spectator's feed rotates through the seats between frames, so the
         // combined log's entries come from all of them.
         assert!(EMBEDDED_INDEX.contains("event.category, [event.player ?? eventViewPlayer(next)]"));
-        // A choice is answered on the frame it is made on, and survives the
-        // tab being closed.
+        // A dossier or chronicle choice is answered on the frame it is made
+        // on, and survives the tab being closed.
         assert!(EMBEDDED_INDEX
             .contains("function applyLogFilter(filters, storageKey, field, value, listId, redraw)"));
         for key in [
-            "civvis-reasoning-filters-v1",
+            "civvis-ai-strategy-filters-v1",
             "civvis-war-filters-v1",
             "civvis-event-filters-v1",
         ] {
@@ -6863,7 +7170,7 @@ mod tests {
     #[test]
     fn a_saved_game_reloads_onto_the_same_turn() {
         let mut params = current();
-        params.leader_pool = LeaderPool::Expanded;
+        params.leader_pool = LeaderPool::ExpandedHistorical;
         let mut session = Session::new(params);
         for _ in 0..3 {
             session.act(&json!({"type": "end_turn"}));
@@ -6875,11 +7182,11 @@ mod tests {
             serde_json::from_value(serde_json::to_value(&session.game).unwrap()).unwrap();
         assert_eq!(round_tripped.turn, turn);
         assert_eq!(round_tripped.seed, session.game.seed);
-        assert_eq!(round_tripped.leader_pool, LeaderPool::Expanded);
+        assert_eq!(round_tripped.leader_pool, LeaderPool::ExpandedHistorical);
 
         let mut restored = Session::from_game(session.params.clone(), round_tripped);
         assert_eq!(restored.game.turn, turn);
-        assert_eq!(restored.params.leader_pool, LeaderPool::Expanded);
+        assert_eq!(restored.params.leader_pool, LeaderPool::ExpandedHistorical);
         assert!(restored.act(&json!({"type": "end_turn"})).is_none());
         assert!(restored.game.turn > turn, "a loaded game plays on");
     }
@@ -7142,18 +7449,23 @@ mod tests {
     }
 
     #[test]
-    fn leader_pool_defaults_to_civ6_and_accepts_expanded_explicitly() {
+    fn leader_pool_defaults_to_civ6_and_normalizes_legacy_expanded_to_historical() {
         let stock = current();
         assert_eq!(stock.leader_pool, LeaderPool::Civ6);
 
         let ignored = new_game_params(&stock, &json!({"leader_pool": "unknown"}));
         assert_eq!(ignored.leader_pool, LeaderPool::Civ6);
 
-        let expanded = new_game_params(&stock, &json!({"leader_pool": "expanded"}));
-        assert_eq!(expanded.leader_pool, LeaderPool::Expanded);
-        let session = Session::new(expanded);
-        assert_eq!(session.game.leader_pool, LeaderPool::Expanded);
-        assert_eq!(session.state()["leader_pool"], "expanded");
+        let historical = new_game_params(&stock, &json!({"leader_pool": "historical"}));
+        assert_eq!(historical.leader_pool, LeaderPool::ExpandedHistorical);
+        let session = Session::new(historical);
+        assert_eq!(session.game.leader_pool, LeaderPool::ExpandedHistorical);
+        assert_eq!(session.state()["leader_pool"], "historical");
+
+        let legacy = new_game_params(&stock, &json!({"leader_pool": "expanded"}));
+        assert_eq!(legacy.leader_pool, LeaderPool::ExpandedHistorical);
+        let unavailable_today = new_game_params(&stock, &json!({"leader_pool": "today"}));
+        assert_eq!(unavailable_today.leader_pool, LeaderPool::Civ6);
 
         let stock_session = Session::new(stock);
         assert!(stock_session
@@ -7162,6 +7474,27 @@ mod tests {
             .iter()
             .filter(|player| !player.is_minor && !player.is_barbarian)
             .all(|player| CIV6_LEADER_POOL.contains(&player.civ.as_str())));
+    }
+
+    #[test]
+    fn leader_choices_must_belong_to_the_selected_available_tier() {
+        let historical = new_game_params(
+            &current(),
+            &json!({
+                "leader_pool": "historical",
+                "civs": ["Denmark", "Rome", "Romania"],
+            }),
+        );
+        assert_eq!(historical.civs, vec!["Denmark"]);
+
+        let civ6 = new_game_params(
+            &current(),
+            &json!({
+                "leader_pool": "civ6",
+                "civs": ["Denmark", "Rome"],
+            }),
+        );
+        assert_eq!(civ6.civs, vec!["Rome"]);
     }
 
     #[test]
@@ -7654,10 +7987,19 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("start_eon"));
         assert!(EMBEDDED_INDEX.contains("id=\"leaderpool\""));
         assert!(EMBEDDED_INDEX.contains(">Civ 6 Leaders</option>"));
-        assert!(EMBEDDED_INDEX.contains(">Expanded</option>"));
+        assert!(EMBEDDED_INDEX.contains(">Expanded Historical Figures</option>"));
+        assert!(EMBEDDED_INDEX.contains(">Today's Leaders — roster pending</option>"));
+        assert!(
+            EMBEDDED_INDEX.find(">Civ 6 Leaders</option>")
+                < EMBEDDED_INDEX.find(">Expanded Historical Figures</option>")
+                && EMBEDDED_INDEX.find(">Expanded Historical Figures</option>")
+                    < EMBEDDED_INDEX.find(">Today's Leaders — roster pending</option>"),
+            "leader tiers must remain Civ 6, historical, then today"
+        );
         assert!(EMBEDDED_INDEX.contains("leader_pool: leaderPool"));
         assert!(EMBEDDED_INDEX.contains("function syncLeaderPool()"));
-        assert!(EMBEDDED_INDEX.contains("RULES.civ6_leaders"));
+        assert!(EMBEDDED_INDEX.contains("RULES.leader_pools"));
+        assert!(EMBEDDED_INDEX.contains("True Start:"));
         assert!(EMBEDDED_INDEX.contains("id=\"maptype\""));
         // The globe has its own renderer, and it is the only one: both globe
         // scripts are drawn by it, so neither needs a projection of its own.
@@ -7801,8 +8143,26 @@ mod tests {
         // Keyed to the planet alone the arrival never got past 0.46.
         assert!(EMBEDDED_INDEX.contains("const star = skyTarget(st)?.star;"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"planet\" selected>Planet</option>"));
-        assert!(EMBEDDED_INDEX
-            .contains("<option value=\"true_start_earth\">True Start Earth</option>"));
+        let map_menu = EMBEDDED_INDEX
+            .split("id=\"maptype\"")
+            .nth(1)
+            .and_then(|tail| tail.split("</select>").next())
+            .expect("browser map selector");
+        for option in [
+            "<option value=\"earth\">Earth</option>",
+            "<option value=\"true_start_earth\">True Start Earth</option>",
+            "<option value=\"fjords\">Fjords</option>",
+        ] {
+            assert!(map_menu.contains(option), "missing {option}");
+        }
+        let option_at = |value: &str| map_menu.find(value).expect("map option");
+        assert!(
+            option_at("value=\"earth\"")
+                < option_at("value=\"true_start_earth\"")
+                && option_at("value=\"true_start_earth\"") < option_at("value=\"continents\"")
+                && option_at("value=\"small_continents\"") < option_at("value=\"fjords\""),
+            "Earth, True Start Earth, Continents, Small Continents, and Fjords must keep their requested order"
+        );
         // The world's shape and its poles are settings of their own, and the
         // renderer picks its projection from the shape the world reports
         // rather than from the world type it was filled with.
@@ -7998,7 +8358,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "basic.push(document.getElementById(\"victory-options\"), document.getElementById(\"saves-group\"));"
         ));
-        // Interface Settings keeps its map and spaceflight switches together
+        // Display Settings keeps its map and spaceflight switches together
         // at the head of its advanced drawer, before the overlay layout controls.
         let display_advanced = [
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"10\"><span><input type=\"checkbox\" id=\"gridchk\"",
@@ -8013,7 +8373,7 @@ mod tests {
             display_advanced.windows(2).all(|pair| {
                 EMBEDDED_INDEX.find(pair[0]).unwrap() < EMBEDDED_INDEX.find(pair[1]).unwrap()
             }),
-            "map and spaceflight switches should lead Interface Settings advanced controls"
+            "map and spaceflight switches should lead Display Settings advanced controls"
         );
         // Resource names are the default detailed-map treatment, but the
         // existing compact symbol stays an explicit, persisted choice and the
@@ -8164,19 +8524,16 @@ mod tests {
             .expect("simulation controls");
         let interface_settings = EMBEDDED_INDEX
             .find("<details class=\"sidebar-section\" data-section=\"display-settings\">")
-            .expect("interface settings panel");
+            .expect("display settings panel");
         let event_log = EMBEDDED_INDEX
             .find("<span>Game event log</span>")
             .expect("game event log");
         let war_log = EMBEDDED_INDEX
             .find("<span>War log</span>")
             .expect("war log");
-        let reasoning_log = EMBEDDED_INDEX
-            .find("<span>AI reasoning log</span>")
-            .expect("AI reasoning log");
         let strategy = EMBEDDED_INDEX
-            .find("<span>Active AI strategy</span>")
-            .expect("active strategy section");
+            .find("<span>AI strategy</span>")
+            .expect("AI strategy section");
         let government = EMBEDDED_INDEX
             .find("data-section=\"government\"")
             .expect("government section");
@@ -8197,27 +8554,23 @@ mod tests {
         assert!(title < sidebar && sidebar < simulation_controls);
         assert!(simulation_controls < interface_settings && interface_settings < game_settings);
         assert!(game_settings < strategy);
-        // The column runs deepest-cause first — what a civilization is trying
-        // to do now, why it acted, the wars that reasoning started, then the
-        // world's record of what happened — so reading the column downward
-        // reads a turn in the order it was decided. Active AI strategy leads
-        // because it is the standing plan every entry below it is an instance
-        // of: the reasoning log is an account over turns, and this is the
-        // current answer.
+        // The column runs deepest-cause first — a civilization's active plan
+        // and its decision factors, then wars, then the world's record of what
+        // happened — so reading the column downward keeps each answer beside
+        // the reasons that formed it.
         assert!(
-            strategy < reasoning_log
-                && reasoning_log < war_log
+            strategy < war_log
                 && war_log < event_log
                 && event_log < government
                 && government < map_lenses
                 && map_lenses < map_utility
                 && map_lenses < visible_tile_search
                 && visible_tile_search < keyboard_shortcuts,
-            "left panel should show controls, interface settings, game setup, strategy, \
-             the three logs, government, map lenses, visible-tile search and then keyboard shortcuts"
+            "left panel should show controls, display settings, game setup, the AI strategy dossier, \
+             world logs, government, map lenses, visible-tile search and then keyboard shortcuts"
         );
-        assert!(EMBEDDED_INDEX.contains("<span>Interface Settings</span>"));
-        assert!(!EMBEDDED_INDEX.contains("<span>Display settings</span>"));
+        assert!(EMBEDDED_INDEX.contains("<span>Display Settings</span>"));
+        assert!(!EMBEDDED_INDEX.contains("<span>Interface Settings</span>"));
         assert!(EMBEDDED_INDEX.contains(
             "order: -1; width: 16vw; min-width: 16vw;"
         ));
@@ -8422,18 +8775,20 @@ mod tests {
         //
         // Every data column is now a share rather than a pixel count, and each
         // of these two enclosing tracks is the exact *sum* of the columns
-        // inside it — 7 identity columns totalling 11.387 against 12 value
-        // columns of 1. That identity is not decoration: it is what lets the
+        // inside it — 8 data identity columns totalling 12.087, plus the fixed
+        // Watch-as action, against 12 value columns of 1. That identity is not
+        // decoration: it is what lets the
         // bar between the two blocks move width across itself, and it is the
         // ratio the table uses at every width. Changing one number here without
         // the other silently re-weights the whole masthead.
         //
-        // The floor is 5 label columns, the ELO figure and the wider odds cell,
-        // whose two named numeric tracks flank a narrow trend track.
+        // The floor is the rank track, 5 label columns, the ELO figure and the
+        // wider odds cell, whose two named numeric tracks flank a narrow trend
+        // track.
         assert!(EMBEDDED_INDEX.contains(
             "--hud-identity-column: minmax(\n      \
-             calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min)\n           \
-             + var(--hud-ident-odds-min)), 11.387fr);"
+             calc(var(--hud-rank-min) + var(--hud-ident-min) * 5\n           \
+             + var(--hud-ident-num-min) + var(--hud-ident-odds-min)), 12.087fr);"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "--hud-stats-column: minmax(\n      \
@@ -8574,16 +8929,24 @@ mod tests {
         // One bar per seam between two adjacent data columns, dragged to move
         // width from the column on its left into the column on its right.
         assert!(EMBEDDED_INDEX.contains("const HUD_COLUMN_STORAGE_KEY = \"civvis-hud-columns-v1\";"));
-        // Every fact in the player-HUD column model can order its rows. The
-        // Watch-as and lock cells are actions, deliberately outside that model,
-        // so an operator never has to sort a meaningless column just to reach
-        // ELO, a yield, or an active plan.
+        // Every fact in the player HUD can order its rows. Rank is the first
+        // dedicated standings column and is derived from the score standing,
+        // while Watch-as and lock cells are actions, deliberately outside the
+        // model, so an operator never has to sort a meaningless column just to
+        // reach ELO, a yield, or an active plan.
         assert!(EMBEDDED_INDEX.contains(
             "...PLAYER_HUD_COLUMNS.map(column => column.key), \"win_start\", \"win_delta\","
         ));
+        assert!(EMBEDDED_INDEX.contains(
+            "{key:\"rank\", label:\"Score rank\", block:\"identity\", head:0, min:\"--hud-rank-min\", width:.7},"
+        ), "rank should be a measured, draggable identity column");
         assert!(EMBEDDED_INDEX.contains("const HUD_SORT_STORAGE_KEY = \"civvis-player-hud-sort-v1\";"));
-        assert!(EMBEDDED_INDEX.contains("function playerHudSortValue(player, key, stats)"));
-        assert!(EMBEDDED_INDEX.contains("function sortedPlayerHudPlayers(players, statsByPlayer)"));
+        assert!(EMBEDDED_INDEX.contains("function playerHudSortValue(player, key, stats, rankById)"));
+        assert!(EMBEDDED_INDEX.contains("if (key === \"rank\") return rankById.get(player.id) ?? null;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "return key === \"rank\" || PLAYER_HUD_TEXT_SORT_COLUMNS.has(key) ? \"asc\" : \"desc\";"
+        ), "rank should initially put #1 first");
+        assert!(EMBEDDED_INDEX.contains("function sortedPlayerHudPlayers(players, statsByPlayer, rankById)"));
         assert!(EMBEDDED_INDEX.contains("function togglePlayerHudSort(key)"));
         assert!(EMBEDDED_INDEX.contains("if (leftValue === null || rightValue === null) {"));
         assert!(EMBEDDED_INDEX.contains(
@@ -8596,7 +8959,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("if (key === \"win_delta\") {"));
         assert!(EMBEDDED_INDEX.contains("return oddsValue(player.odds_now);"),
             "the NOW Win heading should order by its current estimate");
-        for key in ["civ", "leader", "player", "elo", "win_start", "win_delta", "win", "age", "plan"] {
+        for key in ["rank", "civ", "leader", "player", "elo", "win_start", "win_delta", "win", "age", "plan"] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("playerHudSortHead(\"{key}\"")),
                 "the {key} heading should be sortable"
@@ -8607,10 +8970,21 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("playerHudSortHead(\"watch\""),
             "Watch-as stays an action instead of a sort target");
         assert!(EMBEDDED_INDEX.contains("class=\"hud-sort-head\" data-hud-sort=\"${key}\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "playerHudSortHead(\"rank\", \"RANK\", \"Score rank\")"
+        ), "the rank figures need their own named sort header");
+        assert!(EMBEDDED_INDEX.contains(
+            "minmax(var(--hud-rank-min), .7fr) minmax(var(--hud-ident-min), 2.035fr)"
+        ), "the rank heading should occupy its own first identity track");
+        assert!(EMBEDDED_INDEX.contains(
+            "#playerhud .diplomacy-rank { grid-column: 1; grid-row: 1; }"
+        ), "the rank figure should align under its own heading");
         assert!(EMBEDDED_INDEX.contains("const sort = ev.target.closest?.(\"[data-hud-sort]\");"));
         assert!(EMBEDDED_INDEX.contains("#playerhud .hud-sort-cell[data-hud-sort-active=\"true\"]"));
         assert!(EMBEDDED_INDEX.contains("const scoreRankedMajors = state.players"));
-        assert!(EMBEDDED_INDEX.contains("const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer, rankById);"
+        ));
         assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1)"));
         assert!(EMBEDDED_INDEX.contains("function aimPlayerHudSeam(seam, targetWidth)"));
         assert!(EMBEDDED_INDEX.contains("class=\"hud-col-grip\" type=\"button\" data-hud-column-seam="));
@@ -8650,12 +9024,12 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function dismissOverlay(name, source)"));
         assert!(EMBEDDED_INDEX.contains("addEventListener(\"pointerdown\", event =>"));
         assert!(EMBEDDED_INDEX.contains("overlay-return-flash .24s ease-in-out 3"));
-        assert!(EMBEDDED_INDEX.contains("restore it in Interface Settings"));
+        assert!(EMBEDDED_INDEX.contains("restore it in Display Settings"));
         assert_eq!(
             EMBEDDED_INDEX
                 .matches("class=\"sidebar-section\"")
                 .count(),
-            8,
+            7,
             "every top-level left-panel section should be collapsible"
         );
         assert!(EMBEDDED_INDEX.contains("function initSidebarSections()"));
@@ -8675,7 +9049,7 @@ mod tests {
             "window.addEventListener(\"resize\", revealMapLensSection, {passive:true});"
         ));
         // Collapsing the command deck collapses the deck alone. Every map
-        // overlay is switched from the deck's Interface Settings instead, so the
+        // overlay is switched from the deck's Display Settings instead, so the
         // two controls stay independent and the deck's width can be handed to
         // the map without losing the instruments on it.
         for (overlay, element) in [
@@ -8686,7 +9060,7 @@ mod tests {
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("body.overlay-{overlay}-hidden {element}")),
-                "Interface Settings should hide the {element} map overlay"
+                "Display Settings should hide the {element} map overlay"
             );
         }
         for element in [
@@ -8741,7 +9115,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("p.ai_plan"));
         assert!(EMBEDDED_INDEX.contains(".civ-dossier {"));
         assert!(EMBEDDED_INDEX.contains("changed its grand strategy from"));
-        // Active AI strategy speaks for one civilization at a time, and which
+        // The AI strategy dossier speaks for one civilization at a time, and which
         // civilizations it may speak for is the observation's answer, not the
         // panel's: `view_player` names a seat in a played game and in Watch as,
         // and is null only for the view entitled to read every plan.
@@ -9149,7 +9523,7 @@ mod tests {
         assert!(!EMBEDDED_INDEX
             .contains("civilization${summaries.length === 1 ? \"\" : \"s\"} completed"));
         assert!(EMBEDDED_INDEX.contains("id=\"strategysec\""));
-        // Active AI strategy is no longer withheld from the omniscient spectator.
+        // AI strategy is no longer withheld from the omniscient spectator.
         // It was, for as long as the panel could only ever speak for `state.me`
         // and above the world there is no single "me"; it now names the
         // civilization it is speaking for, so the one view that can read every
@@ -9162,7 +9536,9 @@ mod tests {
             .contains("document.getElementById(\"strategysec\").style.display = fullMapSpectator"));
         assert!(EMBEDDED_INDEX.contains("if (!fullMapSpectator && (SPEC || govs.length"));
         assert!(EMBEDDED_INDEX.contains(".sort((a, b) => b.score - a.score || a.id - b.id)"));
-        assert!(EMBEDDED_INDEX.contains("class=\"diplomacy-rank\">#${rank}"));
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"diplomacy-rank\" title=\"Score rank ${rank}\">#${rank}"
+        ));
         // The sidebar sits left of the map. Match the declaration rather than
         // its formatting, so restyling the block cannot fail the rule.
         let side_rule = EMBEDDED_INDEX
@@ -9396,15 +9772,48 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("// The Civ VI atlas cells").next())
             .expect("strategic unit health renderer");
-        assert!(renderer.contains("Math.round(hp ?? 100)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const CAPTURE_ONLY_CIVILIAN_UNITS = new Set([\"settler\", \"builder\"]);"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function unitHasHealth(unit) {"));
+        assert!(renderer.contains("if (!Number.isFinite(hp)) return;"));
+        assert!(renderer.contains("Math.round(hp)"));
         assert!(renderer.contains("health >= 100"));
         assert!(renderer.contains("cx.strokeText(String(health), x, by + bh / 2)"));
         assert!(renderer.contains("cx.fillText(String(health), x, by + bh / 2)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const status = unitHasHealth(u) ? `hp ${u.hp}` : \"capturable\";"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const unitStatus = unitHasHealth(unit) ? `${fmtYield(unit.hp)} HP` : \"capturable\";"
+        ));
         assert_eq!(
             EMBEDDED_INDEX.matches("drawStrategicUnitHealth(").count(),
             3,
             "the shared damage-only health renderer should serve the flat map and globe"
         );
+    }
+
+    #[test]
+    fn city_icons_are_shared_by_flat_globe_and_minimaps() {
+        let icon = EMBEDDED_INDEX
+            .split("function drawCityIcon")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawSettlement").next())
+            .expect("shared city icon renderer");
+        assert!(icon.contains(
+            "const base = y + r * .45, wallTop = y + r * .06;"
+        ));
+        assert!(icon.contains("context.moveTo(x - r * .72, base);"));
+        assert!(icon.contains("capital && r >= 2.6"));
+        for call in [
+            "drawCityIcon(cx, cell.center.x, cell.center.y, r, bannerColor,",
+            "drawCityIcon(cx, x, y + cityIconRadius * .16, cityIconRadius,",
+            "drawCityIcon(mx2, cell.center.x, cell.center.y, cityRadius,",
+            "drawCityIcon(mx2, x, y, citySize * (cityState ? .55 : .62),",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(call), "missing city icon path: {call}");
+        }
     }
 
     #[test]
@@ -9634,6 +10043,35 @@ mod tests {
     }
 
     #[test]
+    fn browser_minimap_highlights_the_camera_footprint_for_both_map_shapes() {
+        assert!(EMBEDDED_INDEX
+            .contains("function paintMiniViewportFootprint(points, clip = null)"));
+        assert!(EMBEDDED_INDEX
+            .contains("mx2.fillStyle = \"rgba(255, 223, 133, .18)\""));
+
+        let flat = EMBEDDED_INDEX
+            .split("function drawFlatMiniViewportFootprint")
+            .nth(1)
+            .and_then(|tail| tail.split("function miniHexPath").next())
+            .expect("flat minimap viewport footprint");
+        assert!(flat.contains("screenToWorld(sx, sy)"));
+        assert!(flat.contains("miniViewportScreenCorners().map"));
+        assert!(EMBEDDED_INDEX.contains("drawFlatMiniViewportFootprint(layout);"));
+
+        let planet = EMBEDDED_INDEX
+            .split("function drawPlanetMiniViewportFootprint")
+            .nth(1)
+            .and_then(|tail| tail.split("function planetMiniScale").next())
+            .expect("planet minimap viewport footprint");
+        assert!(planet.contains("const mainRadius = mainCamera.radius * cam.scale;"));
+        assert!(planet.contains("planetGroundInputY(sy, mainCenterY)"));
+        assert!(planet.contains("mainCamera.chart ? null : () => mx2.arc"));
+        assert!(EMBEDDED_INDEX.contains(
+            "drawPlanetMiniViewportFootprint(camera, scale, centerX, centerY);"
+        ));
+    }
+
+    #[test]
     fn browser_tile_yields_are_numbered_in_centered_semantic_rows() {
         assert!(EMBEDDED_INDEX.contains(
             "[\"science\", \"culture\", \"faith\"],\n  [\"food\", \"production\", \"gold\"],"
@@ -9818,7 +10256,7 @@ mod tests {
             "num_players": 6,
             "map_script": "continents",
             "game_speed": "quick",
-            "leader_pool": "expanded",
+            "leader_pool": "historical",
             "victory_conditions": {"culture": false, "score": false},
         }));
 
@@ -9844,7 +10282,7 @@ mod tests {
                 "shape": "flat",
                 "poles": "poles",
                 "speed": "quick",
-                "leader_pool": "expanded",
+                "leader_pool": "historical",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
@@ -9862,7 +10300,7 @@ mod tests {
         assert_eq!(session.params.num_players, 6);
         assert_eq!(session.params.map_script, MapScript::Continents);
         assert_eq!(session.params.game_speed, GameSpeed::Quick);
-        assert_eq!(session.params.leader_pool, LeaderPool::Expanded);
+        assert_eq!(session.params.leader_pool, LeaderPool::ExpandedHistorical);
         assert!(!session.game.victory_conditions.culture);
         assert!(!session.game.victory_conditions.score);
         drop(session);
@@ -9964,7 +10402,7 @@ mod tests {
                 "num_players": 4,
                 "map_script": "continents",
                 "game_speed": "quick",
-                "leader_pool": "expanded",
+                "leader_pool": "historical",
                 "victory_conditions": {"culture": false, "score": false},
             }))
             .unwrap();
@@ -10003,7 +10441,7 @@ mod tests {
                 "shape": "flat",
                 "poles": "poles",
                 "speed": "quick",
-                "leader_pool": "expanded",
+                "leader_pool": "historical",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
@@ -10352,7 +10790,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("row(\"Strike package\""));
     }
 
-    /// The Active AI strategy panel reads one civilization's plan beside what it
+    /// The AI strategy dossier reads one civilization's plan beside what it
     /// is actually spending its science and culture on. The observation only
     /// ever carries the *observed* seat's study, in `me`, and above the world
     /// there is no observed seat — so the omniscient view names every major's.
@@ -10787,8 +11225,9 @@ mod tests {
                 "the setup screen is missing {piece}"
             );
         }
-        // Both selects are filled from the live ruleset, never a hardcoded list.
-        assert!(EMBEDDED_INDEX.contains("RULES.civs && typeof RULES.civs === \"object\""));
+        // The leader picker follows the live roster API, while difficulty is
+        // still supplied by the active ruleset; neither is a hardcoded list.
+        assert!(EMBEDDED_INDEX.contains("RULES.leader_pools"));
         assert!(EMBEDDED_INDEX
             .contains("RULES.difficulties && typeof RULES.difficulties === \"object\""));
         // A spectated world has nobody to hand a leader or a handicap to, and
@@ -12081,7 +12520,10 @@ mod tests {
             previous = at;
         }
         assert!(details.contains("${civPossessive(civ)} ${titleCase(unit.type)} - "));
-        assert!(details.contains("fmtYield(unit.hp) + \" HP</span>\""));
+        assert!(details.contains(
+            "const unitStatus = unitHasHealth(unit) ? `${fmtYield(unit.hp)} HP` : \"capturable\";"
+        ));
+        assert!(details.contains("unitStatus + \"</span>\""));
         assert!(details.contains("? (tileImpassable(t) ? \"Impassable\" : \"Unknown\")"));
         assert!(details.contains("const defenseText = (defense > 0 ? \"+\" : \"\") + defense;"));
         assert!(
@@ -12160,7 +12602,7 @@ mod tests {
     /// them: collapse the command deck, set the map area, face north, zoom in,
     /// zoom out, choose a sky route when one is available, dismiss.
     /// Dismissal is last because it is the only one that removes the bar, and
-    /// it hides itself while the deck is collapsed — Interface Settings is the
+    /// it hides itself while the deck is collapsed — Display Settings is the
     /// only way back and it lives inside the deck.
     #[test]
     fn the_map_controls_run_from_collapse_to_dismiss() {
@@ -12334,7 +12776,7 @@ mod tests {
         // framed — every constant, every trace and the caption that read off
         // them, so nothing is left drawing a hundred thousand light-years that
         // no zoom can now reach.
-        assert!(EMBEDDED_INDEX.contains("label:\"Solar system\", mark:\"☉\""));
+        assert!(EMBEDDED_INDEX.contains("label:\"Solar System\", mark:\"☉\""));
         assert!(EMBEDDED_INDEX.contains("stops.push({id:\"voyage\", label:\"Voyage\""));
         // The complete old route lives in the control row in the order a
         // journey reads: the local arrivals Earth, Moon, and Mars; the solar
@@ -12359,9 +12801,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "document.querySelectorAll(\"#skynav [data-sky-stop]\")"
         ));
-        assert!(EMBEDDED_INDEX.contains(
-            "button.setAttribute(\"aria-label\", kind === \"world\" ?"
-        ));
+        assert!(EMBEDDED_INDEX.contains("button.setAttribute(\"aria-label\", stop.label);"));
         // A switch takes three times as long as it first shipped at, both ways.
         // The distances are the content, and at the old pace the crossing was
         // over before it had said anything about what lay between the two ends.
@@ -12385,24 +12825,20 @@ mod tests {
                 "the galaxy view is dropped, but {gone} is still in the client"
             );
         }
-        // The destination is a button called Exoplanet, not one called whatever
-        // that game's survey happened to turn up: the same control reads
-        // `Teegarden's Star b` in one game and `82 Eridani d` in the next, and
-        // a control that renames itself between games is one nobody learns.
-        // The real name stays on the tooltip and on the world's own captions.
+        // These controls stay practical and stable: each button is named only
+        // for its destination, with no changing survey name or hover copy.
         assert!(EMBEDDED_INDEX
-            .contains("const SKY_STOP_LABELS = {earth:\"Earth\", exo:\"Exoplanet\"};"));
+            .contains("const SKY_STOP_LABELS = {earth:\"Earth\", moon:\"Moon\", mars:\"Mars\", exo:\"Exoplanet\"};"));
         assert!(EMBEDDED_INDEX.contains(
-            "                label:SKY_STOP_LABELS[id] || body.name.replace(/^The /, \"\"),"
+            "                label:SKY_STOP_LABELS[id] || body.name.replace(/^The /, \"\")});"
         ));
-        assert!(EMBEDDED_INDEX.contains("                                     : `Fly to ${body.name}`});"));
-        // And the bar's rebuild key carries the title, because the labels no
-        // longer move: `Exoplanet` and `Voyage` read the same whichever world
-        // the expedition settled on, so keyed on the labels alone the bar would
-        // never rebuild when the destination was chosen and both tooltips would
-        // name the pre-launch default for the rest of the game.
+        assert!(EMBEDDED_INDEX.contains("button.title = stop.label;"));
+        assert!(!EMBEDDED_INDEX.contains("Fly to ${body.name}"));
+        // The labels are fixed, so they are all the rebuild key needs.
         assert!(EMBEDDED_INDEX
-            .contains(".map(stop => `${stop.id}/${stop.label}/${stop.title}`).join(\",\");"));
+            .contains(".map(stop => `${stop.id}/${stop.label}`).join(\",\");"));
+        assert!(!EMBEDDED_INDEX.contains("function skySceneCaption"));
+        assert!(EMBEDDED_INDEX.contains("function mapControlsBox(viewRect)"));
         // Short of the ceiling on purpose: a jump that lands exactly on the
         // stop leaves the zoom-in button dead in the hand on arrival.
         assert!(EMBEDDED_INDEX.contains("const SKY_STOP_FILL = .8;"));
@@ -12488,11 +12924,16 @@ mod tests {
         ));
         assert!(!EMBEDDED_INDEX.contains("Math.max(1e-6, cam.scale)"));
 
-        // The sky keeps its captions clear of the bar the way it does of every
-        // other widget, and the block that says what the picture is a picture
-        // of is measured off the same edge the bar is.
+        // The practical ruler sits beside the map controls whenever that space
+        // fits, and otherwise rises above them without covering a button.
         assert!(EMBEDDED_INDEX.contains("  const nav = skyNavBox(viewRect);"));
-        assert!(EMBEDDED_INDEX.contains("const nav = skyNavBox(cv.getBoundingClientRect());"));
+        assert!(EMBEDDED_INDEX.contains("const controls = mapControlsBox(viewRect);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const right = mapScaleRightEdge(viewRect, controls, frame.right - 12);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const beside = controls && controls.right + 14 + width <= right;"
+        ));
     }
 
     /// Mercury, Ceres, Callisto, and Titan are surveyable tiled worlds. Their

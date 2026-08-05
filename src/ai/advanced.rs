@@ -15264,6 +15264,179 @@ impl AdvancedAi {
         value
     }
 
+    /// The few military unique improvements are not Builder choices, so their
+    /// most important effects are not ordinary tile yields. A Feitoria pays
+    /// every foreign route, while a Roman Fort or Maori Pa pays when it makes
+    /// a pressured frontier harder to cross. Price those effects directly so
+    /// a special charge reaches the job its civilization is meant to have.
+    fn special_improvement_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        pos: Pos,
+        improvement: &str,
+        strategy: GrandStrategy,
+    ) -> f64 {
+        let spec = &g.rules.improvements[improvement];
+        let mut value = self.improvement_value(g, pos, improvement, strategy);
+        value += spec
+            .effects
+            .get("foreign_route_gold")
+            .copied()
+            .unwrap_or(0.0)
+            * 6.0;
+        value += spec
+            .effects
+            .get("foreign_route_production")
+            .copied()
+            .unwrap_or(0.0)
+            * 9.0;
+
+        let defensive_effect = spec.effects.get("defense").copied().unwrap_or(0.0) * 3.0
+            + spec
+                .effects
+                .get("grant_fortification")
+                .copied()
+                .unwrap_or(0.0)
+                * 3.0
+            + spec
+                .effects
+                .get("hostile_movement_penalty")
+                .copied()
+                .unwrap_or(0.0)
+                * 4.0
+            + spec
+                .effects
+                .get("maori_heal_after_action")
+                .copied()
+                .unwrap_or(0.0)
+                * 6.0;
+        if defensive_effect <= 0.0 {
+            return value;
+        }
+        let frontier = g.nbrs(pos).into_iter().any(|neighbor| {
+            g.map
+                .get(neighbor)
+                .and_then(|tile| tile.owner_city)
+                .and_then(|city| g.cities.get(&city))
+                .is_some_and(|city| city.owner != pid)
+        });
+        let hostile_nearby = g.wdisk(pos, 4).into_iter().any(|neighbor| {
+            g.units_at(neighbor).into_iter().any(|uid| {
+                let unit = &g.units[&uid];
+                unit.owner != pid && g.is_at_war(pid, unit.owner)
+            })
+        });
+        let at_war = g
+            .players
+            .iter()
+            .any(|player| player.id != pid && player.alive && g.is_at_war(pid, player.id));
+        let pressure = if hostile_nearby {
+            3.0
+        } else if at_war && frontier {
+            2.0
+        } else if frontier {
+            1.25
+        } else {
+            0.5
+        };
+        value += defensive_effect * pressure;
+        if strategy == GrandStrategy::Conquest && (frontier || hostile_nearby) {
+            value += defensive_effect;
+        }
+        value
+    }
+
+    fn special_improvement_choice(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        pos: Pos,
+        strategy: GrandStrategy,
+    ) -> Option<(f64, Name)> {
+        BasicAi::special_unit_improvements(g, pid, uid, pos)
+            .into_iter()
+            .map(|improvement| {
+                (
+                    self.special_improvement_value(g, pid, pos, &improvement, strategy),
+                    improvement,
+                )
+            })
+            .max_by(|(left_value, left), (right_value, right)| {
+                left_value
+                    .total_cmp(right_value)
+                    .then_with(|| right.cmp(left))
+            })
+    }
+
+    /// Route a military unique with a build charge through the same legal
+    /// improvement surface as the rules engine. Unlike an ordinary Builder,
+    /// this may deliberately leave our borders for an open foreign coast.
+    /// Returning `None` preserves the unit's ordinary military turn whenever
+    /// no legal strategic site exists.
+    pub(crate) fn advanced_special_improver_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        strategy: GrandStrategy,
+    ) -> Option<bool> {
+        let current = g.units.get(&uid)?.pos;
+        if let Some((_, improvement)) =
+            self.special_improvement_choice(g, pid, uid, current, strategy)
+        {
+            return g
+                .apply(
+                    pid,
+                    &Action::Improve {
+                        unit: uid,
+                        improvement,
+                    },
+                )
+                .ok()
+                .map(|_| true);
+        }
+
+        let candidates = {
+            let _memo = g.query_memo();
+            g.map
+                .tiles
+                .keys()
+                .copied()
+                .filter_map(|position| {
+                    if position == current {
+                        return None;
+                    }
+                    self.special_improvement_choice(g, pid, uid, position, strategy)
+                        .map(|(value, _)| {
+                            (value - g.wdist(current, position) as f64 * 0.7, position)
+                        })
+                })
+                .collect::<Vec<_>>()
+        };
+        let preferred = candidates
+            .iter()
+            .max_by(|(left_value, left), (right_value, right)| {
+                left_value
+                    .total_cmp(right_value)
+                    .then_with(|| right.cmp(left))
+            })
+            .map(|(_, position)| *position);
+        let fallback: HashSet<Pos> = candidates
+            .iter()
+            .map(|(_, position)| *position)
+            .collect();
+        preferred
+            .and_then(|position| g.route_step(uid, position, 0))
+            .or_else(|| g.route_step_to_any(uid, &fallback))
+            .and_then(|to| {
+                g.apply(pid, &Action::Move { unit: uid, to })
+                    .ok()
+                    .map(|_| true)
+            })
+    }
+
     /// Return only improvements that genuinely upgrade the tile. The game
     /// permits builders to replace an existing improvement, so comparing
     /// candidates in isolation made late-game builders oscillate between a
@@ -18069,6 +18242,7 @@ impl AdvancedAi {
         let unit = g.units[&uid].clone();
         let rules = std::sync::Arc::clone(&g.rules);
         let spec = &rules.units[unit.kind];
+        let special_improver = unit.charges > 0 && !spec.builds.is_empty();
         let doctrine = BasicAi::unit_doctrine(g, uid);
         if self.base.unit_objective_memory && spec.class == "military" {
             if let Some(city) = plan.target_city {
@@ -18182,6 +18356,13 @@ impl AdvancedAi {
             }
             if let Some(acted) = self.campaign_staging_step(g, pid, uid, plan) {
                 return acted;
+            }
+            if special_improver {
+                if let Some(acted) =
+                    self.advanced_special_improver_step(g, pid, uid, plan.strategy)
+                {
+                    return acted;
+                }
             }
             return self.base.military_step(g, pid, uid);
         }
@@ -18442,6 +18623,18 @@ impl AdvancedAi {
             && self.base.explore_step(g, pid, uid)
         {
             return true;
+        }
+
+        // A charged military unique still gets every immediate combat, escort,
+        // civilian-capture, and recovery decision above. If none claimed it,
+        // use its charge as a strategic job before sending it on an otherwise
+        // distant campaign march.
+        if special_improver {
+            if let Some(acted) =
+                self.advanced_special_improver_step(g, pid, uid, plan.strategy)
+            {
+                return acted;
+            }
         }
 
         let defend_target = plan.threatened_city.and_then(|cid| {
@@ -18956,7 +19149,8 @@ impl AdvancedAi {
                 | "trader"
                 | "missionary"
                 | "rock_band"
-        ) && !(self.victory_planning && g.rules.units[unit.kind].class == "religious")
+        ) && (unit.charges <= 0 || g.rules.units[unit.kind].builds.is_empty())
+            && !(self.victory_planning && g.rules.units[unit.kind].class == "religious")
     }
 
     fn advance_unit_serial(
@@ -20155,6 +20349,82 @@ mod tests {
                 && !game.rules.is_water(tile)
                 && game.city_at(position).is_none()
         })
+    }
+
+    #[test]
+    fn charged_special_improvers_stay_on_the_serial_improvement_path_until_spent() {
+        let mut game = Game::new_full(2, 30, 18, 940_000, 120, 0, false);
+        let position = game.units[&game.player_unit_ids(0)[0]].pos;
+        let ai = AdvancedAi::new();
+
+        for kind in ["toa", "legion", "nau"] {
+            let unit = game.spawn_test_unit(kind, 0, position);
+            assert!(
+                !ai.unit_uses_general_planner(&game, unit),
+                "a charged {kind} must reach serial improvement planning before the parallel combat planner"
+            );
+            game.units.get_mut(&unit).unwrap().charges = 0;
+            assert!(
+                ai.unit_uses_general_planner(&game, unit),
+                "a spent {kind} should return to its ordinary military planner"
+            );
+        }
+    }
+
+    #[test]
+    fn charged_toa_attacks_an_adjacent_enemy_before_building_a_pa() {
+        let (mut game, city, _) = empire_with_a_capital(940_001);
+        let position = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .expect("the capital owns a usable improvement tile");
+        {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.hills = true;
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.pillaged = false;
+        }
+        let enemy_position = game
+            .nbrs(position)
+            .into_iter()
+            .find(|neighbor| {
+                game.map.get(*neighbor).is_some_and(|tile| {
+                    game.rules.is_passable(tile)
+                        && !game.rules.is_water(tile)
+                        && game.city_at(*neighbor).is_none()
+                        && game.units_at(*neighbor).is_empty()
+                })
+            })
+            .expect("the Pa site has an adjacent open land tile");
+        game.players[0].civ = "Maori".to_string();
+        let toa = game.spawn_test_unit("toa", 0, position);
+        let enemy = game.spawn_test_unit("warrior", 1, enemy_position);
+        game.units.get_mut(&enemy).unwrap().hp = 1;
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut ai = AdvancedAi::new();
+
+        assert!(game
+            .valid_improvements(0, position)
+            .contains(&crate::name!("maori_pa")));
+        assert!(ai.advanced_military_step(&mut game, 0, toa, &plan));
+        assert!(
+            !game.units.contains_key(&enemy),
+            "an adjacent kill must outrank spending the Toa's improvement charge"
+        );
+        assert!(game.map.tiles[&position].improvement.is_none());
     }
 
     #[test]

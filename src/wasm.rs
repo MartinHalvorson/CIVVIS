@@ -286,6 +286,11 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             o
         }),
 
+        // A published browser build has no permission to inspect the machine
+        // that hosts it. Keep the response shape, but say that plainly rather
+        // than substituting the tab's own incomplete measurements.
+        ("GET", "/machine-metrics") => machine_metrics_json(),
+
         ("GET", "/status") => with_session(|session| {
             json!({
                 "turn": session.game.turn,
@@ -313,6 +318,7 @@ fn route(method: &str, target: &str, body: &str) -> Value {
                 "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
                 "city_state_limit": r.city_states.roster.len(),
                 "civ6_leaders": crate::game::CIV6_LEADER_POOL.as_slice(),
+                "leader_pools": crate::leader_roster::browser_pools(),
                 "great_people": r.great_people, "governors": r.governors,
                 "map_sizes": CIV6_MAP_SIZES,
                 "difficulties": r.difficulties, "speeds": r.speeds,

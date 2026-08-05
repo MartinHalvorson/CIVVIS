@@ -341,12 +341,10 @@
     letter-spacing: .12em; text-transform: uppercase;
   }
   .sidebar-section { flex: 0 0 auto; margin: 0 0 10px; }
-  #eventsec[open], #warsec[open], #reasonsec[open] { display: flex; flex-direction: column; min-height: 0; }
-  /* Share the spare height three to two, and never shrink — a shrunk section
-     would push its own content past its box and over the panel below instead
-     of scrolling. The basis is zero rather than auto so that a long log
-     inside cannot inflate its own section: each list scrolls within the
-     height it was given, floored by the min-height below. */
+  #strategysec[open], #eventsec[open], #warsec[open] { display: flex; flex-direction: column; min-height: 0; }
+  /* The strategy dossier owns the space that its former separate reasoning
+     panel used to take. Its current plan is fixed at the top; the decision
+     factors below it use the remaining height and scroll inside that track. */
   /* That floor has to be stated on the section, not only on the list inside
      it. `min-height: 0` above lets flexbox squeeze a section to nothing when
      the sidebar is crowded — a short window, or a player's game where the
@@ -354,31 +352,22 @@
      keeps its own min-height and `.sec` does not clip, so the log paints
      straight over the panels below it. Header 39px + the body's 13px padding
      and 1px border either side + the list's floor. */
-  /* Three logs now share the spare height. The reasoning log gets the largest
-     share because it is the only one whose entries are sentences rather than
-     labels — three of its rows is one of the event log's — and because it is
-     the panel this column is read for. */
-  /* Each floor is header 39px + the body's 13px padding and 1px border either
-     side + whatever the panel holds, and every one of the three now has to
-     cover a filter bar above its list as well: 97px for the reasoning log's
-     three rows, 66px for the two rows the war and event logs carry (a 27px
-     select per row, 4px between them, 8px under the bar). Both of the new
-     numbers are the old floor plus that bar, so each list keeps exactly the
-     height it had. A section squeezed under its floor does not clip — its list
-     paints straight over the panel below it — so these are measured in the
-     page, never guessed. */
-  #reasonsec[open] { flex: 3 0 0; min-height: 300px; }
+  /* The dossier needs room for the current plan plus a readable decision trail.
+     A section squeezed under its floor does not clip — its list paints straight
+     over the panel below it — so these floors are measured in the page rather
+     than guessed. */
+  #strategysec[open] { flex: 3 0 0; min-height: 460px; }
   #eventsec[open] { flex: 2 0 0; min-height: 302px; }
   #warsec[open] { flex: 2 0 0; min-height: 266px; }
   /* A <details> hands its children to an internal content box, so the panel
      inside it only inherits the extra height if that box is told to grow
      too. Browsers without ::details-content simply keep the log at its
      min-height, which is the old fixed-box behaviour. */
-  #eventsec[open]::details-content, #warsec[open]::details-content,
-  #reasonsec[open]::details-content {
+  #strategysec[open]::details-content, #eventsec[open]::details-content,
+  #warsec[open]::details-content {
     flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
   }
-  #eventsec[open] > .sec, #warsec[open] > .sec, #reasonsec[open] > .sec { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  #strategysec[open] > .sec, #eventsec[open] > .sec, #warsec[open] > .sec { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
   .section-label {
     min-height: 43px; display: flex; align-items: center; gap: 9px; padding: 8px 9px;
     color: #bac8c2; background: linear-gradient(135deg, #162622, #101c19);
@@ -429,6 +418,15 @@
      needs rather than a card slot's fixed 55px. */
   .strategy-track.strategy-plan-track { min-height: 0; }
   .strategy-track.strategy-plan-track .strategy-heading span::before { background: var(--gold); box-shadow: 0 0 9px #d7b66a77; }
+  /* The live plan is a compact dossier; the decision trail is the one part of
+     it allowed to grow and scroll. Keeping it in this same card makes the
+     strategy change and its recorded factors one continuous inspection flow. */
+  .strategy-track.strategy-reasoning-track { flex: 1 1 0; min-height: 196px; display: flex; flex-direction: column; border-bottom: 0; }
+  .strategy-reason-filters { flex: 0 0 auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin: 2px 0 6px; }
+  .strategy-reason-filters .log-filter { grid-template-columns: 39px minmax(0, 1fr); gap: 5px; }
+  .strategy-reasoning-meta { color: var(--faint); font-size: var(--type-label); font-weight: 750; letter-spacing: .04em; text-transform: none; }
+  .strategy-reasoning-context { flex: 0 0 auto; margin: -1px 0 6px; color: #8fa198; font-size: var(--type-label); line-height: 1.35; }
+  .reason-more { align-self: center; flex: 0 0 auto; margin-top: 7px; }
   .strategy-plan { display: flex; flex-direction: column; gap: 1px; }
   .strategy-heading {
     display: flex; align-items: center; justify-content: space-between; min-height: 23px; margin-bottom: 4px;
@@ -940,7 +938,7 @@
      The gutter gives back the 3px flex gap that the cell puts after every one
      of its items, so it costs the civilization's name 10px rather than 13 —
      that name is the first thing the standings give up when the masthead is
-     narrow, and the `#` beside it carries its own left bearing anyway. */
+     narrow. */
   .agenda-mark {
     flex: 0 0 auto; display: inline-block; width: 10px; margin-right: -3px;
     font-size: var(--type-label); line-height: 1; text-align: center; vertical-align: 1px;
@@ -1254,7 +1252,7 @@
   #notify {
     position: absolute; z-index: 8; top: 196px; bottom: 200px;
     /* Reserve the upper-right victory rail so notification chips cannot
-       obscure its values. Hiding it in Interface Settings returns this edge. */
+       obscure its values. Hiding it in Display Settings returns this edge. */
     right: calc(var(--victory-hud-width) + 20px);
     display: none; flex-direction: column; align-items: flex-end; gap: 6px;
     overflow: hidden auto; scrollbar-width: none; pointer-events: none;
@@ -1692,11 +1690,9 @@
   .event-turn { color: var(--faint); font-size: var(--type-label); letter-spacing: .07em; text-transform: uppercase; }
   .empty-state { padding: 10px 0 2px; color: var(--faint); font-size: var(--type-secondary); text-align: center; }
 
-  /* A panel's filter bar. The three logs and the Active AI strategy card above
-     them all wear the same one, in the same place, so narrowing the war log is
-     the gesture a reader already learned one panel up. In a log the filters
-     sit above the list and never scroll with it: a reader narrowed to one
-     civilization must not have to scroll back up to change their mind. */
+  /* The dossier and the two world chronicles share one compact filter language.
+     In a log the controls stay above the list, so changing a question never
+     requires scrolling back through the answer first. */
   .log-filters { flex: 0 0 auto; display: grid; grid-template-columns: 1fr; gap: 4px; margin-bottom: 8px; }
   .log-filter { display: grid; grid-template-columns: 42px 1fr; align-items: center; gap: 7px; }
   .log-filter > span { color: var(--faint); font-size: var(--type-label); font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
@@ -1705,17 +1701,17 @@
      the density the sidebar can afford. */
   .log-filter select { width: 100%; min-width: 0; padding: 4px 24px 4px 8px; font-size: var(--type-secondary); }
 
-  /* AI reasoning log — what each civilization decided this turn, and why. */
+  /* AI decision factors — the selected civilization's live decision history. */
   .reason-list { flex: 1 1 auto; min-height: 132px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; overflow-anchor: none; scrollbar-gutter: stable; }
   .reason-list > * { flex: 0 0 auto; }
-  /* One thought. The civilization's own jersey colour runs down the left edge,
-     which is what lets a reader follow a single empire through the combined
-     log without reading a name on every line. */
+  /* One recorded decision. The selected civilization's own jersey colour runs
+     down its edge, while a gold ground marks strategy-level assessments. */
   .reason-item {
     padding: 7px 8px 7px 9px; border-left: 3px solid var(--reason-tint, #49645a);
     border-radius: 4px 9px 9px 4px; background: #0b1613;
   }
   .reason-item.level-strategy { background: linear-gradient(90deg, #2b2413, #0b1613 78%); box-shadow: inset 0 0 0 1px #d7b66a1f; }
+  .reason-item.strategy-shift { border-left-color: var(--gold-bright); box-shadow: inset 0 0 0 1px #d7b66a55, 0 0 12px #d7b66a1a; }
   .reason-item.level-detail { background: #091210; opacity: .92; }
   .reason-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
   .reason-civ { min-width: 0; color: var(--reason-tint, #9fb3aa); font-size: var(--type-label); font-weight: 850; letter-spacing: .07em; text-transform: uppercase; overflow: hidden; text-overflow: clip; white-space: nowrap; }
@@ -1723,6 +1719,8 @@
   .reason-headline { margin-top: 2px; color: #d3ded8; font-size: var(--type-secondary); }
   .reason-item.level-strategy .reason-headline { color: #f0e2c2; font-weight: 650; }
   .reason-detail { margin-top: 3px; color: var(--faint); font-size: var(--type-label); line-height: 1.45; }
+  .reason-factor-label { margin-right: 5px; color: #cbb278; font-size: var(--type-label); font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
+  .reason-shift-label { margin-left: 5px; color: #f0d28b; font-size: var(--type-label); font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
   .reason-topic {
     display: inline-block; margin-right: 5px; padding: 1px 5px; border-radius: 4px;
     background: #ffffff0a; border: 1px solid #ffffff12; color: #9fb3aa;
@@ -1938,6 +1936,48 @@
   .render-resolution-row { grid-template-columns: minmax(0, 1fr) minmax(104px, 1fr); }
   .render-resolution-row > span, .render-resolution-row > select { min-width: 0; }
   .render-resolution-row > span { overflow-wrap: anywhere; }
+  /* This is host-wide pressure, not a promise that the viewer owns a fixed
+     share. The cap is therefore a decision point for the controls below, not
+     a throttling control that could silently weaken a running game. */
+  .machine-loads {
+    display: grid; gap: 7px; margin-bottom: 12px; padding: 9px 10px 10px;
+    border: 1px solid #385149; border-radius: 9px; background: #09131080;
+  }
+  .machine-load-row {
+    display: grid; grid-template-columns: 48px minmax(34px, 1fr) 38px auto;
+    align-items: center; gap: 7px; min-width: 0;
+  }
+  .machine-load-name, .machine-load-cap > span {
+    color: var(--muted); font-size: var(--type-small); font-weight: 800;
+    letter-spacing: .08em; text-transform: uppercase;
+  }
+  .machine-load-meter {
+    min-width: 0; height: 7px; overflow: hidden; border: 1px solid #385149;
+    border-radius: 999px; background: #06100d;
+  }
+  .machine-load-meter > span {
+    display: block; width: 0; height: 100%; border-radius: inherit;
+    background: linear-gradient(90deg, #4b9982, #b2d891); transition: width .24s ease, background .18s ease;
+  }
+  .machine-load-value {
+    color: #c7d3cc; font: 800 var(--type-small)/1 var(--font-ui);
+    font-variant-numeric: tabular-nums; letter-spacing: .02em; text-align: right;
+  }
+  .machine-load-cap { display: flex; align-items: center; gap: 4px; min-width: 0; }
+  .machine-load-cap select { min-width: 56px; padding: 4px 5px; font-size: var(--type-small); }
+  .machine-load-row.is-near-cap .machine-load-value { color: #e3c978; }
+  .machine-load-row.is-near-cap .machine-load-meter > span { background: linear-gradient(90deg, #c99948, #edd179); }
+  .machine-load-row.is-over-cap .machine-load-value { color: #eea09a; }
+  .machine-load-row.is-over-cap .machine-load-meter > span { background: linear-gradient(90deg, #b96059, #ef9b85); }
+  .machine-loads.is-unavailable .machine-load-value { color: var(--faint); }
+  .display-load-advice {
+    padding-top: 7px; border-top: 1px solid #ffffff12; color: var(--faint);
+    font-size: var(--type-label); line-height: 1.38;
+  }
+  .display-load-guidance {
+    box-shadow: inset 2px 0 #c99e4e; border-radius: 4px;
+    background: linear-gradient(90deg, #c99e4e12, transparent 70%);
+  }
   .resource-display-setting { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .resource-display-setting > span, .resource-display-setting > select { min-width: 0; }
   .resource-display-setting > span { overflow-wrap: anywhere; }
@@ -2239,31 +2279,34 @@
        figures and the arrow between them, so it stands on a wider floor of its
        own: 76px keeps the longer START label and both numeric tracks whole at
        the fitter's 9px floor. Each breakpoint below moves the label floor only,
-       and keeps 5 labels + 2 figure cells adding up to what the identity block
-       claims at that width. */
+       and keeps the five labels, two figure cells, and fixed rank track adding
+       up to what the identity block claims at that width. */
     --hud-ident-min: 30px; --hud-ident-num-min: 60px; --hud-ident-odds-min: 76px;
+    --hud-rank-min: 30px;
     /* How much of the flexible width the identity block asks for relative to
        the values, over and above the sum of its own columns. A wide panel can
        afford whole names; a narrow one gives the identity up first, because a
        clipped name still reads and a clipped number lies. */
     --hud-identity-bias: 1;
     --hud-identity-column: minmax(
-      calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min)
-           + var(--hud-ident-odds-min)), 11.387fr);
+      calc(var(--hud-rank-min) + var(--hud-ident-min) * 5
+           + var(--hud-ident-num-min) + var(--hud-ident-odds-min)), 12.087fr);
     /* Twelve cells and the eleven gutters between them. */
     --hud-stats-column: minmax(
       calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), 12fr);
     --hud-column-gap: 6px;
-    /* Civilization, leader, player, age and the plan are labels, and their
-       cells ellipsize. Elo and the odds pair are figures on the taller floors:
-       with no minimum at all they collapsed on a 1440px screen and rendered
-       "1792" as "179" and "11%" as "1" — a truncated number that reads as a
-       different, smaller number. Watch-as keeps its fixed track between Leader
-       and Player, which is why the bar for that seam is drawn on Leader's edge.
-       Its extra four-pixel tail is the visual gutter before Player. */
+    /* Rank has its own dedicated column. Civilization, leader, player, age and the
+       plan are labels, and their cells ellipsize. Elo and the odds pair are
+       figures on the taller floors: with no minimum at all they collapsed on a
+       1440px screen and rendered "1792" as "179" and "11%" as "1" — a
+       truncated number that reads as a different, smaller number. Watch-as
+       keeps its fixed track between Leader and Player, which is why the bar
+       for that seam is drawn on Leader's edge. Its extra four-pixel tail is the
+       visual gutter before Player. */
     --hud-identity-tracks:
-      minmax(var(--hud-ident-min), 2.035fr) minmax(var(--hud-ident-min), 1.85fr)
-      var(--hud-watch-column) minmax(var(--hud-ident-min), 1.85fr)
+      minmax(var(--hud-rank-min), .7fr) minmax(var(--hud-ident-min), 2.035fr)
+      minmax(var(--hud-ident-min), 1.85fr) var(--hud-watch-column)
+      minmax(var(--hud-ident-min), 1.85fr)
       minmax(var(--hud-ident-num-min), 1.017fr)
       minmax(var(--hud-ident-odds-min), 1.3fr)
       minmax(var(--hud-ident-min), 1.3fr)
@@ -2291,7 +2334,11 @@
   #playerhud > .player-standings {
     grid-column: 2; grid-row: 1; min-width: 0; min-height: 0;
     display: flex; flex-direction: column; gap: 3px;
+    overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
+    scrollbar-color: #476057 transparent; scrollbar-width: thin;
   }
+  #playerhud > .player-standings::-webkit-scrollbar { height: 4px; }
+  #playerhud > .player-standings::-webkit-scrollbar-thumb { border-radius: 4px; background: #476057; }
   .ribbon-heading {
     position: relative; min-height: 20px; display: flex; align-items: center;
     justify-content: center; padding: 0 4px; overflow: hidden; color: #c7d3ce;
@@ -2455,8 +2502,9 @@
   #playerhud .diplomacy-ribbon::-webkit-scrollbar { width: 3px; }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar-thumb { background: #476057; border-radius: 4px; }
   /* One line, four regions: the lock, identity with its adjacent Watch-as
-     action, then the twelve values. Civilization itself now carries the former
-     Empire/capital action. */
+     action, then the twelve values. Rank and Civilization are independent
+     identity facts; Civilization itself carries the former Empire/capital
+     action. */
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
     grid-template-columns: var(--hud-lock-column, 0px)
@@ -2472,10 +2520,11 @@
   /* Watch-as sits in the same fixed track as the All button heading it, and it
      is inset by the same single pixel, so the two read as one column rather
      than as a head that is four pixels wider than everything under it. */
-  #playerhud .watch-as-link { grid-column: 3; grid-row: 1; align-self: center; justify-self: stretch; }
-  #playerhud .diplomacy-civ-link { grid-column: 1; grid-row: 1; }
-  #playerhud .diplomacy-leader-link { grid-column: 2; grid-row: 1; }
-  #playerhud .diplomacy-identity-secondary { grid-column: 4 / 9; grid-row: 1; }
+  #playerhud .watch-as-link { grid-column: 4; grid-row: 1; align-self: center; justify-self: stretch; }
+  #playerhud .diplomacy-rank { grid-column: 1; grid-row: 1; }
+  #playerhud .diplomacy-civ-link { grid-column: 2; grid-row: 1; }
+  #playerhud .diplomacy-leader-link { grid-column: 3; grid-row: 1; }
+  #playerhud .diplomacy-identity-secondary { grid-column: 5 / 10; grid-row: 1; }
   #playerhud .diplomacy-stats { grid-column: 4; grid-row: 1; }
 
   /* Locking a seat keeps its row in view while the rest of the table scrolls
@@ -2504,7 +2553,7 @@
   #playerhud .watch-as-link {
     width: calc(100% - 2px); height: 22px; margin: 0 1px; font-size: var(--type-micro);
   }
-  /* Every identity fact uses the same seven tracks as the heading above it.
+  /* Every identity fact uses the same tracks as the heading above it.
      Variable-length names can ellipsize inside their own cell without moving
      ELO, win odds or strategy to a different horizontal position on each row. */
   #playerhud .diplomacy-identity {
@@ -2540,7 +2589,11 @@
   #playerhud .diplomacy-civ-link .diplomacy-identity-field {
     border-left-color: transparent;
   }
-  #playerhud .diplomacy-rank { flex: 0 0 auto; margin-right: 0; font-size: var(--type-label); }
+  #playerhud .diplomacy-rank {
+    min-width: 0; display: flex; align-items: center; justify-content: flex-end;
+    margin: 0; padding-inline: 3px; overflow: hidden;
+    font-size: var(--type-label); text-align: right; white-space: nowrap;
+  }
   #playerhud .diplomacy-civ { flex: 1 1 auto; }
   #playerhud .diplomacy-leader-name { color: var(--muted); font-weight: 650; }
   #playerhud .diplomacy-player { color: #d9e1dc; font-weight: 750; }
@@ -2722,7 +2775,7 @@
   body.hud-layout-active.layout-resizing * { cursor: var(--layout-resize-cursor, nwse-resize) !important; }
 
   /* Collapsing the command deck collapses the deck and nothing else. Every map
-     overlay is switched from the deck's own Interface Settings instead, so the
+     overlay is switched from the deck's own Display Settings instead, so the
      two controls stay independent: hand the map back the deck's width without
      losing the instruments, or clear the instruments and keep the deck. Only
      the pause button follows the deck, because collapsing it takes the deck's
@@ -2913,24 +2966,17 @@
     --hud-ident-min: 25px; --hud-column-gap: 4px;
     --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }
-  #playerhud[data-type-size="compact"] > .player-standings {
-    overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
-    scrollbar-color: #476057 transparent; scrollbar-width: thin;
-  }
-  #playerhud[data-type-size="compact"] > .player-standings::-webkit-scrollbar { height: 4px; }
-  #playerhud[data-type-size="compact"] > .player-standings::-webkit-scrollbar-thumb {
-    border-radius: 4px; background: #476057;
-  }
   #playerhud[data-type-size="compact"] > .player-standings:focus-visible {
     outline: 1px solid #d7b66a70; outline-offset: -1px; border-radius: 6px;
   }
   /* Twelve complete numeric columns have a real minimum width. When a custom or
      phone-sized box cannot supply it, keep a readable type floor and scroll the
      table inside its own panel instead of crushing or spilling its cells.
-     773px keeps 201px of identity, twelve 32px values with 2px gutters, and the
-     lock, widened watch action and padding comfortably separated. */
+     803px makes room for the dedicated Rank column as well as the identity tracks,
+     twelve 32px values with 2px gutters, the lock, widened watch action, and
+     padding. */
   #playerhud[data-type-size="compact"] .ribbon-stat-heading,
-  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 773px; }
+  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 803px; }
   #playerhud[data-type-size="roomy"] {
     grid-template-columns: 168px minmax(0, 1fr);
     --hud-ident-min: 61px; --hud-column-gap: 7px;
@@ -3303,10 +3349,7 @@
   <div id="dossier-windows" aria-label="Open player dossiers"></div>
   <div id="map-controls-dock">
     <!-- Left to right: collapse the deck, set the map area, face north, zoom
-         in, zoom out, navigate the solar system, and dismiss. The full sky
-         route begins immediately after minus and ends immediately before
-         dismiss; Interface Settings is the way back and that is inside the
-         deck. -->
+         in, zoom out, choose a sky destination, and dismiss. -->
     <div id="zoomctl">
       <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
       <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
@@ -3314,17 +3357,16 @@
       <button id="compass" type="button" title="Face north" aria-label="Face north"><span id="compass-needle"></span></button>
       <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
       <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
-      <div id="skynav" hidden role="group" aria-label="Sky navigation">
-        <div class="skynav-group" id="skynav-worlds" role="group" aria-label="Fly to local worlds"></div>
-        <div class="skynav-group" id="skynav-scales" role="group" aria-label="Solar-system route"></div>
+      <div id="skynav" hidden role="group" aria-label="Sky controls">
+        <div class="skynav-group" id="skynav-worlds" role="group" aria-label="Worlds"></div>
+        <div class="skynav-group" id="skynav-scales" role="group" aria-label="Route"></div>
         <div class="skynav-group skynav-rungs">
           <input id="skyladder" type="range" min="0" max="1000" step="1" value="1000"
-            aria-label="How far out the camera stands"
-            title="The whole zoom, end to end — left is the far stop, right is the ground">
-          <span id="skyspan" title="How wide the stage is">—</span>
+            aria-label="Scale">
+          <span id="skyspan">—</span>
         </div>
       </div>
-      <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Interface Settings" title="Hide map controls · restore in Interface Settings">✕</button>
+      <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display Settings" title="Hide map controls · restore in Display Settings">✕</button>
     </div>
   </div>
   <div id="map-area-editor" hidden aria-label="Set map area">
@@ -3371,7 +3413,7 @@
   <div id="winner" role="status" aria-live="assertive"></div>
   <div class="minimap-frame" data-layout-widget="minimap">
     <div class="minimap-label widget-drag-handle" data-widget-drag tabindex="0" role="button" aria-label="Move world minimap; use arrow keys or drag" title="Drag to move · arrow keys also move"><span>World minimap</span></div>
-    <button class="overlay-close" type="button" data-overlay-close="minimap" aria-label="Hide world minimap; restore it in Interface Settings" title="Hide world minimap · restore in Interface Settings">✕</button>
+    <button class="overlay-close" type="button" data-overlay-close="minimap" aria-label="Hide world minimap; restore it in Display Settings" title="Hide world minimap · restore in Display Settings">✕</button>
     <canvas id="mini" width="200" height="140"></canvas>
     <span class="minimap-hint">Click to travel</span>
   </div>
@@ -3534,11 +3576,26 @@
     </div>
     <details class="sidebar-section" data-section="display-settings">
       <summary class="section-label" id="display-settings-header">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">◈</span><span>Interface Settings</span></span>
+        <span class="section-title"><span class="section-icon" aria-hidden="true">◈</span><span>Display Settings</span></span>
         <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
       </summary>
       <div class="sec settings-sec" id="display-settings">
       <div class="utility-group">
+        <div class="machine-loads" id="machine-loads" aria-label="Machine resource usage">
+          <div class="machine-load-row" id="cpu-load-row">
+            <span class="machine-load-name" id="cpu-load-name" title="Host-wide CPU usage on the machine serving this viewer">CPU</span>
+            <div class="machine-load-meter" id="cpu-load-meter" role="progressbar" aria-labelledby="cpu-load-name" aria-valuemin="0" aria-valuemax="100"><span id="cpu-load-fill"></span></div>
+            <output class="machine-load-value" id="cpu-load-value">Sampling…</output>
+            <label class="machine-load-cap"><span>Cap</span><select id="cpu-load-cap" aria-label="CPU usage cap"><option value="10">10%</option><option value="20">20%</option><option value="30">30%</option><option value="40">40%</option><option value="50">50%</option><option value="60">60%</option><option value="70" selected>70%</option><option value="80">80%</option><option value="90">90%</option></select></label>
+          </div>
+          <div class="machine-load-row" id="memory-load-row">
+            <span class="machine-load-name" id="memory-load-name" title="Host-wide memory usage on the machine serving this viewer">Memory</span>
+            <div class="machine-load-meter" id="memory-load-meter" role="progressbar" aria-labelledby="memory-load-name" aria-valuemin="0" aria-valuemax="100"><span id="memory-load-fill"></span></div>
+            <output class="machine-load-value" id="memory-load-value">Sampling…</output>
+            <label class="machine-load-cap"><span>Cap</span><select id="memory-load-cap" aria-label="Memory usage cap"><option value="10">10%</option><option value="20">20%</option><option value="30">30%</option><option value="40">40%</option><option value="50">50%</option><option value="60">60%</option><option value="70" selected>70%</option><option value="80">80%</option><option value="90">90%</option></select></label>
+          </div>
+          <div class="display-load-advice" id="display-load-advice" role="status" aria-live="polite">Sampling the machine serving this viewer…</div>
+        </div>
         <div class="observer-settings" id="observer-settings">
           <div class="view-row"><span>Watch as</span>
             <select id="viewplayer" aria-label="Observation perspective">
@@ -3626,7 +3683,8 @@
         </select></label>
         <label class="small game-advanced-setting civ6-hidden" data-advanced-order="20">Leader Pool<select id="leaderpool" style="margin-top:4px">
           <option value="civ6" selected>Civ 6 Leaders</option>
-          <option value="expanded">Expanded</option>
+          <option value="historical">Expanded Historical Figures</option>
+          <option value="today" disabled>Today's Leaders — roster pending</option>
         </select></label>
         <label class="small civ6-hidden">Scenario<select id="scenario" style="margin-top:4px">
           <option value="custom" selected>Custom Game</option>
@@ -3665,11 +3723,13 @@
           <option value="grand_canals">Grand Canals</option>
           <option value="grand_canals_2">Grand Canals II</option>
           <option value="pangaea">Pangaea</option>
+          <option value="earth">Earth</option>
+          <option value="true_start_earth">True Start Earth</option>
           <option value="continents">Continents</option>
           <option value="small_continents">Small Continents</option>
+          <option value="fjords">Fjords</option>
           <option value="islands">Islands</option>
           <option value="water_world">Water World</option>
-          <option value="true_start_earth">True Start Earth</option>
         </select></label>
         <label class="small game-advanced-setting civ6-hidden" data-advanced-order="40">Thermal distribution<select id="mappoles" style="margin-top:4px">
           <option value="poles">Hot equator, cold poles</option>
@@ -3756,19 +3816,13 @@
       </div>
       </div>
     </details>
-    <!-- The column runs deepest-cause first: what a civilization is trying to
-         do *now*, then why it acted, then the wars that reasoning started, then
-         the world's own record of what happened. An observer reading downward
-         reads a turn in the order it was decided.
-
-         Active AI strategy leads because it is the standing plan every entry
-         below it is an instance of: the reasoning log is an account over turns,
-         and this is the current answer. It names one civilization at a time —
-         the standings table already carries every seat's doctrine in its PLAN
-         column, and twenty research cards would bury the logs. -->
+    <!-- The column runs deepest-cause first: a civilization's current strategy
+         and the factors behind its decisions, then wars, then the world's own
+         record of what happened. Reading downward follows a decision from its
+         active plan through the evidence that changed or carried it forward. -->
     <details class="sidebar-section" id="strategysec" data-section="active-strategy">
       <summary class="section-label">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">◆</span><span>Active AI strategy</span></span>
+        <span class="section-title"><span class="section-icon" aria-hidden="true">◆</span><span>AI strategy</span></span>
         <span class="section-meta"><span class="event-scope" id="strategyscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
       </summary>
       <div class="sec strategy-sec">
@@ -3789,35 +3843,26 @@
           <div class="strategy-heading"><span>Civic development</span><button class="mini" onclick='openTree("civics")'>Tree</button></div>
           <div id="civics" class="progress-slot"></div>
         </div>
-      </div>
-    </details>
-
-    <details class="sidebar-section" id="reasonsec" data-section="ai-reasoning">
-      <summary class="section-label">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">◉</span><span>AI reasoning log</span></span>
-        <span class="section-meta"><span class="event-scope" id="reasonscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
-      </summary>
-      <div class="sec">
-        <div class="log-filters">
-          <label class="log-filter"><span>Civ</span>
-            <select id="reasonplayer" aria-label="Whose reasoning to show">
-              <option value="all">All civilizations</option>
-            </select>
-          </label>
-          <label class="log-filter"><span>Depth</span>
-            <select id="reasonlevel" aria-label="How deep into the reasoning to go">
-              <option value="strategy">Grand strategy only</option>
-              <option value="decision" selected>Decisions</option>
-              <option value="detail">Everything</option>
-            </select>
-          </label>
-          <label class="log-filter"><span>Topic</span>
-            <select id="reasontopic" aria-label="Which part of the reasoning to show">
-              <option value="all">All topics</option>
-            </select>
-          </label>
+        <div class="strategy-track strategy-reasoning-track">
+          <div class="strategy-heading"><span>Decision factors</span><small id="reasoningscope" class="strategy-reasoning-meta"></small></div>
+          <div id="reasoningcontext" class="strategy-reasoning-context"></div>
+          <div class="strategy-reason-filters">
+            <label class="log-filter"><span>Depth</span>
+              <select id="reasonlevel" aria-label="How deep into this civilization's reasoning to show">
+                <option value="strategy">Grand strategy only</option>
+                <option value="decision">Decisions</option>
+                <option value="detail" selected>Everything</option>
+              </select>
+            </label>
+            <label class="log-filter"><span>Topic</span>
+              <select id="reasontopic" aria-label="Which part of this civilization's reasoning to show">
+                <option value="all">All topics</option>
+              </select>
+            </label>
+          </div>
+          <div id="reasoning" class="reason-list"><div class="empty-state">No decision factors have been recorded yet.</div></div>
+          <button type="button" id="reasonmore" class="mini reason-more" hidden onclick="showMoreReasoning()">Show earlier factors</button>
         </div>
-        <div id="reasoning" class="reason-list"><div class="empty-state">No civilization has thought out loud yet.</div></div>
       </div>
     </details>
 
@@ -3889,7 +3934,7 @@
               <span class="map-lens-icon" aria-hidden="true">⊘</span>
               <span class="map-lens-label">Clear</span>
             </button>
-            <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Interface Settings" title="Hide map lenses · restore in Interface Settings">✕</button>
+            <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Display Settings" title="Hide map lenses · restore in Display Settings">✕</button>
           </div>
           <div id="map-lens-strip" role="none">
             <button type="button" data-map-lens="continent" aria-pressed="false"
@@ -4012,7 +4057,15 @@ function initSidebarSections() {
   };
   for (const section of document.querySelectorAll("#side details.sidebar-section[data-section]")) {
     const key = section.dataset.section;
-    if (Object.prototype.hasOwnProperty.call(saved, key)) section.open = !!saved[key];
+    if (Object.prototype.hasOwnProperty.call(saved, key)) {
+      section.open = !!saved[key];
+    } else if (key === "active-strategy" &&
+               Object.prototype.hasOwnProperty.call(saved, "ai-reasoning")) {
+      // The two previous cards are one dossier now. Preserve a reader's open
+      // reasoning log when they upgrade rather than making that trail vanish
+      // behind the old strategy card's closed state.
+      section.open = !!saved["ai-reasoning"];
+    }
     section.addEventListener("toggle", () => {
       saved[key] = section.open;
       localStorage.setItem(SIDEBAR_SECTION_STATE_KEY, JSON.stringify(saved));
@@ -4303,12 +4356,19 @@ const RES_WORD_MAX_WIDTH = S * SQ3 * .72;
 // small; at this size it decides whether the badge leans into the next hex.
 const RES_BADGE_SEAT = 1 - (RES_BADGE_R + 1.2) / (S * SQ3 / 2);
 const ARTIFACT_RESOURCES = new Set(["antiquity_site", "shipwreck"]);
-// Units that cannot fight — captured rather than killed, and the things an
-// empire has to escort. They carry their own plate shape so a glance separates
-// an army from what it is protecting.
+// Civilian-layer units carry their own plate shape so a glance separates an
+// army from what it is protecting. Religious civilians still use theological
+// health; the two capture-only civilian types are named separately below.
 const CIVILIAN_UNITS = new Set(["settler", "builder", "trader", "naturalist",
   "archaeologist", "rock_band", "spy", "missionary", "apostle", "guru",
   "inquisitor"]);
+// A hostile melee unit captures these by entering their tile. They never take
+// combat damage, so presenting an HP total would imply a fight that cannot
+// occur.
+const CAPTURE_ONLY_CIVILIAN_UNITS = new Set(["settler", "builder"]);
+function unitHasHealth(unit) {
+  return !!unit && !CAPTURE_ONLY_CIVILIAN_UNITS.has(unit.type) && Number.isFinite(unit.hp);
+}
 // The command map uses Civilization VI's own unit glyphs. Their order is the
 // order of the cells in civ6-unit-flags.png and is kept beside the renderer so
 // a missing ruleset unit cannot silently borrow another unit's picture.
@@ -5112,7 +5172,7 @@ function animateDiff(prev, next) {
                                 t0: now, dur:unitMoveDuration(nu.id, steps) });
       }
     }
-    if (nu.hp < pu.hp) {
+    if (unitHasHealth(nu) && unitHasHealth(pu) && nu.hp < pu.hp) {
       const dmg = pu.hp - nu.hp;
       const [x, y] = worldXY(nu.pos);
       anim.floats.push({ x, y: y - 16, txt: "-" + dmg, col: "#ff6252", t0: now });
@@ -5123,7 +5183,7 @@ function animateDiff(prev, next) {
     if (nextU.has(pu.id)) continue;
     // Low-HP disappearance is the fog-safe signal that this was a casualty,
     // rather than a unit simply leaving the observer's current sight.
-    if (pu.hp <= 55) {
+    if (unitHasHealth(pu) && pu.hp <= 55) {
       const [x, y] = worldXY(pu.pos);
       const deathAt = now;
       anim.deaths.push({ x, y, owner: pu.owner, type: pu.type,
@@ -5618,28 +5678,29 @@ const HUD_ELO_MAX_TYPE_SIZE = 13;
 // predicted from the track list. The heading cells are the columns; anything
 // derived from the stylesheet instead can drift from what is on the screen.
 const PLAYER_HUD_COLUMNS = [
-  {key:"civ", label:"Civilization", block:"identity", head:0, min:"--hud-ident-min", width:2.035},
+  {key:"rank", label:"Score rank", block:"identity", head:0, min:"--hud-rank-min", width:.7},
+  {key:"civ", label:"Civilization", block:"identity", head:1, min:"--hud-ident-min", width:2.035},
   // Watch-as keeps a fixed track between Leader and Player, so that seam is
   // drawn on Leader's edge and slides the button along with it.
-  {key:"leader", label:"Leader", block:"identity", head:1, min:"--hud-ident-min", width:1.85},
-  {key:"player", label:"Player", block:"identity", head:3, min:"--hud-ident-min", width:1.85},
-  {key:"elo", label:"Elo rating", block:"identity", head:4, min:"--hud-ident-num-min", width:1.017},
+  {key:"leader", label:"Leader", block:"identity", head:2, min:"--hud-ident-min", width:1.85},
+  {key:"player", label:"Player", block:"identity", head:4, min:"--hud-ident-min", width:1.85},
+  {key:"elo", label:"Elo rating", block:"identity", head:5, min:"--hud-ident-num-min", width:1.017},
   // One column, two figures: the odds this seat started with and the odds it
   // holds now. They are dragged, saved and measured as a single column because
   // they are read as a single movement.
-  {key:"win", label:"Win odds", block:"identity", head:5, min:"--hud-ident-odds-min", width:1.3},
-  {key:"age", label:"Age", block:"identity", head:6, min:"--hud-ident-min", width:1.3},
-  {key:"plan", label:"Plan", block:"identity", head:7, min:"--hud-ident-min", width:2.035},
+  {key:"win", label:"Win odds", block:"identity", head:6, min:"--hud-ident-odds-min", width:1.3},
+  {key:"age", label:"Age", block:"identity", head:7, min:"--hud-ident-min", width:1.3},
+  {key:"plan", label:"Plan", block:"identity", head:8, min:"--hud-ident-min", width:2.035},
   ...[["cities", "Cities"], ["population", "Population"], ["food", "Food"], ["production", "Production"],
       ["science", "Science"], ["culture", "Culture"], ["faith", "Faith"],
       ["gold", "Gold"], ["military", "Military"], ["wonders", "Wonders"],
       ["suzerain", "Suzerainty"], ["score", "Score"]]
     .map(([key, label], head) => ({key, label, block:"stats", head, min:"--hud-stat-min", width:1})),
 ];
-// A data column is sortable by definition. Start, change and current chance
-// are individually labelled tracks inside Win odds, so they each get a key as
-// well. Watch-as and the row lock are actions rather than facts, so neither is
-// part of this model or this set.
+// Every named standings fact is sortable. Rank is the first standings track,
+// while start, change and current chance are individually labelled tracks
+// inside Win odds. Watch-as and the row lock are actions rather than facts, so
+// neither is part of this model or this set.
 const PLAYER_HUD_SORTABLE_COLUMNS = new Set([
   ...PLAYER_HUD_COLUMNS.map(column => column.key), "win_start", "win_delta",
 ]);
@@ -5683,7 +5744,7 @@ function savePlayerHudColumns() {
 }
 
 function playerHudSortDefaultDirection(key) {
-  return PLAYER_HUD_TEXT_SORT_COLUMNS.has(key) ? "asc" : "desc";
+  return key === "rank" || PLAYER_HUD_TEXT_SORT_COLUMNS.has(key) ? "asc" : "desc";
 }
 
 function savePlayerHudSort() {
@@ -5691,7 +5752,8 @@ function savePlayerHudSort() {
   catch (_) {}
 }
 
-function playerHudSortValue(player, key, stats) {
+function playerHudSortValue(player, key, stats, rankById) {
+  if (key === "rank") return rankById.get(player.id) ?? null;
   if (key === "civ") return player.civ || null;
   if (key === "leader") return player.leader || null;
   if (key === "player") return player.player_username || player.ai_username || player.ai_name || "AI player";
@@ -5724,12 +5786,12 @@ function comparePlayerHudSortValues(left, right) {
   return left - right;
 }
 
-function sortedPlayerHudPlayers(players, statsByPlayer) {
+function sortedPlayerHudPlayers(players, statsByPlayer, rankById) {
   const {key, direction} = playerHudSort;
   const multiplier = direction === "asc" ? 1 : -1;
   return [...players].sort((left, right) => {
-    const leftValue = playerHudSortValue(left, key, statsByPlayer.get(left.id));
-    const rightValue = playerHudSortValue(right, key, statsByPlayer.get(right.id));
+    const leftValue = playerHudSortValue(left, key, statsByPlayer.get(left.id), rankById);
+    const rightValue = playerHudSortValue(right, key, statsByPlayer.get(right.id), rankById);
     // Do this before applying direction so unavailable data consistently stays
     // below observed values in both ascending and descending order.
     if (leftValue === null || rightValue === null) {
@@ -5782,7 +5844,7 @@ function playerHudColumnFlex(column, bias) {
     (column.block === "identity" ? bias : 1);
 }
 
-// Write the model out as the five track lists the stylesheet reads. The
+// Write the model out as the track values the stylesheet reads. The
 // emitted text is cached because this runs from a ResizeObserver: re-setting
 // an inline custom property that has not changed would invalidate style on
 // every observed frame for no reason.
@@ -5798,11 +5860,12 @@ function syncPlayerHudColumns(placeGrips = true) {
   const tracks = [
     // The Watch-as button holds its fixed track in the middle of the identity
     // block, exactly where the markup places it.
-    `${track(identity[0])} ${track(identity[1])} var(--hud-watch-column) ` +
-      identity.slice(2).map(track).join(" "),
+    `${track(identity[0])} ${track(identity[1])} ${track(identity[2])} ` +
+      `var(--hud-watch-column) ${identity.slice(3).map(track).join(" ")}`,
     stats.map(track).join(" "),
-    `minmax(calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) ` +
-      `+ var(--hud-ident-odds-min)), ${total(identity).toFixed(4)}fr)`,
+    `minmax(calc(var(--hud-rank-min) + var(--hud-ident-min) * 5 ` +
+      `+ var(--hud-ident-num-min) + var(--hud-ident-odds-min)), ` +
+      `${total(identity).toFixed(4)}fr)`,
     `minmax(calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), ` +
       `${total(stats).toFixed(4)}fr)`,
   ];
@@ -7548,6 +7611,153 @@ async function fetchJSON(url, opts = {}, timeoutMs = 15000) {
     callerSignal?.removeEventListener("abort", abortForCaller);
   }
 }
+// Host-wide load is an observation, not a browser capability. The native
+// server samples it; the published browser build deliberately returns no
+// values, because a tab cannot truthfully inspect the machine serving it.
+const DISPLAY_RESOURCE_CAPS_STORAGE_KEY = "civvis-display-resource-caps-v1";
+const DISPLAY_RESOURCE_CAP_VALUES = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+const DISPLAY_RESOURCE_CAP_DEFAULT = 70;
+const DISPLAY_CPU_GUIDANCE_CONTROLS = [
+  "renderresolution", "yieldchk", "reschk", "resourcedisplay", "rocketanimchk",
+];
+const DISPLAY_MEMORY_GUIDANCE_CONTROLS = [
+  "renderresolution", "resourcedisplay", "reset-overlay-layout",
+];
+let displayResourceCaps = {cpu: DISPLAY_RESOURCE_CAP_DEFAULT, memory: DISPLAY_RESOURCE_CAP_DEFAULT};
+let machineMetrics = {cpu: null, memory: null, status: "sampling", samples: 0};
+let machineMetricsRefreshTimer = null;
+
+function normalizedDisplayResourceCap(value) {
+  const parsed = Number(value);
+  return DISPLAY_RESOURCE_CAP_VALUES.includes(parsed) ? parsed : DISPLAY_RESOURCE_CAP_DEFAULT;
+}
+function restoreDisplayResourceCaps() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DISPLAY_RESOURCE_CAPS_STORAGE_KEY) || "{}");
+    for (const kind of ["cpu", "memory"])
+      displayResourceCaps[kind] = normalizedDisplayResourceCap(saved[kind]);
+  } catch (_) {}
+}
+function saveDisplayResourceCaps() {
+  try { localStorage.setItem(DISPLAY_RESOURCE_CAPS_STORAGE_KEY, JSON.stringify(displayResourceCaps)); }
+  catch (_) {}
+}
+function normalizedMachinePercent(value) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.min(100, value)) : null;
+}
+function machineMetricText(kind, percent) {
+  if (percent !== null) return `${Math.round(percent)}%`;
+  if (machineMetrics.status === "sampling" ||
+      (machineMetrics.status === "available" && machineMetrics.samples < 2)) return "Sampling…";
+  return "Unavailable";
+}
+function setMachineLoadRow(kind) {
+  const percent = machineMetrics[kind];
+  const cap = displayResourceCaps[kind];
+  const row = document.getElementById(`${kind}-load-row`);
+  const meter = document.getElementById(`${kind}-load-meter`);
+  const fill = document.getElementById(`${kind}-load-fill`);
+  const value = document.getElementById(`${kind}-load-value`);
+  if (!row || !meter || !fill || !value) return;
+  const overCap = percent !== null && percent >= cap;
+  const nearCap = percent !== null && !overCap && percent >= cap * .85;
+  row.classList.toggle("is-near-cap", nearCap);
+  row.classList.toggle("is-over-cap", overCap);
+  fill.style.width = `${percent ?? 0}%`;
+  value.textContent = machineMetricText(kind, percent);
+  if (percent === null) {
+    meter.removeAttribute("aria-valuenow");
+    meter.removeAttribute("aria-valuetext");
+  } else {
+    meter.setAttribute("aria-valuenow", String(Math.round(percent)));
+    meter.setAttribute("aria-valuetext", `${Math.round(percent)}% host-wide usage`);
+  }
+}
+function displayGuidanceContainer(id) {
+  return document.getElementById(id)?.closest(".speed-row, .setting-row, .overlay-options");
+}
+function updateDisplayLoadGuidance(cpuPressure, memoryPressure) {
+  const controls = [...new Set([
+    ...DISPLAY_CPU_GUIDANCE_CONTROLS, ...DISPLAY_MEMORY_GUIDANCE_CONTROLS,
+  ])];
+  for (const id of controls) displayGuidanceContainer(id)?.classList.remove("display-load-guidance");
+  if (cpuPressure) {
+    for (const id of DISPLAY_CPU_GUIDANCE_CONTROLS)
+      displayGuidanceContainer(id)?.classList.add("display-load-guidance");
+  }
+  if (memoryPressure) {
+    for (const id of DISPLAY_MEMORY_GUIDANCE_CONTROLS)
+      displayGuidanceContainer(id)?.classList.add("display-load-guidance");
+  }
+}
+function updateMachineMetricsDisplay() {
+  const panel = document.getElementById("machine-loads");
+  const advice = document.getElementById("display-load-advice");
+  if (!panel || !advice) return;
+  setMachineLoadRow("cpu");
+  setMachineLoadRow("memory");
+  const cpu = machineMetrics.cpu;
+  const memory = machineMetrics.memory;
+  const cpuOver = cpu !== null && cpu >= displayResourceCaps.cpu;
+  const memoryOver = memory !== null && memory >= displayResourceCaps.memory;
+  const cpuNear = cpu !== null && !cpuOver && cpu >= displayResourceCaps.cpu * .85;
+  const memoryNear = memory !== null && !memoryOver && memory >= displayResourceCaps.memory * .85;
+  panel.classList.toggle("is-unavailable", machineMetrics.status === "unavailable");
+  updateDisplayLoadGuidance(cpuOver || cpuNear, memoryOver || memoryNear);
+  if (machineMetrics.status === "sampling") {
+    advice.textContent = "Sampling the machine serving this viewer…";
+  } else if (machineMetrics.status === "unavailable") {
+    advice.textContent = "Machine telemetry is unavailable here. Use the display choices below manually.";
+  } else if (cpuOver && memoryOver) {
+    advice.textContent = "CPU and memory are over their caps. Prefer Performance resolution, then reduce tile layers, animations, or unneeded overlays below.";
+  } else if (cpuOver) {
+    advice.textContent = "CPU is over its cap. Prefer Performance resolution, then reduce yields, resource markers, or rocket and satellite animations below.";
+  } else if (memoryOver) {
+    advice.textContent = "Memory is over its cap. Prefer Balanced or Performance resolution and hide unneeded overlays below.";
+  } else if (cpuNear || memoryNear) {
+    advice.textContent = "Near a selected cap. Lower render resolution or optional map detail below before load rises further.";
+  } else {
+    advice.textContent = "Within the selected caps. Native resolution and optional map detail are available.";
+  }
+}
+function setDisplayResourceCap(kind, value) {
+  if (kind !== "cpu" && kind !== "memory") return;
+  const cap = normalizedDisplayResourceCap(value);
+  displayResourceCaps[kind] = cap;
+  const select = document.getElementById(`${kind}-load-cap`);
+  if (select) select.value = String(cap);
+  saveDisplayResourceCaps();
+  updateMachineMetricsDisplay();
+}
+function installMachineMetricsControls() {
+  restoreDisplayResourceCaps();
+  for (const kind of ["cpu", "memory"]) {
+    const select = document.getElementById(`${kind}-load-cap`);
+    if (!select) continue;
+    select.value = String(displayResourceCaps[kind]);
+    select.onchange = () => setDisplayResourceCap(kind, select.value);
+  }
+  updateMachineMetricsDisplay();
+  refreshMachineMetrics();
+}
+async function refreshMachineMetrics() {
+  try {
+    const metrics = await fetchJSON("/machine-metrics", {cache: "no-store"}, 3000);
+    machineMetrics.cpu = normalizedMachinePercent(metrics?.cpu_percent);
+    machineMetrics.memory = normalizedMachinePercent(metrics?.memory_percent);
+    machineMetrics.samples += 1;
+    machineMetrics.status = machineMetrics.cpu !== null || machineMetrics.memory !== null
+      ? "available" : "unavailable";
+  } catch (_) {
+    machineMetrics.cpu = null;
+    machineMetrics.memory = null;
+    machineMetrics.status = "unavailable";
+  }
+  updateMachineMetricsDisplay();
+  window.clearTimeout(machineMetricsRefreshTimer);
+  machineMetricsRefreshTimer = window.setTimeout(refreshMachineMetrics, 5000);
+}
 let firstLoad = true;
 let serverInstance = null;
 // The commit whose HTML, JavaScript and rules this document was served with.
@@ -8106,9 +8316,10 @@ async function boot() {
       if ([...select.options].some(option => option.value === chosen)) select.value = chosen;
     }
     syncEarthShape();
-    // A leader is a civilization plus the person who leads it; the ruleset
-    // knows both, and their agendas, so the setup screen never invents names.
-    if (RULES.civs && typeof RULES.civs === "object") {
+    // Roster data names both the civilization and its leader, even when that
+    // neutral historical identity is intentionally absent from this game's
+    // modeled Civilization VI rules.
+    if (Array.isArray(RULES.leader_pools)) {
       syncLeaderPool();
     }
     if (RULES.difficulties && typeof RULES.difficulties === "object") {
@@ -8295,14 +8506,14 @@ function adoptTiles(st) {
 // `have` is a different question from `painted`, and the tile patch below
 // turns on the difference: a state can arrive, patch the tiles and still fail
 // to draw. What a patch is built against is what this page *holds*.
-// The AI reasoning log's own state, declared here rather than beside the rest
-// of that panel further down the file. `paintedQuery` below reads the cursor,
+// The AI strategy dossier's decision-factor state, declared here rather than
+// beside the rest of that panel further down the file. `paintedQuery` reads the cursor,
 // and the spectator's first fetch happens while this script is still running:
 // a `let` declared after that point would be in its temporal dead zone and the
 // throw would take the whole client with it.
-const REASON_FILTER_KEY = "civvis-reasoning-filters-v1";
+const REASON_FILTER_KEY = "civvis-ai-strategy-filters-v1";
 let reasoningLog = {cursor: 0, world: null, viewer: null, thoughts: [], dropped: 0, truncatedTurns: 0};
-let reasonFilters = {player: "all", level: "decision", topic: "all"};
+let reasonFilters = {level: "detail", topic: "all"};
 // The war and event logs are narrowed the same way, and their choices are kept
 // the same way too. All three live here rather than beside their panels for
 // the reason above: the first fetch runs while this script is still executing.
@@ -8320,16 +8531,12 @@ function restoreLogFilters(key, defaults) {
 reasonFilters = restoreLogFilters(REASON_FILTER_KEY, reasonFilters);
 warFilters = restoreLogFilters(WAR_FILTER_KEY, warFilters);
 eventFilters = restoreLogFilters(EVENT_FILTER_KEY, eventFilters);
-// Which seat the Active AI strategy panel is speaking for, and the world that
-// choice belongs to.
-//
-// It is deliberately *not* part of `reasonFilters`: the log answers "what has
-// every civilization been thinking", the plan answers "what is this one doing
-// now", and a reader routinely wants those two set differently. It is also
-// deliberately not remembered across games the way the reasoning filters are —
-// a new world reseats every civilization, so the player 5 stored last night is
-// not the player 5 on screen this morning. A new world reopens on whoever is
-// leading it.
+// Which seat the AI strategy dossier is speaking for, and the world that choice
+// belongs to. It scopes both the active plan and its decision factors, so a
+// reader never has to reconcile a plan for one civilization with a log for
+// another. It is deliberately not remembered across games: a new world reseats
+// every civilization, so the player 5 stored last night is not the player 5 on
+// screen this morning. A new world reopens on whoever is leading it.
 let strategySeat = null;
 let strategySeatWorld = null;
 
@@ -9127,7 +9334,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   document.getElementById("specbar").style.display = "block";
   document.body.classList.toggle("watching-sim", SPEC);
   document.getElementById("observer-settings").style.display = SPEC ? "block" : "none";
-  // Active AI strategy used to be withheld from the omniscient spectator
+  // AI strategy used to be withheld from the omniscient spectator
   // because the panel could only ever speak for `state.me`, and above the
   // world there is no single "me". It now names the civilization it is
   // speaking for, so the one view that can read every plan is the last one
@@ -9157,7 +9364,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       defaultTurnLimitForSpeed(st.game_speed));
     setOptionalWorldNumber("mapseed", st.seed);
     syncWorldSetupInputs();
-    document.getElementById("leaderpool").value = st.leader_pool || "civ6";
+    document.getElementById("leaderpool").value = normalizedLeaderPoolId(st.leader_pool || "civ6");
     syncLeaderPool();
     // The seat a person is playing and the handicap they are playing it on are
     // settings of this world too, so the panel adopts them alongside the map
@@ -12382,6 +12589,34 @@ function paintImprovementMarker(marker, t, x, y, dir) {
     case "airstrip":
       cx.fillStyle = "#59616a"; cx.fillRect(x - 14, y - 2.2, 28, 5); cx.strokeStyle = "#d8d3ad"; cx.lineWidth = 1; cx.strokeRect(x - 14, y - 2.2, 28, 5);
       cx.strokeStyle = "#f2edc6"; cx.setLineDash([2, 2]); cx.beginPath(); cx.moveTo(x - 12, y + .3); cx.lineTo(x + 12, y + .3); cx.stroke(); cx.setLineDash([]); break;
+    case "feitoria": {
+      // A Feitoria is Portugal's fortified overseas trade post, not an
+      // anonymous inland house. A white watchtower, red pennant and low quay
+      // make its foreign coast and commercial role legible at survey scale.
+      cx.fillStyle = "rgba(82,139,168,.76)";
+      cx.beginPath(); cx.ellipse(x, y + 6.5, 15, 4.7, 0, 0, 7); cx.fill();
+      cx.strokeStyle = "rgba(198,225,231,.72)"; cx.lineWidth = .9;
+      for (const waveY of [5.2, 8.2]) {
+        cx.beginPath(); cx.moveTo(x - 13, y + waveY); cx.quadraticCurveTo(x - 7, y + waveY - 1.5, x - 1, y + waveY);
+        cx.quadraticCurveTo(x + 6, y + waveY + 1.5, x + 13, y + waveY); cx.stroke();
+      }
+      const quay = new Path2D(); quay.roundRect(x - 13, y + 2.7, 26, 4.8, 1.1);
+      outlined(quay, matteMat("#88613f", dir, 13), "rgba(55,37,21,.78)", .9);
+      const tower = new Path2D(); tower.roundRect(x - 5.7, y - 11.5, 11.4, 15.2, 1.1);
+      outlined(tower, matteMat("#e2d3af", dir, 5.7), "rgba(57,45,31,.8)", 1);
+      cx.fillStyle = "#f0e4c8";
+      for (const dx of [-5.1, -1.7, 1.7, 5.1]) cx.fillRect(x + dx - 1.15, y - 13.1, 2.3, 3.1);
+      cx.strokeStyle = "rgba(77,61,43,.72)"; cx.lineWidth = .7;
+      cx.beginPath(); cx.moveTo(x - 5.7, y - 10); cx.lineTo(x + 5.7, y - 10); cx.stroke();
+      cx.fillStyle = "#31546a";
+      cx.beginPath(); cx.arc(x, y + 2.1, 2.45, Math.PI, 0); cx.lineTo(x + 2.45, y + 3.8); cx.lineTo(x - 2.45, y + 3.8); cx.closePath(); cx.fill();
+      cx.strokeStyle = "#5b412d"; cx.lineWidth = 1.2;
+      cx.beginPath(); cx.moveTo(x + dir * 3.3, y - 13); cx.lineTo(x + dir * 3.3, y - 19); cx.stroke();
+      cx.fillStyle = "#ba4039";
+      cx.beginPath(); cx.moveTo(x + dir * 3.3, y - 18.8); cx.lineTo(x + dir * 9.1, y - 16.8); cx.lineTo(x + dir * 3.3, y - 14.8); cx.closePath(); cx.fill();
+      cx.fillStyle = "#e9ca64"; cx.beginPath(); cx.arc(x + dir * 5.1, y - 16.8, .85, 0, 7); cx.fill();
+      break;
+    }
     case "arena":
       cx.fillStyle = "#caa66d"; cx.beginPath(); cx.ellipse(x, y + 3, 13, 7, 0, 0, 7); cx.fill(); cx.strokeStyle = "#61472c"; cx.lineWidth = 1.2; cx.stroke();
       cx.fillStyle = "#805e37"; cx.beginPath(); cx.ellipse(x, y + 3, 7, 3, 0, 0, 7); cx.fill(); break;
@@ -12827,6 +13062,73 @@ function faithColor(name) {
 function settlementSpread(pop) {
   return 8.5 + Math.min(7, Math.sqrt(Math.max(1, pop || 1)) * 1.9);
 }
+// A city is more than its owner colour or nameplate. This small, canvas-native
+// skyline keeps a recognizable urban mark at survey scale, while the town
+// beneath it still carries the useful population detail at close range.
+function cityIconInk(fill, cityState) {
+  if (cityState) return "#e7e9e3";
+  return lightness(fill) < .55 ? "#fff4d4" : "#11161b";
+}
+function drawCityIcon(context, x, y, radius, fill, outline, cityState = false,
+                      capital = false, badge = true) {
+  const r = Math.max(.75, radius);
+  const ink = cityIconInk(fill, cityState);
+  context.save();
+  context.lineJoin = "round"; context.lineCap = "round";
+  if (badge) {
+    context.fillStyle = fill; context.strokeStyle = outline;
+    context.lineWidth = Math.max(.5, Math.min(2.2, r * .22));
+    context.beginPath(); context.arc(x, y, r, 0, 7); context.fill(); context.stroke();
+  }
+  // Three stepped towers and their shared wall make a city silhouette rather
+  // than a generic round token. The central keep stays tall enough to survive
+  // the thumbnail, and its crown gives capitals a small pennant of their own.
+  const base = y + r * .45, wallTop = y + r * .06;
+  context.fillStyle = ink;
+  context.beginPath();
+  context.moveTo(x - r * .72, base);
+  context.lineTo(x - r * .72, y - r * .27);
+  context.lineTo(x - r * .53, y - r * .27);
+  context.lineTo(x - r * .53, y - r * .45);
+  context.lineTo(x - r * .32, y - r * .45);
+  context.lineTo(x - r * .32, wallTop);
+  context.lineTo(x - r * .22, wallTop);
+  context.lineTo(x - r * .22, y - r * .68);
+  context.lineTo(x - r * .07, y - r * .68);
+  context.lineTo(x - r * .07, y - r * .80);
+  context.lineTo(x + r * .07, y - r * .80);
+  context.lineTo(x + r * .07, y - r * .68);
+  context.lineTo(x + r * .22, y - r * .68);
+  context.lineTo(x + r * .22, wallTop);
+  context.lineTo(x + r * .32, wallTop);
+  context.lineTo(x + r * .32, y - r * .45);
+  context.lineTo(x + r * .53, y - r * .45);
+  context.lineTo(x + r * .53, y - r * .27);
+  context.lineTo(x + r * .72, y - r * .27);
+  context.lineTo(x + r * .72, base);
+  context.closePath(); context.fill();
+  // An arched gate reads at a glance when there is room for it, but is omitted
+  // from the smallest markers instead of becoming a fuzzy extra pixel.
+  if (r >= 2) {
+    context.fillStyle = fill; context.globalAlpha = .78;
+    context.beginPath(); context.arc(x, base, r * .2, Math.PI, 0);
+    context.lineTo(x + r * .2, base); context.closePath(); context.fill();
+  }
+  if (capital && r >= 2.6) {
+    context.globalAlpha = 1; context.strokeStyle = ink;
+    context.lineWidth = Math.max(.5, r * .09);
+    context.beginPath();
+    context.moveTo(x + r * .10, y - r * .79);
+    context.lineTo(x + r * .10, y - r * 1.04); context.stroke();
+    context.fillStyle = ink;
+    context.beginPath();
+    context.moveTo(x + r * .10, y - r * 1.03);
+    context.lineTo(x + r * .40, y - r * .95);
+    context.lineTo(x + r * .10, y - r * .87);
+    context.closePath(); context.fill();
+  }
+  context.restore();
+}
 function drawSettlement(c, x, y) {
   const pop = Math.max(1, c.pop || 1);
   const n = Math.max(3, Math.min(11, 2 + Math.round(Math.sqrt(pop) * 2)));
@@ -13242,7 +13544,8 @@ function strategicUnitTokenPath(civilian, x, y, r) {
 // label. Its largest corner is still inside the token's enclosing circle, so
 // the same inradius calculation that contains the unit contains its health.
 function drawStrategicUnitHealth(x, y, r, hp, now) {
-  const health = Math.max(0, Math.min(100, Math.round(hp ?? 100)));
+  if (!Number.isFinite(hp)) return;
+  const health = Math.max(0, Math.min(100, Math.round(hp)));
   if (!(r > 0) || health >= 100) return;
   cx.save();
   const frac = health / 100;
@@ -16075,19 +16378,10 @@ function skyWorldStopScale(body) {
   return Math.max(planetMinScale(),
                   Math.min(planetMaxScale(SKY_PAN, body), want));
 }
-// The four places. A world is only offered once this civilization can see it,
-// by the same roster everything else out here is drawn from, so the bar can
-// never point at something the sky is withholding.
-//
-// The destination is labelled **Exoplanet** rather than by its catalogue name.
-// Which world it is depends on what that civilization surveyed, so the same
-// button reads `Teegarden's Star b` in one game and `82 Eridani d` in the next
-// — and a control whose name changes between games is one nobody ever learns
-// the position of. The real name is a fact and it is kept in all three places a
-// fact belongs: the button's own tooltip, the caption under the world, and the
-// scene caption that comes up on arrival with the distance and the catch.
+// The four practical destinations. A world is offered only once this
+// civilization can see it, by the same roster everything else out here uses.
 const SKY_STOP_MARKS = {earth:"◉", moon:"☾", mars:"♂", exo:"✧"};
-const SKY_STOP_LABELS = {earth:"Earth", exo:"Exoplanet"};
+const SKY_STOP_LABELS = {earth:"Earth", moon:"Moon", mars:"Mars", exo:"Exoplanet"};
 function skyWorldStops() {
   const known = new Set(skyKnownWorlds().map(body => body.id));
   const stops = [];
@@ -16096,9 +16390,7 @@ function skyWorldStops() {
     const body = skyBody(id);
     if (!body) continue;
     stops.push({id, body, mark:SKY_STOP_MARKS[id] || "◉",
-                label:SKY_STOP_LABELS[id] || body.name.replace(/^The /, ""),
-                title:id === "earth" ? "Home — the whole globe, and the board on it"
-                                     : `Fly to ${body.name}`});
+                label:SKY_STOP_LABELS[id] || body.name.replace(/^The /, "")});
   }
   return stops;
 }
@@ -16118,16 +16410,10 @@ function skyScaleStops() {
   const edge = SKY_SYSTEM.find(body =>
     body.id === (seesOuterSystem() ? "neptune" : "saturn"));
   if (edge)
-    stops.push({id:"system", label:"Solar system", mark:"☉", x:sx, y:sy,
-                reach:edge.orbitRadius * 1.16,
-                title:`The solar system, out past ${edge.name}`});
+    stops.push({id:"system", label:"Solar System", mark:"☉", x:sx, y:sy,
+                reach:edge.orbitRadius * 1.16});
   if (knowsNeighbourhood()) {
-    const target = seesDestination() ? skyTarget() : null;
-    stops.push({id:"voyage", label:"Voyage", mark:"⇢", ...skyVoyageFrame(),
-                title:target
-                  ? `The whole trip: the Sun, ${target.name}, and the ` +
-                    `${target.ly.toFixed(2)} light-years between them`
-                  : `${SKY_STOP_LY} light-years of sky, and every star in it`});
+    stops.push({id:"voyage", label:"Voyage", mark:"⇢", ...skyVoyageFrame()});
   }
   return stops;
 }
@@ -16403,9 +16689,9 @@ function skyNavButton(kind, stop) {
   const button = document.createElement("button");
   button.type = "button";
   button.dataset.skyStop = `${kind}:${stop.id}`;
-  button.title = stop.title;
+  button.title = stop.label;
   button.setAttribute("aria-pressed", "false");
-  button.setAttribute("aria-label", kind === "world" ? `Fly to ${stop.label}` : `Frame ${stop.label}`);
+  button.setAttribute("aria-label", stop.label);
   const mark = document.createElement("span");
   mark.className = "skynav-mark";
   mark.setAttribute("aria-hidden", "true");
@@ -16431,19 +16717,12 @@ function syncSkyNav() {
   }
   if (!showing) return;
   const worlds = skyWorldStops(), scales = skyScaleStops();
-  // The title is in the key and it has to be, now that the labels are fixed
-  // words. `Exoplanet` and `Voyage` read the same whichever world the expedition
-  // settled on, and the world's name lives on their tooltips — so keyed on the
-  // labels alone the bar would never rebuild when the destination was chosen and
-  // both tooltips would go on naming the pre-launch default for the rest of the
-  // game. It used to be keyed on the label safely because the label *was* the
-  // catalogue name.
   const key = [...worlds, ...scales]
-    .map(stop => `${stop.id}/${stop.label}/${stop.title}`).join(",");
+    .map(stop => `${stop.id}/${stop.label}`).join(",");
   if (key !== SKY_NAV_KEY) {
     SKY_NAV_KEY = key; SKY_NAV_MARK = "";
     // The old route is deliberately one readable sequence in the control bar:
-    // Earth, Moon, Mars, Solar system, Voyage, Exoplanet. The distant world
+    // Earth, Moon, Mars, Solar System, Voyage, Exoplanet. The distant world
     // follows the two whole-route shots, rather than leaving an icon-only
     // shortcut up by the compass and making the route read in two places.
     const local = worlds.filter(stop => stop.id !== "exo");
@@ -16627,7 +16906,12 @@ function skyPixels(earthRadii, radius) { return earthRadii * radius; }
 // is a line across the picture.
 function drawSkyOrbits(radius, centerX, centerY, alpha) {
   const span = skyStageSpan();
-  const bodies = visibleSkyBodies().filter(body => body.orbitRadius > 0);
+  // Earth is home, so `visibleSkyBodies` deliberately leaves it out of the
+  // navigation/object list. Its Sun-centred path still belongs in the system
+  // diagram: it is the one astronomical-unit ring that tells the viewer where
+  // home is in relation to the Sun.
+  const bodies = [SKY_EARTH, ...visibleSkyBodies().filter(body => body.id !== "earth")]
+    .filter(body => body.orbitRadius > 0);
   if (!bodies.length) return;
   cx.save();
   cx.lineWidth = 1;
@@ -16641,8 +16925,9 @@ function drawSkyOrbits(radius, centerX, centerY, alpha) {
     const x = centerX + px * radius, y = centerY + py * radius;
     // Nothing to draw if the whole ring is off the stage in one direction.
     if (Math.abs(x) > span * 9 && Math.abs(y) > span * 9) continue;
-    cx.globalAlpha = shown * (body.parent ? .22 : .34);
-    cx.strokeStyle = body.parent ? "#8fa6bb" : "#7f94ab";
+    const homeOrbit = body.id === "earth";
+    cx.globalAlpha = shown * (body.parent ? .22 : homeOrbit ? .56 : .34);
+    cx.strokeStyle = body.parent ? "#8fa6bb" : homeOrbit ? "#9ccce9" : "#7f94ab";
     cx.beginPath(); cx.arc(x, y, ring, 0, 6.283185); cx.stroke();
   }
   cx.restore();
@@ -16923,78 +17208,57 @@ function skyScaleChoice(radius, want) {
   }
   return null;
 }
-// What this picture is a picture of, in three words, and the one number that
-// makes it mean something. This is where the view answers the question it is
-// built around: at the far end it says out loud how far the expedition is
-// going, and the picture behind the words is showing exactly that.
-function skySceneCaption(radius) {
-  const span = skyStageSpan();
-  const across = span / Math.max(1e-30, radius);   // Earth radii across the stage
-  // Standing over the destination, the caption is the destination: its name,
-  // how far the trip was, and the thing that is wrong with it. That last part
-  // is the whole payoff of the survey — a civilization that looked harder is
-  // standing over a better world, and it should be able to read why.
-  const target = skyTarget();
-  if (across < 40 * target.size && skyRungAtLeast("space")) {
-    const [exoX, exoY] = skyBodyPos(skyExoBody());
-    if (Math.hypot(exoX - SKY_PAN.x, exoY - SKY_PAN.y) < across)
-      return [target.name, `${target.ly.toFixed(2)} light-years. ${target.note}`];
-  }
-  if (across > 3 * LIGHT_YEAR)
-    return ["The solar neighbourhood",
-            `${SKY_STOP_LY} light-years across, and the expedition is going to ` +
-            `one of these stars`];
-  if (across > 120 * AU)
-    return ["Interstellar space",
-            `The nearest star is ${SKY_STARS[0].ly.toFixed(2)} light-years away — ` +
-            `${Math.round(SKY_STARS[0].ly * LIGHT_YEAR / AU).toLocaleString()} times the Earth's orbit`];
-  if (across > 3 * AU)
-    return ["The solar system", "Sunlight takes eight minutes to reach the Earth"];
-  if (across > 600)
-    return ["The Earth's orbit", "One astronomical unit: 149.6 million kilometres"];
-  if (across > 12)
-    return ["The Earth and the Moon",
-            "Sixty Earths apart, and every other world in the game is further"];
-  return null;
+function mapControlsBox(viewRect) {
+  const controls = document.getElementById("zoomctl");
+  if (!controls) return null;
+  const box = controls.getBoundingClientRect();
+  if (!(box.width && box.height)) return null;
+  return {
+    left:box.left - viewRect.left, right:box.right - viewRect.left,
+    top:box.top - viewRect.top, bottom:box.bottom - viewRect.top,
+  };
+}
+function mapScaleRightEdge(viewRect, controls, fallback) {
+  const minimap = document.querySelector(".minimap-frame");
+  if (!minimap) return fallback;
+  const box = minimap.getBoundingClientRect();
+  const left = box.left - viewRect.left;
+  return box.width && (!controls || left > controls.right) ? left - 12 : fallback;
 }
 function drawSkyScale(radius, alpha) {
   if (alpha <= .02) return;
   const frame = observedFrameRect();
-  const want = Math.min(150, (frame.right - frame.left) * .16);
+  const viewRect = cv.getBoundingClientRect();
+  const controls = mapControlsBox(viewRect);
+  const want = Math.min(125, (frame.right - frame.left) * .16);
   const choice = skyScaleChoice(radius, want);
-  const caption = skySceneCaption(radius);
-  if (!choice && !caption) return;
-  const x = frame.left + 18;
-  // Both this block and the sky's own control bar are measured off the bottom
-  // of the map, so the block moves up by exactly what the bar takes. It is the
-  // caption that says what the picture is a picture of; hiding half of it
-  // behind the buttons that got you there is the worst trade in the view.
-  const nav = skyNavBox(cv.getBoundingClientRect());
-  const overlaps = nav && nav.right > x && nav.left < x + 320;
-  const y = overlaps ? Math.min(frame.bottom - 20, nav.top - 12) : frame.bottom - 20;
+  if (!choice) return;
   cx.save();
   cx.globalAlpha = alpha;
   cx.textAlign = "left";
-  if (choice) {
-    cx.strokeStyle = "rgba(214,235,241,.72)";
-    cx.lineWidth = 1;
-    cx.beginPath();
-    cx.moveTo(x, y - 5); cx.lineTo(x, y); cx.lineTo(x + choice.drawn, y);
-    cx.lineTo(x + choice.drawn, y - 5);
-    cx.stroke();
-    cx.fillStyle = "rgba(226,240,246,.86)";
-    cx.font = "600 10px system-ui, sans-serif";
-    const amount = choice.step >= 1 ? choice.step.toLocaleString() : String(choice.step);
-    cx.fillText(`${amount} ${choice.unit.name}`, x + choice.drawn + 7, y);
-  }
-  if (caption) {
-    cx.fillStyle = "rgba(232,244,250,.92)";
-    cx.font = "600 12px system-ui, sans-serif";
-    cx.fillText(caption[0], x, y - 30);
-    cx.fillStyle = "rgba(200,220,232,.66)";
-    cx.font = "11px system-ui, sans-serif";
-    cx.fillText(caption[1], x, y - 15);
-  }
+  cx.font = "600 10px system-ui, sans-serif";
+  const amount = choice.step >= 1 ? choice.step.toLocaleString() : String(choice.step);
+  const label = `${amount} ${choice.unit.name}`;
+  const width = choice.drawn + 7 + cx.measureText(label).width;
+  const right = mapScaleRightEdge(viewRect, controls, frame.right - 12);
+  const beside = controls && controls.right + 14 + width <= right;
+  const x = beside ? controls.right + 14 : frame.left + 18;
+  // A wide map keeps the practical ruler in the same lower strip, immediately
+  // after the map controls. On a narrow map it rises just above them instead
+  // of covering either the buttons or the map.
+  const y = beside
+    ? Math.max(frame.top + 16, Math.min(frame.bottom - 12, controls.bottom - 16))
+    : controls
+    ? Math.max(frame.top + 16, Math.min(frame.bottom - 12, controls.top - 12))
+    : frame.bottom - 20;
+  cx.strokeStyle = "rgba(214,235,241,.72)";
+  cx.lineWidth = 1;
+  cx.beginPath();
+  cx.moveTo(x, y - 5); cx.lineTo(x, y); cx.lineTo(x + choice.drawn, y);
+  cx.lineTo(x + choice.drawn, y - 5);
+  cx.stroke();
+  cx.fillStyle = "rgba(226,240,246,.86)";
+  cx.fillText(label, x + choice.drawn + 7, y);
   cx.restore();
 }
 
@@ -19398,11 +19662,10 @@ function drawPlanetMap() {
       ? Math.max(3, Math.min(5.8, 3.8 * Math.sqrt(scale)))
       : Math.max(5.5, Math.min(10.5, 6.6 * Math.sqrt(scale)));
     const bannerColor = cityBannerColor(city.owner);
-    cx.fillStyle = bannerColor;
-    cx.strokeStyle = cityState ? "#10151d" : pcol2(city.owner);
-    cx.lineWidth = cityState ? .9 : 2.4;
     if (!cityState) { cx.shadowColor = bannerColor; cx.shadowBlur = 7; }
-    cx.beginPath(); cx.arc(cell.center.x, cell.center.y, r, 0, 7); cx.fill(); cx.stroke();
+    drawCityIcon(cx, cell.center.x, cell.center.y, r, bannerColor,
+                 cityState ? "#10151d" : pcol2(city.owner), cityState,
+                 Boolean(city.is_capital));
     cx.shadowBlur = 0;
     if (!cityState) {
       cx.strokeStyle = bannerColor; cx.lineWidth = 1.2;
@@ -19460,7 +19723,7 @@ function drawPlanetMap() {
     cx.fill(); cx.stroke();
     drawUnitPictogram(unit.embarked ? "galley" : unit.type, ux, uy,
                       r * 1.48, tokenInk);
-    drawStrategicUnitHealth(ux, uy, r, unit.hp, now);
+    if (unitHasHealth(unit)) drawStrategicUnitHealth(ux, uy, r, unit.hp, now);
     if (commandTokenClip) cx.restore();
     cx.restore();
   }
@@ -20066,6 +20329,13 @@ function draw() {
       cx.restore();
     }
     drawSettlement(c, x, y);
+    // The settlement scales with the map so it can become a real town up
+    // close; this badge has a bounded screen size so every city remains
+    // unmistakable while surveying an empire.
+    const cityIconRadius = (cityState ? 4.7 : 6.6) * UI_K();
+    drawCityIcon(cx, x, y + cityIconRadius * .16, cityIconRadius,
+                 cityBannerColor(c.owner), cityState ? "#10151d" : pcol2(c.owner),
+                 cityState, Boolean(c.is_capital));
     // Which faith holds this city. Religion is one of the six ways to win and
     // it spreads city by city across the map, yet the map said nothing at all —
     // a religious conquest rolling through your neighbours was visible only as
@@ -20325,7 +20595,7 @@ function draw() {
     cx.stroke();
     drawUnitPictogram(u.type, x, y, rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk);
     cx.globalAlpha = unitAlpha;
-    drawStrategicUnitHealth(x, y, rr, u.hp, now);
+    if (unitHasHealth(u)) drawStrategicUnitHealth(x, y, rr, u.hp, now);
     if (u.level > 1) {
       const count = u.level - 1;
       const pipRadius = Math.min(2, rr * .12);
@@ -20565,6 +20835,53 @@ function drawNuclearFlash(now) {
 // what stops the world chart from handing back the ball the map is withholding.
 // A people charting a flat world get a flat chart in the corner too, filling
 // its frame corner to corner with no disc in it, exactly as their map does.
+function miniViewportScreenCorners() {
+  return [[0, 0], [MAPW, 0], [MAPW, MAPH], [0, MAPH]];
+}
+function miniViewportPath(points) {
+  mx2.beginPath();
+  points.forEach(([x, y], index) => index ? mx2.lineTo(x, y) : mx2.moveTo(x, y));
+  mx2.closePath();
+}
+// The footprint is deliberately a translucent surface as well as an outline:
+// a one-pixel frame disappears into a dense empire on a small minimap, while a
+// light wash still says which ground is in the camera without hiding its owners.
+function paintMiniViewportFootprint(points, clip = null) {
+  if (points.length < 3) return;
+  mx2.save();
+  if (clip) {
+    mx2.beginPath(); clip(); mx2.clip();
+  }
+  miniViewportPath(points);
+  mx2.fillStyle = "rgba(255, 223, 133, .18)"; mx2.fill();
+  mx2.lineJoin = "round"; mx2.shadowColor = "rgba(0,0,0,.78)"; mx2.shadowBlur = 2;
+  mx2.strokeStyle = "rgba(8,14,17,.88)"; mx2.lineWidth = 3; mx2.stroke();
+  mx2.shadowBlur = 0; mx2.strokeStyle = "#ffe4a2"; mx2.lineWidth = 1.05; mx2.stroke();
+  mx2.restore();
+}
+// The surface camera and the corner camera share a projection. A point on the
+// map canvas therefore reaches the minimap by the ratio of their radii. For a
+// globe, clipping that projected rectangle to the thumbnail disc is the exact
+// visible spherical cap (including a partial-disc crescent at the edge). The
+// undiscovered chart has no disc, but its ground plane is vertically pitched on
+// the main map, so undo that pitch before carrying the same ground to the mini.
+function drawPlanetMiniViewportFootprint(camera, scale, centerX, centerY) {
+  const mainCamera = planetCamera();
+  const mainRadius = mainCamera.radius * cam.scale;
+  const miniRadius = camera.radius * scale;
+  if (!(mainRadius > 1e-6) || !(miniRadius > 1e-6)) return;
+  const [mainCenterX, mainCenterY] = planetEarthCenter(mainRadius);
+  const ratio = miniRadius / mainRadius;
+  const points = miniViewportScreenCorners().map(([sx, sy]) => {
+    const groundY = mainCamera.chart ? planetGroundInputY(sy, mainCenterY) : sy;
+    return [centerX + (sx - mainCenterX) * ratio,
+            centerY + (groundY - mainCenterY) * ratio];
+  });
+  paintMiniViewportFootprint(
+    points,
+    mainCamera.chart ? null : () => mx2.arc(centerX, centerY, miniRadius, 0, 7)
+  );
+}
 function planetMiniScale(width, height) {
   return knowsGlobe() ? Math.min(width, height) * .44
                       : Math.hypot(width, height) / 2 / CHART_LIMIT;
@@ -20621,6 +20938,7 @@ function drawPlanetMini() {
     }
   }
   drawPlanetMiniNaturalWonderPerimeters(cells);
+  drawPlanetMiniViewportFootprint(camera, scale, centerX, centerY);
   if (!camera.chart) {
     mx2.strokeStyle = "#b9e3f388"; mx2.lineWidth = 1;
     mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.stroke();
@@ -20634,11 +20952,9 @@ function drawPlanetMini() {
     const cityState = ownerIsCityState(city.owner);
     const cityRadius = cityState ? 1.15 : 2.35;
     mx2.globalAlpha = cityState ? MAP_CIV_HIERARCHY.cityStateMarker : 1;
-    mx2.fillStyle = cityBannerColor(city.owner);
-    mx2.beginPath(); mx2.arc(cell.center.x, cell.center.y, cityRadius, 0, 7); mx2.fill();
-    if (!cityState) {
-      mx2.strokeStyle = "#f8edca"; mx2.lineWidth = .75; mx2.stroke();
-    }
+    drawCityIcon(mx2, cell.center.x, cell.center.y, cityRadius,
+                 cityBannerColor(city.owner), cityState ? "#0b0e13" : "#f8edca",
+                 cityState, Boolean(city.is_capital));
     mx2.globalAlpha = 1;
   }
   mx2.setTransform(1, 0, 0, 1, 0, 0);
@@ -20727,6 +21043,20 @@ function miniHexCenter(pos, layout) {
   return [layout.originX + SQ3 * layout.size * chartUnrolledU(pos[0] + pos[1] / 2),
           layout.originY + 1.5 * layout.size * pos[1]];
 }
+// `screenToWorld` is the inverse of the flat renderer's scale, pitch, and
+// rotation. Projecting its four screen corners back through the minimap layout
+// gives the real visible quadrilateral instead of a north-up approximation.
+function drawFlatMiniViewportFootprint(layout) {
+  const toMini = (wx, wy) => {
+    const rf = wy / (1.5 * S), qf = wx / (S * SQ3) - rf / 2;
+    return miniHexCenter([qf, rf], layout);
+  };
+  const points = miniViewportScreenCorners().map(([sx, sy]) => {
+    const [wx, wy] = screenToWorld(sx, sy);
+    return toMini(wx, wy);
+  });
+  paintMiniViewportFootprint(points);
+}
 function miniHexPath(x, y, size) {
   mx2.beginPath();
   for (let i = 0; i < 6; i++) {
@@ -20809,6 +21139,7 @@ function drawMini() {
   }
   mx2.globalAlpha = 1;
   drawMiniNaturalWonderPerimeters(tiles, layout);
+  drawFlatMiniViewportFootprint(layout);
   for (const c of state.cities) {
     const [x, y] = miniHexCenter(c.pos, layout);
     const cityState = ownerIsCityState(c.owner);
@@ -20822,6 +21153,11 @@ function drawMini() {
     mx2.strokeStyle = cityState ? "#0b0e13" : "#f8edca";
     mx2.lineWidth = cityState ? .45 : .9;
     miniHexPath(x, y, citySize - 0.35); mx2.stroke();
+    // Retain the hex backing at thumbnail scale, then put the same city
+    // silhouette inside it so the minimap shares the map's settlement grammar.
+    drawCityIcon(mx2, x, y, citySize * (cityState ? .55 : .62),
+                 cityBannerColor(c.owner), cityState ? "#0b0e13" : "#f8edca",
+                 cityState, Boolean(c.is_capital), false);
     mx2.globalAlpha = 1;
   }
   // Detonations. The minimap is the only view that always holds the whole
@@ -20848,22 +21184,6 @@ function drawMini() {
     }
     mx2.globalAlpha = 1;
   }
-  // viewport rect
-  const toMini = (wx, wy) => {
-    const rf = wy / (1.5 * S), qf = wx / (S * SQ3) - rf / 2;
-    return miniHexCenter([qf, rf], layout);
-  };
-  // viewport quad (rotates with the camera)
-  const cs4 = [[0, 0], [MAPW, 0],
-               [MAPW, MAPH], [0, MAPH]];
-  mx2.strokeStyle = "#f0c674"; mx2.lineWidth = 1;
-  mx2.beginPath();
-  cs4.forEach(([sx, sy], i) => {
-    const [wx, wy] = screenToWorld(sx, sy);
-    const [mxp, myp] = toMini(wx, wy);
-    i ? mx2.lineTo(mxp, myp) : mx2.moveTo(mxp, myp);
-  });
-  mx2.closePath(); mx2.stroke();
 }
 mini.addEventListener("click", ev => {
   const r = mini.getBoundingClientRect();
@@ -21228,7 +21548,7 @@ function playerHudOverview() {
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move victory tracker; use arrow keys or drag" title="Drag to move · arrow keys also move" id="victory-tracker-title">` +
     `<span>Victory tracker</span></div>` +
-    `<button class="overlay-close" type="button" data-overlay-close="victory" aria-label="Hide victory tracker; restore it in Interface Settings" title="Hide victory tracker · restore in Interface Settings">✕</button>` +
+    `<button class="overlay-close" type="button" data-overlay-close="victory" aria-label="Hide victory tracker; restore it in Display Settings" title="Hide victory tracker · restore in Display Settings">✕</button>` +
     `<section class="hud-region victory-region" aria-labelledby="victory-tracker-title">` +
     `<div class="hud-rail" tabindex="0" aria-label="Victory paths; scroll vertically for every path">` +
     `<div class="victory-ribbon" style="--victory-rows:${victoryCount};` +
@@ -21433,7 +21753,7 @@ function drawPlayerHud() {
   const rankById = new Map(scoreRankedMajors.map((p, index) => [p.id, index + 1]));
   const statsByPlayer = new Map(scoreRankedMajors.map(p =>
     [p.id, playerHudStats(p, rankById.get(p.id))]));
-  const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer);
+  const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer, rankById);
   const rows = Math.max(1, majors.length);
   const seats = seatKeysById(majors);
   const repeatedCivs = repeatedCivNames(majors);
@@ -21461,7 +21781,7 @@ function drawPlayerHud() {
   }));
   const relationById = new Map();
   const html =
-    `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore them in Interface Settings" title="Hide player standings · restore in Interface Settings">✕</button>` +
+    `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore it in Display Settings" title="Hide player standings · restore in Display Settings">✕</button>` +
     hudTurnPlate() +
     `<div class="player-standings" tabindex="0" aria-label="Player statistics; scroll horizontally for every column">` +
     `<div class="ribbon-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
@@ -21474,6 +21794,7 @@ function drawPlayerHud() {
     // cell remains one draggable Win odds column, so adding the labels does not
     // add two more masthead seams. AGE and PLAN stay short because these heads
     // clip rather than ellipsize; their full wording is in their tooltips.
+    playerHudSortHead("rank", "RANK", "Score rank") +
     playerHudSortHead("civ", "CIV", "Civilization") +
     playerHudSortHead("leader", "LEADER", "Leader") +
     `<button type="button" class="spectator-view-link" data-hud-action="spectator" ` +
@@ -21539,9 +21860,8 @@ function drawPlayerHud() {
       // Nobody reports how they feel about themselves, so the seat you are
       // playing wears no mark of its own.
       const shownStance = p.id === acting && !SPEC ? "" : stance;
-      // The glyph rides in the CIV cell ahead of the rank, and the empty span
-      // holds that gutter open on the rows that have nothing to say — without
-      // it every marked row would push its own `#3` a glyph's width right.
+      // The glyph rides in the CIV cell before its name, and the empty span
+      // holds that gutter open on the rows that have nothing to say.
       const agendaGlyph =
         shownStance === "approves" ? `<span class="agenda-mark up" title="Approves of you">▲</span>`
         : shownStance === "disapproves" ? `<span class="agenda-mark down" title="Disapproves of you">▼</span>`
@@ -21619,13 +21939,14 @@ function drawPlayerHud() {
         `<button class="lock-toggle" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
         `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>` +
         `<span class="diplomacy-identity-grid">` +
+        `<span class="diplomacy-rank" title="Score rank ${rank}">#${rank}</span>` +
         // A civilization with no capital leaves this button disabled, and a
         // disabled control answers no hover — so the cell that now carries the
         // agenda mark says the stance in words too, rather than resting on a
         // tooltip that half the rows cannot show.
         `<button class="diplomacy-identity diplomacy-civ-link" data-hud-action="capital" data-hud-civ="${p.id}" ` +
         `title="${escapeAttr(civTitle)}" aria-label="${escapeAttr(civTitle)}"${capital ? "" : " disabled"}>` +
-        `<span class="diplomacy-identity-field">${agendaGlyph}<span class="diplomacy-rank">#${rank}</span>` +
+        `<span class="diplomacy-identity-field">${agendaGlyph}` +
         `<span class="diplomacy-civ">${p.id === acting && highlightActing ? "◉ " : ""}${p.civ}</span></span></button>` +
         `<button class="diplomacy-identity diplomacy-leader-link" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
         `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
@@ -23220,7 +23541,8 @@ function drawUbar() {
   const linked = u.linked_to !== null && u.linked_to !== undefined;
   const escortPeer = linked && state.units.find(candidate => candidate.id === u.linked_to);
   const escortName = escortPeer ? titleCase(escortPeer.type) : null;
-  let h = `<b>${u.type}</b> <span class="small">hp ${u.hp} · mp ${u.moves_left}` +
+  const status = unitHasHealth(u) ? `hp ${u.hp}` : "capturable";
+  let h = `<b>${u.type}</b> <span class="small">${status} · mp ${u.moves_left}` +
     (u.level > 1 ? ` · lvl ${u.level}` : "") + (u.fortified ? " · ⛨ fortified" : "") +
     (u.formation ? ` · ${formationName(u.type, u.formation)}` : "") +
     (linked ? ` · escort with ${escortName || `#${u.linked_to}`}` : "") +
@@ -23482,7 +23804,11 @@ function strategyViewSeat() {
 function setStrategySeat(value) {
   const seat = Number(value);
   strategySeat = Number.isInteger(seat) ? seat : null;
-  if (state) drawStrategyPanel();
+  resetReasoningWindow();
+  if (state) {
+    drawStrategyPanel();
+    drawReasoning();
+  }
 }
 
 // Keep the picker in step with the world without rebuilding it every frame — a
@@ -23619,10 +23945,11 @@ function drawStrategyPanel() {
   drawResearchSlot(cdiv, "culture", study.civic, study.civicProgress,
     study.civic ? civicCost(study.civic) : 0, study.culture, study.boostedCivics);
 }
-// ---------------------------------------------------------------- reasoning
+// ---------------------------------------------------------- decision factors
 //
-// The AI reasoning log. The event log says what happened and the war log keeps
-// the account; this says why any of it was decided, in the agents' own terms.
+// The strategy dossier keeps the active plan beside the record of why the AI
+// changed or carried that plan forward. The event and war logs say what
+// happened; these entries preserve the agent's own decision factors.
 //
 // It arrives as a *delta*, not as part of the world observation: `/state` is
 // close to a megabyte on a standard map and this page fetches one per turn, so
@@ -23646,14 +23973,13 @@ const REASON_TOPIC_LABEL = new Map(REASON_TOPICS);
 // strategy above it too, because a decision read without the plan it serves is
 // the half of the reasoning that explains nothing.
 const REASON_LEVEL_RANK = {strategy: 0, decision: 1, detail: 2};
-// How much of the log this page keeps. The server's ring is larger; this is
-// what one browser holds so that narrowing to a single civilization still has
-// history to show.
-const REASON_KEEP = 2000;
-// How many rows are put in the DOM at once. A filter of "everything, all
-// civilizations" over a long game is thousands of entries and rebuilding that
-// list every turn costs more than the map does.
-const REASON_RENDER_LIMIT = 240;
+// Keep the whole live server ring in this browser. The visible page stays
+// bounded, but a reader can ask for older factors until it reaches the first
+// record the server still has; a discarded-history notice remains honest once
+// the ring itself has rolled over.
+const REASON_KEEP = 6000;
+const REASON_RENDER_PAGE = 240;
+let reasonRenderLimit = REASON_RENDER_PAGE;
 function reasonEscape(text) {
   return String(text ?? "").replace(/[&<>"]/g, c =>
     ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
@@ -23670,10 +23996,9 @@ function reasonEscape(text) {
 // That last one is a fog rule. `reasoning_json` stops *sending* a rival's
 // thoughts the moment Watch as is entered, but the page is still holding
 // everything it absorbed while it was above the world, so without this the
-// redaction is defeated by having watched first: the log names every
-// civilization while the Active AI strategy panel above it names one. Only the
-// held thoughts go — the cursor survives, because the world has not changed
-// and asking from zero would have the server resend the whole ring.
+// redaction is defeated by having watched first. Only the held thoughts go —
+// the cursor survives, because the world has not changed and asking from zero
+// would have the server resend the whole ring.
 function absorbReasoning(st) {
   if (!st) return;
   const world = st.seed ?? null;
@@ -23682,6 +24007,7 @@ function absorbReasoning(st) {
   if (newWorld || reasoningLog.viewer !== viewer) {
     reasoningLog = {cursor: newWorld ? 0 : reasoningLog.cursor, world, viewer,
                     thoughts: [], dropped: 0, truncatedTurns: 0};
+    reasonRenderLimit = REASON_RENDER_PAGE;
   }
   const delta = st.ai_reasoning;
   if (!delta || !Array.isArray(delta.thoughts)) return;
@@ -23753,22 +24079,12 @@ function reasonTint(id) {
   return jerseyLanes(id)[1];
 }
 
-// Keep the two option lists in step with the world.
+// Keep the two decision-factor filters in step with the world. The civilization
+// is selected once, at the top of the dossier, and scopes both this trail and
+// the active plan above it.
 function syncReasonOptions() {
-  const playerSelect = document.getElementById("reasonplayer");
   const topicSelect = document.getElementById("reasontopic");
-  if (!playerSelect || !topicSelect) return;
-  // Anything the log can show, the filter can isolate. Anyone who has actually
-  // recorded a thought is added to the seats a combined log always offers,
-  // because they are already visible under "All civilizations", and a seat you
-  // can read but cannot select is a filter that does not do what it says. In
-  // practice that is a Free City, which keeps developing the cities it
-  // inherited and therefore keeps making production decisions.
-  const listed = logSeatsMet();
-  for (const thought of reasoningLog.thoughts) listed.add(thought.player);
-  const seats = logSeatsOrdered(listed);
-  reasonFilters.player = syncCivFilterOptions(
-    playerSelect, seats, "All civilizations", reasonFilters.player);
+  if (!topicSelect) return;
   if (!topicSelect.dataset.built) {
     topicSelect.dataset.built = "1";
     topicSelect.innerHTML = `<option value="all">All topics</option>` +
@@ -23779,20 +24095,47 @@ function syncReasonOptions() {
   if (levelSelect) levelSelect.value = reasonFilters.level;
 }
 
+// The engine records its grand-strategy assessment whenever it reconsiders a
+// plan, including ordinary confirmations. A gold entry therefore says that an
+// assessment happened, not necessarily that the doctrine changed. Walk the
+// selected civilization's complete retained trail in chronological order so a
+// reader can distinguish an actual transition from a re-assessment — even
+// when the earlier assessment sits beyond the current rendered page.
+function grandStrategyName(thought) {
+  if (thought.level !== "strategy" || thought.topic !== "strategy") return "";
+  const match = /^Grand strategy:\s*(.+)$/.exec(String(thought.headline || ""));
+  return match ? match[1].trim() : "";
+}
+
+function strategyShiftOrigins(player) {
+  const shifts = new Map();
+  let previous = "";
+  for (const thought of reasoningLog.thoughts) {
+    if (thought.player !== player) continue;
+    const strategy = grandStrategyName(thought);
+    if (!strategy) continue;
+    if (previous && previous !== strategy) shifts.set(thought.id, previous);
+    previous = strategy;
+  }
+  return shifts;
+}
+
 function reasonFilteredThoughts() {
   const depth = REASON_LEVEL_RANK[reasonFilters.level] ?? 1;
-  const player = reasonFilters.player === "all" ? null : Number(reasonFilters.player);
+  const player = strategyViewSeat();
   const topic = reasonFilters.topic === "all" ? null : reasonFilters.topic;
+  if (player === null) return {thoughts: [], hasMore: false, player: null};
+  const shifts = strategyShiftOrigins(player);
   const kept = [];
-  // Newest first, and stop as soon as the DOM budget is full: an unfiltered
-  // log of thousands must not be walked to its end to show its first screen.
+  // Newest first. One extra item tells the caller whether the reader can open
+  // another page without walking the full six-thousand-entry ring each frame.
   for (let i = reasoningLog.thoughts.length - 1; i >= 0; i--) {
     const thought = reasoningLog.thoughts[i];
     if ((REASON_LEVEL_RANK[thought.level] ?? 2) > depth) continue;
-    if (player !== null && thought.player !== player) continue;
+    if (thought.player !== player) continue;
     if (topic !== null && thought.topic !== topic) continue;
     kept.push(thought);
-    if (kept.length >= REASON_RENDER_LIMIT) break;
+    if (kept.length > reasonRenderLimit) break;
   }
   // The latest turn belongs at the top — but *within* one civilization's turn
   // the order is the order it thought in, because the grand strategy is what
@@ -23808,7 +24151,14 @@ function reasonFilteredThoughts() {
     for (let k = j - 1; k >= i; k--) ordered.push(kept[k]);
     i = j;
   }
-  return ordered;
+  return {
+    thoughts: ordered.slice(0, reasonRenderLimit).map(thought => {
+      const strategyShiftFrom = shifts.get(thought.id);
+      return strategyShiftFrom ? {...thought, strategyShiftFrom} : thought;
+    }),
+    hasMore: ordered.length > reasonRenderLimit,
+    player,
+  };
 }
 
 function reasonItemHtml(thought) {
@@ -23820,49 +24170,61 @@ function reasonItemHtml(thought) {
       `title="Show this on the map" aria-label="Show this on the map">⌖</button>`
     : "";
   const detail = thought.detail
-    ? `<div class="reason-detail"><span class="reason-topic">${reasonEscape(topic)}</span>` +
+    ? `<div class="reason-detail"><span class="reason-factor-label">Factors</span>` +
       `${reasonEscape(thought.detail)}</div>`
-    : `<div class="reason-detail"><span class="reason-topic">${reasonEscape(topic)}</span></div>`;
-  return `<div class="reason-item level-${thought.level}" style="--reason-tint:${tint}" ` +
+    : "";
+  const shift = thought.strategyShiftFrom
+    ? `<span class="reason-shift-label" title="Changed from ${reasonEscape(thought.strategyShiftFrom)}">` +
+      `Shift from ${reasonEscape(thought.strategyShiftFrom)}</span>`
+    : "";
+  return `<div class="reason-item level-${thought.level}${thought.strategyShiftFrom ? " strategy-shift" : ""}" style="--reason-tint:${tint}" ` +
     `data-thought-id="${thought.id}">` +
-    `<div class="reason-head"><span class="reason-civ">${reasonEscape(logSeatName(thought.player))}</span>` +
+    `<div class="reason-head"><span><span class="reason-topic">${reasonEscape(topic)}</span>${shift}</span>` +
     `<span class="reason-turn">Turn ${thought.turn}${locate}</span></div>` +
     `<div class="reason-headline">${reasonEscape(thought.headline)}</div>${detail}</div>`;
 }
 
 function drawReasoning() {
   const el = document.getElementById("reasoning");
-  const scope = document.getElementById("reasonscope");
+  const scope = document.getElementById("reasoningscope");
+  const context = document.getElementById("reasoningcontext");
+  const more = document.getElementById("reasonmore");
   if (!el) return;
   absorbReasoning(state);
   syncReasonOptions();
-  const thoughts = reasonFilteredThoughts();
+  const {thoughts, hasMore, player} = reasonFilteredThoughts();
+  const civ = player === null ? null : (state?.players || [])[player];
   const newest = thoughts.length ? thoughts[0] : null;
-  // Say what cadence this is arriving at, which is the whole question when the
-  // log is quiet: a civilization that decided nothing this turn and a log that
-  // is not being fed look the same otherwise. The header strip is ~110px, so
-  // the count and the turn go there and the rest goes in the tooltip.
-  scope.textContent = newest
-    ? `${thoughts.length} · Turn ${newest.turn}`
-    : (reasoningLog.thoughts.length ? "no matches" : "");
-  if (newest) {
-    const onLatest = thoughts.filter(t => t.turn === newest.turn).length;
-    scope.title = `${thoughts.length} thoughts shown of ${reasoningLog.thoughts.length} ` +
-      `held; ${onLatest} of them from turn ${newest.turn}`;
-  } else {
-    scope.title = reasoningLog.thoughts.length
-      ? `${reasoningLog.thoughts.length} thoughts held, none matching this filter` : "";
+  if (context) {
+    context.textContent = civ
+      ? `Recorded factors behind ${civ.civ}'s plan and decisions. Gold entries mark grand-strategy assessments.`
+      : "Choose a civilization to inspect its plan and decision factors.";
   }
-  const signature = `${reasoningLog.cursor}|${reasonFilters.player}|${reasonFilters.level}|` +
-    `${reasonFilters.topic}|${thoughts.length}|${reasoningLog.dropped}`;
+  if (scope) scope.textContent = newest
+    ? `${thoughts.length}${hasMore ? "+" : ""} factors · Turn ${newest.turn}`
+    : (reasoningLog.thoughts.length ? "no matching factors" : "");
+  if (scope && newest) {
+    const onLatest = thoughts.filter(t => t.turn === newest.turn).length;
+    scope.title = `${thoughts.length}${hasMore ? "+" : ""} factors shown for ${civ?.civ || "this civilization"}; ` +
+      `${onLatest} of them are from turn ${newest.turn}`;
+  } else if (scope) {
+    scope.title = reasoningLog.thoughts.length
+      ? `${reasoningLog.thoughts.length} factors held, none matching this civilization and filter` : "";
+  }
+  if (more) {
+    more.hidden = !hasMore;
+    more.textContent = "Show earlier factors";
+  }
+  const signature = `${reasoningLog.cursor}|${player}|${reasonFilters.level}|${reasonFilters.topic}|` +
+    `${reasonRenderLimit}|${thoughts.length}|${hasMore ? 1 : 0}|${reasoningLog.dropped}`;
   if (el.dataset.signature === signature) return;
   el.dataset.signature = signature;
   if (!thoughts.length) {
-    el.innerHTML = `<div class="empty-state">${reasoningLog.thoughts.length
-      ? "No reasoning matches this filter yet."
-      : (state.spectate
-        ? "No civilization has thought out loud yet."
-        : "The reasoning log follows a spectated game.")}</div>`;
+    el.innerHTML = `<div class="empty-state">${civ
+      ? `No decision factors recorded for ${reasonEscape(civ.civ)} yet.`
+      : (state?.spectate
+        ? "No civilization has published a strategy yet."
+        : "Decision factors are recorded for spectated games.")}</div>`;
     return;
   }
   // Anchor on the newest row the same way the event log does, so a reader who
@@ -23878,7 +24240,7 @@ function drawReasoning() {
         }))[0]
     : null;
   const truncated = reasoningLog.dropped || reasoningLog.truncatedTurns
-    ? `<div class="reason-gap">Earlier reasoning has been discarded` +
+    ? `<div class="reason-gap">Earlier decision factors have been discarded` +
       `${reasoningLog.truncatedTurns
         ? ` — and ${reasoningLog.truncatedTurns} busy turn` +
           `${reasoningLog.truncatedTurns === 1 ? " was" : "s were"} cut short`
@@ -23906,8 +24268,20 @@ function applyLogFilter(filters, storageKey, field, value, listId, redraw) {
   if (el) delete el.dataset.signature;
   if (state) redraw();
 }
+function resetReasoningWindow() {
+  reasonRenderLimit = REASON_RENDER_PAGE;
+  const el = document.getElementById("reasoning");
+  if (el) delete el.dataset.signature;
+}
 function setReasonFilter(field, value) {
+  resetReasoningWindow();
   applyLogFilter(reasonFilters, REASON_FILTER_KEY, field, value, "reasoning", drawReasoning);
+}
+function showMoreReasoning() {
+  reasonRenderLimit = Math.min(REASON_KEEP, reasonRenderLimit + REASON_RENDER_PAGE);
+  const el = document.getElementById("reasoning");
+  if (el) delete el.dataset.signature;
+  if (state) drawReasoning();
 }
 function setEventFilter(field, value) {
   applyLogFilter(eventFilters, EVENT_FILTER_KEY, field, value, "events", drawEvents);
@@ -27305,13 +27679,14 @@ function tileDevelopmentTipLine(t) {
 function tileTipLines(t, pos, tileKey) {
   const lines = [];
   // Who is standing here is what a hover over an occupied tile is asking, so
-  // the units lead and state their remaining health in the compact map-detail
-  // form: Empire's unit - xx HP.
+  // the units lead and state their health or capture status in the compact
+  // map-detail form: Empire's unit - xx HP/capturable.
   for (const unit of state.units) {
     if (key(unit.pos) !== tileKey) continue;
     const civ = state.players[unit.owner]?.civ || `Player ${unit.owner}`;
+    const unitStatus = unitHasHealth(unit) ? `${fmtYield(unit.hp)} HP` : "capturable";
     lines.push(`<span class="tip-unit">${civPossessive(civ)} ${titleCase(unit.type)} - ` +
-      fmtYield(unit.hp) + " HP</span>");
+      unitStatus + "</span>");
   }
   const owner = tileOwnershipTipLine(t);
   if (owner) lines.push(owner);
@@ -28859,7 +29234,7 @@ function applyQueuedSimulationSettings(settings) {
     defaultTurnLimitForSpeed(settings.speed));
   setOptionalWorldNumber("mapseed", settings.seed);
   syncWorldSetupInputs();
-  document.getElementById("leaderpool").value = settings.leader_pool || "civ6";
+  document.getElementById("leaderpool").value = normalizedLeaderPoolId(settings.leader_pool || "civ6");
   syncLeaderPool();
   document.getElementById("baseruleset").value = settings.base_ruleset || "civ6";
   if (settings.start_era) document.getElementById("startera").value = settings.start_era;
@@ -29020,23 +29395,40 @@ function syncMapRoster(civ6) {
   syncEarthShape();
 }
 
-// The broad historical ruleset remains available, but a normal lobby offers
-// only civilizations that Civilization VI itself ships. The same pool fills
-// random AI seats on the server and filters the person's explicit leader
-// choice here, so "Random leader" and a named pick describe one roster.
+function normalizedLeaderPoolId(id) {
+  return id === "expanded" ? "historical" : id;
+}
+
+// The server owns the ordered roster data.  That makes the picker match the
+// identities it can actually seat, including future Today's Leaders records
+// that do not have an entry in the Civilization VI rules data.
 function syncLeaderPool() {
   const select = document.getElementById("leader");
   const pool = document.getElementById("leaderpool");
-  if (!select || !pool || !RULES || !RULES.civs || typeof RULES.civs !== "object") return;
+  if (!select || !pool || !RULES || !Array.isArray(RULES.leader_pools)) return;
   const selected = select.value;
-  const civ6 = new Set(Array.isArray(RULES.civ6_leaders) ? RULES.civ6_leaders : []);
-  const leaders = Object.entries(RULES.civs)
-    .filter(([civ]) => pool.value === "expanded" || civ6.has(civ))
-    .map(([civ, spec]) => ({civ, leader: spec.leader || civ, note: spec.note || ""}))
+  const requested = normalizedLeaderPoolId(pool.value);
+  const pools = RULES.leader_pools;
+  const active = pools.find(entry => entry.id === requested && entry.available)
+    || pools.find(entry => entry.available);
+  if (!active) return;
+  pool.innerHTML = pools.map(entry =>
+    `<option value="${escapeAttr(entry.id)}"${entry.available ? "" : " disabled"}` +
+    ` title="${escapeAttr(entry.description || "")}">${escapeAttr(entry.name)}</option>`
+  ).join("");
+  pool.value = active.id;
+  const leaders = (active.leaders || [])
+    .map(entry => ({
+      civ: entry.civ,
+      leader: entry.leader || entry.civ,
+      latitude: Number(entry.latitude),
+      longitude: Number(entry.longitude),
+    }))
     .sort((first, second) => first.leader.localeCompare(second.leader));
   select.innerHTML = `<option value="">Random leader</option>` + leaders.map(entry =>
-    `<option value="${entry.civ}" title="${escapeAttr(entry.note)}">` +
-    `${entry.leader} of ${entry.civ}</option>`).join("");
+    `<option value="${escapeAttr(entry.civ)}" title="${escapeAttr(
+      `True Start: ${entry.latitude.toFixed(2)}°, ${entry.longitude.toFixed(2)}°`
+    )}">${escapeAttr(entry.leader)} of ${escapeAttr(entry.civ)}</option>`).join("");
   if (leaders.some(entry => entry.civ === selected)) select.value = selected;
 }
 
@@ -29311,21 +29703,18 @@ document.getElementById("newgame-options").addEventListener("change", event => {
   if (event.target.id !== "scenario") syncScenarioFromSettings();
   stageSelectedSimulationSettings();
 });
-// The three logs' filters. They are read back from storage before the first
-// frame, so a reader who narrowed to one civilization's policy cards last
-// night is still there this morning.
+// The strategy dossier remembers its factor depth and topic. Its civilization
+// is deliberately live-world state, so it cannot point at a seat from a game
+// that no longer exists.
 {
-  const player = document.getElementById("reasonplayer");
   const level = document.getElementById("reasonlevel");
   const topic = document.getElementById("reasontopic");
   level.value = reasonFilters.level;
-  player.onchange = () => setReasonFilter("player", player.value);
   level.onchange = () => setReasonFilter("level", level.value);
   topic.onchange = () => setReasonFilter("topic", topic.value);
 }
-// Whose plan the Active AI strategy panel above the log is showing. Its options
-// are filled from the world on every frame; only the omniscient spectator ever
-// has more than one to offer.
+// One civilization anchors the entire AI strategy dossier: its live plan,
+// research, civics, and the factors behind each recorded decision.
 {
   const seat = document.getElementById("strategyplayer");
   seat.onchange = () => setStrategySeat(seat.value);
@@ -29396,6 +29785,7 @@ for (const checkbox of document.querySelectorAll("[data-overlay]")) {
   checkbox.checked = OVERLAY_VISIBILITY[name] !== false;
   checkbox.onchange = () => setOverlayVisibility(name, checkbox.checked);
 }
+installMachineMetricsControls();
 
 // The bearing is not set here: it belongs to a world, and no world is known
 // until the first observation arrives. adoptWorldFacing() applies it then.
