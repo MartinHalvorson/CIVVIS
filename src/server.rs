@@ -7114,7 +7114,7 @@ mod tests {
         assert!(dock.contains("id=\"map-search-input\" type=\"search\""));
         assert!(dock.contains("aria-live=\"polite\""));
         assert!(EMBEDDED_INDEX.contains(
-            "#map-search {\n    position: absolute; z-index: 2; left: 0; bottom: calc(100% + 6px);"
+            "#map-search {\n    position: absolute; z-index: 2; left: 0; bottom: calc(100% + var(--panel-gap));"
         ));
 
         let matcher = EMBEDDED_INDEX
@@ -7876,7 +7876,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("<span>Interface Settings</span>"));
         assert!(!EMBEDDED_INDEX.contains("<span>Display settings</span>"));
         assert!(EMBEDDED_INDEX.contains(
-            "order: -1; width: 16vw; min-width: 16vw;"
+            "order: -1; width: clamp(220px, 18vw, 332px); min-width: clamp(220px, 18vw, 332px);"
         ));
         for overlay in ["players", "victory", "minimap", "controls", "lenses"] {
             assert!(
@@ -7998,21 +7998,21 @@ mod tests {
         // diagonal against the screen diagonal. Custom drag layouts still
         // override these values inline, but an uncustomized viewer always
         // returns here.
-        assert!(EMBEDDED_INDEX.contains("--victory-hud-width: 10vw;"));
+        assert!(EMBEDDED_INDEX.contains("--victory-hud-width: clamp(156px, 15vw, 280px);"));
         assert!(EMBEDDED_INDEX.contains(
-            "top: 0; left: var(--player-hud-left, 0px); right: var(--victory-hud-width); width: auto;"
+            "right: var(--panel-edge); top: var(--panel-edge);"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "width: var(--world-minimap-width); height: var(--minimap-height);"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "top: 0; bottom: var(--minimap-height);\n    \
-             width: var(--victory-hud-width); height: auto;"
+            "bottom: calc(var(--minimap-height) + var(--panel-gap) + var(--panel-edge));"
         ));
-        assert!(EMBEDDED_INDEX.contains("const WORLD_MINIMAP_DIAGONAL_SHARE = .17;"));
-        assert!(EMBEDDED_INDEX.contains("Math.hypot(window.innerWidth, window.innerHeight)"));
+        assert!(EMBEDDED_INDEX.contains("width: var(--victory-hud-width); height: auto;"));
+        assert!(EMBEDDED_INDEX.contains("const referenceDiagonal = Math.hypot(320, 172);"));
+        assert!(EMBEDDED_INDEX.contains(".17 * Math.hypot(viewportWidth, viewportHeight)"));
         assert!(EMBEDDED_INDEX.contains(
-            "Math.hypot(WORLD_MINIMAP_REFERENCE_WIDTH, WORLD_MINIMAP_REFERENCE_HEIGHT)"
+            "const viewport = window.visualViewport;"
         ));
         assert!(!EMBEDDED_INDEX.contains("--player-hud-width"));
         // Every path keeps its top three plus the player's own civilization
@@ -8746,7 +8746,10 @@ mod tests {
         // The deck's normal desktop declaration remains the first flex track,
         // while the added seam changes only its width/flex basis. This prevents
         // a resize gesture from becoming a draggable panel.
-        assert!(EMBEDDED_INDEX.contains("order: -1; width: 16vw; min-width: 16vw; flex: 0 0 16vw;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "order: -1; width: clamp(220px, 18vw, 332px); min-width: clamp(220px, 18vw, 332px);"
+        ));
+        assert!(EMBEDDED_INDEX.contains("flex: 0 0 clamp(220px, 18vw, 332px);"));
         assert!(EMBEDDED_INDEX.contains("id=\"side-resize-handle\" type=\"button\" role=\"separator\""));
         assert!(EMBEDDED_INDEX.contains("Resize the command deck from its right edge"));
         assert!(EMBEDDED_INDEX.contains("const SIDEBAR_WIDTH_STORAGE_KEY = \"civvis-sidebar-width-v1\";"));
@@ -8760,11 +8763,15 @@ mod tests {
         // as a naturally narrow viewport.
         assert!(EMBEDDED_INDEX.contains("function playerHudSidebarInset()"));
         assert!(EMBEDDED_INDEX.contains("area.style.setProperty(\"--player-hud-left\", `${inset}px`);"));
-        assert!(EMBEDDED_INDEX.contains("left: var(--player-hud-left, 0px);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "left: max(var(--panel-edge), var(--player-hud-left, 0px));"
+        ));
         assert!(EMBEDDED_INDEX.contains("area.classList.toggle(\"player-hud-compact\", width <= PLAYER_HUD_COMPACT_WIDTH);"));
         assert!(EMBEDDED_INDEX.contains("#maparea.player-hud-compact #playerhud"));
         assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38, avoidsSidebar:true"));
-        assert!(EMBEDDED_INDEX.contains("function hudWidgetMinX(config, margin = 4)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "function hudWidgetMinX(config, margin = hudWidgetMargin())"
+        ));
     }
 
     /// Player-row color is reserved for a current war. Friendships and
@@ -11649,7 +11656,7 @@ mod tests {
         );
         assert!(EMBEDDED_INDEX.contains("body.overlay-controls-hidden #skynav"));
         assert!(EMBEDDED_INDEX.contains("#skynav[hidden] { display: none; }"));
-        assert!(EMBEDDED_INDEX.contains("bottom: calc(100% + 6px)"));
+        assert!(EMBEDDED_INDEX.contains("bottom: calc(100% + var(--panel-gap))"));
         for part in [
             "id=\"skynav-worlds\"",
             "id=\"skynav-scales\"",
