@@ -96,12 +96,53 @@ impl Ai for NeuralAi {
         }
         self.base.take_turn(g, pid);
     }
+
+    /// The scripted layer underneath does the day-to-day reasoning, so the
+    /// observer's log reads from there. The rollouts above run over clones,
+    /// whose journals are silent by construction.
+    fn attach_journal(&mut self, journal: crate::reasoning::Journal) {
+        self.base.attach_journal(journal);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::NeuralAi;
-    use crate::game::Game;
+    use crate::ai::{Ai, BasicAi, Weights};
+    use crate::game::{Action, Game};
+    use crate::valuenet::ValueNet;
+
+    /// The value net only judges war; the scripted layer underneath does the
+    /// day-to-day reasoning. An attached journal has to reach that layer, or
+    /// a seated `neural` agent is completely blank in the observer's panel.
+    #[test]
+    fn an_attached_journal_reaches_the_scripted_layer() {
+        let journal = crate::reasoning::Journal::recording();
+        let net = ValueNet {
+            sizes: vec![25, 1],
+            weights: vec![vec![vec![0.0]; 25]],
+            biases: vec![vec![0.0]],
+        };
+        let mut agent = NeuralAi::new(Weights::default(), net);
+        agent.attach_journal(journal.handle());
+        let mut g = Game::new(2, 24, 16, 8_100, 90, 0);
+        let mut others = BasicAi::fleet(&g);
+        while g.winner.is_none() && g.turn <= 12 {
+            let pid = g.current;
+            if pid == 0 {
+                agent.take_turn(&mut g, pid);
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &Action::EndTurn);
+            }
+        }
+        assert!(
+            journal.since(0).thoughts.iter().any(|t| t.player == 0),
+            "the seat run by the neural wrapper never recorded a thought"
+        );
+    }
 
     #[test]
     fn war_candidates_include_only_met_major_civilizations() {
