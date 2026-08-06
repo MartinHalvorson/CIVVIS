@@ -686,8 +686,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `project_matches_focus` helper were unreachable — dead weight, not
 /// behaviour. No reachable decision changes; the source contract is
 /// re-pinned.
+/// #1297 lets the strongest MET major weigh on the army target in PEACETIME,
+/// behind `peacetime_deterrence` — `false` in `AdvancedAi::new()` and set only
+/// by `enable_live_bridge`. `enemy_weighted_army_target` (the renamed
+/// `wartime_army_target`; the wartime term is untouched) multiplies `shipped`
+/// by 1.0 on that flag before it reads a single player, so every configured,
+/// legacy and Elo agent wants exactly the army it always wanted. A
+/// compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7bd4_2f0f_2c67_745f;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x79ff_091b_8942_a3a1;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
