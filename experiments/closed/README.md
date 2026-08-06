@@ -19,6 +19,16 @@ cargo test --profile ci --locked --features closed-experiments --bin q_pairwise_
 - `faith_conversion_eval` — development STOP; no gameplay integration.
 - `q_override_train` and `q_pairwise_calibrate` — the recorded corpus cannot
   support a trustworthy selective override.
+- `q_train`, `q_counterfactual`, `q_advantage_train`, `q_dataset` — the rest
+  of that Q line: its dataset emitters and trainers, moved here with the
+  closed decision they served.
+- `ablate` — the oracle ablation harness (docs/EVAL.md); `src/oracle.rs`, its
+  only consumer, rides the same feature.
+- `fog_census` — docs/FOG_CENSUS.md; reproducible command lines in the doc.
+- `expansion_investment` — docs/EXPANSION_INVESTMENT.md.
+- `gene_objective_probe` — docs/GENE_OBJECTIVE.md.
+- `terminal_faith_census` — docs/TERMINAL_FAITH_OPPORTUNITIES.md; the
+  religious lane is measured dead in deployment (n=142, median 0 faith buys).
 
 Do not reopen a result by tuning, rerunning, or changing these binaries in
 place. A future experiment needs a new preregistration, fresh independent data,
