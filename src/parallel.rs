@@ -44,6 +44,14 @@ thread_local! {
     static IN_WORK_POOL: Cell<bool> = const { Cell::new(false) };
 }
 
+enum WorkCursor {
+    Shared {
+        next: Arc<AtomicUsize>,
+        cancelled: Arc<AtomicBool>,
+    },
+    Local(usize),
+}
+
 /// Dynamic indices claimed by one stateful worker in a [`WorkPool`] batch.
 ///
 /// Every clone shares one atomic cursor, so each index is yielded exactly
@@ -51,8 +59,7 @@ thread_local! {
 /// panics. The type deliberately exposes no way to manufacture or rewind an
 /// index; callers return `(index, value)` pairs for deterministic reordering.
 pub struct WorkIndices {
-    next: Arc<AtomicUsize>,
-    cancelled: Arc<AtomicBool>,
+    cursor: WorkCursor,
     count: usize,
 }
 
@@ -60,11 +67,23 @@ impl Iterator for WorkIndices {
     type Item = usize;
 
     fn next(&mut self) -> Option<usize> {
-        if self.cancelled.load(Ordering::Acquire) {
-            return None;
+        match &mut self.cursor {
+            WorkCursor::Local(next) => {
+                if *next >= self.count {
+                    return None;
+                }
+                let index = *next;
+                *next += 1;
+                Some(index)
+            }
+            WorkCursor::Shared { next, cancelled } => {
+                if cancelled.load(Ordering::Acquire) {
+                    return None;
+                }
+                let index = next.fetch_add(1, Ordering::Relaxed);
+                (index < self.count).then_some(index)
+            }
         }
-        let index = self.next.fetch_add(1, Ordering::Relaxed);
-        (index < self.count).then_some(index)
     }
 }
 
@@ -138,6 +157,8 @@ impl WorkPool {
         if count == 0 {
             return Vec::new();
         }
+        let next = Arc::new(AtomicUsize::new(0));
+        let cancelled = Arc::new(AtomicBool::new(false));
         let nested = IN_WORK_POOL.with(Cell::get);
         let active = self.workers.len().min(count);
         if active == 1 || nested {
@@ -291,8 +312,6 @@ impl WorkPool {
             active,
             "a stateful batch needs one state per active worker"
         );
-        let next = Arc::new(AtomicUsize::new(0));
-        let cancelled = Arc::new(AtomicBool::new(false));
         let nested = IN_WORK_POOL.with(Cell::get);
 
         if active == 1 || nested {
@@ -303,8 +322,7 @@ impl WorkPool {
             let results = job(
                 state,
                 WorkIndices {
-                    next,
-                    cancelled,
+                    cursor: WorkCursor::Local(0),
                     count,
                 },
             );
@@ -321,8 +339,10 @@ impl WorkPool {
             self.sender
                 .send(WorkerMessage::Run(Box::new(move || {
                     let indices = WorkIndices {
-                        next,
-                        cancelled: Arc::clone(&cancelled),
+                        cursor: WorkCursor::Shared {
+                            next,
+                            cancelled: Arc::clone(&cancelled),
+                        },
                         count,
                     };
                     match catch_unwind(AssertUnwindSafe(|| job(state, indices))) {
