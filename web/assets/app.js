@@ -3870,11 +3870,13 @@ function updatePerformanceStatsDisplay(now = performance.now(), force = false) {
   const simulationValue = document.getElementById("performance-simulation-value");
   const fullGameValue = document.getElementById("performance-fullgame-value");
   const gamesValue = document.getElementById("performance-games-value");
+  const lastGameValue = document.getElementById("performance-lastgame-value");
   const canvasValue = document.getElementById("performance-canvas-value");
   const workloadValue = document.getElementById("performance-workload-value");
   const recommendation = document.getElementById("performance-recommendation");
   if (!renderValue || !slowValue || !simulationValue || !fullGameValue ||
-      !gamesValue || !canvasValue || !workloadValue || !recommendation) return;
+      !gamesValue || !lastGameValue || !canvasValue || !workloadValue ||
+      !recommendation) return;
   if (frameValues.length >= 4 && frameAverage > 0) {
     const fps = Math.min(999, 1000 / frameAverage);
     // FPS and ms-per-frame are the same measurement inverted, so only the
@@ -3909,13 +3911,20 @@ function updatePerformanceStatsDisplay(now = performance.now(), force = false) {
   const games = viewerPerformance.simulations;
   if (games && games.completed > 0) {
     const victory = victoryTrackLabel(games.last_victory);
-    const wonBy = [victory, games.last_civ].filter(Boolean).join(", ");
-    const last = [performanceDuration(games.last_ms), wonBy].filter(Boolean).join(" · ");
     gamesValue.textContent =
-      `${performanceInteger(games.completed)} this server · avg ${performanceDuration(games.average_ms)} · last ${last}`;
+      `${performanceInteger(games.completed)} this server · avg ${performanceDuration(games.average_ms)}`;
+    // Duration and who took it, and nothing else: a long civilization name
+    // beside a long victory name is already the width of this panel.
+    lastGameValue.textContent = [
+      performanceDuration(games.last_ms),
+      [victory, games.last_civ].filter(Boolean).join(", "),
+    ].filter(Boolean).join(" · ");
+    lastGameValue.title = `${performanceInteger(games.last_turns)} turns played`;
   } else {
-    gamesValue.textContent = viewerPerformance.spectator
-      ? "None finished yet on this server" : "Not available in this mode";
+    const pending = viewerPerformance.spectator
+      ? "None finished yet" : "Not available in this mode";
+    gamesValue.textContent = pending;
+    lastGameValue.textContent = pending;
   }
   canvasValue.textContent = performanceCanvasText();
   const workload = viewerPerformance.workload;
