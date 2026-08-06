@@ -4901,6 +4901,35 @@ mod tests {
         }
     }
 
+    /// Lightning and Blitz resolve a step faster than an eye can find the
+    /// token that took it, so a watcher can ask each unit's wake to linger a
+    /// configured beat after the move lands. Pin the whole chain: the
+    /// control, the persisted preference, the recorded wake, the lingering
+    /// painter, and the ticker that keeps a fading wake animating.
+    #[test]
+    fn browser_lets_a_watcher_keep_unit_trails_lingering() {
+        for contract in [
+            "id=\"unittrails\" aria-label=\"Unit trail linger\"",
+            "<option value=\"0\" selected>Move only</option>",
+            "<option value=\"200\">Linger 0.2s</option>",
+            "<option value=\"500\">Linger 0.5s</option>",
+            "<option value=\"1000\">Linger 1s</option>",
+            "<option value=\"2000\">Linger 2s</option>",
+            "const UNIT_TRAIL_LINGER_STORAGE_KEY = \"civvis-unit-trail-linger\";",
+            "const UNIT_TRAIL_LINGER_VALUES = [0, 200, 500, 1000, 2000];",
+            "function setUnitTrailLinger(value) {",
+            "trails.onchange = () => setUnitTrailLinger(trails.value);",
+            "function drawLingeringUnitTrails(unitAlpha, now) {",
+            "if (mapLens !== \"empire\") drawLingeringUnitTrails(unitAlpha, now);",
+            "anim.trails.length > 0 ||",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(contract),
+                "unit trail linger contract is missing: {contract}"
+            );
+        }
+    }
+
     #[test]
     fn browser_gives_every_shipped_improvement_a_named_tile_marker() {
         let markers = EMBEDDED_INDEX
@@ -10356,6 +10385,68 @@ mod tests {
             1,
             "the planet minimap must paint the landmark perimeter exactly once"
         );
+    }
+
+    /// A selected unit's movement is drawn as the engine's own affordances:
+    /// the perimeter of everywhere it can end this turn, and a per-edge arrow
+    /// wherever `reach_steps` says the remaining movement crosses. The client
+    /// must read the engine's per-edge answer rather than re-derive it — only
+    /// the engine knows step costs, rivers, and ZOC — and both boundary
+    /// renderers must be built from positions, not surveyed tiles, so the
+    /// line keeps reading where the range runs into fog.
+    #[test]
+    fn browser_draws_the_selected_units_reach_perimeter_and_edge_arrows() {
+        // The engine's directional step list is what both renderers consume.
+        assert!(EMBEDDED_INDEX.contains("function selReachEdges()"));
+        assert!(EMBEDDED_INDEX.contains("(sel && sel.reach_steps) || []"));
+        assert!(EMBEDDED_INDEX.contains("region.add(key(sel.pos));"));
+
+        let flat = EMBEDDED_INDEX
+            .split("function drawFlatReachPerimeter")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawFlatMapSearchHighlights").next())
+            .expect("flat reach perimeter and arrow renderers");
+        assert!(flat.contains("EDGE_CORNERS[side]"));
+        assert!(
+            flat.contains("const tile = TMAP.get(regionKey);"),
+            "the perimeter tolerates region tiles beyond the surveyed map"
+        );
+        assert!(flat.contains("drawEdgeArrow(x + dx / 2, y + dy / 2, dx, dy,"));
+
+        let planet = EMBEDDED_INDEX
+            .split("function drawPlanetReachOverlay")
+            .nth(1)
+            .and_then(|tail| tail.split("function planetFeatureGlyph").next())
+            .expect("planet reach overlay renderer");
+        assert!(planet.contains("cell.nbrs[side]"));
+        assert!(
+            planet.contains("planetCellGeometry({pos}, camera, scale, centerX, centerY)"),
+            "the globe projects region cells the frame does not carry"
+        );
+        assert!(planet.contains("entry.cell.nbrs.indexOf(key(edge.to))"));
+
+        // Each map paints the movement overlay exactly once, after fog and
+        // the sight perimeter, so the boundary stays visible over parchment.
+        assert_eq!(EMBEDDED_INDEX.matches("drawFlatReachPerimeter();").count(), 1);
+        assert_eq!(EMBEDDED_INDEX.matches("drawFlatReachArrows();").count(), 1);
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("drawPlanetReachOverlay(cells, camera, scale, centerX, centerY);")
+                .count(),
+            1
+        );
+        let after_sight = EMBEDDED_INDEX
+            .split("drawFlatVisibilityPerimeter(tiles, visible);")
+            .nth(1)
+            .expect("the flat sight perimeter is painted");
+        assert!(
+            after_sight.contains("drawFlatReachPerimeter();"),
+            "movement range must paint after the sight perimeter and fog"
+        );
+        // The arrow glyph itself is shared by both projections and knows the
+        // two directional forms: a head across the edge, one back, or both.
+        assert!(EMBEDDED_INDEX
+            .contains("function drawEdgeArrow(mx, my, dx, dy, out, back, k)"));
     }
 
     #[test]
