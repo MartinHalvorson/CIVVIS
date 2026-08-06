@@ -1231,15 +1231,29 @@ fn main() {
     match cmd {
         "simulate" => {
             let players = arg(&args, "--players", 4);
-            let jobs = single_simulation_jobs_arg(&args);
             let g0 = Instant::now();
             let mut g = Game::new_with(game_options(
                 &args,
                 players,
                 arg(&args, "--seed", 0) as u64,
             ));
-            let mut ais = AdvancedAi::fleet_parallel(&g, jobs);
-            let census = civvis::simultaneous::run_structured(&mut g, &mut ais);
+            // The two regimes want opposite parallelism. Sequential seats
+            // cannot deliberate concurrently, so `--jobs` feeds the clone-
+            // heavy WorkPool frontiers inside one seat's turn, whose measured
+            // knee caps the default at four. Simultaneous seats deliberate
+            // independently by construction, so `--jobs` fans whole seats out
+            // instead — one clone buys a whole turn of deliberation, past the
+            // knee — and the AIs skip the inner pool rather than stack the
+            // two layers.
+            let census = if g.turn_structure == setup::TurnStructure::Simultaneous {
+                let jobs = jobs_arg(&args);
+                let mut ais = AdvancedAi::fleet(&g);
+                civvis::simultaneous::run_structured_jobs(&mut g, &mut ais, jobs)
+            } else {
+                let jobs = single_simulation_jobs_arg(&args);
+                let mut ais = AdvancedAi::fleet_parallel(&g, jobs);
+                civvis::simultaneous::run_structured(&mut g, &mut ais)
+            };
             println!("[{:.3}s]", g0.elapsed().as_secs_f64());
             if let Some(census) = census {
                 println!("{}", census.summary());
