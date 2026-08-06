@@ -32784,6 +32784,44 @@ impl Game {
         best.into_keys().filter(|p| *p != start).collect()
     }
 
+    /// Every legal single step inside this turn's remaining movement, as
+    /// ordered `(from, to)` pairs: a step is listed when some legal move
+    /// sequence this turn arrives at `from` with enough movement left to
+    /// enter `to`. The per-edge companion to [`Game::reachable`] — it shows
+    /// *how* the range is entered, not only where it ends. Direction matters:
+    /// stepping into enemy ZOC ends movement, so the reverse step can be
+    /// absent while the forward one is offered.
+    pub fn reach_steps(&self, uid: u32) -> Vec<(Pos, Pos)> {
+        let (start, moves) = match self.units.get(&uid) {
+            Some(u) => (u.pos, u.moves_left),
+            None => return vec![],
+        };
+        let max_moves = self.unit_max_moves(uid);
+        if self.formation_movement_locked_by_zoc(uid) {
+            return vec![];
+        }
+        let _memo = self.query_memo();
+        let best = self.flow(uid, start, moves);
+        let mut steps = Vec::new();
+        for (&from, &rem) in &best {
+            if rem <= 0.0 {
+                continue;
+            }
+            for to in self.nbrs(from) {
+                if !self.map.tiles.contains_key(&to) || !self.can_enter(uid, from, to) {
+                    continue;
+                }
+                let cost = self.unit_step_cost(uid, from, to);
+                let fresh = from == start && rem >= max_moves;
+                if rem < cost && !fresh {
+                    continue; // MP paid up front (Civ 6), same rule as `flow`
+                }
+                steps.push((from, to));
+            }
+        }
+        steps
+    }
+
     /// First step of a deterministic long-range route to `to`, stopping once
     /// the unit is within `stop_range`. Unlike `reachable`, this plans across
     /// future turns so AI units can detour around mountains, coastlines, and
