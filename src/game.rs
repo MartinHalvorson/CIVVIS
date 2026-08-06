@@ -16331,6 +16331,16 @@ pub struct Game {
     /// memory turns it off for a faster clone-and-step.
     #[serde(skip, default = "yes")]
     track_fog_memory: bool,
+    /// Whether the narrated war ledger is re-synced after every successful
+    /// action, so a spectator's war infobox stays live inside a turn. The
+    /// ledger feeds observations and post-game reports, never a rule or a
+    /// built-in agent, and every declaration, peace, and turn boundary still
+    /// syncs it unconditionally — switching this off only trades mid-turn
+    /// freshness for skipping an at_war clone, an uncached suzerain poll of
+    /// every minor, and a military_power walk per participant, once per
+    /// action. On by default; headless rollouts turn it off.
+    #[serde(skip, default = "yes")]
+    track_war_ledger: bool,
     /// AI turns apply many actions synchronously, with no observer able to
     /// read the half-finished position. Coalesce their full-empire visibility
     /// refreshes and publish the same final observation once at the boundary.
@@ -16984,6 +16994,7 @@ impl From<GameSer> for Game {
             query_memo: QueryCache::default(),
             remembered_under: Vec::new(),
             track_fog_memory: true,
+            track_war_ledger: true,
             visibility_batch: VisibilityBatch::default(),
             rng: s.rng,
             seed: s.seed,
@@ -17488,6 +17499,7 @@ impl Game {
             query_memo: QueryCache::default(),
             remembered_under: Vec::new(),
             track_fog_memory: true,
+            track_war_ledger: true,
             visibility_batch: VisibilityBatch::default(),
             rng,
             seed,
@@ -31459,6 +31471,16 @@ impl Game {
         self.track_fog_memory = track;
     }
 
+    /// Stop (or resume) re-syncing the narrated war ledger after every
+    /// action. Declarations, peaces, and turn boundaries still sync it
+    /// unconditionally, so the ledger every observer and report reads is
+    /// identical at every turn boundary; only its mid-turn freshness — a
+    /// spectator-infobox nicety — is given up. Outcomes are unchanged either
+    /// way: nothing in the rules or the built-in agents reads the ledger.
+    pub fn set_war_ledger(&mut self, track: bool) {
+        self.track_war_ledger = track;
+    }
+
     /// Run a synchronous action sequence while coalescing full visibility
     /// maintenance at its boundary.
     ///
@@ -41537,7 +41559,13 @@ impl Game {
                     | Action::RazeCity { .. }
                     | Action::LiberateCity { .. }
             ) {
-                self.sync_war_log();
+                // Mid-turn freshness for the spectator's war infobox only;
+                // headless rollouts switch it off and rely on the
+                // unconditional syncs at declarations, peaces, and turn
+                // boundaries.
+                if self.track_war_ledger {
+                    self.sync_war_log();
+                }
             }
             self.defer_or_refresh_visibility(pid, matches!(action, Action::EndTurn));
             self.log.push(pid, action.clone());
@@ -68169,6 +68197,51 @@ mod district_mechanics {
             crate::obs::observation_spectator(&game, 0)["wars"][0]["theater"],
             aftermath,
             "later history must not move the View aftermath target"
+        );
+    }
+
+    /// Headless rollouts switch the per-action ledger re-sync off. The
+    /// unconditional syncs — declarations, peaces, turn boundaries — must be
+    /// unaffected, because reports and saved games read the ledger there; and
+    /// the switch itself must be runtime-only so a save never comes back with
+    /// a stale spectator ledger.
+    #[test]
+    fn a_disabled_war_ledger_still_syncs_at_declarations_and_turn_boundaries() {
+        let mut game = emergency_game_with_capitals(2, 5_512, 300);
+        game.set_war_ledger(false);
+        game.turn = 40;
+        game.record_contact(0, 1);
+        let start = game.military_power(0).round() as i64;
+        game.do_declare_war(0, 1).unwrap();
+        let participant = game.wars[&pair(0, 1)]
+            .participants
+            .iter()
+            .find(|participant| participant.player == 0)
+            .unwrap();
+        assert_eq!(participant.strength, start, "a declaration always syncs");
+
+        let capital = game.player_city_ids(0)[0];
+        let reinforcement = game.spawn_unit("warrior", 0, game.cities[&capital].pos);
+        let peak = game.military_power(0).round() as i64;
+        assert!(peak > start);
+        game.do_end_turn();
+        let participant = game.wars[&pair(0, 1)]
+            .participants
+            .iter()
+            .find(|participant| participant.player == 0)
+            .unwrap();
+        assert_eq!(
+            participant.peak_strength,
+            Some(peak),
+            "a turn boundary always syncs"
+        );
+        game.remove_unit(reinforcement);
+
+        let restored: Game =
+            serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
+        assert!(
+            restored.track_war_ledger,
+            "the switch is runtime-only; a restored save narrates again"
         );
     }
 

@@ -375,6 +375,11 @@ pub fn run_game<A: Ai>(g: &mut Game, ais: &mut [A]) {
     // stepping does not use `run_game`, so spectator and player displays keep
     // complete observation memory.
     g.set_fog_memory(false);
+    // Same reasoning for the narrated war ledger: no observer reads a
+    // half-finished headless turn, so the per-action re-sync buys nothing.
+    // Declarations, peaces, and turn boundaries still sync it, so the ledger
+    // in reports and saved games is unchanged.
+    g.set_war_ledger(false);
     while g.winner.is_none() && g.turn <= g.max_turns {
         let pid = g.current;
         ais[pid].take_turn(g, pid);
