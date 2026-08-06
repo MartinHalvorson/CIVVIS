@@ -10870,6 +10870,33 @@ function planetGlide(vx, vy) {
   const turn = basis && planetTurnAxis(basis, vx, vy);
   return turn ? {axis:turn.axis, rate:turn.angle} : null;
 }
+// A flight to a cell is the turn the minimap already draws: the great circle
+// from what the camera faces to the target, which the azimuthal chart shows as
+// the straight line from its centre to the clicked point. Easing the stored
+// column and row there instead walks the longitude/latitude grid, and the
+// world appears to spin about its pole rather than head for the click. One
+// step of the walk: turn the level basis about the great-circle axis by the
+// eased share of what remains, re-aiming each step with the roll the transport
+// has actually produced so the walk settles on exactly the centring
+// `planetCameraTargetFor` describes. Returns whether the flight has arrived.
+function planetFlightStep(target, ease) {
+  const level = planetViewBasis(planetCameraBase());
+  const aim = planetUntiltBasis(planetViewBasis({
+    longitude:Math.atan2(target[1], target[0]),
+    latitude:Math.asin(Math.max(-1, Math.min(1, target[2]))),
+    roll:planetCamera().roll,
+  }));
+  const left = Math.acos(Math.max(-1, Math.min(1, dot3(level.out, aim.out))));
+  const done = left * WW() / (2 * Math.PI) < .35;
+  let axis = cross3(level.out, aim.out);
+  const length = Math.hypot(axis[0], axis[1], axis[2]);
+  // The antipode has no unique way round; any axis across the view does.
+  axis = length > 1e-9 ? [axis[0] / length, axis[1] / length, axis[2] / length]
+                       : level.up;
+  applyPlanetBasis(planetTiltBasis(
+    done ? aim : planetSpin(level, axis, left * ease)));
+  return done;
+}
 
 function planetCellGeometry(tile, camera, scale, centerX, centerY) {
   const cell = PLANET?.cells.get(key(tile.pos));
@@ -23640,6 +23667,10 @@ function flyCameraTo(pos, scale = cam.scale) {
     cameraFlight = null; draw(); drawMini(); return;
   }
   cameraFlight = {x, y:clampCameraY(y, scale), scale:Math.max(.25, Math.min(3.2, scale))};
+  // On a globe the flight walks the great circle to the cell; x and y stay as
+  // the arrival reading for whoever compares a pending flight to a new goal.
+  const cell = planetReady() && PLANET.cells.get(key(pos));
+  if (cell) cameraFlight.greatCircle = cell.center;
 }
 function orbitCamera(deltaRot = 0, deltaTilt = 0) {
   takeCameraControl();
@@ -23803,6 +23834,15 @@ function advanceUserCameraMotion(now = performance.now()) {
                           cameraZoom.sx, cameraZoom.sy, cameraZoom.scale);
         cameraZoom = null;
       }
+    }
+  } else if (cameraFlight && cameraFlight.greatCircle && planetReady()) {
+    const ease = 1 - Math.pow(.018, dt / 1000);
+    const arrived = planetFlightStep(cameraFlight.greatCircle, ease);
+    cam.scale += (cameraFlight.scale - cam.scale) * ease;
+    active = true;
+    if (arrived && Math.abs(cameraFlight.scale - cam.scale) < .001) {
+      cam.scale = cameraFlight.scale;
+      cameraFlight = null;
     }
   } else if (cameraFlight) {
     const ease = 1 - Math.pow(.018, dt / 1000);
