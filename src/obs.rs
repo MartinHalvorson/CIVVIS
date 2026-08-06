@@ -2292,7 +2292,7 @@ mod tests {
         assert!(index.contains("function drawFlatLaunches(now)"));
         assert!(index.contains("drawMissionRocket(flight.rocket, player, size, now, pixel);"));
         assert!(index.contains(
-            "drawFlatSatellites(now0);\n  drawFlatLaunches(now0);\n  drawNuclearBlasts(now0);"
+            "drawFlatSatellites(now0);\n  drawFlatLaunches(now0);\n  drawMissileStrikes(now0);\n  drawNuclearBlasts(now0);"
         ));
         assert!(index.contains(
             "return SHOW_ROCKET_ANIMATIONS && (activeSkyLaunches().length > 0 ||\n    (flatSkyShown() > .02"

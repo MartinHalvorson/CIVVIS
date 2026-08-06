@@ -7296,8 +7296,10 @@ impl AdvancedAi {
         // 2,600 but the technology that permits one at barely two points, so
         // no empire ever researched its way to the doctrine it already had.
         // Price the path like the other victory beelines, from the industrial
-        // era on so the ancient rush book keeps its own ordering.
-        if strategy == GrandStrategy::Conquest && g.world_era >= 4 {
+        // era on so the ancient rush book keeps its own ordering. Gated on
+        // victory_planning like the strike doctrine itself, which keeps the
+        // frozen advanced_v1 anchor's research untouched.
+        if self.victory_planning && strategy == GrandStrategy::Conquest && g.world_era >= 4 {
             let arsenal = &g.players[pid].science_projects;
             let milestone = if !arsenal.contains("manhattan_project") {
                 Some("nuclear_fission")

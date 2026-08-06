@@ -694,7 +694,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// legacy and Elo agent wants exactly the army it always wanted. A
 /// compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8420_163d_c5eb_178f;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2747_6589_ca6e_bcc7;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -2521,6 +2521,26 @@ mod tests {
             !civvis::ai::AdvancedAi::new().garrison_loyalty_policy,
             "the stock entrant must not slot limitanei either — the arm measured \
              a null and ships OFF"
+        );
+        // ⚠ SAME QUESTION, ASKED AGAIN FOR THE NUCLEAR LANE.
+        //
+        // The wmd-strike doctrine's wider gate (Recovery/threatened besides
+        // Conquest) lives behind `advanced_command_actions`, and the new
+        // nuclear tech beeline in `tech_value` is explicitly gated on
+        // `victory_planning` — both paths the anchor never enters, because
+        // legacy() constructs with victory_planning = false. So the source
+        // fingerprint moved while the legacy path did not, and the re-pin
+        // below is free.
+        assert!(
+            !civvis::ai::AdvancedAi::legacy().coordinates_forces(),
+            "advanced_v1 must not victory-plan; if it ever does, the nuclear \
+             beeline and strike doctrine reach the anchor and the re-pin is \
+             no longer free — bump ELO_PROTOCOL_VERSION instead"
+        );
+        assert!(
+            civvis::ai::AdvancedAi::new().coordinates_forces(),
+            "the stock entrant does victory-plan, so `advanced` rows straddle \
+             the nuclear-lane change — recorded here honestly"
         );
     }
 
