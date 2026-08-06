@@ -157,8 +157,6 @@ impl WorkPool {
         if count == 0 {
             return Vec::new();
         }
-        let next = Arc::new(AtomicUsize::new(0));
-        let cancelled = Arc::new(AtomicBool::new(false));
         let nested = IN_WORK_POOL.with(Cell::get);
         let active = self.workers.len().min(count);
         if active == 1 || nested {
@@ -312,6 +310,8 @@ impl WorkPool {
             active,
             "a stateful batch needs one state per active worker"
         );
+        let next = Arc::new(AtomicUsize::new(0));
+        let cancelled = Arc::new(AtomicBool::new(false));
         let nested = IN_WORK_POOL.with(Cell::get);
 
         if active == 1 || nested {
