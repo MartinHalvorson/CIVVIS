@@ -907,6 +907,18 @@ fn future_era(args: &[String]) -> setup::FutureEra {
     })
 }
 
+/// Whether the seats of a game turn act one after another or plan against a
+/// shared snapshot and commit together. Same contract as the eras: an unknown
+/// id is refused rather than quietly played as the stock regime.
+fn turn_structure(args: &[String]) -> setup::TurnStructure {
+    let id = arg_text(args, "--turn-structure", setup::TurnStructure::default().id());
+    setup::turn_structure_from_id(&id).unwrap_or_else(|| {
+        let known: Vec<&str> = setup::TURN_STRUCTURES.iter().map(|spec| spec.id).collect();
+        eprintln!("unknown turn structure {id:?}; choose one of: {}", known.join(", "));
+        std::process::exit(2);
+    })
+}
+
 /// Difficulty and speed are chosen the same way everywhere: by name, against
 /// the shipped ruleset, with the stock levels as defaults.
 fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
@@ -1053,6 +1065,7 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
             }
             modes
         },
+        turn_structure: turn_structure(args),
         ..GameOptions::new(
             player_count,
             auto_dimension(args, "--width", players, true),
@@ -1211,8 +1224,11 @@ fn main() {
                 arg(&args, "--seed", 0) as u64,
             ));
             let mut ais = AdvancedAi::fleet_parallel(&g, jobs);
-            run_game(&mut g, &mut ais);
+            let census = civvis::simultaneous::run_structured(&mut g, &mut ais);
             println!("[{:.3}s]", g0.elapsed().as_secs_f64());
+            if let Some(census) = census {
+                println!("{}", census.summary());
+            }
             standings(&g);
         }
         "soak" => {
@@ -1228,17 +1244,17 @@ fn main() {
                 let result = std::panic::catch_unwind(|| {
                     let mut g = Game::new_with(game_options(&args, players, seed as u64));
                     let mut ais = AdvancedAi::fleet(&g);
-                    run_game(&mut g, &mut ais);
+                    let simultaneous = civvis::simultaneous::run_structured(&mut g, &mut ais);
                     // Every major's turns, pooled: what the empires in this game
                     // actually spent the game doing.
                     let mut census = civvis::ai::StrategyCensus::default();
                     for ai in ais.iter().take(g.players.iter().filter(|p| !p.is_minor).count()) {
                         census.absorb(&ai.strategy_census());
                     }
-                    (g, census)
+                    (g, census, simultaneous)
                 });
                 match result {
-                    Ok((g, census)) => {
+                    Ok((g, census, simultaneous)) => {
                         let majors: Vec<_> = g.players.iter().filter(|p| !p.is_minor).collect();
                         let minors: Vec<_> = g
                             .players
@@ -1251,6 +1267,14 @@ fn main() {
                         // than taking the whole run down.
                         let w = g.winner.map(|winner| &g.players[winner]);
                         let mut flags = String::new();
+                        if let Some(simultaneous) = &simultaneous {
+                            flags.push_str(&format!(
+                                " SIMUL drops={}/{}{}",
+                                simultaneous.dropped,
+                                simultaneous.planned,
+                                if simultaneous.aborted { " ABORTED" } else { "" }
+                            ));
+                        }
                         if majors.iter().all(|p| p.techs.len() <= 2) {
                             flags.push_str(" NO-TECH-PROGRESS");
                         }
@@ -2114,6 +2138,15 @@ fn main() {
                             game.mods, active
                         );
                     }
+                    // Stepping a simultaneous save one seat at a time would
+                    // silently change its regime mid-game; say so instead.
+                    if game.turn_structure == setup::TurnStructure::Simultaneous {
+                        eprintln!(
+                            "{path} is a simultaneous-turns game; the interactive \
+                             server plays sequential games only"
+                        );
+                        std::process::exit(2);
+                    }
                     game
                 });
             let seed = {
@@ -2128,6 +2161,17 @@ fn main() {
                 }
             };
             let play_options = game_options(&args, players, seed);
+            // The interactive server steps one seat at a time and consults
+            // each AI live, which is the sequential regime by construction.
+            // Refuse the alternative rather than quietly playing a different
+            // game than the flag asked for; `simulate` and `soak` play it.
+            if play_options.turn_structure == setup::TurnStructure::Simultaneous {
+                eprintln!(
+                    "the interactive server plays sequential games only; \
+                     use `civvis simulate --turn-structure simultaneous`"
+                );
+                std::process::exit(2);
+            }
             let map_script = play_options.map_script;
             let map_topology = play_options.map_topology;
             let map_poles = play_options.map_poles;
@@ -2143,6 +2187,7 @@ fn main() {
                     base_ruleset: play_options.base_ruleset,
                     start_era: play_options.start_era,
                     future_era: play_options.future_era,
+                    turn_structure: play_options.turn_structure,
                     map_script,
                     map_topology,
                     map_poles,
@@ -2303,6 +2348,7 @@ fn main() {
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
                       [--disasters 0|1|2|3|4] [--barbarians on|off] \
+                      [--turn-structure sequential|simultaneous] \
                       [--game-modes apocalypse,secret_societies] \
                       [--leader-pool civ6|historical|today] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \

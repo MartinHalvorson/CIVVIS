@@ -17,7 +17,7 @@ use crate::rules::{
 use crate::specmap::SpecMap;
 
 use crate::setup::{
-    BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology,
+    BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology, TurnStructure,
 };
 use crate::world::{DistrictFoundation, RememberedTile, Tile, TileBits, TileMemory, WorldMap};
 use crate::{hex, mapgen, Pos};
@@ -15981,6 +15981,11 @@ pub struct GameOptions {
     /// simulations and old saves retain their seed-for-seed stock seating;
     /// the live server enables it for newly created games.
     pub randomize_civs: bool,
+    /// Whether the seats of one game turn act one after another or plan
+    /// against a shared snapshot and commit together. Sequential is the stock
+    /// regime and the default everywhere; see [`crate::setup::TurnStructure`]
+    /// and [`crate::simultaneous`] for what the alternative changes.
+    pub turn_structure: TurnStructure,
 }
 
 impl GameOptions {
@@ -16015,6 +16020,7 @@ impl GameOptions {
             civs: Vec::new(),
             leader_pool: LeaderPool::default(),
             randomize_civs: false,
+            turn_structure: TurnStructure::default(),
         }
     }
 }
@@ -16365,6 +16371,13 @@ pub struct Game {
     /// must be rebuilt on the rules it was started under.
     #[serde(default)]
     pub future_era: FutureEra,
+    /// Whether this game's seats act sequentially or plan simultaneously.
+    /// Kept on the save so a resumed game keeps the regime it was played
+    /// under, and so a finished run's record says which game it was. It does
+    /// not change `Game::apply` semantics — only how a driver consults the
+    /// seats — which is why nothing else in this struct reads it.
+    #[serde(default)]
+    pub turn_structure: TurnStructure,
     /// The Moon's ore, by resource: one body, one set of piles, shared by
     /// everybody who gets a mass driver over it. Rolled at setup only when the
     /// ruleset gives a resource a lunar deposit, so a classic game carries an
@@ -16823,6 +16836,10 @@ struct GameSer {
     /// which were played on the classic one.
     #[serde(default)]
     future_era: FutureEra,
+    /// Absent in saves written before turn structure was a choice, all of
+    /// which were sequential.
+    #[serde(default)]
+    turn_structure: TurnStructure,
     /// Absent in every classic save, and in a modified one that has not been
     /// rolled yet.
     #[serde(default)]
@@ -16995,6 +17012,7 @@ impl From<GameSer> for Game {
             base_ruleset: s.base_ruleset,
             start_era: s.start_era,
             future_era: s.future_era,
+            turn_structure: s.turn_structure,
             moon_deposits: s.moon_deposits,
             map_script: s.map_script,
             leader_pool: s.leader_pool.available_or_default(),
@@ -17179,6 +17197,7 @@ impl From<Game> for GameSer {
             base_ruleset: g.base_ruleset,
             start_era: g.start_era,
             future_era: g.future_era,
+            turn_structure: g.turn_structure,
             moon_deposits: g.moon_deposits,
             map_script: g.map_script,
             leader_pool: g.leader_pool,
@@ -17416,6 +17435,7 @@ impl Game {
             civs,
             leader_pool,
             randomize_civs,
+            turn_structure,
         } = options;
         // A rung past the end of the ladder is clamped rather than fatal: a
         // client from a later build must not be able to construct a world that
@@ -17497,6 +17517,7 @@ impl Game {
             base_ruleset,
             start_era,
             future_era,
+            turn_structure,
             moon_deposits,
             map_script,
             leader_pool,

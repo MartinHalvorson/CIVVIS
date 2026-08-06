@@ -28,9 +28,10 @@ use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::name::Name;
 use crate::rules::Rules;
 use crate::setup::{
-    future_era_from_id, future_era_id, start_era_from_id, start_era_id, BaseRuleset, FutureEra,
-    GameSpeed, MapPoles, MapScript, MapSize, MapTopology, BASE_RULESETS, CIV6_GAME_SPEEDS,
-    CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, FUTURE_ERAS, MAP_POLES, MAP_TOPOLOGIES, START_ERAS,
+    future_era_from_id, future_era_id, start_era_from_id, start_era_id, turn_structure_id,
+    BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology, TurnStructure,
+    BASE_RULESETS, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, FUTURE_ERAS, MAP_POLES,
+    MAP_TOPOLOGIES, START_ERAS,
 };
 use crate::Pos;
 
@@ -452,6 +453,12 @@ pub struct Params {
     /// Which rules the far end of the game is played by. Only an era somebody
     /// has built ever reaches here; see [`new_game_params`].
     pub future_era: FutureEra,
+    /// Whether seats act sequentially or plan against a shared snapshot.
+    /// Carried for provenance and faithful restarts; the interactive server
+    /// itself only plays sequential games, and refuses the alternative at its
+    /// entry points rather than quietly stepping a simultaneous world one
+    /// seat at a time.
+    pub turn_structure: TurnStructure,
     pub map_script: MapScript,
     /// What shape the world is, chosen independently of what fills it.
     pub map_topology: MapTopology,
@@ -2122,6 +2129,7 @@ impl Session {
             base_ruleset: params.base_ruleset,
             start_era: params.start_era,
             future_era: params.future_era,
+            turn_structure: params.turn_structure,
             map_script: params.map_script,
             map_topology: params.map_topology,
             map_poles: params.map_poles,
@@ -2208,6 +2216,7 @@ impl Session {
         params.base_ruleset = game.base_ruleset;
         params.start_era = game.start_era;
         params.future_era = game.future_era;
+        params.turn_structure = game.turn_structure;
         params.map_script = game.map_script;
         params.map_topology = if game.map.topology == crate::world::Topology::Cylinder {
             MapTopology::Flat
@@ -3392,6 +3401,7 @@ fn simulation_settings(params: &Params) -> Value {
         "base_ruleset": params.base_ruleset.id(),
         "start_era": start_era_id(params.start_era),
         "future_era": future_era_id(params.future_era),
+        "turn_structure": turn_structure_id(params.turn_structure),
         "map": params.map_script.id(),
         "shape": params.map_topology.id(),
         "poles": params.map_poles.id(),
@@ -7184,6 +7194,7 @@ mod tests {
             base_ruleset: BaseRuleset::Civ6,
             start_era: 0,
             future_era: FutureEra::Classic,
+            turn_structure: TurnStructure::Sequential,
             num_players: 2,
             width: 20,
             height: 14,
