@@ -13001,7 +13001,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("#skynav[hidden] { display: none; }"));
         assert!(EMBEDDED_INDEX.contains("#zoomctl-main"));
         assert!(EMBEDDED_INDEX.contains("flex-direction: column;"));
-        assert!(EMBEDDED_INDEX.contains("position: static; z-index: auto; align-self: stretch;"));
+        assert!(EMBEDDED_INDEX.contains("position: static; z-index: auto; align-self: flex-start;"));
         assert!(EMBEDDED_INDEX.contains("syncSkyNavDockGeometry();"));
         for part in [
             "id=\"skynav-worlds\"",

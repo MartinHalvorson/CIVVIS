@@ -1165,31 +1165,43 @@
     display: flex; align-items: stretch; gap: var(--panel-gap); min-width: 0;
     pointer-events: none;
   }
+  /* The outline traces only the rows that hold controls. Each row is its own
+     shrink-wrapped panel and the two fuse along their shared left edge, so
+     when one row runs shorter than the other its free corner steps in and
+     gives that ground back to the map, rather than framing empty panel. The
+     stack itself is unpainted and lets the pointer through: the notch beside
+     the shorter row is live map, not dead dock. */
   #zoomctl {
     position: relative; z-index: 1; display: flex; flex: 0 1 auto; flex-direction: column;
+    align-items: flex-start;
     width: max-content; max-width: 100%; min-width: 0;
-    gap: 5px; padding: 5px; border-radius: 13px; background: #0a1512cb; border: 1px solid #3c554c;
+    pointer-events: none;
+  }
+  #zoomctl-main {
+    position: relative; display: flex; flex: 0 0 auto; align-items: center; gap: 5px; min-width: 0;
+    max-width: 100%;
+    padding: 5px; border-radius: 13px; background: #0a1512cb; border: 1px solid #3c554c;
     box-shadow: 0 12px 26px #0006; backdrop-filter: blur(12px);
     pointer-events: auto;
   }
-  #zoomctl-main {
-    display: flex; flex: 0 0 auto; align-items: center; gap: 5px; min-width: 0;
-  }
+  /* Square only the two corners at the seam; the row that reaches further
+     keeps its rounded corner over the map either way. #zoomctl-main is
+     positioned so its bottom border wins the one-pixel overlap and the seam
+     stays a single hairline. */
+  #zoomctl:has(#skynav:not([hidden])) #zoomctl-main { border-bottom-left-radius: 0; }
   #zoomctl button { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; background: transparent; font-size: 16px; }
   #zoomctl-main > button { flex: 0 0 34px; }
   #zoomctl button + button { border-left: 1px solid #ffffff0c; border-radius: 0; }
   /* The visible-tile search lives in the command deck's lower-left stack
      (lenses, search, shortcuts) — its panel styles sit with the deck rules.
-     Only the sky bar floats here. It rides above the zoom instruments and is
-     taken out of the dock's flow to get there: the dock is the map's bottom
-     strip, so a second row in the flow would have moved the world every time
-     the camera left the globe. Standing over the map instead costs nothing,
-     and the sky keeps its captions clear of the bar the same way it does of
-     every other widget. */
+     Only the sky bar rides here, the dock's second row, up while there is a
+     sky to cross. It only ever appears beneath the primary row, so its
+     squared top-left corner is unconditional. */
   #skynav {
-    position: static; z-index: auto; align-self: stretch;
-    width: 100%; max-width: 100%; display: flex; flex-wrap: wrap; align-items: center;
-    gap: 4px; padding: 5px; border-radius: 13px;
+    position: static; z-index: auto; align-self: flex-start;
+    width: max-content; max-width: 100%; margin-top: -1px;
+    display: flex; flex-wrap: wrap; align-items: center;
+    gap: 4px; padding: 5px; border-radius: 0 13px 13px 13px;
     background: #0a1512d8; border: 1px solid #3c554c;
     box-shadow: 0 12px 26px #0006; backdrop-filter: blur(12px);
     pointer-events: auto;
