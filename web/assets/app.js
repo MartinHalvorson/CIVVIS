@@ -11182,6 +11182,77 @@ function drawPlanetVisibilityPerimeter(cells, visible) {
   cx.restore();
 }
 
+// The selected unit's movement, on the globe and the chart: the perimeter of
+// everywhere it can end this turn, and a small arrow astride every cell seam
+// its remaining movement can cross. The region routinely runs past the
+// surveyed map, so cells the frame does not carry are projected here from the
+// globe's own geometry — the boundary keeps reading over fog and bare sphere,
+// which is exactly where a scout's reach matters most.
+function drawPlanetReachOverlay(cells, camera, scale, centerX, centerY) {
+  if (!sel || !(sel.reachable || []).length) return;
+  const region = selReachRegion();
+  const behind = camera.chart
+    ? planetChartHorizon(camera, scale, planetStageReach(centerX, centerY))
+    : -.03;
+  const entries = new Map();
+  for (const entry of cells) entries.set(key(entry.tile.pos), entry);
+  for (const regionKey of region) {
+    if (entries.has(regionKey)) continue;
+    const pos = regionKey.split(",").map(Number);
+    const geometry = planetCellGeometry({pos}, camera, scale, centerX, centerY);
+    if (!geometry || geometry.center.z <= behind) continue;
+    entries.set(regionKey, {tile: {pos}, ...geometry});
+  }
+  const segments = [];
+  for (const regionKey of region) {
+    const entry = entries.get(regionKey);
+    if (!entry) continue;
+    const {cell, points} = entry;
+    for (let side = 0; side < points.length; side++) {
+      const across = cell.nbrs[side];
+      if (across && region.has(across)) continue;
+      const a = points[side], b = points[(side + 1) % points.length];
+      segments.push([a.x, a.y, b.x, b.y]);
+    }
+  }
+  if (segments.length) {
+    cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+    for (const [width, color] of [
+      [3.0, "rgba(5,10,15,.68)"],
+      [1.3, "rgba(143,216,255,.92)"],
+    ]) {
+      cx.beginPath();
+      for (const [ax, ay, bx, by] of segments) {
+        cx.moveTo(ax, ay); cx.lineTo(bx, by);
+      }
+      cx.strokeStyle = color; cx.lineWidth = width; cx.stroke();
+    }
+    cx.restore();
+  }
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const edge of selReachEdges().values()) {
+    const entry = entries.get(key(edge.from));
+    if (!entry) continue;
+    const side = entry.cell.nbrs.indexOf(key(edge.to));
+    if (side < 0) continue;
+    const a = entry.points[side];
+    const b = entry.points[(side + 1) % entry.points.length];
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const across = entries.get(key(edge.to));
+    // Aim at the neighbour's own centre when the frame carries it; otherwise
+    // outward from this cell through the seam, which is the same direction to
+    // the eye at any scale a seam is still visible at.
+    const dx = across ? across.center.x - entry.center.x : mx - entry.center.x;
+    const dy = across ? across.center.y - entry.center.y : my - entry.center.y;
+    // Flat-map arrow geometry is tuned to a hex of inradius S·√3/2; a globe
+    // cell's screen size is whatever the camera says it is.
+    const k = Math.max(.3, Math.min(1.5,
+      planetCellInradius(entry) / (S * SQ3 / 2)));
+    drawEdgeArrow(mx, my, dx, dy, edge.out, edge.back, k);
+  }
+  cx.restore();
+}
+
 function planetFeatureGlyph(tile) {
   if (tile.terrain === "mountain") return "▲";
   if (tile.feature === "forest") return "♠";
@@ -16318,6 +16389,137 @@ function drawFlatVisibilityPerimeter(tiles, visible) {
   cx.restore();
 }
 
+// ------------------------------------------------- selected unit's movement
+// The tiles a selected unit can end on, plus the tile it stands on: the shape
+// of this turn's whole movement decision. Built from positions rather than
+// tiles because the range routinely runs past the surveyed map, and the line
+// has to keep saying "you can walk here" over fog and blank parchment alike.
+function selReachRegion() {
+  const region = new Set((sel.reachable || []).map(key));
+  region.add(key(sel.pos));
+  return region;
+}
+// The engine's per-edge movement affordances for the selected unit, one entry
+// per hex edge. `reach_steps` is directional — stepping into enemy ZOC ends
+// movement, so an edge can be enterable one way and not back — and only the
+// engine knows step costs, rivers, and ZOC, so this is read, never re-derived
+// from `reachable`.
+function selReachEdges() {
+  const edges = new Map();
+  for (const [from, to] of (sel && sel.reach_steps) || []) {
+    const a = key(from), b = key(to);
+    const flip = b < a;
+    const id = flip ? b + "|" + a : a + "|" + b;
+    let edge = edges.get(id);
+    if (!edge) edge = {from: flip ? to : from, to: flip ? from : to,
+                       out: false, back: false}, edges.set(id, edge);
+    if (flip) edge.back = true; else edge.out = true;
+  }
+  return edges;
+}
+// Which of `from`'s six sides faces `to`, in DIRS order, wrap included.
+function reachStepSide(from, to) {
+  const wanted = key(to);
+  for (let side = 0; side < DIRS.length; side++) {
+    const across = canonPos([from[0] + DIRS[side][0], from[1] + DIRS[side][1]]);
+    if (key(across) === wanted) return side;
+  }
+  return -1;
+}
+// Centre-to-centre offset toward DIRS[side], in view space (rotate, then
+// dimetric squash) — the same transform hexXY applies, taken as a delta so a
+// neighbour across the wrap seam still sits beside its tile.
+function hexDirOffset(side) {
+  const dwx = S * SQ3 * (DIRS[side][0] + DIRS[side][1] / 2);
+  const dwy = S * 1.5 * DIRS[side][1];
+  return [COSR * dwx - SINR * dwy, (SINR * dwx + COSR * dwy) * YS];
+}
+// One small arrow astride a hex edge. `out` points the head across the edge,
+// `back` points one at the near end; both at once is the both-ways edge the
+// open field mostly is, and one alone is a door that only opens one way.
+function drawEdgeArrow(mx, my, dx, dy, out, back, k) {
+  const length = Math.hypot(dx, dy) || 1;
+  const ux = dx / length, uy = dy / length;
+  const px = -uy, py = ux;
+  const reach = 6.5 * k, head = 4.4 * k, flare = 3 * k;
+  const tailX = mx - ux * reach, tailY = my - uy * reach;
+  const tipX = mx + ux * reach, tipY = my + uy * reach;
+  for (const [width, color] of [
+    [3.2 * k, "rgba(5,10,15,.62)"],
+    [1.5 * k, "rgba(207,238,255,.95)"],
+  ]) {
+    cx.strokeStyle = color; cx.lineWidth = width;
+    cx.beginPath();
+    cx.moveTo(tailX, tailY); cx.lineTo(tipX, tipY);
+    if (out) {
+      cx.moveTo(tipX - ux * head + px * flare, tipY - uy * head + py * flare);
+      cx.lineTo(tipX, tipY);
+      cx.lineTo(tipX - ux * head - px * flare, tipY - uy * head - py * flare);
+    }
+    if (back) {
+      cx.moveTo(tailX + ux * head + px * flare, tailY + uy * head + py * flare);
+      cx.lineTo(tailX, tailY);
+      cx.lineTo(tailX + ux * head - px * flare, tailY + uy * head - py * flare);
+    }
+    cx.stroke();
+  }
+}
+// The perimeter of everywhere the selected unit can end this turn. Drawn
+// after the fog and parchment layers on purpose: where the range runs into
+// unexplored ground the boundary keeps reading, which is exactly where a
+// player most needs to know how far a scout can push.
+function drawFlatReachPerimeter() {
+  if (!sel || !(sel.reachable || []).length) return;
+  const region = selReachRegion();
+  const segments = [];
+  for (const regionKey of region) {
+    const pos = regionKey.split(",").map(Number);
+    const tile = TMAP.get(regionKey);
+    const [x, yy] = hexXY(pos[0], pos[1]);
+    const y = yy - (tile ? elev(tile) : 0);
+    for (let side = 0; side < DIRS.length; side++) {
+      const across = canonPos([pos[0] + DIRS[side][0], pos[1] + DIRS[side][1]]);
+      if (region.has(key(across))) continue;
+      const [a, b] = EDGE_CORNERS[side];
+      segments.push([...corner(x, y, S - 1.6, a), ...corner(x, y, S - 1.6, b)]);
+    }
+  }
+  if (!segments.length) return;
+  const k = UI_K();
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [width, color] of [
+    [3.2 * k, "rgba(5,10,15,.68)"],
+    [1.5 * k, "rgba(143,216,255,.92)"],
+  ]) {
+    cx.beginPath();
+    for (const [ax, ay, bx, by] of segments) {
+      cx.moveTo(ax, ay); cx.lineTo(bx, by);
+    }
+    cx.strokeStyle = color; cx.lineWidth = width; cx.stroke();
+  }
+  cx.restore();
+}
+// Every way across every edge the remaining movement affords. Three arrows
+// out of a plains diamond say "straight across, or round either flank" —
+// multiple routes to the same tile that a filled range alone cannot show.
+function drawFlatReachArrows() {
+  if (!sel) return;
+  const edges = selReachEdges();
+  if (!edges.size) return;
+  const k = Math.min(UI_K(), 1.5);
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const edge of edges.values()) {
+    const side = reachStepSide(edge.from, edge.to);
+    if (side < 0) continue;
+    const tile = TMAP.get(key(edge.from));
+    const [x, yy] = hexXY(edge.from[0], edge.from[1]);
+    const y = yy - (tile ? elev(tile) : 0);
+    const [dx, dy] = hexDirOffset(side);
+    drawEdgeArrow(x + dx / 2, y + dy / 2, dx, dy, edge.out, edge.back, k);
+  }
+  cx.restore();
+}
+
 // Search is a luminous surface rather than another map lens. It stays legible
 // over any active lens and keeps districts, wonders, cities, and units intact
 // above the fill. The sight perimeter is drawn after it, preserving the exact
@@ -16550,6 +16752,9 @@ function drawPlanetMap() {
   drawPlanetMapSearchHighlights(cells);
   if (!spectator && radius >= SKY_MARKERS)
     drawPlanetVisibilityPerimeter(cells, visible);
+  // The selected unit's movement: range perimeter, then per-seam arrows.
+  if (radius >= SKY_MARKERS)
+    drawPlanetReachOverlay(cells, camera, scale, centerX, centerY);
   // At the same scale where major-city names leave the globe, replace the
   // settlement vocabulary with cartographic empire names. This is deliberately
   // before the city/icon pass so close markers remain readable over the label
@@ -17169,6 +17374,9 @@ function drawScene() {
   drawFlatMapSearchHighlights(tiles);
   if (Number.isInteger(state.view_player))
     drawFlatVisibilityPerimeter(tiles, visible);
+  // --- selected unit's movement: range perimeter, then per-edge arrows
+  drawFlatReachPerimeter();
+  drawFlatReachArrows();
   // --- secondary-press order line
   if (rdrag && rdragTo && sel) {
     const ts = TMAP.get(key(sel.pos)), tt = TMAP.get(key(rdragTo));
