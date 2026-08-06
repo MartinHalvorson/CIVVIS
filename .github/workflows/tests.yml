@@ -48,7 +48,19 @@ jobs:
       # simulation throughput. The gate does not run rated games, and
       # serialising the backend over a 100k-line crate is what made this the
       # slowest step in the merge path.
-      - run: cargo test --profile ci --locked
+      #
+      # nextest instead of `cargo test` for the run phase, for two measured
+      # reasons. `cargo test` runs the nine test binaries one after another,
+      # so the lib binary's wall-clock tail — the spectator tests that sleep
+      # on real sockets — sets the phase's floor on this 4-core runner;
+      # nextest schedules every test from every binary in one worker pool.
+      # And it prints per-test times, so the next 19-second sleeper shows up
+      # in this log instead of hiding inside a two-minute total. Compilation
+      # is identical (`--cargo-profile ci`); doc-tests do not run under
+      # nextest, and this crate has none that execute (every doc fence is
+      # `text` or `ignore`, 3 ignored stubs).
+      - uses: taiki-e/install-action@nextest
+      - run: cargo nextest run --cargo-profile ci --locked
 
       # ⚠ The worktree audit is the only guard against a whole class of loss
       # that is invisible to every other gate here: finished work left unstaged

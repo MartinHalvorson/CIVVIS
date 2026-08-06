@@ -300,12 +300,26 @@ notice later. Run this from the task worktree:
 python3 tools/civvis_collab.py ship
 ```
 
-`ship` is the completion boundary. It pushes the finished commit, marks the PR
-ready, waits for `cargo-test` and `collaboration-policy`, and squash-merges as
-soon as both are green. If another feature reaches `main` while CI is running,
-it merges that new trunk into the task, reruns `cargo test --profile ci --locked`,
-pushes the updated head, and waits for the new green result. It never invents a
-summary, checks validation boxes, resolves conflicts, or accepts a failed gate.
+`ship` is the completion boundary. It merges the latest `main` once (with a
+`cargo check` of the merged result), pushes the finished commit, marks the PR
+ready, arms squash auto-merge, and waits for `cargo-test` and
+`collaboration-policy`. While the gate runs it deliberately **leaves the head
+alone**. `main` advancing in the meantime is the normal state of this trunk,
+not something to chase: protection runs with `strict: false`, so a green run
+merges even when the head trails `main` by a few commits, and the push to
+`main` reruns the full gate on the actual squash result. Chasing the trunk is
+what used to prevent convergence entirely — every refreshed head cancels the
+in-flight CI run and restarts the gate from zero, and on 2026-08-06 that
+killed 58 of 133 cargo-test runs (44%). `ship` refreshes the head in exactly
+two cases: GitHub reports a real conflict (resolved by a local merge, then
+revalidation), or the branch has fallen `STALE_BASE_LIMIT` (150) commits
+behind, where a merge would be a tree no CI run has approximated. It never
+invents a summary, checks validation boxes, resolves conflicts, or accepts a
+failed gate.
+
+The same rule binds every agent and person: **while a PR's checks are in
+flight, do not push to it, merge `main` into it, or edit its body.** Each of
+those restarts the gate and, at fleet velocity, everyone else's merges too.
 
 On a host running the production spectator, `ship` then watches `/status` until
 the merged revision is actually serving. Other hosts stop after confirming the
@@ -334,7 +348,11 @@ The repository owner should enforce the workflow on `main` with a branch
 ruleset:
 
 - require a pull request before merging;
-- require the `cargo-test` status check and require branches to be current;
+- require the `cargo-test` status check — but do **not** require branches to
+  be current (`strict` stays `false`): at hundreds of merges a day, strict
+  currency re-queues every open PR after every merge and the fleet starves
+  its own CI. Staleness is bounded instead by `STALE_BASE_LIMIT` in
+  `tools/civvis_collab.py` and audited after merge;
 - require conversation resolution;
 - block force-pushes and branch deletion;
 - allow squash merge only;
