@@ -4842,8 +4842,8 @@ async function boot() {
       ).join("");
       if ([...sizes.options].some(option => option.value === chosen)) {
         sizes.value = chosen;
-      } else if ([...sizes.options].some(option => option.value === "6")) {
-        sizes.value = "6";
+      } else if ([...sizes.options].some(option => option.value === "4")) {
+        sizes.value = "4";
       }
       // The sizes this build offers decide which team splits it can seat.
       syncTeams();
@@ -5911,7 +5911,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     // offering to restart it as a free-for-all.
     syncTeams();
     document.getElementById("teams").value = teamRuleFromArray(st.teams);
-    document.getElementById("maptype").value = st.map.script || "pangaea";
+    document.getElementById("maptype").value = st.map.script || "tenins_ball";
     document.getElementById("mapshape").value = st.map.shape || "planet";
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
@@ -18848,7 +18848,7 @@ function hudTurnPlate() {
   const playerView = SPEC && state.view_player !== null && state.view_player !== undefined;
   const identity = SPEC ? viewer : state.players[0];
   const viewLabel = playerView ? "Player view" : SPEC ? "Observing" : "Your empire";
-  const mapName = titleCase(state.map.script || "pangaea");
+  const mapName = titleCase(state.map.script || "tenins_ball");
   const speedName = titleCase(state.game_speed || "standard");
   const paceSelect = document.getElementById("specspeed");
   const paceOption = paceSelect?.selectedOptions[0];
