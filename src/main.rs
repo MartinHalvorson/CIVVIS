@@ -671,8 +671,23 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// immutable batch snapshot, keyed by traversal class, so each worker reuses
 /// the same read-only map scan without publishing it across a world mutation.
 /// The fixed-prefix output remains byte-identical; compatibility is re-pinned.
+/// `run_game` now also switches the narrated war ledger's per-action re-sync
+/// off beside fog memory. The ledger is observation-only — no rule and no
+/// built-in agent reads it, and declarations, peaces, and turn boundaries
+/// still sync unconditionally — so the frozen controller's decisions are
+/// unchanged and the source contract is re-pinned.
+/// `faith_building_spending` now skips building the purchase menu whenever
+/// the faith bank is below the reserve — the state in which the existing
+/// filter provably rejects every candidate. Identical purchases in every
+/// reachable state, so the frozen controller's decisions are unchanged and
+/// the source contract is re-pinned.
+/// `culture_focus` is removed from `BasicAi`: both constructors pinned it
+/// `false` and nothing else ever set it, so its production blocks and the
+/// `project_matches_focus` helper were unreachable — dead weight, not
+/// behaviour. No reachable decision changes; the source contract is
+/// re-pinned.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa208_34b5_d343_0102;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7bd4_2f0f_2c67_745f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
