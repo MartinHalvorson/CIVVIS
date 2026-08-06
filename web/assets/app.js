@@ -1301,6 +1301,53 @@ const WORLD_MINIMAP_REFERENCE = {
   flat: {width:336, height:168},
   planet: {width:240, height:240},
 };
+// How large a hex the thumbnail may draw while it frames known ground rather
+// than the whole world (see miniBounds). The reference frame is sized for a
+// charted world; fitted to a first city's dozen tiles it hands those tiles
+// back as giant hexes in a mostly-black corner. Capping the scale and letting
+// the frame shrink to what that scale needs keeps a young thumbnail small —
+// it grows with what is known and reaches the standard instrument only when
+// the known ground fills it, at which point the ordinary fit takes over.
+const MINI_KNOWN_HEX_LIMIT = 5.5;
+// Pixels the frame spends around the chart itself: its own 6px padding on each
+// side, the fit margin miniLayout keeps, and the label row above the canvas.
+const MINI_FRAME_CHROME = {width:20, height:38};
+function knownChartFrameCap() {
+  const tiles = state?.map?.tiles;
+  // Mirrors the branch miniBounds takes: a spectator and a circumnavigated
+  // world frame the whole world at the standard size. The globe has its own
+  // rule below — its chart is global at any frame size.
+  if (!tiles?.length || planetMap()) return null;
+  if (!chartIsOpen() && !mapEdgeVeiled()) return null;
+  const bounds = miniBounds();
+  const unitWidth = SQ3 * (bounds.maxU - bounds.minU + 1);
+  const unitHeight = 1.5 * (bounds.maxR - bounds.minR) + 2;
+  // Measured turned, exactly as miniLayout fits it, so the frame asks for the
+  // room the chart's own corners take at this bearing.
+  const cos = Math.abs(Math.cos(chartRot())), sin = Math.abs(Math.sin(chartRot()));
+  return {
+    width:(unitWidth * cos + unitHeight * sin) * MINI_KNOWN_HEX_LIMIT + MINI_FRAME_CHROME.width,
+    height:(unitWidth * sin + unitHeight * cos) * MINI_KNOWN_HEX_LIMIT + MINI_FRAME_CHROME.height,
+  };
+}
+// The globe's corner chart is global by design — its crop always holds the
+// same share of the sphere, so a frame of any size shows the same ground and
+// a barely-explored planet is a large square of fog around a speck of known
+// ground. The frame cannot zoom the chart, but it can stop spending the
+// standard square on that fog: its side follows the known cap's angular size,
+// with room for this much unexplored context around it, until the cap has
+// earned the standard instrument.
+const MINI_KNOWN_GLOBE_CONTEXT = 2;
+function knownGlobeFrameShare() {
+  const tiles = state?.map?.tiles;
+  if (!tiles?.length || !planetMap() || wentAround()) return null;
+  // The angular radius of the spherical cap holding the known share of the
+  // world's tiles, against the half-angle the chart's square crop reaches.
+  const share = Math.min(.5,
+    tiles.length / Math.max(1, state.map.width * state.map.height));
+  const reach = Math.acos(1 - 2 * share);
+  return Math.min(1, MINI_KNOWN_GLOBE_CONTEXT * reach / AZIMUTHAL_MINI_SQUARE_HALF);
+}
 function clampPanelDimension(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -1328,8 +1375,24 @@ function syncResponsivePanelGeometry() {
   const compactMinimapHeight = Math.round(clampPanelDimension(height * .19, 80, 148));
   const planetMinimapSide = Math.round(clampPanelDimension(
     Math.min(compactMinimapWidth, compactMinimapHeight), 130, 148));
-  const compactInstrumentWidth = shape === "planet" ? planetMinimapSide : compactMinimapWidth;
-  const compactInstrumentHeight = shape === "planet" ? planetMinimapSide : compactMinimapHeight;
+  // While the thumbnail frames known ground the frame follows the known
+  // extent, so a barely-explored world gets a small minimap instead of a
+  // standard frame full of giant hexes (flat) or fog (globe). Each shape has
+  // its own measure and the other's is always null.
+  const knownFrameCap = knownChartFrameCap();
+  const knownGlobeShare = knownGlobeFrameShare();
+  let compactInstrumentWidth = shape === "planet" ? planetMinimapSide : compactMinimapWidth;
+  let compactInstrumentHeight = shape === "planet" ? planetMinimapSide : compactMinimapHeight;
+  if (knownFrameCap) {
+    compactInstrumentWidth = Math.round(clampPanelDimension(
+      knownFrameCap.width, 130, compactInstrumentWidth));
+    compactInstrumentHeight = Math.round(clampPanelDimension(
+      knownFrameCap.height, 80, compactInstrumentHeight));
+  } else if (knownGlobeShare !== null && knownGlobeShare < 1) {
+    compactInstrumentWidth = Math.round(clampPanelDimension(
+      compactInstrumentWidth * knownGlobeShare, 130, compactInstrumentWidth));
+    compactInstrumentHeight = compactInstrumentWidth;
+  }
   // Reserve the complete lower-left instrument stack before sizing the band
   // above it. The smaller of the natural band and the remaining space keeps a
   // common 960x540 quadrant from having the tracker overlap the minimap.
@@ -1354,11 +1417,21 @@ function syncResponsivePanelGeometry() {
     referenceDiagonal * reference.width;
   const wideMinimapMax = shape === "planet" ? 194
     : Math.min(360, Math.max(180, width * .32));
-  const wideMinimapWidth = Math.round(clampPanelDimension(
+  let wideMinimapWidth = Math.round(clampPanelDimension(
     diagonalWidth, 180, wideMinimapMax));
-  const wideMinimapHeight = Math.round(clampPanelDimension(
+  let wideMinimapHeight = Math.round(clampPanelDimension(
     shape === "planet" ? wideMinimapWidth
       : wideMinimapWidth * reference.height / reference.width, 96, 194));
+  if (knownFrameCap) {
+    wideMinimapWidth = Math.round(clampPanelDimension(
+      knownFrameCap.width, 130, wideMinimapWidth));
+    wideMinimapHeight = Math.round(clampPanelDimension(
+      knownFrameCap.height, 96, wideMinimapHeight));
+  } else if (knownGlobeShare !== null && knownGlobeShare < 1) {
+    wideMinimapWidth = Math.round(clampPanelDimension(
+      wideMinimapWidth * knownGlobeShare, 130, wideMinimapWidth));
+    wideMinimapHeight = wideMinimapWidth;
+  }
   const victoryWidth = Math.round(clampPanelDimension(width * .15, 156, 280));
   const style = area.style;
   style.setProperty("--panel-edge", `${edge}px`);
