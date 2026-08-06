@@ -17605,6 +17605,11 @@ function drawNuclearFlash(now) {
 // The forward and inverse maps below are shared by the pixel painter, the
 // overlay painters, and minimap clicks, so all three agree about the crop.
 const AZIMUTHAL_MINI_WORLD_SHARE = 0.8;
+// How many cell polygons share one fill call. A canvas fill's cost grows
+// superlinearly with the subpaths in its path, so painting the ground in
+// small chunks is an order of magnitude cheaper than one path per colour —
+// and the minimap repaints on every pointermove of a drag.
+const AZIMUTHAL_MINI_FILL_CHUNK = 48;
 const AZIMUTHAL_MINI_SQUARE_HALF = (() => {
   // The share of the sphere inside the square crop, by eightfold symmetry:
   // toward each bearing the crop reaches half / cos(bearing) radians, never
@@ -17874,46 +17879,68 @@ function drawPlanetMini() {
     entry.color = planetMiniCellColor(entry.tile, visible, spectator);
   }
 
-  // The azimuthal inverse is a few trigonometric calls, cheap enough to run
-  // once per CSS pixel on every redraw; the cell search is the real work.
-  const pixelWidth = Math.max(1, Math.round(projection.width));
-  const pixelHeight = Math.max(1, Math.round(projection.height));
-  const fallback = rgbOf("#07110f");
-  const mapped = new Array(pixelWidth * pixelHeight);
-  for (let gridY = 0; gridY < pixelHeight; gridY++) {
-    for (let gridX = 0; gridX < pixelWidth; gridX++) {
-      const point = azimuthalMiniSphereAt(gridX + .5, gridY + .5, projection);
-      if (point) mapped[gridY * pixelWidth + gridX] = planetMiniCellAt(point, index);
-    }
-  }
-  const physicalWidth = mini.width, physicalHeight = mini.height;
-  const physical = mx2.createImageData(physicalWidth, physicalHeight);
-  const scaleX = physicalWidth / projection.width, scaleY = physicalHeight / projection.height;
-  for (let py = 0; py < physicalHeight; py++) {
-    const gridY = Math.min(pixelHeight - 1, Math.floor((py + .5) / scaleY));
-    for (let px = 0; px < physicalWidth; px++) {
-      const gridX = Math.min(pixelWidth - 1, Math.floor((px + .5) / scaleX));
-      const pixel = py * physicalWidth + px;
-      const gridPixel = gridY * pixelWidth + gridX;
-      const offset = pixel * 4;
-      let color = fallback;
-      if (mapped[gridPixel]?.color) color = mapped[gridPixel].color;
-      physical.data[offset] = color[0]; physical.data[offset + 1] = color[1];
-      physical.data[offset + 2] = color[2]; physical.data[offset + 3] = 255;
-    }
-  }
-  mx2.setTransform(1, 0, 0, 1, 0, 0);
-  mx2.putImageData(physical, 0, 0);
+  // The chart is painted forward: every cell polygon is projected and filled,
+  // batched into one path per colour, rather than inverting the projection
+  // under every pixel. The azimuthal chart has no interior fold, so a cell is
+  // one contiguous polygon and the whole world is a few dozen fill calls; the
+  // inverse-per-pixel raster this replaces spent ~100ms a frame in its cell
+  // search, and the drag path redraws the minimap on every pointermove, which
+  // made moving a planet map an eight-frame slideshow. The inverse map still
+  // serves clicks, where it runs once per click instead of thirty thousand
+  // times per frame.
+  //
+  // Only the fringe past the crop's corners is skipped: beyond the paint
+  // reach a cell smears toward the antipode, where its straightened chords
+  // would cross a square it does not belong to.
   mx2.setTransform(DPR, 0, 0, DPR, 0, 0);
-  mx2.strokeStyle = "#b9e3f388"; mx2.lineWidth = 1;
-  mx2.strokeRect(projection.centerX - projection.half + .5,
-                 projection.centerY - projection.half + .5,
-                 projection.side - 1, projection.side - 1);
-  // The crop cuts ground off mid-projection, so everything drawn over the
-  // raster — perimeters, the footprint, cities — is clipped to the square
-  // rather than allowed to spill past the frame.
+  mx2.fillStyle = "#07110f";
+  mx2.fillRect(0, 0, projection.width, projection.height);
+  const paintReach = Math.min(Math.PI - .01,
+                              Math.SQRT2 * AZIMUTHAL_MINI_SQUARE_HALF + .15);
+  const towardFloor = Math.cos(paintReach);
+  const batches = new Map();
+  for (const entry of index.entries) {
+    if (dot3(entry.cell.center, projection.basis.out) < towardFloor) continue;
+    const points = [];
+    for (const vertex of entry.vertices) {
+      const point = azimuthalMiniScreenPoint(vertex, projection);
+      if (!point) { points.length = 0; break; }
+      points.push(point);
+    }
+    if (!points.length) continue;
+    const color = entry.color;
+    const packed = ((color[0] + .5) | 0) << 16 |
+                   ((color[1] + .5) | 0) << 8 | ((color[2] + .5) | 0);
+    let batch = batches.get(packed);
+    if (!batch) { batch = []; batches.set(packed, batch); }
+    batch.push(points);
+  }
+  // The crop cuts ground off mid-projection, so the ground fill and
+  // everything over it — perimeters, the footprint, cities — is clipped to
+  // the square rather than allowed to spill past the frame.
   mx2.save();
   azimuthalMiniSquarePath(projection); mx2.clip();
+  mx2.lineJoin = "round";
+  for (const [packed, polygons] of batches) {
+    const style = `rgb(${packed >> 16 & 255},${packed >> 8 & 255},${packed & 255})`;
+    mx2.fillStyle = style; mx2.strokeStyle = style; mx2.lineWidth = 1;
+    // Filled in chunks because a canvas fill is superlinear in the subpaths
+    // of one path: the same polygons cost ~5ms as one path per colour and
+    // ~0.5ms at 48 subpaths per fill (and 22ms as one path for everything).
+    for (let start = 0; start < polygons.length; start += AZIMUTHAL_MINI_FILL_CHUNK) {
+      const end = Math.min(polygons.length, start + AZIMUTHAL_MINI_FILL_CHUNK);
+      mx2.beginPath();
+      for (let poly = start; poly < end; poly++) {
+        const points = polygons[poly];
+        mx2.moveTo(points[0][0], points[0][1]);
+        for (let i = 1; i < points.length; i++) mx2.lineTo(points[i][0], points[i][1]);
+        mx2.closePath();
+      }
+      // The stroke closes the hairline seams an antialiased fill leaves
+      // between neighbouring polygons.
+      mx2.fill(); mx2.stroke();
+    }
+  }
   drawPlanetMiniNaturalWonderPerimeters(index.entries, projection);
   drawPlanetMiniViewportFootprint(projection);
   for (const city of state.cities) {
@@ -17931,6 +17958,10 @@ function drawPlanetMini() {
     mx2.globalAlpha = 1;
   }
   mx2.restore();
+  mx2.strokeStyle = "#b9e3f388"; mx2.lineWidth = 1;
+  mx2.strokeRect(projection.centerX - projection.half + .5,
+                 projection.centerY - projection.half + .5,
+                 projection.side - 1, projection.side - 1);
   mx2.setTransform(1, 0, 0, 1, 0, 0);
   return true;
 }
