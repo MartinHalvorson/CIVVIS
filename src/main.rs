@@ -1013,8 +1013,8 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
         base_ruleset: base_ruleset(args),
         start_era: start_era(args),
         future_era: future_era(args),
-        map_script: MapScript::from_id(&arg_text(args, "--map", "pangaea"))
-            .unwrap_or(MapScript::Pangaea),
+        map_script: MapScript::from_id(&arg_text(args, "--map", "tennis_ball"))
+            .unwrap_or(MapScript::TeninsBall),
         map_topology: map_topology(args),
         map_poles: map_poles(args),
         difficulty,
@@ -2031,7 +2031,10 @@ fn main() {
             });
         }
         "play" => {
-            let players = arg(&args, "--players", 6);
+            // The stock game: four civilizations on a Tiny world, which is
+            // `MapSize::for_players(4)`. The map script default lives in
+            // `game_options` so the headless arms open the same world.
+            let players = arg(&args, "--players", 4);
             // `--mirror <run-dir>`: show the board a Civilization VI seat can
             // actually see, rebuilt as a CIVVIS game, instead of generating one.
             //
