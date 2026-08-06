@@ -66,15 +66,16 @@ pub struct SimultaneousCensus {
     /// Mandatory choices (a captured city's fate) the plan never made and
     /// the commit resolved with the first legal answer.
     pub forced: u64,
-    /// Seats that could not be planned because the rolling forward world
-    /// had already decided the game or eliminated them.
+    /// Seats the commit cursor reached that the planning pass never saw —
+    /// a seat that came alive during the cycle. It takes an empty turn.
     pub unplanned_seats: u64,
     /// Whole plans discarded because the seat was eliminated by an earlier
     /// seat's committed actions in the same turn.
     pub lost_seats: u64,
-    /// True if a seat's turn could not be closed within the resolution
-    /// bound and the game was abandoned rather than livelocked. Should
-    /// never happen; instrumented so it cannot happen silently.
+    /// True if the game was abandoned rather than allowed to spin: a seat's
+    /// turn could not be closed, or a whole cycle left the turn cursor
+    /// where it found it. Neither should ever happen, and both used to be
+    /// silent hangs, so they are counted rather than trusted.
     pub aborted: bool,
 }
 
@@ -179,39 +180,38 @@ fn run_simultaneous<A: Ai>(g: &mut Game, ais: &mut [A]) -> SimultaneousCensus {
     g.set_fog_memory(false);
     let mut census = SimultaneousCensus::default();
     while g.winner.is_none() && g.turn <= g.max_turns {
-        // One full cycle of alive seats in the stock cursor order, starting
-        // wherever the cursor stands — the same walk `do_end_turn` takes.
-        let n = g.players.len();
-        let seats: Vec<usize> = (0..n)
-            .map(|offset| (g.current + offset) % n)
-            .filter(|&seat| g.players[seat].alive)
-            .collect();
+        let opened = (g.turn, g.current);
+        let cycle_turn = g.turn;
+        // One cycle visits each seat once; the slack absorbs a seat that
+        // comes alive mid-cycle. Exceeding it means the cursor is not
+        // behaving like a turn cursor, which the guard below reports.
+        let bound = 2 * g.players.len() + 8;
 
         // ---- Plan: every seat against the world with nobody having acted.
         // The rolling world takes each seat's EndTurn with no actions, so a
-        // later seat plans with its own upkeep applied and its rivals
+        // later seat plans with its own upkeep applied and every rival
         // frozen. Each seat then plans on a private copy of that world.
-        let mut plans: Vec<(usize, Vec<Action>)> = Vec::with_capacity(seats.len());
+        //
+        // Both phases follow the authoritative turn cursor exactly as
+        // `run_game` does, and deliberately do not filter the seats by
+        // `alive`. A seat can be eliminated by its own upkeep — a loyalty
+        // flip taking its last city inside `begin_turn` — after the cursor
+        // has already moved to it, so the cursor legitimately rests on a
+        // dead seat. Selecting seats by any other rule than "whoever the
+        // cursor names" lets the plans and the cursor disagree, and a cycle
+        // that commits nothing advances nothing.
+        let mut plans: BTreeMap<usize, Vec<Action>> = BTreeMap::new();
         let mut rolling = g.clone();
         let mut forwarded = 0u64;
-        for (index, &seat) in seats.iter().enumerate() {
-            if index > 0 {
-                let previous = seats[index - 1];
-                if rolling.winner.is_none() && rolling.current == previous {
-                    let _ = close_seat_turn(&mut rolling, previous, &mut forwarded);
-                }
-            }
-            // The forward world can decide the game (a project completing in
-            // upkeep) or lose this seat (a loyalty flip taking its last
-            // city). Such a seat gets no plan; the live commit decides what
-            // actually happens to it.
-            if rolling.winner.is_some() || rolling.current != seat {
-                census.unplanned_seats += 1;
-                plans.push((seat, Vec::new()));
-                continue;
+        let mut steps = 0;
+        while rolling.winner.is_none() && rolling.turn == cycle_turn && steps < bound {
+            steps += 1;
+            let seat = rolling.current;
+            if plans.contains_key(&seat) {
+                break;
             }
             let mut world = rolling.clone();
-            world.rng = planning_stream(g.seed, g.turn, seat);
+            world.rng = planning_stream(g.seed, cycle_turn, seat);
             let mark = world.log.len();
             ais[seat].take_turn(&mut world, seat);
             let actions: Vec<Action> = world
@@ -222,42 +222,58 @@ fn run_simultaneous<A: Ai>(g: &mut Game, ais: &mut [A]) -> SimultaneousCensus {
                 .map(|(_, action)| action.clone())
                 .collect();
             census.planned += actions.len() as u64;
-            plans.push((seat, actions));
+            plans.insert(seat, actions);
+            if !close_seat_turn(&mut rolling, seat, &mut forwarded) {
+                break;
+            }
         }
         drop(rolling);
 
-        // ---- Commit: the plans land in the same seat order, through the
-        // ordinary rules, on the one authoritative world. A stale order is
+        // ---- Commit: the plans land on the one authoritative world in
+        // cursor order, through the ordinary rules. A stale order is
         // dropped; the seat's turn closes through the ordinary EndTurn so
         // upkeep, the world-turn wrap, and victory checks all run exactly
         // where a sequential game runs them.
-        for (seat, actions) in plans {
-            if g.winner.is_some() {
-                break;
-            }
-            if g.current != seat {
-                // An earlier seat's committed actions eliminated this seat;
-                // the cursor already skipped it and its plan dies with it.
-                census.lost_seats += 1;
-                continue;
-            }
-            for action in &actions {
-                if g.winner.is_some() {
-                    break;
+        let mut steps = 0;
+        while g.winner.is_none() && g.turn == cycle_turn && steps < bound {
+            steps += 1;
+            let seat = g.current;
+            match plans.remove(&seat) {
+                Some(actions) => {
+                    for action in &actions {
+                        if g.winner.is_some() {
+                            break;
+                        }
+                        match g.apply(seat, action) {
+                            Ok(()) => census.applied += 1,
+                            Err(_) => census.note_drop(action),
+                        }
+                    }
                 }
-                match g.apply(seat, action) {
-                    Ok(()) => census.applied += 1,
-                    Err(_) => census.note_drop(action),
-                }
+                // The cursor reached a seat the planning pass never saw —
+                // one that came alive during this cycle. It takes an empty
+                // turn here and plans normally next turn.
+                None => census.unplanned_seats += 1,
             }
             if g.winner.is_none() && g.current == seat {
                 if !close_seat_turn(g, seat, &mut census.forced) {
                     // Closing failed within the bound. Abandon the game
-                    // loudly rather than replanning the same turn forever.
+                    // loudly rather than replaying the same turn forever.
                     census.aborted = true;
                     return census;
                 }
             }
+        }
+        // Plans the cursor never reached: their seats were eliminated by an
+        // earlier seat's committed actions in this same cycle.
+        census.lost_seats += plans.len() as u64;
+
+        // A cycle that leaves the cursor exactly where it found it would
+        // repeat forever. Nothing in the two phases above should be able to
+        // do that; if one ever does, say so and stop rather than spin.
+        if g.winner.is_none() && (g.turn, g.current) == opened {
+            census.aborted = true;
+            return census;
         }
     }
     census
@@ -335,6 +351,35 @@ mod tests {
             serde_json::to_value(&g).unwrap(),
             serde_json::to_value(&replayed).unwrap()
         );
+    }
+
+    /// The turn cursor can rest on a seat that is not alive: a civilization
+    /// can be eliminated by its own upkeep — a loyalty flip taking its last
+    /// city inside `begin_turn` — after `do_end_turn` has already moved the
+    /// cursor to it. An earlier driver chose the cycle's seats by `alive`
+    /// instead of by the cursor, so on such a turn every plan disagreed with
+    /// the cursor, the cycle committed nothing, and the game spun on one
+    /// turn forever (observed: 1.8M identical cycles on turn 68 of a
+    /// six-player game). Both phases now follow the cursor, and a cycle that
+    /// fails to move it aborts rather than repeats — so this asserts on a
+    /// board with city-states, minors and Free Cities that the game both
+    /// finishes and never had to invoke that guard.
+    #[test]
+    fn a_cycle_always_moves_the_turn_cursor() {
+        for seed in [3u64, 17, 68] {
+            let mut g = Game::new(4, 32, 22, seed, 60, 3);
+            g.turn_structure = TurnStructure::Simultaneous;
+            let mut ais = BasicAi::fleet(&g);
+            let census = run_structured(&mut g, &mut ais).expect("a census");
+            assert!(
+                !census.aborted,
+                "seed {seed} could not advance its own turn cursor"
+            );
+            assert!(
+                g.winner.is_some() || g.turn > g.max_turns,
+                "seed {seed} stopped without finishing"
+            );
+        }
     }
 
     #[test]
