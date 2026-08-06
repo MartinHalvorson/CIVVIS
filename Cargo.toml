@@ -127,3 +127,12 @@ codegen-units = 16
 # (#1005). Turning them on here costs a little test runtime and nothing in the
 # shipped `release` build, which does not inherit this profile.
 debug-assertions = true
+# Local only: the workflow pins `CARGO_INCREMENTAL: 0` in its env, so CI still
+# builds from clean and this line cannot change what the gate compiles. What
+# it changes is every LOCAL revalidation after the first — `release` inherits
+# `incremental = false`, so before this line each `cargo test --profile ci`
+# in a task worktree recompiled the entire ~212k-line crate at opt-level 3 to
+# rebuild one edited function. Validation still must use the worktree's own
+# target directory; a shared one reuses stale sibling binaries and passes
+# suites the code cannot pass.
+incremental = true
