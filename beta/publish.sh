@@ -101,6 +101,14 @@ source, target = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
 assets = pathlib.Path(sys.argv[3])
 page = source.read_text(encoding="utf-8")
 
+# The viewer's script lives beside the atlases as `assets/app.js` (it was a
+# 1.35 MB inline block; splitting it out is what stopped `web/index.html`
+# growing the pack by a megabyte per edit). Its copy arrived with the
+# `cp -R web/assets` above, and it holds most of the root-absolute asset
+# references now, so every rewrite below runs over both texts.
+app_js = assets / "app.js"
+script = app_js.read_text(encoding="utf-8")
+
 # The page asks for its assets from the site root, which is where a desktop
 # build serves them. Published under /test/ they sit beside the page instead.
 #
@@ -114,15 +122,16 @@ edits = [
     ('"/assets/', '"assets/'),
 ]
 for needle, replacement in edits:
-    if needle not in page:
+    if needle not in page and needle not in script:
         raise SystemExit(
             f"the viewer no longer contains {needle!r}. web/index.html has changed "
             "shape; beta/publish.sh needs updating before this build can be published."
         )
     page = page.replace(needle, replacement)
+    script = script.replace(needle, replacement)
 
 for stranded in ('"/assets/',):
-    if stranded in page:
+    if stranded in page or stranded in script:
         raise SystemExit(f"{stranded!r} survived the rewrite; the published page would 404 on it")
 
 # The sprite atlases, republished as lossless WebP.
@@ -152,13 +161,16 @@ else:
         after += webp.stat().st_size
         png.unlink()
         page = page.replace(f'"assets/{png.name}"', f'"assets/{webp.name}"')
+        script = script.replace(f'"assets/{png.name}"', f'"assets/{webp.name}"')
     if before:
         print(f"   atlases {before:,} -> {after:,} bytes as lossless WebP")
 
 # Every atlas the page asks for has to be one this build actually ships. This
 # is what catches a rewrite that half-happened: a reference the loop above
-# missed still names a `.png` that is no longer on disk.
-wanted = set(re.findall(r'"assets/([^"]+)"', page))
+# missed still names a `.png` that is no longer on disk. The script's copy is
+# written back only now, after every rewrite above has run over it.
+app_js.write_text(script, encoding="utf-8")
+wanted = set(re.findall(r'"assets/([^"]+)"', page + script))
 have = {p.name for p in assets.iterdir()} if assets.is_dir() else set()
 missing = sorted(wanted - have)
 if missing:

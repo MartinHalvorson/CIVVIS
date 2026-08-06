@@ -30,7 +30,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-const INDEX: &str = include_str!("../web/index.html");
+const INDEX: &str = include_str!("../web/assets/app.js");
 const COLORS_JSON: &str = include_str!("../data/civ6_player_colors.json");
 const CIVS_JSON: &str = include_str!("../data/civs.json");
 
