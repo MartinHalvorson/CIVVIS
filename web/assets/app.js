@@ -3927,8 +3927,14 @@ function updatePerformanceStatsDisplay(now = performance.now(), force = false) {
 // What one game turn costs in wall time. The host reports this when it measures
 // it; the published browser build does not, so this page's own reading of the
 // same thing — the interval between the turn numbers it was served — stands in.
+//
+// The observation is only meaningful while a game is playing itself. In a game
+// a human is taking turns in, the interval between turn numbers is how long
+// that person thought, which is not a cost this panel is entitled to report as
+// the simulation's.
 function simulationTurnMs() {
-  return viewerPerformance.simulation.wall ?? simulationLedger.observedTurnMs;
+  if (viewerPerformance.simulation.wall !== null) return viewerPerformance.simulation.wall;
+  return viewerPerformance.spectator ? simulationLedger.observedTurnMs : null;
 }
 function simulationTurnLimit() {
   return viewerPerformance.turnLimit ?? SIMULATION_FALLBACK_TURN_LIMIT;
@@ -3940,12 +3946,19 @@ function updateSimulationStatsDisplay(now) {
   const lastValue = document.getElementById("performance-lastsim-value");
   const countValue = document.getElementById("performance-simcount-value");
   if (!turnValue || !fullValue || !currentValue || !lastValue || !countValue) return;
+  // Every row here describes a game playing itself. A game with a human in it
+  // has none of these readings, rather than misleading ones.
+  if (!viewerPerformance.spectator) {
+    for (const element of [turnValue, fullValue, currentValue, lastValue, countValue])
+      element.textContent = "Not available in this mode";
+    return;
+  }
   const turnMs = simulationTurnMs();
   const compute = viewerPerformance.simulation.compute;
   const limit = simulationTurnLimit();
   if (turnMs === null) {
-    turnValue.textContent = viewerPerformance.spectator ? "Measuring…" : "Not available in this mode";
-    fullValue.textContent = viewerPerformance.spectator ? "Measuring…" : "Not available in this mode";
+    turnValue.textContent = "Measuring…";
+    fullValue.textContent = "Measuring…";
   } else {
     turnValue.textContent = compute === null
       ? `${performanceMs(turnMs)}/turn`
@@ -4016,6 +4029,11 @@ function startSimulationRun(seed, turn, now) {
   simulationLedger.recorded = false;
 }
 function trackSimulationRun(st, now) {
+  // Only a game playing itself is a simulation run. A human's game is timed by
+  // nothing here, so it must not enter the ledger either. Runs already recorded
+  // survive: coming back to a spectated world arrives as a new seed, or as a
+  // gap wide enough to spoil the old one, and either way is not counted.
+  if (st?.spectate !== true) return;
   const seed = st?.seed;
   const turn = typeof st?.turn === "number" && Number.isFinite(st.turn) ? st.turn : null;
   const finished = st?.winner !== null && st?.winner !== undefined;

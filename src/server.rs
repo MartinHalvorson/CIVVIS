@@ -8608,12 +8608,17 @@ mod tests {
         // The simulation rows are the reason the panel can answer "how long does
         // a whole game take" at all, and every build must be able to fill them:
         // the published browser build reports no turn cost of its own, so the
-        // viewer measures the turn interval it was served instead.
+        // viewer measures the turn interval it was served instead. That
+        // substitute is only honest while the game plays itself — between a
+        // human's turns the same interval is how long that person thought — so
+        // both the fallback and the ledger are gated on spectating.
         for simulation_contract in [
             "function simulationTurnMs() {",
-            "return viewerPerformance.simulation.wall ?? simulationLedger.observedTurnMs;",
+            "if (viewerPerformance.simulation.wall !== null) return viewerPerformance.simulation.wall;",
+            "return viewerPerformance.spectator ? simulationLedger.observedTurnMs : null;",
             "const SIMULATION_FALLBACK_TURN_LIMIT = 250;",
             "function trackSimulationRun(st, now) {",
+            "if (st?.spectate !== true) return;",
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(simulation_contract),
