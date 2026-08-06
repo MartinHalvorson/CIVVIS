@@ -14,9 +14,16 @@ sequential regime that deliberation cannot be parallelized across seats,
 because each seat's information set includes the previous seat's whole
 turn. Freezing the information set at the top of the turn removes exactly
 that dependency and nothing else: seat deliberation becomes independent
-work, which a later change can fan out across cores. The variant is
-implemented and correct on its own — the parallel planning phase builds on
-it separately.
+work, and the planning phase fans it out across up to `--jobs` threads
+(`run_structured_jobs`). Only the deliberation is concurrent — the prepare
+and the commit stay strictly serial, every planning world and RNG stream is
+fixed before the first worker starts, and results are consumed in seat
+order, so the fan-out is an execution detail: `jobs = 1` and `jobs = N`
+produce byte-for-byte the same game and census (test:
+`parallel_planning_is_an_execution_detail`). Under `simulate`, a
+simultaneous game therefore takes `--jobs` at the full batch default (one
+per core) and skips the AIs' inner WorkPool, while sequential games keep
+the intra-turn frontier pool with its measured knee of four.
 
 ## What it changes, and what it deliberately does not
 
@@ -93,6 +100,27 @@ play. Read it before trusting any result measured in this mode.
 civvis simulate --players 6 --turn-structure simultaneous --seed 7311002
 civvis soak --games 20 --turn-structure simultaneous
 ```
+
+## Measured (2026-08-06, ci profile, shared host — directional)
+
+One 74×46-class 150-turn online game, seed 7311002, wall clock:
+
+| Players | Sequential | Simultaneous `--jobs 1` | Best simultaneous | vs sequential |
+|---|---:|---:|---:|---:|
+| 6  | 13.7s | 14.5s | **7.6s** (jobs 8) | **1.79×** |
+| 10 | 42.4s | 48.6s | 28.1s (jobs 18) | 1.51× |
+| 14 | 41.5s | — | 32.4s (jobs 18) | 1.28× |
+
+Normalized output was byte-identical across jobs 1/8/18 at both measured
+sizes, and the drop rate holds near 5% at every scale (94–96% of planned
+actions applied). The advantage currently *shrinks* as seats grow: the
+serial prepare walks one empty `EndTurn` per seat per cycle, each touching
+the whole world, so its share rises with seat count. Making that forward
+cheaper (an upkeep-only step, or preparing seats concurrently) is the
+standing follow-up if very large games are the goal. A 20-paired-seed
+semantics A/B (drop rate 3.6–5.7%, city counts indistinguishable, no
+seat-0 advantage, religious closes rarer) is recorded in
+`~/civvis-turn-structure-ab-preregistration.md`.
 
 Before comparing regimes, run paired seeds both ways and read the drop
 rate alongside the outcome distributions — one seed is never a result.

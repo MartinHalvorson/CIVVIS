@@ -125,13 +125,37 @@ impl SimultaneousCensus {
 /// Play a game out headlessly under whichever turn structure it was set up
 /// with. Sequential games go through [`run_game`] unchanged and report no
 /// census; simultaneous games report what became of their plans.
-pub fn run_structured<A: Ai>(g: &mut Game, ais: &mut [A]) -> Option<SimultaneousCensus> {
+pub fn run_structured<A: Ai + Send>(g: &mut Game, ais: &mut [A]) -> Option<SimultaneousCensus> {
+    run_structured_jobs(g, ais, 1)
+}
+
+/// [`run_structured`], with the simultaneous planning phase fanned out
+/// across up to `jobs` threads.
+///
+/// This is the payoff the regime exists for: with every rival frozen at the
+/// top of the turn, the seats' deliberations are independent work, and
+/// deliberation is roughly two thirds of simulator runtime. The engine-side
+/// prepare (empty-forwarding one rolling world through the seats) and the
+/// commit stay strictly serial; only `Ai::take_turn` calls on worker-private
+/// worlds run concurrently, and their results are consumed in seat order.
+/// `jobs = 1` runs the identical code path serially on the caller's thread
+/// — the equivalence oracle the tests hold the fan-out to, and the reason
+/// execution order can never reach the game: every planning world and its
+/// RNG stream are fully determined before the first worker starts.
+///
+/// Sequential games ignore `jobs` here: their seats cannot deliberate
+/// concurrently by construction, which is what the whole option is for.
+pub fn run_structured_jobs<A: Ai + Send>(
+    g: &mut Game,
+    ais: &mut [A],
+    jobs: usize,
+) -> Option<SimultaneousCensus> {
     match g.turn_structure {
         TurnStructure::Sequential => {
             run_game(g, ais);
             None
         }
-        TurnStructure::Simultaneous => Some(run_simultaneous(g, ais)),
+        TurnStructure::Simultaneous => Some(run_simultaneous(g, ais, jobs)),
     }
 }
 
@@ -174,7 +198,7 @@ fn close_seat_turn(g: &mut Game, seat: usize, forced: &mut u64) -> bool {
     false
 }
 
-fn run_simultaneous<A: Ai>(g: &mut Game, ais: &mut [A]) -> SimultaneousCensus {
+fn run_simultaneous<A: Ai + Send>(g: &mut Game, ais: &mut [A], jobs: usize) -> SimultaneousCensus {
     // Same headless observation mode as `run_game`: fog memory is a display
     // cache, not a gameplay input, and planning clones inherit the setting.
     g.set_fog_memory(false);
@@ -200,34 +224,69 @@ fn run_simultaneous<A: Ai>(g: &mut Game, ais: &mut [A]) -> SimultaneousCensus {
         // dead seat. Selecting seats by any other rule than "whoever the
         // cursor names" lets the plans and the cursor disagree, and a cycle
         // that commits nothing advances nothing.
-        let mut plans: BTreeMap<usize, Vec<Action>> = BTreeMap::new();
-        let mut rolling = g.clone();
-        let mut forwarded = 0u64;
-        let mut steps = 0;
-        while rolling.winner.is_none() && rolling.turn == cycle_turn && steps < bound {
-            steps += 1;
-            let seat = rolling.current;
-            if plans.contains_key(&seat) {
-                break;
+        // The prepare is engine-only and serial: every seat's world and RNG
+        // stream exist before any deliberation starts, so the fan-out below
+        // has nothing left to decide about ordering.
+        let mut prepared: Vec<(usize, Game)> = Vec::new();
+        {
+            let mut rolling = g.clone();
+            let mut forwarded = 0u64;
+            let mut steps = 0;
+            while rolling.winner.is_none() && rolling.turn == cycle_turn && steps < bound {
+                steps += 1;
+                let seat = rolling.current;
+                if prepared.iter().any(|(planned, _)| *planned == seat) {
+                    break;
+                }
+                let mut world = rolling.clone();
+                world.rng = planning_stream(g.seed, cycle_turn, seat);
+                prepared.push((seat, world));
+                if !close_seat_turn(&mut rolling, seat, &mut forwarded) {
+                    break;
+                }
             }
-            let mut world = rolling.clone();
-            world.rng = planning_stream(g.seed, cycle_turn, seat);
+        }
+
+        // The deliberation fan-out. Each cell hands exactly one worker
+        // exclusive ownership of one seat's AI and world; results come back
+        // in prepared order regardless of which worker finished when, and
+        // `jobs = 1` is the same code run serially in that order.
+        let seats: Vec<usize> = prepared.iter().map(|(seat, _)| *seat).collect();
+        let cells: Vec<std::sync::Mutex<(Option<&mut A>, Option<Game>)>> = {
+            let mut ai_slots: Vec<Option<&mut A>> = Vec::new();
+            ai_slots.resize_with(seats.len(), || None);
+            for (pid, ai) in ais.iter_mut().enumerate() {
+                if let Some(position) = seats.iter().position(|&seat| seat == pid) {
+                    ai_slots[position] = Some(ai);
+                }
+            }
+            ai_slots
+                .into_iter()
+                .zip(prepared.into_iter().map(|(_, world)| Some(world)))
+                .map(|(ai, world)| std::sync::Mutex::new((ai, world)))
+                .collect()
+        };
+        let planned: Vec<Vec<Action>> = crate::parallel::map(cells.len(), jobs, |index| {
+            let mut cell = cells[index].lock().expect("a planning job panicked");
+            let ai = cell.0.take().expect("each planning cell is taken once");
+            let mut world = cell.1.take().expect("each planning world is taken once");
+            let seat = seats[index];
             let mark = world.log.len();
-            ais[seat].take_turn(&mut world, seat);
-            let actions: Vec<Action> = world
+            ai.take_turn(&mut world, seat);
+            world
                 .log
                 .since(mark)
                 .take_while(|(pid, _)| *pid == seat)
                 .filter(|(_, action)| !matches!(action, Action::EndTurn))
                 .map(|(_, action)| action.clone())
-                .collect();
+                .collect()
+        });
+        drop(cells);
+        let mut plans: BTreeMap<usize, Vec<Action>> = BTreeMap::new();
+        for (seat, actions) in seats.into_iter().zip(planned) {
             census.planned += actions.len() as u64;
             plans.insert(seat, actions);
-            if !close_seat_turn(&mut rolling, seat, &mut forwarded) {
-                break;
-            }
         }
-        drop(rolling);
 
         // ---- Commit: the plans land on the one authoritative world in
         // cursor order, through the ordinary rules. A stale order is
@@ -351,6 +410,30 @@ mod tests {
             serde_json::to_value(&g).unwrap(),
             serde_json::to_value(&replayed).unwrap()
         );
+    }
+
+    /// The fan-out must be an execution detail with no reachable effect on
+    /// the game: planning worlds and their RNG streams are fully prepared
+    /// before the first worker starts, and results are consumed in seat
+    /// order. Four workers must therefore produce byte-for-byte the game and
+    /// census one worker does — the same equivalence oracle the WorkPool
+    /// frontiers are held to.
+    #[test]
+    fn parallel_planning_is_an_execution_detail() {
+        let mut serial = simultaneous_game(9, 40);
+        let mut ais = BasicAi::fleet(&serial);
+        let census_serial = run_structured(&mut serial, &mut ais).expect("a census");
+        let mut fanned = simultaneous_game(9, 40);
+        let mut ais = BasicAi::fleet(&fanned);
+        let census_fanned =
+            run_structured_jobs(&mut fanned, &mut ais, 4).expect("a census");
+        assert_eq!(
+            serde_json::to_value(&serial).unwrap(),
+            serde_json::to_value(&fanned).unwrap()
+        );
+        assert_eq!(census_serial.planned, census_fanned.planned);
+        assert_eq!(census_serial.applied, census_fanned.applied);
+        assert_eq!(census_serial.dropped_by_kind, census_fanned.dropped_by_kind);
     }
 
     /// The turn cursor can rest on a seat that is not alive: a civilization
