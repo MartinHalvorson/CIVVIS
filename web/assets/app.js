@@ -3796,7 +3796,8 @@ const viewerPerformance = {
   renderSamples: [],
   lastFrameAt: null,
   lastRenderMs: null,
-  simulation: {wall: null, compute: null},
+  simulation: {wall: null, compute: null, turns: null},
+  simulations: null,
   spectator: false,
   workload: null,
   lastUiAt: 0,
@@ -3819,6 +3820,20 @@ function performanceMs(value) {
 }
 function performanceInteger(value) {
   return Number.isFinite(value) ? Math.max(0, Math.round(value)).toLocaleString("en") : "—";
+}
+// A whole game runs for minutes where a frame runs for milliseconds, so these
+// figures need a unit that follows the magnitude rather than a fixed one.
+function performanceDuration(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  if (ms < 950) return `${Math.round(ms)} ms`;
+  const seconds = ms / 1000;
+  if (seconds < 90) return `${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)} s`;
+  const minutes = seconds / 60;
+  if (minutes < 90) return `${minutes < 10 ? minutes.toFixed(1) : Math.round(minutes)} min`;
+  return `${(minutes / 60).toFixed(1)} h`;
+}
+function victoryTrackLabel(id) {
+  return VICTORY_TRACKS.find(track => track.id === id)?.label || null;
 }
 function performanceCanvasText() {
   const width = Number(cv?.width);
@@ -3853,17 +3868,21 @@ function updatePerformanceStatsDisplay(now = performance.now(), force = false) {
   const renderValue = document.getElementById("performance-render-value");
   const slowValue = document.getElementById("performance-slow-value");
   const simulationValue = document.getElementById("performance-simulation-value");
+  const fullGameValue = document.getElementById("performance-fullgame-value");
+  const gamesValue = document.getElementById("performance-games-value");
   const canvasValue = document.getElementById("performance-canvas-value");
   const workloadValue = document.getElementById("performance-workload-value");
   const recommendation = document.getElementById("performance-recommendation");
-  if (!renderValue || !slowValue || !simulationValue || !canvasValue ||
-      !workloadValue || !recommendation) return;
+  if (!renderValue || !slowValue || !simulationValue || !fullGameValue ||
+      !gamesValue || !canvasValue || !workloadValue || !recommendation) return;
   if (frameValues.length >= 4 && frameAverage > 0) {
     const fps = Math.min(999, 1000 / frameAverage);
+    // FPS and ms-per-frame are the same measurement inverted, so only the
+    // rate is printed here; the paint cost is the part it does not contain.
     const paint = renderP95 === null ? "" : ` · ${performanceMs(renderP95)} paint`;
-    renderValue.textContent = `${Math.round(fps)} FPS · ${performanceMs(frameAverage)}/frame${paint}`;
+    renderValue.textContent = `${Math.round(fps)} FPS${paint}`;
     const slowShare = frameValues.filter(value => value > 33.3).length / frameValues.length;
-    slowValue.textContent = `p95 ${performanceMs(frameP95)} · ${Math.round(slowShare * 100)}% >33 ms`;
+    slowValue.textContent = `${Math.round(slowShare * 100)}% over 33 ms · p95 ${performanceMs(frameP95)}`;
     recommendation.textContent = performanceRecommendation(
       frameAverage, frameP95, renderP95 ?? 0, frameValues.length);
   } else {
@@ -3873,11 +3892,30 @@ function updatePerformanceStatsDisplay(now = performance.now(), force = false) {
   }
   const simulation = viewerPerformance.simulation;
   if (simulation.wall !== null) {
-    const compute = simulation.compute === null ? "" : ` · ${performanceMs(simulation.compute)} compute`;
-    simulationValue.textContent = `${performanceMs(simulation.wall)}/turn${compute}`;
+    const compute = simulation.compute === null
+      ? "" : ` · ${performanceDuration(simulation.compute)} compute`;
+    simulationValue.textContent = `${performanceDuration(simulation.wall)}/turn${compute}`;
+    fullGameValue.textContent = simulation.turns
+      ? `~${performanceDuration(simulation.wall * simulation.turns)} for ${performanceInteger(simulation.turns)} turns`
+      : "—";
   } else {
-    simulationValue.textContent = viewerPerformance.spectator
+    const pending = viewerPerformance.spectator
       ? "Measuring simulation…" : "Not available in this mode";
+    simulationValue.textContent = pending;
+    fullGameValue.textContent = pending;
+  }
+  // Finished games are counted by the server for as long as its process
+  // lives, so this says "this server" rather than implying an all-time total.
+  const games = viewerPerformance.simulations;
+  if (games && games.completed > 0) {
+    const victory = victoryTrackLabel(games.last_victory);
+    const wonBy = [victory, games.last_civ].filter(Boolean).join(", ");
+    const last = [performanceDuration(games.last_ms), wonBy].filter(Boolean).join(" · ");
+    gamesValue.textContent =
+      `${performanceInteger(games.completed)} this server · avg ${performanceDuration(games.average_ms)} · last ${last}`;
+  } else {
+    gamesValue.textContent = viewerPerformance.spectator
+      ? "None finished yet on this server" : "Not available in this mode";
   }
   canvasValue.textContent = performanceCanvasText();
   const workload = viewerPerformance.workload;
@@ -3909,7 +3947,9 @@ function updatePerformanceState(st) {
   viewerPerformance.simulation = {
     wall: numeric(st?.turn_ms),
     compute: numeric(st?.turn_compute_ms),
+    turns: numeric(st?.max_turns),
   };
+  viewerPerformance.simulations = st?.simulations || null;
   viewerPerformance.workload = st?.map ? {
     tiles: Array.isArray(st.map.tiles) ? st.map.tiles.length : 0,
     units: Array.isArray(st.units) ? st.units.length : 0,

@@ -1252,6 +1252,10 @@ pub struct Shared {
     pub turn_us: AtomicU64,
     /// The same turn with the sleeps taken out: what the unlimited pace costs.
     pub turn_compute_us: AtomicU64,
+    /// What finished worlds have cost this process. The exhibition cycles
+    /// games in place, so this accumulates until the supervisor swaps the
+    /// binary — which is why the viewer labels it "this server".
+    pub simulations: SimulationLog,
     /// Monotonic identity of the last spectator frame the stepper completed.
     ///
     /// `turn` alone is not enough once Blitz and slower paces publish after
@@ -1588,6 +1592,61 @@ pub fn seat_delay_ms(pace_ms: u64, majors: usize, minors: usize, minor: bool) ->
     let weight = (majors as f64 + minors as f64 * MINOR_SHARE).max(1.0);
     let share = if minor { MINOR_SHARE } else { 1.0 };
     ((pace_ms as f64) * share / weight).round() as u64
+}
+
+/// A world the stepper watched from its opening turn to its result screen.
+///
+/// Only whole games are recorded. A world this loop joined late — a resumed
+/// checkpoint, or a session adopted mid-flight — has no honest duration to
+/// report, so it is left out rather than averaged in short.
+pub struct FinishedGame {
+    ms: u64,
+    turns: u32,
+    /// Raw victory id and the civilization that took it. The browser owns the
+    /// id-to-label table for every other victory readout; this sends it the
+    /// same ids rather than growing a second set of names here.
+    victory: Option<String>,
+    civ: Option<String>,
+}
+
+/// Running totals for the finished games of one server process.
+#[derive(Default)]
+pub struct SimulationLog {
+    completed: AtomicU64,
+    total_ms: AtomicU64,
+    last_ms: AtomicU64,
+    last_turns: AtomicU64,
+    last_victory: Mutex<Option<String>>,
+    last_civ: Mutex<Option<String>>,
+}
+
+impl SimulationLog {
+    fn record(&self, game: FinishedGame) {
+        // Publish the detail first and the count that admits it last, so a
+        // reader never sees a count it has no matching figures for.
+        self.total_ms.fetch_add(game.ms, Ordering::Relaxed);
+        self.last_ms.store(game.ms, Ordering::Relaxed);
+        self.last_turns.store(game.turns as u64, Ordering::Relaxed);
+        *self.last_victory.lock().unwrap() = game.victory;
+        *self.last_civ.lock().unwrap() = game.civ;
+        self.completed.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// The finished-game summary for `/state`, or null before the first one.
+    fn json(&self) -> Value {
+        let completed = self.completed.load(Ordering::Relaxed);
+        if completed == 0 {
+            return Value::Null;
+        }
+        json!({
+            "completed": completed,
+            "average_ms": self.total_ms.load(Ordering::Relaxed) / completed,
+            "last_ms": self.last_ms.load(Ordering::Relaxed),
+            "last_turns": self.last_turns.load(Ordering::Relaxed),
+            "last_victory": *self.last_victory.lock().unwrap(),
+            "last_civ": *self.last_civ.lock().unwrap(),
+        })
+    }
 }
 
 /// Smooth a measurement so the reported figure does not flicker turn to turn.
@@ -3711,6 +3770,11 @@ fn auto_step_loop(sh: Arc<Shared>) {
     let mut turn_compute_us: u64 = 0;
     let mut unlimited_since = Instant::now();
     let mut timed_pace = u64::MAX;
+    // The world currently being timed end to end: its seed, when this loop
+    // first stepped it, and the turn it was on then. Keyed by seed so every
+    // way a world can be replaced — the automatic rollover, a manual reset,
+    // a supervisor handoff — starts a fresh measurement without being told.
+    let mut timed_game: Option<(u64, Instant, u32)> = None;
     loop {
         let pace = sh.pace_ms.load(Ordering::Relaxed).min(60_000);
         if pace != timed_pace {
@@ -3789,6 +3853,9 @@ fn auto_step_loop(sh: Arc<Shared>) {
         let delay; // this seat's slice of the turn budget
         let mut waiting = false; // between games nothing is being simulated
         let mut completed_frame = None;
+        // Recorded after the session lock is released: the log has its own,
+        // and nesting the two would be the only place in this loop that does.
+        let mut finished_game: Option<FinishedGame> = None;
         {
             let mut s = sh.session.lock().unwrap();
             if !s.params.spectate {
@@ -3829,6 +3896,14 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 let step_started = Instant::now();
                 let turn_before = s.game.turn;
                 let finished_before = s.game.winner.is_some();
+                let (game_started, joined_at_turn) = match timed_game {
+                    Some((seed, at, from)) if seed == s.game.seed => (at, from),
+                    _ => {
+                        let fresh = (s.game.seed, Instant::now(), turn_before);
+                        timed_game = Some(fresh);
+                        (fresh.1, fresh.2)
+                    }
+                };
                 let pid = s.step_quietly();
                 turn_compute_us += step_started.elapsed().as_micros() as u64;
                 if spectator_step_completes_frame(pace, turn_before, finished_before, &s.game) {
@@ -3843,6 +3918,22 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 // every millisecond of the selected window to choose one more
                 // turn.
                 if s.game.winner.is_some() {
+                    // The step that decided the world is where its duration
+                    // ends; the result screen that follows is not simulation.
+                    // Only a world watched from its opening turn has a whole
+                    // duration to report.
+                    if !finished_before && joined_at_turn <= 1 {
+                        finished_game = Some(FinishedGame {
+                            ms: game_started.elapsed().as_millis() as u64,
+                            turns: s.game.turn,
+                            victory: s.game.victory_type.clone(),
+                            civ: s
+                                .game
+                                .winner
+                                .and_then(|pid| s.game.players.get(pid))
+                                .map(|player| player.civ.clone()),
+                        });
+                    }
                     over_since = Some(Instant::now());
                     sh.restart_in
                         .store(final_countdown_ms(&sh), Ordering::Relaxed);
@@ -3871,6 +3962,9 @@ fn auto_step_loop(sh: Arc<Shared>) {
                     turn_compute_us = 0;
                 }
             }
+        }
+        if let Some(game) = finished_game.take() {
+            sh.simulations.record(game);
         }
         // An active browser paints exactly one complete, same-snapshot frame
         // before simulation continues. Lightning publishes at the end of the
@@ -3947,6 +4041,7 @@ fn decorate(o: &mut Value, sh: &Shared) {
     if compute > 0 {
         o["turn_compute_ms"] = json!(compute as f64 / 1000.0);
     }
+    o["simulations"] = sh.simulations.json();
     // The request lives beside the session rather than inside it, so it is
     // attached here for every reader that used to find it in `state()`.
     if let Some(request) = sh.pending_new_game_request() {
@@ -4790,7 +4885,7 @@ mod tests {
         new_game_params, publishes_player_turn_frames, query_value, request_path, save_path,
         seat_delay_ms, spectator_frame, spectator_step_completes_frame, staged_next_game_params,
         strategy_roster, tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot,
-        ChronicleState, FrameDelivery, Params, Session, Shared, SpectatorFrame,
+        ChronicleState, FrameDelivery, Params, Session, Shared, SimulationLog, SpectatorFrame,
         BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, DEFAULT_BETWEEN_GAME_COUNTDOWN_MS,
         EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX,
         MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
@@ -5163,6 +5258,7 @@ mod tests {
             restart_in: AtomicU64::new(u64::MAX),
             turn_us: AtomicU64::new(0),
             turn_compute_us: AtomicU64::new(0),
+            simulations: SimulationLog::default(),
             frame_sequence: AtomicU64::new(0),
             frame_delivery: Mutex::new(FrameDelivery::default()),
             frame_painted: Condvar::new(),
@@ -10706,6 +10802,7 @@ mod tests {
             restart_in: AtomicU64::new(u64::MAX),
             turn_us: AtomicU64::new(0),
             turn_compute_us: AtomicU64::new(0),
+            simulations: SimulationLog::default(),
             frame_sequence: AtomicU64::new(0),
             frame_delivery: Mutex::new(FrameDelivery::default()),
             frame_painted: Condvar::new(),
@@ -13567,6 +13664,7 @@ pub fn serve_with_game(
         restart_in: AtomicU64::new(u64::MAX),
         turn_us: AtomicU64::new(0),
         turn_compute_us: AtomicU64::new(0),
+        simulations: SimulationLog::default(),
         frame_sequence: AtomicU64::new(0),
         frame_delivery: Mutex::new(FrameDelivery::default()),
         frame_painted: Condvar::new(),
