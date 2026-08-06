@@ -10304,23 +10304,41 @@ mod tests {
             .expect("planet minimap viewport footprint");
         assert!(planet.contains("const mainRadius = mainCamera.radius * cam.scale;"));
         assert!(planet.contains("const basis = planetViewBasis(mainCamera);"));
-        assert!(planet.contains("peirceMiniScreenPoint(point.map(value => value / length), projection)"));
+        // The screen boundary is walked densely, not just at the corners: a
+        // straight screen edge is a curve on the azimuthal chart.
+        assert!(planet.contains("miniViewportBoundaryScreenPoints().map"));
+        assert!(planet.contains("azimuthalMiniScreenPoint(point.map(value => value / length), projection)"));
+        // A ray past the globe's limb is clamped to the limb rather than
+        // dropped, so a zoomed-out footprint keeps its corners.
+        assert!(planet.contains("if (distance >= 1 - 1e-6) {"));
         assert!(EMBEDDED_INDEX.contains(
             "drawPlanetMiniViewportFootprint(projection);"
         ));
     }
 
     #[test]
-    fn browser_planet_minimap_uses_a_centered_square_peirce_quincuncial_chart() {
-        assert!(EMBEDDED_INDEX.contains("const PEIRCE_SQUARE_HALF = PEIRCE_GUYOU_DX * PEIRCE_SQRT1_2;"));
-        assert!(EMBEDDED_INDEX.contains("function peirceQuincuncialRaw(lambda, phi)"));
-        assert!(EMBEDDED_INDEX.contains("function peirceQuincuncialInvert(x0, y0)"));
-        assert!(EMBEDDED_INDEX.contains("return [PEIRCE_PI, 0];"));
-        assert!(EMBEDDED_INDEX.contains("function peirceMiniPointCopies(point, projection)"));
-        assert!(EMBEDDED_INDEX.contains("return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];"));
-        assert!(EMBEDDED_INDEX.contains("const projection = peirceMiniProjection(r.width, r.height);"));
-        assert!(EMBEDDED_INDEX.contains("const point = peirceMiniSphereAt(x, y, projection);"));
-        assert!(EMBEDDED_INDEX.contains("const target = point && peirceMiniCellAt(point, peirceMiniCellIndex());"));
+    fn browser_planet_minimap_uses_a_square_cropped_azimuthal_equidistant_chart() {
+        // The chart is azimuthal equidistant about the point facing the
+        // viewer, cropped to the minimap's square, and the square's half-side
+        // is derived from the share of the sphere the crop must hold.
+        assert!(EMBEDDED_INDEX.contains("const AZIMUTHAL_MINI_WORLD_SHARE = 0.8;"));
+        assert!(EMBEDDED_INDEX.contains("const AZIMUTHAL_MINI_SQUARE_HALF = (() => {"));
+        assert!(EMBEDDED_INDEX.contains("if (cropShare(mid) < AZIMUTHAL_MINI_WORLD_SHARE) low = mid; else high = mid;"));
+        assert!(EMBEDDED_INDEX.contains("function azimuthalMiniLocalSphereAt(x0, y0)"));
+        assert!(EMBEDDED_INDEX.contains("function azimuthalMiniSphereAt(x, y, projection)"));
+        assert!(EMBEDDED_INDEX.contains("function azimuthalMiniScreenPoint(point, projection)"));
+        // The elliptic Peirce machinery left with the projection it served.
+        assert!(!EMBEDDED_INDEX.contains("peirce"));
+        assert!(!EMBEDDED_INDEX.contains("Peirce"));
+        // Ground the crop cuts off mid-projection must not spill past the
+        // frame: the overlays clip to the same square the raster fills and
+        // the frame is stroked around.
+        assert!(EMBEDDED_INDEX.contains("function azimuthalMiniSquarePath(projection)"));
+        assert!(EMBEDDED_INDEX.contains("azimuthalMiniSquarePath(projection); mx2.clip();"));
+        // Minimap clicks invert the same chart the raster paints.
+        assert!(EMBEDDED_INDEX.contains("const projection = azimuthalMiniProjection(r.width, r.height);"));
+        assert!(EMBEDDED_INDEX.contains("const point = azimuthalMiniSphereAt(x, y, projection);"));
+        assert!(EMBEDDED_INDEX.contains("const target = point && planetMiniCellAt(point, planetMiniCellIndex());"));
         assert!(EMBEDDED_INDEX.contains("avoidsSidebar:true, square:true"));
     }
 

@@ -12,4 +12,5 @@ Quick demo:
 
 <!-- The demo clip lives on the `media-exhibition` release, not in the tree:
      the pair was 20.8 MB — 48% of every checkout — and read only from here.
-     Re-shoot with tools' readme rig, then update the release assets. -->
+     Re-shoot by driving the shipped binary over CDP (the retired readme rig
+     is in git history, pre-#1285), then update the release assets. -->
