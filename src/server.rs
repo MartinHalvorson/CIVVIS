@@ -5734,10 +5734,13 @@ mod tests {
             assert!(Instant::now() < deadline, "spectator server never came up");
             std::thread::sleep(Duration::from_millis(50));
         }
-        http_post(port, "/pace", "{\"ms\":120}").expect("set the turn pace");
+        http_post(port, "/pace", "{\"ms\":40}").expect("set the turn pace");
 
         // The browser's loop at its worst: one request in flight at a time,
-        // and a paint that costs twice what the whole turn was budgeted.
+        // and a paint that costs twice what the whole turn was budgeted. Only
+        // that ratio is the scenario; the absolute numbers are as small as
+        // stays clearly above scheduler jitter, because this loop is pure
+        // wall-clock and once ran 24 x 250ms — the slowest test in the suite.
         let mut seen: Vec<u32> = Vec::new();
         let mut painted: Option<Value> = None;
         for _ in 0..24 {
@@ -5748,7 +5751,7 @@ mod tests {
             let body = http_get(port, &target).expect("a state to draw");
             let state: Value = serde_json::from_str(&body).expect("state is JSON");
             let turn = state["turn"].as_u64().expect("a turn") as u32;
-            std::thread::sleep(Duration::from_millis(250)); // the paint
+            std::thread::sleep(Duration::from_millis(80)); // the paint
             seen.push(turn);
             painted = Some(state);
         }
@@ -5811,9 +5814,15 @@ mod tests {
         // Somebody is already watching, and drawing slowly. The stepper owes
         // this viewer every turn and will wait for it; the question is only
         // whether it waits with the door held shut behind it.
+        // The paint below and the arrival bound in the loop are a matched
+        // pair: a lock-out makes an arrival wait for the whole paint, so the
+        // bound must sit well under the paint (2.4x here, as it always was)
+        // while staying far above an uncontended read. Scaled from 1500/600ms
+        // — which made this the suite's slowest test at 19s of wall clock —
+        // to 600/250ms, which detects the same regression.
         let watcher = std::thread::spawn(move || {
             let mut painted: Option<Value> = None;
-            for _ in 0..8 {
+            for _ in 0..6 {
                 let target = match painted.as_ref() {
                     None => "/state?painted=&viewer=watcher".to_string(),
                     Some(state) => next_painted_state("watcher", state),
@@ -5822,11 +5831,11 @@ mod tests {
                     return;
                 };
                 let state: Value = serde_json::from_str(&body).expect("state is JSON");
-                std::thread::sleep(Duration::from_millis(1_500)); // the paint
+                std::thread::sleep(Duration::from_millis(600)); // the paint
                 painted = Some(state);
             }
         });
-        std::thread::sleep(Duration::from_millis(600)); // let it take its seat
+        std::thread::sleep(Duration::from_millis(300)); // let it take its seat
 
         // Each arrival is a distinct page, exactly as a reload or a restart is.
         // Asked repeatedly, because a lock-out is a race and one lucky read
@@ -5843,11 +5852,11 @@ mod tests {
                 "arrival {attempt}: the opening state carries no turn"
             );
             assert!(
-                elapsed < Duration::from_millis(600),
+                elapsed < Duration::from_millis(250),
                 "arrival {attempt} waited {elapsed:?} for its first frame while another \
                  viewer was painting, and a restart shows a veil for every bit of that"
             );
-            std::thread::sleep(Duration::from_millis(150));
+            std::thread::sleep(Duration::from_millis(50));
         }
         http_post(port, "/pace", "{\"paused\":true}"); // stop stepping this game
         let _ = watcher.join();
@@ -6319,14 +6328,16 @@ mod tests {
     #[test]
     fn two_viewers_each_see_every_turn() {
         let port = exhibition(20_260_726);
-        http_post(port, "/pace", "{\"ms\":60}").expect("set the turn pace");
+        http_post(port, "/pace", "{\"ms\":30}").expect("set the turn pace");
 
         // The two run side by side for the same stretch of wall clock rather
         // than for the same number of polls, because the whole point is that
         // they read at different rates: one an order of magnitude slower than
         // the other, which is what a big map on a loaded machine looks like
-        // next to a small one.
-        let until = Instant::now() + Duration::from_secs(6);
+        // next to a small one. Two seconds is enough window for the slow
+        // viewer to cover several turns; the ratios are the scenario, and the
+        // original 6s/400ms version cost 7s of pure wall clock.
+        let until = Instant::now() + Duration::from_secs(2);
         let watch = |name: &'static str, paint: u64| {
             std::thread::spawn(move || {
                 let mut seen: Vec<u32> = Vec::new();
@@ -6348,8 +6359,8 @@ mod tests {
                 seen
             })
         };
-        let slow = watch("slow", 400);
-        let quick = watch("quick", 40);
+        let slow = watch("slow", 200);
+        let quick = watch("quick", 20);
         let (slow, quick) = (slow.join().unwrap(), quick.join().unwrap());
         http_post(port, "/pace", "{\"paused\":true}");
 
