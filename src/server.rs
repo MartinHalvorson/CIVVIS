@@ -2792,27 +2792,37 @@ impl Session {
     /// Returns the pid and successful actions so the observer UI can explain
     /// the AI's decisions instead of showing only their eventual outcomes.
     pub fn step(&mut self) -> (usize, Vec<Action>) {
+        let log_start = self.game.log.len();
+        let pid = self.step_quietly();
+        let actions = self
+            .game
+            .log
+            .since(log_start)
+            .map(|(_, action)| action.clone())
+            .collect();
+        (pid, actions)
+    }
+
+    /// The same turn advance without materializing the action trace. The
+    /// unattended pacer advances a whole exhibition this way — cloning every
+    /// action of every turn for a reader that does not exist was the only
+    /// difference.
+    pub fn step_quietly(&mut self) -> usize {
         let g = &mut self.game;
         let pid = g.current;
-        let log_start = g.log.len();
         if g.winner.is_some() {
-            return (pid, vec![]);
+            return pid;
         }
         self.ais[pid].take_turn(g, pid);
         if g.current == pid && g.winner.is_none() {
             let _ = g.apply(pid, &Action::EndTurn);
         }
-        let actions = g
-            .log
-            .since(log_start)
-            .map(|(_, action)| action.clone())
-            .collect();
         // Every way of advancing the world funnels through here — the browser
         // stepping a batch, the headless pacer running an unattended
         // exhibition, autoplay — so this is the one place a result cannot be
         // missed.
         self.record_league_result();
-        (pid, actions)
+        pid
     }
 
     /// Advance a bounded batch while retaining each civilization's action
@@ -3796,7 +3806,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 let step_started = Instant::now();
                 let turn_before = s.game.turn;
                 let finished_before = s.game.winner.is_some();
-                let (pid, _) = s.step();
+                let pid = s.step_quietly();
                 turn_compute_us += step_started.elapsed().as_micros() as u64;
                 if spectator_step_completes_frame(pace, turn_before, finished_before, &s.game) {
                     let sequence = sh.frame_sequence.fetch_add(1, Ordering::Relaxed) + 1;
