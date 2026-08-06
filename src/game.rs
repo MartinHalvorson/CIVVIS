@@ -23359,6 +23359,15 @@ impl Game {
     /// neither are city-states.
     fn check_religious_victory(&mut self) {
         self.award_religious_unity_envoys();
+        // The sweep below can only ever crown a religious winner, and
+        // `set_winner` refuses that crown whenever the lobby has Religious
+        // Victory switched off — so with the condition disabled the whole
+        // O(majors × rivals × cities) scan is a no-op that was still paid once
+        // per player turn. The envoy award above is an ordinary envoy
+        // mechanic, not a victory check, and keeps running either way.
+        if !self.victory_conditions.religious {
+            return;
+        }
         if self.winner.is_some() {
             return;
         }
@@ -63722,6 +63731,41 @@ mod victory_conditions {
         );
         g.check_religious_victory();
         assert_eq!(g.winner, Some(0));
+    }
+
+    /// A lobby with Religious Victory off can never crown a conversion, so
+    /// the per-turn conversion sweep is skipped outright. The gate sits
+    /// exactly where `set_winner`'s own refusal already drew the line: the
+    /// same fully converted world crowns nobody with the checkbox off and
+    /// the founder with it on.
+    #[test]
+    fn a_disabled_religious_victory_skips_the_sweep_and_crowns_nobody() {
+        let mut g = game_with_capitals(2, 403, 300);
+        let extra_pos = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| g.city_at(*pos).is_none())
+            .unwrap();
+        let extra = g.found_city_for(1, extra_pos, None);
+        let religion = "Test Religion".to_string();
+        g.players[0].religion = Some(religion.clone());
+        for city in [g.player_city_ids(1)[0], extra] {
+            g.cities
+                .get_mut(&city)
+                .unwrap()
+                .pressure
+                .insert(religion.clone(), 100.0);
+        }
+        g.victory_conditions.religious = false;
+        g.check_religious_victory();
+        assert_eq!(g.winner, None, "a switched-off victory path stays off");
+
+        g.victory_conditions.religious = true;
+        g.check_religious_victory();
+        assert_eq!(g.winner, Some(0));
+        assert_eq!(g.victory_type.as_deref(), Some("religious"));
     }
 
     #[test]
