@@ -1,8 +1,8 @@
 # CIVVIS
 
-Try CIVVIS yourself at [civvis.ai](https://www.civvis.ai)!
+Try CIVVIS yourself at [civvis.ai](https://www.civvis.ai).
 
-I threw some early progress & demo videos up on [YouTube](https://www.youtube.com/@civvis).
+I threw some early progress video demos up on [YouTube](https://www.youtube.com/@civvis).
 
 Mostly vibecoding this out. Continues to be a work in progress, particularly the AI decision-making.
 
