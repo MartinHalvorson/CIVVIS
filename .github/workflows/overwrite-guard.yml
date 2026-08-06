@@ -1,0 +1,58 @@
+# overwrite-guard — blames every line a PR deletes and refuses the merge when
+# lines merged to main within the last week would vanish unacknowledged.
+#
+# The week of 2026-08-05 showed why: machines iterating on the same GUI
+# regions kept deleting each other's hours-old work, every such PR merged
+# green, and the losses surfaced only as later "Restore ..." commits. The
+# check costs one honest line ("Supersedes: #N") when replacement is the
+# intent, and blocks exactly the case where nobody knew a replacement was
+# happening. Details in tools/overwrite_guard.py.
+#
+# Runs on `edited` too: the fix for a flagged PR is a body edit, and the fix
+# must be able to turn the check green without a new push.
+
+name: overwrite-guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: overwrite-guard-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  overwrite-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # The default pull_request checkout (the merge ref) rather than the PR
+      # head: a branch cut before this guard existed has no tool in its tree,
+      # and checking out head.sha made every such PR fail with exit 127 —
+      # unjudgeable, not judged (#1265 found this within hours of the guard
+      # becoming required).
+      - uses: actions/checkout@v4
+        with:
+          # Blame needs the full history to date the deleted lines.
+          fetch-depth: 0
+
+      - name: Blame the deletions
+        env:
+          # Through env, not interpolation into the script: a PR body is
+          # attacker-shaped text and must never reach a shell as syntax.
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_REF: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$PR_BODY" > /tmp/pr-body.txt
+          # Judge with MAIN's copy of the tool, never the branch's: an old
+          # branch may lack it and no branch may audition its own judge.
+          git fetch --quiet origin main
+          git show origin/main:tools/overwrite_guard.py > /tmp/overwrite_guard.py
+          base="$(git merge-base "$BASE_REF" "$HEAD_SHA")"
+          python3 /tmp/overwrite_guard.py --base "$base" --head "$HEAD_SHA" \
+            --body-file /tmp/pr-body.txt

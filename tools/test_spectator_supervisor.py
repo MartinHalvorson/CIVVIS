@@ -444,7 +444,20 @@ class SessionSettingsTests(unittest.TestCase):
             "speed": "online",
         }
 
+        # A live world does not trigger a new random draw on every supervisor
+        # poll. Its current launch setup remains the fallback until a result
+        # actually asks for the next world.
+        active = {**state, "winner": None, "next_game_settings": None}
+        self.assertEqual(supervisor.settings_at_boundary(active, defaults), defaults)
+        finished = {**state, "winner": 0, "next_game_settings": None}
+        self.assertEqual(
+            supervisor.settings_at_boundary(
+                finished, defaults, current_is_authoritative=True
+            ),
+            defaults,
+        )
         self.assertEqual(supervisor.session_settings(state, defaults), selected)
+        self.assertEqual(supervisor.settings_at_boundary(state, defaults), selected)
 
     def test_empty_state_uses_defaults(self):
         defaults = {

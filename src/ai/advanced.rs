@@ -19375,6 +19375,7 @@ impl AdvancedAi {
         let mut snapshot_invalid = false;
         for (&uid, intent) in ids.iter().zip(intents) {
             if snapshot_invalid || !g.units.contains_key(&uid) {
+                self.base.clear_prepared_patrol_posts();
                 let took_a_turn = g.units.contains_key(&uid)
                     && self.advance_unit_serial(
                         g,
@@ -19452,6 +19453,7 @@ impl AdvancedAi {
                 self.base.hold_stood_down_unit(g, pid, uid);
             }
         }
+        self.base.clear_prepared_patrol_posts();
     }
 
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
@@ -19549,6 +19551,7 @@ impl AdvancedAi {
 
             let pool = pool.as_ref().expect("parallel unit batch has a pool");
             let batch_ids = Arc::new(batch.clone());
+            self.base.prepare_patrol_posts(g, pid, &batch);
             let plan_snapshot = plan.clone();
             let active = pool.threads().min(batch.len());
             let states = (0..active)

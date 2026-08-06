@@ -1,0 +1,40 @@
+# stranded-work-report — one daily issue naming every piece of work that
+# exists but is going nowhere: PRs closed without a word, task branches idle
+# with real commits, rescue snapshots under refs/civvis/wip/*.
+#
+# Why an issue and not a failure: stranded work is a queue to triage, not a
+# defect in any one PR, and there is no PR to fail. The report updates a
+# single labeled issue in place (tools/stranded_work_report.py) so the fleet
+# has one place to look and the issue's edit history is the timeline.
+#
+# 06:11 UTC, an odd minute for the same reason the site deploys at :07/:37 —
+# on-the-hour crons get delayed or dropped under GitHub's load.
+
+name: stranded-work-report
+
+on:
+  schedule:
+    - cron: "11 6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: stranded-work-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The branch inventory diffs every agent branch against main.
+          fetch-depth: 0
+      - name: Publish the inventory
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./tools/stranded_work_report.py
