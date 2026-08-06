@@ -10374,6 +10374,39 @@ mod tests {
     }
 
     #[test]
+    fn browser_planet_minimap_paints_forward_cell_polygons_not_a_per_pixel_raster() {
+        // The drag path redraws the minimap on every pointermove, so the
+        // planet chart must stay a few dozen batched polygon fills. The
+        // per-pixel inverse raster it replaces ran the cell search ~30k times
+        // per redraw (~100ms a frame) and made dragging a planet map an
+        // eight-frame slideshow; the inverse is reserved for clicks.
+        let planet_mini = EMBEDDED_INDEX
+            .split("function drawPlanetMini()")
+            .nth(1)
+            .and_then(|tail| tail.split("function chartUnrolledU").next())
+            .expect("planet minimap renderer");
+        assert!(planet_mini.contains("const batches = new Map();"));
+        assert!(planet_mini.contains("const point = azimuthalMiniScreenPoint(vertex, projection);"));
+        assert!(planet_mini.contains("mx2.fill(); mx2.stroke();"));
+        // A canvas fill is superlinear in its path's subpaths, so the ground
+        // must stay chunked — one path per colour costs ~10x, one path for
+        // everything ~40x.
+        assert!(EMBEDDED_INDEX.contains("const AZIMUTHAL_MINI_FILL_CHUNK = 48;"));
+        assert!(planet_mini.contains("start += AZIMUTHAL_MINI_FILL_CHUNK"));
+        assert!(
+            !planet_mini.contains("planetMiniCellAt("),
+            "the redraw path must not run the per-pixel cell search"
+        );
+        assert!(
+            !EMBEDDED_INDEX.contains("createImageData"),
+            "no per-pixel software raster may return to the viewer"
+        );
+        // Cells smeared past the crop's corners are culled before batching.
+        assert!(planet_mini.contains("Math.SQRT2 * AZIMUTHAL_MINI_SQUARE_HALF + .15"));
+        assert!(planet_mini.contains("if (dot3(entry.cell.center, projection.basis.out) < towardFloor) continue;"));
+    }
+
+    #[test]
     fn browser_tile_yields_are_numbered_in_centered_semantic_rows() {
         assert!(EMBEDDED_INDEX.contains(
             "[\"science\", \"culture\", \"faith\"],\n  [\"food\", \"production\", \"gold\"],"
