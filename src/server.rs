@@ -417,7 +417,21 @@ fn host_memory_percent() -> Option<f64> {
     None
 }
 
-const EMBEDDED_INDEX: &str = include_str!("../web/index.html");
+const EMBEDDED_INDEX_HTML: &str = include_str!("../web/index.html");
+const EMBEDDED_APP_JS: &str = include_str!("../web/assets/app.js");
+/// The whole page source — the document plus its one external script — as a
+/// single searchable string. The server ships the two parts at `/` and
+/// `/assets/app.js`; the source-contract tests assert against this combined
+/// source, which is the same contract they checked when the script block was
+/// inline. (The split exists because the script was a 1.35 MB block inside
+/// `web/index.html`, making that file the repository's largest history payer
+/// at ~1 MB of pack growth per edit.)
+static EMBEDDED_INDEX: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    let mut page = String::with_capacity(EMBEDDED_INDEX_HTML.len() + EMBEDDED_APP_JS.len());
+    page.push_str(EMBEDDED_INDEX_HTML);
+    page.push_str(EMBEDDED_APP_JS);
+    page
+});
 const EMBEDDED_FEATURE_ATLAS: &[u8] = include_bytes!("../web/assets/feature-atlas.png");
 const EMBEDDED_ENVIRONMENT_FEATURE_ATLAS: &[u8] =
     include_bytes!("../web/assets/environment-feature-atlas.png");
@@ -2801,27 +2815,37 @@ impl Session {
     /// Returns the pid and successful actions so the observer UI can explain
     /// the AI's decisions instead of showing only their eventual outcomes.
     pub fn step(&mut self) -> (usize, Vec<Action>) {
+        let log_start = self.game.log.len();
+        let pid = self.step_quietly();
+        let actions = self
+            .game
+            .log
+            .since(log_start)
+            .map(|(_, action)| action.clone())
+            .collect();
+        (pid, actions)
+    }
+
+    /// The same turn advance without materializing the action trace. The
+    /// unattended pacer advances a whole exhibition this way — cloning every
+    /// action of every turn for a reader that does not exist was the only
+    /// difference.
+    pub fn step_quietly(&mut self) -> usize {
         let g = &mut self.game;
         let pid = g.current;
-        let log_start = g.log.len();
         if g.winner.is_some() {
-            return (pid, vec![]);
+            return pid;
         }
         self.ais[pid].take_turn(g, pid);
         if g.current == pid && g.winner.is_none() {
             let _ = g.apply(pid, &Action::EndTurn);
         }
-        let actions = g
-            .log
-            .since(log_start)
-            .map(|(_, action)| action.clone())
-            .collect();
         // Every way of advancing the world funnels through here — the browser
         // stepping a batch, the headless pacer running an unattended
         // exhibition, autoplay — so this is the one place a result cannot be
         // missed.
         self.record_league_result();
-        (pid, actions)
+        pid
     }
 
     /// Advance a bounded batch while retaining each civilization's action
@@ -3114,7 +3138,16 @@ fn index_html() -> Vec<u8> {
             return b;
         }
     }
-    EMBEDDED_INDEX.as_bytes().to_vec()
+    EMBEDDED_INDEX_HTML.as_bytes().to_vec()
+}
+
+fn app_js() -> Vec<u8> {
+    for p in ["web/assets/app.js"] {
+        if let Ok(b) = std::fs::read(p) {
+            return b;
+        }
+    }
+    EMBEDDED_APP_JS.as_bytes().to_vec()
 }
 
 fn feature_atlas() -> Vec<u8> {
@@ -3806,7 +3839,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 let step_started = Instant::now();
                 let turn_before = s.game.turn;
                 let finished_before = s.game.winner.is_some();
-                let (pid, _) = s.step();
+                let pid = s.step_quietly();
                 turn_compute_us += step_started.elapsed().as_micros() as u64;
                 if spectator_step_completes_frame(pace, turn_before, finished_before, &s.game) {
                     let sequence = sh.frame_sequence.fetch_add(1, Ordering::Relaxed) + 1;
@@ -3970,6 +4003,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
     match (method.as_str(), path.as_str()) {
         ("GET", path) if viewer_path(path) => {
             respond(stream, "200 OK", "text/html; charset=utf-8", &index_html());
+        }
+        ("GET", "/assets/app.js") => {
+            respond(
+                stream,
+                "200 OK",
+                "text/javascript; charset=utf-8",
+                &app_js(),
+            );
         }
         ("GET", "/assets/feature-atlas.png") => {
             respond(stream, "200 OK", "image/png", &feature_atlas());
@@ -6036,7 +6077,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("st?.server_artifact_bytes"));
         assert!(EMBEDDED_INDEX.contains("st?.server_artifact_kind"));
         assert!(EMBEDDED_INDEX.contains("function formatBuildSize(bytes)"));
-        assert!(EMBEDDED_INDEX.contains("(bytes / 1048576).toFixed(1)} MiB"));
+        assert!(EMBEDDED_INDEX.contains("(bytes / 1e6).toFixed(1)} MB"));
         assert!(EMBEDDED_INDEX.contains("(artifactSize ? ` · Build size ${artifactSize}` : \"\")"));
         assert!(EMBEDDED_INDEX.contains("commit.slice(0, 7)"));
         assert!(EMBEDDED_INDEX.contains("id=\"buildmark-commit\""));
@@ -6044,7 +6085,10 @@ mod tests {
             "https://github.com/MartinHalvorson/CIVVIS/commit/${encodeURIComponent(commit)}"
         ));
         assert!(EMBEDDED_INDEX.contains("View commit ${shortCommit} on GitHub"));
-        assert!(EMBEDDED_INDEX.contains("return parts.join(\" \") || \"0m\""));
+        // The age is one unit at one decimal ("1.5h", "2.3d"), never a
+        // two-unit chain — the marker has to fit beside the minimap.
+        assert!(EMBEDDED_INDEX.contains("if (totalMinutes < 60) return `${Math.floor(totalMinutes)}m`"));
+        assert!(EMBEDDED_INDEX.contains("${Number.isInteger(tenths) ? tenths : tenths.toFixed(1)}${unit}"));
         assert!(EMBEDDED_INDEX.contains("Commit is ${formatBuildAge(commitDate)} old"));
         assert!(EMBEDDED_INDEX.contains("Build is ${formatBuildAge(buildDate)} old"));
         assert!(EMBEDDED_INDEX.contains(
@@ -9212,9 +9256,15 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("cursor: col-resize; pointer-events: auto; touch-action: none;"));
         // A repaint mid-gesture would take the bar out from under the pointer
-        // along with its pointer capture.
+        // along with its pointer capture, and the open watch-pace menu is
+        // anchored to its select the same way.
         assert!(EMBEDDED_INDEX.contains(
-            "if (html === hudHtml || hudLayoutGesture?.name === \"players\" || playerHudColumnGesture) {"
+            "if (html === hudHtml || hudLayoutGesture?.name === \"players\" || playerHudColumnGesture\n      || hudPaceHeldOpen()) {"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function hudPaceHeldOpen()"));
+        // The moment focus leaves the select, the held snapshots paint.
+        assert!(EMBEDDED_INDEX.contains(
+            "if (ev.target.closest?.(\"[data-hud-pace]\") && state) drawPlayerHud();"
         ));
         // The bars are placed from the rendered heading, so they cannot drift
         // from the columns they name.
@@ -10299,24 +10349,75 @@ mod tests {
             .expect("planet minimap viewport footprint");
         assert!(planet.contains("const mainRadius = mainCamera.radius * cam.scale;"));
         assert!(planet.contains("const basis = planetViewBasis(mainCamera);"));
-        assert!(planet.contains("peirceMiniScreenPoint(point.map(value => value / length), projection)"));
+        // The screen boundary is walked densely, not just at the corners: a
+        // straight screen edge is a curve on the azimuthal chart.
+        assert!(planet.contains("miniViewportBoundaryScreenPoints().map"));
+        assert!(planet.contains("azimuthalMiniScreenPoint(point.map(value => value / length), projection)"));
+        // A ray past the globe's limb is clamped to the limb rather than
+        // dropped, so a zoomed-out footprint keeps its corners.
+        assert!(planet.contains("if (distance >= 1 - 1e-6) {"));
         assert!(EMBEDDED_INDEX.contains(
             "drawPlanetMiniViewportFootprint(projection);"
         ));
     }
 
     #[test]
-    fn browser_planet_minimap_uses_a_centered_square_peirce_quincuncial_chart() {
-        assert!(EMBEDDED_INDEX.contains("const PEIRCE_SQUARE_HALF = PEIRCE_GUYOU_DX * PEIRCE_SQRT1_2;"));
-        assert!(EMBEDDED_INDEX.contains("function peirceQuincuncialRaw(lambda, phi)"));
-        assert!(EMBEDDED_INDEX.contains("function peirceQuincuncialInvert(x0, y0)"));
-        assert!(EMBEDDED_INDEX.contains("return [PEIRCE_PI, 0];"));
-        assert!(EMBEDDED_INDEX.contains("function peirceMiniPointCopies(point, projection)"));
-        assert!(EMBEDDED_INDEX.contains("return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];"));
-        assert!(EMBEDDED_INDEX.contains("const projection = peirceMiniProjection(r.width, r.height);"));
-        assert!(EMBEDDED_INDEX.contains("const point = peirceMiniSphereAt(x, y, projection);"));
-        assert!(EMBEDDED_INDEX.contains("const target = point && peirceMiniCellAt(point, peirceMiniCellIndex());"));
+    fn browser_planet_minimap_uses_a_square_cropped_azimuthal_equidistant_chart() {
+        // The chart is azimuthal equidistant about the point facing the
+        // viewer, cropped to the minimap's square, and the square's half-side
+        // is derived from the share of the sphere the crop must hold.
+        assert!(EMBEDDED_INDEX.contains("const AZIMUTHAL_MINI_WORLD_SHARE = 0.8;"));
+        assert!(EMBEDDED_INDEX.contains("const AZIMUTHAL_MINI_SQUARE_HALF = (() => {"));
+        assert!(EMBEDDED_INDEX.contains("if (cropShare(mid) < AZIMUTHAL_MINI_WORLD_SHARE) low = mid; else high = mid;"));
+        assert!(EMBEDDED_INDEX.contains("function azimuthalMiniLocalSphereAt(x0, y0)"));
+        assert!(EMBEDDED_INDEX.contains("function azimuthalMiniSphereAt(x, y, projection)"));
+        assert!(EMBEDDED_INDEX.contains("function azimuthalMiniScreenPoint(point, projection)"));
+        // The elliptic Peirce machinery left with the projection it served.
+        assert!(!EMBEDDED_INDEX.contains("peirce"));
+        assert!(!EMBEDDED_INDEX.contains("Peirce"));
+        // Ground the crop cuts off mid-projection must not spill past the
+        // frame: the overlays clip to the same square the raster fills and
+        // the frame is stroked around.
+        assert!(EMBEDDED_INDEX.contains("function azimuthalMiniSquarePath(projection)"));
+        assert!(EMBEDDED_INDEX.contains("azimuthalMiniSquarePath(projection); mx2.clip();"));
+        // Minimap clicks invert the same chart the raster paints.
+        assert!(EMBEDDED_INDEX.contains("const projection = azimuthalMiniProjection(r.width, r.height);"));
+        assert!(EMBEDDED_INDEX.contains("const point = azimuthalMiniSphereAt(x, y, projection);"));
+        assert!(EMBEDDED_INDEX.contains("const target = point && planetMiniCellAt(point, planetMiniCellIndex());"));
         assert!(EMBEDDED_INDEX.contains("avoidsSidebar:true, square:true"));
+    }
+
+    #[test]
+    fn browser_planet_minimap_paints_forward_cell_polygons_not_a_per_pixel_raster() {
+        // The drag path redraws the minimap on every pointermove, so the
+        // planet chart must stay a few dozen batched polygon fills. The
+        // per-pixel inverse raster it replaces ran the cell search ~30k times
+        // per redraw (~100ms a frame) and made dragging a planet map an
+        // eight-frame slideshow; the inverse is reserved for clicks.
+        let planet_mini = EMBEDDED_INDEX
+            .split("function drawPlanetMini()")
+            .nth(1)
+            .and_then(|tail| tail.split("function chartUnrolledU").next())
+            .expect("planet minimap renderer");
+        assert!(planet_mini.contains("const batches = new Map();"));
+        assert!(planet_mini.contains("const point = azimuthalMiniScreenPoint(vertex, projection);"));
+        assert!(planet_mini.contains("mx2.fill(); mx2.stroke();"));
+        // A canvas fill is superlinear in its path's subpaths, so the ground
+        // must stay chunked — one path per colour costs ~10x, one path for
+        // everything ~40x.
+        assert!(EMBEDDED_INDEX.contains("const AZIMUTHAL_MINI_FILL_CHUNK = 48;"));
+        assert!(planet_mini.contains("start += AZIMUTHAL_MINI_FILL_CHUNK"));
+        assert!(
+            !planet_mini.contains("planetMiniCellAt("),
+            "the redraw path must not run the per-pixel cell search"
+        );
+        assert!(
+            !EMBEDDED_INDEX.contains("createImageData"),
+            "no per-pixel software raster may return to the viewer"
+        );
+        // Cells smeared past the crop's corners are culled before batching.
+        assert!(planet_mini.contains("Math.SQRT2 * AZIMUTHAL_MINI_SQUARE_HALF + .15"));
+        assert!(planet_mini.contains("if (dot3(entry.cell.center, projection.basis.out) < towardFloor) continue;"));
     }
 
     #[test]
@@ -12949,7 +13050,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("#skynav[hidden] { display: none; }"));
         assert!(EMBEDDED_INDEX.contains("#zoomctl-main"));
         assert!(EMBEDDED_INDEX.contains("flex-direction: column;"));
-        assert!(EMBEDDED_INDEX.contains("position: static; z-index: auto; align-self: stretch;"));
+        assert!(EMBEDDED_INDEX.contains("position: static; z-index: auto; align-self: flex-start;"));
         assert!(EMBEDDED_INDEX.contains("syncSkyNavDockGeometry();"));
         for part in [
             "id=\"skynav-worlds\"",

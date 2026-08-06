@@ -21,6 +21,11 @@ pub mod name;
 pub mod neural;
 pub mod obs;
 pub mod odds;
+// The oracle's only consumer is `experiments/closed/ablate.rs`, so it rides
+// the same opt-in feature: normal builds and CI skip its ~1,300 lines and 12
+// tests, and `--features closed-experiments` brings the whole ablation
+// harness back exactly as recorded.
+#[cfg(feature = "closed-experiments")]
 pub mod oracle;
 pub mod parallel;
 
@@ -38,7 +43,6 @@ pub mod specmap;
 pub mod server;
 pub mod setup;
 pub mod simultaneous;
-pub mod skirmish;
 pub mod sphere;
 pub mod strategic;
 pub mod valuenet;

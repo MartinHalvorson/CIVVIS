@@ -701,6 +701,13 @@ impl<A: Ai> Ai for Oracle<A> {
     fn review_census(&self) -> Option<crate::strategic::ReviewCensus> {
         self.inner.review_census()
     }
+
+    /// An oracle's grants change the world, not the agent's mind; the
+    /// reasoning an observer sees is the inner agent's, reading the granted
+    /// position exactly as it reads any other.
+    fn attach_journal(&mut self, journal: crate::reasoning::Journal) {
+        self.inner.attach_journal(journal);
+    }
 }
 
 #[cfg(test)]
@@ -710,6 +717,37 @@ mod tests {
     use crate::game::{Game, GovernorState, Item};
     use crate::Pos;
     use std::collections::BTreeSet;
+
+    /// An oracle seat forwards its plan to the dossier; the decision factors
+    /// under that plan come from the inner agent's journal, so the handle
+    /// has to reach it the same way `plan_report` does.
+    #[test]
+    fn an_attached_journal_reaches_the_wrapped_agent() {
+        let journal = crate::reasoning::Journal::recording();
+        let mut oracle = Oracle::new(AdvancedAi::new(), Grant::None);
+        oracle.attach_journal(journal.handle());
+        let mut g = Game::new(2, 24, 16, 8_100, 90, 0);
+        let mut other = AdvancedAi::new();
+        while g.winner.is_none() && g.turn <= 6 {
+            let pid = g.current;
+            if pid == 0 {
+                oracle.take_turn(&mut g, pid);
+            } else {
+                other.take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &crate::game::Action::EndTurn);
+            }
+        }
+        assert!(
+            journal
+                .since(0)
+                .thoughts
+                .iter()
+                .any(|t| t.player == 0 && t.headline.starts_with("Grand strategy:")),
+            "the seat run by the oracle wrapper never published its plan to the journal"
+        );
+    }
 
     #[test]
     fn grant_ids_round_trip() {

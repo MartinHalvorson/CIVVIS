@@ -1,8 +1,8 @@
 """Play Civilization VI games back to back with CIVVIS deciding, until one is won.
 
-`civ6_climb.py` walks the whole difficulty ladder and does not start a brain, so it
-cannot be used for a CIVVIS-driven attempt. This does one rung, repeatedly, with the
-decision loop attached, and keeps a ledger.
+The retired ladder walker (`civ6_climb.py`, in git history) climbed every rung but
+never started a brain, so it could not host a CIVVIS-driven attempt. This does one
+rung, repeatedly, with the decision loop attached, and keeps a ledger.
 
     python3 tools/civ6_civvis_climb.py --attempts 12 --victory civvis
 
