@@ -34,8 +34,12 @@ def version_lane(lane: pathlib.Path) -> None:
     shim_path = lane / "shim.js"
     worker_path = lane / "worker.js"
     wasm_path = lane / "civvis.wasm"
+    # The viewer's script moved out of the page into assets/app.js (#1289).
+    # A lane pinned to a revision from before that — the stable lane routinely
+    # is — keeps the script inline in index.html and ships no app.js, so its
+    # absence is a shape, not an error.
     app_js_path = lane / "assets" / "app.js"
-    for required in (page_path, shim_path, worker_path, wasm_path, app_js_path):
+    for required in (page_path, shim_path, worker_path, wasm_path):
         if not required.is_file():
             raise FileNotFoundError(f"published lane is missing {required.name}")
 
@@ -90,10 +94,12 @@ def version_lane(lane: pathlib.Path) -> None:
     # Version them inside the script first and write it back, so the script's
     # own bytes — and therefore the hash the page requests it by — change
     # whenever any atlas it names changes: the same dependency-hash chaining
-    # the generated shim uses for the wasm and worker.
-    appjs = app_js_path.read_text(encoding="utf-8")
-    appjs = ASSET_REFERENCE.sub(version_asset, appjs)
-    app_js_path.write_text(appjs, encoding="utf-8")
+    # the generated shim uses for the wasm and worker. In a pre-app.js lane
+    # the references sit in the page and the pass below covers them.
+    if app_js_path.is_file():
+        appjs = app_js_path.read_text(encoding="utf-8")
+        appjs = ASSET_REFERENCE.sub(version_asset, appjs)
+        app_js_path.write_text(appjs, encoding="utf-8")
 
     page = ASSET_REFERENCE.sub(version_asset, page)
     if referenced_assets == 0:
