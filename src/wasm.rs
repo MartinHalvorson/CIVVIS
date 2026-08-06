@@ -247,6 +247,12 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             "commit": runtime_commit("unknown"),
             "commit_time": runtime_commit_time(),
             "built_at": runtime_built_at(),
+            "next_game_settings": NEXT_GAME_PARAMS.with(|cell| {
+                cell.borrow()
+                    .as_ref()
+                    .map(simulation_settings)
+                    .unwrap_or(Value::Null)
+            }),
         }),
 
         // No per-viewer tile delta: the page is told the whole world every
@@ -324,11 +330,13 @@ fn route(method: &str, target: &str, body: &str) -> Value {
                 "difficulties": r.difficulties, "speeds": r.speeds,
                 "base_rulesets": BASE_RULESETS,
                 "start_eras": START_ERAS,
+                "future_eras": FUTURE_ERAS,
                 "map_scripts": CIV6_MAP_SCRIPTS,
                 "map_topologies": MAP_TOPOLOGIES,
                 "map_poles": MAP_POLES,
                 "game_speeds": CIV6_GAME_SPEEDS,
                 "strategies": strategy_roster(session),
+                "leader_elo_options": leader_elo_options(session),
                 "seat_strategy": session.seated_strategy_name(0),
             })
         }),

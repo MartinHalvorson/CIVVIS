@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>CIVVIS · Civilization VIS</title>
+<title>CIVVIS · Civ VI Simulator</title>
 <script>
   (() => {
     const channel = location.pathname.split("/").find(part => ["rust", "wasm", "beta"].includes(part));
-    if (channel === "rust") document.title = "CIVVIS (Rust)";
-    if (channel === "wasm" || channel === "beta") document.title = "CIVVIS (Wasm)";
+    if (channel === "rust") document.title = "CIVVIS · Civ VI Simulator (Rust)";
+    if (channel === "wasm" || channel === "beta") document.title = "CIVVIS · Civ VI Simulator (Wasm)";
   })();
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%2307110f'/%3E%3Ccircle cx='16' cy='16' r='12.5' fill='%23d7b66a' stroke='%23f6e4ac'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-family='Georgia,serif' font-size='15' font-weight='700' fill='%2315221c'%3EV%3C/text%3E%3C/svg%3E">
@@ -294,7 +294,7 @@
   .brand-copy { min-width: 0; flex: 1 1 auto; padding: 1px 34px 0 0; }
   .brand-title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
   h1 {
-    width: auto; min-width: 0; max-width: 100%; overflow: hidden;
+    width: auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
     color: var(--gold-bright);
     font: 650 36px/.95 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
     font-size: clamp(22px, 10cqw, 36px);
@@ -331,17 +331,45 @@
   .tagline span { display: block; white-space: nowrap; }
   .tagline span + span { color: #bccac4; }
   /* A split-screen deck cannot afford the landing-page-sized mark and title.
-     The compact band preserves both, but gives the map its working width and
-     lets the copy wrap instead of flowing beyond the deck edge. */
+     The compact band preserves both, but reflows the lockup: the copy column
+     dissolves (display: contents) so the tagline steps out of the mark's
+     shadow and takes the whole band. That is what lets a 220px deck keep a
+     two-line tagline instead of a five-line tower squeezed beside the globe. */
   #side[data-type-size="compact"] .side-head { min-height: 102px; padding: 14px 12px; }
-  #side[data-type-size="compact"] .brand { gap: 10px; }
+  #side[data-type-size="compact"] .brand {
+    display: grid; grid-template-columns: auto minmax(0, 1fr);
+    align-items: center; gap: 7px 10px;
+  }
+  #side[data-type-size="compact"] .brand-copy { display: contents; }
   #side[data-type-size="compact"] .brand-mark { width: 54px; height: 54px; }
   #side[data-type-size="compact"] .brand-mark svg { width: 49px; height: 49px; }
+  /* The social column only climbs the band's bottom half, but the tallest
+     title could still graze it; reserving the lane in the row keeps the
+     wordmark and the buttons apart at every band height. */
+  #side[data-type-size="compact"] .brand-title-row { padding-right: 26px; }
+  /* 10cqw measures the whole band, but the wordmark's real lane is the band
+     minus the 54px mark, its 10px gutter and the 26px link lane — and the
+     CIVVIS.ai run is 4.65em wide (4.85 leaves fallback-font slack). Deriving
+     the size from that lane spends all of a 300px deck on the 28px cap yet
+     still steps down cleanly on a 220px one, where raw 10cqw overflows. */
   #side[data-type-size="compact"] h1 {
-    width: auto; font-size: clamp(20px, 10cqw, 28px); letter-spacing: .055em;
+    width: auto; letter-spacing: .055em;
+    font-size: clamp(15px, calc((100cqw - 90px) / 4.85), 28px);
   }
-  #side[data-type-size="compact"] .tagline { max-width: none; margin-top: 6px; font-size: var(--type-small); }
+  #side[data-type-size="compact"] .tagline {
+    grid-column: 1 / -1; max-width: none; margin-top: 0; padding-right: 28px;
+    font-size: var(--type-small);
+  }
   #side[data-type-size="compact"] .tagline span { white-space: normal; }
+  /* Past the width where the whole sentence fits beside the globe, the
+     stacked two-line lockup reads as leftover narrow-screen furniture. Join
+     the tagline into its single line there; 620px of band leaves ~200px of
+     slack at the shared body size, so the line cannot be what overflows. */
+  @container (min-width: 620px) {
+    .side-head .tagline { max-width: none; }
+    .side-head .tagline span { display: inline; }
+    .side-head .tagline span + span::before { content: " "; }
+  }
   /* The deck is a column: the fixed panels take the height they need and the
      two chronicles share whatever is left, so a tall screen reads more
      history rather than more empty parchment. Below the point where the
@@ -354,6 +382,10 @@
     scrollbar-color: #385148 transparent; scrollbar-width: thin; scrollbar-gutter: stable;
     background: linear-gradient(90deg, #ffffff02, transparent 14%, transparent 86%, #0002);
   }
+  /* The shortcut legend opens upward from the bottom edge. Keep the scrolling
+     deck above that temporary drawer so a lower section (especially Map
+     lenses) remains visible and clickable while the legend is expanded. */
+  #side > .side-scroll { position: relative; z-index: 4; }
   #side::-webkit-scrollbar, .side-scroll::-webkit-scrollbar { width: 7px; }
   #side::-webkit-scrollbar-thumb, .side-scroll::-webkit-scrollbar-thumb { background: #385148; border-radius: 9px; }
   .side-actions {
@@ -495,9 +527,26 @@
     background: linear-gradient(145deg, #172723fa, #0b1714fc);
     box-shadow: 0 -12px 32px #0008;
   }
-  /* Search is a compact, always-available map tool at the deck's lower edge.
-     Lenses live with the other collapsible command-deck sections above it, so
-     a viewer can reclaim the grid until they want to change perspective. */
+  /* The deck's fixed lower-left stack: map lenses, visible-tile search, and
+     keyboard shortcuts, docked in that order at the bottom of the screen so
+     the map-reading tools never scroll away with the command sections. */
+  #maplensessec {
+    position: relative; z-index: 3; flex: 0 0 auto; margin: 0;
+    border-top: 1px solid #355047; background: linear-gradient(180deg, #101d1a, #091310);
+    box-shadow: 0 -10px 28px #0005;
+  }
+  #maplensessec > summary {
+    min-height: 40px; padding: 11px 14px;
+    color: var(--muted); cursor: pointer; list-style: none;
+    font-size: var(--type-small); font-weight: 800; letter-spacing: .11em; text-transform: uppercase;
+  }
+  #maplensessec > summary::-webkit-details-marker { display: none; }
+  #maplensessec > summary::after { content: "+"; float: right; color: var(--gold); font-size: var(--type-body); line-height: 1; }
+  #maplensessec[open] > summary::after { content: "−"; }
+  /* The open grid shares the deck's height with the scroller above it, so it
+     caps itself and scrolls inside rather than swallowing the whole column. */
+  .lens-dock-body { padding: 0 10px 10px; }
+  #maplensessec[open] .lens-dock-body { max-height: min(430px, 46vh); overflow-y: auto; scrollbar-width: thin; }
   #map-utility-panel {
     position: relative; z-index: 3; flex: 0 0 auto; padding: 8px 10px 10px;
     border-top: 1px solid #355047; background: linear-gradient(180deg, #101d1a, #091310);
@@ -507,11 +556,8 @@
     min-width: 0;
   }
   .map-lens-head {
-    display: flex; align-items: center; gap: 5px; min-height: 22px; margin-bottom: 6px;
-  }
-  .map-lens-title {
-    min-width: 0; flex: 1; color: #b9c8c2; font-size: var(--type-caption); font-weight: 900;
-    letter-spacing: .10em; text-transform: uppercase;
+    display: flex; align-items: center; justify-content: flex-end;
+    gap: 5px; min-height: 22px; margin-bottom: 6px;
   }
   #map-lenses button {
     position: relative; min-width: 0; height: 31px;
@@ -589,6 +635,18 @@
     min-width: 0; padding: 6px 7px; border: 1px solid #3c554c; border-radius: 11px;
     background: #0a1512df; box-shadow: inset 0 1px #ffffff08, 0 7px 18px #0004;
   }
+  /* The same search markup is also used by the map's lower instrument dock.
+     That dock positions its copy above the map, but this copy is a normal
+     child of the left-panel utility band. Keep the panel copy in flow so the
+     keyboard-shortcut drawer cannot cover it or collapse its parent to a
+     border-sized strip. The extra specificity intentionally outranks the
+     map-dock positioning rule below. */
+  #side > #map-utility-panel #map-search {
+    position: relative; left: auto; right: auto; bottom: auto;
+    width: auto; min-height: 0; display: block;
+    grid-template-columns: none; gap: normal; padding: 6px 7px;
+  }
+  #side > #map-utility-panel { z-index: 5; }
   #map-search:focus-within {
     border-color: #d7b66aa8; box-shadow: inset 0 1px #ffffff08, 0 0 0 2px #d7b66a24;
   }
@@ -745,12 +803,30 @@
   }
   /* Neither half of a row gives up width, and nothing here ellipsizes: a
      setting is shown whole or the block is drawn a quarter-point smaller. */
-  .turn-setting > span, .turn-setting > b { flex: 0 0 auto; }
+  .turn-setting > span, .turn-setting > b, .turn-setting > .turn-pace-choice { flex: 0 0 auto; }
   /* Tabular figures so a count changing from 10 to 9 moves the row by exactly
      one digit's width instead of an arbitrary one — the block is refitted on
      that width, and a proportional 1 would re-size all four rows mid-game. */
   .turn-setting b {
     color: #dce6e1; font-weight: 900; font-variant-numeric: tabular-nums;
+  }
+  .turn-pace-choice {
+    position: relative; display: inline-flex; align-items: center; max-width: 100%;
+  }
+  .turn-pace-choice select {
+    width: auto; min-width: 0; max-width: 100%; padding: 0 1em 0 0;
+    border: 0; border-radius: 0; color: #dce6e1; background: transparent;
+    font-weight: 900; line-height: inherit; text-align: right; text-align-last: right;
+    cursor: pointer; appearance: none; -webkit-appearance: none;
+  }
+  .turn-pace-choice select:hover { color: #f4d892; }
+  .turn-pace-choice select:focus-visible {
+    outline: 1px solid #d7b66a; outline-offset: 2px; border-radius: 2px;
+  }
+  .turn-pace-choice option { color: #dce6e1; background: #0d1816; }
+  .turn-pace-caret {
+    position: absolute; right: .1em; top: 50%; color: #d7b66a;
+    font-size: .8em; line-height: 1; pointer-events: none; transform: translateY(-38%);
   }
   /* A roster row carries what is left and what it was taken out of. The toll
      rides *inside* the value so the row is still two flex items — one label,
@@ -945,6 +1021,7 @@
   .diplomacy-civ { color: #f1f4ed; }
   .diplomacy-rank { margin-right: 4px; color: var(--gold-bright); font: 700 var(--type-secondary)/1.1 var(--font-display); }
   .diplomacy-elo { flex: 0 0 auto; color: var(--gold-bright); font-weight: 850; }
+  .diplomacy-elo-delta { flex: 0 0 auto; color: #c1d0c8; font-weight: 800; }
   /* A rating nothing has been finished behind is still the real starting
      number, so it is the same figure in the same cell — only unfilled, the
      way an unearned thing should look. Opacity and nothing else: a marker
@@ -1089,54 +1166,29 @@
     pointer-events: none;
   }
   #zoomctl {
-    position: relative; z-index: 1; display: flex; flex: 0 1 auto; flex-direction: row;
+    position: relative; z-index: 1; display: flex; flex: 0 1 auto; flex-direction: column;
     width: max-content; max-width: 100%; min-width: 0;
     gap: 5px; padding: 5px; border-radius: 13px; background: #0a1512cb; border: 1px solid #3c554c;
     box-shadow: 0 12px 26px #0006; backdrop-filter: blur(12px);
     pointer-events: auto;
   }
+  #zoomctl-main {
+    display: flex; flex: 0 0 auto; align-items: center; gap: 5px; min-width: 0;
+  }
   #zoomctl button { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; background: transparent; font-size: 16px; }
-  #zoomctl > button { flex: 0 0 34px; }
+  #zoomctl-main > button { flex: 0 0 34px; }
   #zoomctl button + button { border-left: 1px solid #ffffff0c; border-radius: 0; }
-  /* Search belongs to the map, not the command deck: keep it immediately
-     above the lower-left instruments where it remains available whether the
-     deck is open or collapsed. The exact result count is part of the control
-     so a search with matches beyond the current camera still answers clearly. */
-  #map-search {
-    position: absolute; z-index: 2; left: 0; bottom: calc(100% + var(--panel-gap));
-    width: min(310px, calc(100vw - 2 * var(--panel-edge))); min-height: 38px;
-    display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center;
-    gap: 5px; padding: 4px 7px; border: 1px solid #3c554c; border-radius: 13px;
-    background: #0a1512df; box-shadow: 0 12px 26px #0006;
-    backdrop-filter: blur(12px); pointer-events: auto;
-  }
-  #map-search:focus-within {
-    border-color: #d7b66aa8; box-shadow: 0 12px 26px #0007, 0 0 0 2px #d7b66a24;
-  }
-  #map-search.no-match { border-color: #a6545080; }
-  #map-search-icon { color: #e6c978; font-size: 16px; text-align: center; }
-  #map-search-input {
-    min-width: 0; width: 100%; height: 28px; padding: 0 2px; border: 0; outline: 0;
-    background: transparent; color: #eef4f1; font: 750 var(--type-control)/1.2 system-ui, sans-serif;
-  }
-  #map-search-input::placeholder { color: #8fa39b; font-weight: 650; opacity: 1; }
-  #map-search-status {
-    min-width: 22px; padding: 2px 6px; border: 1px solid #d7b66a45; border-radius: 999px;
-    background: #d7b66a18; color: #ffe7a6; font-size: var(--type-caption);
-    font-weight: 900; font-variant-numeric: tabular-nums; text-align: center;
-  }
-  #map-search-status[hidden] { display: none; }
-  /* The sky bar rides above the lower-left search and zoom instruments and is
+  /* The visible-tile search lives in the command deck's lower-left stack
+     (lenses, search, shortcuts) — its panel styles sit with the deck rules.
+     Only the sky bar floats here. It rides above the zoom instruments and is
      taken out of the dock's flow to get there: the dock is the map's bottom
-     strip and its height is a reservation the framing already pays for, so a
-     second row in the flow would have moved the world every time the camera
-     left the globe. Standing over the map instead costs nothing, and the sky
-     keeps its captions clear of the bar the same way it does of every other
-     widget. */
+     strip, so a second row in the flow would have moved the world every time
+     the camera left the globe. Standing over the map instead costs nothing,
+     and the sky keeps its captions clear of the bar the same way it does of
+     every other widget. */
   #skynav {
-    position: absolute; z-index: 1; left: 0;
-    bottom: calc(100% + var(--panel-control-height) + var(--panel-gap));
-    max-width: 100%; display: flex; flex-wrap: wrap; align-items: center;
+    position: static; z-index: auto; align-self: stretch;
+    width: 100%; max-width: 100%; display: flex; flex-wrap: wrap; align-items: center;
     gap: 4px; padding: 5px; border-radius: 13px;
     background: #0a1512d8; border: 1px solid #3c554c;
     box-shadow: 0 12px 26px #0006; backdrop-filter: blur(12px);
@@ -1711,6 +1763,13 @@
     color: #b9c8c2; font-size: var(--type-secondary); font-weight: 900; letter-spacing: .10em;
     text-transform: uppercase;
   }
+  /* The Peirce chart needs the whole square, not a square with a title row
+     stolen from its north edge. Keep the label as chrome over the chart while
+     retaining its drag target and keyboard affordance. */
+  .minimap-frame.minimap-world-planet .minimap-label {
+    position: absolute; z-index: 2; top: 6px; left: 6px; right: 6px;
+    pointer-events: auto;
+  }
   .minimap-label.widget-drag-handle::before { position: absolute; left: 3px; }
   .minimap-hint {
     position: absolute; z-index: 1; right: 10px; bottom: 9px; padding: 2px 4px;
@@ -2123,11 +2182,104 @@
     overflow: hidden; color: var(--faint); font-size: var(--type-label); font-weight: 650;
     letter-spacing: .02em; text-overflow: ellipsis; text-transform: none; white-space: nowrap;
   }
+  .era-mods-settings { margin-top: 0; }
+  .era-mods-body {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px;
+    padding: 10px 10px 11px; align-items: end;
+  }
+  .era-mod-option { margin: 0; }
+  .era-future-setting { min-width: 0; }
+  .custom-leader-selection {
+    grid-column: 1 / -1; min-width: 0; padding: 9px 10px 10px;
+    border: 1px solid var(--line-soft); border-radius: 9px; background: #07100e99;
+  }
+  .custom-leader-help { margin: -1px 0 9px; color: var(--faint); line-height: 1.4; }
+  .custom-leader-table-wrap { overflow-x: auto; }
+  .custom-leader-table {
+    width: 100%; min-width: 360px; border-collapse: collapse; table-layout: fixed;
+  }
+  .custom-leader-table th {
+    padding: 0 6px 6px; color: var(--faint); font-size: var(--type-label);
+    font-weight: 850; letter-spacing: .08em; text-align: left; text-transform: uppercase;
+  }
+  .custom-leader-table td {
+    padding: 6px; border-top: 1px solid #ffffff0d; vertical-align: middle;
+  }
+  .custom-leader-table th:first-child, .custom-leader-table td:first-child { width: 76px; }
+  .custom-leader-table th:last-child, .custom-leader-table td:last-child { width: 112px; }
+  .custom-leader-table select { width: 100%; min-width: 0; }
+  .custom-leader-team { color: var(--muted); font-size: var(--type-small); font-weight: 750; }
+  .custom-leader-empty {
+    padding: 9px 6px; color: var(--faint); font-size: var(--type-small); text-align: center;
+  }
+  .display-settings-group {
+    width: 100%; margin-top: 8px; overflow: hidden;
+    border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080;
+  }
+  .display-settings-group > summary {
+    min-height: 38px; display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 10px 11px; color: var(--muted); cursor: pointer;
+    list-style: none; font-size: var(--type-small); font-weight: 850;
+    letter-spacing: .09em; text-transform: uppercase; user-select: none;
+  }
+  .display-settings-group > summary::-webkit-details-marker { display: none; }
+  .display-settings-group > summary::after {
+    content: "+"; flex: 0 0 auto; color: var(--gold); font-size: var(--type-body); line-height: 1;
+  }
+  .display-settings-group[open] > summary { border-bottom: 1px solid var(--line-soft); color: var(--text); }
+  .display-settings-group[open] > summary::after { content: "−"; }
+  .display-settings-group-body {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    padding: 10px 10px 11px; align-items: end;
+  }
+  .display-settings-group-body > .setting-row,
+  .display-settings-group-body > .speed-row,
+  .display-settings-group-body > .overlay-options,
+  .display-settings-group-body > .performance-stats,
+  .display-settings-group-body > .performance-host-telemetry { grid-column: 1 / -1; }
+  .display-settings-group-body > .setting-row,
+  .display-settings-group-body > .speed-row { margin-top: 2px; }
+  .display-settings-group-body > .overlay-options { margin-top: 0; padding-top: 0; border-top: 0; }
+  .performance-stats {
+    overflow: hidden; border: 1px solid var(--line-soft); border-radius: 9px; background: #07100e99;
+  }
+  .performance-stat-row {
+    display: grid; grid-template-columns: minmax(74px, .34fr) minmax(0, 1fr);
+    align-items: baseline; gap: 9px; min-width: 0; padding: 8px 9px;
+    border-bottom: 1px solid #ffffff0d;
+  }
+  .performance-stat-row:last-of-type { border-bottom: 0; }
+  .performance-stat-name {
+    color: var(--muted); font-size: var(--type-small); font-weight: 850;
+    letter-spacing: .07em; text-transform: uppercase;
+  }
+  .performance-stat-value {
+    min-width: 0; color: #c7d3cc; font: 750 var(--type-small)/1.3 var(--font-ui);
+    font-variant-numeric: tabular-nums; overflow-wrap: anywhere; text-align: right;
+  }
+  .performance-stat-note {
+    padding: 8px 9px; color: var(--faint); font-size: var(--type-label); line-height: 1.38;
+  }
+  .performance-host-telemetry {
+    overflow: hidden; border: 1px solid var(--line-soft); border-radius: 9px; background: #07100e99;
+  }
+  .performance-host-telemetry > summary {
+    min-height: 35px; display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; padding: 8px 9px; color: var(--muted); cursor: pointer;
+    list-style: none; font-size: var(--type-small); font-weight: 850;
+    letter-spacing: .07em; text-transform: uppercase; user-select: none;
+  }
+  .performance-host-telemetry > summary::-webkit-details-marker { display: none; }
+  .performance-host-telemetry > summary::after { content: "+"; color: var(--gold); font-size: var(--type-body); }
+  .performance-host-telemetry[open] > summary { border-bottom: 1px solid var(--line-soft); color: var(--text); }
+  .performance-host-telemetry[open] > summary::after { content: "−"; }
+  .performance-host-telemetry > .machine-loads { margin: 0; border: 0; border-radius: 0; background: transparent; }
   .advanced-settings-body {
     display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
     padding: 10px 10px 11px; align-items: end;
   }
   .advanced-settings-body > .mod-options,
+  .advanced-settings-body > .custom-leader-selection,
   .advanced-settings-body > .overlay-options,
   .advanced-settings-body > .setting-row,
   .advanced-settings-body > .resource-display-setting { grid-column: 1 / -1; }
@@ -2411,18 +2563,19 @@
        without disturbing the shares; and each enclosing track is the exact sum
        of the columns inside it, which is what lets one bar move width out of
        the last identity column and into the first value column. */
-    /* The label floor narrows with the screen; the figure floors do not. Elo is
-       a signed score, not a four-digit display: 60px keeps five digits, a
-       possible minus sign, the cell inset and its divider whole at the fitter's
-       13px ceiling. `syncPlayerHudEloFloor()` raises that floor before layout
-       when a live rating needs more. A label that gives up width ellipsizes and
-       keeps its tooltip, where a figure that gives up width becomes a smaller
-       number that is simply wrong. The odds cell carries two separately aligned
-       figures and the arrow between them, so it stands on a wider floor of its
-       own: 76px keeps the longer START label and both numeric tracks whole at
-       the fitter's 9px floor. Each breakpoint below moves the label floor only,
-       and keeps the five labels, two figure cells, and fixed rank track adding
-       up to what the identity block claims at that width. */
+    /* The label floor narrows with the screen; the figure floors do not. Elo and
+       its live position delta are signed scores, not four-digit displays: 60px
+       keeps five digits, a possible minus sign, the cell inset and its divider
+       whole at the fitter's 13px ceiling. `syncPlayerHudEloFloor()` raises that
+       floor before layout when either live value needs more. A label that gives
+       up width ellipsizes and keeps its tooltip, where a figure that gives up
+       width becomes a smaller number that is simply wrong. The odds cell carries
+       two separately aligned figures and the arrow between them, so it stands on
+       a wider floor of its own: 76px keeps the longer START label and both
+       numeric tracks whole at the fitter's 9px floor. Each breakpoint below
+       moves the label floor only, and keeps the five labels, two figure cells,
+       odds cell and fixed rank track adding up to what the identity block claims
+       at that width. */
     --hud-ident-min: 30px; --hud-ident-num-min: 60px; --hud-ident-odds-min: 76px;
     --hud-rank-min: 30px;
     /* How much of the flexible width the identity block asks for relative to
@@ -2432,24 +2585,25 @@
     --hud-identity-bias: 1;
     --hud-identity-column: minmax(
       calc(var(--hud-rank-min) + var(--hud-ident-min) * 5
-           + var(--hud-ident-num-min) + var(--hud-ident-odds-min)), 12.087fr);
+           + var(--hud-ident-num-min) * 2 + var(--hud-ident-odds-min)), 12.937fr);
     /* Twelve cells and the eleven gutters between them. */
     --hud-stats-column: minmax(
       calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), 12fr);
     --hud-column-gap: 6px;
     /* Rank has its own dedicated column. Civilization, leader, player, age and the
-       plan are labels, and their cells ellipsize. Elo and the odds pair are
-       figures on the taller floors: with no minimum at all they collapsed on a
-       1440px screen and rendered "1792" as "179" and "11%" as "1" — a
-       truncated number that reads as a different, smaller number. Watch-as
-       keeps its fixed track between Leader and Player, which is why the bar
-       for that seam is drawn on Leader's edge. Its extra four-pixel tail is the
-       visual gutter before Player. */
+       plan are labels, and their cells ellipsize. Elo, its live delta and the
+       odds pair are figures on the taller floors: with no minimum at all they
+       collapsed on a 1440px screen and rendered "1792" as "179" and "11%" as
+       "1" — a truncated number that reads as a different, smaller number.
+       Watch-as keeps its fixed track between Leader and Player, which is why the
+       bar for that seam is drawn on Leader's edge. Its extra four-pixel tail is
+       the visual gutter before Player. */
     --hud-identity-tracks:
       minmax(var(--hud-rank-min), .7fr) minmax(var(--hud-ident-min), 2.035fr)
       minmax(var(--hud-ident-min), 1.85fr) var(--hud-watch-column)
       minmax(var(--hud-ident-min), 1.85fr)
       minmax(var(--hud-ident-num-min), 1.017fr)
+      minmax(var(--hud-ident-num-min), .85fr)
       minmax(var(--hud-ident-odds-min), 1.3fr)
       minmax(var(--hud-ident-min), 1.3fr)
       minmax(var(--hud-ident-min), 2.035fr);
@@ -2674,7 +2828,7 @@
   #playerhud .diplomacy-rank { grid-column: 1; grid-row: 1; }
   #playerhud .diplomacy-civ-link { grid-column: 2; grid-row: 1; }
   #playerhud .diplomacy-leader-link { grid-column: 3; grid-row: 1; }
-  #playerhud .diplomacy-identity-secondary { grid-column: 5 / 10; grid-row: 1; }
+  #playerhud .diplomacy-identity-secondary { grid-column: 5 / 11; grid-row: 1; }
   #playerhud .diplomacy-stats { grid-column: 4; grid-row: 1; }
 
   /* Locking a seat keeps its row in view while the rest of the table scrolls
@@ -2705,13 +2859,14 @@
   }
   /* Every identity fact uses the same tracks as the heading above it.
      Variable-length names can ellipsize inside their own cell without moving
-     ELO, win odds or strategy to a different horizontal position on each row. */
+     ELO, its live delta, win odds or strategy to a different horizontal
+     position on each row. */
   #playerhud .diplomacy-identity {
     position: relative; min-width: 0; display: grid;
     align-items: stretch; gap: 0; overflow: hidden; padding-block: 0;
   }
-  /* Player, ELO, WIN%, AGE and PLAN are five of the identity block's tracks,
-     but they are drawn inside one button that spans all five — so the button has
+  /* Player, ELO, ELO Δ, WIN%, AGE and PLAN are six of the identity block's tracks,
+     but they are drawn inside one button that spans all six — so the button has
      to divide itself along exactly the lines its parent already drew.
      `subgrid` is what makes that literal. A copy of the ratios cannot be:
      the shares here are `1 : .55 : .55 : .7 : 1.1`, which is the same proportion
@@ -2724,9 +2879,9 @@
        11.5px to the left of it.
      - **The seam bars.** A drag rewrites `--hud-identity-tracks`, which is
        the heading's list *and* this block's parent — but a copy of the old
-       ratios does not hear about it at all. Dragging the ELO/WIN% bar 26px on
+       ratios does not hear about it at all. Dragging the ELO/Δ bar 26px on
        a 1920px screen moved the head 21px and left every figure where it was.
-     With subgrid these five tracks are not equal to the heading's, they are
+     With subgrid these six tracks are not equal to the heading's, they are
      the same tracks, so no drag and no floor can separate them again. */
   #playerhud .diplomacy-identity-secondary {
     grid-template-columns: subgrid;
@@ -2749,11 +2904,13 @@
   #playerhud .diplomacy-player { color: #d9e1dc; font-weight: 750; }
   #playerhud .diplomacy-civ, #playerhud .diplomacy-leader-name,
   #playerhud .diplomacy-player, #playerhud .diplomacy-elo-value,
+  #playerhud .diplomacy-elo-delta-value,
   #playerhud .diplomacy-expected-value, #playerhud .diplomacy-age .civ-age,
   #playerhud .diplomacy-strategy .ai-plan {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  #playerhud .diplomacy-elo, #playerhud .diplomacy-expected {
+  #playerhud .diplomacy-elo, #playerhud .diplomacy-elo-delta,
+  #playerhud .diplomacy-expected {
     justify-content: flex-end; text-align: right; font-variant-numeric: tabular-nums;
   }
   #playerhud .diplomacy-age .civ-age { display: block; color: #c7d3ce; font-weight: 850; }
@@ -3037,7 +3194,6 @@
       left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: auto; bottom: var(--panel-controls-clearance);
       width: var(--compact-minimap-width); height: var(--compact-minimap-height);
     }
-    .minimap-frame.minimap-world-planet { width: 164px; height: 150px; }
     #victoryhud .hud-rail { overflow-x: auto; overflow-y: hidden; }
     #victoryhud .victory-ribbon {
       min-height: 0; width: max(100%, var(--victory-min-width, 514px));
@@ -3079,41 +3235,26 @@
     left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: auto; bottom: var(--panel-controls-clearance);
     width: var(--compact-minimap-width); height: var(--compact-minimap-height);
   }
-  #maparea.player-hud-compact .minimap-frame.minimap-world-planet { width: 164px; height: 150px; }
   /* The lower instruments have two compact arrangements. A normal quadrant
-     has enough width to place search beside the minimap; a narrow, tall split
-     instead puts search in the clear vertical lane above it. JavaScript picks
+     has enough width to place the sky bar beside the minimap; a narrow, tall
+     split instead puts it in the clear vertical lane above. JavaScript picks
      the mode from the *uncovered* map width and the real space between the
      victory band and minimap, so neither control floats over the world map. */
-  #maparea.player-hud-compact[data-controls-layout="inline"] #map-search {
-    left: calc(var(--compact-minimap-width) + var(--panel-gap)); right: auto;
-    width: min(310px, calc(100% - var(--compact-minimap-width) - var(--panel-gap)));
-  }
   #maparea.player-hud-compact[data-controls-layout="inline"] #skynav {
     left: calc(var(--compact-minimap-width) + var(--panel-gap));
     max-width: calc(100% - var(--compact-minimap-width) - var(--panel-gap));
   }
-  #maparea.player-hud-compact[data-controls-layout="stacked"] #map-search {
-    left: 0; right: 0; width: auto;
-    bottom: calc(100% + var(--compact-minimap-height) + 2 * var(--panel-gap));
-  }
   #maparea.player-hud-compact[data-controls-layout="stacked"] #skynav {
     left: 0; max-width: 100%;
-    bottom: calc(100% + var(--compact-minimap-height) + 2 * var(--panel-gap) + var(--panel-control-height));
+    bottom: calc(100% + var(--compact-minimap-height) + 2 * var(--panel-gap));
   }
-  /* If the viewer dismisses the minimap, return its former share to search
-     regardless of which compact mode the last resize selected. */
-  body.overlay-minimap-hidden #maparea.player-hud-compact[data-controls-layout="inline"] #map-search {
-    left: 0; width: min(310px, 100%);
-  }
+  /* If the viewer dismisses the minimap, return its former share to the sky
+     bar regardless of which compact mode the last resize selected. */
   body.overlay-minimap-hidden #maparea.player-hud-compact[data-controls-layout="inline"] #skynav {
     left: 0; max-width: 100%;
   }
-  body.overlay-minimap-hidden #maparea.player-hud-compact[data-controls-layout="stacked"] #map-search {
-    bottom: calc(100% + var(--panel-gap));
-  }
   body.overlay-minimap-hidden #maparea.player-hud-compact[data-controls-layout="stacked"] #skynav {
-    bottom: calc(100% + var(--panel-control-height) + var(--panel-gap));
+    bottom: calc(100% + var(--panel-gap));
   }
   #maparea.player-hud-compact #victoryhud .hud-rail { overflow-x: auto; overflow-y: hidden; }
   #maparea.player-hud-compact #victoryhud .victory-ribbon {
@@ -3548,15 +3689,19 @@
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="dossier-windows" aria-label="Open player dossiers"></div>
   <div id="map-controls-dock">
-    <!-- Left to right: collapse the deck, set the map area, face north, zoom
-         in, zoom out, choose a sky destination, and dismiss. -->
+    <!-- Primary row: collapse the deck, set the map area, face north, zoom in,
+         zoom out, and dismiss. Planet navigation appears in the second row
+         below when the globe has a route to offer. -->
     <div id="zoomctl">
-      <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
-      <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
-      <button id="mapareaset" type="button" aria-pressed="false" title="Set map area — drag the four edges" aria-label="Set map area">⛶</button>
-      <button id="compass" type="button" title="Face north" aria-label="Face north"><span id="compass-needle"></span></button>
-      <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
-      <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
+      <div id="zoomctl-main">
+        <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
+        <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
+        <button id="mapareaset" type="button" aria-pressed="false" title="Set map area — drag the four edges" aria-label="Set map area">⛶</button>
+        <button id="compass" type="button" title="Face north" aria-label="Face north"><span id="compass-needle"></span></button>
+        <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
+        <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
+        <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display Settings" title="Hide map controls · restore in Display Settings">✕</button>
+      </div>
       <div id="skynav" hidden role="group" aria-label="Sky controls">
         <div class="skynav-group" id="skynav-worlds" role="group" aria-label="Worlds"></div>
         <div class="skynav-group" id="skynav-scales" role="group" aria-label="Route"></div>
@@ -3566,7 +3711,6 @@
           <span id="skyspan">—</span>
         </div>
       </div>
-      <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display Settings" title="Hide map controls · restore in Display Settings">✕</button>
     </div>
   </div>
   <div id="map-area-editor" hidden aria-label="Set map area">
@@ -3781,21 +3925,6 @@
       </summary>
       <div class="sec settings-sec" id="display-settings">
       <div class="utility-group">
-        <div class="machine-loads" id="machine-loads" aria-label="Machine resource usage">
-          <div class="machine-load-row" id="cpu-load-row">
-            <span class="machine-load-name" id="cpu-load-name" title="Host-wide CPU usage on the machine serving this viewer">CPU</span>
-            <div class="machine-load-meter" id="cpu-load-meter" role="progressbar" aria-labelledby="cpu-load-name" aria-valuemin="0" aria-valuemax="100"><span id="cpu-load-fill"></span></div>
-            <output class="machine-load-value" id="cpu-load-value">Sampling…</output>
-            <label class="machine-load-cap"><span>Cap</span><select id="cpu-load-cap" aria-label="CPU usage cap"><option value="10">10%</option><option value="20">20%</option><option value="30">30%</option><option value="40">40%</option><option value="50">50%</option><option value="60">60%</option><option value="70" selected>70%</option><option value="80">80%</option><option value="90">90%</option></select></label>
-          </div>
-          <div class="machine-load-row" id="memory-load-row">
-            <span class="machine-load-name" id="memory-load-name" title="Host-wide memory usage on the machine serving this viewer">Memory</span>
-            <div class="machine-load-meter" id="memory-load-meter" role="progressbar" aria-labelledby="memory-load-name" aria-valuemin="0" aria-valuemax="100"><span id="memory-load-fill"></span></div>
-            <output class="machine-load-value" id="memory-load-value">Sampling…</output>
-            <label class="machine-load-cap"><span>Cap</span><select id="memory-load-cap" aria-label="Memory usage cap"><option value="10">10%</option><option value="20">20%</option><option value="30">30%</option><option value="40">40%</option><option value="50">50%</option><option value="60">60%</option><option value="70" selected>70%</option><option value="80">80%</option><option value="90">90%</option></select></label>
-          </div>
-          <div class="display-load-advice" id="display-load-advice" role="status" aria-live="polite">Sampling the machine serving this viewer…</div>
-        </div>
         <div class="observer-settings" id="observer-settings">
           <div class="view-row"><span>Watch as</span>
             <select id="viewplayer" aria-label="Observation perspective">
@@ -3821,52 +3950,89 @@
               <option value="10000" selected>10s</option>
             </select>
           </div>
-          <div class="speed-row render-resolution-row"><span>Render resolution</span>
-            <select id="renderresolution" aria-label="Map render resolution"
-                    title="Changes map and minimap sharpness; does not change simulation speed">
-              <option value="native" selected>Native</option>
-              <option value="balanced">Balanced</option>
-              <option value="performance">Performance</option>
-            </select>
+        </div>
+        <details class="display-settings-group" id="map-options-settings" data-advanced-settings="display-map">
+          <summary><span class="advanced-settings-summary">Map options<small>Tile detail, animations &amp; map edges</small></span></summary>
+          <div class="display-settings-group-body">
+            <label class="setting-row"><span><input type="checkbox" id="gridchk"> Show the hex grid</span></label>
+            <label class="setting-row"><span><input type="checkbox" id="reschk"> Show resource markers</span></label>
+            <div class="speed-row resource-display-setting">
+              <span>Resource mode</span>
+              <select id="resourcedisplay" aria-label="Resource display" title="Show each resource as a symbol and word, or as the existing symbol only">
+                <option value="symbol_word" selected>Symbol &amp; word</option>
+                <option value="symbol">Symbol</option>
+              </select>
+            </div>
+            <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span></label>
+            <label class="setting-row"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
+            <label class="setting-row"><span><input type="checkbox" id="rocketanimchk" checked> Show rocket &amp; satellite animations</span></label>
+            <label class="setting-row"><span><input type="checkbox" id="inertiachk" checked> Enable world pan inertia</span></label>
+            <div class="overlay-options" id="flat-map-wrap-settings" role="group"
+                 aria-labelledby="flat-map-wrap-title">
+              <h2 id="flat-map-wrap-title">Flat map wraparound</h2>
+              <div class="overlay-option-grid">
+                <label class="overlay-option"><input type="checkbox" id="wrapxchk" checked>Left–right wraparound</label>
+                <label class="overlay-option"><input type="checkbox" id="wrapychk">Top–bottom wraparound</label>
+              </div>
+            </div>
           </div>
-        </div>
-        <label class="setting-row display-advanced-setting" data-advanced-order="10"><span><input type="checkbox" id="gridchk"> Show the hex grid</span></label>
-        <label class="setting-row display-advanced-setting" data-advanced-order="20"><span><input type="checkbox" id="reschk"> Show resource markers</span></label>
-        <div class="speed-row display-advanced-setting resource-display-setting" data-advanced-order="25">
-          <span>Resource mode</span>
-          <select id="resourcedisplay" aria-label="Resource display" title="Show each resource as a symbol and word, or as the existing symbol only">
-            <option value="symbol_word" selected>Symbol &amp; word</option>
-            <option value="symbol">Symbol</option>
-          </select>
-        </div>
-        <label class="setting-row display-advanced-setting" data-advanced-order="30"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span></label>
-        <label class="setting-row display-advanced-setting" data-advanced-order="40"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
-        <label class="setting-row display-advanced-setting" data-advanced-order="45"><span><input type="checkbox" id="rocketanimchk" checked> Show rocket &amp; satellite animations</span></label>
-        <label class="setting-row display-advanced-setting" data-advanced-order="47"><span><input type="checkbox" id="inertiachk" checked> Enable world pan inertia</span></label>
-        <div class="overlay-options display-advanced-setting" data-advanced-order="50" role="group" aria-labelledby="overlay-options-title">
-          <h2 id="overlay-options-title">Map overlays</h2>
-          <div class="small overlay-layout-help">Drag a title bar to move an overlay; drag any edge or corner to resize. Your layout saves automatically.</div>
-          <div class="small overlay-layout-help">In the standings, drag a thin bar in the column heading to divide two columns differently; double-click one to put that pair back. Widths are shares of the panel, so they follow it as the window resizes. ◉ locks a row: it stays in view while the rest of the table scrolls past it. Two seats of the same civilization lock separately, and a lock is remembered into the next game.</div>
-          <div class="overlay-option-grid">
-            <label class="overlay-option"><input type="checkbox" data-overlay="players" checked>Player standings</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory tracker</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="minimap" checked>World minimap</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="controls" checked>Map controls</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="lenses" checked>Map lenses</label>
+        </details>
+        <details class="display-settings-group" id="map-overlays-settings" data-advanced-settings="display-overlays">
+          <summary><span class="advanced-settings-summary">Map overlays<small>Choose the information panels shown over the map</small></span></summary>
+          <div class="display-settings-group-body">
+            <div class="overlay-options" role="group" aria-labelledby="overlay-options-title">
+              <h2 id="overlay-options-title">Visible overlays</h2>
+              <div class="small overlay-layout-help">Drag a title bar to move an overlay; drag any edge or corner to resize. Your layout saves automatically.</div>
+              <div class="small overlay-layout-help">In the standings, drag a thin bar in the column heading to divide two columns differently; double-click one to put that pair back. Widths are shares of the panel, so they follow the window size. ◉ locks a row in view; locks are remembered into the next game.</div>
+              <div class="overlay-option-grid">
+                <label class="overlay-option"><input type="checkbox" data-overlay="players" checked>Player standings</label>
+                <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory tracker</label>
+                <label class="overlay-option"><input type="checkbox" data-overlay="minimap" checked>World minimap</label>
+                <label class="overlay-option"><input type="checkbox" data-overlay="controls" checked>Map controls</label>
+                <label class="overlay-option"><input type="checkbox" data-overlay="lenses" checked>Map lenses</label>
+              </div>
+              <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions, sizes &amp; columns</button>
+            </div>
           </div>
-          <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions, sizes &amp; columns</button>
-        </div>
-        <div class="overlay-options display-advanced-setting" data-advanced-order="60" id="flat-map-wrap-settings" role="group"
-             aria-labelledby="flat-map-wrap-title">
-          <h2 id="flat-map-wrap-title">Flat map wraparound</h2>
-          <div class="overlay-option-grid">
-            <label class="overlay-option"><input type="checkbox" id="wrapxchk" checked>Left–right wraparound</label>
-            <label class="overlay-option"><input type="checkbox" id="wrapychk">Top–bottom wraparound</label>
+        </details>
+        <details class="display-settings-group" id="performance-options-settings" data-advanced-settings="display-performance">
+          <summary><span class="advanced-settings-summary">Performance options<small>Resolution, viewer timing &amp; workload</small></span></summary>
+          <div class="display-settings-group-body">
+            <div class="speed-row render-resolution-row"><span>Render resolution</span>
+              <select id="renderresolution" aria-label="Map render resolution"
+                      title="Changes map and minimap sharpness; does not change simulation speed">
+                <option value="native" selected>Native</option>
+                <option value="balanced">Balanced</option>
+                <option value="performance">Performance</option>
+              </select>
+            </div>
+            <div class="performance-stats" id="performance-stats" aria-label="Viewer performance statistics">
+              <div class="performance-stat-row"><span class="performance-stat-name">Render</span><output class="performance-stat-value" id="performance-render-value">Sampling…</output></div>
+              <div class="performance-stat-row"><span class="performance-stat-name">Slow frames</span><output class="performance-stat-value" id="performance-slow-value">Sampling…</output></div>
+              <div class="performance-stat-row"><span class="performance-stat-name">Simulation</span><output class="performance-stat-value" id="performance-simulation-value">Not available</output></div>
+              <div class="performance-stat-row"><span class="performance-stat-name">Canvas</span><output class="performance-stat-value" id="performance-canvas-value">Sampling…</output></div>
+              <div class="performance-stat-row"><span class="performance-stat-name">Workload</span><output class="performance-stat-value" id="performance-workload-value">Waiting for a map…</output></div>
+              <div class="performance-stat-note" id="performance-recommendation" role="status" aria-live="polite">Measuring viewer performance…</div>
+            </div>
+            <details class="performance-host-telemetry" id="host-resource-details" data-advanced-settings="display-host">
+              <summary><span class="advanced-settings-summary">Host telemetry<small>Native server only · optional context</small></span></summary>
+              <div class="machine-loads" id="machine-loads" aria-label="Host resource usage">
+                <div class="machine-load-row" id="cpu-load-row">
+                  <span class="machine-load-name" id="cpu-load-name" title="Host-wide CPU usage on the machine serving this viewer">CPU</span>
+                  <div class="machine-load-meter" id="cpu-load-meter" role="progressbar" aria-labelledby="cpu-load-name" aria-valuemin="0" aria-valuemax="100"><span id="cpu-load-fill"></span></div>
+                  <output class="machine-load-value" id="cpu-load-value">Sampling…</output>
+                  <label class="machine-load-cap"><span>Warn</span><select id="cpu-load-cap" aria-label="CPU usage warning threshold"><option value="10">10%</option><option value="20">20%</option><option value="30">30%</option><option value="40">40%</option><option value="50">50%</option><option value="60">60%</option><option value="70" selected>70%</option><option value="80">80%</option><option value="90">90%</option></select></label>
+                </div>
+                <div class="machine-load-row" id="memory-load-row">
+                  <span class="machine-load-name" id="memory-load-name" title="Host-wide memory usage on the machine serving this viewer">Memory</span>
+                  <div class="machine-load-meter" id="memory-load-meter" role="progressbar" aria-labelledby="memory-load-name" aria-valuemin="0" aria-valuemax="100"><span id="memory-load-fill"></span></div>
+                  <output class="machine-load-value" id="memory-load-value">Sampling…</output>
+                  <label class="machine-load-cap"><span>Warn</span><select id="memory-load-cap" aria-label="Memory usage warning threshold"><option value="10">10%</option><option value="20">20%</option><option value="30">30%</option><option value="40">40%</option><option value="50">50%</option><option value="60">60%</option><option value="70" selected>70%</option><option value="80">80%</option><option value="90">90%</option></select></label>
+                </div>
+                <div class="display-load-advice" id="display-load-advice" role="status" aria-live="polite">Sampling the machine serving this viewer…</div>
+              </div>
+            </details>
           </div>
-        </div>
-        <details class="advanced-settings" id="display-advanced-settings" data-advanced-settings="display">
-          <summary><span class="advanced-settings-summary">Advanced Settings<small>Tile layers, spaceflight, overlay layout, map edges &amp; archaeology</small></span></summary>
-          <div class="advanced-settings-body" id="display-advanced-settings-body"></div>
         </details>
       </div>
       </div>
@@ -3878,14 +4044,6 @@
       </summary>
       <div class="sec settings-sec" id="game-settings">
       <div id="newgame-options">
-        <label class="small game-advanced-setting" data-advanced-order="10">Base game ruleset<select id="baseruleset" style="margin-top:4px">
-          <option value="civ6" selected>Civ 6</option>
-        </select></label>
-        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="20">Leader Pool<select id="leaderpool" style="margin-top:4px">
-          <option value="civ6" selected>Civ 6 Leaders</option>
-          <option value="historical">Expanded Historical Figures</option>
-          <option value="today" disabled>Today's Leaders — roster pending</option>
-        </select></label>
         <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
           <option value="single">Single player</option>
@@ -3896,18 +4054,14 @@
           <div class="civ6-line"><span class="civ6-dot"></span><span id="civ6-host">Checking this computer…</span></div>
           <div class="civ6-line civ6-run" id="civ6-run" hidden></div>
         </div>
-        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="30">Teams<select id="teams" style="margin-top:4px"
-          title="Permanent pre-game teams. Teammates share sight, pass each other the Eureka for a technology they have not researched, fight the same wars and win together.">
-          <option value="ffa" selected>Free-for-all</option>
-          <option value="2">2 teams</option>
-          <option value="3">3 teams</option>
-          <option value="4">4 teams</option>
-          <option value="pairs">Pairs</option>
+        <label class="small">World size<select id="np" style="margin-top:4px">
+          <option value="2">Duel · 2 civs · 3 city-states · 44×26</option>
+          <option value="4">Tiny · 4 civs · 6 city-states · 60×38</option>
+          <option value="6" selected>Small · 6 civs · 9 city-states · 74×46</option>
+          <option value="8">Standard · 8 civs · 12 city-states · 84×54</option>
+          <option value="10">Large · 10 civs · 15 city-states · 96×60</option>
+          <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
         </select></label>
-        <label class="small human-setting civ6-hidden">Leader<select id="leader" style="margin-top:4px">
-          <option value="">Random</option>
-        </select></label>
-        <label class="small human-setting">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
         <label class="small civ6-hidden">World shape<select id="mapshape" style="margin-top:4px">
           <option value="flat">Flat</option>
           <option value="planet" selected>Planet</option>
@@ -3916,6 +4070,7 @@
           <option value="land_only">Land Only</option>
           <option value="lakes">Lakes</option>
           <option value="inland_sea">Inland Sea</option>
+          <option value="tenins_ball">Tenins Ball</option>
           <option value="grand_canals">Grand Canals</option>
           <option value="grand_canals_2">Grand Canals II</option>
           <option value="pangaea">Pangaea</option>
@@ -3927,25 +4082,20 @@
           <option value="islands">Islands</option>
           <option value="water_world">Water World</option>
         </select></label>
-        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="40">Thermal distribution<select id="mappoles" style="margin-top:4px">
-          <option value="poles">Hot equator, cold poles</option>
-          <option value="randomized">Randomized</option>
-        </select></label>
-        <label class="small">World size<select id="np" style="margin-top:4px">
-          <option value="2">Duel · 2 civs · 3 city-states · 44×26</option>
-          <option value="4" selected>Tiny · 4 civs · 6 city-states · 60×38</option>
-          <option value="6">Small · 6 civs · 9 city-states · 74×46</option>
-          <option value="8">Standard · 8 civs · 12 city-states · 84×54</option>
-          <option value="10">Large · 10 civs · 15 city-states · 96×60</option>
-          <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
-        </select></label>
-        <label class="small civ6-hidden">City-states<input id="citystates" type="number" min="0" max="182" step="1"
-          inputmode="numeric" placeholder="Map default" aria-describedby="citystates-hint"
-          title="Leave blank to use the map-size default; enter 0 for no city-states"><small class="setup-number-hint" id="citystates-hint">Leave blank to use the map-size default.</small></label>
         <label class="small civ6-hidden">Start era<select id="startera" style="margin-top:4px">
           <option value="stone_age" disabled>Stone Age · later</option>
           <option value="ancient" selected>Ancient</option>
         </select></label>
+        <details class="advanced-settings era-mods-settings civ6-hidden" id="era-mods-settings" data-advanced-settings="era-mods">
+          <summary><span class="advanced-settings-summary">Era mods<small>Ice Age and future-era rules</small></span></summary>
+          <div class="era-mods-body">
+            <label class="mod-option era-mod-option"><input type="checkbox" id="iceagemod" disabled><span>Ice Age<small>Later</small></span></label>
+            <label class="small era-future-setting">Future era<select id="futureera" style="margin-top:4px">
+              <option value="classic" selected>Regular Future Era</option>
+              <option value="modified" disabled>Modified Future Era · later</option>
+            </select></label>
+          </div>
+        </details>
         <label class="small">Game speed<select id="gamespeed" style="margin-top:4px">
           <option value="online" selected>Online · 250 turns</option>
           <option value="quick">Quick · 330 turns</option>
@@ -3953,12 +4103,9 @@
           <option value="epic">Epic · 750 turns</option>
           <option value="marathon">Marathon · 1500 turns</option>
         </select></label>
-        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="50">Turn limit<input id="turnlimit" type="number" min="1" max="4294967295" step="1"
+        <label class="small civ6-hidden">Custom turn cap<input id="turnlimit" type="number" min="1" max="4294967295" step="1"
           inputmode="numeric" placeholder="Speed default" aria-describedby="turnlimit-hint"
           title="Leave blank to use the selected game speed's normal turn limit"><small class="setup-number-hint" id="turnlimit-hint">Leave blank to use the selected game speed's normal turn limit.</small></label>
-        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="60">Map seed<input id="mapseed" type="number" min="0" max="9007199254740991" step="1"
-          inputmode="numeric" placeholder="Random" aria-describedby="mapseed-hint"
-          title="Leave blank for a fresh random map; use a seed to replay one exactly"><small class="setup-number-hint" id="mapseed-hint">Leave blank for a fresh random map.</small></label>
         <div class="utility-group" id="saves-group" style="display:none">
           <div class="city-group-head" style="margin-bottom:6px">Saved games<span id="saves-count"></span></div>
           <div id="saves-list"></div>
@@ -3979,35 +4126,77 @@
             <label class="victory-option"><input type="checkbox" id="victory-score" checked>Score</label>
           </div>
         </div>
-        <label class="small civ6-hidden">Future Era<select id="futureera" style="margin-top:4px">
-          <option value="classic" selected>Classic Future Era</option>
+        <label class="small game-advanced-setting" data-advanced-order="10">Base game ruleset<select id="baseruleset" style="margin-top:4px">
+          <option value="civ6" selected>Civ 6</option>
         </select></label>
-        <div class="mod-options game-advanced-setting civ6-hidden" data-advanced-order="90"
-             role="group" aria-labelledby="mod-options-title">
-          <h2 id="mod-options-title">Mods</h2>
-          <div class="small mod-help">Tournament defaults are preselected. These choices are saved for the upcoming per-game mod loader; the active server ruleset is unchanged for now.</div>
-          <div class="mod-tier">
-            <div class="mod-tier-title">Civ 6 tournament defaults</div>
-            <div class="mod-option-grid">
-              <label class="mod-option"><input type="checkbox" data-game-mod="bbg" checked><span>Better Balanced Game<small>BBG · balance rules</small></span></label>
-              <label class="mod-option"><input type="checkbox" data-game-mod="bbm" checked><span>Better Balanced Maps<small>BBM · fair starts</small></span></label>
-              <label class="mod-option"><input type="checkbox" data-game-mod="mph" checked><span>Multiplayer Helper<small>MPH · lobby tools</small></span></label>
-              <label class="mod-option"><input type="checkbox" data-game-mod="bsm" checked><span>Better Spectator Mod<small>BSM · observer tools</small></span></label>
-            </div>
-          </div>
-          <div class="mod-tier">
-            <div class="mod-tier-title">Optional</div>
-            <div class="mod-option-grid">
-              <label class="mod-option"><input type="checkbox" data-game-mod="quick-deals"><span>Quick Deals<small>Trade quality of life</small></span></label>
-              <label class="mod-option"><input type="checkbox" data-game-mod="detailed-map-tacks"><span>Detailed Map Tacks<small>Planning tools</small></span></label>
-              <label class="mod-option"><input type="checkbox" data-game-mod="extended-policy-cards"><span>Extended Policy Cards<small>Policy yield previews</small></span></label>
-              <label class="mod-option"><input type="checkbox" data-game-mod="sukritacts-oceans"><span>Sukritact's Oceans<small>Expanded ocean rules</small></span></label>
-            </div>
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="20">Teams<select id="teams" style="margin-top:4px"
+          title="Permanent pre-game teams. Teammates share sight, pass each other the Eureka for a technology they have not researched, fight the same wars and win together.">
+          <option value="ffa" selected>Free-for-all</option>
+          <option value="2">2 teams</option>
+          <option value="3">3 teams</option>
+          <option value="4">4 teams</option>
+          <option value="pairs">Pairs</option>
+        </select></label>
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="30">Leader pool<select id="leaderpool" style="margin-top:4px">
+          <option value="civ6" selected>Civ 6 Leaders</option>
+          <option value="historical">Expanded Historical Figures</option>
+          <option value="today" disabled>Today's Leaders — roster pending</option>
+        </select></label>
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="40">Leader selection<select id="leaderselection" style="margin-top:4px">
+          <option value="automatic" selected>Automatic selection</option>
+          <option value="custom">Custom selection</option>
+        </select></label>
+        <div class="custom-leader-selection game-advanced-setting civ6-hidden" data-advanced-order="45" id="custom-leader-selection" hidden>
+          <div class="mod-tier-title">Custom leader table</div>
+          <div class="small custom-leader-help">Choose the team, civilization and leader for each major seat. ELO choices are the ratings currently available for that civilization-leader combination.</div>
+          <div class="custom-leader-table-wrap">
+            <table class="custom-leader-table" id="custom-leader-table">
+              <thead><tr><th scope="col">Team</th><th scope="col">Civ — leader</th><th scope="col">ELO</th></tr></thead>
+              <tbody id="custom-leader-rows"><tr><td class="custom-leader-empty" colspan="3">Choose Custom selection to build the table.</td></tr></tbody>
+            </table>
           </div>
         </div>
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="50">Thermal distribution<select id="mappoles" style="margin-top:4px">
+          <option value="poles">Hot equator, cold poles</option>
+          <option value="randomized">Randomized</option>
+        </select></label>
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="60">Map seed<input id="mapseed" type="number" min="0" max="9007199254740991" step="1"
+          inputmode="numeric" placeholder="Random" aria-describedby="mapseed-hint"
+          title="Leave blank for a fresh random map; use a seed to replay one exactly"><small class="setup-number-hint" id="mapseed-hint">Leave blank for a fresh random map.</small></label>
+        <label class="small game-advanced-setting human-setting civ6-hidden" data-advanced-order="70">Leader<select id="leader" style="margin-top:4px">
+          <option value="">Random</option>
+        </select></label>
+        <label class="small game-advanced-setting human-setting" data-advanced-order="80">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
         <details class="advanced-settings" id="game-advanced-settings" data-advanced-settings="game">
-          <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Rules, roster, teams, limits &amp; climate · 4 of 8 mods</small></span></summary>
+          <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Base ruleset, teams, leader pool, selection, climate &amp; seed</small></span></summary>
           <div class="advanced-settings-body" id="game-advanced-settings-body"></div>
+        </details>
+        <details class="advanced-settings civ6-hidden" id="game-mod-settings" data-advanced-settings="mods">
+          <summary><span class="advanced-settings-summary">Mods<small id="game-mod-summary">4 of 8 selected</small></span></summary>
+          <div class="advanced-settings-body">
+            <div class="mod-options" role="group" aria-labelledby="mod-options-title">
+              <h2 id="mod-options-title">Game mods</h2>
+              <div class="small mod-help">Tournament defaults are preselected. These choices are saved for the upcoming per-game mod loader; the active server ruleset is unchanged for now.</div>
+              <div class="mod-tier">
+                <div class="mod-tier-title">Civ 6 tournament defaults</div>
+                <div class="mod-option-grid">
+                  <label class="mod-option"><input type="checkbox" data-game-mod="bbg" checked><span>Better Balanced Game<small>BBG · balance rules</small></span></label>
+                  <label class="mod-option"><input type="checkbox" data-game-mod="bbm" checked><span>Better Balanced Maps<small>BBM · fair starts</small></span></label>
+                  <label class="mod-option"><input type="checkbox" data-game-mod="mph" checked><span>Multiplayer Helper<small>MPH · lobby tools</small></span></label>
+                  <label class="mod-option"><input type="checkbox" data-game-mod="bsm" checked><span>Better Spectator Mod<small>BSM · observer tools</small></span></label>
+                </div>
+              </div>
+              <div class="mod-tier">
+                <div class="mod-tier-title">Optional</div>
+                <div class="mod-option-grid">
+                  <label class="mod-option"><input type="checkbox" data-game-mod="quick-deals"><span>Quick Deals<small>Trade quality of life</small></span></label>
+                  <label class="mod-option"><input type="checkbox" data-game-mod="detailed-map-tacks"><span>Detailed Map Tacks<small>Planning tools</small></span></label>
+                  <label class="mod-option"><input type="checkbox" data-game-mod="extended-policy-cards"><span>Extended Policy Cards<small>Policy yield previews</small></span></label>
+                  <label class="mod-option"><input type="checkbox" data-game-mod="sukritacts-oceans"><span>Sukritact's Oceans<small>Expanded ocean rules</small></span></label>
+                </div>
+              </div>
+            </div>
+          </div>
         </details>
       </div>
       </div>
@@ -4116,87 +4305,86 @@
       <div class="sec"><div id="gov"></div></div>
     </details>
 
-    <details class="sidebar-section" id="maplensessec" data-section="map-lenses">
-      <summary class="section-label">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">◐</span><span>Map lenses</span></span>
-        <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
-      </summary>
-      <div class="sec">
-        <div id="map-lenses" role="toolbar" aria-label="Map lenses">
-          <div class="map-lens-head">
-            <span class="map-lens-title">Map lenses</span>
-            <button id="map-lens-exit" type="button" hidden
-              title="Exit the active map lens" aria-label="Exit the active map lens">
-              <span class="map-lens-icon" aria-hidden="true">⊘</span>
-              <span class="map-lens-label">Clear</span>
-            </button>
-            <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Display Settings" title="Hide map lenses · restore in Display Settings">✕</button>
-          </div>
-          <div id="map-lens-strip" role="none">
-            <button type="button" data-map-lens="continent" aria-pressed="false"
-              title="Continent lens — geographic continent regions">
-              <span class="map-lens-icon" aria-hidden="true">◒</span>
-              <span class="map-lens-label">Continent</span>
-            </button>
-            <button type="button" data-map-lens="political" aria-pressed="false"
-              title="Political lens — territory grouped by civilization">
-              <span class="map-lens-icon" aria-hidden="true">◩</span>
-              <span class="map-lens-label">Political</span>
-            </button>
-            <button type="button" data-map-lens="settler" aria-pressed="false"
-              title="Settler map — legal sites, quality, and water access (2)">
-              <span class="map-lens-icon" aria-hidden="true">⌂</span>
-              <span class="map-lens-label">Settler</span><kbd aria-hidden="true">2</kbd>
-            </button>
-            <button type="button" data-map-lens="empire" aria-pressed="false"
-              title="Empire lens — city borders, districts, adjacency, and wonders">
-              <span class="map-lens-icon" aria-hidden="true">◈</span>
-              <span class="map-lens-label">Empire</span>
-            </button>
-            <button type="button" data-map-lens="religion" aria-pressed="false"
-              title="Religion lens — majority faith and religious pressure">
-              <span class="map-lens-icon" aria-hidden="true">✦</span>
-              <span class="map-lens-label">Religion</span>
-            </button>
-            <button type="button" data-map-lens="government" aria-pressed="false"
-              title="Government lens — territory grouped by form of government">
-              <span class="map-lens-icon" aria-hidden="true">♜</span>
-              <span class="map-lens-label">Government</span>
-            </button>
-            <button type="button" data-map-lens="appeal" aria-pressed="false"
-              title="Appeal lens — Breathtaking through Disgusting tiles">
-              <span class="map-lens-icon" aria-hidden="true">❀</span>
-              <span class="map-lens-label">Appeal</span>
-            </button>
-            <button type="button" data-map-lens="tourism" aria-pressed="false"
-              title="Tourism lens — exact Tourism generated by each tile">
-              <span class="map-lens-icon" aria-hidden="true">♪</span>
-              <span class="map-lens-label">Tourism</span>
-            </button>
-            <button type="button" data-map-lens="loyalty" aria-pressed="false"
-              title="Loyalty lens — population pressure and city loyalty">
-              <span class="map-lens-icon" aria-hidden="true">⚑</span>
-              <span class="map-lens-label">Loyalty</span>
-            </button>
-            <button type="button" data-map-lens="power" aria-pressed="false"
-              title="Power lens — city generation, demand, and status">
-              <span class="map-lens-icon" aria-hidden="true">⚡</span>
-              <span class="map-lens-label">Power</span>
-            </button>
-            <details id="district-lens-section">
-              <summary title="District adjacency lenses">
-                <span class="map-lens-icon" aria-hidden="true">⬡</span>
-                <span class="map-lens-label">District adjacency</span>
-                <span class="district-lens-caret" aria-hidden="true">›</span>
-              </summary>
-              <div id="district-lens-list" role="group" aria-label="District adjacency lenses"></div>
-            </details>
-          </div>
+  </div>
+  <!-- The deck's fixed lower-left stack, in reading order: map lenses, then
+       the visible-tile search, then keyboard shortcuts. The lenses are docked
+       here rather than scrolled with the command sections so changing the
+       map's perspective is always one click from the bottom of the screen. -->
+  <details id="maplensessec" data-section="map-lenses">
+    <summary>Map lenses</summary>
+    <div class="lens-dock-body">
+      <div id="map-lenses" role="toolbar" aria-label="Map lenses">
+        <div class="map-lens-head">
+          <button id="map-lens-exit" type="button" hidden
+            title="Exit the active map lens" aria-label="Exit the active map lens">
+            <span class="map-lens-icon" aria-hidden="true">⊘</span>
+            <span class="map-lens-label">Clear</span>
+          </button>
+          <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Display Settings" title="Hide map lenses · restore in Display Settings">✕</button>
+        </div>
+        <div id="map-lens-strip" role="none">
+          <button type="button" data-map-lens="continent" aria-pressed="false"
+            title="Continent lens — geographic continent regions">
+            <span class="map-lens-icon" aria-hidden="true">◒</span>
+            <span class="map-lens-label">Continent</span>
+          </button>
+          <button type="button" data-map-lens="political" aria-pressed="false"
+            title="Political lens — territory grouped by civilization">
+            <span class="map-lens-icon" aria-hidden="true">◩</span>
+            <span class="map-lens-label">Political</span>
+          </button>
+          <button type="button" data-map-lens="settler" aria-pressed="false"
+            title="Settler map — legal sites, quality, and water access (2)">
+            <span class="map-lens-icon" aria-hidden="true">⌂</span>
+            <span class="map-lens-label">Settler</span><kbd aria-hidden="true">2</kbd>
+          </button>
+          <button type="button" data-map-lens="empire" aria-pressed="false"
+            title="Empire lens — city borders, districts, adjacency, and wonders">
+            <span class="map-lens-icon" aria-hidden="true">◈</span>
+            <span class="map-lens-label">Empire</span>
+          </button>
+          <button type="button" data-map-lens="religion" aria-pressed="false"
+            title="Religion lens — majority faith and religious pressure">
+            <span class="map-lens-icon" aria-hidden="true">✦</span>
+            <span class="map-lens-label">Religion</span>
+          </button>
+          <button type="button" data-map-lens="government" aria-pressed="false"
+            title="Government lens — territory grouped by form of government">
+            <span class="map-lens-icon" aria-hidden="true">♜</span>
+            <span class="map-lens-label">Government</span>
+          </button>
+          <button type="button" data-map-lens="appeal" aria-pressed="false"
+            title="Appeal lens — Breathtaking through Disgusting tiles">
+            <span class="map-lens-icon" aria-hidden="true">❀</span>
+            <span class="map-lens-label">Appeal</span>
+          </button>
+          <button type="button" data-map-lens="tourism" aria-pressed="false"
+            title="Tourism lens — exact Tourism generated by each tile">
+            <span class="map-lens-icon" aria-hidden="true">♪</span>
+            <span class="map-lens-label">Tourism</span>
+          </button>
+          <button type="button" data-map-lens="loyalty" aria-pressed="false"
+            title="Loyalty lens — population pressure and city loyalty">
+            <span class="map-lens-icon" aria-hidden="true">⚑</span>
+            <span class="map-lens-label">Loyalty</span>
+          </button>
+          <button type="button" data-map-lens="power" aria-pressed="false"
+            title="Power lens — city generation, demand, and status">
+            <span class="map-lens-icon" aria-hidden="true">⚡</span>
+            <span class="map-lens-label">Power</span>
+          </button>
+          <details id="district-lens-section">
+            <summary title="District adjacency lenses">
+              <span class="map-lens-icon" aria-hidden="true">⬡</span>
+              <span class="map-lens-label">District adjacency</span>
+              <span class="district-lens-caret" aria-hidden="true">›</span>
+            </summary>
+            <div id="district-lens-list" role="group" aria-label="District adjacency lenses"></div>
+          </details>
         </div>
       </div>
-    </details>
-
-  </div>
+    </div>
+  </details>
   <div id="map-utility-panel" aria-label="Map tools">
     <div id="map-search" role="search" aria-label="Search visible map tiles">
       <div class="map-search-entry">
@@ -4240,20 +4428,10 @@ function initSidebarSections() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(SIDEBAR_SECTION_STATE_KEY) || "{}"); }
   catch (_) { saved = {}; }
-  const revealMapLensSection = () => {
-    const section = document.getElementById("maplensessec");
-    if (!section?.open) return;
-    requestAnimationFrame(() => section.scrollIntoView({block:"nearest", inline:"nearest"}));
-  };
-  const scheduleMapLensSectionReveal = () => {
-    // Browsers can restore a <details> disclosure after this script's first
-    // layout pass. These bounded retries see that late open state; a closed
-    // fresh profile is a no-op because revealMapLensSection returns first.
-    for (const delay of [0, 250, 750]) {
-      window.setTimeout(revealMapLensSection, delay);
-    }
-  };
-  for (const section of document.querySelectorAll("#side details.sidebar-section[data-section]")) {
+  // The lens dock is a fixed panel at the deck's lower edge now, so it needs
+  // no scroll-into-view choreography — only the same saved disclosure state
+  // as the scrolling sections above it.
+  for (const section of document.querySelectorAll("#side details[data-section]")) {
     const key = section.dataset.section;
     if (Object.prototype.hasOwnProperty.call(saved, key)) {
       section.open = !!saved[key];
@@ -4267,20 +4445,8 @@ function initSidebarSections() {
     section.addEventListener("toggle", () => {
       saved[key] = section.open;
       localStorage.setItem(SIDEBAR_SECTION_STATE_KEY, JSON.stringify(saved));
-      // The lens grid is intentionally taller than a closed deck row. It sits
-      // at the bottom of the scrolling command sections, so reveal it in that
-      // scroll container when opened instead of leaving its controls behind
-      // the fixed search and keyboard drawers below.
-      if (section.id === "maplensessec" && section.open) {
-        revealMapLensSection();
-      }
     });
   }
-  // A saved disclosure is applied before its toggle listener is attached. It
-  // needs the same reveal as an interactive opening, otherwise a persisted
-  // lower-deck lens grid can reload just beneath the scroll viewport.
-  scheduleMapLensSectionReveal();
-  window.addEventListener("resize", revealMapLensSection, {passive:true});
 }
 initSidebarSections();
 function initAdvancedSettings() {
@@ -4290,16 +4456,19 @@ function initAdvancedSettings() {
     for (const node of nodes) target.appendChild(node);
   };
 
-  // Keep the source order that older clients and the embedded-page contract
-  // understand, then compose the shorter basic pass in the live DOM. Moving
-  // the real controls (rather than cloning them) preserves their ids, values,
-  // delegated change handler and accessibility labels.
+  // Compose the short setup pass in the live DOM. Moving the real controls
+  // (rather than cloning them) preserves their ids, values, delegated change
+  // handler and accessibility labels.
   const game = document.getElementById("newgame-options");
   const gameAdvanced = document.getElementById("game-advanced-settings");
   moveByOrder(game, ".game-advanced-setting", document.getElementById("game-advanced-settings-body"));
-  const basic = ["gamemode", "mapshape", "maptype", "leader", "difficulty", "np", "citystates",
-    "startera", "gamespeed", "futureera"]
-    .map(id => document.getElementById(id).closest("label"));
+  const basic = [
+    ["gamemode", true], ["np", true], ["mapshape", true], ["maptype", true],
+    ["startera", true], ["era-mods-settings", false], ["gamespeed", true],
+    ["turnlimit", true],
+  ].map(([id, label]) => label
+    ? document.getElementById(id).closest("label")
+    : document.getElementById(id));
   basic.push(document.getElementById("victory-options"), document.getElementById("saves-group"));
   for (const node of basic) gameAdvanced.before(node);
   // The Civ 6 host line describes the mode chosen directly above it, so it
@@ -4307,9 +4476,6 @@ function initAdvancedSettings() {
   // source happens to put it.
   document.getElementById("gamemode").closest("label")
     .after(document.getElementById("civ6-status"));
-
-  const display = document.getElementById("display-settings");
-  moveByOrder(display, ".display-advanced-setting", document.getElementById("display-advanced-settings-body"));
 
   let disclosureState = {};
   try { disclosureState = JSON.parse(localStorage.getItem(ADVANCED_SETTINGS_STATE_KEY) || "{}"); }
@@ -4339,8 +4505,8 @@ function initAdvancedSettings() {
   } catch (_) {}
   const syncModSummary = () => {
     const selected = modBoxes.filter(box => box.checked).map(box => box.dataset.gameMod);
-    document.getElementById("game-advanced-summary").textContent =
-      `Rules, roster, teams, limits & climate · ${selected.length} of ${modBoxes.length} mods`;
+    document.getElementById("game-mod-summary").textContent =
+      `${selected.length} of ${modBoxes.length} selected`;
     return selected;
   };
   syncModSummary();
@@ -5553,7 +5719,7 @@ let responsivePanelGeometry = {
 const WORLD_MINIMAP_DIAGONAL_SHARE = .17;
 const WORLD_MINIMAP_REFERENCE = {
   flat: {width:336, height:168},
-  planet: {width:240, height:216},
+  planet: {width:240, height:240},
 };
 function clampPanelDimension(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -5564,7 +5730,9 @@ function syncResponsivePanelGeometry() {
   const edge = Math.round(clampPanelDimension(shortEdge * .014, 6, 16));
   const gap = Math.round(clampPanelDimension(shortEdge * .01, 5, 12));
   const compact = width <= 1100;
-  const controlHeight = 46;
+  const measuredControlHeight = document.getElementById("map-controls-dock")
+    ?.getBoundingClientRect().height || 0;
+  const controlHeight = Math.max(46, Math.round(measuredControlHeight));
   const controlClearance = edge + controlHeight + gap;
   // The player masthead scrolls internally below this ceiling. Let the cap
   // fall below its ordinary two-row preference on a very short quadrant so the
@@ -5578,32 +5746,39 @@ function syncResponsivePanelGeometry() {
   HUD_WIDGETS?.minimap?.element?.classList.toggle("minimap-world-planet", shape === "planet");
   const compactMinimapWidth = Math.round(clampPanelDimension(width * .22, 130, 190));
   const compactMinimapHeight = Math.round(clampPanelDimension(height * .19, 80, 148));
+  const planetMinimapSide = Math.round(clampPanelDimension(
+    Math.min(compactMinimapWidth, compactMinimapHeight), 130, 148));
+  const compactInstrumentWidth = shape === "planet" ? planetMinimapSide : compactMinimapWidth;
+  const compactInstrumentHeight = shape === "planet" ? planetMinimapSide : compactMinimapHeight;
   // Reserve the complete lower-left instrument stack before sizing the band
   // above it. The smaller of the natural band and the remaining space keeps a
   // common 960x540 quadrant from having the tracker overlap the minimap.
   const compactVictoryRoom = height - edge - playerReserve - gap -
-    compactMinimapHeight - controlClearance - gap;
+    compactInstrumentHeight - controlClearance - gap;
   const compactVictoryHeight = Math.round(clampPanelDimension(
     Math.min(132, Math.max(64, compactVictoryRoom)), 64, 132));
   const sidebarInset = Number.parseFloat(area.style.getPropertyValue("--player-hud-left")) || 0;
   const uncoveredWidth = Math.max(1, width - sidebarInset - edge);
-  const compactSearchRoom = height - controlClearance - compactMinimapHeight -
+  const compactSkyRoom = height - controlClearance - compactMinimapHeight -
     (edge + playerReserve + gap + compactVictoryHeight);
-  // A compact command deck can cover most of a vertical split. Search then
-  // either uses the lane above the minimap (when it genuinely fits there) or
-  // stays beside it; it never gets to obscure the travel map below.
+  // A compact command deck can cover most of a vertical split. The sky bar
+  // then either uses the lane above the minimap (when it genuinely fits
+  // there) or stays beside it; it never gets to obscure the travel map below.
   const controlsLayout = compact && uncoveredWidth < 440 &&
-    compactSearchRoom >= controlHeight + gap * 2 ? "stacked" : "inline";
+    compactSkyRoom >= controlHeight + gap * 2 ? "stacked" : "inline";
   const viewport = window.visualViewport;
   const viewportWidth = Math.max(1, viewport?.width || window.innerWidth || width);
   const viewportHeight = Math.max(1, viewport?.height || window.innerHeight || height);
   const referenceDiagonal = Math.hypot(reference.width, reference.height);
   const diagonalWidth = WORLD_MINIMAP_DIAGONAL_SHARE * Math.hypot(viewportWidth, viewportHeight) /
     referenceDiagonal * reference.width;
+  const wideMinimapMax = shape === "planet" ? 194
+    : Math.min(360, Math.max(180, width * .32));
   const wideMinimapWidth = Math.round(clampPanelDimension(
-    diagonalWidth, 180, Math.min(360, Math.max(180, width * .32))));
+    diagonalWidth, 180, wideMinimapMax));
   const wideMinimapHeight = Math.round(clampPanelDimension(
-    wideMinimapWidth * reference.height / reference.width, 96, 194));
+    shape === "planet" ? wideMinimapWidth
+      : wideMinimapWidth * reference.height / reference.width, 96, 194));
   const victoryWidth = Math.round(clampPanelDimension(width * .15, 156, 280));
   const style = area.style;
   style.setProperty("--panel-edge", `${edge}px`);
@@ -5612,8 +5787,8 @@ function syncResponsivePanelGeometry() {
   style.setProperty("--panel-controls-clearance", `${controlClearance}px`);
   style.setProperty("--player-hud-max-height", `${maxPlayerHeight}px`);
   style.setProperty("--compact-victory-hud-height", `${compactVictoryHeight}px`);
-  style.setProperty("--compact-minimap-width", `${compactMinimapWidth}px`);
-  style.setProperty("--compact-minimap-height", `${compactMinimapHeight}px`);
+  style.setProperty("--compact-minimap-width", `${compactInstrumentWidth}px`);
+  style.setProperty("--compact-minimap-height", `${compactInstrumentHeight}px`);
   style.setProperty("--victory-hud-width", `${victoryWidth}px`);
   style.setProperty("--workspace-inline-inset", `${Math.round(clampPanelDimension(width * .03, 10, 48))}px`);
   style.setProperty("--workspace-block-inset", `${Math.round(clampPanelDimension(height * .04, 10, 48))}px`);
@@ -5623,8 +5798,10 @@ function syncResponsivePanelGeometry() {
   area.dataset.controlsLayout = controlsLayout;
   responsivePanelGeometry = {
     edge, gap, compact,
-    minimapWidth:compact ? compactMinimapWidth : wideMinimapWidth,
-    minimapHeight:compact ? compactMinimapHeight : wideMinimapHeight,
+    minimapWidth:compact ? compactInstrumentWidth
+                         : wideMinimapWidth,
+    minimapHeight:compact ? compactInstrumentHeight
+                          : wideMinimapHeight,
     controlClearance, maxPlayerHeight,
   };
   return responsivePanelGeometry;
@@ -5934,7 +6111,8 @@ const HUD_WIDGETS = {
   players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:PLAYER_HUD_MIN_HEIGHT,
             maxHeight:playerHudMaxContentHeight, maxHeightRatio:.38, avoidsSidebar:true},
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88, avoidsSidebar:true},
-  minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96, avoidsSidebar:true},
+  minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96,
+            avoidsSidebar:true, square:true},
 };
 const dossierWidgetName = id => `dossier-${id}`;
 const HUD_RESIZE_EDGES = [
@@ -5985,12 +6163,13 @@ const PLAYER_HUD_COLUMNS = [
   {key:"leader", label:"Leader", block:"identity", head:2, min:"--hud-ident-min", width:1.85},
   {key:"player", label:"Player", block:"identity", head:4, min:"--hud-ident-min", width:1.85},
   {key:"elo", label:"Elo rating", block:"identity", head:5, min:"--hud-ident-num-min", width:1.017},
+  {key:"elo_delta", label:"Elo delta", block:"identity", head:6, min:"--hud-ident-num-min", width:.85},
   // One column, two figures: the odds this seat started with and the odds it
   // holds now. They are dragged, saved and measured as a single column because
   // they are read as a single movement.
-  {key:"win", label:"Win odds", block:"identity", head:6, min:"--hud-ident-odds-min", width:1.3},
-  {key:"age", label:"Age", block:"identity", head:7, min:"--hud-ident-min", width:1.3},
-  {key:"plan", label:"Plan", block:"identity", head:8, min:"--hud-ident-min", width:2.035},
+  {key:"win", label:"Win odds", block:"identity", head:7, min:"--hud-ident-odds-min", width:1.3},
+  {key:"age", label:"Age", block:"identity", head:8, min:"--hud-ident-min", width:1.3},
+  {key:"plan", label:"Plan", block:"identity", head:9, min:"--hud-ident-min", width:2.035},
   ...[["cities", "Cities"], ["population", "Population"], ["food", "Food"], ["production", "Production"],
       ["science", "Science"], ["culture", "Culture"], ["faith", "Faith"],
       ["gold", "Gold"], ["military", "Military"], ["wonders", "Wonders"],
@@ -6052,6 +6231,14 @@ function savePlayerHudSort() {
   catch (_) {}
 }
 
+// The live odds model states the board's current position as an Elo offset
+// against the living field. Keep the raw number for sorting; the row renderer
+// adds a sign only when it turns the value into a label.
+function playerHudEloDeltaValue(player) {
+  const value = Number(player.odds_standing_elo);
+  return Number.isFinite(value) ? value : null;
+}
+
 function playerHudSortValue(player, key, stats, rankById) {
   if (key === "rank") return rankById.get(player.id) ?? null;
   if (key === "civ") return player.civ || null;
@@ -6060,6 +6247,11 @@ function playerHudSortValue(player, key, stats, rankById) {
   if (key === "elo") {
     const value = Number(player.player_username ? player.player_elo : player.ai_elo);
     return Number.isFinite(value) ? value : null;
+  }
+  if (key === "elo_delta") {
+    // Sort by the model's numeric Elo position, not by the signed label shown
+    // in the cell. Missing odds keep the delta unavailable under fog.
+    return playerHudEloDeltaValue(player);
   }
   if (key === "win_start") return oddsValue(player.odds_start);
   if (key === "win_delta") {
@@ -6164,7 +6356,7 @@ function syncPlayerHudColumns(placeGrips = true) {
       `var(--hud-watch-column) ${identity.slice(3).map(track).join(" ")}`,
     stats.map(track).join(" "),
     `minmax(calc(var(--hud-rank-min) + var(--hud-ident-min) * 5 ` +
-      `+ var(--hud-ident-num-min) + var(--hud-ident-odds-min)), ` +
+      `+ var(--hud-ident-num-min) * 2 + var(--hud-ident-odds-min)), ` +
       `${total(identity).toFixed(4)}fr)`,
     `minmax(calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), ` +
       `${total(stats).toFixed(4)}fr)`,
@@ -6180,14 +6372,16 @@ function syncPlayerHudColumns(placeGrips = true) {
   if (placeGrips) syncPlayerHudColumnGrips();
 }
 
-// The ELO track is one shared column, so its floor has to cover the widest
-// score the table is showing. Measure at the text fitter's maximum rather than
-// at its current fitted size: a wider panel must never let a score grow back
-// into an ellipsis. The field's own inset and divider live inside its grid
-// track, and therefore belong in the floor too.
+// The ELO and ELO-delta tracks share one numeric floor, so it has to cover the
+// widest signed value the table is showing. Measure at the text fitter's
+// maximum rather than at its current fitted size: a wider panel must never let
+// a score grow back into an ellipsis. The field's own inset and divider live
+// inside its grid track, and therefore belong in the floor too.
 function syncPlayerHudEloFloor() {
   const hud = document.getElementById("playerhud");
-  const scores = [...(hud?.querySelectorAll(".diplomacy-elo-value") || [])];
+  const scores = [...(hud?.querySelectorAll(
+    ".diplomacy-elo-value, .diplomacy-elo-delta-value"
+  ) || [])];
   if (!hud || !scores.length) return;
   const probe = document.createElement("span");
   probe.style.cssText = "position:fixed; visibility:hidden; inset:auto; display:inline-block; " +
@@ -6453,7 +6647,13 @@ if (playerHudPanel) {
 // that keeps both dimensions inside it. Wrapped prose is deliberately absent:
 // it keeps the shared body scale and lets its panel scroll naturally.
 const RESPONSIVE_TEXT_RULES = [
-  {selector:"#side .tagline span", min:12, max:15},
+  // The tagline is fitted only while its two lines are unbreakable: wrapped
+  // prose never overflows its own box, so on the compact band — where the
+  // spans are allowed to wrap — measuring could only ever pin the ceiling.
+  // The compact entry instead writes the band's own size, which also retires
+  // a stale fitted size left behind when the deck crosses the band boundary.
+  {selector:"#side:not([data-type-size=compact]) .tagline span", min:12, max:15},
+  {selector:"#side[data-type-size=compact] .tagline span", min:12, max:12},
   {selector:"#side .section-title > span:last-child", min:10, max:13},
   {selector:"#side .event-scope", min:9, max:12},
   {selector:"#side .sec h2", min:10, max:12},
@@ -6471,6 +6671,7 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .diplomacy-leader-name", min:9, max:13},
   {selector:"#playerhud .diplomacy-player", min:9, max:13},
   {selector:"#playerhud .diplomacy-elo-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
+  {selector:"#playerhud .diplomacy-elo-delta-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
   {selector:"#playerhud .diplomacy-expected-value", min:9, max:13},
   {selector:"#playerhud .diplomacy-age .civ-age", min:9, max:12},
   {selector:"#playerhud .diplomacy-strategy .ai-plan", min:9, max:12},
@@ -6731,7 +6932,25 @@ try {
 // with a deliberately widened command deck then behaves like split screen.
 function syncDefaultMinimapGeometry() {
   const geometry = syncResponsivePanelGeometry();
-  if (HUD_LAYOUT.minimap) return;
+  if (HUD_LAYOUT.minimap) {
+    // Saved layouts predate the world shape, so a rectangular custom frame
+    // may be on screen before the first Planet state arrives. Bring that one
+    // stored frame onto the square invariant as soon as the shape is known.
+    const element = HUD_WIDGETS.minimap?.element;
+    if (planetMap() && element?.classList.contains("layout-widget-custom")) {
+      const rect = element.getBoundingClientRect();
+      const side = Math.min(rect.width, rect.height);
+      if (side > 0 && (Math.abs(rect.width - side) > .5 ||
+                       Math.abs(rect.height - side) > .5)) {
+        element.style.width = `${side}px`; element.style.height = `${side}px`;
+        HUD_LAYOUT.minimap.width = Math.round(side);
+        HUD_LAYOUT.minimap.height = Math.round(side);
+        area.style.setProperty("--minimap-height", `${Math.round(side)}px`);
+        saveHudLayout();
+      }
+    }
+    return;
+  }
   area.style.setProperty("--world-minimap-width", `${geometry.minimapWidth}px`);
   area.style.setProperty("--minimap-height", `${geometry.minimapHeight}px`);
 }
@@ -6771,8 +6990,14 @@ function clampHudWidget(config, metrics) {
   const maxHeight = hudWidgetMaxHeight(config, margin);
   const minWidth = Math.min(config.minWidth, maxWidth);
   const minHeight = Math.min(config.minHeight, maxHeight);
-  const width = Math.max(minWidth, Math.min(maxWidth, Number(metrics.width) || minWidth));
-  const height = Math.max(minHeight, Math.min(maxHeight, Number(metrics.height) || minHeight));
+  let width = Math.max(minWidth, Math.min(maxWidth, Number(metrics.width) || minWidth));
+  let height = Math.max(minHeight, Math.min(maxHeight, Number(metrics.height) || minHeight));
+  if (config.square && typeof planetMap === "function" && planetMap()) {
+    const maxSide = Math.max(1, Math.min(maxWidth, maxHeight));
+    const minSide = Math.min(maxSide, Math.max(minWidth, minHeight));
+    const side = Math.max(minSide, Math.min(maxSide, Math.min(width, height)));
+    width = side; height = side;
+  }
   const maxX = Math.max(minX, area.clientWidth - margin - width);
   const maxY = Math.max(margin, area.clientHeight - margin - height);
   return {
@@ -7980,6 +8205,138 @@ async function fetchJSON(url, opts = {}, timeoutMs = 15000) {
     callerSignal?.removeEventListener("abort", abortForCaller);
   }
 }
+// Viewer-side performance is the useful cross-browser signal. Unlike host
+// CPU/RAM, animation timing and canvas paint timing describe the machine that
+// is actually showing this page and work in native, WASM, and ordinary web
+// builds alike.
+const PERFORMANCE_SAMPLE_WINDOW_MS = 3000;
+const PERFORMANCE_UI_REFRESH_MS = 250;
+const viewerPerformance = {
+  frameSamples: [],
+  renderSamples: [],
+  lastFrameAt: null,
+  lastRenderMs: null,
+  simulation: {wall: null, compute: null},
+  spectator: false,
+  workload: null,
+  lastUiAt: 0,
+};
+function prunePerformanceSamples(samples, now) {
+  while (samples.length && now - samples[0].at > PERFORMANCE_SAMPLE_WINDOW_MS)
+    samples.shift();
+}
+function performanceAverage(values) {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+}
+function performancePercentile(values, fraction) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * fraction) - 1)];
+}
+function performanceMs(value) {
+  if (!Number.isFinite(value)) return "—";
+  return value < 10 ? `${value.toFixed(1)} ms` : `${Math.round(value)} ms`;
+}
+function performanceInteger(value) {
+  return Number.isFinite(value) ? Math.max(0, Math.round(value)).toLocaleString("en") : "—";
+}
+function performanceCanvasText() {
+  const width = Number(cv?.width);
+  const height = Number(cv?.height);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width < 1 || height < 1)
+    return "Sampling…";
+  const cssWidth = Number(cv?.clientWidth);
+  const reportedDpr = cssWidth > 0 ? width / cssWidth : Number(DPR);
+  const dpr = Number.isFinite(reportedDpr) && reportedDpr > 0 ? reportedDpr : 1;
+  const megapixels = width * height / 1_000_000;
+  return `${performanceInteger(width)}×${performanceInteger(height)} @ ${dpr.toFixed(1)}× · ${megapixels.toFixed(megapixels >= 10 ? 0 : 1)}M px`;
+}
+function performanceRecommendation(frameAverage, frameP95, renderP95, sampleCount) {
+  if (sampleCount < 8) return "Measuring viewer performance…";
+  const fps = frameAverage > 0 ? 1000 / frameAverage : 0;
+  if (fps < 45 || frameP95 > 33.3 || renderP95 > 22)
+    return "Performance mode recommended — lower render resolution or hide optional map detail.";
+  if (fps < 55 || frameP95 > 20 || renderP95 > 14)
+    return "Running acceptably — Balanced resolution may help as the map gets busier.";
+  return "Running smoothly at the current display settings.";
+}
+function updatePerformanceStatsDisplay(now = performance.now(), force = false) {
+  if (!force && now - viewerPerformance.lastUiAt < PERFORMANCE_UI_REFRESH_MS) return;
+  viewerPerformance.lastUiAt = now;
+  prunePerformanceSamples(viewerPerformance.frameSamples, now);
+  prunePerformanceSamples(viewerPerformance.renderSamples, now);
+  const frameValues = viewerPerformance.frameSamples.map(sample => sample.value);
+  const renderValues = viewerPerformance.renderSamples.map(sample => sample.value);
+  const frameAverage = performanceAverage(frameValues);
+  const frameP95 = performancePercentile(frameValues, .95);
+  const renderP95 = performancePercentile(renderValues, .95) ?? viewerPerformance.lastRenderMs;
+  const renderValue = document.getElementById("performance-render-value");
+  const slowValue = document.getElementById("performance-slow-value");
+  const simulationValue = document.getElementById("performance-simulation-value");
+  const canvasValue = document.getElementById("performance-canvas-value");
+  const workloadValue = document.getElementById("performance-workload-value");
+  const recommendation = document.getElementById("performance-recommendation");
+  if (!renderValue || !slowValue || !simulationValue || !canvasValue ||
+      !workloadValue || !recommendation) return;
+  if (frameValues.length >= 4 && frameAverage > 0) {
+    const fps = Math.min(999, 1000 / frameAverage);
+    const paint = renderP95 === null ? "" : ` · ${performanceMs(renderP95)} paint`;
+    renderValue.textContent = `${Math.round(fps)} FPS · ${performanceMs(frameAverage)}/frame${paint}`;
+    const slowShare = frameValues.filter(value => value > 33.3).length / frameValues.length;
+    slowValue.textContent = `p95 ${performanceMs(frameP95)} · ${Math.round(slowShare * 100)}% >33 ms`;
+    recommendation.textContent = performanceRecommendation(
+      frameAverage, frameP95, renderP95 ?? 0, frameValues.length);
+  } else {
+    renderValue.textContent = "Sampling…";
+    slowValue.textContent = "Sampling…";
+    recommendation.textContent = "Measuring viewer performance…";
+  }
+  const simulation = viewerPerformance.simulation;
+  if (simulation.wall !== null) {
+    const compute = simulation.compute === null ? "" : ` · ${performanceMs(simulation.compute)} compute`;
+    simulationValue.textContent = `${performanceMs(simulation.wall)}/turn${compute}`;
+  } else {
+    simulationValue.textContent = viewerPerformance.spectator
+      ? "Measuring simulation…" : "Not available in this mode";
+  }
+  canvasValue.textContent = performanceCanvasText();
+  const workload = viewerPerformance.workload;
+  workloadValue.textContent = workload
+    ? `${performanceInteger(workload.tiles)} tiles · ${performanceInteger(workload.units)} units · ${performanceInteger(workload.cities)} cities`
+    : "Waiting for a map…";
+}
+function recordPerformanceFrame(now) {
+  if (viewerPerformance.lastFrameAt !== null) {
+    const elapsed = now - viewerPerformance.lastFrameAt;
+    // A hidden-tab pause is not a slow rendered frame. Reset across it rather
+    // than allowing a tab switch to poison the p95 and recommendation.
+    if (elapsed > 0 && elapsed <= 1000)
+      viewerPerformance.frameSamples.push({at: now, value: elapsed});
+  }
+  viewerPerformance.lastFrameAt = now;
+  updatePerformanceStatsDisplay(now);
+}
+function recordPerformanceRender(elapsed) {
+  if (!Number.isFinite(elapsed) || elapsed < 0 || elapsed > 10_000) return;
+  const now = performance.now();
+  viewerPerformance.lastRenderMs = elapsed;
+  viewerPerformance.renderSamples.push({at: now, value: elapsed});
+  updatePerformanceStatsDisplay(now);
+}
+function updatePerformanceState(st) {
+  const numeric = value => typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+  viewerPerformance.spectator = st?.spectate === true;
+  viewerPerformance.simulation = {
+    wall: numeric(st?.turn_ms),
+    compute: numeric(st?.turn_compute_ms),
+  };
+  viewerPerformance.workload = st?.map ? {
+    tiles: Array.isArray(st.map.tiles) ? st.map.tiles.length : 0,
+    units: Array.isArray(st.units) ? st.units.length : 0,
+    cities: Array.isArray(st.cities) ? st.cities.length : 0,
+  } : null;
+  updatePerformanceStatsDisplay(performance.now(), true);
+}
 // Host-wide load is an observation, not a browser capability. The native
 // server samples it; the published browser build deliberately returns no
 // values, because a tab cannot truthfully inspect the machine serving it.
@@ -8079,15 +8436,15 @@ function updateMachineMetricsDisplay() {
   } else if (machineMetrics.status === "unavailable") {
     advice.textContent = "Machine telemetry is unavailable here. Use the display choices below manually.";
   } else if (cpuOver && memoryOver) {
-    advice.textContent = "CPU and memory are over their caps. Prefer Performance resolution, then reduce tile layers, animations, or unneeded overlays below.";
+    advice.textContent = "CPU and memory are over their warning thresholds. Prefer Performance resolution, then reduce tile layers, animations, or unneeded overlays below.";
   } else if (cpuOver) {
-    advice.textContent = "CPU is over its cap. Prefer Performance resolution, then reduce yields, resource markers, or rocket and satellite animations below.";
+    advice.textContent = "CPU is over its warning threshold. Prefer Performance resolution, then reduce yields, resource markers, or rocket and satellite animations below.";
   } else if (memoryOver) {
-    advice.textContent = "Memory is over its cap. Prefer Balanced or Performance resolution and hide unneeded overlays below.";
+    advice.textContent = "Memory is over its warning threshold. Prefer Balanced or Performance resolution and hide unneeded overlays below.";
   } else if (cpuNear || memoryNear) {
-    advice.textContent = "Near a selected cap. Lower render resolution or optional map detail below before load rises further.";
+    advice.textContent = "Near a selected warning threshold. Lower render resolution or optional map detail below before load rises further.";
   } else {
-    advice.textContent = "Within the selected caps. Native resolution and optional map detail are available.";
+    advice.textContent = "Within the selected warning thresholds. Native resolution and optional map detail are available.";
   }
 }
 function setDisplayResourceCap(kind, value) {
@@ -8693,25 +9050,33 @@ async function boot() {
         ? chosen : (stock ? stock.id : "");
     }
     if (Array.isArray(RULES.future_eras)) {
-      // The other end of the game, listed the same way the start era is: an
-      // era nobody has built is shown as what is coming and cannot be chosen.
-      // Unlike the start era this one selects a *ruleset*, so what it changes
-      // is what the late game contains rather than where the early game opens.
+      // Era mods are a compact setup choice. Regular Future Era is the one
+      // released option today; the modified ruleset stays visible as a later
+      // choice so the panel explains the shape of the feature before it ships.
       const futures = document.getElementById("futureera");
       const chosen = futures.value;
-      futures.innerHTML = RULES.future_eras.map(era =>
-        `<option value="${era.id}" title="${escapeAttr(era.description)}"` +
-        `${era.playable ? "" : " disabled"}>${era.name}` +
-        `${era.playable ? "" : " · later"}</option>`
+      futures.innerHTML = RULES.future_eras.map(era => {
+        const released = era.id === "classic" && era.playable;
+        const name = era.id === "classic" ? "Regular Future Era" : "Modified Future Era";
+        return `<option value="${era.id}" title="${escapeAttr(era.description)}"` +
+          `${released ? "" : " disabled"}>${name}` +
+          `${released ? "" : " · later"}</option>`;
+      }
       ).join("");
-      const stock = RULES.future_eras.find(era => era.playable);
-      futures.value = RULES.future_eras.some(era => era.playable && era.id === chosen)
-        ? chosen : (stock ? stock.id : "");
+      const stock = RULES.future_eras.find(era => era.id === "classic" && era.playable);
+      futures.value = chosen === "classic" && stock ? chosen : (stock ? stock.id : "");
     }
     if (Array.isArray(RULES.map_sizes)) {
-      document.getElementById("np").innerHTML = RULES.map_sizes.map(size =>
+      const sizes = document.getElementById("np");
+      const chosen = sizes.value;
+      sizes.innerHTML = RULES.map_sizes.map(size =>
         `<option value="${size.default_players}">${size.name} · ${size.default_players} civs · ${size.default_city_states} city-states · ${size.width}×${size.height}</option>`
       ).join("");
+      if ([...sizes.options].some(option => option.value === chosen)) {
+        sizes.value = chosen;
+      } else if ([...sizes.options].some(option => option.value === "6")) {
+        sizes.value = "6";
+      }
       // The sizes this build offers decide which team splits it can seat.
       syncTeams();
       syncWorldSetupInputs();
@@ -9185,8 +9550,8 @@ let paceDisagreed = 0;
 let paceChoice = null;   // the pace the viewer picked, null until they pick one
 let paceAsserted = null; // the server pace we have already answered with a push
 function paceHeldOpen() {
-  const select = document.getElementById("specspeed");
-  return !!select && document.activeElement === select;
+  return [document.getElementById("specspeed"), document.querySelector("[data-hud-pace]")]
+    .some(select => select && document.activeElement === select);
 }
 function paceOffered(select, ms) {
   return [...select.options].some(o => +o.value === ms);
@@ -9730,6 +10095,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     cameraFlight = null; cameraZoom = null; clearCameraInertia();
   }
   state = st;
+  updatePerformanceState(st);
   syncDefaultMinimapGeometry();
   updateBuildMarker(st);
   SPEC = !!st.spectate;
@@ -9769,8 +10135,6 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     // reloads over a running team game reads that game back rather than
     // offering to restart it as a free-for-all.
     syncTeams();
-    const cityStates = st.players.filter(player => player.is_minor && !player.is_barbarian).length;
-    setOptionalWorldNumber("citystates", cityStates, defaultCityStatesForPlayers(majors));
     document.getElementById("teams").value = teamRuleFromArray(st.teams);
     document.getElementById("maptype").value = st.map.script || "pangaea";
     document.getElementById("mapshape").value = st.map.shape || "planet";
@@ -12241,7 +12605,7 @@ const SOLAR_FARM_ICON_SCALE = 0.8;
 // a label you have to zoom in to identify.
 // Resource badges are terrain information, not actors, so they sit a step
 // quieter than the unit plates instead of ringing the map in bright white
-// discs of the same weight. The rim carries the resource class, so strategics
+// discs of the same weight. The class colour fills the badge, so strategics
 // and luxuries separate from ordinary bonuses at a glance.
 // Resources now paint once in their terrain pass, beneath units. Their helpers
 // still establish text state locally, and their pictograms save their own
@@ -12627,10 +12991,19 @@ function resourceBadgeClass(t) {
     ? RULES.resources[t.resource].class : "bonus";
 }
 
+// Resource class is the badge's only categorical colour channel: red for
+// strategics, gold for luxuries, and brown for ordinary bonus deposits. The
+// same colour is used as the survey dot and as the symbol plate so a deposit
+// keeps its meaning while the map changes scale.
+const RESOURCE_CLASS_COLORS = {
+  strategic: "#c64d45",
+  luxury: "#d5ad4c",
+  bonus: "#8d6140",
+};
+const RESOURCE_BADGE_KEYLINE = "#12100d";
+
 function resourceBadgeRim(t) {
-  const rc = resourceBadgeClass(t);
-  return rc === "strategic" ? "#ff9d5c"
-    : rc === "luxury" ? "#d9a0f0" : "#e6ddbd";
+  return RESOURCE_CLASS_COLORS[resourceBadgeClass(t)] || RESOURCE_CLASS_COLORS.bonus;
 }
 
 // Improvements are reported on the resource's tile.  Ownership is the only
@@ -12674,25 +13047,19 @@ function drawResourceSymbolBadge(t, x, y, rim = resourceBadgeRim(t)) {
   // fish at ordinary map zoom; the farthest survey view stays a class mark.
   const detailedResource = cam.scale >= RES_BADGE_DETAIL_SCALE;
   if (detailedResource) {
-    // A two-step dark plate separates the pictogram from every terrain tone;
-    // the class-coloured rim still reads strategic/luxury/bonus at a glance.
-    cx.fillStyle = "#07110fe0";
-    cx.beginPath(); cx.arc(rx, ry, RES_BADGE_R + 1.2, 0, 7); cx.fill();
-    cx.fillStyle = "#16231ce8";
+    // The resource class is the plate itself. A thin black keyline keeps the
+    // red, gold or brown background distinct from whatever tile it sits on.
+    cx.fillStyle = rim;
     cx.beginPath(); cx.arc(rx, ry, RES_BADGE_R, 0, 7); cx.fill();
-    cx.strokeStyle = rim + "ee"; cx.lineWidth = 1.7 * RES_BADGE_K; cx.stroke();
-    cx.strokeStyle = "rgba(255,250,222,.28)"; cx.lineWidth = .55 * RES_BADGE_K;
-    cx.beginPath(); cx.arc(rx, ry, RES_BADGE_R - 1.3 * RES_BADGE_K, 0, 7); cx.stroke();
+    cx.strokeStyle = RESOURCE_BADGE_KEYLINE; cx.lineWidth = 1.1; cx.stroke();
     drawResourcePictogram(t.resource, rx, ry, RES_BADGE_R * 1.74);
   } else {
     // At the farthest survey scale, an individual material silhouette becomes
     // noise. Keep a deposit prominent with a distinct mark for each class.
     const dot = 4.15 * RES_BADGE_K;
-    cx.fillStyle = "#0b1511d8";
-    cx.beginPath(); cx.arc(rx, ry, dot + 1.05, 0, 7); cx.fill();
     cx.fillStyle = rim;
     cx.beginPath(); cx.arc(rx, ry, dot, 0, 7); cx.fill();
-    cx.strokeStyle = "#101914d8"; cx.lineWidth = 1.1 * RES_BADGE_K; cx.stroke();
+    cx.strokeStyle = RESOURCE_BADGE_KEYLINE; cx.lineWidth = 1.05; cx.stroke();
     cx.fillStyle = "#101914";
     if (rc === "strategic") {
       tri(rx, ry - dot * .52, rx + dot * .52, ry, rx, ry + dot * .52);
@@ -12726,11 +13093,11 @@ function drawResourceWordBadge(t, x, y, rim = resourceBadgeRim(t)) {
   const label = titleCase(t.resource);
   cx.save();
   cx.lineCap = "round"; cx.lineJoin = "round";
-  // A small version of the familiar badge keeps its class rim and material
-  // colour while the word below it remains centred within the tile.
-  cx.fillStyle = "#07110fe8";
+  // The icon uses the same class colour as the survey dot. Its dark keyline
+  // keeps that colour separate from the terrain without hiding the tile.
+  cx.fillStyle = rim;
   cx.beginPath(); cx.arc(rx, iconY, RES_WORD_ICON_SIZE * .54, 0, 7); cx.fill();
-  cx.strokeStyle = rim + "e8"; cx.lineWidth = 1.05; cx.stroke();
+  cx.strokeStyle = RESOURCE_BADGE_KEYLINE; cx.lineWidth = 1; cx.stroke();
   drawResourcePictogram(t.resource, rx, iconY - .1, RES_WORD_ICON_SIZE);
 
   cx.font = `800 ${RES_WORD_FONT_SIZE}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
@@ -14907,7 +15274,8 @@ function planetFrontierLanes(cells) {
     const weight = Math.min(1, Math.round(4 * inradius / PLANET_LANE_TILE) / 4);
     for (let i = 0; i < sides; i++) {
       const across = TMAP.get(cell.nbrs[i]);
-      if (across && isWater(tile) !== isWater(across)) continue;
+      // Ownership outranks geography: the frontier traces the empire's whole
+      // perimeter, coast edges included, and rides above the coastline seam.
       if (across && across.owner === owner) continue;
       const a = points[i], b = points[(i + 1) % sides];
       let ex = b.x - a.x, ey = b.y - a.y;
@@ -15415,6 +15783,13 @@ const SKY_SYSTEM = SKY_SYSTEM_SPECS.map(skyMakeBody);
 const SKY_STARS = SKY_STAR_SPECS.map(skyMakeStar);
 const SKY_EARTH = SKY_SYSTEM.find(body => body.id === "earth");
 const SKY_SUN = SKY_SYSTEM.find(body => body.id === "sun");
+// The IAU's eight planets get heliocentric orbit rings. Dwarf planets remain
+// in the catalogue and keep their real positions, surfaces, and labels, but a
+// Sun-centred ring is a claim that they are planets — and Ceres and Pluto are
+// not. Moons use their own parent-centred rings below.
+const SKY_OFFICIAL_PLANETS = new Set([
+  "mercury", "venus", "earth", "mars", "jupiter", "saturn", "uranus", "neptune",
+]);
 
 // The destination, as a world in the sky. It keeps the id `exo` whatever it is
 // pointed at, because it is one thing — the place the expedition is going —
@@ -16464,10 +16839,10 @@ function skyWidgetBoxes() {
     const box = mapWidgetBox(name, viewRect);
     if (box) boxes.push(box);
   }
-  // The sky's own way about stands over the map's bottom strip while it is up,
-  // and it is the one widget out here that is *about* the bodies — a caption
-  // sliding under the button that flies to it is the worst place of all to lose
-  // one.
+  // The sky's own way about is the second row of the map-control dock while it
+  // is up, and it is the one widget out here that is *about* the bodies — a
+  // caption sliding under the button that flies to it is the worst place of
+  // all to lose one.
   const nav = skyNavBox(viewRect);
   if (nav) boxes.push(nav);
   return boxes;
@@ -16751,11 +17126,17 @@ function skyZoomLadder() {
 // These are the named navigation stops: they are places the space programme
 // explicitly reaches, so and only so they receive map-control buttons.
 const SKY_ARRIVALS = ["earth", "moon", "mars", "exo"];
-// The four survey worlds need the same slow final approach and whole-world
-// zoom ceiling as a named destination, but deliberately stay off the controls.
-// The resource markers are visual only; this list adds no gameplay destination.
-const SKY_TILED_RESOURCE_WORLDS = ["mercury", "ceres", "callisto", "titan"];
-const SKY_ZOOMABLE_WORLDS = [...SKY_ARRIVALS, ...SKY_TILED_RESOURCE_WORLDS];
+// Every catalogued body with a frequency has a tiled visual surface: rocky
+// planets, dwarf planets, moons, and the cloud decks of the gas giants. Keep
+// all of them on the same slow final approach as the named destinations, while
+// leaving the navigation bar intentionally reserved for the actual game
+// arrivals. Ceres is therefore a real mapped surface, not just an asteroid dot.
+const SKY_SURFACE_WORLDS = [
+  "mercury", "venus", "moon", "mars", "ceres",
+  "jupiter", "io", "europa", "ganymede", "callisto",
+  "saturn", "titan", "uranus", "neptune", "pluto",
+];
+const SKY_ZOOMABLE_WORLDS = [...SKY_ARRIVALS, ...SKY_SURFACE_WORLDS];
 // Those four, and the destination's own star with them, because out there the
 // stop belongs to the star. LHS 1140 is twelve times its own planet and sits at
 // the same point in the catalogue, so `planetMaxScale` answers with the star's
@@ -17120,12 +17501,13 @@ function skySpanLabel(radii) {
   return `${Math.round(km).toLocaleString("en")} km`;
 }
 
-// The bar is up while there is a sky to cross and down while there is not.
+// The second row is up while there is a sky to cross and down while there is
+// not. Its height is part of the map-control dock while it is present.
 //
 // Measured against the canvas rather than against the framed stage, on purpose:
-// the bar stands over the map's own bottom strip, and a test that read the
-// frame would be reading a number the bar itself moved. The two thresholds are
-// a hysteresis, so a zoom that comes to rest on the line does not blink.
+// the row belongs to the map controls, and the dock is the stable thing that
+// reserves it. The two thresholds are a hysteresis, so a zoom that comes to
+// rest on the line does not blink.
 const skyNavBar = document.getElementById("skynav");
 const skyNavWorldRow = document.getElementById("skynav-worlds");
 const skyNavScaleRow = document.getElementById("skynav-scales");
@@ -17133,6 +17515,26 @@ const skyNavLadder = document.getElementById("skyladder");
 const skyNavSpan = document.getElementById("skyspan");
 let SKY_NAV_UP = false, SKY_NAV_KEY = "", SKY_NAV_MARK = "", SKY_NAV_SPAN = "";
 let skyNavLadderHeld = false;
+let skyNavRefitFrame = 0, skyNavDockHeight = 0;
+function syncSkyNavDockGeometry() {
+  const dock = document.getElementById("map-controls-dock");
+  const measuredHeight = dock?.getBoundingClientRect().height || 0;
+  const height = Math.max(46, Math.round(measuredHeight));
+  const edge = responsivePanelGeometry.edge || 4;
+  const gap = responsivePanelGeometry.gap || 6;
+  const clearance = edge + height + gap;
+  area.style.setProperty("--panel-control-height", `${height}px`);
+  area.style.setProperty("--panel-controls-clearance", `${clearance}px`);
+  responsivePanelGeometry.controlClearance = clearance;
+  if (Math.abs(height - skyNavDockHeight) <= .5) return;
+  skyNavDockHeight = height;
+  if (skyNavRefitFrame) return;
+  skyNavRefitFrame = requestAnimationFrame(() => {
+    skyNavRefitFrame = 0;
+    settleCompactHudWidgets();
+    refitMapAreaToChrome();
+  });
+}
 function skyNavShowing() {
   if (!planetMap() || !knowsGlobe() || !mapOverlayVisible("controls")) return false;
   // Only home takes it down, and only while home fills the frame. Home is the
@@ -17216,6 +17618,7 @@ function syncSkyNav() {
     skyNavBar.hidden = !showing;
     skyNavWorldRow.hidden = !showing;
   }
+  syncSkyNavDockGeometry();
   if (!showing) return;
   const worlds = skyWorldStops(), scales = skyScaleStops();
   const key = [...worlds, ...scales]
@@ -17234,6 +17637,7 @@ function syncSkyNav() {
       skyNavButton(stop.body ? "world" : "scale", stop)));
     skyNavScaleRow.hidden = !onward.length;
   }
+  syncSkyNavDockGeometry();
   const here = skyNavHere();
   if (here !== SKY_NAV_MARK) {
     SKY_NAV_MARK = here;
@@ -17410,9 +17814,11 @@ function drawSkyOrbits(radius, centerX, centerY, alpha) {
   // Earth is home, so `visibleSkyBodies` deliberately leaves it out of the
   // navigation/object list. Its Sun-centred path still belongs in the system
   // diagram: it is the one astronomical-unit ring that tells the viewer where
-  // home is in relation to the Sun.
+  // home is in relation to the Sun. Dwarf planets are still visible bodies,
+  // but only official planets get a ring around the Sun.
   const bodies = [SKY_EARTH, ...visibleSkyBodies().filter(body => body.id !== "earth")]
-    .filter(body => body.orbitRadius > 0);
+    .filter(body => body.orbitRadius > 0 &&
+      (body.parent || SKY_OFFICIAL_PLANETS.has(body.id)));
   if (!bodies.length) return;
   cx.save();
   cx.lineWidth = 1;
@@ -17475,14 +17881,95 @@ function skySunDirection(place, radius, centerX, centerY) {
   return {x:dx / away, y:dy / away};
 }
 
-// A star is not a lit ball, it is the thing doing the lighting, so it is drawn
-// the other way round: a hot core, a glow that reaches well past the disc, and
-// the four-point flare an eye or a lens puts on anything much brighter than its
-// surroundings. The Sun gets the same treatment as every other star, because it
-// is one, and at the far end of the zoom that is exactly how it should read.
+// The Sun is the one star close enough to be a world-sized object in this view.
+// Keep its surface in a small cached texture: a single drawImage per frame is
+// cheaper than rebuilding hundreds of granules while the camera is moving, and
+// lets the close-up read as a photosphere rather than a flat yellow disc.
+let SKY_SUN_TEXTURE = null;
+function skySunTexture() {
+  if (SKY_SUN_TEXTURE) return SKY_SUN_TEXTURE;
+  const size = 512, center = size / 2, radius = center - 2;
+  const texture = document.createElement("canvas");
+  texture.width = size; texture.height = size;
+  const brush = texture.getContext("2d");
+  brush.save();
+  brush.beginPath(); brush.arc(center, center, radius, 0, 7); brush.clip();
+
+  // A hotter upper-left photosphere and a warm, darker limb give the ball the
+  // same depth cue as the planets, but with the colour temperature of sunlight.
+  const disk = brush.createRadialGradient(
+    center - radius * .24, center - radius * .30, radius * .04,
+    center, center, radius);
+  disk.addColorStop(0, "#fffef2");
+  disk.addColorStop(.28, "#fff7c2");
+  disk.addColorStop(.66, "#ffd45e");
+  disk.addColorStop(.90, "#f28a1e");
+  disk.addColorStop(1, "#a83a08");
+  brush.fillStyle = disk;
+  brush.beginPath(); brush.arc(center, center, radius, 0, 7); brush.fill();
+
+  // Granulation is deliberately sparse and deterministic. It survives a
+  // close zoom without becoming animated noise, and the texture is generated
+  // only once for the whole page.
+  for (let i = 0; i < 180; i++) {
+    const angle = 6.283185 * hash2(i + 311, 17);
+    const distance = Math.sqrt(hash2(i + 311, 29)) * radius * .9;
+    const gx = center + Math.cos(angle) * distance;
+    const gy = center + Math.sin(angle) * distance;
+    const granule = radius * (.006 + .018 * hash2(i + 311, 37));
+    brush.globalCompositeOperation = hash2(i + 311, 43) > .46 ? "screen" : "multiply";
+    brush.globalAlpha = .035 + .075 * hash2(i + 311, 53);
+    brush.fillStyle = hash2(i + 311, 61) > .5 ? "#fff6b2" : "#c8530d";
+    brush.beginPath();
+    brush.ellipse(gx, gy, granule * 1.8, granule * (.55 + hash2(i + 311, 67)),
+                  angle, 0, 6.283185);
+    brush.fill();
+  }
+
+  // A few broad sunspot groups keep a close view from looking procedurally
+  // uniform without competing with the ball's defining brightness.
+  brush.globalCompositeOperation = "multiply";
+  for (let i = 0; i < 7; i++) {
+    const angle = 6.283185 * hash2(i + 911, 17);
+    const distance = (.18 + .58 * hash2(i + 911, 29)) * radius;
+    const spot = radius * (.014 + .028 * hash2(i + 911, 37));
+    const sx = center + Math.cos(angle) * distance;
+    const sy = center + Math.sin(angle) * distance;
+    const shade = brush.createRadialGradient(sx, sy, 0, sx, sy, spot * 2.4);
+    shade.addColorStop(0, "rgba(89,22,1,.38)");
+    shade.addColorStop(.45, "rgba(137,39,3,.16)");
+    shade.addColorStop(1, "rgba(137,39,3,0)");
+    brush.fillStyle = shade;
+    brush.beginPath(); brush.arc(sx, sy, spot * 2.4, 0, 7); brush.fill();
+  }
+  brush.restore();
+  brush.globalAlpha = 1;
+  brush.globalCompositeOperation = "source-over";
+  SKY_SUN_TEXTURE = texture;
+  return texture;
+}
+function drawSkySunBall(place, alpha) {
+  const {x, y, r} = place;
+  const reach = r * (r > 8 ? 2.6 : 5.8);
+  cx.save();
+  cx.globalAlpha = alpha;
+  const corona = cx.createRadialGradient(x, y, r * .72, x, y, reach);
+  corona.addColorStop(0, "rgba(255,224,112,.28)");
+  corona.addColorStop(.24, "rgba(255,166,33,.12)");
+  corona.addColorStop(1, "rgba(255,96,8,0)");
+  cx.fillStyle = corona;
+  cx.beginPath(); cx.arc(x, y, reach, 0, 7); cx.fill();
+  cx.drawImage(skySunTexture(), x - r, y - r, r * 2, r * 2);
+  cx.restore();
+}
+
+// A distant star is not a lit ball, it is the thing doing the lighting, so it
+// is drawn the other way round: a hot core, a glow that reaches well past the
+// disc, and the four-point flare an eye or a lens puts on anything much
+// brighter than its surroundings.
 function drawSkyStarBall(place, alpha) {
   const {x, y, r, tint} = place;
-  const reach = r * (place.id === "sun" ? 7 : 5);
+  const reach = r * 5;
   cx.save();
   cx.globalAlpha = alpha;
   const halo = cx.createRadialGradient(x, y, r * .6, x, y, reach);
@@ -17572,7 +18059,8 @@ function drawSkyRingHalf(place, alpha, side) {
 // Sun is — so only its colour, its size and what is standing on it change.
 function drawSkyBall(place, alpha, light) {
   const {x, y, r, tint, dark} = place;
-  if (place.kind === "star" || place.light) return drawSkyStarBall(place, alpha);
+  if (place.light) return drawSkySunBall(place, alpha);
+  if (place.kind === "star") return drawSkyStarBall(place, alpha);
   const lx = -(light ? light.x : -.55), ly = -(light ? light.y : -.6);
   cx.save();
   cx.globalAlpha = alpha;
@@ -17823,13 +18311,12 @@ function drawSkyGlobe(place, alpha) {
 function drawSkyResourceBadge(resource, x, y, size, alpha) {
   const resourceClass = RULES?.resources?.[resource]?.class ||
     (resource === "salt" ? "luxury" : "strategic");
-  const rim = resourceClass === "strategic" ? "#ff9d5c"
-    : resourceClass === "luxury" ? "#d9a0f0" : "#e6ddbd";
+  const rim = RESOURCE_CLASS_COLORS[resourceClass] || RESOURCE_CLASS_COLORS.bonus;
   cx.save();
   cx.globalAlpha = alpha;
-  cx.fillStyle = "#10151ae0";
+  cx.fillStyle = rim;
   cx.beginPath(); cx.arc(x, y, size, 0, 7); cx.fill();
-  cx.strokeStyle = rim; cx.lineWidth = Math.max(.8, size * .13); cx.stroke();
+  cx.strokeStyle = RESOURCE_BADGE_KEYLINE; cx.lineWidth = Math.max(.8, size * .13); cx.stroke();
   drawResourcePictogram(resource, x, y, size * 1.35);
   cx.restore();
 }
@@ -17927,6 +18414,10 @@ function skyOrbit(player) {
   };
 }
 
+// Raise the orbit height above Earth's surface by seventy percent while
+// keeping the surface itself at one Earth radius.
+const SKY_SATELLITE_ALTITUDE_SCALE = 1.7;
+
 // Orbits are real circles seen at an angle, so a satellite passing behind the
 // world goes behind it. The depth that decides is the same one the projection
 // throws away.
@@ -17953,8 +18444,9 @@ function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
     const {inclination, node, phase, pace} = skyOrbit(player);
     // Kept in Earth radii so the ring stands off the limb by the same margin
     // whatever the zoom, the way the old pixel figure did.
-    const ring = 1.38 + Math.min(8, radius * .5) / Math.max(1, radius) +
+    const altitude = .38 + Math.min(8, radius * .5) / Math.max(1, radius) +
       index * Math.max(2, radius * .07) / Math.max(1, radius);
+    const ring = 1 + altitude * SKY_SATELLITE_ALTITUDE_SCALE;
     const cosNode = Math.cos(node), sinNode = Math.sin(node);
     const cosLean = Math.cos(inclination), sinLean = Math.sin(inclination);
     const basis = {ring,
@@ -17964,14 +18456,15 @@ function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
     const at = planetProject(site(basis, angle), view, radius, centerX, centerY);
     return {player, basis, x:at.x, y:at.y, behind:at.z < 0};
   });
-  // The track first, and only where there is sky to draw it on: a ring laid
-  // straight over the tiles reads as a scratch on the lens rather than as an
-  // orbit going round the back.
+  // The track belongs in the sky around the limb, not across Earth's face: a
+  // ring laid straight over the tiles reads as a scratch on the lens rather
+  // than as an orbit. The Earth disk is an explicit even-odd hole, so the
+  // satellite itself can still pass over the daylight side below.
   cx.save();
   cx.beginPath();
   cx.rect(0, 0, MAPW, MAPH);
-  cx.arc(centerX, centerY, radius, 0, 7, true);
-  cx.clip();
+  cx.arc(centerX, centerY, radius, 0, 7);
+  cx.clip("evenodd");
   cx.globalAlpha = shown * .3; cx.lineWidth = .8;
   for (const {player, basis} of flight) {
     cx.strokeStyle = pcol(player.id);
@@ -19710,6 +20203,91 @@ function drawPlanetLensGroupLabels(cells) {
   }
   cx.restore();
 }
+
+// City plates are useful while the globe is close enough to read individual
+// settlements. Once they leave the frame, the map still needs a name for the
+// land beneath the viewer's eye. Keep this threshold beside the city pass so
+// the two levels hand off without a gap: small entities up close, empires at
+// survey distance.
+const PLANET_MAJOR_CITY_LABEL_SCALE = .52;
+const PLANET_EMPIRE_LABEL_MIN_RADIUS = 34;
+function drawPlanetEmpireLabels(cells, scale, radius, visible, spectator) {
+  if (scale > PLANET_MAJOR_CITY_LABEL_SCALE) return;
+  const alpha = Math.max(0, Math.min(1,
+    (radius - PLANET_EMPIRE_LABEL_MIN_RADIUS) /
+    (SKY_MARKERS - PLANET_EMPIRE_LABEL_MIN_RADIUS)));
+  if (alpha <= 0) return;
+
+  // Work from the part of the world the viewer can actually see. The sphere's
+  // neighbour links still give us true globe connectivity, while stopping at
+  // the visible edge naturally lets two separated screen sections receive two
+  // labels instead of forcing one name through the limb.
+  const eligible = new Map();
+  for (const entry of cells) {
+    const owner = entry.tile.owner;
+    const player = state.players[owner];
+    if (!player || player.is_minor || player.is_barbarian || player.met === false ||
+        !player.civ || entry.center.z < .12) continue;
+    if (!spectator && !visible.has(key(entry.tile.pos))) continue;
+    eligible.set(key(entry.tile.pos), entry);
+  }
+  if (!eligible.size) return;
+
+  const sections = [], seen = new Set();
+  for (const [startKey, start] of eligible) {
+    if (seen.has(startKey)) continue;
+    const owner = start.tile.owner;
+    const entries = [], pending = [start];
+    seen.add(startKey);
+    while (pending.length) {
+      const entry = pending.pop();
+      entries.push(entry);
+      for (const neighbourKey of entry.cell.nbrs || []) {
+        const neighbour = eligible.get(neighbourKey);
+        if (!neighbour || seen.has(neighbourKey) || neighbour.tile.owner !== owner) continue;
+        seen.add(neighbourKey);
+        pending.push(neighbour);
+      }
+    }
+    if (entries.length < 2) continue;
+    let x = 0, y = 0, area = 0, totalWeight = 0;
+    for (const entry of entries) {
+      const weight = Math.max(1, planetCellInradius(entry));
+      x += entry.center.x * weight;
+      y += entry.center.y * weight;
+      area += weight * weight;
+      totalWeight += weight;
+    }
+    const player = state.players[owner];
+    sections.push({owner, entries, x:x / totalWeight, y:y / totalWeight, area,
+      label:player.civ.toUpperCase()});
+  }
+  if (!sections.length) return;
+
+  const zoomOut = Math.max(0, Math.min(1,
+    (PLANET_MAJOR_CITY_LABEL_SCALE - scale) / .38));
+  const fontSize = 17 + zoomOut * 7;
+  const boxes = [];
+  sections.sort((a, b) => b.area - a.area);
+  cx.save();
+  cx.textAlign = "center"; cx.textBaseline = "middle";
+  cx.font = `900 ${fontSize}px Georgia, serif`;
+  for (const section of sections) {
+    const width = cx.measureText(section.label).width;
+    const box = {left:section.x - width / 2 - 5, right:section.x + width / 2 + 5,
+                 top:section.y - fontSize / 2 - 4, bottom:section.y + fontSize / 2 + 4};
+    if (boxes.some(other => box.left < other.right && box.right > other.left &&
+                           box.top < other.bottom && box.bottom > other.top)) continue;
+    boxes.push(box);
+    const [, light] = jerseyLanes(section.owner);
+    cx.globalAlpha = alpha;
+    cx.strokeStyle = "#07100f"; cx.lineWidth = Math.max(3.5, fontSize * .22);
+    cx.strokeText(section.label, section.x, section.y);
+    cx.fillStyle = light;
+    cx.fillText(section.label, section.x, section.y);
+  }
+  cx.restore();
+}
 function drawThematicLensPlanet(cells) {
   const context = mapLensContext(cells.map(cell => cell.tile));
   for (const cell of cells) {
@@ -20223,6 +20801,11 @@ function drawPlanetMap() {
   drawPlanetMapSearchHighlights(cells);
   if (!spectator && radius >= SKY_MARKERS)
     drawPlanetVisibilityPerimeter(cells, visible);
+  // At the same scale where major-city names leave the globe, replace the
+  // settlement vocabulary with cartographic empire names. This is deliberately
+  // before the city/icon pass so close markers remain readable over the label
+  // if the two levels meet during a zoom animation.
+  drawPlanetEmpireLabels(cells, scale, radius, turnVisible, spectator);
   // Cities and armies are drawn at a floor size so they stay clickable, and a
   // four-pixel dot on a world the size of a coin is no longer a city on it.
   // Past that the globe is one object among several and only reads as one.
@@ -20251,7 +20834,7 @@ function drawPlanetMap() {
       cx.strokeStyle = bannerColor; cx.lineWidth = 1.2;
       cx.beginPath(); cx.arc(cell.center.x, cell.center.y, r + 3, 0, 7); cx.stroke();
     }
-    if (scale > (cityState ? .95 : .52)) {
+    if (scale > (cityState ? .95 : PLANET_MAJOR_CITY_LABEL_SCALE)) {
       cx.font = `${cityState ? 650 : 800} ${cityState
         ? Math.max(9, Math.min(11, 8 * scale))
         : Math.max(11, Math.min(15, 10.5 * scale))}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
@@ -20339,7 +20922,7 @@ function drawPlanetMap() {
   return true;
 }
 
-function draw() {
+function drawScene() {
   if (!state) return;
   // Before the branch, because the sky's own way about has to come down when
   // the world under it is a flat board as surely as it goes up when the camera
@@ -20495,24 +21078,22 @@ function draw() {
     laneAxis.push([ex, ey, nx, ny]);
   }
   const borderSegs = new Map();
-  // One neighbour lookup per side, reused by the edge test and by both of that
-  // edge's corners. nbrTile builds a string key, so asking it again per corner
-  // would be the most expensive thing in this layer by a wide margin.
+  // One neighbour lookup per side, reused by both of that edge's corners.
+  // nbrTile builds a string key, so asking it again per corner would be the
+  // most expensive thing in this layer by a wide margin.
   const ourSide = [false, false, false, false, false, false];
-  const neighbors = new Array(6);
   for (const t of tiles) {
     if (t.owner === null || t.owner === undefined) continue;
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     const y = yy - elev(t);
     for (let i = 0; i < 6; i++) {
       const n = nbrTile(t.pos, DIRS[i]);
-      neighbors[i] = n;
       ourSide[i] = !!n && n.owner === t.owner;
     }
     for (let i = 0; i < 6; i++) {
       if (ourSide[i]) continue;
-      const n = neighbors[i];
-      if (n && isWater(t) !== isWater(n)) continue;
+      // Ownership outranks geography: the frontier traces the empire's whole
+      // perimeter, coast edges included, and rides above the coastline seam.
       const [c1, c2] = EDGE_CORNERS[i];
       const [ax, ay] = corner(x, y, S, c1);
       const [bx, by] = corner(x, y, S, c2);
@@ -21281,6 +21862,13 @@ function draw() {
   drawNuclearFlash(now0);
 }
 
+function draw() {
+  if (!state) return;
+  const started = performance.now();
+  drawScene();
+  recordPerformanceRender(performance.now() - started);
+}
+
 // ------------------------------------------------------- nuclear detonation
 //
 // A command-map detonation shows how far the blast reached.
@@ -21416,11 +22004,337 @@ function drawNuclearFlash(now) {
 }
 
 // ---------------------------------------------------------------- minimap
-// Keep the globe's minimap in the same projection as the main view so their
-// shapes, visible hemisphere, and click targets always agree — which is also
-// what stops the world chart from handing back the ball the map is withholding.
-// A people charting a flat world get a flat chart in the corner too, filling
-// its frame corner to corner with no disc in it, exactly as their map does.
+// A planet's corner chart is global, even when the main view is a close-up.
+// Peirce's quincuncial projection is the right instrument for that job: the
+// point facing the viewer sits in the centre of a square, while its antipode
+// is identified at all four corners. The map is therefore a complete world,
+// not a smaller copy of whichever hemisphere happened to be on screen.
+//
+// The projection is Guyou's elliptic-function hemisphere-in-a-square followed
+// by the quincuncial fold used by D3 and PROJ. It is kept here rather than
+// pulled in as a library because the browser is one static HTML file. The
+// inverse is used both for the pixel painter and for minimap clicks.
+// The compact elliptic arithmetic below is translated from d3-geo-projection
+// (Copyright 2013-2021 Mike Bostock), under its ISC license:
+// Permission to use, copy, modify, and/or distribute this software for any
+// purpose with or without fee is hereby granted, provided that the copyright
+// notice and this permission notice appear in all copies.
+// THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+const PEIRCE_PI = Math.PI;
+const PEIRCE_HALF_PI = PEIRCE_PI / 2;
+const PEIRCE_QUARTER_PI = PEIRCE_PI / 4;
+const PEIRCE_SQRT1_2 = Math.SQRT1_2;
+const PEIRCE_SQRT2 = Math.SQRT2;
+const PEIRCE_EPSILON = 1e-7;
+function peirceSqrt(value) { return value > 0 ? Math.sqrt(value) : 0; }
+function peirceSign(value) { return value > 0 ? 1 : value < 0 ? -1 : 0; }
+function peirceEllipticF(phi, m) {
+  if (!m) return phi;
+  if (m === 1) return Math.log(Math.tan(phi / 2 + PEIRCE_QUARTER_PI));
+  let a = 1, b = peirceSqrt(1 - m), c = peirceSqrt(m), iterations = 0;
+  while (Math.abs(c) > PEIRCE_EPSILON && iterations < 12) {
+    if (phi % PEIRCE_PI) {
+      let dPhi = Math.atan(b * Math.tan(phi) / a);
+      if (dPhi < 0) dPhi += PEIRCE_PI;
+      phi += dPhi + Math.trunc(phi / PEIRCE_PI) * PEIRCE_PI;
+    } else phi += phi;
+    c = (a + b) / 2;
+    b = peirceSqrt(a * b);
+    c = (a = c) - b;
+    c /= 2;
+    iterations++;
+  }
+  return phi / (Math.pow(2, iterations) * a);
+}
+function peirceEllipticJ(u, m) {
+  if (m < PEIRCE_EPSILON) {
+    const sn = Math.sin(u), cn = Math.cos(u);
+    const correction = m * (u - sn * cn) / 4;
+    return [sn - correction * cn, cn + correction * sn,
+            1 - m * sn * sn / 2, u - correction];
+  }
+  if (m >= 1 - PEIRCE_EPSILON) {
+    const correction = (1 - m) / 4;
+    const cosh = Math.cosh(u), tanh = Math.tanh(u), phi = 1 / cosh;
+    const doubled = cosh * Math.sinh(u);
+    return [tanh + correction * (doubled - u) / (cosh * cosh),
+            phi - correction * tanh * phi * (doubled - u),
+            phi + correction * tanh * phi * (doubled + u),
+            2 * Math.atan(Math.exp(u)) - PEIRCE_HALF_PI +
+              correction * (doubled - u) / cosh];
+  }
+  const a = new Array(9).fill(0), c = new Array(9).fill(0);
+  a[0] = 1; c[0] = peirceSqrt(m);
+  let b = peirceSqrt(1 - m), twon = 1, i = 0;
+  while (Math.abs(c[i] / a[i]) > PEIRCE_EPSILON && i < 8) {
+    const prior = a[i];
+    i++;
+    c[i] = (prior - b) / 2;
+    a[i] = (prior + b) / 2;
+    b = peirceSqrt(prior * b);
+    twon *= 2;
+  }
+  let phi = twon * a[i] * u, t = 0, previous = phi;
+  do {
+    previous = phi;
+    t = c[i] * Math.sin(previous) / a[i];
+    phi = (Math.asin(Math.max(-1, Math.min(1, t))) + previous) / 2;
+  } while (--i);
+  const cn = Math.cos(phi);
+  return [Math.sin(phi), cn, cn / Math.cos(phi - previous), phi];
+}
+function peirceEllipticFi(phi, psi, m) {
+  const r = Math.abs(phi), imaginary = Math.abs(psi);
+  const sinhPsi = Math.sinh(imaginary);
+  if (r) {
+    const cscPhi = 1 / Math.sin(r);
+    const cotPhi2 = 1 / (Math.tan(r) * Math.tan(r));
+    const b = -(cotPhi2 + m * sinhPsi * sinhPsi * cscPhi * cscPhi - 1 + m);
+    const c = (m - 1) * cotPhi2;
+    const cotLambda2 = (-b + peirceSqrt(b * b - 4 * c)) / 2;
+    return [
+      peirceEllipticF(Math.atan(1 / peirceSqrt(cotLambda2)), m) * peirceSign(phi),
+      peirceEllipticF(
+        Math.atan(peirceSqrt((cotLambda2 / cotPhi2 - 1) / m)), 1 - m
+      ) * peirceSign(psi),
+    ];
+  }
+  return [0, peirceEllipticF(Math.atan(sinhPsi), 1 - m) * peirceSign(psi)];
+}
+function peirceEllipticJi(u, v, m) {
+  let a, b, c;
+  if (u === 0) {
+    b = peirceEllipticJ(v, 1 - m);
+    return [[0, b[0] / b[1]], [1 / b[1], 0], [b[2] / b[1], 0]];
+  }
+  a = peirceEllipticJ(u, m);
+  if (v === 0) return [[a[0], 0], [a[1], 0], [a[2], 0]];
+  b = peirceEllipticJ(v, 1 - m);
+  c = b[1] * b[1] + m * a[0] * a[0] * b[0] * b[0];
+  return [
+    [a[0] * b[2] / c, a[1] * a[2] * b[0] * b[1] / c],
+    [a[1] * b[1] / c, -a[0] * a[2] * b[0] * b[2] / c],
+    [a[2] * b[1] * b[2] / c, -m * a[0] * a[1] * b[0] / c],
+  ];
+}
+function peirceComplexAtan(x, y) {
+  const x2 = x * x, y1 = y + 1, t = 1 - x2 - y * y;
+  return [
+    .5 * ((x >= 0 ? PEIRCE_HALF_PI : -PEIRCE_HALF_PI) - Math.atan2(t, 2 * x)),
+    -.25 * Math.log(Math.max(1e-300, t * t + 4 * x2)) +
+      .5 * Math.log(Math.max(1e-300, y1 * y1 + x2)),
+  ];
+}
+function peirceComplexDivide(a, b) {
+  const denominator = b[0] * b[0] + b[1] * b[1];
+  if (denominator < 1e-300) return [0, 0];
+  return [
+    (a[0] * b[0] + a[1] * b[1]) / denominator,
+    (a[1] * b[0] - a[0] * b[1]) / denominator,
+  ];
+}
+const PEIRCE_K_ = (PEIRCE_SQRT2 - 1) / (PEIRCE_SQRT2 + 1);
+const PEIRCE_K = peirceSqrt(1 - PEIRCE_K_ * PEIRCE_K_);
+const PEIRCE_M = PEIRCE_K * PEIRCE_K;
+const PEIRCE_KCOMPLETE = peirceEllipticF(PEIRCE_HALF_PI, PEIRCE_M);
+function peirceGuyouRaw(lambda, phi) {
+  const f = -1;
+  const psi = Math.log(Math.tan(PEIRCE_QUARTER_PI + Math.abs(phi) / 2));
+  const radius = Math.exp(f * psi) / peirceSqrt(PEIRCE_K_);
+  const at = peirceComplexAtan(radius * Math.cos(f * lambda),
+                               radius * Math.sin(f * lambda));
+  const t = peirceEllipticFi(at[0], at[1], PEIRCE_M);
+  return [-t[1], (phi >= 0 ? 1 : -1) * (.5 * PEIRCE_KCOMPLETE - t[0])];
+}
+const PEIRCE_GUYOU_DX = peirceGuyouRaw(PEIRCE_HALF_PI, 0)[0] -
+  peirceGuyouRaw(-PEIRCE_HALF_PI, 0)[0];
+const PEIRCE_SQUARE_HALF = PEIRCE_GUYOU_DX * PEIRCE_SQRT1_2;
+function peirceQuincuncialRaw(lambda, phi) {
+  const inner = Math.abs(lambda) < PEIRCE_HALF_PI;
+  const guyou = peirceGuyouRaw(
+    inner ? lambda : lambda > 0 ? lambda - PEIRCE_PI : lambda + PEIRCE_PI,
+    phi
+  );
+  const x = (guyou[0] - guyou[1]) * PEIRCE_SQRT1_2;
+  const y = (guyou[0] + guyou[1]) * PEIRCE_SQRT1_2;
+  if (inner) return [x, y];
+  const s = (x > 0) !== (y > 0) ? -1 : 1;
+  return [s * x - peirceSign(y) * PEIRCE_SQUARE_HALF,
+          s * y - peirceSign(x) * PEIRCE_SQUARE_HALF];
+}
+function peirceQuincuncialInvert(x0, y0) {
+  // At the four singular corners every approach is the same antipodal point.
+  // The elliptic inverse is intentionally not asked to divide by its zero.
+  if (Math.abs(Math.abs(x0) - PEIRCE_SQUARE_HALF) < 1e-6 &&
+      Math.abs(Math.abs(y0) - PEIRCE_SQUARE_HALF) < 1e-6)
+    return [PEIRCE_PI, 0];
+  let x = (x0 + y0) * PEIRCE_SQRT1_2;
+  let y = (y0 - x0) * PEIRCE_SQRT1_2;
+  const inner = Math.abs(x) < .5 * PEIRCE_GUYOU_DX &&
+                Math.abs(y) < .5 * PEIRCE_GUYOU_DX;
+  if (!inner) {
+    const s = (x > 0) !== (y > 0) ? -1 : 1;
+    const x1 = -s * x0 + (y > 0 ? 1 : -1) * PEIRCE_SQUARE_HALF;
+    const y1 = -s * y0 + (x > 0 ? 1 : -1) * PEIRCE_SQUARE_HALF;
+    x = (-x1 - y1) * PEIRCE_SQRT1_2;
+    y = (x1 - y1) * PEIRCE_SQRT1_2;
+  }
+  const j = peirceEllipticJi(.5 * PEIRCE_KCOMPLETE - y, -x, PEIRCE_M);
+  const tn = peirceComplexDivide(j[0], j[1]);
+  const radius2 = PEIRCE_K_ * (tn[0] * tn[0] + tn[1] * tn[1]);
+  const phi = 2 * Math.atan(Math.exp(.5 / -1 *
+    Math.log(Math.max(1e-300, radius2)))) - PEIRCE_HALF_PI;
+  let lambda = Math.atan2(tn[1], tn[0]) / -1;
+  if (!inner) lambda += x > 0 ? PEIRCE_PI : -PEIRCE_PI;
+  return [lambda, phi];
+}
+
+function peirceMiniProjection(width, height, camera = planetCamera()) {
+  const side = Math.max(1, Math.min(width, height));
+  return {
+    width, height, side, half:side / 2,
+    centerX:width / 2, centerY:height / 2,
+    basis:planetViewBasis(camera),
+  };
+}
+function peirceLocalSphereAt(x0, y0) {
+  const [lambda, phi] = peirceQuincuncialInvert(x0, y0);
+  const cosPhi = Math.cos(phi);
+  return [cosPhi * Math.cos(lambda), cosPhi * Math.sin(lambda), Math.sin(phi)];
+}
+function peirceMiniSphereAt(x, y, projection) {
+  const nx = (x - projection.centerX) / projection.half;
+  const ny = (projection.centerY - y) / projection.half;
+  if (Math.abs(nx) > 1 + 1e-6 || Math.abs(ny) > 1 + 1e-6) return null;
+  const local = peirceLocalSphereAt(nx * PEIRCE_SQUARE_HALF,
+                                    ny * PEIRCE_SQUARE_HALF);
+  return [
+    projection.basis.out[0] * local[0] + projection.basis.right[0] * local[1] + projection.basis.up[0] * local[2],
+    projection.basis.out[1] * local[0] + projection.basis.right[1] * local[1] + projection.basis.up[1] * local[2],
+    projection.basis.out[2] * local[0] + projection.basis.right[2] * local[1] + projection.basis.up[2] * local[2],
+  ];
+}
+function peirceMiniScreenPoint(point, projection) {
+  const local = [dot3(point, projection.basis.out),
+                 dot3(point, projection.basis.right),
+                 dot3(point, projection.basis.up)];
+  if (local[0] < -1 + 1e-8) return null;
+  const projected = peirceQuincuncialRaw(
+    Math.atan2(local[1], local[0]),
+    Math.asin(Math.max(-1, Math.min(1, local[2])))
+  );
+  return [projection.centerX + projected[0] / PEIRCE_SQUARE_HALF * projection.half,
+          projection.centerY - projected[1] / PEIRCE_SQUARE_HALF * projection.half];
+}
+function peirceMiniPointCopies(point, projection) {
+  const localOut = dot3(point, projection.basis.out);
+  if (localOut < -1 + 1e-8) {
+    const x0 = projection.centerX - projection.half, x1 = projection.centerX + projection.half;
+    const y0 = projection.centerY - projection.half, y1 = projection.centerY + projection.half;
+    return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  }
+  const pointOnMap = peirceMiniScreenPoint(point, projection);
+  return pointOnMap ? [pointOnMap] : [];
+}
+
+// The inverse elliptic function is expensive, but its result in the local
+// projection frame does not depend on which way the current world is facing.
+// Cache one local sphere vector per physical minimap pixel, then only rotate
+// those vectors into the current camera basis during a redraw.
+let PEIRCE_MINI_LOCAL_GRID = null;
+function peirceMiniLocalGrid(projection) {
+  const pixelWidth = Math.max(1, Math.round(projection.width));
+  const pixelHeight = Math.max(1, Math.round(projection.height));
+  const key = `${pixelWidth}x${pixelHeight}`;
+  if (PEIRCE_MINI_LOCAL_GRID?.key === key) return PEIRCE_MINI_LOCAL_GRID;
+  const vectors = new Float32Array(pixelWidth * pixelHeight * 3);
+  const valid = new Uint8Array(pixelWidth * pixelHeight);
+  for (let py = 0; py < pixelHeight; py++) {
+    const y = py + .5;
+    for (let px = 0; px < pixelWidth; px++) {
+      const x = px + .5;
+      const nx = (x - projection.centerX) / projection.half;
+      const ny = (projection.centerY - y) / projection.half;
+      if (Math.abs(nx) > 1 || Math.abs(ny) > 1) continue;
+      const local = peirceLocalSphereAt(nx * PEIRCE_SQUARE_HALF,
+                                         ny * PEIRCE_SQUARE_HALF);
+      const offset = (py * pixelWidth + px) * 3;
+      vectors[offset] = local[0]; vectors[offset + 1] = local[1]; vectors[offset + 2] = local[2];
+      valid[py * pixelWidth + px] = 1;
+    }
+  }
+  return PEIRCE_MINI_LOCAL_GRID = {key, pixelWidth, pixelHeight, vectors, valid};
+}
+
+let PEIRCE_MINI_INDEX = null;
+function peirceMiniCellIndex() {
+  if (PEIRCE_MINI_INDEX?.planet === PLANET) return PEIRCE_MINI_INDEX;
+  const binCount = 48, entries = [], bins = new Map();
+  const binFor = value => Math.max(0, Math.min(binCount - 1,
+    Math.floor((value + 1) * .5 * binCount)));
+  for (const cell of PLANET.cells.values()) {
+    const vertices = cell.ids.map(id => [PLANET.corners[3 * id],
+      PLANET.corners[3 * id + 1], PLANET.corners[3 * id + 2]]);
+    const edges = vertices.map((a, index) => {
+      const normal = cross3(a, vertices[(index + 1) % vertices.length]);
+      return {normal, sign:dot3(normal, cell.center) >= 0 ? 1 : -1};
+    });
+    const entry = {cell, key:key(cell.pos), vertices, edges, tile:null, color:null};
+    entries.push(entry);
+    const bin = `${binFor(cell.center[0])},${binFor(cell.center[1])},${binFor(cell.center[2])}`;
+    let bucket = bins.get(bin);
+    if (!bucket) { bucket = []; bins.set(bin, bucket); }
+    bucket.push(entry);
+  }
+  return PEIRCE_MINI_INDEX = {planet:PLANET, binCount, bins, entries};
+}
+function peircePointInsideCell(point, entry) {
+  for (const edge of entry.edges)
+    if (edge.sign * dot3(edge.normal, point) < -1e-7) return false;
+  return true;
+}
+function peirceMiniCellAt(point, index) {
+  const binCount = index.binCount;
+  const binFor = value => Math.max(0, Math.min(binCount - 1,
+    Math.floor((value + 1) * .5 * binCount)));
+  const bx = binFor(point[0]), by = binFor(point[1]), bz = binFor(point[2]);
+  let best = null, bestDot = -Infinity;
+  for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++)
+    for (let dz = -2; dz <= 2; dz++) {
+      const bucket = index.bins.get(`${bx + dx},${by + dy},${bz + dz}`);
+      if (!bucket) continue;
+      for (const entry of bucket) {
+        if (peircePointInsideCell(point, entry)) return entry;
+        const distance = dot3(point, entry.cell.center);
+        if (distance > bestDot) { bestDot = distance; best = entry; }
+      }
+    }
+  if (best) return best;
+  for (const entry of index.entries) {
+    const distance = dot3(point, entry.cell.center);
+    if (distance > bestDot) { bestDot = distance; best = entry; }
+  }
+  return best;
+}
+function peirceMiniCellColor(tile, visible, spectator) {
+  if (!tile) return rgbOf("#12305c");
+  let color = rgbOf(tileGroundColor(tile, "#44545a"));
+  if (!spectator && !visible.has(key(tile.pos))) color = color.map(channel => channel * .35);
+  if (tile.owner !== null && tile.owner !== undefined) {
+    const owner = rgbOf(cityBannerColor(tile.owner));
+    const alpha = TERRITORY_TINT_SCALE * (ownerIsCityState(tile.owner)
+      ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor);
+    color = color.map((channel, index) => channel * (1 - alpha) + owner[index] * alpha);
+  }
+  return color;
+}
+
 function miniViewportScreenCorners() {
   return [[0, 0], [MAPW, 0], [MAPW, MAPH], [0, MAPH]];
 }
@@ -21445,42 +22359,65 @@ function paintMiniViewportFootprint(points, clip = null) {
   mx2.shadowBlur = 0; mx2.strokeStyle = "#ffe4a2"; mx2.lineWidth = 1.05; mx2.stroke();
   mx2.restore();
 }
-// The surface camera and the corner camera share a projection. A point on the
-// map canvas therefore reaches the minimap by the ratio of their radii. For a
-// globe, clipping that projected rectangle to the thumbnail disc is the exact
-// visible spherical cap (including a partial-disc crescent at the edge). The
-// undiscovered chart has no disc, but its ground plane is vertically pitched on
-// the main map, so undo that pitch before carrying the same ground to the mini.
-function drawPlanetMiniViewportFootprint(camera, scale, centerX, centerY) {
+// Project the four corners of the main map back to the sphere, then through
+// the same Peirce frame as the world raster. This keeps the minimap's gold
+// footprint tied to the actual centre view instead of drawing a decorative
+// rectangle whose meaning changes with zoom.
+function drawPlanetMiniViewportFootprint(projection) {
   const mainCamera = planetCamera();
   const mainRadius = mainCamera.radius * cam.scale;
-  const miniRadius = camera.radius * scale;
-  if (!(mainRadius > 1e-6) || !(miniRadius > 1e-6)) return;
-  const [mainCenterX, mainCenterY] = planetEarthCenter(mainRadius);
-  const ratio = miniRadius / mainRadius;
+  if (!(mainRadius > 1e-6)) return;
+  const basis = planetViewBasis(mainCamera);
   const points = miniViewportScreenCorners().map(([sx, sy]) => {
-    const groundY = mainCamera.chart ? planetGroundInputY(sy, mainCenterY) : sy;
-    return [centerX + (sx - mainCenterX) * ratio,
-            centerY + (groundY - mainCenterY) * ratio];
-  });
-  paintMiniViewportFootprint(
-    points,
-    mainCamera.chart ? null : () => mx2.arc(centerX, centerY, miniRadius, 0, 7)
-  );
+    const dx = (sx - MAPW / 2) / mainRadius;
+    const dy = (sy - MAPH / 2) / mainRadius;
+    const distance = Math.hypot(dx, dy);
+    let point;
+    if (mainCamera.chart) {
+      const angle = distance;
+      if (angle > PEIRCE_PI) return null;
+      const tangent = distance > 1e-9 ? Math.sin(angle) / distance : 1;
+      point = [
+        basis.out[0] * Math.cos(angle) + (basis.right[0] * dx - basis.up[0] * dy) * tangent,
+        basis.out[1] * Math.cos(angle) + (basis.right[1] * dx - basis.up[1] * dy) * tangent,
+        basis.out[2] * Math.cos(angle) + (basis.right[2] * dx - basis.up[2] * dy) * tangent,
+      ];
+    } else {
+      const squared = dx * dx + dy * dy;
+      if (squared >= 1) return null;
+      const toward = Math.sqrt(1 - squared);
+      point = [
+        basis.out[0] * toward + basis.right[0] * dx - basis.up[0] * dy,
+        basis.out[1] * toward + basis.right[1] * dx - basis.up[1] * dy,
+        basis.out[2] * toward + basis.right[2] * dx - basis.up[2] * dy,
+      ];
+    }
+    const length = Math.hypot(...point) || 1;
+    return peirceMiniScreenPoint(point.map(value => value / length), projection);
+  }).filter(Boolean);
+  paintMiniViewportFootprint(points);
 }
 function planetMiniScale(width, height) {
-  return knowsGlobe() ? Math.min(width, height) * .44
-                      : Math.hypot(width, height) / 2 / CHART_LIMIT;
+  return Math.min(width, height) / 2;
 }
-function drawPlanetMiniNaturalWonderPerimeters(cells) {
+function drawPlanetMiniNaturalWonderPerimeters(cells, projection) {
   const segments = [];
-  for (const {tile, cell, points} of cells) {
-    if (!cell || !isNaturalWonder(tile.feature)) continue;
-    for (let side = 0; side < points.length; side++) {
+  for (const {tile, cell} of cells) {
+    if (!cell || !tile || !isNaturalWonder(tile.feature)) continue;
+    for (let side = 0; side < cell.ids.length; side++) {
       const neighbor = TMAP.get(cell.nbrs[side]);
       if (naturalWonderContinues(tile, neighbor)) continue;
-      const a = points[side], b = points[(side + 1) % points.length];
-      segments.push([a.x, a.y, b.x, b.y]);
+      const a = [PLANET.corners[3 * cell.ids[side]],
+                 PLANET.corners[3 * cell.ids[side] + 1],
+                 PLANET.corners[3 * cell.ids[side] + 2]];
+      const next = cell.ids[(side + 1) % cell.ids.length];
+      const b = [PLANET.corners[3 * next], PLANET.corners[3 * next + 1],
+                 PLANET.corners[3 * next + 2]];
+      const first = peirceMiniScreenPoint(a, projection);
+      const second = peirceMiniScreenPoint(b, projection);
+      if (!first || !second || Math.hypot(first[0] - second[0], first[1] - second[1]) > projection.half)
+        continue;
+      segments.push([...first, ...second]);
     }
   }
   if (!segments.length) return;
@@ -21497,50 +22434,70 @@ function drawPlanetMiniNaturalWonderPerimeters(cells) {
 function drawPlanetMini() {
   if (!planetReady()) return planetMap();
   const {width, height} = syncMiniCanvas();
-  const camera = {...planetCamera(), radius:1};
-  const centerX = width / 2, centerY = height / 2;
-  const scale = planetMiniScale(width, height);
-  mx2.setTransform(DPR, 0, 0, DPR, 0, 0);
-  mx2.fillStyle = camera.chart ? "#123b55" : "#03080c";
-  mx2.fillRect(0, 0, width, height);
-  if (!camera.chart) {
-    mx2.fillStyle = "#123b55";
-    mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.fill();
-  }
+  const projection = peirceMiniProjection(width, height);
   const visible = new Set((state.turn_visible || state.visible).map(key));
   const spectator = !Number.isInteger(state.view_player);
-  const reach = Math.hypot(width, height) / 2;
-  const cells = planetCells(camera, scale, centerX, centerY, reach);
-  for (const cell of cells) {
-    planetPath(mx2, cell.points);
-    const base = tileGroundColor(cell.tile, "#44545a");
-    mx2.fillStyle = spectator || visible.has(key(cell.tile.pos)) ? base : shade(base, .35);
-    mx2.fill();
-    if (cell.tile.owner !== null && cell.tile.owner !== undefined) {
-      mx2.globalAlpha = TERRITORY_TINT_SCALE * (ownerIsCityState(cell.tile.owner)
-        ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor);
-      mx2.fillStyle = cityBannerColor(cell.tile.owner); mx2.fill();
-      mx2.globalAlpha = 1;
+  const index = peirceMiniCellIndex();
+  for (const entry of index.entries) {
+    entry.tile = TMAP.get(entry.key);
+    entry.color = peirceMiniCellColor(entry.tile, visible, spectator);
+  }
+
+  const grid = peirceMiniLocalGrid(projection);
+  const fallback = rgbOf("#07110f");
+  const mapped = new Array(grid.pixelWidth * grid.pixelHeight);
+  for (let gridY = 0; gridY < grid.pixelHeight; gridY++) {
+    for (let gridX = 0; gridX < grid.pixelWidth; gridX++) {
+      const gridPixel = gridY * grid.pixelWidth + gridX;
+      if (!grid.valid[gridPixel]) continue;
+      const vectorOffset = gridPixel * 3;
+      const local = [grid.vectors[vectorOffset], grid.vectors[vectorOffset + 1],
+                     grid.vectors[vectorOffset + 2]];
+      const point = [
+        projection.basis.out[0] * local[0] + projection.basis.right[0] * local[1] + projection.basis.up[0] * local[2],
+        projection.basis.out[1] * local[0] + projection.basis.right[1] * local[1] + projection.basis.up[1] * local[2],
+        projection.basis.out[2] * local[0] + projection.basis.right[2] * local[1] + projection.basis.up[2] * local[2],
+      ];
+      mapped[gridPixel] = peirceMiniCellAt(point, index);
     }
   }
-  drawPlanetMiniNaturalWonderPerimeters(cells);
-  drawPlanetMiniViewportFootprint(camera, scale, centerX, centerY);
-  if (!camera.chart) {
-    mx2.strokeStyle = "#b9e3f388"; mx2.lineWidth = 1;
-    mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.stroke();
+  const physicalWidth = mini.width, physicalHeight = mini.height;
+  const physical = mx2.createImageData(physicalWidth, physicalHeight);
+  const scaleX = physicalWidth / projection.width, scaleY = physicalHeight / projection.height;
+  for (let py = 0; py < physicalHeight; py++) {
+    const gridY = Math.min(grid.pixelHeight - 1, Math.floor((py + .5) / scaleY));
+    for (let px = 0; px < physicalWidth; px++) {
+      const gridX = Math.min(grid.pixelWidth - 1, Math.floor((px + .5) / scaleX));
+      const pixel = py * physicalWidth + px;
+      const gridPixel = gridY * grid.pixelWidth + gridX;
+      const offset = pixel * 4;
+      let color = fallback;
+      if (mapped[gridPixel]?.color) color = mapped[gridPixel].color;
+      physical.data[offset] = color[0]; physical.data[offset + 1] = color[1];
+      physical.data[offset + 2] = color[2]; physical.data[offset + 3] = 255;
+    }
   }
+  mx2.setTransform(1, 0, 0, 1, 0, 0);
+  mx2.putImageData(physical, 0, 0);
+  mx2.setTransform(DPR, 0, 0, DPR, 0, 0);
+  mx2.strokeStyle = "#b9e3f388"; mx2.lineWidth = 1;
+  mx2.strokeRect(projection.centerX - projection.half + .5,
+                 projection.centerY - projection.half + .5,
+                 projection.side - 1, projection.side - 1);
+  drawPlanetMiniNaturalWonderPerimeters(index.entries, projection);
+  drawPlanetMiniViewportFootprint(projection);
   for (const city of state.cities) {
-    const tile = TMAP.get(key(city.pos));
-    if (!tile) continue;
-    const cell = planetCellGeometry(tile, camera, scale, centerX, centerY);
-    if (!cell || cell.center.z <=
-        (camera.chart ? planetChartHorizon(camera, scale, reach) : 0)) continue;
+    const cell = PLANET.cells.get(key(city.pos));
+    if (!cell) continue;
+    const center = peirceMiniPointCopies(cell.center, projection);
     const cityState = ownerIsCityState(city.owner);
     const cityRadius = cityState ? 1.15 : 2.35;
-    mx2.globalAlpha = cityState ? MAP_CIV_HIERARCHY.cityStateMarker : 1;
-    drawCityIcon(mx2, cell.center.x, cell.center.y, cityRadius,
-                 cityBannerColor(city.owner), cityState ? "#0b0e13" : "#f8edca",
-                 cityState, Boolean(city.is_capital));
+    for (const [x, y] of center) {
+      mx2.globalAlpha = cityState ? MAP_CIV_HIERARCHY.cityStateMarker : 1;
+      drawCityIcon(mx2, x, y, cityRadius, cityBannerColor(city.owner),
+                   cityState ? "#0b0e13" : "#f8edca", cityState,
+                   Boolean(city.is_capital));
+    }
     mx2.globalAlpha = 1;
   }
   mx2.setTransform(1, 0, 0, 1, 0, 0);
@@ -21775,15 +22732,12 @@ mini.addEventListener("click", ev => {
   const r = mini.getBoundingClientRect();
   if (planetMap()) {
     if (!planetReady()) return;
-    const camera = {...planetCamera(), radius:1};
-    const centerX = r.width / 2, centerY = r.height / 2;
-    const scale = planetMiniScale(r.width, r.height);
+    const projection = peirceMiniProjection(r.width, r.height);
     const x = ev.clientX - r.left, y = ev.clientY - r.top;
-    const target = planetCells(camera, scale, centerX, centerY,
-                               Math.hypot(r.width, r.height) / 2)
-      .filter(cell => pointInsidePlanetCell(x, y, cell.points))
-      .sort((a, b) => b.center.z - a.center.z)[0];
-    if (target) { takeCameraControl(); centerWorld(target.tile.pos); }
+    const point = peirceMiniSphereAt(x, y, projection);
+    const target = point && peirceMiniCellAt(point, peirceMiniCellIndex());
+    const tile = target?.tile || (target && TMAP.get(target.key));
+    if (tile) { takeCameraControl(); centerWorld(tile.pos); }
     return;
   }
   const layout = miniLayout(r.width, r.height);
@@ -21993,8 +22947,18 @@ function hudTurnPlate() {
   const viewLabel = playerView ? "Player view" : SPEC ? "Observing" : "Your empire";
   const mapName = titleCase(state.map.script || "pangaea");
   const speedName = titleCase(state.game_speed || "standard");
-  const paceOption = document.getElementById("specspeed")?.selectedOptions[0];
+  const paceSelect = document.getElementById("specspeed");
+  const paceOption = paceSelect?.selectedOptions[0];
   const watchPace = SPEC ? paceOption?.textContent.trim() || "Blitz" : "Manual";
+  const watchPaceOptions = SPEC && paceSelect
+    ? [...paceSelect.options].map(option =>
+        `<option value="${escapeAttr(option.value)}"${option.value === paceOption?.value ? " selected" : ""}>` +
+        `${escapeAttr(option.textContent.trim())}</option>`).join("")
+    : "";
+  const watchPaceValue = SPEC
+    ? `<span class="turn-pace-choice"><select data-hud-pace title="Change watch pace" ` +
+      `aria-label="Watch pace">${watchPaceOptions}</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span>`
+    : `<b>${watchPace}</b>`;
   // "Remaining" is a count of who is still playing, so a civilization that has
   // been wiped off the map no longer appears in it. The count it was taken out
   // of is worth as much as the count itself — eight remaining reads very
@@ -22061,7 +23025,7 @@ function hudTurnPlate() {
     `</div>` +
     `<div class="turn-settings" aria-label="Game setup">` +
     `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
-    `<div class="turn-setting"><span>Watch pace:</span><b>${watchPace}</b></div>` +
+    `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
     rosterRow("Civs:", civCount, civsLost) +
     rosterRow("City states:", cityStateCount, cityStatesLost) +
     `</div></section>`;
@@ -22244,13 +23208,29 @@ function oddsMovement(player) {
   const start = oddsValue(player.odds_start);
   const now = oddsValue(player.odds_now);
   if (start === null || now === null) return {symbol:"→", direction:"flat"};
-  // Five per cent of the opening chance catches a real relative move, while a
-  // half-point absolute floor stops a 0.10% long shot flickering upward at
-  // 0.11%. The displayed columns should tell a trend, not amplify float noise.
-  const deadBand = Math.max(.005, start * .05);
-  if (now - start >= deadBand) return {symbol:"↗", direction:"up"};
-  if (start - now >= deadBand) return {symbol:"↘", direction:"down"};
+  // Two percentage points is an absolute dead band: a move from 48% to 50%
+  // is still flat, while the arrows remain reserved for a clearer change.
+  const delta = now - start;
+  if (delta > .02) return {symbol:"↗", direction:"up"};
+  if (delta < -.02) return {symbol:"↘", direction:"down"};
   return {symbol:"→", direction:"flat"};
+}
+
+function signedEloDelta(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "—";
+  const rounded = Math.round(number);
+  if (rounded > 0) return `+${rounded}`;
+  if (rounded < 0) return `−${Math.abs(rounded)}`;
+  return "0";
+}
+
+function eloDeltaTitle(player) {
+  const delta = playerHudEloDeltaValue(player);
+  return delta === null
+    ? "Live Elo position unavailable"
+    : `Live Elo position against the living field: ${signedEloDelta(delta)}`;
 }
 
 function playerOddsFigures(player) {
@@ -22380,9 +23360,10 @@ function drawPlayerHud() {
     `<span class="player-standings-drag widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move player standings; use arrow keys or drag" title="Drag to move · arrow keys also move"></span>` +
     `<span class="diplomacy-identity-head">` +
-    // The two win estimates are two named categories on matching inner tracks;
-    // Δ owns the narrow middle track used by each row's trend glyph. The outer
-    // cell remains one draggable Win odds column, so adding the labels does not
+    // ELO's live position delta is its own draggable column. The two win
+    // estimates remain named categories on matching inner tracks; their Δ owns
+    // the narrow middle track used by each row's trend glyph. The outer cell
+    // remains one draggable Win odds column, so adding those labels does not
     // add two more masthead seams. AGE and PLAN stay short because these heads
     // clip rather than ellipsize; their full wording is in their tooltips.
     playerHudSortHead("rank", "RANK", "Score rank") +
@@ -22394,6 +23375,7 @@ function drawPlayerHud() {
     `aria-label="Spectator mode: see everyone with full map visibility">All</button>` +
     playerHudSortHead("player", "PLAYER", "Player") +
     playerHudSortHead("elo", "ELO", "Elo rating", "numeric") +
+    playerHudSortHead("elo_delta", "Δ", "Live Elo position against the living field", "numeric") +
     `<span class="diplomacy-odds-head numeric">` +
     playerHudSortHead("win_start", "START", "Win odds at the start of the game") +
     playerHudSortHead("win_delta", "Δ", "Change in win odds", "odds-trend-head") +
@@ -22498,6 +23480,7 @@ function drawPlayerHud() {
       // a provisional one is marked by its class rather than by a character
       // that would push the value over the column's width.
       const playerElo = eloKnown ? `${eloValue}` : "—";
+      const playerEloDelta = signedEloDelta(playerHudEloDeltaValue(p));
       const humanTitle = `You · new league player ${p.player_username}` +
         ` · ${playedGames ? `${p.player_elo} ±${p.player_elo_rd} over ${playedGames} rated ` +
           `${playedGames === 1 ? "game" : "games"}`
@@ -22552,6 +23535,8 @@ function drawPlayerHud() {
         `<span class="diplomacy-identity-field" title="${leagueTitle}"><span class="diplomacy-player">${playerName}</span></span>` +
         `<span class="diplomacy-identity-field diplomacy-elo" title="${playerEloLabel} · ${leagueTitle}">` +
         `<span class="diplomacy-elo-value${eloProvisional ? " provisional" : ""}">${playerElo}</span></span>` +
+        `<span class="diplomacy-identity-field diplomacy-elo-delta" title="${escapeAttr(eloDeltaTitle(p))}">` +
+        `<span class="diplomacy-elo-delta-value">${playerEloDelta}</span></span>` +
         // The per-cent sign lives in the WIN% column head, not in eight or
         // twelve repetitions of the value. It cost about seven pixels a row, and
         // because the value ellipsizes rather than shrinks, going one pixel over
@@ -22710,6 +23695,10 @@ function runHudAction(target) {
 // swallowed. Act on the press, which always lands on what was under the
 // cursor, and keep click for keyboard activation — which reports no press.
 const hudRibbon = document.getElementById("playerhud");
+hudRibbon.addEventListener("change", ev => {
+  const pace = ev.target.closest?.("[data-hud-pace]");
+  if (pace) chooseWatchPace(pace.value);
+});
 hudRibbon.addEventListener("mousedown", ev => {
   if (ev.button !== 0) return;
   const sort = ev.target.closest?.("[data-hud-sort]");
@@ -25972,12 +26961,28 @@ function districtLensDistrict(lens = mapLens) {
   return district || null;
 }
 function districtLensId(district) { return DISTRICT_LENS_PREFIX + district; }
+// The omniscient spectator has no seat: `state.player` merely follows the
+// acting major, so anything derived from it changes every simulated turn.
+// Every lens read below branches on this instead, so the lens holds still
+// while the world runs and shows the whole world's information at once.
+function districtLensOmniscient() {
+  return !!state?.spectate && !Number.isInteger(state?.view_player);
+}
 function districtLensViewer() {
   if (!state) return null;
   if (Number.isInteger(state.view_player)) return state.view_player;
   return Number.isInteger(state.player) ? state.player : null;
 }
 function districtLensChoices() {
+  if (districtLensOmniscient()) {
+    // Above the world there is no single civilization to filter by. Offer
+    // the stable base families; each empire's tiles answer with the unique
+    // replacement that civilization actually builds for the family.
+    return Object.keys(RULES?.districts || {})
+      .filter(district => RULES.districts[district]?.buildable !== false)
+      .filter(district => !RULES.districts[district]?.unique_to)
+      .sort((left, right) => titleCase(left).localeCompare(titleCase(right)));
+  }
   const viewer = districtLensViewer();
   const civ = state?.players?.[viewer]?.civ;
   return Object.keys(RULES?.districts || {})
@@ -25992,6 +26997,15 @@ function districtLensChoices() {
     .filter(district => !Object.values(RULES.districts).some(spec =>
       spec.replaces === district && spec.unique_to === civ))
     .sort((left, right) => titleCase(left).localeCompare(titleCase(right)));
+}
+// The district `civ` actually builds for `family` — the civilization's unique
+// replacement where one exists (Korea's seowon for campus), otherwise the
+// family itself. Mirrors the engine's `civ_district_variant`.
+function districtLensCivVariant(family, civ) {
+  if (!civ) return family;
+  return Object.keys(RULES?.districts || {}).find(district =>
+    RULES.districts[district]?.unique_to === civ &&
+    districtLensFamily(district) === family) || family;
 }
 function districtLensFamily(district) {
   let family = district;
@@ -26063,7 +27077,13 @@ function districtLensWorldDistance(a, b) {
   return Math.min(...columns.map(column =>
     hexDist(a, [bColumn + column - Math.floor(b[1] / 2), b[1]])));
 }
-function districtLensKnownTechs() { return new Set(state?.me?.techs || []); }
+// The one observed seat's technologies. Above the world there is no observed
+// seat — `state.me` follows the acting major there, so the omniscient lens
+// reads null and skips tech gates entirely rather than flickering through a
+// different empire's laboratory every simulated turn.
+function districtLensKnownTechs() {
+  return districtLensOmniscient() ? null : new Set(state?.me?.techs || []);
+}
 function districtLensPlacementIsVisible(tile, spec, neighbors, cityCenters, city, owner) {
   if (!tile || !spec || tile.flooded || tile.submerged || tile.district || tile.planned_district ||
       tile.wonder || cityCenters.has(key(tile.pos)) || tile.improvement === "national_park" ||
@@ -26074,11 +27094,11 @@ function districtLensPlacementIsVisible(tile, spec, neighbors, cityCenters, city
   const vietnamSpecialty = civ === "Vietnam" && spec.specialty !== false;
   const removalTech = {forest:"mining", jungle:"bronze_working", marsh:"irrigation"}[tile.feature];
   if (vietnamSpecialty && !["forest", "jungle", "marsh"].includes(tile.feature)) return false;
-  if (!vietnamSpecialty && removalTech && !knownTechs.has(removalTech)) return false;
+  if (!vietnamSpecialty && removalTech && knownTechs && !knownTechs.has(removalTech)) return false;
   const resource = ruleSpec("resources", tile.resource);
   if (resource && !["bonus", "artifact"].includes(resource.class)) return false;
   const resourceImprovement = ruleSpec("improvements", resource?.improvement);
-  if (resourceImprovement?.tech && !knownTechs.has(resourceImprovement.tech)) return false;
+  if (resourceImprovement?.tech && knownTechs && !knownTechs.has(resourceImprovement.tech)) return false;
 
   const water = isWater(tile);
   const placement = spec.placement || (spec.water ? "water" : "land");
@@ -26179,8 +27199,10 @@ function districtLensPolicyPercent(district, owner) {
   // Policies are private. The focused player's cards are the one set the
   // observation legitimately carries, so only use them for that player's
   // prospective and existing districts; foreign sites stay at their visible
-  // map-derived amount.
-  if (owner !== districtLensViewer()) return 0;
+  // map-derived amount. The omniscient view has no focused player — `me`
+  // follows the acting major — so every empire stays at the map-derived
+  // figure there rather than one empire's total flickering by turn.
+  if (districtLensOmniscient() || owner !== districtLensViewer()) return 0;
   const family = districtLensFamily(district);
   const effect = `${family}_adjacency_pct`;
   let percent = 0;
@@ -26248,13 +27270,20 @@ function districtLensData() {
       districtLensCache.district === district && districtLensCache.planet === planet)
     return districtLensCache.data;
 
+  const omniscient = districtLensOmniscient();
   const visible = new Set((state.visible || []).map(key));
   const cityCenters = new Set((state.cities || [])
     .filter(city => Array.isArray(city.pos) && visible.has(key(city.pos)))
     .map(city => key(city.pos)));
   const viewer = districtLensViewer();
-  const ownCities = new Map((state.cities || [])
-    .filter(city => city.owner === viewer && visible.has(key(city.pos)))
+  // Whose prospective sites this lens forecasts: the observed seat's cities,
+  // or every empire's at once above the world — the omniscient spectator is
+  // entitled to all information, and tying candidates to the acting player
+  // made the lens flash a different empire's plots every simulated turn.
+  const planCities = new Map((state.cities || [])
+    .filter(city => (omniscient
+      ? city.owner !== null && city.owner !== undefined
+      : city.owner === viewer) && Array.isArray(city.pos) && visible.has(key(city.pos)))
     .map(city => [city.id, city]));
   const cityBuildable = new Map();
   const values = new Map();
@@ -26266,26 +27295,34 @@ function districtLensData() {
     // looks at the same ground, but it can never disclose fogged information.
     if (!visible.has(tileKey)) continue;
     const owner = tile.owner;
-    const foreign = owner !== null && owner !== undefined && owner !== viewer;
     const neighbors = districtLensNeighbors(tile).filter(neighbor => visible.has(key(neighbor.pos)));
     if (tile.district) {
-      if (tile.district !== district) continue;
-      const yields = districtLensYields(district, tile, neighbors, cityCenters, owner);
+      // Any member of the selected family lights up — a rival's seowon under
+      // the campus lens — and is priced by its own rules, not the lens's.
+      if (!districtLensIsFamily(tile.district, district)) continue;
+      const yields = districtLensYields(tile.district, tile, neighbors, cityCenters, owner);
       // Existing districts in another empire are the one exception to the
-      // no-foreign-planning rule: show only their selected district and only
-      // when visible surroundings give it a bonus.
-      if (!districtLensHasBonus(yields)) continue;
+      // no-foreign-planning rule for a seated viewer: show only when visible
+      // surroundings give it a bonus. The omniscient spectator instead sees
+      // every standing member of the family, +0 included.
+      if (!omniscient && !districtLensHasBonus(yields)) continue;
       values.set(tileKey, {kind:"existing", yields});
       high = Math.max(high, Math.abs(districtLensTotal(yields)));
       continue;
     }
-    const city = ownCities.get(tile.owner_city);
-    if (foreign || owner !== viewer || !city || districtLensWorldDistance(tile.pos, city.pos) > 3) continue;
+    const city = planCities.get(tile.owner_city);
+    if (!city || owner !== city.owner || districtLensWorldDistance(tile.pos, city.pos) > 3) continue;
+    // Each empire plans with the district its civilization actually builds:
+    // the campus family lens prices a seowon on Korean ground.
+    const variant = omniscient
+      ? districtLensCivVariant(district, state.players?.[city.owner]?.civ)
+      : district;
+    if (!RULES.districts[variant]) continue;
     if (!cityBuildable.has(city.id))
-      cityBuildable.set(city.id, districtLensCityCanBuild(district, city, visible));
+      cityBuildable.set(city.id, districtLensCityCanBuild(variant, city, visible));
     if (!cityBuildable.get(city.id) || !districtLensPlacementIsVisible(
-      tile, RULES.districts[district], neighbors, cityCenters, city, viewer)) continue;
-    const yields = districtLensYields(district, tile, neighbors, cityCenters, viewer, true);
+      tile, RULES.districts[variant], neighbors, cityCenters, city, city.owner)) continue;
+    const yields = districtLensYields(variant, tile, neighbors, cityCenters, city.owner, true);
     values.set(tileKey, {kind:"candidate", yields});
     high = Math.max(high, Math.abs(districtLensTotal(yields)));
   }
@@ -26293,11 +27330,25 @@ function districtLensData() {
   districtLensCache = {state, rules:RULES, district, planet, data};
   return data;
 }
+// Whether anything in this district's family ever pays adjacency. Aerodromes,
+// Encampments, Spaceports and friends legitimately have none — exactly as in
+// Civilization VI — so their lenses show legal sites and say so, rather than
+// looking broken.
+function districtLensFamilyHasAdjacency(district) {
+  const family = districtLensFamily(district);
+  return Object.keys(RULES?.districts || {}).some(name =>
+    districtLensFamily(name) === family &&
+    Object.keys(RULES.districts[name]?.adjacency || {}).length > 0);
+}
 function districtLensInfo(district) {
+  const none = districtLensFamilyHasAdjacency(district)
+    ? "" : " · no adjacency bonuses in Civ VI — showing legal sites";
+  if (districtLensOmniscient())
+    return `${titleCase(district)} ADJACENCY — every empire, omniscient view${none}`;
   const viewer = districtLensViewer();
   const civ = state?.players?.[viewer]?.civ;
   return `${titleCase(district)} ADJACENCY — visible map information only` +
-    (civ ? ` · ${civ} perspective` : "");
+    (civ ? ` · ${civ} perspective` : "") + none;
 }
 const SETTLE_DISK = [];
 for (let q = -2; q <= 2; q++) for (let r = -2; r <= 2; r++)
@@ -26580,7 +27631,12 @@ function syncDistrictLensList() {
   const section = document.getElementById("district-lens-section");
   if (!list || !section) return;
   const viewer = districtLensViewer();
-  const civ = state?.players?.[viewer]?.civ || "";
+  // The omniscient list must not carry the acting player's civilization:
+  // `state.player` rotates every simulated turn, and a signature that
+  // rotates with it rebuilt this list — and reset the active lens — while
+  // the world ran. One stable name keeps the lens where the viewer put it.
+  const civ = districtLensOmniscient()
+    ? "omniscient" : state?.players?.[viewer]?.civ || "";
   const choices = districtLensChoices();
   const signature = `${civ}|${choices.join("|")}`;
   if (districtLensListKey?.rules === RULES && districtLensListKey.signature === signature) return;
@@ -26849,15 +27905,10 @@ function uncoveredMapBox(origin, width, height) {
     if (spansWidth) top = Math.max(top, Math.max(0, Math.min(height, victory.bottom)));
     else right = Math.max(0, Math.min(width, victory.left));
   }
-  // The bottom control dock is a frame below the world, not an overlay on its
-  // last row. Measuring the dock itself covers either half independently: if
-  // zoom/search controls or map lenses remain visible, the fitted map ends at
-  // their shared top edge; if both are hidden the zero-height dock reserves
-  // nothing. Against an already-fitted canvas this clamps to `height`, so the
-  // camera does not pay for the same strip twice.
-  const controls = document.getElementById("map-controls-dock")?.getBoundingClientRect();
-  if (controls?.height)
-    bottom = Math.max(0, Math.min(height, controls.top - origin.top));
+  // The bottom control dock floats over the world like every other lower
+  // instrument: the fitted map deliberately runs to the bottom of the screen
+  // rather than reserving a strip for the zoom cluster, so the world reads as
+  // the whole stage and the dock as a control resting on it.
   // A custom widget layout can put the nominal right edge left of the deck,
   // or the nominal top edge below the screen. There is no uncovered rectangle
   // on that axis, so retain a real on-screen center instead of returning an
@@ -29552,12 +30603,23 @@ let civ6StatusInFlight = false;
 let civvisMapOptions = null;
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
+document.getElementById("leaderselection").addEventListener("change", syncCustomLeaderSelection);
+document.getElementById("teams").addEventListener("change", syncCustomLeaderSelection);
+document.getElementById("custom-leader-table").addEventListener("change", event => {
+  if (!event.target.matches("[data-custom-civ]")) return;
+  const row = event.target.closest("tr");
+  const selected = event.target.selectedOptions[0];
+  const elo = row?.querySelector("[data-custom-elo]");
+  if (elo && selected)
+    elo.innerHTML = customEloOptions(event.target.value, selected.dataset.leader || "", "");
+});
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
 // Bound on the select itself, so it has re-fitted the splits to the new size
 // before the panel's own delegated listener stages what is now selected.
 document.getElementById("np").addEventListener("change", () => {
   syncTeams();
   syncWorldSetupInputs();
+  syncCustomLeaderSelection();
 });
 document.getElementById("gamespeed").addEventListener("change", syncWorldSetupInputs);
 document.getElementById("savebtn").onclick = () => writeSave();
@@ -29568,11 +30630,16 @@ document.getElementById("paneltoggle").onclick = () => togglePanel();
 bindMapAreaEditor();
 document.getElementById("collapsepause").onclick = toggleSpecPause;
 document.getElementById("specpause").onclick = toggleSpecPause;
-document.getElementById("specspeed").onchange = () => {
-  rememberPace(specPace()); // the pick outranks any state already in flight
+function chooseWatchPace(value) {
+  const select = document.getElementById("specspeed");
+  const ms = Number(value);
+  if (!select || !Number.isFinite(ms) || !paceOffered(select, ms)) return;
+  select.value = String(ms);
+  rememberPace(ms); // the pick outranks any state already in flight
   setPace({ms: paceChoice});
   if (state) drawPlayerHud();
-};
+}
+document.getElementById("specspeed").onchange = event => chooseWatchPace(event.currentTarget.value);
 restorePace();
 document.getElementById("between-game-countdown").onchange = () => {
   const ms = betweenGameCountdownMs();
@@ -29633,7 +30700,6 @@ function readOptionalWholeSetting(id) {
 }
 function worldSetupInputError() {
   for (const [id, label] of [
-    ["citystates", "City-states"],
     ["turnlimit", "Turn limit"],
     ["mapseed", "Map seed"],
   ]) {
@@ -29642,14 +30708,6 @@ function worldSetupInputError() {
       return `${label} must be a whole number in the range shown`;
   }
   return "";
-}
-function mapSizeForPlayers(players) {
-  return Array.isArray(RULES?.map_sizes)
-    ? RULES.map_sizes.find(size => Number(size.default_players) === Number(players))
-    : null;
-}
-function defaultCityStatesForPlayers(players = +readSetting("np")) {
-  return Number(mapSizeForPlayers(players)?.default_city_states);
 }
 function defaultTurnLimitForSpeed(speed = readSetting("gamespeed")) {
   const entry = Array.isArray(RULES?.game_speeds)
@@ -29667,21 +30725,6 @@ function setOptionalWorldNumber(id, value, defaultValue = Number.NaN) {
     ? String(number) : "";
 }
 function syncWorldSetupInputs() {
-  const cityStates = document.getElementById("citystates");
-  const cityStatesHint = document.getElementById("citystates-hint");
-  const cityStateDefault = defaultCityStatesForPlayers();
-  const cityStateLimit = Number(RULES?.city_state_limit);
-  if (cityStates) {
-    if (Number.isSafeInteger(cityStateLimit) && cityStateLimit >= 0)
-      cityStates.max = String(cityStateLimit);
-    const detail = Number.isSafeInteger(cityStateDefault)
-      ? `${cityStateDefault} city-states for this world size`
-      : "the map-size default";
-    cityStates.placeholder = `Map default · ${detail}`;
-    cityStates.title = `Leave blank to use ${detail}; enter 0 for no city-states`;
-    if (cityStatesHint)
-      cityStatesHint.textContent = `Leave blank to use ${detail}; enter 0 for none.`;
-  }
   const turnLimit = document.getElementById("turnlimit");
   const turnLimitHint = document.getElementById("turnlimit-hint");
   const turnDefault = defaultTurnLimitForSpeed();
@@ -29767,7 +30810,12 @@ function selectedSimulationSettings() {
     [track.id, readVictorySetting(`victory-${track.id}`)]));
   const leader = readSetting("leader");
   const difficulty = readSetting("difficulty");
-  const cityStates = readOptionalWholeSetting("citystates");
+  const leaderSelection = readSetting("leaderselection") || "automatic";
+  const customLeaders = leaderSelection === "custom" ? customLeaderRowsFromDom() : [];
+  const customCivs = customLeaders.map(row => row.civ).filter(Boolean);
+  const teams = leaderSelection === "custom" && customLeaders.length === np
+    ? customLeaders.map(row => row.team === "" ? null : Number(row.team))
+    : teamAssignment(np, readSetting("teams"));
   const turnLimit = readOptionalWholeSetting("turnlimit");
   const mapSeed = readOptionalWholeSetting("mapseed");
   // In the Civilization VI mode the map control holds one of that game's
@@ -29783,13 +30831,14 @@ function selectedSimulationSettings() {
   return {num_players: np, map_script: ourMap, map_topology: mapTopology,
           map_poles: mapPoles, game_speed: gameSpeed,
           leader_pool: leaderPool,
+          leader_selection: leaderSelection,
           base_ruleset: baseRuleset, start_era: startEra,
           future_era: futureEra,
-          // The control holds the rule; the server is handed the seat-by-seat
-          // assignment that rule makes of this many civilizations.
-          teams: teamAssignment(np, readSetting("teams")),
+          // Automatic mode carries the split rule. Custom mode carries the
+          // table's seat-by-seat team assignment and civilization choices.
+          teams,
+          ...(leaderSelection === "custom" ? {custom_leaders: customLeaders} : {}),
           victory_conditions: victoryConditions,
-          ...(cityStates === null ? {} : {num_city_states: cityStates}),
           ...(turnLimit === null ? {} : {max_turns: turnLimit}),
           ...(mapSeed === null ? {} : {seed: mapSeed}),
           spectate: gameMode === "ai_sim",
@@ -29798,7 +30847,9 @@ function selectedSimulationSettings() {
           // Neither has this one, but its difficulty is the point of it: the
           // other game hands its handicap bonuses to human seats only, which is
           // what makes the ladder climbable from one.
-          ...(gameMode === "ai_sim" ? {} : {civs: civ6 || !leader ? [] : [leader], difficulty})};
+          ...(gameMode === "ai_sim"
+            ? (leaderSelection === "custom" ? {civs: customCivs} : {})
+            : {civs: civ6 || !leader ? [] : [leader], difficulty})};
 }
 // The handoff screen describes the world being built, so it reports the values
 // the payload actually carries rather than re-reading the panel behind it.
@@ -29864,8 +30915,6 @@ function applyQueuedSimulationSettings(settings) {
   // The staged size decides which splits exist, so it is in place first and
   // the queued assignment is read back as the rule that would produce it.
   syncTeams();
-  setOptionalWorldNumber("citystates", settings.city_states,
-    defaultCityStatesForPlayers(settings.players));
   document.getElementById("teams").value = teamRuleFromArray(settings.teams);
   document.getElementById("maptype").value = settings.map;
   if (settings.shape) document.getElementById("mapshape").value = settings.shape;
@@ -29877,7 +30926,10 @@ function applyQueuedSimulationSettings(settings) {
   setOptionalWorldNumber("mapseed", settings.seed);
   syncWorldSetupInputs();
   document.getElementById("leaderpool").value = normalizedLeaderPoolId(settings.leader_pool || "civ6");
+  if (settings.leader_selection)
+    document.getElementById("leaderselection").value = settings.leader_selection;
   syncLeaderPool();
+  syncCustomLeaderSelection();
   document.getElementById("baseruleset").value = settings.base_ruleset || "civ6";
   if (settings.start_era) document.getElementById("startera").value = settings.start_era;
   if (settings.future_era) document.getElementById("futureera").value = settings.future_era;
@@ -30070,6 +31122,95 @@ function syncLeaderPool() {
       `True Start: ${entry.latitude.toFixed(2)}°, ${entry.longitude.toFixed(2)}°`
     )}">${escapeAttr(entry.leader)} of ${escapeAttr(entry.civ)}</option>`).join("");
   if (leaders.some(entry => entry.civ === selected)) select.value = selected;
+  syncCustomLeaderSelection();
+}
+
+function activeLeaderPool() {
+  const requested = normalizedLeaderPoolId(readSetting("leaderpool"));
+  const pools = Array.isArray(RULES?.leader_pools) ? RULES.leader_pools : [];
+  return pools.find(pool => pool.id === requested && pool.available)
+    || pools.find(pool => pool.available) || null;
+}
+function customLeaderEntries() {
+  return (activeLeaderPool()?.leaders || [])
+    .map(entry => ({
+      civ: entry.civ,
+      leader: entry.leader || entry.civ,
+    }))
+    .sort((first, second) => `${first.civ} ${first.leader}`.localeCompare(`${second.civ} ${second.leader}`));
+}
+function customLeaderRowsFromDom() {
+  return [...document.querySelectorAll("#custom-leader-rows tr[data-seat]")].map(row => ({
+    team: row.querySelector("[data-custom-team]")?.value ?? "",
+    civ: row.querySelector("[data-custom-civ]")?.value ?? "",
+    leader: row.querySelector("[data-custom-civ] option:checked")?.dataset.leader || "",
+    elo: row.querySelector("[data-custom-elo]")?.value ?? "",
+  }));
+}
+function customLeaderEloOptions(civ, leader) {
+  const match = (RULES?.leader_elo_options || []).find(entry =>
+    entry.civ === civ && entry.leader === leader);
+  return Array.isArray(match?.elos) ? match.elos : [];
+}
+function customTeamOptions(players, rule, selected) {
+  const count = teamCount(players, rule);
+  if (!count) return `<option value="" selected>Free-for-all</option>`;
+  return Array.from({length: count}, (_, team) =>
+    `<option value="${team}"${String(team) === String(selected) ? " selected" : ""}>Team ${team + 1}</option>`
+  ).join("");
+}
+function customEloOptions(civ, leader, selected) {
+  const options = customLeaderEloOptions(civ, leader);
+  if (!options.length)
+    return `<option value="" selected>No recorded ELO</option>`;
+  const value = options.some(option => String(option.elo) === String(selected))
+    ? String(selected) : String(options[0].elo);
+  return options.map(option => {
+    const elo = String(option.elo);
+    const source = (option.strategies || []).join(", ");
+    return `<option value="${escapeAttr(elo)}"${elo === value ? " selected" : ""}` +
+      `${source ? ` title="${escapeAttr(source)}"` : ""}>${escapeAttr(elo)}</option>`;
+  }).join("");
+}
+function syncCustomLeaderSelection() {
+  const section = document.getElementById("custom-leader-selection");
+  const body = document.getElementById("custom-leader-rows");
+  if (!section || !body) return;
+  const custom = readSetting("leaderselection") === "custom";
+  section.hidden = !custom;
+  if (!custom) return;
+  const prior = customLeaderRowsFromDom();
+  const entries = customLeaderEntries();
+  const players = Math.max(0, Number(readSetting("np")) || 0);
+  const rule = readSetting("teams");
+  const automaticTeams = teamAssignment(players, rule);
+  if (!entries.length || !players) {
+    body.innerHTML = `<tr><td class="custom-leader-empty" colspan="3">No leaders are available in this pool.</td></tr>`;
+    return;
+  }
+  const rows = Array.from({length: players}, (_, seat) => {
+    const old = prior[seat] || {};
+    const entry = entries.find(candidate => candidate.civ === old.civ) || entries[seat % entries.length];
+    const team = teamCount(players, rule)
+      ? (Number.isInteger(Number(old.team)) && Number(old.team) < teamCount(players, rule)
+        ? String(old.team) : String(automaticTeams[seat] ?? 0))
+      : "";
+    return {
+      team,
+      civ: entry.civ,
+      leader: entry.leader,
+      elo: customLeaderEloOptions(entry.civ, entry.leader).some(option =>
+        String(option.elo) === String(old.elo)) ? String(old.elo) : "",
+    };
+  });
+  body.innerHTML = rows.map((row, seat) => `<tr data-seat="${seat}">
+    <td><select data-custom-team aria-label="Team for seat ${seat + 1}">${customTeamOptions(players, rule, row.team)}</select></td>
+    <td><select data-custom-civ aria-label="Civilization and leader for seat ${seat + 1}">${entries.map(entry =>
+      `<option value="${escapeAttr(entry.civ)}" data-leader="${escapeAttr(entry.leader)}"` +
+      `${entry.civ === row.civ ? " selected" : ""}>${escapeAttr(entry.civ)} — ${escapeAttr(entry.leader)}</option>`
+    ).join("")}</select></td>
+    <td><select data-custom-elo aria-label="ELO for seat ${seat + 1}">${customEloOptions(row.civ, row.leader, row.elo)}</select></td>
+  </tr>`).join("");
 }
 
 // Teams are permanent and decided before the world exists, so the lobby is
@@ -30446,6 +31587,7 @@ let lastIdleDraw = 0, drawCost = 8;
 const MAX_ANIMATION_PAINT_SHARE = .5;
 function animTick(now) {
   requestAnimationFrame(animTick);
+  recordPerformanceFrame(now);
   if (!state) return;
   const userCameraMoving = advanceUserCameraMotion(now);
   const followCameraMoving = advanceCameraFollow(now);

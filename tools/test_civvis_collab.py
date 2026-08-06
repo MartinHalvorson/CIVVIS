@@ -1065,5 +1065,67 @@ Added the fast shipping path.
         )
 
 
+class BaseStalenessTests(unittest.TestCase):
+    def test_a_current_branch_is_left_alone(self):
+        self.assertIsNone(collab.base_staleness("ahead", 0))
+        self.assertIsNone(collab.base_staleness("identical", 0))
+
+    def test_mild_staleness_advises_and_says_nothing_enforces_it(self):
+        kind, message = collab.base_staleness("behind", 3)
+        self.assertEqual(kind, "advisory")
+        self.assertIn("3 commits", message)
+        self.assertIn("Nothing enforces freshness", message)
+
+    def test_severe_staleness_is_refused(self):
+        kind, message = collab.base_staleness(
+            "behind", collab.STALE_BASE_LIMIT)
+        self.assertEqual(kind, "error")
+        self.assertIn("no CI run has tested", message)
+
+    def test_diverged_history_uses_the_same_ladder(self):
+        self.assertEqual(collab.base_staleness("diverged", 1)[0], "advisory")
+        self.assertEqual(
+            collab.base_staleness("diverged", collab.STALE_BASE_LIMIT + 40)[0],
+            "error",
+        )
+
+    def test_one_commit_under_the_limit_still_only_advises(self):
+        kind, _ = collab.base_staleness("behind", collab.STALE_BASE_LIMIT - 1)
+        self.assertEqual(kind, "advisory")
+
+
+class MachineRegistryTests(unittest.TestCase):
+    def registry_file(self, text: str) -> Path:
+        directory = tempfile.mkdtemp(prefix="civvis-machines-")
+        path = Path(directory) / "MACHINES.md"
+        path.write_text(text, encoding="utf-8")
+        self.addCleanup(lambda: subprocess.run(
+            [sys.executable, "-c",
+             f"import shutil; shutil.rmtree({directory!r}, ignore_errors=True)"]))
+        return path
+
+    def test_collects_every_backticked_id_wherever_it_sits(self):
+        registry = collab.machine_registry(self.registry_file(
+            "| `martin-desktop` | desktop | `old-name` |\n"
+            "- `mbp-martin`\n"
+            "Prose mentioning `mbp-m5-max-128` counts too.\n"
+        ))
+        self.assertEqual(
+            registry,
+            {"martin-desktop", "old-name", "mbp-martin", "mbp-m5-max-128"},
+        )
+
+    def test_rejects_tokens_that_could_never_be_machine_ids(self):
+        registry = collab.machine_registry(self.registry_file(
+            "`martin-desktop` but not `Not-Valid` nor `has_underscore`\n"
+        ))
+        self.assertEqual(registry, {"martin-desktop"})
+
+    def test_a_missing_registry_reads_as_none_not_empty(self):
+        missing = Path(tempfile.mkdtemp(prefix="civvis-machines-")) / "no.md"
+        self.assertIsNone(collab.machine_registry(missing))
+        # None means "stay silent"; an empty set would notice every PR.
+
+
 if __name__ == "__main__":
     unittest.main()

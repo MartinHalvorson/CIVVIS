@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""Publish a daily inventory of work that exists but is going nowhere.
+
+Three shapes of stranded work have each cost this fleet real progress, and
+none of them is visible from any single machine:
+
+- **Commentless closes.** A PR closed unmerged with a written rationale is a
+  decision; one closed silently is indistinguishable from an accident. On
+  2026-08-05 two of them (#1250, #1252) triggered a full cross-machine
+  forensic sweep that a one-line closing comment would have made unnecessary.
+- **Idle task branches.** A branch whose last real commit is more than a day
+  old, with no open PR, is work only one disk plus GitHub remembers — and
+  nothing routinely asks whether it was meant to land.
+- **Rescue snapshots.** `civvis_worktree_audit.py --rescue` preserves dirty
+  worktrees under `refs/civvis/wip/*` precisely so bytes survive a dead
+  session. Preservation without review is a graveyard, not a rescue.
+
+This report upserts a single issue (title below) rather than filing new ones:
+one place to look, no notification pile, and the issue's edit history is the
+fleet's stranded-work timeline for free. Rows carry enough to act on —
+branch, age, subject, line counts — so triage happens from the issue without
+an archaeology session. An empty report writes "nothing stranded" rather than
+skipping the update: silence must be distinguishable from breakage.
+
+    GH_TOKEN=... ./tools/stranded_work_report.py [--dry-run]
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.request
+
+REPOSITORY = "MartinHalvorson/CIVVIS"
+ISSUE_TITLE = "Stranded work report"
+ISSUE_LABEL = "stranded-work"
+CLOSE_WINDOW_DAYS = 7
+IDLE_HOURS = 24
+
+
+def git(*args: str) -> str:
+    return subprocess.run(
+        ["git", *args], capture_output=True, text=True, encoding="utf-8",
+        errors="replace", check=False,
+    ).stdout
+
+
+def api(path: str, method: str = "GET", data: dict | None = None):
+    request = urllib.request.Request(
+        f"https://api.github.com{path}",
+        method=method,
+        data=json.dumps(data).encode() if data is not None else None,
+        headers={
+            "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+            "Accept": "application/vnd.github+json",
+        },
+    )
+    with urllib.request.urlopen(request) as response:
+        return json.load(response)
+
+
+def commentless_closes(now: datetime.datetime) -> list[str]:
+    """Closed-unmerged PRs from the window whose thread holds no comment."""
+    since = now - datetime.timedelta(days=CLOSE_WINDOW_DAYS)
+    rows = []
+    pulls = api(f"/repos/{REPOSITORY}/pulls?state=closed&sort=updated"
+                f"&direction=desc&per_page=100")
+    for pull in pulls:
+        if pull.get("merged_at") or not pull.get("closed_at"):
+            continue
+        closed = datetime.datetime.fromisoformat(pull["closed_at"].rstrip("Z"))
+        if closed < since:
+            continue
+        if api(f"/repos/{REPOSITORY}/issues/{pull['number']}/comments?per_page=1"):
+            continue
+        rows.append(
+            f"- #{pull['number']} `{pull['head']['ref']}` closed "
+            f"{pull['closed_at'][:16]} with no stated reason — "
+            f"{pull['title'][:80]}"
+        )
+    return rows
+
+
+def idle_branches(now: datetime.datetime) -> list[str]:
+    """agent/* branches whose tip is real work, aging, and not in an open PR."""
+    open_refs = {
+        pull["head"]["ref"]
+        for pull in api(f"/repos/{REPOSITORY}/pulls?state=open&per_page=100")
+    }
+    rows = []
+    git("fetch", "--prune", "origin")
+    for line in git(
+        "for-each-ref", "refs/remotes/origin/agent/",
+        "--format=%(refname:short)\t%(committerdate:unix)\t%(contents:subject)",
+    ).splitlines():
+        name, stamp, subject = line.split("\t", 2)
+        branch = name.removeprefix("origin/")
+        if branch in open_refs or subject.startswith("claim:"):
+            continue
+        age_hours = (now.timestamp() - int(stamp)) / 3600
+        if age_hours < IDLE_HOURS:
+            continue
+        ahead = git("rev-list", "--count", f"origin/main..{name}").strip()
+        if ahead in ("", "0"):
+            continue
+        stat = git("diff", "--shortstat", f"origin/main...{name}").strip()
+        rows.append(
+            f"- `{branch}` idle {age_hours / 24:.1f}d, {ahead} commits ahead "
+            f"({stat or 'no diff'}) — {subject[:70]}"
+        )
+    return rows
+
+
+def rescue_refs() -> list[str]:
+    """Everything the worktree audit preserved that still only it remembers."""
+    git("fetch", "origin", "+refs/civvis/wip/*:refs/civvis/wip/*")
+    rows = []
+    for line in git(
+        "for-each-ref", "refs/civvis/wip/",
+        "--format=%(refname)\t%(committerdate:iso-strict)\t%(contents:subject)",
+    ).splitlines():
+        ref, date, subject = line.split("\t", 2)
+        stat = git("diff", "--shortstat", f"{ref}^", ref).strip()
+        rows.append(f"- `{ref.removeprefix('refs/civvis/wip/')}` ({date[:16]}, "
+                    f"{stat or 'empty'}) — {subject[:70]}")
+    return rows
+
+
+def compose(now: datetime.datetime) -> str:
+    sections = [
+        ("Closed without a word", commentless_closes(now),
+         "Add a closing comment stating why, or reopen and land it."),
+        ("Idle branches holding real commits", idle_branches(now),
+         "Open a PR, hand the branch off, or delete it with the reason in a "
+         "closing comment on its claim PR."),
+        ("Rescue snapshots (`refs/civvis/wip/*`)", rescue_refs(),
+         "Land what was meant to land; the rest is preserved history and can "
+         "stay."),
+    ]
+    parts = [
+        f"_Generated {now.isoformat(timespec='minutes')}Z by "
+        f"`tools/stranded_work_report.py`. One issue, updated in place; "
+        f"its edit history is the timeline._",
+    ]
+    for title, rows, remedy in sections:
+        parts.append(f"\n## {title}\n")
+        parts.append("\n".join(rows) if rows else "Nothing stranded here today.")
+        if rows:
+            parts.append(f"\n_Remedy: {remedy}_")
+    return "\n".join(parts)
+
+
+def upsert(body: str) -> None:
+    issues = api(f"/repos/{REPOSITORY}/issues?state=open"
+                 f"&labels={ISSUE_LABEL}&per_page=10")
+    existing = next((i for i in issues if i["title"] == ISSUE_TITLE), None)
+    if existing:
+        api(f"/repos/{REPOSITORY}/issues/{existing['number']}", "PATCH",
+            {"body": body})
+        print(f"updated issue #{existing['number']}")
+    else:
+        created = api(f"/repos/{REPOSITORY}/issues", "POST",
+                      {"title": ISSUE_TITLE, "body": body,
+                       "labels": [ISSUE_LABEL]})
+        print(f"created issue #{created['number']}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--dry-run", action="store_true",
+                        help="print the report instead of writing the issue")
+    args = parser.parse_args(argv)
+    now = datetime.datetime.now(datetime.timezone.utc).replace(
+        microsecond=0, tzinfo=None)
+    body = compose(now)
+    if args.dry_run:
+        print(body)
+        return 0
+    upsert(body)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
