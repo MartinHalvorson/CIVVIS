@@ -25,7 +25,22 @@ const second = 'assets/second.webp';
 """
 
 
+APP_JS_PAGE = """<!doctype html><html><head>
+<link rel="preload" href="civvis.wasm" as="fetch" type="application/wasm">
+<script src="shim.js"></script>
+</head><body><script src="assets/app.js"></script></body></html>
+"""
+
+APP_JS = """const atlas = "assets/atlas.webp";
+const second = 'assets/second.webp';
+"""
+
+
 class CacheBustTests(unittest.TestCase):
+    # The plain lane models a revision from before the viewer's script moved
+    # into assets/app.js (#1289) — its atlas references live inline in the
+    # page. The stable lane is routinely pinned to such a revision, so both
+    # shapes must stay publishable.
     def make_lane(self, root: pathlib.Path) -> pathlib.Path:
         lane = root / "lane"
         (lane / "assets").mkdir(parents=True)
@@ -36,6 +51,29 @@ class CacheBustTests(unittest.TestCase):
         (lane / "assets" / "atlas.webp").write_bytes(b"atlas-v1")
         (lane / "assets" / "second.webp").write_bytes(b"atlas-v2")
         return lane
+
+    def make_app_js_lane(self, root: pathlib.Path) -> pathlib.Path:
+        lane = self.make_lane(root)
+        (lane / "index.html").write_text(APP_JS_PAGE, encoding="utf-8")
+        (lane / "assets" / "app.js").write_text(APP_JS, encoding="utf-8")
+        return lane
+
+    def test_versions_the_atlases_inside_the_viewer_script(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            lane = self.make_app_js_lane(pathlib.Path(directory))
+            atlas_version = content_version(lane / "assets" / "atlas.webp")
+            second_version = content_version(lane / "assets" / "second.webp")
+
+            version_lane(lane)
+
+            appjs = (lane / "assets" / "app.js").read_text(encoding="utf-8")
+            self.assertIn(f'"assets/atlas.webp?v={atlas_version}"', appjs)
+            self.assertIn(f"'assets/second.webp?v={second_version}'", appjs)
+            # The page requests the script by the hash of its rewritten bytes,
+            # so an atlas change rolls the script's URL too.
+            page = (lane / "index.html").read_text(encoding="utf-8")
+            rewritten_version = content_version(lane / "assets" / "app.js")
+            self.assertIn(f'src="assets/app.js?v={rewritten_version}"', page)
 
     def test_versions_every_build_dependency_by_its_content(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -107,7 +107,11 @@ page = source.read_text(encoding="utf-8")
 # `cp -R web/assets` above, and it holds most of the root-absolute asset
 # references now, so every rewrite below runs over both texts.
 app_js = assets / "app.js"
-script = app_js.read_text(encoding="utf-8")
+# A revision from before the script moved out of the page (#1289) has no
+# assets/app.js — its viewer script is still inline in index.html, so every
+# rewrite below simply runs over the page alone. The stable lane is routinely
+# pinned to such a revision.
+script = app_js.read_text(encoding="utf-8") if app_js.is_file() else ""
 
 # The page asks for its assets from the site root, which is where a desktop
 # build serves them. Published under /test/ they sit beside the page instead.
@@ -169,7 +173,8 @@ else:
 # is what catches a rewrite that half-happened: a reference the loop above
 # missed still names a `.png` that is no longer on disk. The script's copy is
 # written back only now, after every rewrite above has run over it.
-app_js.write_text(script, encoding="utf-8")
+if app_js.is_file():
+    app_js.write_text(script, encoding="utf-8")
 wanted = set(re.findall(r'"assets/([^"]+)"', page + script))
 have = {p.name for p in assets.iterdir()} if assets.is_dir() else set()
 missing = sorted(wanted - have)

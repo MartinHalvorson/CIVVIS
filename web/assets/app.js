@@ -4076,21 +4076,20 @@ let serverInstance = null;
 // build this document actually came from is what tells a successor worth
 // reloading for from one this page is already running.
 let documentCommit = null;
+// One unit only, the largest that reaches 1: ninety minutes is "1.5h", not
+// "1h 30m", and fifty-four hours is "2.3d". A whole value drops its ".0".
 function formatBuildAge(buildDate) {
-  const totalMinutes = Math.floor(Math.max(0, Date.now() - buildDate.getTime()) / 60000);
-  const days = Math.floor(totalMinutes / 1440);
-  const hours = Math.floor(totalMinutes % 1440 / 60);
-  const minutes = totalMinutes % 60;
-  const parts = [
-    days ? `${days}d` : "",
-    hours ? `${hours}h` : "",
-    minutes ? `${minutes}m` : "",
-  ].filter(Boolean);
-  return parts.join(" ") || "0m";
+  const totalMinutes = Math.max(0, Date.now() - buildDate.getTime()) / 60000;
+  if (totalMinutes < 60) return `${Math.floor(totalMinutes)}m`;
+  const [value, unit] = totalMinutes < 1440
+    ? [totalMinutes / 60, "h"]
+    : [totalMinutes / 1440, "d"];
+  const tenths = Math.round(value * 10) / 10;
+  return `${Number.isInteger(tenths) ? tenths : tenths.toFixed(1)}${unit}`;
 }
 function formatBinarySize(bytes) {
-  const mib = bytes / (1024 * 1024);
-  return `${mib < 10 ? mib.toFixed(2) : mib.toFixed(1)} MiB`;
+  const mb = bytes / 1e6;
+  return `${mb < 10 ? mb.toFixed(2) : mb.toFixed(1)} MB`;
 }
 // The revision belongs beside the world overview, not on top of it. Read the
 // live frame because its authored size follows the screen diagonal and a
@@ -4123,7 +4122,7 @@ function syncBuildMarkerPosition() {
 }
 function formatBuildSize(bytes) {
   if (!Number.isSafeInteger(bytes) || bytes <= 0) return "";
-  return `${(bytes / 1048576).toFixed(1)} MiB`;
+  return `${(bytes / 1e6).toFixed(1)} MB`;
 }
 function updateBuildMarker(st = state) {
   const marker = document.getElementById("buildmark");
@@ -19411,13 +19410,15 @@ function civDossier(p, rank, relation) {
         strategy ? `Generated from this AI's ${titleCase(strategy)} strategy` : "Generated for this AI seat") +
       eloRow + oddsRows
     : "";
+  // The plan rows run top-down, each derived from the one above it — the same
+  // order the sidebar dossier uses: victory lane, the doctrine pursuing it,
+  // the campaign and war that doctrine is waging, the forces and cities it
+  // wages them with, and the reassessment stamp last.
   const strategyBody = leagueRows + (plan
-    ? row("Doctrine", `<span class="ai-plan ${plan.strategy}">${titleCase(plan.strategy)}</span>`,
-        "The medium-term plan every department of this AI is currently serving") +
-      row("Victory lane", plan.victory_target ? titleCase(plan.victory_target) : "Opportunistic",
-        plan.victory_target ? "A committed game-ending objective" : "No committed objective — the plan follows whichever lane is going best") +
-      row("Reassessed", planAge === 0 ? "This turn" : `Turn ${plan.assessed_turn} · ${planAge} ago`) +
-      row("Settlement goal", `${p.cities} of ${plan.desired_cities}`, "Cities held against the cities this plan wants") +
+    ? row("Victory lane", plan.victory_target ? titleCase(plan.victory_target) : "Opportunistic",
+        plan.victory_target ? "The victory this AI is playing for — the fixed goal every row below serves" : "No committed victory — the plan follows whichever lane is going best") +
+      row("Doctrine", `<span class="ai-plan ${plan.strategy}">${titleCase(plan.strategy)}</span>`,
+        "How the victory lane is being pursued right now — the medium-term plan every department of this AI is serving") +
       row("Campaign target", plan.target_city
         ? `${plan.target_city.name}${plan.target_civ ? ` (${plan.target_civ})` : ""}`
         : plan.target_civ || "None",
@@ -19431,7 +19432,9 @@ function civDossier(p, rank, relation) {
           : "") +
       (forces.length
         ? `<div class="dossier-note">${forceChips}${forces.length > 6 ? ` <span class="dossier-empty">+${forces.length - 6} more</span>` : ""}</div>`
-        : `<div class="dossier-note"><span class="dossier-empty">No coordinated forces in the field</span></div>`)
+        : `<div class="dossier-note"><span class="dossier-empty">No coordinated forces in the field</span></div>`) +
+      row("Settlement goal", `${p.cities} of ${plan.desired_cities}`, "Cities held against the cities this plan wants") +
+      row("Reassessed", planAge === 0 ? "This turn" : `Turn ${plan.assessed_turn} · ${planAge} ago`)
     : `<div class="dossier-empty">No published plan. The hierarchical AI reports one from its first turn of a spectated game.</div>`);
 
   // --- the victory tracker, at the width the topbar cannot spare
@@ -20890,6 +20893,12 @@ function syncStrategyOptions(seats, seat) {
 // What the agent is trying to do, in the rows the dossier uses. Only the parts
 // that are true: a civilization with nothing under threat and no campaign does
 // not need two rows saying so in a sidebar this narrow.
+//
+// The rows run top-down, each derived from the one above it: the victory lane
+// the seat is playing for (the implicit goal above the panel is to win), the
+// doctrine chosen to pursue that lane, the campaign and war the doctrine is
+// waging, the forces and cities it wages them with, and — last, being
+// bookkeeping about the plan rather than part of it — when it was reassessed.
 function strategyPlanHtml(p) {
   const plan = p.ai_plan || null;
   const strategy = plan?.strategy || p.ai_strategy || "";
@@ -20912,18 +20921,16 @@ function strategyPlanHtml(p) {
     ? `${reasonEscape(plan.target_city.name)}${plan.target_civ ? ` (${reasonEscape(plan.target_civ)})` : ""}`
     : plan?.target_civ ? reasonEscape(plan.target_civ) : "";
   return `<div class="strategy-plan">` +
-    row("Doctrine", strategy
-      ? `<span class="ai-plan ${reasonEscape(strategy)}">${titleCase(strategy)}</span>` : "",
-      "The medium-term plan every department of this AI is currently serving") +
     (plan ? row("Victory lane", plan.victory_target ? titleCase(plan.victory_target) : "Opportunistic",
       plan.victory_target
-        ? "A committed game-ending objective"
-        : "No committed objective — the plan follows whichever lane is going best") +
-      row("Reassessed", planAge === 0 ? "This turn" : `Turn ${plan.assessed_turn} · ${planAge} ago`,
-        "When this plan was last reconsidered") +
-      row("Cities", `${p.cities} of ${plan.desired_cities}`,
-        "Cities held against the cities this plan wants") +
-      row("Campaign", target, target ? "The city or civilization this plan is measured against" : "") +
+        ? "The victory this AI is playing for — the fixed goal every row below serves"
+        : "No committed victory — the plan follows whichever lane is going best") : "") +
+    row("Doctrine", strategy
+      ? `<span class="ai-plan ${reasonEscape(strategy)}">${titleCase(strategy)}</span>` : "",
+      plan
+        ? "How the victory lane is being pursued right now — the medium-term plan every department of this AI is serving"
+        : "The medium-term plan every department of this AI is currently serving") +
+    (plan ? row("Campaign", target, target ? "The city or civilization this plan is measured against" : "") +
       (warPlan?.active
         ? row("Attack phase", `${titleCase(warPlan.phase || "forming")}${warPlan.rapid ? " · Rapid" : warPlan.selective ? " · Selective" : ""}`,
             warPlan.rapid
@@ -20939,7 +20946,11 @@ function strategyPlanHtml(p) {
       (chips
         ? `<div class="dossier-note">${chips}${forces.length > 4
             ? ` <span class="dossier-empty">+${forces.length - 4} more</span>` : ""}</div>`
-        : "")
+        : "") +
+      row("Cities", `${p.cities} of ${plan.desired_cities}`,
+        "Cities held against the cities this plan wants") +
+      row("Reassessed", planAge === 0 ? "This turn" : `Turn ${plan.assessed_turn} · ${planAge} ago`,
+        "When this plan was last reconsidered")
       : "") +
     `</div>`;
 }

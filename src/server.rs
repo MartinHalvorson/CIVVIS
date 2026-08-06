@@ -6067,7 +6067,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("st?.server_artifact_bytes"));
         assert!(EMBEDDED_INDEX.contains("st?.server_artifact_kind"));
         assert!(EMBEDDED_INDEX.contains("function formatBuildSize(bytes)"));
-        assert!(EMBEDDED_INDEX.contains("(bytes / 1048576).toFixed(1)} MiB"));
+        assert!(EMBEDDED_INDEX.contains("(bytes / 1e6).toFixed(1)} MB"));
         assert!(EMBEDDED_INDEX.contains("(artifactSize ? ` · Build size ${artifactSize}` : \"\")"));
         assert!(EMBEDDED_INDEX.contains("commit.slice(0, 7)"));
         assert!(EMBEDDED_INDEX.contains("id=\"buildmark-commit\""));
@@ -6075,7 +6075,10 @@ mod tests {
             "https://github.com/MartinHalvorson/CIVVIS/commit/${encodeURIComponent(commit)}"
         ));
         assert!(EMBEDDED_INDEX.contains("View commit ${shortCommit} on GitHub"));
-        assert!(EMBEDDED_INDEX.contains("return parts.join(\" \") || \"0m\""));
+        // The age is one unit at one decimal ("1.5h", "2.3d"), never a
+        // two-unit chain — the marker has to fit beside the minimap.
+        assert!(EMBEDDED_INDEX.contains("if (totalMinutes < 60) return `${Math.floor(totalMinutes)}m`"));
+        assert!(EMBEDDED_INDEX.contains("${Number.isInteger(tenths) ? tenths : tenths.toFixed(1)}${unit}"));
         assert!(EMBEDDED_INDEX.contains("Commit is ${formatBuildAge(commitDate)} old"));
         assert!(EMBEDDED_INDEX.contains("Build is ${formatBuildAge(buildDate)} old"));
         assert!(EMBEDDED_INDEX.contains(
