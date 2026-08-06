@@ -10517,6 +10517,15 @@ impl AdvancedAi {
             GrandStrategy::Culture if g.players[pid].civics.contains(&crate::name!("cold_war")) => 700.0,
             _ => 80.0,
         };
+        // Every candidate below must clear `cost + reserve`, and a purchase
+        // cost is never negative — so a bank under the reserve cannot buy
+        // anything no matter what the menu holds. Skip building the menu at
+        // all: `legal_purchase_actions` is the priciest question this
+        // function asks (worker clones of the whole Game), and
+        // `military_faith_spending` already banks-gates the same way.
+        if g.players[pid].faith + f64::EPSILON < reserve {
+            return;
+        }
         let best = self
             .legal_purchase_actions(g, pid)
             .into_iter()
