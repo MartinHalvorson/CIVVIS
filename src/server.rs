@@ -4770,7 +4770,7 @@ mod tests {
     use crate::server::{generated_ai_name, simulation_settings};
     use crate::setup::{
         future_era_from_id, start_era_from_id, BaseRuleset, FutureEra, GameSpeed, MapPoles,
-        MapScript, MapTopology, MAP_POLES,
+        MapScript, MapTopology, TurnStructure, MAP_POLES,
     };
     use serde_json::{json, Value};
     use std::io::{Read, Write};
@@ -10529,6 +10529,7 @@ mod tests {
                 "base_ruleset": "civ6",
                 "start_era": "ancient",
                 "future_era": "classic",
+                "turn_structure": "sequential",
                 "map": "continents",
                 "shape": "flat",
                 "poles": "poles",
@@ -10688,6 +10689,7 @@ mod tests {
                 "base_ruleset": "civ6",
                 "start_era": "ancient",
                 "future_era": "classic",
+                "turn_structure": "sequential",
                 "map": "continents",
                 "shape": "flat",
                 "poles": "poles",
