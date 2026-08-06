@@ -9201,9 +9201,15 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("cursor: col-resize; pointer-events: auto; touch-action: none;"));
         // A repaint mid-gesture would take the bar out from under the pointer
-        // along with its pointer capture.
+        // along with its pointer capture, and the open watch-pace menu is
+        // anchored to its select the same way.
         assert!(EMBEDDED_INDEX.contains(
-            "if (html === hudHtml || hudLayoutGesture?.name === \"players\" || playerHudColumnGesture) {"
+            "if (html === hudHtml || hudLayoutGesture?.name === \"players\" || playerHudColumnGesture\n      || hudPaceHeldOpen()) {"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function hudPaceHeldOpen()"));
+        // The moment focus leaves the select, the held snapshots paint.
+        assert!(EMBEDDED_INDEX.contains(
+            "if (ev.target.closest?.(\"[data-hud-pace]\") && state) drawPlayerHud();"
         ));
         // The bars are placed from the rendered heading, so they cannot drift
         // from the columns they name.
