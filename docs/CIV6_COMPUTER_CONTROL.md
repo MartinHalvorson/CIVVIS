@@ -385,8 +385,8 @@ Civilization VI game and a CIVVIS game are the same size.
 
 `docs/COMPETITIVE.md` pins the competitive lobby CIVVIS aims at, and its size line
 is *"Firaxis-default map size and city-states for the player count"*. So a six-player
-game is `MAPSIZE_SMALL`, and that is the default for `civ6_play.py`,
-`civ6_civvis_climb.py` and `civ6_climb.py`. Duel and Tiny were measuring two- and
+game is `MAPSIZE_SMALL`, and that is the default for `civ6_play.py` and
+`civ6_civvis_climb.py`. Duel and Tiny were measuring two- and
 four-player games against rules written for six.
 
 | setting | value | why |
