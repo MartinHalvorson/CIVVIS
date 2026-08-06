@@ -1671,6 +1671,74 @@ fn tennis_ball_land(wm: &WorldMap, poles: MapPoles) -> BTreeSet<Pos> {
         .collect()
 }
 
+/// How far in from the seam's coast a four-seat game opens, in the world's own
+/// tiles: near an end of the lobe, but not on the beach.
+const TENNIS_BALL_START_INLAND_TILES: f64 = 6.5;
+
+/// The stock four-seat layout of a Tenins Ball world: one civilization at each
+/// end of each of the two lobes.
+///
+/// The seam swings north and south twice on its way around the world, so each
+/// lobe is fattest where the seam has swung deepest into the other lobe's
+/// hemisphere. Those four swings are the ends somebody sees when they look at
+/// the map, and they are a quarter of the world apart from each other. A start
+/// stands [`TENNIS_BALL_START_INLAND_TILES`] in from the seam's own coast at
+/// its end, snapped to the nearest tile the candidate pool would seat a
+/// capital on.
+///
+/// `None` means the pool had nothing to offer near one of the ends, or two
+/// picks drifted inside the shipped clearance; the caller falls back to the
+/// regional model, so the promise is a layout, never a lost or crowded seat.
+fn tennis_ball_major_starts(wm: &WorldMap, pool: &BTreeSet<Pos>) -> Option<Vec<Pos>> {
+    let coast_stand_off = (tennis_ball_gap_tiles(wm) as f64 / 2.0
+        + TENNIS_BALL_START_INLAND_TILES)
+        * tile_arc(wm);
+    // Which side of the seam each end is on, and the longitude where that
+    // lobe is fattest: where `sin(2λ)` swings the seam deepest the other way.
+    let ends = [
+        (1.0_f64, 0.75 * std::f64::consts::PI),
+        (1.0, 1.75 * std::f64::consts::PI),
+        (-1.0, 0.25 * std::f64::consts::PI),
+        (-1.0, 1.25 * std::f64::consts::PI),
+    ];
+    let mut starts: Vec<Pos> = Vec::with_capacity(ends.len());
+    for (side, longitude) in ends {
+        // At its own end the seam sits a full amplitude into this lobe's
+        // opposite hemisphere; standing off its coast can leave the target on
+        // either side of the equator, depending on how big a tile is here.
+        let latitude = side * (coast_stand_off - TENNIS_BALL_SEAM_AMPLITUDE);
+        let target = [
+            latitude.cos() * longitude.cos(),
+            latitude.cos() * longitude.sin(),
+            latitude.sin(),
+        ];
+        let pick = pool
+            .iter()
+            .copied()
+            .filter(|position| {
+                let direction = wm.direction(*position);
+                let seam = TENNIS_BALL_SEAM_AMPLITUDE
+                    * (2.0 * direction[1].atan2(direction[0])).sin();
+                side * (direction[2].asin() - seam) > 0.0
+            })
+            .max_by(|first, second| {
+                dot(wm.direction(*first), target)
+                    .total_cmp(&dot(wm.direction(*second), target))
+                    // The pool iterates in `Pos` order, so an exact tie goes
+                    // to the lower position and the layout stays a function
+                    // of the map alone.
+                    .then_with(|| second.cmp(first))
+            })?;
+        starts.push(pick);
+    }
+    let clear = starts.iter().enumerate().all(|(index, start)| {
+        starts[index + 1..]
+            .iter()
+            .all(|other| wm.distance(*start, *other) > MAJOR_START_BUFFER)
+    });
+    clear.then_some(starts)
+}
+
 /// The three axes a Grand Canals world is cut around: the polar one, and the
 /// two through the equator at longitude 0 and longitude 90.
 const CANAL_AXES: [[f64; 3]; 3] = [[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
@@ -3434,7 +3502,22 @@ pub fn generate_with_script_and_leader_starts(
     } else {
         regions_for_seats(&wm, &components, &fertility, num_major_spawns)
     };
-    let mut spawns = if script.is_true_start() {
+    // A four-seat Tenins Ball is the stock game, and its layout is part of
+    // that map type's promise: one civilization at each end of each lobe, a
+    // handful of tiles in from the seam. The regional model would seat them
+    // at each half-lobe's center of fertility instead — the right general
+    // answer and the wrong shape for this world.
+    let lobe_ends = (script == MapScript::TeninsBall && num_major_spawns == 4)
+        .then(|| tennis_ball_major_starts(&wm, &major_pool))
+        .flatten();
+    let mut spawns = if let Some(mut starts) = lobe_ends {
+        // Seat order should not correlate with the order the ends are listed.
+        for index in (1..starts.len()).rev() {
+            let other = rng.below(index + 1);
+            starts.swap(index, other);
+        }
+        starts
+    } else if script.is_true_start() {
         // Earth does not divide into regions: the whole point of the script is
         // that Rome opens in Italy and the Aztecs open in Mexico, however
         // lopsided that leaves the continents.
@@ -7736,6 +7819,72 @@ mod river_tests {
                         (5..=6).contains(&gap),
                         "{} {topology:?}: seam is {gap} tiles wide",
                         size.id
+                    );
+                }
+            }
+        }
+    }
+
+    /// The stock four-seat game's layout is part of this map type's promise:
+    /// one civilization at each end of each lobe, roughly six or seven tiles
+    /// in from the seam — not seated wherever each half-lobe's fertility
+    /// happens to peak.
+    #[test]
+    fn four_seat_tenins_ball_seats_one_civilization_at_each_lobe_end() {
+        let rules = Rules::embedded();
+        let size = &CIV6_MAP_SIZES[1];
+        for topology in [FLAT, GLOBE] {
+            for seed in 0..4u64 {
+                let mut rng = Rng::new(94_500 + seed);
+                let (world, spawns) = generate_with_script(
+                    &rules,
+                    size.width,
+                    size.height,
+                    4,
+                    size.default_city_states,
+                    size.natural_wonders,
+                    size.continents,
+                    MapScript::TeninsBall,
+                    topology,
+                    POLED,
+                    &mut rng,
+                );
+                let majors = &spawns[..4];
+                let components = land_components(&world, &rules);
+                for lobe in &components[..2] {
+                    let pair: Vec<Pos> = majors
+                        .iter()
+                        .copied()
+                        .filter(|major| lobe.contains(major))
+                        .collect();
+                    // Two per lobe, and the lobes are the two broad components.
+                    assert_eq!(
+                        pair.len(),
+                        2,
+                        "{topology:?} seed {seed}: a lobe seats {} civilizations",
+                        pair.len()
+                    );
+                    // The pair sharing a lobe is at its two ends — over a
+                    // quarter of the world apart — not side by side in its
+                    // middle.
+                    let across = dot(world.direction(pair[0]), world.direction(pair[1]));
+                    assert!(
+                        across < 0.0,
+                        "{topology:?} seed {seed}: lobe mates stand only {across:.2} apart"
+                    );
+                }
+                // And every capital keeps the seam a short walk away: inland,
+                // not on the beach and not at the lobe's heart.
+                let seam = tennis_ball_seam_water(&world);
+                for major in majors {
+                    let to_seam = seam
+                        .iter()
+                        .map(|tile| world.distance(*major, *tile))
+                        .min()
+                        .expect("the seam is never empty");
+                    assert!(
+                        (4..=10).contains(&to_seam),
+                        "{topology:?} seed {seed}: a capital is {to_seam} tiles from the seam"
                     );
                 }
             }
