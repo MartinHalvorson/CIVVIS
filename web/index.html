@@ -509,7 +509,7 @@
   .setting-row[hidden] { display: none; }
   .shortcut-panel {
     position: relative; z-index: 3; flex: 0 0 auto; margin: 0;
-    border-top: 1px solid #355047; background: linear-gradient(180deg, #101d1a, #091310);
+    border-top: 1px solid #343a3e; background: linear-gradient(180deg, #0f1113, #070809);
     box-shadow: 0 -10px 28px #0005;
   }
   .shortcut-panel summary {
@@ -523,8 +523,8 @@
   .shortcut-panel[open] > .utility-body {
     position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px);
     max-height: min(420px, calc(100vh - 180px)); overflow-y: auto;
-    border: 1px solid #355047; border-radius: 10px;
-    background: linear-gradient(145deg, #172723fa, #0b1714fc);
+    border: 1px solid #343a3e; border-radius: 10px;
+    background: linear-gradient(145deg, #15181afa, #080a0bfc);
     box-shadow: 0 -12px 32px #0008;
   }
   /* The deck's fixed lower-left stack: map lenses, visible-tile search, and
@@ -549,11 +549,11 @@
   #maplensessec[open] .lens-dock-body { max-height: min(430px, 46vh); overflow-y: auto; scrollbar-width: thin; }
   #map-utility-panel {
     position: relative; z-index: 3; flex: 0 0 auto; padding: 8px 10px 10px;
-    border-top: 1px solid #355047; background: linear-gradient(180deg, #101d1a, #091310);
+    border-top: 1px solid #41484c; background: #090b0de8;
     box-shadow: 0 -10px 28px #0005;
   }
   #map-lenses {
-    min-width: 0;
+    min-width: 0; background: #090b0de8;
   }
   .map-lens-head {
     display: flex; align-items: center; justify-content: flex-end;
@@ -632,8 +632,8 @@
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   #map-search {
-    min-width: 0; padding: 6px 7px; border: 1px solid #3c554c; border-radius: 11px;
-    background: #0a1512df; box-shadow: inset 0 1px #ffffff08, 0 7px 18px #0004;
+    min-width: 0; padding: 6px 7px; border: 1px solid #41484c; border-radius: 11px;
+    background: #090b0de8; box-shadow: inset 0 1px #ffffff08, 0 7px 18px #0004;
   }
   /* The same search markup is also used by the map's lower instrument dock.
      That dock positions its copy above the map, but this copy is a normal
@@ -1180,7 +1180,7 @@
   #zoomctl-main {
     position: relative; display: flex; flex: 0 0 auto; align-items: center; gap: 5px; min-width: 0;
     max-width: 100%;
-    padding: 5px; border-radius: 13px; background: #0a1512cb; border: 1px solid #3c554c;
+    padding: 5px; border-radius: 13px; background: #090b0de8; border: 1px solid #41484c;
     box-shadow: 0 12px 26px #0006; backdrop-filter: blur(12px);
     pointer-events: auto;
   }
@@ -1202,7 +1202,7 @@
     width: max-content; max-width: 100%; margin-top: -1px;
     display: flex; flex-wrap: wrap; align-items: center;
     gap: 4px; padding: 5px; border-radius: 0 13px 13px 13px;
-    background: #0a1512d8; border: 1px solid #3c554c;
+    background: #090b0de8; border: 1px solid #41484c;
     box-shadow: 0 12px 26px #0006; backdrop-filter: blur(12px);
     pointer-events: auto;
   }
@@ -1377,8 +1377,8 @@
     position: absolute; z-index: 7; left: 50%; bottom: calc(var(--panel-edge) + var(--panel-gap)); transform: translateX(-50%);
     display: none; min-width: min(360px, calc(100% - 2 * var(--panel-edge)));
     max-width: min(680px, calc(100% - 2 * var(--panel-edge))); padding: 13px 16px;
-    color: var(--text); text-align: center; border-radius: 14px; border: 1px solid #50675f;
-    background: #0a1512ec; box-shadow: var(--shadow); backdrop-filter: blur(18px);
+    color: var(--text); text-align: center; border-radius: 14px; border: 1px solid #41484c;
+    background: #090b0de8; box-shadow: var(--shadow); backdrop-filter: blur(18px);
   }
   #ubar > b { color: var(--gold-bright); font: 600 17px Georgia, serif; text-transform: capitalize; }
   #modeline {
@@ -1768,7 +1768,7 @@
     position: absolute; z-index: 6; left: auto; right: var(--panel-edge); bottom: var(--panel-edge);
     width: var(--world-minimap-width); height: var(--minimap-height);
     display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 6px; border-radius: 12px;
-    background: #091310e6; border: 1px solid #40584f; box-shadow: 0 14px 35px #0008;
+    background: #090b0de8; border: 1px solid #41484c; box-shadow: 0 14px 35px #0008;
   }
   .minimap-label {
     position: relative; display: flex; justify-content: center; padding: 1px 3px 5px;
@@ -3247,26 +3247,17 @@
     left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: auto; bottom: var(--panel-controls-clearance);
     width: var(--compact-minimap-width); height: var(--compact-minimap-height);
   }
-  /* The lower instruments have two compact arrangements. A normal quadrant
-     has enough width to place the sky bar beside the minimap; a narrow, tall
-     split instead puts it in the clear vertical lane above. JavaScript picks
-     the mode from the *uncovered* map width and the real space between the
-     victory band and minimap, so neither control floats over the world map. */
+  /* The sky bar stays in the dock's flow in the compact arrangements too;
+     the mode JavaScript picks from the uncovered map width only decides how
+     much width the bar may take. Beside a minimap it leaves the minimap's
+     column free and wraps instead; in the narrow stacked split — or once the
+     viewer dismisses the minimap — it may run the dock's full width. */
   #maparea.player-hud-compact[data-controls-layout="inline"] #skynav {
-    left: calc(var(--compact-minimap-width) + var(--panel-gap));
     max-width: calc(100% - var(--compact-minimap-width) - var(--panel-gap));
   }
-  #maparea.player-hud-compact[data-controls-layout="stacked"] #skynav {
-    left: 0; max-width: 100%;
-    bottom: calc(100% + var(--compact-minimap-height) + 2 * var(--panel-gap));
-  }
-  /* If the viewer dismisses the minimap, return its former share to the sky
-     bar regardless of which compact mode the last resize selected. */
+  #maparea.player-hud-compact[data-controls-layout="stacked"] #skynav,
   body.overlay-minimap-hidden #maparea.player-hud-compact[data-controls-layout="inline"] #skynav {
-    left: 0; max-width: 100%;
-  }
-  body.overlay-minimap-hidden #maparea.player-hud-compact[data-controls-layout="stacked"] #skynav {
-    bottom: calc(100% + var(--panel-gap));
+    max-width: 100%;
   }
   #maparea.player-hud-compact #victoryhud .hud-rail { overflow-x: auto; overflow-y: hidden; }
   #maparea.player-hud-compact #victoryhud .victory-ribbon {
@@ -3488,14 +3479,6 @@
     background: linear-gradient(135deg, #111416, #0a0c0e);
   }
   .section-meta kbd { background: #090b0c99; border-color: #343a3e; }
-  .shortcut-panel {
-    border-top-color: #343a3e;
-    background: linear-gradient(180deg, #0f1113, #070809);
-  }
-  .shortcut-panel[open] > .utility-body {
-    border-color: #343a3e;
-    background: linear-gradient(145deg, #15181afa, #080a0bfc);
-  }
 
   button {
     background: linear-gradient(180deg, #24282b, #181b1e);
@@ -3560,9 +3543,6 @@
   }
   .victory-turn { background: linear-gradient(155deg, #caa45618, #caa45606); }
 
-  .minimap-frame, #zoomctl-main, #skynav, #map-utility-panel, #map-search, #map-lenses, #ubar {
-    background: #090b0de8; border-color: #41484c;
-  }
   #mini { background: var(--ink); }
   #map-lenses button:hover { border-color: #555d62; background: #1b1f22; }
   #map-lenses button.active {
