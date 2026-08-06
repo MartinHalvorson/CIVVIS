@@ -416,7 +416,21 @@ fn host_memory_percent() -> Option<f64> {
     None
 }
 
-const EMBEDDED_INDEX: &str = include_str!("../web/index.html");
+const EMBEDDED_INDEX_HTML: &str = include_str!("../web/index.html");
+const EMBEDDED_APP_JS: &str = include_str!("../web/assets/app.js");
+/// The whole page source — the document plus its one external script — as a
+/// single searchable string. The server ships the two parts at `/` and
+/// `/assets/app.js`; the source-contract tests assert against this combined
+/// source, which is the same contract they checked when the script block was
+/// inline. (The split exists because the script was a 1.35 MB block inside
+/// `web/index.html`, making that file the repository's largest history payer
+/// at ~1 MB of pack growth per edit.)
+static EMBEDDED_INDEX: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    let mut page = String::with_capacity(EMBEDDED_INDEX_HTML.len() + EMBEDDED_APP_JS.len());
+    page.push_str(EMBEDDED_INDEX_HTML);
+    page.push_str(EMBEDDED_APP_JS);
+    page
+});
 const EMBEDDED_FEATURE_ATLAS: &[u8] = include_bytes!("../web/assets/feature-atlas.png");
 const EMBEDDED_ENVIRONMENT_FEATURE_ATLAS: &[u8] =
     include_bytes!("../web/assets/environment-feature-atlas.png");
@@ -3105,7 +3119,16 @@ fn index_html() -> Vec<u8> {
             return b;
         }
     }
-    EMBEDDED_INDEX.as_bytes().to_vec()
+    EMBEDDED_INDEX_HTML.as_bytes().to_vec()
+}
+
+fn app_js() -> Vec<u8> {
+    for p in ["web/assets/app.js"] {
+        if let Ok(b) = std::fs::read(p) {
+            return b;
+        }
+    }
+    EMBEDDED_APP_JS.as_bytes().to_vec()
 }
 
 fn feature_atlas() -> Vec<u8> {
@@ -3960,6 +3983,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
     match (method.as_str(), path.as_str()) {
         ("GET", path) if viewer_path(path) => {
             respond(stream, "200 OK", "text/html; charset=utf-8", &index_html());
+        }
+        ("GET", "/assets/app.js") => {
+            respond(
+                stream,
+                "200 OK",
+                "text/javascript; charset=utf-8",
+                &app_js(),
+            );
         }
         ("GET", "/assets/feature-atlas.png") => {
             respond(stream, "200 OK", "image/png", &feature_atlas());

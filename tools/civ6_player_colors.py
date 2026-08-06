@@ -31,11 +31,11 @@ Usage::
     python3 tools/civ6_player_colors.py                 # report, with coverage
     python3 tools/civ6_player_colors.py --json          # write data/civ6_player_colors.json
     python3 tools/civ6_player_colors.py --js            # print the generated JS region
-    python3 tools/civ6_player_colors.py --write --json  # patch web/index.html and the JSON
+    python3 tools/civ6_player_colors.py --write --json  # patch web/assets/app.js and the JSON
 
 Requires a Civ 6 install (see ``tools/civ6_env.py``). The generated JSON is
 checked in so CI and machines without the game can still verify the table --
-``tests/civ6_jerseys.rs`` asserts web/index.html agrees with it.
+``tests/civ6_jerseys.rs`` asserts web/assets/app.js agrees with it.
 """
 
 from __future__ import annotations
@@ -561,7 +561,7 @@ def js_region(jerseys, names, generic):
 
 
 def patch_index(region):
-    path = REPO / "web/index.html"
+    path = REPO / "web/assets/app.js"
     text = path.read_text()
     if BEGIN in text:
         start = text.index(BEGIN)
@@ -580,7 +580,7 @@ def main():
     ap.add_argument("--civ6", help="Civ 6 install root or Assets directory")
     ap.add_argument("--json", action="store_true", help="write data/civ6_player_colors.json")
     ap.add_argument("--js", action="store_true", help="print the generated JS region")
-    ap.add_argument("--write", action="store_true", help="patch web/index.html in place")
+    ap.add_argument("--write", action="store_true", help="patch web/assets/app.js in place")
     args = ap.parse_args()
 
     assets = civ6_env.assets_dir(args.civ6)

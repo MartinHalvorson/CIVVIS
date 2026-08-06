@@ -442,7 +442,7 @@ class DesktopAppsTests(unittest.TestCase):
         self.assertIn('misses >= 5', text)
 
     def test_shared_page_names_each_desktop_channel(self):
-        page = (ROOT / "web/index.html").read_text(encoding="utf-8")
+        page = (ROOT / "web/assets/app.js").read_text(encoding="utf-8")
         self.assertIn('channel === "rust") document.title = "CIVVIS (Rust)"', page)
         self.assertIn('channel === "wasm" || channel === "beta"', page)
         self.assertIn('document.title = "CIVVIS (Wasm)"', page)

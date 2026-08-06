@@ -57841,7 +57841,7 @@ mod visibility_tests {
 
     #[test]
     fn browser_lights_turn_memory_but_traces_only_exact_current_sight() {
-        const INDEX: &str = include_str!("../web/index.html");
+        const INDEX: &str = include_str!("../web/assets/app.js");
         assert!(INDEX.contains("function drawFlatVisibilityPerimeter(tiles, visible)"));
         assert!(INDEX.contains("function drawPlanetVisibilityPerimeter(cells, visible)"));
         assert!(INDEX.contains("const visible = new Set(state.visible.map(key));"));
@@ -62856,7 +62856,7 @@ mod victory_conditions {
         // needs positions and palettes the engine has no use for — so the ids
         // are pinned against each other here rather than left to drift into a
         // destination that renders as nothing.
-        let client = include_str!("../web/index.html");
+        let client = include_str!("../web/assets/app.js");
         for target in EXOPLANET_TARGETS.iter() {
             assert!(
                 client.contains(&format!("id:\"{}\"", target.id)),

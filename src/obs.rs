@@ -1838,7 +1838,7 @@ mod tests {
             json!(true)
         );
 
-        const INDEX: &str = include_str!("../web/index.html");
+        const INDEX: &str = include_str!("../web/assets/app.js");
         assert!(INDEX.contains("function cityGovernor(city)"));
         assert!(INDEX.contains("if (!state || SPEC || !city) return null;"));
         assert!(INDEX.contains("const posting = `⚑ ${governor.name.toUpperCase()}${waiting}`;"));
