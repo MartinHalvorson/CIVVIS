@@ -4939,11 +4939,92 @@ function updateSpecPauseButtons() {
 function toggleSpecPause() {
   if (!SPEC) return;
   specPaused = !specPaused;
+  syncLiveClockRun();
+  paintLiveClock();
   updateSpecPauseButtons();
   reportSpecStatus();
   setPace({paused: specPaused});
 }
 setInterval(reportSpecStatus, 4000);
+// --- Live time: the turn plate's stopwatch, under its Watch pace row. It
+// reads how long the world on screen has actually been playing: it starts
+// with the world's first unpaused frame, stops while the simulation is paused
+// or a result is on screen, and a new world starts it over from zero. A
+// restart that comes back paused at the opening position therefore sits at
+// 0:00 until somebody presses Start — an unstarted game has no live time.
+let liveClock = {seed: undefined, ms: 0, runningSince: null};
+const LIVE_CLOCK_STORE = "civvis-live-time-v1";
+function liveClockMs() {
+  return liveClock.ms +
+    (liveClock.runningSince !== null ? Math.max(0, Date.now() - liveClock.runningSince) : 0);
+}
+function liveClockLabel() {
+  const total = Math.floor(liveClockMs() / 1000);
+  const seconds = String(total % 60).padStart(2, "0");
+  const minutes = Math.floor(total / 60) % 60;
+  const hours = Math.floor(total / 3600);
+  return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`;
+}
+// Start or stop the accumulator against what the page is showing right now.
+// Paused covers the unstarted opening as well: a clock that has never run
+// and is not running reads 0:00, which is what an unstarted game has played.
+function syncLiveClockRun() {
+  const over = !!state && state.winner !== null && state.winner !== undefined;
+  const shouldRun = SPEC && !!state && !specPaused && !over;
+  if (shouldRun && liveClock.runningSince === null) {
+    liveClock.runningSince = Date.now();
+  } else if (!shouldRun && liveClock.runningSince !== null) {
+    liveClock.ms += Math.max(0, Date.now() - liveClock.runningSince);
+    liveClock.runningSince = null;
+  }
+}
+function syncLiveClock(st, newWorld) {
+  if (newWorld) {
+    // A page's first world may be the one it was already showing — a reload,
+    // or a supervised binary swap resuming the same map — so the first world
+    // resumes the reading the predecessor document banked. Every later new
+    // world is a restart and starts over from zero.
+    if (liveClock.seed === undefined) restoreLiveClock(st);
+    else { liveClock.ms = 0; liveClock.runningSince = null; }
+    liveClock.seed = st.seed ?? null;
+  }
+  syncLiveClockRun();
+  saveLiveClock(st);
+}
+function saveLiveClock(st) {
+  try {
+    sessionStorage.setItem(LIVE_CLOCK_STORE, JSON.stringify({
+      seed: st.seed ?? null, turn: st.turn ?? 0, wall: Date.now(),
+      ms: liveClockMs(), running: liveClock.runningSince !== null,
+    }));
+  } catch (e) {}
+}
+function restoreLiveClock(st) {
+  liveClock.ms = 0;
+  liveClock.runningSince = null;
+  let stored = null;
+  try { stored = JSON.parse(sessionStorage.getItem(LIVE_CLOCK_STORE)); } catch (e) {}
+  // The banked reading belongs to this world only while the world is the same
+  // one and has not been wound back: a same-seed restart returns to turn 1,
+  // and its clock must return to zero with it.
+  if (!stored || stored.seed !== (st.seed ?? null) || stored.turn > (st.turn ?? 0)) return;
+  liveClock.ms = Math.max(0, Number(stored.ms) || 0);
+  // The world kept playing while no document watched it, so the time away is
+  // live time too — but only when the clock was running on both sides of the
+  // gap; a pause of unknown length inside it would otherwise be counted.
+  if (stored.running && st.paused === false && st.winner == null)
+    liveClock.ms += Math.max(0, Date.now() - (Number(stored.wall) || Date.now()));
+}
+// The plate is only rebuilt when a frame changes it, which at a slow watch
+// pace is many seconds apart; the clock ticks between those rebuilds by
+// repainting its one value in place, the way the restart countdown does.
+function paintLiveClock() {
+  const value = document.querySelector("[data-live-time]");
+  if (!value) return;
+  const text = liveClockLabel();
+  if (value.textContent !== text) value.textContent = text;
+}
+setInterval(paintLiveClock, 500);
 function warPairKey(war) {
   return `${Math.min(war.aggressor, war.defender)}:${Math.max(war.aggressor, war.defender)}:${war.started}`;
 }
@@ -5854,6 +5935,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   if (SPEC && st.paused !== undefined && st.paused !== specPaused) {
     specPaused = st.paused; // stay in sync with the server-side stepper
   }
+  syncLiveClock(st, newWorld);
   updateSpecPauseButtons();
   if (SPEC) updatePaceControl(st);
   updateBetweenGameCountdownControl(st);
@@ -18627,8 +18709,14 @@ function hudTurnPlate() {
       (decided.mode === "indefinite" ? " indefinitely" : " until the next victory")
     : "";
   const context = identityContext + (playOnLabel ? ` · ${playOnLabel}` : "");
+  // Live time is the spectator's stopwatch: how long this world has actually
+  // been playing, with pauses and the between-game result screen left out. A
+  // hand-played game has no pause or restart to measure against, so the row
+  // belongs to the watched regimes only.
+  const liveTimeText = SPEC ? liveClockLabel() : null;
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
     `game speed ${speedName}; watch pace ${watchPace}; ` +
+    (liveTimeText ? `live time ${liveTimeText}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
     `${cityStateCount} city states remaining, ${cityStatesLost} eliminated`;
   // A count and the toll it was taken out of are one reading, so they share a
@@ -18650,6 +18738,10 @@ function hudTurnPlate() {
     `<div class="turn-settings" aria-label="Game setup">` +
     `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
     `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
+    (liveTimeText !== null
+      ? `<div class="turn-setting" title="How long this world has been playing. Pauses stop the clock; a restart starts it over.">` +
+        `<span>Live time:</span><b data-live-time>${liveTimeText}</b></div>`
+      : ``) +
     rosterRow("Civs:", civCount, civsLost) +
     rosterRow("City states:", cityStateCount, cityStatesLost) +
     `</div></section>`;
