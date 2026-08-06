@@ -924,6 +924,13 @@ fn generate_land(
         // answered once for both shapes. See [`canal_blocks`].
         return canal_blocks(wm, poles, rng).land;
     }
+    if script == MapScript::TeninsBall {
+        // The seam is also one piece of geometry, like the six lanes of Grand
+        // Canals. Its latitude is sampled from the world's own surface, so a
+        // flat map wraps the seam at its east edge and a globe closes it at
+        // every longitude. See [`tennis_ball_land`].
+        return tennis_ball_land(wm, poles);
+    }
     if wm.sphere().is_some() {
         if script == MapScript::Fjords {
             // Fjords are a coastline-first world on either shape. Reading the
@@ -1058,6 +1065,7 @@ fn flat_land(
             }
             land
         }
+        MapScript::TeninsBall => tennis_ball_land(wm, poles),
         MapScript::Lakes => {
             // The basins this leaves behind are the map's water. They are cut
             // from the field rather than grown, so they arrive in the range of
@@ -1557,6 +1565,110 @@ fn globe_land(
             land
         }
     }
+}
+
+/// The Standard map has 84 × 54 tiles, and its seam is six tiles wide. Scaling
+/// by the square root of tile count keeps the seam's proportion steady as map
+/// sizes grow, while rounding leaves the stock sizes at clean whole-tile
+/// widths: three on Duel, four on Tiny, five on Small, and six on Standard.
+const TENNIS_BALL_STANDARD_TILES: f64 = 84.0 * 54.0;
+const TENNIS_BALL_STANDARD_GAP_TILES: f64 = 5.5;
+const TENNIS_BALL_MIN_GAP_TILES: f64 = 3.0;
+const TENNIS_BALL_MAX_GAP_TILES: f64 = 10.0;
+
+/// How far the seam bows north and south. Two turns around the longitude make
+/// the single closed band read like the crossing curves stitched into a tennis
+/// ball, rather than like an ordinary equatorial belt.
+const TENNIS_BALL_SEAM_AMPLITUDE: f64 = 0.60;
+
+/// The nearest point on a smooth seam is always within one half-wave of the
+/// tile's own longitude. The sample count is chosen from the tile's angular
+/// scale, so the approximation stays finer than a tile on every shipped map
+/// while generation remains linear in map size.
+const TENNIS_BALL_SEAM_SEARCH_RADIUS: f64 = std::f64::consts::FRAC_PI_2;
+const TENNIS_BALL_SEAM_MIN_SAMPLES: usize = 32;
+const TENNIS_BALL_SEAM_MAX_SAMPLES: usize = 256;
+
+fn tennis_ball_gap_tiles(wm: &WorldMap) -> usize {
+    (TENNIS_BALL_STANDARD_GAP_TILES
+        * (wm.tiles.len() as f64 / TENNIS_BALL_STANDARD_TILES).sqrt())
+    .round()
+    .clamp(TENNIS_BALL_MIN_GAP_TILES, TENNIS_BALL_MAX_GAP_TILES) as usize
+}
+
+fn tennis_ball_seam_point(longitude: f64) -> [f64; 3] {
+    let latitude = TENNIS_BALL_SEAM_AMPLITUDE * (2.0 * longitude).sin();
+    [
+        latitude.cos() * longitude.cos(),
+        latitude.cos() * longitude.sin(),
+        latitude.sin(),
+    ]
+}
+
+/// The cosine of the angular distance from a world point to the tennis-ball
+/// seam. Working in cosine space avoids an expensive inverse cosine for every
+/// tile and is exact enough for the whole-tile band the map asks for.
+fn tennis_ball_seam_proximity(point: [f64; 3], samples: usize) -> f64 {
+    let longitude = point[1].atan2(point[0]);
+    (0..=samples)
+        .map(|sample| {
+            let fraction = sample as f64 / samples as f64;
+            let longitude = longitude
+                + (2.0 * fraction - 1.0) * TENNIS_BALL_SEAM_SEARCH_RADIUS;
+            dot(point, tennis_ball_seam_point(longitude))
+        })
+        .fold(-1.0, f64::max)
+}
+
+/// The water stitching of a Tenins Ball world: one closed, wavy band around
+/// every longitude.
+fn tennis_ball_seam_water(wm: &WorldMap) -> BTreeSet<Pos> {
+    let arc = tile_arc(wm);
+    let half_width = tennis_ball_gap_tiles(wm) as f64 * arc / 2.0;
+    let seam_cutoff = half_width.cos();
+    let samples = (std::f64::consts::PI / arc)
+        .ceil()
+        .clamp(TENNIS_BALL_SEAM_MIN_SAMPLES as f64, TENNIS_BALL_SEAM_MAX_SAMPLES as f64)
+        as usize;
+    wm.tiles
+        .keys()
+        .copied()
+        .filter(|pos| tennis_ball_seam_proximity(wm.direction(*pos), samples) >= seam_cutoff)
+        .collect()
+}
+
+/// A globe also keeps its twelve pentagons and, with poles, its polar caps in
+/// water, as every generated globe does; those are not part of the playable
+/// seam.
+fn tennis_ball_water(wm: &WorldMap, poles: MapPoles) -> BTreeSet<Pos> {
+    let globe = wm.sphere().is_some();
+    let mut water = tennis_ball_seam_water(wm);
+    let cap = if globe && poles.has_poles() {
+        0.93
+    } else {
+        f64::MAX
+    };
+    let pentagons: BTreeSet<Pos> = wm
+        .sphere()
+        .map(|sphere| sphere.pentagons().into_iter().collect())
+        .unwrap_or_default();
+    water.extend(pentagons);
+    water.extend(
+        wm.tiles
+            .keys()
+            .copied()
+            .filter(|pos| wm.polar_fraction(*pos) >= cap),
+    );
+    water
+}
+
+fn tennis_ball_land(wm: &WorldMap, poles: MapPoles) -> BTreeSet<Pos> {
+    let water = tennis_ball_water(wm, poles);
+    wm.tiles
+        .keys()
+        .copied()
+        .filter(|pos| !water.contains(pos))
+        .collect()
 }
 
 /// The three axes a Grand Canals world is cut around: the polar one, and the
@@ -2251,7 +2363,9 @@ fn large_lake_budget(script: MapScript, num_continents: usize) -> usize {
         // The blocks a canal world is cut into are broad enough to hold one,
         // and a lake is the water a canal world does not already have: fresh,
         // enclosed, and nothing a ship arrives by.
-        MapScript::Pangaea | MapScript::InlandSea | MapScript::GrandCanals => num_continents,
+        MapScript::Pangaea
+        | MapScript::InlandSea
+        | MapScript::GrandCanals => num_continents,
         MapScript::Continents => num_continents / 2,
         // A block of a Grand Canals II world is a few dozen tiles of ground
         // with a canal already around it, so its middle is never far from a
@@ -2261,6 +2375,7 @@ fn large_lake_budget(script: MapScript, num_continents: usize) -> usize {
         MapScript::Earth
         | MapScript::TrueStartEarth
         | MapScript::LandOnly
+        | MapScript::TeninsBall
         | MapScript::SmallContinents
         | MapScript::Fjords
         | MapScript::Islands
@@ -6739,10 +6854,11 @@ mod river_tests {
     const SCATTERED: MapPoles = MapPoles::Randomized;
 
     /// Every non-Earth world type, in the order the lobby lists them.
-    const ROLLED_TYPES: [MapScript; 11] = [
+    const ROLLED_TYPES: [MapScript; 12] = [
         MapScript::LandOnly,
         MapScript::Lakes,
         MapScript::InlandSea,
+        MapScript::TeninsBall,
         MapScript::GrandCanals,
         MapScript::GrandCanalsTwo,
         MapScript::Pangaea,
@@ -7596,6 +7712,36 @@ mod river_tests {
         }
     }
 
+    /// The new map's water is one stitched loop, not a pair of bays that
+    /// happen to face one another. The loop is also measured in tiles rather
+    /// than degrees, so the same request scales from the small map sizes to a
+    /// Standard world on either map shape.
+    #[test]
+    fn tenins_ball_has_one_scaled_water_stitching_loop() {
+        for size in &CIV6_MAP_SIZES[..4] {
+            for topology in [FLAT, GLOBE] {
+                let world = if topology.is_globe() {
+                    WorldMap::globe(size.globe_frequency)
+                } else {
+                    WorldMap::new(size.width, size.height)
+                };
+                let seam = tennis_ball_seam_water(&world);
+                let bodies = connected_components(&world, &seam);
+                assert_eq!(bodies.len(), 1, "{} {topology:?}: seam is not one loop", size.id);
+                assert!(!seam.is_empty(), "{} {topology:?}: seam is empty", size.id);
+
+                let gap = tennis_ball_gap_tiles(&world);
+                if size.id == "standard" {
+                    assert!(
+                        (5..=6).contains(&gap),
+                        "{} {topology:?}: seam is {gap} tiles wide",
+                        size.id
+                    );
+                }
+            }
+        }
+    }
+
     /// The layers of a canal are what the world type promises, so they are
     /// pinned here rather than left to the table: between one and three tiles
     /// of shelf off either bank, and between one and three of channel down the
@@ -8164,6 +8310,13 @@ mod river_tests {
                     "Grand Canals II should cut the world into blocks of a size, got {:?}",
                     components.iter().map(|c| c.len()).collect::<Vec<_>>()
                 ),
+                // The seam is one closed water body, so it divides the ground
+                // into two broad lobes rather than scattering islands.
+                MapScript::TeninsBall => assert!(
+                    components.len() >= 2 && components[0].len() * 3 <= total * 2,
+                    "Tenins Ball should leave two broad land lobes, got {:?}",
+                    components.iter().map(|c| c.len()).collect::<Vec<_>>()
+                ),
                 MapScript::Earth | MapScript::TrueStartEarth => {
                     unreachable!("fixed-geography Earth is not in this list")
                 }
@@ -8176,6 +8329,7 @@ mod river_tests {
             let expected = match script {
                 MapScript::Continents => 2,
                 MapScript::SmallContinents => 4,
+                MapScript::TeninsBall => 2,
                 _ => 1,
             };
             assert!(

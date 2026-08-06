@@ -2204,6 +2204,7 @@ mod tests {
         // One orbit per civilization, in the world's own frame, so the globe
         // and the flat board draw the same launch rather than two of them.
         assert!(INDEX.contains("function skyOrbit(player) {"));
+        assert!(INDEX.contains("const SKY_SATELLITE_ALTITUDE_SCALE = 1.7;"));
         assert!(INDEX.contains("const {inclination, node, phase, pace} = skyOrbit(player);"));
         assert!(INDEX.contains("const orbit = skyOrbit(player);"));
         // The ground track itself: the orbit's own latitude and longitude, less
@@ -2262,6 +2263,7 @@ mod tests {
         assert!(INDEX.contains(
             "function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {\n  if (!SHOW_ROCKET_ANIMATIONS) return;"
         ));
+        assert!(INDEX.contains("cx.clip(\"evenodd\");"));
         assert!(INDEX.contains(
             "function drawFlatSatellites(now) {\n  if (!SHOW_ROCKET_ANIMATIONS) return;"
         ));

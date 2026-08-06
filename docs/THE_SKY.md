@@ -244,11 +244,11 @@ out here goes where the pointer says and the pointer is over empty space for
 most of the way. Coming back from the far stop to a city was a long scroll that
 could be lost at any point in it.
 
-So the sky carries its own way about, on a bar that stands over the zoom
-buttons — the same control, in the same place — and is only there while there
-is a sky to cross. Home wholly on the stage with room around it puts it up; home
-filling the frame takes it down again. Three things on it, in the order a hand
-reaches for them:
+So the sky carries its own way about, on a second row beneath the zoom buttons
+inside the same map-control card, and is only there while there is a sky to
+cross. Home wholly on the stage with room around it puts it up; home filling
+the frame takes it down again. Three things on it, in the order a hand reaches
+for them:
 
 **The bar reads outward, in one order:** `Earth`, `Moon`, `Mars`, `Solar
 system`, `Voyage`, `Exoplanet`. The divider in the middle of it is no longer the

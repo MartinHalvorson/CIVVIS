@@ -319,6 +319,7 @@ pub enum MapScript {
     LandOnly,
     Lakes,
     InlandSea,
+    TeninsBall,
     GrandCanals,
     GrandCanalsTwo,
     #[default]
@@ -338,6 +339,7 @@ impl MapScript {
             Self::LandOnly => "land_only",
             Self::Lakes => "lakes",
             Self::InlandSea => "inland_sea",
+            Self::TeninsBall => "tenins_ball",
             Self::GrandCanals => "grand_canals",
             Self::GrandCanalsTwo => "grand_canals_2",
             Self::Pangaea => "pangaea",
@@ -375,6 +377,10 @@ impl MapScript {
             Self::LandOnly => 95,
             Self::Lakes => 81,
             Self::InlandSea => 68,
+            // The seam is the world's only ordinary water on a flat map. A
+            // globe also holds its pentagons and, with poles, its caps out of
+            // the ground, so this is the share both shapes come out near.
+            Self::TeninsBall => 79,
             // Ground nearly everywhere, less the six canals cut through it.
             // What the canals take is geometry rather than a share the
             // generator picks, so this is what is left once they have taken
@@ -409,6 +415,9 @@ impl MapScript {
             "pangea" => return Some(Self::Pangaea),
             "planet" => return Some(Self::SmallContinents),
             "archipelago" => return Some(Self::Islands),
+            // Accept the corrected spelling at the protocol boundary while
+            // retaining the lobby name requested for this map type.
+            "tennis_ball" => return Some(Self::TeninsBall),
             _ => {}
         }
         CIV6_MAP_SCRIPTS
@@ -575,7 +584,7 @@ pub struct MapScriptSpec {
 }
 
 /// The world types in the order [`MapScript`] declares them.
-pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 13] = [
+pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 14] = [
     MapScriptSpec {
         id: "land_only",
         name: "Land Only",
@@ -593,6 +602,12 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 13] = [
         name: "Inland Sea",
         description: "A broad connected landmass surrounding a central sea.",
         script: MapScript::InlandSea,
+    },
+    MapScriptSpec {
+        id: "tenins_ball",
+        name: "Tenins Ball",
+        description: "Two land lobes divided by a five-to-six-tile water seam that loops around the whole world like a tennis ball's stitching.",
+        script: MapScript::TeninsBall,
     },
     MapScriptSpec {
         id: "grand_canals",
@@ -1254,6 +1269,7 @@ mod tests {
                 MapScript::LandOnly,
                 MapScript::Lakes,
                 MapScript::InlandSea,
+                MapScript::TeninsBall,
                 MapScript::GrandCanals,
                 MapScript::GrandCanalsTwo,
                 MapScript::Pangaea,
