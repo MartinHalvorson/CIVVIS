@@ -3802,12 +3802,15 @@ const viewerPerformance = {
   turnLimit: null,
   lastUiAt: 0,
 };
-// How long a whole simulation takes is a question only the viewer can answer.
-// The exhibition starts a fresh server process for every world, so no host has
-// a history of finished games to report; this page keeps its own for as long as
-// it stays open. Runs are counted only when this document watched the world
-// from its opening turn, because a page that joined at turn 90 knows how long
-// it watched, not how long the simulation took.
+// How long a whole simulation takes is a question the viewer can always answer
+// and the host often cannot. A native server cycles worlds in place, so it could
+// keep this ledger itself — but the published browser build steps the game in
+// the tab and reports no turn cost at all, and a server driven by external
+// `/step` calls never blends one either, because only `auto_step_loop` does.
+// This page therefore keeps its own, for as long as it stays open. Runs are
+// counted only when this document watched the world from its opening turn,
+// because a page that joined at turn 90 knows how long it watched, not how long
+// the simulation took.
 const SIMULATION_RUN_LIMIT = 24;
 const SIMULATION_JOIN_TURN_LIMIT = 2;
 // A longer gap between turns is a pause, a throttled background tab or the
