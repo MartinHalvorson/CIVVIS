@@ -4,7 +4,7 @@
 //! woodland anchor independent from hill presence, the hill on its lower edge,
 //! and improvement calls at the unshifted tile origin.
 
-const INDEX: &str = include_str!("../web/assets/app.js");
+const INDEX: &str = include_str!("../../web/assets/app.js");
 
 fn function_source(name: &str) -> &str {
     let start = INDEX.find(name).unwrap_or_else(|| panic!("missing {name}"));
