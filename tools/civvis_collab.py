@@ -860,11 +860,22 @@ def wait_for_pr_head(
 
 
 def merge_current_main(repo: Path) -> bool:
-    """Integrate a newly advanced main and independently revalidate the result."""
+    """Integrate a newly advanced main and type-check the merged result.
+
+    This used to rerun the entire `cargo test --profile ci --locked` suite —
+    several local minutes per ship whenever the trunk had moved, duplicating
+    the full CI gate that runs on the pushed result minutes later anyway. The
+    author already validated the branch before shipping (AGENTS.md), and the
+    exact merged tree is what CI tests and auto-merge gates on. What a clean
+    auto-merge can still break locally is names and types drifting under the
+    diff, and `cargo check` catches that whole class in a fraction of the
+    time. A conflicted merge never reaches this path — it raises above, and
+    resolving plus revalidating it is on the author.
+    """
     fetch_main(repo)
     if ref_contains(repo, "origin/main"):
         return False
-    print("main advanced; merging it and rerunning the required local test")
+    print("main advanced; merging it and type-checking the result")
     merged = run(
         ("git", "-C", str(repo), "merge", "--no-edit", "origin/main"),
         check=False,
@@ -877,7 +888,7 @@ def merge_current_main(repo: Path) -> bool:
         )
     git(repo, "diff", "--check", "origin/main...")
     run(
-        ("cargo", "test", "--profile", "ci", "--locked"),
+        ("cargo", "check", "--locked"),
         cwd=repo,
         capture=False,
     )
@@ -1067,10 +1078,12 @@ def ship_task(args: argparse.Namespace) -> int:
                 )
 
             if not auto_merge_armed:
-                # Armed auto-merge fires the instant a green run coincides with
-                # being current, instead of only when this poll happens to
-                # observe both at once. That window is small: `main` takes a
-                # merge every few minutes and the gate runs for several.
+                # Armed auto-merge fires the instant the required checks go
+                # green, instead of only when this poll happens to observe it.
+                # With `strict: false` it fires even when `main` has advanced
+                # past this head — deliberate: waiting for a run that finishes
+                # inside a no-new-merges window is what kept busy PRs from
+                # ever converging.
                 armed = run(
                     (
                         "gh", "pr", "merge", str(pr["number"]),
@@ -1095,29 +1108,54 @@ def ship_task(args: argparse.Namespace) -> int:
             if str(pr.get("headRefOid") or "") != local_head:
                 raise CommandError("the PR head changed outside this task's one-writer worktree")
             if not ref_contains(root, "origin/main"):
-                # Update the branch through GitHub rather than rebuilding the
-                # task locally. This merges `main` into the head server-side,
-                # so CI reruns on the exact merge result without paying for a
-                # local release build that CI is about to repeat anyway.
-                print("main advanced; updating the PR branch through GitHub")
-                updated = gh_api_write(
-                    "PUT",
-                    f"repos/{REPOSITORY}/pulls/{pr['number']}/update-branch",
-                    {},
-                    check=False,
-                )
-                if updated is None:
-                    # A conflict GitHub cannot resolve needs a real merge in the
-                    # worktree, which is what the outer loop does.
-                    print("GitHub could not update the branch; merging locally")
+                # `main` advancing while the gate runs is the NORMAL state of a
+                # busy trunk, not a problem this loop must fix. Refreshing the
+                # head here — server-side or locally — pushes a new commit,
+                # which trips `cancel-in-progress` and restarts the ~7-minute
+                # gate from zero; while `main` takes a merge every few minutes
+                # the PR can then never converge. On 2026-08-06, 58 of 133
+                # cargo-test runs (44%) were cancelled exactly this way.
+                # Doing nothing is safe by design: branch protection runs with
+                # `strict: false` (see `base_staleness`), armed auto-merge
+                # lands a green run even when the head trails the trunk, and
+                # the push to `main` reruns the full gate on the actual squash
+                # result. Only two cases still need a fresh head:
+                merge_state = str(pr.get("mergeStateStatus") or "").upper()
+                if merge_state == "DIRTY":
+                    # A textual conflict. GitHub can neither auto-merge nor
+                    # update-branch this; only a real merge in the worktree
+                    # resolves it, which is what the outer loop does.
+                    print("main advanced into a conflict; merging locally")
                     ready_thresholds.clear()
                     break
-                git(root, "fetch", "origin", branch)
-                git(root, "merge", "--ff-only", f"origin/{branch}")
-                local_head = git(root, "rev-parse", "HEAD")
-                ready_thresholds.clear()
-                time.sleep(args.poll_seconds)
-                continue
+                behind = int(
+                    git(root, "rev-list", "--count", "HEAD..origin/main") or "0"
+                )
+                if behind >= STALE_BASE_LIMIT:
+                    # Past the same limit that makes `base_staleness` a
+                    # refusal: a merge from here would be a tree no CI run has
+                    # even approximated. Refresh through GitHub so the reset
+                    # gate runs on the exact merge result.
+                    print(
+                        f"branch is {behind} commits behind main; "
+                        "updating the PR branch through GitHub"
+                    )
+                    updated = gh_api_write(
+                        "PUT",
+                        f"repos/{REPOSITORY}/pulls/{pr['number']}/update-branch",
+                        {},
+                        check=False,
+                    )
+                    if updated is None:
+                        print("GitHub could not update the branch; merging locally")
+                        ready_thresholds.clear()
+                        break
+                    git(root, "fetch", "origin", branch)
+                    git(root, "merge", "--ff-only", f"origin/{branch}")
+                    local_head = git(root, "rev-parse", "HEAD")
+                    ready_thresholds.clear()
+                    time.sleep(args.poll_seconds)
+                    continue
 
             state, names = required_check_state(
                 pr.get("statusCheckRollup") or [], minimum_started=ready_thresholds
@@ -1253,8 +1291,23 @@ def merged_pr_gate_errors(number: int, base_sha: str = "") -> List[str]:
                 f"repos/{REPOSITORY}/compare/{base_sha}...{head_sha}",
             )
         )
-        if not compare_status_is_current(str(comparison.get("status") or "")):
-            errors.append("PR head did not contain current main before merge")
+        # Merging a few commits behind main is the designed outcome, not a
+        # violation: `strict: false` admits it, `ship` deliberately stops
+        # refreshing the head while the gate runs (every refresh cancelled the
+        # in-flight run — 44% of all runs on 2026-08-06), and the push to
+        # `main` reruns the full gate on the actual squash result. The hard
+        # line is the same one `base_staleness` draws pre-merge: past
+        # STALE_BASE_LIMIT the merged tree is a combination no CI run has
+        # even approximated.
+        behind_by = int(comparison.get("behind_by") or 0)
+        if (
+            not compare_status_is_current(str(comparison.get("status") or ""))
+            and behind_by >= STALE_BASE_LIMIT
+        ):
+            errors.append(
+                f"PR head was {behind_by} commits behind main at merge, past "
+                f"the {STALE_BASE_LIMIT}-commit staleness limit"
+            )
     payload = gh_json(
         (
             "api",
