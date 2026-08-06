@@ -5340,39 +5340,6 @@ pub(crate) fn apply_tile_memory(game: &mut crate::game::Game, snapshot: &Snapsho
     }
 }
 
-/// The seat's own cities, in the order they appear in the stream.
-///
-/// Read from `state` events, which the mod emits only under `--export-state`.
-pub fn own_cities_from_events(path: &std::path::Path) -> Vec<(i32, i32)> {
-    let Ok(raw) = std::fs::read_to_string(path) else {
-        return Vec::new();
-    };
-    let mut seen = std::collections::BTreeSet::new();
-    let mut order = Vec::new();
-    for line in raw.lines() {
-        if !line.contains("\"state\"") {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        let Some(cities) = value.get("cities").and_then(|c| c.as_array()) else {
-            continue;
-        };
-        for city in cities {
-            let x = city.get("x").and_then(|v| v.as_i64());
-            let y = city.get("y").and_then(|v| v.as_i64());
-            if let (Some(x), Some(y)) = (x, y) {
-                let pos = (x as i32, y as i32);
-                if seen.insert(pos) {
-                    order.push(pos);
-                }
-            }
-        }
-    }
-    order
-}
-
 /// Rebuild the map AND place the seat's cities on it.
 ///
 /// ⚠ Without the cities, every score that reads spacing or owned territory is
@@ -7601,13 +7568,6 @@ pub(crate) fn grow_frontier(
 /// ⚠ Reads the settler's ACTUAL position from the event, not the site CIVVIS aimed
 /// at. Those differ whenever the settler has not arrived, and blocking the tile the
 /// order named would blacklist good ground the settler simply had not reached.
-pub fn refused_sites_of_kind(
-    path: &std::path::Path,
-    kind: &str,
-) -> std::collections::BTreeSet<crate::Pos> {
-    refused_sites_of_kind_through(path, kind, None)
-}
-
 fn refused_sites_of_kind_through(
     path: &std::path::Path,
     kind: &str,
@@ -8289,17 +8249,6 @@ fn refused_policies_through(
         }
     }
     refused
-}
-
-/// Sites Civilization VI refused to found a city on.
-pub fn refused_city_sites(path: &std::path::Path) -> std::collections::BTreeSet<crate::Pos> {
-    refused_sites_of_kind(path, "found_refused")
-}
-
-/// Tiles Civilization VI refused to let a builder improve, after the mod had already
-/// tried the named improvement, any improvement, and automation.
-pub fn refused_improve_sites(path: &std::path::Path) -> std::collections::BTreeSet<crate::Pos> {
-    refused_sites_of_kind(path, "improve_refused")
 }
 
 
@@ -9166,7 +9115,7 @@ pub fn rebuild_from_state(
     }
 
     // Sites the host engine has already rejected, so the planner stops re-deriving
-    // them. See `refused_city_sites`.
+    // them. See `refused_sites_of_kind_through`.
     game.blocked_city_sites = state.refused_sites.clone();
     game.blocked_improvement_sites = state.refused_improves.clone();
     game.blocked_trade_routes = state.refused_trade_routes.clone();

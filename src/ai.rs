@@ -1456,7 +1456,6 @@ pub struct UnitMemory {
 pub struct BasicAi {
     minor: bool,
     barb: bool,
-    culture_focus: bool,
     /// Let the baseline governor build the district that repairs an Amenity
     /// deficit.
     ///
@@ -2671,7 +2670,6 @@ impl BasicAi {
         BasicAi {
             minor: false,
             barb: false,
-            culture_focus: false,
             amenity_districts: false,
             housing_districts: false,
             district_coverage: false,
@@ -2705,7 +2703,6 @@ impl BasicAi {
         BasicAi {
             minor: false,
             barb: false,
-            culture_focus: false,
             amenity_districts: false,
             housing_districts: false,
             district_coverage: false,
@@ -6080,7 +6077,7 @@ impl BasicAi {
                     let Item::Project { project } = item else {
                         return false;
                     };
-                    self.project_matches_focus(g, project) && g.can_produce(pid, cid, item)
+                    g.can_produce(pid, cid, item)
                 })
                 .collect();
             // Cost and label taken once per candidate: the comparator used to
@@ -6362,25 +6359,6 @@ impl BasicAi {
                 }
             }
         }
-        if !self.minor && self.culture_focus {
-            if let Some(amphitheater) = Self::civ_building(g, pid, cid, "amphitheater") {
-                return Some(amphitheater);
-            }
-        }
-        if !self.minor && self.culture_focus {
-            let empire_wonders = g
-                .cities
-                .values()
-                .filter(|city| city.owner == pid)
-                .map(|city| city.wonders.len())
-                .sum::<usize>();
-            if empire_wonders < 3 {
-                let wonder = Self::cheapest_available_wonder(g, pid, cid);
-                if wonder.is_some() {
-                    return wonder;
-                }
-            }
-        }
         let mut buildable: Vec<(i64, Name)> = g
             .rules
             .buildings
@@ -6535,10 +6513,6 @@ impl BasicAi {
                     .total_cmp(&g.item_cost_for_city(pid, cid, right))
                     .then_with(|| format!("{left:?}").cmp(&format!("{right:?}")))
             })
-    }
-
-    fn project_matches_focus(&self, g: &Game, project: &str) -> bool {
-        !self.culture_focus || g.rules.projects[project].district != Some(crate::name!("spaceport"))
     }
 
     fn units(&mut self, g: &mut Game, pid: usize) {
@@ -13579,43 +13553,6 @@ mod tests {
         let next = ai.pick_item(&g, 0, home, 1, 0, 1, 0, 1, 2, 2, 0).unwrap();
         assert!(!matches!(next, Item::Unit { unit }
             if unit == "battering_ram" || unit == "siege_tower"));
-    }
-
-    #[test]
-    fn culture_focus_skips_space_projects_and_finishes_amphitheaters_first() {
-        let mut g = Game::new_full(1, 20, 14, 35, 300, 0, false);
-        let settler = g
-            .player_unit_ids(0)
-            .into_iter()
-            .find(|id| g.units[id].kind == "settler")
-            .unwrap();
-        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
-        let cid = g.player_city_ids(0)[0];
-        let theater = g.cities[&cid].owned_tiles[1];
-        g.players[0].civics.insert(crate::name!("drama_poetry"));
-        g.cities
-            .get_mut(&cid)
-            .unwrap()
-            .districts
-            .insert(crate::name!("theater_square"), theater);
-        g.cities
-            .get_mut(&cid)
-            .unwrap()
-            .buildings
-            .push(crate::name!("monument"));
-
-        let mut ai = BasicAi::new();
-        ai.culture_focus = true;
-        assert!(!ai.project_matches_focus(&g, "launch_earth_satellite"));
-        assert!(ai.project_matches_focus(&g, "repair_outer_defenses"));
-
-        let item = ai.pick_item(&g, 0, cid, 1, 1, 1, 0, 0, 1, 1, 0).unwrap();
-        assert_eq!(
-            item,
-            Item::Building {
-                building: crate::name!("amphitheater")
-            }
-        );
     }
 
     #[test]

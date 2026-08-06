@@ -3695,22 +3695,6 @@ where
     }
 }
 
-pub fn run_tournament_into<F>(names: &[String], make: F, cfg: &TourneyCfg, pool: &mut EloPool)
-where
-    F: Fn(&str, u64) -> Box<dyn Ai> + Sync,
-{
-    pool.bind_profile(TournamentProfile::from_cfg(cfg))
-        .expect("cannot mix tournament profiles in one Elo pool");
-    let result: Result<(), std::convert::Infallible> =
-        play_tournament(names, &make, cfg, |_, _, players| {
-            pool.record_game(players, cfg.k);
-            Ok(())
-        });
-    if let Err(never) = result {
-        match never {}
-    }
-}
-
 struct LedgerLock {
     path: PathBuf,
 }
