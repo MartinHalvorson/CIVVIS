@@ -13064,18 +13064,17 @@ mod tests {
         ));
     }
 
-    /// Mercury, Ceres, Callisto, and Titan are surveyable tiled worlds. Their
-    /// resource marks use already-known Civ resource IDs, but remain separate
-    /// from the game rules until an off-world economy is deliberately designed.
+    /// Every non-Sun body in the catalogue that has a frequency is a tiled
+    /// visual surface. Their resource marks use already-known Civ resource IDs,
+    /// but remain separate from the game rules until an off-world economy is
+    /// deliberately designed.
     #[test]
-    fn tiled_sky_resource_worlds_are_zoomable_without_navigation_buttons() {
+    fn every_tiled_sky_surface_is_zoomable_without_navigation_buttons() {
         let worlds = [
-            ("mercury", "iron"),
-            ("ceres", "salt"),
-            ("callisto", "iron"),
-            ("titan", "oil"),
+            "mercury", "venus", "moon", "mars", "ceres", "jupiter", "io", "europa",
+            "ganymede", "callisto", "saturn", "titan", "uranus", "neptune", "pluto",
         ];
-        for (world, resource) in worlds {
+        for world in worlds {
             let spec = EMBEDDED_INDEX
                 .split_once(&format!("id:\"{world}\""))
                 .unwrap_or_else(|| panic!("{world} is absent from the sky catalogue"))
@@ -13083,16 +13082,20 @@ mod tests {
                 .split_once("},")
                 .unwrap_or_else(|| panic!("{world} sky catalogue entry is not closed"))
                 .0;
-            assert!(
-                spec.contains(&format!("skyResources:[\"{resource}\"]")),
-                "{world} must use the existing {resource} resource marker"
-            );
+            assert!(spec.contains("frequency:"), "{world} must have a tiled surface");
+        }
+        let surface_list = EMBEDDED_INDEX
+            .split_once("const SKY_SURFACE_WORLDS = [")
+            .expect("the tiled surface world list")
+            .1
+            .split_once("];\nconst SKY_ZOOMABLE_WORLDS")
+            .expect("the tiled surface list terminator")
+            .0;
+        for world in worlds {
+            assert!(surface_list.contains(&format!("\"{world}\"")), "{world} is not zoomable");
         }
         assert!(EMBEDDED_INDEX.contains(
-            "const SKY_TILED_RESOURCE_WORLDS = [\"mercury\", \"ceres\", \"callisto\", \"titan\"];"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "const SKY_ZOOMABLE_WORLDS = [...SKY_ARRIVALS, ...SKY_TILED_RESOURCE_WORLDS];"
+            "const SKY_ZOOMABLE_WORLDS = [...SKY_ARRIVALS, ...SKY_SURFACE_WORLDS];"
         ));
         assert!(EMBEDDED_INDEX.contains("const ids = [...SKY_ZOOMABLE_WORLDS];"));
         assert!(EMBEDDED_INDEX.contains("function skyResourceCells(body, cells)"));
@@ -13112,6 +13115,30 @@ mod tests {
             .0;
         assert!(world_stops.contains("for (const id of SKY_ARRIVALS)"));
         assert!(!world_stops.contains("SKY_ZOOMABLE_WORLDS"));
+    }
+
+    #[test]
+    fn solar_rings_are_planet_only_and_the_sun_uses_a_cached_photosphere() {
+        let orbit_list = EMBEDDED_INDEX
+            .split_once("const SKY_OFFICIAL_PLANETS = new Set([")
+            .expect("the official planet orbit list")
+            .1
+            .split_once("]);\n")
+            .expect("the official planet orbit list terminator")
+            .0;
+        for planet in [
+            "mercury", "venus", "earth", "mars", "jupiter", "saturn", "uranus", "neptune",
+        ] {
+            assert!(orbit_list.contains(&format!("\"{planet}\"")), "{planet} needs a solar ring");
+        }
+        for dwarf in ["ceres", "pluto"] {
+            assert!(!orbit_list.contains(&format!("\"{dwarf}\"")), "{dwarf} is a dwarf planet");
+        }
+        assert!(EMBEDDED_INDEX.contains("body.parent || SKY_OFFICIAL_PLANETS.has(body.id)"));
+        assert!(EMBEDDED_INDEX.contains("let SKY_SUN_TEXTURE = null;"));
+        assert!(EMBEDDED_INDEX.contains("function skySunTexture()"));
+        assert!(EMBEDDED_INDEX.contains("function drawSkySunBall(place, alpha)"));
+        assert!(EMBEDDED_INDEX.contains("if (place.light) return drawSkySunBall(place, alpha);"));
     }
 
     /// The world is drawn into a rectangle of the map area rather than into

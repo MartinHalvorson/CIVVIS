@@ -15385,6 +15385,13 @@ const SKY_SYSTEM = SKY_SYSTEM_SPECS.map(skyMakeBody);
 const SKY_STARS = SKY_STAR_SPECS.map(skyMakeStar);
 const SKY_EARTH = SKY_SYSTEM.find(body => body.id === "earth");
 const SKY_SUN = SKY_SYSTEM.find(body => body.id === "sun");
+// The IAU's eight planets get heliocentric orbit rings. Dwarf planets remain
+// in the catalogue and keep their real positions, surfaces, and labels, but a
+// Sun-centred ring is a claim that they are planets — and Ceres and Pluto are
+// not. Moons use their own parent-centred rings below.
+const SKY_OFFICIAL_PLANETS = new Set([
+  "mercury", "venus", "earth", "mars", "jupiter", "saturn", "uranus", "neptune",
+]);
 
 // The destination, as a world in the sky. It keeps the id `exo` whatever it is
 // pointed at, because it is one thing — the place the expedition is going —
@@ -16721,11 +16728,17 @@ function skyZoomLadder() {
 // These are the named navigation stops: they are places the space programme
 // explicitly reaches, so and only so they receive map-control buttons.
 const SKY_ARRIVALS = ["earth", "moon", "mars", "exo"];
-// The four survey worlds need the same slow final approach and whole-world
-// zoom ceiling as a named destination, but deliberately stay off the controls.
-// The resource markers are visual only; this list adds no gameplay destination.
-const SKY_TILED_RESOURCE_WORLDS = ["mercury", "ceres", "callisto", "titan"];
-const SKY_ZOOMABLE_WORLDS = [...SKY_ARRIVALS, ...SKY_TILED_RESOURCE_WORLDS];
+// Every catalogued body with a frequency has a tiled visual surface: rocky
+// planets, dwarf planets, moons, and the cloud decks of the gas giants. Keep
+// all of them on the same slow final approach as the named destinations, while
+// leaving the navigation bar intentionally reserved for the actual game
+// arrivals. Ceres is therefore a real mapped surface, not just an asteroid dot.
+const SKY_SURFACE_WORLDS = [
+  "mercury", "venus", "moon", "mars", "ceres",
+  "jupiter", "io", "europa", "ganymede", "callisto",
+  "saturn", "titan", "uranus", "neptune", "pluto",
+];
+const SKY_ZOOMABLE_WORLDS = [...SKY_ARRIVALS, ...SKY_SURFACE_WORLDS];
 // Those four, and the destination's own star with them, because out there the
 // stop belongs to the star. LHS 1140 is twelve times its own planet and sits at
 // the same point in the catalogue, so `planetMaxScale` answers with the star's
@@ -17380,9 +17393,11 @@ function drawSkyOrbits(radius, centerX, centerY, alpha) {
   // Earth is home, so `visibleSkyBodies` deliberately leaves it out of the
   // navigation/object list. Its Sun-centred path still belongs in the system
   // diagram: it is the one astronomical-unit ring that tells the viewer where
-  // home is in relation to the Sun.
+  // home is in relation to the Sun. Dwarf planets are still visible bodies,
+  // but only official planets get a ring around the Sun.
   const bodies = [SKY_EARTH, ...visibleSkyBodies().filter(body => body.id !== "earth")]
-    .filter(body => body.orbitRadius > 0);
+    .filter(body => body.orbitRadius > 0 &&
+      (body.parent || SKY_OFFICIAL_PLANETS.has(body.id)));
   if (!bodies.length) return;
   cx.save();
   cx.lineWidth = 1;
@@ -17445,14 +17460,95 @@ function skySunDirection(place, radius, centerX, centerY) {
   return {x:dx / away, y:dy / away};
 }
 
-// A star is not a lit ball, it is the thing doing the lighting, so it is drawn
-// the other way round: a hot core, a glow that reaches well past the disc, and
-// the four-point flare an eye or a lens puts on anything much brighter than its
-// surroundings. The Sun gets the same treatment as every other star, because it
-// is one, and at the far end of the zoom that is exactly how it should read.
+// The Sun is the one star close enough to be a world-sized object in this view.
+// Keep its surface in a small cached texture: a single drawImage per frame is
+// cheaper than rebuilding hundreds of granules while the camera is moving, and
+// lets the close-up read as a photosphere rather than a flat yellow disc.
+let SKY_SUN_TEXTURE = null;
+function skySunTexture() {
+  if (SKY_SUN_TEXTURE) return SKY_SUN_TEXTURE;
+  const size = 512, center = size / 2, radius = center - 2;
+  const texture = document.createElement("canvas");
+  texture.width = size; texture.height = size;
+  const brush = texture.getContext("2d");
+  brush.save();
+  brush.beginPath(); brush.arc(center, center, radius, 0, 7); brush.clip();
+
+  // A hotter upper-left photosphere and a warm, darker limb give the ball the
+  // same depth cue as the planets, but with the colour temperature of sunlight.
+  const disk = brush.createRadialGradient(
+    center - radius * .24, center - radius * .30, radius * .04,
+    center, center, radius);
+  disk.addColorStop(0, "#fffef2");
+  disk.addColorStop(.28, "#fff7c2");
+  disk.addColorStop(.66, "#ffd45e");
+  disk.addColorStop(.90, "#f28a1e");
+  disk.addColorStop(1, "#a83a08");
+  brush.fillStyle = disk;
+  brush.beginPath(); brush.arc(center, center, radius, 0, 7); brush.fill();
+
+  // Granulation is deliberately sparse and deterministic. It survives a
+  // close zoom without becoming animated noise, and the texture is generated
+  // only once for the whole page.
+  for (let i = 0; i < 180; i++) {
+    const angle = 6.283185 * hash2(i + 311, 17);
+    const distance = Math.sqrt(hash2(i + 311, 29)) * radius * .9;
+    const gx = center + Math.cos(angle) * distance;
+    const gy = center + Math.sin(angle) * distance;
+    const granule = radius * (.006 + .018 * hash2(i + 311, 37));
+    brush.globalCompositeOperation = hash2(i + 311, 43) > .46 ? "screen" : "multiply";
+    brush.globalAlpha = .035 + .075 * hash2(i + 311, 53);
+    brush.fillStyle = hash2(i + 311, 61) > .5 ? "#fff6b2" : "#c8530d";
+    brush.beginPath();
+    brush.ellipse(gx, gy, granule * 1.8, granule * (.55 + hash2(i + 311, 67)),
+                  angle, 0, 6.283185);
+    brush.fill();
+  }
+
+  // A few broad sunspot groups keep a close view from looking procedurally
+  // uniform without competing with the ball's defining brightness.
+  brush.globalCompositeOperation = "multiply";
+  for (let i = 0; i < 7; i++) {
+    const angle = 6.283185 * hash2(i + 911, 17);
+    const distance = (.18 + .58 * hash2(i + 911, 29)) * radius;
+    const spot = radius * (.014 + .028 * hash2(i + 911, 37));
+    const sx = center + Math.cos(angle) * distance;
+    const sy = center + Math.sin(angle) * distance;
+    const shade = brush.createRadialGradient(sx, sy, 0, sx, sy, spot * 2.4);
+    shade.addColorStop(0, "rgba(89,22,1,.38)");
+    shade.addColorStop(.45, "rgba(137,39,3,.16)");
+    shade.addColorStop(1, "rgba(137,39,3,0)");
+    brush.fillStyle = shade;
+    brush.beginPath(); brush.arc(sx, sy, spot * 2.4, 0, 7); brush.fill();
+  }
+  brush.restore();
+  brush.globalAlpha = 1;
+  brush.globalCompositeOperation = "source-over";
+  SKY_SUN_TEXTURE = texture;
+  return texture;
+}
+function drawSkySunBall(place, alpha) {
+  const {x, y, r} = place;
+  const reach = r * (r > 8 ? 2.6 : 5.8);
+  cx.save();
+  cx.globalAlpha = alpha;
+  const corona = cx.createRadialGradient(x, y, r * .72, x, y, reach);
+  corona.addColorStop(0, "rgba(255,224,112,.28)");
+  corona.addColorStop(.24, "rgba(255,166,33,.12)");
+  corona.addColorStop(1, "rgba(255,96,8,0)");
+  cx.fillStyle = corona;
+  cx.beginPath(); cx.arc(x, y, reach, 0, 7); cx.fill();
+  cx.drawImage(skySunTexture(), x - r, y - r, r * 2, r * 2);
+  cx.restore();
+}
+
+// A distant star is not a lit ball, it is the thing doing the lighting, so it
+// is drawn the other way round: a hot core, a glow that reaches well past the
+// disc, and the four-point flare an eye or a lens puts on anything much
+// brighter than its surroundings.
 function drawSkyStarBall(place, alpha) {
   const {x, y, r, tint} = place;
-  const reach = r * (place.id === "sun" ? 7 : 5);
+  const reach = r * 5;
   cx.save();
   cx.globalAlpha = alpha;
   const halo = cx.createRadialGradient(x, y, r * .6, x, y, reach);
@@ -17542,7 +17638,8 @@ function drawSkyRingHalf(place, alpha, side) {
 // Sun is — so only its colour, its size and what is standing on it change.
 function drawSkyBall(place, alpha, light) {
   const {x, y, r, tint, dark} = place;
-  if (place.kind === "star" || place.light) return drawSkyStarBall(place, alpha);
+  if (place.light) return drawSkySunBall(place, alpha);
+  if (place.kind === "star") return drawSkyStarBall(place, alpha);
   const lx = -(light ? light.x : -.55), ly = -(light ? light.y : -.6);
   cx.save();
   cx.globalAlpha = alpha;
