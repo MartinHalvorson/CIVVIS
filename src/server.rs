@@ -4901,6 +4901,35 @@ mod tests {
         }
     }
 
+    /// Lightning and Blitz resolve a step faster than an eye can find the
+    /// token that took it, so a watcher can ask each unit's wake to linger a
+    /// configured beat after the move lands. Pin the whole chain: the
+    /// control, the persisted preference, the recorded wake, the lingering
+    /// painter, and the ticker that keeps a fading wake animating.
+    #[test]
+    fn browser_lets_a_watcher_keep_unit_trails_lingering() {
+        for contract in [
+            "id=\"unittrails\" aria-label=\"Unit trail linger\"",
+            "<option value=\"0\" selected>Move only</option>",
+            "<option value=\"200\">Linger 0.2s</option>",
+            "<option value=\"500\">Linger 0.5s</option>",
+            "<option value=\"1000\">Linger 1s</option>",
+            "<option value=\"2000\">Linger 2s</option>",
+            "const UNIT_TRAIL_LINGER_STORAGE_KEY = \"civvis-unit-trail-linger\";",
+            "const UNIT_TRAIL_LINGER_VALUES = [0, 200, 500, 1000, 2000];",
+            "function setUnitTrailLinger(value) {",
+            "trails.onchange = () => setUnitTrailLinger(trails.value);",
+            "function drawLingeringUnitTrails(unitAlpha, now) {",
+            "if (mapLens !== \"empire\") drawLingeringUnitTrails(unitAlpha, now);",
+            "anim.trails.length > 0 ||",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(contract),
+                "unit trail linger contract is missing: {contract}"
+            );
+        }
+    }
+
     #[test]
     fn browser_gives_every_shipped_improvement_a_named_tile_marker() {
         let markers = EMBEDDED_INDEX

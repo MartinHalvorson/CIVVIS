@@ -810,6 +810,19 @@ let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") ===
 // Space-race flights and satellites are on unless a viewer explicitly turns
 // their animated visual effects off. The completed mission remains in state.
 let SHOW_ROCKET_ANIMATIONS = localStorage.getItem("civvis-show-rocket-animations") !== "0";
+// How long a unit's movement wake stays on the map after its step lands.
+// Zero is the original behavior — a comet only while the tween itself runs —
+// while a linger keeps who-went-where readable at Lightning and Blitz paces,
+// where a step resolves faster than an eye can find the token that took it.
+const UNIT_TRAIL_LINGER_STORAGE_KEY = "civvis-unit-trail-linger";
+const UNIT_TRAIL_LINGER_VALUES = [0, 200, 500, 1000, 2000];
+// Enough for every mover of a large late-game turn; bounds draw cost when a
+// whole war resolves in one Lightning poll.
+const UNIT_TRAIL_LIMIT = 240;
+let UNIT_TRAIL_LINGER_MS = (() => {
+  const saved = Number(localStorage.getItem(UNIT_TRAIL_LINGER_STORAGE_KEY));
+  return UNIT_TRAIL_LINGER_VALUES.includes(saved) ? saved : 0;
+})();
 // A brief coast makes direct drags feel physical; reduced-motion still takes
 // precedence, and a viewer can opt out here without changing system settings.
 const WORLD_PAN_INERTIA_STORAGE_KEY = "civvis-world-pan-inertia";
@@ -956,7 +969,7 @@ applyOverlayVisibility();
 // burst — a device is the only event on this board that deserves several
 // seconds and the whole frame.
 const anim = { moves: new Map(), floats: [], sparks: [], deaths: [],
-               claims: [], strike: null, blasts: [],
+               claims: [], strike: null, blasts: [], trails: [],
                skyLaunches: [] };
 // Detonations already shown. The engine gives every strike a unique id
 // precisely so a client can answer this without comparing fields: two devices
@@ -1016,6 +1029,7 @@ function resetAnim() {
   anim.deaths.length = 0;
   anim.claims.length = 0;
   anim.blasts.length = 0;
+  anim.trails.length = 0;
   anim.skyLaunches.length = 0;
   seenBlasts = new Set();
   anim.strike = null;
@@ -1113,11 +1127,22 @@ function animateDiff(prev, next) {
         // dropped the full shift the instant it set off, and one walking out
         // snapped up by the same amount: a visible jolt at both ends of the
         // step. Carrying both endpoints lets the shift ease across the move.
+        const dur = unitMoveDuration(nu.id, steps);
         anim.moves.set(nu.id, {mapX:start.x, mapY:start.y, mapLift:start.lift,
                                 mapPoints, steps,
                                 fromCity: cityKeys.has(key(pu.pos)),
                                 toCity: cityKeys.has(key(nu.pos)),
-                                t0: now, dur:unitMoveDuration(nu.id, steps) });
+                                t0: now, dur });
+        // The lingering wake outlives both the tween and the unit itself — a
+        // trail that survives its casualty is what makes a fast battle
+        // readable after the fact.
+        if (UNIT_TRAIL_LINGER_MS > 0) {
+          anim.trails.push({ unit: nu.id, points: mapPoints, owner: nu.owner,
+                             t0: now, moveDur: dur,
+                             linger: UNIT_TRAIL_LINGER_MS });
+          if (anim.trails.length > UNIT_TRAIL_LIMIT)
+            anim.trails.splice(0, anim.trails.length - UNIT_TRAIL_LIMIT);
+        }
       }
     }
     if (unitHasHealth(nu) && unitHasHealth(pu) && nu.hp < pu.hp) {
@@ -4080,6 +4105,7 @@ const DISPLAY_RESOURCE_CAP_VALUES = [10, 20, 30, 40, 50, 60, 70, 80, 90];
 const DISPLAY_RESOURCE_CAP_DEFAULT = 70;
 const DISPLAY_CPU_GUIDANCE_CONTROLS = [
   "renderresolution", "yieldchk", "reschk", "resourcedisplay", "rocketanimchk",
+  "unittrails",
 ];
 const DISPLAY_MEMORY_GUIDANCE_CONTROLS = [
   "renderresolution", "resourcedisplay", "reset-overlay-layout",
@@ -16888,6 +16914,54 @@ function drawPlanetMap() {
   return true;
 }
 
+// One wake polyline in view space: a dark casing under the owner's color so
+// it reads on any terrain, transparent at the tail and strong at the head.
+function strokeUnitTrail(points, color, alpha) {
+  if (points.length < 2 || alpha <= 0) return;
+  const [startX, startY] = points[0];
+  const [endX, endY] = points[points.length - 1];
+  const tint = cx.createLinearGradient(startX, startY, endX, endY);
+  tint.addColorStop(0, color + "00");
+  tint.addColorStop(1, color + "e0");
+  const casing = cx.createLinearGradient(startX, startY, endX, endY);
+  casing.addColorStop(0, "#0d111700");
+  casing.addColorStop(1, "#0d1117b0");
+  cx.save();
+  cx.globalAlpha = alpha;
+  cx.lineCap = "round";
+  cx.strokeStyle = casing; cx.lineWidth = 5.4;   // casing, so it reads on sand
+  cx.beginPath();
+  points.forEach(([px, py], index) => index ? cx.lineTo(px, py + 7) : cx.moveTo(px, py + 7));
+  cx.stroke();
+  cx.strokeStyle = tint; cx.lineWidth = 3;
+  cx.beginPath();
+  points.forEach(([px, py], index) => index ? cx.lineTo(px, py + 7) : cx.moveTo(px, py + 7));
+  cx.stroke();
+  cx.restore();
+}
+// The wakes that outlived their tween, painted before the tokens so every
+// unit draws above them. Each holds full strength until its own step has
+// landed, then fades over the viewer's configured linger.
+function drawLingeringUnitTrails(unitAlpha, now) {
+  if (!anim.trails.length) return;
+  const alive = [];
+  for (const trail of anim.trails) {
+    const age = now - trail.t0;
+    if (age > trail.moveDur + trail.linger) continue;
+    alive.push(trail);
+    // While its tween is on screen the in-flight comet owns this wake, and a
+    // beat of slack keeps the completion frame from painting it twice. The
+    // age test matters too: a casualty's orphaned move record is never
+    // sampled again, and it must not suppress the wake of the very unit the
+    // watcher most wants to trace.
+    if (age < trail.moveDur + 50 && anim.moves.has(trail.unit)) continue;
+    const fade = Math.min(1, Math.max(0, 1 - (age - trail.moveDur) / trail.linger));
+    strokeUnitTrail(trail.points.map(mapPointToView),
+                    pcol(trail.owner), unitAlpha * 0.75 * fade);
+  }
+  anim.trails = alive;
+}
+
 function drawScene() {
   if (!state) return;
   // Before the branch, because the sky's own way about has to come down when
@@ -17648,6 +17722,7 @@ function drawScene() {
   const strategicUnitStacks = strategicUnitStackSlots(drawnUnits, anim.moves);
   const now = performance.now();
   const unitAlpha = mapLens === "settler" ? SETTLER_LENS_UNIT_ALPHA : 1;
+  if (mapLens !== "empire") drawLingeringUnitTrails(unitAlpha, now);
   for (const u of sorted) {
     const [tileX, tileY] = worldXY(u.pos);
     let x = tileX, y = tileY;
@@ -17671,28 +17746,12 @@ function drawScene() {
     // eye can otherwise only catch whichever unit it happened to be pointed
     // at; a trail in the owner's color says who went where after the fact, and
     // swells then fades over the step so it never becomes permanent clutter.
+    // Under a configured linger it swells and then holds instead, and the
+    // lingering pass owns the fade once the step has landed.
     if (moving) {
-      const c = pcol(u.owner);
-      const [trailStartX, trailStartY] = trailPoints[0];
-      const [trailEndX, trailEndY] = trailPoints[trailPoints.length - 1];
-      const g2 = cx.createLinearGradient(trailStartX, trailStartY, trailEndX, trailEndY);
-      g2.addColorStop(0, c + "00");
-      g2.addColorStop(1, c + "e0");
-      const gk = cx.createLinearGradient(trailStartX, trailStartY, trailEndX, trailEndY);
-      gk.addColorStop(0, "#0d111700");
-      gk.addColorStop(1, "#0d1117b0");
-      cx.save();
-      cx.globalAlpha = unitAlpha * 0.75 * Math.sin(mv.e * Math.PI);
-      cx.lineCap = "round";
-      cx.strokeStyle = gk; cx.lineWidth = 5.4;   // casing, so it reads on sand
-      cx.beginPath();
-      trailPoints.forEach(([px, py], index) => index ? cx.lineTo(px, py + 7) : cx.moveTo(px, py + 7));
-      cx.stroke();
-      cx.strokeStyle = g2; cx.lineWidth = 3;
-      cx.beginPath();
-      trailPoints.forEach(([px, py], index) => index ? cx.lineTo(px, py + 7) : cx.moveTo(px, py + 7));
-      cx.stroke();
-      cx.restore();
+      const swell = UNIT_TRAIL_LINGER_MS > 0 ? Math.min(mv.e, .5) : mv.e;
+      strokeUnitTrail(trailPoints, pcol(u.owner),
+                      unitAlpha * 0.75 * Math.sin(swell * Math.PI));
     }
     if (anim.strike && anim.strike.id === u.id) {
       const st2 = anim.strike;
@@ -25959,6 +26018,17 @@ function setShowRocketAnimations(on) {
   if (!SHOW_ROCKET_ANIMATIONS) anim.skyLaunches.length = 0;
   if (state) draw();
 }
+function setUnitTrailLinger(value) {
+  const ms = Number(value);
+  UNIT_TRAIL_LINGER_MS = UNIT_TRAIL_LINGER_VALUES.includes(ms) ? ms : 0;
+  localStorage.setItem(UNIT_TRAIL_LINGER_STORAGE_KEY, String(UNIT_TRAIL_LINGER_MS));
+  const select = document.getElementById("unittrails");
+  if (select) select.value = String(UNIT_TRAIL_LINGER_MS);
+  // Turning the linger off clears wakes already on the map at once, which
+  // makes the preference reliable even while a battle is animating.
+  if (!UNIT_TRAIL_LINGER_MS) anim.trails.length = 0;
+  if (state) draw();
+}
 function setWorldPanInertia(on) {
   WORLD_PAN_INERTIA = !!on;
   localStorage.setItem(WORLD_PAN_INERTIA_STORAGE_KEY, WORLD_PAN_INERTIA ? "1" : "0");
@@ -27410,6 +27480,11 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   rockets.onchange = () => setShowRocketAnimations(rockets.checked);
 }
 {
+  const trails = document.getElementById("unittrails");
+  trails.value = String(UNIT_TRAIL_LINGER_MS);
+  trails.onchange = () => setUnitTrailLinger(trails.value);
+}
+{
   const inertia = document.getElementById("inertiachk");
   inertia.checked = WORLD_PAN_INERTIA;
   inertia.onchange = () => setWorldPanInertia(inertia.checked);
@@ -27466,7 +27541,8 @@ function animTick(now) {
   const cameraMoving = userCameraMoving || followCameraMoving;
   const active = cameraMoving || anim.moves.size > 0 || anim.floats.length > 0 ||
     anim.sparks.length > 0 || anim.deaths.length > 0 || anim.strike ||
-    anim.blasts.length > 0 || planetSkyAnimating() || flatSkyAnimating();
+    anim.blasts.length > 0 ||
+    anim.trails.length > 0 || planetSkyAnimating() || flatSkyAnimating();
   // Never spend more than about half the wall clock rendering. Measured cost
   // decides: a frame that takes 60ms gets asked for every 130ms rather than
   // every 33, so the view degrades to a slower picture instead of stalling.
