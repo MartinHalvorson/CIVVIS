@@ -676,8 +676,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// built-in agent reads it, and declarations, peaces, and turn boundaries
 /// still sync unconditionally — so the frozen controller's decisions are
 /// unchanged and the source contract is re-pinned.
+/// `faith_building_spending` now skips building the purchase menu whenever
+/// the faith bank is below the reserve — the state in which the existing
+/// filter provably rejects every candidate. Identical purchases in every
+/// reachable state, so the frozen controller's decisions are unchanged and
+/// the source contract is re-pinned.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd151_1d75_74d8_3084;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb385_7120_73f2_6f90;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
