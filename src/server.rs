@@ -8563,25 +8563,52 @@ mod tests {
             }),
             "Display Settings sections should read observer, map, overlays, performance"
         );
-        for performance_marker in [
+        // Performance options read outward from the one control the viewer can
+        // change: the resolution being drawn at, the map that resolution has to
+        // cover, how fast this browser draws it, and last the simulation behind
+        // it — turn cost, a whole run's projected length, the run on screen, and
+        // the runs this page has already watched end to end.
+        let performance_markers = [
             "id=\"renderresolution\"",
+            "id=\"performance-canvas-value\"",
+            "id=\"performance-workload-value\"",
             "id=\"performance-render-value\"",
             "id=\"performance-slow-value\"",
             "id=\"performance-simulation-value\"",
-            "id=\"performance-canvas-value\"",
-            "id=\"performance-workload-value\"",
+            "id=\"performance-fullsim-value\"",
+            "id=\"performance-thissim-value\"",
+            "id=\"performance-lastsim-value\"",
+            "id=\"performance-simcount-value\"",
             "id=\"performance-recommendation\"",
-        ] {
+        ];
+        for performance_marker in performance_markers {
             assert!(
                 EMBEDDED_INDEX.contains(performance_marker),
                 "performance display is missing: {performance_marker}"
             );
         }
         assert!(
-            EMBEDDED_INDEX.find("id=\"renderresolution\"").unwrap()
-                < EMBEDDED_INDEX.find("id=\"performance-render-value\"").unwrap(),
-            "render resolution should precede performance stats"
+            performance_markers.windows(2).all(|pair| {
+                EMBEDDED_INDEX.find(pair[0]).unwrap() < EMBEDDED_INDEX.find(pair[1]).unwrap()
+            }),
+            "performance options should read resolution, canvas, workload, render, slow \
+             frames, then the simulation rows"
         );
+        // The simulation rows are the reason the panel can answer "how long does
+        // a whole game take" at all, and every build must be able to fill them:
+        // the published browser build reports no turn cost of its own, so the
+        // viewer measures the turn interval it was served instead.
+        for simulation_contract in [
+            "function simulationTurnMs() {",
+            "return viewerPerformance.simulation.wall ?? simulationLedger.observedTurnMs;",
+            "const SIMULATION_FALLBACK_TURN_LIMIT = 250;",
+            "function trackSimulationRun(st, now) {",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(simulation_contract),
+                "simulation statistics contract is missing: {simulation_contract}"
+            );
+        }
         // Resource names are the default detailed-map treatment, but the
         // existing compact symbol stays an explicit, persisted choice and the
         // only treatment at survey scale.

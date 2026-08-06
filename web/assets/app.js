@@ -3799,7 +3799,39 @@ const viewerPerformance = {
   simulation: {wall: null, compute: null},
   spectator: false,
   workload: null,
+  turnLimit: null,
   lastUiAt: 0,
+};
+// How long a whole simulation takes is a question only the viewer can answer.
+// The exhibition starts a fresh server process for every world, so no host has
+// a history of finished games to report; this page keeps its own for as long as
+// it stays open. Runs are counted only when this document watched the world
+// from its opening turn, because a page that joined at turn 90 knows how long
+// it watched, not how long the simulation took.
+const SIMULATION_RUN_LIMIT = 24;
+const SIMULATION_JOIN_TURN_LIMIT = 2;
+// A longer gap between turns is a pause, a throttled background tab or the
+// hold between games — not what a turn costs.
+const SIMULATION_TURN_GAP_CEILING_MS = 20_000;
+const SIMULATION_TURN_GAP_WEIGHT = .2;
+const SIMULATION_FALLBACK_TURN_LIMIT = 250;
+const simulationLedger = {
+  seed: null,
+  joinedTurn: null,
+  startedAt: null,
+  endedAt: null,
+  lastTurn: null,
+  lastTurnAt: null,
+  lastSeenAt: null,
+  // A world that was paused, or that this page stopped being served for, took
+  // longer in wall time than it took to simulate. Such a run is still watched
+  // and still shown; it is simply never timed.
+  spoiled: false,
+  // Wall milliseconds per game turn as this page saw them, for the builds that
+  // report no `turn_ms` of their own — the published browser build among them.
+  observedTurnMs: null,
+  recorded: false,
+  runs: [],
 };
 function prunePerformanceSamples(samples, now) {
   while (samples.length && now - samples[0].at > PERFORMANCE_SAMPLE_WINDOW_MS)
@@ -3820,6 +3852,14 @@ function performanceMs(value) {
 function performanceInteger(value) {
   return Number.isFinite(value) ? Math.max(0, Math.round(value)).toLocaleString("en") : "—";
 }
+function performanceDuration(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return seconds % 60 ? `${minutes}m ${seconds % 60}s` : `${minutes}m`;
+  return minutes % 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${Math.floor(minutes / 60)}h`;
+}
 function performanceCanvasText() {
   const width = Number(cv?.width);
   const height = Number(cv?.height);
@@ -3829,7 +3869,9 @@ function performanceCanvasText() {
   const reportedDpr = cssWidth > 0 ? width / cssWidth : Number(DPR);
   const dpr = Number.isFinite(reportedDpr) && reportedDpr > 0 ? reportedDpr : 1;
   const megapixels = width * height / 1_000_000;
-  return `${performanceInteger(width)}×${performanceInteger(height)} @ ${dpr.toFixed(1)}× · ${megapixels.toFixed(megapixels >= 10 ? 0 : 1)}M px`;
+  // A pixel dimension is a coordinate, not a quantity: grouping it reads as two
+  // numbers and cost this row the line it has to fit on.
+  return `${Math.round(width)}×${Math.round(height)} @ ${dpr.toFixed(1)}× · ${megapixels.toFixed(megapixels >= 10 ? 0 : 1)}M px`;
 }
 function performanceRecommendation(frameAverage, frameP95, renderP95, sampleCount) {
   if (sampleCount < 8) return "Measuring viewer performance…";
@@ -3852,16 +3894,17 @@ function updatePerformanceStatsDisplay(now = performance.now(), force = false) {
   const renderP95 = performancePercentile(renderValues, .95) ?? viewerPerformance.lastRenderMs;
   const renderValue = document.getElementById("performance-render-value");
   const slowValue = document.getElementById("performance-slow-value");
-  const simulationValue = document.getElementById("performance-simulation-value");
   const canvasValue = document.getElementById("performance-canvas-value");
   const workloadValue = document.getElementById("performance-workload-value");
   const recommendation = document.getElementById("performance-recommendation");
-  if (!renderValue || !slowValue || !simulationValue || !canvasValue ||
-      !workloadValue || !recommendation) return;
+  if (!renderValue || !slowValue || !canvasValue || !workloadValue || !recommendation) return;
   if (frameValues.length >= 4 && frameAverage > 0) {
     const fps = Math.min(999, 1000 / frameAverage);
     const paint = renderP95 === null ? "" : ` · ${performanceMs(renderP95)} paint`;
-    renderValue.textContent = `${Math.round(fps)} FPS · ${performanceMs(frameAverage)}/frame${paint}`;
+    // Frames per second and milliseconds per frame are the same reading twice,
+    // and the pair cost this row the line it has to fit on. The frame time the
+    // rate does not imply — the slow tail — is the row below.
+    renderValue.textContent = `${Math.round(fps)} FPS${paint}`;
     const slowShare = frameValues.filter(value => value > 33.3).length / frameValues.length;
     slowValue.textContent = `p95 ${performanceMs(frameP95)} · ${Math.round(slowShare * 100)}% >33 ms`;
     recommendation.textContent = performanceRecommendation(
@@ -3871,19 +3914,55 @@ function updatePerformanceStatsDisplay(now = performance.now(), force = false) {
     slowValue.textContent = "Sampling…";
     recommendation.textContent = "Measuring viewer performance…";
   }
-  const simulation = viewerPerformance.simulation;
-  if (simulation.wall !== null) {
-    const compute = simulation.compute === null ? "" : ` · ${performanceMs(simulation.compute)} compute`;
-    simulationValue.textContent = `${performanceMs(simulation.wall)}/turn${compute}`;
-  } else {
-    simulationValue.textContent = viewerPerformance.spectator
-      ? "Measuring simulation…" : "Not available in this mode";
-  }
   canvasValue.textContent = performanceCanvasText();
   const workload = viewerPerformance.workload;
   workloadValue.textContent = workload
     ? `${performanceInteger(workload.tiles)} tiles · ${performanceInteger(workload.units)} units · ${performanceInteger(workload.cities)} cities`
     : "Waiting for a map…";
+  updateSimulationStatsDisplay(now);
+}
+// What one game turn costs in wall time. The host reports this when it measures
+// it; the published browser build does not, so this page's own reading of the
+// same thing — the interval between the turn numbers it was served — stands in.
+function simulationTurnMs() {
+  return viewerPerformance.simulation.wall ?? simulationLedger.observedTurnMs;
+}
+function simulationTurnLimit() {
+  return viewerPerformance.turnLimit ?? SIMULATION_FALLBACK_TURN_LIMIT;
+}
+function updateSimulationStatsDisplay(now) {
+  const turnValue = document.getElementById("performance-simulation-value");
+  const fullValue = document.getElementById("performance-fullsim-value");
+  const currentValue = document.getElementById("performance-thissim-value");
+  const lastValue = document.getElementById("performance-lastsim-value");
+  const countValue = document.getElementById("performance-simcount-value");
+  if (!turnValue || !fullValue || !currentValue || !lastValue || !countValue) return;
+  const turnMs = simulationTurnMs();
+  const compute = viewerPerformance.simulation.compute;
+  const limit = simulationTurnLimit();
+  if (turnMs === null) {
+    turnValue.textContent = viewerPerformance.spectator ? "Measuring…" : "Not available in this mode";
+    fullValue.textContent = viewerPerformance.spectator ? "Measuring…" : "Not available in this mode";
+  } else {
+    turnValue.textContent = compute === null
+      ? `${performanceMs(turnMs)}/turn`
+      : `${performanceMs(turnMs)}/turn · ${performanceMs(compute)} compute`;
+    fullValue.textContent = `≈${performanceDuration(turnMs * limit)} · ${performanceInteger(limit)} turns`;
+  }
+  const watchedFrom = simulationLedger.startedAt;
+  const watchedTo = simulationLedger.endedAt ?? now;
+  currentValue.textContent = simulationLedger.lastTurn === null || watchedFrom === null
+    ? "Waiting for a world…"
+    : `turn ${performanceInteger(simulationLedger.lastTurn)}/${performanceInteger(limit)}` +
+      ` · ${performanceDuration(watchedTo - watchedFrom)} watched`;
+  const runs = simulationLedger.runs;
+  const last = runs[runs.length - 1];
+  lastValue.textContent = last
+    ? `${performanceDuration(last.ms)} · ${titleCase(last.victory || "score")} victory`
+    : "None finished yet";
+  countValue.textContent = runs.length
+    ? `${performanceInteger(runs.length)} this session · avg ${performanceDuration(performanceAverage(runs.map(run => run.ms)))}`
+    : "None yet this session";
 }
 function recordPerformanceFrame(now) {
   if (viewerPerformance.lastFrameAt !== null) {
@@ -3910,12 +3989,67 @@ function updatePerformanceState(st) {
     wall: numeric(st?.turn_ms),
     compute: numeric(st?.turn_compute_ms),
   };
+  // `turn_limit` is null once a decided game is being played on. The length the
+  // game was set up at still says how long a whole simulation runs.
+  viewerPerformance.turnLimit = numeric(st?.turn_limit) ?? numeric(st?.max_turns);
   viewerPerformance.workload = st?.map ? {
     tiles: Array.isArray(st.map.tiles) ? st.map.tiles.length : 0,
     units: Array.isArray(st.units) ? st.units.length : 0,
     cities: Array.isArray(st.cities) ? st.cities.length : 0,
   } : null;
-  updatePerformanceStatsDisplay(performance.now(), true);
+  const now = performance.now();
+  trackSimulationRun(st, now);
+  updatePerformanceStatsDisplay(now, true);
+}
+function startSimulationRun(seed, turn, now) {
+  simulationLedger.seed = seed;
+  simulationLedger.joinedTurn = turn;
+  simulationLedger.startedAt = now;
+  simulationLedger.endedAt = null;
+  simulationLedger.lastTurn = turn;
+  simulationLedger.lastTurnAt = now;
+  simulationLedger.lastSeenAt = now;
+  simulationLedger.spoiled = false;
+  simulationLedger.recorded = false;
+}
+function trackSimulationRun(st, now) {
+  const seed = st?.seed;
+  const turn = typeof st?.turn === "number" && Number.isFinite(st.turn) ? st.turn : null;
+  const finished = st?.winner !== null && st?.winner !== undefined;
+  // A different seed is a different world, and the same seed at an earlier turn
+  // is that world restarted. Either way the run being timed is a new one.
+  if (seed !== simulationLedger.seed ||
+      (turn !== null && simulationLedger.lastTurn !== null && turn < simulationLedger.lastTurn)) {
+    startSimulationRun(seed, turn, now);
+    return;
+  }
+  const sinceSeen = simulationLedger.lastSeenAt === null ? 0 : now - simulationLedger.lastSeenAt;
+  simulationLedger.lastSeenAt = now;
+  if (!finished && !simulationLedger.recorded &&
+      (st?.paused === true || sinceSeen > SIMULATION_TURN_GAP_CEILING_MS))
+    simulationLedger.spoiled = true;
+  if (turn !== null && simulationLedger.lastTurn !== null && turn > simulationLedger.lastTurn) {
+    const perTurn = (now - simulationLedger.lastTurnAt) / (turn - simulationLedger.lastTurn);
+    if (perTurn > 0 && perTurn <= SIMULATION_TURN_GAP_CEILING_MS)
+      simulationLedger.observedTurnMs = simulationLedger.observedTurnMs === null
+        ? perTurn
+        : simulationLedger.observedTurnMs * (1 - SIMULATION_TURN_GAP_WEIGHT) +
+          perTurn * SIMULATION_TURN_GAP_WEIGHT;
+    simulationLedger.lastTurn = turn;
+    simulationLedger.lastTurnAt = now;
+  }
+  if (!finished || simulationLedger.recorded) return;
+  simulationLedger.recorded = true;
+  simulationLedger.endedAt = now;
+  // Only a world watched from its opening turn, uninterrupted, has a duration
+  // this page is entitled to report as the simulation's own.
+  if (simulationLedger.spoiled || simulationLedger.joinedTurn === null ||
+      simulationLedger.joinedTurn > SIMULATION_JOIN_TURN_LIMIT) return;
+  simulationLedger.runs.push({
+    ms: now - simulationLedger.startedAt,
+    victory: typeof st?.victory_type === "string" ? st.victory_type : null,
+  });
+  if (simulationLedger.runs.length > SIMULATION_RUN_LIMIT) simulationLedger.runs.shift();
 }
 // Host-wide load is an observation, not a browser capability. The native
 // server samples it; the published browser build deliberately returns no
@@ -3930,7 +4064,7 @@ const DISPLAY_MEMORY_GUIDANCE_CONTROLS = [
   "renderresolution", "resourcedisplay", "reset-overlay-layout",
 ];
 let displayResourceCaps = {cpu: DISPLAY_RESOURCE_CAP_DEFAULT, memory: DISPLAY_RESOURCE_CAP_DEFAULT};
-let machineMetrics = {cpu: null, memory: null, status: "sampling", samples: 0};
+let machineMetrics = {cpu: null, memory: null, status: "sampling", samples: 0, everAvailable: false};
 let machineMetricsRefreshTimer = null;
 
 function normalizedDisplayResourceCap(value) {
@@ -4000,6 +4134,13 @@ function updateDisplayLoadGuidance(cpuPressure, memoryPressure) {
 function updateMachineMetricsDisplay() {
   const panel = document.getElementById("machine-loads");
   const advice = document.getElementById("display-load-advice");
+  // Host CPU and memory belong to the machine serving the page, and only the
+  // native server can read them. Rather than offer the published browser build
+  // a disclosure that can never hold anything but two "Unavailable" rows, the
+  // section is withheld until a host has actually answered once — and then kept,
+  // so one timed-out sample cannot make it flicker away.
+  const details = document.getElementById("host-resource-details");
+  if (details) details.hidden = !machineMetrics.everAvailable && machineMetrics.status === "unavailable";
   if (!panel || !advice) return;
   setMachineLoadRow("cpu");
   setMachineLoadRow("memory");
@@ -4055,6 +4196,7 @@ async function refreshMachineMetrics() {
     machineMetrics.samples += 1;
     machineMetrics.status = machineMetrics.cpu !== null || machineMetrics.memory !== null
       ? "available" : "unavailable";
+    if (machineMetrics.status === "available") machineMetrics.everAvailable = true;
   } catch (_) {
     machineMetrics.cpu = null;
     machineMetrics.memory = null;
