@@ -4076,21 +4076,20 @@ let serverInstance = null;
 // build this document actually came from is what tells a successor worth
 // reloading for from one this page is already running.
 let documentCommit = null;
+// One unit only, the largest that reaches 1: ninety minutes is "1.5h", not
+// "1h 30m", and fifty-four hours is "2.3d". A whole value drops its ".0".
 function formatBuildAge(buildDate) {
-  const totalMinutes = Math.floor(Math.max(0, Date.now() - buildDate.getTime()) / 60000);
-  const days = Math.floor(totalMinutes / 1440);
-  const hours = Math.floor(totalMinutes % 1440 / 60);
-  const minutes = totalMinutes % 60;
-  const parts = [
-    days ? `${days}d` : "",
-    hours ? `${hours}h` : "",
-    minutes ? `${minutes}m` : "",
-  ].filter(Boolean);
-  return parts.join(" ") || "0m";
+  const totalMinutes = Math.max(0, Date.now() - buildDate.getTime()) / 60000;
+  if (totalMinutes < 60) return `${Math.floor(totalMinutes)}m`;
+  const [value, unit] = totalMinutes < 1440
+    ? [totalMinutes / 60, "h"]
+    : [totalMinutes / 1440, "d"];
+  const tenths = Math.round(value * 10) / 10;
+  return `${Number.isInteger(tenths) ? tenths : tenths.toFixed(1)}${unit}`;
 }
 function formatBinarySize(bytes) {
-  const mib = bytes / (1024 * 1024);
-  return `${mib < 10 ? mib.toFixed(2) : mib.toFixed(1)} MiB`;
+  const mb = bytes / 1e6;
+  return `${mb < 10 ? mb.toFixed(2) : mb.toFixed(1)} MB`;
 }
 // The revision belongs beside the world overview, not on top of it. Read the
 // live frame because its authored size follows the screen diagonal and a
@@ -4123,7 +4122,7 @@ function syncBuildMarkerPosition() {
 }
 function formatBuildSize(bytes) {
   if (!Number.isSafeInteger(bytes) || bytes <= 0) return "";
-  return `${(bytes / 1048576).toFixed(1)} MiB`;
+  return `${(bytes / 1e6).toFixed(1)} MB`;
 }
 function updateBuildMarker(st = state) {
   const marker = document.getElementById("buildmark");
