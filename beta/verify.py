@@ -769,10 +769,17 @@ def main(argv: list[str] | None = None) -> int:
         # supplies the current manifest to both lanes, so an old pinned
         # viewer can have ``wasm_bytes`` in build.json without knowing how to
         # render the new marker field.  Gate the new assertion on the viewer
-        # contract, rather than on the publisher's manifest alone.
+        # contract, rather than on the publisher's manifest alone.  Since
+        # #1289 that contract lives in ``assets/app.js``, not the page —
+        # read both, or a current lane reads as a legacy viewer and the
+        # size assertion silently skips.
+        app_js = dist / lane / "assets" / "app.js"
+        viewer_source = page + (
+            app_js.read_text(encoding="utf-8") if app_js.is_file() else ""
+        )
         wasm_bytes = build.get("wasm_bytes")
         marker_has_build_size = all(
-            token in page
+            token in viewer_source
             for token in ("formatBuildSize", "server_artifact_bytes", "Build size")
         )
         if marker_has_build_size:
@@ -782,7 +789,12 @@ def main(argv: list[str] | None = None) -> int:
                     f"{wasm_bytes!r}"
                 )
             else:
-                expected_size = f"Build size {wasm_bytes / 1048576:.1f} MiB"
+                # A pinned root lane can still carry the MiB formatter;
+                # expect whichever units this viewer's own source renders.
+                if "(bytes / 1e6).toFixed(1)} MB" in viewer_source:
+                    expected_size = f"Build size {wasm_bytes / 1e6:.1f} MB"
+                else:
+                    expected_size = f"Build size {wasm_bytes / 1048576:.1f} MiB"
                 if expected_size not in build_marker:
                     problems.append(
                         f"the build marker does not show {expected_size!r}: {build_marker!r}"
