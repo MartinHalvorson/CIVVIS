@@ -382,9 +382,10 @@
     scrollbar-color: #385148 transparent; scrollbar-width: thin; scrollbar-gutter: stable;
     background: linear-gradient(90deg, #ffffff02, transparent 14%, transparent 86%, #0002);
   }
-  /* The shortcut legend opens upward from the bottom edge. Keep the scrolling
-     deck above that temporary drawer so a lower section (especially Map
-     lenses) remains visible and clickable while the legend is expanded. */
+  /* The bottom dock's drawers (map lenses, keyboard shortcuts) open upward
+     over this scroller. The deck keeps its own layer above the closed dock
+     strips; an open drawer raises its whole <details> above every band —
+     see the dock rules below. */
   #side > .side-scroll { position: relative; z-index: 4; }
   #side::-webkit-scrollbar, .side-scroll::-webkit-scrollbar { width: 7px; }
   #side::-webkit-scrollbar-thumb, .side-scroll::-webkit-scrollbar-thumb { background: #385148; border-radius: 9px; }
@@ -520,6 +521,10 @@
   .shortcut-panel summary::-webkit-details-marker { display: none; }
   .shortcut-panel summary::after { content: "+"; float: right; color: var(--gold); font-size: var(--type-body); line-height: 1; }
   .shortcut-panel[open] summary::after { content: "−"; }
+  /* While a drawer is expanded its whole section outranks the search band
+     (z-index 5) and the scroller (4), so the floating body is never trapped
+     behind a higher dock strip. */
+  .shortcut-panel[open], #maplensessec[open] { z-index: 6; }
   .shortcut-panel[open] > .utility-body {
     position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px);
     max-height: min(420px, calc(100vh - 180px)); overflow-y: auto;
@@ -543,10 +548,18 @@
   #maplensessec > summary::-webkit-details-marker { display: none; }
   #maplensessec > summary::after { content: "+"; float: right; color: var(--gold); font-size: var(--type-body); line-height: 1; }
   #maplensessec[open] > summary::after { content: "−"; }
-  /* The open grid shares the deck's height with the scroller above it, so it
-     caps itself and scrolls inside rather than swallowing the whole column. */
+  /* Like the shortcut legend, the lens grid opens upward as a floating
+     drawer while its header stays docked in place, so expanding it never
+     reflows the scroller or pushes the search band around. It caps itself
+     and scrolls inside rather than covering the whole column. */
   .lens-dock-body { padding: 0 10px 10px; }
-  #maplensessec[open] .lens-dock-body { max-height: min(430px, 46vh); overflow-y: auto; scrollbar-width: thin; }
+  #maplensessec[open] .lens-dock-body {
+    position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px);
+    max-height: min(430px, 46vh); overflow-y: auto; scrollbar-width: thin;
+    padding: 10px; border: 1px solid #355047; border-radius: 10px;
+    background: linear-gradient(145deg, #12211dfa, #0a1512fc);
+    box-shadow: 0 -12px 32px #0008;
+  }
   #map-utility-panel {
     position: relative; z-index: 3; flex: 0 0 auto; padding: 8px 10px 10px;
     border-top: 1px solid #41484c; background: #090b0de8;
@@ -637,10 +650,11 @@
   }
   /* The same search markup is also used by the map's lower instrument dock.
      That dock positions its copy above the map, but this copy is a normal
-     child of the left-panel utility band. Keep the panel copy in flow so the
-     keyboard-shortcut drawer cannot cover it or collapse its parent to a
-     border-sized strip. The extra specificity intentionally outranks the
-     map-dock positioning rule below. */
+     child of the left-panel utility band. Keep the panel copy in flow so its
+     band holds its height rather than collapsing to a border-sized strip;
+     the lens and shortcut drawers float over it only while expanded. The
+     extra specificity intentionally outranks the map-dock positioning rule
+     below. */
   #side > #map-utility-panel #map-search {
     position: relative; left: auto; right: auto; bottom: auto;
     width: auto; min-height: 0; display: block;
