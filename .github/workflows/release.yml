@@ -95,10 +95,23 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           if [ "${{ runner.os }}" = "Windows" ]; then
+            # MSVC keeps symbols in the .pdb, which is never shipped; the .exe
+            # has nothing to strip.
             cp "target/${{ matrix.target }}/release/civvis.exe" "dist/${{ matrix.asset }}"
           else
             cp "target/${{ matrix.target }}/release/civvis" "dist/${{ matrix.asset }}"
             chmod +x "dist/${{ matrix.asset }}"
+            # Only the packaged copy is stripped: fleet and CI builds keep
+            # their symbol tables because crash backtraces from a running
+            # spectator are worth more than 2 MB, but a download's ~9% of
+            # symbol bytes serves nobody. macOS gets `-x` — a full strip
+            # rejects Mach-O executables over indirect-symbol references —
+            # and Apple's strip re-signs the ad-hoc signature itself.
+            if [ "${{ runner.os }}" = "macOS" ]; then
+              strip -x "dist/${{ matrix.asset }}"
+            else
+              strip "dist/${{ matrix.asset }}"
+            fi
           fi
           # Published beside the binary so anyone can check what they got
           # without trusting the download page. The runners disagree about
@@ -112,6 +125,15 @@ jobs:
             fi
           )
           ls -l dist
+
+      # "Prove it runs" exercised the binary strip has since rewritten. A bad
+      # strip fails at exec time — on arm64 macOS it can invalidate the ad-hoc
+      # code signature — so prove the exact bytes being uploaded, not their
+      # ancestor. Windows ships the unmodified build and is already proven.
+      - name: Prove the stripped asset runs
+        if: runner.os != 'Windows'
+        shell: bash
+        run: ./dist/${{ matrix.asset }} simulate --players 4 --width 24 --height 16 --turns 20 --seed 1
 
       - uses: actions/upload-artifact@v4
         with:
