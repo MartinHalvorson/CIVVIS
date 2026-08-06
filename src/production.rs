@@ -398,6 +398,13 @@ impl Ai for ProductionSearchAi {
     fn plan_report(&self) -> Option<PlanReport> {
         self.inner.plan_report()
     }
+
+    /// See [`crate::strategic::StrategicAi::attach_journal`]: the search runs
+    /// over clones, whose journals are silent, so only the build the governor
+    /// actually committed is recorded.
+    fn attach_journal(&mut self, journal: crate::reasoning::Journal) {
+        self.inner.attach_journal(journal);
+    }
 }
 
 /// Explicit victory targeting, for parity with the other agents.
@@ -431,6 +438,38 @@ mod tests {
             }
         }
         (agent, g)
+    }
+
+    /// The observer's dossier reads this seat's plan through `plan_report`,
+    /// but a plan without its decision factors is half the exposure: the
+    /// inner agent does the day-to-day reasoning, so an attached journal has
+    /// to reach it or the seat sits silent in the panel.
+    #[test]
+    fn an_attached_journal_reaches_the_inner_agent() {
+        let journal = crate::reasoning::Journal::recording();
+        let mut agent = ProductionSearchAi::new();
+        agent.attach_journal(journal.handle());
+        let mut g = Game::new(2, 24, 16, 8_100, 90, 0);
+        let mut others = BasicAi::fleet(&g);
+        while g.winner.is_none() && g.turn <= 6 {
+            let pid = g.current;
+            if pid == 0 {
+                agent.take_turn(&mut g, pid);
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &Action::EndTurn);
+            }
+        }
+        assert!(
+            journal
+                .since(0)
+                .thoughts
+                .iter()
+                .any(|t| t.player == 0 && t.headline.starts_with("Grand strategy:")),
+            "the seat run by the search wrapper never published its plan to the journal"
+        );
     }
 
     /// The agent must play a legal game to completion, and must actually
