@@ -694,7 +694,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// legacy and Elo agent wants exactly the army it always wanted. A
 /// compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x79ff_091b_8942_a3a1;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8420_163d_c5eb_178f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

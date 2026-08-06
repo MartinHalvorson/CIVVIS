@@ -12105,7 +12105,11 @@ impl AdvancedAi {
                         && if at_war_only {
                             g.is_at_war(pid, player.id)
                         } else {
-                            g.has_met(pid, player.id)
+                            // ⚠ `has_met` answers `true` for a TEAMMATE, so
+                            // without this an ally's army would size ours.
+                            // The wartime arm excludes them for free, because
+                            // a team is never at war with itself.
+                            g.has_met(pid, player.id) && !g.same_team(pid, player.id)
                         }
                 })
                 .map(|player| g.military_power(player.id))
@@ -27040,6 +27044,22 @@ mod tests {
             12,
             "an unmet major must not reach the peacetime target through fog"
         );
+
+        // ⚠ `has_met` answers `true` for a TEAMMATE, so an ally's army would
+        // otherwise deter us. `ai_eval` seats a free-for-all (`teams` empty,
+        // every `player.team` None), so this arm is unreachable there and the
+        // guard is inert in every evaluated game — but it is reachable in a
+        // team lobby, which is why it is pinned rather than argued.
+        game.players[0].met.insert(1);
+        game.players[0].team = Some(1);
+        game.players[1].team = Some(1);
+        assert_eq!(
+            ai.enemy_weighted_army_target(&game, 0, 12),
+            12,
+            "an ally on our own team must not size our army"
+        );
+        game.players[0].team = None;
+        game.players[1].team = None;
 
         // War with the same rival escalates past the deterrence ceiling: the
         // wartime term takes over under its larger ceiling.
