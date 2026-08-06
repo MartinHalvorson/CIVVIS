@@ -1645,12 +1645,19 @@ mod tests {
         assert!(observed_city["loyalty"].is_number());
         assert!(observed_city["loyalty_per_turn"].is_number());
 
-        const INDEX: &str = include_str!("../web/index.html");
-        assert!(INDEX.contains("id=\"map-controls-dock\""));
+        // Mixed contract: markup lives in the document, renderer code in its
+        // external script - assert the whole page source.
+        let index_owned = format!(
+            "{}{}",
+            include_str!("../web/index.html"),
+            include_str!("../web/assets/app.js")
+        );
+        let index: &str = &index_owned;
+        assert!(index.contains("id=\"map-controls-dock\""));
         // The compact two-column menu pairs related readings: land and borders,
         // city planning and empire detail, then culture, tile value, and the
         // two city-pressure lenses.
-        let toolbar = INDEX
+        let toolbar = index
             .split_once("<div id=\"map-lens-strip\"")
             .expect("map lens toolbar")
             .1
@@ -1694,23 +1701,23 @@ mod tests {
             "function drawEmpireDetailsPlanet(",
         ] {
             assert!(
-                INDEX.contains(renderer),
+                index.contains(renderer),
                 "the lens toolbar is missing renderer {renderer}"
             );
         }
-        assert!(INDEX.contains(
+        assert!(index.contains(
             "{id: \"SettlerLens\", key: \"2\", spectator: true, run: () => setMapLens(\"settler\")},"
         ));
-        assert!(!INDEX.contains("id: \"LoyaltyLens\""));
-        assert!(!INDEX.contains("id: \"PowerLens\""));
-        let start = INDEX
+        assert!(!index.contains("id: \"LoyaltyLens\""));
+        assert!(!index.contains("id: \"PowerLens\""));
+        let start = index
             .find("function tileTipLines(t, pos, tileKey)")
             .expect("the tile hover has one ordered builder");
-        let end = INDEX[start..]
+        let end = index[start..]
             .find("\n// tooltip")
             .map(|offset| start + offset)
             .expect("the tile hover builder ends before its event handler");
-        let hover = &INDEX[start..end];
+        let hover = &index[start..end];
         let ordered = [
             "for (const unit of state.units)",
             "lines.push(...tileBuiltTipLines(t, city));",
@@ -1734,13 +1741,13 @@ mod tests {
             );
             previous = at;
         }
-        assert!(INDEX.contains(".tip-primary, .tip-unit"));
-        assert!(INDEX.contains("function civPossessive(civ)"));
-        assert!(INDEX.contains("function tileTerrainTipLine(t)"));
-        assert!(INDEX.contains("function tileBuiltTipLines(t, city)"));
-        assert!(INDEX.contains("function tileBaseYieldLines(t)"));
-        assert!(INDEX.contains("function tileTotalYields(t)"));
-        assert!(INDEX.contains("function tileYieldMarkers(yields)"));
+        assert!(index.contains(".tip-primary, .tip-unit"));
+        assert!(index.contains("function civPossessive(civ)"));
+        assert!(index.contains("function tileTerrainTipLine(t)"));
+        assert!(index.contains("function tileBuiltTipLines(t, city)"));
+        assert!(index.contains("function tileBaseYieldLines(t)"));
+        assert!(index.contains("function tileTotalYields(t)"));
+        assert!(index.contains("function tileYieldMarkers(yields)"));
         assert!(hover.contains("${civPossessive(civ)} ${titleCase(unit.type)} - "));
         assert!(hover.contains("Total tile yields: ${yieldWords || \"unavailable\"}"));
         assert!(hover.contains("Movement: ${movement}"));
@@ -1930,7 +1937,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(ages, expected);
 
-        const INDEX: &str = include_str!("../web/index.html");
+        const INDEX: &str = include_str!("../web/assets/app.js");
         let age_column = INDEX.find("{key:\"age\", label:\"Age\"").unwrap();
         let plan_column = INDEX.find("{key:\"plan\", label:\"Plan\"").unwrap();
         let next_column = INDEX[age_column + 1..].find("{key:\"").unwrap() + age_column + 1;
@@ -2199,7 +2206,7 @@ mod tests {
             vec![EXOPLANET_EYE.to_string()],
         );
 
-        const INDEX: &str = include_str!("../web/index.html");
+        const INDEX: &str = include_str!("../web/assets/app.js");
         assert!(INDEX.contains("satellite:\"launch_earth_satellite\","));
         // One orbit per civilization, in the world's own frame, so the globe
         // and the flat board draw the same launch rather than two of them.
@@ -2232,55 +2239,62 @@ mod tests {
 
     #[test]
     fn space_race_launches_use_mission_specific_rockets_on_both_maps() {
-        const INDEX: &str = include_str!("../web/index.html");
+        // Mixed contract: markup lives in the document, renderer code in its
+        // external script - assert the whole page source.
+        let index_owned = format!(
+            "{}{}",
+            include_str!("../web/index.html"),
+            include_str!("../web/assets/app.js")
+        );
+        let index: &str = &index_owned;
 
         // Apollo 11 flew Saturn V, Mars gets the Starship silhouette, and the
         // exoplanet mission gets the explicitly oversized version of it.
-        assert!(INDEX.contains(
+        assert!(index.contains(
             "moon:{project:SKY_CHAIN.moon, duration:2800, body:\"moon\", rocket:\"saturn_v\"}"
         ));
-        assert!(INDEX.contains(
+        assert!(index.contains(
             "mars:{project:SKY_CHAIN.mars, duration:3600, body:\"mars\", rocket:\"starship\"}"
         ));
-        assert!(INDEX.contains(
+        assert!(index.contains(
             "expedition:{project:SKY_CHAIN.expedition, duration:3000, body:\"exo\", rocket:\"starship_xl\"}"
         ));
-        assert!(INDEX.contains("function drawMissionRocket(rocket, player, size, now"));
-        assert!(INDEX.contains("length:starshipLength * 2"));
-        assert!(INDEX.contains("halfWidth:starshipHalfWidth * 4"));
+        assert!(index.contains("function drawMissionRocket(rocket, player, size, now"));
+        assert!(index.contains("length:starshipLength * 2"));
+        assert!(index.contains("halfWidth:starshipHalfWidth * 4"));
 
         // Spaceflight visuals default to visible, retain a viewer preference,
         // and treat the perpetual satellite orbit like a rocket animation.
-        assert!(INDEX.contains(
+        assert!(index.contains(
             "<input type=\"checkbox\" id=\"rocketanimchk\" checked> Show rocket &amp; satellite animations"
         ));
-        assert!(INDEX.contains(
+        assert!(index.contains(
             "let SHOW_ROCKET_ANIMATIONS = localStorage.getItem(\"civvis-show-rocket-animations\") !== \"0\";"
         ));
-        assert!(INDEX.contains("function setShowRocketAnimations(on)"));
-        assert!(INDEX.contains("if (!SHOW_ROCKET_ANIMATIONS) anim.skyLaunches.length = 0;"));
-        assert!(INDEX.contains("rockets.onchange = () => setShowRocketAnimations(rockets.checked);"));
-        assert!(INDEX.contains(
+        assert!(index.contains("function setShowRocketAnimations(on)"));
+        assert!(index.contains("if (!SHOW_ROCKET_ANIMATIONS) anim.skyLaunches.length = 0;"));
+        assert!(index.contains("rockets.onchange = () => setShowRocketAnimations(rockets.checked);"));
+        assert!(index.contains(
             "function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {\n  if (!SHOW_ROCKET_ANIMATIONS) return;"
         ));
-        assert!(INDEX.contains("cx.clip(\"evenodd\");"));
-        assert!(INDEX.contains(
+        assert!(index.contains("cx.clip(\"evenodd\");"));
+        assert!(index.contains(
             "function drawFlatSatellites(now) {\n  if (!SHOW_ROCKET_ANIMATIONS) return;"
         ));
 
         // State-diff detection is shared, then each projection owns a flight
         // path while both call the same rocket-art renderer.
-        assert!(INDEX.contains("function queueSkyLaunches(prev, next"));
-        assert!(INDEX.contains("if (!SHOW_ROCKET_ANIMATIONS || !prev || !next"));
-        assert!(INDEX.contains("function drawSkyLaunches(crews, placements"));
-        assert!(INDEX.contains("drawMissionRocket(flight.rocket, player, size, now);"));
-        assert!(INDEX.contains("function flatLaunchRoute(launch, player)"));
-        assert!(INDEX.contains("function drawFlatLaunches(now)"));
-        assert!(INDEX.contains("drawMissionRocket(flight.rocket, player, size, now, pixel);"));
-        assert!(INDEX.contains(
+        assert!(index.contains("function queueSkyLaunches(prev, next"));
+        assert!(index.contains("if (!SHOW_ROCKET_ANIMATIONS || !prev || !next"));
+        assert!(index.contains("function drawSkyLaunches(crews, placements"));
+        assert!(index.contains("drawMissionRocket(flight.rocket, player, size, now);"));
+        assert!(index.contains("function flatLaunchRoute(launch, player)"));
+        assert!(index.contains("function drawFlatLaunches(now)"));
+        assert!(index.contains("drawMissionRocket(flight.rocket, player, size, now, pixel);"));
+        assert!(index.contains(
             "drawFlatSatellites(now0);\n  drawFlatLaunches(now0);\n  drawNuclearBlasts(now0);"
         ));
-        assert!(INDEX.contains(
+        assert!(index.contains(
             "return SHOW_ROCKET_ANIMATIONS && (activeSkyLaunches().length > 0 ||\n    (flatSkyShown() > .02"
         ));
     }
@@ -2294,9 +2308,16 @@ mod tests {
     /// off-screen at fast spectator paces even though its timer is still live.
     #[test]
     fn space_race_launches_outlive_fast_turn_boundaries() {
-        const INDEX: &str = include_str!("../web/index.html");
+        // Mixed contract: markup lives in the document, renderer code in its
+        // external script - assert the whole page source.
+        let index_owned = format!(
+            "{}{}",
+            include_str!("../web/index.html"),
+            include_str!("../web/assets/app.js")
+        );
+        let index: &str = &index_owned;
 
-        let queue = INDEX
+        let queue = index
             .split_once("function queueSkyLaunches(")
             .unwrap()
             .1
@@ -2308,7 +2329,7 @@ mod tests {
         assert!(queue.contains("crew:launchCrew"));
         assert!(queue.contains("expeditionProgress:Math.max(0, Math.min(1,"));
 
-        let lifetime = INDEX
+        let lifetime = index
             .split_once("function activeSkyLaunches(")
             .unwrap()
             .1
@@ -2321,11 +2342,11 @@ mod tests {
             "a wall-clock launch lifetime must not expire at a turn boundary"
         );
 
-        assert!(INDEX.contains("place, radius, centerX, centerY, launch.expeditionProgress"));
-        assert!(INDEX.contains(
+        assert!(index.contains("place, radius, centerX, centerY, launch.expeditionProgress"));
+        assert!(index.contains(
             "const anchor = launch.originPos ? {pos:launch.originPos} : playerAnchor(player.id);"
         ));
-        assert!(INDEX.contains("const player = launch.player ||"));
+        assert!(index.contains("const player = launch.player ||"));
     }
 
     #[test]
