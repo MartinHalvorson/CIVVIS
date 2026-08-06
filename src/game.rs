@@ -4173,24 +4173,20 @@ mod belief_runtime_tests {
         }
 
         // And it reaches the map: a camp that has just spawned waits half as
-        // long to spawn again at Deity as it does at Prince.
+        // long to spawn again at Deity as it does at Prince. Read one named
+        // camp immediately after its first post-opening spawn so the standing
+        // guard and recon units do not make the global cap obscure the timer.
         let rearm = |difficulty: &str| {
             let mut game = Game::new_full(2, 40, 26, 4_172, 200, 0, true);
             game.difficulty = difficulty.to_string();
-            game.turn = 1;
-            let before: Vec<u32> = game.barb_camps.values().copied().collect();
-            for _ in 0..12 {
-                game.turn += 1;
-                game.barbarian_phase();
-            }
-            let after: Vec<u32> = game.barb_camps.values().copied().collect();
-            let _ = before;
-            after.into_iter().max().unwrap_or(0)
+            let camp = *game.barb_camps.keys().next().unwrap();
+            game.turn = game.barb_camps[&camp];
+            game.barbarian_phase();
+            game.barb_camps[&camp]
         };
-        assert!(
-            rearm("deity") < rearm("prince"),
-            "Deity re-arms sooner than Prince"
-        );
+        let deity = rearm("deity");
+        let prince = rearm("prince");
+        assert!(deity < prince, "Deity re-arms sooner than Prince ({deity} vs {prince})");
     }
 
     #[test]
@@ -13311,6 +13307,9 @@ const BARBARIAN_CAMP_MINIMUM_DISTANCE_ANOTHER_CAMP: i32 = 7;
 /// per-turn roll, not a schedule — the first camps a civilization has not seen
 /// yet appear over the opening handful of turns, not once a decade.
 const BARBARIAN_CAMP_ODDS_OF_NEW_CAMP_SPAWNING: usize = 2;
+/// Shipped `BARBARIAN_CAMP_COASTAL_SPAWN_ROLL`: one in six eligible coastal
+/// camps is a naval outpost. The classification persists for the camp's life.
+const BARBARIAN_CAMP_COASTAL_SPAWN_ROLL: usize = 6;
 
 pub fn effective_strength(base: f64, hp: i32) -> f64 {
     let wounded_penalty = (10.0 - hp.clamp(0, 100) as f64 / 10.0).round();
@@ -13727,7 +13726,7 @@ impl VisionCache {
 /// class serves every such unit. Per-edge and per-moment rules — cliffs,
 /// stacking, closed borders, zone of control — are deliberately absent:
 /// they gate individual steps, not which regions exist.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct TraversalClass {
     /// Naval movement: water, city centers, and canal-like districts.
     sea: bool,
@@ -16667,6 +16666,14 @@ pub struct Game {
     pub nuclear_strikes: Vec<NuclearStrike>,
     pub barb_pid: Option<usize>,
     pub barb_camps: BTreeMap<Pos, u32>,
+    /// Coastal camps are naval outposts; the set is persisted so a camp does
+    /// not change type merely because a save was loaded on another turn.
+    #[serde(default)]
+    pub barb_naval_camps: BTreeSet<Pos>,
+    /// The fortified anti-cavalry unit initially assigned to each camp.
+    /// Keeping its id lets camp cleanup remove stale ownership cleanly.
+    #[serde(default)]
+    pub barb_camp_guards: BTreeMap<Pos, u32>,
     pub barb_scout_homes: BTreeMap<u32, Pos>,
     pub barb_scout_targets: BTreeMap<u32, Pos>,
     pub barb_camp_targets: BTreeMap<Pos, Pos>,
@@ -16879,6 +16886,10 @@ struct GameSer {
     #[serde(default)]
     barb_camps: Vec<(Pos, u32)>,
     #[serde(default)]
+    barb_naval_camps: Vec<Pos>,
+    #[serde(default)]
+    barb_camp_guards: Vec<(Pos, u32)>,
+    #[serde(default)]
     barb_scout_homes: BTreeMap<u32, Pos>,
     #[serde(default)]
     barb_scout_targets: BTreeMap<u32, Pos>,
@@ -17034,6 +17045,8 @@ impl From<GameSer> for Game {
             nuclear_strikes: s.nuclear_strikes,
             barb_pid: s.barb_pid,
             barb_camps: s.barb_camps.into_iter().collect(),
+            barb_naval_camps: s.barb_naval_camps.into_iter().collect(),
+            barb_camp_guards: s.barb_camp_guards.into_iter().collect(),
             barb_scout_homes: s.barb_scout_homes,
             barb_scout_targets: s.barb_scout_targets,
             barb_camp_targets: s.barb_camp_targets.into_iter().collect(),
@@ -17198,6 +17211,8 @@ impl From<Game> for GameSer {
             nuclear_strikes: g.nuclear_strikes,
             barb_pid: g.barb_pid,
             barb_camps: g.barb_camps.into_iter().collect(),
+            barb_naval_camps: g.barb_naval_camps.into_iter().collect(),
+            barb_camp_guards: g.barb_camp_guards.into_iter().collect(),
             barb_scout_homes: g.barb_scout_homes,
             barb_scout_targets: g.barb_scout_targets,
             barb_camp_targets: g.barb_camp_targets.into_iter().collect(),
@@ -17531,6 +17546,8 @@ impl Game {
             nuclear_strikes: Vec::new(),
             barb_pid: None,
             barb_camps: BTreeMap::new(),
+            barb_naval_camps: BTreeSet::new(),
+            barb_camp_guards: BTreeMap::new(),
             barb_scout_homes: BTreeMap::new(),
             barb_scout_targets: BTreeMap::new(),
             barb_camp_targets: BTreeMap::new(),
@@ -18413,6 +18430,7 @@ impl Game {
             if t.owner_city.is_some()
                 || t.improvement.is_some()
                 || self.city_by_pos.contains_key(pos)
+                || !self.units_at(*pos).is_empty()
             {
                 continue;
             }
@@ -18426,20 +18444,31 @@ impl Game {
         }
         let pos = cands[self.rng.below(cands.len())];
         self.map.tiles.get_mut(&pos).unwrap().improvement = Some(crate::name!("barbarian_camp"));
+        let coastal = self.nbrs(pos).into_iter().any(|neighbor| {
+            self.map
+                .get(neighbor)
+                .is_some_and(|tile| self.rules.is_water(tile))
+        });
+        if coastal && self.rng.below(BARBARIAN_CAMP_COASTAL_SPAWN_ROLL) == 0 {
+            self.barb_naval_camps.insert(pos);
+        }
         self.barb_camps.insert(pos, self.turn + 2);
+        self.spawn_barbarian_camp_units(pos);
     }
 
     fn barbarian_scout_phase(&mut self, bpid: usize) {
         self.barb_scout_homes.retain(|unit, camp| {
-            self.units.contains_key(unit) && self.barb_camps.contains_key(camp)
+            self.units
+                .get(unit)
+                .is_some_and(|scout| scout.owner == bpid)
+                && self.barb_camps.contains_key(camp)
         });
         self.barb_scout_targets
-            .retain(|unit, _| self.units.contains_key(unit));
-        let scouts: Vec<u32> = self
-            .player_unit_ids(bpid)
-            .into_iter()
-            .filter(|unit| self.units[unit].kind == "scout")
-            .collect();
+            .retain(|unit, _| self.units.get(unit).is_some_and(|scout| scout.owner == bpid));
+        // Only the recon unit assigned to an outpost searches and reports.
+        // Later-raised Scouts are ordinary raiders, while a naval camp's
+        // Galley occupies this same role on water.
+        let scouts: Vec<u32> = self.barb_scout_homes.keys().copied().collect();
         for unit in scouts {
             let position = self.units[&unit].pos;
             let Some(home) = self.barb_scout_homes.get(&unit).copied().or_else(|| {
@@ -18529,6 +18558,7 @@ impl Game {
                     && spec.unique_to.is_none()
                     && !matches!(spec.domain.as_deref(), Some("sea") | Some("air"))
                     && spec.promotion_class != "support"
+                    && spec.promotion_class != "recon"
                     && spec.civic.is_none()
                     && spec
                         .tech
@@ -18537,6 +18567,145 @@ impl Game {
             })
             .map(|(name, _)| *name)
             .collect()
+    }
+
+    /// The camp's standing defender is the strongest non-unique anti-cavalry
+    /// unit available in the current world era. Unlike the ordinary raider
+    /// pool, this deliberately uses era rather than the leaders' researched
+    /// techs: a fresh outpost still opens with its era's Spearman/Pikeman.
+    fn barbarian_guard_unit(&self) -> Name {
+        self.rules
+            .units
+            .iter()
+            .filter(|(_, spec)| {
+                spec.class == "military"
+                    && spec.buildable
+                    && spec.unique_to.is_none()
+                    && !matches!(spec.domain.as_deref(), Some("sea") | Some("air"))
+                    && spec.promotion_class == "anti_cavalry"
+                    && spec.civic.is_none()
+                    && spec.tech.as_deref().is_none_or(|tech| {
+                        self.rules
+                            .techs
+                            .get(tech)
+                            .is_some_and(|tech| tech.era <= self.world_era)
+                    })
+            })
+            .max_by_key(|(name, spec)| {
+                let era = spec
+                    .tech
+                    .as_deref()
+                    .and_then(|tech| self.rules.techs.get(tech))
+                    .map_or(0, |tech| tech.era);
+                (era, spec.strength.round() as i64, *name)
+            })
+            .map(|(name, _)| *name)
+            .unwrap_or_else(|| crate::name!("spearman"))
+    }
+
+    /// Naval outposts use the same technology ceiling as land camps, but a
+    /// Galley is always eligible for the special recon slot even before any
+    /// major civilization has researched Sailing.
+    fn barbarian_naval_unit_pool(&self) -> Vec<Name> {
+        let leader_techs = self
+            .players
+            .iter()
+            .filter(|p| !p.is_minor)
+            .map(|p| p.techs.len())
+            .max()
+            .unwrap_or(0);
+        let mut ranked: Vec<(&Name, &crate::rules::TechSpec)> = self.rules.techs.iter().collect();
+        ranked.sort_by(|a, b| {
+            (a.1.era, a.1.cost as i64, a.0).cmp(&(b.1.era, b.1.cost as i64, b.0))
+        });
+        let known: BTreeSet<&str> = ranked
+            .iter()
+            .take(leader_techs * 50 / 100)
+            .map(|(name, _)| name.as_str())
+            .collect();
+        self.rules
+            .units
+            .iter()
+            .filter(|(name, spec)| {
+                spec.class == "military"
+                    && spec.buildable
+                    && spec.unique_to.is_none()
+                    && spec.domain.as_deref() == Some("sea")
+                    && spec.promotion_class != "support"
+                    && spec.civic.is_none()
+                    && (name.as_str() == "galley"
+                        || spec
+                            .tech
+                            .as_deref()
+                            .is_none_or(|tech| known.contains(tech)))
+            })
+            .map(|(name, _)| *name)
+            .collect()
+    }
+
+    fn choose_barbarian_unit(&mut self, pool: &[Name]) -> Option<Name> {
+        if pool.is_empty() {
+            return None;
+        }
+        (0..3)
+            .map(|_| pool[self.rng.below(pool.len())])
+            .max_by(|a, b| {
+                let strength = |kind: &str| {
+                    let spec = &self.rules.units[kind];
+                    spec.strength.max(spec.ranged_strength) as i64
+                };
+                strength(a).cmp(&strength(b)).then_with(|| b.cmp(a))
+            })
+    }
+
+    fn spawn_barbarian_camp_recon(&mut self, kind: &str, owner: usize, camp: Pos) -> Option<u32> {
+        let want_sea = self.rules.units[kind].domain.as_deref() == Some("sea");
+        self.nbrs(camp).into_iter().find_map(|position| {
+            let tile = self.map.get(position)?;
+            if !self.rules.is_passable(tile) || self.rules.is_water(tile) != want_sea {
+                return None;
+            }
+            if self.city_at(position).is_some()
+                || self.units_at(position).into_iter().any(|unit| {
+                    self.rules.units[self.units[&unit].kind].class == "military"
+                })
+            {
+                return None;
+            }
+            Some(self.spawn_unit(kind, owner, position))
+        })
+    }
+
+    fn spawn_barbarian_camp_units(&mut self, camp: Pos) {
+        let Some(bpid) = self.barb_pid else {
+            return;
+        };
+        if self.barb_camp_guards.contains_key(&camp) {
+            return;
+        }
+        let guard = self.barbarian_guard_unit();
+        let guard_id = self.spawn_unit(guard.as_str(), bpid, camp);
+        if let Some(unit) = self.units.get_mut(&guard_id) {
+            unit.fortified = true;
+            unit.moves_left = 0.0;
+            unit.fortify_turns = 1;
+            unit.moved = false;
+            unit.acted = false;
+        }
+        self.barb_camp_guards.insert(camp, guard_id);
+
+        let naval = self.barb_naval_camps.contains(&camp);
+        let recon_kind = if naval && self.rules.units.contains_key("galley") {
+            "galley"
+        } else {
+            "scout"
+        };
+        let recon = self
+            .spawn_barbarian_camp_recon(recon_kind, bpid, camp)
+            .or_else(|| self.place_new_unit(recon_kind, bpid, camp));
+        if let Some(unit) = recon {
+            self.barb_scout_homes.insert(unit, camp);
+        }
     }
 
     fn barbarian_phase(&mut self) {
@@ -18548,6 +18717,15 @@ impl Game {
             .retain(|camp, until| self.barb_camps.contains_key(camp) && *until > self.turn);
         self.barb_camp_targets
             .retain(|camp, _| self.barb_camps.contains_key(camp));
+        self.barb_naval_camps
+            .retain(|camp| self.barb_camps.contains_key(camp));
+        self.barb_camp_guards.retain(|camp, guard| {
+            self.barb_camps.contains_key(camp)
+                && self
+                    .units
+                    .get(guard)
+                    .is_some_and(|unit| unit.owner == bpid && unit.pos == *camp)
+        });
         self.barbarian_scout_phase(bpid);
         // Setup puts a third of the target on the map before turn one
         // (BARBARIAN_CAMP_FIRST_TURN_PERCENT_OF_TARGET_TO_ADD); from there the
@@ -18574,36 +18752,22 @@ impl Game {
         let spawn_scale = self.difficulty_spec().barb_spawn_scale;
         let cap = (((2 + 2 * self.barb_camps.len() + 2 * alerted) as f64) * scale).round() as usize;
         let mut n_barb = self.player_unit_ids(bpid).len();
-        let pool = self.barbarian_unit_pool();
+        let land_pool = self.barbarian_unit_pool();
+        let naval_pool = self.barbarian_naval_unit_pool();
         let camps: Vec<(Pos, u32)> = self.barb_camps.iter().map(|(p, n)| (*p, *n)).collect();
         for (pos, nxt) in camps {
             if self.turn < nxt || n_barb >= cap {
                 continue;
             }
-            let has_scout = self
-                .barb_scout_homes
-                .iter()
-                .any(|(unit, camp)| *camp == pos && self.units.contains_key(unit));
-            let utype = if has_scout {
-                // The shipped spawn samples three random choices and fields
-                // the strongest (BARBARIAN_NUM_RANDOM_UNIT_CHOICES).
-                (0..3)
-                    .map(|_| pool[self.rng.below(pool.len())])
-                    .max_by(|a, b| {
-                        let strength = |kind: &str| {
-                            let spec = &self.rules.units[kind];
-                            spec.strength.max(spec.ranged_strength) as i64
-                        };
-                        strength(a).cmp(&strength(b)).then_with(|| b.cmp(a))
-                    })
-                    .unwrap_or_else(|| crate::name!("warrior"))
+            let pool = if self.barb_naval_camps.contains(&pos) {
+                &naval_pool
             } else {
-                crate::name!("scout")
+                &land_pool
             };
-            if let Some(unit) = self.place_new_unit(&utype, bpid, pos) {
-                if utype == "scout" {
-                    self.barb_scout_homes.insert(unit, pos);
-                }
+            let Some(utype) = self.choose_barbarian_unit(pool) else {
+                continue;
+            };
+            if let Some(_unit) = self.place_new_unit(utype.as_str(), bpid, pos) {
                 n_barb += 1;
                 let rapid = self
                     .barb_alerted_until
@@ -18911,6 +19075,8 @@ impl Game {
             return false;
         }
         self.barb_camps.remove(&pos);
+        self.barb_naval_camps.remove(&pos);
+        self.barb_camp_guards.remove(&pos);
         self.barb_alerted_until.remove(&pos);
         self.barb_camp_targets.remove(&pos);
         self.barb_scout_homes.retain(|_, camp| *camp != pos);
@@ -25696,6 +25862,35 @@ impl Game {
     /// Can this set of cards be seated in the player's slots? Typed cards
     /// fill their own slot type first; overflow and wildcard cards need
     /// wildcard slots (Civ 6 rule).
+    /// Drop slotted cards until the deck fits `pid`'s CURRENT government.
+    ///
+    /// ⚠⚠ A GOVERNMENT CHANGE INVALIDATES A DECK AND NOTHING RE-CHECKED IT.
+    /// `policies_fit` is enforced when a card is SLOTTED and never again, so a
+    /// deck legal under the old constitution survived into the new one. On the
+    /// live bridge the mirror sets the government from the host export, and
+    /// CIVVIS then re-sent that stale deck EVERY TURN and the host refused it
+    /// every turn: run `civvis-20260805T192809Z` switched Theocracy ->
+    /// Merchant Republic on t155 and was still asking for the Theocracy shape
+    /// (ECONOMIC x3, MILITARY x2, DIPLOMATIC x1) at t160-163, while the host sat
+    /// at FIVE cards in SIX slots.
+    ///
+    /// Cards are dropped in reverse slot order so the deterministic `BTreeSet`
+    /// iteration cannot depend on insertion history.
+    pub(crate) fn prune_policies_to_government(&mut self, pid: usize) -> usize {
+        let mut dropped = 0;
+        loop {
+            let cards = self.players[pid].policies.clone();
+            if cards.is_empty() || self.policies_fit(pid, &cards) {
+                return dropped;
+            }
+            let Some(victim) = cards.iter().next_back().copied() else {
+                return dropped;
+            };
+            self.players[pid].policies.remove(&victim);
+            dropped += 1;
+        }
+    }
+
     fn policies_fit(&self, pid: usize, cards: &BTreeSet<Name>) -> bool {
         let slots = self.gov_slots(pid);
         let (mut m, mut e, mut d, mut w) = (0i64, 0i64, 0i64, 0i64);
@@ -25804,7 +25999,7 @@ impl Game {
 
     /// The [`TraversalClass`] a unit moves as, folding its kind and its
     /// owner's unlocks into the flags the tile predicate reads.
-    fn traversal_class(&self, uid: u32) -> TraversalClass {
+    pub(crate) fn traversal_class(&self, uid: u32) -> TraversalClass {
         if let Some(memo) = self.query_memo.traversal.borrow().as_ref() {
             if let Some(class) = memo.get(&uid) {
                 return *class;
@@ -29993,6 +30188,7 @@ impl Game {
     pub(crate) fn remove_unit(&mut self, uid: u32) {
         self.barb_scout_homes.remove(&uid);
         self.barb_scout_targets.remove(&uid);
+        self.barb_camp_guards.retain(|_, guard| *guard != uid);
         let carried_aircraft: Vec<u32> = self
             .units
             .get(&uid)
@@ -32524,6 +32720,22 @@ impl Game {
                 return None;
             }
         }
+        // Refresh the cheap epoch guard before consulting a retained path.
+        // This lets a cache hit bypass the full connected-region proof while
+        // still dropping paths after a map write, turn change, or city-count
+        // change.
+        self.refresh_routing_cache_stamp();
+        let has_path = {
+            let routing = self.routing.borrow();
+            routing.paths.iter().any(|route| {
+                route.unit == uid && route.target == to && route.range == range
+            })
+        };
+        if has_path {
+            if let Some(cached_step) = self.cached_route_step(unit, start, to, range) {
+                return Some(cached_step);
+            }
+        }
         if !self.zone_connected(uid, to, range) {
             return None; // proven: no chain of traversable tiles links them
         }
@@ -32536,28 +32748,6 @@ impl Game {
             return None;
         }
         let access_key = self.route_access_key(unit, territory_access.as_slice());
-        let cached_step = {
-            let routing = self.routing.borrow();
-            routing
-                .paths
-                .iter()
-                .find(|route| {
-                    route.unit == uid
-                        && route.target == to
-                        && route.range == range
-                        && route.access_key == access_key
-                })
-                .and_then(|route| {
-                    route
-                        .path
-                        .iter()
-                        .position(|position| *position == start)
-                        .and_then(|index| route.path.get(index + 1).copied())
-                })
-        };
-        if cached_step.is_some_and(|next| self.can_enter(uid, start, next)) {
-            return cached_step;
-        }
         let traversal_zones = self.routing_zones(self.traversal_class(uid));
 
         // A* keeps known-target routing cheap enough for high-throughput
@@ -32667,6 +32857,44 @@ impl Game {
             path: std::mem::take(&mut scratch.path),
         });
         Some(step)
+    }
+
+    fn cached_route_step(
+        &self,
+        unit: &Unit,
+        start: Pos,
+        to: Pos,
+        range: i32,
+    ) -> Option<Pos> {
+        let territory_access = self.unit_territory_access(unit);
+        if range == 0
+            && self
+                .territory_owner_at(to)
+                .is_some_and(|owner| !territory_access[owner])
+        {
+            return None;
+        }
+        let access_key = self.route_access_key(unit, territory_access.as_slice());
+        let cached_step = {
+            let routing = self.routing.borrow();
+            routing
+                .paths
+                .iter()
+                .find(|route| {
+                    route.unit == unit.id
+                        && route.target == to
+                        && route.range == range
+                        && route.access_key == access_key
+                })
+                .and_then(|route| {
+                    route
+                        .path
+                        .iter()
+                        .position(|position| *position == start)
+                        .and_then(|index| route.path.get(index + 1).copied())
+                })
+        };
+        cached_step.filter(|next| self.can_enter(unit.id, start, *next))
     }
 
     /// Exact number of hex steps in the deterministic long-range route used by
@@ -32808,9 +33036,9 @@ impl Game {
         }
     }
 
-    /// The region labeling for `class`, rebuilt lazily whenever the world
-    /// stamp moves and shared by every unit of the class until then.
-    fn routing_zones(&self, class: TraversalClass) -> std::sync::Arc<Vec<u32>> {
+    /// Refresh the shared routing epoch and discard derived paths when a
+    /// world write has made their static assumptions stale.
+    fn refresh_routing_cache_stamp(&self) -> u64 {
         // Cities grant naval passage but live beside the map, so fold their
         // count in with the tile epoch; the turn bounds any residual
         // staleness (a found-and-razed pair the same turn) to one turn.
@@ -32819,14 +33047,22 @@ impl Game {
             self.turn as u64,
             self.cities.len() as u64,
         ]);
+        let mut cache = self.routing.borrow_mut();
+        if cache.stamp != stamp {
+            cache.stamp = stamp;
+            cache.zones.clear();
+            cache.paths.clear();
+            cache.city_owner_key = None;
+        }
+        stamp
+    }
+
+    /// The region labeling for `class`, rebuilt lazily whenever the world
+    /// stamp moves and shared by every unit of the class until then.
+    fn routing_zones(&self, class: TraversalClass) -> std::sync::Arc<Vec<u32>> {
+        let stamp = self.refresh_routing_cache_stamp();
         {
-            let mut cache = self.routing.borrow_mut();
-            if cache.stamp != stamp {
-                cache.stamp = stamp;
-                cache.zones.clear();
-                cache.paths.clear();
-                cache.city_owner_key = None;
-            }
+            let cache = self.routing.borrow();
             if let Some((_, zones)) = cache.zones.iter().find(|(c, _)| *c == class) {
                 return zones.clone();
             }
@@ -32845,6 +33081,18 @@ impl Game {
     /// deterministic, though only label *equality* ever matters.
     fn build_routing_zones(&self, class: TraversalClass) -> Vec<u32> {
         let mut zones = vec![0u32; self.map.tiles.len()];
+        // The flood visits a tile once as a seed or neighbor and may inspect
+        // it many more times from adjacent frontier tiles. Evaluate the
+        // static terrain/domain predicate once per tile, then let the BFS
+        // read the dense result. This preserves map-order labels while
+        // avoiding repeated ruleset and city-passage lookups on Ludicrous
+        // maps.
+        let traversable: Vec<u8> = self
+            .map
+            .tiles
+            .values()
+            .map(|tile| self.class_can_traverse(class, tile) as u8)
+            .collect();
         let mut label = 0u32;
         let mut queue = VecDeque::new();
         for index in 0..self.map.tiles.len() {
@@ -32852,7 +33100,7 @@ impl Game {
                 continue;
             }
             let seed = self.map.tiles.values().as_slice()[index].pos;
-            if !self.class_can_traverse(class, &self.map.tiles[&seed]) {
+            if traversable[index] == 0 {
                 continue;
             }
             label += 1;
@@ -32863,7 +33111,7 @@ impl Game {
                     let Some(slot) = self.map.tiles.index_of(n) else {
                         continue;
                     };
-                    if zones[slot] == 0 && self.class_can_traverse(class, &self.map.tiles[&n]) {
+                    if zones[slot] == 0 && traversable[slot] != 0 {
                         zones[slot] = label;
                         queue.push_back(n);
                     }
@@ -65073,6 +65321,91 @@ mod great_work_tests {
 }
 
 #[cfg(test)]
+mod government_deck {
+    use super::*;
+
+    /// ⚠ A DECK LEGAL UNDER THE OLD CONSTITUTION SURVIVED THE CHANGE.
+    ///
+    /// `policies_fit` is enforced when a card is SLOTTED and never again, so on
+    /// the live bridge CIVVIS re-sent a stale deck every turn and the host
+    /// refused it every turn. Run `civvis-20260805T192809Z` switched
+    /// Theocracy -> Merchant Republic on t155 and was still asking for the
+    /// Theocracy shape (ECONOMIC x3, MILITARY x2, DIPLOMATIC x1) at t160-163,
+    /// while the host sat at FIVE cards in SIX slots.
+    #[test]
+    fn changing_government_drops_cards_the_new_slots_cannot_hold() {
+        let mut game = Game::new(2, 24, 16, 1, 200, 0);
+
+        // Theocracy is military 2, economic 2, diplomatic 1, wildcard 1.
+        game.players[0].government = Some("theocracy".to_string());
+        // Build the deck FROM THE RULES by slot type rather than by name, so the
+        // fixture cannot silently stop testing anything when a card is renamed.
+        // Theocracy holds military 2 + economic 2 + diplomatic 1 + wildcard 1, so
+        // MILITARY x2 and ECONOMIC x3 is legal there (one economic on the
+        // wildcard) and needs TWO wildcards under Merchant Republic's military 1.
+        let pick = |game: &Game, slot: &str, want: usize| -> Vec<Name> {
+            let mut found: Vec<Name> = game
+                .rules
+                .policies
+                .iter()
+                .filter(|(_, spec)| spec.slot == slot)
+                .map(|(name, _)| *name)
+                .collect();
+            found.sort();
+            found.truncate(want);
+            found
+        };
+        game.players[0].policies.clear();
+        for card in pick(&game, "military", 2)
+            .into_iter()
+            .chain(pick(&game, "economic", 3))
+        {
+            game.players[0].policies.insert(card);
+        }
+        let before = game.players[0].policies.len();
+        assert_eq!(before, 5, "the fixture needs all five cards to exist");
+        assert!(
+            game.policies_fit(0, &game.players[0].policies.clone()),
+            "the fixture deck must be LEGAL under Theocracy, or it tests nothing"
+        );
+
+        // Merchant Republic is military 1, economic 2, diplomatic 2, wildcard 1:
+        // the SAME six slots in a different shape, which is exactly why a
+        // slot-COUNT comparison cannot catch this and only the SHAPE can.
+        game.players[0].government = Some("merchant_republic".to_string());
+        let dropped = game.prune_policies_to_government(0);
+
+        let held = game.players[0].policies.clone();
+        // ⚠ A TEST THAT CANNOT FAIL IS NOT A TEST. If the starting deck already
+        // fitted Merchant Republic nothing would be pruned and the assertions
+        // below would pass vacuously, so require that pruning actually bit.
+        assert!(
+            dropped > 0,
+            "the fixture must construct a deck the NEW government cannot hold"
+        );
+        assert!(
+            game.policies_fit(0, &held),
+            "after pruning the deck must fit the new government"
+        );
+        assert_eq!(
+            held.len() + dropped,
+            before,
+            "pruning must only remove cards, never invent them"
+        );
+    }
+
+    /// A deck that already fits must be left completely alone.
+    #[test]
+    fn a_deck_that_fits_is_not_pruned() {
+        let mut game = Game::new(2, 24, 16, 1, 200, 0);
+        game.players[0].government = Some("merchant_republic".to_string());
+        let before = game.players[0].policies.clone();
+        assert_eq!(game.prune_policies_to_government(0), 0);
+        assert_eq!(game.players[0].policies, before);
+    }
+}
+
+#[cfg(test)]
 mod district_mechanics {
     use super::*;
 
@@ -66506,6 +66839,135 @@ mod district_mechanics {
             neighborhood_positions.as_slice()
         );
         assert_eq!(restored.cities[&city].districts.len(), 3);
+    }
+
+    #[test]
+    fn barbarian_camps_open_with_fortified_guards_and_recon() {
+        let game = Game::new_full(2, 44, 30, 88_100, 100, 0, true);
+        let barbarian = game.barb_pid.unwrap();
+
+        assert_eq!(game.barb_camp_guards.len(), game.barb_camps.len());
+        assert_eq!(game.barb_scout_homes.len(), game.barb_camps.len());
+        for camp in game.barb_camps.keys() {
+            let guard_id = game
+                .barb_camp_guards
+                .get(camp)
+                .copied()
+                .expect("every camp has a standing guard");
+            let guard = &game.units[&guard_id];
+            assert_eq!(guard.owner, barbarian);
+            assert_eq!(guard.pos, *camp);
+            assert_eq!(guard.kind, "spearman");
+            assert_eq!(
+                game.rules.units[&guard.kind].promotion_class,
+                "anti_cavalry"
+            );
+            assert!(guard.fortified);
+            assert_eq!(guard.moves_left, 0.0);
+            assert_eq!(guard.fortify_turns, 1);
+
+            let recon_id = game
+                .barb_scout_homes
+                .iter()
+                .find_map(|(unit, home)| (*home == *camp).then_some(*unit))
+                .expect("every camp has a recon unit");
+            let recon = &game.units[&recon_id];
+            assert_eq!(recon.owner, barbarian);
+            let is_naval = game.barb_naval_camps.contains(camp);
+            assert_eq!(recon.kind == "galley", is_naval);
+            assert_eq!(
+                game.rules.is_water(&game.map.tiles[&recon.pos]),
+                is_naval,
+                "naval recon must live on water and land recon on land"
+            );
+            if is_naval {
+                assert!(
+                    game.nbrs(*camp).into_iter().any(|neighbor| {
+                        game.map
+                            .get(neighbor)
+                            .is_some_and(|tile| game.rules.is_water(tile))
+                    }),
+                    "a naval camp must be coastal"
+                );
+            }
+        }
+
+        let saved = serde_json::to_value(&game).unwrap();
+        let restored: Game = serde_json::from_value(saved).unwrap();
+        assert_eq!(restored.barb_naval_camps, game.barb_naval_camps);
+        assert_eq!(restored.barb_camp_guards, game.barb_camp_guards);
+        assert_eq!(restored.barb_scout_homes, game.barb_scout_homes);
+    }
+
+    #[test]
+    fn naval_barbarian_camps_reconnoiter_and_produce_ships() {
+        let mut game = Game::new_full(1, 44, 30, 88_101, 100, 0, true);
+        let barbarian = game.barb_pid.unwrap();
+
+        // Strip the generated world to one controlled outpost, retaining the
+        // real map so the test exercises the same land/water placement rules.
+        for unit in game.player_unit_ids(barbarian) {
+            game.remove_unit(unit);
+        }
+        for camp in game.barb_camps.keys().copied().collect::<Vec<_>>() {
+            game.map.tiles.get_mut(&camp).unwrap().improvement = None;
+        }
+        game.barb_camps.clear();
+        game.barb_naval_camps.clear();
+        game.barb_camp_guards.clear();
+        game.barb_scout_homes.clear();
+        game.barb_scout_targets.clear();
+
+        let camp = game
+            .map
+            .tiles
+            .iter()
+            .find_map(|(position, tile)| {
+                if game.rules.is_water(tile)
+                    || !game.rules.is_passable(tile)
+                    || tile.owner_city.is_some()
+                    || game.city_at(*position).is_some()
+                    || !game.units_at(*position).is_empty()
+                {
+                    return None;
+                }
+                let water_neighbors = game
+                    .nbrs(*position)
+                    .into_iter()
+                    .filter(|neighbor| {
+                        game.map
+                            .get(*neighbor)
+                            .is_some_and(|tile| game.rules.is_water(tile))
+                    })
+                    .count();
+                (water_neighbors >= 2).then_some(*position)
+            })
+            .expect("the generated map has a land tile with two water neighbors");
+        game.map.tiles.get_mut(&camp).unwrap().improvement = Some(crate::name!("barbarian_camp"));
+        game.barb_camps.insert(camp, game.turn);
+        game.barb_naval_camps.insert(camp);
+        game.spawn_barbarian_camp_units(camp);
+
+        let recon_id = game
+            .barb_scout_homes
+            .iter()
+            .find_map(|(unit, home)| (*home == camp).then_some(*unit))
+            .unwrap();
+        assert_eq!(game.units[&recon_id].kind, "galley");
+        assert!(game.rules.is_water(&game.map.tiles[&game.units[&recon_id].pos]));
+
+        let naval_before = game
+            .player_unit_ids(barbarian)
+            .into_iter()
+            .filter(|unit| game.rules.units[&game.units[unit].kind].domain.as_deref() == Some("sea"))
+            .count();
+        game.barbarian_phase();
+        let naval_after = game
+            .player_unit_ids(barbarian)
+            .into_iter()
+            .filter(|unit| game.rules.units[&game.units[unit].kind].domain.as_deref() == Some("sea"))
+            .count();
+        assert!(naval_after > naval_before, "a naval camp should produce a ship");
     }
 
     #[test]

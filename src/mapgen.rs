@@ -8,6 +8,7 @@ use crate::name::Name;
 use crate::rng::Rng;
 use crate::rules::{volcanic_soil_valid_terrain, Rules};
 use crate::setup::{MapPoles, MapScript, MapTopology};
+use crate::sphere::trig;
 use crate::world::WorldMap;
 use crate::{hex, Pos};
 
@@ -278,7 +279,7 @@ fn earth_tile(wm: &WorldMap, pos: Pos) -> EarthTile {
     let (longitude, latitude) = wm.lon_lat(pos);
     let (span_longitude, span_latitude) = earth_tile_span(wm);
     let stretch = if wm.sphere().is_some() {
-        1.0 / latitude.to_radians().cos().abs().max(0.02)
+        1.0 / trig::cos(latitude.to_radians()).abs().max(0.02)
     } else {
         1.0
     };
@@ -497,9 +498,9 @@ const EARTH_LAKES: &[(f64, f64, f64)] = &[
 fn earth_direction(longitude: f64, latitude: f64) -> [f64; 3] {
     let (longitude, latitude) = (longitude.to_radians(), latitude.to_radians());
     [
-        latitude.cos() * longitude.cos(),
-        latitude.cos() * longitude.sin(),
-        latitude.sin(),
+        trig::cos(latitude) * trig::cos(longitude),
+        trig::cos(latitude) * trig::sin(longitude),
+        trig::sin(latitude),
     ]
 }
 
@@ -622,8 +623,9 @@ fn earth_ground_from_sample(wm: &WorldMap, pos: Pos, sampled: EarthTile) -> Eart
         for step in 0..(8 * ring) {
             let angle = std::f64::consts::TAU * step as f64 / (8 * ring) as f64;
             let cell = earth_cell(
-                longitude + reach * angle.cos() / latitude.to_radians().cos().abs().max(0.02),
-                (latitude + reach * angle.sin()).clamp(-89.999, 89.999),
+                longitude
+                    + reach * trig::cos(angle) / trig::cos(latitude.to_radians()).abs().max(0.02),
+                (latitude + reach * trig::sin(angle)).clamp(-89.999, 89.999),
             );
             if cell.is_land() {
                 return EarthTile {
@@ -1603,7 +1605,7 @@ fn grand_canals(wm: &WorldMap) -> BTreeSet<Pos> {
         .filter(|pos| {
             let point = wm.direction(*pos);
             CANAL_AXES.iter().any(|axis| {
-                let out_of_plane = dot(point, *axis).clamp(-1.0, 1.0).asin();
+                let out_of_plane = trig::asin(dot(point, *axis).clamp(-1.0, 1.0));
                 (out_of_plane - offset).abs() <= half || (out_of_plane + offset).abs() <= half
             })
         })
@@ -1898,7 +1900,7 @@ impl TileFrame {
     /// How many tiles apart two points of the frame stand.
     fn span(&self, from: [f64; 3], to: [f64; 3]) -> f64 {
         match self.arc {
-            Some(arc) => dot(from, to).clamp(-1.0, 1.0).acos() / arc,
+            Some(arc) => trig::acos(dot(from, to).clamp(-1.0, 1.0)) / arc,
             None => {
                 let east = (from[0] - to[0]).abs();
                 let east = east.min(self.wrap - east);
@@ -1945,7 +1947,7 @@ impl TileFrame {
             Some(_) => point,
             None => {
                 let turn = std::f64::consts::TAU * point[0] / self.wrap;
-                [turn.cos(), turn.sin(), point[1]]
+                [trig::cos(turn), trig::sin(turn), point[1]]
             }
         }
     }
@@ -1961,7 +1963,7 @@ impl TileFrame {
                 (length > 1e-9).then(|| [sum[0] / length, sum[1] / length, sum[2] / length])
             }
             None => {
-                let turn = sum[1].atan2(sum[0]).rem_euclid(std::f64::consts::TAU);
+                let turn = trig::atan2(sum[1], sum[0]).rem_euclid(std::f64::consts::TAU);
                 Some([
                     turn / std::f64::consts::TAU * self.wrap,
                     sum[2] / count as f64,
@@ -6753,6 +6755,88 @@ mod river_tests {
 
     const FIXED_GEOGRAPHY_TYPES: [MapScript; 2] = [MapScript::Earth, MapScript::TrueStartEarth];
 
+    /// Eight bytes that stand for everything a seed generated, so two builds
+    /// — or two platforms — can be compared without shipping worlds around.
+    /// FNV-1a over the world's save serialization and the spawn list.
+    fn world_digest(world: &WorldMap, spawns: &[Pos]) -> u64 {
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        let mut eat = |bytes: &[u8]| {
+            for byte in bytes {
+                hash ^= *byte as u64;
+                hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        };
+        eat(serde_json::to_string(world).unwrap().as_bytes());
+        for (col, row) in spawns {
+            eat(&col.to_le_bytes());
+            eat(&row.to_le_bytes());
+        }
+        hash
+    }
+
+    /// The digest every platform must agree on, per seed and shape.
+    ///
+    /// This is the regression gate for #1061: the same seed generated a
+    /// different globe on wasm32 than on native, because latitude came out of
+    /// whichever `asin` the platform linked and one ULP moved tiles across
+    /// climate thresholds. The geometry path now calls [`crate::sphere::trig`]
+    /// on every target, so a world is a pure function of its seed again — and
+    /// this test holds every platform to the bits these values were computed
+    /// from. A seed only diverged when some tile sat within a rounding step of
+    /// a boundary, which is a property of the seed, so several seeds are
+    /// pinned rather than one; the globe seeds include ones that demonstrably
+    /// diverged before the fix (1013, 1037, 4242, 31337 in #1061) and the flat
+    /// controls pin that flat generation did not move at all.
+    ///
+    /// If this fails because mapgen changed *on purpose*, recompute: run the
+    /// test, and the assertion message prints every digest the current code
+    /// produces. Paste them in — on one platform only; the others must then
+    /// match without being touched, and a platform that disagrees is exactly
+    /// the bug this test exists to catch.
+    #[test]
+    fn the_same_seed_generates_the_same_world_on_every_platform() {
+        let rules = Rules::embedded();
+        let cases: [(u64, MapTopology, u64); 6] = [
+            (1013, GLOBE, 0x5882_57c1_2847_3376),
+            (1037, GLOBE, 0xea88_b67e_6785_f742),
+            (4242, GLOBE, 0xaffb_235c_3df8_79fe),
+            (31337, GLOBE, 0x1dec_b624_0de4_3098),
+            (777, FLAT, 0x8c54_302a_be4c_7bab),
+            (4242, FLAT, 0xf08d_d844_42a1_ec99),
+        ];
+        let actual: Vec<String> = cases
+            .iter()
+            .map(|(seed, topology, _)| {
+                let mut rng = Rng::new(*seed);
+                let (world, spawns) = generate_with_script(
+                    &rules,
+                    74,
+                    46,
+                    6,
+                    9,
+                    4,
+                    3,
+                    MapScript::Continents,
+                    *topology,
+                    POLED,
+                    &mut rng,
+                );
+                format!("{:016x}", world_digest(&world, &spawns))
+            })
+            .collect();
+        let expected: Vec<String> = cases
+            .iter()
+            .map(|(_, _, digest)| format!("{digest:016x}"))
+            .collect();
+        assert_eq!(
+            actual, expected,
+            "a seed no longer generates the world every platform agreed on \
+             (seeds {:?}); if mapgen changed deliberately, pin the left column \
+             — computed on one platform, verified by the rest",
+            cases.map(|(seed, ..)| seed)
+        );
+    }
+
     /// What share of a generated world is dry land.
     fn land_share(world: &WorldMap, rules: &Rules) -> usize {
         let land = world
@@ -7373,7 +7457,7 @@ mod river_tests {
         // read straight off them.
         let along = axis.iter().position(|part| *part != 0.0).unwrap();
         let point = world.direction(pos);
-        let angle = point[(along + 2) % 3].atan2(point[(along + 1) % 3]);
+        let angle = trig::atan2(point[(along + 2) % 3], point[(along + 1) % 3]);
         let turns = angle.rem_euclid(std::f64::consts::TAU) / std::f64::consts::TAU;
         ((turns * 12.0) as usize).min(11)
     }
@@ -7453,9 +7537,9 @@ mod river_tests {
                                     world.tiles[pos].feature.as_deref() != Some("ice")
                                 })
                                 .filter(|pos| {
-                                    let out_of_plane = dot(world.direction(*pos), direction)
-                                        .clamp(-1.0, 1.0)
-                                        .asin();
+                                    let out_of_plane = trig::asin(
+                                        dot(world.direction(*pos), direction).clamp(-1.0, 1.0),
+                                    );
                                     (out_of_plane - sign * offset).abs() <= half
                                 })
                                 .collect();
@@ -8791,7 +8875,7 @@ mod river_tests {
     /// both the count and the reason no rotation about the pole fixes it.
     #[test]
     fn earth_keeps_the_three_pentagons_that_land_on_it() {
-        let ring = (0.5f64).atan().to_degrees();
+        let ring = trig::atan(0.5).to_degrees();
         let corners: Vec<(f64, f64)> = (0..5)
             .map(|k| (72.0 * k as f64, ring))
             .chain((0..5).map(|k| (72.0 * k as f64 + 36.0, -ring)))

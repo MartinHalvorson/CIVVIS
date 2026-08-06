@@ -118,17 +118,38 @@ class MirrorCheckTest(unittest.TestCase):
             "rivals": [{"score": 926, "military": 995}],
         }
         board = {"me": {"trade_capacity": 3}, "players": [
-            {"id": 0, "score": 177, "military": 2, "gold": 25.0, "faith": 100.0,
+            {"id": 0, "score": 177, "military": 2, "observed_military": 2,
+             "gold": 25.0, "faith": 100.0,
              "yields": {"science": 6.8, "culture": 6.0}},
-            {"id": 1, "score": 926, "military": 995},
+            {"id": 1, "score": 926, "military": 995, "observed_military": 995},
         ]}
         self.assertEqual(civ6_mirror_check.public_fact_mismatches(state, board), [])
-        board["players"][1]["military"] = 64
+        board["players"][1]["observed_military"] = 64
         self.assertIn("seat 1 military", civ6_mirror_check.public_fact_mismatches(state, board)[0])
-        board["players"][1]["military"] = 995
+        board["players"][1]["observed_military"] = 995
         board["me"]["trade_capacity"] = 4
         self.assertIn(
             "trade_capacity", civ6_mirror_check.public_fact_mismatches(state, board)[0]
+        )
+
+    def test_a_stronger_own_strength_model_is_not_a_bridge_disagreement(self) -> None:
+        """`military_power` is max(observed, our own sum), so for our OWN seat it
+        may legitimately exceed the host. That is a MODEL difference, not a
+        mapping one, and this check used to report it as
+        `seat 0 military Civ6=520 CIVVIS=545`. Measured over 2,713 turn-records
+        the host's figure wins that max ~90% of the time, so the warning was rare,
+        benign, and exactly the kind that trains an operator to ignore the report.
+        """
+        state = {"score": 100, "military": 520, "rivals": []}
+        board = {"me": {}, "players": [
+            {"id": 0, "score": 100, "military": 545, "observed_military": 520},
+        ]}
+        self.assertEqual(civ6_mirror_check.public_fact_mismatches(state, board), [])
+
+        # But a genuine MAPPING failure must still be caught.
+        board["players"][0]["observed_military"] = 400
+        self.assertIn(
+            "seat 0 military", civ6_mirror_check.public_fact_mismatches(state, board)[0]
         )
 
     def test_city_data_check_covers_non_positional_state(self) -> None:

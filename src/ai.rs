@@ -1,7 +1,7 @@
 //! Scripted AIs (mirrors civvis/ai/). BasicAi reads full state (no fog) —
 //! sparring partner, not a fair-play agent.
 use crate::name::{AsName, Name};
-use crate::game::{effective_strength, Action, ActionFamilies, Game, Item};
+use crate::game::{effective_strength, Action, ActionFamilies, Game, Item, TraversalClass};
 use crate::parallel::WorkPool;
 use crate::reasoning::{plain, Journal};
 use crate::rng::Rng;
@@ -1617,6 +1617,10 @@ pub struct BasicAi {
     /// domain. Reuse the scan for the rest of this player's turn instead of
     /// walking the whole map once per idle unit.
     patrol_posts: HashMap<String, Vec<Pos>>,
+    /// Parallel unit snapshots can be primed before they are cloned. Keep
+    /// those primed scans separate by full traversal class so a Scout that can
+    /// embark does not change the post list used by a land-only unit.
+    patrol_posts_by_class: HashMap<(String, TraversalClass), Vec<Pos>>,
     /// Colonies, especially overseas ones, need a fixed destination. Re-scoring
     /// only a short local radius each step strands settlers on shorelines and
     /// can make them reverse course after embarking.
@@ -2687,6 +2691,7 @@ impl BasicAi {
             recovering_units: HashSet::new(),
             patrol_targets: HashMap::new(),
             patrol_posts: HashMap::new(),
+            patrol_posts_by_class: HashMap::new(),
             settler_targets: HashMap::new(),
             unit_memories: RefCell::new(BTreeMap::new()),
             last_path_step_from: RefCell::new(HashMap::new()),
@@ -2720,6 +2725,7 @@ impl BasicAi {
             recovering_units: HashSet::new(),
             patrol_targets: HashMap::new(),
             patrol_posts: HashMap::new(),
+            patrol_posts_by_class: HashMap::new(),
             settler_targets: HashMap::new(),
             unit_memories: RefCell::new(BTreeMap::new()),
             last_path_step_from: RefCell::new(HashMap::new()),
@@ -3009,6 +3015,7 @@ impl BasicAi {
         self.recovering_units.clear();
         self.patrol_targets.clear();
         self.patrol_posts.clear();
+        self.patrol_posts_by_class.clear();
         self.settler_targets.clear();
         self.unit_memories.get_mut().clear();
         self.unit_motion.clear();
@@ -3049,6 +3056,7 @@ impl BasicAi {
         // Posts are cleared every turn by `begin_movement_turn` anyway, and they are
         // claims on ground rather than memory about a unit.
         self.patrol_posts.clear();
+        self.patrol_posts_by_class.clear();
         self.settler_targets = remap(&self.settler_targets, map);
         let unit_memories = std::mem::take(self.unit_memories.get_mut());
         *self.unit_memories.get_mut() = unit_memories
@@ -3072,6 +3080,7 @@ impl BasicAi {
     /// the expensive all-map candidate scan does not need to.
     pub(crate) fn begin_movement_turn(&mut self, g: &Game, pid: usize) {
         self.patrol_posts.clear();
+        self.patrol_posts_by_class.clear();
         self.refresh_unit_memories(g, pid);
         self.observe_unit_motion(g, pid);
     }
@@ -3128,6 +3137,10 @@ impl BasicAi {
         // Posts are immutable for the turn. A branch may have paid to build a
         // domain's list, so retain that work for later serial fallbacks.
         self.patrol_posts.extend(state.patrol_posts);
+    }
+
+    pub(crate) fn clear_prepared_patrol_posts(&mut self) {
+        self.patrol_posts_by_class.clear();
     }
 
     /// Record this turn's starting tile for every unit, and judge each unit
@@ -8591,6 +8604,106 @@ impl BasicAi {
         g.unit_can_traverse(uid, pos)
     }
 
+    fn build_patrol_posts(&self, g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
+        let mut posts: Vec<Pos> = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| self.patrol_tile(g, pid, uid, *pos))
+            .filter(|pos| {
+                // A frontier post borders land or water outside this empire.
+                // Interior city centers remain fallback destinations below.
+                g.nbrs(*pos).into_iter().any(|neighbor| {
+                    g.map.get(neighbor).is_some_and(|tile| {
+                        tile.owner_city
+                            .and_then(|cid| g.cities.get(&cid))
+                            .is_none_or(|city| city.owner != pid)
+                    })
+                })
+            })
+            .collect();
+        if posts.is_empty() {
+            posts = g
+                .player_city_ids(pid)
+                .into_iter()
+                .map(|cid| g.cities[&cid].pos)
+                .filter(|pos| self.patrol_tile(g, pid, uid, *pos))
+                .collect();
+        }
+        posts.sort_unstable();
+        posts.dedup();
+        posts
+    }
+
+    fn patrol_posts_for(
+        &mut self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        domain: &str,
+        class_specific: bool,
+    ) -> Vec<Pos> {
+        let post_memo = g.query_memo();
+        let class_key = (domain.to_string(), g.traversal_class(uid));
+        let mut posts = if let Some(posts) = self.patrol_posts_by_class.get(&class_key) {
+            posts.clone()
+        } else if !class_specific {
+            if let Some(posts) = self.patrol_posts.get(domain) {
+                posts.clone()
+            } else {
+                let posts = self.build_patrol_posts(g, pid, uid);
+                self.patrol_posts.insert(domain.to_string(), posts.clone());
+                posts
+            }
+        } else {
+            let posts = self.build_patrol_posts(g, pid, uid);
+            self.patrol_posts_by_class
+                .insert(class_key, posts.clone());
+            posts
+        };
+        // A conquest earlier in this same unit phase may have invalidated a
+        // cached frontier tile. Keep the shared scan, but cheaply validate the
+        // relatively small candidate list before routing to it.
+        posts.retain(|pos| self.patrol_tile(g, pid, uid, *pos));
+        drop(post_memo);
+        posts
+    }
+
+    /// Populate the frontier scan before AdvancedAi clones a planner into
+    /// parallel unit snapshots. Those snapshots are intentionally independent,
+    /// so a lazy cache would otherwise pay for the same map scan once per
+    /// branch. BasicAi keeps its ordinary lazy behavior when this hook is not
+    /// used.
+    pub(crate) fn prepare_patrol_posts(&mut self, g: &Game, pid: usize, uids: &[u32]) {
+        let mut representatives: Vec<(String, TraversalClass, u32)> = Vec::new();
+        for uid in uids {
+            let Some(unit) = g.units.get(uid) else {
+                continue;
+            };
+            if g.rules.units[unit.kind].class != "military" {
+                continue;
+            }
+            let domain = g.rules.units[unit.kind]
+                .domain
+                .as_deref()
+                .unwrap_or("land")
+                .to_string();
+            let class = g.traversal_class(*uid);
+            if !representatives
+                .iter()
+                .any(|(old_domain, old_class, _)| {
+                    *old_class == class && old_domain == &domain
+                })
+            {
+                representatives.push((domain, class, *uid));
+            }
+        }
+        for (domain, _, uid) in representatives {
+            let _ = self.patrol_posts_for(g, pid, uid, &domain, true);
+        }
+    }
+
     /// Move an otherwise idle military unit between useful frontier posts.
     /// Targets persist across turns, avoiding random-looking oscillation; a
     /// new post is selected only after the old one is reached or invalidated.
@@ -8621,46 +8734,7 @@ impl BasicAi {
             .as_deref()
             .unwrap_or("land")
             .to_string();
-        let post_memo = g.query_memo();
-        let mut posts = if let Some(posts) = self.patrol_posts.get(&domain) {
-            posts.clone()
-        } else {
-            let mut posts: Vec<Pos> = g
-                .map
-                .tiles
-                .keys()
-                .copied()
-                .filter(|pos| self.patrol_tile(g, pid, uid, *pos))
-                .filter(|pos| {
-                    // A frontier post borders land or water outside this empire.
-                    // Interior city centers remain fallback destinations below.
-                    g.nbrs(*pos).into_iter().any(|neighbor| {
-                        g.map.get(neighbor).is_some_and(|tile| {
-                            tile.owner_city
-                                .and_then(|cid| g.cities.get(&cid))
-                                .is_none_or(|city| city.owner != pid)
-                        })
-                    })
-                })
-                .collect();
-            if posts.is_empty() {
-                posts = g
-                    .player_city_ids(pid)
-                    .into_iter()
-                    .map(|cid| g.cities[&cid].pos)
-                    .filter(|pos| self.patrol_tile(g, pid, uid, *pos))
-                    .collect();
-            }
-            posts.sort_unstable();
-            posts.dedup();
-            self.patrol_posts.insert(domain.clone(), posts.clone());
-            posts
-        };
-        // A conquest earlier in this same unit phase may have invalidated a
-        // cached frontier tile. Keep the shared scan, but cheaply validate the
-        // relatively small candidate list before routing to it.
-        posts.retain(|pos| self.patrol_tile(g, pid, uid, *pos));
-        drop(post_memo);
+        let posts = self.patrol_posts_for(g, pid, uid, &domain, false);
         if posts.is_empty() {
             return false;
         }
@@ -9019,8 +9093,16 @@ impl BasicAi {
                 return self.fortify_or_stop(g, pid, uid);
             }
         }
-        if let Some(acted) = self.special_improver_step(g, pid, uid) {
-            return acted;
+        let special_improver = {
+            let unit = &g.units[&uid];
+            unit.owner == pid
+                && unit.charges > 0
+                && !g.rules.units[unit.kind].builds.is_empty()
+        };
+        if special_improver {
+            if let Some(acted) = self.special_improver_step(g, pid, uid) {
+                return acted;
+            }
         }
         // Coming ashore outranks exploring. A Recon unit explores for as long
         // as any unseen tile remains, which on an ocean map is forever, so
@@ -11698,6 +11780,8 @@ mod tests {
         let camps: Vec<Pos> = g.barb_camps.keys().copied().collect();
         for camp in camps {
             g.barb_camps.remove(&camp);
+            g.barb_naval_camps.remove(&camp);
+            g.barb_camp_guards.remove(&camp);
             let tile = g.map.tiles.get_mut(&camp).unwrap();
             if tile.improvement.as_deref() == Some("barbarian_camp") {
                 tile.improvement = None;
@@ -11870,6 +11954,8 @@ mod tests {
             g.remove_unit(unit);
         }
         g.barb_camps.clear();
+        g.barb_naval_camps.clear();
+        g.barb_camp_guards.clear();
         g.barb_scout_homes.clear();
         g.barb_scout_targets.clear();
         g.barb_camp_targets.clear();
@@ -11919,6 +12005,8 @@ mod tests {
         let camps: Vec<Pos> = g.barb_camps.keys().copied().collect();
         for camp in camps {
             g.barb_camps.remove(&camp);
+            g.barb_naval_camps.remove(&camp);
+            g.barb_camp_guards.remove(&camp);
             let tile = g.map.tiles.get_mut(&camp).unwrap();
             if tile.improvement.as_deref() == Some("barbarian_camp") {
                 tile.improvement = None;

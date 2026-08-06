@@ -248,6 +248,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the live `civvis_orders` bridge. Engine and Elo trajectories therefore keep
 /// their prior behavior; this is a compatibility re-pin, not a protocol bump.
 ///
+/// #929 retries asynchronous Firaxis governor postings behind
+/// `live_governor_assignment_adapter`. Configured and legacy engine agents keep
+/// it false; only `civvis_orders` enables it. Compatibility re-pin, not an Elo
+/// protocol change.
+///
 /// #911's escorted-settler correction remains behind `settlement_safety`,
 /// which `AdvancedAi::legacy()` disables. The live religious-purchase guard
 /// added afterward is likewise default-off in `BasicAi` and enabled only by
@@ -658,8 +663,16 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// order rejects the overwhelmingly common unowned map tile before asking the
 /// traversal cache, so the frozen controller's source contract is re-pinned
 /// after the fixed-prefix comparison below.
+/// #1259 guards the special-improver helper at its call site. The guard repeats
+/// the helper's existing eligibility checks, so the advanced_v1 legacy path is
+/// unchanged; the source contract is re-pinned after the fixed-prefix
+/// comparison above.
+/// The Advanced parallel unit planner now primes frontier-post scans inside the
+/// immutable batch snapshot, keyed by traversal class, so each worker reuses
+/// the same read-only map scan without publishing it across a world mutation.
+/// The fixed-prefix output remains byte-identical; compatibility is re-pinned.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xce62_1e34_ff30_2cbf;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa208_34b5_d343_0102;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -1159,6 +1159,53 @@ pub struct AdvancedAi {
     /// persistent agent otherwise treats every legal oscillating escort move
     /// as renewed progress; engine controllers retain their measured behavior.
     pub linked_settler_progress: bool,
+    /// Retry the city-posting half of a live Firaxis governor appointment on a
+    /// later turn. CIVVIS applies appointment and assignment atomically, while
+    /// the host accepts them as separate asynchronous operations; this adapter
+    /// is therefore bridge-specific and remains off in engine play.
+    pub live_governor_assignment_adapter: bool,
+    /// Let more than one settler exist at a time, up to the shortfall against
+    /// the city target.
+    ///
+    /// The settler production gate carries `counts.settlers == 0` on an
+    /// `EmpireCounts`, so today at most one settler may exist in the whole
+    /// empire. The conjunct beside it already caps cities-plus-settlers at
+    /// `desired_cities`, so this one adds no cap — it is purely serialization,
+    /// and a four-city empire therefore expands no faster than a one-city one.
+    ///
+    /// Measured before building (`docs/OPENINGS.md` §6): over 60 maps at 4
+    /// players on 32×22 the seat first holds 2/3/4/5/6 cities on turns
+    /// 37.0/71.0/89.5/118.7/150.2 — gaps of +34.0/+18.5/+29.2/+31.5 that **do
+    /// not shrink as the empire grows**, which is what serialization looks
+    /// like and is not what compounding expansion looks like. A seat spends
+    /// 60.8 ± 3.8 turns short of its city target with a settler already
+    /// walking, against 68.5 ± 4.2 turns short with none.
+    ///
+    /// This is a *rate* lever and is not the `city_target` sweep in
+    /// `docs/GENOME.md`, which is a *target* lever and saturates above six.
+    /// Reaching six cities on turn 90 rather than turn 150 compounds those
+    /// yields for sixty turns at the same target.
+    ///
+    /// ⚠ **Measured near-INERT by its own fires-check, and never taken to an
+    /// eval.** Over the same 60 maps, turning it on moves the founding cadence
+    /// from 37.0/71.0/89.5/118.7/150.2 to 37.6/71.0/89.1/117.6/148.7 and
+    /// leaves cities-at-turn-50 at 1.95 either way.
+    ///
+    /// The mechanism story above was wrong. `counts.settlers == 0` is
+    /// redundant on top of engine rules that already bind harder: a settler
+    /// requires `pop >= 2` and **consumes a population** on completion
+    /// (`Game` at the `settler_no_population` governor check), and successive
+    /// settlers cost 80, 110, 140 production. A one- or two-city empire
+    /// therefore cannot afford a second settler whether or not the AI permits
+    /// one, so lifting the permission buys nothing. The 60.8 ± 3.8 turns a
+    /// seat spends short of target with a settler walking are not turns this
+    /// clause forbids a second — they are turns the empire could not pay for
+    /// one.
+    ///
+    /// Kept as the `advanced_parallel_settlers` entrant with the null
+    /// recorded, on the `advanced_lane_reachable` precedent, so the axis can
+    /// be re-measured rather than re-derived if the settler economy changes.
+    pub parallel_settlers: bool,
     /// Slot `limitanei` (+2 Loyalty in cities with a garrison) when expanding or
     /// conquering.
     ///
@@ -2012,6 +2059,8 @@ impl AdvancedAi {
             settler_avoid: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
             linked_settler_progress: false,
+            live_governor_assignment_adapter: false,
+            parallel_settlers: false,
             garrison_loyalty_policy: false,
             expansion_pays_back: false,
             late_expansion: false,
@@ -10858,6 +10907,46 @@ impl AdvancedAi {
                    "the city the {} plan gets most from", plan.strategy.as_str());
         }
 
+        // Firaxis appoints a Governor and assigns its city as two asynchronous
+        // player operations. The control mod submits the assignment from the
+        // appointment callback, but the completed Rome run proved that the
+        // request can report success without sticking: Moksha stayed idle from
+        // t22 through t243 and Victor from t83 through t229. On the next turn
+        // the authoritative mirror exposes `city: None`; retry it even though
+        // there is no new title to spend. Ordinary CIVVIS games never need this
+        // because `AppointGovernor` installs the city atomically.
+        if self.live_governor_assignment_adapter {
+            let unassigned = g.players[pid]
+                .governor_roster
+                .iter()
+                .filter(|(_, state)| state.city.is_none())
+                .map(|(governor, _)| governor.to_string())
+                .collect::<Vec<_>>();
+            for governor in unassigned {
+                let Some(city) = self.best_governor_city(g, pid, &governor, plan) else {
+                    continue;
+                };
+                if g.apply(
+                    pid,
+                    &Action::ReassignGovernor {
+                        governor: Name::new(&governor),
+                        city,
+                    },
+                )
+                .is_ok()
+                {
+                    let where_ = g
+                        .cities
+                        .get(&city)
+                        .map(|city| city.name.clone())
+                        .unwrap_or_else(|| format!("city {city}"));
+                    think!(self.journal(), Government, Decision,
+                           "Retrying {}'s post to {where_}", plain(&governor);
+                           "Firaxis still reports the appointed Governor as unassigned");
+                }
+            }
+        }
+
     }
 
     /// ★★★★★ FAITH BUYS THE SOLDIER; GOLD PAYS FOR IT, EVERY TURN, FOREVER.
@@ -19286,6 +19375,7 @@ impl AdvancedAi {
         let mut snapshot_invalid = false;
         for (&uid, intent) in ids.iter().zip(intents) {
             if snapshot_invalid || !g.units.contains_key(&uid) {
+                self.base.clear_prepared_patrol_posts();
                 let took_a_turn = g.units.contains_key(&uid)
                     && self.advance_unit_serial(
                         g,
@@ -19363,6 +19453,7 @@ impl AdvancedAi {
                 self.base.hold_stood_down_unit(g, pid, uid);
             }
         }
+        self.base.clear_prepared_patrol_posts();
     }
 
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
@@ -19460,6 +19551,7 @@ impl AdvancedAi {
 
             let pool = pool.as_ref().expect("parallel unit batch has a pool");
             let batch_ids = Arc::new(batch.clone());
+            self.base.prepare_patrol_posts(g, pid, &batch);
             let plan_snapshot = plan.clone();
             let active = pool.threads().min(batch.len());
             let states = (0..active)
@@ -23132,6 +23224,55 @@ mod tests {
             game.players[0].governor_roster["pingala"].promotions.len(),
             2
         );
+    }
+
+    #[test]
+    fn live_governor_adapter_posts_an_idle_appointee_without_a_new_title() {
+        let mut game = Game::new_full(1, 24, 16, 7_114, 200, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        game.players[0].governor_roster.insert(
+            "moksha".to_string(),
+            GovernorState {
+                city: None,
+                assigned_turn: game.turn,
+                disabled_until: 0,
+                promotions: BTreeSet::new(),
+            },
+        );
+        assert_eq!(game.governor_titles_available(0), 0);
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Religion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        let mut control = game.clone();
+        AdvancedAi::new().strategic_governors(&mut control, 0, &plan);
+        assert_eq!(control.players[0].governor_roster["moksha"].city, None);
+
+        let mut ai = AdvancedAi::new();
+        ai.live_governor_assignment_adapter = true;
+        ai.strategic_governors(&mut game, 0, &plan);
+
+        assert_eq!(game.players[0].governor_roster["moksha"].city, Some(city));
+        assert!(game.log.iter().any(|(player, action)| {
+            *player == 0
+                && matches!(
+                    action,
+                    Action::ReassignGovernor { governor, city: target }
+                        if governor == "moksha" && *target == city
+                )
+        }));
     }
 
     #[test]
