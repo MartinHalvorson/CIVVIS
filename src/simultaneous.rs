@@ -204,138 +204,158 @@ fn run_simultaneous<A: Ai + Send>(g: &mut Game, ais: &mut [A], jobs: usize) -> S
     g.set_fog_memory(false);
     let mut census = SimultaneousCensus::default();
     while g.winner.is_none() && g.turn <= g.max_turns {
-        let opened = (g.turn, g.current);
-        let cycle_turn = g.turn;
-        // One cycle visits each seat once; the slack absorbs a seat that
-        // comes alive mid-cycle. Exceeding it means the cursor is not
-        // behaving like a turn cursor, which the guard below reports.
-        let bound = 2 * g.players.len() + 8;
-
-        // ---- Plan: every seat against the world with nobody having acted.
-        // The rolling world takes each seat's EndTurn with no actions, so a
-        // later seat plans with its own upkeep applied and every rival
-        // frozen. Each seat then plans on a private copy of that world.
-        //
-        // Both phases follow the authoritative turn cursor exactly as
-        // `run_game` does, and deliberately do not filter the seats by
-        // `alive`. A seat can be eliminated by its own upkeep — a loyalty
-        // flip taking its last city inside `begin_turn` — after the cursor
-        // has already moved to it, so the cursor legitimately rests on a
-        // dead seat. Selecting seats by any other rule than "whoever the
-        // cursor names" lets the plans and the cursor disagree, and a cycle
-        // that commits nothing advances nothing.
-        // The prepare is engine-only and serial: every seat's world and RNG
-        // stream exist before any deliberation starts, so the fan-out below
-        // has nothing left to decide about ordering.
-        let mut prepared: Vec<(usize, Game)> = Vec::new();
-        {
-            let mut rolling = g.clone();
-            let mut forwarded = 0u64;
-            let mut steps = 0;
-            while rolling.winner.is_none() && rolling.turn == cycle_turn && steps < bound {
-                steps += 1;
-                let seat = rolling.current;
-                if prepared.iter().any(|(planned, _)| *planned == seat) {
-                    break;
-                }
-                let mut world = rolling.clone();
-                world.rng = planning_stream(g.seed, cycle_turn, seat);
-                prepared.push((seat, world));
-                if !close_seat_turn(&mut rolling, seat, &mut forwarded) {
-                    break;
-                }
-            }
-        }
-
-        // The deliberation fan-out. Each cell hands exactly one worker
-        // exclusive ownership of one seat's AI and world; results come back
-        // in prepared order regardless of which worker finished when, and
-        // `jobs = 1` is the same code run serially in that order.
-        let seats: Vec<usize> = prepared.iter().map(|(seat, _)| *seat).collect();
-        let cells: Vec<std::sync::Mutex<(Option<&mut A>, Option<Game>)>> = {
-            let mut ai_slots: Vec<Option<&mut A>> = Vec::new();
-            ai_slots.resize_with(seats.len(), || None);
-            for (pid, ai) in ais.iter_mut().enumerate() {
-                if let Some(position) = seats.iter().position(|&seat| seat == pid) {
-                    ai_slots[position] = Some(ai);
-                }
-            }
-            ai_slots
-                .into_iter()
-                .zip(prepared.into_iter().map(|(_, world)| Some(world)))
-                .map(|(ai, world)| std::sync::Mutex::new((ai, world)))
-                .collect()
-        };
-        let planned: Vec<Vec<Action>> = crate::parallel::map(cells.len(), jobs, |index| {
-            let mut cell = cells[index].lock().expect("a planning job panicked");
-            let ai = cell.0.take().expect("each planning cell is taken once");
-            let mut world = cell.1.take().expect("each planning world is taken once");
-            let seat = seats[index];
-            let mark = world.log.len();
-            ai.take_turn(&mut world, seat);
-            world
-                .log
-                .since(mark)
-                .take_while(|(pid, _)| *pid == seat)
-                .filter(|(_, action)| !matches!(action, Action::EndTurn))
-                .map(|(_, action)| action.clone())
-                .collect()
-        });
-        drop(cells);
-        let mut plans: BTreeMap<usize, Vec<Action>> = BTreeMap::new();
-        for (seat, actions) in seats.into_iter().zip(planned) {
-            census.planned += actions.len() as u64;
-            plans.insert(seat, actions);
-        }
-
-        // ---- Commit: the plans land on the one authoritative world in
-        // cursor order, through the ordinary rules. A stale order is
-        // dropped; the seat's turn closes through the ordinary EndTurn so
-        // upkeep, the world-turn wrap, and victory checks all run exactly
-        // where a sequential game runs them.
-        let mut steps = 0;
-        while g.winner.is_none() && g.turn == cycle_turn && steps < bound {
-            steps += 1;
-            let seat = g.current;
-            match plans.remove(&seat) {
-                Some(actions) => {
-                    for action in &actions {
-                        if g.winner.is_some() {
-                            break;
-                        }
-                        match g.apply(seat, action) {
-                            Ok(()) => census.applied += 1,
-                            Err(_) => census.note_drop(action),
-                        }
-                    }
-                }
-                // The cursor reached a seat the planning pass never saw —
-                // one that came alive during this cycle. It takes an empty
-                // turn here and plans normally next turn.
-                None => census.unplanned_seats += 1,
-            }
-            if g.winner.is_none() && g.current == seat {
-                if !close_seat_turn(g, seat, &mut census.forced) {
-                    // Closing failed within the bound. Abandon the game
-                    // loudly rather than replaying the same turn forever.
-                    census.aborted = true;
-                    return census;
-                }
-            }
-        }
-        // Plans the cursor never reached: their seats were eliminated by an
-        // earlier seat's committed actions in this same cycle.
-        census.lost_seats += plans.len() as u64;
-
-        // A cycle that leaves the cursor exactly where it found it would
-        // repeat forever. Nothing in the two phases above should be able to
-        // do that; if one ever does, say so and stop rather than spin.
-        if g.winner.is_none() && (g.turn, g.current) == opened {
-            census.aborted = true;
+        if !step_cycle(g, ais, jobs, &mut census) {
             return census;
         }
     }
     census
+}
+
+/// Advance one whole simultaneous game turn — prepare, plan, commit — and
+/// account for it in `census`. The caller owns the loop and its stopping
+/// rules (winner, turn cap): the headless runner above spins this to the
+/// end of the game, while the watched spectator server calls it once per
+/// pace tick, serially (`jobs = 1`), so a browser build never grows a
+/// thread pool. Returns false when the cycle could not move the game
+/// forward — an unclosable seat or a stalled cursor, both recorded as
+/// `aborted` — and the caller must stop rather than call again.
+pub fn step_cycle<A: Ai + Send>(
+    g: &mut Game,
+    ais: &mut [A],
+    jobs: usize,
+    census: &mut SimultaneousCensus,
+) -> bool {
+    let opened = (g.turn, g.current);
+    let cycle_turn = g.turn;
+    // One cycle visits each seat once; the slack absorbs a seat that
+    // comes alive mid-cycle. Exceeding it means the cursor is not
+    // behaving like a turn cursor, which the guard below reports.
+    let bound = 2 * g.players.len() + 8;
+
+    // ---- Plan: every seat against the world with nobody having acted.
+    // The rolling world takes each seat's EndTurn with no actions, so a
+    // later seat plans with its own upkeep applied and every rival
+    // frozen. Each seat then plans on a private copy of that world.
+    //
+    // Both phases follow the authoritative turn cursor exactly as
+    // `run_game` does, and deliberately do not filter the seats by
+    // `alive`. A seat can be eliminated by its own upkeep — a loyalty
+    // flip taking its last city inside `begin_turn` — after the cursor
+    // has already moved to it, so the cursor legitimately rests on a
+    // dead seat. Selecting seats by any other rule than "whoever the
+    // cursor names" lets the plans and the cursor disagree, and a cycle
+    // that commits nothing advances nothing.
+    // The prepare is engine-only and serial: every seat's world and RNG
+    // stream exist before any deliberation starts, so the fan-out below
+    // has nothing left to decide about ordering.
+    let mut prepared: Vec<(usize, Game)> = Vec::new();
+    {
+        let mut rolling = g.clone();
+        let mut forwarded = 0u64;
+        let mut steps = 0;
+        while rolling.winner.is_none() && rolling.turn == cycle_turn && steps < bound {
+            steps += 1;
+            let seat = rolling.current;
+            if prepared.iter().any(|(planned, _)| *planned == seat) {
+                break;
+            }
+            let mut world = rolling.clone();
+            world.rng = planning_stream(g.seed, cycle_turn, seat);
+            prepared.push((seat, world));
+            if !close_seat_turn(&mut rolling, seat, &mut forwarded) {
+                break;
+            }
+        }
+    }
+
+    // The deliberation fan-out. Each cell hands exactly one worker
+    // exclusive ownership of one seat's AI and world; results come back
+    // in prepared order regardless of which worker finished when, and
+    // `jobs = 1` is the same code run serially in that order.
+    let seats: Vec<usize> = prepared.iter().map(|(seat, _)| *seat).collect();
+    let cells: Vec<std::sync::Mutex<(Option<&mut A>, Option<Game>)>> = {
+        let mut ai_slots: Vec<Option<&mut A>> = Vec::new();
+        ai_slots.resize_with(seats.len(), || None);
+        for (pid, ai) in ais.iter_mut().enumerate() {
+            if let Some(position) = seats.iter().position(|&seat| seat == pid) {
+                ai_slots[position] = Some(ai);
+            }
+        }
+        ai_slots
+            .into_iter()
+            .zip(prepared.into_iter().map(|(_, world)| Some(world)))
+            .map(|(ai, world)| std::sync::Mutex::new((ai, world)))
+            .collect()
+    };
+    let planned: Vec<Vec<Action>> = crate::parallel::map(cells.len(), jobs, |index| {
+        let mut cell = cells[index].lock().expect("a planning job panicked");
+        let ai = cell.0.take().expect("each planning cell is taken once");
+        let mut world = cell.1.take().expect("each planning world is taken once");
+        let seat = seats[index];
+        let mark = world.log.len();
+        ai.take_turn(&mut world, seat);
+        world
+            .log
+            .since(mark)
+            .take_while(|(pid, _)| *pid == seat)
+            .filter(|(_, action)| !matches!(action, Action::EndTurn))
+            .map(|(_, action)| action.clone())
+            .collect()
+    });
+    drop(cells);
+    let mut plans: BTreeMap<usize, Vec<Action>> = BTreeMap::new();
+    for (seat, actions) in seats.into_iter().zip(planned) {
+        census.planned += actions.len() as u64;
+        plans.insert(seat, actions);
+    }
+
+    // ---- Commit: the plans land on the one authoritative world in
+    // cursor order, through the ordinary rules. A stale order is
+    // dropped; the seat's turn closes through the ordinary EndTurn so
+    // upkeep, the world-turn wrap, and victory checks all run exactly
+    // where a sequential game runs them.
+    let mut steps = 0;
+    while g.winner.is_none() && g.turn == cycle_turn && steps < bound {
+        steps += 1;
+        let seat = g.current;
+        match plans.remove(&seat) {
+            Some(actions) => {
+                for action in &actions {
+                    if g.winner.is_some() {
+                        break;
+                    }
+                    match g.apply(seat, action) {
+                        Ok(()) => census.applied += 1,
+                        Err(_) => census.note_drop(action),
+                    }
+                }
+            }
+            // The cursor reached a seat the planning pass never saw —
+            // one that came alive during this cycle. It takes an empty
+            // turn here and plans normally next turn.
+            None => census.unplanned_seats += 1,
+        }
+        if g.winner.is_none() && g.current == seat {
+            if !close_seat_turn(g, seat, &mut census.forced) {
+                // Closing failed within the bound. Abandon the game
+                // loudly rather than replaying the same turn forever.
+                census.aborted = true;
+                return false;
+            }
+        }
+    }
+    // Plans the cursor never reached: their seats were eliminated by an
+    // earlier seat's committed actions in this same cycle.
+    census.lost_seats += plans.len() as u64;
+
+    // A cycle that leaves the cursor exactly where it found it would
+    // repeat forever. Nothing in the two phases above should be able to
+    // do that; if one ever does, say so and stop rather than spin.
+    if g.winner.is_none() && (g.turn, g.current) == opened {
+        census.aborted = true;
+        return false;
+    }
+    true
 }
 
 #[cfg(test)]

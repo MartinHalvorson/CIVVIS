@@ -2175,11 +2175,15 @@ fn main() {
                         );
                     }
                     // Stepping a simultaneous save one seat at a time would
-                    // silently change its regime mid-game; say so instead.
-                    if game.turn_structure == setup::TurnStructure::Simultaneous {
+                    // silently change its regime mid-game; say so instead. A
+                    // spectated table plays whole planned turns, so only a
+                    // resume that seats a human refuses it.
+                    if game.turn_structure == setup::TurnStructure::Simultaneous
+                        && !args.iter().any(|a| a == "--spectate" || a == "--watch")
+                    {
                         eprintln!(
-                            "{path} is a simultaneous-turns game; the interactive \
-                             server plays sequential games only"
+                            "{path} is a simultaneous-turns game; a played game is \
+                             sequential by construction — resume it with --spectate"
                         );
                         std::process::exit(2);
                     }
@@ -2197,14 +2201,19 @@ fn main() {
                 }
             };
             let play_options = game_options(&args, players, seed);
-            // The interactive server steps one seat at a time and consults
-            // each AI live, which is the sequential regime by construction.
-            // Refuse the alternative rather than quietly playing a different
-            // game than the flag asked for; `simulate` and `soak` play it.
-            if play_options.turn_structure == setup::TurnStructure::Simultaneous {
+            // A played game consults the human seat live, one seat at a
+            // time, which is the sequential regime by construction. A
+            // spectated table has nobody at the keyboard, so it plays the
+            // simultaneous regime as one whole planned turn per pace tick.
+            // Refuse the combination that cannot be honoured rather than
+            // quietly playing a different game than the flag asked for;
+            // `simulate` and `soak` play it headless either way.
+            let spectate = args.iter().any(|a| a == "--spectate" || a == "--watch");
+            if !spectate && play_options.turn_structure == setup::TurnStructure::Simultaneous {
                 eprintln!(
-                    "the interactive server plays sequential games only; \
-                     use `civvis simulate --turn-structure simultaneous`"
+                    "a played game is sequential by construction; simultaneous \
+                     turns need --spectate, or `civvis simulate --turn-structure \
+                     simultaneous`"
                 );
                 std::process::exit(2);
             }
@@ -2231,7 +2240,7 @@ fn main() {
                     max_turns: play_options.max_turns,
                     victory_conditions: victory_conditions(&args),
                     num_city_states: auto_cs(&args, players),
-                    spectate: args.iter().any(|a| a == "--spectate" || a == "--watch"),
+                    spectate,
                     difficulty: play_options.difficulty,
                     speed: play_options.speed,
                     teams: play_options.teams,
