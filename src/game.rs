@@ -15124,6 +15124,15 @@ pub struct Player {
     /// and their chart says so.
     #[serde(default)]
     pub went_around: bool,
+    /// Longitude bands already covered by this civilization's explored ground —
+    /// see [`Game::update_world_lap`]. A running accumulation over `explored`,
+    /// so each tile is classified once as it leaves the fog instead of the
+    /// whole explored set being rescanned on every visibility refresh. Empty
+    /// means not yet accumulated; the next lap check rebuilds it from
+    /// `explored`, which also migrates saves from before the cache existed.
+    /// Cleared once the lap closes, because the answer can never change back.
+    #[serde(default)]
+    pub lap_bands: BTreeSet<u32>,
     /// Per-tile last-known state. Unlike `explored`, this does not update
     /// while a tile is under fog, so improvements, ownership, disasters, and
     /// other changes cannot leak through a player observation.
@@ -15377,6 +15386,7 @@ impl Player {
             turn_visible: BTreeSet::new(),
             turn_units: BTreeMap::new(),
             went_around: false,
+            lap_bands: BTreeSet::new(),
             remembered_tiles: TileMemory::default(),
             remembered_cities: BTreeMap::new(),
             met: BTreeSet::new(),
@@ -23359,6 +23369,15 @@ impl Game {
     /// neither are city-states.
     fn check_religious_victory(&mut self) {
         self.award_religious_unity_envoys();
+        // The sweep below can only ever crown a religious winner, and
+        // `set_winner` refuses that crown whenever the lobby has Religious
+        // Victory switched off — so with the condition disabled the whole
+        // O(majors × rivals × cities) scan is a no-op that was still paid once
+        // per player turn. The envoy award above is an ordinary envoy
+        // mechanic, not a victory check, and keeps running either way.
+        if !self.victory_conditions.religious {
+            return;
+        }
         if self.winner.is_some() {
             return;
         }
@@ -31783,7 +31802,7 @@ impl Game {
         // the turns exploring actually got somewhere rather than on every
         // refresh behind every move.
         if !newly_explored.is_empty() {
-            self.update_world_lap(pid);
+            self.update_world_lap(pid, &newly_explored);
         }
 
         let wonders: BTreeSet<Name> = newly_explored
@@ -31835,28 +31854,63 @@ impl Game {
     /// same ground. That is the moment the world is known to come back on
     /// itself, and it is the moment one lap of exploring arrives at.
     ///
-    /// Reported, never enforced — nothing in the simulation turns on this. It
-    /// decides what a civilization's own map has earned the right to show, and
-    /// reaches the client as `me.went_around` in [`crate::obs`].
-    fn update_world_lap(&mut self, pid: usize) {
+    /// The award is era score (the circumnavigation moment), so the answer has
+    /// to stay exact; only the cost changed. The chart's coverage is a running
+    /// accumulation in [`Player::lap_bands`], so each call classifies only the
+    /// ground that just left the fog — `new_positions` — instead of rescanning
+    /// everything the seat has ever seen. The seat also reads the flag as
+    /// `me.went_around` in [`crate::obs`].
+    fn update_world_lap(&mut self, pid: usize, new_positions: &[Pos]) {
         if self.map.width <= 0 || self.players[pid].went_around {
             return;
         }
-        let globe = self.map.sphere();
-        let bands = if globe.is_some() {
+        let bands = self.lap_band_count();
+        // An empty accumulation is a seat this cache has never counted — a new
+        // game, or a save from before the cache existed. Both are settled the
+        // same way: one classification of the full explored set, after which
+        // only fresh ground is ever looked at again.
+        if self.players[pid].lap_bands.is_empty() {
+            let everything: Vec<Pos> = self.players[pid].explored.iter().copied().collect();
+            self.note_lap_bands(pid, bands, &everything);
+        } else {
+            self.note_lap_bands(pid, bands, new_positions);
+        }
+        if self.players[pid].lap_bands.len() < bands {
+            return;
+        }
+        // The answer can never change back, so the accumulation has done its
+        // job and does not need carrying or serializing any further.
+        self.players[pid].lap_bands.clear();
+        self.players[pid].went_around = true;
+        self.first_historic_moment(
+            pid,
+            "circumnavigation",
+            Some("MOMENT_WORLD_CIRCUMNAVIGATED"),
+            Some("MOMENT_WORLD_CIRCUMNAVIGATED_FIRST_IN_WORLD"),
+        );
+        self.note_important(
+            pid,
+            "World",
+            "have been the whole way around the world: the two ends of the chart are the same ground",
+            None,
+        );
+    }
+
+    /// How many longitude bands a lap of this world has to cover. A globe is
+    /// carved into a fixed number of meridian slices; a cylinder's columns are
+    /// its own bands.
+    fn lap_band_count(&self) -> usize {
+        if self.map.sphere().is_some() {
             GLOBE_LAP_BANDS
         } else {
             self.map.width as usize
-        };
-        // One tile can only account for one longitude, so most of a game is
-        // settled without looking at the ground at all.
-        if self.players[pid].explored.len() < bands {
-            return;
         }
-        let mut seen = vec![false; bands];
-        let mut count = 0usize;
-        for position in &self.players[pid].explored {
-            let band = match globe {
+    }
+
+    /// Fold these tiles into the seat's covered-longitude accumulation.
+    fn note_lap_bands(&mut self, pid: usize, bands: usize, positions: &[Pos]) {
+        for position in positions {
+            let band = match self.map.sphere() {
                 Some(sphere) => {
                     // Near a pole every longitude is a short walk from every
                     // other, so a circuit of the ice says nothing about how
@@ -31873,26 +31927,8 @@ impl Game {
                     .0
                     .rem_euclid(self.map.width) as usize,
             };
-            if !std::mem::replace(&mut seen[band], true) {
-                count += 1;
-            }
+            self.players[pid].lap_bands.insert(band as u32);
         }
-        if count < bands {
-            return;
-        }
-        self.players[pid].went_around = true;
-        self.first_historic_moment(
-            pid,
-            "circumnavigation",
-            Some("MOMENT_WORLD_CIRCUMNAVIGATED"),
-            Some("MOMENT_WORLD_CIRCUMNAVIGATED_FIRST_IN_WORLD"),
-        );
-        self.note_important(
-            pid,
-            "World",
-            "have been the whole way around the world: the two ends of the chart are the same ground",
-            None,
-        );
     }
 
     fn refresh_all_visibility(&mut self) {
@@ -32052,9 +32088,13 @@ impl Game {
             });
         // Allies pool what they know, and a ring closed between two of them is
         // still a closed ring: each side has sailed its half and the charts
-        // agree where they meet.
+        // agree where they meet. Shared memory is the one path that grows
+        // `explored` without a visibility refresh, so the pooled ground is
+        // handed to the lap accumulation here; re-counting a member's own
+        // tiles is harmless because the accumulation is a set.
+        let pooled: Vec<Pos> = explored.iter().copied().collect();
         for member in members {
-            self.update_world_lap(*member);
+            self.update_world_lap(*member, &pooled);
         }
     }
 
@@ -63724,6 +63764,41 @@ mod victory_conditions {
         assert_eq!(g.winner, Some(0));
     }
 
+    /// A lobby with Religious Victory off can never crown a conversion, so
+    /// the per-turn conversion sweep is skipped outright. The gate sits
+    /// exactly where `set_winner`'s own refusal already drew the line: the
+    /// same fully converted world crowns nobody with the checkbox off and
+    /// the founder with it on.
+    #[test]
+    fn a_disabled_religious_victory_skips_the_sweep_and_crowns_nobody() {
+        let mut g = game_with_capitals(2, 403, 300);
+        let extra_pos = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| g.city_at(*pos).is_none())
+            .unwrap();
+        let extra = g.found_city_for(1, extra_pos, None);
+        let religion = "Test Religion".to_string();
+        g.players[0].religion = Some(religion.clone());
+        for city in [g.player_city_ids(1)[0], extra] {
+            g.cities
+                .get_mut(&city)
+                .unwrap()
+                .pressure
+                .insert(religion.clone(), 100.0);
+        }
+        g.victory_conditions.religious = false;
+        g.check_religious_victory();
+        assert_eq!(g.winner, None, "a switched-off victory path stays off");
+
+        g.victory_conditions.religious = true;
+        g.check_religious_victory();
+        assert_eq!(g.winner, Some(0));
+        assert_eq!(g.victory_type.as_deref(), Some("religious"));
+    }
+
     #[test]
     fn the_last_civilization_standing_does_not_convert_itself_to_victory() {
         // An empty opponent list satisfies "every other civilization"
@@ -69300,22 +69375,27 @@ mod world_lap_tests {
         let width = game.map.width;
         game.players[0].explored.clear();
         game.players[0].went_around = false;
+        // Setup vision already primed the accumulation; the fixture rebuilds
+        // its own explored set from nothing, so the accumulation starts over.
+        game.players[0].lap_bands.clear();
 
         for column in 0..width - 1 {
             game.players[0]
                 .explored
                 .insert(crate::hex::offset_to_axial(column, 8));
         }
-        game.update_world_lap(0);
+        // An empty accumulation is rebuilt from the whole explored set, which
+        // is also how a save from before the cache existed comes up to date.
+        game.update_world_lap(0, &[]);
         assert!(
             !game.players[0].went_around,
             "one unseen longitude is a way the world might still continue",
         );
 
-        game.players[0]
-            .explored
-            .insert(crate::hex::offset_to_axial(width - 1, 8));
-        game.update_world_lap(0);
+        let last = crate::hex::offset_to_axial(width - 1, 8);
+        game.players[0].explored.insert(last);
+        // A primed accumulation looks only at the ground that just arrived.
+        game.update_world_lap(0, &[last]);
         assert!(game.players[0].went_around, "that was a lap");
         assert!(
             game.events
@@ -69327,7 +69407,7 @@ mod world_lap_tests {
         // Knowing the shape of your world is not something you can un-know:
         // ground can be lost, and this cannot.
         game.players[0].explored.clear();
-        game.update_world_lap(0);
+        game.update_world_lap(0, &[]);
         assert!(game.players[0].went_around);
     }
 
@@ -69362,21 +69442,26 @@ mod world_lap_tests {
 
         game.players[0].explored.clear();
         game.players[0].went_around = false;
-        for (pos, _) in &polar {
+        game.players[0].lap_bands.clear();
+        let polar_positions: Vec<Pos> = polar.iter().map(|(pos, _)| *pos).collect();
+        for pos in &polar_positions {
             game.players[0].explored.insert(*pos);
         }
-        game.update_world_lap(0);
+        game.update_world_lap(0, &polar_positions);
         assert!(
             !game.players[0].went_around,
             "walking round the ice is not sailing round the world",
         );
 
-        for (pos, latitude, _) in &cells {
-            if latitude.abs() < 20f64.to_radians() {
-                game.players[0].explored.insert(*pos);
-            }
+        let equator: Vec<Pos> = cells
+            .iter()
+            .filter(|(_, latitude, _)| latitude.abs() < 20f64.to_radians())
+            .map(|(pos, _, _)| *pos)
+            .collect();
+        for pos in &equator {
+            game.players[0].explored.insert(*pos);
         }
-        game.update_world_lap(0);
+        game.update_world_lap(0, &equator);
         assert!(
             game.players[0].went_around,
             "a way round at the equator is the real thing",
