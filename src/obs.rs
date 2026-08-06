@@ -2328,6 +2328,18 @@ mod tests {
         assert!(queue.contains("originPos:Array.isArray(origin) ? [...origin] : null"));
         assert!(queue.contains("crew:launchCrew"));
         assert!(queue.contains("expeditionProgress:Math.max(0, Math.min(1,"));
+        // The rocket leaves from the Spaceport that ran the project. Only an
+        // empire with no visible Spaceport falls back to its anchor city.
+        assert!(queue.contains(
+            "const origin = skyLaunchOrigin(prev, next, player.id, flight.project) ||"
+        ));
+        assert!(index.contains("function citySpaceportPos(city)"));
+        assert!(index.contains(
+            "RULES?.districts?.[district]?.replaces !== \"spaceport\""
+        ));
+        assert!(index.contains(
+            "owned(prev).find(city => (city.queue || [])[0]?.project === project)"
+        ));
 
         let lifetime = index
             .split_once("function activeSkyLaunches(")
