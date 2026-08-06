@@ -16331,6 +16331,16 @@ pub struct Game {
     /// memory turns it off for a faster clone-and-step.
     #[serde(skip, default = "yes")]
     track_fog_memory: bool,
+    /// Whether the narrated war ledger is re-synced after every successful
+    /// action, so a spectator's war infobox stays live inside a turn. The
+    /// ledger feeds observations and post-game reports, never a rule or a
+    /// built-in agent, and every declaration, peace, and turn boundary still
+    /// syncs it unconditionally — switching this off only trades mid-turn
+    /// freshness for skipping an at_war clone, an uncached suzerain poll of
+    /// every minor, and a military_power walk per participant, once per
+    /// action. On by default; headless rollouts turn it off.
+    #[serde(skip, default = "yes")]
+    track_war_ledger: bool,
     /// AI turns apply many actions synchronously, with no observer able to
     /// read the half-finished position. Coalesce their full-empire visibility
     /// refreshes and publish the same final observation once at the boundary.
@@ -16984,6 +16994,7 @@ impl From<GameSer> for Game {
             query_memo: QueryCache::default(),
             remembered_under: Vec::new(),
             track_fog_memory: true,
+            track_war_ledger: true,
             visibility_batch: VisibilityBatch::default(),
             rng: s.rng,
             seed: s.seed,
@@ -17488,6 +17499,7 @@ impl Game {
             query_memo: QueryCache::default(),
             remembered_under: Vec::new(),
             track_fog_memory: true,
+            track_war_ledger: true,
             visibility_batch: VisibilityBatch::default(),
             rng,
             seed,
@@ -31457,6 +31469,16 @@ impl Game {
     /// cities. Outcomes are unchanged either way; only observations are.
     pub fn set_fog_memory(&mut self, track: bool) {
         self.track_fog_memory = track;
+    }
+
+    /// Stop (or resume) re-syncing the narrated war ledger after every
+    /// action. Declarations, peaces, and turn boundaries still sync it
+    /// unconditionally, so the ledger every observer and report reads is
+    /// identical at every turn boundary; only its mid-turn freshness — a
+    /// spectator-infobox nicety — is given up. Outcomes are unchanged either
+    /// way: nothing in the rules or the built-in agents reads the ledger.
+    pub fn set_war_ledger(&mut self, track: bool) {
+        self.track_war_ledger = track;
     }
 
     /// Run a synchronous action sequence while coalescing full visibility
