@@ -43,11 +43,21 @@ const STRIKE_OPENING_SCALE: f64 = 0.6;
 /// out of position without the unit fleeing contact altogether.
 const BLIND_RANGED_TILE: f64 = 12.0;
 /// Most the wartime army target may be multiplied by when the enemy outweighs
-/// us, used by [`AdvancedAi::wartime_army_target`]. Two doublings would be an
+/// us, used by [`AdvancedAi::enemy_weighted_army_target`]. Two doublings would be an
 /// empire of nothing but soldiers; 2.0 asks a six-city empire at war to want
 /// 24 land units rather than 12 when it is being outweighed two to one, and
 /// stops there however far ahead the rival runs.
 const WARTIME_ARMY_CEILING: f64 = 2.0;
+/// Most the PEACETIME army target may be multiplied by when the strongest met
+/// major outweighs us, used by [`AdvancedAi::enemy_weighted_army_target`].
+/// Deterrence wants a standing army, not a war footing: run
+/// `civvis-20260803T220954Z` was declared on at 894 against 481 and lost six
+/// of seven cities at loyalty 100, so the peacetime target must move before
+/// the declaration — but it fires in nearly every game (someone met is almost
+/// always stronger), so its ceiling is deliberately far below
+/// [`WARTIME_ARMY_CEILING`]'s doubling. 1.5 asks a six-city empire at peace to
+/// hold 9 land units rather than 6 while it is outweighed, and stops there.
+const PEACETIME_DETERRENCE_CEILING: f64 = 1.5;
 /// Points of standing wall that justify one more siege train, used by
 /// [`AdvancedAi::siege_units_wanted`]. A Civ VI wall tier is 100 points and a
 /// fully walled Renaissance city carries 400, so this asks for two trains at
@@ -880,9 +890,18 @@ pub struct AdvancedAi {
     /// keeping a headcount that only ever looks at our own city count.
     ///
     /// **Off by default, live-bridge only**, on the same footing as
-    /// `bounded_recovery`. See [`AdvancedAi::wartime_army_target`] for the
+    /// `bounded_recovery`. See [`AdvancedAi::enemy_weighted_army_target`] for the
     /// 94-of-188-turns measurement behind it.
     pub army_target_weighs_the_enemy: bool,
+    /// Let the strongest MET major weigh on the army target in peacetime, so
+    /// deterrence exists before a declaration instead of the target waking up
+    /// only once the war has started.
+    ///
+    /// **Off by default, live-bridge only**, on the same footing as
+    /// `bounded_recovery`. See [`AdvancedAi::enemy_weighted_army_target`] for
+    /// the collapse this answers: both army targets were blind until the war
+    /// started, and the leader declared at nearly two to one.
+    pub peacetime_deterrence: bool,
     /// Skip policy cards that multiply a suzerainty count of zero. Off here so
     /// every configured, legacy and Elo agent keeps the deck order it has always
     /// had; `strategic_policies` reorders nothing on this flag.
@@ -2042,6 +2061,7 @@ impl AdvancedAi {
             strike_opening: false,
             ranged_needs_line_of_sight: false,
             army_target_weighs_the_enemy: false,
+            peacetime_deterrence: false,
             suzerain_cards_need_a_suzerainty: false,
             siege_tracks_the_wall: false,
             blind_objective_strength: false,
@@ -2199,6 +2219,13 @@ impl AdvancedAi {
         self.army_target_weighs_the_enemy = true;
     }
 
+    /// Let the strongest met major weigh on the army target while at peace,
+    /// so deterrence exists before a declaration. Native tournament games
+    /// leave this disabled so their recorded ladders stay comparable.
+    pub fn enable_peacetime_deterrence(&mut self) {
+        self.peacetime_deterrence = true;
+    }
+
     pub fn enable_suzerain_cards_need_a_suzerainty(&mut self) {
         self.suzerain_cards_need_a_suzerainty = true;
     }
@@ -2327,6 +2354,16 @@ impl AdvancedAi {
         // the rival fielded 1050 military against our 658 while the target still
         // read satisfied at 11 against a wanted 10.
         self.enable_army_target_weighs_the_enemy();
+        // ⚠ And the wartime repair above still wakes up only once the war has
+        // started. Measured on run `civvis-20260803T220954Z` (Rome, 250 turns):
+        // seven cities founded by t123, Mali declared at t157 holding **894
+        // military against our 481**, and six of the seven were taken at
+        // loyalty 100 — sieges, not revolts — including Rome itself at t225.
+        // We issued zero war orders and sixteen refused peace requests. A
+        // target that asks "who could kill me" only after the declaration is
+        // asking too late; this floor asks it of the strongest MET major in
+        // peacetime, under its own far smaller ceiling.
+        self.enable_peacetime_deterrence();
         // Raj, Wisselbanken, Collective Activism and the International Space
         // Agency all scale off SUZERAIN city-states and pay nothing at zero.
         // Live run `civvis-20260803T220954Z` held Raj AND Wisselbanken slotted
@@ -2577,6 +2614,10 @@ impl AdvancedAi {
 
     pub fn disable_army_target_weighs_the_enemy(&mut self) {
         self.army_target_weighs_the_enemy = false;
+    }
+
+    pub fn disable_peacetime_deterrence(&mut self) {
+        self.peacetime_deterrence = false;
     }
 
     pub fn disable_suzerain_cards_need_a_suzerainty(&mut self) {
@@ -12038,27 +12079,58 @@ impl AdvancedAi {
     /// target arbitrarily high and the empire builds nothing but units, which
     /// is the failure `civvis-civ6-all-army-no-economy` records. #962's
     /// affordability gate bounds the *purchase* side; this bounds the *want*.
-    fn wartime_army_target(&self, g: &Game, pid: usize, shipped: usize) -> usize {
-        if !self.army_target_weighs_the_enemy {
-            return shipped;
-        }
-        let strongest = g
-            .players
-            .iter()
-            .filter(|player| {
-                player.id != pid
-                    && player.alive
-                    && !player.is_barbarian
-                    && !player.is_minor
-                    && g.is_at_war(pid, player.id)
-            })
-            .map(|player| g.military_power(player.id))
-            .fold(0.0_f64, f64::max);
-        if strongest <= 0.0 {
-            return shipped;
-        }
+    ///
+    /// The wartime term alone left the target blind until the declaration.
+    /// Run `civvis-20260803T220954Z` founded seven cities, Mali declared at
+    /// t157 holding 894 military against our 481, and six cities fell at
+    /// loyalty 100 — the army target read satisfied right up to the war it
+    /// could no longer win. `peacetime_deterrence` adds the missing regime:
+    /// the strongest MET major weighs on the target in peace, under
+    /// [`PEACETIME_DETERRENCE_CEILING`], far below the wartime doubling,
+    /// because deterrence wants a standing army rather than a war footing.
+    /// Met-gated so fog stays honest: a rival this seat has never met cannot
+    /// size its army. The two terms combine by `max`, never by product, so
+    /// the overall bound stays [`WARTIME_ARMY_CEILING`].
+    fn enemy_weighted_army_target(&self, g: &Game, pid: usize, shipped: usize) -> usize {
         let ours = g.military_power(pid).max(1.0);
-        let ratio = (strongest / ours).clamp(1.0, WARTIME_ARMY_CEILING);
+        let strongest_ratio = |at_war_only: bool, ceiling: f64| -> f64 {
+            let strongest = g
+                .players
+                .iter()
+                .filter(|player| {
+                    player.id != pid
+                        && player.alive
+                        && !player.is_barbarian
+                        && !player.is_minor
+                        && if at_war_only {
+                            g.is_at_war(pid, player.id)
+                        } else {
+                            // ⚠ `has_met` answers `true` for a TEAMMATE, so
+                            // without this an ally's army would size ours.
+                            // The wartime arm excludes them for free, because
+                            // a team is never at war with itself.
+                            g.has_met(pid, player.id) && !g.same_team(pid, player.id)
+                        }
+                })
+                .map(|player| g.military_power(player.id))
+                .fold(0.0_f64, f64::max);
+            if strongest <= 0.0 {
+                1.0
+            } else {
+                (strongest / ours).clamp(1.0, ceiling)
+            }
+        };
+        let wartime = if self.army_target_weighs_the_enemy {
+            strongest_ratio(true, WARTIME_ARMY_CEILING)
+        } else {
+            1.0
+        };
+        let deterrence = if self.peacetime_deterrence {
+            strongest_ratio(false, PEACETIME_DETERRENCE_CEILING)
+        } else {
+            1.0
+        };
+        let ratio = wartime.max(deterrence);
         ((shipped as f64) * ratio).ceil() as usize
     }
 
@@ -12756,7 +12828,7 @@ impl AdvancedAi {
             GrandStrategy::Recovery => 2 * city_count,
             _ => city_count,
         };
-        let desired_military = self.wartime_army_target(g, pid, desired_military);
+        let desired_military = self.enemy_weighted_army_target(g, pid, desired_military);
         // A rush is fought out of one or two cities, so `2 * city_count` asks
         // for two units when the siege needs four and the census measures it
         // fielding 2.5 melee at turn 50 with 1.1 of them anywhere near the
@@ -26853,7 +26925,7 @@ mod tests {
         }
         game.spawn_test_unit("warrior", 1, muster);
         assert_eq!(
-            ai.wartime_army_target(&game, 0, 12),
+            ai.enemy_weighted_army_target(&game, 0, 12),
             12,
             "while we are ahead the shipped target is exactly what it was"
         );
@@ -26863,7 +26935,7 @@ mod tests {
         for _ in 0..12 {
             game.spawn_test_unit("warrior", 1, muster);
         }
-        let raised = ai.wartime_army_target(&game, 0, 12);
+        let raised = ai.enemy_weighted_army_target(&game, 0, 12);
         assert!(
             raised > 12,
             "an army twice ours must want more than the peacetime twelve: {raised}"
@@ -26876,7 +26948,7 @@ mod tests {
             game.spawn_test_unit("warrior", 1, muster);
         }
         assert_eq!(
-            ai.wartime_army_target(&game, 0, 12),
+            ai.enemy_weighted_army_target(&game, 0, 12),
             24,
             "a runaway rival is still capped at WARTIME_ARMY_CEILING"
         );
@@ -26885,7 +26957,7 @@ mod tests {
         game.at_war.remove(&(0, 1));
         game.at_war.remove(&(1, 0));
         assert_eq!(
-            ai.wartime_army_target(&game, 0, 12),
+            ai.enemy_weighted_army_target(&game, 0, 12),
             12,
             "a rival we are not fighting does not size our army"
         );
@@ -26893,7 +26965,118 @@ mod tests {
         // And the shipped agent never moves at all, war or not.
         game.at_war.insert((0, 1));
         assert!(!shipped.army_target_weighs_the_enemy);
-        assert_eq!(shipped.wartime_army_target(&game, 0, 12), 12);
+        assert_eq!(shipped.enemy_weighted_army_target(&game, 0, 12), 12);
+    }
+
+    /// The defect this exists for: both army targets were blind until the war
+    /// started. Run `civvis-20260803T220954Z` founded seven cities, Mali
+    /// declared at t157 holding 894 military against our 481, and six of the
+    /// seven fell at loyalty 100 — sieges, not revolts, including the capital.
+    /// A target that asks "who could kill me" only after the declaration asks
+    /// too late; deterrence has to exist while the peace still holds.
+    #[test]
+    fn the_army_target_deters_the_strongest_met_major_in_peacetime() {
+        let (mut game, _capital, home) = empire_with_a_capital(71_106);
+        let mut sites: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.wdist(**position, home) >= 15
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .collect();
+        sites.sort_unstable();
+        let muster = sites[0];
+
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_peacetime_deterrence();
+
+        // Everyone is at peace, and the rival has been met.
+        game.at_war.remove(&(0, 1));
+        game.at_war.remove(&(1, 0));
+        game.players[0].met.insert(1);
+        game.players[1].met.insert(0);
+
+        // While we outweigh the met rival the shipped target stands.
+        for step in 0..6 {
+            game.spawn_test_unit("warrior", 0, anchor_at(&game, home, 1 + step));
+        }
+        game.spawn_test_unit("warrior", 1, muster);
+        assert_eq!(
+            ai.enemy_weighted_army_target(&game, 0, 12),
+            12,
+            "a weaker met major does not size our peacetime army"
+        );
+
+        // They pass us in peace. The target rises — but under the deterrence
+        // ceiling, which sits far below the wartime doubling.
+        for _ in 0..12 {
+            game.spawn_test_unit("warrior", 1, muster);
+        }
+        let raised = ai.enemy_weighted_army_target(&game, 0, 12);
+        assert!(
+            raised > 12,
+            "a met major outweighing us must raise the peacetime target: {raised}"
+        );
+        assert!(
+            raised <= 18,
+            "deterrence wants a standing army, not a war footing: {raised}"
+        );
+
+        // However far ahead they run, peace never asks for a war footing.
+        for _ in 0..60 {
+            game.spawn_test_unit("warrior", 1, muster);
+        }
+        assert_eq!(
+            ai.enemy_weighted_army_target(&game, 0, 12),
+            18,
+            "the peacetime ceiling holds however strong the met major grows"
+        );
+
+        // A major this seat has never met cannot size its army — the floor
+        // reads no information fog has not released.
+        game.players[0].met.remove(&1);
+        assert_eq!(
+            ai.enemy_weighted_army_target(&game, 0, 12),
+            12,
+            "an unmet major must not reach the peacetime target through fog"
+        );
+
+        // ⚠ `has_met` answers `true` for a TEAMMATE, so an ally's army would
+        // otherwise deter us. `ai_eval` seats a free-for-all (`teams` empty,
+        // every `player.team` None), so this arm is unreachable there and the
+        // guard is inert in every evaluated game — but it is reachable in a
+        // team lobby, which is why it is pinned rather than argued.
+        game.players[0].met.insert(1);
+        game.players[0].team = Some(1);
+        game.players[1].team = Some(1);
+        assert_eq!(
+            ai.enemy_weighted_army_target(&game, 0, 12),
+            12,
+            "an ally on our own team must not size our army"
+        );
+        game.players[0].team = None;
+        game.players[1].team = None;
+
+        // War with the same rival escalates past the deterrence ceiling: the
+        // wartime term takes over under its larger ceiling.
+        game.players[0].met.insert(1);
+        game.at_war.insert((0, 1));
+        ai.enable_army_target_weighs_the_enemy();
+        assert_eq!(
+            ai.enemy_weighted_army_target(&game, 0, 12),
+            24,
+            "once the war is real the wartime ceiling governs, not the floor"
+        );
+
+        // The shipped agent never moves at all.
+        let shipped = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(!shipped.peacetime_deterrence);
+        game.at_war.remove(&(0, 1));
+        assert_eq!(shipped.enemy_weighted_army_target(&game, 0, 12), 12);
     }
 
     /// The defect this exists for: `do_promote` heals up to 50 and costs the

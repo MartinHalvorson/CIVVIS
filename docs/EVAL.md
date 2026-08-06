@@ -7179,3 +7179,138 @@ against `advanced_v1`, from a 29/40 pair score (72.5%, 95% Wilson 57.2–83.9%).
 `basic-20260801-diplomacy` is a new identity because the same diplomacy path
 changes Basic behavior. This records a new controller definition, not an
 effect-size claim for the mechanic.
+
+## 2026-08-06 — peacetime deterrence floor: a well-resolved null, shipped for the live regime
+
+Preregistered before the run (`~/civvis-peacetime-deterrence-preregistration.md`,
+PR #1297): arms, profile, seeds, outcomes and the decision rule were all fixed
+before the first map.
+
+**Treatment.** `peacetime_deterrence` — the strongest **met** major's military
+power weighs on the army target while at peace, clamped to
+`PEACETIME_DETERRENCE_CEILING` (1.5); wartime keeps its own 2.0 ceiling and the
+two terms combine by `max`, never product. Met-gated so fog stays honest. This
+is the holding half of the wide-empire problem: over 112 completed live runs,
+54% lost at least one founded city and holding everything is worth **1.92× the
+median score** (499 vs 260). The motivating run (`civvis-20260803T220954Z`)
+founded seven cities, then lost six to sieges at loyalty 100 after Mali declared
+at 894-vs-481 military — both army targets were blind until the war began.
+
+**Fires-check (both scales, per the expansion-axis inversion rule).** Deployment
+6p/74×46: 65,586 activations, firing on 980 of ~3,000 seat-turns (33%), median
+ratio 1.50, 20.5% of activations below 1.2 — responsive to the actual power
+gap, not pinned. Clears the preregistered 5% bar; eval scale recorded for the
+inversion table only.
+
+**Discovery eval** — `live` vs `live_without_peacetime_deterrence`, deployment-
+online profile, 120 pairs, seed 520000:
+
+```text
+paired-map score 49.8% (Wilson 41.0–58.6%), Elo −1 (CI −63..+60)
+paired direction 13 / 94 / 13, exact sign p=1.0000
+terminal-score direction 59 / 3 / 58, p=1.0000; resolution: wins on 26/120, terminal score on 117/120
+seat means: military 1333 vs 1303, gold 315 vs 405, cities 8.57 vs 8.64, score 756 vs 758
+```
+
+A **well-resolved null**, not an unmeasured one: terminal score resolves on 117
+of 120 maps and comes out dead even. The mechanism does what it claims — a
+~2.3% larger standing army, paid out of gold — at zero score cost. Not
+directional on any preregistered outcome, so the confirmation seed was not
+spent.
+
+**Decision, per the preregistered rule.** A null with the mechanism firing
+ships: the regime the treatment targets — being declared on by a leader at 2:1
+— is scarce headlessly (headless play almost never wins by domination,
+1/1513), and the harm arm the null excludes is the one that mattered.
+`enable_peacetime_deterrence()` stays in `enable_live_bridge`;
+`live_without_peacetime_deterrence` is registered across every registry so the
+flag remains priced. The tournament controller stays frozen. Judge the live
+effect from `code_rev` rows in `~/civvis-civ6-runs/civvis_ladder.jsonl`, not
+from this table.
+
+## 2026-08-06 — the peacetime deterrence floor: fires hard, measures NULL headlessly
+
+`peacetime_deterrence` (#1297). Both army targets were blind until the war
+started: `wartime_army_target` filtered candidates on `is_at_war`, so at peace
+`strongest == 0` and it returned the shipped count unchanged. The Lua ladder's
+`wantArmy` has the same shape — its only responsive lift is `losingWar`, which
+by its own comment "CANNOT SEE PEACETIME HOPELESSNESS".
+
+The treatment lets the strongest **met** major weigh on the target while at
+peace, clamped to `PEACETIME_DETERRENCE_CEILING` (1.5), against the wartime
+2.0. Met-gated so fog stays honest; teammates excluded because `has_met`
+answers `true` for them. The two terms combine by `max`, never by product.
+`wartime_army_target` is renamed `enemy_weighted_army_target` for both regimes.
+
+### Fires-check, both scales
+
+Per the expansion-axis rule that has caught four readings failing to transfer
+between map scales:
+
+| scale | activations | seat-turns firing |
+|---|---|---|
+| eval 4p/24×16 | 1,225 | — |
+| **deployment 6p/74×46** | 65,586 | **980 of ~3000 (33%)** |
+
+Ratio distribution in deployment: median 1.50, mean 1.38, **20.5% below 1.2**,
+55% at the ceiling — responsive to the real power gap, not a constant
+multiplier. Well clear of the 5% criterion, so the eval was worth its compute.
+
+### The eval — `live` vs `live_without_peacetime_deterrence`
+
+120 pairs, seed 520000, deployment-online (6p/74×46/250t), single differing
+axis (`arms differ on: peacetime-deterrence`).
+
+```
+paired-map score       49.8%  (95% Wilson 41.0–58.6), Elo -1 (CI -63..+60)
+paired direction       13 for / 94 neutral / 13 against   sign p=1.0000
+terminal-score         59 for /  3 neutral / 58 against   sign p=1.0000
+direction resolution   wins rest on 26 of 120 maps; TERMINAL SCORE ON 117
+promotion gate         INCONCLUSIVE
+```
+
+⭐ **Read the resolution line before calling this unmeasured.** The wins
+statistic rests on only 26 maps and is weak, but the terminal-score statistic
+resolves on **117 of 120** and lands 59–58. This is a genuine measured null,
+not the 2-of-120 "50.0% means nothing happened" pattern that #562 recorded.
+
+The mechanism fires and its cost is visible in the economy columns:
+
+| | `live` | without | delta |
+|---|---|---|---|
+| military strength | 1333.0 | 1303.3 | **+2.3%** |
+| gold | 314.6 | 404.8 | **−22.3%** |
+| cities | 8.57 | 8.64 | −0.8% |
+| score | 756.2 | 757.8 | −0.2% |
+| science | 301.6 | 305.2 | −1.2% |
+
+So it buys the army it asks for, pays for it in upkeep, and moves neither
+cities held nor score. No disjoint-seed confirmation was run: the
+preregistration required one only for a directional result, and p=1.0000 on
+both statistics is not a direction to confirm.
+
+### ⚠ Why it ships enabled anyway, and what would overturn that
+
+Preregistered before the run: a null with the mechanism firing ships, because
+**headless does not contain the failure this addresses**. The same run says so
+in its own victory table — `live` won 105 seat-games as **99 science, 6
+culture, 0 domination**, and 0/720 seats ever rushed. Conquest does not decide
+these games, so an anti-conquest treatment has nothing to price.
+
+The live regime is not that regime. Recomputed over 112 completed live runs
+(≥200 turns): **61 (54%) lose at least one city**, median score 260 against
+**499** for the 51 that hold — 1.92×, reproducing the earlier n=73 pass (236
+vs 452) to two decimals on a corpus half again as large. 26% of every city the
+fleet founds is lost. Run `civvis-20260803T220954Z` founded seven cities, was
+declared on at t157 at 894 military against 481, and lost six at loyalty 100.
+
+⚠ It is enabled only in `enable_live_bridge` — the deployed Civ 6 decider —
+and touches no tournament, Elo or legacy agent. The headless null is therefore
+a **bound on harm** (score flat, −22% gold) rather than evidence of benefit,
+and the benefit claim remains **unmeasured**, not established.
+
+**The measurement that would settle it**: a live batch comparing conquest
+losses per run with the flag on and off. `live_without_peacetime_deterrence`
+exists for exactly that. ⛔ Do not quote the +2.3% military as a gain — it is
+the treatment's input, not its outcome. If a live batch shows cities lost
+unchanged, drop the `enable_live_bridge` call and keep the arm.
