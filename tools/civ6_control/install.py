@@ -129,7 +129,7 @@ def _write_mod(target: Path, config: dict) -> None:
     # install without reading a whole script.
     # ⚠⚠ THE RUN TAG IN THIS FILE IS THE GAME LOCK'S IDENTITY. `gamelock.foreign_run`
     # reads it and, if the game is up and the tag is not the caller's, reports
-    # "another run holds the game" — which `civ6_climb` counts as a spent ATTEMPT.
+    # "another run holds the game" — which the climb loop counts as a spent ATTEMPT.
     # A throwaway install (a probe, a syntax check) that writes a made-up tag and
     # leaves Civ 6 running therefore locks out every subsequent run: it burned all
     # four attempts twice in a row with RunTag 'probe'. None is treated as "not

@@ -17592,197 +17592,43 @@ function drawNuclearFlash(now) {
 
 // ---------------------------------------------------------------- minimap
 // A planet's corner chart is global, even when the main view is a close-up.
-// Peirce's quincuncial projection is the right instrument for that job: the
-// point facing the viewer sits in the centre of a square, while its antipode
-// is identified at all four corners. The map is therefore a complete world,
-// not a smaller copy of whichever hemisphere happened to be on screen.
+// The chart is drawn in the azimuthal equidistant projection: the point facing
+// the viewer sits at the centre, and every other point lies at its true
+// angular distance from that centre, so the world unrolls in rings and only
+// closes at the antipode. The full disc is not shown. The chart is cropped to
+// the minimap's square, whose half-side is sized so the crop holds
+// AZIMUTHAL_MINI_WORLD_SHARE of the sphere — about 114 of the 180 degrees
+// there are, leaving only the fringe around the antipode off the chart. The
+// corners reach further than the edge midpoints but still short of the
+// antipode, so every pixel of the square is real ground.
 //
-// The projection is Guyou's elliptic-function hemisphere-in-a-square followed
-// by the quincuncial fold used by D3 and PROJ. It is kept here rather than
-// pulled in as a library because the browser is one static HTML file. The
-// inverse is used both for the pixel painter and for minimap clicks.
-// The compact elliptic arithmetic below is translated from d3-geo-projection
-// (Copyright 2013-2021 Mike Bostock), under its ISC license:
-// Permission to use, copy, modify, and/or distribute this software for any
-// purpose with or without fee is hereby granted, provided that the copyright
-// notice and this permission notice appear in all copies.
-// THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-const PEIRCE_PI = Math.PI;
-const PEIRCE_HALF_PI = PEIRCE_PI / 2;
-const PEIRCE_QUARTER_PI = PEIRCE_PI / 4;
-const PEIRCE_SQRT1_2 = Math.SQRT1_2;
-const PEIRCE_SQRT2 = Math.SQRT2;
-const PEIRCE_EPSILON = 1e-7;
-function peirceSqrt(value) { return value > 0 ? Math.sqrt(value) : 0; }
-function peirceSign(value) { return value > 0 ? 1 : value < 0 ? -1 : 0; }
-function peirceEllipticF(phi, m) {
-  if (!m) return phi;
-  if (m === 1) return Math.log(Math.tan(phi / 2 + PEIRCE_QUARTER_PI));
-  let a = 1, b = peirceSqrt(1 - m), c = peirceSqrt(m), iterations = 0;
-  while (Math.abs(c) > PEIRCE_EPSILON && iterations < 12) {
-    if (phi % PEIRCE_PI) {
-      let dPhi = Math.atan(b * Math.tan(phi) / a);
-      if (dPhi < 0) dPhi += PEIRCE_PI;
-      phi += dPhi + Math.trunc(phi / PEIRCE_PI) * PEIRCE_PI;
-    } else phi += phi;
-    c = (a + b) / 2;
-    b = peirceSqrt(a * b);
-    c = (a = c) - b;
-    c /= 2;
-    iterations++;
+// The forward and inverse maps below are shared by the pixel painter, the
+// overlay painters, and minimap clicks, so all three agree about the crop.
+const AZIMUTHAL_MINI_WORLD_SHARE = 0.8;
+const AZIMUTHAL_MINI_SQUARE_HALF = (() => {
+  // The share of the sphere inside the square crop, by eightfold symmetry:
+  // toward each bearing the crop reaches half / cos(bearing) radians, never
+  // past the antipode, and the ground within that reach is the spherical cap
+  // (1 - cos reach) / 2.
+  const cropShare = half => {
+    const samples = 96;
+    let sum = 0;
+    for (let i = 0; i < samples; i++) {
+      const bearing = (i + .5) / samples * (Math.PI / 4);
+      const reach = Math.min(half / Math.cos(bearing), Math.PI);
+      sum += (1 - Math.cos(reach)) / 2;
+    }
+    return sum / samples;
+  };
+  let low = 0, high = Math.PI;
+  for (let i = 0; i < 50; i++) {
+    const mid = (low + high) / 2;
+    if (cropShare(mid) < AZIMUTHAL_MINI_WORLD_SHARE) low = mid; else high = mid;
   }
-  return phi / (Math.pow(2, iterations) * a);
-}
-function peirceEllipticJ(u, m) {
-  if (m < PEIRCE_EPSILON) {
-    const sn = Math.sin(u), cn = Math.cos(u);
-    const correction = m * (u - sn * cn) / 4;
-    return [sn - correction * cn, cn + correction * sn,
-            1 - m * sn * sn / 2, u - correction];
-  }
-  if (m >= 1 - PEIRCE_EPSILON) {
-    const correction = (1 - m) / 4;
-    const cosh = Math.cosh(u), tanh = Math.tanh(u), phi = 1 / cosh;
-    const doubled = cosh * Math.sinh(u);
-    return [tanh + correction * (doubled - u) / (cosh * cosh),
-            phi - correction * tanh * phi * (doubled - u),
-            phi + correction * tanh * phi * (doubled + u),
-            2 * Math.atan(Math.exp(u)) - PEIRCE_HALF_PI +
-              correction * (doubled - u) / cosh];
-  }
-  const a = new Array(9).fill(0), c = new Array(9).fill(0);
-  a[0] = 1; c[0] = peirceSqrt(m);
-  let b = peirceSqrt(1 - m), twon = 1, i = 0;
-  while (Math.abs(c[i] / a[i]) > PEIRCE_EPSILON && i < 8) {
-    const prior = a[i];
-    i++;
-    c[i] = (prior - b) / 2;
-    a[i] = (prior + b) / 2;
-    b = peirceSqrt(prior * b);
-    twon *= 2;
-  }
-  let phi = twon * a[i] * u, t = 0, previous = phi;
-  do {
-    previous = phi;
-    t = c[i] * Math.sin(previous) / a[i];
-    phi = (Math.asin(Math.max(-1, Math.min(1, t))) + previous) / 2;
-  } while (--i);
-  const cn = Math.cos(phi);
-  return [Math.sin(phi), cn, cn / Math.cos(phi - previous), phi];
-}
-function peirceEllipticFi(phi, psi, m) {
-  const r = Math.abs(phi), imaginary = Math.abs(psi);
-  const sinhPsi = Math.sinh(imaginary);
-  if (r) {
-    const cscPhi = 1 / Math.sin(r);
-    const cotPhi2 = 1 / (Math.tan(r) * Math.tan(r));
-    const b = -(cotPhi2 + m * sinhPsi * sinhPsi * cscPhi * cscPhi - 1 + m);
-    const c = (m - 1) * cotPhi2;
-    const cotLambda2 = (-b + peirceSqrt(b * b - 4 * c)) / 2;
-    return [
-      peirceEllipticF(Math.atan(1 / peirceSqrt(cotLambda2)), m) * peirceSign(phi),
-      peirceEllipticF(
-        Math.atan(peirceSqrt((cotLambda2 / cotPhi2 - 1) / m)), 1 - m
-      ) * peirceSign(psi),
-    ];
-  }
-  return [0, peirceEllipticF(Math.atan(sinhPsi), 1 - m) * peirceSign(psi)];
-}
-function peirceEllipticJi(u, v, m) {
-  let a, b, c;
-  if (u === 0) {
-    b = peirceEllipticJ(v, 1 - m);
-    return [[0, b[0] / b[1]], [1 / b[1], 0], [b[2] / b[1], 0]];
-  }
-  a = peirceEllipticJ(u, m);
-  if (v === 0) return [[a[0], 0], [a[1], 0], [a[2], 0]];
-  b = peirceEllipticJ(v, 1 - m);
-  c = b[1] * b[1] + m * a[0] * a[0] * b[0] * b[0];
-  return [
-    [a[0] * b[2] / c, a[1] * a[2] * b[0] * b[1] / c],
-    [a[1] * b[1] / c, -a[0] * a[2] * b[0] * b[2] / c],
-    [a[2] * b[1] * b[2] / c, -m * a[0] * a[1] * b[0] / c],
-  ];
-}
-function peirceComplexAtan(x, y) {
-  const x2 = x * x, y1 = y + 1, t = 1 - x2 - y * y;
-  return [
-    .5 * ((x >= 0 ? PEIRCE_HALF_PI : -PEIRCE_HALF_PI) - Math.atan2(t, 2 * x)),
-    -.25 * Math.log(Math.max(1e-300, t * t + 4 * x2)) +
-      .5 * Math.log(Math.max(1e-300, y1 * y1 + x2)),
-  ];
-}
-function peirceComplexDivide(a, b) {
-  const denominator = b[0] * b[0] + b[1] * b[1];
-  if (denominator < 1e-300) return [0, 0];
-  return [
-    (a[0] * b[0] + a[1] * b[1]) / denominator,
-    (a[1] * b[0] - a[0] * b[1]) / denominator,
-  ];
-}
-const PEIRCE_K_ = (PEIRCE_SQRT2 - 1) / (PEIRCE_SQRT2 + 1);
-const PEIRCE_K = peirceSqrt(1 - PEIRCE_K_ * PEIRCE_K_);
-const PEIRCE_M = PEIRCE_K * PEIRCE_K;
-const PEIRCE_KCOMPLETE = peirceEllipticF(PEIRCE_HALF_PI, PEIRCE_M);
-function peirceGuyouRaw(lambda, phi) {
-  const f = -1;
-  const psi = Math.log(Math.tan(PEIRCE_QUARTER_PI + Math.abs(phi) / 2));
-  const radius = Math.exp(f * psi) / peirceSqrt(PEIRCE_K_);
-  const at = peirceComplexAtan(radius * Math.cos(f * lambda),
-                               radius * Math.sin(f * lambda));
-  const t = peirceEllipticFi(at[0], at[1], PEIRCE_M);
-  return [-t[1], (phi >= 0 ? 1 : -1) * (.5 * PEIRCE_KCOMPLETE - t[0])];
-}
-const PEIRCE_GUYOU_DX = peirceGuyouRaw(PEIRCE_HALF_PI, 0)[0] -
-  peirceGuyouRaw(-PEIRCE_HALF_PI, 0)[0];
-const PEIRCE_SQUARE_HALF = PEIRCE_GUYOU_DX * PEIRCE_SQRT1_2;
-function peirceQuincuncialRaw(lambda, phi) {
-  const inner = Math.abs(lambda) < PEIRCE_HALF_PI;
-  const guyou = peirceGuyouRaw(
-    inner ? lambda : lambda > 0 ? lambda - PEIRCE_PI : lambda + PEIRCE_PI,
-    phi
-  );
-  const x = (guyou[0] - guyou[1]) * PEIRCE_SQRT1_2;
-  const y = (guyou[0] + guyou[1]) * PEIRCE_SQRT1_2;
-  if (inner) return [x, y];
-  const s = (x > 0) !== (y > 0) ? -1 : 1;
-  return [s * x - peirceSign(y) * PEIRCE_SQUARE_HALF,
-          s * y - peirceSign(x) * PEIRCE_SQUARE_HALF];
-}
-function peirceQuincuncialInvert(x0, y0) {
-  // At the four singular corners every approach is the same antipodal point.
-  // The elliptic inverse is intentionally not asked to divide by its zero.
-  if (Math.abs(Math.abs(x0) - PEIRCE_SQUARE_HALF) < 1e-6 &&
-      Math.abs(Math.abs(y0) - PEIRCE_SQUARE_HALF) < 1e-6)
-    return [PEIRCE_PI, 0];
-  let x = (x0 + y0) * PEIRCE_SQRT1_2;
-  let y = (y0 - x0) * PEIRCE_SQRT1_2;
-  const inner = Math.abs(x) < .5 * PEIRCE_GUYOU_DX &&
-                Math.abs(y) < .5 * PEIRCE_GUYOU_DX;
-  if (!inner) {
-    const s = (x > 0) !== (y > 0) ? -1 : 1;
-    const x1 = -s * x0 + (y > 0 ? 1 : -1) * PEIRCE_SQUARE_HALF;
-    const y1 = -s * y0 + (x > 0 ? 1 : -1) * PEIRCE_SQUARE_HALF;
-    x = (-x1 - y1) * PEIRCE_SQRT1_2;
-    y = (x1 - y1) * PEIRCE_SQRT1_2;
-  }
-  const j = peirceEllipticJi(.5 * PEIRCE_KCOMPLETE - y, -x, PEIRCE_M);
-  const tn = peirceComplexDivide(j[0], j[1]);
-  const radius2 = PEIRCE_K_ * (tn[0] * tn[0] + tn[1] * tn[1]);
-  const phi = 2 * Math.atan(Math.exp(.5 / -1 *
-    Math.log(Math.max(1e-300, radius2)))) - PEIRCE_HALF_PI;
-  let lambda = Math.atan2(tn[1], tn[0]) / -1;
-  if (!inner) lambda += x > 0 ? PEIRCE_PI : -PEIRCE_PI;
-  return [lambda, phi];
-}
+  return (low + high) / 2; // ~1.994 radians for a 0.8 share
+})();
 
-function peirceMiniProjection(width, height, camera = planetCamera()) {
+function azimuthalMiniProjection(width, height, camera = planetCamera()) {
   const side = Math.max(1, Math.min(width, height));
   return {
     width, height, side, half:side / 2,
@@ -17790,78 +17636,55 @@ function peirceMiniProjection(width, height, camera = planetCamera()) {
     basis:planetViewBasis(camera),
   };
 }
-function peirceLocalSphereAt(x0, y0) {
-  const [lambda, phi] = peirceQuincuncialInvert(x0, y0);
-  const cosPhi = Math.cos(phi);
-  return [cosPhi * Math.cos(lambda), cosPhi * Math.sin(lambda), Math.sin(phi)];
+// A chart point in radians back to a unit vector in the local frame: out
+// toward the viewer, then right, then up.
+function azimuthalMiniLocalSphereAt(x0, y0) {
+  const reach = Math.hypot(x0, y0);
+  if (reach > Math.PI) return null;
+  const ring = reach > 1e-9 ? Math.sin(reach) / reach : 1;
+  return [Math.cos(reach), x0 * ring, y0 * ring];
 }
-function peirceMiniSphereAt(x, y, projection) {
+function azimuthalMiniSphereAt(x, y, projection) {
   const nx = (x - projection.centerX) / projection.half;
   const ny = (projection.centerY - y) / projection.half;
   if (Math.abs(nx) > 1 + 1e-6 || Math.abs(ny) > 1 + 1e-6) return null;
-  const local = peirceLocalSphereAt(nx * PEIRCE_SQUARE_HALF,
-                                    ny * PEIRCE_SQUARE_HALF);
+  const local = azimuthalMiniLocalSphereAt(nx * AZIMUTHAL_MINI_SQUARE_HALF,
+                                           ny * AZIMUTHAL_MINI_SQUARE_HALF);
+  if (!local) return null;
   return [
     projection.basis.out[0] * local[0] + projection.basis.right[0] * local[1] + projection.basis.up[0] * local[2],
     projection.basis.out[1] * local[0] + projection.basis.right[1] * local[1] + projection.basis.up[1] * local[2],
     projection.basis.out[2] * local[0] + projection.basis.right[2] * local[1] + projection.basis.up[2] * local[2],
   ];
 }
-function peirceMiniScreenPoint(point, projection) {
+function azimuthalMiniScreenPoint(point, projection) {
   const local = [dot3(point, projection.basis.out),
                  dot3(point, projection.basis.right),
                  dot3(point, projection.basis.up)];
-  if (local[0] < -1 + 1e-8) return null;
-  const projected = peirceQuincuncialRaw(
-    Math.atan2(local[1], local[0]),
-    Math.asin(Math.max(-1, Math.min(1, local[2])))
-  );
-  return [projection.centerX + projected[0] / PEIRCE_SQUARE_HALF * projection.half,
-          projection.centerY - projected[1] / PEIRCE_SQUARE_HALF * projection.half];
+  const ring = Math.hypot(local[1], local[2]);
+  // The exact antipode has a distance but no direction. It also lies beyond
+  // the crop, so it is simply not drawn.
+  if (ring < 1e-9 && local[0] < 0) return null;
+  const reach = Math.atan2(ring, Math.max(-1, Math.min(1, local[0])));
+  const stretch = ring > 1e-9 ? reach / ring : 1;
+  return [projection.centerX + local[1] * stretch / AZIMUTHAL_MINI_SQUARE_HALF * projection.half,
+          projection.centerY - local[2] * stretch / AZIMUTHAL_MINI_SQUARE_HALF * projection.half];
 }
-function peirceMiniPointCopies(point, projection) {
-  const localOut = dot3(point, projection.basis.out);
-  if (localOut < -1 + 1e-8) {
-    const x0 = projection.centerX - projection.half, x1 = projection.centerX + projection.half;
-    const y0 = projection.centerY - projection.half, y1 = projection.centerY + projection.half;
-    return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
-  }
-  const pointOnMap = peirceMiniScreenPoint(point, projection);
-  return pointOnMap ? [pointOnMap] : [];
+// The square the chart is cropped to, as one path: the raster fills it, the
+// overlays clip to it, and the frame is stroked around it.
+function azimuthalMiniSquarePath(projection) {
+  mx2.beginPath();
+  mx2.rect(projection.centerX - projection.half, projection.centerY - projection.half,
+           projection.side, projection.side);
 }
-
-// The inverse elliptic function is expensive, but its result in the local
-// projection frame does not depend on which way the current world is facing.
-// Cache one local sphere vector per physical minimap pixel, then only rotate
-// those vectors into the current camera basis during a redraw.
-let PEIRCE_MINI_LOCAL_GRID = null;
-function peirceMiniLocalGrid(projection) {
-  const pixelWidth = Math.max(1, Math.round(projection.width));
-  const pixelHeight = Math.max(1, Math.round(projection.height));
-  const key = `${pixelWidth}x${pixelHeight}`;
-  if (PEIRCE_MINI_LOCAL_GRID?.key === key) return PEIRCE_MINI_LOCAL_GRID;
-  const vectors = new Float32Array(pixelWidth * pixelHeight * 3);
-  const valid = new Uint8Array(pixelWidth * pixelHeight);
-  for (let py = 0; py < pixelHeight; py++) {
-    const y = py + .5;
-    for (let px = 0; px < pixelWidth; px++) {
-      const x = px + .5;
-      const nx = (x - projection.centerX) / projection.half;
-      const ny = (projection.centerY - y) / projection.half;
-      if (Math.abs(nx) > 1 || Math.abs(ny) > 1) continue;
-      const local = peirceLocalSphereAt(nx * PEIRCE_SQUARE_HALF,
-                                         ny * PEIRCE_SQUARE_HALF);
-      const offset = (py * pixelWidth + px) * 3;
-      vectors[offset] = local[0]; vectors[offset + 1] = local[1]; vectors[offset + 2] = local[2];
-      valid[py * pixelWidth + px] = 1;
-    }
-  }
-  return PEIRCE_MINI_LOCAL_GRID = {key, pixelWidth, pixelHeight, vectors, valid};
+function azimuthalMiniInsideSquare(point, projection, slack = 0) {
+  return Math.abs(point[0] - projection.centerX) <= projection.half + slack &&
+         Math.abs(point[1] - projection.centerY) <= projection.half + slack;
 }
 
-let PEIRCE_MINI_INDEX = null;
-function peirceMiniCellIndex() {
-  if (PEIRCE_MINI_INDEX?.planet === PLANET) return PEIRCE_MINI_INDEX;
+let PLANET_MINI_INDEX = null;
+function planetMiniCellIndex() {
+  if (PLANET_MINI_INDEX?.planet === PLANET) return PLANET_MINI_INDEX;
   const binCount = 48, entries = [], bins = new Map();
   const binFor = value => Math.max(0, Math.min(binCount - 1,
     Math.floor((value + 1) * .5 * binCount)));
@@ -17879,14 +17702,14 @@ function peirceMiniCellIndex() {
     if (!bucket) { bucket = []; bins.set(bin, bucket); }
     bucket.push(entry);
   }
-  return PEIRCE_MINI_INDEX = {planet:PLANET, binCount, bins, entries};
+  return PLANET_MINI_INDEX = {planet:PLANET, binCount, bins, entries};
 }
-function peircePointInsideCell(point, entry) {
+function planetPointInsideCell(point, entry) {
   for (const edge of entry.edges)
     if (edge.sign * dot3(edge.normal, point) < -1e-7) return false;
   return true;
 }
-function peirceMiniCellAt(point, index) {
+function planetMiniCellAt(point, index) {
   const binCount = index.binCount;
   const binFor = value => Math.max(0, Math.min(binCount - 1,
     Math.floor((value + 1) * .5 * binCount)));
@@ -17897,7 +17720,7 @@ function peirceMiniCellAt(point, index) {
       const bucket = index.bins.get(`${bx + dx},${by + dy},${bz + dz}`);
       if (!bucket) continue;
       for (const entry of bucket) {
-        if (peircePointInsideCell(point, entry)) return entry;
+        if (planetPointInsideCell(point, entry)) return entry;
         const distance = dot3(point, entry.cell.center);
         if (distance > bestDot) { bestDot = distance; best = entry; }
       }
@@ -17909,7 +17732,7 @@ function peirceMiniCellAt(point, index) {
   }
   return best;
 }
-function peirceMiniCellColor(tile, visible, spectator) {
+function planetMiniCellColor(tile, visible, spectator) {
   if (!tile) return rgbOf("#12305c");
   let color = rgbOf(tileGroundColor(tile, "#44545a"));
   if (!spectator && !visible.has(key(tile.pos))) color = color.map(channel => channel * .35);
@@ -17925,6 +17748,22 @@ function peirceMiniCellColor(tile, visible, spectator) {
 function miniViewportScreenCorners() {
   return [[0, 0], [MAPW, 0], [MAPW, MAPH], [0, MAPH]];
 }
+// The same boundary walked densely. Under the azimuthal chart a straight
+// screen edge is a curve, so four corners joined by straight lines would
+// misstate what the camera holds.
+function miniViewportBoundaryScreenPoints(samplesPerEdge = 16) {
+  const corners = miniViewportScreenCorners();
+  const points = [];
+  for (let edge = 0; edge < corners.length; edge++) {
+    const [ax, ay] = corners[edge];
+    const [bx, by] = corners[(edge + 1) % corners.length];
+    for (let step = 0; step < samplesPerEdge; step++) {
+      const t = step / samplesPerEdge;
+      points.push([ax + (bx - ax) * t, ay + (by - ay) * t]);
+    }
+  }
+  return points;
+}
 function miniViewportPath(points) {
   mx2.beginPath();
   points.forEach(([x, y], index) => index ? mx2.lineTo(x, y) : mx2.moveTo(x, y));
@@ -17932,7 +17771,9 @@ function miniViewportPath(points) {
 }
 // The footprint is deliberately a translucent surface as well as an outline:
 // a one-pixel frame disappears into a dense empire on a small minimap, while a
-// light wash still says which ground is in the camera without hiding its owners.
+// light wash still says which ground is in the camera without hiding its
+// owners. The outline itself is kept medium-thin — enough to read as a shape
+// around the visible ground, not enough to become a border of its own.
 function paintMiniViewportFootprint(points, clip = null) {
   if (points.length < 3) return;
   mx2.save();
@@ -17942,27 +17783,28 @@ function paintMiniViewportFootprint(points, clip = null) {
   miniViewportPath(points);
   mx2.fillStyle = "rgba(255, 223, 133, .18)"; mx2.fill();
   mx2.lineJoin = "round"; mx2.shadowColor = "rgba(0,0,0,.78)"; mx2.shadowBlur = 2;
-  mx2.strokeStyle = "rgba(8,14,17,.88)"; mx2.lineWidth = 3; mx2.stroke();
-  mx2.shadowBlur = 0; mx2.strokeStyle = "#ffe4a2"; mx2.lineWidth = 1.05; mx2.stroke();
+  mx2.strokeStyle = "rgba(8,14,17,.88)"; mx2.lineWidth = 2.4; mx2.stroke();
+  mx2.shadowBlur = 0; mx2.strokeStyle = "#ffe4a2"; mx2.lineWidth = 1.35; mx2.stroke();
   mx2.restore();
 }
-// Project the four corners of the main map back to the sphere, then through
-// the same Peirce frame as the world raster. This keeps the minimap's gold
+// Walk the main view's screen boundary back to the sphere, then through the
+// same azimuthal chart as the world raster. This keeps the minimap's gold
 // footprint tied to the actual centre view instead of drawing a decorative
-// rectangle whose meaning changes with zoom.
+// rectangle whose meaning changes with zoom. A ray past the globe's limb is
+// clamped to the limb, so a zoomed-out view reads as the visible hemisphere
+// instead of losing its corners.
 function drawPlanetMiniViewportFootprint(projection) {
   const mainCamera = planetCamera();
   const mainRadius = mainCamera.radius * cam.scale;
   if (!(mainRadius > 1e-6)) return;
   const basis = planetViewBasis(mainCamera);
-  const points = miniViewportScreenCorners().map(([sx, sy]) => {
-    const dx = (sx - MAPW / 2) / mainRadius;
-    const dy = (sy - MAPH / 2) / mainRadius;
+  const points = miniViewportBoundaryScreenPoints().map(([sx, sy]) => {
+    let dx = (sx - MAPW / 2) / mainRadius;
+    let dy = (sy - MAPH / 2) / mainRadius;
     const distance = Math.hypot(dx, dy);
     let point;
     if (mainCamera.chart) {
-      const angle = distance;
-      if (angle > PEIRCE_PI) return null;
+      const angle = Math.min(distance, Math.PI - 1e-6);
       const tangent = distance > 1e-9 ? Math.sin(angle) / distance : 1;
       point = [
         basis.out[0] * Math.cos(angle) + (basis.right[0] * dx - basis.up[0] * dy) * tangent,
@@ -17970,9 +17812,11 @@ function drawPlanetMiniViewportFootprint(projection) {
         basis.out[2] * Math.cos(angle) + (basis.right[2] * dx - basis.up[2] * dy) * tangent,
       ];
     } else {
-      const squared = dx * dx + dy * dy;
-      if (squared >= 1) return null;
-      const toward = Math.sqrt(1 - squared);
+      if (distance >= 1 - 1e-6) {
+        const limb = (1 - 1e-6) / distance;
+        dx *= limb; dy *= limb;
+      }
+      const toward = Math.sqrt(Math.max(0, 1 - dx * dx - dy * dy));
       point = [
         basis.out[0] * toward + basis.right[0] * dx - basis.up[0] * dy,
         basis.out[1] * toward + basis.right[1] * dx - basis.up[1] * dy,
@@ -17980,7 +17824,7 @@ function drawPlanetMiniViewportFootprint(projection) {
       ];
     }
     const length = Math.hypot(...point) || 1;
-    return peirceMiniScreenPoint(point.map(value => value / length), projection);
+    return azimuthalMiniScreenPoint(point.map(value => value / length), projection);
   }).filter(Boolean);
   paintMiniViewportFootprint(points);
 }
@@ -18000,8 +17844,8 @@ function drawPlanetMiniNaturalWonderPerimeters(cells, projection) {
       const next = cell.ids[(side + 1) % cell.ids.length];
       const b = [PLANET.corners[3 * next], PLANET.corners[3 * next + 1],
                  PLANET.corners[3 * next + 2]];
-      const first = peirceMiniScreenPoint(a, projection);
-      const second = peirceMiniScreenPoint(b, projection);
+      const first = azimuthalMiniScreenPoint(a, projection);
+      const second = azimuthalMiniScreenPoint(b, projection);
       if (!first || !second || Math.hypot(first[0] - second[0], first[1] - second[1]) > projection.half)
         continue;
       segments.push([...first, ...second]);
@@ -18021,42 +17865,36 @@ function drawPlanetMiniNaturalWonderPerimeters(cells, projection) {
 function drawPlanetMini() {
   if (!planetReady()) return planetMap();
   const {width, height} = syncMiniCanvas();
-  const projection = peirceMiniProjection(width, height);
+  const projection = azimuthalMiniProjection(width, height);
   const visible = new Set((state.turn_visible || state.visible).map(key));
   const spectator = !Number.isInteger(state.view_player);
-  const index = peirceMiniCellIndex();
+  const index = planetMiniCellIndex();
   for (const entry of index.entries) {
     entry.tile = TMAP.get(entry.key);
-    entry.color = peirceMiniCellColor(entry.tile, visible, spectator);
+    entry.color = planetMiniCellColor(entry.tile, visible, spectator);
   }
 
-  const grid = peirceMiniLocalGrid(projection);
+  // The azimuthal inverse is a few trigonometric calls, cheap enough to run
+  // once per CSS pixel on every redraw; the cell search is the real work.
+  const pixelWidth = Math.max(1, Math.round(projection.width));
+  const pixelHeight = Math.max(1, Math.round(projection.height));
   const fallback = rgbOf("#07110f");
-  const mapped = new Array(grid.pixelWidth * grid.pixelHeight);
-  for (let gridY = 0; gridY < grid.pixelHeight; gridY++) {
-    for (let gridX = 0; gridX < grid.pixelWidth; gridX++) {
-      const gridPixel = gridY * grid.pixelWidth + gridX;
-      if (!grid.valid[gridPixel]) continue;
-      const vectorOffset = gridPixel * 3;
-      const local = [grid.vectors[vectorOffset], grid.vectors[vectorOffset + 1],
-                     grid.vectors[vectorOffset + 2]];
-      const point = [
-        projection.basis.out[0] * local[0] + projection.basis.right[0] * local[1] + projection.basis.up[0] * local[2],
-        projection.basis.out[1] * local[0] + projection.basis.right[1] * local[1] + projection.basis.up[1] * local[2],
-        projection.basis.out[2] * local[0] + projection.basis.right[2] * local[1] + projection.basis.up[2] * local[2],
-      ];
-      mapped[gridPixel] = peirceMiniCellAt(point, index);
+  const mapped = new Array(pixelWidth * pixelHeight);
+  for (let gridY = 0; gridY < pixelHeight; gridY++) {
+    for (let gridX = 0; gridX < pixelWidth; gridX++) {
+      const point = azimuthalMiniSphereAt(gridX + .5, gridY + .5, projection);
+      if (point) mapped[gridY * pixelWidth + gridX] = planetMiniCellAt(point, index);
     }
   }
   const physicalWidth = mini.width, physicalHeight = mini.height;
   const physical = mx2.createImageData(physicalWidth, physicalHeight);
   const scaleX = physicalWidth / projection.width, scaleY = physicalHeight / projection.height;
   for (let py = 0; py < physicalHeight; py++) {
-    const gridY = Math.min(grid.pixelHeight - 1, Math.floor((py + .5) / scaleY));
+    const gridY = Math.min(pixelHeight - 1, Math.floor((py + .5) / scaleY));
     for (let px = 0; px < physicalWidth; px++) {
-      const gridX = Math.min(grid.pixelWidth - 1, Math.floor((px + .5) / scaleX));
+      const gridX = Math.min(pixelWidth - 1, Math.floor((px + .5) / scaleX));
       const pixel = py * physicalWidth + px;
-      const gridPixel = gridY * grid.pixelWidth + gridX;
+      const gridPixel = gridY * pixelWidth + gridX;
       const offset = pixel * 4;
       let color = fallback;
       if (mapped[gridPixel]?.color) color = mapped[gridPixel].color;
@@ -18071,22 +17909,28 @@ function drawPlanetMini() {
   mx2.strokeRect(projection.centerX - projection.half + .5,
                  projection.centerY - projection.half + .5,
                  projection.side - 1, projection.side - 1);
+  // The crop cuts ground off mid-projection, so everything drawn over the
+  // raster — perimeters, the footprint, cities — is clipped to the square
+  // rather than allowed to spill past the frame.
+  mx2.save();
+  azimuthalMiniSquarePath(projection); mx2.clip();
   drawPlanetMiniNaturalWonderPerimeters(index.entries, projection);
   drawPlanetMiniViewportFootprint(projection);
   for (const city of state.cities) {
     const cell = PLANET.cells.get(key(city.pos));
     if (!cell) continue;
-    const center = peirceMiniPointCopies(cell.center, projection);
+    const center = azimuthalMiniScreenPoint(cell.center, projection);
     const cityState = ownerIsCityState(city.owner);
     const cityRadius = cityState ? 1.15 : 2.35;
-    for (const [x, y] of center) {
-      mx2.globalAlpha = cityState ? MAP_CIV_HIERARCHY.cityStateMarker : 1;
-      drawCityIcon(mx2, x, y, cityRadius, cityBannerColor(city.owner),
-                   cityState ? "#0b0e13" : "#f8edca", cityState,
-                   Boolean(city.is_capital));
-    }
+    if (!center || !azimuthalMiniInsideSquare(center, projection, cityRadius)) continue;
+    const [x, y] = center;
+    mx2.globalAlpha = cityState ? MAP_CIV_HIERARCHY.cityStateMarker : 1;
+    drawCityIcon(mx2, x, y, cityRadius, cityBannerColor(city.owner),
+                 cityState ? "#0b0e13" : "#f8edca", cityState,
+                 Boolean(city.is_capital));
     mx2.globalAlpha = 1;
   }
+  mx2.restore();
   mx2.setTransform(1, 0, 0, 1, 0, 0);
   return true;
 }
@@ -18319,10 +18163,10 @@ mini.addEventListener("click", ev => {
   const r = mini.getBoundingClientRect();
   if (planetMap()) {
     if (!planetReady()) return;
-    const projection = peirceMiniProjection(r.width, r.height);
+    const projection = azimuthalMiniProjection(r.width, r.height);
     const x = ev.clientX - r.left, y = ev.clientY - r.top;
-    const point = peirceMiniSphereAt(x, y, projection);
-    const target = point && peirceMiniCellAt(point, peirceMiniCellIndex());
+    const point = azimuthalMiniSphereAt(x, y, projection);
+    const target = point && planetMiniCellAt(point, planetMiniCellIndex());
     const tile = target?.tile || (target && TMAP.get(target.key));
     if (tile) { takeCameraControl(); centerWorld(tile.pos); }
     return;
