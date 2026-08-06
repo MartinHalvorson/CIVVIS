@@ -729,16 +729,24 @@ class PolicyTests(unittest.TestCase):
         self.assertIsNone(collab.commit_is_pr_backed(rows, "def"))
         self.assertIsNone(collab.commit_is_pr_backed(rows, "missing"))
 
-    def test_a_stale_merge_is_still_caught_after_the_fact(self):
-        # Staleness is only an advisory on an open PR, because GitHub blocks
-        # the merge itself. Once something *has* merged while behind main, that
-        # is a real violation and must stay a hard error.
+    def test_a_far_stale_merge_is_still_caught_after_the_fact(self):
+        # An earlier version of this test called ANY behind-merge a violation,
+        # on the stated premise that GitHub blocks such merges. It does not:
+        # protection runs with `strict: false` on purpose, and `ship`
+        # deliberately leaves the head alone while the gate runs — refreshing
+        # it cancelled the in-flight run every time `main` advanced, which on
+        # 2026-08-06 killed 44% of all cargo-test runs. The hard line that
+        # remains is the one `base_staleness` draws pre-merge: a head at or
+        # past STALE_BASE_LIMIT merged as a tree no CI run has approximated.
         views = {
             "pr": {
                 "headRefOid": "head1234",
                 "mergedAt": "2026-07-25T03:00:00Z",
             },
-            "compare": {"status": "diverged"},
+            "compare": {
+                "status": "diverged",
+                "behind_by": collab.STALE_BASE_LIMIT,
+            },
             "checks": {"check_runs": []},
         }
 
@@ -752,7 +760,39 @@ class PolicyTests(unittest.TestCase):
 
         with patch.object(collab, "gh_json", side_effect=fake_gh_json):
             errors = collab.merged_pr_gate_errors(42, base_sha="base5678")
-        self.assertIn("PR head did not contain current main before merge", errors)
+        self.assertTrue(
+            any("behind main at merge" in error for error in errors),
+            errors,
+        )
+
+    def test_a_mildly_stale_merge_is_the_designed_outcome(self):
+        # Below the limit, a green run merging while the trunk moved on is how
+        # this repository converges at all: the push-to-main gate tests the
+        # actual squash result. The audit must not flag it, or the fleet
+        # relearns to ignore red.
+        views = {
+            "pr": {
+                "headRefOid": "head1234",
+                "mergedAt": "2026-07-25T03:00:00Z",
+            },
+            "compare": {"status": "diverged", "behind_by": 3},
+            "checks": {"check_runs": []},
+        }
+
+        def fake_gh_json(args, *, cwd=None):
+            joined = " ".join(args)
+            if "compare" in joined:
+                return views["compare"]
+            if "check-runs" in joined:
+                return views["checks"]
+            return views["pr"]
+
+        with patch.object(collab, "gh_json", side_effect=fake_gh_json):
+            errors = collab.merged_pr_gate_errors(42, base_sha="base5678")
+        self.assertFalse(
+            [error for error in errors if "behind main" in error],
+            errors,
+        )
 
     def test_a_rejected_write_can_fall_back_instead_of_raising(self):
         # ship updates a stale branch through GitHub, but a conflict GitHub
