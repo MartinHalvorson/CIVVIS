@@ -701,6 +701,13 @@ impl<A: Ai> Ai for Oracle<A> {
     fn review_census(&self) -> Option<crate::strategic::ReviewCensus> {
         self.inner.review_census()
     }
+
+    /// An oracle's grants change the world, not the agent's mind; the
+    /// reasoning an observer sees is the inner agent's, reading the granted
+    /// position exactly as it reads any other.
+    fn attach_journal(&mut self, journal: crate::reasoning::Journal) {
+        self.inner.attach_journal(journal);
+    }
 }
 
 #[cfg(test)]

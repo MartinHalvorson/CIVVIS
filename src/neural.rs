@@ -96,6 +96,13 @@ impl Ai for NeuralAi {
         }
         self.base.take_turn(g, pid);
     }
+
+    /// The scripted layer underneath does the day-to-day reasoning, so the
+    /// observer's log reads from there. The rollouts above run over clones,
+    /// whose journals are silent by construction.
+    fn attach_journal(&mut self, journal: crate::reasoning::Journal) {
+        self.base.attach_journal(journal);
+    }
 }
 
 #[cfg(test)]

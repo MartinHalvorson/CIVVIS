@@ -398,6 +398,13 @@ impl Ai for ProductionSearchAi {
     fn plan_report(&self) -> Option<PlanReport> {
         self.inner.plan_report()
     }
+
+    /// See [`crate::strategic::StrategicAi::attach_journal`]: the search runs
+    /// over clones, whose journals are silent, so only the build the governor
+    /// actually committed is recorded.
+    fn attach_journal(&mut self, journal: crate::reasoning::Journal) {
+        self.inner.attach_journal(journal);
+    }
 }
 
 /// Explicit victory targeting, for parity with the other agents.
