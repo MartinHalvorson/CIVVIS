@@ -667,8 +667,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the helper's existing eligibility checks, so the advanced_v1 legacy path is
 /// unchanged; the source contract is re-pinned after the fixed-prefix
 /// comparison above.
+/// The Advanced parallel unit planner now primes frontier-post scans inside the
+/// immutable batch snapshot, keyed by traversal class, so each worker reuses
+/// the same read-only map scan without publishing it across a world mutation.
+/// The fixed-prefix output remains byte-identical; compatibility is re-pinned.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6921_1afb_17d8_bec8;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa208_34b5_d343_0102;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

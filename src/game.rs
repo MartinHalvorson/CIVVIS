@@ -13726,7 +13726,7 @@ impl VisionCache {
 /// class serves every such unit. Per-edge and per-moment rules — cliffs,
 /// stacking, closed borders, zone of control — are deliberately absent:
 /// they gate individual steps, not which regions exist.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct TraversalClass {
     /// Naval movement: water, city centers, and canal-like districts.
     sea: bool,
@@ -25999,7 +25999,7 @@ impl Game {
 
     /// The [`TraversalClass`] a unit moves as, folding its kind and its
     /// owner's unlocks into the flags the tile predicate reads.
-    fn traversal_class(&self, uid: u32) -> TraversalClass {
+    pub(crate) fn traversal_class(&self, uid: u32) -> TraversalClass {
         if let Some(memo) = self.query_memo.traversal.borrow().as_ref() {
             if let Some(class) = memo.get(&uid) {
                 return *class;
