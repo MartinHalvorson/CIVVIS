@@ -267,9 +267,15 @@
     content: ""; position: absolute; right: 11px; bottom: -1px; width: 76px; height: 1px;
     background: linear-gradient(90deg, transparent, #d7b66a8c);
   }
-  .brand { display: flex; align-items: center; gap: 15px; }
+  /* The lockup splits the band roughly a third to the globe and the rest to
+     the copy: the mark scales with the deck instead of pinning a 70px
+     medallion beside ever-wider whitespace. The copy column stretches to the
+     globe's height so the wordmark rides its top edge and the tagline its
+     bottom. */
+  .brand { display: flex; align-items: stretch; gap: 15px; }
   .brand-mark {
-    position: relative; isolation: isolate; flex: 0 0 auto; width: 70px; height: 70px;
+    position: relative; isolation: isolate; flex: 0 0 clamp(70px, 36cqw, 150px);
+    aspect-ratio: 1; align-self: center;
     display: grid; place-items: center; border-radius: 50%; background: #07130f;
     border: 1px solid #e0c1768f;
     box-shadow: 0 0 0 4px #0b1915, 0 10px 25px #0009, 0 0 24px #d7b66a17;
@@ -278,7 +284,7 @@
     content: ""; position: absolute; z-index: -1; inset: 2px; border-radius: 50%;
     box-shadow: inset 0 1px #fff1c924;
   }
-  .brand-mark svg { width: 64px; height: 64px; overflow: visible; }
+  .brand-mark svg { width: 91%; height: 91%; overflow: visible; }
   .brand-mark .globe-sea { fill: url(#brand-sea); stroke: #e8ca7f; stroke-width: 1; }
   .brand-mark .globe-grid {
     fill: none; stroke: #d9bd773b; stroke-width: .55; stroke-linecap: round;
@@ -288,16 +294,19 @@
     stroke-linejoin: round;
   }
   .brand-mark .globe-shine { fill: none; stroke: #fff9df; stroke-opacity: .14; stroke-width: 1.1; }
-  /* The social rail is absolutely positioned so it does not make the header
-     taller. Reserve that lane in the copy, however, so a narrower deck lets
-     the title and tagline use less width instead of painting under the links. */
-  .brand-copy { min-width: 0; flex: 1 1 auto; padding: 1px 34px 0 0; }
-  .brand-title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .brand-copy {
+    min-width: 0; flex: 1 1 auto; padding-top: 1px;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  /* The wordmark's lane is the band minus the globe's 36cqw and its 15px
+     gutter; the CIVVIS.ai run is 4.65em wide (4.85 leaves fallback-font
+     slack), so dividing the lane by that fills the copy column without
+     tripping the ellipsis. */
   h1 {
     width: auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
     color: var(--gold-bright);
     font: 650 36px/.95 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-    font-size: clamp(22px, 10cqw, 36px);
+    font-size: clamp(22px, calc((64cqw - 15px) / 4.85), 36px);
     letter-spacing: .08em; text-transform: uppercase;
     background: linear-gradient(100deg, #f6dfaa 8%, #d7b66a 66%, #a9823b);
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
@@ -306,29 +315,14 @@
   h1 .brand-suffix {
     font-size: .58em; letter-spacing: .025em; text-transform: lowercase;
   }
-  /* One narrow column pinned to the corner: GitHub takes the bottom right and
-     YouTube sits directly above it, so the icons cost the copy one 24px lane
-     instead of the 55px a side-by-side row ate. */
-  .brand-links {
-    position: absolute; right: 10px; bottom: 9px;
-    display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
-  }
-  .brand-links a {
-    width: 24px; height: 24px; display: grid; place-items: center; border-radius: 7px;
-    color: var(--gold); border: 1px solid #d7b66a38; background: #d7b66a0b;
-    transition: color .15s ease, border-color .15s ease, background .15s ease, transform .15s ease;
-  }
-  .brand-links a:hover {
-    color: var(--gold-bright); border-color: #d7b66a80; background: #d7b66a18;
-    transform: translateY(-1px);
-  }
-  .brand-links a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-  .brand-links svg { width: 21px; height: 21px; fill: currentColor; }
   .tagline {
     max-width: 225px; margin-top: 9px; color: #dde6e2; font-size: var(--type-body);
     font-weight: 650; letter-spacing: .015em; line-height: 1.36;
   }
-  .tagline span { display: block; white-space: nowrap; }
+  /* Each phrase starts its own line but may wrap inside itself: the copy
+     lane is now the band minus the globe's third, which is too narrow to
+     promise any phrase a single line. */
+  .tagline span { display: block; }
   .tagline span + span { color: #bccac4; }
   /* A split-screen deck cannot afford the landing-page-sized mark and title.
      The compact band preserves both, but reflows the lockup: the copy column
@@ -343,24 +337,19 @@
   #side[data-type-size="compact"] .brand-copy { display: contents; }
   #side[data-type-size="compact"] .brand-mark { width: 54px; height: 54px; }
   #side[data-type-size="compact"] .brand-mark svg { width: 49px; height: 49px; }
-  /* The social column only climbs the band's bottom half, but the tallest
-     title could still graze it; reserving the lane in the row keeps the
-     wordmark and the buttons apart at every band height. */
-  #side[data-type-size="compact"] .brand-title-row { padding-right: 26px; }
   /* 10cqw measures the whole band, but the wordmark's real lane is the band
-     minus the 54px mark, its 10px gutter and the 26px link lane — and the
-     CIVVIS.ai run is 4.65em wide (4.85 leaves fallback-font slack). Deriving
-     the size from that lane spends all of a 300px deck on the 28px cap yet
-     still steps down cleanly on a 220px one, where raw 10cqw overflows. */
+     minus the 54px mark and its 10px gutter — and the CIVVIS.ai run is
+     4.65em wide (4.85 leaves fallback-font slack). Deriving the size from
+     that lane spends all of a 300px deck on the 28px cap yet still steps
+     down cleanly on a 220px one, where raw 10cqw overflows. */
   #side[data-type-size="compact"] h1 {
     width: auto; letter-spacing: .055em;
-    font-size: clamp(15px, calc((100cqw - 90px) / 4.85), 28px);
+    font-size: clamp(15px, calc((100cqw - 64px) / 4.85), 28px);
   }
   #side[data-type-size="compact"] .tagline {
-    grid-column: 1 / -1; max-width: none; margin-top: 0; padding-right: 28px;
+    grid-column: 1 / -1; max-width: none; margin-top: 0;
     font-size: var(--type-small);
   }
-  #side[data-type-size="compact"] .tagline span { white-space: normal; }
   /* Past the width where the whole sentence fits beside the globe, the
      stacked two-line lockup reads as leftover narrow-screen furniture. Join
      the tagline into its single line there; 620px of band leaves ~200px of
@@ -3852,17 +3841,7 @@
         </svg>
       </div>
       <div class="brand-copy">
-        <div class="brand-title-row">
-          <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
-          <nav class="brand-links" aria-label="CIVVIS links">
-            <a href="https://www.youtube.com/@civvis" target="_blank" rel="noopener noreferrer" aria-label="CIVVIS on YouTube" title="CIVVIS on YouTube">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23.5 6.19a3.02 3.02 0 0 0-2.12-2.14C19.5 3.54 12 3.54 12 3.54s-7.5 0-9.38.51A3.02 3.02 0 0 0 .5 6.19C0 8.08 0 12 0 12s0 3.92.5 5.81a3.02 3.02 0 0 0 2.12 2.14c1.88.51 9.38.51 9.38.51s7.5 0 9.38-.51a3.02 3.02 0 0 0 2.12-2.14C24 15.92 24 12 24 12s0-3.92-.5-5.81ZM9.55 15.57V8.43L15.82 12l-6.27 3.57Z"/></svg>
-            </a>
-            <a href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noopener noreferrer" aria-label="CIVVIS on GitHub" title="CIVVIS on GitHub">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.11.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.28-1.69-1.28-1.69-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.57-.29-5.27-1.28-5.27-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.16 1.18A10.94 10.94 0 0 1 12 6.12c.98 0 1.95.13 2.87.39 2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.71 5.38-5.29 5.67.42.36.79 1.07.79 2.16v3.25c0 .31.21.68.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
-            </a>
-          </nav>
-        </div>
+        <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
         <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for AI strategy development</span></div>
       </div>
     </div>
