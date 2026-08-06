@@ -3977,12 +3977,10 @@
           </div>
         </details>
         <details class="display-settings-group" id="map-overlays-settings" data-advanced-settings="display-overlays">
-          <summary><span class="advanced-settings-summary">Map overlays<small>Choose the information panels shown over the map</small></span></summary>
+          <summary><span class="advanced-settings-summary">Map overlays<small>Information panels shown over the map</small></span></summary>
           <div class="display-settings-group-body">
             <div class="overlay-options" role="group" aria-labelledby="overlay-options-title">
               <h2 id="overlay-options-title">Visible overlays</h2>
-              <div class="small overlay-layout-help">Drag a title bar to move an overlay; drag any edge or corner to resize. Your layout saves automatically.</div>
-              <div class="small overlay-layout-help">In the standings, drag a thin bar in the column heading to divide two columns differently; double-click one to put that pair back. Widths are shares of the panel, so they follow the window size. ◉ locks a row in view; locks are remembered into the next game.</div>
               <div class="overlay-option-grid">
                 <label class="overlay-option"><input type="checkbox" data-overlay="players" checked>Player standings</label>
                 <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory tracker</label>
@@ -3990,6 +3988,8 @@
                 <label class="overlay-option"><input type="checkbox" data-overlay="controls" checked>Map controls</label>
                 <label class="overlay-option"><input type="checkbox" data-overlay="lenses" checked>Map lenses</label>
               </div>
+              <div class="small overlay-layout-help">Drag a title bar to move an overlay, any edge or corner to resize; the layout saves automatically.</div>
+              <div class="small overlay-layout-help">In the standings, drag the thin bar between two column headings to rebalance them; double-click it to reset the pair. ◉ locks a row in view, and locks carry into the next game.</div>
               <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions, sizes &amp; columns</button>
             </div>
           </div>

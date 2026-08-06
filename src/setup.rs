@@ -266,6 +266,70 @@ pub fn future_era_id(era: FutureEra) -> &'static str {
     era.id()
 }
 
+/// How the seats of one game turn relate to each other in time.
+///
+/// Sequential is the stock regime: each civilization acts on the world exactly
+/// as the previous one left it. Simultaneous freezes the world at the top of
+/// the game turn, lets every seat plan its whole turn against that same
+/// snapshot, then commits the plans in seat order under the ordinary rules —
+/// an order that has become illegal by the time it commits is dropped, not
+/// reinterpreted. It is an information choice, not a rules choice: every
+/// committed action goes through the same `Game::apply` either way, which is
+/// what keeps a simultaneous game's action log an ordinary replayable log.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TurnStructure {
+    #[default]
+    Sequential,
+    Simultaneous,
+}
+
+impl TurnStructure {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Sequential => "sequential",
+            Self::Simultaneous => "simultaneous",
+        }
+    }
+}
+
+/// One turn structure a setup screen can offer.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct TurnStructureSpec {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+}
+
+pub const TURN_STRUCTURES: [TurnStructureSpec; 2] = [
+    TurnStructureSpec {
+        id: "sequential",
+        name: "Sequential turns",
+        description: "Civilizations act one after another; each sees the world exactly as the previous one left it.",
+    },
+    TurnStructureSpec {
+        id: "simultaneous",
+        name: "Simultaneous turns",
+        description: "Every civilization plans the turn against the same snapshot of the world, and the plans are then committed together; a plan the world has outrun is dropped.",
+    },
+];
+
+/// Resolve a turn-structure id. Same contract as [`future_era_from_id`]: an
+/// unknown id resolves to nothing rather than to the stock regime, so the
+/// caller decides what to say about it.
+pub fn turn_structure_from_id(id: &str) -> Option<TurnStructure> {
+    match id {
+        "sequential" => Some(TurnStructure::Sequential),
+        "simultaneous" => Some(TurnStructure::Simultaneous),
+        _ => None,
+    }
+}
+
+/// The turn structure a game is played under, as the lobby names it.
+pub fn turn_structure_id(structure: TurnStructure) -> &'static str {
+    structure.id()
+}
+
 /// Resolve a start era id to the era its trees are cut at.
 ///
 /// An id that is not on the ladder — or one naming a rung nobody has built yet
