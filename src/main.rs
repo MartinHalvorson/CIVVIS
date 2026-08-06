@@ -681,8 +681,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// filter provably rejects every candidate. Identical purchases in every
 /// reachable state, so the frozen controller's decisions are unchanged and
 /// the source contract is re-pinned.
+/// `culture_focus` is removed from `BasicAi`: both constructors pinned it
+/// `false` and nothing else ever set it, so its production blocks and the
+/// `project_matches_focus` helper were unreachable — dead weight, not
+/// behaviour. No reachable decision changes; the source contract is
+/// re-pinned.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb385_7120_73f2_6f90;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7bd4_2f0f_2c67_745f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
