@@ -810,6 +810,19 @@ let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") ===
 // Space-race flights and satellites are on unless a viewer explicitly turns
 // their animated visual effects off. The completed mission remains in state.
 let SHOW_ROCKET_ANIMATIONS = localStorage.getItem("civvis-show-rocket-animations") !== "0";
+// How long a unit's movement wake stays on the map after its step lands.
+// Zero is the original behavior — a comet only while the tween itself runs —
+// while a linger keeps who-went-where readable at Lightning and Blitz paces,
+// where a step resolves faster than an eye can find the token that took it.
+const UNIT_TRAIL_LINGER_STORAGE_KEY = "civvis-unit-trail-linger";
+const UNIT_TRAIL_LINGER_VALUES = [0, 200, 500, 1000, 2000];
+// Enough for every mover of a large late-game turn; bounds draw cost when a
+// whole war resolves in one Lightning poll.
+const UNIT_TRAIL_LIMIT = 240;
+let UNIT_TRAIL_LINGER_MS = (() => {
+  const saved = Number(localStorage.getItem(UNIT_TRAIL_LINGER_STORAGE_KEY));
+  return UNIT_TRAIL_LINGER_VALUES.includes(saved) ? saved : 0;
+})();
 // A brief coast makes direct drags feel physical; reduced-motion still takes
 // precedence, and a viewer can opt out here without changing system settings.
 const WORLD_PAN_INERTIA_STORAGE_KEY = "civvis-world-pan-inertia";
@@ -956,7 +969,7 @@ applyOverlayVisibility();
 // burst — a device is the only event on this board that deserves several
 // seconds and the whole frame.
 const anim = { moves: new Map(), floats: [], sparks: [], deaths: [],
-               claims: [], strike: null, blasts: [],
+               claims: [], strike: null, blasts: [], trails: [],
                skyLaunches: [] };
 // Detonations already shown. The engine gives every strike a unique id
 // precisely so a client can answer this without comparing fields: two devices
@@ -1016,6 +1029,7 @@ function resetAnim() {
   anim.deaths.length = 0;
   anim.claims.length = 0;
   anim.blasts.length = 0;
+  anim.trails.length = 0;
   anim.skyLaunches.length = 0;
   seenBlasts = new Set();
   anim.strike = null;
@@ -1113,11 +1127,22 @@ function animateDiff(prev, next) {
         // dropped the full shift the instant it set off, and one walking out
         // snapped up by the same amount: a visible jolt at both ends of the
         // step. Carrying both endpoints lets the shift ease across the move.
+        const dur = unitMoveDuration(nu.id, steps);
         anim.moves.set(nu.id, {mapX:start.x, mapY:start.y, mapLift:start.lift,
                                 mapPoints, steps,
                                 fromCity: cityKeys.has(key(pu.pos)),
                                 toCity: cityKeys.has(key(nu.pos)),
-                                t0: now, dur:unitMoveDuration(nu.id, steps) });
+                                t0: now, dur });
+        // The lingering wake outlives both the tween and the unit itself — a
+        // trail that survives its casualty is what makes a fast battle
+        // readable after the fact.
+        if (UNIT_TRAIL_LINGER_MS > 0) {
+          anim.trails.push({ unit: nu.id, points: mapPoints, owner: nu.owner,
+                             t0: now, moveDur: dur,
+                             linger: UNIT_TRAIL_LINGER_MS });
+          if (anim.trails.length > UNIT_TRAIL_LIMIT)
+            anim.trails.splice(0, anim.trails.length - UNIT_TRAIL_LIMIT);
+        }
       }
     }
     if (unitHasHealth(nu) && unitHasHealth(pu) && nu.hp < pu.hp) {
