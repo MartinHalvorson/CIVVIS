@@ -16735,7 +16735,16 @@ function drawPlanetMap() {
   for (const cell of cells) {
     const color = highlighted.get(key(cell.tile.pos));
     if (!color) continue;
-    planetPath(cx, cell.points); cx.strokeStyle = color; cx.lineWidth = 2.2; cx.stroke();
+    planetPath(cx, cell.points);
+    if (color === "#74d7ff") {
+      // The movement range's interior is a quiet wash, as on the flat board;
+      // its boundary belongs to drawPlanetReachOverlay's perimeter and the
+      // per-seam arrows. A bright outline on every cell buried both.
+      cx.fillStyle = "#ffffff14"; cx.fill();
+      cx.strokeStyle = "#ffffff5a"; cx.lineWidth = 1; cx.stroke();
+    } else {
+      cx.strokeStyle = color; cx.lineWidth = 2.2; cx.stroke();
+    }
   }
 
   // How far round the world a thing standing on it can be and still be drawn.
