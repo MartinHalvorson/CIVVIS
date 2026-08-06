@@ -23278,10 +23278,31 @@ mapSearchInput.addEventListener("keydown", event => {
 });
 syncMapSearchCivilizations();
 syncMapSearchStatus();
+// The lens dock offers two sets — the global whole-map lenses and the
+// district adjacency forecasts — and shows one at a time, switched by the
+// tab row above them. Expanding the dock starts on the global set.
+let mapLensSet = "global";
+function syncMapLensSets() {
+  const strip = document.getElementById("map-lens-strip");
+  if (strip) strip.hidden = mapLensSet !== "global";
+  const list = document.getElementById("district-lens-list");
+  if (list) list.hidden = mapLensSet !== "district";
+  for (const button of document.querySelectorAll("[data-lens-set]")) {
+    const selected = button.dataset.lensSet === mapLensSet;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-selected", selected ? "true" : "false");
+  }
+}
+function setMapLensSet(next) {
+  mapLensSet = next;
+  syncMapLensSets();
+}
+for (const button of document.querySelectorAll("[data-lens-set]"))
+  button.onclick = () => setMapLensSet(button.dataset.lensSet);
 function syncDistrictLensList() {
   const list = document.getElementById("district-lens-list");
-  const section = document.getElementById("district-lens-section");
-  if (!list || !section) return;
+  const sets = document.getElementById("map-lens-sets");
+  if (!list || !sets) return;
   const viewer = districtLensViewer();
   // The omniscient list must not carry the acting player's civilization:
   // `state.player` rotates every simulated turn, and a signature that
@@ -23315,14 +23336,15 @@ function syncDistrictLensList() {
     label.className = "map-lens-label";
     label.textContent = titleCase(district);
     button.append(icon, label);
-    button.onclick = () => {
-      section.open = true;
-      setMapLens(districtLensId(district));
-    };
+    button.onclick = () => setMapLens(districtLensId(district));
     return button;
   });
   list.replaceChildren(...buttons);
-  section.hidden = choices.length === 0;
+  // Without any district choices there is only one set, so the switcher row
+  // disappears and the global strip stands alone.
+  sets.hidden = choices.length === 0;
+  if (sets.hidden && mapLensSet === "district") mapLensSet = "global";
+  syncMapLensSets();
 }
 function syncDistrictLensControls() {
   const district = districtLensDistrict();
@@ -23331,7 +23353,10 @@ function syncDistrictLensControls() {
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", active ? "true" : "false");
   }
-  document.getElementById("district-lens-section")?.classList.toggle("active", !!district);
+  // A dot on a tab marks the set holding the active lens, so a lens left
+  // running in the set that is not displayed stays announced.
+  document.getElementById("lens-set-district")?.classList.toggle("holds-lens", !!district);
+  document.getElementById("lens-set-global")?.classList.toggle("holds-lens", !!mapLens && !district);
 }
 function syncMapLensControls() {
   syncDistrictLensList();
