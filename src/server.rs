@@ -3987,6 +3987,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "built_at": runtime_built_at(),
                     "artifact_bytes": runtime_artifact_bytes(),
                     "artifact_kind": runtime_artifact_kind(),
+                    // The setup queue is beside the simulation lock too. The
+                    // supervisor needs the viewer's latest choice even when
+                    // an AI turn is making the full `/state` response wait.
+                    "next_game_settings": sh.staged_next_game_settings(),
                     // The supervisor's only view of a restart used to be
                     // `/state`, which is exactly what a long AI turn makes
                     // unavailable. This probe takes no lock the simulation
@@ -6001,8 +6005,9 @@ mod tests {
         // a restart is asked for and exactly when `/state` cannot be built.
         assert!(runtime["supervisor_request"].is_null());
         assert_eq!(runtime["supervisor_request"], state["supervisor_request"]);
+        assert!(runtime["next_game_settings"].is_null());
         assert!(
-            runtime_body.len() < 256,
+            runtime_body.len() < 320,
             "successor identity should stay tiny, got {} bytes",
             runtime_body.len()
         );
@@ -7714,11 +7719,18 @@ mod tests {
         assert!(sidebar.contains("id=\"map-search-civ\""));
         assert!(sidebar.contains("aria-live=\"polite\""));
         assert!(sidebar.contains(
-            "<details class=\"sidebar-section\" id=\"maplensessec\" data-section=\"map-lenses\">"
+            "<details id=\"maplensessec\" data-section=\"map-lenses\">"
         ));
+        // The search is a deck panel in the fixed lower-left stack, not a
+        // pill floating over the map: exactly one #map-search rule, the
+        // deck's, and no absolutely positioned leftover from the dock era.
         assert!(EMBEDDED_INDEX.contains(
-            "#map-search {\n    position: absolute; z-index: 2; left: 0; bottom: calc(100% + var(--panel-gap));"
+            "#map-search {\n    min-width: 0; padding: 6px 7px;"
         ));
+        assert!(
+            !EMBEDDED_INDEX.contains("#map-search {\n    position: absolute;"),
+            "the visible-tile search must not float over the map"
+        );
 
         let matcher = EMBEDDED_INDEX
             .split_once("function computeMapSearchMatches(st, query, civFilter = mapSearchCivId) {")
@@ -7798,6 +7810,47 @@ mod tests {
             !lens_setter.contains("mapSearch"),
             "a lens must not clear an active visible-tile search"
         );
+    }
+
+    /// The omniscient spectator has no seat: `state.player` merely follows
+    /// the acting major, so a district lens keyed to it flashed a different
+    /// empire's information every simulated turn — and reset itself whenever
+    /// the acting civilization replaced the selected family with a unique.
+    /// Above the world the lens must instead hold still and show everything.
+    #[test]
+    fn browser_district_lens_holds_still_above_the_world() {
+        // One switch, read everywhere the lens would otherwise follow the
+        // acting player.
+        assert!(EMBEDDED_INDEX.contains("function districtLensOmniscient() {"));
+        assert!(EMBEDDED_INDEX
+            .contains("return !!state?.spectate && !Number.isInteger(state?.view_player);"));
+        // The lens list offers the stable base families and signs itself with
+        // a constant name, so nothing rebuilds — or resets the active lens —
+        // as turns rotate.
+        assert!(EMBEDDED_INDEX
+            .contains(".filter(district => !RULES.districts[district]?.unique_to)"));
+        assert!(EMBEDDED_INDEX.contains("? \"omniscient\" : state?.players?.[viewer]?.civ || \"\";"));
+        // Every empire's ground answers at once: existing districts match by
+        // family and price themselves by their own rules, and candidate plots
+        // are forecast for each empire with the district its civilization
+        // actually builds.
+        assert!(EMBEDDED_INDEX.contains("function districtLensCivVariant(family, civ) {"));
+        assert!(EMBEDDED_INDEX.contains("if (!districtLensIsFamily(tile.district, district)) continue;"));
+        assert!(EMBEDDED_INDEX
+            .contains("? districtLensCivVariant(district, state.players?.[city.owner]?.civ)"));
+        // The one observed seat's private reads — its laboratory and its
+        // policy cards — are skipped above the world instead of flickering
+        // through whichever empire happens to be acting.
+        assert!(EMBEDDED_INDEX
+            .contains("return districtLensOmniscient() ? null : new Set(state?.me?.techs || []);"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (districtLensOmniscient() || owner !== districtLensViewer()) return 0;"));
+        // Districts without adjacency rules — the Aerodrome family and
+        // friends, exactly as in Civilization VI — say so in the modeline
+        // rather than reading as a broken lens.
+        assert!(EMBEDDED_INDEX.contains("function districtLensFamilyHasAdjacency(district) {"));
+        assert!(EMBEDDED_INDEX
+            .contains("no adjacency bonuses in Civ VI — showing legal sites"));
     }
 
     /// Every lobby setting is answered before a game starts: each select
@@ -8660,7 +8713,7 @@ mod tests {
             .find("<summary>Keyboard shortcuts</summary>")
             .expect("keyboard shortcuts");
         let map_lenses = EMBEDDED_INDEX
-            .find("<details class=\"sidebar-section\" id=\"maplensessec\" data-section=\"map-lenses\">")
+            .find("<details id=\"maplensessec\" data-section=\"map-lenses\">")
             .expect("collapsible map lens section");
         let map_utility = EMBEDDED_INDEX
             .find("<div id=\"map-utility-panel\"")
@@ -8737,10 +8790,11 @@ mod tests {
         );
         assert!(EMBEDDED_INDEX.contains("id=\"map-lens-exit\""));
         assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #maplensessec"));
-        // Lenses are a first-class deck section: collapsed by default, saved
-        // with the other disclosures, and expanded only when the viewer wants
-        // to change the map perspective. Search stays in the lower utility
-        // band, so a query remains reachable without opening the lens grid.
+        // Lenses are a docked panel at the deck's lower edge: collapsed by
+        // default, saved with the other disclosures, and always at the bottom
+        // of the screen in reading order — lenses, then visible-tile search,
+        // then keyboard shortcuts — so changing the map perspective never
+        // requires scrolling the command sections.
         let lens_section = &EMBEDDED_INDEX[map_lenses..map_utility];
         let lens_opening = lens_section
             .split_once('>')
@@ -8755,8 +8809,11 @@ mod tests {
             lenses < strip && close < strip,
             "the collapsible menu header holds its dismiss control and the lens grid follows it"
         );
-        assert!(lens_section.contains("<summary class=\"section-label\">"));
+        assert!(lens_section.contains("<summary>Map lenses</summary>"));
         assert!(lens_section.contains("data-section=\"map-lenses\""));
+        // The open grid caps its own height and scrolls inside, so it shares
+        // the deck with the scroller above instead of swallowing the column.
+        assert!(EMBEDDED_INDEX.contains("#maplensessec[open] .lens-dock-body"));
         assert!(
             !lens_opening.contains(" open"),
             "a fresh profile should start with the map lens section collapsed"
@@ -9177,25 +9234,21 @@ mod tests {
             EMBEDDED_INDEX
                 .matches("class=\"sidebar-section\"")
                 .count(),
-            7,
-            "every top-level left-panel section should be collapsible"
+            6,
+            "every scrolling left-panel section should be collapsible; the \
+             lens dock below them carries its own panel style"
         );
         assert!(EMBEDDED_INDEX.contains("function initSidebarSections()"));
         assert!(EMBEDDED_INDEX.contains("civvis-sidebar-sections-v1"));
-        assert!(EMBEDDED_INDEX.contains("section.id === \"maplensessec\" && section.open"));
-        assert!(EMBEDDED_INDEX.contains("const revealMapLensSection = () => {"));
-        assert!(EMBEDDED_INDEX.contains("const scheduleMapLensSectionReveal = () => {"));
-        assert!(EMBEDDED_INDEX.contains(
-            "section.scrollIntoView({block:\"nearest\", inline:\"nearest\"})"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "for (const delay of [0, 250, 750]) {"
-        ));
-        assert!(EMBEDDED_INDEX.contains("window.setTimeout(revealMapLensSection, delay);"));
-        assert!(EMBEDDED_INDEX.contains("scheduleMapLensSectionReveal();"));
-        assert!(EMBEDDED_INDEX.contains(
-            "window.addEventListener(\"resize\", revealMapLensSection, {passive:true});"
-        ));
+        // The lens dock is a fixed panel at the deck's lower edge. It shares
+        // the saved-disclosure store with the scrolling sections and needs no
+        // scroll-into-view choreography — that machinery went with the old
+        // in-scroller placement.
+        assert!(EMBEDDED_INDEX.contains("#side details[data-section]"));
+        assert!(
+            !EMBEDDED_INDEX.contains("revealMapLensSection"),
+            "a docked lens panel has nothing to scroll into view"
+        );
         // Collapsing the command deck collapses the deck alone. Every map
         // overlay is switched from the deck's Display Settings instead, so the
         // two controls stay independent and the deck's width can be handed to
@@ -13232,6 +13285,20 @@ mod tests {
                 "the ground outside the map area's {edge} edge must be dimmed"
             );
         }
+        // The fitted world runs to the bottom of the screen. The zoom dock
+        // floats over it like every other lower instrument, so the uncovered
+        // rectangle must not carve a strip out for it.
+        let uncovered = EMBEDDED_INDEX
+            .split_once("function uncoveredMapBox(origin, width, height)")
+            .expect("the uncovered-map measurement")
+            .1
+            .split_once("\nfunction ")
+            .expect("the end of the uncovered-map measurement")
+            .0;
+        assert!(
+            !uncovered.contains("map-controls-dock"),
+            "the map fit must ignore the floating map-controls dock"
+        );
         // The canvas is placed by those properties rather than stretched to
         // its container. `width: 100%` on #map is exactly what this replaces.
         let map_rule = EMBEDDED_INDEX

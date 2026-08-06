@@ -247,6 +247,12 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             "commit": runtime_commit("unknown"),
             "commit_time": runtime_commit_time(),
             "built_at": runtime_built_at(),
+            "next_game_settings": NEXT_GAME_PARAMS.with(|cell| {
+                cell.borrow()
+                    .as_ref()
+                    .map(simulation_settings)
+                    .unwrap_or(Value::Null)
+            }),
         }),
 
         // No per-viewer tile delta: the page is told the whole world every

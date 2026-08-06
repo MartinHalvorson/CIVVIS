@@ -29,9 +29,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # The default pull_request checkout (the merge ref) rather than the PR
+      # head: a branch cut before this guard existed has no tool in its tree,
+      # and checking out head.sha made every such PR fail with exit 127 —
+      # unjudgeable, not judged (#1265 found this within hours of the guard
+      # becoming required).
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
           # Blame needs the full history to date the deleted lines.
           fetch-depth: 0
 
@@ -45,6 +49,10 @@ jobs:
         run: |
           set -euo pipefail
           printf '%s' "$PR_BODY" > /tmp/pr-body.txt
+          # Judge with MAIN's copy of the tool, never the branch's: an old
+          # branch may lack it and no branch may audition its own judge.
+          git fetch --quiet origin main
+          git show origin/main:tools/overwrite_guard.py > /tmp/overwrite_guard.py
           base="$(git merge-base "$BASE_REF" "$HEAD_SHA")"
-          ./tools/overwrite_guard.py --base "$base" --head "$HEAD_SHA" \
+          python3 /tmp/overwrite_guard.py --base "$base" --head "$HEAD_SHA" \
             --body-file /tmp/pr-body.txt
