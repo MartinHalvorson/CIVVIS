@@ -9538,6 +9538,13 @@ function paceHeldOpen() {
   return [document.getElementById("specspeed"), document.querySelector("[data-hud-pace]")]
     .some(select => select && document.activeElement === select);
 }
+// Only the standings' own copy of the pace select dies when the standings
+// repaint, so only that copy needs to hold the repaint while it is held open.
+// The sidebar #specspeed lives outside #playerhud and never has this problem.
+function hudPaceHeldOpen() {
+  const select = document.querySelector("[data-hud-pace]");
+  return !!select && document.activeElement === select;
+}
 function paceOffered(select, ms) {
   return [...select.options].some(o => +o.value === ms);
 }
@@ -23551,7 +23558,12 @@ function drawPlayerHud() {
   // A repaint mid-gesture would take the bar out from under the pointer along
   // with its pointer capture, so a column drag holds the table exactly as a
   // widget drag does. finishPlayerHudColumnGesture() catches it up on release.
-  if (html === hudHtml || hudLayoutGesture?.name === "players" || playerHudColumnGesture) {
+  // The watch-pace dropdown is the same kind of hostage: its native menu is
+  // anchored to the select element, so replacing the table's HTML while it is
+  // open snaps the menu shut before a pick can land. Hold the repaint while
+  // that select is focused; the ribbon's focusout listener catches it up.
+  if (html === hudHtml || hudLayoutGesture?.name === "players" || playerHudColumnGesture
+      || hudPaceHeldOpen()) {
     reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
     return;
   }
@@ -23677,7 +23689,18 @@ function runHudAction(target) {
 const hudRibbon = document.getElementById("playerhud");
 hudRibbon.addEventListener("change", ev => {
   const pace = ev.target.closest?.("[data-hud-pace]");
-  if (pace) chooseWatchPace(pace.value);
+  if (!pace) return;
+  chooseWatchPace(pace.value);
+  // The pick has landed, so nothing is holding the menu open any more —
+  // release the focus hold so the standings resume repainting immediately
+  // rather than staying frozen until the viewer happens to click elsewhere.
+  pace.blur();
+});
+// Focus on the watch-pace select holds the standings repaint (drawPlayerHud)
+// so the open menu's anchor survives the next snapshot. The moment focus
+// leaves it, paint whatever those held snapshots changed.
+hudRibbon.addEventListener("focusout", ev => {
+  if (ev.target.closest?.("[data-hud-pace]") && state) drawPlayerHud();
 });
 hudRibbon.addEventListener("mousedown", ev => {
   if (ev.button !== 0) return;
