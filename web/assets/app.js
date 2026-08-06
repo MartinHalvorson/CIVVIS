@@ -16013,9 +16013,12 @@ function drawPlanetEmpireLabels(cells, scale, radius, visible, spectator) {
   }
   if (!sections.length) return;
 
-  const zoomOut = Math.max(0, Math.min(1,
-    (PLANET_MAJOR_CITY_LABEL_SCALE - scale) / .38));
-  const fontSize = 17 + zoomOut * 7;
+  // Size the type by the Earth on the screen, not by the zoom ladder. The old
+  // ramp grew the font as the camera pulled away, so a globe shrunk to a ball
+  // wore captions a third of its own width. Tying the size to the on-screen
+  // radius keeps a survey label smaller than the world it names, and the floor
+  // hands over to the radius fade above before the type becomes unreadable.
+  const fontSize = Math.max(9, Math.min(17, radius * .075));
   const boxes = [];
   sections.sort((a, b) => b.area - a.area);
   cx.save();
@@ -16030,7 +16033,7 @@ function drawPlanetEmpireLabels(cells, scale, radius, visible, spectator) {
     boxes.push(box);
     const [, light] = jerseyLanes(section.owner);
     cx.globalAlpha = alpha;
-    cx.strokeStyle = "#07100f"; cx.lineWidth = Math.max(3.5, fontSize * .22);
+    cx.strokeStyle = "#07100f"; cx.lineWidth = Math.max(2, fontSize * .22);
     cx.strokeText(section.label, section.x, section.y);
     cx.fillStyle = light;
     cx.fillText(section.label, section.x, section.y);
