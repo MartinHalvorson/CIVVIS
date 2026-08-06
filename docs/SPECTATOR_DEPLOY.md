@@ -49,17 +49,12 @@ the private build worktree is `<...>/civvis-spectator-spectator-src`.
 
 ## Windows (Task Scheduler)
 
-```powershell
-powershell -ExecutionPolicy Bypass -File deploy\register_spectator_task.ps1 `
-    -DeployRoot C:\Users\<you>\PycharmProjects\civvis-spectator
-Start-ScheduledTask -TaskPath '\Martbot\' -TaskName 'Civvis Spectator'
-```
-
-The task runs `pythonw.exe` (windowless); the supervisor gives every child
-process `CREATE_NO_WINDOW`, so nothing ever flashes a console — the operator
-terminal policy is honored. A per-port lock inside the supervisor guarantees a
-single instance even across a self-update, so the logon + 5-minute recovery
-triggers can fire freely.
+The fleet is macOS-only today, so the Task Scheduler registrar
+(`deploy/register_spectator_task.ps1`) was retired; it lives in git history if
+a Windows spectator host ever returns. The supervisor itself is still
+cross-platform: it gives every child `CREATE_NO_WINDOW` on Windows and holds a
+per-port lock, so re-registering a scheduled task around it is all a future
+Windows deploy needs.
 
 ## macOS / Linux (launchd)
 
