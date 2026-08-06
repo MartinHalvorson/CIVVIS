@@ -310,8 +310,6 @@ impl WorkPool {
             active,
             "a stateful batch needs one state per active worker"
         );
-        let next = Arc::new(AtomicUsize::new(0));
-        let cancelled = Arc::new(AtomicBool::new(false));
         let nested = IN_WORK_POOL.with(Cell::get);
 
         if active == 1 || nested {
@@ -329,6 +327,8 @@ impl WorkPool {
             return Self::ordered_stateful_results(count, results);
         }
 
+        let next = Arc::new(AtomicUsize::new(0));
+        let cancelled = Arc::new(AtomicBool::new(false));
         let job = Arc::new(job);
         let (result_tx, result_rx) = mpsc::channel::<BatchMessage<T>>();
         for state in states {
