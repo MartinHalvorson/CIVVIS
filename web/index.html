@@ -23019,7 +23019,7 @@ function hudTurnPlate() {
   return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
     `<span class="turn-era">${ageLabel}</span>` +
     `<div class="${turnCountClasses}"><span class="turn-label">Turn</span>` +
-    `<div class="turn-progress"><strong>${turn}</strong>` +
+    `<div class="turn-progress"><strong>${reportedTurn()}</strong>` +
     `<small class="turn-total">${compactTurn ? "/" : "/ "}${turnCap}</small></div>` +
     (decided ? `<small class="turn-playon">Playing on</small>` : ``) +
     `</div>` +
