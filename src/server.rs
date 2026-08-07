@@ -28,10 +28,10 @@ use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::name::Name;
 use crate::rules::Rules;
 use crate::setup::{
-    future_era_from_id, future_era_id, start_era_from_id, start_era_id, turn_structure_id,
-    BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology, TurnStructure,
-    BASE_RULESETS, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, FUTURE_ERAS, MAP_POLES,
-    MAP_TOPOLOGIES, START_ERAS,
+    battlefield_map_scripts, future_era_from_id, future_era_id, start_era_from_id, start_era_id,
+    turn_structure_id, world_map_scripts, BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript,
+    MapSize, MapTopology, TurnStructure, BASE_RULESETS, BATTLEFIELD_SIZES, CIV6_GAME_SPEEDS,
+    CIV6_MAP_SIZES, FUTURE_ERAS, MAP_POLES, MAP_TOPOLOGIES, START_ERAS,
 };
 use crate::Pos;
 
@@ -3899,6 +3899,17 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
             p.max_turns = requested_turn_limit(request).unwrap_or(spec.turns);
         }
     }
+    // A battlefield is an arena, not a world: flat by construction — a globe
+    // has no opposite corners for its two sides — and it seats no
+    // city-states. This lands after every override above so the published
+    // next-game settings honestly describe the game that will start; the
+    // engine enforces both again when the world is built. A later request
+    // that moves the map back to a world restores the size profile's
+    // city-states through its own `num_players` stamp.
+    if p.map_script.is_battlefield() {
+        p.map_topology = MapTopology::Flat;
+        p.num_city_states = 0;
+    }
     // Only a spectated table plays the simultaneous regime. A human seat is
     // consulted live, one seat at a time — sequential by construction — so
     // the structure is refused for a played game exactly as `play` refuses
@@ -4618,7 +4629,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "base_rulesets": BASE_RULESETS,
                     "start_eras": START_ERAS,
                     "future_eras": FUTURE_ERAS,
-                    "map_scripts": CIV6_MAP_SCRIPTS,
+                    // The Civ mode's worlds and the Tactics mode's arenas are
+                    // separate menus cut from the one authoritative roster:
+                    // a battlefield is not a world a Civ game should offer.
+                    "map_scripts": world_map_scripts(),
+                    "battlefield_scripts": battlefield_map_scripts(),
+                    "battlefield_sizes": BATTLEFIELD_SIZES,
                     "map_topologies": MAP_TOPOLOGIES,
                     "map_poles": MAP_POLES,
                     "game_speeds": CIV6_GAME_SPEEDS,
@@ -5018,8 +5034,9 @@ mod tests {
         default_setup_json, generated_ai_name, simulation_settings, stock_opening_params,
     };
     use crate::setup::{
-        future_era_from_id, start_era_from_id, BaseRuleset, FutureEra, GameSpeed, MapPoles,
-        MapScript, MapSize, MapTopology, TurnStructure, MAP_POLES,
+        battlefield_map_scripts, future_era_from_id, start_era_from_id, world_map_scripts,
+        BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology,
+        TurnStructure, BATTLEFIELD_SIZES, MAP_POLES,
     };
     use serde_json::{json, Value};
     use std::io::{Read, Write};
@@ -7591,6 +7608,72 @@ mod tests {
         assert_eq!(seated.turn_structure, TurnStructure::Sequential);
     }
 
+    /// A battlefield request is an arena, whatever else it asks for: the
+    /// shape comes back flat — a globe has no opposite corners — the
+    /// city-states come back zero, and the explicit arena dimensions survive
+    /// the size ladder that `num_players` stamps. Leaving Tactics restores
+    /// the size profile's own city-states through the next `num_players`.
+    #[test]
+    fn a_battlefield_request_is_flat_bounded_and_without_city_states() {
+        let tactics = new_game_params(
+            &current(),
+            &json!({
+                "num_players": 2, "map_script": "battlefield",
+                "map_topology": "planet", "width": 11, "height": 10,
+            }),
+        );
+        assert_eq!(tactics.map_script, MapScript::Battlefield);
+        assert_eq!(tactics.map_topology, MapTopology::Flat);
+        assert_eq!((tactics.width, tactics.height), (11, 10));
+        assert_eq!(tactics.num_city_states, 0);
+        assert_eq!(tactics.num_players, 2);
+
+        let back = new_game_params(&tactics, &json!({
+            "num_players": 2, "map_script": "pangaea",
+        }));
+        assert_eq!(back.map_script, MapScript::Pangaea);
+        assert_eq!(
+            back.num_city_states,
+            MapSize::for_players(2).default_city_states,
+            "leaving Tactics must restore the size profile's city-states"
+        );
+    }
+
+    /// The lobby's two map menus are cut from the one authoritative roster:
+    /// the Civ mode offers every world and no arena, the Tactics mode offers
+    /// the battlefield, and the battlefield sizes advertise their fighting
+    /// ground while carrying the seam column that seals the wrap.
+    #[test]
+    fn the_map_menus_split_worlds_from_battlefields() {
+        assert!(world_map_scripts()
+            .iter()
+            .all(|spec| !spec.script.is_battlefield()));
+        assert_eq!(
+            world_map_scripts().len() + battlefield_map_scripts().len(),
+            crate::setup::CIV6_MAP_SCRIPTS.len()
+        );
+        assert!(battlefield_map_scripts()
+            .iter()
+            .all(|spec| spec.script.is_battlefield()));
+        assert_eq!(battlefield_map_scripts()[0].id, "battlefield");
+        let sizes = serde_json::to_value(BATTLEFIELD_SIZES).expect("battlefield sizes serialize");
+        assert_eq!(sizes[0]["id"], json!("10x10"));
+        assert_eq!(sizes[0]["width"], json!(11));
+        assert_eq!(sizes[0]["height"], json!(10));
+        // The lobby swaps its size and map rosters from these lists and
+        // sends the arena's dimensions explicitly.
+        assert!(EMBEDDED_INDEX.contains("RULES.battlefield_sizes"));
+        assert!(EMBEDDED_INDEX.contains("RULES.battlefield_scripts"));
+        assert!(EMBEDDED_INDEX.contains(
+            "...(battlefield ? {width: battlefield.width, height: battlefield.height} : {})"
+        ));
+        // Tactics is a body state beside the other two, and the controls a
+        // battlefield cannot honour are hidden under it.
+        assert!(EMBEDDED_INDEX
+            .contains("document.body.classList.toggle(\"playing-tactics\", tactics);"));
+        assert!(EMBEDDED_INDEX.contains("body.playing-tactics .tactics-hidden { display: none; }"));
+    }
+
     fn current() -> Params {
         Params {
             map_topology: MapTopology::Flat,
@@ -7960,7 +8043,7 @@ mod tests {
             );
         }
         assert!(EMBEDDED_INDEX.contains(
-            "[\"gamemode\", true], [\"np\", true], [\"mapshape\", true], [\"maptype\", true],"
+            "[\"humanplayers\", true], [\"np\", true], [\"mapshape\", true], [\"maptype\", true],"
         ));
     }
 
@@ -8278,6 +8361,7 @@ mod tests {
     fn every_game_setting_is_answered_before_a_game_starts() {
         for setting in [
             "baseruleset",
+            "humanplayers",
             "gamemode",
             "startera",
             "futureera",
@@ -8324,7 +8408,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("const settings = selectedSimulationSettings();"));
         assert!(EMBEDDED_INDEX.contains("seed: settings.seed ?? Math.floor(Math.random() * 1e9)"));
         assert!(EMBEDDED_INDEX.contains("const changed = human || (activeSimulationSettingsKey"));
-        assert!(EMBEDDED_INDEX.contains("spectate: gameMode === \"ai_sim\","));
+        assert!(EMBEDDED_INDEX.contains("spectate: humanPlayers === \"ai_sim\","));
         assert!(
             !EMBEDDED_INDEX.contains("num_city_states: cityStates"),
             "the lobby should not send a custom city-state count"
@@ -8538,8 +8622,15 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("RULES.map_sizes.map(size =>"));
         assert!(EMBEDDED_INDEX.contains("RULES.map_scripts.map(script =>"));
         assert!(EMBEDDED_INDEX.contains("RULES.game_speeds.map(speed =>"));
+        assert!(EMBEDDED_INDEX.contains("id=\"humanplayers\""));
+        assert!(EMBEDDED_INDEX.contains(">Human players<"));
         assert!(EMBEDDED_INDEX.contains("id=\"gamemode\""));
-        // The game mode leads the primary path. The advanced ruleset and the
+        assert!(EMBEDDED_INDEX.contains(">Game mode<"));
+        // The Tactics game mode is offered beside Civ, from the markup: the
+        // choice between whole games is not data the server rosters.
+        assert!(EMBEDDED_INDEX.contains("<option value=\"civ\" selected>Civ</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"tactics\">Tactics</option>"));
+        // Who plays leads the primary path. The advanced ruleset and the
         // start-era ladder still come from the server, so a new ruleset — or a
         // rung somebody finally builds — never means editing the markup.
         assert!(EMBEDDED_INDEX.contains("id=\"baseruleset\""));
@@ -8550,8 +8641,12 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("RULES.start_eras.map(era =>"));
         assert!(EMBEDDED_INDEX.contains("base_ruleset: baseRuleset, start_era: startEra,"));
         assert!(
+            EMBEDDED_INDEX.find(">Human players<") < EMBEDDED_INDEX.find(">Base game ruleset<"),
+            "who plays must lead the primary setup path"
+        );
+        assert!(
             EMBEDDED_INDEX.find(">Game mode<") < EMBEDDED_INDEX.find(">Base game ruleset<"),
-            "the game mode must lead the primary setup path"
+            "the game mode must lead the advanced drawer"
         );
         // The eon that used to sit above the era is gone from the lobby, and
         // the ladder it hung off with it.
@@ -8861,7 +8956,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("st.seed !== state.seed"));
         assert!(!EMBEDDED_INDEX.contains("id=\"head-newgame\""));
         // The mode still decides whether anyone is watching or playing.
-        assert!(EMBEDDED_INDEX.contains("spectate: gameMode === \"ai_sim\""));
+        assert!(EMBEDDED_INDEX.contains("spectate: humanPlayers === \"ai_sim\""));
         assert!(!EMBEDDED_INDEX.contains("id=\"specchk\""));
         assert!(!EMBEDDED_INDEX.contains("RULES.map_sizes.filter"));
 
@@ -8871,7 +8966,7 @@ mod tests {
         // then victories. The rules, roster, teams, climate and seed stay in
         // the advanced drawer; the era mods live in the mods drawer.
         let order = [
-            "gamemode",
+            "humanplayers",
             "np",
             "mapshape",
             "maptype",
@@ -8885,7 +8980,7 @@ mod tests {
         });
         assert!(
             order.windows(2).all(|pair| pair[0] < pair[1]),
-            "lobby order must read mode/size, shape/map, era/speed"
+            "lobby order must read players/size, shape/map, era/speed"
         );
         assert!(EMBEDDED_INDEX.find("id=\"gamespeed\"").unwrap()
             < EMBEDDED_INDEX.find("id=\"victory-options\"").unwrap());
@@ -8896,18 +8991,19 @@ mod tests {
         // climate and seed. Human-only leader/difficulty fields remain there
         // too, so they do not interrupt the primary simulation path.
         for advanced in [
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"5\">Game mode",
             "class=\"small game-advanced-setting\" data-advanced-order=\"10\">Base game ruleset",
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"20\">Teams",
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\">Leader pool",
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\">Leader selection",
             "class=\"custom-leader-selection game-advanced-setting civ6-hidden\" data-advanced-order=\"45\"",
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"50\">Thermal distribution",
+            "class=\"small game-advanced-setting civ6-hidden tactics-hidden\" data-advanced-order=\"50\">Thermal distribution",
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"60\">Map seed",
         ] {
             assert!(EMBEDDED_INDEX.contains(advanced), "missing advanced setting: {advanced}");
         }
         for normal in [
-            "class=\"small civ6-hidden\">World shape",
+            "class=\"small civ6-hidden tactics-hidden\">World shape",
             "class=\"small civ6-hidden\">Start era",
             "class=\"small era-future-setting\">Future era",
             "class=\"victory-options civ6-hidden\" id=\"victory-options\"",
@@ -8931,7 +9027,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function syncRequiredVictoriesCap"));
         assert!(EMBEDDED_INDEX.contains("required_victory_types: requiredVictories,"));
         assert!(EMBEDDED_INDEX.contains(
-            "[\"gamemode\", true], [\"np\", true], [\"mapshape\", true], [\"maptype\", true],"
+            "[\"humanplayers\", true], [\"np\", true], [\"mapshape\", true], [\"maptype\", true],"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "[\"startera\", true], [\"gamespeed\", true],"
@@ -12216,7 +12312,7 @@ mod tests {
         // by that game. Its *difficulty* still travels, because that is the one
         // setting the mode exists for.
         assert!(EMBEDDED_INDEX.contains(
-            "...(gameMode === \"ai_sim\"\n            ? (leaderSelection === \"custom\" ? {civs: customCivs} : {})"
+            "...(humanPlayers === \"ai_sim\"\n            ? (leaderSelection === \"custom\" ? {civs: customCivs} : {})"
         ));
         assert!(EMBEDDED_INDEX.contains(
             ": {civs: civ6 || !leader ? [] : [leader], difficulty})"
@@ -12288,7 +12384,7 @@ mod tests {
         // Settings staged for the next simulation describe a spectated world,
         // so they may only adopt that mode while one is on screen.
         assert!(EMBEDDED_INDEX
-            .contains("if (SPEC) document.getElementById(\"gamemode\").value = \"ai_sim\";"));
+            .contains("if (SPEC) document.getElementById(\"humanplayers\").value = \"ai_sim\";"));
     }
 
     /// The verification-only mode plays the other game, so the panel it is
@@ -12314,13 +12410,14 @@ mod tests {
         // Exactly the rows that are not carried, and no others. Difficulty is
         // deliberately absent: it is the setting the mode exists for.
         for row in [
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"5\"", // game mode
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"20\"", // teams
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\"", // leader pool
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\"", // leader selection
             "class=\"custom-leader-selection game-advanced-setting civ6-hidden\"", // custom table
             "class=\"small game-advanced-setting human-setting civ6-hidden\"",
-            "class=\"small civ6-hidden\">World shape",
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"50\"", // thermal
+            "class=\"small civ6-hidden tactics-hidden\">World shape",
+            "class=\"small game-advanced-setting civ6-hidden tactics-hidden\" data-advanced-order=\"50\"", // thermal
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"60\"", // map seed
             "class=\"small civ6-hidden\">Start era",
             "class=\"victory-options civ6-hidden\"",
@@ -12331,12 +12428,12 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("class=\"small human-setting civ6-hidden\">Difficulty"));
         // The map control becomes the other game's roster rather than a
         // filtered copy of ours; neither list contains the other.
-        assert!(EMBEDDED_INDEX.contains("function syncMapRoster(civ6)"));
+        assert!(EMBEDDED_INDEX.contains("function syncMapRoster(civ6, tactics)"));
         assert!(EMBEDDED_INDEX.contains("const carried = maps.find(map => map.civvis === chosen);"));
         // The one start control is named after the game it starts.
         assert!(EMBEDDED_INDEX.contains("? \"Play Firaxis Civ 6\""));
         assert!(EMBEDDED_INDEX
-            .contains("if (readSetting(\"gamemode\") === \"civ6\") { startCiv6Game(); return; }"));
+            .contains("if (readSetting(\"humanplayers\") === \"civ6\") { startCiv6Game(); return; }"));
         assert!(EMBEDDED_INDEX.contains("await fetchJSON(\"/civ6/start\", {method: \"POST\","));
         // A refusal is shown rather than hidden. A run that silently never
         // starts is how a dead Steam client cost eleven ladder attempts.

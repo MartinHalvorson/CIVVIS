@@ -293,7 +293,11 @@ fn route(method: &str, target: &str, body: &str) -> Value {
                 "base_rulesets": BASE_RULESETS,
                 "start_eras": START_ERAS,
                 "future_eras": FUTURE_ERAS,
-                "map_scripts": CIV6_MAP_SCRIPTS,
+                // The same two menus the native server cuts from the one
+                // roster: worlds for the Civ mode, arenas for Tactics.
+                "map_scripts": world_map_scripts(),
+                "battlefield_scripts": battlefield_map_scripts(),
+                "battlefield_sizes": BATTLEFIELD_SIZES,
                 "map_topologies": MAP_TOPOLOGIES,
                 "map_poles": MAP_POLES,
                 "game_speeds": CIV6_GAME_SPEEDS,

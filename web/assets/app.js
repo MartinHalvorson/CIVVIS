@@ -43,7 +43,7 @@ function initAdvancedSettings() {
   const gameAdvanced = document.getElementById("game-advanced-settings");
   moveByOrder(game, ".game-advanced-setting", document.getElementById("game-advanced-settings-body"));
   const basic = [
-    ["gamemode", true], ["np", true], ["mapshape", true], ["maptype", true],
+    ["humanplayers", true], ["np", true], ["mapshape", true], ["maptype", true],
     ["startera", true], ["gamespeed", true],
   ].map(([id, label]) => label
     ? document.getElementById(id).closest("label")
@@ -53,7 +53,7 @@ function initAdvancedSettings() {
   // The Civ 6 host line describes the mode chosen directly above it, so it
   // follows that control through the reorder rather than staying where the
   // source happens to put it.
-  document.getElementById("gamemode").closest("label")
+  document.getElementById("humanplayers").closest("label")
     .after(document.getElementById("civ6-status"));
 
   let disclosureState = {};
@@ -6599,10 +6599,22 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   syncViewPlayer();
   if (newWorld && st.seed !== undefined) { lastSeed = st.seed; loadTacks(); }
   if (newWorld) {
+    // The game mode belongs to this world too: a battlefield on screen reads
+    // back as Tactics, with the size control holding its arena rather than a
+    // seat count. The mode is in place before the size and map are read back
+    // so both controls hold the roster those values live in.
+    const tactics = st.map.script === "battlefield";
+    document.getElementById("gamemode").value = tactics ? "tactics" : "civ";
+    syncSetupMode();
     const majors = st.players.filter(p => !p.is_minor && !p.is_barbarian).length;
     const playerSelect = document.getElementById("np");
-    if ([...playerSelect.options].some(o => +o.value === majors))
+    const arena = tactics ? battlefieldSizes().find(size =>
+      size.width === st.map.width && size.height === st.map.height) : null;
+    if (arena) {
+      playerSelect.value = arena.id;
+    } else if ([...playerSelect.options].some(o => +o.value === majors)) {
       playerSelect.value = String(majors);
+    }
     // Teams belong to this world as much as its map does, so a page that
     // reloads over a running team game reads that game back rather than
     // offering to restart it as a free-for-all.
@@ -27767,6 +27779,8 @@ let civ6Status = null;
 let civ6StatusTimer = null;
 let civ6StatusInFlight = false;
 let civvisMapOptions = null;
+let civvisSizeOptions = null;
+document.getElementById("humanplayers").addEventListener("change", syncSetupMode);
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("leaderselection").addEventListener("change", syncCustomLeaderSelection);
@@ -27961,10 +27975,14 @@ function drawCiv6Status() {
   runLine.hidden = !runLine.innerHTML;
 }
 function selectedSimulationSettings() {
-  const np = +readSetting("np");
-  const gameMode = readSetting("gamemode");
+  const humanPlayers = readSetting("humanplayers");
+  // In Tactics the size control holds a battlefield id rather than a seat
+  // count: the arena always seats two sides, and its dimensions travel
+  // explicitly because no seat count implies them.
+  const battlefield = humanPlayers === "civ6" ? null : battlefieldSize(readSetting("np"));
+  const np = battlefield ? 2 : +readSetting("np");
   const mapScript = readSetting("maptype");
-  const mapTopology = readSetting("mapshape");
+  const mapTopology = battlefield ? "flat" : readSetting("mapshape");
   const mapPoles = readSetting("mappoles");
   const gameSpeed = readSetting("gamespeed");
   const leaderPool = readSetting("leaderpool");
@@ -27989,7 +28007,7 @@ function selectedSimulationSettings() {
   // engine could still build — the payload has to stay a valid description of a
   // CIVVIS world for the settings staging and the summary line, which are the
   // same code in every mode.
-  const civ6 = gameMode === "civ6";
+  const civ6 = humanPlayers === "civ6";
   const civ6Map = civ6 ? mapScript : "";
   const ourMap = civ6
     ? (civ6Maps().find(map => map.id === civ6Map) || {}).civvis || "continents"
@@ -28008,13 +28026,17 @@ function selectedSimulationSettings() {
           mercy_rule: mercyRule === "" ? null : Number(mercyRule),
           required_victory_types: requiredVictories,
           ...(mapSeed === null ? {} : {seed: mapSeed}),
-          spectate: gameMode === "ai_sim",
+          // A battlefield's dimensions are its own setting: no seat count
+          // implies an arena size, so the chosen one travels explicitly and
+          // the server derives everything else from the battlefield map.
+          ...(battlefield ? {width: battlefield.width, height: battlefield.height} : {}),
+          spectate: humanPlayers === "ai_sim",
           ...(civ6 ? {mode: "civ6", civ6_map: civ6Map} : {}),
           // A spectated world has nobody to hand a leader or a handicap to.
           // Neither has this one, but its difficulty is the point of it: the
           // other game hands its handicap bonuses to human seats only, which is
           // what makes the ladder climbable from one.
-          ...(gameMode === "ai_sim"
+          ...(humanPlayers === "ai_sim"
             ? (leaderSelection === "custom" ? {civs: customCivs} : {})
             : {civs: civ6 || !leader ? [] : [leader], difficulty})};
 }
@@ -28030,11 +28052,14 @@ function selectedSimulationSummary(settings = null) {
     return (option?.textContent || (value ?? select.value) || "").toString().trim();
   };
   const spectate = settings ? settings.spectate
-    : document.getElementById("gamemode").value === "ai_sim";
+    : document.getElementById("humanplayers").value === "ai_sim";
   const civ6 = settings ? settings.mode === "civ6"
-    : document.getElementById("gamemode").value === "civ6";
+    : document.getElementById("humanplayers").value === "civ6";
+  const tactics = settings ? settings.map_script === "battlefield"
+    : readSetting("gamemode") === "tactics";
   const mode = civ6 ? "Firaxis Civ 6"
     : spectate === true ? "AI simulation" : "Single player";
+  const arena = !civ6 && tactics ? "Tactics" : "";
   // The world-size option already includes its dimensions and seat count; the
   // compact first clause is enough to identify the choice without turning the
   // handoff screen into a settings table.
@@ -28061,12 +28086,13 @@ function selectedSimulationSummary(settings = null) {
   // Free-for-all is what you get by choosing nothing, so only a real division
   // is worth a clause — and it is named by its split, which is the part that
   // depends on a size this line has already reported.
-  const players = settings ? settings.num_players : +document.getElementById("np").value;
+  const players = settings ? settings.num_players
+    : +document.getElementById("np").value || 2;
   const teamRule = settings
     ? teamRuleFromArray(settings.teams)
     : document.getElementById("teams")?.value;
   const teams = teamRule && teamRule !== "ffa" ? teamPhrase(players, teamRule) : "";
-  return [mode, size, map, speed, era, future, teams].filter(Boolean).join(" · ");
+  return [mode, arena, size, map, speed, era, future, teams].filter(Boolean).join(" · ");
 }
 function simulationSettingsKey(settings) {
   return JSON.stringify(settings);
@@ -28076,9 +28102,20 @@ function applyQueuedSimulationSettings(settings) {
   // Staged settings describe a spectated world, so they adopt that mode while
   // one is on screen. They must not overrule the person who just asked for a
   // single-player game and is now looking at it.
-  if (SPEC) document.getElementById("gamemode").value = "ai_sim";
+  if (SPEC) document.getElementById("humanplayers").value = "ai_sim";
+  // The staged map says which game mode the queue describes: a battlefield
+  // is the Tactics mode's arena, and the size control reads back as the
+  // battlefield whose dimensions the queue carries.
+  const tactics = settings.map === "battlefield";
+  document.getElementById("gamemode").value = tactics ? "tactics" : "civ";
   syncSetupMode();
-  document.getElementById("np").value = String(settings.players);
+  if (tactics) {
+    const size = battlefieldSizes().find(size =>
+      size.width === settings.width && size.height === settings.height);
+    if (size) document.getElementById("np").value = size.id;
+  } else {
+    document.getElementById("np").value = String(settings.players);
+  }
   // The staged size decides which splits exist, so it is in place first and
   // the queued assignment is read back as the rule that would produce it.
   syncTeams();
@@ -28189,7 +28226,7 @@ function showNewSimulationError(error, action = "start simulation") {
 // AI-only simulation. Once a world is on screen it opens on that world's mode
 // instead, so the persistent restart control describes what it will start.
 function adoptRunningMode() {
-  const select = document.getElementById("gamemode");
+  const select = document.getElementById("humanplayers");
   if (!select || !state) return;
   select.value = SPEC ? "ai_sim" : "single";
   syncSetupMode();
@@ -28204,12 +28241,21 @@ function adoptRunningMode() {
 // seats, which is the whole reason to occupy one), and nobody is at the
 // keyboard once it starts. So the settings follow single player and the
 // controls follow the simulation. See docs/CIV6_GAME_MODE.md.
+//
+// Tactics is a game-mode axis rather than a fourth keyboard state: who plays
+// is still the Human players control, and what they play — the full Civ game
+// or a battlefield arena — swaps the size and map rosters the way Civ 6
+// swaps the map list. Civ 6 outranks it while chosen, because that mode's
+// panel configures the other game entirely.
 function syncSetupMode() {
-  const mode = (document.getElementById("gamemode") || {}).value || "ai_sim";
-  const civ6 = mode === "civ6";
-  document.body.classList.toggle("spectating", mode === "ai_sim");
+  const seats = (document.getElementById("humanplayers") || {}).value || "ai_sim";
+  const civ6 = seats === "civ6";
+  const tactics = !civ6 && readSetting("gamemode") === "tactics";
+  document.body.classList.toggle("spectating", seats === "ai_sim");
   document.body.classList.toggle("playing-civ6", civ6);
-  syncMapRoster(civ6);
+  document.body.classList.toggle("playing-tactics", tactics);
+  syncMapRoster(civ6, tactics);
+  syncBattlefieldSizes(tactics);
   // The control's label is not relabelled from here. This runs once during
   // load, before the settings state it would read has been initialised, and
   // `#newgame-options`'s delegated change listener already relabels it on
@@ -28224,31 +28270,83 @@ function syncSetupMode() {
 function civ6Maps() {
   return (RULES && RULES.civ6 && Array.isArray(RULES.civ6.maps)) ? RULES.civ6.maps : [];
 }
-function syncMapRoster(civ6) {
+function battlefieldScripts() {
+  return (RULES && Array.isArray(RULES.battlefield_scripts)) ? RULES.battlefield_scripts : [];
+}
+function battlefieldSizes() {
+  return (RULES && Array.isArray(RULES.battlefield_sizes)) ? RULES.battlefield_sizes : [];
+}
+function battlefieldSize(id) {
+  return battlefieldSizes().find(size => size.id === id) || null;
+}
+function syncMapRoster(civ6, tactics) {
   const select = document.getElementById("maptype");
   if (!select) return;
   const maps = civ6Maps();
   // Before /rules has answered there is nothing to swap to; syncSetupMode runs
   // again once it has.
   if (civ6 && !maps.length) return;
-  const roster = civ6 ? "civ6" : "civvis";
+  if (tactics && !battlefieldScripts().length) return;
+  const roster = civ6 ? "civ6" : tactics ? "tactics" : "civvis";
   // `/rules` refills this control after load, so what is put back must be
   // whatever it holds now rather than the markup it was born with.
-  if (select.dataset.roster !== "civ6") civvisMapOptions = select.innerHTML;
-  if (select.dataset.roster === roster) return;
+  if (select.dataset.roster !== "civ6" && select.dataset.roster !== "tactics")
+    civvisMapOptions = select.innerHTML;
+  if ((select.dataset.roster || "civvis") === roster) return;
   const chosen = select.value;
+  // The world chosen for the Civ game survives a round trip through either
+  // other roster, so flipping a mode on and off costs nobody their map.
+  if (select.dataset.roster !== "civ6" && select.dataset.roster !== "tactics")
+    select.dataset.civvisChoice = chosen;
   if (civ6) {
     select.innerHTML = maps.map(map =>
       `<option value="${escapeAttr(map.id)}">${map.name}</option>`).join("");
     const carried = maps.find(map => map.civvis === chosen);
     select.value = carried ? carried.id : (RULES.civ6.default_map || maps[0].id);
+  } else if (tactics) {
+    // The Tactics menu is the battlefield roster from the same /rules
+    // answer, so a second arena can arrive without a page change.
+    select.innerHTML = battlefieldScripts().map(script =>
+      `<option value="${escapeAttr(script.id)}" title="${escapeAttr(script.description)}">${script.name}</option>`).join("");
   } else {
     select.innerHTML = civvisMapOptions;
     const carried = maps.find(map => map.id === chosen);
-    if (carried && carried.civvis) select.value = carried.civvis;
+    const restored = carried && carried.civvis ? carried.civvis : select.dataset.civvisChoice;
+    if (restored && [...select.options].some(option => option.value === restored))
+      select.value = restored;
   }
   select.dataset.roster = roster;
   syncEarthShape();
+}
+// The world-size control is the battlefield-size control in Tactics: the same
+// select carrying a different roster, exactly as the map control does for
+// Civ 6 above. A battlefield seats exactly two sides, so the option says so
+// and the seat-dependent controls re-fit when the roster moves either way.
+function syncBattlefieldSizes(tactics) {
+  const sizes = document.getElementById("np");
+  if (!sizes) return;
+  if (tactics && !battlefieldSizes().length) return;
+  const roster = tactics ? "tactics" : "civvis";
+  if (sizes.dataset.roster !== "tactics") civvisSizeOptions = sizes.innerHTML;
+  if ((sizes.dataset.roster || "civvis") === roster) return;
+  const chosen = sizes.value;
+  if (tactics) {
+    sizes.dataset.civvisChoice = chosen;
+    sizes.innerHTML = battlefieldSizes().map(size =>
+      `<option value="${escapeAttr(size.id)}">${size.name} · 2 civs</option>`).join("");
+    const carried = sizes.dataset.tacticsChoice;
+    if (carried && [...sizes.options].some(option => option.value === carried))
+      sizes.value = carried;
+  } else {
+    sizes.dataset.tacticsChoice = chosen;
+    sizes.innerHTML = civvisSizeOptions;
+    const restored = sizes.dataset.civvisChoice;
+    if (restored && [...sizes.options].some(option => option.value === restored))
+      sizes.value = restored;
+  }
+  sizes.dataset.roster = roster;
+  syncTeams();
+  syncCustomLeaderSelection();
 }
 
 function normalizedLeaderPoolId(id) {
@@ -28345,7 +28443,9 @@ function syncCustomLeaderSelection() {
   if (!custom) return;
   const prior = customLeaderRowsFromDom();
   const entries = customLeaderEntries();
-  const players = Math.max(0, Number(readSetting("np")) || 0);
+  // A battlefield id in the size control means two seats, not a seat count.
+  const players = battlefieldSize(readSetting("np"))
+    ? 2 : Math.max(0, Number(readSetting("np")) || 0);
   const rule = readSetting("teams");
   const automaticTeams = teamAssignment(players, rule);
   if (!entries.length || !players) {
@@ -28442,7 +28542,8 @@ function syncTeams() {
   const select = document.getElementById("teams");
   const size = document.getElementById("np");
   if (!select || !size) return;
-  const players = +size.value;
+  // A battlefield id in the size control means two seats, not a seat count.
+  const players = battlefieldSize(size.value) ? 2 : +size.value;
   for (const option of select.options) {
     if (!TEAM_RULES.includes(option.value)) continue;
     const name = option.value === "pairs" ? "Pairs" : `${option.value} teams`;
@@ -28541,7 +28642,7 @@ async function startCiv6Game() {
 }
 async function startNewSimulation(restartSource = "manual") {
   if (newSimulationBusy) return;
-  if (readSetting("gamemode") === "civ6") { startCiv6Game(); return; }
+  if (readSetting("humanplayers") === "civ6") { startCiv6Game(); return; }
   cancelFinaleCountdown();
   const wasPaused = specPaused;
   const payload = {...newSimulationPayload(), paused: wasPaused};
