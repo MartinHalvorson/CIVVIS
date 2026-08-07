@@ -11757,6 +11757,29 @@ const SKY_LAUNCH_FLIGHTS = {
   mars:{project:SKY_CHAIN.mars, duration:3600, body:"mars", rocket:"starship"},
   expedition:{project:SKY_CHAIN.expedition, duration:3000, body:"exo", rocket:"starship_xl"},
 };
+// A mission lifts off from the Spaceport that ran its project, not from the
+// palace lawn. The completion frame no longer says which city built it, but
+// the frame before still holds the project at the head of one city's queue;
+// failing that, any city of the empire with a Spaceport is still the pad the
+// rocket must have used, and only an empire with no visible Spaceport at all
+// falls back to its anchor city.
+function citySpaceportPos(city) {
+  for (const [district, encoded] of Object.entries(city?.districts || {})) {
+    if (district !== "spaceport" &&
+        RULES?.districts?.[district]?.replaces !== "spaceport") continue;
+    const [pos] = districtIconPositions(encoded);
+    if (pos) return pos;
+  }
+  return null;
+}
+function skyLaunchOrigin(prev, next, pid, project) {
+  const owned = st => (st?.cities || []).filter(city => city.owner === pid);
+  const launcher = owned(prev).find(city => (city.queue || [])[0]?.project === project);
+  const launched = launcher &&
+    (owned(next).find(city => city.id === launcher.id) || launcher);
+  return citySpaceportPos(launched) ||
+    owned(next).map(citySpaceportPos).find(Boolean) || null;
+}
 function queueSkyLaunches(prev, next, now = performance.now()) {
   if (!SHOW_ROCKET_ANIMATIONS || !prev || !next || prev.seed !== next.seed || REDUCED_MOTION_QUERY.matches) return;
   const before = new Map((prev.players || []).map(player => [player.id, player]));
@@ -11779,7 +11802,8 @@ function queueSkyLaunches(prev, next, now = performance.now()) {
         (candidate.science_projects || []).includes(flight.project))
         .map(candidate => ({id:candidate.id}));
       const target = +player.victories?.science?.distance_target || 50;
-      const origin = statePlayerAnchor(next, player.id)?.pos;
+      const origin = skyLaunchOrigin(prev, next, player.id, flight.project) ||
+        statePlayerAnchor(next, player.id)?.pos;
       // A launch is a wall-clock event, not a turn-frame decoration. Fast
       // spectators can advance dozens of turns during one flight, so freeze
       // everything the route inherited from the completion frame. In
