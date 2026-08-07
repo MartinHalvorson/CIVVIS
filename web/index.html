@@ -1043,15 +1043,8 @@
      would compete with the protected width reserved for the full score. */
   .diplomacy-elo-value.provisional { opacity: 0.62; }
   .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
-  /* Start and Now are two numeric categories on matching tracks. The narrow
-     middle track belongs only to the trend glyph, so the three tokens no longer
-     run together as one unexplained number. */
-  .diplomacy-expected-value, .diplomacy-odds-head {
-    width: 100%; display: grid;
-    grid-template-columns: minmax(0, 1fr) 11px minmax(0, 1fr);
-    align-items: center; column-gap: 1px;
-    font-variant-numeric: tabular-nums;
-  }
+  /* Start, trend and Now are three columns of their own; the shared classes
+     below keep the opening estimate dimmed against the current one. */
   .diplomacy-expected .odds-start { opacity: .62; }
   .diplomacy-expected .odds-start, .diplomacy-expected .odds-now {
     min-width: 0; overflow: hidden; text-overflow: clip; text-align: right;
@@ -1061,7 +1054,6 @@
   }
   .diplomacy-expected .odds-move.up { color: #8fd6a4; opacity: 1; }
   .diplomacy-expected .odds-move.down { color: #f2a09b; opacity: 1; }
-  .diplomacy-expected .odds-unavailable { grid-column: 1 / -1; text-align: center; }
   .diplomacy-player { flex: 1 1 auto; color: #d9e1dc; font-weight: 750; }
   /* The mark leads the CIV cell from a gutter of its own. It is emitted on
      every row, empty where there is no stance to report, so that the rank
@@ -2650,14 +2642,13 @@
        whole at the fitter's 13px ceiling. `syncPlayerHudEloFloor()` raises that
        floor before layout when either live value needs more. A label that gives
        up width ellipsizes and keeps its tooltip, where a figure that gives up
-       width becomes a smaller number that is simply wrong. The odds cell carries
-       two separately aligned figures and the arrow between them, so it stands on
-       a wider floor of its own: 76px keeps the longer START label and both
-       numeric tracks whole at the fitter's 9px floor. Each breakpoint below
-       moves the label floor only, and keeps the five labels, two figure cells,
-       odds cell and fixed rank track adding up to what the identity block claims
-       at that width. */
-    --hud-ident-min: 30px; --hud-ident-num-min: 60px; --hud-ident-odds-min: 76px;
+       width becomes a smaller number that is simply wrong. The odds columns
+       stand on floors of their own: 27px keeps a three-digit percentage and
+       the START and NOW heads whole at the fitter's floor, and the narrow
+       trend column needs only its arrow. Each breakpoint below moves the
+       label floor only. */
+    --hud-ident-min: 30px; --hud-ident-num-min: 60px;
+    --hud-odds-min: 27px; --hud-odds-trend-min: 13px;
     --hud-rank-min: 30px;
     /* How much of the flexible width the identity block asks for relative to
        the values, over and above the sum of its own columns. A wide panel can
@@ -2675,12 +2666,15 @@
        syncPlayerHudColumns() rewrites it from the viewer's column model —
        order, visibility, shares and any content-fitted floors together. */
     --hud-tracks:
+      var(--hud-lock-column)
       minmax(var(--hud-rank-min), .7fr) minmax(var(--hud-ident-min), 2.035fr)
       minmax(var(--hud-ident-min), 1.85fr) var(--hud-watch-column)
       minmax(var(--hud-ident-min), 1.85fr)
       minmax(var(--hud-ident-num-min), 1.017fr)
       minmax(var(--hud-ident-num-min), .85fr)
-      minmax(var(--hud-ident-odds-min), 1.3fr)
+      minmax(var(--hud-odds-min), .55fr)
+      minmax(var(--hud-odds-trend-min), .2fr)
+      minmax(var(--hud-odds-min), .55fr)
       minmax(var(--hud-ident-min), 1.3fr)
       minmax(var(--hud-ident-min), 2.035fr)
       repeat(12, minmax(var(--hud-stat-min), 1fr));
@@ -2730,7 +2724,7 @@
      the same reason, which is why the width breakpoints move them together. */
   .ribbon-stat-heading {
     position: relative; min-height: 12px; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-tracks);
+    grid-template-columns: var(--hud-tracks);
     align-items: stretch; column-gap: var(--hud-stat-gap, 3px); padding: 0 4px 0 3px;
     border: 1px solid transparent;
     /* Every visible column at its own floor. A panel narrower than that no
@@ -2742,7 +2736,7 @@
      lock column already leads every table row, so its compact grip keeps the
      movable-panel affordance without pushing the data below the turn plate. */
   #playerhud .player-standings-drag {
-    grid-column: 1; grid-row: 1; z-index: 3; min-width: 0; min-height: 0;
+    z-index: 3; min-width: 0; min-height: 0;
     display: grid; place-items: center; padding: 0; color: #d7b66aa6;
   }
   #playerhud .player-standings-drag::before { font-size: var(--type-control); }
@@ -2767,9 +2761,12 @@
     padding-inline: 3px; border-left: 1px solid #ffffff10;
     font-size: var(--type-micro); letter-spacing: .025em;
   }
-  .player-standings-drag + .hud-head-cell { border-left-color: transparent; }
+  .player-standings-drag + .hud-head-cell,
+  .ribbon-stat-heading > .hud-head-cell:first-child { border-left-color: transparent; }
   .ribbon-stat-heading .numeric { text-align: right; }
-  .ribbon-stat-heading .diplomacy-odds-head { padding-inline: 2px; }
+  .ribbon-stat-heading .odds-trend-head {
+    color: #738981; font-size: .88em; font-weight: 800; text-align: center;
+  }
   /* The stat gutters separate these columns, so the heads do not also need a
      rule between every pair — twelve hairlines over twelve short words read
      as a fence. */
@@ -2908,7 +2905,7 @@
      column assignments — the tracks and the cells cannot disagree. */
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-tracks);
+    grid-template-columns: var(--hud-tracks);
     grid-template-rows: minmax(0, 1fr);
     align-items: center; column-gap: var(--hud-stat-gap, 3px); row-gap: 0;
     margin: 0; padding: 1px 4px 1px 3px;
@@ -2924,7 +2921,7 @@
      control is a quiet dot until it is switched on or reached by pointer or
      keyboard, so twelve of them do not compete with the numbers beside them. */
   #playerhud .lock-toggle {
-    grid-column: 1; width: 13px; height: 13px; display: grid; place-items: center;
+    width: 13px; height: 13px; display: grid; place-items: center;
     margin: 0; padding: 0; border: 0; border-radius: 4px; box-shadow: none;
     color: #43594f; background: transparent; font-size: var(--type-label); line-height: 1;
     transition: color .12s ease, background .12s ease;
@@ -2971,8 +2968,7 @@
   #playerhud .diplomacy-player { color: #d9e1dc; font-weight: 750; }
   #playerhud .diplomacy-civ, #playerhud .diplomacy-leader-name,
   #playerhud .diplomacy-player, #playerhud .diplomacy-elo-value,
-  #playerhud .diplomacy-elo-delta-value,
-  #playerhud .diplomacy-expected-value, #playerhud .diplomacy-age .civ-age,
+  #playerhud .diplomacy-elo-delta-value, #playerhud .diplomacy-age .civ-age,
   #playerhud .diplomacy-strategy .ai-plan {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
@@ -2980,6 +2976,7 @@
   #playerhud .diplomacy-expected {
     justify-content: flex-end; text-align: right; font-variant-numeric: tabular-nums;
   }
+  #playerhud .diplomacy-odds-trend { justify-content: center; text-align: center; }
   #playerhud .diplomacy-age .civ-age { display: block; color: #c7d3ce; font-weight: 850; }
   #playerhud .diplomacy-age .civ-age.heroic { color: #d7b6ff; }
   #playerhud .diplomacy-age .civ-age.golden { color: var(--gold-bright); }
