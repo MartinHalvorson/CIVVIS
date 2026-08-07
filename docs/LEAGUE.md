@@ -244,7 +244,16 @@ league instead.
 
 ## Selection
 
-Every `--evolve-every` rounds (default 4):
+Every `--evolve-every` rounds (default 4). A live recorder reaches the same
+selection on a games cadence: one rated exhibition game is one rating period,
+so every 64 recorded games — the offline parity of 4 rounds × 16 games — the
+recorder breeds and retires inside the same league lock and atomic write as
+the ratings, judging win evidence at the table size just played. A large
+inherited roster shrinks by one entrant per sweep rather than being culled to
+`--pop` at once, a roster at or under `--pop` only grows, and each sweep
+appends a `round,born,retired` row to `selection.csv` so a frozen roster is
+visible instead of silent (the committed snapshot reached round 4002 with no
+entrant born after round 60 because live games never selected).
 
 - **Breed** `max(1, --pop / 4)` offspring with quality-diversity pressure
   across seven niches: the six victory lanes plus an untargeted generalist.
