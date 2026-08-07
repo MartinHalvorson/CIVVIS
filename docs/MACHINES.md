@@ -27,6 +27,7 @@ use the canonical ID.
 | Canonical ID | Hardware | Aliases seen in history |
 | --- | --- | --- |
 | `martin-desktop` | Windows 11 desktop (RTX Pro 6000) | — |
+| `martbot-9985` | AMD Ryzen Threadripper PRO 9985WX (64 cores / 128 threads) | — |
 | `martbot-mbp-m4-max-128gb` | MacBook Pro M4 Max 128 GB | `mbp-m4-max-128-1` |
 | `mbp-m5-max-128` | MacBook Pro M5 Max 128 GB | `martbot-mbp-m5-max-128` |
 | `mbp-m5-pro-64` | MacBook Pro M5 Pro 64 GB | — |
