@@ -416,10 +416,46 @@ fn close_seat_turn(g: &mut Game, seat: usize, forced: &mut u64) -> bool {
     false
 }
 
+// ---- TEMPORARY instrumentation (CIVVIS_SIMUL_PHASE_TIMING=1): phase nanos.
+pub(crate) mod phase_timing {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    pub static PREP_CLONE: AtomicU64 = AtomicU64::new(0);
+    pub static PREP_FORWARD: AtomicU64 = AtomicU64::new(0);
+    pub static PLAN_WALL: AtomicU64 = AtomicU64::new(0);
+    pub static COMMIT: AtomicU64 = AtomicU64::new(0);
+    pub static CYCLES: AtomicU64 = AtomicU64::new(0);
+
+    pub fn enabled() -> bool {
+        std::env::var_os("CIVVIS_SIMUL_PHASE_TIMING").is_some()
+    }
+
+    pub fn add(counter: &AtomicU64, nanos: u128) {
+        counter.fetch_add(nanos as u64, Ordering::Relaxed);
+    }
+
+    pub fn report() {
+        let ms = |counter: &AtomicU64| counter.load(Ordering::Relaxed) as f64 / 1e6;
+        eprintln!(
+            "SIMUL PHASES cycles={} prep_clone={:.0}ms prep_forward={:.0}ms plan_wall={:.0}ms commit={:.0}ms",
+            CYCLES.load(Ordering::Relaxed),
+            ms(&PREP_CLONE),
+            ms(&PREP_FORWARD),
+            ms(&PLAN_WALL),
+            ms(&COMMIT),
+        );
+    }
+}
+
 fn run_simultaneous<A: Ai + Send>(g: &mut Game, ais: &mut [A], jobs: usize) -> SimultaneousCensus {
     // Same headless observation mode as `run_game`: fog memory is a display
     // cache, not a gameplay input, and planning clones inherit the setting.
     g.set_fog_memory(false);
+    // And the same narrated-war-ledger mode: nobody reads a half-finished
+    // headless turn, declarations, peaces, and turn boundaries still sync
+    // it unconditionally, and here every planning world inherits the skip
+    // too — the per-action re-sync would otherwise be paid once per planned
+    // action in every seat's private world and again on every commit.
+    g.set_war_ledger(false);
     let mut census = SimultaneousCensus::default();
     let workers = jobs.max(1).min(ais.len().max(1));
     if workers == 1 {
@@ -445,6 +481,9 @@ fn run_simultaneous<A: Ai + Send>(g: &mut Game, ais: &mut [A], jobs: usize) -> S
                 }
             }
         });
+    }
+    if phase_timing::enabled() {
+        phase_timing::report();
     }
     census
 }
@@ -537,9 +576,17 @@ where
     // The prepare is engine-only and serial: every seat's world and RNG
     // stream exist before any deliberation starts, so the fan-out below
     // has nothing left to decide about ordering.
+    let timing = phase_timing::enabled();
     let mut prepared: Vec<(usize, Game)> = Vec::new();
     {
+        let clock = std::time::Instant::now();
+        let mut spent = clock.elapsed();
         let mut rolling = g.clone();
+        if timing {
+            let now = clock.elapsed();
+            phase_timing::add(&phase_timing::PREP_CLONE, (now - spent).as_nanos());
+            spent = now;
+        }
         let mut forwarded = 0u64;
         let mut steps = 0;
         while rolling.winner.is_none() && rolling.turn == cycle_turn && steps < bound {
@@ -551,8 +598,18 @@ where
             let mut world = rolling.clone();
             world.rng = planning_stream(g.seed, cycle_turn, seat);
             prepared.push((seat, world));
+            if timing {
+                let now = clock.elapsed();
+                phase_timing::add(&phase_timing::PREP_CLONE, (now - spent).as_nanos());
+                spent = now;
+            }
             if !close_seat_turn(&mut rolling, seat, &mut forwarded) {
                 break;
+            }
+            if timing {
+                let now = clock.elapsed();
+                phase_timing::add(&phase_timing::PREP_FORWARD, (now - spent).as_nanos());
+                spent = now;
             }
         }
     }
@@ -560,7 +617,12 @@ where
     // The planner may use the caller thread or the scoped persistent fleet,
     // but both return the prepared order. The authoritative world only sees
     // these results below, in turn-cursor order.
+    let plan_clock = std::time::Instant::now();
     let planned = plan(prepared);
+    if timing {
+        phase_timing::add(&phase_timing::PLAN_WALL, plan_clock.elapsed().as_nanos());
+        phase_timing::CYCLES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
     let mut plans: BTreeMap<usize, Vec<Action>> = BTreeMap::new();
     for (seat, actions) in planned {
         census.planned += actions.len() as u64;
@@ -572,6 +634,7 @@ where
     // dropped; the seat's turn closes through the ordinary EndTurn so
     // upkeep, the world-turn wrap, and victory checks all run exactly
     // where a sequential game runs them.
+    let commit_clock = std::time::Instant::now();
     let mut steps = 0;
     while g.winner.is_none() && g.turn == cycle_turn && steps < bound {
         steps += 1;
@@ -601,6 +664,9 @@ where
                 return false;
             }
         }
+    }
+    if timing {
+        phase_timing::add(&phase_timing::COMMIT, commit_clock.elapsed().as_nanos());
     }
     // Plans the cursor never reached: their seats were eliminated by an
     // earlier seat's committed actions in this same cycle.
