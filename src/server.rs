@@ -4901,6 +4901,35 @@ mod tests {
         }
     }
 
+    /// Lightning and Blitz resolve a step faster than an eye can find the
+    /// token that took it, so a watcher can ask each unit's wake to linger a
+    /// configured beat after the move lands. Pin the whole chain: the
+    /// control, the persisted preference, the recorded wake, the lingering
+    /// painter, and the ticker that keeps a fading wake animating.
+    #[test]
+    fn browser_lets_a_watcher_keep_unit_trails_lingering() {
+        for contract in [
+            "id=\"unittrails\" aria-label=\"Unit trail linger\"",
+            "<option value=\"0\" selected>Move only</option>",
+            "<option value=\"200\">Linger 0.2s</option>",
+            "<option value=\"500\">Linger 0.5s</option>",
+            "<option value=\"1000\">Linger 1s</option>",
+            "<option value=\"2000\">Linger 2s</option>",
+            "const UNIT_TRAIL_LINGER_STORAGE_KEY = \"civvis-unit-trail-linger\";",
+            "const UNIT_TRAIL_LINGER_VALUES = [0, 200, 500, 1000, 2000];",
+            "function setUnitTrailLinger(value) {",
+            "trails.onchange = () => setUnitTrailLinger(trails.value);",
+            "function drawLingeringUnitTrails(unitAlpha, now) {",
+            "if (mapLens !== \"empire\") drawLingeringUnitTrails(unitAlpha, now);",
+            "anim.trails.length > 0 ||",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(contract),
+                "unit trail linger contract is missing: {contract}"
+            );
+        }
+    }
+
     #[test]
     fn browser_gives_every_shipped_improvement_a_named_tile_marker() {
         let markers = EMBEDDED_INDEX
@@ -5705,10 +5734,13 @@ mod tests {
             assert!(Instant::now() < deadline, "spectator server never came up");
             std::thread::sleep(Duration::from_millis(50));
         }
-        http_post(port, "/pace", "{\"ms\":120}").expect("set the turn pace");
+        http_post(port, "/pace", "{\"ms\":40}").expect("set the turn pace");
 
         // The browser's loop at its worst: one request in flight at a time,
-        // and a paint that costs twice what the whole turn was budgeted.
+        // and a paint that costs twice what the whole turn was budgeted. Only
+        // that ratio is the scenario; the absolute numbers are as small as
+        // stays clearly above scheduler jitter, because this loop is pure
+        // wall-clock and once ran 24 x 250ms — the slowest test in the suite.
         let mut seen: Vec<u32> = Vec::new();
         let mut painted: Option<Value> = None;
         for _ in 0..24 {
@@ -5719,7 +5751,7 @@ mod tests {
             let body = http_get(port, &target).expect("a state to draw");
             let state: Value = serde_json::from_str(&body).expect("state is JSON");
             let turn = state["turn"].as_u64().expect("a turn") as u32;
-            std::thread::sleep(Duration::from_millis(250)); // the paint
+            std::thread::sleep(Duration::from_millis(80)); // the paint
             seen.push(turn);
             painted = Some(state);
         }
@@ -5782,9 +5814,15 @@ mod tests {
         // Somebody is already watching, and drawing slowly. The stepper owes
         // this viewer every turn and will wait for it; the question is only
         // whether it waits with the door held shut behind it.
+        // The paint below and the arrival bound in the loop are a matched
+        // pair: a lock-out makes an arrival wait for the whole paint, so the
+        // bound must sit well under the paint (2.4x here, as it always was)
+        // while staying far above an uncontended read. Scaled from 1500/600ms
+        // — which made this the suite's slowest test at 19s of wall clock —
+        // to 600/250ms, which detects the same regression.
         let watcher = std::thread::spawn(move || {
             let mut painted: Option<Value> = None;
-            for _ in 0..8 {
+            for _ in 0..6 {
                 let target = match painted.as_ref() {
                     None => "/state?painted=&viewer=watcher".to_string(),
                     Some(state) => next_painted_state("watcher", state),
@@ -5793,11 +5831,11 @@ mod tests {
                     return;
                 };
                 let state: Value = serde_json::from_str(&body).expect("state is JSON");
-                std::thread::sleep(Duration::from_millis(1_500)); // the paint
+                std::thread::sleep(Duration::from_millis(600)); // the paint
                 painted = Some(state);
             }
         });
-        std::thread::sleep(Duration::from_millis(600)); // let it take its seat
+        std::thread::sleep(Duration::from_millis(300)); // let it take its seat
 
         // Each arrival is a distinct page, exactly as a reload or a restart is.
         // Asked repeatedly, because a lock-out is a race and one lucky read
@@ -5814,11 +5852,11 @@ mod tests {
                 "arrival {attempt}: the opening state carries no turn"
             );
             assert!(
-                elapsed < Duration::from_millis(600),
+                elapsed < Duration::from_millis(250),
                 "arrival {attempt} waited {elapsed:?} for its first frame while another \
                  viewer was painting, and a restart shows a veil for every bit of that"
             );
-            std::thread::sleep(Duration::from_millis(150));
+            std::thread::sleep(Duration::from_millis(50));
         }
         http_post(port, "/pace", "{\"paused\":true}"); // stop stepping this game
         let _ = watcher.join();
@@ -6290,14 +6328,16 @@ mod tests {
     #[test]
     fn two_viewers_each_see_every_turn() {
         let port = exhibition(20_260_726);
-        http_post(port, "/pace", "{\"ms\":60}").expect("set the turn pace");
+        http_post(port, "/pace", "{\"ms\":30}").expect("set the turn pace");
 
         // The two run side by side for the same stretch of wall clock rather
         // than for the same number of polls, because the whole point is that
         // they read at different rates: one an order of magnitude slower than
         // the other, which is what a big map on a loaded machine looks like
-        // next to a small one.
-        let until = Instant::now() + Duration::from_secs(6);
+        // next to a small one. Two seconds is enough window for the slow
+        // viewer to cover several turns; the ratios are the scenario, and the
+        // original 6s/400ms version cost 7s of pure wall clock.
+        let until = Instant::now() + Duration::from_secs(2);
         let watch = |name: &'static str, paint: u64| {
             std::thread::spawn(move || {
                 let mut seen: Vec<u32> = Vec::new();
@@ -6319,8 +6359,8 @@ mod tests {
                 seen
             })
         };
-        let slow = watch("slow", 400);
-        let quick = watch("quick", 40);
+        let slow = watch("slow", 200);
+        let quick = watch("quick", 20);
         let (slow, quick) = (slow.join().unwrap(), quick.join().unwrap());
         http_post(port, "/pace", "{\"paused\":true}");
 
@@ -10356,6 +10396,68 @@ mod tests {
             1,
             "the planet minimap must paint the landmark perimeter exactly once"
         );
+    }
+
+    /// A selected unit's movement is drawn as the engine's own affordances:
+    /// the perimeter of everywhere it can end this turn, and a per-edge arrow
+    /// wherever `reach_steps` says the remaining movement crosses. The client
+    /// must read the engine's per-edge answer rather than re-derive it — only
+    /// the engine knows step costs, rivers, and ZOC — and both boundary
+    /// renderers must be built from positions, not surveyed tiles, so the
+    /// line keeps reading where the range runs into fog.
+    #[test]
+    fn browser_draws_the_selected_units_reach_perimeter_and_edge_arrows() {
+        // The engine's directional step list is what both renderers consume.
+        assert!(EMBEDDED_INDEX.contains("function selReachEdges()"));
+        assert!(EMBEDDED_INDEX.contains("(sel && sel.reach_steps) || []"));
+        assert!(EMBEDDED_INDEX.contains("region.add(key(sel.pos));"));
+
+        let flat = EMBEDDED_INDEX
+            .split("function drawFlatReachPerimeter")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawFlatMapSearchHighlights").next())
+            .expect("flat reach perimeter and arrow renderers");
+        assert!(flat.contains("EDGE_CORNERS[side]"));
+        assert!(
+            flat.contains("const tile = TMAP.get(regionKey);"),
+            "the perimeter tolerates region tiles beyond the surveyed map"
+        );
+        assert!(flat.contains("drawEdgeArrow(x + dx / 2, y + dy / 2, dx, dy,"));
+
+        let planet = EMBEDDED_INDEX
+            .split("function drawPlanetReachOverlay")
+            .nth(1)
+            .and_then(|tail| tail.split("function planetFeatureGlyph").next())
+            .expect("planet reach overlay renderer");
+        assert!(planet.contains("cell.nbrs[side]"));
+        assert!(
+            planet.contains("planetCellGeometry({pos}, camera, scale, centerX, centerY)"),
+            "the globe projects region cells the frame does not carry"
+        );
+        assert!(planet.contains("entry.cell.nbrs.indexOf(key(edge.to))"));
+
+        // Each map paints the movement overlay exactly once, after fog and
+        // the sight perimeter, so the boundary stays visible over parchment.
+        assert_eq!(EMBEDDED_INDEX.matches("drawFlatReachPerimeter();").count(), 1);
+        assert_eq!(EMBEDDED_INDEX.matches("drawFlatReachArrows();").count(), 1);
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("drawPlanetReachOverlay(cells, camera, scale, centerX, centerY);")
+                .count(),
+            1
+        );
+        let after_sight = EMBEDDED_INDEX
+            .split("drawFlatVisibilityPerimeter(tiles, visible);")
+            .nth(1)
+            .expect("the flat sight perimeter is painted");
+        assert!(
+            after_sight.contains("drawFlatReachPerimeter();"),
+            "movement range must paint after the sight perimeter and fog"
+        );
+        // The arrow glyph itself is shared by both projections and knows the
+        // two directional forms: a head across the edge, one back, or both.
+        assert!(EMBEDDED_INDEX
+            .contains("function drawEdgeArrow(mx, my, dx, dy, out, back, k)"));
     }
 
     #[test]

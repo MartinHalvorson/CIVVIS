@@ -1013,8 +1013,8 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
         base_ruleset: base_ruleset(args),
         start_era: start_era(args),
         future_era: future_era(args),
-        map_script: MapScript::from_id(&arg_text(args, "--map", "pangaea"))
-            .unwrap_or(MapScript::Pangaea),
+        map_script: MapScript::from_id(&arg_text(args, "--map", "tennis_ball"))
+            .unwrap_or(MapScript::TeninsBall),
         map_topology: map_topology(args),
         map_poles: map_poles(args),
         difficulty,
@@ -2031,7 +2031,10 @@ fn main() {
             });
         }
         "play" => {
-            let players = arg(&args, "--players", 6);
+            // The stock game: four civilizations on a Tiny world, which is
+            // `MapSize::for_players(4)`. The map script default lives in
+            // `game_options` so the headless arms open the same world.
+            let players = arg(&args, "--players", 4);
             // `--mirror <run-dir>`: show the board a Civilization VI seat can
             // actually see, rebuilt as a CIVVIS game, instead of generating one.
             //
@@ -2423,6 +2426,28 @@ mod tests {
 
         let flat = vec!["--shape".to_string(), "flat".to_string()];
         assert_eq!(map_topology(&flat), MapTopology::Flat);
+    }
+
+    /// The stock game somebody gets by asking for nothing: a Tenins Ball
+    /// world. The four-seat half of the promise lives in the `play` arm's
+    /// `--players` default, and the serde default stays Pangaea so a client
+    /// that has never been taught the setting is unmoved.
+    #[test]
+    fn omitted_map_defaults_to_the_tenins_ball() {
+        use civvis::setup::MapScript;
+
+        let options = game_options(&[], 4, 71_005);
+        assert_eq!(options.map_script, MapScript::TeninsBall);
+
+        // An explicit choice still wins, under either accepted spelling.
+        for (asked, chosen) in [
+            ("pangaea", MapScript::Pangaea),
+            ("tennis_ball", MapScript::TeninsBall),
+            ("tenins_ball", MapScript::TeninsBall),
+        ] {
+            let args = vec!["--map".to_string(), asked.to_string()];
+            assert_eq!(game_options(&args, 4, 71_005).map_script, chosen, "{asked}");
+        }
     }
 
     #[test]

@@ -304,6 +304,15 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                     .iter()
                     .map(|p| json!([p.0, p.1]))
                     .collect::<Vec<_>>());
+                // The per-edge companion: which single steps the remaining
+                // movement affords, so a client can draw how the range is
+                // entered. Only the engine knows step costs, rivers and ZOC,
+                // so the client must not re-derive these from `reachable`.
+                v["reach_steps"] = json!(g
+                    .reach_steps(u.id)
+                    .iter()
+                    .map(|(a, b)| json!([[a.0, a.1], [b.0, b.1]]))
+                    .collect::<Vec<_>>());
                 if let Some((target, gold, _)) = g.unit_gold_upgrade_offer(pid, u.id) {
                     v["upgrade"] = json!({ "to": target, "gold": gold });
                 }
