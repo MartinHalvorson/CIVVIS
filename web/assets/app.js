@@ -809,25 +809,14 @@ let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") ===
 // Space-race flights and satellites are on unless a viewer explicitly turns
 // their animated visual effects off. The completed mission remains in state.
 let SHOW_ROCKET_ANIMATIONS = localStorage.getItem("civvis-show-rocket-animations") !== "0";
-// How long a unit's movement wake stays on the map after its step lands.
-// Zero is the original behavior — a comet only while the tween itself runs —
-// while a linger keeps who-went-where readable at Lightning and Blitz paces,
-// where a step resolves faster than an eye can find the token that took it.
-const UNIT_TRAIL_LINGER_STORAGE_KEY = "civvis-unit-trail-linger";
-const UNIT_TRAIL_LINGER_VALUES = [0, 200, 500, 1000, 2000];
-// Enough for every mover of a large late-game turn; bounds draw cost when a
-// whole war resolves in one Lightning poll.
-const UNIT_TRAIL_LIMIT = 240;
-let UNIT_TRAIL_LINGER_MS = (() => {
-  const saved = Number(localStorage.getItem(UNIT_TRAIL_LINGER_STORAGE_KEY));
-  return UNIT_TRAIL_LINGER_VALUES.includes(saved) ? saved : 0;
-})();
 // How many turns each unit's walked tile route stays traced on the map.
-// Unlike the wall-clock wake linger above, this ages in game time: a route
-// walked on turn T is held until T + N, so at any pace the map shows where
-// the last N turns of movement actually went. The routes ride in on
-// `state.unit_move_trails` — the engine's walked-route ledger — so they are
-// the executed tiles, not a guess reconstructed from a board diff.
+// This ages in game time rather than on the wall clock, so at any watch pace
+// the map shows where the last N turns of movement actually went — which is
+// what keeps who-went-where readable at Lightning and Blitz, where a step
+// resolves faster than an eye can find the token that took it. The routes
+// ride in on `state.unit_move_trails` — the engine's walked-route ledger —
+// so they are the executed tiles, not a guess reconstructed from a board
+// diff.
 const UNIT_TAIL_TURNS_STORAGE_KEY = "civvis-unit-tail-turns";
 const UNIT_TAIL_TURNS_MAX = 5;
 let UNIT_TAIL_TURNS = (() => {
@@ -985,7 +974,7 @@ applyOverlayVisibility();
 // burst — a device is the only event on this board that deserves several
 // seconds and the whole frame.
 const anim = { moves: new Map(), floats: [], sparks: [], deaths: [],
-               claims: [], strike: null, blasts: [], trails: [],
+               claims: [], strike: null, blasts: [],
                skyLaunches: [] };
 // Detonations already shown. The engine gives every strike a unique id
 // precisely so a client can answer this without comparing fields: two devices
@@ -1045,7 +1034,6 @@ function resetAnim() {
   anim.deaths.length = 0;
   anim.claims.length = 0;
   anim.blasts.length = 0;
-  anim.trails.length = 0;
   anim.skyLaunches.length = 0;
   seenBlasts = new Set();
   anim.strike = null;
@@ -1186,16 +1174,6 @@ function animateDiff(prev, next) {
                                 fromCity: cityKeys.has(key(pu.pos)),
                                 toCity: cityKeys.has(key(nu.pos)),
                                 t0: now, dur });
-        // The lingering wake outlives both the tween and the unit itself — a
-        // trail that survives its casualty is what makes a fast battle
-        // readable after the fact.
-        if (UNIT_TRAIL_LINGER_MS > 0) {
-          anim.trails.push({ unit: nu.id, points: mapPoints, owner: nu.owner,
-                             t0: now, moveDur: dur,
-                             linger: UNIT_TRAIL_LINGER_MS });
-          if (anim.trails.length > UNIT_TRAIL_LIMIT)
-            anim.trails.splice(0, anim.trails.length - UNIT_TRAIL_LIMIT);
-        }
       }
     }
     if (unitHasHealth(nu) && unitHasHealth(pu) && nu.hp < pu.hp) {
@@ -1878,6 +1856,10 @@ const HUD_ELO_MAX_TYPE_SIZE = 13;
 // the model as a real, reorderable column on a fixed track; it is an action
 // rather than a fact, which is why it is the one column with no sort target.
 const PLAYER_HUD_COLUMNS = [
+  // The row lock leads the table exactly as its fixed track always did; as a
+  // model column it can now be checked out of the table or moved like any
+  // other. Its heading doubles as the panel's drag handle.
+  {key:"lock", label:"Row lock", block:"identity", min:"--hud-lock-column", width:0, fixed:true},
   {key:"rank", label:"Score rank", block:"identity", min:"--hud-rank-min", width:.7},
   {key:"civ", label:"Civilization", block:"identity", min:"--hud-ident-min", width:2.035},
   {key:"leader", label:"Leader", block:"identity", min:"--hud-ident-min", width:1.85},
@@ -1885,10 +1867,12 @@ const PLAYER_HUD_COLUMNS = [
   {key:"player", label:"Player", block:"identity", min:"--hud-ident-min", width:1.85},
   {key:"elo", label:"Elo rating", block:"identity", min:"--hud-ident-num-min", width:1.017},
   {key:"elo_delta", label:"Elo delta", block:"identity", min:"--hud-ident-num-min", width:.85},
-  // One column, two figures: the odds this seat started with and the odds it
-  // holds now. They are dragged, saved and measured as a single column because
-  // they are read as a single movement.
-  {key:"win", label:"Win odds", block:"identity", min:"--hud-ident-odds-min", width:1.3},
+  // One movement, three columns: the odds this seat started with, the trend
+  // between them, and the odds it holds now — each separately sortable,
+  // sized, shown and placed, reading START · Δ · NOW by default.
+  {key:"win_start", label:"Win odds · start", block:"identity", min:"--hud-odds-min", width:.55},
+  {key:"win_delta", label:"Win odds trend", block:"identity", min:"--hud-odds-trend-min", width:.2},
+  {key:"win", label:"Win odds · now", block:"identity", min:"--hud-odds-min", width:.55},
   {key:"age", label:"Age", block:"identity", min:"--hud-ident-min", width:1.3},
   {key:"plan", label:"Plan", block:"identity", min:"--hud-ident-min", width:2.035},
   ...[["cities", "Cities"], ["population", "Population"], ["food", "Food"], ["production", "Production"],
@@ -1898,13 +1882,11 @@ const PLAYER_HUD_COLUMNS = [
     .map(([key, label]) => ({key, label, block:"stats", min:"--hud-stat-min", width:1})),
 ];
 const PLAYER_HUD_COLUMN_BY_KEY = new Map(PLAYER_HUD_COLUMNS.map(column => [column.key, column]));
-// Every named standings fact is sortable. Rank is the score standing,
-// while start, change and current chance are individually labelled tracks
-// inside Win odds. Watch-as and the row lock are actions rather than facts, so
-// neither is part of this set.
+// Every named standings fact is sortable. Rank is the score standing, and
+// the odds trio are three facts of their own now. Watch-as and the row lock
+// are actions rather than facts, so neither is part of this set.
 const PLAYER_HUD_SORTABLE_COLUMNS = new Set([
   ...PLAYER_HUD_COLUMNS.filter(column => !column.fixed).map(column => column.key),
-  "win_start", "win_delta",
 ]);
 const PLAYER_HUD_TEXT_SORT_COLUMNS = new Set(["civ", "leader", "player", "plan"]);
 const PLAYER_HUD_AGE_SORT_ORDER = {dark:0, normal:1, golden:2, heroic:3};
@@ -1939,7 +1921,20 @@ try {
     // Saved keys keep their saved places; columns this build has that the
     // save does not know join at the end rather than being lost.
     const known = saved.order.filter(key => PLAYER_HUD_COLUMN_BY_KEY.has(key));
-    playerHudColumnOrder = [...new Set([...known, ...playerHudColumnOrder])];
+    let merged = [...new Set([...known, ...playerHudColumnOrder])];
+    // Columns that joined the model after a save was written go back to their
+    // shipped places rather than the end: the row lock leads the table, and
+    // the odds trio stands where the one Win odds column stood.
+    if (!known.includes("lock"))
+      merged = ["lock", ...merged.filter(key => key !== "lock")];
+    for (const [key, before] of [["win_delta", "win"], ["win_start", "win_delta"]])
+      if (!known.includes(key)) {
+        const rest = merged.filter(other => other !== key);
+        const at = rest.indexOf(before);
+        rest.splice(at < 0 ? rest.length : at, 0, key);
+        merged = rest;
+      }
+    playerHudColumnOrder = merged;
   }
   if (Array.isArray(saved.hidden))
     playerHudHiddenColumns = new Set(
@@ -2110,6 +2105,9 @@ const PLAYER_HUD_HEAD_LABELS = {
   leader:["LEADER", "Leader"], player:["PLAYER", "Player"],
   elo:["ELO", "Elo rating", "numeric"],
   elo_delta:["Δ", "Live Elo position against the living field", "numeric"],
+  win_start:["START", "Win odds at the start of the game", "numeric"],
+  win_delta:["Δ", "Change in win odds", "odds-trend-head"],
+  win:["NOW", "Current win odds", "numeric"],
   age:["AGE", "Civilization age"], plan:["PLAN", "AI active strategy"],
   cities:["CITY", "Cities controlled"], population:["POP", "Total population"],
   food:["FOOD", "Food per turn"], production:["PROD", "Production per turn"],
@@ -2124,6 +2122,14 @@ const PLAYER_HUD_HEAD_LABELS = {
 // fit all find a column through that one attribute.
 function playerHudColumnHead(column) {
   const attrs = `data-hud-col="${column.key}"`;
+  // The row lock's heading is the panel's own drag handle, exactly where the
+  // old fixed lock track kept it. It moves the whole standings panel, so it
+  // deliberately does not take part in the column-reorder gesture.
+  if (column.key === "lock") {
+    return `<span class="hud-head-cell hud-head-lock player-standings-drag widget-drag-handle" ` +
+      `${attrs} data-widget-drag tabindex="0" role="button" ` +
+      `aria-label="Move player standings; use arrow keys or drag" title="Drag to move · arrow keys also move"></span>`;
+  }
   // The Watch-as column's heading is the inverse of every action below it:
   // leave any one civilization's fog and return to the omniscient table.
   // Keeping it in the column makes that relationship visible, while the
@@ -2134,17 +2140,6 @@ function playerHudColumnHead(column) {
       `aria-pressed="${state.view_player === null || state.view_player === undefined}" ` +
       `title="Spectator mode · see everyone with full map visibility" ` +
       `aria-label="Spectator mode: see everyone with full map visibility">All</button></span>`;
-  }
-  // ELO's live position delta is its own draggable column. The two win
-  // estimates remain named categories on matching inner tracks; their Δ owns
-  // the narrow middle track used by each row's trend glyph. The outer cell
-  // remains one draggable Win odds column, so adding those labels does not
-  // add two more masthead seams.
-  if (column.key === "win") {
-    return `<span class="hud-head-cell hud-head-identity diplomacy-odds-head numeric" ${attrs}>` +
-      playerHudSortHead("win_start", "START", "Win odds at the start of the game") +
-      playerHudSortHead("win_delta", "Δ", "Change in win odds", "odds-trend-head") +
-      playerHudSortHead("win", "NOW", "Current win odds") + `</span>`;
   }
   const [label, title, extra] = PLAYER_HUD_HEAD_LABELS[column.key];
   const classes = column.block === "stats"
@@ -2190,10 +2185,10 @@ function syncPlayerHudColumns(placeGrips = true) {
     ? `var(${column.min})`
     : `minmax(${playerHudColumnMinExpr(column)}, ` +
       `${playerHudColumnFlex(column, bias).toFixed(4)}fr)`).join(" ");
-  // Every column floor, the lock track, one gutter per column and the panel's
-  // own padding and border. 9px is that chrome: 4px + 3px padding, 2px border.
-  const tableMin = `calc(var(--hud-lock-column, 0px) + 9px + ` +
-    `${columns.length} * var(--hud-stat-gap, 3px) + ` +
+  // Every column floor, one gutter per seam and the panel's own padding and
+  // border. 9px is that chrome: 4px + 3px padding, 2px border.
+  const tableMin = `calc(9px + ` +
+    `${Math.max(0, columns.length - 1)} * var(--hud-stat-gap, 3px) + ` +
     columns.map(column => column.fixed ? `var(${column.min})`
       : playerHudColumnMinExpr(column)).join(" + ") + `)`;
   if (`${tracks}|${tableMin}` !== playerHudColumnCss) {
@@ -2688,7 +2683,7 @@ if (playerHudPanel) {
     const grip = event.target.closest?.(".hud-col-grip");
     if (grip) { beginPlayerHudColumnGesture(event, grip); return; }
     const head = event.target.closest?.(".hud-head-cell");
-    if (head && head.closest(".ribbon-stat-heading"))
+    if (head && head.closest(".ribbon-stat-heading") && !head.closest("[data-widget-drag]"))
       beginPlayerHudReorderGesture(event, head);
   });
   playerHudPanel.addEventListener("keydown", event => {
@@ -2742,7 +2737,7 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .diplomacy-player", min:9, max:13},
   {selector:"#playerhud .diplomacy-elo-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
   {selector:"#playerhud .diplomacy-elo-delta-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
-  {selector:"#playerhud .diplomacy-expected-value", min:9, max:13},
+  {selector:"#playerhud .diplomacy-expected span", min:9, max:13},
   {selector:"#playerhud .diplomacy-age .civ-age", min:9, max:12},
   {selector:"#playerhud .diplomacy-strategy .ai-plan", min:9, max:12},
   // Measured against the cell, not against itself. The figure sits in a grid
@@ -4698,7 +4693,7 @@ const DISPLAY_RESOURCE_CAP_VALUES = [10, 20, 30, 40, 50, 60, 70, 80, 90];
 const DISPLAY_RESOURCE_CAP_DEFAULT = 70;
 const DISPLAY_CPU_GUIDANCE_CONTROLS = [
   "renderresolution", "yieldchk", "reschk", "resourcedisplay", "rocketanimchk",
-  "unittrails", "unittail",
+  "unittail",
 ];
 const DISPLAY_MEMORY_GUIDANCE_CONTROLS = [
   "renderresolution", "resourcedisplay", "reset-overlay-layout",
@@ -17798,26 +17793,6 @@ function drawUnitMovementTails(unitAlpha) {
   }
 }
 
-function drawLingeringUnitTrails(unitAlpha, now) {
-  if (!anim.trails.length) return;
-  const alive = [];
-  for (const trail of anim.trails) {
-    const age = now - trail.t0;
-    if (age > trail.moveDur + trail.linger) continue;
-    alive.push(trail);
-    // While its tween is on screen the in-flight comet owns this wake, and a
-    // beat of slack keeps the completion frame from painting it twice. The
-    // age test matters too: a casualty's orphaned move record is never
-    // sampled again, and it must not suppress the wake of the very unit the
-    // watcher most wants to trace.
-    if (age < trail.moveDur + 50 && anim.moves.has(trail.unit)) continue;
-    const fade = Math.min(1, Math.max(0, 1 - (age - trail.moveDur) / trail.linger));
-    strokeUnitTrail(trail.points.map(mapPointToView),
-                    pcol(trail.owner), unitAlpha * 0.75 * fade);
-  }
-  anim.trails = alive;
-}
-
 function drawScene() {
   if (!state) return;
   // Before the branch, because the sky's own way about has to come down when
@@ -18582,12 +18557,7 @@ function drawScene() {
   const strategicUnitStacks = strategicUnitStackSlots(drawnUnits, anim.moves);
   const now = performance.now();
   const unitAlpha = mapLens === "settler" ? SETTLER_LENS_UNIT_ALPHA : 1;
-  if (mapLens !== "empire") {
-    // Tails under wakes: the persistent record is ground ink, the fresh wake
-    // glows over it.
-    drawUnitMovementTails(unitAlpha);
-    drawLingeringUnitTrails(unitAlpha, now);
-  }
+  if (mapLens !== "empire") drawUnitMovementTails(unitAlpha);
   for (const u of sorted) {
     const [tileX, tileY] = worldXY(u.pos);
     let x = tileX, y = tileY;
@@ -18611,12 +18581,10 @@ function drawScene() {
     // eye can otherwise only catch whichever unit it happened to be pointed
     // at; a trail in the owner's color says who went where after the fact, and
     // swells then fades over the step so it never becomes permanent clutter.
-    // Under a configured linger it swells and then holds instead, and the
-    // lingering pass owns the fade once the step has landed.
+    // The turn tails above keep the walked route on the ground afterward.
     if (moving) {
-      const swell = UNIT_TRAIL_LINGER_MS > 0 ? Math.min(mv.e, .5) : mv.e;
       strokeUnitTrail(trailPoints, pcol(u.owner),
-                      unitAlpha * 0.75 * Math.sin(swell * Math.PI));
+                      unitAlpha * 0.75 * Math.sin(mv.e * Math.PI));
     }
     if (anim.strike && anim.strike.id === u.id) {
       const st2 = anim.strike;
@@ -20322,19 +20290,6 @@ function eloDeltaTitle(player) {
     : `Live Elo position against the living field: ${signedEloDelta(delta)}`;
 }
 
-function playerOddsFigures(player) {
-  const start = oddsPct(player.odds_start);
-  const now = oddsPct(player.odds_now);
-  if (start === null && now === null) {
-    return `<span class="diplomacy-expected-value"><span class="odds-unavailable">—</span></span>`;
-  }
-  const movement = oddsMovement(player);
-  return `<span class="diplomacy-expected-value">` +
-    `<span class="odds-start">${start ?? "—"}</span>` +
-    `<span class="odds-move ${movement.direction}" aria-label="Win chance trend ${movement.direction}">${movement.symbol}</span>` +
-    `<span class="odds-now">${now ?? "—"}</span></span>`;
-}
-
 function anyVictoryEnabled() {
   return VICTORY_TRACKS.some(track => state?.victory_conditions?.[track.id] !== false);
 }
@@ -20453,8 +20408,6 @@ function drawPlayerHud() {
     `title="Drag to size the turn plate · double-click resets"></button>` +
     `<div class="player-standings" tabindex="0" aria-label="Player statistics; scroll horizontally for every column">` +
     `<div class="ribbon-stat-heading">` +
-    `<span class="player-standings-drag widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
-    `aria-label="Move player standings; use arrow keys or drag" title="Drag to move · arrow keys also move"></span>` +
     visibleColumns.map(playerHudColumnHead).join("") +
     // The bars stand on the seams of the heading they are laid over, and are
     // rebuilt with it so that a repaint can never orphan one.
@@ -20583,6 +20536,9 @@ function drawPlayerHud() {
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}"`;
       const rowCell = column => {
         switch (column.key) {
+          case "lock":
+            return `<button class="lock-toggle" data-hud-col="lock" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
+              `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>`;
           case "rank":
             return `<span class="diplomacy-rank" data-hud-col="rank" title="Score rank ${rank}">#${rank}</span>`;
           // A civilization with no capital leaves this button disabled, and a
@@ -20612,15 +20568,24 @@ function drawPlayerHud() {
             return `<button class="diplomacy-identity" data-hud-col="elo_delta" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-elo-delta" title="${escapeAttr(eloDeltaTitle(p))}">` +
               `<span class="diplomacy-elo-delta-value">${playerEloDelta}</span></span></button>`;
-          // The per-cent sign lives in the WIN% column head, not in eight or
-          // twelve repetitions of the value. Two named numeric categories sit
-          // inside the outer Win odds cell: Start, a narrow trend track, and
-          // Now. Matching grid tracks keep every opening estimate, arrow and
-          // current estimate aligned down the table.
+          // The per-cent sign lives in the START and NOW column heads, not in
+          // eight or twelve repetitions of the value. Start, trend and Now are
+          // three columns of their own; each cell still carries the full odds
+          // story in its tooltip.
+          case "win_start":
+            return `<button class="diplomacy-identity" data-hud-col="win_start" ${dossierAttrs}>` +
+              `<span class="diplomacy-identity-field diplomacy-expected" title="${escapeAttr(oddsTitle(p))}">` +
+              `<span class="odds-start">${startPct ?? "—"}</span></span></button>`;
+          case "win_delta": {
+            const movement = oddsMovement(p);
+            return `<button class="diplomacy-identity" data-hud-col="win_delta" ${dossierAttrs}>` +
+              `<span class="diplomacy-identity-field diplomacy-expected diplomacy-odds-trend" title="${escapeAttr(oddsTitle(p))}">` +
+              `<span class="odds-move ${movement.direction}" aria-label="Win chance trend ${movement.direction}">${movement.symbol}</span></span></button>`;
+          }
           case "win":
             return `<button class="diplomacy-identity" data-hud-col="win" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-expected" title="${escapeAttr(oddsTitle(p))}">` +
-              playerOddsFigures(p) + `</span></button>`;
+              `<span class="odds-now">${nowPct ?? "—"}</span></span></button>`;
           case "age":
             return `<button class="diplomacy-identity" data-hud-col="age" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-age" title="${ageTitle}">` +
@@ -20648,8 +20613,6 @@ function drawPlayerHud() {
           `<b>${kind === "score" ? ribbonScore(value) : ribbonStat(value)}</b>${markerHtml}</button>`;
       };
       return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
-        `<button class="lock-toggle" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
-        `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>` +
         visibleColumns.map(rowCell).join("") + `</div>`;
     }).join("") + `</div>` + hudResizeHandles("player standings");
   drawDossierWindows(scoreRankedMajors, rankById, relationById);
@@ -27253,17 +27216,6 @@ function setShowRocketAnimations(on) {
   if (!SHOW_ROCKET_ANIMATIONS) anim.skyLaunches.length = 0;
   if (state) draw();
 }
-function setUnitTrailLinger(value) {
-  const ms = Number(value);
-  UNIT_TRAIL_LINGER_MS = UNIT_TRAIL_LINGER_VALUES.includes(ms) ? ms : 0;
-  localStorage.setItem(UNIT_TRAIL_LINGER_STORAGE_KEY, String(UNIT_TRAIL_LINGER_MS));
-  const select = document.getElementById("unittrails");
-  if (select) select.value = String(UNIT_TRAIL_LINGER_MS);
-  // Turning the linger off clears wakes already on the map at once, which
-  // makes the preference reliable even while a battle is animating.
-  if (!UNIT_TRAIL_LINGER_MS) anim.trails.length = 0;
-  if (state) draw();
-}
 function setUnitTailTurns(value) {
   const turns = Number(value);
   UNIT_TAIL_TURNS = Number.isInteger(turns) && turns >= 0 && turns <= UNIT_TAIL_TURNS_MAX
@@ -28776,11 +28728,6 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   rockets.onchange = () => setShowRocketAnimations(rockets.checked);
 }
 {
-  const trails = document.getElementById("unittrails");
-  trails.value = String(UNIT_TRAIL_LINGER_MS);
-  trails.onchange = () => setUnitTrailLinger(trails.value);
-}
-{
   const tail = document.getElementById("unittail");
   tail.value = String(UNIT_TAIL_TURNS);
   tail.onchange = () => setUnitTailTurns(tail.value);
@@ -28815,12 +28762,19 @@ for (const checkbox of document.querySelectorAll("[data-overlay]")) {
 // toggle the overlay alone — never fold the menu open or shut — so the
 // click's default is cancelled on both counts and the visibility change is
 // applied directly. Keyboard toggling arrives here as a click too.
+//
+// The visibility flip is deferred one tick because cancelling the click also
+// runs the checkbox's canceled-activation step AFTER this handler returns,
+// putting the box back how the press found it. Applied synchronously, the
+// flip was silently reverted a moment later: the overlay left the map while
+// its switch stayed checked.
 for (const summary of document.querySelectorAll(".overlay-menu > summary")) {
   summary.addEventListener("click", event => {
     const box = event.target.closest?.("input[data-overlay]");
     if (!box) return;
     event.preventDefault();
-    setOverlayVisibility(box.dataset.overlay, !OVERLAY_VISIBILITY[box.dataset.overlay]);
+    const name = box.dataset.overlay;
+    setTimeout(() => setOverlayVisibility(name, !OVERLAY_VISIBILITY[name]), 0);
   });
 }
 for (const button of document.querySelectorAll("[data-hud-widget-reset]")) {
@@ -28904,8 +28858,7 @@ function animTick(now) {
   const cameraMoving = userCameraMoving || followCameraMoving;
   const active = cameraMoving || anim.moves.size > 0 || anim.floats.length > 0 ||
     anim.sparks.length > 0 || anim.deaths.length > 0 || anim.strike ||
-    anim.blasts.length > 0 ||
-    anim.trails.length > 0 || planetSkyAnimating() || flatSkyAnimating();
+    anim.blasts.length > 0 || planetSkyAnimating() || flatSkyAnimating();
   // Never spend more than about half the wall clock rendering. Measured cost
   // decides: a frame that takes 60ms gets asked for every 130ms rather than
   // every 33, so the view degrades to a slower picture instead of stalling.
