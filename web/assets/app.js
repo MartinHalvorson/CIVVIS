@@ -1547,10 +1547,13 @@ function syncMapViewport() {
   style.setProperty("--map-area-width", `${viewWidth}px`);
   style.setProperty("--map-area-height", `${viewHeight}px`);
   document.body.classList.toggle("map-area-inset", left > 0 || top > 0 || right > 0 || bottom > 0);
-  // The backing store is native resolution, and it belongs to the viewport
-  // rather than to the container the viewport sits in. Resizing it also wipes
-  // the canvas, so a caller that repaints only on a change has to be told
-  // about a display whose pixel ratio moved under a viewport that did not.
+  // The backing store belongs to the viewport rather than to the container
+  // the viewport sits in, and its scale is settled here because the render
+  // resolution is measured against the viewport height this call just
+  // computed. Resizing it also wipes the canvas, so a caller that repaints
+  // only on a change has to be told about a display whose pixel ratio moved
+  // under a viewport that did not.
+  DPR = renderedDpr(viewHeight);
   const backingWidth = Math.max(1, Math.round(viewWidth * DPR));
   const backingHeight = Math.max(1, Math.round(viewHeight * DPR));
   if (cv.width !== backingWidth) { cv.width = backingWidth; changed = true; }
@@ -3398,23 +3401,50 @@ function unregisterDossierWidget(id) {
 
 for (const [name, config] of Object.entries(HUD_WIDGETS)) bindHudWidget(name, config);
 document.getElementById("reset-overlay-layout").addEventListener("click", resetAllHudWidgets);
-// The canvas fills physical pixels, not CSS pixels. A retained cap lets a
-// Retina/4K viewer trade only map/minimap sharpness for paint headroom while
-// ordinary 1× displays retain their native backing store at every setting.
+// The canvas fills physical pixels, not CSS pixels. A render resolution names
+// the tallest picture the map may be drawn at — the familiar broadcast tiers —
+// and the width follows the viewport's own shape, so one setting means the
+// same picture on every window and display. The display's native pixel grid
+// is always the ceiling: a tier above it renders at native rather than paying
+// for pixels this screen cannot show, and a tier below it trades map/minimap
+// sharpness for paint headroom.
 const RENDER_RESOLUTION_KEY = "civvis-render-resolution";
-const RENDER_RESOLUTION_CAP = {
+const RENDER_RESOLUTION_LINES = {
   native: Infinity,
-  balanced: 1.5,
-  performance: 1,
+  "4320": 4320,   // 8K
+  "2160": 2160,   // 4K UHD
+  "1440": 1440,   // QHD
+  "1080": 1080,   // FHD
+  "720": 720,     // HD
+  "480": 480,     // SD
+};
+// The renamed pre-dimension tiers, read once so a stored choice keeps its
+// spirit: Balanced capped a Retina display near QHD, and Performance chose
+// speed over sharpness.
+const RENDER_RESOLUTION_LEGACY = { balanced: "1440", performance: "720" };
+// One high-level control over the quality-versus-speed trade. Each preset is
+// simply a named render resolution; a hand-picked resolution that matches no
+// preset reads back as Custom rather than pretending to be one of them.
+const PERFORMANCE_PRESET_RESOLUTION = {
+  quality: "native",
+  balanced: "1440",
+  fast: "720",
 };
 let renderResolution = "native";
 function renderResolutionOffered(value) {
-  return Object.prototype.hasOwnProperty.call(RENDER_RESOLUTION_CAP, value);
+  return Object.prototype.hasOwnProperty.call(RENDER_RESOLUTION_LINES, value);
 }
-function renderedDpr() {
+function performancePresetFor(resolution) {
+  for (const [preset, presetResolution] of Object.entries(PERFORMANCE_PRESET_RESOLUTION))
+    if (presetResolution === resolution) return preset;
+  return "custom";
+}
+function renderedDpr(viewHeight = MAPH) {
   const reported = Number(window.devicePixelRatio);
   const displayDpr = Number.isFinite(reported) && reported > 0 ? reported : 1;
-  return Math.min(displayDpr, RENDER_RESOLUTION_CAP[renderResolution]);
+  const lines = RENDER_RESOLUTION_LINES[renderResolution];
+  if (!Number.isFinite(lines)) return displayDpr;
+  return Math.min(displayDpr, lines / Math.max(1, viewHeight));
 }
 let DPR = renderedDpr();
 applySavedHudLayouts();
@@ -3992,7 +4022,6 @@ function syncMiniCanvas() {
 }
 
 function resize() {
-  DPR = renderedDpr();
   syncDefaultMinimapGeometry();
   // The widgets are placed first and the map area is measured against where
   // they landed, so a fitted area is never one window size out of date. The
@@ -4462,9 +4491,9 @@ function performanceRecommendation(frameAverage, frameP95, renderP95, sampleCoun
   if (sampleCount < 8) return "Measuring viewer performance…";
   const fps = frameAverage > 0 ? 1000 / frameAverage : 0;
   if (fps < 45 || frameP95 > 33.3 || renderP95 > 22)
-    return "Performance mode recommended — lower render resolution or hide optional map detail.";
+    return "The Fast preset is recommended — lower the render resolution or hide optional map detail.";
   if (fps < 55 || frameP95 > 20 || renderP95 > 14)
-    return "Running acceptably — Balanced resolution may help as the map gets busier.";
+    return "Running acceptably — the Balanced preset may help as the map gets busier.";
   return "Running smoothly at the current display settings.";
 }
 function updatePerformanceStatsDisplay(now = performance.now(), force = false) {
@@ -4661,11 +4690,11 @@ const DISPLAY_RESOURCE_CAPS_STORAGE_KEY = "civvis-display-resource-caps-v1";
 const DISPLAY_RESOURCE_CAP_VALUES = [10, 20, 30, 40, 50, 60, 70, 80, 90];
 const DISPLAY_RESOURCE_CAP_DEFAULT = 70;
 const DISPLAY_CPU_GUIDANCE_CONTROLS = [
-  "renderresolution", "yieldchk", "reschk", "resourcedisplay", "rocketanimchk",
-  "unittail",
+  "performancepreset", "renderresolution", "yieldchk", "reschk",
+  "resourcedisplay", "rocketanimchk", "unittail",
 ];
 const DISPLAY_MEMORY_GUIDANCE_CONTROLS = [
-  "renderresolution", "resourcedisplay", "reset-overlay-layout",
+  "performancepreset", "renderresolution", "resourcedisplay", "reset-overlay-layout",
 ];
 let displayResourceCaps = {cpu: DISPLAY_RESOURCE_CAP_DEFAULT, memory: DISPLAY_RESOURCE_CAP_DEFAULT};
 let machineMetrics = {cpu: null, memory: null, status: "sampling", samples: 0, everAvailable: false};
@@ -4761,15 +4790,15 @@ function updateMachineMetricsDisplay() {
   } else if (machineMetrics.status === "unavailable") {
     advice.textContent = "Machine telemetry is unavailable here. Use the display choices below manually.";
   } else if (cpuOver && memoryOver) {
-    advice.textContent = "CPU and memory are over their warning thresholds. Prefer Performance resolution, then reduce tile layers, animations, or unneeded overlays below.";
+    advice.textContent = "CPU and memory are over their warning thresholds. Prefer the Fast preset, then reduce tile layers, animations, or unneeded overlays below.";
   } else if (cpuOver) {
-    advice.textContent = "CPU is over its warning threshold. Prefer Performance resolution, then reduce yields, resource markers, or rocket and satellite animations below.";
+    advice.textContent = "CPU is over its warning threshold. Prefer the Fast preset, then reduce yields, resource markers, or rocket and satellite animations below.";
   } else if (memoryOver) {
-    advice.textContent = "Memory is over its warning threshold. Prefer Balanced or Performance resolution and hide unneeded overlays below.";
+    advice.textContent = "Memory is over its warning threshold. Prefer the Balanced or Fast preset and hide unneeded overlays below.";
   } else if (cpuNear || memoryNear) {
     advice.textContent = "Near a selected warning threshold. Lower render resolution or optional map detail below before load rises further.";
   } else {
-    advice.textContent = "Within the selected warning thresholds. Native resolution and optional map detail are available.";
+    advice.textContent = "Within the selected warning thresholds. High quality — this display's native resolution — and optional map detail are available.";
   }
 }
 function setDisplayResourceCap(kind, value) {
@@ -6052,21 +6081,29 @@ function restoreBetweenGameCountdown() {
   betweenGameCountdownChoice = ms;
   select.value = String(ms);
 }
+function syncPerformancePresetSelect() {
+  const select = document.getElementById("performancepreset");
+  if (select) select.value = performancePresetFor(renderResolution);
+}
 function rememberRenderResolution(value) {
-  renderResolution = renderResolutionOffered(value) ? value : "native";
+  const migrated = RENDER_RESOLUTION_LEGACY[value] || value;
+  renderResolution = renderResolutionOffered(migrated) ? migrated : "native";
   try { localStorage.setItem(RENDER_RESOLUTION_KEY, renderResolution); } catch (e) {}
+  const select = document.getElementById("renderresolution");
+  if (select) select.value = renderResolution;
+  syncPerformancePresetSelect();
 }
 function restoreRenderResolution() {
   const select = document.getElementById("renderresolution");
   if (!select) return;
   let stored = null;
   try { stored = localStorage.getItem(RENDER_RESOLUTION_KEY); } catch (e) {}
-  if (!renderResolutionOffered(stored)) return;
-  renderResolution = stored;
-  select.value = stored;
+  if (stored === null) { syncPerformancePresetSelect(); return; }
+  // rememberRenderResolution also rewrites a stored pre-dimension tier as the
+  // dimension it kept the spirit of, so the migration happens exactly once.
+  rememberRenderResolution(stored);
 }
 function refreshRenderResolution() {
-  DPR = renderedDpr();
   syncMapViewport();
   syncMiniCanvas();
   if (state) { draw(); drawMini(); }
@@ -27598,6 +27635,11 @@ document.getElementById("between-game-countdown").onchange = () => {
 restoreBetweenGameCountdown();
 document.getElementById("renderresolution").onchange = () => {
   rememberRenderResolution(document.getElementById("renderresolution").value);
+  refreshRenderResolution();
+};
+document.getElementById("performancepreset").onchange = () => {
+  const preset = document.getElementById("performancepreset").value;
+  rememberRenderResolution(PERFORMANCE_PRESET_RESOLUTION[preset] || "native");
   refreshRenderResolution();
 };
 restoreRenderResolution();

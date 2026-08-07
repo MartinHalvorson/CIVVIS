@@ -4098,14 +4098,28 @@
         <details class="display-settings-group" id="performance-options-settings" data-advanced-settings="display-performance">
           <summary><span class="advanced-settings-summary">Performance options<small>Resolution, viewer timing &amp; workload</small></span></summary>
           <div class="display-settings-group-body">
+            <div class="speed-row render-resolution-row"><span>Performance</span>
+              <select id="performancepreset" aria-label="Overall performance preset"
+                      title="One control for the quality-versus-speed trade; it picks the render resolution below">
+                <option value="quality" selected>High quality</option>
+                <option value="balanced">Balanced</option>
+                <option value="fast">Fast</option>
+                <option value="custom" disabled hidden>Custom</option>
+              </select>
+            </div>
             <div class="speed-row render-resolution-row"><span>Render resolution</span>
               <select id="renderresolution" aria-label="Map render resolution"
                       title="Changes map and minimap sharpness; does not change simulation speed">
-                <option value="native" selected>Native</option>
-                <option value="balanced">Balanced</option>
-                <option value="performance">Performance</option>
+                <option value="native" selected>Native · this display</option>
+                <option value="4320">8K · 4320p</option>
+                <option value="2160">4K UHD · 2160p</option>
+                <option value="1440">QHD · 1440p</option>
+                <option value="1080">FHD · 1080p</option>
+                <option value="720">HD · 720p</option>
+                <option value="480">SD · 480p</option>
               </select>
             </div>
+            <div class="small render-resolution-help">A resolution is the picture's height; its width follows the window's shape. Choices above this display's own pixels render at native.</div>
             <div class="performance-stats" id="performance-stats" aria-label="Viewer performance statistics">
               <div class="performance-stat-row"><span class="performance-stat-name">Canvas</span><output class="performance-stat-value" id="performance-canvas-value">Sampling…</output></div>
               <div class="performance-stat-row"><span class="performance-stat-name">Workload</span><output class="performance-stat-value" id="performance-workload-value">Waiting for a map…</output></div>

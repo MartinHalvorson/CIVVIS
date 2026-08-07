@@ -5102,7 +5102,7 @@ mod tests {
         for contract in [
             "DISPLAY_RESOURCE_CAPS_STORAGE_KEY",
             "fetchJSON(\"/machine-metrics\", {cache: \"no-store\"}, 3000)",
-            "Prefer Performance resolution",
+            "Prefer the Fast preset",
             "Machine telemetry is unavailable here.",
         ] {
             assert!(EMBEDDED_INDEX.contains(contract), "missing display load contract: {contract}");
@@ -8954,12 +8954,14 @@ mod tests {
             }),
             "Display Settings sections should read observer, overlays, map, performance"
         );
-        // Performance options read outward from the one control the viewer can
-        // change: the resolution being drawn at, the map that resolution has to
-        // cover, how fast this browser draws it, and last the simulation behind
-        // it — turn cost, a whole run's projected length, the run on screen, and
-        // the runs this page has already watched end to end.
+        // Performance options read outward from the controls the viewer can
+        // change: the one-word quality-versus-speed preset, the resolution it
+        // picks, the map that resolution has to cover, how fast this browser
+        // draws it, and last the simulation behind it — turn cost, a whole
+        // run's projected length, the run on screen, and the runs this page
+        // has already watched end to end.
         let performance_markers = [
+            "id=\"performancepreset\"",
             "id=\"renderresolution\"",
             "id=\"performance-canvas-value\"",
             "id=\"performance-workload-value\"",
@@ -8982,9 +8984,38 @@ mod tests {
             performance_markers.windows(2).all(|pair| {
                 EMBEDDED_INDEX.find(pair[0]).unwrap() < EMBEDDED_INDEX.find(pair[1]).unwrap()
             }),
-            "performance options should read resolution, canvas, workload, render, slow \
-             frames, then the simulation rows"
+            "performance options should read preset, resolution, canvas, workload, render, \
+             slow frames, then the simulation rows"
         );
+        // The preset is one word for the quality-versus-speed trade; the
+        // resolution names the broadcast tiers as picture heights, and the
+        // display's native grid is always the ceiling — never a multiplier
+        // table the viewer has to translate. A hand-picked resolution that
+        // matches no preset reads back as Custom instead of impersonating one.
+        for preset in ["quality", "balanced", "fast", "custom"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("<option value=\"{preset}\"")),
+                "performance preset should offer {preset}"
+            );
+        }
+        for tier in ["native", "4320", "2160", "1440", "1080", "720", "480"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("<option value=\"{tier}\"")),
+                "render resolution should offer {tier}"
+            );
+        }
+        for resolution_contract in [
+            "const RENDER_RESOLUTION_LINES = {",
+            "const PERFORMANCE_PRESET_RESOLUTION = {",
+            "const RENDER_RESOLUTION_LEGACY = { balanced: \"1440\", performance: \"720\" };",
+            "return Math.min(displayDpr, lines / Math.max(1, viewHeight));",
+            "function performancePresetFor(resolution) {",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(resolution_contract),
+                "render resolution contract is missing: {resolution_contract}"
+            );
+        }
         // The simulation rows are the reason the panel can answer "how long does
         // a whole game take" at all, and every build must be able to fill them:
         // the published browser build reports no turn cost of its own, so the
