@@ -19370,7 +19370,8 @@ function hudTurnPlate() {
   const playerView = SPEC && state.view_player !== null && state.view_player !== undefined;
   const identity = SPEC ? viewer : state.players[0];
   const viewLabel = playerView ? "Player view" : SPEC ? "Observing" : "Your empire";
-  const mapName = titleCase(state.map.script || "tenins_ball");
+  const mapScript = state.map.script || "tenins_ball";
+  const mapName = mapScript === "tenins_ball" ? "Tennis Ball" : titleCase(mapScript);
   const speedName = titleCase(state.game_speed || "standard");
   const paceSelect = document.getElementById("specspeed");
   const paceOption = paceSelect?.selectedOptions[0];
