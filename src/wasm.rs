@@ -68,50 +68,10 @@ thread_local! {
 
 /// The world a page opens on before anybody has visited the lobby.
 ///
-/// Four majors on the Tiny Tennis Ball globe, played out as a spectated
-/// exhibition: the smallest stock world, so the very first visit generates
-/// and steps a game the visitor's own CPU finds snappy, and the one that
-/// needs no decisions from a visitor who has just arrived.
+/// The stock opening world — see `stock_opening_params` in the parent for
+/// the one description of it — rolled from the seed the page supplied.
 fn opening_params() -> Params {
-    let size = MapSize::for_players(4);
-    let map_topology = MapTopology::Planet;
-    let (width, height) = size.dimensions(map_topology);
-    Params {
-        num_players: 4,
-        width,
-        height,
-        seed: OPENING_SEED.with(Cell::get),
-        base_ruleset: BaseRuleset::Civ6,
-        start_era: 0,
-        // The world a visitor arrives on is the stock game, at both ends of
-        // it: the lobby is where a different Future Era is asked for.
-        future_era: FutureEra::Classic,
-        turn_structure: TurnStructure::Sequential,
-        map_script: MapScript::TeninsBall,
-        map_topology,
-        map_poles: MapPoles::Poles,
-        game_speed: GameSpeed::Online,
-        max_turns: GameSpeed::Online.turn_limit(),
-        victory_conditions: VictoryConditions {
-            science: true,
-            culture: true,
-            religious: true,
-            diplomatic: true,
-            domination: true,
-            score: true,
-        },
-        num_city_states: size.default_city_states,
-        spectate: true,
-        difficulty: "prince".to_string(),
-        speed: GameSpeed::Online.id().to_string(),
-        teams: Vec::new(),
-        leader_pool: LeaderPool::Civ6,
-        civs: Vec::new(),
-        supervised: false,
-        league_dir: None,
-        league_record: false,
-        force_strategy: None,
-    }
+    stock_opening_params(OPENING_SEED.with(Cell::get))
 }
 
 fn browser_session(params: Params) -> Session {
@@ -337,6 +297,9 @@ fn route(method: &str, target: &str, body: &str) -> Value {
                 "map_topologies": MAP_TOPOLOGIES,
                 "map_poles": MAP_POLES,
                 "game_speeds": CIV6_GAME_SPEEDS,
+                // The stock opening setup, so the lobby's defaults are read
+                // from the engine rather than repeated in markup.
+                "default_setup": default_setup_json(),
                 "strategies": strategy_roster(session),
                 "leader_elo_options": leader_elo_options(session),
                 "seat_strategy": session.seated_strategy_name(0),
@@ -742,30 +705,8 @@ pub unsafe extern "C" fn civvis_request(ptr: *mut u8, len: usize) -> *mut u8 {
     sized(answer.into_bytes())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::opening_params;
-    use crate::setup::{MapScript, MapSize, MapTopology};
-
-    #[test]
-    fn opening_exhibition_defaults_to_planet() {
-        let params = opening_params();
-        let size = MapSize::for_players(params.num_players);
-
-        assert_eq!(params.map_topology, MapTopology::Planet);
-        assert_eq!(
-            (params.width, params.height),
-            size.dimensions(MapTopology::Planet)
-        );
-    }
-
-    /// The first world a civvis.ai visitor ever waits on is the smallest
-    /// stock one: four majors on the Tiny Tennis Ball globe.
-    #[test]
-    fn opening_exhibition_is_the_tiny_tennis_ball_world() {
-        let params = opening_params();
-
-        assert_eq!(params.num_players, 4);
-        assert_eq!(params.map_script, MapScript::TeninsBall);
-    }
-}
+// The opening world's own contract — that it is the Tiny Tennis Ball globe,
+// sized by the shipped table — is tested natively on `stock_opening_params`
+// in the parent module, where the suite actually runs; a `#[cfg(test)]`
+// module here would only ever be compiled for a target whose tests nobody
+// executes.
