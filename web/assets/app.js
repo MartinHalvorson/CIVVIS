@@ -423,9 +423,12 @@ const BLDG_ICON = { monument:"🗿", granary:"🌾", walls:"🧱", medieval_wall
                     shrine:"⛩", library:"📜", market:"⚖", barracks:"🛡",
                     lighthouse:"🗼", amphitheater:"🎭", aqueduct:"⛲", arena:"🎪",
                     workshop:"🔧", armory:"🛡", bank:"🏦", university:"🎓" };
-const DISTRICT_COLOR = { campus:"#4aa3df", holy_site:"#e8e4ef", commercial_hub:"#e2c04a",
-                         harbor:"#5ec8d8", encampment:"#c0392b", theater_square:"#c678dd",
-                         industrial_zone:"#e67e22", entertainment_complex:"#e75480" };
+// Hues follow Civ VI's own yield language — science blue, culture a real
+// violet (not pink; entertainment keeps pink), faith a pale sky-white, gold a
+// yellow coin, production a burnt orange — softened only slightly for the map.
+const DISTRICT_COLOR = { campus:"#3da4dc", holy_site:"#dcebf5", commercial_hub:"#e9c83e",
+                         harbor:"#52bcd4", encampment:"#c0392b", theater_square:"#9855d2",
+                         industrial_zone:"#d4761f", entertainment_complex:"#e75480" };
 // Every unique district is its parent in a local hat — a Seowon is a Campus,
 // an Ikanda an Encampment — so they share a silhouette and a color. Grouping by
 // family is also what keeps thirty-five kinds down to a set of shapes a player
@@ -447,8 +450,8 @@ const DISTRICT_FAMILY = {
   preserve:"preserve", city_center:"civic",
 };
 const FAMILY_COLOR = {
-  campus:"#4aa3df", faith:"#ece6f4", war:"#c0392b", trade:"#e2c04a",
-  harbor:"#5ec8d8", culture:"#c678dd", industry:"#e67e22", fun:"#e75480",
+  campus:"#3da4dc", faith:"#dcebf5", war:"#c0392b", trade:"#e9c83e",
+  harbor:"#52bcd4", culture:"#9855d2", industry:"#d4761f", fun:"#e75480",
   water:"#7fb8d8", homes:"#bda684", air:"#9fb0c4", civic:"#d8c58a",
   preserve:"#6fbf73",
 };
@@ -8165,10 +8168,9 @@ function tri(ax, ay, bx, by, ccx, ccy) {
 // Districts are colored discs — board-game tokens rather than tiny
 // architecture. The family color IS the identity (blue = science, purple =
 // culture, orange = industry), readable from survey zoom without a key, and
-// the disc covers half of its tile's area so the hex edge, roads, and borders
-// stay visible around its rim. Completed buildings stand on the disc as dark
-// bars; see `drawDistrictBars`.
-const DISTRICT_DISC_RADIUS = S * 0.643;  // π·(0.643·S)² ≈ half a hex's area
+// the disc is deliberately flat: solid color, thin outline, no lighting.
+// Completed buildings stand on the disc as dark bars; see `drawDistrictBars`.
+const DISTRICT_DISC_RADIUS = S * 0.56;  // π·(0.56·S)² ≈ 38% of a hex's area
 
 // Positive amounts mix a district color toward white, negative toward black.
 // The dark end is the ink that the disc's bars and glyphs share, so every
@@ -8236,9 +8238,9 @@ function districtBuildingsByTile() {
 // in `districtBuildingsByTile`). A pillaged building's bar falls to a third
 // of its height, and the full bar's ghost outline stays standing over the
 // stub so the fall reads as damage rather than youth.
-const DISTRICT_BAR_SEATS = [-8.2, 0, 8.2];
-const DISTRICT_BAR_WIDTH = 5.2, DISTRICT_BAR_HEIGHT = 12.5;
-const DISTRICT_BAR_BASELINE = 13.5;
+const DISTRICT_BAR_SEATS = [-7.2, 0, 7.2];
+const DISTRICT_BAR_WIDTH = 4.6, DISTRICT_BAR_HEIGHT = 11;
+const DISTRICT_BAR_BASELINE = 11.5;
 
 function drawDistrictBars(x, y, buildings, ink) {
   for (const [index, building] of
@@ -8256,8 +8258,6 @@ function drawDistrictBars(x, y, buildings, ink) {
     }
     cx.fillStyle = ink;
     cx.fillRect(left, base - height, DISTRICT_BAR_WIDTH, height);
-    cx.fillStyle = "rgba(255,255,255,.3)";
-    cx.fillRect(left, base - height, DISTRICT_BAR_WIDTH, 1.1);
     cx.strokeStyle = "rgba(12,16,22,.5)"; cx.lineWidth = .9;
     cx.strokeRect(left, base - height, DISTRICT_BAR_WIDTH, height);
   }
@@ -8333,20 +8333,11 @@ function drawDistrict(t, x, y, buildings = []) {
     cx.ellipse(x + 7, y - ry + 4.5, 7.5, 6.5, 0, Math.PI, 0);
     cx.stroke();
   }
-  // Grounding shadow, then the token itself: a near-flat face with one soft
-  // top light so it reads as a piece set on the board, not a printed dot.
-  cx.fillStyle = "rgba(10,14,18,.3)";
-  cx.beginPath(); cx.ellipse(x + 1.1, y + 2.4, rx, ry, 0, 0, 7); cx.fill();
-  const face = cx.createLinearGradient(x, y - ry, x, y + ry);
-  face.addColorStop(0, districtShade(col, .16));
-  face.addColorStop(1, districtShade(col, -.1));
-  cx.fillStyle = face;
+  // The token itself: one solid color and a thin ink outline, nothing else —
+  // a printed counter on the board rather than a lit game piece.
+  cx.fillStyle = col;
   cx.beginPath(); cx.ellipse(x, y, rx, ry, 0, 0, 7); cx.fill();
   cx.strokeStyle = "rgba(13,18,24,.78)"; cx.lineWidth = 1.6; cx.stroke();
-  cx.strokeStyle = "rgba(255,255,255,.26)"; cx.lineWidth = 1.2;
-  cx.beginPath();
-  cx.ellipse(x, y, rx - 2.4, ry - 2.4, 0, Math.PI * 1.1, Math.PI * 1.9);
-  cx.stroke();
   drawDistrictGlyph(t, x, y, ink);
   drawDistrictBars(x, y, buildings, ink);
   cx.restore();

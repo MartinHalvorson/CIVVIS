@@ -2189,6 +2189,22 @@
   .victory-option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 9px; }
   .victory-option { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--muted); font-size: var(--type-small); cursor: pointer; }
   .victory-option input { margin: 0; }
+  /* Both endgame rules only mean something against the boxes ticked above —
+     the Mercy Rule ends a game those conditions are still deciding, and
+     Require N counts them — so they read as the card's second row rather than
+     a separate setting adrift in the two-column setup grid. "95% win odds"
+     needs about 150px to spell itself out, so the pair sits side by side only
+     in a sidebar wide enough for that and stacks rather than clipping below
+     it. Bottom alignment keeps the two selects on one line even though
+     "Require N Victory Types" wraps to a second line and "Mercy Rule" does
+     not. */
+  .victory-endgame {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px 10px; align-items: end; margin-top: 9px; padding-top: 9px;
+    border-top: 1px solid var(--line-soft);
+  }
+  .victory-endgame > label { min-width: 0; }
+  .victory-endgame select { width: 100%; }
   /* The first setup pass stays short. Less common rules live behind one
      disclosure at the bottom of each panel, where they remain discoverable
      without making every new game begin with a wall of switches. */
@@ -4233,25 +4249,25 @@
             <label class="victory-option"><input type="checkbox" id="victory-domination" checked>Domination</label>
             <label class="victory-option"><input type="checkbox" id="victory-score" checked>Score</label>
           </div>
-        </div>
-        <div class="victory-endgame civ6-hidden" id="victory-endgame" style="display:flex;gap:10px">
-          <label class="small" style="flex:1">Mercy Rule<select id="mercyrule" style="margin-top:4px"
-            title="End the game the moment one civilization's live win odds reach this share — the same calibrated estimate the spectator ribbon shows. None plays every game to its natural end.">
-            <option value="">None</option>
-            <option value="0.99">99% win odds</option>
-            <option value="0.97">97% win odds</option>
-            <option value="0.95" selected>95% win odds</option>
-            <option value="0.90">90% win odds</option>
-          </select></label>
-          <label class="small" style="flex:1">Require N Victory Types<span class="setup-info" style="cursor:help;opacity:.7"
-            title="Option to require multiple victory types to be won before a winner is declared. Each type is banked the usual way: Science by reaching the exoplanet, Culture by the culture victory, Religion by world conversion, Diplomacy at 20 Diplomatic Victory points, Domination by taking every other capital — and Score is banked at the turn limit by the leading scorer. The first civilization holding N different types wins; if the clock runs out first, whoever banked the most types takes it. The choice caps at the number of victory conditions enabled above."> ⓘ</span><select id="requiredvictories" style="margin-top:4px">
-            <option value="1" selected>1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-            <option value="4">4</option>
-            <option value="5">5</option>
-            <option value="6">6</option>
-          </select></label>
+          <div class="victory-endgame civ6-hidden" id="victory-endgame">
+            <label class="small">Mercy Rule<select id="mercyrule" style="margin-top:4px"
+              title="End the game the moment one civilization's live win odds reach this share — the same calibrated estimate the spectator ribbon shows. None plays every game to its natural end.">
+              <option value="">None</option>
+              <option value="0.99">99% win odds</option>
+              <option value="0.97">97% win odds</option>
+              <option value="0.95" selected>95% win odds</option>
+              <option value="0.90">90% win odds</option>
+            </select></label>
+            <label class="small">Require N Victory Types<span class="setup-info" style="cursor:help;opacity:.7"
+              title="Option to require multiple victory types to be won before a winner is declared. Each type is banked the usual way: Science by reaching the exoplanet, Culture by the culture victory, Religion by world conversion, Diplomacy at 20 Diplomatic Victory points, Domination by taking every other capital — and Score is banked at the turn limit by the leading scorer. The first civilization holding N different types wins; if the clock runs out first, whoever banked the most types takes it. The choice caps at the number of victory conditions enabled above."> ⓘ</span><select id="requiredvictories" style="margin-top:4px">
+              <option value="1" selected>1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+            </select></label>
+          </div>
         </div>
         <label class="small game-advanced-setting civ6-hidden" data-advanced-order="5">Game mode<select id="gamemode" style="margin-top:4px"
           title="Civ is the full game. Tactics is a playground for tactical unit combat: a small flat battlefield with mountains, rivers, woods and water but no resources or city-states, where two evenly-armed sides begin in opposite corners of a square arena or at opposite ends of a long one.">
