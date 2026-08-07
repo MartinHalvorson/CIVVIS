@@ -3493,7 +3493,7 @@ fn major_teams(game: &Game) -> Vec<Option<usize>> {
 }
 
 /// The stock opening world: four majors playing themselves out on the Tiny
-/// Tennis Ball globe.
+/// Tennis Ball globe, under simultaneous turns.
 ///
 /// This is the one description of "the game nobody has decided anything
 /// about yet". The browser build opens every civvis.ai visit on it (see
@@ -3514,7 +3514,13 @@ fn stock_opening_params(seed: u64) -> Params {
         base_ruleset: BaseRuleset::Civ6,
         start_era: 0,
         future_era: FutureEra::Classic,
-        turn_structure: TurnStructure::Sequential,
+        // A spectated table has nobody at the keyboard, so it plays the
+        // regime the automated surfaces already default to: every seat plans
+        // the turn against the same frozen world and the plans commit
+        // together. Taking a seat here is still sequential — `new_game_params`
+        // downgrades a played game the same way `play` refuses the flag —
+        // so this changes what a visitor watches, not what they can play.
+        turn_structure: TurnStructure::Simultaneous,
         map_script: MapScript::TeninsBall,
         map_topology,
         map_poles: MapPoles::Poles,
@@ -10191,9 +10197,10 @@ mod tests {
 
     /// The first world a civvis.ai visitor ever waits on is the smallest
     /// stock one: four majors on the Tiny Tennis Ball globe, sized by the
-    /// shipped table, spectated, at Online speed. The browser build's
-    /// `wasm::opening_params` is this function with the page's seed, so the
-    /// contract is tested here, where the suite actually runs.
+    /// shipped table, spectated, at Online speed, under simultaneous turns.
+    /// The browser build's `wasm::opening_params` is this function with the
+    /// page's seed, so the contract is tested here, where the suite actually
+    /// runs.
     #[test]
     fn the_stock_opening_world_is_the_tiny_tennis_ball_exhibition() {
         let params = stock_opening_params(7);
@@ -10209,7 +10216,23 @@ mod tests {
         assert_eq!(params.num_city_states, size.default_city_states);
         assert_eq!(params.game_speed, GameSpeed::Online);
         assert!(params.spectate);
+        assert_eq!(params.turn_structure, TurnStructure::Simultaneous);
         assert_eq!(params.seed, 7);
+    }
+
+    /// The stock world is watched, never played, so its regime is the one
+    /// every unattended surface already defaults to. A visitor who takes a
+    /// seat is a live human consulted one seat at a time, so `new_game_params`
+    /// hands them the sequential regime instead — the same refusal `play`
+    /// makes at launch, and the reason this default is safe to publish.
+    #[test]
+    fn taking_a_seat_in_the_stock_world_still_plays_sequentially() {
+        let stock = stock_opening_params(0);
+        assert_eq!(stock.turn_structure, TurnStructure::Simultaneous);
+
+        let seated = new_game_params(&stock, &json!({"spectate": false}));
+        assert!(!seated.spectate);
+        assert_eq!(seated.turn_structure, TurnStructure::Sequential);
     }
 
     /// `/rules` publishes the stock opening setup in the same vocabulary the
