@@ -705,8 +705,16 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// so its unit loop never asks for a paired friendly finisher or replaces a
 /// reply price; this is a reviewed compatibility re-pin, not an Elo-protocol
 /// change.
+/// #1363 restores the joint tactical planner (`joint_tactics`, off everywhere
+/// but the `advanced_joint_tactics` arm and the live bridge) and admits the
+/// barbarian seat to the Advanced military step's enemy list behind
+/// `home_defense`. `AdvancedAi::legacy()` leaves `home_defense` false and
+/// `joint_tactics` false, so the anchor's path gains only inert fields and a
+/// set-membership test against an empty set; the STOCK `advanced` entrant
+/// (which ships `home_defense = true`) now answers barbarian raiders at home,
+/// recorded here honestly. Compatibility re-pin for the anchor.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2553_18c4_1ac9_0749;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6937_8a74_85e7_6ba8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

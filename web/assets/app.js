@@ -454,39 +454,6 @@ const FAMILY_COLOR = {
 };
 const districtColor = d =>
   DISTRICT_COLOR[d] || FAMILY_COLOR[DISTRICT_FAMILY[d]] || "#ddd";
-// The broad family silhouette makes a district legible from a distance; its
-// completed buildings then give the tile a small but real sense of growth. A
-// unique building uses the same architectural language as the building it
-// replaces, with a few cases named here where its role is more useful than its
-// spelling (a Madrasa still reads as a school, a Film Studio as a broadcast
-// house). Everything else has a family-and-tier fallback below.
-const DISTRICT_BUILDING_KIND = {
-  library:"books", madrasa:"books", navigation_school:"books", alchemical_society:"lab",
-  university:"academy", research_lab:"lab",
-  shrine:"shrine", temple:"temple", stave_church:"shrine", prasat:"temple",
-  cathedral:"temple", dar_e_mehr:"shrine", gurdwara:"temple", meeting_house:"shrine",
-  mosque:"temple", pagoda:"shrine", stupa:"shrine", synagogue:"temple", wat:"temple",
-  market:"market", sukiennice:"market", grand_bazaar:"market", gilded_vault:"bank",
-  bank:"bank", stock_exchange:"tower",
-  barracks:"fort", basilikoi_paides:"fort", ordu:"fort", stable:"stable", armory:"fort",
-  military_academy:"academy",
-  lighthouse:"lighthouse", shipyard:"shipyard", seaport:"port",
-  amphitheater:"theater", marae:"theater", art_museum:"museum", archaeological_museum:"museum",
-  broadcast_center:"broadcast", film_studio:"broadcast",
-  workshop:"workshop", electronics_factory:"factory", factory:"factory",
-  coal_power_plant:"plant", oil_power_plant:"plant", nuclear_power_plant:"plant",
-  arena:"arena", tlachtli:"arena", thermal_bath:"bath", zoo:"park", stadium:"stadium",
-  ferris_wheel:"ferris", aquarium:"aquarium", aquatics_center:"stadium",
-  food_market:"market", shopping_mall:"mall",
-  hangar:"hangar", airport:"airport",
-  consulate:"civic", chancery:"civic",
-  grove:"grove", sanctuary:"sanctuary",
-  hydroelectric_dam:"plant",
-  ancestral_hall:"civic", audience_chamber:"civic", warlords_throne:"civic",
-  foreign_ministry:"civic", intelligence_agency:"tower", grand_masters_chapel:"shrine",
-  queens_bibliotheque:"books", national_history_museum:"museum", royal_society:"civic",
-  war_department:"fort",
-};
 // Text yields — tooltips and the sidebar, where a yield is a word in a line
 // rather than a mark on the map. The map's numbered-marker palette lives with
 // `drawTileYields`.
@@ -8101,14 +8068,25 @@ function tri(ax, ay, bx, by, ccx, ccy) {
   cx.closePath(); cx.fill();
 }
 
-// Districts are pieces of a city rather than badges laid on top of the map.
-// Keep their visual centre just above the tile centre: the front terrace can
-// still touch the ground, while the skyline has room to read as architecture.
-const DISTRICT_ICON_LIFT = 3.5;
-// Districts are their own tile, not a minor terrain badge.  This deliberately
-// fills most of the hex while leaving enough of the edge visible for roads,
-// borders, and the cell's underlying terrain to remain readable.
-const DISTRICT_ICON_SCALE = 1.8;
+// Districts are colored discs — board-game tokens rather than tiny
+// architecture. The family color IS the identity (blue = science, purple =
+// culture, orange = industry), readable from survey zoom without a key, and
+// the disc covers half of its tile's area so the hex edge, roads, and borders
+// stay visible around its rim. Completed buildings stand on the disc as dark
+// bars; see `drawDistrictBars`.
+const DISTRICT_DISC_RADIUS = S * 0.643;  // π·(0.643·S)² ≈ half a hex's area
+
+// Positive amounts mix a district color toward white, negative toward black.
+// The dark end is the ink that the disc's bars and glyphs share, so every
+// family's furniture is automatically a deep shade of its own color.
+function districtShade(color, amount) {
+  const hex = color.length === 4
+    ? "#" + [...color.slice(1)].map(ch => ch + ch).join("") : color;
+  const target = amount < 0 ? 0 : 255, weight = Math.abs(amount);
+  const mixed = [1, 3, 5].map(at => Math.round(
+    parseInt(hex.slice(at, at + 2), 16) * (1 - weight) + target * weight));
+  return `rgb(${mixed.join(",")})`;
+}
 
 function districtIconPositions(value) {
   if (!Array.isArray(value)) return [];
@@ -8158,324 +8136,131 @@ function districtBuildingsByTile() {
   return byTile;
 }
 
-function districtBuildingKind(id, family, index) {
-  if (DISTRICT_BUILDING_KIND[id]) return DISTRICT_BUILDING_KIND[id];
-  const tiers = {
-    campus:["books", "academy", "lab"], faith:["shrine", "temple", "temple"],
-    war:["fort", "stable", "academy"], trade:["market", "bank", "tower"],
-    harbor:["lighthouse", "shipyard", "port"], culture:["theater", "museum", "broadcast"],
-    industry:["workshop", "factory", "plant"], fun:["arena", "park", "stadium"],
-    water:["plant"], homes:["market", "mall"], air:["hangar", "airport"],
-    civic:["civic", "civic", "tower"], preserve:["grove", "sanctuary"],
-  };
-  const sequence = tiers[family] || ["house"];
-  return sequence[Math.min(index, sequence.length - 1)];
-}
+// A district's completed buildings are up to three bars standing on the lower
+// half of the disc — a tiny bar chart of how far the district has grown.
+// Slots fill left to right in build order (cheapest first, matching the sort
+// in `districtBuildingsByTile`). A pillaged building's bar falls to a third
+// of its height, and the full bar's ghost outline stays standing over the
+// stub so the fall reads as damage rather than youth.
+const DISTRICT_BAR_SEATS = [-8.2, 0, 8.2];
+const DISTRICT_BAR_WIDTH = 5.2, DISTRICT_BAR_HEIGHT = 12.5;
+const DISTRICT_BAR_BASELINE = 13.5;
 
-// A completed building is deliberately a tiny structure, not an emoji or a
-// text label. The small set of rooflines and landmarks is enough to distinguish
-// a school from a market or a factory at map scale, while sharing one material
-// and outline language with the district terrace underneath it.
-function drawDistrictBuilding(kind, x, y, scale, pillaged) {
-  const ink = "#1a2025", stone = "#ece8d8", roof = "#a65342";
-  const rect = (left, top, width, height, fill = stone) => {
-    cx.fillStyle = fill; cx.beginPath(); cx.rect(left, top, width, height); cx.fill(); cx.stroke();
-  };
-  const roofed = (width = 7, height = 5, roofColor = roof) => {
-    rect(-width / 2, -height, width, height);
-    cx.fillStyle = roofColor; cx.beginPath();
-    cx.moveTo(-width / 2 - 1.1, -height); cx.lineTo(0, -height - 4.2);
-    cx.lineTo(width / 2 + 1.1, -height); cx.closePath(); cx.fill(); cx.stroke();
-  };
-  cx.save();
-  cx.translate(x, y); cx.scale(scale, scale);
-  cx.lineJoin = "round"; cx.lineCap = "round";
-  cx.strokeStyle = ink; cx.lineWidth = 1.05;
-  if (pillaged) cx.globalAlpha = .5;
-
-  if (kind === "books") {
-    rect(-4.2, -5.2, 8.4, 5.2);
-    cx.fillStyle = "#6da7c8";
-    for (const bx of [-2.5, -.7, 1.1]) cx.fillRect(bx, -4.5, 1.1, 3.1);
-    cx.fillStyle = roof; cx.beginPath();
-    cx.moveTo(-5, -5.2); cx.lineTo(0, -9); cx.lineTo(5, -5.2); cx.closePath(); cx.fill(); cx.stroke();
-  } else if (kind === "academy" || kind === "lab") {
-    rect(-3.8, -4.2, 7.6, 4.2, kind === "lab" ? "#b8d8d2" : stone);
-    cx.fillStyle = kind === "lab" ? "#71b9c4" : stone;
-    cx.beginPath(); cx.arc(0, -4.1, 3.8, Math.PI, 0); cx.fill(); cx.stroke();
-    cx.beginPath(); cx.moveTo(1.5, -7.2); cx.lineTo(4.7, -10.1); cx.stroke();
-    if (kind === "lab") { cx.fillStyle = "#d6f5ee"; cx.beginPath(); cx.arc(4.8, -10.2, 1.2, 0, 7); cx.fill(); }
-  } else if (kind === "shrine" || kind === "temple") {
-    rect(-3.4, -5.3, 6.8, 5.3, stone);
-    cx.fillStyle = kind === "temple" ? "#d7c48e" : "#bd7159";
-    cx.beginPath(); cx.moveTo(-4.5, -5.3); cx.lineTo(0, -9.5); cx.lineTo(4.5, -5.3);
-    cx.closePath(); cx.fill(); cx.stroke();
-    cx.beginPath(); cx.moveTo(0, -9.5); cx.lineTo(0, -12); cx.stroke();
-  } else if (kind === "market") {
-    rect(-4.5, -4.8, 9, 4.8);
-    cx.fillStyle = "#d9ad4e"; cx.beginPath();
-    cx.moveTo(-5.2, -4.8); cx.lineTo(-3.5, -8.3); cx.lineTo(3.5, -8.3);
-    cx.lineTo(5.2, -4.8); cx.closePath(); cx.fill(); cx.stroke();
-    cx.strokeStyle = "#9b5541"; cx.lineWidth = 1.2;
-    for (const bx of [-2.1, .2, 2.5]) { cx.beginPath(); cx.moveTo(bx, -8.1); cx.lineTo(bx + .7, -5); cx.stroke(); }
-  } else if (kind === "bank" || kind === "tower" || kind === "civic") {
-    const height = kind === "tower" ? 10.6 : 7.2;
-    rect(-3.5, -height, 7, height, kind === "bank" ? "#d9c67d" : stone);
-    if (kind === "civic" || kind === "museum") {
-      cx.fillStyle = "#c7b789"; cx.beginPath();
-      cx.moveTo(-4.8, -height); cx.lineTo(0, -height - 3.2); cx.lineTo(4.8, -height);
-      cx.closePath(); cx.fill(); cx.stroke();
-    }
-    cx.strokeStyle = "#637d8a"; cx.lineWidth = .75;
-    for (const bx of [-1.9, 0, 1.9]) { cx.beginPath(); cx.moveTo(bx, -height + 1.3); cx.lineTo(bx, -1.2); cx.stroke(); }
-  } else if (kind === "fort" || kind === "stable") {
-    rect(-4.4, -6.2, 8.8, 6.2, kind === "stable" ? "#b48b61" : "#97938a");
-    if (kind === "fort") {
-      cx.fillStyle = "#97938a";
-      for (const bx of [-4.4, -1.45, 1.5]) cx.fillRect(bx, -8.2, 2.4, 2.2);
-      cx.strokeRect(-4.4, -8.2, 8.8, 2.2);
-    } else {
-      cx.fillStyle = roof; cx.beginPath();
-      cx.moveTo(-5.4, -6.2); cx.lineTo(0, -10); cx.lineTo(5.4, -6.2); cx.closePath(); cx.fill(); cx.stroke();
-    }
-  } else if (kind === "lighthouse") {
-    cx.fillStyle = stone; cx.beginPath();
-    cx.moveTo(-2.6, 0); cx.lineTo(-1.6, -9.5); cx.lineTo(1.6, -9.5); cx.lineTo(2.6, 0);
-    cx.closePath(); cx.fill(); cx.stroke();
-    cx.fillStyle = "#d9574f"; cx.fillRect(-2.2, -11.2, 4.4, 1.7); cx.strokeRect(-2.2, -11.2, 4.4, 1.7);
-  } else if (kind === "shipyard" || kind === "port") {
-    cx.strokeStyle = "#705239"; cx.lineWidth = 1.4;
-    cx.beginPath(); cx.moveTo(-5, -.5); cx.lineTo(5, -.5); cx.stroke();
-    for (const bx of [-3.5, 1.5]) { cx.beginPath(); cx.moveTo(bx, -.5); cx.lineTo(bx, 2); cx.stroke(); }
-    cx.strokeStyle = ink; cx.lineWidth = 1;
-    cx.beginPath(); cx.moveTo(1.5, -.5); cx.lineTo(1.5, -10); cx.lineTo(5.4, -5.8); cx.stroke();
-    if (kind === "port") { cx.fillStyle = "#d5d0bd"; cx.beginPath(); cx.ellipse(-3, -2.8, 3, 1.8, 0, 0, 7); cx.fill(); cx.stroke(); }
-  } else if (kind === "theater" || kind === "arena" || kind === "stadium") {
-    const wide = kind === "stadium" ? 5.8 : kind === "arena" ? 4.7 : 4.1;
-    cx.fillStyle = kind === "theater" ? "#d5c5df" : stone;
-    cx.beginPath(); cx.ellipse(0, -2.8, wide, 3.6, 0, Math.PI, 0); cx.fill(); cx.stroke();
-    cx.strokeStyle = ink; cx.lineWidth = .9;
-    cx.beginPath(); cx.ellipse(0, -2.8, wide * .52, 1.55, 0, Math.PI, 0); cx.stroke();
-    if (kind === "stadium") { cx.strokeStyle = "#d9ad4e"; cx.beginPath(); cx.moveTo(-wide, -6); cx.lineTo(-wide, -9); cx.moveTo(wide, -6); cx.lineTo(wide, -9); cx.stroke(); }
-  } else if (kind === "museum" || kind === "broadcast") {
-    if (kind === "museum") {
-      rect(-4.2, -5.5, 8.4, 5.5); cx.fillStyle = "#c8c0aa"; cx.beginPath();
-      cx.moveTo(-5, -5.5); cx.lineTo(0, -9); cx.lineTo(5, -5.5); cx.closePath(); cx.fill(); cx.stroke();
-    } else {
-      rect(-3.2, -4.3, 6.4, 4.3, "#aab6be");
-      cx.beginPath(); cx.moveTo(0, -4.3); cx.lineTo(0, -11); cx.stroke();
-      for (const side of [-1, 1]) { cx.beginPath(); cx.moveTo(0, -9); cx.lineTo(side * 3.1, -6.7); cx.stroke(); }
-    }
-  } else if (kind === "workshop" || kind === "factory" || kind === "plant") {
-    rect(-5, -5.2, 10, 5.2, kind === "plant" ? "#889ca0" : "#88796a");
-    cx.fillStyle = "#b5a069"; cx.beginPath();
-    cx.moveTo(-5.6, -5.2); cx.lineTo(-2.5, -8.5); cx.lineTo(.3, -5.2);
-    cx.lineTo(2.6, -8.5); cx.lineTo(5.6, -5.2); cx.closePath(); cx.fill(); cx.stroke();
-    if (kind !== "workshop") { rect(2.3, -10.5, 2.4, 5.5, "#77685f"); }
-    if (kind === "plant") { cx.fillStyle = "#e6d565"; cx.beginPath(); cx.moveTo(-1, -7.5); cx.lineTo(1.2, -7.5); cx.lineTo(0, -4.3); cx.lineTo(2.1, -4.3); cx.lineTo(-1.4, -.9); cx.lineTo(-.4, -4.1); cx.lineTo(-2, -4.1); cx.closePath(); cx.fill(); }
-  } else if (kind === "park" || kind === "grove" || kind === "sanctuary") {
-    const foliage = kind === "sanctuary" ? "#5f8e6b" : "#3e7a45";
-    for (const [tx, ty, size] of [[-2.7, 0, .72], [1.8, -1.2, 1], [4, .5, .55]]) {
-      cx.fillStyle = foliage; cx.beginPath();
-      cx.moveTo(tx - 3 * size, ty); cx.lineTo(tx, ty - 7 * size); cx.lineTo(tx + 3 * size, ty);
-      cx.closePath(); cx.fill(); cx.stroke();
-    }
-  } else if (kind === "ferris") {
-    cx.strokeStyle = "#f1df91"; cx.lineWidth = 1.15; cx.beginPath(); cx.arc(0, -5, 4.8, 0, 7); cx.stroke();
-    for (let angle = 0; angle < 7; angle += Math.PI / 3) {
-      cx.beginPath(); cx.moveTo(0, -5); cx.lineTo(Math.cos(angle) * 4.8, -5 + Math.sin(angle) * 4.8); cx.stroke();
-    }
-    cx.beginPath(); cx.moveTo(-3.5, 0); cx.lineTo(0, -2.2); cx.lineTo(3.5, 0); cx.stroke();
-  } else if (kind === "aquarium" || kind === "bath") {
-    cx.fillStyle = kind === "bath" ? "#bcd9d1" : "#73b7c8";
-    cx.beginPath(); cx.ellipse(0, -2.5, 5.1, 3.2, 0, 0, 7); cx.fill(); cx.stroke();
-    cx.strokeStyle = "#e9f6ed"; cx.lineWidth = .85; cx.beginPath(); cx.arc(0, -2.5, 2.6, .15, 2.9); cx.stroke();
-  } else if (kind === "hangar" || kind === "airport") {
-    cx.fillStyle = "#b7c2c7"; cx.beginPath(); cx.arc(-1.3, -1.3, 4.7, Math.PI, 0); cx.fill(); cx.stroke();
-    cx.strokeStyle = "#f2efe2"; cx.lineWidth = 1.15; cx.setLineDash([2, 2]);
-    cx.beginPath(); cx.moveTo(-5.5, 1.6); cx.lineTo(5.5, .2); cx.stroke(); cx.setLineDash([]);
-    if (kind === "airport") { cx.strokeStyle = ink; cx.beginPath(); cx.moveTo(2, -4); cx.lineTo(4.2, -7); cx.stroke(); }
-  } else if (kind === "mall") {
-    rect(-5.2, -5.1, 10.4, 5.1, "#d9c8a5");
-    cx.fillStyle = "#7da6b7"; cx.fillRect(-3.6, -3.9, 7.2, 1.8); cx.strokeRect(-3.6, -3.9, 7.2, 1.8);
-  } else {
-    roofed();
-  }
-
-  if (pillaged) {
-    cx.strokeStyle = "#d8443a"; cx.lineWidth = 1.35;
-    cx.beginPath(); cx.moveTo(-4.6, 1); cx.lineTo(4.6, -10.4); cx.stroke();
-  }
-  cx.restore();
-}
-
-function drawDistrictBuildingCluster(buildings, family) {
-  if (!buildings?.length) return;
-  const visible = buildings.length > 3 ? buildings.slice(-3) : buildings;
-  const seats = visible.length === 1 ? [[0, 3.6, 1.05]]
-    : visible.length === 2 ? [[-4.6, 4.2, .9], [4.8, 2.8, 1.02]]
-    : [[-7, 4.25, .79], [0, 2.45, .98], [7, 4.25, .79]];
-  // A few tiny streets stop three separate glyphs from looking like a row of
-  // UI pips. Their shared origin makes the cluster read as one district.
-  cx.save();
-  cx.strokeStyle = "rgba(33,38,42,.34)"; cx.lineWidth = .75;
-  for (const [sx, sy] of seats) {
-    cx.beginPath(); cx.moveTo(0, 5.7); cx.lineTo(sx, sy + .3); cx.stroke();
-  }
-  cx.restore();
-  visible.forEach((building, index) => {
+function drawDistrictBars(x, y, buildings, ink) {
+  for (const [index, building] of
+       buildings.slice(0, DISTRICT_BAR_SEATS.length).entries()) {
     const entry = typeof building === "string" ? {id:building} : building;
-    const [sx, sy, scale] = seats[index];
-    drawDistrictBuilding(districtBuildingKind(entry.id, family, index), sx, sy, scale,
-                         Boolean(entry.pillaged));
-  });
+    const left = x + DISTRICT_BAR_SEATS[index] - DISTRICT_BAR_WIDTH / 2;
+    const base = y + DISTRICT_BAR_BASELINE;
+    const height = entry.pillaged ? DISTRICT_BAR_HEIGHT / 3 : DISTRICT_BAR_HEIGHT;
+    if (entry.pillaged) {
+      cx.save(); cx.globalAlpha *= .38;
+      cx.strokeStyle = ink; cx.lineWidth = 1;
+      cx.strokeRect(left, base - DISTRICT_BAR_HEIGHT,
+                    DISTRICT_BAR_WIDTH, DISTRICT_BAR_HEIGHT);
+      cx.restore();
+    }
+    cx.fillStyle = ink;
+    cx.fillRect(left, base - height, DISTRICT_BAR_WIDTH, height);
+    cx.fillStyle = "rgba(255,255,255,.3)";
+    cx.fillRect(left, base - height, DISTRICT_BAR_WIDTH, 1.1);
+    cx.strokeStyle = "rgba(12,16,22,.5)"; cx.lineWidth = .9;
+    cx.strokeRect(left, base - height, DISTRICT_BAR_WIDTH, height);
+  }
 }
 
-// A district was a bright rounded chip with one letter stamped on it, which is
-// a label rather than a place — and with only eight of the thirty-five kinds
-// given a color, most of them were a white chip reading "H" or "A". They are
-// built now, in the same painted language as improvements: a terrace in the
-// family's color so the district reads from survey zoom, a landmark tells you
-// its purpose, and the completed structures in front tell you how far it has
-// grown without opening the city panel.
-function drawDistrict(t, x, y, buildings = []) {
-  const fam = DISTRICT_FAMILY[t.district] || "civic";
-  const col = districtColor(t.district);
-  const anchorX = x, anchorY = y - DISTRICT_ICON_LIFT;
+// Nature and water infrastructure keep a small drawn symbol: a green or
+// water-blue disc alone doesn't say aqueduct, canal, dam, or kept woodland
+// the way plain color says science or industry. The glyph sits on the upper
+// half of the disc, in the same dark ink as the building bars.
+function drawDistrictGlyph(t, x, y, ink) {
+  const fam = districtIconFamily(t.district);
+  if (fam !== "water" && fam !== "preserve") return;
+  const gy = y - 7;
   cx.save();
-  cx.translate(anchorX, anchorY);
-  cx.scale(DISTRICT_ICON_SCALE, DISTRICT_ICON_SCALE);
-  x = 0; y = 0;
-  if (t.pillaged) cx.globalAlpha = 0.6;
-  cx.lineJoin = "round";
-  const dir = -LITF;
-  contactAO(x, y + 8, 13, 4.4, .24);                   // footing
-  const terrace = new Path2D();                        // paved terrace
-  terrace.moveTo(x - 13, y + 4); terrace.lineTo(x, y - 1.5);
-  terrace.lineTo(x + 13, y + 4); terrace.lineTo(x, y + 9.5); terrace.closePath();
-  // Paving takes the light across its width, and the two lower edges get a
-  // lip, so the terrace reads as a raised platform the buildings stand on
-  // rather than a coloured lozenge printed on the ground.
-  volume(terrace, matteMat(col, dir, 13), dir, skyRim(col), "rgba(14,18,26,.72)", 1.2);
-  cx.strokeStyle = "rgba(255,255,255,.2)"; cx.lineWidth = 1;
-  cx.beginPath();
-  cx.moveTo(x - 13, y + 4); cx.lineTo(x, y - 1.5); cx.lineTo(x + 13, y + 4); cx.stroke();
-  cx.strokeStyle = "rgba(10,14,20,.35)";
-  cx.beginPath();
-  cx.moveTo(x - 13, y + 4); cx.lineTo(x, y + 9.5); cx.lineTo(x + 13, y + 4); cx.stroke();
-  const dark = "#1b202a", pale = "#f2eee2";
-  cx.strokeStyle = dark; cx.lineWidth = 1.1;
-  if (fam === "campus") {                              // observatory dome
-    cx.fillStyle = pale;
-    cx.beginPath(); cx.arc(x, y - 2, 6, Math.PI, 0); cx.fill(); cx.stroke();
-    cx.fillRect(x - 6, y - 2, 12, 2.6); cx.strokeRect(x - 6, y - 2, 12, 2.6);
-    cx.strokeStyle = dark;
-    cx.beginPath(); cx.moveTo(x + 1, y - 5); cx.lineTo(x + 7, y - 10); cx.stroke();
-  } else if (fam === "faith") {                        // temple and spire
-    cx.fillStyle = pale;
+  cx.strokeStyle = ink; cx.fillStyle = ink;
+  cx.lineWidth = 1.9; cx.lineCap = "round"; cx.lineJoin = "round";
+  if (fam === "preserve") {                        // one deliberate fir
+    tri(x - 6.2, gy + 5.5, x, gy - 6.5, x + 6.2, gy + 5.5);
+    tri(x - 4.6, gy - 1.5, x, gy - 10.5, x + 4.6, gy - 1.5);
+    cx.fillRect(x - 1.3, gy + 5.5, 2.6, 3.4);
+  } else if (t.district === "canal") {             // straight banks, water between
     cx.beginPath();
-    cx.moveTo(x - 6, y + 1); cx.lineTo(x - 6, y - 4); cx.lineTo(x, y - 8);
-    cx.lineTo(x + 6, y - 4); cx.lineTo(x + 6, y + 1); cx.closePath();
-    cx.fill(); cx.stroke();
-    cx.beginPath(); cx.moveTo(x, y - 8); cx.lineTo(x, y - 14); cx.stroke();
-    cx.beginPath(); cx.moveTo(x - 2.4, y - 12); cx.lineTo(x + 2.4, y - 12); cx.stroke();
-  } else if (fam === "war") {                          // crenellated tower
-    cx.fillStyle = "#8d8578";
-    cx.beginPath(); cx.rect(x - 5.5, y - 8, 11, 9); cx.fill(); cx.stroke();
-    for (const cxo of [-5.5, -1.8, 1.8]) cx.fillRect(x + cxo, y - 11, 3.7, 3.2);
-    cx.strokeRect(x - 5.5, y - 11, 11, 3.2);
-  } else if (fam === "trade") {                        // market awning
-    cx.fillStyle = pale;
-    cx.beginPath(); cx.rect(x - 7, y - 3, 14, 4.5); cx.fill(); cx.stroke();
-    cx.fillStyle = "#c94b45";
+    cx.moveTo(x - 10, gy - 4.5); cx.lineTo(x + 10, gy - 4.5);
+    cx.moveTo(x - 10, gy + 4.5); cx.lineTo(x + 10, gy + 4.5);
+    cx.stroke();
+    cx.lineWidth = 1.5;
+    cx.beginPath(); cx.moveTo(x - 7, gy);
+    cx.quadraticCurveTo(x - 3.5, gy - 3, x, gy);
+    cx.quadraticCurveTo(x + 3.5, gy + 3, x + 7, gy);
+    cx.stroke();
+  } else if (t.district === "dam") {               // bowed wall, spill below
     cx.beginPath();
-    cx.moveTo(x - 9, y - 3); cx.lineTo(x - 5, y - 8); cx.lineTo(x + 5, y - 8);
-    cx.lineTo(x + 9, y - 3); cx.closePath(); cx.fill(); cx.stroke();
-  } else if (fam === "harbor") {                       // pier and mast
-    cx.strokeStyle = "#6b5236"; cx.lineWidth = 1.5;
-    cx.beginPath(); cx.moveTo(x - 9, y + 1); cx.lineTo(x + 6, y + 1); cx.stroke();
-    for (const px of [-7, -1, 5]) {
-      cx.beginPath(); cx.moveTo(x + px, y + 1); cx.lineTo(x + px, y + 5); cx.stroke();
-    }
-    cx.strokeStyle = dark; cx.lineWidth = 1.1;
-    cx.beginPath(); cx.moveTo(x + 3, y + 1); cx.lineTo(x + 3, y - 10); cx.stroke();
-    cx.fillStyle = pale;
+    cx.moveTo(x - 9.5, gy - 5); cx.quadraticCurveTo(x, gy - .5, x + 9.5, gy - 5);
+    cx.moveTo(x - 9.5, gy); cx.quadraticCurveTo(x, gy + 4.5, x + 9.5, gy);
+    cx.stroke();
+    cx.lineWidth = 1.5;
+    cx.beginPath(); cx.moveTo(x - 5.5, gy + 8);
+    cx.quadraticCurveTo(x - 2.75, gy + 5.5, x, gy + 8);
+    cx.quadraticCurveTo(x + 2.75, gy + 10.5, x + 5.5, gy + 8);
+    cx.stroke();
+  } else {                                         // aqueduct family: an arcade
     cx.beginPath();
-    cx.moveTo(x + 3.8, y - 10); cx.lineTo(x + 9.5, y - 3); cx.lineTo(x + 3.8, y - 3);
-    cx.closePath(); cx.fill();
-  } else if (fam === "culture") {                      // amphitheatre
-    cx.fillStyle = pale;
-    cx.beginPath(); cx.arc(x, y + 1, 8, Math.PI, 0); cx.fill(); cx.stroke();
-    cx.strokeStyle = dark;
-    cx.beginPath(); cx.arc(x, y + 1, 5, Math.PI, 0); cx.stroke();
-    cx.beginPath(); cx.arc(x, y + 1, 2.4, Math.PI, 0); cx.stroke();
-  } else if (fam === "industry") {                     // works and chimney
-    cx.fillStyle = "#6f6559";
-    cx.beginPath(); cx.rect(x - 8, y - 5, 12, 6.5); cx.fill(); cx.stroke();
-    cx.fillRect(x + 4, y - 12, 4.5, 13.5); cx.strokeRect(x + 4, y - 12, 4.5, 13.5);
-    cx.fillStyle = "#ffffff5c";
-    cx.beginPath(); cx.arc(x + 6, y - 14.5, 3.1, 0, 7); cx.fill();
-  } else if (fam === "fun") {                          // arena with banners
-    cx.fillStyle = pale;
-    cx.beginPath(); cx.ellipse(x, y - 2, 8.5, 5, 0, 0, 7); cx.fill(); cx.stroke();
-    cx.strokeStyle = dark;
-    cx.beginPath(); cx.ellipse(x, y - 2, 4.4, 2.4, 0, 0, 7); cx.stroke();
-    cx.fillStyle = "#e75480";
-    for (const px of [-8, 8]) {
-      cx.beginPath(); cx.moveTo(x + px, y - 6); cx.lineTo(x + px, y - 12); cx.stroke();
+    cx.moveTo(x - 10.5, gy - 5.5); cx.lineTo(x + 10.5, gy - 5.5); cx.stroke();
+    for (const px of [-5.2, 5.2]) {
       cx.beginPath();
-      cx.moveTo(x + px, y - 12); cx.lineTo(x + px + 4.2, y - 10.5);
-      cx.lineTo(x + px, y - 9); cx.closePath(); cx.fill();
+      cx.moveTo(x + px - 3.6, gy + 7); cx.lineTo(x + px - 3.6, gy - 1);
+      cx.arc(x + px, gy - 1, 3.6, Math.PI, 0);
+      cx.lineTo(x + px + 3.6, gy + 7);
+      cx.stroke();
     }
-  } else if (fam === "water") {                        // aqueduct arches
-    cx.fillStyle = pale;
-    cx.beginPath(); cx.rect(x - 10, y - 8, 20, 3.4); cx.fill(); cx.stroke();
-    for (const px of [-7, 0, 7]) {
-      cx.beginPath(); cx.moveTo(x + px - 2.6, y + 1); cx.lineTo(x + px - 2.6, y - 3);
-      cx.arc(x + px, y - 3, 2.6, Math.PI, 0);
-      cx.lineTo(x + px + 2.6, y + 1); cx.stroke();
-    }
-  } else if (fam === "homes") {                        // a couple of houses
-    cx.fillStyle = pale;
-    for (const [hx, hy, s] of [[-5, 0, 1], [4.5, -2, 0.85]]) {
-      cx.beginPath(); cx.rect(x + hx - 4 * s, y + hy - 4 * s, 8 * s, 5 * s);
-      cx.fill(); cx.stroke();
-      cx.fillStyle = "#a8593f";
-      cx.beginPath();
-      cx.moveTo(x + hx - 5.2 * s, y + hy - 4 * s); cx.lineTo(x + hx, y + hy - 8.4 * s);
-      cx.lineTo(x + hx + 5.2 * s, y + hy - 4 * s); cx.closePath();
-      cx.fill(); cx.stroke();
-      cx.fillStyle = pale;
-    }
-  } else if (fam === "air") {                          // hangar and strip
-    cx.fillStyle = "#b9c2cc";
-    cx.beginPath(); cx.arc(x - 1, y - 1, 7, Math.PI, 0); cx.fill(); cx.stroke();
-    cx.strokeStyle = pale; cx.lineWidth = 1.6; cx.setLineDash([3, 3]);
-    cx.beginPath(); cx.moveTo(x - 9, y + 4.5); cx.lineTo(x + 10, y + 2); cx.stroke();
-    cx.setLineDash([]); cx.lineWidth = 1.1; cx.strokeStyle = dark;
-  } else if (fam === "preserve") {                     // kept woodland
-    for (const [tx, ty, s] of [[-5, 1, 1], [4, -1, 1.2], [0, 3, 0.8]]) {
-      cx.fillStyle = "#2f6b34";
-      cx.beginPath();
-      cx.moveTo(x + tx - 4.4 * s, y + ty); cx.lineTo(x + tx, y + ty - 9 * s);
-      cx.lineTo(x + tx + 4.4 * s, y + ty); cx.closePath(); cx.fill(); cx.stroke();
-    }
-  } else {                                             // civic colonnade
-    cx.fillStyle = pale;
-    cx.beginPath();
-    cx.moveTo(x - 9, y - 5); cx.lineTo(x, y - 10); cx.lineTo(x + 9, y - 5);
-    cx.closePath(); cx.fill(); cx.stroke();
-    for (const px of [-6, -2, 2, 6]) cx.fillRect(x + px - 1.1, y - 5, 2.2, 6.5);
-    cx.strokeRect(x - 7.4, y - 5, 14.8, 6.5);
   }
-  drawDistrictBuildingCluster(buildings, fam);
+  cx.restore();
+}
+
+// A district was a painted terrace with a landmark and miniature buildings,
+// which read beautifully up close and muddily from the survey zoom where a
+// spectator actually lives. It is now a solid color token: the disc names the
+// family, the bars count its completed buildings, and a hilltop district lets
+// the hill's crest show above its rim instead of flattening the terrain away.
+function drawDistrict(t, x, y, buildings = []) {
+  const col = districtColor(t.district);
+  const rx = DISTRICT_DISC_RADIUS, ry = rx * YS;
+  const ink = districtShade(col, -.55);
+  cx.save();
+  if (t.pillaged) cx.globalAlpha *= .6;
+  cx.lineJoin = "round";
+  // The hill this district is built on, cresting past the rim in the same
+  // stroked-mound hand as the strategic hill mark.
+  if (t.hills) {
+    cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
+    cx.beginPath();
+    cx.ellipse(x - 8, y - ry + 3, 8, 7.5, 0, Math.PI, 0);
+    cx.ellipse(x + 7, y - ry + 4.5, 7.5, 6.5, 0, Math.PI, 0);
+    cx.stroke();
+  }
+  // Grounding shadow, then the token itself: a near-flat face with one soft
+  // top light so it reads as a piece set on the board, not a printed dot.
+  cx.fillStyle = "rgba(10,14,18,.3)";
+  cx.beginPath(); cx.ellipse(x + 1.1, y + 2.4, rx, ry, 0, 0, 7); cx.fill();
+  const face = cx.createLinearGradient(x, y - ry, x, y + ry);
+  face.addColorStop(0, districtShade(col, .16));
+  face.addColorStop(1, districtShade(col, -.1));
+  cx.fillStyle = face;
+  cx.beginPath(); cx.ellipse(x, y, rx, ry, 0, 0, 7); cx.fill();
+  cx.strokeStyle = "rgba(13,18,24,.78)"; cx.lineWidth = 1.6; cx.stroke();
+  cx.strokeStyle = "rgba(255,255,255,.26)"; cx.lineWidth = 1.2;
+  cx.beginPath();
+  cx.ellipse(x, y, rx - 2.4, ry - 2.4, 0, Math.PI * 1.1, Math.PI * 1.9);
+  cx.stroke();
+  drawDistrictGlyph(t, x, y, ink);
+  drawDistrictBars(x, y, buildings, ink);
   cx.restore();
   if (t.pillaged) {
     cx.strokeStyle = "#d8443a"; cx.lineWidth = 2.4; cx.lineCap = "round";
-    cx.beginPath(); cx.moveTo(anchorX - 9 * DISTRICT_ICON_SCALE,
-                               anchorY + 8 * DISTRICT_ICON_SCALE);
-    cx.lineTo(anchorX + 9 * DISTRICT_ICON_SCALE,
-              anchorY - 10 * DISTRICT_ICON_SCALE); cx.stroke();
+    cx.beginPath();
+    cx.moveTo(x - rx * .7, y + ry * .7); cx.lineTo(x + rx * .7, y - ry * .7);
+    cx.stroke();
     cx.lineCap = "butt";
   }
 }

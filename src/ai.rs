@@ -160,6 +160,7 @@ const RAILROAD_RESOURCE_RESERVE: f64 = 4.0;
 type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 
 mod advanced;
+mod tactics;
 pub use advanced::{
     AdvancedAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan,
     ExpansionCensus, StrategyCensus, VictoryTarget,
@@ -324,6 +325,17 @@ pub trait Ai {
         None
     }
 
+    /// How often this agent's joint tactical planner produced a plan, and how
+    /// many unit decisions it reached. Agents without one return `None`.
+    ///
+    /// This exists for the same reason [`Ai::review_census`] does: an agent
+    /// that searches must be able to say when it did not. A whole-game null
+    /// from a layer that barely ran and one from a layer that ran constantly
+    /// call for opposite next steps, and a win rate cannot tell them apart.
+    fn joint_tactics_census(&self) -> Option<(usize, usize)> {
+        None
+    }
+
     /// Write this agent's reasoning into an observer's log.
     ///
     /// Every seat at a watched table is handed a handle on the *same*
@@ -353,6 +365,10 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 
     fn expansion_census(&self) -> Option<ExpansionCensus> {
         (**self).expansion_census()
+    }
+
+    fn joint_tactics_census(&self) -> Option<(usize, usize)> {
+        (**self).joint_tactics_census()
     }
 
     fn attach_journal(&mut self, journal: Journal) {
@@ -8081,6 +8097,37 @@ impl BasicAi {
     /// walks a frontier ring by `uid % posts.len()` and is threat-blind.
     ///
     /// So this is an ABSENT assignment rather than a broken one: nothing anywhere
+    /// Whether the barbarian seat has a military presence — a raider or a
+    /// camp — within [`HOME_THREAT_RADIUS`] of one of this empire's cities.
+    ///
+    /// This is the admission test the Advanced military step uses before it
+    /// lets the barbarian seat into a unit's enemy list: a raider pillaging
+    /// inside the empire is a war at home whatever the diplomatic table says,
+    /// while a camp on the far side of the map is not a reason to mobilise.
+    /// The chase itself stays bounded by [`BasicAi::nearest_enemy`]'s own
+    /// near-home and exchange-score gates.
+    pub(crate) fn barbarian_presence_at_home(g: &Game, pid: usize) -> bool {
+        let Some(barb) = g.barb_pid else {
+            return false;
+        };
+        let my_cities: Vec<Pos> = g
+            .cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .map(|city| city.pos)
+            .collect();
+        if my_cities.is_empty() {
+            return false;
+        }
+        let near_home =
+            |pos: Pos| my_cities.iter().any(|city| g.wdist(pos, *city) <= HOME_THREAT_RADIUS);
+        g.units.values().any(|unit| {
+            unit.owner == barb
+                && g.rules.units[unit.kind].class == "military"
+                && near_home(unit.pos)
+        }) || g.barb_camps.keys().any(|camp| near_home(*camp))
+    }
+
     /// measured threat *to our own cities*. This does, and answers the worst
     /// threats with the nearest sufficient units before the offensive claims them.
     ///
