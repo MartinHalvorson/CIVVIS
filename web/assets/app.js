@@ -823,6 +823,23 @@ let UNIT_TRAIL_LINGER_MS = (() => {
   const saved = Number(localStorage.getItem(UNIT_TRAIL_LINGER_STORAGE_KEY));
   return UNIT_TRAIL_LINGER_VALUES.includes(saved) ? saved : 0;
 })();
+// How many turns each unit's walked tile route stays traced on the map.
+// Unlike the wall-clock wake linger above, this ages in game time: a route
+// walked on turn T is held until T + N, so at any pace the map shows where
+// the last N turns of movement actually went. The routes ride in on
+// `state.unit_move_trails` — the engine's walked-route ledger — so they are
+// the executed tiles, not a guess reconstructed from a board diff.
+const UNIT_TAIL_TURNS_STORAGE_KEY = "civvis-unit-tail-turns";
+const UNIT_TAIL_TURNS_MAX = 5;
+let UNIT_TAIL_TURNS = (() => {
+  // `Number(null)` is 0, so a fresh browser must be told apart from a saved
+  // "no tail" — the first visit starts on one turn of tail, not off.
+  const saved = localStorage.getItem(UNIT_TAIL_TURNS_STORAGE_KEY);
+  if (saved === null) return 1;
+  const turns = Number(saved);
+  return Number.isInteger(turns) && turns >= 0 && turns <= UNIT_TAIL_TURNS_MAX
+    ? turns : 1;
+})();
 // A brief coast makes direct drags feel physical; reduced-motion still takes
 // precedence, and a viewer can opt out here without changing system settings.
 const WORLD_PAN_INERTIA_STORAGE_KEY = "civvis-world-pan-inertia";
@@ -1094,6 +1111,32 @@ function detonate(prev, next) {
   // Two devices at once is a fine thing to render; twenty is a slideshow.
   if (anim.blasts.length > 4) anim.blasts.splice(0, anim.blasts.length - 4);
 }
+// The route this unit actually walked into its new position, read from the
+// engine's ledger. Only `/action` responses carry `movement_paths`, so a
+// spectator diff used to know nothing between a mover's endpoints and had to
+// teleport any multi-hex step. The newest ledger record for the unit settles
+// it: if the record's path ends where the unit now stands and passes through
+// where it stood last frame, the stretch between is the authoritative route.
+function ledgerRouteBetween(st, unitId, from, to) {
+  const trails = st && st.unit_move_trails;
+  if (!Array.isArray(trails)) return null;
+  for (let i = trails.length - 1; i >= 0; i--) {
+    const trail = trails[i];
+    if (trail.unit !== unitId) continue;
+    const path = trail.path;
+    if (!Array.isArray(path) || path.length < 2) return null;
+    const last = path[path.length - 1];
+    if (last[0] !== to[0] || last[1] !== to[1]) return null;
+    // Walk back for the latest visit to `from`, so a route that loops over a
+    // tile animates only the stretch this frame actually revealed.
+    for (let at = path.length - 2; at >= 0; at--) {
+      if (path[at][0] === from[0] && path[at][1] === from[1])
+        return path.slice(at);
+    }
+    return null;
+  }
+  return null;
+}
 function animateDiff(prev, next) {
   if (!prev) return;
   const now = performance.now();
@@ -1109,7 +1152,8 @@ function animateDiff(prev, next) {
     if (!pu) continue;
     if (pu.pos[0] !== nu.pos[0] || pu.pos[1] !== nu.pos[1]) {
       const cur = anim.moves.get(nu.id);
-      const route = next.movement_paths && next.movement_paths[nu.id];
+      const route = (next.movement_paths && next.movement_paths[nu.id])
+        || ledgerRouteBetween(next, nu.id, pu.pos, nu.pos);
       // A multi-hex state diff may contain an entire AI turn. Without the
       // authoritative intermediate route, a straight tween can visibly fly
       // across oceans or mountains even though every game step was legal.
@@ -4188,7 +4232,7 @@ const DISPLAY_RESOURCE_CAP_VALUES = [10, 20, 30, 40, 50, 60, 70, 80, 90];
 const DISPLAY_RESOURCE_CAP_DEFAULT = 70;
 const DISPLAY_CPU_GUIDANCE_CONTROLS = [
   "renderresolution", "yieldchk", "reschk", "resourcedisplay", "rocketanimchk",
-  "unittrails",
+  "unittrails", "unittail",
 ];
 const DISPLAY_MEMORY_GUIDANCE_CONTROLS = [
   "renderresolution", "resourcedisplay", "reset-overlay-layout",
@@ -17073,6 +17117,7 @@ function drawPlanetMap() {
   }
   const visibleUnits = empireLens ? [] : state.units;
   const unitAlpha = mapLens === "settler" ? SETTLER_LENS_UNIT_ALPHA : 1;
+  if (!empireLens) drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha);
   // Use the same stable tile layout as the flat command map. The globe has no
   // in-flight unit animation, so every overview marker on a cell belongs here.
   const planetUnitStacks = strategicUnitStackSlots(visibleUnits);
@@ -17170,6 +17215,114 @@ function strokeUnitTrail(points, color, alpha) {
 // The wakes that outlived their tween, painted before the tokens so every
 // unit draws above them. Each holds full strength until its own step has
 // landed, then fades over the viewer's configured linger.
+// The persistent tail's stroke: thinner and steadier than the wake above, so
+// several turns of routes can sit on the map without gunking it up. The mild
+// head-to-tail ramp keeps direction readable, while stopping short of the
+// wake's fully transparent start — a route's oldest tiles are exactly what a
+// tail exists to show.
+function strokeUnitTailRoute(points, color, alpha) {
+  if (points.length < 2 || alpha <= 0) return;
+  const [startX, startY] = points[0];
+  const [endX, endY] = points[points.length - 1];
+  const tint = cx.createLinearGradient(startX, startY, endX, endY);
+  tint.addColorStop(0, color + "66");
+  tint.addColorStop(1, color + "e6");
+  cx.save();
+  cx.globalAlpha = alpha;
+  cx.lineCap = "round";
+  cx.lineJoin = "round";
+  cx.strokeStyle = "#0d1117b0"; cx.lineWidth = 2.4; // casing, so it reads on sand
+  cx.beginPath();
+  points.forEach(([px, py], index) => index ? cx.lineTo(px, py + 7) : cx.moveTo(px, py + 7));
+  cx.stroke();
+  cx.strokeStyle = tint; cx.lineWidth = 1.2;
+  cx.beginPath();
+  points.forEach(([px, py], index) => index ? cx.lineTo(px, py + 7) : cx.moveTo(px, py + 7));
+  cx.stroke();
+  cx.restore();
+}
+
+// The globe's own tail stroke. Planet points are screen-space cell centers
+// under a pixel transform, so the widths are literal pixels rather than the
+// flat map's zoom-scaled world units, and there is no ground drop to apply.
+function strokePlanetTailRoute(points, color, alpha) {
+  if (points.length < 2 || alpha <= 0) return;
+  const start = points[0], end = points[points.length - 1];
+  const tint = cx.createLinearGradient(start.x, start.y, end.x, end.y);
+  tint.addColorStop(0, color + "66");
+  tint.addColorStop(1, color + "e6");
+  cx.save();
+  cx.globalAlpha = alpha;
+  cx.lineCap = "round";
+  cx.lineJoin = "round";
+  cx.strokeStyle = "#0d1117b0"; cx.lineWidth = 2.2;
+  cx.beginPath();
+  points.forEach((p, index) => index ? cx.lineTo(p.x, p.y) : cx.moveTo(p.x, p.y));
+  cx.stroke();
+  cx.strokeStyle = tint; cx.lineWidth = 1.1;
+  cx.beginPath();
+  points.forEach((p, index) => index ? cx.lineTo(p.x, p.y) : cx.moveTo(p.x, p.y));
+  cx.stroke();
+  cx.restore();
+}
+
+// The globe has no in-flight unit animation, but the walked-route ledger is
+// not an animation: it is state, and the globe can trace it cell by cell
+// like the flat map traces tiles. A stretch that walks around the far side
+// is dropped and the route resumes as its own run when it comes back over
+// the limb, rather than chording through the planet.
+function drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha) {
+  if (UNIT_TAIL_TURNS <= 0) return;
+  const trails = state.unit_move_trails;
+  if (!Array.isArray(trails) || !trails.length) return;
+  for (const trail of trails) {
+    const age = state.turn - trail.turn;
+    if (age < 0 || age >= UNIT_TAIL_TURNS) continue;
+    const path = trail.path;
+    if (!Array.isArray(path) || path.length < 2) continue;
+    const alpha = unitAlpha * 0.6 * (1 - age / UNIT_TAIL_TURNS);
+    const color = pcol(trail.owner);
+    let run = [];
+    const flush = () => {
+      if (run.length > 1) strokePlanetTailRoute(run, color, alpha);
+      run = [];
+    };
+    for (const pos of path) {
+      const cell = cellByKey.get(key(pos));
+      if (!cell || cell.center.z < (onSheet ?? .025)) { flush(); continue; }
+      run.push(cell.center);
+    }
+    flush();
+  }
+}
+
+// The wake's persistent cousin: every walked route of the last N turns,
+// traced tile by tile off the engine's ledger rather than remembered from
+// animations this tab happened to witness — a reload or a late join shows
+// the same tails everyone else sees. Each elapsed turn drains ink from a
+// route until it ages out entirely.
+function drawUnitMovementTails(unitAlpha) {
+  if (UNIT_TAIL_TURNS <= 0) return;
+  const trails = state.unit_move_trails;
+  if (!Array.isArray(trails) || !trails.length) return;
+  for (const trail of trails) {
+    const age = state.turn - trail.turn;
+    if (age < 0 || age >= UNIT_TAIL_TURNS) continue;
+    const path = trail.path;
+    if (!Array.isArray(path) || path.length < 2) continue;
+    // Chain the projection so a route crossing the wrap seam stays one line
+    // beside itself instead of lashing across the whole flat map.
+    let nearX = cam.x, nearY = cam.y;
+    const points = path.map(pos => {
+      const point = unitMapPoint(pos, nearX, nearY);
+      nearX = point.x; nearY = point.y;
+      return mapPointToView(point);
+    });
+    strokeUnitTailRoute(points, pcol(trail.owner),
+                        unitAlpha * 0.6 * (1 - age / UNIT_TAIL_TURNS));
+  }
+}
+
 function drawLingeringUnitTrails(unitAlpha, now) {
   if (!anim.trails.length) return;
   const alive = [];
@@ -17954,7 +18107,12 @@ function drawScene() {
   const strategicUnitStacks = strategicUnitStackSlots(drawnUnits, anim.moves);
   const now = performance.now();
   const unitAlpha = mapLens === "settler" ? SETTLER_LENS_UNIT_ALPHA : 1;
-  if (mapLens !== "empire") drawLingeringUnitTrails(unitAlpha, now);
+  if (mapLens !== "empire") {
+    // Tails under wakes: the persistent record is ground ink, the fresh wake
+    // glows over it.
+    drawUnitMovementTails(unitAlpha);
+    drawLingeringUnitTrails(unitAlpha, now);
+  }
   for (const u of sorted) {
     const [tileX, tileY] = worldXY(u.pos);
     let x = tileX, y = tileY;
@@ -26628,6 +26786,15 @@ function setUnitTrailLinger(value) {
   if (!UNIT_TRAIL_LINGER_MS) anim.trails.length = 0;
   if (state) draw();
 }
+function setUnitTailTurns(value) {
+  const turns = Number(value);
+  UNIT_TAIL_TURNS = Number.isInteger(turns) && turns >= 0 && turns <= UNIT_TAIL_TURNS_MAX
+    ? turns : 1;
+  localStorage.setItem(UNIT_TAIL_TURNS_STORAGE_KEY, String(UNIT_TAIL_TURNS));
+  const select = document.getElementById("unittail");
+  if (select) select.value = String(UNIT_TAIL_TURNS);
+  if (state) draw();
+}
 function setWorldPanInertia(on) {
   WORLD_PAN_INERTIA = !!on;
   localStorage.setItem(WORLD_PAN_INERTIA_STORAGE_KEY, WORLD_PAN_INERTIA ? "1" : "0");
@@ -28161,6 +28328,11 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   const trails = document.getElementById("unittrails");
   trails.value = String(UNIT_TRAIL_LINGER_MS);
   trails.onchange = () => setUnitTrailLinger(trails.value);
+}
+{
+  const tail = document.getElementById("unittail");
+  tail.value = String(UNIT_TAIL_TURNS);
+  tail.onchange = () => setUnitTailTurns(tail.value);
 }
 {
   const inertia = document.getElementById("inertiachk");

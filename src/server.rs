@@ -4984,12 +4984,45 @@ mod tests {
             "function setUnitTrailLinger(value) {",
             "trails.onchange = () => setUnitTrailLinger(trails.value);",
             "function drawLingeringUnitTrails(unitAlpha, now) {",
-            "if (mapLens !== \"empire\") drawLingeringUnitTrails(unitAlpha, now);",
+            "drawLingeringUnitTrails(unitAlpha, now);",
             "anim.trails.length > 0 ||",
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(contract),
                 "unit trail linger contract is missing: {contract}"
+            );
+        }
+    }
+
+    /// The tail that outlives the wake: the engine's walked-route ledger,
+    /// held on the map for a chosen number of turns and traced tile by tile.
+    /// Pin the whole chain: the control under Watch pace, the persisted
+    /// preference, the turn-aged painter behind the empire-lens gate the
+    /// wake shares, and the ledger route that lets a spectator tween walk
+    /// the exact tiles instead of teleporting a multi-hex step.
+    #[test]
+    fn browser_traces_each_units_walked_route_for_n_turns() {
+        for contract in [
+            "id=\"unittail\" aria-label=\"Unit tail turns\"",
+            "<option value=\"0\">0 (no tail)</option>",
+            "<option value=\"1\" selected>1</option>",
+            "<option value=\"5\">5</option>",
+            "const UNIT_TAIL_TURNS_STORAGE_KEY = \"civvis-unit-tail-turns\";",
+            "const UNIT_TAIL_TURNS_MAX = 5;",
+            "function setUnitTailTurns(value) {",
+            "tail.onchange = () => setUnitTailTurns(tail.value);",
+            "if (mapLens !== \"empire\") {",
+            "function drawUnitMovementTails(unitAlpha) {",
+            "drawUnitMovementTails(unitAlpha);",
+            "function drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha) {",
+            "if (!empireLens) drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha);",
+            "state.unit_move_trails",
+            "function ledgerRouteBetween(st, unitId, from, to) {",
+            "|| ledgerRouteBetween(next, nu.id, pu.pos, nu.pos);",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(contract),
+                "unit movement tail contract is missing: {contract}"
             );
         }
     }
