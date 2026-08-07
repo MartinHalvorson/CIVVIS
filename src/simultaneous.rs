@@ -191,7 +191,7 @@ struct PlanningRequest {
     seat: usize,
     world: Game,
     cancelled: Arc<AtomicBool>,
-    response: mpsc::Sender<PlanningResult>,
+    response: mpsc::Sender<CycleEvent>,
 }
 
 enum PlanningMessage {
@@ -199,7 +199,18 @@ enum PlanningMessage {
     Shutdown,
 }
 
-enum PlanningResult {
+/// Everything one cycle's helpers can tell the committing thread. The
+/// preparer announces each seat as its private world ships to the fleet and
+/// closes with `PrepareDone`; every shipped request is answered by exactly
+/// one of `Planned`, `Cancelled`, or `Panicked`. The commit consumes these
+/// by *content* — which seats are planned, and each seat's actions — never
+/// by arrival order, which is what keeps worker scheduling unobservable.
+enum CycleEvent {
+    Prepared {
+        seat: usize,
+    },
+    PrepareDone,
+    PreparePanicked(Box<dyn Any + Send + 'static>),
     Planned {
         sequence: usize,
         seat: usize,
@@ -209,6 +220,18 @@ enum PlanningResult {
         sequence: usize,
     },
     Panicked(Box<dyn Any + Send + 'static>),
+}
+
+/// One cycle's worth of work for the persistent prepare thread: empty-forward
+/// `rolling` through the seats exactly as the serial driver would, shipping
+/// each seat's private world to the planner fleet the moment it exists.
+struct PrepareJob {
+    rolling: Game,
+    seed: u64,
+    cycle_turn: u32,
+    bound: usize,
+    cancelled: Arc<AtomicBool>,
+    events: mpsc::Sender<CycleEvent>,
 }
 
 /// A scoped, persistent worker fleet for simultaneous-turn deliberation.
@@ -258,7 +281,7 @@ impl<'scope> SeatPlannerPool<'scope> {
                         PlanningMessage::Shutdown => break,
                         PlanningMessage::Plan(request) => {
                             if request.cancelled.load(Ordering::Acquire) {
-                                let _ = request.response.send(PlanningResult::Cancelled {
+                                let _ = request.response.send(CycleEvent::Cancelled {
                                     sequence: request.sequence,
                                 });
                                 continue;
@@ -286,7 +309,7 @@ impl<'scope> SeatPlannerPool<'scope> {
                             }));
                             match planned {
                                 Ok(actions) => {
-                                    let _ = response.send(PlanningResult::Planned {
+                                    let _ = response.send(CycleEvent::Planned {
                                         sequence,
                                         seat,
                                         actions,
@@ -294,7 +317,7 @@ impl<'scope> SeatPlannerPool<'scope> {
                                 }
                                 Err(payload) => {
                                     cancelled.store(true, Ordering::Release);
-                                    let _ = response.send(PlanningResult::Panicked(payload));
+                                    let _ = response.send(CycleEvent::Panicked(payload));
                                 }
                             }
                         }
@@ -319,7 +342,7 @@ impl<'scope> SeatPlannerPool<'scope> {
         }
         let count = prepared.len();
         let cancelled = Arc::new(AtomicBool::new(false));
-        let (response, results) = mpsc::channel::<PlanningResult>();
+        let (response, results) = mpsc::channel::<CycleEvent>();
         for (sequence, (seat, world)) in prepared.into_iter().enumerate() {
             self.sender
                 .send(PlanningMessage::Plan(PlanningRequest {
@@ -341,7 +364,7 @@ impl<'scope> SeatPlannerPool<'scope> {
                 .recv()
                 .expect("a simultaneous planning worker stopped without reporting")
             {
-                PlanningResult::Planned {
+                CycleEvent::Planned {
                     sequence,
                     seat,
                     actions,
@@ -353,13 +376,18 @@ impl<'scope> SeatPlannerPool<'scope> {
                     );
                     plans[sequence] = Some((seat, actions));
                 }
-                PlanningResult::Cancelled { sequence } => {
+                CycleEvent::Cancelled { sequence } => {
                     assert!(sequence < count, "planning worker cancelled an invalid sequence");
                 }
-                PlanningResult::Panicked(payload) => {
+                CycleEvent::Panicked(payload) => {
                     if first_panic.is_none() {
                         first_panic = Some(payload);
                     }
+                }
+                CycleEvent::Prepared { .. }
+                | CycleEvent::PrepareDone
+                | CycleEvent::PreparePanicked(_) => {
+                    unreachable!("a batch plan has no prepare thread on its channel")
                 }
             }
         }
@@ -423,6 +451,7 @@ pub(crate) mod phase_timing {
     pub static PREP_FORWARD: AtomicU64 = AtomicU64::new(0);
     pub static PLAN_WALL: AtomicU64 = AtomicU64::new(0);
     pub static COMMIT: AtomicU64 = AtomicU64::new(0);
+    pub static STALL: AtomicU64 = AtomicU64::new(0);
     pub static CYCLES: AtomicU64 = AtomicU64::new(0);
 
     pub fn enabled() -> bool {
@@ -436,12 +465,13 @@ pub(crate) mod phase_timing {
     pub fn report() {
         let ms = |counter: &AtomicU64| counter.load(Ordering::Relaxed) as f64 / 1e6;
         eprintln!(
-            "SIMUL PHASES cycles={} prep_clone={:.0}ms prep_forward={:.0}ms plan_wall={:.0}ms commit={:.0}ms",
+            "SIMUL PHASES cycles={} prep_clone={:.0}ms prep_forward={:.0}ms plan_wall={:.0}ms commit={:.0}ms stall={:.0}ms",
             CYCLES.load(Ordering::Relaxed),
             ms(&PREP_CLONE),
             ms(&PREP_FORWARD),
             ms(&PLAN_WALL),
             ms(&COMMIT),
+            ms(&STALL),
         );
     }
 }
@@ -471,12 +501,24 @@ fn run_simultaneous<A: Ai + Send>(g: &mut Game, ais: &mut [A], jobs: usize) -> S
         // game. A previous implementation spawned `workers` new threads for
         // every cycle, so a long many-civilization game created thousands of
         // short-lived threads before its planning work could reach the host.
+        //
+        // A persistent prepare thread joins the fleet so all three phases of
+        // a cycle are in flight at once: it walks the rolling world and
+        // streams planning worlds to the workers while this thread commits
+        // finished plans in cursor order. The old shape held the whole cycle
+        // to prepare + plan + commit end to end; measured at 16 seats, the
+        // two serial phases had come to dominate the parallel plan.
         thread::scope(|scope| {
             let planners = SeatPlannerPool::new(scope, ais, workers);
+            let (jobs_tx, jobs_rx) = mpsc::channel::<PrepareJob>();
+            let planner_tx = planners.sender.clone();
+            thread::Builder::new()
+                .name("civvis-seat-prep".to_string())
+                .stack_size(PLANNING_WORKER_STACK)
+                .spawn_scoped(scope, move || prepare_loop(jobs_rx, planner_tx))
+                .expect("the operating system refused a simultaneous prepare worker");
             while g.winner.is_none() && g.turn <= g.max_turns {
-                if !step_cycle_with_planner(g, &mut census, |prepared| {
-                    planners.plan(prepared)
-                }) {
+                if !step_cycle_pipelined(g, &mut census, &jobs_tx) {
                     break;
                 }
             }
@@ -539,6 +581,257 @@ fn plan_serially<A: Ai>(
             (seat, actions)
         })
         .collect()
+}
+
+/// The persistent prepare thread: for each cycle, empty-forward the rolling
+/// world through the seats — the very same walk the serial driver takes —
+/// but ship each seat's private world to the planner fleet the moment it is
+/// cloned, instead of holding the whole batch until the walk finishes. The
+/// walk itself stays strictly serial and fully deterministic: every world
+/// and RNG stream a worker ever sees is fixed by game state alone.
+fn prepare_loop(jobs: mpsc::Receiver<PrepareJob>, planners: mpsc::Sender<PlanningMessage>) {
+    while let Ok(job) = jobs.recv() {
+        let PrepareJob {
+            mut rolling,
+            seed,
+            cycle_turn,
+            bound,
+            cancelled,
+            events,
+        } = job;
+        let timing = phase_timing::enabled();
+        let outcome = catch_unwind(AssertUnwindSafe(|| {
+            let mut announced: Vec<usize> = Vec::new();
+            let mut forwarded = 0u64;
+            let mut steps = 0;
+            let mut sequence = 0;
+            while rolling.winner.is_none() && rolling.turn == cycle_turn && steps < bound {
+                steps += 1;
+                let seat = rolling.current;
+                if announced.contains(&seat) {
+                    break;
+                }
+                // A worker already panicked; shipping more seats would only
+                // delay the unwind the committing thread is waiting to run.
+                if cancelled.load(Ordering::Acquire) {
+                    break;
+                }
+                let clock = std::time::Instant::now();
+                let mut world = rolling.clone();
+                world.rng = planning_stream(seed, cycle_turn, seat);
+                if timing {
+                    phase_timing::add(&phase_timing::PREP_CLONE, clock.elapsed().as_nanos());
+                }
+                announced.push(seat);
+                let _ = events.send(CycleEvent::Prepared { seat });
+                let _ = planners.send(PlanningMessage::Plan(PlanningRequest {
+                    sequence,
+                    seat,
+                    world,
+                    cancelled: Arc::clone(&cancelled),
+                    response: events.clone(),
+                }));
+                sequence += 1;
+                let clock = std::time::Instant::now();
+                let closed = close_seat_turn(&mut rolling, seat, &mut forwarded);
+                if timing {
+                    phase_timing::add(&phase_timing::PREP_FORWARD, clock.elapsed().as_nanos());
+                }
+                if !closed {
+                    break;
+                }
+            }
+        }));
+        match outcome {
+            Ok(()) => {
+                let _ = events.send(CycleEvent::PrepareDone);
+            }
+            Err(payload) => {
+                cancelled.store(true, Ordering::Release);
+                let _ = events.send(CycleEvent::PreparePanicked(payload));
+                let _ = events.send(CycleEvent::PrepareDone);
+            }
+        }
+    }
+}
+
+/// The committing thread's view of one cycle in flight: which seats the
+/// prepare walk has announced, which plans have arrived, and whether anything
+/// panicked. Every decision the commit takes reads this accumulated *state*,
+/// never the order events happened to arrive in.
+#[derive(Default)]
+struct CycleInbox {
+    announced: std::collections::BTreeSet<usize>,
+    prepare_done: bool,
+    arrived: BTreeMap<usize, Vec<Action>>,
+    submitted: usize,
+    results_seen: usize,
+    first_panic: Option<Box<dyn Any + Send + 'static>>,
+}
+
+impl CycleInbox {
+    fn absorb(&mut self, event: CycleEvent, census: &mut SimultaneousCensus) {
+        match event {
+            CycleEvent::Prepared { seat } => {
+                self.announced.insert(seat);
+                self.submitted += 1;
+            }
+            CycleEvent::PrepareDone => self.prepare_done = true,
+            CycleEvent::PreparePanicked(payload) => {
+                if self.first_panic.is_none() {
+                    self.first_panic = Some(payload);
+                }
+            }
+            CycleEvent::Planned {
+                seat, actions, ..
+            } => {
+                census.planned += actions.len() as u64;
+                self.results_seen += 1;
+                self.arrived.insert(seat, actions);
+            }
+            CycleEvent::Cancelled { .. } => self.results_seen += 1,
+            CycleEvent::Panicked(payload) => {
+                self.results_seen += 1;
+                if self.first_panic.is_none() {
+                    self.first_panic = Some(payload);
+                }
+            }
+        }
+    }
+
+    /// Every shipped request has answered and the prepare walk has closed —
+    /// the fleet is quiescent, so the cycle may end (or unwind) safely.
+    fn drained(&self) -> bool {
+        self.prepare_done && self.results_seen == self.submitted
+    }
+}
+
+/// Advance one whole simultaneous game turn with all three phases in
+/// flight at once: the prepare thread walks the rolling world and streams
+/// private planning worlds to the fleet, the fleet deliberates, and this —
+/// the simulation thread — commits each seat's plan in turn-cursor order
+/// the moment it is available. The committed game is byte-for-byte the
+/// serial driver's: the prepare walk is the same walk, the planning worlds
+/// and RNG streams are fixed by game state alone, and the commit blocks
+/// until it *knows* the answer for the seat under the cursor — a wait can
+/// change wall clock, never an action.
+///
+/// One deliberate divergence from the batch driver: a worker panic can
+/// surface after this cycle has already committed earlier seats, so the
+/// unwound game may carry a partial cycle. The batch driver planned
+/// everything before committing anything, so its unwound game carried
+/// none. A panic abandons the game either way; what is preserved is that
+/// the fleet is fully drained before the payload resumes, so the scoped
+/// threads join and nothing leaks.
+fn step_cycle_pipelined(
+    g: &mut Game,
+    census: &mut SimultaneousCensus,
+    jobs: &mpsc::Sender<PrepareJob>,
+) -> bool {
+    let opened = (g.turn, g.current);
+    let cycle_turn = g.turn;
+    let bound = 2 * g.players.len() + 8;
+    let timing = phase_timing::enabled();
+    let (events_tx, events) = mpsc::channel::<CycleEvent>();
+    let cancelled = Arc::new(AtomicBool::new(false));
+    jobs.send(PrepareJob {
+        rolling: g.clone(),
+        seed: g.seed,
+        cycle_turn,
+        bound,
+        cancelled,
+        events: events_tx,
+    })
+    .expect("the simultaneous prepare thread stopped unexpectedly");
+
+    let mut inbox = CycleInbox::default();
+    let mut consumed = std::collections::BTreeSet::new();
+    let commit_clock = std::time::Instant::now();
+    let mut steps = 0;
+    while g.winner.is_none() && g.turn == cycle_turn && steps < bound {
+        steps += 1;
+        let seat = g.current;
+        // Resolve the seat under the cursor: planned (commit its actions),
+        // or not planned this cycle (an empty turn). Block only while the
+        // answer is genuinely still in flight.
+        let plan = loop {
+            if inbox.first_panic.is_some() {
+                break None;
+            }
+            if let Some(actions) = inbox.arrived.remove(&seat) {
+                break Some(actions);
+            }
+            // A seat the cursor reaches twice in one cycle spent its plan on
+            // the first visit; only an unconsumed, unannounced seat after
+            // `PrepareDone` is truly unplanned.
+            if consumed.contains(&seat)
+                || (inbox.prepare_done && !inbox.announced.contains(&seat))
+            {
+                break None;
+            }
+            let clock = std::time::Instant::now();
+            let event = events
+                .recv()
+                .expect("a simultaneous planning worker stopped without reporting");
+            if timing {
+                phase_timing::add(&phase_timing::STALL, clock.elapsed().as_nanos());
+            }
+            inbox.absorb(event, census);
+        };
+        if inbox.first_panic.is_some() {
+            break;
+        }
+        match plan {
+            Some(actions) => {
+                consumed.insert(seat);
+                for action in &actions {
+                    if g.winner.is_some() {
+                        break;
+                    }
+                    match g.apply(seat, action) {
+                        Ok(()) => census.applied += 1,
+                        Err(_) => census.note_drop(action),
+                    }
+                }
+            }
+            None => census.unplanned_seats += 1,
+        }
+        if g.winner.is_none() && g.current == seat {
+            if !close_seat_turn(g, seat, &mut census.forced) {
+                census.aborted = true;
+                break;
+            }
+        }
+    }
+    if timing {
+        phase_timing::add(&phase_timing::COMMIT, commit_clock.elapsed().as_nanos());
+        phase_timing::CYCLES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    // Let the cycle's whole fleet report before touching the next cycle:
+    // plans for seats the cursor never reached still count into the census,
+    // and the pool must be quiescent before it is reused or unwound.
+    while !inbox.drained() {
+        let event = events
+            .recv()
+            .expect("a simultaneous planning worker stopped without reporting");
+        inbox.absorb(event, census);
+    }
+    if let Some(payload) = inbox.first_panic {
+        resume_unwind(payload);
+    }
+    census.lost_seats += (inbox.submitted - consumed.len()) as u64;
+
+    if census.aborted {
+        // Closing a seat failed within the bound. Abandon the game loudly
+        // rather than replaying the same turn forever.
+        return false;
+    }
+    if g.winner.is_none() && (g.turn, g.current) == opened {
+        census.aborted = true;
+        return false;
+    }
+    true
 }
 
 /// Advance one whole simultaneous cycle after supplying the mechanism that
