@@ -3006,10 +3006,24 @@ pub fn seat_by_civ(league: &League, civs: &[String]) -> Vec<usize> {
     seat_by_leader_civ(league, &combinations)
 }
 
-/// Sample each seat from the best few proven winners at this table size, using
-/// its leader/civilization placement rating as the tie-break. Rank weighting
-/// (3:2:1 for the default top three) keeps the best entrant most common without
-/// making every game the same matchup.
+/// Sample each seat from the best few proven winners at this table size —
+/// exact win evidence first, overall placement rating as the tie-break — then
+/// assign the sampled entrants to the table's civilizations by Latin square
+/// over the league's game counter (`rating::rotate_seating`). Rank weighting
+/// (3:2:1 for the default top three) keeps the best entrant most common
+/// without making every game the same matchup.
+///
+/// Quality decides *who* plays; the rotation decides *which civ* they play,
+/// and the two must stay separate. This function used to rank candidates by
+/// their rating on the specific civ being seated, which is a feedback loop:
+/// whoever is rated best on Rome keeps drawing Rome. In the audited history
+/// one strategy played Rome 200 games out of 200 while its rating led the
+/// table at 1873 and its actual Rome winrate was 25%, against 56% for a
+/// strategy rated 204 points lower — strategy and civilization had become
+/// the same variable, and no estimator can separate them after the fact
+/// (docs/RATING.md). Balanced seating is a precondition for the ratings
+/// meaning anything, which matters doubly now that live selection breeds and
+/// retires on them.
 ///
 /// `table_size` is explicit because a human-controlled seat is omitted from
 /// `civs` but still changes every AI's parity win probability. An old roster
@@ -3051,9 +3065,12 @@ pub fn seat_by_leader_civ_seeded(
         })
         .count()
         >= requested_pool;
-    combinations
+    // Selection: quality decides who plays. The ordering deliberately reads
+    // nothing about the civ being seated — a per-civ rating here is the
+    // feedback loop documented above.
+    let picks: Vec<usize> = combinations
         .iter()
-        .map(|(leader, civ)| {
+        .map(|_combination| {
             let mut pool: Vec<usize> = if used.len() < active.len() {
                 active
                     .iter()
@@ -3080,8 +3097,6 @@ pub fn seat_by_leader_civ_seeded(
             }
             let sample_size = top_n.max(1).min(pool.len());
             pool.sort_by(|a, b| {
-                let ea = display_elo_for(&league.strategies[*a], leader, civ).0;
-                let eb = display_elo_for(&league.strategies[*b], leader, civ).0;
                 let win_order = if use_win_evidence {
                     exact_win_lower_confidence_for(&league.strategies[*b], table_size)
                         .expect("the win-evidence pool contains only exact profiles")
@@ -3094,7 +3109,11 @@ pub fn seat_by_leader_civ_seeded(
                     std::cmp::Ordering::Equal
                 };
                 win_order
-                    .then_with(|| eb.total_cmp(&ea))
+                    .then_with(|| {
+                        league.strategies[*b]
+                            .rating
+                            .total_cmp(&league.strategies[*a].rating)
+                    })
                     .then(a.cmp(b))
             });
             pool.truncate(sample_size);
@@ -3103,6 +3122,14 @@ pub fn seat_by_leader_civ_seeded(
             used.insert(pick);
             pick
         })
+        .collect();
+    // Assignment: the Latin square decides which civ each pick plays. The
+    // league round is the game counter in the live regime (one rated game is
+    // one rating period), so over `picks.len()` consecutive rated games each
+    // sampled slot draws every civilization once by construction.
+    crate::rating::rotate_seating(picks.len(), combinations.len(), league.round as u64)
+        .into_iter()
+        .map(|slot| picks[slot])
         .collect()
 }
 
@@ -4689,6 +4716,108 @@ mod tests {
             seat_by_civ_seeded(&league, &["Byzantium".into()], 4, 17, 3),
             "a game seed must reproduce its specialist"
         );
+    }
+
+    /// The Latin-square half of the rating fix: with the pick set held
+    /// deterministic (`top_n = 1`), consecutive rated games rotate the same
+    /// entrants across the table's civilizations, so over a full cycle every
+    /// entrant draws every civ exactly once. The audited failure this pins
+    /// against: one strategy played Rome 200 games out of 200.
+    #[test]
+    fn seeded_seating_rotates_entrants_across_civs_between_rated_games() {
+        let mut league = League {
+            round: 0,
+            strategies: (0..4)
+                .map(|index| {
+                    Strategy::new(
+                        &format!("candidate-{index}"),
+                        StrategyKind::Builtin {
+                            ai: "advanced".into(),
+                        },
+                        0,
+                    )
+                })
+                .collect(),
+            calibration: Calibration::default(),
+        };
+        for (index, strategy) in league.strategies.iter_mut().enumerate() {
+            strategy.rating = 1_800.0 - index as f64 * 100.0;
+        }
+        let civs: Vec<String> = ["Rome", "Egypt", "Greece", "Sumeria"]
+            .iter()
+            .map(|civ| civ.to_string())
+            .collect();
+        // civ -> set of entrants that drew it across one full cycle
+        let mut drew: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); civs.len()];
+        for round in 0..civs.len() as u32 {
+            league.round = round;
+            let seating = seat_by_civ_seeded(&league, &civs, 4, 9, 1);
+            for (civ_index, entrant) in seating.iter().enumerate() {
+                drew[civ_index].insert(*entrant);
+            }
+        }
+        for (civ_index, entrants) in drew.iter().enumerate() {
+            assert_eq!(
+                entrants,
+                &BTreeSet::from([0, 1, 2, 3]),
+                "civ {civ_index} must be drawn by every entrant across a cycle"
+            );
+        }
+        // Same round and seed reproduce the same table exactly.
+        league.round = 2;
+        assert_eq!(
+            seat_by_civ_seeded(&league, &civs, 4, 9, 1),
+            seat_by_civ_seeded(&league, &civs, 4, 9, 1)
+        );
+    }
+
+    /// The selection half: who plays is decided by overall quality, never by
+    /// the rating on the civ being seated. A strategy with a stellar record
+    /// on Rome and a weaker overall rating must not keep drawing Rome — that
+    /// feedback loop is how strategy and civilization became the same
+    /// variable in the audited history.
+    #[test]
+    fn seeded_seating_ignores_civ_specific_ratings_when_choosing_who_plays() {
+        let mut league = League {
+            round: 0,
+            strategies: (0..2)
+                .map(|index| {
+                    Strategy::new(
+                        &format!("candidate-{index}"),
+                        StrategyKind::Builtin {
+                            ai: "advanced".into(),
+                        },
+                        0,
+                    )
+                })
+                .collect(),
+            calibration: Calibration::default(),
+        };
+        league.strategies[0].rating = 1_700.0;
+        league.strategies[1].rating = 1_500.0;
+        // The weaker-overall strategy holds a spectacular Rome-specific
+        // rating of the kind the old ordering fed back on.
+        league.strategies[1].leader_elo.insert(
+            default_leader("Rome"),
+            BTreeMap::from([(
+                "Rome".to_string(),
+                CivRating {
+                    rating: 2_400.0,
+                    ..CivRating::default()
+                },
+            )]),
+        );
+        for seed in 0..32 {
+            for round in 0..4 {
+                league.round = round;
+                let seating = seat_by_civ_seeded(&league, &["Rome".into()], 4, seed, 1);
+                assert_eq!(
+                    seating,
+                    vec![0],
+                    "the overall-strongest entrant plays, not the Rome specialist"
+                );
+            }
+        }
     }
 
     #[test]

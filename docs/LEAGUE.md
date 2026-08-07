@@ -159,14 +159,19 @@ because they selected a leader they have not played before.
 ## Watching players in the game HUD
 
 `civvis play --spectate --league league/` ranks live-eligible strategies first
-by the lower 95% Wilson **outright-win** bound for the full table size. The
-exact leader/civilization placement rating breaks an equal bound. It samples
-from the top three with 3:2:1 rank weight, avoids repeats, and exhausts exact
-profiles before using an unprofiled fallback. A roster does not switch from the
-legacy placement-only policy until it has enough exact profiles to fill the
-initial three-entry pool. Thus one human plus five AI seats uses six-player
-evidence, not five-player evidence, and removing seat one's pick cannot switch
-seat two back to a different objective.
+by the lower 95% Wilson **outright-win** bound for the full table size, with
+the overall placement rating breaking an equal bound. It samples from the top
+three with 3:2:1 rank weight, avoids repeats, and exhausts exact profiles
+before using an unprofiled fallback; the sampled entrants are then assigned to
+the table's civilizations by Latin square over the league round
+(`rating::rotate_seating`), so quality decides who plays and the rotation
+decides which civ they play. Seating by a strategy's rating *on the civ being
+seated* was the feedback loop in docs/RATING.md — one strategy played Rome 200
+games out of 200 — and is gone. A roster does not switch from the legacy
+placement-only policy until it has enough exact profiles to fill the initial
+three-entry pool. Thus one human plus five AI seats uses six-player evidence,
+not five-player evidence, and removing seat one's pick cannot switch seat two
+back to a different objective.
 
 The spectator HUD lists, per player: **civ, league username + strategy, its
 elo** (exact leader/civ rating after game one, ±RD on hover), the live **Elo
