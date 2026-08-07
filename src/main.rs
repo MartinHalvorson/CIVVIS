@@ -700,8 +700,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the family it replaces. A doc comment and one test; no executable path
 /// changes, so advanced_v1 is byte-identical by construction. Compatibility
 /// re-pin.
+/// #1360 adds a bounded friendly-volley extension only under
+/// `BasicAi::tactical_strategy`. `AdvancedAi::legacy()` leaves that flag false,
+/// so its unit loop never asks for a paired friendly finisher or replaces a
+/// reply price; this is a reviewed compatibility re-pin, not an Elo-protocol
+/// change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x81d1_39cb_4a9d_82d7;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2553_18c4_1ac9_0749;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

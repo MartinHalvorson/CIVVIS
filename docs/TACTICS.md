@@ -68,10 +68,13 @@ before the next is considered. That commitment rule costs four things:
    Ranged units act first and over-price their exposure — the screen that will
    stand in front of them does not exist yet — and melee acts last and
    under-prices it. The bias runs in exactly the wrong direction.
-2. **No joint target assignment.** With four attackers and three defenders,
+2. **No broad joint target assignment.** With four attackers and three defenders,
    every attacker picking its individually-best target is not the best *set* of
    attacks. The `focus_fire` gene is a flat bonus toward one shared tile, which
-   trades spread-fire for overkill rather than solving either.
+   trades spread-fire for overkill rather than solving either. Production now
+   repairs the narrow, forcing case: a bounded friendly-volley extension sees a
+   direct two-unit kill and prices the enemy reply after the second friendly
+   action. It is intentionally not a general assignment search.
 3. **The order is never questioned.** Soften-then-capture is usually right,
    which is why a fixed order works as well as it does, but it is wrong whenever
    a melee kill has to clear a tile or a firing lane first.
@@ -361,6 +364,15 @@ candidate pruning:
   wall;
 - light cavalry pillages before routine combat; heavy cavalry attacks first and
   uses pillaging as its fallback.
+
+When an engaged force has a direct two-unit kill, the first attack gets a
+bounded friendly-volley extension: it confirms the second legal attack against
+the cloned engine state, then replaces the reply price that incorrectly placed
+the enemy between those friendly actions. The search considers at most three
+immediate targets and eight deterministic finishers, excludes movement and
+cities, and leaves the finisher's own exact exchange score in control. This
+improves actual focus-fire sequencing without reviving the removed portfolio
+search or adding quiet-move clone fan-out.
 
 The bonuses assign close choices; exact damage, kills, captures, and enemy reply
 damage still dominate decisive exchanges. The feature is enabled by the

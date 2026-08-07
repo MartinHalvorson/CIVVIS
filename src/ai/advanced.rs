@@ -42,6 +42,20 @@ const STRIKE_OPENING_SCALE: f64 = 0.6;
 /// `mv_threat`'s 15.0 at parity, so a blind tile loses to a sighted one a hex
 /// out of position without the unit fleeing contact altogether.
 const BLIND_RANGED_TILE: f64 = 12.0;
+/// A normal tactical candidate already spends two cloned worlds on its exact
+/// exchange and its forcing reply.  The friendly-volley extension below is a
+/// deliberately smaller joint search: inspect only the three best immediate
+/// attacks for a setup that a teammate can finish right now.
+const TACTICAL_VOLLEY_CANDIDATE_LIMIT: usize = 3;
+/// A force can be large late in the game.  Once eight direct finishers have
+/// been checked in deterministic unit order, more choices buy little tactical
+/// signal while multiplying the clone-heavy hot path.
+const TACTICAL_VOLLEY_FINISHER_LIMIT: usize = 8;
+/// The opening shot earns one and a half ordinary kill bonuses when it lets a
+/// teammate finish the same defender.  The actual kill remains priced by the
+/// finisher's exact exchange; this bonus only corrects the first unit's
+/// otherwise myopic ordering.
+const TACTICAL_VOLLEY_KILL_BONUS_SCALE: f64 = 1.5;
 /// Most the wartime army target may be multiplied by when the enemy outweighs
 /// us, used by [`AdvancedAi::enemy_weighted_army_target`]. Two doublings would be an
 /// empire of nothing but soldiers; 2.0 asks a six-city empire at war to want
@@ -680,6 +694,22 @@ struct UnitIntent {
 struct UnitTurnFlags {
     religious_offensive: bool,
     decline_settlers: bool,
+}
+
+/// One exact attack candidate after its ordinary one-unit evaluation.  Keeping
+/// the components lets the bounded friendly-volley extension replace the
+/// reply price with the reply after both teammates have acted, rather than
+/// pretending the opponent moves in the middle of a friendly volley.
+struct TacticalAttackCandidate {
+    score: f64,
+    target: Pos,
+    action: Action,
+    /// Exact attack value, required threshold, local-odds caution, priced
+    /// forcing reply, and any cooperative-volley setup credit.
+    parts: [f64; 5],
+    /// Preserve the generator's deterministic order when scores and targets
+    /// tie (for example, a hybrid unit's ranged and melee actions).
+    order: usize,
 }
 
 #[derive(Clone)]
@@ -17707,6 +17737,27 @@ impl AdvancedAi {
         if !after.units.contains_key(&uid) {
             return 135.0;
         }
+        Self::forcing_reply_penalty_from_position(work_pool.as_ref(), &after, pid, &[uid])
+    }
+
+    /// Price the strongest forcing reply from an already-resolved friendly
+    /// position.  Most callers have one exposed attacker; a coordinated
+    /// volley passes both surviving bodies so the opponent is allowed to pick
+    /// whichever member of the pair is actually vulnerable.
+    fn forcing_reply_penalty_from_position(
+        work_pool: Option<&Arc<WorkPool>>,
+        after: &Game,
+        pid: usize,
+        victims: &[u32],
+    ) -> f64 {
+        let victims: Vec<u32> = victims
+            .iter()
+            .copied()
+            .filter(|uid| after.units.contains_key(uid))
+            .collect();
+        if victims.is_empty() {
+            return 0.0;
+        }
         let enemies: Vec<usize> = after
             .players
             .iter()
@@ -17739,14 +17790,15 @@ impl AdvancedAi {
                 city.struck = false;
                 city.encampment_struck = false;
             }
-
-            worst_reply = worst_reply.max(Self::forcing_reply_line(
-                work_pool.as_ref(),
-                &reply_position,
-                enemy,
-                uid,
-                2,
-            ));
+            for victim in &victims {
+                worst_reply = worst_reply.max(Self::forcing_reply_line(
+                    work_pool,
+                    &reply_position,
+                    enemy,
+                    *victim,
+                    2,
+                ));
+            }
         }
         worst_reply
     }
@@ -17759,6 +17811,106 @@ impl AdvancedAi {
             uid,
             action,
         )
+    }
+
+    /// Find a direct, two-unit kill that the normal per-unit evaluator cannot
+    /// see as one line.  The first unit still needs to choose a sound exact
+    /// attack; this only credits it when a surviving teammate in the same
+    /// engaged force can legally remove that *same* defender immediately.
+    ///
+    /// The bounded extension deliberately excludes movement, cities, and
+    /// quiet follow-ups.  It fixes the harmful ordering assumption that the
+    /// enemy replies between two friendly shots without reopening the removed
+    /// portfolio search or its performance cost.
+    fn friendly_volley_extension(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        action: &Action,
+        group: &ForceGroup,
+        plan: &StrategicPlan,
+    ) -> Option<(f64, f64)> {
+        if !self.base.tactical_strategy
+            || group.posture != ForcePosture::Engage
+            || group.units.len() < 2
+        {
+            return None;
+        }
+        let target = match action {
+            Action::Attack { unit, target } | Action::Ranged { unit, target } if *unit == uid => {
+                *target
+            }
+            _ => return None,
+        };
+        let victim = g.units_at(target).into_iter().find(|other| {
+            let defender = &g.units[other];
+            defender.owner != pid
+                && g.is_at_war(pid, defender.owner)
+                && g.rules.units[defender.kind].class == "military"
+        })?;
+        let mut after_first = g.clone();
+        if after_first.apply(pid, action).is_err()
+            || !after_first.units.contains_key(&uid)
+            || !after_first.units.contains_key(&victim)
+        {
+            return None;
+        }
+
+        let mut best: Option<(f64, u32, usize, Game)> = None;
+        for (order, followup) in Self::forcing_attacks_to(&after_first, pid, target, None)
+            .into_iter()
+            .filter_map(|followup| match &followup {
+                Action::Attack { unit, .. } | Action::Ranged { unit, .. }
+                    if *unit != uid && group.units.contains(unit) =>
+                {
+                    Some(followup)
+                }
+                _ => None,
+            })
+            .take(TACTICAL_VOLLEY_FINISHER_LIMIT)
+            .enumerate()
+        {
+            let (finisher, ranged) = match &followup {
+                Action::Attack { unit, .. } => (*unit, false),
+                Action::Ranged { unit, .. } => (*unit, true),
+                _ => unreachable!("friendly volley only retains direct ground attacks"),
+            };
+            let mut after_second = after_first.clone();
+            if after_second.apply(pid, &followup).is_err() || after_second.units.contains_key(&victim)
+            {
+                continue;
+            }
+            let finish_score = Self::tactical_attack_value_owned(
+                after_first.clone(),
+                pid,
+                finisher,
+                &followup,
+                plan,
+            ) - self.base.attack_threshold(&after_first, finisher, target)
+                + self
+                    .base
+                    .tactical_action_bonus(&after_first, finisher, target, ranged);
+            if !finish_score.is_finite() || finish_score <= 0.0 {
+                continue;
+            }
+            let better = best.as_ref().is_none_or(|(old, old_uid, old_order, _)| {
+                finish_score.total_cmp(old).is_gt()
+                    || (finish_score.total_cmp(old).is_eq()
+                        && (finisher, order) < (*old_uid, *old_order))
+            });
+            if better {
+                best = Some((finish_score, finisher, order, after_second));
+            }
+        }
+        let (_, finisher, _, after_second) = best?;
+        let reply = Self::forcing_reply_penalty_from_position(
+            self.work_pool.as_ref(),
+            &after_second,
+            pid,
+            &[uid, finisher],
+        );
+        Some((self.base.w.kill_bonus * TACTICAL_VOLLEY_KILL_BONUS_SCALE, reply))
     }
 
     /// Evaluate an air strike by making it on a cloned position. This captures
@@ -18717,9 +18869,9 @@ impl AdvancedAi {
                 .collect(),
         };
 
-        let mut best: Option<(f64, Pos, Action, [f64; 4])> = None;
-        for ((pos, action), (attack_value, reply_penalty)) in
-            candidates.into_iter().zip(evaluations)
+        let mut scored = Vec::with_capacity(candidates.len());
+        for (order, ((pos, action), (attack_value, reply_penalty))) in
+            candidates.into_iter().zip(evaluations).enumerate()
         {
             let threshold = self.base.attack_threshold(g, uid, pos);
             let ranged = matches!(&action, Action::Ranged { .. });
@@ -18747,15 +18899,86 @@ impl AdvancedAi {
             score -= caution;
             let reply = self.base.w.trade_caution * reply_penalty;
             score -= reply;
-            if best
+            scored.push(TacticalAttackCandidate {
+                score,
+                target: pos,
+                action,
+                parts: [attack_value, threshold, caution, reply, 0.0],
+                order,
+            });
+        }
+
+        // The ordinary evaluator prices one action at a time, so it treats an
+        // enemy reply as if it arrives between a ranged setup shot and the
+        // teammate's finishing blow.  Revisit only a few strongest candidates
+        // with the bounded friendly-volley extension, then replace that reply
+        // price with the exact reply after both friendly actions.
+        if self.base.tactical_strategy
+            && group
                 .as_ref()
-                .map(|(old, bp, _, _)| score > *old || (score == *old && pos < *bp))
-                .unwrap_or(true)
-            {
-                best = Some((score, pos, action, [attack_value, threshold, caution, reply]));
+                .is_some_and(|orders| orders.posture == ForcePosture::Engage)
+        {
+            let focus = group.as_ref().and_then(|orders| orders.focus_target);
+            let mut volley_indices: Vec<usize> = (0..scored.len())
+                .filter(|index| {
+                    g.units_at(scored[*index].target).into_iter().any(|other| {
+                        let defender = &g.units[&other];
+                        defender.owner != pid
+                            && g.is_at_war(pid, defender.owner)
+                            && g.rules.units[defender.kind].class == "military"
+                    })
+                })
+                .collect();
+            volley_indices.sort_by(|left, right| {
+                let left = &scored[*left];
+                let right = &scored[*right];
+                (focus == Some(right.target))
+                    .cmp(&(focus == Some(left.target)))
+                    .then_with(|| right.score.total_cmp(&left.score))
+                    .then_with(|| left.target.cmp(&right.target))
+                    .then_with(|| left.order.cmp(&right.order))
+            });
+            let mut examined_targets = BTreeSet::new();
+            for index in volley_indices {
+                if examined_targets.len() >= TACTICAL_VOLLEY_CANDIDATE_LIMIT
+                    || !examined_targets.insert(scored[index].target)
+                {
+                    continue;
+                }
+                let Some(orders) = group.as_ref() else {
+                    break;
+                };
+                let Some((bonus, followup_reply)) = self.friendly_volley_extension(
+                    g,
+                    pid,
+                    uid,
+                    &scored[index].action,
+                    orders,
+                    plan,
+                ) else {
+                    continue;
+                };
+                let reply = self.base.w.trade_caution * followup_reply;
+                let prior_reply = scored[index].parts[3];
+                scored[index].score += bonus + prior_reply - reply;
+                scored[index].parts[3] = reply;
+                scored[index].parts[4] = bonus;
             }
         }
-        if let Some((score, at, action, parts)) = best {
+        let best = scored.into_iter().max_by(|left, right| {
+            left.score
+                .total_cmp(&right.score)
+                .then_with(|| right.target.cmp(&left.target))
+                .then_with(|| right.order.cmp(&left.order))
+        });
+        if let Some(TacticalAttackCandidate {
+            score,
+            target: at,
+            action,
+            parts,
+            ..
+        }) = best
+        {
             let required_margin = if unit.hp < 55 { 12.0 } else { 0.0 };
             if score > required_margin {
                 if self.journal().wants(crate::reasoning::Level::Detail) {
@@ -18803,14 +19026,15 @@ impl AdvancedAi {
                 // 100 health**, 37 of those Field Cannons. Not one of those 77
                 // decisions left a trace.
                 //
-                // The four terms are named because the score is a sum and
+                // The terms are named because the score is a sum and
                 // knowing it was negative says nothing about which part sank
                 // it. `worth` is the exact forward-model attack value,
                 // `asking` the doctrine threshold from
                 // `BasicAi::attack_threshold`, `caution` the local-superiority
                 // deduction, and `reply` the enemy's best answer priced by
-                // `trade_caution`.
-                let [attack_value, threshold, caution, reply] = parts;
+                // `trade_caution`; `volley` is the bounded cooperative setup
+                // credit when another force member can finish the defender.
+                let [attack_value, threshold, caution, reply, volley] = parts;
                 let defender = g
                     .city_at(at)
                     .and_then(|cid| g.cities.get(&cid))
@@ -18822,7 +19046,7 @@ impl AdvancedAi {
                 think!(self.journal(), Military, Detail,
                        "{} declines {defender}", plain(&unit.kind);
                        "worth {attack_value:.0} against asking {threshold:.0}, \
-                        caution {caution:.0}, reply {reply:.0} — {score:.0} \
+                        caution {caution:.0}, reply {reply:.0}, volley {volley:.0} — {score:.0} \
                         under a margin of {required_margin:.0}, on {} health",
                        unit.hp; at);
             }
@@ -31063,6 +31287,143 @@ mod tests {
             .force_groups()
             .iter()
             .any(|group| group.units.contains(&vanguard)));
+    }
+
+    #[test]
+    fn friendly_volley_reprices_a_two_unit_kill_after_the_finisher() {
+        let mut base = Game::new_full(2, 24, 16, 81_700, 80, 0, false);
+        for unit in base.units.keys().copied().collect::<Vec<_>>() {
+            base.remove_unit(unit);
+        }
+        for tile in base.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        base.current = 0;
+        base.at_war.insert((0, 1));
+        let target = base
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| base.nbrs(*position).len() == 6)
+            .expect("fixture needs an interior tile");
+        let firing_lines: Vec<Pos> = base
+            .wdisk(target, 2)
+            .into_iter()
+            .filter(|position| base.wdist(*position, target) == 2)
+            .take(2)
+            .collect();
+        assert_eq!(firing_lines.len(), 2, "interior tile needs two firing lines");
+        let opener = base.spawn_test_unit("archer", 0, firing_lines[0]);
+        let finisher = base.spawn_test_unit("archer", 0, firing_lines[1]);
+        let defender = base.spawn_test_unit("warrior", 1, target);
+        let opening = Action::Ranged {
+            unit: opener,
+            target,
+        };
+        let finish = Action::Ranged {
+            unit: finisher,
+            target,
+        };
+
+        // Discover an exact seeded-damage window rather than hard-coding a
+        // combat-roll amount: the first shot must leave the defender alive
+        // and the next friendly shot must remove it.
+        let game = (2..=100)
+            .find_map(|hp| {
+                let mut candidate = base.clone();
+                candidate.units.get_mut(&defender).unwrap().hp = hp;
+                let mut after_first = candidate.clone();
+                (after_first.apply(0, &opening).is_ok()
+                    && after_first.units.contains_key(&defender))
+                .then_some(after_first)
+                .and_then(|mut after_first| {
+                    (after_first.apply(0, &finish).is_ok()
+                        && !after_first.units.contains_key(&defender))
+                    .then_some(candidate)
+                })
+            })
+            .expect("two archers must admit a nonlethal-then-lethal damage window");
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let group = ForceGroup {
+            id: opener,
+            domain: ForceDomain::Land,
+            units: vec![opener, finisher],
+            anchor: game.units[&opener].pos,
+            objective: target,
+            focus_target: Some(target),
+            posture: ForcePosture::Engage,
+            readiness: 1.0,
+            local_strength_ratio: 1.0,
+        };
+        let ai = AdvancedAi::new();
+        let first_reply = ai.forcing_reply_penalty(&game, 0, opener, &opening);
+        let (bonus, paired_reply) = ai
+            .friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
+            .expect("the engaged force has an immediate friendly finisher");
+        assert_eq!(
+            bonus,
+            ai.base.w.kill_bonus * TACTICAL_VOLLEY_KILL_BONUS_SCALE
+        );
+        assert!(
+            first_reply > paired_reply,
+            "the defender cannot reply after its friendly-volley kill: first={first_reply}, paired={paired_reply}"
+        );
+        assert!(
+            AdvancedAi::legacy()
+                .friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
+                .is_none(),
+            "the frozen control keeps the production-only tactical extension off"
+        );
+
+        // Give the first shot a reply price high enough that it would decline
+        // in isolation, while the real two-unit line remains worthwhile.  The
+        // live unit step must then use the extension rather than merely expose
+        // it as a helper.
+        let attack_value = ai.tactical_attack_value(&game, 0, opener, &opening, &plan);
+        let threshold = ai.base.attack_threshold(&game, opener, target);
+        let static_score = attack_value - threshold
+            + ai.base.tactical_action_bonus(&game, opener, target, true)
+            + ai.base.w.focus_fire * 10.0
+            + if game.units_at(target).iter().any(|unit| game.units[unit].hp <= 35) {
+                16.0
+            } else {
+                0.0
+            };
+        let trade_caution = (1..=128)
+            .map(|value| value as f64)
+            .find(|trade| {
+                static_score - *trade * first_reply <= 0.0
+                    && static_score + bonus - *trade * paired_reply > 0.0
+            })
+            .expect("the friendly kill must be distinguishable from its interrupted reply");
+        let mut live = AdvancedAi::new();
+        live.base.w.trade_caution = trade_caution;
+        live.force_groups = vec![group.clone()];
+        let mut played = game.clone();
+        assert!(live.advanced_military_step(&mut played, 0, opener, &plan));
+        assert!(played.units.contains_key(&defender), "the opening shot is deliberately nonlethal");
+        assert!(matches!(
+            played.log.last(),
+            Some((0, Action::Ranged { unit, target: hit })) if *unit == opener && *hit == target
+        ));
+
+        let mut parallel = ai.clone();
+        parallel.work_pool = Some(Arc::new(WorkPool::new(4)));
+        assert_eq!(
+            Some((bonus, paired_reply)),
+            parallel.friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
+        );
     }
 
     #[test]
