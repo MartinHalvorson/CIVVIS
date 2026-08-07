@@ -2437,12 +2437,12 @@ mod tests {
         assert_eq!(map_topology(&flat), MapTopology::Flat);
     }
 
-    /// The stock game somebody gets by asking for nothing: a Tenins Ball
+    /// The stock game somebody gets by asking for nothing: a Tennis Ball
     /// world. The four-seat half of the promise lives in the `play` arm's
     /// `--players` default, and the serde default stays Pangaea so a client
     /// that has never been taught the setting is unmoved.
     #[test]
-    fn omitted_map_defaults_to_the_tenins_ball() {
+    fn omitted_map_defaults_to_the_tennis_ball() {
         use civvis::setup::MapScript;
 
         let options = game_options(&[], 4, 71_005);
