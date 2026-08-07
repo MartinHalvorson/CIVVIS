@@ -48,10 +48,30 @@
 //! measured against completed games at three phases, using both Brier error and
 //! winner log loss so confidence as well as ranking is checked.
 
-use crate::elo::win_shares;
 use crate::game::Game;
 use crate::league::League;
 use std::collections::BTreeMap;
+
+/// [`crate::elo::win_shares`], on soft-float `libm::pow`.
+///
+/// The Mercy Rule makes these odds outcome-bearing: a threshold crossing ends
+/// the game, so the same seed must cross on the same turn on every platform.
+/// IEEE-754 does not pin `powf`, and the platform math libraries round it
+/// differently (docs/FLOAT_DETERMINISM.md, #1061) — every transcendental in
+/// the `table` path therefore calls this crate's `libm` implementations. The
+/// display-only callers of `elo::win_shares` keep the platform version.
+fn win_shares(ratings: &[f64]) -> Vec<f64> {
+    let top = ratings.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let weights: Vec<f64> = ratings
+        .iter()
+        .map(|rating| libm::pow(10.0, (rating - top) / 400.0))
+        .collect();
+    let total: f64 = weights.iter().sum();
+    if total <= 0.0 || !total.is_finite() {
+        return vec![1.0 / ratings.len().max(1) as f64; ratings.len()];
+    }
+    weights.iter().map(|weight| weight / total).collect()
+}
 
 /// Elo per point of mean city-yield percentage the difficulty setting adds.
 const HANDICAP_YIELD_ELO: f64 = 4.0;
@@ -302,6 +322,24 @@ where
     odds
 }
 
+/// The seat the Mercy Rule would crown from this position, if any.
+///
+/// A living seat whose live share meets `threshold` is the mercy winner;
+/// `None` while the table is still contested. Flat 1500 priors, always: the
+/// rule is part of the game and a game knows nothing about rosters, so only
+/// the board, the handicaps and the clock separate the seats — and the same
+/// position answers the same on every platform (see `win_shares` above).
+/// With permanent teams every living member carries the side's whole share,
+/// so the lowest living seat of the leading side is crowned and the normal
+/// team-victory credit does the rest.
+pub fn mercy_leader(game: &Game, threshold: f64) -> Option<usize> {
+    let odds = table(game, |_pid| 1500.0f64);
+    odds.iter()
+        .filter(|(pid, seat)| game.players[**pid].alive && seat.now >= threshold)
+        .max_by(|a, b| a.1.now.total_cmp(&b.1.now).then_with(|| b.0.cmp(a.0)))
+        .map(|(pid, _)| *pid)
+}
+
 /// How much stronger than their own rating the roster has been *while playing
 /// this civilization*, in Elo.
 ///
@@ -478,7 +516,7 @@ fn best_race_pct(game: &Game, pid: usize, leading_score: i64) -> f64 {
 }
 
 fn race_elo(pct: f64) -> f64 {
-    RACE_FULL_ELO * (pct / 100.0).clamp(0.0, 1.0).powf(RACE_CURVE)
+    RACE_FULL_ELO * libm::pow((pct / 100.0).clamp(0.0, 1.0), RACE_CURVE)
 }
 
 /// How far through its clock this world is.
@@ -569,7 +607,7 @@ fn seat_index(seats: &[usize], pid: usize) -> usize {
 }
 
 fn log_ratio(value: f64, mean: f64, floor: f64) -> f64 {
-    ((value.max(0.0) + floor) / (mean.max(0.0) + floor)).ln()
+    libm::log((value.max(0.0) + floor) / (mean.max(0.0) + floor))
 }
 
 fn mean(values: &[f64]) -> f64 {

@@ -1,11 +1,54 @@
-# Adjudication: measured, and not worth it
+# Adjudication: measured — dead as a compute lever, shipped as a game rule
 
-**Verdict (2026-08-07): do not adjudicate. The hypothesis that ending
-"decided" games early recovers meaningful compute is refuted at every
-threshold on both turn-budget regimes. The instrument stays; the mechanism
-was never built.**
+**Verdict (2026-08-07): do not adjudicate for throughput. The hypothesis that
+ending "decided" games early recovers meaningful compute is refuted at every
+threshold on both turn-budget regimes (tables below).**
 
-## The hypothesis
+**Product decision (2026-08-07, operator): the same threshold crossing ships
+as the player-facing "Mercy Rule" setup option — a concession rule, not an
+optimization.** The tables below are its calibration reference: they say what
+each rung of the setup ladder trades. The related "Require N Victory Types"
+setup option shares this page because both change how a game ends.
+
+## The Mercy Rule (setup option)
+
+The game ends the moment one civilization's live win odds — `odds::table`,
+the calibrated share the spectator ribbon shows, on flat 1500 priors — reach
+the chosen threshold. Setup ladder: **None, 99%, 97%, 95% (shipped default),
+90%**. Checked at every world-turn wrap after the real victory sweeps, so
+mercy never outranks a victory the rules just recognised; recorded as victory
+type `mercy`. Headless/eval constructors default to **off** (`GameOptions`),
+so simulation baselines and rated batch evidence are unchanged; the 95%
+default enters through the setup surfaces (`stock_opening_params`, which the
+lobby stamp and the wasm opening world both follow, and `civvis play`).
+
+What the measurement says each rung trades (six-player stock budget): 0.95
+crossed in 23/60 games and agreed with the played-out winner in 91.3% of
+crossings; 0.98 agreed in 100% of 11 crossings; 0.90 agreed in 93.5% of 31.
+A mercy game ending early may therefore occasionally crown a seat the full
+game would not have — that is the rule's nature, chosen deliberately.
+
+Determinism: the crossing ends games, so `odds.rs` computes its
+transcendentals (`pow`, `log`) through `libm` — the same soft-float rule as
+world geometry (docs/FLOAT_DETERMINISM.md). The display-only
+`elo::win_shares` keeps the platform version.
+
+## Require N Victory Types (setup option)
+
+A winner must hold N distinct victory types (setup ladder 1–6, clamped live
+to the number of enabled victory conditions; 1 is the stock game). Above 1,
+each achieved type **banks** instead of ending the world — Science by
+reaching the exoplanet, Culture by the culture victory, Religion by world
+conversion, Diplomacy at 20 Diplomatic Victory points, Domination by taking
+every other capital — and Score is banked at the turn limit by the leading
+scorer through the shipped tiebreak chain. First seat holding N different
+types wins with the completing type; if the clock runs out first, the seat
+with the most banked types takes the turn-limit award (victory type
+`score`, cap scorer breaking ties). Banked sets live in the save
+(`victories_won`) and in `/state`. Mercy stays terminal under Require-N: it
+is a judgement about the whole game, not one lane.
+
+## The original throughput hypothesis
 
 `docs/FLEET.md` records that 62% of an audited league history ended as score
 truncations at turn 250 — games whose tails looked like compute spent on a

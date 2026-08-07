@@ -5495,6 +5495,18 @@ async function boot() {
       if ([...speeds.options].some(option => option.value === stockSetup.speed))
         speeds.value = stockSetup.speed;
     }
+    // The endgame rules stamp from the same stock setup: the shipped Mercy
+    // Rule default lives engine-side, not in this markup.
+    setMercySelect(document.getElementById("mercyrule"), stockSetup.mercy_rule);
+    const requiredVictoriesSelect = document.getElementById("requiredvictories");
+    if (requiredVictoriesSelect && stockSetup.required_victory_types)
+      requiredVictoriesSelect.value = String(stockSetup.required_victory_types);
+    const victoryGroup = document.getElementById("victory-options");
+    if (victoryGroup && !victoryGroup.dataset.capwired) {
+      victoryGroup.dataset.capwired = "1";
+      victoryGroup.addEventListener("change", syncRequiredVictoriesCap);
+    }
+    syncRequiredVictoriesCap();
     // The ruleset carries the other game's vocabulary too, and the mode may
     // already be selected by the time it lands.
     syncSetupMode();
@@ -6625,6 +6637,12 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       const checkbox = document.getElementById(`victory-${track.id}`);
       if (checkbox) checkbox.checked = st.victory_conditions?.[track.id] !== false;
     }
+    if (st.mercy_rule !== undefined)
+      setMercySelect(document.getElementById("mercyrule"), st.mercy_rule);
+    const requiredRestore = document.getElementById("requiredvictories");
+    if (requiredRestore && st.required_victory_types)
+      requiredRestore.value = String(st.required_victory_types);
+    syncRequiredVictoriesCap();
     activeSimulationSettingsKey = simulationSettingsKey(selectedSimulationSettings());
     applyQueuedSimulationSettings(st.next_game_settings);
     updateRestartSimulationButton();
@@ -27830,6 +27848,27 @@ function readSetting(id) {
   const select = document.getElementById(id);
   return select ? select.value : "";
 }
+// The Mercy Rule select stores its threshold as the option's text number, so
+// a value arriving as 0.9 must still find the "0.90" option: match on the
+// number, not the string.
+function setMercySelect(select, value) {
+  if (!select) return;
+  const target = value == null ? null : Number(value);
+  const match = [...select.options].find(option =>
+    (option.value === "" ? null : Number(option.value)) === target);
+  if (match) select.value = match.value;
+}
+// Require-N can never exceed the victory conditions actually enabled: cap the
+// choices live as the checkboxes change, and pull an over-cap selection down.
+function syncRequiredVictoriesCap() {
+  const select = document.getElementById("requiredvictories");
+  if (!select) return;
+  const enabled = VICTORY_TRACKS.filter(track =>
+    readVictorySetting(`victory-${track.id}`)).length || 1;
+  for (const option of select.options)
+    option.disabled = Number(option.value) > enabled;
+  if (Number(select.value) > enabled) select.value = String(enabled);
+}
 function readVictorySetting(id) {
   const box = document.getElementById(id);
   return box ? box.checked : true;
@@ -27934,6 +27973,8 @@ function selectedSimulationSettings() {
   const futureEra = readSetting("futureera");
   const victoryConditions = Object.fromEntries(VICTORY_TRACKS.map(track =>
     [track.id, readVictorySetting(`victory-${track.id}`)]));
+  const mercyRule = readSetting("mercyrule");
+  const requiredVictories = Number(readSetting("requiredvictories")) || 1;
   const leader = readSetting("leader");
   const difficulty = readSetting("difficulty");
   const leaderSelection = readSetting("leaderselection") || "automatic";
@@ -27964,6 +28005,8 @@ function selectedSimulationSettings() {
           teams,
           ...(leaderSelection === "custom" ? {custom_leaders: customLeaders} : {}),
           victory_conditions: victoryConditions,
+          mercy_rule: mercyRule === "" ? null : Number(mercyRule),
+          required_victory_types: requiredVictories,
           ...(mapSeed === null ? {} : {seed: mapSeed}),
           spectate: gameMode === "ai_sim",
           ...(civ6 ? {mode: "civ6", civ6_map: civ6Map} : {}),
