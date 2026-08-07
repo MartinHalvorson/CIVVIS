@@ -481,6 +481,11 @@ pub struct Params {
     pub game_speed: GameSpeed,
     pub max_turns: u32,
     pub victory_conditions: VictoryConditions,
+    /// The Mercy Rule threshold for new games, if any. See `Game::mercy_rule`.
+    pub mercy_rule: Option<f64>,
+    /// Distinct victory types required to win. See
+    /// `Game::effective_required_victories`.
+    pub required_victory_types: usize,
     pub num_city_states: usize,
     /// All players AI-driven; the GUI just watches (auto-steps via /step).
     pub spectate: bool,
@@ -2202,6 +2207,8 @@ impl Session {
             )
         });
         game.victory_conditions = params.victory_conditions;
+        game.mercy_rule = params.mercy_rule;
+        game.required_victory_types = params.required_victory_types;
         // The hierarchical agent is the stock major-civilization default when
         // no league strategy is seated. Minors/barbarians retain the cheaper
         // baseline because they do not need empire-level planning.
@@ -2284,6 +2291,8 @@ impl Session {
         params.speed = game.speed.clone();
         params.leader_pool = game.leader_pool;
         params.victory_conditions = game.victory_conditions;
+        params.mercy_rule = game.mercy_rule;
+        params.required_victory_types = game.required_victory_types;
         params.teams = game
             .players
             .iter()
@@ -2824,6 +2833,9 @@ impl Session {
             }
             o["teams"] = json!(major_teams(&self.game));
             o["victory_conditions"] = json!(self.game.victory_conditions);
+            o["mercy_rule"] = json!(self.game.mercy_rule);
+            o["required_victory_types"] = json!(self.game.effective_required_victories());
+            o["victories_won"] = json!(self.game.victories_won);
             o["legal_actions"] = json!([]);
             // Lets a long-running spectator notice that its server was
             // rebuilt/restarted between games and reload the latest UI.
@@ -2850,6 +2862,9 @@ impl Session {
         o["turn_structure"] = json!(self.game.turn_structure.id());
         o["teams"] = json!(major_teams(&self.game));
         o["victory_conditions"] = json!(self.game.victory_conditions);
+        o["mercy_rule"] = json!(self.game.mercy_rule);
+        o["required_victory_types"] = json!(self.game.effective_required_victories());
+        o["victories_won"] = json!(self.game.victories_won);
         o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
         o["server_instance"] = json!(process_identity());
         o["server_commit"] = json!(runtime_commit("unknown"));
@@ -3537,6 +3552,11 @@ fn stock_opening_params(seed: u64) -> Params {
             domination: true,
             score: true,
         },
+        // The shipped Mercy Rule default: a game ends the moment one seat's
+        // live win odds reach 95%. docs/ADJUDICATION.md holds the measured
+        // agreement ladder behind the setup options.
+        mercy_rule: Some(0.95),
+        required_victory_types: 1,
         num_city_states: size.default_city_states,
         spectate: true,
         difficulty: "prince".to_string(),
@@ -3593,6 +3613,8 @@ fn simulation_settings(params: &Params) -> Value {
         "leader_pool": params.leader_pool.id(),
         "teams": params.teams,
         "victories": victories,
+        "mercy_rule": params.mercy_rule,
+        "required_victory_types": params.required_victory_types,
     })
 }
 
@@ -3823,6 +3845,16 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
                 _ => {}
             }
         }
+    }
+    // A present key always wins, including an explicit null for "no mercy";
+    // an absent key keeps the stock default, so clients that predate the
+    // option still get the shipped 95% rule. The band rejects thresholds a
+    // typo could smuggle in: below 0.5 a "leader" is not even favoured.
+    if let Some(value) = request.as_object().and_then(|o| o.get("mercy_rule")) {
+        p.mercy_rule = value.as_f64().filter(|v| (0.5..1.0).contains(v));
+    }
+    if let Some(n) = request["required_victory_types"].as_u64() {
+        p.required_victory_types = (n as usize).clamp(1, VictoryConditions::NAMES.len());
     }
     // Advanced clients can still deliberately override individual stock
     // settings by sending them alongside num_players.
@@ -7563,6 +7595,8 @@ mod tests {
         Params {
             map_topology: MapTopology::Flat,
             map_poles: MapPoles::Poles,
+            mercy_rule: None,
+            required_victory_types: 1,
             base_ruleset: BaseRuleset::Civ6,
             start_era: 0,
             future_era: FutureEra::Classic,
@@ -8880,6 +8914,22 @@ mod tests {
         ] {
             assert!(EMBEDDED_INDEX.contains(normal), "missing normal setting: {normal}");
         }
+        // The endgame rules sit directly under the victory checkboxes they
+        // depend on. The Mercy Rule ships selected at 95% win odds — the
+        // engine-side default in `stock_opening_params` and this markup must
+        // tell the same story — and the Require-N cap tracks the enabled
+        // victory conditions live in the client.
+        assert!(EMBEDDED_INDEX.find("id=\"victory-options\"").unwrap()
+            < EMBEDDED_INDEX.find("id=\"victory-endgame\"").unwrap());
+        for endgame in [
+            "class=\"victory-endgame civ6-hidden\" id=\"victory-endgame\"",
+            "<option value=\"0.95\" selected>95% win odds</option>",
+            "id=\"requiredvictories\"",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(endgame), "missing endgame setting: {endgame}");
+        }
+        assert!(EMBEDDED_INDEX.contains("function syncRequiredVictoriesCap"));
+        assert!(EMBEDDED_INDEX.contains("required_victory_types: requiredVictories,"));
         assert!(EMBEDDED_INDEX.contains(
             "[\"gamemode\", true], [\"np\", true], [\"mapshape\", true], [\"maptype\", true],"
         ));
@@ -11213,6 +11263,8 @@ mod tests {
                 "leader_pool": "historical",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
+                "mercy_rule": null,
+                "required_victory_types": 1,
             })
         );
 
@@ -11373,6 +11425,8 @@ mod tests {
                 "leader_pool": "historical",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
+                "mercy_rule": null,
+                "required_victory_types": 1,
             })
         );
     }

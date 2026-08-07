@@ -16189,6 +16189,19 @@ pub struct GameOptions {
     /// regime and the default everywhere; see [`crate::setup::TurnStructure`]
     /// and [`crate::simultaneous`] for what the alternative changes.
     pub turn_structure: TurnStructure,
+    /// The Mercy Rule: end the game the moment one seat's live win odds —
+    /// the same calibrated share the spectator ribbon shows, on flat priors —
+    /// reach this threshold. `None` plays every game to its natural end.
+    /// The setup ladder and the measured winner-agreement behind it live in
+    /// docs/ADJUDICATION.md.
+    pub mercy_rule: Option<f64>,
+    /// Require this many distinct victory types before a winner is declared.
+    /// 1 is the stock game. Above it, each achieved victory type banks a
+    /// milestone and play continues; the first civilization holding the
+    /// required number of different types wins, and the turn limit falls back
+    /// to whoever banked the most. Clamped to the number of enabled victory
+    /// conditions.
+    pub required_victory_types: usize,
 }
 
 impl GameOptions {
@@ -16224,6 +16237,8 @@ impl GameOptions {
             leader_pool: LeaderPool::default(),
             randomize_civs: false,
             turn_structure: TurnStructure::default(),
+            mercy_rule: None,
+            required_victory_types: 1,
         }
     }
 }
@@ -16618,6 +16633,19 @@ pub struct Game {
     #[serde(default)]
     pub decided: Option<Decided>,
     pub victory_conditions: VictoryConditions,
+    /// The Mercy Rule threshold this world was set up with, if any. Absent
+    /// in saves written before the rule existed, all of which play to the
+    /// natural end.
+    #[serde(default)]
+    pub mercy_rule: Option<f64>,
+    /// How many distinct victory types a winner must hold. Zero or one — and
+    /// every save written before the option existed — is the stock game; see
+    /// [`Self::effective_required_victories`].
+    #[serde(default)]
+    pub required_victory_types: usize,
+    /// The victory types each seat has banked under Require-N, by player id.
+    #[serde(default)]
+    pub victories_won: BTreeMap<usize, BTreeSet<String>>,
     pub next_id: u32,
     pub map: WorldMap,
     pub players: Players,
@@ -17083,6 +17111,12 @@ struct GameSer {
     decided: Option<Decided>,
     #[serde(default)]
     victory_conditions: VictoryConditions,
+    #[serde(default)]
+    mercy_rule: Option<f64>,
+    #[serde(default)]
+    required_victory_types: usize,
+    #[serde(default)]
+    victories_won: BTreeMap<usize, BTreeSet<String>>,
     next_id: u32,
     rng: Rng,
     at_war: Vec<(usize, usize)>,
@@ -17246,6 +17280,9 @@ impl From<GameSer> for Game {
             victory_type: s.victory_type,
             decided: s.decided,
             victory_conditions: s.victory_conditions,
+            mercy_rule: s.mercy_rule,
+            required_victory_types: s.required_victory_types,
+            victories_won: s.victories_won,
             next_id: s.next_id,
             map: s.map,
             players: s.players.into(),
@@ -17432,6 +17469,9 @@ impl From<Game> for GameSer {
             victory_type: g.victory_type,
             decided: g.decided,
             victory_conditions: g.victory_conditions,
+            mercy_rule: g.mercy_rule,
+            required_victory_types: g.required_victory_types,
+            victories_won: g.victories_won,
             next_id: g.next_id,
             rng: g.rng,
             at_war: g.at_war.into_iter().collect(),
@@ -17659,6 +17699,8 @@ impl Game {
             leader_pool,
             randomize_civs,
             turn_structure,
+            mercy_rule,
+            required_victory_types,
         } = options;
         // A rung past the end of the ladder is clamped rather than fatal: a
         // client from a later build must not be able to construct a world that
@@ -17755,6 +17797,9 @@ impl Game {
             victory_type: None,
             decided: None,
             victory_conditions: VictoryConditions::default(),
+            mercy_rule,
+            required_victory_types,
+            victories_won: BTreeMap::new(),
             next_id: 1,
             map,
             players: Players::default(),
@@ -53361,6 +53406,44 @@ impl Game {
                 // `reported_turn` dates the result on the turn the limit
                 // names rather than on that wrap.
                 self.set_winner(best_pid, "score");
+                // Require-N at the limit: the banked score type may not have
+                // completed anybody's set, but the clock still ends the
+                // world. The seat holding the most banked types wins — the
+                // cap scorer breaks ties, having just banked score through
+                // the shipped chain — and the award keeps the turn limit's
+                // own victory type.
+                if self.winner.is_none() && self.effective_required_victories() > 1 {
+                    let most_banked = self
+                        .players
+                        .iter()
+                        .filter(|pl| pl.alive && !pl.is_minor && !pl.is_barbarian)
+                        .max_by_key(|pl| {
+                            (
+                                self.victories_won.get(&pl.id).map_or(0, BTreeSet::len),
+                                pl.id == best_pid,
+                                std::cmp::Reverse(pl.id),
+                            )
+                        })
+                        .map(|pl| pl.id);
+                    if let Some(leader) = most_banked {
+                        self.crown(leader, "score");
+                    }
+                }
+            }
+            // The Mercy Rule: end the game the moment the board is beyond
+            // reasonable doubt. The threshold came from the setup screen; the
+            // model is the calibrated live win share the spectator ribbon
+            // shows, on flat priors and soft-float transcendentals so every
+            // platform crosses on the same turn (docs/ADJUDICATION.md holds
+            // the measured agreement ladder). Checked after the real victory
+            // sweeps and the turn-limit award, inside the same wrap, so mercy
+            // can never outrank a victory the rules just recognised.
+            if self.winner.is_none() {
+                if let Some(threshold) = self.mercy_rule {
+                    if let Some(leader) = crate::odds::mercy_leader(self, threshold) {
+                        self.set_winner(leader, "mercy");
+                    }
+                }
             }
         }
         if self.winner.is_none() {
@@ -56624,42 +56707,105 @@ impl Game {
         true
     }
 
-    fn set_winner(&mut self, pid: usize, vtype: &str) -> bool {
-        if self.decided.as_ref().is_some_and(|decided| match decided.mode {
+    /// Whether a play-on extension refuses this result outright.
+    fn play_on_blocks(&self, pid: usize, vtype: &str) -> bool {
+        self.decided.as_ref().is_some_and(|decided| match decided.mode {
             PlayOnMode::Indefinite => true,
             PlayOnMode::UntilNextVictory => {
                 decided.winner == pid && decided.victory_type == vtype
             }
-        }) {
+        })
+    }
+
+    /// The Require-N setting, clamped to what the lobby actually enabled:
+    /// requiring more victory types than exist could never be satisfied, and
+    /// zero — a save written before the option existed — is the stock
+    /// single-victory game.
+    pub fn effective_required_victories(&self) -> usize {
+        let enabled = VictoryConditions::NAMES
+            .iter()
+            .filter(|name| self.victory_conditions.is_enabled(name))
+            .count();
+        self.required_victory_types.clamp(1, enabled.max(1))
+    }
+
+    /// Declare the result: the tail of every victory, shared by the normal
+    /// single-victory path, the Require-N completion, and the turn-limit
+    /// most-banked-types award. Checks only what every caller must respect —
+    /// play-on and an already-decided world — so type legality stays with
+    /// [`Self::set_winner`].
+    fn crown(&mut self, pid: usize, vtype: &str) -> bool {
+        if self.winner.is_some() || self.play_on_blocks(pid, vtype) {
+            return false;
+        }
+        self.winner = Some(pid);
+        self.victory_type = Some(vtype.to_string());
+        let winners = self.team_members(pid);
+        let winner = if winners.len() > 1 {
+            let names = winners
+                .iter()
+                .map(|winner| self.civ_name(*winner))
+                .collect::<Vec<_>>()
+                .join(" and ");
+            format!("Team {names}")
+        } else {
+            self.civ_name(pid)
+        };
+        let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
+        for seat in seats {
+            self.note(
+                seat,
+                "General",
+                format!("{winner} won a {vtype} victory"),
+                None,
+            );
+        }
+        true
+    }
+
+    fn set_winner(&mut self, pid: usize, vtype: &str) -> bool {
+        if self.play_on_blocks(pid, vtype) {
             return false;
         }
         if self.winner.is_none()
             && self.victory_eligible(pid)
-            && self.victory_conditions.is_enabled(vtype)
+            && (self.victory_conditions.is_enabled(vtype)
+                // Mercy answers to its own setup option, not the victory
+                // checkboxes: it is a concession rule, not a victory lane.
+                || (vtype == "mercy" && self.mercy_rule.is_some()))
         {
-            self.winner = Some(pid);
-            self.victory_type = Some(vtype.to_string());
-            let winners = self.team_members(pid);
-            let winner = if winners.len() > 1 {
-                let names = winners
-                    .iter()
-                    .map(|winner| self.civ_name(*winner))
-                    .collect::<Vec<_>>()
-                    .join(" and ");
-                format!("Team {names}")
-            } else {
-                self.civ_name(pid)
-            };
-            let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
-            for seat in seats {
-                self.note(
-                    seat,
-                    "General",
-                    format!("{winner} won a {vtype} victory"),
-                    None,
-                );
+            // Require-N: short of the requirement, a victory type banks a
+            // milestone instead of ending the world. The set dedupes, because
+            // culture, religious and diplomatic checks re-fire every turn
+            // while their condition holds. Mercy stays terminal: it is a
+            // judgement about the whole game, not one lane of it.
+            let required = self.effective_required_victories();
+            if vtype != "mercy" && required > 1 {
+                let banked = {
+                    let types = self.victories_won.entry(pid).or_default();
+                    if !types.insert(vtype.to_string()) {
+                        return false;
+                    }
+                    types.len()
+                };
+                if banked < required {
+                    let name = self.civ_name(pid);
+                    let seats: Vec<usize> =
+                        self.players.iter().map(|player| player.id).collect();
+                    for seat in seats {
+                        self.note(
+                            seat,
+                            "General",
+                            format!(
+                                "{name} banked a {vtype} victory ({banked}/{required} types)"
+                            ),
+                            None,
+                        );
+                    }
+                    return false;
+                }
             }
-            true
+            self.crown(pid, vtype)
         } else {
             false
         }
@@ -62492,6 +62638,112 @@ mod victory_conditions {
             g.found_city_for(pid, pos, None);
         }
         g
+    }
+
+    fn play_to_the_end(game: &mut Game) {
+        while game.winner.is_none() && game.turn <= game.max_turns {
+            let pid = game.current;
+            let _ = game.apply(pid, &Action::EndTurn);
+        }
+    }
+
+    #[test]
+    fn require_n_banks_types_until_the_set_is_complete() {
+        let mut game = game_with_capitals(2, 91_500, 300);
+        game.required_victory_types = 2;
+        assert!(!game.set_winner(0, "science"), "one type is short of two");
+        assert_eq!(game.winner, None);
+        assert_eq!(game.victories_won[&0].len(), 1);
+        assert!(
+            !game.set_winner(0, "science"),
+            "a re-fired condition banks nothing new"
+        );
+        assert_eq!(game.victories_won[&0].len(), 1);
+        assert!(
+            game.set_winner(0, "culture"),
+            "the second distinct type completes the set"
+        );
+        assert_eq!(game.winner, Some(0));
+        assert_eq!(game.victory_type.as_deref(), Some("culture"));
+    }
+
+    #[test]
+    fn require_n_clamps_to_the_enabled_victory_count() {
+        let mut game = game_with_capitals(2, 91_501, 300);
+        game.required_victory_types = 6;
+        game.victory_conditions = VictoryConditions {
+            science: true,
+            culture: true,
+            religious: false,
+            diplomatic: false,
+            domination: false,
+            score: false,
+        };
+        assert_eq!(game.effective_required_victories(), 2);
+        assert!(!game.set_winner(0, "science"));
+        assert!(
+            game.set_winner(0, "culture"),
+            "two enabled types are the whole reachable cap"
+        );
+        assert_eq!(game.winner, Some(0));
+    }
+
+    #[test]
+    fn require_n_turn_limit_crowns_the_most_banked_types() {
+        let mut game = game_with_capitals(2, 91_502, 3);
+        game.required_victory_types = 3;
+        assert!(!game.set_winner(1, "science"));
+        assert!(!game.set_winner(1, "culture"));
+        // The wrap past the limit banks score for the leading scorer, then
+        // ends the world on whoever holds the most banked types.
+        play_to_the_end(&mut game);
+        assert_eq!(game.winner, Some(1), "two banked types beat at most one");
+        assert_eq!(game.victory_type.as_deref(), Some("score"));
+    }
+
+    #[test]
+    fn mercy_rule_ends_the_game_the_moment_the_bar_is_met() {
+        let mut game = game_with_capitals(2, 91_503, 50);
+        game.mercy_rule = Some(0.0);
+        play_to_the_end(&mut game);
+        assert_eq!(game.victory_type.as_deref(), Some("mercy"));
+        assert!(game.winner.is_some());
+        assert!(
+            game.turn <= 3,
+            "a floor of zero concedes on the first wrap, not turn {}",
+            game.turn
+        );
+    }
+
+    #[test]
+    fn without_a_mercy_rule_the_game_plays_to_its_natural_end() {
+        let mut game = game_with_capitals(2, 91_504, 5);
+        assert_eq!(game.mercy_rule, None, "the engine default is off");
+        play_to_the_end(&mut game);
+        assert_ne!(game.victory_type.as_deref(), Some("mercy"));
+    }
+
+    #[test]
+    fn mercy_and_required_types_round_trip_and_old_saves_default_off() {
+        let mut game = game_with_capitals(2, 91_505, 300);
+        game.mercy_rule = Some(0.97);
+        game.required_victory_types = 3;
+        let _ = game.set_winner(0, "science");
+        let encoded = serde_json::to_value(&game).unwrap();
+        let restored: Game = serde_json::from_value(encoded.clone()).unwrap();
+        assert_eq!(restored.mercy_rule, Some(0.97));
+        assert_eq!(restored.required_victory_types, 3);
+        assert!(restored.victories_won[&0].contains("science"));
+
+        let mut legacy = encoded;
+        let save = legacy.as_object_mut().unwrap();
+        save.remove("mercy_rule");
+        save.remove("required_victory_types");
+        save.remove("victories_won");
+        let restored: Game = serde_json::from_value(legacy).unwrap();
+        assert_eq!(restored.mercy_rule, None);
+        assert_eq!(restored.effective_required_victories(), 1);
+        assert!(restored.victories_won.is_empty());
     }
 
     #[test]

@@ -2511,6 +2511,9 @@ fn main() {
                     game_speed,
                     max_turns: play_options.max_turns,
                     victory_conditions: victory_conditions(&args),
+                    // The shipped setup defaults: the lobby can change both.
+                    mercy_rule: Some(0.95),
+                    required_victory_types: 1,
                     num_city_states: auto_cs(&args, players),
                     spectate,
                     difficulty: play_options.difficulty,

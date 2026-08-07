@@ -4217,6 +4217,25 @@
             <label class="victory-option"><input type="checkbox" id="victory-score" checked>Score</label>
           </div>
         </div>
+        <div class="victory-endgame civ6-hidden" id="victory-endgame" style="display:flex;gap:10px">
+          <label class="small" style="flex:1">Mercy Rule<select id="mercyrule" style="margin-top:4px"
+            title="End the game the moment one civilization's live win odds reach this share — the same calibrated estimate the spectator ribbon shows. None plays every game to its natural end.">
+            <option value="">None</option>
+            <option value="0.99">99% win odds</option>
+            <option value="0.97">97% win odds</option>
+            <option value="0.95" selected>95% win odds</option>
+            <option value="0.90">90% win odds</option>
+          </select></label>
+          <label class="small" style="flex:1">Require N Victory Types<span class="setup-info" style="cursor:help;opacity:.7"
+            title="Option to require multiple victory types to be won before a winner is declared. Each type is banked the usual way: Science by reaching the exoplanet, Culture by the culture victory, Religion by world conversion, Diplomacy at 20 Diplomatic Victory points, Domination by taking every other capital — and Score is banked at the turn limit by the leading scorer. The first civilization holding N different types wins; if the clock runs out first, whoever banked the most types takes it. The choice caps at the number of victory conditions enabled above."> ⓘ</span><select id="requiredvictories" style="margin-top:4px">
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+          </select></label>
+        </div>
         <label class="small game-advanced-setting" data-advanced-order="10">Base game ruleset<select id="baseruleset" style="margin-top:4px">
           <option value="civ6" selected>Civ 6</option>
         </select></label>
