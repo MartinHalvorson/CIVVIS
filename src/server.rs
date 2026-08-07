@@ -5078,43 +5078,22 @@ mod tests {
         }
     }
 
-    /// Lightning and Blitz resolve a step faster than an eye can find the
-    /// token that took it, so a watcher can ask each unit's wake to linger a
-    /// configured beat after the move lands. Pin the whole chain: the
-    /// control, the persisted preference, the recorded wake, the lingering
-    /// painter, and the ticker that keeps a fading wake animating.
-    #[test]
-    fn browser_lets_a_watcher_keep_unit_trails_lingering() {
-        for contract in [
-            "id=\"unittrails\" aria-label=\"Unit trail linger\"",
-            "<option value=\"0\" selected>Move only</option>",
-            "<option value=\"200\">Linger 0.2s</option>",
-            "<option value=\"500\">Linger 0.5s</option>",
-            "<option value=\"1000\">Linger 1s</option>",
-            "<option value=\"2000\">Linger 2s</option>",
-            "const UNIT_TRAIL_LINGER_STORAGE_KEY = \"civvis-unit-trail-linger\";",
-            "const UNIT_TRAIL_LINGER_VALUES = [0, 200, 500, 1000, 2000];",
-            "function setUnitTrailLinger(value) {",
-            "trails.onchange = () => setUnitTrailLinger(trails.value);",
-            "function drawLingeringUnitTrails(unitAlpha, now) {",
-            "drawLingeringUnitTrails(unitAlpha, now);",
-            "anim.trails.length > 0 ||",
-        ] {
-            assert!(
-                EMBEDDED_INDEX.contains(contract),
-                "unit trail linger contract is missing: {contract}"
-            );
-        }
-    }
-
-    /// The tail that outlives the wake: the engine's walked-route ledger,
+    /// The one movement-history control: the engine's walked-route ledger,
     /// held on the map for a chosen number of turns and traced tile by tile.
-    /// Pin the whole chain: the control under Watch pace, the persisted
-    /// preference, the turn-aged painter behind the empire-lens gate the
-    /// wake shares, and the ledger route that lets a spectator tween walk
-    /// the exact tiles instead of teleporting a multi-hex step.
+    /// Turn tails replaced the wall-clock wake linger (#1308) outright — a
+    /// turn is the unit fast watching actually measures in — so this also
+    /// pins the linger's absence. Pin the whole chain: the control under
+    /// Watch pace, the persisted preference, the turn-aged painter behind
+    /// the empire-lens gate, and the ledger route that lets a spectator
+    /// tween walk the exact tiles instead of teleporting a multi-hex step.
     #[test]
     fn browser_traces_each_units_walked_route_for_n_turns() {
+        for gone in ["unittrails", "UNIT_TRAIL_LINGER", "drawLingeringUnitTrails"] {
+            assert!(
+                !EMBEDDED_INDEX.contains(gone),
+                "the retired wake linger left {gone} behind"
+            );
+        }
         for contract in [
             "id=\"unittail\" aria-label=\"Unit tail turns\"",
             "<option value=\"0\">0 (no tail)</option>",
@@ -5124,9 +5103,8 @@ mod tests {
             "const UNIT_TAIL_TURNS_MAX = 5;",
             "function setUnitTailTurns(value) {",
             "tail.onchange = () => setUnitTailTurns(tail.value);",
-            "if (mapLens !== \"empire\") {",
+            "if (mapLens !== \"empire\") drawUnitMovementTails(unitAlpha);",
             "function drawUnitMovementTails(unitAlpha) {",
-            "drawUnitMovementTails(unitAlpha);",
             "function drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha) {",
             "if (!empireLens) drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha);",
             "state.unit_move_trails",
