@@ -1837,48 +1837,52 @@ const HUD_COLUMN_STORAGE_KEY = "civvis-hud-columns-v1";
 // raises the same floor before the shared grid tracks are laid out.
 const HUD_ELO_MIN_FLOOR = 60;
 const HUD_ELO_MAX_TYPE_SIZE = 13;
-// Reading order, left to right. `min` names the custom property carrying this
-// column's floor, and `head` is its index among the heading cells of the block
-// it sits in — which is how a column is *measured* during a drag rather than
-// predicted from the track list. The heading cells are the columns; anything
-// derived from the stylesheet instead can drift from what is on the screen.
+// Reading order, left to right — the shipped order, not the rendered one:
+// the viewer's own saved order decides what actually stands where. `min`
+// names the custom property carrying this column's floor. Watch-as rides in
+// the model as a real, reorderable column on a fixed track; it is an action
+// rather than a fact, which is why it is the one column with no sort target.
 const PLAYER_HUD_COLUMNS = [
-  {key:"rank", label:"Score rank", block:"identity", head:0, min:"--hud-rank-min", width:.7},
-  {key:"civ", label:"Civilization", block:"identity", head:1, min:"--hud-ident-min", width:2.035},
-  // Watch-as keeps a fixed track between Leader and Player, so that seam is
-  // drawn on Leader's edge and slides the button along with it.
-  {key:"leader", label:"Leader", block:"identity", head:2, min:"--hud-ident-min", width:1.85},
-  {key:"player", label:"Player", block:"identity", head:4, min:"--hud-ident-min", width:1.85},
-  {key:"elo", label:"Elo rating", block:"identity", head:5, min:"--hud-ident-num-min", width:1.017},
-  {key:"elo_delta", label:"Elo delta", block:"identity", head:6, min:"--hud-ident-num-min", width:.85},
+  {key:"rank", label:"Score rank", block:"identity", min:"--hud-rank-min", width:.7},
+  {key:"civ", label:"Civilization", block:"identity", min:"--hud-ident-min", width:2.035},
+  {key:"leader", label:"Leader", block:"identity", min:"--hud-ident-min", width:1.85},
+  {key:"watch", label:"Watch as", block:"identity", min:"--hud-watch-column", width:0, fixed:true},
+  {key:"player", label:"Player", block:"identity", min:"--hud-ident-min", width:1.85},
+  {key:"elo", label:"Elo rating", block:"identity", min:"--hud-ident-num-min", width:1.017},
+  {key:"elo_delta", label:"Elo delta", block:"identity", min:"--hud-ident-num-min", width:.85},
   // One column, two figures: the odds this seat started with and the odds it
   // holds now. They are dragged, saved and measured as a single column because
   // they are read as a single movement.
-  {key:"win", label:"Win odds", block:"identity", head:7, min:"--hud-ident-odds-min", width:1.3},
-  {key:"age", label:"Age", block:"identity", head:8, min:"--hud-ident-min", width:1.3},
-  {key:"plan", label:"Plan", block:"identity", head:9, min:"--hud-ident-min", width:2.035},
+  {key:"win", label:"Win odds", block:"identity", min:"--hud-ident-odds-min", width:1.3},
+  {key:"age", label:"Age", block:"identity", min:"--hud-ident-min", width:1.3},
+  {key:"plan", label:"Plan", block:"identity", min:"--hud-ident-min", width:2.035},
   ...[["cities", "Cities"], ["population", "Population"], ["food", "Food"], ["production", "Production"],
       ["science", "Science"], ["culture", "Culture"], ["faith", "Faith"],
       ["gold", "Gold"], ["military", "Military"], ["wonders", "Wonders"],
       ["suzerain", "Suzerainty"], ["score", "Score"]]
-    .map(([key, label], head) => ({key, label, block:"stats", head, min:"--hud-stat-min", width:1})),
+    .map(([key, label]) => ({key, label, block:"stats", min:"--hud-stat-min", width:1})),
 ];
-// Every named standings fact is sortable. Rank is the first standings track,
+const PLAYER_HUD_COLUMN_BY_KEY = new Map(PLAYER_HUD_COLUMNS.map(column => [column.key, column]));
+// Every named standings fact is sortable. Rank is the score standing,
 // while start, change and current chance are individually labelled tracks
 // inside Win odds. Watch-as and the row lock are actions rather than facts, so
-// neither is part of this model or this set.
+// neither is part of this set.
 const PLAYER_HUD_SORTABLE_COLUMNS = new Set([
-  ...PLAYER_HUD_COLUMNS.map(column => column.key), "win_start", "win_delta",
+  ...PLAYER_HUD_COLUMNS.filter(column => !column.fixed).map(column => column.key),
+  "win_start", "win_delta",
 ]);
 const PLAYER_HUD_TEXT_SORT_COLUMNS = new Set(["civ", "leader", "player", "plan"]);
 const PLAYER_HUD_AGE_SORT_ORDER = {dark:0, normal:1, golden:2, heroic:3};
 const HUD_SORT_STORAGE_KEY = "civvis-player-hud-sort-v1";
-// One bar per seam between two adjacent data columns, including the seam where
-// the identity block hands over to the twelve values.
-const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1).map((left, index) =>
-  ({left, right:PLAYER_HUD_COLUMNS[index + 1], index}));
+// Which columns the table shows and in what order, plus any content-fitted
+// pixel floors, saved apart from the shares so an old widths save still loads.
+const HUD_COLUMN_LAYOUT_STORAGE_KEY = "civvis-hud-column-layout-v1";
 const playerHudColumnWidths = new Map(PLAYER_HUD_COLUMNS.map(c => [c.key, c.width]));
+let playerHudColumnOrder = PLAYER_HUD_COLUMNS.map(column => column.key);
+let playerHudHiddenColumns = new Set();
+const playerHudColumnMinPx = new Map();
 let playerHudColumnGesture = null;
+let playerHudReorderGesture = null;
 let playerHudColumnTap = {seam:-1, at:0};
 let playerHudColumnCss = "";
 let playerHudSort = {key:"score", direction:"desc"};
@@ -1894,6 +1898,60 @@ try {
         playerHudColumnWidths.set(column.key, Math.min(width, 40));
     }
 } catch (_) {}
+try {
+  const saved = JSON.parse(localStorage.getItem(HUD_COLUMN_LAYOUT_STORAGE_KEY) || "{}");
+  if (Array.isArray(saved.order)) {
+    // Saved keys keep their saved places; columns this build has that the
+    // save does not know join at the end rather than being lost.
+    const known = saved.order.filter(key => PLAYER_HUD_COLUMN_BY_KEY.has(key));
+    playerHudColumnOrder = [...new Set([...known, ...playerHudColumnOrder])];
+  }
+  if (Array.isArray(saved.hidden))
+    playerHudHiddenColumns = new Set(
+      saved.hidden.filter(key => PLAYER_HUD_COLUMN_BY_KEY.has(key)));
+  if (saved.min && typeof saved.min === "object")
+    for (const [key, value] of Object.entries(saved.min)) {
+      const floor = Number(value);
+      if (PLAYER_HUD_COLUMN_BY_KEY.has(key) && Number.isFinite(floor) && floor > 0)
+        playerHudColumnMinPx.set(key, Math.min(Math.round(floor), 600));
+    }
+  // An all-hidden save would leave nothing to click to get the columns back.
+  if (PLAYER_HUD_COLUMNS.every(column => playerHudHiddenColumns.has(column.key)))
+    playerHudHiddenColumns = new Set();
+} catch (_) {}
+
+function savePlayerHudColumnLayout() {
+  try {
+    localStorage.setItem(HUD_COLUMN_LAYOUT_STORAGE_KEY, JSON.stringify({
+      order: playerHudColumnOrder,
+      hidden: [...playerHudHiddenColumns],
+      min: Object.fromEntries(playerHudColumnMinPx),
+    }));
+  } catch (_) {}
+}
+
+function visiblePlayerHudColumns() {
+  return playerHudColumnOrder
+    .map(key => PLAYER_HUD_COLUMN_BY_KEY.get(key))
+    .filter(column => column && !playerHudHiddenColumns.has(column.key));
+}
+
+// One bar per seam between two adjacent flexible columns. A fixed track such
+// as Watch-as owns no bar of its own: the bar on its left edge belongs to the
+// boundary before it and trades width between its flexible neighbors, exactly
+// as the old two-block layout drew that seam on Leader's edge.
+function playerHudColumnSeams() {
+  const columns = visiblePlayerHudColumns();
+  const seams = [];
+  for (let index = 0; index < columns.length - 1; index++) {
+    const left = columns[index];
+    if (left.fixed) continue;
+    const right = columns.slice(index + 1).find(column => !column.fixed);
+    if (!right) break;
+    seams.push({left, right, index: seams.length});
+  }
+  return seams;
+}
 try {
   const saved = JSON.parse(localStorage.getItem(HUD_SORT_STORAGE_KEY) || "{}");
   if (PLAYER_HUD_SORTABLE_COLUMNS.has(saved?.key) &&
@@ -1995,17 +2053,69 @@ function togglePlayerHudSort(key) {
   if (state) drawPlayerHud();
 }
 
-function playerHudSortHead(key, label, title, classes = "") {
+function playerHudSortHead(key, label, title, classes = "", attrs = "") {
   const active = playerHudSort.key === key;
   const direction = active ? playerHudSort.direction : playerHudSortDefaultDirection(key);
   const directionLabel = direction === "asc" ? "ascending" : "descending";
   const instruction = active
     ? `sorted ${directionLabel}; click for ${direction === "asc" ? "descending" : "ascending"}`
     : `click to sort ${directionLabel}`;
-  return `<span class="hud-sort-cell${classes ? ` ${classes}` : ""}" data-hud-sort-active="${active}">` +
+  return `<span class="hud-sort-cell${classes ? ` ${classes}` : ""}"${attrs ? ` ${attrs}` : ""} data-hud-sort-active="${active}">` +
     `${label}<button type="button" class="hud-sort-head" data-hud-sort="${key}" ` +
     `data-hud-sort-active="${active}" data-hud-sort-direction="${direction}" aria-pressed="${active}" ` +
-    `title="Sort by ${title} · ${instruction}" aria-label="Sort players by ${title}; ${instruction}"></button></span>`;
+    `title="Sort by ${title} · ${instruction}${classes.includes("hud-head-cell") ? " · drag to reorder the column" : ""}" ` +
+    `aria-label="Sort players by ${title}; ${instruction}"></button></span>`;
+}
+
+// Compact label and full name for every column heading. AGE and PLAN stay
+// short because these heads clip rather than ellipsize; their full wording is
+// in their tooltips.
+const PLAYER_HUD_HEAD_LABELS = {
+  rank:["RANK", "Score rank"], civ:["CIV", "Civilization"],
+  leader:["LEADER", "Leader"], player:["PLAYER", "Player"],
+  elo:["ELO", "Elo rating", "numeric"],
+  elo_delta:["Δ", "Live Elo position against the living field", "numeric"],
+  age:["AGE", "Civilization age"], plan:["PLAN", "AI active strategy"],
+  cities:["CITY", "Cities controlled"], population:["POP", "Total population"],
+  food:["FOOD", "Food per turn"], production:["PROD", "Production per turn"],
+  science:["SCI", "Science per turn"], culture:["CUL", "Culture per turn"],
+  faith:["FPT", "Faith per turn"], gold:["GPT", "Net Gold per turn"],
+  military:["MIL", "Military strength"], wonders:["WNDR", "World wonders controlled"],
+  suzerain:["SUZ", "City-states under suzerainty"], score:["SCORE", "Score"],
+};
+
+// One heading cell per visible column. Every head carries the key of the
+// column it stands for; the seam bars, the reorder gesture and the content
+// fit all find a column through that one attribute.
+function playerHudColumnHead(column) {
+  const attrs = `data-hud-col="${column.key}"`;
+  // The Watch-as column's heading is the inverse of every action below it:
+  // leave any one civilization's fog and return to the omniscient table.
+  // Keeping it in the column makes that relationship visible, while the
+  // pressed state says when the full spectator view is already active.
+  if (column.key === "watch") {
+    return `<span class="hud-head-cell hud-head-identity hud-head-watch" ${attrs}>` +
+      `<button type="button" class="spectator-view-link" data-hud-action="spectator" ` +
+      `aria-pressed="${state.view_player === null || state.view_player === undefined}" ` +
+      `title="Spectator mode · see everyone with full map visibility" ` +
+      `aria-label="Spectator mode: see everyone with full map visibility">All</button></span>`;
+  }
+  // ELO's live position delta is its own draggable column. The two win
+  // estimates remain named categories on matching inner tracks; their Δ owns
+  // the narrow middle track used by each row's trend glyph. The outer cell
+  // remains one draggable Win odds column, so adding those labels does not
+  // add two more masthead seams.
+  if (column.key === "win") {
+    return `<span class="hud-head-cell hud-head-identity diplomacy-odds-head numeric" ${attrs}>` +
+      playerHudSortHead("win_start", "START", "Win odds at the start of the game") +
+      playerHudSortHead("win_delta", "Δ", "Change in win odds", "odds-trend-head") +
+      playerHudSortHead("win", "NOW", "Current win odds") + `</span>`;
+  }
+  const [label, title, extra] = PLAYER_HUD_HEAD_LABELS[column.key];
+  const classes = column.block === "stats"
+    ? `hud-head-cell hud-head-stat ${column.key}`
+    : `hud-head-cell hud-head-identity${extra ? ` ${extra}` : ""}`;
+  return playerHudSortHead(column.key, label, title, classes, attrs);
 }
 
 // A wide masthead lets the identity block ask for more than the sum of its own
@@ -2023,37 +2133,38 @@ function playerHudColumnFlex(column, bias) {
     (column.block === "identity" ? bias : 1);
 }
 
-// Write the model out as the track values the stylesheet reads. The
-// emitted text is cached because this runs from a ResizeObserver: re-setting
-// an inline custom property that has not changed would invalidate style on
-// every observed frame for no reason.
+// A column's floor is the stylesheet's own, raised to any content-fitted
+// pixel floor the viewer has asked for by double-clicking its seam.
+function playerHudColumnMinExpr(column) {
+  const fitted = playerHudColumnMinPx.get(column.key);
+  return fitted > 0 ? `max(var(${column.min}), ${fitted}px)` : `var(${column.min})`;
+}
+
+// Write the model out as the track values the stylesheet reads — one track
+// per visible column, in the viewer's own order — together with the table's
+// own floor, below which the standings scroll sideways instead of crushing.
+// The emitted text is cached because this runs from a ResizeObserver:
+// re-setting an inline custom property that has not changed would invalidate
+// style on every observed frame for no reason.
 function syncPlayerHudColumns(placeGrips = true) {
   const hud = document.getElementById("playerhud");
   if (!hud) return;
   const bias = playerHudColumnBias(hud);
-  const flex = new Map(PLAYER_HUD_COLUMNS.map(c => [c.key, playerHudColumnFlex(c, bias)]));
-  const track = column => `minmax(var(${column.min}), ${flex.get(column.key).toFixed(4)}fr)`;
-  const identity = PLAYER_HUD_COLUMNS.filter(c => c.block === "identity");
-  const stats = PLAYER_HUD_COLUMNS.filter(c => c.block === "stats");
-  const total = columns => columns.reduce((sum, c) => sum + flex.get(c.key), 0);
-  const tracks = [
-    // The Watch-as button holds its fixed track in the middle of the identity
-    // block, exactly where the markup places it.
-    `${track(identity[0])} ${track(identity[1])} ${track(identity[2])} ` +
-      `var(--hud-watch-column) ${identity.slice(3).map(track).join(" ")}`,
-    stats.map(track).join(" "),
-    `minmax(calc(var(--hud-rank-min) + var(--hud-ident-min) * 5 ` +
-      `+ var(--hud-ident-num-min) * 2 + var(--hud-ident-odds-min)), ` +
-      `${total(identity).toFixed(4)}fr)`,
-    `minmax(calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), ` +
-      `${total(stats).toFixed(4)}fr)`,
-  ];
-  if (tracks.join("|") !== playerHudColumnCss) {
-    playerHudColumnCss = tracks.join("|");
-    hud.style.setProperty("--hud-identity-tracks", tracks[0]);
-    hud.style.setProperty("--hud-stat-tracks", tracks[1]);
-    hud.style.setProperty("--hud-identity-column", tracks[2]);
-    hud.style.setProperty("--hud-stats-column", tracks[3]);
+  const columns = visiblePlayerHudColumns();
+  const tracks = columns.map(column => column.fixed
+    ? `var(${column.min})`
+    : `minmax(${playerHudColumnMinExpr(column)}, ` +
+      `${playerHudColumnFlex(column, bias).toFixed(4)}fr)`).join(" ");
+  // Every column floor, the lock track, one gutter per column and the panel's
+  // own padding and border. 9px is that chrome: 4px + 3px padding, 2px border.
+  const tableMin = `calc(var(--hud-lock-column, 0px) + 9px + ` +
+    `${columns.length} * var(--hud-stat-gap, 3px) + ` +
+    columns.map(column => column.fixed ? `var(${column.min})`
+      : playerHudColumnMinExpr(column)).join(" + ") + `)`;
+  if (`${tracks}|${tableMin}` !== playerHudColumnCss) {
+    playerHudColumnCss = `${tracks}|${tableMin}`;
+    hud.style.setProperty("--hud-tracks", tracks);
+    hud.style.setProperty("--hud-table-min", tableMin);
     scheduleResponsiveType(hud);
   }
   if (placeGrips) syncPlayerHudColumnGrips();
@@ -2103,10 +2214,10 @@ function syncPlayerHudEloFloor() {
   syncPlayerHudColumns(false);
 }
 
-function playerHudHeadingCells(heading) {
-  const identity = heading.querySelectorAll(".diplomacy-identity-head > *");
-  const stats = heading.querySelectorAll(".diplomacy-stat-head > *");
-  return column => (column.block === "identity" ? identity : stats)[column.head];
+// A heading cell *is* its column — each carries the key it stands for, so a
+// lookup here and a lookup in a row read the same fact the same way.
+function playerHudHeadingCell(heading, column) {
+  return heading?.querySelector(`[data-hud-col="${column.key}"]`);
 }
 
 // Bars are placed from the rendered heading rather than from the track list,
@@ -2116,12 +2227,12 @@ function syncPlayerHudColumnGrips() {
   const heading = document.getElementById("playerhud")?.querySelector(".ribbon-stat-heading");
   const layer = heading?.querySelector(".hud-col-grips");
   if (!layer) return;
-  const cellOf = playerHudHeadingCells(heading);
+  const seams = playerHudColumnSeams();
   const origin = heading.getBoundingClientRect().left;
   for (const grip of layer.children) {
-    const seam = PLAYER_HUD_COLUMN_SEAMS[Number(grip.dataset.hudColumnSeam)];
-    const left = seam && cellOf(seam.left)?.getBoundingClientRect();
-    const right = seam && cellOf(seam.right)?.getBoundingClientRect();
+    const seam = seams[Number(grip.dataset.hudColumnSeam)];
+    const left = seam && playerHudHeadingCell(heading, seam.left)?.getBoundingClientRect();
+    const right = seam && playerHudHeadingCell(heading, seam.right)?.getBoundingClientRect();
     // A hidden masthead, or one whose heading has not been laid out yet,
     // measures zero everywhere. Leave those bars where they are instead of
     // stacking all fifteen of them against the left edge.
@@ -2132,24 +2243,30 @@ function syncPlayerHudColumnGrips() {
   }
 }
 
+// The floor a column may be dragged down to: the stylesheet's own, raised to
+// any content-fitted pixel floor the viewer has pinned on it.
+function playerHudColumnFloor(column, style) {
+  return Math.max(8, parseFloat(style.getPropertyValue(column.min)) || 8,
+    playerHudColumnMinPx.get(column.key) || 0);
+}
+
 // Both sides of a seam as they are rendering right now, with the floors
 // neither of them may cross.
 function playerHudSeamMetrics(seam) {
   const hud = document.getElementById("playerhud");
   const heading = hud?.querySelector(".ribbon-stat-heading");
   if (!heading) return null;
-  const cellOf = playerHudHeadingCells(heading);
-  const left = cellOf(seam.left)?.getBoundingClientRect();
-  const right = cellOf(seam.right)?.getBoundingClientRect();
+  const left = playerHudHeadingCell(heading, seam.left)?.getBoundingClientRect();
+  const right = playerHudHeadingCell(heading, seam.right)?.getBoundingClientRect();
   if (!left?.width || !right?.width) return null;
   const style = getComputedStyle(hud);
-  const floor = column => Math.max(8, parseFloat(style.getPropertyValue(column.min)) || 8);
   const bias = playerHudColumnBias(hud);
   return {
     leftWidth:left.width, rightWidth:right.width,
     leftFlex:playerHudColumnFlex(seam.left, bias),
     rightFlex:playerHudColumnFlex(seam.right, bias),
-    leftFloor:floor(seam.left), rightFloor:floor(seam.right), bias,
+    leftFloor:playerHudColumnFloor(seam.left, style),
+    rightFloor:playerHudColumnFloor(seam.right, style), bias,
   };
 }
 
@@ -2176,7 +2293,6 @@ function aimPlayerHudSeam(seam, targetWidth) {
   const heading = hud?.querySelector(".ribbon-stat-heading");
   const start = playerHudSeamMetrics(seam);
   if (!start) return false;
-  const cellOf = playerHudHeadingCells(heading);
   const combined = start.leftFlex + start.rightFlex;
   const span = start.leftWidth + start.rightWidth;
   const ceiling = span - start.rightFloor;
@@ -2189,7 +2305,7 @@ function aimPlayerHudSeam(seam, targetWidth) {
     playerHudColumnWidths.set(seam.right.key,
       Math.max(.02, (combined - flex) / unbias(seam.right)));
     syncPlayerHudColumns(false);
-    return cellOf(seam.left).getBoundingClientRect().width;
+    return playerHudHeadingCell(heading, seam.left).getBoundingClientRect().width;
   };
   // The bracket starts at the share the column holds now, on the side the
   // target lies: monotonicity makes that a valid bound and a much tighter one
@@ -2207,48 +2323,106 @@ function aimPlayerHudSeam(seam, targetWidth) {
   return true;
 }
 
-// Double-click, or Home, hands one seam back to the division it shipped with
-// while keeping the pair's combined width — so resetting the seam you are
-// looking at never shifts the columns on either side of it.
+// Home hands one seam back to the division it shipped with while keeping the
+// pair's combined width — so resetting the seam you are looking at never
+// shifts the columns on either side of it. Any content-fitted floors on the
+// pair go with it: a reset that left a pin behind would not be a reset.
 function resetPlayerHudSeam(seam) {
   const combined = (playerHudColumnWidths.get(seam.left.key) ?? seam.left.width) +
     (playerHudColumnWidths.get(seam.right.key) ?? seam.right.width);
   const share = seam.left.width / (seam.left.width + seam.right.width);
   playerHudColumnWidths.set(seam.left.key, combined * share);
   playerHudColumnWidths.set(seam.right.key, combined * (1 - share));
+  playerHudColumnMinPx.delete(seam.left.key);
+  playerHudColumnMinPx.delete(seam.right.key);
   syncPlayerHudColumns();
   savePlayerHudColumns();
+  savePlayerHudColumnLayout();
+}
+
+// The widest content this column is showing anywhere — its heading included —
+// measured by laying a clone of each cell out at its own natural width. The
+// clones sit inside #playerhud so every scoped rule and fitted type size
+// still applies; only the grid track that was crushing them is gone.
+function playerHudColumnContentWidth(column) {
+  const hud = document.getElementById("playerhud");
+  if (!hud) return 0;
+  const cells = hud.querySelectorAll(`[data-hud-col="${column.key}"]`);
+  if (!cells.length) return 0;
+  const probe = document.createElement("div");
+  probe.style.cssText = "position:fixed; left:-10000px; top:0; visibility:hidden; " +
+    "display:block; width:max-content; pointer-events:none;";
+  hud.append(probe);
+  let width = 0;
+  for (const cell of cells) {
+    const clone = cell.cloneNode(true);
+    clone.style.width = "max-content";
+    clone.style.minWidth = "0";
+    clone.style.maxWidth = "none";
+    probe.replaceChildren(clone);
+    width = Math.max(width, probe.getBoundingClientRect().width);
+  }
+  probe.remove();
+  return Math.ceil(width) + 2;
+}
+
+// Double-click: give the column left of the bar exactly the width its own
+// content needs. The width comes out of the neighbor as any drag would, and
+// when the fit needs more than the stylesheet floor it is pinned as this
+// column's own floor — so a narrowing panel scrolls rather than taking the
+// fit straight back.
+function autofitPlayerHudColumn(seam) {
+  const hud = document.getElementById("playerhud");
+  const target = playerHudColumnContentWidth(seam.left);
+  if (!hud || !target) return;
+  const style = getComputedStyle(hud);
+  const cssFloor = Math.max(8, parseFloat(style.getPropertyValue(seam.left.min)) || 8);
+  if (target > cssFloor) playerHudColumnMinPx.set(seam.left.key, target);
+  else playerHudColumnMinPx.delete(seam.left.key);
+  syncPlayerHudColumns(false);
+  aimPlayerHudSeam(seam, target);
+  savePlayerHudColumns();
+  savePlayerHudColumnLayout();
 }
 
 function resetPlayerHudColumns(persist = true) {
   for (const column of PLAYER_HUD_COLUMNS)
     playerHudColumnWidths.set(column.key, column.width);
+  playerHudColumnOrder = PLAYER_HUD_COLUMNS.map(column => column.key);
+  playerHudHiddenColumns = new Set();
+  playerHudColumnMinPx.clear();
   syncPlayerHudColumns();
-  if (persist) savePlayerHudColumns();
+  renderHudColumnList();
+  if (persist) {
+    savePlayerHudColumns();
+    savePlayerHudColumnLayout();
+    if (state) drawPlayerHud();
+  }
 }
 
 // Rebuilt with the heading it rides in, so a repaint can never leave a stale
 // bar standing where its columns no longer meet.
 function playerHudColumnGrips() {
-  return `<div class="hud-col-grips">` + PLAYER_HUD_COLUMN_SEAMS.map(seam =>
+  return `<div class="hud-col-grips">` + playerHudColumnSeams().map(seam =>
     `<button class="hud-col-grip" type="button" data-hud-column-seam="${seam.index}" ` +
     `role="separator" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="100" ` +
     `title="Drag to divide ${seam.left.label} and ${seam.right.label} · ` +
-    `arrow keys also move it · double-click to reset" ` +
+    `arrow keys also move it · double-click to fit ${seam.left.label} to its contents · ` +
+    `Home resets the pair" ` +
     `aria-label="Width divider between the ${seam.left.label} and ${seam.right.label} ` +
     `columns; drag or use the arrow keys"></button>`).join("") + `</div>`;
 }
 
 function beginPlayerHudColumnGesture(event, grip) {
   if (event.button !== 0 && event.pointerType !== "touch") return;
-  const seam = PLAYER_HUD_COLUMN_SEAMS[Number(grip.dataset.hudColumnSeam)];
+  const seam = playerHudColumnSeams()[Number(grip.dataset.hudColumnSeam)];
   const start = seam && playerHudSeamMetrics(seam);
   if (!start) return;
   // Cancelling pointerdown is what stops the gesture from selecting the
   // heading text and from starting a native drag — and cancelling it also
   // suppresses the compatibility mouse events, so there is no dblclick on a
   // bar to listen for. Two presses on the same bar inside the double-click
-  // window are the reset instead.
+  // window are the content fit instead.
   event.preventDefault();
   event.stopPropagation();
   const doubled = playerHudColumnTap.seam === seam.index &&
@@ -2256,7 +2430,7 @@ function beginPlayerHudColumnGesture(event, grip) {
   playerHudColumnTap = {seam:seam.index, at:event.timeStamp};
   if (doubled) {
     playerHudColumnTap = {seam:-1, at:0};
-    resetPlayerHudSeam(seam);
+    autofitPlayerHudColumn(seam);
     return;
   }
   playerHudColumnGesture =
@@ -2273,10 +2447,26 @@ function finishPlayerHudColumnGesture(event) {
   playerHudColumnGesture = null;
   gesture.grip.classList.remove("dragging");
   document.body.classList.remove("hud-columns-resizing");
-  if (gesture.moved) savePlayerHudColumns();
+  if (gesture.moved) {
+    savePlayerHudColumns();
+    savePlayerHudColumnLayout();
+  }
   // Spectator updates that arrived mid-gesture were held back so the bar under
   // the pointer would survive the repaint. Catch the table up now.
   if (state) drawPlayerHud();
+}
+
+// A drag may undo a content fit: pulled back under a pinned floor, the pin
+// follows the pointer down instead of standing in its way.
+function loosenPlayerHudColumnPin(column, width) {
+  const pinned = playerHudColumnMinPx.get(column.key);
+  if (!pinned || width >= pinned) return;
+  const hud = document.getElementById("playerhud");
+  const cssFloor = hud ? Math.max(8,
+    parseFloat(getComputedStyle(hud).getPropertyValue(column.min)) || 8) : 8;
+  if (width > cssFloor) playerHudColumnMinPx.set(column.key, Math.round(width));
+  else playerHudColumnMinPx.delete(column.key);
+  syncPlayerHudColumns(false);
 }
 
 window.addEventListener("pointermove", event => {
@@ -2290,7 +2480,11 @@ window.addEventListener("pointermove", event => {
   // absolute target, re-solved from the live table on every move, so a gesture
   // through a region where a floor is binding still arrives exactly where the
   // pointer is let go.
-  aimPlayerHudSeam(gesture.seam, gesture.start.leftWidth + dx);
+  const target = gesture.start.leftWidth + dx;
+  loosenPlayerHudColumnPin(gesture.seam.left, target);
+  loosenPlayerHudColumnPin(gesture.seam.right,
+    gesture.start.leftWidth + gesture.start.rightWidth - target);
+  aimPlayerHudSeam(gesture.seam, target);
 }, {passive:false});
 window.addEventListener("pointerup", finishPlayerHudColumnGesture);
 window.addEventListener("pointercancel", finishPlayerHudColumnGesture);
@@ -2299,6 +2493,157 @@ window.addEventListener("pointercancel", finishPlayerHudColumnGesture);
 // exactly that — so the observers on the panel would never see it.
 window.addEventListener("resize", () => syncPlayerHudColumns());
 
+// ── Reordering a column by dragging its heading ────────────────────────────
+//
+// A press on a heading is still a sort click (or the All button) until the
+// pointer commits to moving sideways; only then does the cell become a
+// carried column. The ghost names what is being carried and the marker stands
+// on the boundary where it will land. Because the ribbon runs its controls on
+// press, the pending gesture owns the press instead: a release that never
+// became a drag performs the control the press landed on, and a release that
+// did drag performs only the reorder.
+function beginPlayerHudReorderGesture(event, head) {
+  if (event.button !== 0 && event.pointerType !== "touch") return;
+  const column = PLAYER_HUD_COLUMN_BY_KEY.get(head.dataset.hudCol || "");
+  if (!column) return;
+  playerHudReorderGesture = {
+    column, pointerId:event.pointerId, startX:event.clientX, startY:event.clientY,
+    pressTarget:event.target, started:false, ghost:null, marker:null, targetIndex:-1,
+  };
+}
+
+function startPlayerHudReorderDrag(gesture) {
+  const heading = document.getElementById("playerhud")?.querySelector(".ribbon-stat-heading");
+  if (!heading) { playerHudReorderGesture = null; return; }
+  gesture.started = true;
+  gesture.ghost = document.createElement("div");
+  gesture.ghost.className = "hud-column-ghost";
+  gesture.ghost.textContent = gesture.column.label;
+  document.body.append(gesture.ghost);
+  gesture.marker = document.createElement("div");
+  gesture.marker.className = "hud-reorder-marker";
+  gesture.marker.style.display = "none";
+  heading.append(gesture.marker);
+  document.body.classList.add("hud-columns-reordering");
+}
+
+function movePlayerHudReorderDrag(gesture, x, y) {
+  const heading = document.getElementById("playerhud")?.querySelector(".ribbon-stat-heading");
+  if (!heading || !gesture.ghost) return;
+  gesture.ghost.style.left = `${x}px`;
+  gesture.ghost.style.top = `${y}px`;
+  // The drop slot is the nearest boundary between two heading cells — cell
+  // N's left edge for slot N, and the final cell's right edge for the end.
+  const columns = visiblePlayerHudColumns();
+  const cells = columns.map(column => playerHudHeadingCell(heading, column));
+  let best = null;
+  for (let slot = 0; slot <= columns.length; slot++) {
+    const rect = (slot < columns.length ? cells[slot] : cells[columns.length - 1])
+      ?.getBoundingClientRect();
+    if (!rect?.width) continue;
+    const at = slot < columns.length ? rect.left : rect.right;
+    const distance = Math.abs(x - at);
+    if (!best || distance < best.distance) best = {slot, at, distance};
+  }
+  if (!best) return;
+  gesture.targetIndex = best.slot;
+  const origin = heading.getBoundingClientRect().left;
+  gesture.marker.style.display = "";
+  gesture.marker.style.left = `${Math.round(best.at - origin) - 1}px`;
+}
+
+function movePlayerHudColumn(column, slot) {
+  const columns = visiblePlayerHudColumns();
+  const from = columns.indexOf(column);
+  if (from < 0 || slot === from || slot === from + 1) return;
+  const before = slot < columns.length ? columns[slot] : null;
+  const order = playerHudColumnOrder.filter(key => key !== column.key);
+  const at = before ? order.indexOf(before.key) : order.length;
+  order.splice(at < 0 ? order.length : at, 0, column.key);
+  playerHudColumnOrder = order;
+  savePlayerHudColumnLayout();
+  renderHudColumnList();
+  syncPlayerHudColumns();
+  if (state) drawPlayerHud();
+}
+
+// ── The column roster in Display Settings ──────────────────────────────────
+//
+// Every column the standings can show, in the viewer's own order: check a
+// column in or out of the table, drag a row to rearrange it. This list and
+// the table read the same model, so a drag in either place moves both.
+function setPlayerHudColumnVisible(key, visible) {
+  const column = PLAYER_HUD_COLUMN_BY_KEY.get(key);
+  if (!column) return;
+  const hidden = new Set(playerHudHiddenColumns);
+  if (visible) hidden.delete(key); else hidden.add(key);
+  // An empty table would leave nothing on screen to bring a column back.
+  if (PLAYER_HUD_COLUMNS.every(other => hidden.has(other.key))) {
+    renderHudColumnList();
+    return;
+  }
+  playerHudHiddenColumns = hidden;
+  savePlayerHudColumnLayout();
+  renderHudColumnList();
+  syncPlayerHudColumns();
+  if (state) drawPlayerHud();
+}
+
+function renderHudColumnList() {
+  const list = document.getElementById("hud-column-list");
+  if (!list) return;
+  list.innerHTML = playerHudColumnOrder.map(key => {
+    const column = PLAYER_HUD_COLUMN_BY_KEY.get(key);
+    if (!column) return "";
+    const checked = !playerHudHiddenColumns.has(key);
+    return `<div class="hud-column-item${checked ? "" : " hidden-col"}" draggable="true" data-hud-column-item="${key}">` +
+      `<span class="hud-column-grip" aria-hidden="true">⠿</span>` +
+      `<label title="${checked ? "Uncheck to remove" : "Check to show"} the ${column.label} column · drag to reorder">` +
+      `<input type="checkbox" data-hud-column-toggle="${key}"${checked ? " checked" : ""}> ${column.label}</label></div>`;
+  }).join("");
+}
+
+function finishPlayerHudReorderGesture(event) {
+  const gesture = playerHudReorderGesture;
+  if (!gesture || (event && event.pointerId !== gesture.pointerId)) return;
+  playerHudReorderGesture = null;
+  if (!gesture.started) {
+    // The press never became a drag: it is the click it started as.
+    const sort = gesture.pressTarget?.closest?.("[data-hud-sort]");
+    if (sort) togglePlayerHudSort(sort.dataset.hudSort);
+    else {
+      const action = gesture.pressTarget?.closest?.("[data-hud-action]");
+      if (action) runHudAction(action);
+      // Releasing the hold above may have left snapshots waiting to paint.
+      else if (state) drawPlayerHud();
+    }
+    return;
+  }
+  gesture.ghost?.remove();
+  gesture.marker?.remove();
+  document.body.classList.remove("hud-columns-reordering");
+  if (gesture.targetIndex >= 0) movePlayerHudColumn(gesture.column, gesture.targetIndex);
+  else if (state) drawPlayerHud();
+}
+
+window.addEventListener("pointermove", event => {
+  const gesture = playerHudReorderGesture;
+  if (!gesture || event.pointerId !== gesture.pointerId) return;
+  if (!gesture.started) {
+    if (Math.abs(event.clientX - gesture.startX) < 6) {
+      // A press that wanders vertically is a scroll or a stray, not a reorder.
+      if (Math.abs(event.clientY - gesture.startY) > 14) playerHudReorderGesture = null;
+      return;
+    }
+    startPlayerHudReorderDrag(gesture);
+    if (!playerHudReorderGesture?.started) return;
+  }
+  event.preventDefault();
+  movePlayerHudReorderDrag(gesture, event.clientX, event.clientY);
+}, {passive:false});
+window.addEventListener("pointerup", finishPlayerHudReorderGesture);
+window.addEventListener("pointercancel", finishPlayerHudReorderGesture);
+
 // Delegated from the panel rather than bound per bar, because the heading is
 // rebuilt on every repaint and fifteen re-bindings a turn is fifteen chances to
 // leave a listener behind on a node nobody can reach any more.
@@ -2306,11 +2651,14 @@ const playerHudPanel = document.getElementById("playerhud");
 if (playerHudPanel) {
   playerHudPanel.addEventListener("pointerdown", event => {
     const grip = event.target.closest?.(".hud-col-grip");
-    if (grip) beginPlayerHudColumnGesture(event, grip);
+    if (grip) { beginPlayerHudColumnGesture(event, grip); return; }
+    const head = event.target.closest?.(".hud-head-cell");
+    if (head && head.closest(".ribbon-stat-heading"))
+      beginPlayerHudReorderGesture(event, head);
   });
   playerHudPanel.addEventListener("keydown", event => {
     const grip = event.target.closest?.(".hud-col-grip");
-    const seam = grip && PLAYER_HUD_COLUMN_SEAMS[Number(grip.dataset.hudColumnSeam)];
+    const seam = grip && playerHudColumnSeams()[Number(grip.dataset.hudColumnSeam)];
     if (!seam) return;
     if (event.key === "Home") {
       event.preventDefault();
@@ -2347,12 +2695,12 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#specpause", min:11, max:15},
   {selector:"#restart-sim .lbl", min:10, max:14},
   {selector:"#restart-sim .sub", min:9, max:11},
-  {selector:"#playerhud .diplomacy-identity-head span", min:8.5, max:11},
+  {selector:"#playerhud .hud-head-identity, #playerhud .hud-head-identity span", min:8.5, max:11},
   {selector:"#playerhud .spectator-view-link", min:9, max:10},
   // 8.5px floor, not 9: WNDR and SCORE are the two longest heads and at a
   // 32px column they were each a pixel or two over at 9px, which cuts the last
   // letter off. Half a point of type is invisible; a clipped head is not.
-  {selector:"#playerhud .diplomacy-stat-head span", min:8.5, max:11},
+  {selector:"#playerhud .hud-head-stat", min:8.5, max:11},
   {selector:"#playerhud .diplomacy-rank", min:9, max:11},
   {selector:"#playerhud .diplomacy-civ", min:9, max:13},
   {selector:"#playerhud .diplomacy-leader-name", min:9, max:13},
@@ -2873,7 +3221,9 @@ function resetAllHudWidgets() {
   for (const name of Object.keys(HUD_WIDGETS)) resetHudWidget(name, false);
   resetPlayerHudColumns(false);
   savePlayerHudColumns();
+  savePlayerHudColumnLayout();
   saveHudLayout();
+  if (state) drawPlayerHud();
 }
 
 function resizeHudWidget(config, start, edge, dx, dy) {
@@ -19802,6 +20152,10 @@ function drawPlayerHud() {
     highestByStat.set(kind, Math.max(highestByStat.get(kind) ?? -Infinity, numericValue));
   }));
   const relationById = new Map();
+  // The one place the column model becomes markup: the heading and every row
+  // emit one cell per column from this list, in this order, so the table and
+  // the viewer's saved arrangement cannot disagree.
+  const visibleColumns = visiblePlayerHudColumns();
   const html =
     `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore it in Display Settings" title="Hide player standings · restore in Display Settings">✕</button>` +
     hudTurnPlate() +
@@ -19809,37 +20163,7 @@ function drawPlayerHud() {
     `<div class="ribbon-stat-heading">` +
     `<span class="player-standings-drag widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move player standings; use arrow keys or drag" title="Drag to move · arrow keys also move"></span>` +
-    `<span class="diplomacy-identity-head">` +
-    // ELO's live position delta is its own draggable column. The two win
-    // estimates remain named categories on matching inner tracks; their Δ owns
-    // the narrow middle track used by each row's trend glyph. The outer cell
-    // remains one draggable Win odds column, so adding those labels does not
-    // add two more masthead seams. AGE and PLAN stay short because these heads
-    // clip rather than ellipsize; their full wording is in their tooltips.
-    playerHudSortHead("rank", "RANK", "Score rank") +
-    playerHudSortHead("civ", "CIV", "Civilization") +
-    playerHudSortHead("leader", "LEADER", "Leader") +
-    `<button type="button" class="spectator-view-link" data-hud-action="spectator" ` +
-    `aria-pressed="${state.view_player === null || state.view_player === undefined}" ` +
-    `title="Spectator mode · see everyone with full map visibility" ` +
-    `aria-label="Spectator mode: see everyone with full map visibility">All</button>` +
-    playerHudSortHead("player", "PLAYER", "Player") +
-    playerHudSortHead("elo", "ELO", "Elo rating", "numeric") +
-    playerHudSortHead("elo_delta", "Δ", "Live Elo position against the living field", "numeric") +
-    `<span class="diplomacy-odds-head numeric">` +
-    playerHudSortHead("win_start", "START", "Win odds at the start of the game") +
-    playerHudSortHead("win_delta", "Δ", "Change in win odds", "odds-trend-head") +
-    playerHudSortHead("win", "NOW", "Current win odds") + `</span>` +
-    playerHudSortHead("age", "AGE", "Civilization age") +
-    playerHudSortHead("plan", "PLAN", "AI active strategy") + `</span>` +
-    `<span class="diplomacy-stat-head">` +
-    [["cities", "CITY", "Cities controlled"], ["population", "POP", "Total population"], ["food", "FOOD", "Food per turn"],
-      ["production", "PROD", "Production per turn"], ["science", "SCI", "Science per turn"],
-      ["culture", "CUL", "Culture per turn"], ["faith", "FPT", "Faith per turn"],
-      ["gold", "GPT", "Net Gold per turn"], ["military", "MIL", "Military strength"],
-      ["wonders", "WNDR", "World wonders controlled"], ["suzerain", "SUZ", "City-states under suzerainty"],
-      ["score", "SCORE", "Score"]]
-      .map(([kind, label, title]) => playerHudSortHead(kind, label, title, kind)).join("") + `</span>` +
+    visibleColumns.map(playerHudColumnHead).join("") +
     // The bars stand on the seams of the heading they are laid over, and are
     // rebuilt with it so that a repaint can never orphan one.
     playerHudColumnGrips() + `</div>` +
@@ -19959,63 +20283,82 @@ function drawPlayerHud() {
       const lockTitle = locked
         ? `Unlock ${seatName} · its row scrolls with the rest of the table`
         : `Lock ${seatName} · its row stays in view while the table scrolls`;
+      // Six identity facts open the dossier, exactly as the one wide button
+      // that used to span them did — each is its own cell now so any of them
+      // can be hidden or stand anywhere in the row.
+      const dossierAttrs = `data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
+        `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
+        `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}"`;
+      const rowCell = column => {
+        switch (column.key) {
+          case "rank":
+            return `<span class="diplomacy-rank" data-hud-col="rank" title="Score rank ${rank}">#${rank}</span>`;
+          // A civilization with no capital leaves this button disabled, and a
+          // disabled control answers no hover — so the cell that carries the
+          // agenda mark says the stance in words too, rather than resting on a
+          // tooltip that half the rows cannot show.
+          case "civ":
+            return `<button class="diplomacy-identity diplomacy-civ-link" data-hud-col="civ" data-hud-action="capital" data-hud-civ="${p.id}" ` +
+              `title="${escapeAttr(civTitle)}" aria-label="${escapeAttr(civTitle)}"${capital ? "" : " disabled"}>` +
+              `<span class="diplomacy-identity-field">${agendaGlyph}` +
+              `<span class="diplomacy-civ">${p.id === acting && highlightActing ? "◉ " : ""}${p.civ}</span></span></button>`;
+          case "leader":
+            return `<button class="diplomacy-identity diplomacy-leader-link" data-hud-col="leader" ${dossierAttrs}>` +
+              `<span class="diplomacy-identity-field"><span class="diplomacy-leader-name">${leader}</span></span>` +
+              `</button>`;
+          case "watch":
+            return `<button class="watch-as-link" data-hud-col="watch" data-hud-action="watch" data-hud-civ="${p.id}" ` +
+              `title="${escapeAttr(watchTitle)}" aria-label="Watch as ${escapeAttr(p.civ)}">Watch as</button>`;
+          case "player":
+            return `<button class="diplomacy-identity" data-hud-col="player" ${dossierAttrs}>` +
+              `<span class="diplomacy-identity-field" title="${leagueTitle}"><span class="diplomacy-player">${playerName}</span></span></button>`;
+          case "elo":
+            return `<button class="diplomacy-identity" data-hud-col="elo" ${dossierAttrs}>` +
+              `<span class="diplomacy-identity-field diplomacy-elo" title="${playerEloLabel} · ${leagueTitle}">` +
+              `<span class="diplomacy-elo-value${eloProvisional ? " provisional" : ""}">${playerElo}</span></span></button>`;
+          case "elo_delta":
+            return `<button class="diplomacy-identity" data-hud-col="elo_delta" ${dossierAttrs}>` +
+              `<span class="diplomacy-identity-field diplomacy-elo-delta" title="${escapeAttr(eloDeltaTitle(p))}">` +
+              `<span class="diplomacy-elo-delta-value">${playerEloDelta}</span></span></button>`;
+          // The per-cent sign lives in the WIN% column head, not in eight or
+          // twelve repetitions of the value. Two named numeric categories sit
+          // inside the outer Win odds cell: Start, a narrow trend track, and
+          // Now. Matching grid tracks keep every opening estimate, arrow and
+          // current estimate aligned down the table.
+          case "win":
+            return `<button class="diplomacy-identity" data-hud-col="win" ${dossierAttrs}>` +
+              `<span class="diplomacy-identity-field diplomacy-expected" title="${escapeAttr(oddsTitle(p))}">` +
+              playerOddsFigures(p) + `</span></button>`;
+          case "age":
+            return `<button class="diplomacy-identity" data-hud-col="age" ${dossierAttrs}>` +
+              `<span class="diplomacy-identity-field diplomacy-age" title="${ageTitle}">` +
+              `<span class="civ-age ${age || "unknown"}">${ageLabel}</span></span></button>`;
+          case "plan":
+            return `<button class="diplomacy-identity" data-hud-col="plan" ${dossierAttrs}>` +
+              `<span class="diplomacy-identity-field diplomacy-strategy">${activeStrategy}</span>` +
+              `<span class="detail-caret">${expanded ? "▾" : "▸"}</span></button>`;
+        }
+        const [kind, , value, label, marker = ""] =
+          stats.find(([statKind]) => statKind === column.key) || [column.key, "", "", ""];
+        const isLeader = highestByStat.get(kind) !== 0 && Number(value || 0) === highestByStat.get(kind);
+        const markerHtml = marker
+          ? `<span class="founded-religion-marker" aria-hidden="true">${marker}</span>`
+          : "";
+        // The marker is a sibling of the figure, not a child of it: inside
+        // <b> its absolute box still counts toward that element's scrollWidth,
+        // so the type fitter shrank the number to make room for a mark that
+        // is not even in flow. The cell is its own button and still answers
+        // with the watch action the old full-width stats button carried.
+        return `<button class="ribbon-stat ${kind}${isLeader ? " category-leader" : ""}" data-hud-col="${kind}" ` +
+          `data-hud-action="watch" data-hud-civ="${p.id}" ` +
+          `title="${label}${marker ? " · Founded religion still followed" : ""}${isLeader ? " · Category leader" : ""} · Watch ${escapeAttr(p.civ)}" ` +
+          `aria-label="${label}; watch ${escapeAttr(p.civ)}">` +
+          `<b>${kind === "score" ? ribbonScore(value) : ribbonStat(value)}</b>${markerHtml}</button>`;
+      };
       return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
         `<button class="lock-toggle" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
         `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>` +
-        `<span class="diplomacy-identity-grid">` +
-        `<span class="diplomacy-rank" title="Score rank ${rank}">#${rank}</span>` +
-        // A civilization with no capital leaves this button disabled, and a
-        // disabled control answers no hover — so the cell that now carries the
-        // agenda mark says the stance in words too, rather than resting on a
-        // tooltip that half the rows cannot show.
-        `<button class="diplomacy-identity diplomacy-civ-link" data-hud-action="capital" data-hud-civ="${p.id}" ` +
-        `title="${escapeAttr(civTitle)}" aria-label="${escapeAttr(civTitle)}"${capital ? "" : " disabled"}>` +
-        `<span class="diplomacy-identity-field">${agendaGlyph}` +
-        `<span class="diplomacy-civ">${p.id === acting && highlightActing ? "◉ " : ""}${p.civ}</span></span></button>` +
-        `<button class="diplomacy-identity diplomacy-leader-link" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
-        `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
-        `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
-        `<span class="diplomacy-identity-field"><span class="diplomacy-leader-name">${leader}</span></span>` +
-        `</button>` +
-        `<button class="watch-as-link" data-hud-action="watch" data-hud-civ="${p.id}" ` +
-        `title="${escapeAttr(watchTitle)}" aria-label="Watch as ${escapeAttr(p.civ)}">Watch as</button>` +
-        `<button class="diplomacy-identity diplomacy-identity-secondary" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
-        `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
-        `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}">` +
-        `<span class="diplomacy-identity-field" title="${leagueTitle}"><span class="diplomacy-player">${playerName}</span></span>` +
-        `<span class="diplomacy-identity-field diplomacy-elo" title="${playerEloLabel} · ${leagueTitle}">` +
-        `<span class="diplomacy-elo-value${eloProvisional ? " provisional" : ""}">${playerElo}</span></span>` +
-        `<span class="diplomacy-identity-field diplomacy-elo-delta" title="${escapeAttr(eloDeltaTitle(p))}">` +
-        `<span class="diplomacy-elo-delta-value">${playerEloDelta}</span></span>` +
-        // The per-cent sign lives in the WIN% column head, not in eight or
-        // twelve repetitions of the value. It cost about seven pixels a row, and
-        // because the value ellipsizes rather than shrinks, going one pixel over
-        // dropped two characters: "12%" rendered as "1…", a win probability of
-        // twelve per cent shown as the digit one.
-        //
-        // Two named numeric categories inside the outer Win odds cell: Start,
-        // a narrow trend track, and Now. Matching grid tracks keep every opening
-        // estimate, arrow and current estimate aligned down the table.
-        `<span class="diplomacy-identity-field diplomacy-expected" title="${escapeAttr(oddsTitle(p))}">` +
-        playerOddsFigures(p) + `</span>` +
-        `<span class="diplomacy-identity-field diplomacy-age" title="${ageTitle}">` +
-        `<span class="civ-age ${age || "unknown"}">${ageLabel}</span></span>` +
-        `<span class="diplomacy-identity-field diplomacy-strategy">${activeStrategy}</span>` +
-        `<span class="detail-caret">${expanded ? "▾" : "▸"}</span></button></span>` +
-        `<button class="diplomacy-stats" data-hud-action="watch" data-hud-civ="${p.id}" title="${watchTitle}" aria-label="Watch ${p.civ}">` +
-        stats.map(([kind, , value, label, marker = ""]) => {
-          const isLeader = highestByStat.get(kind) !== 0 && Number(value || 0) === highestByStat.get(kind);
-          const markerHtml = marker
-            ? `<span class="founded-religion-marker" aria-hidden="true">${marker}</span>`
-            : "";
-          // The marker is a sibling of the figure, not a child of it: inside
-          // <b> its absolute box still counts toward that element's scrollWidth,
-          // so the type fitter shrank the number to make room for a mark that
-          // is not even in flow.
-          return `<span class="ribbon-stat ${kind}${isLeader ? " category-leader" : ""}" ` +
-            `title="${label}${marker ? " · Founded religion still followed" : ""}${isLeader ? " · Category leader" : ""}">` +
-            `<b>${kind === "score" ? ribbonScore(value) : ribbonStat(value)}</b>${markerHtml}</span>`;
-        }).join("") + `</button></div>`;
+        visibleColumns.map(rowCell).join("") + `</div>`;
     }).join("") + `</div>` + hudResizeHandles("player standings");
   drawDossierWindows(scoreRankedMajors, rankById, relationById);
   // A repaint mid-gesture would take the bar out from under the pointer along
@@ -20026,7 +20369,7 @@ function drawPlayerHud() {
   // open snaps the menu shut before a pick can land. Hold the repaint while
   // that select is focused; the ribbon's focusout listener catches it up.
   if (html === hudHtml || hudLayoutGesture?.name === "players" || playerHudColumnGesture
-      || hudPaceHeldOpen()) {
+      || playerHudReorderGesture || hudPaceHeldOpen()) {
     reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
     return;
   }
@@ -20175,6 +20518,11 @@ hudRibbon.addEventListener("focusout", ev => {
 });
 hudRibbon.addEventListener("mousedown", ev => {
   if (ev.button !== 0) return;
+  // A press on a column heading is not yet a sort: it may become a reorder
+  // drag. The pending gesture owns it either way — its release runs the sort
+  // or the All button when the pointer never committed to dragging, and the
+  // held repaint keeps the pressed control alive until then.
+  if (ev.target.closest?.(".ribbon-stat-heading .hud-head-cell")) return;
   const sort = ev.target.closest?.("[data-hud-sort]");
   if (sort) {
     togglePlayerHudSort(sort.dataset.hudSort);
@@ -28154,6 +28502,68 @@ for (const checkbox of document.querySelectorAll("[data-overlay]")) {
   const name = checkbox.dataset.overlay;
   checkbox.checked = OVERLAY_VISIBILITY[name] !== false;
   checkbox.onchange = () => setOverlayVisibility(name, checkbox.checked);
+}
+// Each overlay checkbox rides in its menu's own header. A click there must
+// toggle the overlay alone — never fold the menu open or shut — so the
+// click's default is cancelled on both counts and the visibility change is
+// applied directly. Keyboard toggling arrives here as a click too.
+for (const summary of document.querySelectorAll(".overlay-menu > summary")) {
+  summary.addEventListener("click", event => {
+    const box = event.target.closest?.("input[data-overlay]");
+    if (!box) return;
+    event.preventDefault();
+    setOverlayVisibility(box.dataset.overlay, !OVERLAY_VISIBILITY[box.dataset.overlay]);
+  });
+}
+for (const button of document.querySelectorAll("[data-hud-widget-reset]")) {
+  button.addEventListener("click", () => resetHudWidget(button.dataset.hudWidgetReset));
+}
+{
+  const list = document.getElementById("hud-column-list");
+  renderHudColumnList();
+  list?.addEventListener("change", event => {
+    const box = event.target.closest?.("[data-hud-column-toggle]");
+    if (box) setPlayerHudColumnVisible(box.dataset.hudColumnToggle, box.checked);
+  });
+  // Native drag and drop, with the dragged row moved live so the list itself
+  // previews the order it will commit on release.
+  let draggedItem = null;
+  list?.addEventListener("dragstart", event => {
+    const item = event.target.closest?.("[data-hud-column-item]");
+    if (!item) return;
+    draggedItem = item;
+    item.classList.add("dragging");
+    event.dataTransfer.effectAllowed = "move";
+    try { event.dataTransfer.setData("text/plain", item.dataset.hudColumnItem); } catch (_) {}
+  });
+  list?.addEventListener("dragover", event => {
+    if (!draggedItem) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    const after = [...list.querySelectorAll("[data-hud-column-item]:not(.dragging)")]
+      .find(item => {
+        const rect = item.getBoundingClientRect();
+        return event.clientY < rect.top + rect.height / 2;
+      });
+    if (after) list.insertBefore(draggedItem, after);
+    else list.append(draggedItem);
+  });
+  list?.addEventListener("drop", event => event.preventDefault());
+  list?.addEventListener("dragend", () => {
+    if (!draggedItem) return;
+    draggedItem.classList.remove("dragging");
+    draggedItem = null;
+    const order = [...list.querySelectorAll("[data-hud-column-item]")]
+      .map(item => item.dataset.hudColumnItem)
+      .filter(key => PLAYER_HUD_COLUMN_BY_KEY.has(key));
+    // Any key the list does not show keeps its old place after the shown ones.
+    playerHudColumnOrder = [...new Set([...order, ...playerHudColumnOrder])];
+    savePlayerHudColumnLayout();
+    syncPlayerHudColumns();
+    if (state) drawPlayerHud();
+  });
+  document.getElementById("reset-hud-columns")
+    ?.addEventListener("click", () => resetPlayerHudColumns());
 }
 installMachineMetricsControls();
 

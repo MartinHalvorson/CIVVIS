@@ -1955,7 +1955,7 @@ mod tests {
             "the resizable AGE column belongs immediately before PLAN"
         );
         assert!(INDEX.contains(
-            "playerHudSortHead(\"age\", \"AGE\", \"Civilization age\")"
+            "age:[\"AGE\", \"Civilization age\"],"
         ));
         assert!(INDEX.contains("diplomacy-identity-field diplomacy-age"));
     }

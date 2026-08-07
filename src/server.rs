@@ -6760,7 +6760,7 @@ mod tests {
         // distinct, wider perspective control with breathing room before the
         // player identity it changes.
         assert!(player_hud.contains(
-            "class=\"diplomacy-identity diplomacy-civ-link\" data-hud-action=\"capital\""
+            "class=\"diplomacy-identity diplomacy-civ-link\" data-hud-col=\"civ\" data-hud-action=\"capital\""
         ));
         assert!(!player_hud.contains("class=\"empire-link\""));
         assert!(EMBEDDED_INDEX.contains("--hud-watch-column: 68px"));
@@ -8716,18 +8716,19 @@ mod tests {
             "basic.push(document.getElementById(\"victory-options\"), document.getElementById(\"saves-group\"));"
         ));
         // Display Settings is a short reading path: observer controls first,
-        // then map controls, overlay visibility, and finally performance.
+        // then the overlay menus — the panels a viewer reaches for most — then
+        // map options, and finally performance.
         let display_sections = [
             "<div class=\"observer-settings\" id=\"observer-settings\">",
-            "<details class=\"display-settings-group\" id=\"map-options-settings\"",
             "<details class=\"display-settings-group\" id=\"map-overlays-settings\"",
+            "<details class=\"display-settings-group\" id=\"map-options-settings\"",
             "<details class=\"display-settings-group\" id=\"performance-options-settings\"",
         ];
         assert!(
             display_sections.windows(2).all(|pair| {
                 EMBEDDED_INDEX.find(pair[0]).unwrap() < EMBEDDED_INDEX.find(pair[1]).unwrap()
             }),
-            "Display Settings sections should read observer, map, overlays, performance"
+            "Display Settings sections should read observer, overlays, map, performance"
         );
         // Performance options read outward from the one control the viewer can
         // change: the resolution being drawn at, the map that resolution has to
@@ -9000,22 +9001,20 @@ mod tests {
             ),
             "map controls should not offer dismissal while their restore switch is hidden"
         );
-        // The switches are a two-column grid, and the order they are written in
-        // follows the map: the rail read top to bottom — standings, victory
-        // tracker, world minimap — and then the map controls and lenses docked
-        // together in the opposite corner.
+        // Each overlay owns a menu with its visibility switch in the header,
+        // and the order the menus are written in follows the map: the rail
+        // read top to bottom — standings, victory tracker, world minimap —
+        // and then the map controls and lenses docked together in the
+        // opposite corner.
         assert!(EMBEDDED_INDEX
             .contains(".overlay-option-grid { display: grid; grid-template-columns: 1fr 1fr;"));
         let switches = EMBEDDED_INDEX
             .split_once(
-                "<div class=\"overlay-options\" role=\"group\" aria-labelledby=\"overlay-options-title\">",
+                "<div class=\"overlay-options overlay-menus\" role=\"group\" aria-labelledby=\"overlay-options-title\">",
             )
             .expect("map overlay switches")
             .1
-            .split_once("<div class=\"overlay-option-grid\">")
-            .expect("map overlay switch grid")
-            .1
-            .split_once("</div>")
+            .split_once("id=\"reset-overlay-layout\"")
             .expect("end of map overlay switches")
             .0;
         let corners: Vec<&str> = switches
@@ -9088,7 +9087,7 @@ mod tests {
         // the world map is the thing filling the screen behind all of them.
         for name in [
             "<span>World minimap</span>",
-            "data-overlay=\"minimap\" checked>World minimap",
+            "class=\"overlay-menu-title\">World minimap<small>",
             "minimap:\"World minimap\"",
         ] {
             assert!(
@@ -9200,42 +9199,35 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("data-victory-focus=\"${isFocus}\""));
         assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
-        // A masthead row is one line: civilization carries the capital action,
-        // followed by the explicit watch action, identity and twelve values.
-        // Watch-as deliberately has no column heading; the button carries its
-        // own visible label.
-        assert!(EMBEDDED_INDEX.contains(
-            "grid-template-columns: var(--hud-lock-column, 0px)\n      \
-             var(--hud-watch-column) var(--hud-identity-column) var(--hud-stats-column);"
-        ));
-        // The values claim their width first and the identity block flexes, so a
+        // A masthead row is one line: the lock track, then one flat track per
+        // visible column in the viewer's own order. Heading and rows read the
+        // same list, so the tracks and the cells cannot disagree.
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("grid-template-columns: var(--hud-lock-column, 0px) var(--hud-tracks);")
+                .count(),
+            2,
+            "the heading and every row stand on the same flat track list"
+        );
+        // The values claim their width first and the identity cells flex, so a
         // narrow masthead ellipsizes a name rather than running two figures
-        // together. A percentage identity column with a 300px floor never
-        // yielded, which left the twelve values 27px each at 1600px.
-        //
-        // Every data column is now a share rather than a pixel count, and each
-        // of these two enclosing tracks is the exact *sum* of the columns
-        // inside it — 9 data identity columns totalling 12.937, plus the fixed
-        // Watch-as action, against 12 value columns of 1. That identity is not
-        // decoration: it is what lets the
-        // bar between the two blocks move width across itself, and it is the
-        // ratio the table uses at every width. Changing one number here without
-        // the other silently re-weights the whole masthead.
-        //
-        // The floor is the rank track, 5 label columns, the ELO and ELO-delta
-        // figures, and the wider odds cell, whose two named numeric tracks
-        // flank a narrow trend track.
+        // together. Every data column is a share rather than a pixel count.
+        // The shipped stylesheet carries one flat default list; once booted,
+        // syncPlayerHudColumns() rewrites it from the viewer's own column
+        // model — order, visibility, shares and content-fitted floors alike —
+        // together with the table's own floor, below which the standings
+        // scroll sideways inside their panel instead of crushing their cells.
         assert!(EMBEDDED_INDEX.contains(
-            "--hud-identity-column: minmax(\n      \
-             calc(var(--hud-rank-min) + var(--hud-ident-min) * 5\n           \
-             + var(--hud-ident-num-min) * 2 + var(--hud-ident-odds-min)), 12.937fr);"
-        ));
+            "minmax(var(--hud-ident-min), 2.035fr)\n      \
+             repeat(12, minmax(var(--hud-stat-min), 1fr));"
+        ), "the shipped default tracks end with the twelve value columns");
+        assert!(EMBEDDED_INDEX.contains("hud.style.setProperty(\"--hud-tracks\", tracks);"));
+        assert!(EMBEDDED_INDEX.contains("hud.style.setProperty(\"--hud-table-min\", tableMin);"));
+        assert!(EMBEDDED_INDEX.contains("min-width: var(--hud-table-min, 0px);"));
+        assert!(EMBEDDED_INDEX.contains("function visiblePlayerHudColumns()"));
         assert!(EMBEDDED_INDEX.contains(
-            "--hud-stats-column: minmax(\n      \
-             calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), 12fr);"
-        ));
-        assert!(EMBEDDED_INDEX
-            .contains("--hud-stat-tracks: repeat(12, minmax(var(--hud-stat-min), 1fr));"));
+            "const HUD_COLUMN_LAYOUT_STORAGE_KEY = \"civvis-hud-column-layout-v1\";"
+        ), "order, visibility and content-fitted floors persist beside the shares");
         // The floors stay in the stylesheet so the width breakpoints can lower
         // them; the shares belong to the viewer. A breakpoint that rewrote a
         // share would undo a dragged column on the next window resize, so no
@@ -9266,27 +9258,15 @@ mod tests {
             "playerHudSortHead(\"win\", \"NOW\", \"Current win odds\")"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "playerHudSortHead(\"elo_delta\", \"Δ\", \"Live Elo position against the living field\", \"numeric\")"
+            "elo_delta:[\"Δ\", \"Live Elo position against the living field\", \"numeric\"],"
         ));
-        assert_eq!(EMBEDDED_INDEX.matches("--hud-identity-column:").count(), 1,
-            "the identity track is written once and then only from the column model");
-        assert_eq!(EMBEDDED_INDEX.matches("--hud-stats-column:").count(), 1,
-            "the value track is written once and then only from the column model");
-        // A gutter between adjacent figures, and no per-value hairline.
-        assert!(EMBEDDED_INDEX.contains("column-gap: var(--hud-stat-gap, 0px);"));
-        // Heading and rows read the same two track lists, which is the only
-        // reason a dragged column moves the figures under it as well as its
-        // own head.
-        assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-stat-tracks);").count(), 2,
-            "the value heads and the value cells are the same twelve tracks");
-        assert!(EMBEDDED_INDEX.contains(
-            "--hud-stat-tracks: repeat(12, minmax(var(--hud-stat-min), 1fr));"
-        ), "the initial style has the same twelve stat tracks before JavaScript synchronizes them");
-        assert!(EMBEDDED_INDEX.contains(
-            "calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), 12fr);"
-        ), "the static stat-track floor covers every stat and its gutters");
-        assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-identity-tracks);").count(), 2,
-            "the identity heads and the identity cells are the same tracks");
+        assert_eq!(EMBEDDED_INDEX.matches("--hud-tracks:").count(), 1,
+            "the flat track list is declared once and then only written from the column model");
+        // A gutter between adjacent figures, and no per-value hairline. The
+        // heading and every row keep the same gutters, or the heads skew off
+        // their own figures.
+        assert_eq!(EMBEDDED_INDEX.matches("column-gap: var(--hud-stat-gap, 3px);").count(), 2,
+            "the heading and the rows divide their columns with the same gutters");
         // All three render-time lists must stay in one reading order: the
         // column model lays out and drags the cells, the heading names them,
         // and playerHudStats supplies their figures. Total population comes
@@ -9323,34 +9303,51 @@ mod tests {
             .0;
         assert_hud_stat_order(stat_figures, "player HUD stat figures");
         let stat_headers = EMBEDDED_INDEX
-            .split_once(r#"<span class="diplomacy-stat-head">` +"#)
-            .expect("player HUD stat headings")
+            .split_once("const PLAYER_HUD_HEAD_LABELS = {")
+            .expect("player HUD head labels")
             .1
-            .split_once(".map(([kind, label, title])")
-            .expect("end of player HUD stat headings")
+            .split_once("};")
+            .expect("end of player HUD head labels")
             .0;
-        assert_hud_stat_order(stat_headers, "player HUD stat headings");
-        // Player, ELO, ELO delta, the Start/Now pair, AGE and PLAN are drawn inside one
-        // button spanning six of those tracks, so that button divides itself with `subgrid` — the
-        // same tracks, not a copy of their ratios. A copy is what shipped
-        // before, and it came apart in both directions a copy can: it carried
-        // `minmax(0, …)` where the heads carry the 30px label floor and the
-        // 60px figure floor, so on a 1280px screen the ELO head stood at 60px
-        // over a 27.5px figure and every "1703" rendered as "1…"; and it never
-        // heard about a drag, so moving the ELO/odds bar 26px at 1920px moved
-        // the head 21px and left the figures where they were.
-        assert!(EMBEDDED_INDEX.contains(
-            "#playerhud .diplomacy-identity-secondary {\n    grid-template-columns: subgrid;\n  }"
-        ), "the six identity columns inside one button are the parent's own tracks");
+        {
+            // The labels map keys are bare identifiers, so the order check
+            // walks `key:[` anchors rather than quoted keys.
+            let expected = [
+                "cities", "population", "food", "production", "science", "culture", "faith",
+                "gold", "military", "wonders", "suzerain", "score",
+            ];
+            let mut cursor = 0;
+            for key in expected {
+                let needle = format!("{key}:[");
+                let offset = stat_headers[cursor..]
+                    .find(&needle)
+                    .unwrap_or_else(|| panic!("player HUD head labels are missing {key}"));
+                cursor += offset + needle.len();
+            }
+        }
+        // Player, ELO, ELO delta, the Start/Now pair, AGE and PLAN used to be
+        // drawn inside one button spanning six tracks, divided with `subgrid`.
+        // Each identity fact is its own cell on the flat tracks now, emitted
+        // straight from the visible column list, so any of them can be hidden
+        // or stand anywhere in the row — and each still opens the dossier,
+        // exactly as the one wide button did.
+        assert!(EMBEDDED_INDEX.contains("visibleColumns.map(playerHudColumnHead).join(\"\")"),
+            "the heading emits one cell per visible column");
+        assert!(EMBEDDED_INDEX.contains("visibleColumns.map(rowCell).join(\"\")"),
+            "every row emits one cell per visible column");
+        assert!(!EMBEDDED_INDEX.contains("grid-template-columns: subgrid"),
+            "no cell spans several tracks any more, so nothing needs subgrid");
+        assert!(EMBEDDED_INDEX.contains("class=\"diplomacy-identity\" data-hud-col=\"player\""),
+            "each identity fact is its own dossier-opening cell");
         assert!(!EMBEDDED_INDEX.contains("minmax(0, .55fr) minmax(0, .55fr)"),
-            "a second copy of the identity ratios is exactly what subgrid replaced");
+            "a second copy of the identity ratios is exactly what the flat list replaced");
         // The rows carry a 1px border that says at war or defeated, and
         // both boxes are border-box — so the heading carries a transparent one
         // or it divides two more pixels than a row does and every head sits off
         // its own figures by up to a pixel, in opposite directions at the two
         // ends of the table.
         assert!(EMBEDDED_INDEX.contains(
-            "align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;\n    \
+            "align-items: stretch; column-gap: var(--hud-stat-gap, 3px); padding: 0 4px 0 3px;\n    \
              border: 1px solid transparent;"
         ), "the heading has the row's border box, or the columns skew across the table");
         // For the same reason the heading gives up its inline padding wherever
@@ -9366,7 +9363,7 @@ mod tests {
         // sub-pixel overflow, so ellipsis spends a character on a head that
         // renders whole. Measured at 1600px: ELO in its 60px column.
         assert!(EMBEDDED_INDEX.contains(
-            "border-left: 1px solid #ffffff10; text-overflow: clip; white-space: nowrap;"
+            "min-width: 0; overflow: hidden; text-overflow: clip; white-space: nowrap;"
         ));
 
         // One bar per seam between two adjacent data columns, dragged to move
@@ -9378,11 +9375,14 @@ mod tests {
         // model, so an operator never has to sort a meaningless column just to
         // reach ELO, a yield, or an active plan.
         assert!(EMBEDDED_INDEX.contains(
-            "...PLAYER_HUD_COLUMNS.map(column => column.key), \"win_start\", \"win_delta\","
-        ));
+            "...PLAYER_HUD_COLUMNS.filter(column => !column.fixed).map(column => column.key),"
+        ), "every fact is sortable; the fixed Watch-as action is not a fact");
         assert!(EMBEDDED_INDEX.contains(
-            "{key:\"rank\", label:\"Score rank\", block:\"identity\", head:0, min:\"--hud-rank-min\", width:.7},"
+            "{key:\"rank\", label:\"Score rank\", block:\"identity\", min:\"--hud-rank-min\", width:.7},"
         ), "rank should be a measured, draggable identity column");
+        assert!(EMBEDDED_INDEX.contains(
+            "{key:\"watch\", label:\"Watch as\", block:\"identity\", min:\"--hud-watch-column\", width:0, fixed:true},"
+        ), "Watch-as rides in the model as a reorderable column on a fixed track");
         assert!(EMBEDDED_INDEX.contains("const HUD_SORT_STORAGE_KEY = \"civvis-player-hud-sort-v1\";"));
         assert!(EMBEDDED_INDEX.contains("function playerHudSortValue(player, key, stats, rankById)"));
         assert!(EMBEDDED_INDEX.contains("if (key === \"rank\") return rankById.get(player.id) ?? null;"));
@@ -9406,33 +9406,40 @@ mod tests {
             "the NOW Win heading should order by its current estimate");
         assert!(EMBEDDED_INDEX.contains("if (delta > .02) return {symbol:\"↗\", direction:\"up\"};"));
         assert!(EMBEDDED_INDEX.contains("if (delta < -.02) return {symbol:\"↘\", direction:\"down\"};"));
-        for key in ["rank", "civ", "leader", "player", "elo", "elo_delta", "win_start", "win_delta", "win", "age", "plan"] {
+        for key in ["rank", "civ", "leader", "player", "elo", "elo_delta", "age", "plan"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("{key}:[")),
+                "the {key} heading should carry a sortable label"
+            );
+        }
+        for key in ["win_start", "win_delta", "win"] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("playerHudSortHead(\"{key}\"")),
                 "the {key} heading should be sortable"
             );
         }
-        assert!(EMBEDDED_INDEX.contains("playerHudSortHead(kind, label, title, kind)"),
-            "every generated statistic heading should be sortable");
+        assert!(EMBEDDED_INDEX.contains(
+            "return playerHudSortHead(column.key, label, title, classes, attrs);"
+        ), "every generated column heading should be sortable");
         assert!(!EMBEDDED_INDEX.contains("playerHudSortHead(\"watch\""),
             "Watch-as stays an action instead of a sort target");
         assert!(EMBEDDED_INDEX.contains("class=\"hud-sort-head\" data-hud-sort=\"${key}\""));
         assert!(EMBEDDED_INDEX.contains(
-            "playerHudSortHead(\"rank\", \"RANK\", \"Score rank\")"
+            "rank:[\"RANK\", \"Score rank\"],"
         ), "the rank figures need their own named sort header");
         assert!(EMBEDDED_INDEX.contains(
             "minmax(var(--hud-rank-min), .7fr) minmax(var(--hud-ident-min), 2.035fr)"
         ), "the rank heading should occupy its own first identity track");
         assert!(EMBEDDED_INDEX.contains(
-            "#playerhud .diplomacy-rank { grid-column: 1; grid-row: 1; }"
-        ), "the rank figure should align under its own heading");
+            "class=\"diplomacy-rank\" data-hud-col=\"rank\""
+        ), "the rank figure and its heading name the same column");
         assert!(EMBEDDED_INDEX.contains("const sort = ev.target.closest?.(\"[data-hud-sort]\");"));
         assert!(EMBEDDED_INDEX.contains("#playerhud .hud-sort-cell[data-hud-sort-active=\"true\"]"));
         assert!(EMBEDDED_INDEX.contains("const scoreRankedMajors = state.players"));
         assert!(EMBEDDED_INDEX.contains(
             "const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer, rankById);"
         ));
-        assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1)"));
+        assert!(EMBEDDED_INDEX.contains("function playerHudColumnSeams()"));
         assert!(EMBEDDED_INDEX.contains("function aimPlayerHudSeam(seam, targetWidth)"));
         assert!(EMBEDDED_INDEX.contains("class=\"hud-col-grip\" type=\"button\" data-hud-column-seam="));
         assert!(EMBEDDED_INDEX.contains("role=\"separator\" aria-orientation=\"vertical\""));
@@ -9446,7 +9453,7 @@ mod tests {
         // along with its pointer capture, and the open watch-pace menu is
         // anchored to its select the same way.
         assert!(EMBEDDED_INDEX.contains(
-            "if (html === hudHtml || hudLayoutGesture?.name === \"players\" || playerHudColumnGesture\n      || hudPaceHeldOpen()) {"
+            "if (html === hudHtml || hudLayoutGesture?.name === \"players\" || playerHudColumnGesture\n      || playerHudReorderGesture || hudPaceHeldOpen()) {"
         ));
         assert!(EMBEDDED_INDEX.contains("function hudPaceHeldOpen()"));
         // The moment focus leaves the select, the held snapshots paint.
@@ -9466,7 +9473,7 @@ mod tests {
         // No coloured bloom behind eighty figures at once.
         assert!(!EMBEDDED_INDEX.contains("text-shadow: 0 1px 2px #000, 0 0 8px currentColor;"));
         assert!(EMBEDDED_INDEX.contains(
-            "class=\"diplomacy-identity diplomacy-civ-link\" data-hud-action=\"capital\""
+            "class=\"diplomacy-identity diplomacy-civ-link\" data-hud-col=\"civ\" data-hud-action=\"capital\""
         ));
         assert!(!EMBEDDED_INDEX.contains("class=\"empire-link\""));
         assert!(!EMBEDDED_INDEX.contains(">Empire</button>"));
@@ -9724,7 +9731,7 @@ mod tests {
         // The ribbon repaints under the cursor, so its buttons declare their
         // action as data and one delegated listener dispatches it.
         assert!(EMBEDDED_INDEX.contains(
-            "class=\"watch-as-link\" data-hud-action=\"watch\""
+            "class=\"watch-as-link\" data-hud-col=\"watch\" data-hud-action=\"watch\""
         ));
         assert!(EMBEDDED_INDEX.contains(">Watch as</button>"));
         // The label is centred against a border rather than ellipsized, so the
@@ -9986,7 +9993,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("if (!fullMapSpectator && (SPEC || govs.length"));
         assert!(EMBEDDED_INDEX.contains(".sort((a, b) => b.score - a.score || a.id - b.id)"));
         assert!(EMBEDDED_INDEX.contains(
-            "class=\"diplomacy-rank\" title=\"Score rank ${rank}\">#${rank}"
+            "class=\"diplomacy-rank\" data-hud-col=\"rank\" title=\"Score rank ${rank}\">#${rank}"
         ));
         // The sidebar sits left of the map. Match the declaration rather than
         // its formatting, so restyling the block cannot fail the rule.
