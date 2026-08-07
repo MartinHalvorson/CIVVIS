@@ -809,25 +809,14 @@ let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") ===
 // Space-race flights and satellites are on unless a viewer explicitly turns
 // their animated visual effects off. The completed mission remains in state.
 let SHOW_ROCKET_ANIMATIONS = localStorage.getItem("civvis-show-rocket-animations") !== "0";
-// How long a unit's movement wake stays on the map after its step lands.
-// Zero is the original behavior — a comet only while the tween itself runs —
-// while a linger keeps who-went-where readable at Lightning and Blitz paces,
-// where a step resolves faster than an eye can find the token that took it.
-const UNIT_TRAIL_LINGER_STORAGE_KEY = "civvis-unit-trail-linger";
-const UNIT_TRAIL_LINGER_VALUES = [0, 200, 500, 1000, 2000];
-// Enough for every mover of a large late-game turn; bounds draw cost when a
-// whole war resolves in one Lightning poll.
-const UNIT_TRAIL_LIMIT = 240;
-let UNIT_TRAIL_LINGER_MS = (() => {
-  const saved = Number(localStorage.getItem(UNIT_TRAIL_LINGER_STORAGE_KEY));
-  return UNIT_TRAIL_LINGER_VALUES.includes(saved) ? saved : 0;
-})();
 // How many turns each unit's walked tile route stays traced on the map.
-// Unlike the wall-clock wake linger above, this ages in game time: a route
-// walked on turn T is held until T + N, so at any pace the map shows where
-// the last N turns of movement actually went. The routes ride in on
-// `state.unit_move_trails` — the engine's walked-route ledger — so they are
-// the executed tiles, not a guess reconstructed from a board diff.
+// This ages in game time rather than on the wall clock, so at any watch pace
+// the map shows where the last N turns of movement actually went — which is
+// what keeps who-went-where readable at Lightning and Blitz, where a step
+// resolves faster than an eye can find the token that took it. The routes
+// ride in on `state.unit_move_trails` — the engine's walked-route ledger —
+// so they are the executed tiles, not a guess reconstructed from a board
+// diff.
 const UNIT_TAIL_TURNS_STORAGE_KEY = "civvis-unit-tail-turns";
 const UNIT_TAIL_TURNS_MAX = 5;
 let UNIT_TAIL_TURNS = (() => {
@@ -985,7 +974,7 @@ applyOverlayVisibility();
 // burst — a device is the only event on this board that deserves several
 // seconds and the whole frame.
 const anim = { moves: new Map(), floats: [], sparks: [], deaths: [],
-               claims: [], strike: null, blasts: [], trails: [],
+               claims: [], strike: null, blasts: [],
                skyLaunches: [] };
 // Detonations already shown. The engine gives every strike a unique id
 // precisely so a client can answer this without comparing fields: two devices
@@ -1045,7 +1034,6 @@ function resetAnim() {
   anim.deaths.length = 0;
   anim.claims.length = 0;
   anim.blasts.length = 0;
-  anim.trails.length = 0;
   anim.skyLaunches.length = 0;
   seenBlasts = new Set();
   anim.strike = null;
@@ -1186,16 +1174,6 @@ function animateDiff(prev, next) {
                                 fromCity: cityKeys.has(key(pu.pos)),
                                 toCity: cityKeys.has(key(nu.pos)),
                                 t0: now, dur });
-        // The lingering wake outlives both the tween and the unit itself — a
-        // trail that survives its casualty is what makes a fast battle
-        // readable after the fact.
-        if (UNIT_TRAIL_LINGER_MS > 0) {
-          anim.trails.push({ unit: nu.id, points: mapPoints, owner: nu.owner,
-                             t0: now, moveDur: dur,
-                             linger: UNIT_TRAIL_LINGER_MS });
-          if (anim.trails.length > UNIT_TRAIL_LIMIT)
-            anim.trails.splice(0, anim.trails.length - UNIT_TRAIL_LIMIT);
-        }
       }
     }
     if (unitHasHealth(nu) && unitHasHealth(pu) && nu.hp < pu.hp) {
@@ -4581,7 +4559,7 @@ const DISPLAY_RESOURCE_CAP_VALUES = [10, 20, 30, 40, 50, 60, 70, 80, 90];
 const DISPLAY_RESOURCE_CAP_DEFAULT = 70;
 const DISPLAY_CPU_GUIDANCE_CONTROLS = [
   "renderresolution", "yieldchk", "reschk", "resourcedisplay", "rocketanimchk",
-  "unittrails", "unittail",
+  "unittail",
 ];
 const DISPLAY_MEMORY_GUIDANCE_CONTROLS = [
   "renderresolution", "resourcedisplay", "reset-overlay-layout",
@@ -17681,26 +17659,6 @@ function drawUnitMovementTails(unitAlpha) {
   }
 }
 
-function drawLingeringUnitTrails(unitAlpha, now) {
-  if (!anim.trails.length) return;
-  const alive = [];
-  for (const trail of anim.trails) {
-    const age = now - trail.t0;
-    if (age > trail.moveDur + trail.linger) continue;
-    alive.push(trail);
-    // While its tween is on screen the in-flight comet owns this wake, and a
-    // beat of slack keeps the completion frame from painting it twice. The
-    // age test matters too: a casualty's orphaned move record is never
-    // sampled again, and it must not suppress the wake of the very unit the
-    // watcher most wants to trace.
-    if (age < trail.moveDur + 50 && anim.moves.has(trail.unit)) continue;
-    const fade = Math.min(1, Math.max(0, 1 - (age - trail.moveDur) / trail.linger));
-    strokeUnitTrail(trail.points.map(mapPointToView),
-                    pcol(trail.owner), unitAlpha * 0.75 * fade);
-  }
-  anim.trails = alive;
-}
-
 function drawScene() {
   if (!state) return;
   // Before the branch, because the sky's own way about has to come down when
@@ -18465,12 +18423,7 @@ function drawScene() {
   const strategicUnitStacks = strategicUnitStackSlots(drawnUnits, anim.moves);
   const now = performance.now();
   const unitAlpha = mapLens === "settler" ? SETTLER_LENS_UNIT_ALPHA : 1;
-  if (mapLens !== "empire") {
-    // Tails under wakes: the persistent record is ground ink, the fresh wake
-    // glows over it.
-    drawUnitMovementTails(unitAlpha);
-    drawLingeringUnitTrails(unitAlpha, now);
-  }
+  if (mapLens !== "empire") drawUnitMovementTails(unitAlpha);
   for (const u of sorted) {
     const [tileX, tileY] = worldXY(u.pos);
     let x = tileX, y = tileY;
@@ -18494,12 +18447,10 @@ function drawScene() {
     // eye can otherwise only catch whichever unit it happened to be pointed
     // at; a trail in the owner's color says who went where after the fact, and
     // swells then fades over the step so it never becomes permanent clutter.
-    // Under a configured linger it swells and then holds instead, and the
-    // lingering pass owns the fade once the step has landed.
+    // The turn tails above keep the walked route on the ground afterward.
     if (moving) {
-      const swell = UNIT_TRAIL_LINGER_MS > 0 ? Math.min(mv.e, .5) : mv.e;
       strokeUnitTrail(trailPoints, pcol(u.owner),
-                      unitAlpha * 0.75 * Math.sin(swell * Math.PI));
+                      unitAlpha * 0.75 * Math.sin(mv.e * Math.PI));
     }
     if (anim.strike && anim.strike.id === u.id) {
       const st2 = anim.strike;
@@ -27131,17 +27082,6 @@ function setShowRocketAnimations(on) {
   if (!SHOW_ROCKET_ANIMATIONS) anim.skyLaunches.length = 0;
   if (state) draw();
 }
-function setUnitTrailLinger(value) {
-  const ms = Number(value);
-  UNIT_TRAIL_LINGER_MS = UNIT_TRAIL_LINGER_VALUES.includes(ms) ? ms : 0;
-  localStorage.setItem(UNIT_TRAIL_LINGER_STORAGE_KEY, String(UNIT_TRAIL_LINGER_MS));
-  const select = document.getElementById("unittrails");
-  if (select) select.value = String(UNIT_TRAIL_LINGER_MS);
-  // Turning the linger off clears wakes already on the map at once, which
-  // makes the preference reliable even while a battle is animating.
-  if (!UNIT_TRAIL_LINGER_MS) anim.trails.length = 0;
-  if (state) draw();
-}
 function setUnitTailTurns(value) {
   const turns = Number(value);
   UNIT_TAIL_TURNS = Number.isInteger(turns) && turns >= 0 && turns <= UNIT_TAIL_TURNS_MAX
@@ -28654,11 +28594,6 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   rockets.onchange = () => setShowRocketAnimations(rockets.checked);
 }
 {
-  const trails = document.getElementById("unittrails");
-  trails.value = String(UNIT_TRAIL_LINGER_MS);
-  trails.onchange = () => setUnitTrailLinger(trails.value);
-}
-{
   const tail = document.getElementById("unittail");
   tail.value = String(UNIT_TAIL_TURNS);
   tail.onchange = () => setUnitTailTurns(tail.value);
@@ -28782,8 +28717,7 @@ function animTick(now) {
   const cameraMoving = userCameraMoving || followCameraMoving;
   const active = cameraMoving || anim.moves.size > 0 || anim.floats.length > 0 ||
     anim.sparks.length > 0 || anim.deaths.length > 0 || anim.strike ||
-    anim.blasts.length > 0 ||
-    anim.trails.length > 0 || planetSkyAnimating() || flatSkyAnimating();
+    anim.blasts.length > 0 || planetSkyAnimating() || flatSkyAnimating();
   // Never spend more than about half the wall clock rendering. Measured cost
   // decides: a frame that takes 60ms gets asked for every 130ms rather than
   // every 33, so the view degrades to a slower picture instead of stalling.
