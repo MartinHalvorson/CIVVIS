@@ -693,8 +693,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// by 1.0 on that flag before it reads a single player, so every configured,
 /// legacy and Elo agent wants exactly the army it always wanted. A
 /// compatibility re-pin.
+/// The `BasicAi` doc comment claiming CIVVIS "ordered an Entertainment
+/// Complex zero times" is corrected — the census's name filter missed the
+/// unique replacements (7 stood across 33 cities, as Hippodromes and a
+/// Street Carnival) — and a test pins that a unique replacement belongs to
+/// the family it replaces. A doc comment and one test; no executable path
+/// changes, so advanced_v1 is byte-identical by construction. Compatibility
+/// re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2747_6589_ca6e_bcc7;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x81d1_39cb_4a9d_82d7;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

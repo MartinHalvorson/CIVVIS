@@ -48,7 +48,7 @@ thread_local! {
     static HOOKED: Cell<bool> = const { Cell::new(false) };
     /// What the socket build keeps in atomics on `Shared`. Nothing in this
     /// build reads them but the page that set them.
-    static PACE: Cell<u64> = const { Cell::new(1_000) };
+    static PACE: Cell<u64> = const { Cell::new(500) };
     static BETWEEN_GAME_COUNTDOWN_MS: Cell<u64> =
         const { Cell::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS) };
     static PAUSED: Cell<bool> = const { Cell::new(false) };
@@ -68,15 +68,16 @@ thread_local! {
 
 /// The world a page opens on before anybody has visited the lobby.
 ///
-/// Six majors on the map size Civ 6 pairs with six, played out as a spectated
-/// exhibition: it is the shape of game the YouTube channel shows, and it is
-/// the one that needs no decisions from a visitor who has just arrived.
+/// Four majors on the Tiny Tennis Ball globe, played out as a spectated
+/// exhibition: the smallest stock world, so the very first visit generates
+/// and steps a game the visitor's own CPU finds snappy, and the one that
+/// needs no decisions from a visitor who has just arrived.
 fn opening_params() -> Params {
-    let size = MapSize::for_players(6);
+    let size = MapSize::for_players(4);
     let map_topology = MapTopology::Planet;
     let (width, height) = size.dimensions(map_topology);
     Params {
-        num_players: 6,
+        num_players: 4,
         width,
         height,
         seed: OPENING_SEED.with(Cell::get),
@@ -86,7 +87,7 @@ fn opening_params() -> Params {
         // it: the lobby is where a different Future Era is asked for.
         future_era: FutureEra::Classic,
         turn_structure: TurnStructure::Sequential,
-        map_script: MapScript::Continents,
+        map_script: MapScript::TeninsBall,
         map_topology,
         map_poles: MapPoles::Poles,
         game_speed: GameSpeed::Online,
@@ -744,7 +745,7 @@ pub unsafe extern "C" fn civvis_request(ptr: *mut u8, len: usize) -> *mut u8 {
 #[cfg(test)]
 mod tests {
     use super::opening_params;
-    use crate::setup::{MapSize, MapTopology};
+    use crate::setup::{MapScript, MapSize, MapTopology};
 
     #[test]
     fn opening_exhibition_defaults_to_planet() {
@@ -756,5 +757,15 @@ mod tests {
             (params.width, params.height),
             size.dimensions(MapTopology::Planet)
         );
+    }
+
+    /// The first world a civvis.ai visitor ever waits on is the smallest
+    /// stock one: four majors on the Tiny Tennis Ball globe.
+    #[test]
+    fn opening_exhibition_is_the_tiny_tennis_ball_world() {
+        let params = opening_params();
+
+        assert_eq!(params.num_players, 4);
+        assert_eq!(params.map_script, MapScript::TeninsBall);
     }
 }
