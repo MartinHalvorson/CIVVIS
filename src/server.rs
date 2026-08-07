@@ -576,6 +576,12 @@ pub struct Session {
     /// accumulates from the turn it resumes — the reasoning behind a decision
     /// is not part of the game state and cannot be recovered from one.
     journal: crate::reasoning::Journal,
+    /// What became of every plan a simultaneous game has committed so far.
+    /// Sequential games never touch it. The census is the regime's health
+    /// instrument — a rising drop rate is the first sign the mode is
+    /// distorting play — so the spectator state carries it alongside the
+    /// turn structure itself.
+    simultaneous_census: crate::simultaneous::SimultaneousCensus,
 }
 
 /// The identity of a person playing a seat.
@@ -2204,6 +2210,7 @@ impl Session {
             league_recorded: false,
             human_players,
             journal,
+            simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
         }
     }
 
@@ -2301,6 +2308,7 @@ impl Session {
             league_recorded,
             human_players,
             journal,
+            simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
         }
     }
 
@@ -2774,6 +2782,12 @@ impl Session {
             o["spectator_paused"] = json!(self.spectator_paused);
             o["view_player"] = json!(self.view_player);
             o["leader_pool"] = json!(self.game.leader_pool.id());
+            o["turn_structure"] = json!(self.game.turn_structure.id());
+            if self.game.turn_structure == TurnStructure::Simultaneous {
+                // The regime's health instrument, for the same panel that
+                // names the regime: how many plans the world has outrun.
+                o["simultaneous"] = json!(self.simultaneous_census);
+            }
             o["teams"] = json!(major_teams(&self.game));
             o["victory_conditions"] = json!(self.game.victory_conditions);
             o["legal_actions"] = json!([]);
@@ -2799,6 +2813,7 @@ impl Session {
         o["supervised"] = json!(self.params.supervised);
         o["view_player"] = json!(0);
         o["leader_pool"] = json!(self.game.leader_pool.id());
+        o["turn_structure"] = json!(self.game.turn_structure.id());
         o["teams"] = json!(major_teams(&self.game));
         o["victory_conditions"] = json!(self.game.victory_conditions);
         o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
@@ -2836,6 +2851,26 @@ impl Session {
         if g.winner.is_some() {
             return pid;
         }
+        // A simultaneous game advances one whole game turn per step: every
+        // seat plans against the same frozen world and the plans commit
+        // through the ordinary rules. Serial on purpose (`jobs = 1`) — the
+        // browser build has no thread pool, and a watched game spends its
+        // pace budget per turn rather than per seat. An aborted cycle is
+        // never retried: the driver has already said a retry would replay
+        // the same turn forever, so the world sits still instead.
+        if g.turn_structure == TurnStructure::Simultaneous {
+            if !self.simultaneous_census.aborted
+                && !crate::simultaneous::step_cycle(g, &mut self.ais, 1, &mut self.simultaneous_census)
+            {
+                eprintln!(
+                    "[server] simultaneous cycle aborted on turn {}: {}",
+                    g.turn,
+                    self.simultaneous_census.summary()
+                );
+            }
+            self.record_league_result();
+            return pid;
+        }
         self.ais[pid].take_turn(g, pid);
         if g.current == pid && g.winner.is_none() {
             let _ = g.apply(pid, &Action::EndTurn);
@@ -2870,6 +2905,13 @@ impl Session {
     /// behind, no matter who keeps winning.
     fn record_league_result(&mut self) {
         if self.league_recorded || self.game.winner.is_none() || !self.params.league_record {
+            return;
+        }
+        // The ratings are a sequential-regime instrument. A simultaneous
+        // game changes every seat's information set, so its results must
+        // never blend into the same Glicko-2 table — the game plays and is
+        // shown, but it rates nobody.
+        if self.game.turn_structure == TurnStructure::Simultaneous {
             return;
         }
         self.league_recorded = true;
@@ -3582,6 +3624,15 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(era) = request["future_era"].as_str().and_then(future_era_from_id) {
         p.future_era = era;
     }
+    // The turn structure follows the same refuse-unknown contract. Whether a
+    // simultaneous request can be *honoured* also depends on who is seated,
+    // which the end of this function settles once every field has landed.
+    if let Some(v) = request["turn_structure"]
+        .as_str()
+        .and_then(crate::setup::turn_structure_from_id)
+    {
+        p.turn_structure = v;
+    }
     if let Some(v) = request["map_script"].as_str().and_then(MapScript::from_id) {
         p.map_script = v;
         // `planet` used to name a world type; it now names a shape. A client
@@ -3710,6 +3761,13 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
             // asked for a specific one in the same request.
             p.max_turns = requested_turn_limit(request).unwrap_or(spec.turns);
         }
+    }
+    // Only a spectated table plays the simultaneous regime. A human seat is
+    // consulted live, one seat at a time — sequential by construction — so
+    // the structure is refused for a played game exactly as `play` refuses
+    // it at launch, and the rest of the request still lands.
+    if !p.spectate && p.turn_structure == TurnStructure::Simultaneous {
+        p.turn_structure = TurnStructure::Sequential;
     }
     p
 }
@@ -3861,14 +3919,20 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 // share of the turn budget and the round adds up to the pace.
                 // Only the living take a step: counting the eliminated made a
                 // late game outrun its own pace as the city-states fell.
-                let living: Vec<_> = s.game.players.iter().filter(|p| p.alive).collect();
-                let minors = living
-                    .iter()
-                    .filter(|p| p.is_minor || p.is_barbarian)
-                    .count();
-                let majors = living.len() - minors;
-                let p = &s.game.players[pid];
-                delay = seat_delay_ms(pace, majors, minors, p.is_minor || p.is_barbarian);
+                // A simultaneous step *is* the whole round, so it spends the
+                // whole budget in one wait instead of a seat's share of it.
+                if s.game.turn_structure == TurnStructure::Simultaneous {
+                    delay = pace;
+                } else {
+                    let living: Vec<_> = s.game.players.iter().filter(|p| p.alive).collect();
+                    let minors = living
+                        .iter()
+                        .filter(|p| p.is_minor || p.is_barbarian)
+                        .count();
+                    let majors = living.len() - minors;
+                    let p = &s.game.players[pid];
+                    delay = seat_delay_ms(pace, majors, minors, p.is_minor || p.is_barbarian);
+                }
                 // The seat that ends the round closes the turn being timed.
                 let turn = s.game.turn;
                 if watched_turn != Some(turn) {
@@ -7269,6 +7333,51 @@ mod tests {
         assert!(with_reasoning["ai_reasoning"]["thoughts"]
             .as_array()
             .is_some_and(|thoughts| !thoughts.is_empty()));
+    }
+
+    #[test]
+    fn a_watched_simultaneous_game_steps_a_whole_turn() {
+        // The spectator server plays the simultaneous regime as one whole
+        // planned turn per step, and the state document names the regime and
+        // carries its census so the viewer can read both.
+        let mut params = watched_table();
+        params.turn_structure = TurnStructure::Simultaneous;
+        let mut session = Session::new(params);
+        let turn_before = session.game.turn;
+        session.step();
+        assert_eq!(
+            session.game.turn,
+            turn_before + 1,
+            "one step of a simultaneous game is one whole game turn"
+        );
+        let state = session.state();
+        assert_eq!(state["turn_structure"], json!("simultaneous"));
+        assert!(state["simultaneous"]["planned"].as_u64().unwrap() > 0);
+    }
+
+    #[test]
+    fn a_sequential_state_names_its_turn_structure_and_no_census() {
+        let session = Session::new(watched_table());
+        let state = session.state();
+        assert_eq!(state["turn_structure"], json!("sequential"));
+        assert!(state.get("simultaneous").is_none());
+    }
+
+    #[test]
+    fn new_game_carries_the_turn_structure_for_a_watched_table_only() {
+        let mut spectated = current();
+        spectated.spectate = true;
+        let asked = new_game_params(&spectated, &json!({"turn_structure": "simultaneous"}));
+        assert_eq!(asked.turn_structure, TurnStructure::Simultaneous);
+        // An unknown id leaves the setting where it was, like every rung.
+        let nonsense = new_game_params(&asked, &json!({"turn_structure": "psychic"}));
+        assert_eq!(nonsense.turn_structure, TurnStructure::Simultaneous);
+        let back = new_game_params(&asked, &json!({"turn_structure": "sequential"}));
+        assert_eq!(back.turn_structure, TurnStructure::Sequential);
+        // A game with a human seat is sequential by construction: the rest
+        // of such a request lands, the regime does not.
+        let played = new_game_params(&current(), &json!({"turn_structure": "simultaneous"}));
+        assert_eq!(played.turn_structure, TurnStructure::Sequential);
     }
 
     fn current() -> Params {

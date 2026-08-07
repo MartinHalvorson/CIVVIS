@@ -857,6 +857,26 @@
     margin-left: .32em; color: #90a29b; font-size: .7em; font-weight: 700;
     font-variant-numeric: tabular-nums; letter-spacing: -.01em; white-space: nowrap;
   }
+  /* Switching the turn structure needs a new world, so the pick opens a small
+     dialog over the map: restart now, queue it for the next game, or go back.
+     The element itself is the scrim; the card is its only child. */
+  #turn-structure-dialog {
+    position: fixed; inset: 0; z-index: 96; display: grid; place-items: center;
+    padding: 16px; background: #040a08a8; backdrop-filter: blur(3px);
+  }
+  .turns-dialog-card {
+    width: min(400px, 100%); padding: 20px 22px;
+    color: var(--text); background: radial-gradient(circle at top, #2c3524, #0c1714f7 65%);
+    border: 1px solid var(--gold); border-radius: 16px;
+    box-shadow: 0 24px 90px #000e, 0 0 60px #d7b66a22;
+  }
+  .turns-dialog-card h3 {
+    margin: 0 0 8px; color: var(--gold-bright); font: 600 22px/1.15 Georgia, serif;
+  }
+  .turns-dialog-card p { margin: 0 0 10px; font-size: var(--type-control); line-height: 1.55; }
+  .turns-dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+  .turns-dialog-actions .primary { grid-column: 1 / -1; }
+  .turns-dialog-actions button { margin: 0; }
   /* Borrowed turns. It sits under the turn cap because that cap is the thing
      it explains: the number went up because somebody asked it to. */
   .turn-playon {
