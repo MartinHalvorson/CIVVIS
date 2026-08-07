@@ -5572,7 +5572,7 @@ function toggleSpecPause() {
   setPace({paused: specPaused});
 }
 setInterval(reportSpecStatus, 4000);
-// --- Live time: the turn plate's stopwatch, under its Watch pace row. It
+// --- Live time: the turn plate's stopwatch, above its Watch pace row. It
 // reads how long the world on screen has actually been playing: it starts
 // with the world's first unpaused frame, stops while the simulation is paused
 // or a result is on screen, and a new world starts it over from zero. A
@@ -20046,8 +20046,9 @@ function hudTurnPlate() {
   // belongs to the watched regimes only.
   const liveTimeText = SPEC ? liveClockLabel() : null;
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
-    `game speed ${speedName}; ${turnStructureName.toLowerCase()} turns; watch pace ${watchPace}; ` +
+    `game speed ${speedName}; ${turnStructureName.toLowerCase()} turns; ` +
     (liveTimeText ? `live time ${liveTimeText}; ` : ``) +
+    `watch pace ${watchPace}; ` +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
     `${cityStateCount} city states remaining, ${cityStatesLost} eliminated`;
   // A count and the toll it was taken out of are one reading, so they share a
@@ -20069,11 +20070,11 @@ function hudTurnPlate() {
     `<div class="turn-settings" aria-label="Game setup">` +
     `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
     `<div class="turn-setting"><span>Turns:</span>${turnStructureValue}</div>` +
-    `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
     (liveTimeText !== null
       ? `<div class="turn-setting" title="How long this world has been playing. Pauses stop the clock; a restart starts it over.">` +
         `<span>Live time:</span><b data-live-time>${liveTimeText}</b></div>`
       : ``) +
+    `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
     rosterRow("Civs:", civCount, civsLost) +
     rosterRow("City states:", cityStateCount, cityStatesLost) +
     `</div></section>`;
