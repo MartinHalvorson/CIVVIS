@@ -1963,11 +1963,14 @@ fn automatic_successor_seed(seed: u64) -> u64 {
 impl Session {
     /// Seat AIs plus each seat's league identity. With a roster to seat from,
     /// each major gets a rank-weighted sample from the top three proven winners
-    /// for this table size (`league::seat_by_civ_seeded`), with its exact
-    /// leader/civilization placement rating breaking win-bound ties and repeats
-    /// avoided while possible. Otherwise majors run the default hierarchical
-    /// AI, which the league rates as its "advanced" entrant, so a loaded roster
-    /// can still label those seats with an elo.
+    /// for this table size (`league::seat_by_civ_seeded`), overall placement
+    /// rating breaking win-bound ties, repeats avoided while possible, and the
+    /// sampled entrants rotated across the table's civilizations by Latin
+    /// square over the league round — never seated by their rating on the civ
+    /// itself, which is the confound documented in docs/RATING.md. Otherwise
+    /// majors run the default hierarchical AI, which the league rates as its
+    /// "advanced" entrant, so a loaded roster can still label those seats with
+    /// an elo.
     ///
     /// A seat somebody is playing is never seated from the roster. Whoever is
     /// at the keyboard is their own player — `register_human_players` gives
