@@ -72,6 +72,13 @@ class DismissalPolicyTest(unittest.TestCase):
         modal = {"owner": "SomeNewAgent", "text": "anything", "buttons": ["OK"]}
         self.assertIsNone(cc.choose_dismissal(modal))
 
+    def test_the_admin_auth_sheet_gets_cancel_and_never_credentials(self) -> None:
+        """The sheet a refused symlink move left on screen for an hour."""
+        modal = {"owner": "SecurityAgent",
+                 "text": "Finder wants to make changes.",
+                 "buttons": ["Use Password…", "Cancel"]}
+        self.assertEqual(cc.choose_dismissal(modal), "Cancel")
+
 
 class EnsureSingleGameTest(unittest.TestCase):
     def test_the_oldest_child_is_kept_and_newer_ones_are_culled(self) -> None:

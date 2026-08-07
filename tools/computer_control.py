@@ -100,6 +100,16 @@ KNOWN_MODALS = {
         "matches": (),
         "safe_buttons": ("OK", "Cancel", "Close"),
     },
+    # The admin-auth sheet ("Finder wants to make changes", Touch ID / password).
+    # Measured 2026-08-07: asking Finder to move a SYMLINK into the protected
+    # bundle raised this sheet; the osascript that asked timed out (-1712) and
+    # the sheet then sat on screen for an hour — invisible to a census keyed on
+    # Finder, because its owner is SecurityAgent. Cancel is the only safe
+    # button: entering credentials is never this tool's to do.
+    "SecurityAgent": {
+        "matches": ("wants to make changes",),
+        "safe_buttons": ("Cancel",),
+    },
 }
 
 
