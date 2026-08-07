@@ -1413,6 +1413,28 @@ pub struct AdvancedAi {
     /// Production Advanced enables this. Historical evaluator controls retain
     /// the old flat-gene delegation.
     pub plan_city_target: bool,
+    /// Price the city ceiling off the land the board actually shows, densely.
+    ///
+    /// ★★★★ THE STOCK CEILING IS WHAT LOSES SETTLER GAMES, and three live
+    /// Firaxis games measured it on 2026-08-07. `assess` clamps
+    /// `map_capacity` to nine and prices land at one city per 55 passable
+    /// tiles — bred against CIVVIS rivals who contest ground. Against
+    /// Civilization VI's Settler AI nobody contests anything: all three runs
+    /// saturated at EIGHT cities by t110–t150 while rivals reached ten and
+    /// eleven, and the score sheet followed directly (639 vs 1317; 911 vs
+    /// 1049; techs 51 vs 72 in the first, because science is a city count).
+    /// The empire hit 8 of its own 9-ceiling — what limited it was the
+    /// ceiling, not its ability to reach one, which is the same shape #569
+    /// already established for the six-city planning cap.
+    ///
+    /// Under the treatment the ceiling prices land at one city per 45 tiles
+    /// and clamps at twelve. Self-adapting by construction: on a contested
+    /// league board rivals absorb the land and the computed capacity never
+    /// nears the new ceiling, so bred behaviour is preserved where breeding
+    /// happened; on an uncontested live board the free land IS the signal.
+    /// Native tournament games leave this off so recorded ladders stay
+    /// comparable.
+    pub wide_map_capacity: bool,
     pub city_strategy: bool,
     /// Ablation halves of `city_strategy`, so the loss above can be attributed
     /// rather than guessed at. Each is meaningless unless `city_strategy` is
@@ -2154,6 +2176,7 @@ impl AdvancedAi {
             belief_pressure: false,
             city_target_floor: 3,
             plan_city_target: false,
+            wide_map_capacity: false,
             city_strategy: false,
             city_strategy_emphasis: true,
             city_strategy_roles: true,
@@ -2231,6 +2254,17 @@ impl AdvancedAi {
     /// disabled so their recorded ladders replay move-for-move.
     pub fn enable_recorded_tactical_step(&mut self) {
         self.base.recorded_tactical_step = true;
+    }
+
+    /// Price the city ceiling off uncontested land. Native tournament games
+    /// leave this off so recorded ladders stay comparable; see
+    /// `wide_map_capacity` for the live Settler measurement.
+    pub fn enable_wide_map_capacity(&mut self) {
+        self.wide_map_capacity = true;
+    }
+
+    pub fn disable_wide_map_capacity(&mut self) {
+        self.wide_map_capacity = false;
     }
 
     /// Enable explicit battlefield roles: the land-unit counter cycle, safe
@@ -2433,6 +2467,10 @@ impl AdvancedAi {
         // asking too late; this floor asks it of the strongest MET major in
         // peacetime, under its own far smaller ceiling.
         self.enable_peacetime_deterrence();
+        // Three straight Settler losses were an eight-city empire against
+        // ten- and eleven-city rivals; the stock nine-ceiling was the binding
+        // constant. See `wide_map_capacity`.
+        self.enable_wide_map_capacity();
         // Raj, Wisselbanken, Collective Activism and the International Space
         // Agency all scale off SUZERAIN city-states and pay nothing at zero.
         // Live run `civvis-20260803T220954Z` held Raj AND Wisselbanken slotted
@@ -5200,7 +5238,14 @@ impl AdvancedAi {
             .values()
             .filter(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
             .count();
-        let map_capacity = (2 + land / 55).clamp(3, 9);
+        let map_capacity = if self.wide_map_capacity {
+            // Live-bridge pricing: one city per 45 passable tiles, ceiling
+            // twelve. See the `wide_map_capacity` field for the three-game
+            // Settler measurement this bounds.
+            (2 + land / 45).clamp(3, 12)
+        } else {
+            (2 + land / 55).clamp(3, 9)
+        };
         // Expansion must compound before it pays back. Add roughly one city
         // per era instead of continuously raising the target and starving a
         // young empire of districts, buildings, and population growth. Scale
@@ -20864,6 +20909,59 @@ mod tests {
     use super::*;
     use crate::ai::run_game;
     use crate::game::{GameOptions, GovernorState};
+
+    #[test]
+    fn wide_map_capacity_prices_uncontested_land_and_stock_stays_capped() {
+        // The league profile's own board: 74x46, where passable land clears
+        // both ceilings — which is exactly the quantity under test.
+        let mut game = Game::new_full(2, 74, 46, 11, 1_000, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("each major starts with a settler");
+            let position = game.units[&settler].pos;
+            game.found_city_for(pid, position, None);
+            game.remove_unit(settler);
+        }
+        let land = game
+            .map
+            .tiles
+            .values()
+            .filter(|t| game.rules.is_passable(t) && !game.rules.is_water(t))
+            .count();
+        assert!(land > 45 * 10, "fixture must offer ceiling-clearing land");
+
+        let mut stock = AdvancedAi::new();
+        stock.plan_city_target = true;
+        stock.city_target_floor = 6;
+        let mut wide = AdvancedAi::new();
+        wide.plan_city_target = true;
+        wide.city_target_floor = 6;
+        wide.enable_wide_map_capacity();
+
+        let mut late = game;
+        late.turn = 2_000; // past every cadence step: the ceiling decides.
+        late.current = 0;
+        let stock_plan = stock.assess(&late, 0);
+        let wide_plan = wide.assess(&late, 0);
+        assert_eq!(
+            stock_plan.desired_cities, 9,
+            "the stock ceiling is the measured Settler saturation point"
+        );
+        assert_eq!(
+            wide_plan.desired_cities, 12,
+            "uncontested land must lift the treated ceiling past the rivals' ten and eleven"
+        );
+
+        // The live bridge carries the treatment, and the ablation arm removes it.
+        let mut bridged = AdvancedAi::new();
+        bridged.enable_live_bridge();
+        assert!(bridged.wide_map_capacity);
+        bridged.disable_wide_map_capacity();
+        assert!(!bridged.wide_map_capacity);
+    }
 
     fn timed_war_fixture(seed: u64) -> (Game, u32, u32) {
         let mut game = Game::new_full(2, 28, 18, seed, 1_000, 0, false);
