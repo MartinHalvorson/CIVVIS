@@ -43,6 +43,7 @@ pub mod specmap;
 pub mod server;
 pub mod setup;
 pub mod simultaneous;
+pub mod skirmish;
 pub mod sphere;
 pub mod strategic;
 pub mod valuenet;

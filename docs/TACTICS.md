@@ -1,7 +1,9 @@
 # Unit battling: the state of the art, what CIVVIS does, and what changed
 
-2026-07-31. Historical record of the removed tactical-search experiment;
-companion to `src/skirmish.rs` and `src/bin/battle_bench.rs`.
+2026-07-31. Historical record of the tactical-search experiment; companion to
+`src/skirmish.rs` and `src/bin/battle_bench.rs`. §§1–8 are the original
+record, including the removal; §9 (2026-08-07) records the operator-directed
+restoration, the strengthened search, and where it now runs.
 
 ## 1. What the published state of the art is for this problem
 
@@ -378,3 +380,94 @@ The bonuses assign close choices; exact damage, kills, captures, and enemy reply
 damage still dominate decisive exchanges. The feature is enabled by the
 production constructor and remains off in the frozen Basic and `advanced_v1`
 controls so historical evaluator identities do not change silently.
+
+## 9. Restoration and the v2 search (2026-08-07)
+
+Operator directive: make tactical unit combat as strong as the instrument can
+prove. The removed experiment, its census wiring, and the deleted instrument
+(`src/skirmish.rs`, `src/bin/battle_bench.rs`, pruned in #1194/#1278) were
+restored from history, re-verified (control at exactly 0.00 over 60 and again
+over 200 fresh seeds), and then strengthened by measurement. Every change below
+was screened on at least combined-arms and melee-only at 300 paired seeds, kept
+only where the screen improved or held, and the final configuration was
+confirmed on 1000 paired fresh seeds a cell (seed block disjoint from every
+screen).
+
+What changed in the search itself:
+
+- **Siege portfolio honesty.** `do_ranged` refuses a siege piece that moved
+  (absent the attack-after-move promotion), so every siege approach line was a
+  turn-wasting suicide walk and a pruning-slot thief; a siege piece that
+  already moved has no legal shot at all. Both are now filtered at generation.
+  Siege cell +90.0 → +108.7.
+- **Budget to the new knee.** 20/10/10 → 32/20/16 (pop/gen/lines): +246.0
+  combined. A 48/28/20 probe measured flat (+273 vs +279), so the curve that
+  "kept climbing" in §6 now plateaus at 32/20 — the evaluator improvements
+  moved the knee, and the budget stops there.
+- **Two-step approach lines** for units with *strictly more than two* movement
+  — the blow itself needs a movement point, so for a two-move unit every
+  two-step line arrives refused and stands in contact unfortified (measured:
+  melee −32.6 before the gate, back to noise after it). Intermediate tiles
+  adjacent to known hostile military are filtered (ZOC forfeits the second
+  step). Combined +275.0; ranged and melee unchanged, exactly as the mobility
+  gate predicts.
+- **Mobility-true enemy reach in the closed-form reply.** An m-move melee unit
+  strikes from m tiles, mounted ranged from range+m−1, and siege from its
+  range alone (it cannot move and shoot). The old constants (2, range+1) were
+  exact for two-move infantry and priced a four-move horseman at half its real
+  envelope. Siege cell +108.7 → +205.8; combined +279.2.
+- **Two nulls, recorded so they are not re-attempted:** stacking
+  `tile_defense_bonus` into the closed-form reply and priors (the exact term
+  `do_attack` uses) measured −10 combined / −10.6 melee with the melee sign
+  test at p=0.09 in the wrong direction — the exact forward model already
+  prices the terrain of every attack taken, and pre-discounting our tiles in
+  the enemy's answer mostly licenses braver stands. And the deeper budget
+  above the new knee buys nothing.
+
+### v2 results — 1000 paired fresh seeds a cell, seats swapped, control 0.00
+
+| composition | exchange ratio (v2 vs stock advanced) | paired swing | sign |
+|---|---|---|---|
+| combined arms | **1.592** vs 0.628 | **+264.3 ± 12.2** | 730/243, p<0.0001 |
+| ranged heavy | **1.993** vs 0.502 | **+395.4 ± 13.3** | 804/164, p<0.0001 |
+| with siege | **1.349** vs 0.742 | **+199.7 ± 15.0** | 645/315, p<0.0001 |
+| melee only | 0.944 vs 1.060 | −3.4 ± 4.8 | 375/398, p=0.43 |
+
+Against the greedy production controller the army now trades at 2.5× (combined
+arms), 4.0× (ranged heavy) and 1.8× (siege) kills-per-loss ratio-of-ratios;
+the melee scrum stays at noise, which §4 explains and §7.4's forfeit term
+already priced. Relative to the restored v1 on the same screens: combined
++233 → +279, siege +90 → +206, ranged flat at +363, melee unchanged.
+
+### Cost and fires at deployment scale
+
+`battle_bench --cost`, one treated seat among five, 6p/74×46, interleaved:
+**1.57×** a stock seat (v1 was 1.47× at the smaller budget; a `StrategicAi`
+seat is 6.4×). Fires-check: the search planned on 47 of 303 treated
+seat-turns (15.5%), reaching 145 unit decisions.
+
+### Where it runs
+
+- **The live bridge enables it** (`enable_joint_tactics`, tagged
+  `joint-tactics`, ablatable as `live_without_joint_tactics`). The deployed
+  agent is the one the operator asked to fight better, and the whole-game
+  evidence in §6 says the rating this cannot move is not the thing being
+  optimized there.
+- **The tournament `advanced` entrant keeps the greedy rule** and the frozen
+  Basic/`advanced_v1` identities are untouched, so recorded ladders stay
+  comparable. The `advanced_joint_tactics` arm remains the measured treatment.
+- §7.1's warning stands for win-rate work: do not spend more here expecting
+  wins. This section exists because the operator asked for combat strength as
+  its own objective, and that is what the instrument certifies.
+
+Separately in the same change: the Advanced military step's enemy list
+excluded the barbarian seat, so with no major war running every soldier took
+the peacetime path while raiders pillaged home districts (live run
+`civvis-20260807T172510Z`). The list now admits the barbarian seat when it has
+a presence within `HOME_THREAT_RADIUS` of our cities, the step consults
+`garrison_step`/`home_defense_objective` (barbarian-scoped) ahead of the
+campaign march, and a claimed responder closes decisively instead of hovering
+at the raider's reach. Scoping to the barbarian seat is measured, not
+stylistic: the unscoped version moved the melee bench −4.8 → −18.1 by
+rerouting wartime defense, and the scoped version returns bit-identical
+major-war benches.
