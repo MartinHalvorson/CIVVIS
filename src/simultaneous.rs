@@ -41,7 +41,12 @@
 //! under `randomize_civs`, which is what washes the priority out across a
 //! corpus).
 
+use std::any::Any;
 use std::collections::BTreeMap;
+use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread::{self, ScopedJoinHandle};
 
 use crate::action_space::kind_name;
 use crate::ai::{run_game, Ai};
@@ -171,6 +176,219 @@ fn planning_stream(seed: u64, turn: u32, seat: usize) -> Rng {
 /// far above anything a real turn produces.
 const MANDATORY_RESOLUTION_BOUND: usize = 64;
 
+/// A planning worker needs the same generous stack as the game's other
+/// simulation workers. A complete AI turn can nest deeply through routing and
+/// speculative rules evaluation, while the platform default is too small for
+/// a late-game world.
+const PLANNING_WORKER_STACK: usize = 32 * 1024 * 1024;
+
+/// One owned planning world handed from the simulation thread to a persistent
+/// seat planner. The request deliberately contains no borrowed state: worker
+/// threads can live for the whole game while the authoritative world continues
+/// to prepare and commit on the caller.
+struct PlanningRequest {
+    sequence: usize,
+    seat: usize,
+    world: Game,
+    cancelled: Arc<AtomicBool>,
+    response: mpsc::Sender<PlanningResult>,
+}
+
+enum PlanningMessage {
+    Plan(PlanningRequest),
+    Shutdown,
+}
+
+enum PlanningResult {
+    Planned {
+        sequence: usize,
+        seat: usize,
+        actions: Vec<Action>,
+    },
+    Cancelled {
+        sequence: usize,
+    },
+    Panicked(Box<dyn Any + Send + 'static>),
+}
+
+/// A scoped, persistent worker fleet for simultaneous-turn deliberation.
+///
+/// A generic [`crate::parallel::WorkPool`] owns `'static` tasks, which is the
+/// right shape for search branches but cannot own a caller's `&mut [Ai]`.
+/// These workers instead borrow the AI fleet for one complete game. Every
+/// individual request owns its `Game` clone and response channel, so all that
+/// crosses the worker boundary is owned data; an AI remains exclusively locked
+/// for its own request. This avoids recreating one OS thread per seat on every
+/// game turn without compromising the caller-owned AI API.
+struct SeatPlannerPool<'scope> {
+    sender: mpsc::Sender<PlanningMessage>,
+    workers: Vec<ScopedJoinHandle<'scope, ()>>,
+}
+
+impl<'scope> SeatPlannerPool<'scope> {
+    fn new<'env, A: Ai + Send>(
+        scope: &'scope thread::Scope<'scope, 'env>,
+        ais: &'env mut [A],
+        jobs: usize,
+    ) -> SeatPlannerPool<'scope> {
+        let workers = jobs.max(1).min(ais.len().max(1));
+        let (sender, receiver) = mpsc::channel::<PlanningMessage>();
+        let receiver = Arc::new(Mutex::new(receiver));
+        // There is one mutable AI per seat, but arbitrary workers can claim
+        // ready seats. The per-seat mutex supplies exclusive ownership without
+        // tying a slow empire to a particular worker for the whole game.
+        let ais = Arc::new(ais.iter_mut().map(Mutex::new).collect::<Vec<_>>());
+        let mut handles = Vec::with_capacity(workers);
+        for index in 0..workers {
+            let receiver = Arc::clone(&receiver);
+            let ais = Arc::clone(&ais);
+            let handle = thread::Builder::new()
+                .name(format!("civvis-seat-plan-{index}"))
+                .stack_size(PLANNING_WORKER_STACK)
+                .spawn_scoped(scope, move || loop {
+                    // `Receiver` is not Sync. Claim one request under the
+                    // lock, then deliberate outside it so every worker can
+                    // make progress at once.
+                    let message = receiver
+                        .lock()
+                        .expect("a simultaneous planning receiver was poisoned")
+                        .recv();
+                    let Ok(message) = message else { break };
+                    match message {
+                        PlanningMessage::Shutdown => break,
+                        PlanningMessage::Plan(request) => {
+                            if request.cancelled.load(Ordering::Acquire) {
+                                let _ = request.response.send(PlanningResult::Cancelled {
+                                    sequence: request.sequence,
+                                });
+                                continue;
+                            }
+                            let PlanningRequest {
+                                sequence,
+                                seat,
+                                mut world,
+                                cancelled,
+                                response,
+                            } = request;
+                            let planned = catch_unwind(AssertUnwindSafe(|| {
+                                let mut ai = ais[seat]
+                                    .lock()
+                                    .expect("a simultaneous planning AI was poisoned");
+                                let mark = world.log.len();
+                                ai.take_turn(&mut world, seat);
+                                world
+                                    .log
+                                    .since(mark)
+                                    .take_while(|(pid, _)| *pid == seat)
+                                    .filter(|(_, action)| !matches!(action, Action::EndTurn))
+                                    .map(|(_, action)| action.clone())
+                                    .collect::<Vec<_>>()
+                            }));
+                            match planned {
+                                Ok(actions) => {
+                                    let _ = response.send(PlanningResult::Planned {
+                                        sequence,
+                                        seat,
+                                        actions,
+                                    });
+                                }
+                                Err(payload) => {
+                                    cancelled.store(true, Ordering::Release);
+                                    let _ = response.send(PlanningResult::Panicked(payload));
+                                }
+                            }
+                        }
+                    }
+                })
+                .expect("the operating system refused a simultaneous planning worker");
+            handles.push(handle);
+        }
+        SeatPlannerPool {
+            sender,
+            workers: handles,
+        }
+    }
+
+    /// Plan every prepared seat, returning plans in the preparation order
+    /// regardless of worker completion order. A worker panic is resumed on
+    /// the simulation thread after every in-flight request has acknowledged
+    /// cancellation, so the scoped fleet never leaks or deadlocks.
+    fn plan(&self, prepared: Vec<(usize, Game)>) -> Vec<(usize, Vec<Action>)> {
+        if prepared.is_empty() {
+            return Vec::new();
+        }
+        let count = prepared.len();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let (response, results) = mpsc::channel::<PlanningResult>();
+        for (sequence, (seat, world)) in prepared.into_iter().enumerate() {
+            self.sender
+                .send(PlanningMessage::Plan(PlanningRequest {
+                    sequence,
+                    seat,
+                    world,
+                    cancelled: Arc::clone(&cancelled),
+                    response: response.clone(),
+                }))
+                .expect("the simultaneous planning worker fleet stopped unexpectedly");
+        }
+        drop(response);
+
+        let mut plans: Vec<Option<(usize, Vec<Action>)>> =
+            (0..count).map(|_| None).collect();
+        let mut first_panic = None;
+        for _ in 0..count {
+            match results
+                .recv()
+                .expect("a simultaneous planning worker stopped without reporting")
+            {
+                PlanningResult::Planned {
+                    sequence,
+                    seat,
+                    actions,
+                } => {
+                    assert!(sequence < count, "planning worker returned an invalid sequence");
+                    assert!(
+                        plans[sequence].is_none(),
+                        "planning worker returned sequence {sequence} twice"
+                    );
+                    plans[sequence] = Some((seat, actions));
+                }
+                PlanningResult::Cancelled { sequence } => {
+                    assert!(sequence < count, "planning worker cancelled an invalid sequence");
+                }
+                PlanningResult::Panicked(payload) => {
+                    if first_panic.is_none() {
+                        first_panic = Some(payload);
+                    }
+                }
+            }
+        }
+        if let Some(payload) = first_panic {
+            resume_unwind(payload);
+        }
+        plans
+            .into_iter()
+            .enumerate()
+            .map(|(sequence, plan)| {
+                plan.unwrap_or_else(|| {
+                    panic!("simultaneous planning worker {sequence} produced no plan")
+                })
+            })
+            .collect()
+    }
+}
+
+impl Drop for SeatPlannerPool<'_> {
+    fn drop(&mut self) {
+        for _ in &self.workers {
+            let _ = self.sender.send(PlanningMessage::Shutdown);
+        }
+        for worker in self.workers.drain(..) {
+            let _ = worker.join();
+        }
+    }
+}
+
 /// Close `seat`'s turn on `g`, resolving any mandatory choice the plan never
 /// made (a captured city's fate) with the first legal answer. Returns false
 /// only if the turn could not be closed within the bound — a state the
@@ -203,10 +421,30 @@ fn run_simultaneous<A: Ai + Send>(g: &mut Game, ais: &mut [A], jobs: usize) -> S
     // cache, not a gameplay input, and planning clones inherit the setting.
     g.set_fog_memory(false);
     let mut census = SimultaneousCensus::default();
-    while g.winner.is_none() && g.turn <= g.max_turns {
-        if !step_cycle(g, ais, jobs, &mut census) {
-            return census;
+    let workers = jobs.max(1).min(ais.len().max(1));
+    if workers == 1 {
+        while g.winner.is_none() && g.turn <= g.max_turns {
+            if !step_cycle_with_planner(g, &mut census, |prepared| {
+                plan_serially(ais, prepared)
+            }) {
+                break;
+            }
         }
+    } else {
+        // The AI fleet is borrowed by one scoped worker fleet for the entire
+        // game. A previous implementation spawned `workers` new threads for
+        // every cycle, so a long many-civilization game created thousands of
+        // short-lived threads before its planning work could reach the host.
+        thread::scope(|scope| {
+            let planners = SeatPlannerPool::new(scope, ais, workers);
+            while g.winner.is_none() && g.turn <= g.max_turns {
+                if !step_cycle_with_planner(g, &mut census, |prepared| {
+                    planners.plan(prepared)
+                }) {
+                    break;
+                }
+            }
+        });
     }
     census
 }
@@ -225,6 +463,57 @@ pub fn step_cycle<A: Ai + Send>(
     jobs: usize,
     census: &mut SimultaneousCensus,
 ) -> bool {
+    let workers = jobs.max(1).min(ais.len().max(1));
+    if workers == 1 {
+        step_cycle_with_planner(g, census, |prepared| plan_serially(ais, prepared))
+    } else {
+        // `step_cycle` is the one-cycle API used by the spectator, which
+        // intentionally passes one worker. Keep its explicit multi-worker
+        // caller contract nevertheless; the full-game runner above is the
+        // path that reuses this fleet across every cycle.
+        thread::scope(|scope| {
+            let planners = SeatPlannerPool::new(scope, ais, workers);
+            step_cycle_with_planner(g, census, |prepared| planners.plan(prepared))
+        })
+    }
+}
+
+/// Let each prepared AI deliberate on the caller thread. This is both the
+/// `jobs = 1` fast path and the deterministic reference implementation for
+/// the persistent worker fleet.
+fn plan_serially<A: Ai>(
+    ais: &mut [A],
+    prepared: Vec<(usize, Game)>,
+) -> Vec<(usize, Vec<Action>)> {
+    prepared
+        .into_iter()
+        .map(|(seat, mut world)| {
+            let mark = world.log.len();
+            ais[seat].take_turn(&mut world, seat);
+            let actions = world
+                .log
+                .since(mark)
+                .take_while(|(pid, _)| *pid == seat)
+                .filter(|(_, action)| !matches!(action, Action::EndTurn))
+                .map(|(_, action)| action.clone())
+                .collect();
+            (seat, actions)
+        })
+        .collect()
+}
+
+/// Advance one whole simultaneous cycle after supplying the mechanism that
+/// turns prepared private worlds into ordered seat plans. Preparation and
+/// commit deliberately stay here on the simulation thread; only this seam is
+/// concurrent, so worker scheduling cannot affect an action or RNG draw.
+fn step_cycle_with_planner<F>(
+    g: &mut Game,
+    census: &mut SimultaneousCensus,
+    plan: F,
+) -> bool
+where
+    F: FnOnce(Vec<(usize, Game)>) -> Vec<(usize, Vec<Action>)>,
+{
     let opened = (g.turn, g.current);
     let cycle_turn = g.turn;
     // One cycle visits each seat once; the slack absorbs a seat that
@@ -268,43 +557,12 @@ pub fn step_cycle<A: Ai + Send>(
         }
     }
 
-    // The deliberation fan-out. Each cell hands exactly one worker
-    // exclusive ownership of one seat's AI and world; results come back
-    // in prepared order regardless of which worker finished when, and
-    // `jobs = 1` is the same code run serially in that order.
-    let seats: Vec<usize> = prepared.iter().map(|(seat, _)| *seat).collect();
-    let cells: Vec<std::sync::Mutex<(Option<&mut A>, Option<Game>)>> = {
-        let mut ai_slots: Vec<Option<&mut A>> = Vec::new();
-        ai_slots.resize_with(seats.len(), || None);
-        for (pid, ai) in ais.iter_mut().enumerate() {
-            if let Some(position) = seats.iter().position(|&seat| seat == pid) {
-                ai_slots[position] = Some(ai);
-            }
-        }
-        ai_slots
-            .into_iter()
-            .zip(prepared.into_iter().map(|(_, world)| Some(world)))
-            .map(|(ai, world)| std::sync::Mutex::new((ai, world)))
-            .collect()
-    };
-    let planned: Vec<Vec<Action>> = crate::parallel::map(cells.len(), jobs, |index| {
-        let mut cell = cells[index].lock().expect("a planning job panicked");
-        let ai = cell.0.take().expect("each planning cell is taken once");
-        let mut world = cell.1.take().expect("each planning world is taken once");
-        let seat = seats[index];
-        let mark = world.log.len();
-        ai.take_turn(&mut world, seat);
-        world
-            .log
-            .since(mark)
-            .take_while(|(pid, _)| *pid == seat)
-            .filter(|(_, action)| !matches!(action, Action::EndTurn))
-            .map(|(_, action)| action.clone())
-            .collect()
-    });
-    drop(cells);
+    // The planner may use the caller thread or the scoped persistent fleet,
+    // but both return the prepared order. The authoritative world only sees
+    // these results below, in turn-cursor order.
+    let planned = plan(prepared);
     let mut plans: BTreeMap<usize, Vec<Action>> = BTreeMap::new();
-    for (seat, actions) in seats.into_iter().zip(planned) {
+    for (seat, actions) in planned {
         census.planned += actions.len() as u64;
         plans.insert(seat, actions);
     }
@@ -363,6 +621,36 @@ mod tests {
     use super::*;
     use crate::ai::BasicAi;
     use crate::game::GameOptions;
+    use std::collections::HashSet;
+    use std::sync::{Arc, Barrier, Mutex};
+
+    /// A deliberately inert AI that blocks one planning request per worker.
+    /// It turns a scheduler assertion into a deterministic test: if one
+    /// worker tried to process two ready seats, the barrier could not open.
+    struct BarrierAi {
+        barrier: Arc<Barrier>,
+        threads: Arc<Mutex<HashSet<std::thread::ThreadId>>>,
+    }
+
+    impl Ai for BarrierAi {
+        fn take_turn(&mut self, _g: &mut Game, _pid: usize) {
+            self.threads
+                .lock()
+                .expect("the planning-thread census was poisoned")
+                .insert(std::thread::current().id());
+            self.barrier.wait();
+        }
+    }
+
+    struct PanicAi {
+        panics: bool,
+    }
+
+    impl Ai for PanicAi {
+        fn take_turn(&mut self, _g: &mut Game, _pid: usize) {
+            assert!(!self.panics, "intentional simultaneous-planning panic");
+        }
+    }
 
     fn simultaneous_game(seed: u64, turns: u32) -> Game {
         let mut g = Game::new(3, 24, 16, seed, turns, 1);
@@ -454,6 +742,55 @@ mod tests {
         assert_eq!(census_serial.planned, census_fanned.planned);
         assert_eq!(census_serial.applied, census_fanned.applied);
         assert_eq!(census_serial.dropped_by_kind, census_fanned.dropped_by_kind);
+    }
+
+    /// A many-seat table has one independent `take_turn` per seat. The
+    /// persistent fleet must make all of them runnable at once, not merely
+    /// preserve the output while one worker drains the queue. The barrier is
+    /// intentionally in the AI rather than a timing assertion, so this stays
+    /// reliable on a loaded host.
+    #[test]
+    fn parallel_planning_runs_all_ready_seats_at_once() {
+        let mut g = Game::new(8, 32, 22, 31, 1, 0);
+        g.turn_structure = TurnStructure::Simultaneous;
+        // The permanent Free Cities slot is dormant at setup and correctly
+        // skipped by the turn cursor; the ready seats are the ones that will
+        // receive a planning world in this first cycle.
+        let ready = g.players.iter().filter(|player| player.alive).count();
+        let barrier = Arc::new(Barrier::new(ready));
+        let threads = Arc::new(Mutex::new(HashSet::new()));
+        let mut ais = (0..g.players.len())
+            .map(|_| BarrierAi {
+                barrier: Arc::clone(&barrier),
+                threads: Arc::clone(&threads),
+            })
+            .collect::<Vec<_>>();
+        let census = run_structured_jobs(&mut g, &mut ais, ready).expect("a census");
+        assert!(!census.aborted);
+        assert_eq!(
+            threads
+                .lock()
+                .expect("the planning-thread census was poisoned")
+                .len(),
+            ready,
+            "every ready seat needs its own active worker when the budget permits it"
+        );
+    }
+
+    /// A worker failure must reach the caller rather than leaving the main
+    /// thread blocked on a response from a worker that unwound. The pool waits
+    /// for the rest of the batch to acknowledge cancellation before resuming
+    /// the original payload, so its scoped threads are joined normally.
+    #[test]
+    fn parallel_planning_propagates_worker_panics_without_hanging() {
+        let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut g = simultaneous_game(41, 2);
+            let mut ais = (0..g.players.len())
+                .map(|pid| PanicAi { panics: pid == 0 })
+                .collect::<Vec<_>>();
+            run_structured_jobs(&mut g, &mut ais, 4).expect("a census");
+        }));
+        assert!(failed.is_err());
     }
 
     /// The turn cursor can rest on a seat that is not alive: a civilization

@@ -1211,6 +1211,20 @@ fn single_simulation_jobs_arg(args: &[String]) -> usize {
     }
 }
 
+/// Split one process-wide worker budget across a simultaneous soak's active
+/// games. The first `extra` game indices receive one additional seat planner,
+/// making the total exact without letting nested game and seat fan-outs
+/// oversubscribe the host.
+fn simultaneous_soak_job_split(games: usize, jobs: usize) -> (usize, usize, usize) {
+    let jobs = jobs.max(1);
+    let concurrent_games = games.max(1).min(jobs);
+    (
+        concurrent_games,
+        jobs / concurrent_games,
+        jobs % concurrent_games,
+    )
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let cmd = args.first().map(|s| s.as_str()).unwrap_or("help");
@@ -1272,15 +1286,37 @@ fn main() {
             let games = arg(&args, "--games", 10);
             let start = arg(&args, "--start-seed", 0);
             let jobs = jobs_arg(&args);
-            // Each game is played on its own thread, then described on the
+            let simultaneous = turn_structure(&args) == setup::TurnStructure::Simultaneous;
+            // A sequential soak has only one useful frontier: independent
+            // games. Simultaneous games have a second one inside each game —
+            // every ready civilization can plan at once. Keep the total
+            // worker budget bounded by splitting it across the games that can
+            // be live at once, then hand each game's share to its persistent
+            // seat-planning fleet. With one large simultaneous game, this
+            // therefore reaches every requested core instead of treating the
+            // one outer job as a reason to run all of its seats serially.
+            let (concurrent_games, jobs_per_game, extra_seat_workers) = if simultaneous {
+                simultaneous_soak_job_split(games as usize, jobs)
+            } else {
+                (jobs, 1, 0)
+            };
+            // Each game is played on an outer worker, then described on the
             // main one, so a soak reads exactly as it did when it was serial.
-            let lines = civvis::parallel::map(games as usize, jobs, |index| {
+            let lines = civvis::parallel::map(games as usize, concurrent_games, |index| {
                 let seed = start + index as i64;
                 let t0 = Instant::now();
                 let result = std::panic::catch_unwind(|| {
                     let mut g = Game::new_with(game_options(&args, players, seed as u64));
                     let mut ais = AdvancedAi::fleet(&g);
-                    let simultaneous = civvis::simultaneous::run_structured(&mut g, &mut ais);
+                    let simultaneous = if g.turn_structure == setup::TurnStructure::Simultaneous {
+                        // Spread a non-divisible budget across the first live
+                        // games; later replacements get the base share, so
+                        // the running total never exceeds `--jobs`.
+                        let seat_jobs = jobs_per_game + usize::from(index < extra_seat_workers);
+                        civvis::simultaneous::run_structured_jobs(&mut g, &mut ais, seat_jobs)
+                    } else {
+                        civvis::simultaneous::run_structured(&mut g, &mut ais)
+                    };
                     // Every major's turns, pooled: what the empires in this game
                     // actually spent the game doing.
                     let mut census = civvis::ai::StrategyCensus::default();
@@ -2414,7 +2450,7 @@ fn main() {
 mod tests {
     use super::{
         game_options, jobs_arg, map_topology, parse_tournament_entrants,
-        single_simulation_jobs_arg, strict_f64_arg, strict_i64_arg,
+        simultaneous_soak_job_split, single_simulation_jobs_arg, strict_f64_arg, strict_i64_arg,
         ADVANCED_V1_SOURCE_CONTRACT_FNV,
         DEFAULT_TOURNAMENT_ENTRANTS, SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
     };
@@ -2492,6 +2528,20 @@ mod tests {
         let explicit = vec!["simulate".to_string(), "--jobs".to_string(), "9".to_string()];
         assert_eq!(jobs_arg(&explicit), 9);
         assert_eq!(single_simulation_jobs_arg(&explicit), 9);
+    }
+
+    #[test]
+    fn simultaneous_soak_uses_idle_batch_budget_for_seat_planning() {
+        assert_eq!(simultaneous_soak_job_split(1, 128), (1, 128, 0));
+        assert_eq!(simultaneous_soak_job_split(3, 128), (3, 42, 2));
+        assert_eq!(simultaneous_soak_job_split(64, 8), (8, 1, 0));
+
+        for (games, jobs) in [(1, 1), (2, 3), (3, 8), (8, 8), (20, 8)] {
+            let (concurrent, per_game, extra) = simultaneous_soak_job_split(games, jobs);
+            assert_eq!(concurrent * per_game + extra, jobs);
+            assert!(extra < concurrent);
+            assert!(concurrent <= games.max(1));
+        }
     }
 
     /// The re-pin above claims the pantheon change is free for the Elo anchor

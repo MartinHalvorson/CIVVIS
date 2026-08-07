@@ -20,10 +20,23 @@ and the commit stay strictly serial, every planning world and RNG stream is
 fixed before the first worker starts, and results are consumed in seat
 order, so the fan-out is an execution detail: `jobs = 1` and `jobs = N`
 produce byte-for-byte the same game and census (test:
-`parallel_planning_is_an_execution_detail`). Under `simulate`, a
-simultaneous game therefore takes `--jobs` at the full batch default (one
-per core) and skips the AIs' inner WorkPool, while sequential games keep
-the intra-turn frontier pool with its measured knee of four.
+`parallel_planning_is_an_execution_detail`). A scoped seat-planner fleet is
+started once for the whole headless game and reuses its workers on every
+cycle; it owns only the AI borrows while each request carries an owned private
+world. This avoids creating fresh worker threads on every cycle. Under
+`simulate`, a simultaneous game therefore takes `--jobs` at the full batch
+default (one per core) and skips the AIs' inner WorkPool, while sequential
+games keep the intra-turn frontier pool with its measured knee of four.
+
+`soak` uses the same budget without nested oversubscription. If there are at
+least as many games as jobs, it retains the ordinary one-game-per-worker
+batch. If there are fewer simultaneous games than jobs, it starts only that
+many outer games and divides the remaining worker budget among each game's
+seat planners. Thus `civvis soak --games 1 --turn-structure simultaneous
+--jobs 128` can use up to one worker per ready civilization instead of
+silently running its one game's turns serially. The real ceiling is the number
+of seats ready in a cycle: 16 civilizations cannot keep 128 planners busy,
+but 64 simultaneous civilizations can use 64 independent planning workers.
 
 ## What it changes, and what it deliberately does not
 
@@ -128,6 +141,37 @@ standing follow-up if very large games are the goal. A 20-paired-seed
 semantics A/B (drop rate 3.6–5.7%, city counts indistinguishable, no
 seat-0 advantage, religious closes rarer) is recorded in
 `~/civvis-turn-structure-ab-preregistration.md`.
+
+### 9985WX scheduling validation (2026-08-06, ci profile)
+
+The local validation host is an AMD Ryzen Threadripper PRO 9985WX (64 physical
+cores / 128 logical CPUs). A 16-civilization, 64×40, zero-city-state,
+100-turn simultaneous game at seed 7,311,002 produced the same normalized
+`simulate` SHA-256 at jobs 1 and 16:
+
+```text
+99a53801956a1d9407848371ab5c23d58a5349acb2d9d2990bff1f597fd62b71
+```
+
+The job curve was 10.34s at one planner and 4.60s at 16 planners (2.25×).
+At 32 civilizations / 40 turns on the automatic map, the same comparison was
+17.28s versus 9.50s (1.82×), again with identical state and census. The
+persistent fleet is performance-neutral versus the old transient fan-out on
+the 16-seat `simulate` workload itself; its important throughput change is
+that `soak` now reaches the seat frontier when the game batch is narrow.
+
+For the 16-civilization one-game soak above with `--jobs 16`, current `main`
+spent 10.26s because its only outer game worker ran its seats serially. This
+change completed in 4.55s (2.25×). Both normalized soak reports hash to:
+
+```text
+1a8a2d18591f551812bcd0224f3132c13b0998b0347bf1e51daae1846d2b56dc
+```
+
+These are local directional measurements, not a promise that every map shape
+has the same knee. Always use an explicit `--jobs` when calibrating a new
+machine or player count, and compare normalized reports before trusting a
+throughput result.
 
 Before comparing regimes, run paired seeds both ways and read the drop
 rate alongside the outcome distributions — one seed is never a result.
