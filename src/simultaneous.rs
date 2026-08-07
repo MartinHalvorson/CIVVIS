@@ -139,14 +139,17 @@ pub fn run_structured<A: Ai + Send>(g: &mut Game, ais: &mut [A]) -> Option<Simul
 ///
 /// This is the payoff the regime exists for: with every rival frozen at the
 /// top of the turn, the seats' deliberations are independent work, and
-/// deliberation is roughly two thirds of simulator runtime. The engine-side
-/// prepare (empty-forwarding one rolling world through the seats) and the
-/// commit stay strictly serial; only `Ai::take_turn` calls on worker-private
-/// worlds run concurrently, and their results are consumed in seat order.
-/// `jobs = 1` runs the identical code path serially on the caller's thread
-/// — the equivalence oracle the tests hold the fan-out to, and the reason
-/// execution order can never reach the game: every planning world and its
-/// RNG stream are fully determined before the first worker starts.
+/// deliberation is roughly two thirds of simulator runtime. Each engine
+/// phase remains strictly serial in itself — one prepare walk, one commit
+/// cursor — but the three phases run *pipelined*: a persistent prepare
+/// thread empty-forwards the rolling world and ships each seat's private
+/// world to the fleet as it is cloned, the fleet deliberates, and the
+/// caller's thread commits every plan in turn-cursor order the moment it
+/// is available. `jobs = 1` runs the whole cycle serially on the caller's
+/// thread — the equivalence oracle the tests hold the pipeline to, and the
+/// reason execution order can never reach the game: every planning world
+/// and its RNG stream are fully determined before the first worker starts,
+/// and the commit blocks until the seat under the cursor is decided.
 ///
 /// Sequential games ignore `jobs` here: their seats cannot deliberate
 /// concurrently by construction, which is what the whole option is for.
@@ -444,38 +447,6 @@ fn close_seat_turn(g: &mut Game, seat: usize, forced: &mut u64) -> bool {
     false
 }
 
-// ---- TEMPORARY instrumentation (CIVVIS_SIMUL_PHASE_TIMING=1): phase nanos.
-pub(crate) mod phase_timing {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    pub static PREP_CLONE: AtomicU64 = AtomicU64::new(0);
-    pub static PREP_FORWARD: AtomicU64 = AtomicU64::new(0);
-    pub static PLAN_WALL: AtomicU64 = AtomicU64::new(0);
-    pub static COMMIT: AtomicU64 = AtomicU64::new(0);
-    pub static STALL: AtomicU64 = AtomicU64::new(0);
-    pub static CYCLES: AtomicU64 = AtomicU64::new(0);
-
-    pub fn enabled() -> bool {
-        std::env::var_os("CIVVIS_SIMUL_PHASE_TIMING").is_some()
-    }
-
-    pub fn add(counter: &AtomicU64, nanos: u128) {
-        counter.fetch_add(nanos as u64, Ordering::Relaxed);
-    }
-
-    pub fn report() {
-        let ms = |counter: &AtomicU64| counter.load(Ordering::Relaxed) as f64 / 1e6;
-        eprintln!(
-            "SIMUL PHASES cycles={} prep_clone={:.0}ms prep_forward={:.0}ms plan_wall={:.0}ms commit={:.0}ms stall={:.0}ms",
-            CYCLES.load(Ordering::Relaxed),
-            ms(&PREP_CLONE),
-            ms(&PREP_FORWARD),
-            ms(&PLAN_WALL),
-            ms(&COMMIT),
-            ms(&STALL),
-        );
-    }
-}
-
 fn run_simultaneous<A: Ai + Send>(g: &mut Game, ais: &mut [A], jobs: usize) -> SimultaneousCensus {
     // Same headless observation mode as `run_game`: fog memory is a display
     // cache, not a gameplay input, and planning clones inherit the setting.
@@ -523,9 +494,6 @@ fn run_simultaneous<A: Ai + Send>(g: &mut Game, ais: &mut [A], jobs: usize) -> S
                 }
             }
         });
-    }
-    if phase_timing::enabled() {
-        phase_timing::report();
     }
     census
 }
@@ -599,7 +567,6 @@ fn prepare_loop(jobs: mpsc::Receiver<PrepareJob>, planners: mpsc::Sender<Plannin
             cancelled,
             events,
         } = job;
-        let timing = phase_timing::enabled();
         let outcome = catch_unwind(AssertUnwindSafe(|| {
             let mut announced: Vec<usize> = Vec::new();
             let mut forwarded = 0u64;
@@ -616,12 +583,8 @@ fn prepare_loop(jobs: mpsc::Receiver<PrepareJob>, planners: mpsc::Sender<Plannin
                 if cancelled.load(Ordering::Acquire) {
                     break;
                 }
-                let clock = std::time::Instant::now();
                 let mut world = rolling.clone();
                 world.rng = planning_stream(seed, cycle_turn, seat);
-                if timing {
-                    phase_timing::add(&phase_timing::PREP_CLONE, clock.elapsed().as_nanos());
-                }
                 announced.push(seat);
                 let _ = events.send(CycleEvent::Prepared { seat });
                 let _ = planners.send(PlanningMessage::Plan(PlanningRequest {
@@ -632,12 +595,7 @@ fn prepare_loop(jobs: mpsc::Receiver<PrepareJob>, planners: mpsc::Sender<Plannin
                     response: events.clone(),
                 }));
                 sequence += 1;
-                let clock = std::time::Instant::now();
-                let closed = close_seat_turn(&mut rolling, seat, &mut forwarded);
-                if timing {
-                    phase_timing::add(&phase_timing::PREP_FORWARD, clock.elapsed().as_nanos());
-                }
-                if !closed {
+                if !close_seat_turn(&mut rolling, seat, &mut forwarded) {
                     break;
                 }
             }
@@ -731,7 +689,6 @@ fn step_cycle_pipelined(
     let opened = (g.turn, g.current);
     let cycle_turn = g.turn;
     let bound = 2 * g.players.len() + 8;
-    let timing = phase_timing::enabled();
     let (events_tx, events) = mpsc::channel::<CycleEvent>();
     let cancelled = Arc::new(AtomicBool::new(false));
     jobs.send(PrepareJob {
@@ -746,7 +703,6 @@ fn step_cycle_pipelined(
 
     let mut inbox = CycleInbox::default();
     let mut consumed = std::collections::BTreeSet::new();
-    let commit_clock = std::time::Instant::now();
     let mut steps = 0;
     while g.winner.is_none() && g.turn == cycle_turn && steps < bound {
         steps += 1;
@@ -769,13 +725,9 @@ fn step_cycle_pipelined(
             {
                 break None;
             }
-            let clock = std::time::Instant::now();
             let event = events
                 .recv()
                 .expect("a simultaneous planning worker stopped without reporting");
-            if timing {
-                phase_timing::add(&phase_timing::STALL, clock.elapsed().as_nanos());
-            }
             inbox.absorb(event, census);
         };
         if inbox.first_panic.is_some() {
@@ -803,11 +755,6 @@ fn step_cycle_pipelined(
             }
         }
     }
-    if timing {
-        phase_timing::add(&phase_timing::COMMIT, commit_clock.elapsed().as_nanos());
-        phase_timing::CYCLES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
-
     // Let the cycle's whole fleet report before touching the next cycle:
     // plans for seats the cursor never reached still count into the census,
     // and the pool must be quiescent before it is reused or unwound.
@@ -820,13 +767,13 @@ fn step_cycle_pipelined(
     if let Some(payload) = inbox.first_panic {
         resume_unwind(payload);
     }
-    census.lost_seats += (inbox.submitted - consumed.len()) as u64;
-
     if census.aborted {
         // Closing a seat failed within the bound. Abandon the game loudly
-        // rather than replaying the same turn forever.
+        // rather than replaying the same turn forever — and, exactly like
+        // the serial driver's early return, without accounting lost seats.
         return false;
     }
+    census.lost_seats += (inbox.submitted - consumed.len()) as u64;
     if g.winner.is_none() && (g.turn, g.current) == opened {
         census.aborted = true;
         return false;
@@ -869,17 +816,9 @@ where
     // The prepare is engine-only and serial: every seat's world and RNG
     // stream exist before any deliberation starts, so the fan-out below
     // has nothing left to decide about ordering.
-    let timing = phase_timing::enabled();
     let mut prepared: Vec<(usize, Game)> = Vec::new();
     {
-        let clock = std::time::Instant::now();
-        let mut spent = clock.elapsed();
         let mut rolling = g.clone();
-        if timing {
-            let now = clock.elapsed();
-            phase_timing::add(&phase_timing::PREP_CLONE, (now - spent).as_nanos());
-            spent = now;
-        }
         let mut forwarded = 0u64;
         let mut steps = 0;
         while rolling.winner.is_none() && rolling.turn == cycle_turn && steps < bound {
@@ -891,18 +830,8 @@ where
             let mut world = rolling.clone();
             world.rng = planning_stream(g.seed, cycle_turn, seat);
             prepared.push((seat, world));
-            if timing {
-                let now = clock.elapsed();
-                phase_timing::add(&phase_timing::PREP_CLONE, (now - spent).as_nanos());
-                spent = now;
-            }
             if !close_seat_turn(&mut rolling, seat, &mut forwarded) {
                 break;
-            }
-            if timing {
-                let now = clock.elapsed();
-                phase_timing::add(&phase_timing::PREP_FORWARD, (now - spent).as_nanos());
-                spent = now;
             }
         }
     }
@@ -910,12 +839,7 @@ where
     // The planner may use the caller thread or the scoped persistent fleet,
     // but both return the prepared order. The authoritative world only sees
     // these results below, in turn-cursor order.
-    let plan_clock = std::time::Instant::now();
     let planned = plan(prepared);
-    if timing {
-        phase_timing::add(&phase_timing::PLAN_WALL, plan_clock.elapsed().as_nanos());
-        phase_timing::CYCLES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
     let mut plans: BTreeMap<usize, Vec<Action>> = BTreeMap::new();
     for (seat, actions) in planned {
         census.planned += actions.len() as u64;
@@ -927,7 +851,6 @@ where
     // dropped; the seat's turn closes through the ordinary EndTurn so
     // upkeep, the world-turn wrap, and victory checks all run exactly
     // where a sequential game runs them.
-    let commit_clock = std::time::Instant::now();
     let mut steps = 0;
     while g.winner.is_none() && g.turn == cycle_turn && steps < bound {
         steps += 1;
@@ -957,9 +880,6 @@ where
                 return false;
             }
         }
-    }
-    if timing {
-        phase_timing::add(&phase_timing::COMMIT, commit_clock.elapsed().as_nanos());
     }
     // Plans the cursor never reached: their seats were eliminated by an
     // earlier seat's committed actions in this same cycle.
@@ -1101,6 +1021,48 @@ mod tests {
         assert_eq!(census_serial.planned, census_fanned.planned);
         assert_eq!(census_serial.applied, census_fanned.applied);
         assert_eq!(census_serial.dropped_by_kind, census_fanned.dropped_by_kind);
+    }
+
+    /// The pipeline must stay an execution detail on boards where the rare
+    /// paths fire: with city-states and minors, seats die mid-cycle (lost
+    /// plans), come alive mid-cycle (unplanned seats), and the commit cursor
+    /// diverges from the prepare walk — exactly the decisions the committing
+    /// thread now takes from accumulated state rather than a finished batch.
+    /// Same oracle as above, on the elimination-rich boards the cursor test
+    /// plays.
+    #[test]
+    fn pipelined_planning_is_an_execution_detail_on_eliminating_boards() {
+        for seed in [3u64, 17] {
+            let mut serial = Game::new(4, 32, 22, seed, 60, 3);
+            serial.turn_structure = TurnStructure::Simultaneous;
+            let mut ais = BasicAi::fleet(&serial);
+            let census_serial = run_structured(&mut serial, &mut ais).expect("a census");
+            let mut fanned = Game::new(4, 32, 22, seed, 60, 3);
+            fanned.turn_structure = TurnStructure::Simultaneous;
+            let mut ais = BasicAi::fleet(&fanned);
+            let census_fanned =
+                run_structured_jobs(&mut fanned, &mut ais, 3).expect("a census");
+            assert_eq!(
+                serde_json::to_value(&serial).unwrap(),
+                serde_json::to_value(&fanned).unwrap(),
+                "seed {seed}"
+            );
+            assert_eq!(census_serial.planned, census_fanned.planned, "seed {seed}");
+            assert_eq!(census_serial.applied, census_fanned.applied, "seed {seed}");
+            assert_eq!(
+                census_serial.dropped_by_kind, census_fanned.dropped_by_kind,
+                "seed {seed}"
+            );
+            assert_eq!(
+                census_serial.lost_seats, census_fanned.lost_seats,
+                "seed {seed}"
+            );
+            assert_eq!(
+                census_serial.unplanned_seats, census_fanned.unplanned_seats,
+                "seed {seed}"
+            );
+            assert_eq!(census_serial.forced, census_fanned.forced, "seed {seed}");
+        }
     }
 
     /// A many-seat table has one independent `take_turn` per seat. The
