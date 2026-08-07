@@ -1469,8 +1469,22 @@ pub struct BasicAi {
     /// them**. So this governor cannot build one, ever, and it makes most of a
     /// deployed empire's build decisions: `advanced_production` is reached on
     /// 22.2% of an adaptive agent's planned turns (all of them Recovery), and
-    /// everything else ends here. Across every live game inspected this session
-    /// CIVVIS ordered an Entertainment Complex **zero times**.
+    /// everything else ends here.
+    ///
+    /// ⚠ **Correction to what this comment said when it merged.** It claimed
+    /// CIVVIS "ordered an Entertainment Complex zero times" across every live
+    /// game inspected. That was measured with
+    /// `verb LIKE '%ENTERTAINMENT%'` against the order log, which **misses the
+    /// unique replacements** — Kongo's Hippodrome and Brazil's Street Carnival
+    /// both carry `replaces: entertainment_complex`. Counting the districts
+    /// actually standing at the end of five completed games gives **7 across 33
+    /// cities** (6 Hippodrome, 1 Water Street Carnival), not zero.
+    ///
+    /// The gap this treatment closes is real but narrower than that sentence
+    /// implied: the baseline governor still cannot reach the family at all, and
+    /// 7 in 33 cities is thin — but "never built" was wrong, and a filter that
+    /// silently drops every unique replacement is worth remembering before the
+    /// next `LIKE '%NAME%'` census.
     ///
     /// That is not a small omission, because Amenities are not a yield — they
     /// are a band that multiplies every yield the city makes.
@@ -14228,6 +14242,30 @@ mod tests {
 mod amenity_district_tests {
     use super::*;
     use crate::game::Game;
+
+    /// A unique replacement is the same family, and a name filter will miss it.
+    ///
+    /// This is pinned because I got it wrong in a merged comment: a census run
+    /// as `verb LIKE '%ENTERTAINMENT%'` reported zero Entertainment Complexes
+    /// across five live games, when seven were standing — as Hippodromes and a
+    /// Street Carnival.
+    #[test]
+    fn a_unique_replacement_belongs_to_the_family_it_replaces() {
+        let game = crate::game::Game::new(2, 8, 8, 3, 100, 0);
+        for unique in ["hippodrome", "street_carnival"] {
+            let spec = &game.rules.districts[unique];
+            assert_eq!(
+                spec.replaces.as_deref(),
+                Some("entertainment_complex"),
+                "{unique} is an Entertainment Complex and any census must count it"
+            );
+            assert_eq!(
+                game.district_family(crate::name::Name::new(unique)).as_str(),
+                "entertainment_complex",
+                "and the engine agrees, so a family check is the correct filter"
+            );
+        }
+    }
 
     /// The omission this repairs: four families, and the one that fixes the
     /// Amenity band is not among them.
