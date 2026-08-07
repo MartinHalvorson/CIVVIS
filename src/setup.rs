@@ -480,7 +480,7 @@ impl MapScript {
             "planet" => return Some(Self::SmallContinents),
             "archipelago" => return Some(Self::Islands),
             // Accept the corrected spelling at the protocol boundary while
-            // retaining the lobby name requested for this map type.
+            // retaining the legacy lobby identifier for this map type.
             "tennis_ball" => return Some(Self::TeninsBall),
             _ => {}
         }
@@ -669,7 +669,7 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 14] = [
     },
     MapScriptSpec {
         id: "tenins_ball",
-        name: "Tenins Ball",
+        name: "Tennis Ball",
         description: "Two land lobes divided by a five-to-six-tile water seam that loops around the whole world like a tennis ball's stitching.",
         script: MapScript::TeninsBall,
     },
@@ -1358,6 +1358,15 @@ mod tests {
             assert_eq!(spec.script.id(), spec.id);
             assert!(seen.insert(spec.id), "{} is listed twice", spec.id);
         }
+    }
+
+    #[test]
+    fn tennis_ball_uses_its_correct_display_name() {
+        let tennis_ball = CIV6_MAP_SCRIPTS
+            .iter()
+            .find(|spec| spec.id == "tenins_ball")
+            .expect("the Tennis Ball map is listed");
+        assert_eq!(tennis_ball.name, "Tennis Ball");
     }
 
     /// The world's shape and its poles are settings of their own, orthogonal to
