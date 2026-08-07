@@ -388,7 +388,11 @@
   #side > .side-scroll { position: relative; z-index: 4; }
   #side::-webkit-scrollbar, .side-scroll::-webkit-scrollbar { width: 7px; }
   #side::-webkit-scrollbar-thumb, .side-scroll::-webkit-scrollbar-thumb { background: #385148; border-radius: 9px; }
+  /* The command card (Pause/Restart while watching, End turn while playing)
+     holds the top of the deck: scrolling the sections must never push the
+     controls off screen. The card is opaque, so sections slide in under it. */
   .side-actions {
+    position: sticky; top: 0; z-index: 3;
     flex: 0 0 auto; margin-bottom: 10px; padding: 7px; border: 1px solid #334c43;
     border-radius: 13px; background: linear-gradient(135deg, #14241f, #0c1714);
     box-shadow: inset 0 1px #ffffff08, 0 8px 22px #0003;
