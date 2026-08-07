@@ -15186,20 +15186,25 @@ function skyLaunchPoint(start, end, progress, bend) {
 
 // All launch views use one silhouette vocabulary. Apollo 11's Saturn V is a
 // long, staged white stack; Mars uses the compact stainless Starship outline;
-// the exoplanet ship deliberately takes that same outline to monumental scale.
-// Keeping the dimensions here makes the promised 2x length and 4x width exact
-// in both projections rather than two hand-tuned approximations.
+// the exoplanet ship is that same outline at exactly twice the scale — still
+// unmistakably a rocket, just monumental. Widening it faster than lengthening
+// it (an earlier 4x width) squashed the aspect ratio to ~1.5:1 and read as an
+// egg with fins. `plume` scales the engine flame with the hull, so the doubled
+// ship is not pushed by a normal-size flame. Keeping the dimensions here makes
+// the doubling exact in both projections rather than two hand-tuned
+// approximations.
 function skyRocketGeometry(rocket, size) {
   const starshipLength = size * 3.4;
   const starshipHalfWidth = size * .55;
   if (rocket === "starship_xl") return {
     family:"starship", length:starshipLength * 2,
-    halfWidth:starshipHalfWidth * 4,
+    halfWidth:starshipHalfWidth * 2, plume:2,
   };
   if (rocket === "starship") return {
     family:"starship", length:starshipLength, halfWidth:starshipHalfWidth,
+    plume:1,
   };
-  return {family:"saturn_v", length:size * 4.7, halfWidth:size * .52};
+  return {family:"saturn_v", length:size * 4.7, halfWidth:size * .52, plume:1};
 }
 
 // Draw in a local frame whose +x axis is the flight direction. `pixel` is one
@@ -15210,18 +15215,19 @@ function drawMissionRocket(rocket, player, size, now, pixel = 1, alpha = 1) {
   const shape = skyRocketGeometry(rocket, size);
   const nose = shape.length / 2, tail = -shape.length / 2;
   const colour = pcol(player.id), dark = pcol2(player.id);
-  const flicker = size * (1.8 + .32 * Math.sin(now / 75 + player.id));
-  const flameHalf = Math.max(size * .42, shape.halfWidth * .32);
+  const flame = size * (shape.plume || 1);
+  const flicker = flame * (1.8 + .32 * Math.sin(now / 75 + player.id));
+  const flameHalf = Math.max(flame * .42, shape.halfWidth * .32);
 
   cx.save();
   // A warm, transparent plume ties the diagrammatic craft to the rest of the
   // game's effects without turning any of the three silhouettes into clip art.
-  const plume = cx.createLinearGradient(tail - flicker, 0, tail + size * .3, 0);
+  const plume = cx.createLinearGradient(tail - flicker, 0, tail + flame * .3, 0);
   plume.addColorStop(0, "rgba(255,173,69,0)");
   plume.addColorStop(.62, "rgba(255,176,70,.68)");
   plume.addColorStop(1, "rgba(255,244,191,.94)");
   cx.globalAlpha = alpha * .92; cx.fillStyle = plume;
-  cx.beginPath(); cx.moveTo(tail + size * .18, 0);
+  cx.beginPath(); cx.moveTo(tail + flame * .18, 0);
   cx.lineTo(tail - flicker, -flameHalf);
   cx.lineTo(tail - flicker * .82, flameHalf); cx.closePath(); cx.fill();
 
@@ -15261,7 +15267,7 @@ function drawMissionRocket(rocket, player, size, now, pixel = 1, alpha = 1) {
   } else {
     // Starship: a stainless tapered hull, dark heat-shield belly, forward
     // flaps and broad aft fins. The XL craft uses precisely the same drawing;
-    // only skyRocketGeometry makes it twice as long and four times as wide.
+    // only skyRocketGeometry doubles every dimension.
     const steel = cx.createLinearGradient(0, -shape.halfWidth, 0, shape.halfWidth);
     steel.addColorStop(0, "#f2f5f3"); steel.addColorStop(.48, "#aeb9bd");
     steel.addColorStop(1, "#65737a");
