@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -336,3 +337,48 @@ class ProtectedInstallTest(unittest.TestCase):
             cleanup.assert_called_once_with(staging, ignore_errors=True)
         finally:
             staging.rmdir()
+
+    def test_clear_run_tag_rewrites_directly_where_it_can(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            mod_dir = Path(temporary)
+            (mod_dir / "config.json").write_text(json.dumps(
+                {"RunTag": "civvis-20260807T152240Z", "Difficulty": "DIFFICULTY_SETTLER"}))
+            with patch.object(install, "install_dir", return_value=mod_dir), \
+                 patch.object(install, "_finder_put_file") as finder:
+                self.assertTrue(install.clear_run_tag())
+            finder.assert_not_called()
+            data = json.loads((mod_dir / "config.json").read_text())
+            self.assertIsNone(data["RunTag"])
+            self.assertEqual(data["Difficulty"], "DIFFICULTY_SETTLER")
+
+    def test_clear_run_tag_lands_through_finder_when_the_bundle_is_protected(self) -> None:
+        """The end of both 2026-08-07 games: read allowed, write refused."""
+        with tempfile.TemporaryDirectory() as temporary:
+            mod_dir = Path(temporary)
+            config = mod_dir / "config.json"
+            config.write_text(json.dumps({"RunTag": "civvis-live"}))
+            real_write = Path.write_text
+
+            def refuse_bundle_writes(path, text, *args, **kwargs):
+                if path == config:
+                    raise PermissionError("Operation not permitted")
+                return real_write(path, text, *args, **kwargs)
+
+            with patch.object(install, "install_dir", return_value=mod_dir), \
+                 patch.object(Path, "write_text", refuse_bundle_writes), \
+                 patch.object(install, "_finder_put_file") as finder:
+                self.assertTrue(install.clear_run_tag())
+            finder.assert_called_once()
+            staged, destination = finder.call_args[0]
+            self.assertEqual(destination, config)
+            self.assertEqual(staged.name, "config.json",
+                             "the duplicate keeps the source's name")
+
+    def test_clear_run_tag_reports_nothing_to_do(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            mod_dir = Path(temporary)
+            with patch.object(install, "install_dir", return_value=mod_dir):
+                self.assertFalse(install.clear_run_tag(), "no config at all")
+            (mod_dir / "config.json").write_text(json.dumps({"RunTag": None}))
+            with patch.object(install, "install_dir", return_value=mod_dir):
+                self.assertFalse(install.clear_run_tag(), "tag already clear")
