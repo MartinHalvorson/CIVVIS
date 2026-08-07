@@ -19194,20 +19194,30 @@ impl AdvancedAi {
         // both self-gate on `home_defense` and budget their responders, so
         // the frozen controllers and the offensive's claim on the rest of the
         // army are untouched.
-        if self.base.garrison_step(g, pid, uid, &enemies) {
-            return true;
-        }
-        // A responder the homeland claimed marches. The wartime mover below
-        // holds a unit outside the enemy's move-and-attack reach — right for a
-        // front, wrong for a raider, which it hovers two tiles from forever
-        // while the districts burn. Close instead; once the threat is inside
-        // this unit's own attack radius the scan above takes the trade on the
-        // next pass, and even trades against barbarians are worth taking.
-        if let Some(threat) = self.base.home_defense_objective(g, pid, uid, &enemies) {
-            if g.wdist(unit.pos, threat) > radius && self.base.step_toward(g, pid, uid, threat) {
+        // Scoped to the barbarian seat on purpose: wartime home defense keeps
+        // its measured shape (these two calls were never on the Advanced path
+        // for major wars, and admitting them there moved the melee bench the
+        // wrong way), while the raider case — which previously had no answer
+        // at all — gets one. A responder the homeland claims marches: the
+        // wartime mover below holds a unit outside the enemy's
+        // move-and-attack reach, right for a front, wrong for a raider, which
+        // it hovers two tiles from forever while the districts burn. Close
+        // instead; once the threat is inside this unit's own attack radius
+        // the scan above takes the trade on the next pass, and even trades
+        // against barbarians are worth taking.
+        if let Some(barb) = g.barb_pid.filter(|barb| enemies.contains(barb)) {
+            let barb_only = [barb];
+            if self.base.garrison_step(g, pid, uid, &barb_only) {
                 return true;
             }
-            return self.base.tactical_step(g, pid, uid, threat, &enemies, radius);
+            if let Some(threat) = self.base.home_defense_objective(g, pid, uid, &barb_only) {
+                if g.wdist(unit.pos, threat) > radius
+                    && self.base.step_toward(g, pid, uid, threat)
+                {
+                    return true;
+                }
+                return self.base.tactical_step(g, pid, uid, threat, &barb_only, radius);
+            }
         }
         let defend_target = plan.threatened_city.and_then(|cid| {
             let city = g.cities.get(&cid)?;

@@ -109,7 +109,7 @@
 //! action per unit plus a nested cloned reply search inside each.
 //! `docs/TACTICS.md` carries the measured numbers.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ai::{BasicAi, Weights};
 use crate::game::{effective_strength, Action, Game};
@@ -187,10 +187,10 @@ pub(crate) struct JointTactics {
 impl Default for JointTactics {
     fn default() -> Self {
         JointTactics {
-            population: 20,
-            generations: 10,
+            population: 32,
+            generations: 20,
             max_units: 8,
-            max_lines: 10,
+            max_lines: 16,
         }
     }
 }
@@ -374,6 +374,19 @@ impl JointTactics {
             // front of a wounded unit before it will spend itself.
             let wounded_margin = if unit.hp < 55 { 12.0 } else { 0.0 };
 
+            // `do_ranged` refuses a siege piece that moved this turn (absent
+            // the rare attack-after-move promotion), so for siege every
+            // approach line is dead weight twice over: it displaces a real
+            // candidate at the `max_lines` truncation, and when the search
+            // plays one anyway the Move lands, the shot is refused, and the
+            // piece has spent its turn walking out of its own firing solution.
+            // A siege unit that already moved cannot shoot either, so it has
+            // no lines at all and is left to the per-unit path.
+            let siege_grounded = spec.siege;
+            if siege_grounded && unit.moved {
+                continue;
+            }
+
             // Attacks available from where the unit already stands.
             for (target, action) in Self::strikes_from(g, pid, uid, unit.pos, range) {
                 let ranged = matches!(action, Action::Ranged { .. });
@@ -387,7 +400,7 @@ impl JointTactics {
 
             // A step onto an adjacent tile, then the attack that step opens.
             // Gated: see "Approach moves" in the module docs.
-            if unit.moves_left >= 1.0 {
+            if unit.moves_left >= 1.0 && !siege_grounded {
                 for to in g.nbrs(unit.pos) {
                     if !g.can_move(uid, to) {
                         continue;
@@ -406,6 +419,81 @@ impl JointTactics {
                                 - role_bonus,
                             actions: vec![Action::Move { unit: uid, to }, action],
                         });
+                    }
+                }
+            }
+
+            // Two steps, then the attack the second step opens. This is what
+            // gives a two-move unit its real reach: the one-step block above
+            // only ever fights what is already at arm's length, so a fight
+            // two tiles out is invisible to the whole search and the unit
+            // stands off while the per-unit mover hovers. Bounded the same
+            // way as one step — geometric generation, no clones, the engine
+            // refuses what is actually illegal when the line is played.
+            //
+            // The intermediate tile is filtered against known hostile
+            // adjacency: a first step into a zone of control forfeits the
+            // second, so nearly every such line dies at evaluation and only
+            // dilutes the portfolio. (Cavalry that ignores ZOC loses a
+            // through-the-ring flank to this filter; it keeps every
+            // around-the-ring one, which is the common case.)
+            //
+            // ⚠ STRICTLY MORE than two movement: the blow itself needs
+            // movement left — `do_attack` and `do_ranged` both refuse a unit
+            // at 0.0 — so for a two-move unit every two-step line is a
+            // suicide walk that arrives, is refused, and stands in contact
+            // unfortified. Measured: admitting them moved the melee-only
+            // bench from −7.6 to −32.6 (p = 0.0005); this gate is what keeps
+            // the reach for three-plus-move units without re-buying that.
+            if unit.moves_left > 2.0 && !siege_grounded {
+                let first_ring = g.nbrs(unit.pos);
+                let hostile_adjacent = |pos: Pos| -> bool {
+                    g.nbrs(pos).into_iter().any(|n| {
+                        g.unit_ids_at(n).iter().any(|oid| {
+                            let other = &g.units[oid];
+                            other.owner != pid
+                                && g.is_at_war(pid, other.owner)
+                                && g.rules.units[other.kind].class == "military"
+                        })
+                    })
+                };
+                let sea = spec.domain.as_deref() == Some("sea");
+                let mut seen: BTreeSet<(Pos, Pos, bool)> = BTreeSet::new();
+                for to1 in first_ring.iter().copied() {
+                    if !g.can_move(uid, to1) || hostile_adjacent(to1) {
+                        continue;
+                    }
+                    for to2 in g.nbrs(to1) {
+                        if to2 == unit.pos || first_ring.contains(&to2) {
+                            continue;
+                        }
+                        let Some(tile) = g.map.get(to2) else {
+                            continue;
+                        };
+                        if !g.rules.is_passable(tile) || g.rules.is_water(tile) != sea {
+                            continue;
+                        }
+                        for (target, action) in Self::strikes_from(g, pid, uid, to2, range) {
+                            let ranged = matches!(action, Action::Ranged { .. });
+                            if !seen.insert((to2, target, ranged)) {
+                                continue;
+                            }
+                            let role_bonus =
+                                base.tactical_action_bonus_from(g, uid, to2, target, ranged);
+                            let prior = Self::strike_prior(g, pid, uid, target, ranged, w)
+                                + role_bonus
+                                - 8.0;
+                            lines.push(Line {
+                                prior,
+                                toll: base.attack_threshold(g, uid, target) + wounded_margin
+                                    - role_bonus,
+                                actions: vec![
+                                    Action::Move { unit: uid, to: to1 },
+                                    Action::Move { unit: uid, to: to2 },
+                                    action,
+                                ],
+                            });
+                        }
                     }
                 }
             }
@@ -905,11 +993,23 @@ fn reply_estimate(after: &Game, pid: usize) -> f64 {
             after.unit_strength(unit, false)
         };
         // A unit that has not acted can normally move and then attack, so its
-        // reach next turn is its range plus a step.
+        // reach next turn is its range plus its remaining mobility — the blow
+        // itself needs a movement point, so an m-move unit strikes from m
+        // tiles out (melee) or shoots after m−1 steps. The old constants
+        // (range+1, melee 2) were exact for two-move infantry and priced a
+        // four-move horseman as if it could not reach half its real
+        // envelope. Siege cannot move and shoot at all, so its reach is its
+        // range alone.
+        let mobility = (spec.moves as i32 - 1).max(0);
         let reach = if ranged {
-            after.unit_attack_range(unit.id).max(1) + 1
+            let range = after.unit_attack_range(unit.id).max(1);
+            if spec.siege {
+                range
+            } else {
+                range + mobility
+            }
         } else {
-            2
+            (spec.moves as i32).max(1)
         };
         aim(
             effective_strength(attack, unit.hp),
