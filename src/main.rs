@@ -1569,6 +1569,180 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        // Would ending decided games early change who wins? 62% of audited
+        // league games ran to the turn cap, where the winner is whoever is
+        // biggest — most of that tail is compute spent on a settled outcome.
+        // The spectator ribbon already carries a calibrated live win
+        // probability (`odds::table`, Brier- and log-loss-checked at three
+        // phases of completed games). This audit plays every game to its real
+        // end while recording, per threshold, the first world turn the odds
+        // leader crossed it — so agreement between the crossing pick and the
+        // played-out winner, and the turns adjudication would have saved, are
+        // measured exactly rather than estimated. It changes no outcome and
+        // is the pre-registered evidence gate for enabling adjudication in
+        // any loop (docs/ADJUDICATION.md).
+        "odds-audit" => {
+            let players = arg(&args, "--players", 6);
+            let games = arg(&args, "--games", 40);
+            let start = arg(&args, "--start-seed", 0);
+            let jobs = jobs_arg(&args);
+            let start_turn = arg(&args, "--adjudicate-start", 100) as u32;
+            let every = (arg(&args, "--every", 5).max(1)) as u32;
+            let thresholds: Vec<f64> = arg_text(&args, "--thresholds", "0.90,0.95,0.98,0.995")
+                .split(',')
+                .map(|t| t.trim().parse::<f64>().expect("--thresholds wants numbers"))
+                .collect();
+            println!(
+                "odds-audit: {games} games, {players} players, sampling from turn \
+                 {start_turn} every {every}, thresholds {thresholds:?}"
+            );
+            type GameAudit = (Option<usize>, Option<String>, u32, Vec<Option<(usize, u32)>>);
+            let results: Vec<Option<GameAudit>> =
+                civvis::parallel::map(games as usize, jobs, |index| {
+                    let seed = start + index as i64;
+                    std::panic::catch_unwind(|| {
+                        let mut g = Game::new_with(game_options(
+                            &args,
+                            players,
+                            seed as u64,
+                            setup::TurnStructure::Sequential,
+                        ));
+                        let mut ais = AdvancedAi::fleet(&g);
+                        // Same display-state elisions as `run_game`: this is a
+                        // headless rollout and the odds read none of them.
+                        g.set_fog_memory(false);
+                        g.set_war_ledger(false);
+                        let mut crossings: Vec<Option<(usize, u32)>> =
+                            vec![None; thresholds.len()];
+                        let mut last_turn = g.turn;
+                        while g.winner.is_none() && g.turn <= g.max_turns {
+                            let pid = g.current;
+                            ais[pid].take_turn(&mut g, pid);
+                            if g.winner.is_none() && g.current == pid {
+                                let _ = g.apply(pid, &civvis::game::Action::EndTurn);
+                            }
+                            if g.turn == last_turn {
+                                continue;
+                            }
+                            last_turn = g.turn;
+                            let due = g.turn >= start_turn && (g.turn - start_turn) % every == 0;
+                            if !due || g.winner.is_some() || crossings.iter().all(Option::is_some)
+                            {
+                                continue;
+                            }
+                            // A flat 1500 prior for every seat: the audit runs
+                            // stock fleets with no roster, so only the board
+                            // terms — score, military, cities, victory races,
+                            // and the clock — separate the table.
+                            let table = civvis::odds::table(&g, |_pid| 1500.0f64);
+                            let Some((leader, seat)) =
+                                table.iter().max_by(|a, b| a.1.now.total_cmp(&b.1.now))
+                            else {
+                                continue;
+                            };
+                            for (slot, threshold) in thresholds.iter().enumerate() {
+                                if crossings[slot].is_none() && seat.now >= *threshold {
+                                    crossings[slot] = Some((*leader, g.turn));
+                                }
+                            }
+                        }
+                        let end_turn = g.turn.min(g.max_turns);
+                        (g.winner, g.victory_type.clone(), end_turn, crossings)
+                    })
+                    .ok()
+                });
+            let mut crashes = 0;
+            let mut finished: Vec<(i64, GameAudit)> = Vec::new();
+            for (index, result) in results.into_iter().enumerate() {
+                let seed = start + index as i64;
+                match result {
+                    Some(audit) => finished.push((seed, audit)),
+                    None => {
+                        crashes += 1;
+                        println!("seed {seed:4}  CRASH (panic)");
+                    }
+                }
+            }
+            for (seed, (winner, victory, end_turn, crossings)) in &finished {
+                let victory = victory.as_deref().unwrap_or("none");
+                let verdicts: Vec<String> = crossings
+                    .iter()
+                    .zip(&thresholds)
+                    .map(|(crossing, threshold)| match crossing {
+                        Some((pid, turn)) => format!(
+                            "{threshold}:t{turn}{}",
+                            if Some(*pid) == *winner { "=" } else { "!" }
+                        ),
+                        None => format!("{threshold}:-"),
+                    })
+                    .collect();
+                println!(
+                    "seed {seed:4}  t{end_turn:<4} {victory:<10} {}",
+                    verdicts.join(" ")
+                );
+            }
+            // The turn cap awards the score victory, so `score` endings are
+            // truncations of an undecided board and every other ending is a
+            // game the rules finished. Agreement is reported for both because
+            // they answer different questions: natural endings are ground
+            // truth, cap endings are agreement with the truncation rule that
+            // adjudication would replace.
+            println!(
+                "\nthreshold  crossed  agree-all      agree-natural  agree-cap      \
+                 mean-saved  saved-share"
+            );
+            for (slot, threshold) in thresholds.iter().enumerate() {
+                let (mut crossed, mut agree, mut nat, mut nat_agree, mut cap, mut cap_agree) =
+                    (0u32, 0u32, 0u32, 0u32, 0u32, 0u32);
+                let (mut saved, mut total) = (0u64, 0u64);
+                for (_, (winner, victory, end_turn, crossings)) in &finished {
+                    total += u64::from(*end_turn);
+                    let Some((pid, turn)) = crossings[slot] else {
+                        continue;
+                    };
+                    crossed += 1;
+                    saved += u64::from(end_turn.saturating_sub(turn));
+                    let hit = *winner == Some(pid);
+                    agree += u32::from(hit);
+                    if victory.as_deref() == Some("score") {
+                        cap += 1;
+                        cap_agree += u32::from(hit);
+                    } else {
+                        nat += 1;
+                        nat_agree += u32::from(hit);
+                    }
+                }
+                let pct = |num: u32, den: u32| {
+                    if den == 0 {
+                        "     -".to_string()
+                    } else {
+                        format!("{:5.1}%", 100.0 * f64::from(num) / f64::from(den))
+                    }
+                };
+                println!(
+                    "{threshold:<9}  {crossed:3}/{:<3}  {}({agree:3}/{crossed:<3})  \
+                     {}({nat_agree:2}/{nat:<2})  {}({cap_agree:2}/{cap:<2})  {:8.1}    {:5.1}%",
+                    finished.len(),
+                    pct(agree, crossed),
+                    pct(nat_agree, nat),
+                    pct(cap_agree, cap),
+                    if crossed == 0 {
+                        0.0
+                    } else {
+                        saved as f64 / f64::from(crossed)
+                    },
+                    if total == 0 {
+                        0.0
+                    } else {
+                        100.0 * saved as f64 / total as f64
+                    },
+                );
+            }
+            if crashes > 0 {
+                println!("\n{crashes} of {games} games crashed");
+                std::process::exit(1);
+            }
+        }
         "benchmark" => {
             let games = arg(&args, "--games", 50);
             let turns = arg(&args, "--turns", 100) as u32;
@@ -2470,7 +2644,7 @@ fn main() {
         }
         _ => {
             println!(
-                "usage: civvis <simulate|soak|benchmark|tournament|league|league-init|rate-game|rating|play|evolve|validate|pedia> \
+                "usage: civvis <simulate|soak|odds-audit|benchmark|tournament|league|league-init|rate-game|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais [identity=]controller,...] [--anchor identity|none] [--ratings path] [--standings] [--port N] [--no-open] \
                       [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world] \
