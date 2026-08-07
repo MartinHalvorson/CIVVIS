@@ -1189,6 +1189,23 @@ pub struct AdvancedAi {
     /// Consecutive turns each settler has failed to make progress, when
     /// `settler_commit` is on. Reset whenever `settler_closest` improves.
     settler_stalls: BTreeMap<u32, u32>,
+    /// Per-settler (last distance-to-target, turns without closing) while a
+    /// LAND escort formation is trusted to carry it. See `escort_unstick`.
+    escort_march: BTreeMap<u32, (i32, u8)>,
+    /// Release a linked escort that is not actually walking its settler.
+    ///
+    /// ★★★★ THE LINKED BRANCH BELOW RETURNS `true` WITHOUT MOVING ANYTHING —
+    /// it trusts the military layer to march the formation, and the military
+    /// layer owes the settle target nothing. Measured on live Firaxis runs
+    /// 2026-08-07: "Settler advancing with its escort | 9 tiles remain"
+    /// repeated at the SAME distance turn after turn (run
+    /// civvis-20260807T202450Z), and across five completed games settlers
+    /// crossed 0.78 tiles/turn with 45% standstills — while every game's
+    /// score lost to city count. Under the treatment, two consecutive
+    /// no-closer turns release the link (which also clears
+    /// `formation_movement_locked_by_zoc`) and fall through to the ordinary
+    /// self-march. Native tournament controllers keep the frozen behaviour.
+    escort_unstick: bool,
     /// Total unresolved delay for each Settler. Unlike `settler_stalls`, this
     /// survives a target change so a stranded civilian stops monopolizing the
     /// empire-wide in-flight allowance and attracts an escort.
@@ -2055,6 +2072,7 @@ impl AdvancedAi {
         self.base.forget_unit_memory();
         self.settler_targets.clear();
         self.settler_stalls.clear();
+        self.escort_march.clear();
         self.settler_blocked_turns.clear();
         self.settler_avoid.clear();
         self.settler_closest.clear();
@@ -2079,6 +2097,11 @@ impl AdvancedAi {
             .settler_stalls
             .iter()
             .filter_map(|(uid, stalls)| map.get(uid).map(|new| (*new, *stalls)))
+            .collect();
+        self.escort_march = self
+            .escort_march
+            .iter()
+            .filter_map(|(uid, held)| map.get(uid).map(|new| (*new, *held)))
             .collect();
         self.settler_blocked_turns = self
             .settler_blocked_turns
@@ -2162,6 +2185,8 @@ impl AdvancedAi {
             adjacency_site_planning: false,
             settler_commit: false,
             settler_stalls: BTreeMap::new(),
+            escort_march: BTreeMap::new(),
+            escort_unstick: false,
             settler_blocked_turns: BTreeMap::new(),
             settler_avoid: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
@@ -2275,6 +2300,15 @@ impl AdvancedAi {
 
     pub fn disable_garrison_under_fire(&mut self) {
         self.base.garrison_under_fire = false;
+    }
+
+    /// Release an escort that is not walking its settler. See `escort_unstick`.
+    pub fn enable_escort_unstick(&mut self) {
+        self.escort_unstick = true;
+    }
+
+    pub fn disable_escort_unstick(&mut self) {
+        self.escort_unstick = false;
     }
 
     /// Enable explicit battlefield roles: the land-unit counter cycle, safe
@@ -2484,6 +2518,9 @@ impl AdvancedAi {
         // The other half of the same three-defeat measurement: the capital that
         // fell bleeding with an empty hostile list. See garrison_under_fire.
         self.enable_garrison_under_fire();
+        // Settler conversion is the score frontier the first seven live games
+        // isolated; see escort_unstick.
+        self.enable_escort_unstick();
         // Raj, Wisselbanken, Collective Activism and the International Space
         // Agency all scale off SUZERAIN city-states and pay nothing at zero.
         // Live run `civvis-20260803T220954Z` held Raj AND Wisselbanken slotted
@@ -15465,15 +15502,36 @@ impl AdvancedAi {
                    self.plan.as_ref().map_or(0, |plan| plan.desired_cities); current);
             return g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
         }
-        if g.units[&uid].linked_to.is_some_and(|peer| {
-            g.units.get(&peer).is_some_and(|escort| {
+        if let Some(escort) = g.units[&uid].linked_to.filter(|peer| {
+            g.units.get(peer).is_some_and(|escort| {
                 g.rules.units[escort.kind].class == "military"
                     && g.rules.units[escort.kind].domain.as_deref() != Some("sea")
             })
         }) {
-            think!(self.journal(), Expansion, Detail, "Settler advancing with its escort";
-                   "{} tiles remain to {target:?}", g.wdist(current, target); target);
-            return true;
+            let distance = g.wdist(current, target);
+            let entry = self.escort_march.entry(uid).or_insert((distance, 0));
+            if distance < entry.0 {
+                *entry = (distance, 0);
+            } else {
+                entry.1 = entry.1.saturating_add(1);
+            }
+            if self.escort_unstick && entry.1 >= 2 {
+                self.escort_march.remove(&uid);
+                if g.apply(pid, &Action::UnlinkUnits { unit: escort }).is_ok() {
+                    think!(self.journal(), Expansion, Detail,
+                           "Escort released a stalled settler";
+                           "{distance} tiles to {target:?} unchanged for two turns \
+                            — the formation was not walking, so the settler will";
+                           target);
+                    // fall through to the ordinary self-march below
+                } else {
+                    return true;
+                }
+            } else {
+                think!(self.journal(), Expansion, Detail, "Settler advancing with its escort";
+                       "{} tiles remain to {target:?}", distance; target);
+                return true;
+            }
         }
         if let Some(escort) = g.units[&uid].linked_to.filter(|peer| {
             g.units.get(peer).is_some_and(|escort| {
@@ -20922,6 +20980,84 @@ mod tests {
     use super::*;
     use crate::ai::run_game;
     use crate::game::{GameOptions, GovernorState};
+
+    #[test]
+    fn a_stalled_escort_is_released_and_the_settler_walks_itself() {
+        // The measured shape: "Settler advancing with its escort | 9 tiles
+        // remain" at the SAME distance turn after turn (run
+        // civvis-20260807T202450Z) while the linked branch returned true
+        // without moving anything. The contract under test is the RELEASE:
+        // no-closer turns must break the link so the ordinary march can act;
+        // frozen controllers must keep trusting forever.
+        fn fixture() -> (Game, u32, Pos) {
+            let mut game = Game::new_full(2, 28, 18, 3, 1_000, 0, false);
+            // A founded capital first: a zero-city empire takes the
+            // first-city fast path and never reaches the escort march.
+            let first = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("seat starts with a settler");
+            let capital_pos = game.units[&first].pos;
+            game.found_city_for(0, capital_pos, None);
+            game.remove_unit(first);
+
+            let land_at = |game: &Game, want: &dyn Fn(Pos) -> bool| {
+                game.map
+                    .tiles
+                    .iter()
+                    .filter(|(pos, tile)| {
+                        game.rules.is_passable(tile)
+                            && !game.rules.is_water(tile)
+                            && game.units_at(**pos).is_empty()
+                            && want(**pos)
+                    })
+                    .map(|(pos, _)| *pos)
+                    .next()
+            };
+            let start = land_at(&game, &|pos| {
+                game.wdist(pos, capital_pos) >= 5 && game.wdist(pos, capital_pos) <= 7
+            })
+            .expect("fixture offers ground away from the capital");
+            let settler = game.spawn_test_unit("settler", 0, start);
+            let escort = game.spawn_test_unit("warrior", 0, start);
+            game.apply(0, &Action::LinkUnits { unit: settler, with: escort })
+                .expect("test pair must link");
+            let target = land_at(&game, &|pos| {
+                game.wdist(pos, start) >= 6
+                    && game.wdist(pos, start) <= 10
+                    && game.wdist(pos, capital_pos) >= 4
+            })
+            .expect("fixture offers a distant land target");
+            (game, settler, target)
+        }
+
+        let (mut game, settler, target) = fixture();
+        let mut ai = AdvancedAi::new();
+        ai.enable_escort_unstick();
+        for _ in 0..4 {
+            ai.settler_targets.insert(settler, target);
+            ai.advanced_settler_step(&mut game, 0, settler);
+            if game.units[&settler].linked_to.is_none() {
+                break;
+            }
+        }
+        assert!(
+            game.units[&settler].linked_to.is_none(),
+            "a formation that closes no distance must be released"
+        );
+
+        let (mut frozen, fsettler, ftarget) = fixture();
+        let mut stock = AdvancedAi::new();
+        for _ in 0..4 {
+            stock.settler_targets.insert(fsettler, ftarget);
+            stock.advanced_settler_step(&mut frozen, 0, fsettler);
+        }
+        assert!(
+            frozen.units[&fsettler].linked_to.is_some(),
+            "frozen controllers keep the recorded trust"
+        );
+    }
 
     #[test]
     fn a_bleeding_city_is_besieged_whatever_the_fog_says() {
