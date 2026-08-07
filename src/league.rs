@@ -46,6 +46,11 @@ const SELECTION_Z: f64 = 1.96;
 /// A leader/civilization-specific rating starts at the player's global
 /// strength, with extra uncertainty for the unmeasured combination effect.
 const LEADER_EFFECT_RD: f64 = 200.0;
+/// Live games between selection sweeps. A live rating period is a single
+/// game, so `league.round` counts games in that regime; the offline league
+/// breeds every `evolve_every` (4) rounds of `games_per_round` (16) games,
+/// and this keeps the live cadence at that same games-per-selection parity.
+const LIVE_SELECTION_GAME_PERIOD: u32 = 64;
 /// Retirement needs evidence: this many games and the deviation below this
 /// bound, so an unlucky newcomer is never culled on noise.
 const MIN_GAMES_TO_RETIRE: u32 = 20;
@@ -2706,9 +2711,42 @@ fn record_ranked_game_inner(
             .recorded_live_results
             .insert(id.to_string());
     }
+    // Selection pressure in the live regime. A live rating period is one
+    // game, so `round` counts games here, and without this block a supervised
+    // exhibition rates thousands of games while the roster stays frozen: the
+    // committed snapshot reached round 4002 with no entrant born after round
+    // 60 and nobody retired. Runs before the authoritative save so births,
+    // retirements and ratings commit in one atomic write, exactly like the
+    // offline finalizer.
+    let (born, retired) = if league.round % LIVE_SELECTION_GAME_PERIOD == 0 {
+        let mut cfg = LeagueCfg::default();
+        // Selection judges win evidence at the table size actually being
+        // played, matching the exact-bucket Wilson bounds everywhere else.
+        cfg.players_per_game = seats.len().max(2);
+        cfg.dir = dir.to_string();
+        let active_before = league.active().len();
+        let retire_floor = active_before.saturating_sub(1).max(cfg.max_pop);
+        let mut rng = round_rng(seed, league.round);
+        evolve_league(&mut league, &cfg, &mut rng, retire_floor)
+    } else {
+        (Vec::new(), Vec::new())
+    };
     // league.json is authoritative. Derived CSV views may lag after a crash,
     // but a crash can never apply the rating period twice.
     save_league_checked(dir, &league).ok()?;
+    if !born.is_empty() || !retired.is_empty() {
+        append_csv(
+            dir,
+            "selection.csv",
+            "round,born,retired",
+            &[format!(
+                "{},{},{}",
+                league.round,
+                born.join("|"),
+                retired.join("|")
+            )],
+        );
+    }
     append_csv(
         dir,
         "matches.csv",
@@ -2774,10 +2812,16 @@ pub fn record_game(
 /// non-elite strategies. Placement Glicko breaks equal win-bound ties but no
 /// longer defines the breeding objective. Anchors, niche elites, and
 /// under-measured strategies are never retired.
+///
+/// `retire_floor` is the active-roster size retirement trims back down to.
+/// The offline league passes its own `max_pop`; the live recorder passes a
+/// floor just below the current roster so a large inherited roster shrinks
+/// one entrant per selection instead of being culled in a single period.
 fn evolve_league(
     league: &mut League,
     cfg: &LeagueCfg,
     rng: &mut Rng,
+    retire_floor: usize,
 ) -> (Vec<String>, Vec<String>) {
     let bounds = Weights::bounds();
     let mut parents: Vec<usize> = league
@@ -2843,7 +2887,7 @@ fn evolve_league(
     let mut retired = Vec::new();
     loop {
         let active = league.active();
-        if active.len() <= cfg.max_pop {
+        if active.len() <= retire_floor {
             break;
         }
         let protected = niche_elites(league, cfg.players_per_game);
@@ -3326,7 +3370,7 @@ fn try_finalize_round(
     let mut rng = round_rng(effective_cfg.seed, round);
     let (born, retired) =
         if effective_cfg.evolve_every > 0 && league.round % effective_cfg.evolve_every == 0 {
-            evolve_league(&mut league, &effective_cfg, &mut rng)
+            evolve_league(&mut league, &effective_cfg, &mut rng, effective_cfg.max_pop)
         } else {
             (Vec::new(), Vec::new())
         };
@@ -4214,6 +4258,131 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
+    fn live_seat(strategy: &str, rank: u32, won: bool) -> LiveGameSeat {
+        LiveGameSeat {
+            strategy: strategy.to_string(),
+            leader: "Trajan".to_string(),
+            civilization: "Rome".to_string(),
+            rank,
+            won,
+        }
+    }
+
+    fn genome_roster(round: u32, count: usize) -> League {
+        let mut league = League {
+            round,
+            strategies: Vec::new(),
+            calibration: Calibration::default(),
+        };
+        for i in 0..count {
+            let mut s = Strategy::new(
+                &format!("s{i}"),
+                StrategyKind::Advanced {
+                    weights: Weights::default(),
+                    target: None,
+                },
+                0,
+            );
+            s.rating = 1600.0 - 25.0 * i as f64;
+            s.rd = 60.0;
+            s.games = 30;
+            s.wins = (count - i) as u32;
+            league.strategies.push(s);
+        }
+        ensure_usernames(&mut league);
+        league
+    }
+
+    /// A live rating period is one game, so the round counter counts games —
+    /// and every `LIVE_SELECTION_GAME_PERIOD` of them the same breeder and
+    /// retirer the offline finalizer runs must fire here too. The committed
+    /// snapshot reached round 4002 with no entrant born after round 60
+    /// because the live path recorded thousands of games and never selected.
+    #[test]
+    fn live_recording_breeds_and_retires_at_the_game_period() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-league-live-select-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let dir = dir.to_str().unwrap();
+        let _ = fs::remove_dir_all(dir);
+        let league = genome_roster(LIVE_SELECTION_GAME_PERIOD - 1, 16);
+        save_league(dir, &league);
+
+        let seats = vec![live_seat("s0", 0, true), live_seat("s1", 1, false)];
+        let updated = record_ranked_game(dir, &seats, 99, 150, "science").expect("rated");
+        assert_eq!(updated.round, LIVE_SELECTION_GAME_PERIOD);
+        let born: Vec<&Strategy> = updated
+            .strategies
+            .iter()
+            .filter(|s| s.born_round == LIVE_SELECTION_GAME_PERIOD)
+            .collect();
+        // max(1, default max_pop / 4) births, exactly like the offline path.
+        assert_eq!(born.len(), 3);
+        for child in &born {
+            assert_eq!(child.parents.len(), 2);
+            assert!(!child.retired);
+            assert_eq!(child.rd, BASE_RD);
+        }
+        // The inherited roster shrinks by one per selection, not to max_pop
+        // in a single cull: 16 entrants + 3 births − 4 retirements.
+        assert_eq!(updated.active().len(), 15);
+        assert_eq!(updated.strategies.iter().filter(|s| s.retired).count(), 4);
+        // Committed in the same atomic write as the ratings.
+        let reloaded = load_league(dir).expect("league on disk");
+        assert_eq!(reloaded.active().len(), 15);
+        // Selection leaves an auditable receipt; its absence was invisible.
+        let receipt = fs::read_to_string(Path::new(dir).join("selection.csv")).unwrap();
+        assert!(receipt.starts_with("round,born,retired"));
+        assert_eq!(receipt.lines().count(), 2);
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// Between period boundaries a live game rates and nothing else moves.
+    #[test]
+    fn live_recording_off_period_leaves_the_roster_alone() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-league-live-offperiod-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let dir = dir.to_str().unwrap();
+        let _ = fs::remove_dir_all(dir);
+        let league = genome_roster(5, 16);
+        save_league(dir, &league);
+
+        let seats = vec![live_seat("s0", 0, true), live_seat("s1", 1, false)];
+        let updated = record_ranked_game(dir, &seats, 42, 150, "science").expect("rated");
+        assert_eq!(updated.round, 6);
+        assert_eq!(updated.strategies.len(), 16);
+        assert!(updated.strategies.iter().all(|s| !s.retired));
+        assert!(!Path::new(dir).join("selection.csv").exists());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// A roster already at or below the offline cap only grows: the retire
+    /// floor never drops below `max_pop`, so a small live league breeds
+    /// toward the cap instead of eating itself.
+    #[test]
+    fn live_selection_never_culls_a_small_roster() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-league-live-small-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let dir = dir.to_str().unwrap();
+        let _ = fs::remove_dir_all(dir);
+        let league = genome_roster(LIVE_SELECTION_GAME_PERIOD - 1, 4);
+        save_league(dir, &league);
+
+        let seats = vec![live_seat("s0", 0, true), live_seat("s1", 1, false)];
+        let updated = record_ranked_game(dir, &seats, 7, 150, "science").expect("rated");
+        assert_eq!(updated.active().len(), 7, "4 entrants + 3 births, no cull");
+        assert!(updated.strategies.iter().all(|s| !s.retired));
+        let _ = fs::remove_dir_all(dir);
+    }
+
     #[test]
     fn live_recording_preserves_exact_leaders_winners_and_score_ties() {
         let dir = std::env::temp_dir().join(format!(
@@ -4845,7 +5014,7 @@ mod tests {
         let newborn_handle = handle(&league, "newborn");
         let anchor_handle = handle(&league, "s0");
         let mut rng = Rng::new(3);
-        let (born, retired) = evolve_league(&mut league, &cfg, &mut rng);
+        let (born, retired) = evolve_league(&mut league, &cfg, &mut rng, cfg.max_pop);
         assert!(!born.is_empty());
         assert!(!retired.contains(&newborn_handle));
         assert!(!retired.contains(&anchor_handle), "anchor retired");
@@ -5022,7 +5191,7 @@ mod tests {
             ..LeagueCfg::default()
         };
         let mut rng = Rng::new(9);
-        let (born, _) = evolve_league(&mut league, &cfg, &mut rng);
+        let (born, _) = evolve_league(&mut league, &cfg, &mut rng, cfg.max_pop);
         let child = league
             .strategies
             .iter()
@@ -5256,7 +5425,7 @@ mod tests {
             ..LeagueCfg::default()
         };
         let mut rng = Rng::new(31);
-        let (born, _) = evolve_league(&mut league, &cfg, &mut rng);
+        let (born, _) = evolve_league(&mut league, &cfg, &mut rng, cfg.max_pop);
         let children: Vec<&Strategy> = league
             .strategies
             .iter()
@@ -5281,7 +5450,7 @@ mod tests {
             .contains(&"retired-science".to_string()));
 
         league.round = 4;
-        let _ = evolve_league(&mut league, &cfg, &mut rng);
+        let _ = evolve_league(&mut league, &cfg, &mut rng, cfg.max_pop);
         let active_targets: std::collections::BTreeSet<String> = league
             .active()
             .into_iter()
@@ -5330,7 +5499,7 @@ mod tests {
             ..LeagueCfg::default()
         };
         let mut rng = Rng::new(32);
-        let (_, retired) = evolve_league(&mut league, &cfg, &mut rng);
+        let (_, retired) = evolve_league(&mut league, &cfg, &mut rng, cfg.max_pop);
         let retired_names: Vec<&str> = league
             .strategies
             .iter()
@@ -5382,7 +5551,7 @@ mod tests {
             ..LeagueCfg::default()
         };
         let mut rng = Rng::new(33);
-        let (born, _) = evolve_league(&mut league, &cfg, &mut rng);
+        let (born, _) = evolve_league(&mut league, &cfg, &mut rng, cfg.max_pop);
         let lanes: Vec<Option<String>> = league
             .strategies
             .iter()
@@ -5429,7 +5598,7 @@ mod tests {
             ..LeagueCfg::default()
         };
         let mut rng = Rng::new(4);
-        let (_, retired) = evolve_league(&mut league, &cfg, &mut rng);
+        let (_, retired) = evolve_league(&mut league, &cfg, &mut rng, cfg.max_pop);
         let retired_names: Vec<&str> = league
             .strategies
             .iter()
@@ -5471,7 +5640,7 @@ mod tests {
             ..LeagueCfg::default()
         };
         let mut rng = Rng::new(40);
-        let (_, retired) = evolve_league(&mut league, &cfg, &mut rng);
+        let (_, retired) = evolve_league(&mut league, &cfg, &mut rng, cfg.max_pop);
         assert_eq!(retired, vec![league.strategies[0].username.clone()]);
     }
 
