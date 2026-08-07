@@ -1045,6 +1045,11 @@ function claimPulse(c) {
 // tenth of a second; a device is allowed three, because the map is supposed to
 // stop and look at it.
 const BLAST_MS = 3000;
+// The delivery ahead of it. The ledger names the launch platform and where it
+// fired from, so the picture can show the arc instead of a city detonating
+// out of nowhere. Flight rides the same record: its t0 is the *arrival*, so
+// every blast painter stays oblivious to the missile phase.
+const MISSILE_FLIGHT_MS = 1400;
 // Start a detonation for every strike that appeared between these two frames.
 //
 // Read from the strike ledger rather than from the board, because the board
@@ -1070,9 +1075,14 @@ function detonate(prev, next) {
     if ((next.turn - strike.turn) > 2) { seenBlasts.add(strike.id); continue; }
     if (seenBlasts.has(strike.id)) continue;
     seenBlasts.add(strike.id);
+    const flight = SHOW_ROCKET_ANIMATIONS && !REDUCED_MOTION_QUERY.matches &&
+      Array.isArray(strike.launched_from) ? MISSILE_FLIGHT_MS : 0;
     anim.blasts.push({
       pos: strike.target,
-      t0: performance.now(),
+      from: flight ? strike.launched_from : null,
+      platform: strike.platform || "city",
+      flight,
+      t0: performance.now() + flight,
       dur: BLAST_MS,
       thermo: !!strike.thermonuclear,
       radius: Math.max(1, strike.blast_radius || 1),
@@ -15720,6 +15730,8 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
     if (["floodplains", "grassland_floodplains", "plains_floodplains"].includes(entry.tile.feature))
       drawPlanetStrategicFloodplains(entry, visible, spectator);
   }
+  // Contaminated ground, under every landmark standing on it.
+  drawPlanetFallout(cells, visible, spectator);
   const naturalWonders = buildPlanetNaturalWonderPlacements(cells);
   const campSet = new Set(state.camps.map(key));
   const districtBuildings = districtBuildingsByTile();
@@ -16989,6 +17001,10 @@ function drawPlanetMap() {
   // a view effect, not a tile object, and must not change this hierarchy.
   drawPlanetTileYieldOverlay(cells, turnVisible, spectator);
 
+  // Detonations and the missiles delivering them belong to the ground and
+  // tilt with it. The screen-space flash stays with the sky, below.
+  drawPlanetBlasts(cells, now, onSheet);
+
   // The air seen edge-on, and the edge it is seen against. Both are the ball
   // itself and neither belongs on a chart.
   if (!camera.chart) {
@@ -17007,6 +17023,9 @@ function drawPlanetMap() {
   }
   cx.restore();
   drawPlanetSky(camera, radius, centerX, centerY);
+  // Last, and in screen space: a detonation's flash washes the frame itself,
+  // exactly as it does over the flat board.
+  drawNuclearFlash(now);
   cx.setTransform(1, 0, 0, 1, 0, 0);
   return true;
 }
@@ -17186,6 +17205,10 @@ function drawScene() {
     cx.fill();
   }
   cx.globalAlpha = 1;
+  // Contaminated ground is a state of the tile, not an event: the wash sits
+  // over the ownership tint and under everything standing on the hex, and
+  // cools as the recovery turn approaches.
+  drawFlatFallout(tiles, now0);
   // Routes are ground infrastructure: they pass beneath the ownership ribbon
   // and all later tile landmarks instead of competing with them in foreground.
   drawFlatStrategicRoads(tiles);
@@ -17980,6 +18003,7 @@ function drawScene() {
   // the world.
   drawFlatSatellites(now0);
   drawFlatLaunches(now0);
+  drawMissileStrikes(now0);
   drawNuclearBlasts(now0);
   // Last of all, and outside the world transform: a detonation is bright enough
   // to wash out the frame itself, and nothing — not even the era grade — gets
@@ -18102,7 +18126,8 @@ function drawNuclearFlash(now) {
     if (e < 0.13) veil = Math.max(veil, (1 - e / 0.13) * punch);
     if (e < 0.62 && b.screen) {
       blooms.push([b.screen, (1 - e / 0.62) * punch,
-                   (b.screenScale || 1) * S * SQ3 * (b.radius + 0.5)]);
+                   b.screenReach != null ? b.screenReach
+                     : (b.screenScale || 1) * S * SQ3 * (b.radius + 0.5)]);
     }
   }
   if (veil <= 0.002 && !blooms.length) return;
@@ -18125,6 +18150,269 @@ function drawNuclearFlash(now) {
     cx.fillRect(0, 0, W, H);
   }
   cx.restore();
+  cx.globalAlpha = 1;
+}
+
+// ------------------------------------------------------------------ fallout
+// How contaminated a tile still is, normalized to a fission crater's whole
+// ten-turn life. A fusion crater simply spends its first ten turns saturated.
+// Zero once the recovery turn arrives, which is what lets the ground heal on
+// screen the moment the engine says it has.
+function falloutStrength(t) {
+  const remaining = (t.fallout_until || 0) - (state?.turn || 0);
+  if (remaining <= 0) return 0;
+  return Math.min(1, remaining / 10);
+}
+// The ☢ glyph in drawFeatureEffects still marks the tile at every zoom; this
+// is the ground it stands on. Bucketed by strength so the fills stay a
+// handful of calls, and chunked because a canvas fill is superlinear in the
+// subpaths of one path.
+function drawFlatFallout(tiles, now) {
+  const buckets = new Map();
+  for (const t of tiles) {
+    const strength = falloutStrength(t);
+    if (!strength) continue;
+    const bucket = Math.min(3, Math.floor(strength * 3.999));
+    let group = buckets.get(bucket);
+    if (!group) { group = []; buckets.set(bucket, group); }
+    group.push(t);
+  }
+  if (!buckets.size) return;
+  // A slow breath, sampled per frame rather than animated on its own: the
+  // exhibition repaints every turn anyway, and contaminated ground that
+  // shimmers on its own schedule would keep the animation pump awake for
+  // twenty turns.
+  const breathe = 0.92 + 0.08 * Math.sin(now / 640);
+  for (const [bucket, group] of buckets) {
+    const presence = (0.35 + 0.65 * (bucket + 1) / 4) * breathe;
+    for (let start = 0; start < group.length; start += 48) {
+      cx.beginPath();
+      for (let i = start; i < Math.min(group.length, start + 48); i++) {
+        const t = group[i];
+        const [x, y0] = hexXY(t.pos[0], t.pos[1]);
+        appendHexPath(x, y0 - elev(t), S - 0.4);
+      }
+      // Charred base, acid tint, then the same diagonal denial hatch the
+      // blast disk uses, so contaminated ground keeps speaking the blast's
+      // language after the rings are gone. The clip pins the hatch to the
+      // chunk's own hexes.
+      cx.fillStyle = "#1c220a"; cx.globalAlpha = 0.55 * presence; cx.fill();
+      cx.fillStyle = "#b8d838"; cx.globalAlpha = 0.30 * presence; cx.fill();
+      cx.save();
+      cx.clip();
+      cx.strokeStyle = "#d6ef55";
+      cx.globalAlpha = 0.34 * presence;
+      cx.lineWidth = 1.1;
+      const box = group.slice(start, start + 48).reduce((acc, t) => {
+        const [x, y0] = hexXY(t.pos[0], t.pos[1]);
+        const y = y0 - elev(t);
+        return [Math.min(acc[0], x - S), Math.min(acc[1], y - S),
+                Math.max(acc[2], x + S), Math.max(acc[3], y + S)];
+      }, [Infinity, Infinity, -Infinity, -Infinity]);
+      const spanY = box[3] - box[1];
+      for (let h = box[0] - spanY; h <= box[2]; h += 9) {
+        cx.beginPath();
+        cx.moveTo(h, box[1]);
+        cx.lineTo(h + spanY, box[3]);
+        cx.stroke();
+      }
+      cx.restore();
+    }
+  }
+  cx.globalAlpha = 1;
+}
+// The same stain on the globe: one wash per contaminated cell, under every
+// landmark standing on it, faded by the same fog term the other strategic
+// marks use so a remembered crater reads as memory.
+function drawPlanetFallout(cells, visible, spectator) {
+  for (const entry of cells) {
+    const strength = falloutStrength(entry.tile);
+    if (!strength) continue;
+    const presence = planetStrategicAlpha(entry, visible, spectator) *
+      (0.35 + 0.65 * strength);
+    cx.save();
+    planetPath(cx, entry.points);
+    cx.fillStyle = "#1c220a"; cx.globalAlpha = 0.55 * presence; cx.fill();
+    cx.fillStyle = "#b8d838"; cx.globalAlpha = 0.30 * presence; cx.fill();
+    // The same denial hatch as the flat wash, clipped to the cell.
+    cx.clip();
+    const r = planetCellInradius(entry) + 2;
+    const {x, y} = entry.center;
+    cx.strokeStyle = "#d6ef55";
+    cx.globalAlpha = 0.34 * presence;
+    cx.lineWidth = 1;
+    for (let h = -r * 2; h <= r * 2; h += 7) {
+      cx.beginPath();
+      cx.moveTo(x + h - r, y - r);
+      cx.lineTo(x + h + r, y + r);
+      cx.stroke();
+    }
+    cx.restore();
+  }
+}
+
+// ----------------------------------------------------------- missile flight
+// One arc vocabulary for both projections. `squashY` is the flat board's
+// dimetric squash (1 on the globe, whose tilt lives in the transform), and
+// `px` scales the strokes so a delivery over a coin-sized globe is not drawn
+// with the flat board's line weights.
+function drawMissileArc(start, end, progress, thermo, squashY, px) {
+  const bend = thermo ? 1.5 : 1.2;
+  const at = skyLaunchPoint(start, end, progress, bend);
+  const ahead = skyLaunchPoint(start, end, Math.min(1, progress + 0.01), bend);
+  cx.save();
+  cx.lineCap = "round";
+  // The travelled exhaust: a wide soft halo under a hot core, brightest just
+  // behind the warhead. A missile over a busy board has to read at survey
+  // zoom — one thin warm line does not.
+  const steps = Math.max(1, Math.ceil(progress * 22));
+  for (const [halo, width, gain] of [[true, 7, 0.22], [false, 2.4, 0.85]]) {
+    cx.strokeStyle = halo ? "#ff7a35" : thermo ? "#ffb168" : "#ffd35e";
+    let prev = null;
+    for (let step = 0; step <= steps; step++) {
+      const point = skyLaunchPoint(start, end, progress * step / steps, bend);
+      if (prev) {
+        const along = step / steps;
+        cx.globalAlpha = gain * along * along + 0.03;
+        cx.lineWidth = (width * (0.5 + 0.5 * along)) * px;
+        cx.beginPath(); cx.moveTo(prev.x, prev.y); cx.lineTo(point.x, point.y);
+        cx.stroke();
+      }
+      prev = point;
+    }
+  }
+  // The launch announces itself: a ring widening off the platform for the
+  // first beats of the flight.
+  if (progress < 0.3) {
+    cx.globalAlpha = (1 - progress / 0.3) * 0.7;
+    cx.strokeStyle = "#ffd35e";
+    cx.lineWidth = 1.8 * px;
+    const ring = (8 + progress * 52) * px;
+    cx.beginPath();
+    cx.ellipse(start.x, start.y, ring, ring * squashY, 0, 0, 7);
+    cx.stroke();
+  }
+  // The warhead itself: a hot glow around a sliver pointed along the flight.
+  const glow = cx.createRadialGradient(at.x, at.y, 0, at.x, at.y, 11 * px);
+  glow.addColorStop(0, "rgba(255,240,205,0.9)");
+  glow.addColorStop(0.4, "rgba(255,170,80,0.45)");
+  glow.addColorStop(1, "rgba(255,140,50,0)");
+  cx.globalAlpha = 1;
+  cx.fillStyle = glow;
+  cx.beginPath(); cx.arc(at.x, at.y, 11 * px, 0, 7); cx.fill();
+  cx.translate(at.x, at.y);
+  cx.rotate(Math.atan2(ahead.y - at.y, ahead.x - at.x));
+  cx.fillStyle = "#fff3d8";
+  cx.beginPath();
+  cx.moveTo(6.5 * px, 0); cx.lineTo(-4.5 * px, -2.6 * px);
+  cx.lineTo(-2.8 * px, 0); cx.lineTo(-4.5 * px, 2.6 * px);
+  cx.closePath(); cx.fill();
+  cx.restore();
+  cx.globalAlpha = 1;
+}
+// The flat board's delivery pass: every stocked blast whose arrival is still
+// ahead is a missile in the air. The origin is drawn beside the target's
+// nearest copy so an arc never spans the long way around a seam.
+function drawMissileStrikes(now) {
+  for (const b of anim.blasts) {
+    if (!b.from || !b.flight || now >= b.t0) continue;
+    const progress = Math.max(0, 1 - (b.t0 - now) / b.flight);
+    const impact = unitMapPoint(b.pos);
+    const origin = unitMapPoint(b.from, impact.x, impact.y);
+    const [sx, sy] = mapPointToView(origin);
+    const [ex, ey] = mapPointToView(impact);
+    // Hold a screen weight as the camera pulls back: a delivery is exactly
+    // the event a survey zoom is watching for.
+    const px = Math.max(1, Math.min(2.5, 1 / cam.scale));
+    drawMissileArc({x: sx, y: sy}, {x: ex, y: ey}, progress, b.thermo, YS, px);
+  }
+}
+
+// --------------------------------------------------- detonation, globe view
+// The same three seconds on the globe. Everything here draws inside the
+// planet's ground transform so the rings ride the tilt with their tile; the
+// screen-space flash is shared with the flat board and reads `b.screen` the
+// same way. This painter also owns record expiry on planet worlds, where
+// drawNuclearBlasts never runs.
+function drawPlanetBlasts(cells, now, onSheet) {
+  if (!anim.blasts.length) return;
+  const floor = onSheet ?? 0.02;
+  const cellByPos = new Map(cells.map(cell => [key(cell.tile.pos), cell]));
+  for (let i = anim.blasts.length - 1; i >= 0; i--) {
+    const b = anim.blasts[i];
+    const e = (now - b.t0) / b.dur;
+    if (e >= 1) { anim.blasts.splice(i, 1); continue; }
+    const cell = cellByPos.get(key(b.pos));
+    const facing = cell && cell.center.z >= floor;
+    if (e < 0) {
+      // Still in the air. Both ends have to face the camera: an arc with one
+      // foot behind the horizon would cut straight through the planet.
+      const origin = b.from && cellByPos.get(key(b.from));
+      if (!facing || !origin || origin.center.z < floor) continue;
+      const px = Math.max(0.5, Math.min(1.4, planetCellInradius(cell) / 8));
+      drawMissileArc(origin.center, cell.center, 1 - (b.t0 - now) / b.flight,
+                     b.thermo, 1, px);
+      continue;
+    }
+    if (!facing) { b.screen = null; b.screenReach = null; continue; }
+    const reach = 2 * planetCellInradius(cell) * (b.radius + 0.5);
+    if (cx.getTransform) {
+      const m = cx.getTransform();
+      b.screen = [m.a * cell.center.x + m.c * cell.center.y + m.e,
+                  m.b * cell.center.x + m.d * cell.center.y + m.f];
+      b.screenReach = Math.hypot(m.a, m.b) * reach;
+    }
+    if (!b.kicked) b.kicked = true;
+    cx.save();
+    drawPlanetStrategicBlast(b, cell.center.x, cell.center.y, reach, e,
+                             planetCellInradius(cell));
+    cx.restore();
+  }
+}
+function drawPlanetStrategicBlast(b, x, y, reach, e, inradius) {
+  const fade = 1 - e;
+  const ee = 1 - (1 - e) * (1 - e);
+  // The denied disk, hatched like the flat board's so the ground stays
+  // readable under it. Circles, not ellipses: the tilt is the transform's.
+  cx.globalAlpha = 0.5 * fade + 0.12;
+  cx.strokeStyle = "#ff8b3d";
+  cx.lineWidth = 1.4;
+  cx.beginPath(); cx.arc(x, y, reach, 0, 7); cx.stroke();
+  cx.save();
+  cx.beginPath(); cx.arc(x, y, reach, 0, 7); cx.clip();
+  cx.globalAlpha = 0.3 * fade + 0.08;
+  for (let h = -reach; h <= reach; h += 6) {
+    cx.beginPath();
+    cx.moveTo(x + h - reach, y - reach);
+    cx.lineTo(x + h + reach, y + reach);
+    cx.stroke();
+  }
+  cx.restore();
+  for (const [delay, alpha] of [[0, 1], [0.12, 0.6]]) {
+    const re = (e - delay) / (0.6 - delay);
+    if (re <= 0 || re >= 1) continue;
+    const rr = reach * (0.1 + (1 - (1 - re) * (1 - re)) * 1.8);
+    cx.globalAlpha = alpha * (1 - re);
+    cx.strokeStyle = "#ffd35e";
+    cx.lineWidth = 3.2 * (1 - re) + 1;
+    cx.beginPath(); cx.arc(x, y, rr, 0, 7); cx.stroke();
+  }
+  if (e < 0.34) {
+    const pe = e / 0.34;
+    cx.globalAlpha = 1 - pe;
+    cx.fillStyle = "#fff6e2";
+    cx.beginPath(); cx.arc(x, y, reach * (0.24 + pe * 0.2), 0, 7); cx.fill();
+  }
+  // The symbol, sized to the cell rather than the flat board's fixed type.
+  const lift = inradius * (2.2 + ee * 1.4);
+  cx.globalAlpha = e < 0.75 ? 1 : Math.max(0, (1 - e) / 0.25);
+  cx.font = `bold ${Math.round(Math.max(11, inradius * 1.7))}px sans-serif`;
+  cx.textAlign = "center";
+  cx.lineWidth = 3;
+  cx.strokeStyle = "#170d05";
+  cx.strokeText("☢", x, y - lift);
+  cx.fillStyle = b.thermo ? "#ff7a4a" : "#ffcf5a";
+  cx.fillText("☢", x, y - lift);
   cx.globalAlpha = 1;
 }
 
@@ -18493,6 +18781,31 @@ function drawPlanetMini() {
     drawCityIcon(mx2, x, y, cityRadius, cityBannerColor(city.owner),
                  cityState ? "#0b0e13" : "#f8edca", cityState,
                  Boolean(city.is_capital));
+    mx2.globalAlpha = 1;
+  }
+  // Detonations. The chart holds the whole world at once, so it is the one
+  // view where a strike on the far hemisphere shows at all — same flash and
+  // ring vocabulary as the flat minimap.
+  const miniNow = performance.now();
+  for (const b of anim.blasts) {
+    const e = (miniNow - b.t0) / b.dur;
+    if (e < 0 || e >= 1) continue;
+    const cell = PLANET.cells.get(key(b.pos));
+    if (!cell) continue;
+    const center = azimuthalMiniScreenPoint(cell.center, projection);
+    if (!center || !azimuthalMiniInsideSquare(center, projection, 3)) continue;
+    const [x, y] = center;
+    const ee = 1 - (1 - e) * (1 - e);
+    const reach = (b.radius + 1) * (b.thermo ? 3.4 : 2.6);
+    mx2.globalAlpha = Math.max(0, 1 - e);
+    mx2.strokeStyle = "#ffd35e";
+    mx2.lineWidth = 1.4 * (1 - e) + 0.4;
+    mx2.beginPath(); mx2.arc(x, y, reach * (0.4 + ee * 2.4), 0, 7); mx2.stroke();
+    if (e < 0.4) {
+      mx2.globalAlpha = 1 - e / 0.4;
+      mx2.fillStyle = "#fff4dc";
+      mx2.beginPath(); mx2.arc(x, y, reach * (0.5 + e), 0, 7); mx2.fill();
+    }
     mx2.globalAlpha = 1;
   }
   mx2.restore();
