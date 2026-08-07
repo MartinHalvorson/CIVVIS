@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 100] = [
+pub const EVAL_ONLY_AIS: [&str; 101] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -114,6 +114,7 @@ pub const EVAL_ONLY_AIS: [&str; 100] = [
     "advanced_garrison_loyalty",
     "advanced_settler_first",
     "advanced_league_top",
+    "advanced_joint_tactics",
     "strategic_cheap",
     "strategic_score",
     "strategic_doctrine",
@@ -273,6 +274,7 @@ define_arm_kinds! {
     AdvancedExpansionComplete => "advanced_expansion_complete",
     AdvancedExpansionDispatch => "advanced_expansion_dispatch",
     AdvancedExpansionPayback => "advanced_expansion_payback",
+    AdvancedJointTactics => "advanced_joint_tactics",
     AdvancedLateExpansion => "advanced_late_expansion",
     AdvancedLeagueTop => "advanced_league_top",
     AdvancedMeasuredDedication => "advanced_measured_dedication",
@@ -1949,6 +1951,15 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             let weights = shipped_league_top_advanced().unwrap_or_default();
             Box::new(AdvancedAi::with_weights(weights))
         }
+        // Plan the turn's whole engagement jointly instead of one unit at a time
+        // in a fixed class order. Paired against `advanced` this isolates the
+        // commitment rule and nothing else — the same per-unit evaluator, the
+        // same weights, the same everything above the battlefield.
+        "advanced_joint_tactics" => {
+            let mut ai = AdvancedAi::new();
+            ai.joint_tactics = true;
+            Box::new(ai)
+        }
         // The denial ablation on the weights the deployment actually plays.
         // Every other arm in `docs/COUNTERING_LEADERS.md` ran on
         // `Weights::default()`, and a genome moves `war_ratio`, `city_target`
@@ -2873,6 +2884,7 @@ impl ArmKind {
             }
             Self::AdvancedCityStrategyPressureOnly => &["city-directives", "city-pressure-only"],
             Self::AdvancedExpansionPayback => &["expansion-payback"],
+            Self::AdvancedJointTactics => &["joint-tactics"],
             Self::AdvancedLateExpansion => &["late-expansion"],
             Self::AdvancedExpansionDispatch => &["expansion-dispatch"],
             Self::AdvancedExpansionComplete => &["late-expansion", "expansion-dispatch"],
@@ -3378,6 +3390,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced_measured_dedication" => (vec![genome], "advanced_measured_dedication"),
         "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
+        "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
         "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
@@ -4483,7 +4496,8 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 69] = [
+            const SCRIPTED: [&str; 70] = [
+                "advanced_joint_tactics",
                 "advanced",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",

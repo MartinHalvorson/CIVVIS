@@ -1717,6 +1717,41 @@ pub struct AdvancedAi {
     /// rule therefore leaves it off; reachable as `advanced_envoy_priority`.
     pub envoy_priority: bool,
 
+    /// Plan the whole engagement at once instead of committing one unit at a
+    /// time in a fixed class order.
+    ///
+    /// The per-unit evaluator this sits in front of is strong: it scores every
+    /// attack on an exact cloned forward model and extends the line with a
+    /// quiescence reply search. What it cannot do is choose a *set* of attacks.
+    /// Units commit greedily and irreversibly in the order ranged, siege,
+    /// melee, so targets are assigned one at a time, the enemy's answer is
+    /// priced against a half-played turn, and no unit may take a worse attack
+    /// to set up a better one for the unit behind it.
+    ///
+    /// `src/ai/tactics.rs` replaces that commitment rule with a bounded
+    /// Portfolio Online Evolution over the joint assignment — the method
+    /// published for exactly this game shape (Churchill & Buro 2013; Justesen
+    /// et al. 2016; Wang et al. 2016). The greedy incumbent is always in the
+    /// population, so the search cannot score below today's behaviour under its
+    /// own evaluator.
+    ///
+    /// **Off by default until the paired whole-game gate clears.** Reachable as
+    /// the `advanced_joint_tactics` entrant. `docs/TACTICS.md` carries the
+    /// design and the measurements.
+    pub joint_tactics: bool,
+
+    /// Units this turn's joint plan already reached a decision for, including
+    /// the ones it decided should not attack. Their greedy attack selection is
+    /// suppressed so a declined trade is not immediately re-taken by the
+    /// per-unit path; movement is untouched.
+    tactics_resolved: BTreeSet<u32>,
+
+    /// Turns on which the joint search produced a plan, and unit decisions it
+    /// reached across them. Read by instruments through
+    /// [`AdvancedAi::joint_tactics_census`].
+    tactics_plans: usize,
+    tactics_decisions: usize,
+
     /// Price beakers as the empire's compounding interest rate rather than as
     /// one victory lane's currency.
     ///
@@ -2145,6 +2180,10 @@ impl AdvancedAi {
             congress_counter_votes: false,
             envoy_infrastructure: false,
             envoy_priority: false,
+            joint_tactics: false,
+            tactics_resolved: BTreeSet::new(),
+            tactics_plans: 0,
+            tactics_decisions: 0,
             research_economy: false,
             campus_every_city: false,
             housing_cards: false,
@@ -2856,6 +2895,17 @@ impl AdvancedAi {
 
     /// Last set of force orders produced for this agent. This is useful to
     /// observers, evaluators, and tests; orders are rebuilt at every war turn.
+    /// How many turns this agent's joint tactical search actually planned, and
+    /// how many unit decisions it reached. For instruments only.
+    ///
+    /// A treatment that never fires produces a null for the wrong reason, and
+    /// on a whole-game evaluation "the layer barely runs" and "the layer runs
+    /// and does not matter" call for opposite next steps. `battle_bench --cost`
+    /// reports this so the two can be told apart.
+    pub fn joint_tactics_census(&self) -> (usize, usize) {
+        (self.tactics_plans, self.tactics_decisions)
+    }
+
     pub fn force_groups(&self) -> &[ForceGroup] {
         &self.force_groups
     }
@@ -18727,12 +18777,40 @@ impl AdvancedAi {
                 return self.base.fortify_or_stop(g, pid, uid);
             }
         }
-        let enemies: Vec<usize> = g
+        let mut enemies: Vec<usize> = g
             .players
             .iter()
             .filter(|p| p.id != pid && p.alive && !p.is_barbarian && g.is_at_war(pid, p.id))
             .map(|p| p.id)
             .collect();
+        // ★★★★★ A RAIDER PILLAGING INSIDE THE EMPIRE IS A WAR AT HOME.
+        //
+        // The filter above deliberately keeps the barbarian seat out of the
+        // campaign machinery — a camp is not a war objective. But this same
+        // list feeds the attack scan, `home_defense_objective`,
+        // `nearest_enemy` and the tactical step, so excluding barbarians here
+        // left every one of those layers blind to raiders: with no major war
+        // on, `enemies` was empty and each soldier took the peacetime path
+        // while barbarians pillaged home districts unanswered (observed on
+        // live run `civvis-20260807T172510Z`, turns 40+, six idle military
+        // units). `home_defense` already ships on in production, but it was
+        // being handed a threat list that could not contain the threat.
+        //
+        // Admit the barbarian seat exactly when it has a presence within
+        // `HOME_THREAT_RADIUS` of one of our cities. `nearest_enemy`'s own
+        // near-home and exchange-score gates keep the chase bounded, and the
+        // gate on `home_defense` keeps the frozen Basic and `advanced_v1`
+        // tournament identities exactly where they were.
+        // No `alive` test on the seat: a barbarian player holds no cities, so
+        // on several rosters it reads `alive = false` while its raiders are
+        // very much on the board. The presence check is the liveness test.
+        if self.base.home_defense {
+            if let Some(barb) = g.barb_pid {
+                if !enemies.contains(&barb) && BasicAi::barbarian_presence_at_home(g, pid) {
+                    enemies.push(barb);
+                }
+            }
+        }
         if enemies.is_empty() {
             if spec.domain.as_deref() == Some("sea") {
                 if let Some(settler) = unit
@@ -18792,8 +18870,13 @@ impl AdvancedAi {
             1
         };
         let mut candidates = Vec::new();
+        // The joint search already decided this unit's fight, weighing it
+        // against what the rest of the army is doing. Re-running the greedy
+        // picker here would let a unit take a trade the plan declined on
+        // purpose, so it only keeps its movement.
+        let resolved_by_plan = self.tactics_resolved.contains(&uid);
         for pos in g.wdisk(unit.pos, radius) {
-            if spec.class != "military" {
+            if spec.class != "military" || resolved_by_plan {
                 break;
             }
             if pos == unit.pos || !self.base.is_enemy_tile(g, pos, &enemies) {
@@ -19101,6 +19184,31 @@ impl AdvancedAi {
             }
         }
 
+        // Holding a threatened city outranks the campaign march, and the
+        // homeland gets first claim on this unit before the offensive does.
+        // This mirrors the Basic military step's precedence exactly — that
+        // path had both calls and this one had neither, so a production seat
+        // (which routes every military unit through here) watched raiders
+        // pillage its home districts while its army staged on a border it was
+        // not even at war across. `garrison_step` and `home_defense_objective`
+        // both self-gate on `home_defense` and budget their responders, so
+        // the frozen controllers and the offensive's claim on the rest of the
+        // army are untouched.
+        if self.base.garrison_step(g, pid, uid, &enemies) {
+            return true;
+        }
+        // A responder the homeland claimed marches. The wartime mover below
+        // holds a unit outside the enemy's move-and-attack reach — right for a
+        // front, wrong for a raider, which it hovers two tiles from forever
+        // while the districts burn. Close instead; once the threat is inside
+        // this unit's own attack radius the scan above takes the trade on the
+        // next pass, and even trades against barbarians are worth taking.
+        if let Some(threat) = self.base.home_defense_objective(g, pid, uid, &enemies) {
+            if g.wdist(unit.pos, threat) > radius && self.base.step_toward(g, pid, uid, threat) {
+                return true;
+            }
+            return self.base.tactical_step(g, pid, uid, threat, &enemies, radius);
+        }
         let defend_target = plan.threatened_city.and_then(|cid| {
             let city = g.cities.get(&cid)?;
             g.units
@@ -19840,6 +19948,39 @@ impl AdvancedAi {
         self.base.clear_prepared_patrol_posts();
     }
 
+    /// Search the turn's whole engagement jointly and play the winning plan.
+    ///
+    /// The plan is replayed onto the authoritative game in the order the
+    /// search played it, starting from the position the search started from,
+    /// so the seeded combat rolls land exactly as they were evaluated.
+    fn plan_engagement(&mut self, g: &mut Game, pid: usize) {
+        let search = super::tactics::JointTactics::default();
+        let Some(plan) = search.plan(g, pid, &self.base) else {
+            return;
+        };
+        let mut played = 0usize;
+        for action in &plan.actions {
+            if g.apply(pid, action).is_ok() {
+                played += 1;
+            }
+        }
+        if played == 0 {
+            return;
+        }
+        self.tactics_resolved.extend(plan.resolved.iter().copied());
+        self.tactics_plans += 1;
+        self.tactics_decisions += plan.resolved.len();
+        self.force_groups_dirty = true;
+        if self.journal().wants(crate::reasoning::Level::Detail) {
+            let gain = plan.score - plan.greedy_score;
+            think!(self.journal(), Military, Detail,
+                   "the army fights as one";
+                   "{played} orders across {} units, worth {:.0} against {:.0} \
+                    for the same units attacking one at a time ({gain:+.0})",
+                   plan.resolved.len(), plan.score, plan.greedy_score);
+        }
+    }
+
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         self.base.begin_movement_turn(g, pid);
         // In a native game a Trader has walking movement and the ordinary unit
@@ -19872,6 +20013,13 @@ impl AdvancedAi {
         // counts up to eight times for every military unit in the same turn.
         let decline_settlers = self.counts(g, pid).settlers > 0
             || !self.base.has_practical_settle_site(g, pid);
+        // Decide the engagement as one problem before any unit commits. Units
+        // this resolves keep their own movement logic below; only the choice
+        // of what to attack is taken out of the greedy per-unit path.
+        self.tactics_resolved.clear();
+        if self.joint_tactics {
+            self.plan_engagement(g, pid);
+        }
         let mut ids = g.player_unit_ids(pid);
         ids.sort_by_key(|uid| {
             let u = &g.units[uid];
@@ -20374,6 +20522,10 @@ impl AdvancedAi {
 }
 
 impl Ai for AdvancedAi {
+    fn joint_tactics_census(&self) -> Option<(usize, usize)> {
+        self.joint_tactics.then(|| self.joint_tactics_census())
+    }
+
     fn expansion_census(&self) -> Option<ExpansionCensus> {
         Some(AdvancedAi::expansion_census(self))
     }
@@ -32775,6 +32927,135 @@ mod tests {
         assert_eq!(
             before, after,
             "a hidden heal, breach, or garrison cannot rewrite the remembered campaign score"
+        );
+    }
+
+    /// ★★★★★ A BARBARIAN PILLAGING INSIDE THE EMPIRE MUST BE ANSWERED WITHOUT
+    /// A MAJOR WAR ON.
+    ///
+    /// The Advanced military step's enemy list carried `!p.is_barbarian`, so
+    /// with no major war running `enemies` was empty and every soldier took
+    /// the peacetime path — and the path that COULD answer,
+    /// `home_defense_objective`, was never consulted by this step at all.
+    /// Observed on live run `civvis-20260807T172510Z` (turns 40+): barbarians
+    /// pillaged home districts for consecutive turns while six military units
+    /// cycled through exploration. The list now admits the barbarian seat
+    /// exactly when it has a presence within `HOME_THREAT_RADIUS` of one of
+    /// our cities, and the campaign chain consults `garrison_step` and
+    /// `home_defense_objective` before the campaign march, mirroring the
+    /// Basic step's precedence.
+    #[test]
+    fn a_barbarian_raider_at_home_is_answered_without_a_major_war() {
+        let mut game = Game::new_full(2, 30, 20, 90_077, 60, 0, true);
+        for player in 0..2 {
+            let settler = game
+                .player_unit_ids(player)
+                .into_iter()
+                .find(|uid| game.units[uid].kind == "settler")
+                .expect("each player opens with a settler");
+            game.current = player;
+            game.apply(player, &Action::FoundCity { unit: settler }).unwrap();
+        }
+        for player in 0..2 {
+            for uid in game.player_unit_ids(player) {
+                game.remove_unit(uid);
+            }
+        }
+        let barb = game.barb_pid.expect("a barbarian-seated game has barb_pid");
+        // Clear construction-time barbarians so the scenario holds exactly the
+        // raider under test.
+        for uid in game.units.keys().copied().collect::<Vec<_>>() {
+            if game.units[&uid].owner == barb {
+                game.remove_unit(uid);
+            }
+        }
+        game.current = 0;
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let open = |g: &Game, pos: Pos| {
+            g.map
+                .get(pos)
+                .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                && g.city_at(pos).is_none()
+                && g.units_at(pos).is_empty()
+        };
+        // Inside the home ring, outside the garrison alarm: the field
+        // response, not the city garrison, is what must answer.
+        let raider_at = game
+            .wdisk(home, crate::ai::HOME_THREAT_RADIUS - 1)
+            .into_iter()
+            .filter(|pos| {
+                open(&game, *pos)
+                    && game.wdist(*pos, home) >= crate::ai::GARRISON_ALERT_RADIUS + 1
+            })
+            .min()
+            .expect("the home ring has open land");
+        game.spawn_test_unit("warrior", barb, raider_at);
+        // Three tiles out: the first step toward the raider is unambiguously
+        // safe (still outside a warrior's move-and-attack reach), so a mover
+        // that received the objective has no cautious reason to hold.
+        let soldier_at = game
+            .wdisk(raider_at, 3)
+            .into_iter()
+            .filter(|pos| open(&game, *pos) && game.wdist(*pos, raider_at) == 3)
+            .min()
+            .expect("open land three tiles from the raider");
+        let soldier = game.spawn_test_unit("warrior", 0, soldier_at);
+
+        assert!(
+            BasicAi::barbarian_presence_at_home(&game, 0),
+            "precondition: the raider stands within the home threat radius"
+        );
+        assert!(
+            !game
+                .players
+                .iter()
+                .any(|p| p.id != 0 && !p.is_barbarian && game.is_at_war(0, p.id)),
+            "precondition: no major war is running, which is exactly when the \
+             old enemy list went empty"
+        );
+
+        // The step is exercised directly, the way the relief-column test does:
+        // this is a test of the enemy list and the objective ordering, not of
+        // battlefront vision, and a spawned raider starts fogged.
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut ai = AdvancedAi::new();
+        ai.battlefront_observation = false;
+        assert_eq!(
+            ai.base.home_defense_objective(&game, 0, soldier, &[barb]),
+            Some(raider_at),
+            "the homeland must claim this unit against the raider once the \
+             barbarian seat is in its enemy list"
+        );
+        let acted = ai.advanced_military_step(&mut game, 0, soldier, &plan);
+        assert!(
+            acted,
+            "the soldier must act on the raider rather than fall through to \
+             the peacetime path"
+        );
+
+        let closed = game
+            .units
+            .get(&soldier)
+            .is_some_and(|unit| game.wdist(unit.pos, raider_at) < 3);
+        let answered = game
+            .units
+            .values()
+            .find(|unit| unit.owner == barb)
+            .map(|raider| raider.hp < 100)
+            .unwrap_or(true);
+        assert!(
+            closed || answered,
+            "a raider pillaging at home must draw the soldier in or take a hit; \
+             the soldier stood at {:?} with the raider untouched at {raider_at:?}",
+            game.units.get(&soldier).map(|unit| unit.pos)
         );
     }
 
