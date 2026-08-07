@@ -1865,6 +1865,10 @@ const HUD_ELO_MAX_TYPE_SIZE = 13;
 // the model as a real, reorderable column on a fixed track; it is an action
 // rather than a fact, which is why it is the one column with no sort target.
 const PLAYER_HUD_COLUMNS = [
+  // The row lock leads the table exactly as its fixed track always did; as a
+  // model column it can now be checked out of the table or moved like any
+  // other. Its heading doubles as the panel's drag handle.
+  {key:"lock", label:"Row lock", block:"identity", min:"--hud-lock-column", width:0, fixed:true},
   {key:"rank", label:"Score rank", block:"identity", min:"--hud-rank-min", width:.7},
   {key:"civ", label:"Civilization", block:"identity", min:"--hud-ident-min", width:2.035},
   {key:"leader", label:"Leader", block:"identity", min:"--hud-ident-min", width:1.85},
@@ -1872,10 +1876,12 @@ const PLAYER_HUD_COLUMNS = [
   {key:"player", label:"Player", block:"identity", min:"--hud-ident-min", width:1.85},
   {key:"elo", label:"Elo rating", block:"identity", min:"--hud-ident-num-min", width:1.017},
   {key:"elo_delta", label:"Elo delta", block:"identity", min:"--hud-ident-num-min", width:.85},
-  // One column, two figures: the odds this seat started with and the odds it
-  // holds now. They are dragged, saved and measured as a single column because
-  // they are read as a single movement.
-  {key:"win", label:"Win odds", block:"identity", min:"--hud-ident-odds-min", width:1.3},
+  // One movement, three columns: the odds this seat started with, the trend
+  // between them, and the odds it holds now — each separately sortable,
+  // sized, shown and placed, reading START · Δ · NOW by default.
+  {key:"win_start", label:"Win odds · start", block:"identity", min:"--hud-odds-min", width:.55},
+  {key:"win_delta", label:"Win odds trend", block:"identity", min:"--hud-odds-trend-min", width:.2},
+  {key:"win", label:"Win odds · now", block:"identity", min:"--hud-odds-min", width:.55},
   {key:"age", label:"Age", block:"identity", min:"--hud-ident-min", width:1.3},
   {key:"plan", label:"Plan", block:"identity", min:"--hud-ident-min", width:2.035},
   ...[["cities", "Cities"], ["population", "Population"], ["food", "Food"], ["production", "Production"],
@@ -1885,13 +1891,11 @@ const PLAYER_HUD_COLUMNS = [
     .map(([key, label]) => ({key, label, block:"stats", min:"--hud-stat-min", width:1})),
 ];
 const PLAYER_HUD_COLUMN_BY_KEY = new Map(PLAYER_HUD_COLUMNS.map(column => [column.key, column]));
-// Every named standings fact is sortable. Rank is the score standing,
-// while start, change and current chance are individually labelled tracks
-// inside Win odds. Watch-as and the row lock are actions rather than facts, so
-// neither is part of this set.
+// Every named standings fact is sortable. Rank is the score standing, and
+// the odds trio are three facts of their own now. Watch-as and the row lock
+// are actions rather than facts, so neither is part of this set.
 const PLAYER_HUD_SORTABLE_COLUMNS = new Set([
   ...PLAYER_HUD_COLUMNS.filter(column => !column.fixed).map(column => column.key),
-  "win_start", "win_delta",
 ]);
 const PLAYER_HUD_TEXT_SORT_COLUMNS = new Set(["civ", "leader", "player", "plan"]);
 const PLAYER_HUD_AGE_SORT_ORDER = {dark:0, normal:1, golden:2, heroic:3};
@@ -1926,7 +1930,20 @@ try {
     // Saved keys keep their saved places; columns this build has that the
     // save does not know join at the end rather than being lost.
     const known = saved.order.filter(key => PLAYER_HUD_COLUMN_BY_KEY.has(key));
-    playerHudColumnOrder = [...new Set([...known, ...playerHudColumnOrder])];
+    let merged = [...new Set([...known, ...playerHudColumnOrder])];
+    // Columns that joined the model after a save was written go back to their
+    // shipped places rather than the end: the row lock leads the table, and
+    // the odds trio stands where the one Win odds column stood.
+    if (!known.includes("lock"))
+      merged = ["lock", ...merged.filter(key => key !== "lock")];
+    for (const [key, before] of [["win_delta", "win"], ["win_start", "win_delta"]])
+      if (!known.includes(key)) {
+        const rest = merged.filter(other => other !== key);
+        const at = rest.indexOf(before);
+        rest.splice(at < 0 ? rest.length : at, 0, key);
+        merged = rest;
+      }
+    playerHudColumnOrder = merged;
   }
   if (Array.isArray(saved.hidden))
     playerHudHiddenColumns = new Set(
@@ -2097,6 +2114,9 @@ const PLAYER_HUD_HEAD_LABELS = {
   leader:["LEADER", "Leader"], player:["PLAYER", "Player"],
   elo:["ELO", "Elo rating", "numeric"],
   elo_delta:["Δ", "Live Elo position against the living field", "numeric"],
+  win_start:["START", "Win odds at the start of the game", "numeric"],
+  win_delta:["Δ", "Change in win odds", "odds-trend-head"],
+  win:["NOW", "Current win odds", "numeric"],
   age:["AGE", "Civilization age"], plan:["PLAN", "AI active strategy"],
   cities:["CITY", "Cities controlled"], population:["POP", "Total population"],
   food:["FOOD", "Food per turn"], production:["PROD", "Production per turn"],
@@ -2111,6 +2131,14 @@ const PLAYER_HUD_HEAD_LABELS = {
 // fit all find a column through that one attribute.
 function playerHudColumnHead(column) {
   const attrs = `data-hud-col="${column.key}"`;
+  // The row lock's heading is the panel's own drag handle, exactly where the
+  // old fixed lock track kept it. It moves the whole standings panel, so it
+  // deliberately does not take part in the column-reorder gesture.
+  if (column.key === "lock") {
+    return `<span class="hud-head-cell hud-head-lock player-standings-drag widget-drag-handle" ` +
+      `${attrs} data-widget-drag tabindex="0" role="button" ` +
+      `aria-label="Move player standings; use arrow keys or drag" title="Drag to move · arrow keys also move"></span>`;
+  }
   // The Watch-as column's heading is the inverse of every action below it:
   // leave any one civilization's fog and return to the omniscient table.
   // Keeping it in the column makes that relationship visible, while the
@@ -2121,17 +2149,6 @@ function playerHudColumnHead(column) {
       `aria-pressed="${state.view_player === null || state.view_player === undefined}" ` +
       `title="Spectator mode · see everyone with full map visibility" ` +
       `aria-label="Spectator mode: see everyone with full map visibility">All</button></span>`;
-  }
-  // ELO's live position delta is its own draggable column. The two win
-  // estimates remain named categories on matching inner tracks; their Δ owns
-  // the narrow middle track used by each row's trend glyph. The outer cell
-  // remains one draggable Win odds column, so adding those labels does not
-  // add two more masthead seams.
-  if (column.key === "win") {
-    return `<span class="hud-head-cell hud-head-identity diplomacy-odds-head numeric" ${attrs}>` +
-      playerHudSortHead("win_start", "START", "Win odds at the start of the game") +
-      playerHudSortHead("win_delta", "Δ", "Change in win odds", "odds-trend-head") +
-      playerHudSortHead("win", "NOW", "Current win odds") + `</span>`;
   }
   const [label, title, extra] = PLAYER_HUD_HEAD_LABELS[column.key];
   const classes = column.block === "stats"
@@ -2177,10 +2194,10 @@ function syncPlayerHudColumns(placeGrips = true) {
     ? `var(${column.min})`
     : `minmax(${playerHudColumnMinExpr(column)}, ` +
       `${playerHudColumnFlex(column, bias).toFixed(4)}fr)`).join(" ");
-  // Every column floor, the lock track, one gutter per column and the panel's
-  // own padding and border. 9px is that chrome: 4px + 3px padding, 2px border.
-  const tableMin = `calc(var(--hud-lock-column, 0px) + 9px + ` +
-    `${columns.length} * var(--hud-stat-gap, 3px) + ` +
+  // Every column floor, one gutter per seam and the panel's own padding and
+  // border. 9px is that chrome: 4px + 3px padding, 2px border.
+  const tableMin = `calc(9px + ` +
+    `${Math.max(0, columns.length - 1)} * var(--hud-stat-gap, 3px) + ` +
     columns.map(column => column.fixed ? `var(${column.min})`
       : playerHudColumnMinExpr(column)).join(" + ") + `)`;
   if (`${tracks}|${tableMin}` !== playerHudColumnCss) {
@@ -2675,7 +2692,7 @@ if (playerHudPanel) {
     const grip = event.target.closest?.(".hud-col-grip");
     if (grip) { beginPlayerHudColumnGesture(event, grip); return; }
     const head = event.target.closest?.(".hud-head-cell");
-    if (head && head.closest(".ribbon-stat-heading"))
+    if (head && head.closest(".ribbon-stat-heading") && !head.closest("[data-widget-drag]"))
       beginPlayerHudReorderGesture(event, head);
   });
   playerHudPanel.addEventListener("keydown", event => {
@@ -2729,7 +2746,7 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .diplomacy-player", min:9, max:13},
   {selector:"#playerhud .diplomacy-elo-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
   {selector:"#playerhud .diplomacy-elo-delta-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
-  {selector:"#playerhud .diplomacy-expected-value", min:9, max:13},
+  {selector:"#playerhud .diplomacy-expected span", min:9, max:13},
   {selector:"#playerhud .diplomacy-age .civ-age", min:9, max:12},
   {selector:"#playerhud .diplomacy-strategy .ai-plan", min:9, max:12},
   // Measured against the cell, not against itself. The figure sits in a grid
@@ -20156,19 +20173,6 @@ function eloDeltaTitle(player) {
     : `Live Elo position against the living field: ${signedEloDelta(delta)}`;
 }
 
-function playerOddsFigures(player) {
-  const start = oddsPct(player.odds_start);
-  const now = oddsPct(player.odds_now);
-  if (start === null && now === null) {
-    return `<span class="diplomacy-expected-value"><span class="odds-unavailable">—</span></span>`;
-  }
-  const movement = oddsMovement(player);
-  return `<span class="diplomacy-expected-value">` +
-    `<span class="odds-start">${start ?? "—"}</span>` +
-    `<span class="odds-move ${movement.direction}" aria-label="Win chance trend ${movement.direction}">${movement.symbol}</span>` +
-    `<span class="odds-now">${now ?? "—"}</span></span>`;
-}
-
 function anyVictoryEnabled() {
   return VICTORY_TRACKS.some(track => state?.victory_conditions?.[track.id] !== false);
 }
@@ -20284,8 +20288,6 @@ function drawPlayerHud() {
     hudTurnPlate() +
     `<div class="player-standings" tabindex="0" aria-label="Player statistics; scroll horizontally for every column">` +
     `<div class="ribbon-stat-heading">` +
-    `<span class="player-standings-drag widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
-    `aria-label="Move player standings; use arrow keys or drag" title="Drag to move · arrow keys also move"></span>` +
     visibleColumns.map(playerHudColumnHead).join("") +
     // The bars stand on the seams of the heading they are laid over, and are
     // rebuilt with it so that a repaint can never orphan one.
@@ -20414,6 +20416,9 @@ function drawPlayerHud() {
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}"`;
       const rowCell = column => {
         switch (column.key) {
+          case "lock":
+            return `<button class="lock-toggle" data-hud-col="lock" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
+              `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>`;
           case "rank":
             return `<span class="diplomacy-rank" data-hud-col="rank" title="Score rank ${rank}">#${rank}</span>`;
           // A civilization with no capital leaves this button disabled, and a
@@ -20443,15 +20448,24 @@ function drawPlayerHud() {
             return `<button class="diplomacy-identity" data-hud-col="elo_delta" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-elo-delta" title="${escapeAttr(eloDeltaTitle(p))}">` +
               `<span class="diplomacy-elo-delta-value">${playerEloDelta}</span></span></button>`;
-          // The per-cent sign lives in the WIN% column head, not in eight or
-          // twelve repetitions of the value. Two named numeric categories sit
-          // inside the outer Win odds cell: Start, a narrow trend track, and
-          // Now. Matching grid tracks keep every opening estimate, arrow and
-          // current estimate aligned down the table.
+          // The per-cent sign lives in the START and NOW column heads, not in
+          // eight or twelve repetitions of the value. Start, trend and Now are
+          // three columns of their own; each cell still carries the full odds
+          // story in its tooltip.
+          case "win_start":
+            return `<button class="diplomacy-identity" data-hud-col="win_start" ${dossierAttrs}>` +
+              `<span class="diplomacy-identity-field diplomacy-expected" title="${escapeAttr(oddsTitle(p))}">` +
+              `<span class="odds-start">${startPct ?? "—"}</span></span></button>`;
+          case "win_delta": {
+            const movement = oddsMovement(p);
+            return `<button class="diplomacy-identity" data-hud-col="win_delta" ${dossierAttrs}>` +
+              `<span class="diplomacy-identity-field diplomacy-expected diplomacy-odds-trend" title="${escapeAttr(oddsTitle(p))}">` +
+              `<span class="odds-move ${movement.direction}" aria-label="Win chance trend ${movement.direction}">${movement.symbol}</span></span></button>`;
+          }
           case "win":
             return `<button class="diplomacy-identity" data-hud-col="win" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-expected" title="${escapeAttr(oddsTitle(p))}">` +
-              playerOddsFigures(p) + `</span></button>`;
+              `<span class="odds-now">${nowPct ?? "—"}</span></span></button>`;
           case "age":
             return `<button class="diplomacy-identity" data-hud-col="age" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-age" title="${ageTitle}">` +
@@ -20479,8 +20493,6 @@ function drawPlayerHud() {
           `<b>${kind === "score" ? ribbonScore(value) : ribbonStat(value)}</b>${markerHtml}</button>`;
       };
       return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
-        `<button class="lock-toggle" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
-        `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>` +
         visibleColumns.map(rowCell).join("") + `</div>`;
     }).join("") + `</div>` + hudResizeHandles("player standings");
   drawDossierWindows(scoreRankedMajors, rankById, relationById);
@@ -28628,12 +28640,19 @@ for (const checkbox of document.querySelectorAll("[data-overlay]")) {
 // toggle the overlay alone — never fold the menu open or shut — so the
 // click's default is cancelled on both counts and the visibility change is
 // applied directly. Keyboard toggling arrives here as a click too.
+//
+// The visibility flip is deferred one tick because cancelling the click also
+// runs the checkbox's canceled-activation step AFTER this handler returns,
+// putting the box back how the press found it. Applied synchronously, the
+// flip was silently reverted a moment later: the overlay left the map while
+// its switch stayed checked.
 for (const summary of document.querySelectorAll(".overlay-menu > summary")) {
   summary.addEventListener("click", event => {
     const box = event.target.closest?.("input[data-overlay]");
     if (!box) return;
     event.preventDefault();
-    setOverlayVisibility(box.dataset.overlay, !OVERLAY_VISIBILITY[box.dataset.overlay]);
+    const name = box.dataset.overlay;
+    setTimeout(() => setOverlayVisibility(name, !OVERLAY_VISIBILITY[name]), 0);
   });
 }
 for (const button of document.querySelectorAll("[data-hud-widget-reset]")) {
