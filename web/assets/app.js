@@ -5472,7 +5472,7 @@ document.addEventListener("visibilitychange", () => {
 });
 // Watch pace is a whole-turn budget. Lightning is zero, so the server takes no
 // wait at all. A pick also has to outlive the server that received it. Every
-// game is a new process starting at the default second per turn, and the
+// game is a new process starting at the default half-second per turn, and the
 // exhibition cycles games all day. A viewer who chose Lightning was quietly
 // returned to Blitz at the next world. A chosen pace is remembered and handed
 // to whatever server the page finds itself talking to.
@@ -5517,7 +5517,7 @@ function restorePace() {
 }
 function specPace() {
   const select = document.getElementById("specspeed");
-  return select ? +select.value : 1000;
+  return select ? +select.value : 500;
 }
 // The interval is a browser preference like watch pace rather than a world
 // setting. A supervised successor is a fresh process, so remember it here and
@@ -5577,9 +5577,9 @@ function refreshRenderResolution() {
 }
 // At rapid exhibition speeds the acting seat changes too quickly to read; its
 // marker becomes a flickering distraction rather than useful turn context.
-// Four seconds is the first pace where the viewer can follow a whole turn, so
+// Two seconds is the first pace where the viewer can follow a whole turn, so
 // only Standard and slower paces mark the acting civilization in the HUD.
-const PLAYER_HUD_ACTIVE_MIN_PACE_MS = 4000;
+const PLAYER_HUD_ACTIVE_MIN_PACE_MS = 2000;
 function highlightActingPlayerInHud() {
   const pace = Number(state?.pace);
   return SPEC && Number.isFinite(pace) && pace >= PLAYER_HUD_ACTIVE_MIN_PACE_MS;

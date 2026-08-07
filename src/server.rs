@@ -1505,13 +1505,17 @@ const FRAME_WAIT_RECHECK: Duration = Duration::from_millis(100);
 /// is answered with the one it already has. Short enough that a finished
 /// game's restart countdown still ticks over once a second on screen.
 const STATE_LONG_POLL: Duration = Duration::from_millis(1_000);
-/// The unlimited pace still hands the accept loop a slot this often, so the
-/// page keeps loading state while the stepper saturates a core.
-const UNLIMITED_BREATH_MS: u64 = 100;
+/// The unlimited pace steps flat out for this long, then rests. The rest is
+/// also when the single-threaded accept loop gets a real slot, so the page
+/// keeps loading state while the stepper runs.
+const UNLIMITED_WORK_SLICE_MS: u64 = 90;
+/// The rest after each work slice: ten milliseconds in every hundred holds
+/// Lightning near 90% of a core instead of pinning it outright.
+const UNLIMITED_REST_MS: u64 = 10;
 /// Blitz is the first watch pace where every player's completed turn becomes
 /// its own frame. Faster custom paces retain Lightning's one-frame-per-round
 /// throughput; every offered pace at or above this threshold is seat-by-seat.
-const PLAYER_TURN_FRAME_MIN_PACE_MS: u64 = 1_000;
+const PLAYER_TURN_FRAME_MIN_PACE_MS: u64 = 500;
 /// Minor civilizations and barbarians take a quarter of a major's slice.
 const MINOR_SHARE: f64 = 0.25;
 
@@ -3965,12 +3969,13 @@ fn auto_step_loop(sh: Arc<Shared>) {
         }
         drop(simulation_frame_gate);
         if pace == 0 && !waiting {
-            // Unlimited: no wait between steps. Yield anyway, and give the
-            // single-threaded accept loop a real slot a few times a second,
-            // or /state would starve behind the session lock.
-            if unlimited_since.elapsed() >= Duration::from_millis(UNLIMITED_BREATH_MS) {
+            // Unlimited: no wait between steps. Yield anyway, and after each
+            // work slice rest long enough to hold the stepper near 90% of a
+            // core and give the single-threaded accept loop a real slot, or
+            // /state would starve behind the session lock.
+            if unlimited_since.elapsed() >= Duration::from_millis(UNLIMITED_WORK_SLICE_MS) {
+                std::thread::sleep(Duration::from_millis(UNLIMITED_REST_MS));
                 unlimited_since = Instant::now();
-                std::thread::sleep(Duration::from_millis(1));
             } else {
                 std::thread::yield_now();
             }
@@ -5037,7 +5042,7 @@ mod tests {
     #[test]
     fn seat_waits_add_up_to_the_chosen_turn_pace() {
         for (majors, minors) in [(2, 0), (4, 4), (8, 12), (6, 3)] {
-            for pace in [100, 1_000, 4_000, 10_000] {
+            for pace in [100, 500, 1_000, 4_000, 10_000] {
                 let round = majors as u64 * seat_delay_ms(pace, majors, minors, false)
                     + minors as u64 * seat_delay_ms(pace, majors, minors, true);
                 // Each seat rounds to whole milliseconds; nothing beyond that.
@@ -5057,8 +5062,8 @@ mod tests {
     #[test]
     fn player_turn_frames_begin_at_blitz() {
         assert!(!publishes_player_turn_frames(0), "Lightning stays round-by-round");
-        assert!(!publishes_player_turn_frames(999));
-        for pace in [1_000, 2_000, 4_000, 10_000, 60_000] {
+        assert!(!publishes_player_turn_frames(499));
+        for pace in [500, 1_000, 2_000, 4_000, 60_000] {
             assert!(
                 publishes_player_turn_frames(pace),
                 "{pace}ms is Blitz or slower"
@@ -5129,7 +5134,7 @@ mod tests {
             seen.push(stepped);
 
             assert!(spectator_step_completes_frame(
-                1_000,
+                500,
                 turn_before,
                 finished_before,
                 &session.game,
@@ -5995,7 +6000,7 @@ mod tests {
             .map(|player| player["id"].as_u64().expect("player id") as usize)
             .collect();
         assert!(living.len() >= 5, "the exhibition roster is too small: {living:?}");
-        http_post(port, "/pace", "{\"ms\":1000,\"paused\":false}")
+        http_post(port, "/pace", "{\"ms\":500,\"paused\":false}")
             .expect("run at Blitz");
 
         let mut movement_seen = false;
@@ -13817,7 +13822,7 @@ pub fn serve_with_game(
         live_params: Mutex::new(session.params.clone()),
         next_game_params: Mutex::new(session.take_resumed_next_game_params()),
         session: Mutex::new(session),
-        pace_ms: AtomicU64::new(1_000), // one second per turn by default
+        pace_ms: AtomicU64::new(500), // half a second per turn by default
         between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
         paused: AtomicBool::new(initially_paused),
         restart_in: AtomicU64::new(u64::MAX),
