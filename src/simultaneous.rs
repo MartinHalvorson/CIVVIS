@@ -26,13 +26,19 @@
 //!   [`SimultaneousCensus`]. The census is the mode's health instrument:
 //!   a rising drop rate is the first sign the regime is distorting play.
 //!
-//! Planning worlds advance through the seats with an *empty forward*: one
-//! rolling clone takes each seat's `EndTurn` with no actions, so a later
+//! Planning worlds advance through the seats with an *upkeep-only forward*:
+//! one rolling clone takes each seat's `EndTurn` with no actions, so a later
 //! seat plans with its own upkeep (unit refresh, growth, income) applied but
 //! every rival frozen. Each seat's planning copy draws from a seat- and
 //! turn-keyed RNG stream — the same discipline disasters and meteors use —
 //! so no seat's speculation shares draws with another's or shifts the
-//! authoritative stream.
+//! authoritative stream. The scaffolding worlds carry a
+//! [`PlanningRole`] so their closes shed work nothing will ever read — the
+//! every-seat sight sweep on the rolling walk, everything after the cursor
+//! move on a seat's discarded copy, the wrap's world systems on the walk's
+//! way out — while the authoritative world runs every rule in full; see the
+//! role's documentation for exactly what each variant elides and why each
+//! elision cannot reach a committed byte.
 //!
 //! What this deliberately does not change: minors and barbarians plan like
 //! everyone else; diplomacy already works by deferred `pending_deals`; and
@@ -50,7 +56,7 @@ use std::thread::{self, ScopedJoinHandle};
 
 use crate::action_space::kind_name;
 use crate::ai::{run_game, Ai};
-use crate::game::{Action, Game};
+use crate::game::{Action, Game, PlanningRole};
 use crate::rng::Rng;
 use crate::setup::TurnStructure;
 
@@ -567,6 +573,7 @@ fn prepare_loop(jobs: mpsc::Receiver<PrepareJob>, planners: mpsc::Sender<Plannin
             cancelled,
             events,
         } = job;
+        rolling.set_planning_role(PlanningRole::Rolling);
         let outcome = catch_unwind(AssertUnwindSafe(|| {
             let mut announced: Vec<usize> = Vec::new();
             let mut forwarded = 0u64;
@@ -584,6 +591,7 @@ fn prepare_loop(jobs: mpsc::Receiver<PrepareJob>, planners: mpsc::Sender<Plannin
                     break;
                 }
                 let mut world = rolling.clone();
+                world.set_planning_role(PlanningRole::Seat);
                 world.rng = planning_stream(seed, cycle_turn, seat);
                 announced.push(seat);
                 let _ = events.send(CycleEvent::Prepared { seat });
@@ -819,6 +827,7 @@ where
     let mut prepared: Vec<(usize, Game)> = Vec::new();
     {
         let mut rolling = g.clone();
+        rolling.set_planning_role(PlanningRole::Rolling);
         let mut forwarded = 0u64;
         let mut steps = 0;
         while rolling.winner.is_none() && rolling.turn == cycle_turn && steps < bound {
@@ -828,6 +837,7 @@ where
                 break;
             }
             let mut world = rolling.clone();
+            world.set_planning_role(PlanningRole::Seat);
             world.rng = planning_stream(g.seed, cycle_turn, seat);
             prepared.push((seat, world));
             if !close_seat_turn(&mut rolling, seat, &mut forwarded) {

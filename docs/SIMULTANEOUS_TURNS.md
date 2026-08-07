@@ -74,6 +74,19 @@ A simultaneous game turn runs in two phases, both in
    RNG stream (the same derived-stream discipline disasters and meteors
    use), and its AI plays its whole turn against the copy. The actions it
    applied there are its plan.
+
+   The forward is *upkeep-only*: the rolling world and the seats' private
+   copies carry a `PlanningRole` marking them as scaffolding, and their
+   `EndTurn` closes shed the work nothing on the planning path reads —
+   the every-seat sight sweep (headless planning reads sight live, never
+   the swept caches; the sweep's one gameplay product, contact recording,
+   still runs authoritatively at commit), the monopoly census, the wrap's
+   world systems on the walk's way out, and everything past the cursor
+   move on a seat's copy once its plan is harvested. The one observable
+   consequence: a contact that would first arise *from mid-walk upkeep*
+   (a levied or spawned unit appearing inside a frozen rival's sight)
+   reaches planning worlds one cycle later than it used to; the committed
+   game records it at exactly the same turn as before.
 2. **Commit.** The plans land on the authoritative world in the same seat
    order, through the very same `Game::apply` calls a sequential game
    makes, each seat closing with the ordinary `EndTurn` so upkeep, the
@@ -84,8 +97,12 @@ A simultaneous game turn runs in two phases, both in
    plan never made (a captured city's fate) is resolved with the first
    legal answer and counted.
 
-Nothing in `game.rs` branches on the regime. Every committed action goes
-through the ordinary rules, which is what buys the guarantees below.
+Nothing in `game.rs` branches on the regime for a committed action: the
+authoritative world never carries a `PlanningRole`, so every committed
+action goes through the ordinary rules in full, which is what buys the
+guarantees below. The role branches exist only on the driver's scaffolding
+worlds, which are discarded without ever being saved, replayed, observed,
+or committed.
 
 ## Guarantees
 
@@ -244,6 +261,37 @@ forward (touching only the seat being opened, rather than one whole empty
 The sequential regime's intra-turn knee was re-measured on this host and
 holds at four: 16-civilization 50-turn sequential runs at `--jobs` 4/8/16
 land at 3.4s/3.2s/3.3s, within host noise of one another.
+
+### 9985WX scaffold shedding (2026-08-07, ci profile)
+
+Phase timing on the pipelined driver (16 civilizations with stock
+city-states, 64×40, 100 turns, seed 31337, `--jobs 16`, ~48 planning
+seats per cycle) split an 8.7s wall into: 6.2s prepare-thread closes,
+5.2s commit-thread closes, 2.3s commit waiting on plans, 0.9s applying
+them — and 18.7s of aggregate worker deliberation that 16 workers cover
+in ~1.2s. The closes, not deliberation, were the wall: per boundary the
+engine ran one every-seat sight sweep (`refresh_all_visibility`, the
+single largest cost at 7.6s across all worlds), the next seat's full
+upkeep, and — once per cycle on a world about to be discarded — the whole
+world-turn wrap. That scaffolding is now shed (the upkeep-only forward
+above), the sweep's per-viewer suzerain poll is memoized for the duration
+of any sweep (an every-major envoy scan per city-state per viewer
+otherwise), and the same workload lands at **7.0s**, with the prepare
+thread down to 2.2s of closes and the commit — the authoritative chain —
+left as the pacing serial phase. Full 500-turn budget on the same table:
+104.2s → 98.0s. The census stayed byte-identical to the pre-change binary
+across seeds 31337/7/12345 at 100 turns and across the full 500-turn run,
+so the theoretical mid-walk-contact timing shift has yet to fire on any
+measured seed.
+
+What remains on the serial floor, per 100 turns of this table: ~2.8s of
+authoritative sight sweeps (contact recording at commit boundaries),
+~1.5s of authoritative upkeep, ~0.9s of applies — the committed game's
+own state evolution. Cutting the sweep further needs per-seat vision
+input stamps (skip a seat whose sight inputs provably did not change
+since its last sweep) with a debug-assert recompute check; that is the
+next follow-up if the commit chain is to shrink, and it would benefit
+sequential boundaries identically.
 
 Before comparing regimes, run paired seeds both ways and read the drop
 rate alongside the outcome distributions — one seed is never a result.
