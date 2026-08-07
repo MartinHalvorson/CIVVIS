@@ -7291,6 +7291,33 @@ impl AdvancedAi {
                 };
             }
         }
+        // The nuclear lane used to carry a terminal reward and no
+        // instrumental one: a Conquest empire prices a finished device at
+        // 2,600 but the technology that permits one at barely two points, so
+        // no empire ever researched its way to the doctrine it already had.
+        // Price the path like the other victory beelines, from the industrial
+        // era on so the ancient rush book keeps its own ordering. Gated on
+        // victory_planning like the strike doctrine itself, which keeps the
+        // frozen advanced_v1 anchor's research untouched.
+        if self.victory_planning && strategy == GrandStrategy::Conquest && g.world_era >= 4 {
+            let arsenal = &g.players[pid].science_projects;
+            let milestone = if !arsenal.contains("manhattan_project") {
+                Some("nuclear_fission")
+            } else if !arsenal.contains("operation_ivy") {
+                Some("nuclear_fusion")
+            } else {
+                // Both gates are open: the lane is production now, not
+                // research.
+                None
+            };
+            if milestone.is_some_and(|milestone| self.tech_leads_to(g, tech, milestone)) {
+                value += if self.victory_target == Some(VictoryTarget::Domination) {
+                    900.0
+                } else {
+                    260.0
+                };
+            }
+        }
         // One-step lookahead prevents cheap prerequisites from being ignored.
         for (future, child) in &g.rules.techs {
             if child.requires.iter().any(|r| r == tech) {
@@ -19287,12 +19314,20 @@ impl AdvancedAi {
         self.advanced_formations(g, pid);
     }
 
-    /// Nuclear doctrine: a Conquest empire at war spends a stockpiled device
-    /// on the hardest enemy city in range — the one whose walls and garrison
-    /// would cost the most to break conventionally — and never on a blast
-    /// that would touch its own cities or units.
+    /// Nuclear doctrine: an empire at war spends a stockpiled device on the
+    /// hardest enemy city in range — the one whose walls and garrison would
+    /// cost the most to break conventionally — and never on a blast that
+    /// would touch its own cities or units, or anyone it is not fighting.
+    ///
+    /// A Conquest empire strikes to open its campaign. Any other posture
+    /// strikes only while besieged — Recovery, or a named threatened city —
+    /// because a device is the one lever a losing empire holds that does not
+    /// need a field army to work.
     fn advanced_wmd_strikes(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        if plan.strategy != GrandStrategy::Conquest {
+        let offensive = plan.strategy == GrandStrategy::Conquest;
+        let besieged =
+            plan.strategy == GrandStrategy::Recovery || plan.threatened_city.is_some();
+        if !offensive && !besieged {
             return;
         }
         let candidates: Vec<(Action, Pos, bool)> = g
@@ -19316,14 +19351,35 @@ impl AdvancedAi {
             }]
             .blast_radius;
             let blast = g.wdisk(target, radius);
-            let friendly_exposure = blast.iter().any(|position| {
-                g.city_at(*position)
-                    .is_some_and(|city| g.cities[&city].owner == pid)
-                    || g.units_at(*position)
-                        .into_iter()
-                        .any(|uid| g.units[&uid].owner == pid)
+            // Own assets hold the launch, and so does anything belonging to a
+            // civilization this empire is not fighting: the engine refuses a
+            // strike that splashes a peaceful power's units or cities, and a
+            // refused launch wastes the only strike the doctrine takes per
+            // turn. Peaceful territory alone is legal to splash but charges
+            // 150 grievances, so it rules a target out too.
+            let exposure = blast.iter().any(|position| {
+                let territory = g
+                    .map
+                    .get(*position)
+                    .and_then(|tile| tile.owner_city)
+                    .and_then(|city| g.cities.get(&city))
+                    .map(|city| city.owner);
+                g.units_at(*position)
+                    .into_iter()
+                    .map(|uid| g.units[&uid].owner)
+                    .chain(g.city_at(*position).map(|city| g.cities[&city].owner))
+                    .chain(g.encampment_at(*position).map(|city| g.cities[&city].owner))
+                    .any(|owner| {
+                        owner == pid
+                            || (!g.players[owner].is_barbarian && !g.is_at_war(pid, owner))
+                    })
+                    || territory.is_some_and(|owner| {
+                        owner != pid
+                            && !g.players[owner].is_barbarian
+                            && !g.is_at_war(pid, owner)
+                    })
             });
-            if friendly_exposure {
+            if exposure {
                 continue;
             }
             let Some(city) = g.city_at(target) else {
@@ -19345,8 +19401,31 @@ impl AdvancedAi {
                 best = Some((value, action));
             }
         }
-        if let Some((_, action)) = best {
-            let _ = g.apply(pid, &action);
+        if let Some((value, action)) = best {
+            let (struck, weapon) = match &action {
+                Action::WmdStrike {
+                    target,
+                    thermonuclear,
+                    ..
+                } => (
+                    g.city_at(*target)
+                        .map(|city| g.cities[&city].name.clone())
+                        .unwrap_or_default(),
+                    if *thermonuclear {
+                        "thermonuclear device"
+                    } else {
+                        "nuclear device"
+                    },
+                ),
+                _ => unreachable!("only WmdStrike candidates are scored"),
+            };
+            if g.apply(pid, &action).is_ok() {
+                think!(self.journal(), Military, Decision,
+                       "Authorizing a {} against {}", weapon, struck;
+                       "the hardest reachable city, worth {:.0} in walls and garrison, {}",
+                       value,
+                       if offensive { "to open the campaign" } else { "to break the siege" });
+            }
         }
     }
 
@@ -22458,6 +22537,169 @@ mod tests {
             "the hard city draws the device once the blast is clean"
         );
         assert!(game.map.tiles[&target].fallout_until > game.turn);
+    }
+
+    #[test]
+    fn a_besieged_empire_spends_its_device_to_break_the_siege() {
+        let mut game = Game::new_full(2, 24, 16, 91_802, 200, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        let target_city = game.player_city_ids(1)[0];
+        let target = game.cities[&target_city].pos;
+        game.at_war.insert((0, 1));
+        game.players[0]
+            .counters
+            .insert("project_effect:thermonuclear_devices".to_string(), 1);
+        game.players[0].explored.insert(target);
+        game.cities.get_mut(&target_city).unwrap().wall_hp = 300;
+        // The empire is losing this war: Recovery posture, not Conquest. The
+        // doctrine used to stand down here, which meant the 72% of late-game
+        // war turns spent in Recovery could never spend a device.
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.advanced_wmd_strikes(&mut game, 0, &plan);
+        assert_eq!(
+            game.players[0].counters["project_effect:thermonuclear_devices"],
+            0,
+            "a besieged empire spends its device on the belligerent's hard city"
+        );
+        assert!(game.map.tiles[&target].fallout_until > game.turn);
+    }
+
+    #[test]
+    fn the_doctrine_spares_a_power_it_is_not_fighting() {
+        let mut game = Game::new_full(3, 24, 16, 91_802, 200, 0, false);
+        for pid in 0..3 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        // Exactly the units this test places, nothing else in any blast.
+        for pid in 0..3 {
+            for unit in game.player_unit_ids(pid) {
+                game.remove_unit(unit);
+            }
+        }
+        let launch_pos = game.cities[&game.player_city_ids(0)[0]].pos;
+        let rich_city = game.player_city_ids(1)[0];
+        let rich = game.cities[&rich_city].pos;
+        let radius = game.rules.wmds["thermonuclear_device"].blast_radius;
+        // A second, quieter city for the same belligerent, far enough from
+        // every other stake that its blast disk is clean.
+        let plain = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                }) && game.wdist(*position, rich) > 2 * radius + 1
+                    && game.wdist(*position, launch_pos) > radius
+                    && game.wdist(*position, launch_pos) <= 12
+                    && game
+                        .wdisk(*position, radius)
+                        .into_iter()
+                        .all(|tile| game.map.get(tile).is_some_and(|t| t.owner_city.is_none()))
+            })
+            .min_by_key(|position| (game.wdist(*position, launch_pos), position.0, position.1))
+            .expect("the map has a clean tile for the second city");
+        let plain_city = game.found_city_for(1, plain, None);
+        game.at_war.insert((0, 1));
+        game.players[0]
+            .counters
+            .insert("project_effect:thermonuclear_devices".to_string(), 1);
+        game.players[0].explored.insert(rich);
+        game.players[0].explored.insert(plain);
+        game.cities.get_mut(&rich_city).unwrap().wall_hp = 400;
+        game.cities.get_mut(&plain_city).unwrap().wall_hp = 400;
+        // The rich target outscores the plain one on garrison — but a scout
+        // from a power we are at peace with stands in its blast.
+        let ring: Vec<Pos> = game
+            .wdisk(rich, radius)
+            .into_iter()
+            .filter(|position| {
+                *position != rich
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                    && game.units_at(*position).is_empty()
+            })
+            .take(4)
+            .collect();
+        assert!(ring.len() == 4, "blast ring has four open land tiles");
+        for post in &ring[..3] {
+            game.spawn_test_unit("warrior", 1, *post);
+        }
+        game.spawn_test_unit("scout", 2, ring[3]);
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(rich_city),
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.advanced_wmd_strikes(&mut game, 0, &plan);
+        assert_eq!(
+            game.players[0].counters["project_effect:thermonuclear_devices"],
+            0,
+            "the device is still spent — on the clean target"
+        );
+        assert!(
+            game.map.tiles[&rich].fallout_until <= game.turn,
+            "the bystander's post holds the strike off the richer city"
+        );
+        assert!(
+            game.map.tiles[&plain].fallout_until > game.turn,
+            "the quieter city takes the strike instead"
+        );
+    }
+
+    #[test]
+    fn conquest_prices_the_nuclear_lane_from_the_industrial_era() {
+        let mut game = Game::new_full(2, 24, 16, 91_802, 200, 0, false);
+        let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        let ancient = ai.tech_value(&game, 0, "nuclear_fission", GrandStrategy::Conquest);
+        game.world_era = 4;
+        let industrial = ai.tech_value(&game, 0, "nuclear_fission", GrandStrategy::Conquest);
+        assert!(
+            industrial > ancient + 15.0,
+            "the industrial era prices the lane like a victory beeline: \
+             {industrial:.1} vs {ancient:.1}"
+        );
+        game.players[0]
+            .science_projects
+            .insert("manhattan_project".to_string());
+        game.players[0]
+            .science_projects
+            .insert("operation_ivy".to_string());
+        let armed = ai.tech_value(&game, 0, "nuclear_fission", GrandStrategy::Conquest);
+        assert!(
+            (armed - ancient).abs() < 1e-9,
+            "an open arsenal stops pricing the lane: {armed:.1} vs {ancient:.1}"
+        );
     }
 
     fn island_colony_game() -> (Game, Pos, Pos) {

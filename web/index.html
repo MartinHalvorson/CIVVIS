@@ -382,13 +382,18 @@
     scrollbar-color: #385148 transparent; scrollbar-width: thin; scrollbar-gutter: stable;
     background: linear-gradient(90deg, #ffffff02, transparent 14%, transparent 86%, #0002);
   }
-  /* The shortcut legend opens upward from the bottom edge. Keep the scrolling
-     deck above that temporary drawer so a lower section (especially Map
-     lenses) remains visible and clickable while the legend is expanded. */
+  /* The bottom dock's drawers (map lenses, keyboard shortcuts) open upward
+     over this scroller. The deck keeps its own layer above the closed dock
+     strips; an open drawer raises its whole <details> above every band —
+     see the dock rules below. */
   #side > .side-scroll { position: relative; z-index: 4; }
   #side::-webkit-scrollbar, .side-scroll::-webkit-scrollbar { width: 7px; }
   #side::-webkit-scrollbar-thumb, .side-scroll::-webkit-scrollbar-thumb { background: #385148; border-radius: 9px; }
+  /* The command card (Pause/Restart while watching, End turn while playing)
+     holds the top of the deck: scrolling the sections must never push the
+     controls off screen. The card is opaque, so sections slide in under it. */
   .side-actions {
+    position: sticky; top: 0; z-index: 3;
     flex: 0 0 auto; margin-bottom: 10px; padding: 7px; border: 1px solid #334c43;
     border-radius: 13px; background: linear-gradient(135deg, #14241f, #0c1714);
     box-shadow: inset 0 1px #ffffff08, 0 8px 22px #0003;
@@ -520,6 +525,10 @@
   .shortcut-panel summary::-webkit-details-marker { display: none; }
   .shortcut-panel summary::after { content: "+"; float: right; color: var(--gold); font-size: var(--type-body); line-height: 1; }
   .shortcut-panel[open] summary::after { content: "−"; }
+  /* While a drawer is expanded its whole section outranks the search band
+     (z-index 5) and the scroller (4), so the floating body is never trapped
+     behind a higher dock strip. */
+  .shortcut-panel[open], #maplensessec[open] { z-index: 6; }
   .shortcut-panel[open] > .utility-body {
     position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px);
     max-height: min(420px, calc(100vh - 180px)); overflow-y: auto;
@@ -543,10 +552,18 @@
   #maplensessec > summary::-webkit-details-marker { display: none; }
   #maplensessec > summary::after { content: "+"; float: right; color: var(--gold); font-size: var(--type-body); line-height: 1; }
   #maplensessec[open] > summary::after { content: "−"; }
-  /* The open grid shares the deck's height with the scroller above it, so it
-     caps itself and scrolls inside rather than swallowing the whole column. */
+  /* Like the shortcut legend, the lens grid opens upward as a floating
+     drawer while its header stays docked in place, so expanding it never
+     reflows the scroller or pushes the search band around. It caps itself
+     and scrolls inside rather than covering the whole column. */
   .lens-dock-body { padding: 0 10px 10px; }
-  #maplensessec[open] .lens-dock-body { max-height: min(430px, 46vh); overflow-y: auto; scrollbar-width: thin; }
+  #maplensessec[open] .lens-dock-body {
+    position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px);
+    max-height: min(430px, 46vh); overflow-y: auto; scrollbar-width: thin;
+    padding: 10px; border: 1px solid #355047; border-radius: 10px;
+    background: linear-gradient(145deg, #12211dfa, #0a1512fc);
+    box-shadow: 0 -12px 32px #0008;
+  }
   #map-utility-panel {
     position: relative; z-index: 3; flex: 0 0 auto; padding: 8px 10px 10px;
     border-top: 1px solid #41484c; background: #090b0de8;
@@ -575,31 +592,26 @@
   #map-lens-strip {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px;
   }
-  #district-lens-section {
-    grid-column: 1 / -1; min-width: 0; margin-top: 2px;
-    border-top: 1px solid #ffffff0d;
+  /* The lenses come in two sets — the global whole-map perspectives and the
+     per-district adjacency forecasts — switched by this row of tabs above
+     them. One set shows at a time; a dot on a tab marks the set holding the
+     active lens while the other set is displayed. */
+  #map-lens-sets {
+    display: flex; gap: 3px; margin-bottom: 6px; padding-bottom: 6px;
+    border-bottom: 1px solid #ffffff0d;
   }
-  #district-lens-section > summary {
-    position: relative; min-width: 0; height: 31px;
-    display: grid; grid-template-columns: 17px minmax(0, 1fr) auto; align-items: center; gap: 4px;
-    margin: 3px 0 0; padding: 0 5px; border: 1px solid transparent; border-radius: 7px;
-    color: #b8c7c0; cursor: pointer; font-size: var(--type-caption); font-weight: 800;
-    list-style: none;
+  #map-lens-sets[hidden] { display: none; }
+  #map-lens-sets button { flex: 1 1 0; display: block; height: 26px; text-align: center; }
+  #map-lens-sets button .map-lens-label { display: block; }
+  #map-lens-sets button.holds-lens::after {
+    content: ""; position: absolute; top: 4px; right: 5px;
+    width: 5px; height: 5px; border-radius: 50%; background: var(--gold);
   }
-  #district-lens-section > summary::-webkit-details-marker { display: none; }
-  #district-lens-section > summary:hover { border-color: #4d6b60; background: #183027; }
-  #district-lens-section.active > summary,
-  #district-lens-section[open] > summary {
-    border-color: #d7b66a75; color: #fff6dc;
-    background: linear-gradient(135deg, #3d3a26aa, #173128d8);
-  }
-  .district-lens-caret { color: #9fb2a8; font-size: 11px; transition: transform .14s ease; }
-  #district-lens-section[open] .district-lens-caret { transform: rotate(90deg); }
+  #map-lens-strip[hidden] { display: none; }
   #district-lens-list {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px;
-    max-height: min(196px, 31vh); margin-top: 4px; overflow-y: auto;
-    scrollbar-width: thin;
   }
+  #district-lens-list[hidden] { display: none; }
   #district-lens-list button { height: 29px; }
   #district-lens-list button .map-lens-icon { color: var(--district-lens-color, #e6c978); }
   #map-lens-exit {
@@ -637,10 +649,11 @@
   }
   /* The same search markup is also used by the map's lower instrument dock.
      That dock positions its copy above the map, but this copy is a normal
-     child of the left-panel utility band. Keep the panel copy in flow so the
-     keyboard-shortcut drawer cannot cover it or collapse its parent to a
-     border-sized strip. The extra specificity intentionally outranks the
-     map-dock positioning rule below. */
+     child of the left-panel utility band. Keep the panel copy in flow so its
+     band holds its height rather than collapsing to a border-sized strip;
+     the lens and shortcut drawers float over it only while expanded. The
+     extra specificity intentionally outranks the map-dock positioning rule
+     below. */
   #side > #map-utility-panel #map-search {
     position: relative; left: auto; right: auto; bottom: auto;
     width: auto; min-height: 0; display: block;
@@ -844,6 +857,26 @@
     margin-left: .32em; color: #90a29b; font-size: .7em; font-weight: 700;
     font-variant-numeric: tabular-nums; letter-spacing: -.01em; white-space: nowrap;
   }
+  /* Switching the turn structure needs a new world, so the pick opens a small
+     dialog over the map: restart now, queue it for the next game, or go back.
+     The element itself is the scrim; the card is its only child. */
+  #turn-structure-dialog {
+    position: fixed; inset: 0; z-index: 96; display: grid; place-items: center;
+    padding: 16px; background: #040a08a8; backdrop-filter: blur(3px);
+  }
+  .turns-dialog-card {
+    width: min(400px, 100%); padding: 20px 22px;
+    color: var(--text); background: radial-gradient(circle at top, #2c3524, #0c1714f7 65%);
+    border: 1px solid var(--gold); border-radius: 16px;
+    box-shadow: 0 24px 90px #000e, 0 0 60px #d7b66a22;
+  }
+  .turns-dialog-card h3 {
+    margin: 0 0 8px; color: var(--gold-bright); font: 600 22px/1.15 Georgia, serif;
+  }
+  .turns-dialog-card p { margin: 0 0 10px; font-size: var(--type-control); line-height: 1.55; }
+  .turns-dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+  .turns-dialog-actions .primary { grid-column: 1 / -1; }
+  .turns-dialog-actions button { margin: 0; }
   /* Borrowed turns. It sits under the turn cap because that cap is the thing
      it explains: the number went up because somebody asked it to. */
   .turn-playon {
@@ -3936,7 +3969,7 @@
               <option value="1000" selected>Blitz</option>
               <option value="2000">Fast</option>
               <option value="4000">Standard</option>
-              <option value="10000">Slow</option>
+              <option value="8000">Slow</option>
             </select>
           </div>
           <div class="speed-row"><span>Between-game countdown</span>
@@ -3965,6 +3998,16 @@
             <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span></label>
             <label class="setting-row"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
             <label class="setting-row"><span><input type="checkbox" id="rocketanimchk" checked> Show rocket &amp; satellite animations</span></label>
+            <div class="speed-row"><span>Unit trails</span>
+              <select id="unittrails" aria-label="Unit trail linger"
+                      title="How long each unit's movement trail lingers after its step — a linger makes Lightning and Blitz paces easier to follow">
+                <option value="0" selected>Move only</option>
+                <option value="200">Linger 0.2s</option>
+                <option value="500">Linger 0.5s</option>
+                <option value="1000">Linger 1s</option>
+                <option value="2000">Linger 2s</option>
+              </select>
+            </div>
             <label class="setting-row"><span><input type="checkbox" id="inertiachk" checked> Enable world pan inertia</span></label>
             <div class="overlay-options" id="flat-map-wrap-settings" role="group"
                  aria-labelledby="flat-map-wrap-title">
@@ -4059,8 +4102,8 @@
         </div>
         <label class="small">World size<select id="np" style="margin-top:4px">
           <option value="2">Duel · 2 civs · 3 city-states · 44×26</option>
-          <option value="4">Tiny · 4 civs · 6 city-states · 60×38</option>
-          <option value="6" selected>Small · 6 civs · 9 city-states · 74×46</option>
+          <option value="4" selected>Tiny · 4 civs · 6 city-states · 60×38</option>
+          <option value="6">Small · 6 civs · 9 city-states · 74×46</option>
           <option value="8">Standard · 8 civs · 12 city-states · 84×54</option>
           <option value="10">Large · 10 civs · 15 city-states · 96×60</option>
           <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
@@ -4073,7 +4116,7 @@
           <option value="land_only">Land Only</option>
           <option value="lakes">Lakes</option>
           <option value="inland_sea">Inland Sea</option>
-          <option value="tenins_ball">Tenins Ball</option>
+          <option value="tenins_ball" selected>Tenins Ball</option>
           <option value="grand_canals">Grand Canals</option>
           <option value="grand_canals_2">Grand Canals II</option>
           <option value="pangaea">Pangaea</option>
@@ -4325,6 +4368,18 @@
           </button>
           <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Display Settings" title="Hide map lenses · restore in Display Settings">✕</button>
         </div>
+        <div id="map-lens-sets" role="tablist" aria-label="Map lens sets" hidden>
+          <button id="lens-set-global" type="button" role="tab" aria-selected="true"
+            aria-controls="map-lens-strip" data-lens-set="global"
+            title="Global lenses — whole-map perspectives">
+            <span class="map-lens-label">Global</span>
+          </button>
+          <button id="lens-set-district" type="button" role="tab" aria-selected="false"
+            aria-controls="district-lens-list" data-lens-set="district"
+            title="District adjacency lenses — per-district yield forecasts">
+            <span class="map-lens-label">District adjacency</span>
+          </button>
+        </div>
         <div id="map-lens-strip" role="none">
           <button type="button" data-map-lens="continent" aria-pressed="false"
             title="Continent lens — geographic continent regions">
@@ -4376,15 +4431,8 @@
             <span class="map-lens-icon" aria-hidden="true">⚡</span>
             <span class="map-lens-label">Power</span>
           </button>
-          <details id="district-lens-section">
-            <summary title="District adjacency lenses">
-              <span class="map-lens-icon" aria-hidden="true">⬡</span>
-              <span class="map-lens-label">District adjacency</span>
-              <span class="district-lens-caret" aria-hidden="true">›</span>
-            </summary>
-            <div id="district-lens-list" role="group" aria-label="District adjacency lenses"></div>
-          </details>
         </div>
+        <div id="district-lens-list" role="group" aria-label="District adjacency lenses" hidden></div>
       </div>
     </div>
   </details>

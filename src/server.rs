@@ -576,6 +576,12 @@ pub struct Session {
     /// accumulates from the turn it resumes — the reasoning behind a decision
     /// is not part of the game state and cannot be recovered from one.
     journal: crate::reasoning::Journal,
+    /// What became of every plan a simultaneous game has committed so far.
+    /// Sequential games never touch it. The census is the regime's health
+    /// instrument — a rising drop rate is the first sign the mode is
+    /// distorting play — so the spectator state carries it alongside the
+    /// turn structure itself.
+    simultaneous_census: crate::simultaneous::SimultaneousCensus,
 }
 
 /// The identity of a person playing a seat.
@@ -2204,6 +2210,7 @@ impl Session {
             league_recorded: false,
             human_players,
             journal,
+            simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
         }
     }
 
@@ -2301,6 +2308,7 @@ impl Session {
             league_recorded,
             human_players,
             journal,
+            simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
         }
     }
 
@@ -2774,6 +2782,12 @@ impl Session {
             o["spectator_paused"] = json!(self.spectator_paused);
             o["view_player"] = json!(self.view_player);
             o["leader_pool"] = json!(self.game.leader_pool.id());
+            o["turn_structure"] = json!(self.game.turn_structure.id());
+            if self.game.turn_structure == TurnStructure::Simultaneous {
+                // The regime's health instrument, for the same panel that
+                // names the regime: how many plans the world has outrun.
+                o["simultaneous"] = json!(self.simultaneous_census);
+            }
             o["teams"] = json!(major_teams(&self.game));
             o["victory_conditions"] = json!(self.game.victory_conditions);
             o["legal_actions"] = json!([]);
@@ -2799,6 +2813,7 @@ impl Session {
         o["supervised"] = json!(self.params.supervised);
         o["view_player"] = json!(0);
         o["leader_pool"] = json!(self.game.leader_pool.id());
+        o["turn_structure"] = json!(self.game.turn_structure.id());
         o["teams"] = json!(major_teams(&self.game));
         o["victory_conditions"] = json!(self.game.victory_conditions);
         o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
@@ -2836,6 +2851,26 @@ impl Session {
         if g.winner.is_some() {
             return pid;
         }
+        // A simultaneous game advances one whole game turn per step: every
+        // seat plans against the same frozen world and the plans commit
+        // through the ordinary rules. Serial on purpose (`jobs = 1`) — the
+        // browser build has no thread pool, and a watched game spends its
+        // pace budget per turn rather than per seat. An aborted cycle is
+        // never retried: the driver has already said a retry would replay
+        // the same turn forever, so the world sits still instead.
+        if g.turn_structure == TurnStructure::Simultaneous {
+            if !self.simultaneous_census.aborted
+                && !crate::simultaneous::step_cycle(g, &mut self.ais, 1, &mut self.simultaneous_census)
+            {
+                eprintln!(
+                    "[server] simultaneous cycle aborted on turn {}: {}",
+                    g.turn,
+                    self.simultaneous_census.summary()
+                );
+            }
+            self.record_league_result();
+            return pid;
+        }
         self.ais[pid].take_turn(g, pid);
         if g.current == pid && g.winner.is_none() {
             let _ = g.apply(pid, &Action::EndTurn);
@@ -2870,6 +2905,13 @@ impl Session {
     /// behind, no matter who keeps winning.
     fn record_league_result(&mut self) {
         if self.league_recorded || self.game.winner.is_none() || !self.params.league_record {
+            return;
+        }
+        // The ratings are a sequential-regime instrument. A simultaneous
+        // game changes every seat's information set, so its results must
+        // never blend into the same Glicko-2 table — the game plays and is
+        // shown, but it rates nobody.
+        if self.game.turn_structure == TurnStructure::Simultaneous {
             return;
         }
         self.league_recorded = true;
@@ -3582,6 +3624,15 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(era) = request["future_era"].as_str().and_then(future_era_from_id) {
         p.future_era = era;
     }
+    // The turn structure follows the same refuse-unknown contract. Whether a
+    // simultaneous request can be *honoured* also depends on who is seated,
+    // which the end of this function settles once every field has landed.
+    if let Some(v) = request["turn_structure"]
+        .as_str()
+        .and_then(crate::setup::turn_structure_from_id)
+    {
+        p.turn_structure = v;
+    }
     if let Some(v) = request["map_script"].as_str().and_then(MapScript::from_id) {
         p.map_script = v;
         // `planet` used to name a world type; it now names a shape. A client
@@ -3710,6 +3761,13 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
             // asked for a specific one in the same request.
             p.max_turns = requested_turn_limit(request).unwrap_or(spec.turns);
         }
+    }
+    // Only a spectated table plays the simultaneous regime. A human seat is
+    // consulted live, one seat at a time — sequential by construction — so
+    // the structure is refused for a played game exactly as `play` refuses
+    // it at launch, and the rest of the request still lands.
+    if !p.spectate && p.turn_structure == TurnStructure::Simultaneous {
+        p.turn_structure = TurnStructure::Sequential;
     }
     p
 }
@@ -3861,14 +3919,20 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 // share of the turn budget and the round adds up to the pace.
                 // Only the living take a step: counting the eliminated made a
                 // late game outrun its own pace as the city-states fell.
-                let living: Vec<_> = s.game.players.iter().filter(|p| p.alive).collect();
-                let minors = living
-                    .iter()
-                    .filter(|p| p.is_minor || p.is_barbarian)
-                    .count();
-                let majors = living.len() - minors;
-                let p = &s.game.players[pid];
-                delay = seat_delay_ms(pace, majors, minors, p.is_minor || p.is_barbarian);
+                // A simultaneous step *is* the whole round, so it spends the
+                // whole budget in one wait instead of a seat's share of it.
+                if s.game.turn_structure == TurnStructure::Simultaneous {
+                    delay = pace;
+                } else {
+                    let living: Vec<_> = s.game.players.iter().filter(|p| p.alive).collect();
+                    let minors = living
+                        .iter()
+                        .filter(|p| p.is_minor || p.is_barbarian)
+                        .count();
+                    let majors = living.len() - minors;
+                    let p = &s.game.players[pid];
+                    delay = seat_delay_ms(pace, majors, minors, p.is_minor || p.is_barbarian);
+                }
                 // The seat that ends the round closes the turn being timed.
                 let turn = s.game.turn;
                 if watched_turn != Some(turn) {
@@ -4901,6 +4965,35 @@ mod tests {
         }
     }
 
+    /// Lightning and Blitz resolve a step faster than an eye can find the
+    /// token that took it, so a watcher can ask each unit's wake to linger a
+    /// configured beat after the move lands. Pin the whole chain: the
+    /// control, the persisted preference, the recorded wake, the lingering
+    /// painter, and the ticker that keeps a fading wake animating.
+    #[test]
+    fn browser_lets_a_watcher_keep_unit_trails_lingering() {
+        for contract in [
+            "id=\"unittrails\" aria-label=\"Unit trail linger\"",
+            "<option value=\"0\" selected>Move only</option>",
+            "<option value=\"200\">Linger 0.2s</option>",
+            "<option value=\"500\">Linger 0.5s</option>",
+            "<option value=\"1000\">Linger 1s</option>",
+            "<option value=\"2000\">Linger 2s</option>",
+            "const UNIT_TRAIL_LINGER_STORAGE_KEY = \"civvis-unit-trail-linger\";",
+            "const UNIT_TRAIL_LINGER_VALUES = [0, 200, 500, 1000, 2000];",
+            "function setUnitTrailLinger(value) {",
+            "trails.onchange = () => setUnitTrailLinger(trails.value);",
+            "function drawLingeringUnitTrails(unitAlpha, now) {",
+            "if (mapLens !== \"empire\") drawLingeringUnitTrails(unitAlpha, now);",
+            "anim.trails.length > 0 ||",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(contract),
+                "unit trail linger contract is missing: {contract}"
+            );
+        }
+    }
+
     #[test]
     fn browser_gives_every_shipped_improvement_a_named_tile_marker() {
         let markers = EMBEDDED_INDEX
@@ -5705,10 +5798,13 @@ mod tests {
             assert!(Instant::now() < deadline, "spectator server never came up");
             std::thread::sleep(Duration::from_millis(50));
         }
-        http_post(port, "/pace", "{\"ms\":120}").expect("set the turn pace");
+        http_post(port, "/pace", "{\"ms\":40}").expect("set the turn pace");
 
         // The browser's loop at its worst: one request in flight at a time,
-        // and a paint that costs twice what the whole turn was budgeted.
+        // and a paint that costs twice what the whole turn was budgeted. Only
+        // that ratio is the scenario; the absolute numbers are as small as
+        // stays clearly above scheduler jitter, because this loop is pure
+        // wall-clock and once ran 24 x 250ms — the slowest test in the suite.
         let mut seen: Vec<u32> = Vec::new();
         let mut painted: Option<Value> = None;
         for _ in 0..24 {
@@ -5719,7 +5815,7 @@ mod tests {
             let body = http_get(port, &target).expect("a state to draw");
             let state: Value = serde_json::from_str(&body).expect("state is JSON");
             let turn = state["turn"].as_u64().expect("a turn") as u32;
-            std::thread::sleep(Duration::from_millis(250)); // the paint
+            std::thread::sleep(Duration::from_millis(80)); // the paint
             seen.push(turn);
             painted = Some(state);
         }
@@ -5782,9 +5878,15 @@ mod tests {
         // Somebody is already watching, and drawing slowly. The stepper owes
         // this viewer every turn and will wait for it; the question is only
         // whether it waits with the door held shut behind it.
+        // The paint below and the arrival bound in the loop are a matched
+        // pair: a lock-out makes an arrival wait for the whole paint, so the
+        // bound must sit well under the paint (2.4x here, as it always was)
+        // while staying far above an uncontended read. Scaled from 1500/600ms
+        // — which made this the suite's slowest test at 19s of wall clock —
+        // to 600/250ms, which detects the same regression.
         let watcher = std::thread::spawn(move || {
             let mut painted: Option<Value> = None;
-            for _ in 0..8 {
+            for _ in 0..6 {
                 let target = match painted.as_ref() {
                     None => "/state?painted=&viewer=watcher".to_string(),
                     Some(state) => next_painted_state("watcher", state),
@@ -5793,11 +5895,11 @@ mod tests {
                     return;
                 };
                 let state: Value = serde_json::from_str(&body).expect("state is JSON");
-                std::thread::sleep(Duration::from_millis(1_500)); // the paint
+                std::thread::sleep(Duration::from_millis(600)); // the paint
                 painted = Some(state);
             }
         });
-        std::thread::sleep(Duration::from_millis(600)); // let it take its seat
+        std::thread::sleep(Duration::from_millis(300)); // let it take its seat
 
         // Each arrival is a distinct page, exactly as a reload or a restart is.
         // Asked repeatedly, because a lock-out is a race and one lucky read
@@ -5814,11 +5916,11 @@ mod tests {
                 "arrival {attempt}: the opening state carries no turn"
             );
             assert!(
-                elapsed < Duration::from_millis(600),
+                elapsed < Duration::from_millis(250),
                 "arrival {attempt} waited {elapsed:?} for its first frame while another \
                  viewer was painting, and a restart shows a veil for every bit of that"
             );
-            std::thread::sleep(Duration::from_millis(150));
+            std::thread::sleep(Duration::from_millis(50));
         }
         http_post(port, "/pace", "{\"paused\":true}"); // stop stepping this game
         let _ = watcher.join();
@@ -6290,14 +6392,16 @@ mod tests {
     #[test]
     fn two_viewers_each_see_every_turn() {
         let port = exhibition(20_260_726);
-        http_post(port, "/pace", "{\"ms\":60}").expect("set the turn pace");
+        http_post(port, "/pace", "{\"ms\":30}").expect("set the turn pace");
 
         // The two run side by side for the same stretch of wall clock rather
         // than for the same number of polls, because the whole point is that
         // they read at different rates: one an order of magnitude slower than
         // the other, which is what a big map on a loaded machine looks like
-        // next to a small one.
-        let until = Instant::now() + Duration::from_secs(6);
+        // next to a small one. Two seconds is enough window for the slow
+        // viewer to cover several turns; the ratios are the scenario, and the
+        // original 6s/400ms version cost 7s of pure wall clock.
+        let until = Instant::now() + Duration::from_secs(2);
         let watch = |name: &'static str, paint: u64| {
             std::thread::spawn(move || {
                 let mut seen: Vec<u32> = Vec::new();
@@ -6319,8 +6423,8 @@ mod tests {
                 seen
             })
         };
-        let slow = watch("slow", 400);
-        let quick = watch("quick", 40);
+        let slow = watch("slow", 200);
+        let quick = watch("quick", 20);
         let (slow, quick) = (slow.join().unwrap(), quick.join().unwrap());
         http_post(port, "/pace", "{\"paused\":true}");
 
@@ -7229,6 +7333,51 @@ mod tests {
         assert!(with_reasoning["ai_reasoning"]["thoughts"]
             .as_array()
             .is_some_and(|thoughts| !thoughts.is_empty()));
+    }
+
+    #[test]
+    fn a_watched_simultaneous_game_steps_a_whole_turn() {
+        // The spectator server plays the simultaneous regime as one whole
+        // planned turn per step, and the state document names the regime and
+        // carries its census so the viewer can read both.
+        let mut params = watched_table();
+        params.turn_structure = TurnStructure::Simultaneous;
+        let mut session = Session::new(params);
+        let turn_before = session.game.turn;
+        session.step();
+        assert_eq!(
+            session.game.turn,
+            turn_before + 1,
+            "one step of a simultaneous game is one whole game turn"
+        );
+        let state = session.state();
+        assert_eq!(state["turn_structure"], json!("simultaneous"));
+        assert!(state["simultaneous"]["planned"].as_u64().unwrap() > 0);
+    }
+
+    #[test]
+    fn a_sequential_state_names_its_turn_structure_and_no_census() {
+        let session = Session::new(watched_table());
+        let state = session.state();
+        assert_eq!(state["turn_structure"], json!("sequential"));
+        assert!(state.get("simultaneous").is_none());
+    }
+
+    #[test]
+    fn new_game_carries_the_turn_structure_for_a_watched_table_only() {
+        let mut spectated = current();
+        spectated.spectate = true;
+        let asked = new_game_params(&spectated, &json!({"turn_structure": "simultaneous"}));
+        assert_eq!(asked.turn_structure, TurnStructure::Simultaneous);
+        // An unknown id leaves the setting where it was, like every rung.
+        let nonsense = new_game_params(&asked, &json!({"turn_structure": "psychic"}));
+        assert_eq!(nonsense.turn_structure, TurnStructure::Simultaneous);
+        let back = new_game_params(&asked, &json!({"turn_structure": "sequential"}));
+        assert_eq!(back.turn_structure, TurnStructure::Sequential);
+        // A game with a human seat is sequential by construction: the rest
+        // of such a request lands, the regime does not.
+        let played = new_game_params(&current(), &json!({"turn_structure": "simultaneous"}));
+        assert_eq!(played.turn_structure, TurnStructure::Sequential);
     }
 
     fn current() -> Params {
@@ -10356,6 +10505,68 @@ mod tests {
             1,
             "the planet minimap must paint the landmark perimeter exactly once"
         );
+    }
+
+    /// A selected unit's movement is drawn as the engine's own affordances:
+    /// the perimeter of everywhere it can end this turn, and a per-edge arrow
+    /// wherever `reach_steps` says the remaining movement crosses. The client
+    /// must read the engine's per-edge answer rather than re-derive it — only
+    /// the engine knows step costs, rivers, and ZOC — and both boundary
+    /// renderers must be built from positions, not surveyed tiles, so the
+    /// line keeps reading where the range runs into fog.
+    #[test]
+    fn browser_draws_the_selected_units_reach_perimeter_and_edge_arrows() {
+        // The engine's directional step list is what both renderers consume.
+        assert!(EMBEDDED_INDEX.contains("function selReachEdges()"));
+        assert!(EMBEDDED_INDEX.contains("(sel && sel.reach_steps) || []"));
+        assert!(EMBEDDED_INDEX.contains("region.add(key(sel.pos));"));
+
+        let flat = EMBEDDED_INDEX
+            .split("function drawFlatReachPerimeter")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawFlatMapSearchHighlights").next())
+            .expect("flat reach perimeter and arrow renderers");
+        assert!(flat.contains("EDGE_CORNERS[side]"));
+        assert!(
+            flat.contains("const tile = TMAP.get(regionKey);"),
+            "the perimeter tolerates region tiles beyond the surveyed map"
+        );
+        assert!(flat.contains("drawEdgeArrow(x + dx / 2, y + dy / 2, dx, dy,"));
+
+        let planet = EMBEDDED_INDEX
+            .split("function drawPlanetReachOverlay")
+            .nth(1)
+            .and_then(|tail| tail.split("function planetFeatureGlyph").next())
+            .expect("planet reach overlay renderer");
+        assert!(planet.contains("cell.nbrs[side]"));
+        assert!(
+            planet.contains("planetCellGeometry({pos}, camera, scale, centerX, centerY)"),
+            "the globe projects region cells the frame does not carry"
+        );
+        assert!(planet.contains("entry.cell.nbrs.indexOf(key(edge.to))"));
+
+        // Each map paints the movement overlay exactly once, after fog and
+        // the sight perimeter, so the boundary stays visible over parchment.
+        assert_eq!(EMBEDDED_INDEX.matches("drawFlatReachPerimeter();").count(), 1);
+        assert_eq!(EMBEDDED_INDEX.matches("drawFlatReachArrows();").count(), 1);
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("drawPlanetReachOverlay(cells, camera, scale, centerX, centerY);")
+                .count(),
+            1
+        );
+        let after_sight = EMBEDDED_INDEX
+            .split("drawFlatVisibilityPerimeter(tiles, visible);")
+            .nth(1)
+            .expect("the flat sight perimeter is painted");
+        assert!(
+            after_sight.contains("drawFlatReachPerimeter();"),
+            "movement range must paint after the sight perimeter and fog"
+        );
+        // The arrow glyph itself is shared by both projections and knows the
+        // two directional forms: a head across the edge, one back, or both.
+        assert!(EMBEDDED_INDEX
+            .contains("function drawEdgeArrow(mx, my, dx, dy, out, back, k)"));
     }
 
     #[test]

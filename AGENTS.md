@@ -114,6 +114,15 @@ python3 tools/civvis_collab.py start <task-slug> --machine <machine-id> \
   spectator host, the live revision. If it stops on a conflict, failed check,
   or permission boundary, resolve or report that concrete blocker; never leave
   completed work waiting silently in a draft PR.
+- **While a PR's checks are in flight, leave its head alone**: do not push to
+  it, merge `main` into it, or edit its body. Every refreshed head cancels the
+  in-flight CI run and restarts the ~7-minute gate; chasing a busy trunk this
+  way once killed 44% of a day's CI runs and kept PRs from converging at all.
+  `main` advancing while you wait is normal and safe: `strict` is `false`, a
+  green run auto-merges even a few commits behind, and the push to `main`
+  reruns the full gate on the actual squash result. Merge `main` once before
+  marking ready, and again only for a real conflict or when `ship` reports the
+  branch past the staleness limit.
 - Merge only through a green PR using squash merge. Delete the remote task
   branch after merge and remove the local worktree.
 - **Never leave work only in a worktree.** Uncommitted changes in a worktree

@@ -1418,8 +1418,10 @@ pub struct Rules {
     pub goody_huts: SpecMap<BTreeMap<String, GoodyRewardSpec>>,
     /// Per-era constants from the shipped Eras table, keyed by ERA_NAMES.
     pub eras: SpecMap<EraSpec>,
-    /// The shipped WMDs table. Blast radius, fallout and ICBM range await a
-    /// delivery mechanic; the per-turn Gold maintenance is charged today.
+    /// The shipped WMDs table. Blast radius, fallout duration and ICBM range
+    /// all drive `Action::WmdStrike` — launched from a city center, an
+    /// unpillaged Missile Silo, or a Nuclear Submarine — and the per-turn
+    /// Gold maintenance is charged every turn a device is stockpiled.
     pub wmds: SpecMap<WmdSpec>,
     /// Gathering Storm's random-disaster classes and their tuning.
     pub disasters: SpecMap<DisasterSpec>,

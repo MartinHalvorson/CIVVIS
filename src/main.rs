@@ -694,7 +694,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// legacy and Elo agent wants exactly the army it always wanted. A
 /// compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8420_163d_c5eb_178f;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2747_6589_ca6e_bcc7;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -1013,8 +1013,8 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
         base_ruleset: base_ruleset(args),
         start_era: start_era(args),
         future_era: future_era(args),
-        map_script: MapScript::from_id(&arg_text(args, "--map", "pangaea"))
-            .unwrap_or(MapScript::Pangaea),
+        map_script: MapScript::from_id(&arg_text(args, "--map", "tennis_ball"))
+            .unwrap_or(MapScript::TeninsBall),
         map_topology: map_topology(args),
         map_poles: map_poles(args),
         difficulty,
@@ -2031,7 +2031,10 @@ fn main() {
             });
         }
         "play" => {
-            let players = arg(&args, "--players", 6);
+            // The stock game: four civilizations on a Tiny world, which is
+            // `MapSize::for_players(4)`. The map script default lives in
+            // `game_options` so the headless arms open the same world.
+            let players = arg(&args, "--players", 4);
             // `--mirror <run-dir>`: show the board a Civilization VI seat can
             // actually see, rebuilt as a CIVVIS game, instead of generating one.
             //
@@ -2175,11 +2178,15 @@ fn main() {
                         );
                     }
                     // Stepping a simultaneous save one seat at a time would
-                    // silently change its regime mid-game; say so instead.
-                    if game.turn_structure == setup::TurnStructure::Simultaneous {
+                    // silently change its regime mid-game; say so instead. A
+                    // spectated table plays whole planned turns, so only a
+                    // resume that seats a human refuses it.
+                    if game.turn_structure == setup::TurnStructure::Simultaneous
+                        && !args.iter().any(|a| a == "--spectate" || a == "--watch")
+                    {
                         eprintln!(
-                            "{path} is a simultaneous-turns game; the interactive \
-                             server plays sequential games only"
+                            "{path} is a simultaneous-turns game; a played game is \
+                             sequential by construction — resume it with --spectate"
                         );
                         std::process::exit(2);
                     }
@@ -2197,14 +2204,19 @@ fn main() {
                 }
             };
             let play_options = game_options(&args, players, seed);
-            // The interactive server steps one seat at a time and consults
-            // each AI live, which is the sequential regime by construction.
-            // Refuse the alternative rather than quietly playing a different
-            // game than the flag asked for; `simulate` and `soak` play it.
-            if play_options.turn_structure == setup::TurnStructure::Simultaneous {
+            // A played game consults the human seat live, one seat at a
+            // time, which is the sequential regime by construction. A
+            // spectated table has nobody at the keyboard, so it plays the
+            // simultaneous regime as one whole planned turn per pace tick.
+            // Refuse the combination that cannot be honoured rather than
+            // quietly playing a different game than the flag asked for;
+            // `simulate` and `soak` play it headless either way.
+            let spectate = args.iter().any(|a| a == "--spectate" || a == "--watch");
+            if !spectate && play_options.turn_structure == setup::TurnStructure::Simultaneous {
                 eprintln!(
-                    "the interactive server plays sequential games only; \
-                     use `civvis simulate --turn-structure simultaneous`"
+                    "a played game is sequential by construction; simultaneous \
+                     turns need --spectate, or `civvis simulate --turn-structure \
+                     simultaneous`"
                 );
                 std::process::exit(2);
             }
@@ -2231,7 +2243,7 @@ fn main() {
                     max_turns: play_options.max_turns,
                     victory_conditions: victory_conditions(&args),
                     num_city_states: auto_cs(&args, players),
-                    spectate: args.iter().any(|a| a == "--spectate" || a == "--watch"),
+                    spectate,
                     difficulty: play_options.difficulty,
                     speed: play_options.speed,
                     teams: play_options.teams,
@@ -2425,6 +2437,28 @@ mod tests {
         assert_eq!(map_topology(&flat), MapTopology::Flat);
     }
 
+    /// The stock game somebody gets by asking for nothing: a Tenins Ball
+    /// world. The four-seat half of the promise lives in the `play` arm's
+    /// `--players` default, and the serde default stays Pangaea so a client
+    /// that has never been taught the setting is unmoved.
+    #[test]
+    fn omitted_map_defaults_to_the_tenins_ball() {
+        use civvis::setup::MapScript;
+
+        let options = game_options(&[], 4, 71_005);
+        assert_eq!(options.map_script, MapScript::TeninsBall);
+
+        // An explicit choice still wins, under either accepted spelling.
+        for (asked, chosen) in [
+            ("pangaea", MapScript::Pangaea),
+            ("tennis_ball", MapScript::TeninsBall),
+            ("tenins_ball", MapScript::TeninsBall),
+        ] {
+            let args = vec!["--map".to_string(), asked.to_string()];
+            assert_eq!(game_options(&args, 4, 71_005).map_script, chosen, "{asked}");
+        }
+    }
+
     #[test]
     fn tournament_entrants_separate_immutable_identity_from_controller() {
         let entrants = parse_tournament_entrants(
@@ -2521,6 +2555,26 @@ mod tests {
             !civvis::ai::AdvancedAi::new().garrison_loyalty_policy,
             "the stock entrant must not slot limitanei either — the arm measured \
              a null and ships OFF"
+        );
+        // ⚠ SAME QUESTION, ASKED AGAIN FOR THE NUCLEAR LANE.
+        //
+        // The wmd-strike doctrine's wider gate (Recovery/threatened besides
+        // Conquest) lives behind `advanced_command_actions`, and the new
+        // nuclear tech beeline in `tech_value` is explicitly gated on
+        // `victory_planning` — both paths the anchor never enters, because
+        // legacy() constructs with victory_planning = false. So the source
+        // fingerprint moved while the legacy path did not, and the re-pin
+        // below is free.
+        assert!(
+            !civvis::ai::AdvancedAi::legacy().coordinates_forces(),
+            "advanced_v1 must not victory-plan; if it ever does, the nuclear \
+             beeline and strike doctrine reach the anchor and the re-pin is \
+             no longer free — bump ELO_PROTOCOL_VERSION instead"
+        );
+        assert!(
+            civvis::ai::AdvancedAi::new().coordinates_forces(),
+            "the stock entrant does victory-plan, so `advanced` rows straddle \
+             the nuclear-lane change — recorded here honestly"
         );
     }
 

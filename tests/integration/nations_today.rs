@@ -44,7 +44,7 @@ struct CityStates {
 #[test]
 fn todays_ranking_is_contiguous_named_and_on_the_globe() {
     let doc: NationsToday =
-        serde_json::from_str(include_str!("../data/nations_today.json")).unwrap();
+        serde_json::from_str(include_str!("../../data/nations_today.json")).unwrap();
 
     assert!(!doc.roster.is_empty(), "an empty ranking seats nobody");
     let mut nations = BTreeSet::new();
@@ -85,9 +85,9 @@ fn todays_ranking_is_contiguous_named_and_on_the_globe() {
 #[test]
 fn every_bias_is_a_real_city_state_type() {
     let doc: NationsToday =
-        serde_json::from_str(include_str!("../data/nations_today.json")).unwrap();
+        serde_json::from_str(include_str!("../../data/nations_today.json")).unwrap();
     let city_states: CityStates =
-        serde_json::from_str(include_str!("../data/city_states.json")).unwrap();
+        serde_json::from_str(include_str!("../../data/city_states.json")).unwrap();
     let types: BTreeSet<&str> = city_states
         .roster
         .iter()
@@ -109,7 +109,7 @@ fn every_bias_is_a_real_city_state_type() {
 #[test]
 fn the_ranking_is_dated() {
     let doc: NationsToday =
-        serde_json::from_str(include_str!("../data/nations_today.json")).unwrap();
+        serde_json::from_str(include_str!("../../data/nations_today.json")).unwrap();
     let parts: Vec<&str> = doc.date.split('-').collect();
     assert_eq!(parts.len(), 3, "date {:?} is not YYYY-MM-DD", doc.date);
     assert_eq!(parts[0].len(), 4);

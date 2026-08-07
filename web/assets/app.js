@@ -810,6 +810,19 @@ let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") ===
 // Space-race flights and satellites are on unless a viewer explicitly turns
 // their animated visual effects off. The completed mission remains in state.
 let SHOW_ROCKET_ANIMATIONS = localStorage.getItem("civvis-show-rocket-animations") !== "0";
+// How long a unit's movement wake stays on the map after its step lands.
+// Zero is the original behavior — a comet only while the tween itself runs —
+// while a linger keeps who-went-where readable at Lightning and Blitz paces,
+// where a step resolves faster than an eye can find the token that took it.
+const UNIT_TRAIL_LINGER_STORAGE_KEY = "civvis-unit-trail-linger";
+const UNIT_TRAIL_LINGER_VALUES = [0, 200, 500, 1000, 2000];
+// Enough for every mover of a large late-game turn; bounds draw cost when a
+// whole war resolves in one Lightning poll.
+const UNIT_TRAIL_LIMIT = 240;
+let UNIT_TRAIL_LINGER_MS = (() => {
+  const saved = Number(localStorage.getItem(UNIT_TRAIL_LINGER_STORAGE_KEY));
+  return UNIT_TRAIL_LINGER_VALUES.includes(saved) ? saved : 0;
+})();
 // A brief coast makes direct drags feel physical; reduced-motion still takes
 // precedence, and a viewer can opt out here without changing system settings.
 const WORLD_PAN_INERTIA_STORAGE_KEY = "civvis-world-pan-inertia";
@@ -956,7 +969,7 @@ applyOverlayVisibility();
 // burst — a device is the only event on this board that deserves several
 // seconds and the whole frame.
 const anim = { moves: new Map(), floats: [], sparks: [], deaths: [],
-               claims: [], strike: null, blasts: [],
+               claims: [], strike: null, blasts: [], trails: [],
                skyLaunches: [] };
 // Detonations already shown. The engine gives every strike a unique id
 // precisely so a client can answer this without comparing fields: two devices
@@ -1016,6 +1029,7 @@ function resetAnim() {
   anim.deaths.length = 0;
   anim.claims.length = 0;
   anim.blasts.length = 0;
+  anim.trails.length = 0;
   anim.skyLaunches.length = 0;
   seenBlasts = new Set();
   anim.strike = null;
@@ -1031,6 +1045,11 @@ function claimPulse(c) {
 // tenth of a second; a device is allowed three, because the map is supposed to
 // stop and look at it.
 const BLAST_MS = 3000;
+// The delivery ahead of it. The ledger names the launch platform and where it
+// fired from, so the picture can show the arc instead of a city detonating
+// out of nowhere. Flight rides the same record: its t0 is the *arrival*, so
+// every blast painter stays oblivious to the missile phase.
+const MISSILE_FLIGHT_MS = 1400;
 // Start a detonation for every strike that appeared between these two frames.
 //
 // Read from the strike ledger rather than from the board, because the board
@@ -1056,9 +1075,14 @@ function detonate(prev, next) {
     if ((next.turn - strike.turn) > 2) { seenBlasts.add(strike.id); continue; }
     if (seenBlasts.has(strike.id)) continue;
     seenBlasts.add(strike.id);
+    const flight = SHOW_ROCKET_ANIMATIONS && !REDUCED_MOTION_QUERY.matches &&
+      Array.isArray(strike.launched_from) ? MISSILE_FLIGHT_MS : 0;
     anim.blasts.push({
       pos: strike.target,
-      t0: performance.now(),
+      from: flight ? strike.launched_from : null,
+      platform: strike.platform || "city",
+      flight,
+      t0: performance.now() + flight,
       dur: BLAST_MS,
       thermo: !!strike.thermonuclear,
       radius: Math.max(1, strike.blast_radius || 1),
@@ -1113,11 +1137,22 @@ function animateDiff(prev, next) {
         // dropped the full shift the instant it set off, and one walking out
         // snapped up by the same amount: a visible jolt at both ends of the
         // step. Carrying both endpoints lets the shift ease across the move.
+        const dur = unitMoveDuration(nu.id, steps);
         anim.moves.set(nu.id, {mapX:start.x, mapY:start.y, mapLift:start.lift,
                                 mapPoints, steps,
                                 fromCity: cityKeys.has(key(pu.pos)),
                                 toCity: cityKeys.has(key(nu.pos)),
-                                t0: now, dur:unitMoveDuration(nu.id, steps) });
+                                t0: now, dur });
+        // The lingering wake outlives both the tween and the unit itself — a
+        // trail that survives its casualty is what makes a fast battle
+        // readable after the fact.
+        if (UNIT_TRAIL_LINGER_MS > 0) {
+          anim.trails.push({ unit: nu.id, points: mapPoints, owner: nu.owner,
+                             t0: now, moveDur: dur,
+                             linger: UNIT_TRAIL_LINGER_MS });
+          if (anim.trails.length > UNIT_TRAIL_LIMIT)
+            anim.trails.splice(0, anim.trails.length - UNIT_TRAIL_LIMIT);
+        }
       }
     }
     if (unitHasHealth(nu) && unitHasHealth(pu) && nu.hp < pu.hp) {
@@ -1301,6 +1336,53 @@ const WORLD_MINIMAP_REFERENCE = {
   flat: {width:336, height:168},
   planet: {width:240, height:240},
 };
+// How large a hex the thumbnail may draw while it frames known ground rather
+// than the whole world (see miniBounds). The reference frame is sized for a
+// charted world; fitted to a first city's dozen tiles it hands those tiles
+// back as giant hexes in a mostly-black corner. Capping the scale and letting
+// the frame shrink to what that scale needs keeps a young thumbnail small —
+// it grows with what is known and reaches the standard instrument only when
+// the known ground fills it, at which point the ordinary fit takes over.
+const MINI_KNOWN_HEX_LIMIT = 5.5;
+// Pixels the frame spends around the chart itself: its own 6px padding on each
+// side, the fit margin miniLayout keeps, and the label row above the canvas.
+const MINI_FRAME_CHROME = {width:20, height:38};
+function knownChartFrameCap() {
+  const tiles = state?.map?.tiles;
+  // Mirrors the branch miniBounds takes: a spectator and a circumnavigated
+  // world frame the whole world at the standard size. The globe has its own
+  // rule below — its chart is global at any frame size.
+  if (!tiles?.length || planetMap()) return null;
+  if (!chartIsOpen() && !mapEdgeVeiled()) return null;
+  const bounds = miniBounds();
+  const unitWidth = SQ3 * (bounds.maxU - bounds.minU + 1);
+  const unitHeight = 1.5 * (bounds.maxR - bounds.minR) + 2;
+  // Measured turned, exactly as miniLayout fits it, so the frame asks for the
+  // room the chart's own corners take at this bearing.
+  const cos = Math.abs(Math.cos(chartRot())), sin = Math.abs(Math.sin(chartRot()));
+  return {
+    width:(unitWidth * cos + unitHeight * sin) * MINI_KNOWN_HEX_LIMIT + MINI_FRAME_CHROME.width,
+    height:(unitWidth * sin + unitHeight * cos) * MINI_KNOWN_HEX_LIMIT + MINI_FRAME_CHROME.height,
+  };
+}
+// The globe's corner chart is global by design — its crop always holds the
+// same share of the sphere, so a frame of any size shows the same ground and
+// a barely-explored planet is a large square of fog around a speck of known
+// ground. The frame cannot zoom the chart, but it can stop spending the
+// standard square on that fog: its side follows the known cap's angular size,
+// with room for this much unexplored context around it, until the cap has
+// earned the standard instrument.
+const MINI_KNOWN_GLOBE_CONTEXT = 2;
+function knownGlobeFrameShare() {
+  const tiles = state?.map?.tiles;
+  if (!tiles?.length || !planetMap() || wentAround()) return null;
+  // The angular radius of the spherical cap holding the known share of the
+  // world's tiles, against the half-angle the chart's square crop reaches.
+  const share = Math.min(.5,
+    tiles.length / Math.max(1, state.map.width * state.map.height));
+  const reach = Math.acos(1 - 2 * share);
+  return Math.min(1, MINI_KNOWN_GLOBE_CONTEXT * reach / AZIMUTHAL_MINI_SQUARE_HALF);
+}
 function clampPanelDimension(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -1328,8 +1410,24 @@ function syncResponsivePanelGeometry() {
   const compactMinimapHeight = Math.round(clampPanelDimension(height * .19, 80, 148));
   const planetMinimapSide = Math.round(clampPanelDimension(
     Math.min(compactMinimapWidth, compactMinimapHeight), 130, 148));
-  const compactInstrumentWidth = shape === "planet" ? planetMinimapSide : compactMinimapWidth;
-  const compactInstrumentHeight = shape === "planet" ? planetMinimapSide : compactMinimapHeight;
+  // While the thumbnail frames known ground the frame follows the known
+  // extent, so a barely-explored world gets a small minimap instead of a
+  // standard frame full of giant hexes (flat) or fog (globe). Each shape has
+  // its own measure and the other's is always null.
+  const knownFrameCap = knownChartFrameCap();
+  const knownGlobeShare = knownGlobeFrameShare();
+  let compactInstrumentWidth = shape === "planet" ? planetMinimapSide : compactMinimapWidth;
+  let compactInstrumentHeight = shape === "planet" ? planetMinimapSide : compactMinimapHeight;
+  if (knownFrameCap) {
+    compactInstrumentWidth = Math.round(clampPanelDimension(
+      knownFrameCap.width, 130, compactInstrumentWidth));
+    compactInstrumentHeight = Math.round(clampPanelDimension(
+      knownFrameCap.height, 80, compactInstrumentHeight));
+  } else if (knownGlobeShare !== null && knownGlobeShare < 1) {
+    compactInstrumentWidth = Math.round(clampPanelDimension(
+      compactInstrumentWidth * knownGlobeShare, 130, compactInstrumentWidth));
+    compactInstrumentHeight = compactInstrumentWidth;
+  }
   // Reserve the complete lower-left instrument stack before sizing the band
   // above it. The smaller of the natural band and the remaining space keeps a
   // common 960x540 quadrant from having the tracker overlap the minimap.
@@ -1354,11 +1452,21 @@ function syncResponsivePanelGeometry() {
     referenceDiagonal * reference.width;
   const wideMinimapMax = shape === "planet" ? 194
     : Math.min(360, Math.max(180, width * .32));
-  const wideMinimapWidth = Math.round(clampPanelDimension(
+  let wideMinimapWidth = Math.round(clampPanelDimension(
     diagonalWidth, 180, wideMinimapMax));
-  const wideMinimapHeight = Math.round(clampPanelDimension(
+  let wideMinimapHeight = Math.round(clampPanelDimension(
     shape === "planet" ? wideMinimapWidth
       : wideMinimapWidth * reference.height / reference.width, 96, 194));
+  if (knownFrameCap) {
+    wideMinimapWidth = Math.round(clampPanelDimension(
+      knownFrameCap.width, 130, wideMinimapWidth));
+    wideMinimapHeight = Math.round(clampPanelDimension(
+      knownFrameCap.height, 96, wideMinimapHeight));
+  } else if (knownGlobeShare !== null && knownGlobeShare < 1) {
+    wideMinimapWidth = Math.round(clampPanelDimension(
+      wideMinimapWidth * knownGlobeShare, 130, wideMinimapWidth));
+    wideMinimapHeight = wideMinimapWidth;
+  }
   const victoryWidth = Math.round(clampPanelDimension(width * .15, 156, 280));
   const style = area.style;
   style.setProperty("--panel-edge", `${edge}px`);
@@ -4080,6 +4188,7 @@ const DISPLAY_RESOURCE_CAP_VALUES = [10, 20, 30, 40, 50, 60, 70, 80, 90];
 const DISPLAY_RESOURCE_CAP_DEFAULT = 70;
 const DISPLAY_CPU_GUIDANCE_CONTROLS = [
   "renderresolution", "yieldchk", "reschk", "resourcedisplay", "rocketanimchk",
+  "unittrails",
 ];
 const DISPLAY_MEMORY_GUIDANCE_CONTROLS = [
   "renderresolution", "resourcedisplay", "reset-overlay-layout",
@@ -4816,8 +4925,8 @@ async function boot() {
       ).join("");
       if ([...sizes.options].some(option => option.value === chosen)) {
         sizes.value = chosen;
-      } else if ([...sizes.options].some(option => option.value === "6")) {
-        sizes.value = "6";
+      } else if ([...sizes.options].some(option => option.value === "4")) {
+        sizes.value = "4";
       }
       // The sizes this build offers decide which team splits it can seat.
       syncTeams();
@@ -5376,12 +5485,15 @@ function paceHeldOpen() {
   return [document.getElementById("specspeed"), document.querySelector("[data-hud-pace]")]
     .some(select => select && document.activeElement === select);
 }
-// Only the standings' own copy of the pace select dies when the standings
-// repaint, so only that copy needs to hold the repaint while it is held open.
-// The sidebar #specspeed lives outside #playerhud and never has this problem.
+// Only the standings' own copies of the pace and turn-structure selects die
+// when the standings repaint, so only those copies need to hold the repaint
+// while one is held open. The sidebar #specspeed lives outside #playerhud
+// and never has this problem.
 function hudPaceHeldOpen() {
-  const select = document.querySelector("[data-hud-pace]");
-  return !!select && document.activeElement === select;
+  return ["[data-hud-pace]", "[data-hud-turns]"].some(selector => {
+    const select = document.querySelector(selector);
+    return !!select && document.activeElement === select;
+  });
 }
 function paceOffered(select, ms) {
   return [...select.options].some(o => +o.value === ms);
@@ -5967,7 +6079,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     // offering to restart it as a free-for-all.
     syncTeams();
     document.getElementById("teams").value = teamRuleFromArray(st.teams);
-    document.getElementById("maptype").value = st.map.script || "pangaea";
+    document.getElementById("maptype").value = st.map.script || "tenins_ball";
     document.getElementById("mapshape").value = st.map.shape || "planet";
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
@@ -11264,6 +11376,77 @@ function drawPlanetVisibilityPerimeter(cells, visible) {
   cx.restore();
 }
 
+// The selected unit's movement, on the globe and the chart: the perimeter of
+// everywhere it can end this turn, and a small arrow astride every cell seam
+// its remaining movement can cross. The region routinely runs past the
+// surveyed map, so cells the frame does not carry are projected here from the
+// globe's own geometry — the boundary keeps reading over fog and bare sphere,
+// which is exactly where a scout's reach matters most.
+function drawPlanetReachOverlay(cells, camera, scale, centerX, centerY) {
+  if (!sel || !(sel.reachable || []).length) return;
+  const region = selReachRegion();
+  const behind = camera.chart
+    ? planetChartHorizon(camera, scale, planetStageReach(centerX, centerY))
+    : -.03;
+  const entries = new Map();
+  for (const entry of cells) entries.set(key(entry.tile.pos), entry);
+  for (const regionKey of region) {
+    if (entries.has(regionKey)) continue;
+    const pos = regionKey.split(",").map(Number);
+    const geometry = planetCellGeometry({pos}, camera, scale, centerX, centerY);
+    if (!geometry || geometry.center.z <= behind) continue;
+    entries.set(regionKey, {tile: {pos}, ...geometry});
+  }
+  const segments = [];
+  for (const regionKey of region) {
+    const entry = entries.get(regionKey);
+    if (!entry) continue;
+    const {cell, points} = entry;
+    for (let side = 0; side < points.length; side++) {
+      const across = cell.nbrs[side];
+      if (across && region.has(across)) continue;
+      const a = points[side], b = points[(side + 1) % points.length];
+      segments.push([a.x, a.y, b.x, b.y]);
+    }
+  }
+  if (segments.length) {
+    cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+    for (const [width, color] of [
+      [3.0, "rgba(5,10,15,.68)"],
+      [1.3, "rgba(143,216,255,.92)"],
+    ]) {
+      cx.beginPath();
+      for (const [ax, ay, bx, by] of segments) {
+        cx.moveTo(ax, ay); cx.lineTo(bx, by);
+      }
+      cx.strokeStyle = color; cx.lineWidth = width; cx.stroke();
+    }
+    cx.restore();
+  }
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const edge of selReachEdges().values()) {
+    const entry = entries.get(key(edge.from));
+    if (!entry) continue;
+    const side = entry.cell.nbrs.indexOf(key(edge.to));
+    if (side < 0) continue;
+    const a = entry.points[side];
+    const b = entry.points[(side + 1) % entry.points.length];
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const across = entries.get(key(edge.to));
+    // Aim at the neighbour's own centre when the frame carries it; otherwise
+    // outward from this cell through the seam, which is the same direction to
+    // the eye at any scale a seam is still visible at.
+    const dx = across ? across.center.x - entry.center.x : mx - entry.center.x;
+    const dy = across ? across.center.y - entry.center.y : my - entry.center.y;
+    // Flat-map arrow geometry is tuned to a hex of inradius S·√3/2; a globe
+    // cell's screen size is whatever the camera says it is.
+    const k = Math.max(.3, Math.min(1.5,
+      planetCellInradius(entry) / (S * SQ3 / 2)));
+    drawEdgeArrow(mx, my, dx, dy, edge.out, edge.back, k);
+  }
+  cx.restore();
+}
+
 function planetFeatureGlyph(tile) {
   if (tile.terrain === "mountain") return "▲";
   if (tile.feature === "forest") return "♠";
@@ -11742,6 +11925,29 @@ const SKY_LAUNCH_FLIGHTS = {
   mars:{project:SKY_CHAIN.mars, duration:3600, body:"mars", rocket:"starship"},
   expedition:{project:SKY_CHAIN.expedition, duration:3000, body:"exo", rocket:"starship_xl"},
 };
+// A mission lifts off from the Spaceport that ran its project, not from the
+// palace lawn. The completion frame no longer says which city built it, but
+// the frame before still holds the project at the head of one city's queue;
+// failing that, any city of the empire with a Spaceport is still the pad the
+// rocket must have used, and only an empire with no visible Spaceport at all
+// falls back to its anchor city.
+function citySpaceportPos(city) {
+  for (const [district, encoded] of Object.entries(city?.districts || {})) {
+    if (district !== "spaceport" &&
+        RULES?.districts?.[district]?.replaces !== "spaceport") continue;
+    const [pos] = districtIconPositions(encoded);
+    if (pos) return pos;
+  }
+  return null;
+}
+function skyLaunchOrigin(prev, next, pid, project) {
+  const owned = st => (st?.cities || []).filter(city => city.owner === pid);
+  const launcher = owned(prev).find(city => (city.queue || [])[0]?.project === project);
+  const launched = launcher &&
+    (owned(next).find(city => city.id === launcher.id) || launcher);
+  return citySpaceportPos(launched) ||
+    owned(next).map(citySpaceportPos).find(Boolean) || null;
+}
 function queueSkyLaunches(prev, next, now = performance.now()) {
   if (!SHOW_ROCKET_ANIMATIONS || !prev || !next || prev.seed !== next.seed || REDUCED_MOTION_QUERY.matches) return;
   const before = new Map((prev.players || []).map(player => [player.id, player]));
@@ -11764,7 +11970,8 @@ function queueSkyLaunches(prev, next, now = performance.now()) {
         (candidate.science_projects || []).includes(flight.project))
         .map(candidate => ({id:candidate.id}));
       const target = +player.victories?.science?.distance_target || 50;
-      const origin = statePlayerAnchor(next, player.id)?.pos;
+      const origin = skyLaunchOrigin(prev, next, player.id, flight.project) ||
+        statePlayerAnchor(next, player.id)?.pos;
       // A launch is a wall-clock event, not a turn-frame decoration. Fast
       // spectators can advance dozens of turns during one flight, so freeze
       // everything the route inherited from the completion frame. In
@@ -15608,6 +15815,8 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
     if (["floodplains", "grassland_floodplains", "plains_floodplains"].includes(entry.tile.feature))
       drawPlanetStrategicFloodplains(entry, visible, spectator);
   }
+  // Contaminated ground, under every landmark standing on it.
+  drawPlanetFallout(cells, visible, spectator);
   const naturalWonders = buildPlanetNaturalWonderPlacements(cells);
   const campSet = new Set(state.camps.map(key));
   const districtBuildings = districtBuildingsByTile();
@@ -16095,9 +16304,12 @@ function drawPlanetEmpireLabels(cells, scale, radius, visible, spectator) {
   }
   if (!sections.length) return;
 
-  const zoomOut = Math.max(0, Math.min(1,
-    (PLANET_MAJOR_CITY_LABEL_SCALE - scale) / .38));
-  const fontSize = 17 + zoomOut * 7;
+  // Size the type by the Earth on the screen, not by the zoom ladder. The old
+  // ramp grew the font as the camera pulled away, so a globe shrunk to a ball
+  // wore captions a third of its own width. Tying the size to the on-screen
+  // radius keeps a survey label smaller than the world it names, and the floor
+  // hands over to the radius fade above before the type becomes unreadable.
+  const fontSize = Math.max(9, Math.min(17, radius * .075));
   const boxes = [];
   sections.sort((a, b) => b.area - a.area);
   cx.save();
@@ -16112,7 +16324,7 @@ function drawPlanetEmpireLabels(cells, scale, radius, visible, spectator) {
     boxes.push(box);
     const [, light] = jerseyLanes(section.owner);
     cx.globalAlpha = alpha;
-    cx.strokeStyle = "#07100f"; cx.lineWidth = Math.max(3.5, fontSize * .22);
+    cx.strokeStyle = "#07100f"; cx.lineWidth = Math.max(2, fontSize * .22);
     cx.strokeText(section.label, section.x, section.y);
     cx.fillStyle = light;
     cx.fillText(section.label, section.x, section.y);
@@ -16400,6 +16612,137 @@ function drawFlatVisibilityPerimeter(tiles, visible) {
   cx.restore();
 }
 
+// ------------------------------------------------- selected unit's movement
+// The tiles a selected unit can end on, plus the tile it stands on: the shape
+// of this turn's whole movement decision. Built from positions rather than
+// tiles because the range routinely runs past the surveyed map, and the line
+// has to keep saying "you can walk here" over fog and blank parchment alike.
+function selReachRegion() {
+  const region = new Set((sel.reachable || []).map(key));
+  region.add(key(sel.pos));
+  return region;
+}
+// The engine's per-edge movement affordances for the selected unit, one entry
+// per hex edge. `reach_steps` is directional — stepping into enemy ZOC ends
+// movement, so an edge can be enterable one way and not back — and only the
+// engine knows step costs, rivers, and ZOC, so this is read, never re-derived
+// from `reachable`.
+function selReachEdges() {
+  const edges = new Map();
+  for (const [from, to] of (sel && sel.reach_steps) || []) {
+    const a = key(from), b = key(to);
+    const flip = b < a;
+    const id = flip ? b + "|" + a : a + "|" + b;
+    let edge = edges.get(id);
+    if (!edge) edge = {from: flip ? to : from, to: flip ? from : to,
+                       out: false, back: false}, edges.set(id, edge);
+    if (flip) edge.back = true; else edge.out = true;
+  }
+  return edges;
+}
+// Which of `from`'s six sides faces `to`, in DIRS order, wrap included.
+function reachStepSide(from, to) {
+  const wanted = key(to);
+  for (let side = 0; side < DIRS.length; side++) {
+    const across = canonPos([from[0] + DIRS[side][0], from[1] + DIRS[side][1]]);
+    if (key(across) === wanted) return side;
+  }
+  return -1;
+}
+// Centre-to-centre offset toward DIRS[side], in view space (rotate, then
+// dimetric squash) — the same transform hexXY applies, taken as a delta so a
+// neighbour across the wrap seam still sits beside its tile.
+function hexDirOffset(side) {
+  const dwx = S * SQ3 * (DIRS[side][0] + DIRS[side][1] / 2);
+  const dwy = S * 1.5 * DIRS[side][1];
+  return [COSR * dwx - SINR * dwy, (SINR * dwx + COSR * dwy) * YS];
+}
+// One small arrow astride a hex edge. `out` points the head across the edge,
+// `back` points one at the near end; both at once is the both-ways edge the
+// open field mostly is, and one alone is a door that only opens one way.
+function drawEdgeArrow(mx, my, dx, dy, out, back, k) {
+  const length = Math.hypot(dx, dy) || 1;
+  const ux = dx / length, uy = dy / length;
+  const px = -uy, py = ux;
+  const reach = 6.5 * k, head = 4.4 * k, flare = 3 * k;
+  const tailX = mx - ux * reach, tailY = my - uy * reach;
+  const tipX = mx + ux * reach, tipY = my + uy * reach;
+  for (const [width, color] of [
+    [3.2 * k, "rgba(5,10,15,.62)"],
+    [1.5 * k, "rgba(207,238,255,.95)"],
+  ]) {
+    cx.strokeStyle = color; cx.lineWidth = width;
+    cx.beginPath();
+    cx.moveTo(tailX, tailY); cx.lineTo(tipX, tipY);
+    if (out) {
+      cx.moveTo(tipX - ux * head + px * flare, tipY - uy * head + py * flare);
+      cx.lineTo(tipX, tipY);
+      cx.lineTo(tipX - ux * head - px * flare, tipY - uy * head - py * flare);
+    }
+    if (back) {
+      cx.moveTo(tailX + ux * head + px * flare, tailY + uy * head + py * flare);
+      cx.lineTo(tailX, tailY);
+      cx.lineTo(tailX + ux * head - px * flare, tailY + uy * head - py * flare);
+    }
+    cx.stroke();
+  }
+}
+// The perimeter of everywhere the selected unit can end this turn. Drawn
+// after the fog and parchment layers on purpose: where the range runs into
+// unexplored ground the boundary keeps reading, which is exactly where a
+// player most needs to know how far a scout can push.
+function drawFlatReachPerimeter() {
+  if (!sel || !(sel.reachable || []).length) return;
+  const region = selReachRegion();
+  const segments = [];
+  for (const regionKey of region) {
+    const pos = regionKey.split(",").map(Number);
+    const tile = TMAP.get(regionKey);
+    const [x, yy] = hexXY(pos[0], pos[1]);
+    const y = yy - (tile ? elev(tile) : 0);
+    for (let side = 0; side < DIRS.length; side++) {
+      const across = canonPos([pos[0] + DIRS[side][0], pos[1] + DIRS[side][1]]);
+      if (region.has(key(across))) continue;
+      const [a, b] = EDGE_CORNERS[side];
+      segments.push([...corner(x, y, S - 1.6, a), ...corner(x, y, S - 1.6, b)]);
+    }
+  }
+  if (!segments.length) return;
+  const k = UI_K();
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [width, color] of [
+    [3.2 * k, "rgba(5,10,15,.68)"],
+    [1.5 * k, "rgba(143,216,255,.92)"],
+  ]) {
+    cx.beginPath();
+    for (const [ax, ay, bx, by] of segments) {
+      cx.moveTo(ax, ay); cx.lineTo(bx, by);
+    }
+    cx.strokeStyle = color; cx.lineWidth = width; cx.stroke();
+  }
+  cx.restore();
+}
+// Every way across every edge the remaining movement affords. Three arrows
+// out of a plains diamond say "straight across, or round either flank" —
+// multiple routes to the same tile that a filled range alone cannot show.
+function drawFlatReachArrows() {
+  if (!sel) return;
+  const edges = selReachEdges();
+  if (!edges.size) return;
+  const k = Math.min(UI_K(), 1.5);
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const edge of edges.values()) {
+    const side = reachStepSide(edge.from, edge.to);
+    if (side < 0) continue;
+    const tile = TMAP.get(key(edge.from));
+    const [x, yy] = hexXY(edge.from[0], edge.from[1]);
+    const y = yy - (tile ? elev(tile) : 0);
+    const [dx, dy] = hexDirOffset(side);
+    drawEdgeArrow(x + dx / 2, y + dy / 2, dx, dy, edge.out, edge.back, k);
+  }
+  cx.restore();
+}
+
 // Search is a luminous surface rather than another map lens. It stays legible
 // over any active lens and keeps districts, wonders, cities, and units intact
 // above the fill. The sight perimeter is drawn after it, preserving the exact
@@ -16615,7 +16958,16 @@ function drawPlanetMap() {
   for (const cell of cells) {
     const color = highlighted.get(key(cell.tile.pos));
     if (!color) continue;
-    planetPath(cx, cell.points); cx.strokeStyle = color; cx.lineWidth = 2.2; cx.stroke();
+    planetPath(cx, cell.points);
+    if (color === "#74d7ff") {
+      // The movement range's interior is a quiet wash, as on the flat board;
+      // its boundary belongs to drawPlanetReachOverlay's perimeter and the
+      // per-seam arrows. A bright outline on every cell buried both.
+      cx.fillStyle = "#ffffff14"; cx.fill();
+      cx.strokeStyle = "#ffffff5a"; cx.lineWidth = 1; cx.stroke();
+    } else {
+      cx.strokeStyle = color; cx.lineWidth = 2.2; cx.stroke();
+    }
   }
 
   // How far round the world a thing standing on it can be and still be drawn.
@@ -16632,6 +16984,9 @@ function drawPlanetMap() {
   drawPlanetMapSearchHighlights(cells);
   if (!spectator && radius >= SKY_MARKERS)
     drawPlanetVisibilityPerimeter(cells, visible);
+  // The selected unit's movement: range perimeter, then per-seam arrows.
+  if (radius >= SKY_MARKERS)
+    drawPlanetReachOverlay(cells, camera, scale, centerX, centerY);
   // At the same scale where major-city names leave the globe, replace the
   // settlement vocabulary with cartographic empire names. This is deliberately
   // before the city/icon pass so close markers remain readable over the label
@@ -16731,6 +17086,10 @@ function drawPlanetMap() {
   // a view effect, not a tile object, and must not change this hierarchy.
   drawPlanetTileYieldOverlay(cells, turnVisible, spectator);
 
+  // Detonations and the missiles delivering them belong to the ground and
+  // tilt with it. The screen-space flash stays with the sky, below.
+  drawPlanetBlasts(cells, now, onSheet);
+
   // The air seen edge-on, and the edge it is seen against. Both are the ball
   // itself and neither belongs on a chart.
   if (!camera.chart) {
@@ -16749,8 +17108,59 @@ function drawPlanetMap() {
   }
   cx.restore();
   drawPlanetSky(camera, radius, centerX, centerY);
+  // Last, and in screen space: a detonation's flash washes the frame itself,
+  // exactly as it does over the flat board.
+  drawNuclearFlash(now);
   cx.setTransform(1, 0, 0, 1, 0, 0);
   return true;
+}
+
+// One wake polyline in view space: a dark casing under the owner's color so
+// it reads on any terrain, transparent at the tail and strong at the head.
+function strokeUnitTrail(points, color, alpha) {
+  if (points.length < 2 || alpha <= 0) return;
+  const [startX, startY] = points[0];
+  const [endX, endY] = points[points.length - 1];
+  const tint = cx.createLinearGradient(startX, startY, endX, endY);
+  tint.addColorStop(0, color + "00");
+  tint.addColorStop(1, color + "e0");
+  const casing = cx.createLinearGradient(startX, startY, endX, endY);
+  casing.addColorStop(0, "#0d111700");
+  casing.addColorStop(1, "#0d1117b0");
+  cx.save();
+  cx.globalAlpha = alpha;
+  cx.lineCap = "round";
+  cx.strokeStyle = casing; cx.lineWidth = 5.4;   // casing, so it reads on sand
+  cx.beginPath();
+  points.forEach(([px, py], index) => index ? cx.lineTo(px, py + 7) : cx.moveTo(px, py + 7));
+  cx.stroke();
+  cx.strokeStyle = tint; cx.lineWidth = 3;
+  cx.beginPath();
+  points.forEach(([px, py], index) => index ? cx.lineTo(px, py + 7) : cx.moveTo(px, py + 7));
+  cx.stroke();
+  cx.restore();
+}
+// The wakes that outlived their tween, painted before the tokens so every
+// unit draws above them. Each holds full strength until its own step has
+// landed, then fades over the viewer's configured linger.
+function drawLingeringUnitTrails(unitAlpha, now) {
+  if (!anim.trails.length) return;
+  const alive = [];
+  for (const trail of anim.trails) {
+    const age = now - trail.t0;
+    if (age > trail.moveDur + trail.linger) continue;
+    alive.push(trail);
+    // While its tween is on screen the in-flight comet owns this wake, and a
+    // beat of slack keeps the completion frame from painting it twice. The
+    // age test matters too: a casualty's orphaned move record is never
+    // sampled again, and it must not suppress the wake of the very unit the
+    // watcher most wants to trace.
+    if (age < trail.moveDur + 50 && anim.moves.has(trail.unit)) continue;
+    const fade = Math.min(1, Math.max(0, 1 - (age - trail.moveDur) / trail.linger));
+    strokeUnitTrail(trail.points.map(mapPointToView),
+                    pcol(trail.owner), unitAlpha * 0.75 * fade);
+  }
+  anim.trails = alive;
 }
 
 function drawScene() {
@@ -16880,6 +17290,10 @@ function drawScene() {
     cx.fill();
   }
   cx.globalAlpha = 1;
+  // Contaminated ground is a state of the tile, not an event: the wash sits
+  // over the ownership tint and under everything standing on the hex, and
+  // cools as the recovery turn approaches.
+  drawFlatFallout(tiles, now0);
   // Routes are ground infrastructure: they pass beneath the ownership ribbon
   // and all later tile landmarks instead of competing with them in foreground.
   drawFlatStrategicRoads(tiles);
@@ -17251,6 +17665,9 @@ function drawScene() {
   drawFlatMapSearchHighlights(tiles);
   if (Number.isInteger(state.view_player))
     drawFlatVisibilityPerimeter(tiles, visible);
+  // --- selected unit's movement: range perimeter, then per-edge arrows
+  drawFlatReachPerimeter();
+  drawFlatReachArrows();
   // --- secondary-press order line
   if (rdrag && rdragTo && sel) {
     const ts = TMAP.get(key(sel.pos)), tt = TMAP.get(key(rdragTo));
@@ -17510,6 +17927,7 @@ function drawScene() {
   const strategicUnitStacks = strategicUnitStackSlots(drawnUnits, anim.moves);
   const now = performance.now();
   const unitAlpha = mapLens === "settler" ? SETTLER_LENS_UNIT_ALPHA : 1;
+  if (mapLens !== "empire") drawLingeringUnitTrails(unitAlpha, now);
   for (const u of sorted) {
     const [tileX, tileY] = worldXY(u.pos);
     let x = tileX, y = tileY;
@@ -17533,28 +17951,12 @@ function drawScene() {
     // eye can otherwise only catch whichever unit it happened to be pointed
     // at; a trail in the owner's color says who went where after the fact, and
     // swells then fades over the step so it never becomes permanent clutter.
+    // Under a configured linger it swells and then holds instead, and the
+    // lingering pass owns the fade once the step has landed.
     if (moving) {
-      const c = pcol(u.owner);
-      const [trailStartX, trailStartY] = trailPoints[0];
-      const [trailEndX, trailEndY] = trailPoints[trailPoints.length - 1];
-      const g2 = cx.createLinearGradient(trailStartX, trailStartY, trailEndX, trailEndY);
-      g2.addColorStop(0, c + "00");
-      g2.addColorStop(1, c + "e0");
-      const gk = cx.createLinearGradient(trailStartX, trailStartY, trailEndX, trailEndY);
-      gk.addColorStop(0, "#0d111700");
-      gk.addColorStop(1, "#0d1117b0");
-      cx.save();
-      cx.globalAlpha = unitAlpha * 0.75 * Math.sin(mv.e * Math.PI);
-      cx.lineCap = "round";
-      cx.strokeStyle = gk; cx.lineWidth = 5.4;   // casing, so it reads on sand
-      cx.beginPath();
-      trailPoints.forEach(([px, py], index) => index ? cx.lineTo(px, py + 7) : cx.moveTo(px, py + 7));
-      cx.stroke();
-      cx.strokeStyle = g2; cx.lineWidth = 3;
-      cx.beginPath();
-      trailPoints.forEach(([px, py], index) => index ? cx.lineTo(px, py + 7) : cx.moveTo(px, py + 7));
-      cx.stroke();
-      cx.restore();
+      const swell = UNIT_TRAIL_LINGER_MS > 0 ? Math.min(mv.e, .5) : mv.e;
+      strokeUnitTrail(trailPoints, pcol(u.owner),
+                      unitAlpha * 0.75 * Math.sin(swell * Math.PI));
     }
     if (anim.strike && anim.strike.id === u.id) {
       const st2 = anim.strike;
@@ -17686,6 +18088,7 @@ function drawScene() {
   // the world.
   drawFlatSatellites(now0);
   drawFlatLaunches(now0);
+  drawMissileStrikes(now0);
   drawNuclearBlasts(now0);
   // Last of all, and outside the world transform: a detonation is bright enough
   // to wash out the frame itself, and nothing — not even the era grade — gets
@@ -17808,7 +18211,8 @@ function drawNuclearFlash(now) {
     if (e < 0.13) veil = Math.max(veil, (1 - e / 0.13) * punch);
     if (e < 0.62 && b.screen) {
       blooms.push([b.screen, (1 - e / 0.62) * punch,
-                   (b.screenScale || 1) * S * SQ3 * (b.radius + 0.5)]);
+                   b.screenReach != null ? b.screenReach
+                     : (b.screenScale || 1) * S * SQ3 * (b.radius + 0.5)]);
     }
   }
   if (veil <= 0.002 && !blooms.length) return;
@@ -17831,6 +18235,269 @@ function drawNuclearFlash(now) {
     cx.fillRect(0, 0, W, H);
   }
   cx.restore();
+  cx.globalAlpha = 1;
+}
+
+// ------------------------------------------------------------------ fallout
+// How contaminated a tile still is, normalized to a fission crater's whole
+// ten-turn life. A fusion crater simply spends its first ten turns saturated.
+// Zero once the recovery turn arrives, which is what lets the ground heal on
+// screen the moment the engine says it has.
+function falloutStrength(t) {
+  const remaining = (t.fallout_until || 0) - (state?.turn || 0);
+  if (remaining <= 0) return 0;
+  return Math.min(1, remaining / 10);
+}
+// The ☢ glyph in drawFeatureEffects still marks the tile at every zoom; this
+// is the ground it stands on. Bucketed by strength so the fills stay a
+// handful of calls, and chunked because a canvas fill is superlinear in the
+// subpaths of one path.
+function drawFlatFallout(tiles, now) {
+  const buckets = new Map();
+  for (const t of tiles) {
+    const strength = falloutStrength(t);
+    if (!strength) continue;
+    const bucket = Math.min(3, Math.floor(strength * 3.999));
+    let group = buckets.get(bucket);
+    if (!group) { group = []; buckets.set(bucket, group); }
+    group.push(t);
+  }
+  if (!buckets.size) return;
+  // A slow breath, sampled per frame rather than animated on its own: the
+  // exhibition repaints every turn anyway, and contaminated ground that
+  // shimmers on its own schedule would keep the animation pump awake for
+  // twenty turns.
+  const breathe = 0.92 + 0.08 * Math.sin(now / 640);
+  for (const [bucket, group] of buckets) {
+    const presence = (0.35 + 0.65 * (bucket + 1) / 4) * breathe;
+    for (let start = 0; start < group.length; start += 48) {
+      cx.beginPath();
+      for (let i = start; i < Math.min(group.length, start + 48); i++) {
+        const t = group[i];
+        const [x, y0] = hexXY(t.pos[0], t.pos[1]);
+        appendHexPath(x, y0 - elev(t), S - 0.4);
+      }
+      // Charred base, acid tint, then the same diagonal denial hatch the
+      // blast disk uses, so contaminated ground keeps speaking the blast's
+      // language after the rings are gone. The clip pins the hatch to the
+      // chunk's own hexes.
+      cx.fillStyle = "#1c220a"; cx.globalAlpha = 0.55 * presence; cx.fill();
+      cx.fillStyle = "#b8d838"; cx.globalAlpha = 0.30 * presence; cx.fill();
+      cx.save();
+      cx.clip();
+      cx.strokeStyle = "#d6ef55";
+      cx.globalAlpha = 0.34 * presence;
+      cx.lineWidth = 1.1;
+      const box = group.slice(start, start + 48).reduce((acc, t) => {
+        const [x, y0] = hexXY(t.pos[0], t.pos[1]);
+        const y = y0 - elev(t);
+        return [Math.min(acc[0], x - S), Math.min(acc[1], y - S),
+                Math.max(acc[2], x + S), Math.max(acc[3], y + S)];
+      }, [Infinity, Infinity, -Infinity, -Infinity]);
+      const spanY = box[3] - box[1];
+      for (let h = box[0] - spanY; h <= box[2]; h += 9) {
+        cx.beginPath();
+        cx.moveTo(h, box[1]);
+        cx.lineTo(h + spanY, box[3]);
+        cx.stroke();
+      }
+      cx.restore();
+    }
+  }
+  cx.globalAlpha = 1;
+}
+// The same stain on the globe: one wash per contaminated cell, under every
+// landmark standing on it, faded by the same fog term the other strategic
+// marks use so a remembered crater reads as memory.
+function drawPlanetFallout(cells, visible, spectator) {
+  for (const entry of cells) {
+    const strength = falloutStrength(entry.tile);
+    if (!strength) continue;
+    const presence = planetStrategicAlpha(entry, visible, spectator) *
+      (0.35 + 0.65 * strength);
+    cx.save();
+    planetPath(cx, entry.points);
+    cx.fillStyle = "#1c220a"; cx.globalAlpha = 0.55 * presence; cx.fill();
+    cx.fillStyle = "#b8d838"; cx.globalAlpha = 0.30 * presence; cx.fill();
+    // The same denial hatch as the flat wash, clipped to the cell.
+    cx.clip();
+    const r = planetCellInradius(entry) + 2;
+    const {x, y} = entry.center;
+    cx.strokeStyle = "#d6ef55";
+    cx.globalAlpha = 0.34 * presence;
+    cx.lineWidth = 1;
+    for (let h = -r * 2; h <= r * 2; h += 7) {
+      cx.beginPath();
+      cx.moveTo(x + h - r, y - r);
+      cx.lineTo(x + h + r, y + r);
+      cx.stroke();
+    }
+    cx.restore();
+  }
+}
+
+// ----------------------------------------------------------- missile flight
+// One arc vocabulary for both projections. `squashY` is the flat board's
+// dimetric squash (1 on the globe, whose tilt lives in the transform), and
+// `px` scales the strokes so a delivery over a coin-sized globe is not drawn
+// with the flat board's line weights.
+function drawMissileArc(start, end, progress, thermo, squashY, px) {
+  const bend = thermo ? 1.5 : 1.2;
+  const at = skyLaunchPoint(start, end, progress, bend);
+  const ahead = skyLaunchPoint(start, end, Math.min(1, progress + 0.01), bend);
+  cx.save();
+  cx.lineCap = "round";
+  // The travelled exhaust: a wide soft halo under a hot core, brightest just
+  // behind the warhead. A missile over a busy board has to read at survey
+  // zoom — one thin warm line does not.
+  const steps = Math.max(1, Math.ceil(progress * 22));
+  for (const [halo, width, gain] of [[true, 7, 0.22], [false, 2.4, 0.85]]) {
+    cx.strokeStyle = halo ? "#ff7a35" : thermo ? "#ffb168" : "#ffd35e";
+    let prev = null;
+    for (let step = 0; step <= steps; step++) {
+      const point = skyLaunchPoint(start, end, progress * step / steps, bend);
+      if (prev) {
+        const along = step / steps;
+        cx.globalAlpha = gain * along * along + 0.03;
+        cx.lineWidth = (width * (0.5 + 0.5 * along)) * px;
+        cx.beginPath(); cx.moveTo(prev.x, prev.y); cx.lineTo(point.x, point.y);
+        cx.stroke();
+      }
+      prev = point;
+    }
+  }
+  // The launch announces itself: a ring widening off the platform for the
+  // first beats of the flight.
+  if (progress < 0.3) {
+    cx.globalAlpha = (1 - progress / 0.3) * 0.7;
+    cx.strokeStyle = "#ffd35e";
+    cx.lineWidth = 1.8 * px;
+    const ring = (8 + progress * 52) * px;
+    cx.beginPath();
+    cx.ellipse(start.x, start.y, ring, ring * squashY, 0, 0, 7);
+    cx.stroke();
+  }
+  // The warhead itself: a hot glow around a sliver pointed along the flight.
+  const glow = cx.createRadialGradient(at.x, at.y, 0, at.x, at.y, 11 * px);
+  glow.addColorStop(0, "rgba(255,240,205,0.9)");
+  glow.addColorStop(0.4, "rgba(255,170,80,0.45)");
+  glow.addColorStop(1, "rgba(255,140,50,0)");
+  cx.globalAlpha = 1;
+  cx.fillStyle = glow;
+  cx.beginPath(); cx.arc(at.x, at.y, 11 * px, 0, 7); cx.fill();
+  cx.translate(at.x, at.y);
+  cx.rotate(Math.atan2(ahead.y - at.y, ahead.x - at.x));
+  cx.fillStyle = "#fff3d8";
+  cx.beginPath();
+  cx.moveTo(6.5 * px, 0); cx.lineTo(-4.5 * px, -2.6 * px);
+  cx.lineTo(-2.8 * px, 0); cx.lineTo(-4.5 * px, 2.6 * px);
+  cx.closePath(); cx.fill();
+  cx.restore();
+  cx.globalAlpha = 1;
+}
+// The flat board's delivery pass: every stocked blast whose arrival is still
+// ahead is a missile in the air. The origin is drawn beside the target's
+// nearest copy so an arc never spans the long way around a seam.
+function drawMissileStrikes(now) {
+  for (const b of anim.blasts) {
+    if (!b.from || !b.flight || now >= b.t0) continue;
+    const progress = Math.max(0, 1 - (b.t0 - now) / b.flight);
+    const impact = unitMapPoint(b.pos);
+    const origin = unitMapPoint(b.from, impact.x, impact.y);
+    const [sx, sy] = mapPointToView(origin);
+    const [ex, ey] = mapPointToView(impact);
+    // Hold a screen weight as the camera pulls back: a delivery is exactly
+    // the event a survey zoom is watching for.
+    const px = Math.max(1, Math.min(2.5, 1 / cam.scale));
+    drawMissileArc({x: sx, y: sy}, {x: ex, y: ey}, progress, b.thermo, YS, px);
+  }
+}
+
+// --------------------------------------------------- detonation, globe view
+// The same three seconds on the globe. Everything here draws inside the
+// planet's ground transform so the rings ride the tilt with their tile; the
+// screen-space flash is shared with the flat board and reads `b.screen` the
+// same way. This painter also owns record expiry on planet worlds, where
+// drawNuclearBlasts never runs.
+function drawPlanetBlasts(cells, now, onSheet) {
+  if (!anim.blasts.length) return;
+  const floor = onSheet ?? 0.02;
+  const cellByPos = new Map(cells.map(cell => [key(cell.tile.pos), cell]));
+  for (let i = anim.blasts.length - 1; i >= 0; i--) {
+    const b = anim.blasts[i];
+    const e = (now - b.t0) / b.dur;
+    if (e >= 1) { anim.blasts.splice(i, 1); continue; }
+    const cell = cellByPos.get(key(b.pos));
+    const facing = cell && cell.center.z >= floor;
+    if (e < 0) {
+      // Still in the air. Both ends have to face the camera: an arc with one
+      // foot behind the horizon would cut straight through the planet.
+      const origin = b.from && cellByPos.get(key(b.from));
+      if (!facing || !origin || origin.center.z < floor) continue;
+      const px = Math.max(0.5, Math.min(1.4, planetCellInradius(cell) / 8));
+      drawMissileArc(origin.center, cell.center, 1 - (b.t0 - now) / b.flight,
+                     b.thermo, 1, px);
+      continue;
+    }
+    if (!facing) { b.screen = null; b.screenReach = null; continue; }
+    const reach = 2 * planetCellInradius(cell) * (b.radius + 0.5);
+    if (cx.getTransform) {
+      const m = cx.getTransform();
+      b.screen = [m.a * cell.center.x + m.c * cell.center.y + m.e,
+                  m.b * cell.center.x + m.d * cell.center.y + m.f];
+      b.screenReach = Math.hypot(m.a, m.b) * reach;
+    }
+    if (!b.kicked) b.kicked = true;
+    cx.save();
+    drawPlanetStrategicBlast(b, cell.center.x, cell.center.y, reach, e,
+                             planetCellInradius(cell));
+    cx.restore();
+  }
+}
+function drawPlanetStrategicBlast(b, x, y, reach, e, inradius) {
+  const fade = 1 - e;
+  const ee = 1 - (1 - e) * (1 - e);
+  // The denied disk, hatched like the flat board's so the ground stays
+  // readable under it. Circles, not ellipses: the tilt is the transform's.
+  cx.globalAlpha = 0.5 * fade + 0.12;
+  cx.strokeStyle = "#ff8b3d";
+  cx.lineWidth = 1.4;
+  cx.beginPath(); cx.arc(x, y, reach, 0, 7); cx.stroke();
+  cx.save();
+  cx.beginPath(); cx.arc(x, y, reach, 0, 7); cx.clip();
+  cx.globalAlpha = 0.3 * fade + 0.08;
+  for (let h = -reach; h <= reach; h += 6) {
+    cx.beginPath();
+    cx.moveTo(x + h - reach, y - reach);
+    cx.lineTo(x + h + reach, y + reach);
+    cx.stroke();
+  }
+  cx.restore();
+  for (const [delay, alpha] of [[0, 1], [0.12, 0.6]]) {
+    const re = (e - delay) / (0.6 - delay);
+    if (re <= 0 || re >= 1) continue;
+    const rr = reach * (0.1 + (1 - (1 - re) * (1 - re)) * 1.8);
+    cx.globalAlpha = alpha * (1 - re);
+    cx.strokeStyle = "#ffd35e";
+    cx.lineWidth = 3.2 * (1 - re) + 1;
+    cx.beginPath(); cx.arc(x, y, rr, 0, 7); cx.stroke();
+  }
+  if (e < 0.34) {
+    const pe = e / 0.34;
+    cx.globalAlpha = 1 - pe;
+    cx.fillStyle = "#fff6e2";
+    cx.beginPath(); cx.arc(x, y, reach * (0.24 + pe * 0.2), 0, 7); cx.fill();
+  }
+  // The symbol, sized to the cell rather than the flat board's fixed type.
+  const lift = inradius * (2.2 + ee * 1.4);
+  cx.globalAlpha = e < 0.75 ? 1 : Math.max(0, (1 - e) / 0.25);
+  cx.font = `bold ${Math.round(Math.max(11, inradius * 1.7))}px sans-serif`;
+  cx.textAlign = "center";
+  cx.lineWidth = 3;
+  cx.strokeStyle = "#170d05";
+  cx.strokeText("☢", x, y - lift);
+  cx.fillStyle = b.thermo ? "#ff7a4a" : "#ffcf5a";
+  cx.fillText("☢", x, y - lift);
   cx.globalAlpha = 1;
 }
 
@@ -18199,6 +18866,31 @@ function drawPlanetMini() {
     drawCityIcon(mx2, x, y, cityRadius, cityBannerColor(city.owner),
                  cityState ? "#0b0e13" : "#f8edca", cityState,
                  Boolean(city.is_capital));
+    mx2.globalAlpha = 1;
+  }
+  // Detonations. The chart holds the whole world at once, so it is the one
+  // view where a strike on the far hemisphere shows at all — same flash and
+  // ring vocabulary as the flat minimap.
+  const miniNow = performance.now();
+  for (const b of anim.blasts) {
+    const e = (miniNow - b.t0) / b.dur;
+    if (e < 0 || e >= 1) continue;
+    const cell = PLANET.cells.get(key(b.pos));
+    if (!cell) continue;
+    const center = azimuthalMiniScreenPoint(cell.center, projection);
+    if (!center || !azimuthalMiniInsideSquare(center, projection, 3)) continue;
+    const [x, y] = center;
+    const ee = 1 - (1 - e) * (1 - e);
+    const reach = (b.radius + 1) * (b.thermo ? 3.4 : 2.6);
+    mx2.globalAlpha = Math.max(0, 1 - e);
+    mx2.strokeStyle = "#ffd35e";
+    mx2.lineWidth = 1.4 * (1 - e) + 0.4;
+    mx2.beginPath(); mx2.arc(x, y, reach * (0.4 + ee * 2.4), 0, 7); mx2.stroke();
+    if (e < 0.4) {
+      mx2.globalAlpha = 1 - e / 0.4;
+      mx2.fillStyle = "#fff4dc";
+      mx2.beginPath(); mx2.arc(x, y, reach * (0.5 + e), 0, 7); mx2.fill();
+    }
     mx2.globalAlpha = 1;
   }
   mx2.restore();
@@ -18651,7 +19343,7 @@ function hudTurnPlate() {
   const playerView = SPEC && state.view_player !== null && state.view_player !== undefined;
   const identity = SPEC ? viewer : state.players[0];
   const viewLabel = playerView ? "Player view" : SPEC ? "Observing" : "Your empire";
-  const mapName = titleCase(state.map.script || "pangaea");
+  const mapName = titleCase(state.map.script || "tenins_ball");
   const speedName = titleCase(state.game_speed || "standard");
   const paceSelect = document.getElementById("specspeed");
   const paceOption = paceSelect?.selectedOptions[0];
@@ -18665,6 +19357,25 @@ function hudTurnPlate() {
     ? `<span class="turn-pace-choice"><select data-hud-pace title="Change watch pace" ` +
       `aria-label="Watch pace">${watchPaceOptions}</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span>`
     : `<b>${watchPace}</b>`;
+  // The turn structure is a game rule, not a display choice, so a pick can
+  // never land on the running world: the select opens a dialog that offers to
+  // restart now, apply to the next game, or go back. The select itself always
+  // names the regime the world on screen is actually playing, and a queued
+  // change is flagged beside it until the world that honours it arrives.
+  const turnStructureLive = state.turn_structure === "simultaneous" ? "simultaneous" : "sequential";
+  if (selectedTurnStructure === turnStructureLive) selectedTurnStructure = null;
+  const turnStructureName = turnStructureLive === "simultaneous" ? "Simultaneous" : "Sequential";
+  const queuedTurnStructure = state.next_game_settings?.turn_structure;
+  const turnsQueuedNote = SPEC && queuedTurnStructure && queuedTurnStructure !== turnStructureLive
+    ? `<small class="turn-toll" title="${escapeAttr(titleCase(queuedTurnStructure))} turns begin with the next game">(next)</small>`
+    : "";
+  const turnStructureValue = SPEC
+    ? `<span class="turn-pace-choice"><select data-hud-turns title="Change turn structure" ` +
+      `aria-label="Turn structure">` +
+      `<option value="sequential"${turnStructureLive === "sequential" ? " selected" : ""}>Sequential</option>` +
+      `<option value="simultaneous"${turnStructureLive === "simultaneous" ? " selected" : ""}>Simultaneous</option>` +
+      `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span>${turnsQueuedNote}`
+    : `<b>${turnStructureName}</b>`;
   // "Remaining" is a count of who is still playing, so a civilization that has
   // been wiped off the map no longer appears in it. The count it was taken out
   // of is worth as much as the count itself — eight remaining reads very
@@ -18715,7 +19426,7 @@ function hudTurnPlate() {
   // belongs to the watched regimes only.
   const liveTimeText = SPEC ? liveClockLabel() : null;
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
-    `game speed ${speedName}; watch pace ${watchPace}; ` +
+    `game speed ${speedName}; ${turnStructureName.toLowerCase()} turns; watch pace ${watchPace}; ` +
     (liveTimeText ? `live time ${liveTimeText}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
     `${cityStateCount} city states remaining, ${cityStatesLost} eliminated`;
@@ -18737,6 +19448,7 @@ function hudTurnPlate() {
     `</div>` +
     `<div class="turn-settings" aria-label="Game setup">` +
     `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
+    `<div class="turn-setting"><span>Turns:</span>${turnStructureValue}</div>` +
     `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
     (liveTimeText !== null
       ? `<div class="turn-setting" title="How long this world has been playing. Pauses stop the clock; a restart starts it over.">` +
@@ -19417,6 +20129,11 @@ function runHudAction(target) {
 // cursor, and keep click for keyboard activation — which reports no press.
 const hudRibbon = document.getElementById("playerhud");
 hudRibbon.addEventListener("change", ev => {
+  const turns = ev.target.closest?.("[data-hud-turns]");
+  if (turns) {
+    chooseTurnStructure(turns);
+    return;
+  }
   const pace = ev.target.closest?.("[data-hud-pace]");
   if (!pace) return;
   chooseWatchPace(pace.value);
@@ -19430,6 +20147,9 @@ hudRibbon.addEventListener("change", ev => {
 // leaves it, paint whatever those held snapshots changed.
 hudRibbon.addEventListener("focusout", ev => {
   if (ev.target.closest?.("[data-hud-pace]") && state) drawPlayerHud();
+});
+hudRibbon.addEventListener("focusout", ev => {
+  if (ev.target.closest?.("[data-hud-turns]") && state) drawPlayerHud();
 });
 hudRibbon.addEventListener("mousedown", ev => {
   if (ev.button !== 0) return;
@@ -23370,10 +24090,31 @@ mapSearchInput.addEventListener("keydown", event => {
 });
 syncMapSearchCivilizations();
 syncMapSearchStatus();
+// The lens dock offers two sets — the global whole-map lenses and the
+// district adjacency forecasts — and shows one at a time, switched by the
+// tab row above them. Expanding the dock starts on the global set.
+let mapLensSet = "global";
+function syncMapLensSets() {
+  const strip = document.getElementById("map-lens-strip");
+  if (strip) strip.hidden = mapLensSet !== "global";
+  const list = document.getElementById("district-lens-list");
+  if (list) list.hidden = mapLensSet !== "district";
+  for (const button of document.querySelectorAll("[data-lens-set]")) {
+    const selected = button.dataset.lensSet === mapLensSet;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-selected", selected ? "true" : "false");
+  }
+}
+function setMapLensSet(next) {
+  mapLensSet = next;
+  syncMapLensSets();
+}
+for (const button of document.querySelectorAll("[data-lens-set]"))
+  button.onclick = () => setMapLensSet(button.dataset.lensSet);
 function syncDistrictLensList() {
   const list = document.getElementById("district-lens-list");
-  const section = document.getElementById("district-lens-section");
-  if (!list || !section) return;
+  const sets = document.getElementById("map-lens-sets");
+  if (!list || !sets) return;
   const viewer = districtLensViewer();
   // The omniscient list must not carry the acting player's civilization:
   // `state.player` rotates every simulated turn, and a signature that
@@ -23407,14 +24148,15 @@ function syncDistrictLensList() {
     label.className = "map-lens-label";
     label.textContent = titleCase(district);
     button.append(icon, label);
-    button.onclick = () => {
-      section.open = true;
-      setMapLens(districtLensId(district));
-    };
+    button.onclick = () => setMapLens(districtLensId(district));
     return button;
   });
   list.replaceChildren(...buttons);
-  section.hidden = choices.length === 0;
+  // Without any district choices there is only one set, so the switcher row
+  // disappears and the global strip stands alone.
+  sets.hidden = choices.length === 0;
+  if (sets.hidden && mapLensSet === "district") mapLensSet = "global";
+  syncMapLensSets();
 }
 function syncDistrictLensControls() {
   const district = districtLensDistrict();
@@ -23423,7 +24165,10 @@ function syncDistrictLensControls() {
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", active ? "true" : "false");
   }
-  document.getElementById("district-lens-section")?.classList.toggle("active", !!district);
+  // A dot on a tab marks the set holding the active lens, so a lens left
+  // running in the set that is not displayed stays announced.
+  document.getElementById("lens-set-district")?.classList.toggle("holds-lens", !!district);
+  document.getElementById("lens-set-global")?.classList.toggle("holds-lens", !!mapLens && !district);
 }
 function syncMapLensControls() {
   syncDistrictLensList();
@@ -25831,6 +26576,17 @@ function setShowRocketAnimations(on) {
   if (!SHOW_ROCKET_ANIMATIONS) anim.skyLaunches.length = 0;
   if (state) draw();
 }
+function setUnitTrailLinger(value) {
+  const ms = Number(value);
+  UNIT_TRAIL_LINGER_MS = UNIT_TRAIL_LINGER_VALUES.includes(ms) ? ms : 0;
+  localStorage.setItem(UNIT_TRAIL_LINGER_STORAGE_KEY, String(UNIT_TRAIL_LINGER_MS));
+  const select = document.getElementById("unittrails");
+  if (select) select.value = String(UNIT_TRAIL_LINGER_MS);
+  // Turning the linger off clears wakes already on the map at once, which
+  // makes the preference reliable even while a battle is animating.
+  if (!UNIT_TRAIL_LINGER_MS) anim.trails.length = 0;
+  if (state) draw();
+}
 function setWorldPanInertia(on) {
   WORLD_PAN_INERTIA = !!on;
   localStorage.setItem(WORLD_PAN_INERTIA_STORAGE_KEY, WORLD_PAN_INERTIA ? "1" : "0");
@@ -26578,6 +27334,11 @@ function selectedSimulationSettings() {
           leader_selection: leaderSelection,
           base_ruleset: baseRuleset, start_era: startEra,
           future_era: futureEra,
+          // The turn structure has no lobby control: it is chosen from the
+          // turn plate's own select, held here until the world that honours
+          // it arrives, and follows the live game otherwise.
+          turn_structure: selectedTurnStructure
+            ?? (state?.turn_structure === "simultaneous" ? "simultaneous" : "sequential"),
           // Automatic mode carries the split rule. Custom mode carries the
           // table's seat-by-seat team assignment and civilization choices.
           teams,
@@ -26677,6 +27438,9 @@ function applyQueuedSimulationSettings(settings) {
   document.getElementById("baseruleset").value = settings.base_ruleset || "civ6";
   if (settings.start_era) document.getElementById("startera").value = settings.start_era;
   if (settings.future_era) document.getElementById("futureera").value = settings.future_era;
+  // A reloaded page keeps a queued turn-structure change the same way it
+  // keeps every other staged setting.
+  if (settings.turn_structure) selectedTurnStructure = settings.turn_structure;
   const victories = new Set(settings.victories || []);
   for (const track of VICTORY_TRACKS)
     document.getElementById(`victory-${track.id}`).checked = victories.has(track.id);
@@ -26732,6 +27496,77 @@ function stageSelectedSimulationSettings() {
     if (queued.error) throw new Error(queued.error);
   });
   settingsStageChain.catch(error => showNewSimulationError(error, "save settings"));
+}
+// The viewer's held turn-structure choice: null follows the live game, and a
+// value stands from the moment a dialog choice lands until a world playing
+// that regime arrives (hudTurnPlate dissolves it on match). It rides in every
+// settings payload exactly like a lobby control's value.
+let selectedTurnStructure = null;
+const TURN_STRUCTURE_EXPLANATIONS = {
+  sequential: "Civilizations act one after another; each sees the world exactly as the previous one left it.",
+  simultaneous: "Every civilization plans the turn against the same snapshot of the world, and the plans are then committed together; a plan the world has outrun is dropped.",
+};
+let turnStructureDialog = null;
+function closeTurnStructureDialog() {
+  turnStructureDialog?.remove();
+  turnStructureDialog = null;
+}
+function dismissTurnStructureDialog() {
+  closeTurnStructureDialog();
+  // The select falls back to naming the live regime on the next paint.
+  if (state) drawPlayerHud();
+}
+// Changing the turn structure is a rules change, and the running world cannot
+// change its rules mid-game: the pick opens a dialog offering the only three
+// honest answers — restart into the regime now, let this game finish and
+// start the next one under it, or go back.
+function chooseTurnStructure(select) {
+  const chosen = select.value === "simultaneous" ? "simultaneous" : "sequential";
+  select.blur();
+  const live = state?.turn_structure === "simultaneous" ? "simultaneous" : "sequential";
+  if (chosen === live) {
+    dismissTurnStructureDialog();
+    return;
+  }
+  openTurnStructureDialog(chosen);
+}
+function openTurnStructureDialog(chosen) {
+  closeTurnStructureDialog();
+  const name = chosen === "simultaneous" ? "Simultaneous" : "Sequential";
+  const dialog = document.createElement("div");
+  dialog.id = "turn-structure-dialog";
+  dialog.innerHTML =
+    `<div class="turns-dialog-card" role="dialog" aria-modal="true" aria-label="Switch to ${name.toLowerCase()} turns">` +
+    `<h3>${name} turns</h3>` +
+    `<p>${TURN_STRUCTURE_EXPLANATIONS[chosen]}</p>` +
+    `<p>The world on screen keeps the rules it began with, so the switch needs a new game.</p>` +
+    `<div class="turns-dialog-actions">` +
+    `<button data-turns-restart class="primary">Restart now</button>` +
+    `<button data-turns-queue>After this game</button>` +
+    `<button data-turns-back>Go back</button>` +
+    `</div></div>`;
+  dialog.addEventListener("mousedown", ev => {
+    // The scrim is the dialog element itself; a press on it is a dismissal.
+    if (ev.target === dialog) dismissTurnStructureDialog();
+  });
+  dialog.addEventListener("keydown", ev => {
+    if (ev.key === "Escape") dismissTurnStructureDialog();
+  });
+  dialog.querySelector("[data-turns-back]").onclick = dismissTurnStructureDialog;
+  dialog.querySelector("[data-turns-queue]").onclick = () => {
+    selectedTurnStructure = chosen;
+    closeTurnStructureDialog();
+    stageSelectedSimulationSettings();
+    if (state) drawPlayerHud();
+  };
+  dialog.querySelector("[data-turns-restart]").onclick = () => {
+    selectedTurnStructure = chosen;
+    closeTurnStructureDialog();
+    startNewSimulation("turn_structure").catch(error => showNewSimulationError(error));
+  };
+  document.body.appendChild(dialog);
+  turnStructureDialog = dialog;
+  dialog.querySelector("[data-turns-back]").focus();
 }
 function newSimulationPayload() {
   const setupError = worldSetupInputError();
@@ -27282,6 +28117,11 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   rockets.onchange = () => setShowRocketAnimations(rockets.checked);
 }
 {
+  const trails = document.getElementById("unittrails");
+  trails.value = String(UNIT_TRAIL_LINGER_MS);
+  trails.onchange = () => setUnitTrailLinger(trails.value);
+}
+{
   const inertia = document.getElementById("inertiachk");
   inertia.checked = WORLD_PAN_INERTIA;
   inertia.onchange = () => setWorldPanInertia(inertia.checked);
@@ -27338,7 +28178,8 @@ function animTick(now) {
   const cameraMoving = userCameraMoving || followCameraMoving;
   const active = cameraMoving || anim.moves.size > 0 || anim.floats.length > 0 ||
     anim.sparks.length > 0 || anim.deaths.length > 0 || anim.strike ||
-    anim.blasts.length > 0 || planetSkyAnimating() || flatSkyAnimating();
+    anim.blasts.length > 0 ||
+    anim.trails.length > 0 || planetSkyAnimating() || flatSkyAnimating();
   // Never spend more than about half the wall clock rendering. Measured cost
   // decides: a frame that takes 60ms gets asked for every 130ms rather than
   // every 33, so the view degrades to a slower picture instead of stalling.

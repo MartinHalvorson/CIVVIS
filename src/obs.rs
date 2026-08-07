@@ -304,6 +304,15 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                     .iter()
                     .map(|p| json!([p.0, p.1]))
                     .collect::<Vec<_>>());
+                // The per-edge companion: which single steps the remaining
+                // movement affords, so a client can draw how the range is
+                // entered. Only the engine knows step costs, rivers and ZOC,
+                // so the client must not re-derive these from `reachable`.
+                v["reach_steps"] = json!(g
+                    .reach_steps(u.id)
+                    .iter()
+                    .map(|(a, b)| json!([[a.0, a.1], [b.0, b.1]]))
+                    .collect::<Vec<_>>());
                 if let Some((target, gold, _)) = g.unit_gold_upgrade_offer(pid, u.id) {
                     v["upgrade"] = json!({ "to": target, "gold": gold });
                 }
@@ -2292,7 +2301,7 @@ mod tests {
         assert!(index.contains("function drawFlatLaunches(now)"));
         assert!(index.contains("drawMissionRocket(flight.rocket, player, size, now, pixel);"));
         assert!(index.contains(
-            "drawFlatSatellites(now0);\n  drawFlatLaunches(now0);\n  drawNuclearBlasts(now0);"
+            "drawFlatSatellites(now0);\n  drawFlatLaunches(now0);\n  drawMissileStrikes(now0);\n  drawNuclearBlasts(now0);"
         ));
         assert!(index.contains(
             "return SHOW_ROCKET_ANIMATIONS && (activeSkyLaunches().length > 0 ||\n    (flatSkyShown() > .02"
@@ -2328,6 +2337,18 @@ mod tests {
         assert!(queue.contains("originPos:Array.isArray(origin) ? [...origin] : null"));
         assert!(queue.contains("crew:launchCrew"));
         assert!(queue.contains("expeditionProgress:Math.max(0, Math.min(1,"));
+        // The rocket leaves from the Spaceport that ran the project. Only an
+        // empire with no visible Spaceport falls back to its anchor city.
+        assert!(queue.contains(
+            "const origin = skyLaunchOrigin(prev, next, player.id, flight.project) ||"
+        ));
+        assert!(index.contains("function citySpaceportPos(city)"));
+        assert!(index.contains(
+            "RULES?.districts?.[district]?.replaces !== \"spaceport\""
+        ));
+        assert!(index.contains(
+            "owned(prev).find(city => (city.queue || [])[0]?.project === project)"
+        ));
 
         let lifetime = index
             .split_once("function activeSkyLaunches(")

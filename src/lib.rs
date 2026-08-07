@@ -2462,6 +2462,7 @@ mod tests {
             .find(|unit| unit["id"].as_u64() == Some(uid as u64))
             .unwrap();
         assert!(human_unit["reachable"].is_array());
+        assert!(human_unit["reach_steps"].is_array());
 
         let spectator = crate::obs::observation_spectator(&g, 0);
         let spectator_unit = spectator["units"]
@@ -2471,6 +2472,38 @@ mod tests {
             .find(|unit| unit["id"].as_u64() == Some(uid as u64))
             .unwrap();
         assert!(spectator_unit.get("reachable").is_none());
+        assert!(spectator_unit.get("reach_steps").is_none());
+    }
+
+    /// Every advertised step must stay inside the advertised range: its
+    /// origin is the unit's own tile or a reachable one, its target is
+    /// reachable (a step never leads out of the range), and the unit's own
+    /// tile offers at least one outgoing step whenever it can move at all.
+    #[test]
+    fn reach_steps_agree_with_reachable() {
+        let g = Game::new(2, 18, 12, 41, 25, 0);
+        let mut units_with_moves = 0;
+        for &uid in &g.player_unit_ids(0) {
+            let unit = &g.units[&uid];
+            let reachable = g.reachable(uid);
+            let steps = g.reach_steps(uid);
+            let mut region: std::collections::BTreeSet<crate::Pos> =
+                reachable.iter().copied().collect();
+            region.insert(unit.pos);
+            for (from, to) in &steps {
+                assert!(region.contains(from), "step from {from:?} outside range");
+                assert!(region.contains(to), "step to {to:?} outside range");
+                assert_ne!(from, to, "a step crosses an edge");
+            }
+            if !reachable.is_empty() {
+                units_with_moves += 1;
+                assert!(
+                    steps.iter().any(|(from, _)| *from == unit.pos),
+                    "a unit with reachable tiles offers no step off its own tile"
+                );
+            }
+        }
+        assert!(units_with_moves > 0, "the opening roster has a movable unit");
     }
 
     #[test]

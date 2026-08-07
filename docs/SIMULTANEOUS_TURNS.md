@@ -77,9 +77,16 @@ play. Read it before trusting any result measured in this mode.
 
 ## Boundaries
 
-- **The interactive server plays sequential games only.** `civvis play`
-  refuses the flag and `--resume` refuses a simultaneous save, rather
-  than quietly stepping a simultaneous world one seat at a time.
+- **A played game is sequential by construction.** A human seat is
+  consulted live, one seat at a time, so `civvis play` without
+  `--spectate` refuses the flag and `--resume` refuses a simultaneous
+  save, rather than quietly stepping a simultaneous world one seat at a
+  time. A *spectated* table has nobody at the keyboard: `civvis play
+  --spectate` plays the regime as one whole planned turn per pace tick,
+  the viewer's turn plate names it (`Turns:`) and carries the census,
+  and `/new` / `/next-game-settings` accept `turn_structure` for
+  spectated worlds only. A simultaneous exhibition game rates nobody —
+  the league's Glicko-2 table stays a sequential-regime instrument.
 - `simulate` and `soak` honor the option. `benchmark`, `tournament`,
   `league`, `elo`, `selfplay`, and `evolve` play sequential games, and
   their ledgers and corpora must not silently mix regimes: a simultaneous
