@@ -940,13 +940,11 @@ fn future_era(args: &[String]) -> setup::FutureEra {
 /// shared snapshot and commit together. Same contract as the eras: an unknown
 /// id is refused rather than quietly played as some stock regime.
 ///
-/// The default is the caller's to name, because it is a per-command choice:
-/// headless simulation and a spectated table default to `simultaneous` for
-/// throughput, while a played game is sequential by construction and every
-/// rating instrument (benchmark, tournament, league, elo, selfplay, evolve)
-/// stays a sequential-regime instrument whose records must not claim
-/// otherwise. `TurnStructure::default()` itself stays `Sequential` as the
-/// save-compatibility and setup-contract anchor.
+/// The default is the caller's to name, but today every caller names
+/// `Sequential`: the product is hard-committed to sequential turns, and the
+/// simultaneous driver is a retained research regime reached only through
+/// this explicit flag. `TurnStructure::default()` itself stays `Sequential`
+/// as the save-compatibility and setup-contract anchor.
 fn turn_structure(args: &[String], default: setup::TurnStructure) -> setup::TurnStructure {
     let id = arg_text(args, "--turn-structure", default.id());
     setup::turn_structure_from_id(&id).unwrap_or_else(|| {
@@ -1274,14 +1272,15 @@ fn main() {
         "simulate" => {
             let players = arg(&args, "--players", 4);
             let g0 = Instant::now();
-            // Headless simulation is what the simultaneous regime exists
-            // for, so it is the default here; `--turn-structure sequential`
-            // asks for the stock regime explicitly.
+            // The product is hard-committed to sequential turns, so every
+            // command defaults to the regime the shipped game plays;
+            // `--turn-structure simultaneous` remains the explicit research
+            // escape hatch into the retained driver.
             let mut g = Game::new_with(game_options(
                 &args,
                 players,
                 arg(&args, "--seed", 0) as u64,
-                setup::TurnStructure::Simultaneous,
+                setup::TurnStructure::Sequential,
             ));
             // The two regimes want opposite parallelism. Sequential seats
             // cannot deliberate concurrently, so `--jobs` feeds the clone-
@@ -1311,7 +1310,7 @@ fn main() {
             let games = arg(&args, "--games", 10);
             let start = arg(&args, "--start-seed", 0);
             let jobs = jobs_arg(&args);
-            let simultaneous = turn_structure(&args, setup::TurnStructure::Simultaneous)
+            let simultaneous = turn_structure(&args, setup::TurnStructure::Sequential)
                 == setup::TurnStructure::Simultaneous;
             // A sequential soak has only one useful frontier: independent
             // games. Simultaneous games have a second one inside each game —
@@ -1336,7 +1335,7 @@ fn main() {
                         &args,
                         players,
                         seed as u64,
-                        setup::TurnStructure::Simultaneous,
+                        setup::TurnStructure::Sequential,
                     ));
                     let mut ais = AdvancedAi::fleet(&g);
                     let simultaneous = if g.turn_structure == setup::TurnStructure::Simultaneous {
@@ -2293,11 +2292,7 @@ fn main() {
                 &args,
                 players,
                 seed,
-                if spectate {
-                    setup::TurnStructure::Simultaneous
-                } else {
-                    setup::TurnStructure::Sequential
-                },
+                setup::TurnStructure::Sequential,
             );
             if !spectate && play_options.turn_structure == setup::TurnStructure::Simultaneous {
                 eprintln!(
@@ -2483,8 +2478,8 @@ fn main() {
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
                       [--disasters 0|1|2|3|4] [--barbarians on|off] \
-                      [--turn-structure sequential|simultaneous (simulate, soak, and spectated \
-                       play default to simultaneous; everything else stays sequential)] \
+                      [--turn-structure sequential|simultaneous (everything defaults to \
+                       sequential; simultaneous is a research regime)] \
                       [--game-modes apocalypse,secret_societies] \
                       [--leader-pool civ6|historical|today] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \

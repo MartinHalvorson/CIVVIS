@@ -78,12 +78,14 @@ living player's completed turn: major players in seat order, then city-states,
 then Free Cities/barbarians. That makes each civilization's unit movement
 visible before the next civilization acts. **Lightning** retains one frame at
 the completed round boundary so its unlimited-throughput contract remains
-intact. On a simultaneous world, Lightning also plans each cycle's seats
-across a worker fleet sized to nine tenths of the machine's cores, leaving
-the last tenth free for whatever else the host runs; any actual pace — and
-every sequential world, whose seats each act on the world the previous seat
-left — keeps the single-threaded cycle. The fleet is an execution detail:
-the game it plays is byte-for-byte the game one worker plays. Every frame carries the whole updated boundary from one snapshot: HUD, player
+intact. On a simultaneous world (a research regime — the product rolls only
+sequential worlds, and no request can select the regime), Lightning also
+plans each cycle's seats across a worker fleet sized to nine tenths of the
+machine's cores, leaving the last tenth free for whatever else the host
+runs; any actual pace — and every sequential world, whose seats each act on
+the world the previous seat left — keeps the single-threaded cycle. The
+fleet is an execution detail: the game it plays is byte-for-byte the game
+one worker plays. Every frame carries the whole updated boundary from one snapshot: HUD, player
 stats, victory tracker, world map, minimap, units, sidebars, controls,
 overlays, and every other turn-bound surface. A partial update, a state merely
 delivered to a socket, or two published boundaries composited into one visible

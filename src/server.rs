@@ -3514,13 +3514,13 @@ fn stock_opening_params(seed: u64) -> Params {
         base_ruleset: BaseRuleset::Civ6,
         start_era: 0,
         future_era: FutureEra::Classic,
-        // A spectated table has nobody at the keyboard, so it plays the
-        // regime the automated surfaces already default to: every seat plans
-        // the turn against the same frozen world and the plans commit
-        // together. Taking a seat here is still sequential — `new_game_params`
-        // downgrades a played game the same way `play` refuses the flag —
-        // so this changes what a visitor watches, not what they can play.
-        turn_structure: TurnStructure::Simultaneous,
+        // The product is sequential, full stop: every world this server
+        // rolls — watched or played — runs the one-seat-at-a-time regime,
+        // and no request can pick anything else. The simultaneous driver
+        // stays in the engine for research runs that launch with
+        // `--turn-structure simultaneous`; it is simply not selectable
+        // from here.
+        turn_structure: TurnStructure::Sequential,
         map_script: MapScript::TeninsBall,
         map_topology,
         map_poles: MapPoles::Poles,
@@ -3730,15 +3730,11 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(era) = request["future_era"].as_str().and_then(future_era_from_id) {
         p.future_era = era;
     }
-    // The turn structure follows the same refuse-unknown contract. Whether a
-    // simultaneous request can be *honoured* also depends on who is seated,
-    // which the end of this function settles once every field has landed.
-    if let Some(v) = request["turn_structure"]
-        .as_str()
-        .and_then(crate::setup::turn_structure_from_id)
-    {
-        p.turn_structure = v;
-    }
+    // The turn structure is deliberately absent from this ladder: the
+    // product is hard-committed to sequential turns, so a request cannot
+    // select the regime at all. A world only plays simultaneous when the
+    // server itself was launched into it (`--turn-structure` on a research
+    // build), and the base params carry that through restarts below.
     if let Some(v) = request["map_script"].as_str().and_then(MapScript::from_id) {
         p.map_script = v;
         // `planet` used to name a world type; it now names a shape. A client
@@ -7534,21 +7530,30 @@ mod tests {
         assert!(state.get("simultaneous").is_none());
     }
 
+    /// The product is hard-committed to sequential turns, so the regime is
+    /// not a request's to choose: a `turn_structure` field is ignored for
+    /// watched and played tables alike. Only the base params carry it — a
+    /// research server launched into the simultaneous regime keeps it
+    /// across restarts, and a human seat still downgrades to sequential.
     #[test]
-    fn new_game_carries_the_turn_structure_for_a_watched_table_only() {
+    fn a_request_cannot_select_the_turn_structure() {
         let mut spectated = current();
         spectated.spectate = true;
         let asked = new_game_params(&spectated, &json!({"turn_structure": "simultaneous"}));
-        assert_eq!(asked.turn_structure, TurnStructure::Simultaneous);
-        // An unknown id leaves the setting where it was, like every rung.
-        let nonsense = new_game_params(&asked, &json!({"turn_structure": "psychic"}));
-        assert_eq!(nonsense.turn_structure, TurnStructure::Simultaneous);
-        let back = new_game_params(&asked, &json!({"turn_structure": "sequential"}));
-        assert_eq!(back.turn_structure, TurnStructure::Sequential);
-        // A game with a human seat is sequential by construction: the rest
-        // of such a request lands, the regime does not.
+        assert_eq!(asked.turn_structure, TurnStructure::Sequential);
         let played = new_game_params(&current(), &json!({"turn_structure": "simultaneous"}));
         assert_eq!(played.turn_structure, TurnStructure::Sequential);
+
+        // A research build's simultaneous world survives a restart request
+        // that never mentions the regime, and a seated human still gets the
+        // sequential game `play` would have handed them.
+        let mut research = current();
+        research.spectate = true;
+        research.turn_structure = TurnStructure::Simultaneous;
+        let restarted = new_game_params(&research, &json!({"players": 5}));
+        assert_eq!(restarted.turn_structure, TurnStructure::Simultaneous);
+        let seated = new_game_params(&research, &json!({"spectate": false}));
+        assert_eq!(seated.turn_structure, TurnStructure::Sequential);
     }
 
     fn current() -> Params {
@@ -9293,22 +9298,24 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("top: calc(var(--pin-head, 0) * var(--hud-row-pitch));"));
         assert!(EMBEDDED_INDEX.contains("bottom: calc(var(--pin-tail, 0) * var(--hud-row-pitch));"));
         // The standings grow through every civilization shown in the ribbon,
-        // with a two-seat floor that keeps the turn counter visible before
-        // enough rows exist to do so on their own.
-        assert!(EMBEDDED_INDEX.contains("--player-hud-content-height: 106px;"));
+        // with a two-seat floor that keeps the turn counter visible before a
+        // world arrives. The default height still ends at the final row, but a
+        // dragged height answers to nothing except the map area itself: the
+        // old two-fifths ratio and roster-content ceilings are deliberately
+        // absent from the players widget.
         assert!(EMBEDDED_INDEX.contains(
-            "--player-hud-max-height: min(var(--player-hud-content-height), calc(100% - 8px));"
+            "height: min(var(--player-hud-height, 106px), var(--player-hud-max-height));"
         ));
+        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: calc(100% - 8px);"));
+        assert!(EMBEDDED_INDEX.contains("const maxPlayerHeight = Math.round(Math.max(104, height - edge * 2));"));
         assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_MIN_ROWS = 2;"));
         assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_ROW_PITCH = PLAYER_HUD_ROW_HEIGHT + PLAYER_HUD_ROW_GAP;"));
         assert!(EMBEDDED_INDEX.contains("function playerHudRowPitch()"));
         assert!(EMBEDDED_INDEX.contains("return Math.max(PLAYER_HUD_MIN_HEIGHT, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());"));
-        assert!(EMBEDDED_INDEX.contains("maxHeight:playerHudMaxContentHeight"));
-        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38, avoidsSidebar:true"));
+        assert!(EMBEDDED_INDEX.contains("minHeight:PLAYER_HUD_MIN_HEIGHT,\n            avoidsSidebar:true}"));
+        assert!(!EMBEDDED_INDEX.contains("maxHeightRatio"), "the masthead height cap is retired");
+        assert!(!EMBEDDED_INDEX.contains("--player-hud-content-height"), "the roster ceiling is retired");
         assert!(EMBEDDED_INDEX.contains("const requestedHeight = playerHudContentHeight(rows);"));
-        assert!(EMBEDDED_INDEX.contains(
-            "mapArea.style.setProperty(\"--player-hud-content-height\", `${requestedHeight}px`);"
-        ));
         assert!(EMBEDDED_INDEX.contains("if (state && hudLayoutGesture?.name !== \"players\") drawPlayerHud();"));
         assert!(EMBEDDED_INDEX.contains(
             "const playerScroll = hud.querySelector(\".diplomacy-ribbon\")?.scrollTop || 0;"
@@ -10195,19 +10202,16 @@ mod tests {
         assert_eq!(params.num_city_states, size.default_city_states);
         assert_eq!(params.game_speed, GameSpeed::Online);
         assert!(params.spectate);
-        assert_eq!(params.turn_structure, TurnStructure::Simultaneous);
+        assert_eq!(params.turn_structure, TurnStructure::Sequential);
         assert_eq!(params.seed, 7);
     }
 
-    /// The stock world is watched, never played, so its regime is the one
-    /// every unattended surface already defaults to. A visitor who takes a
-    /// seat is a live human consulted one seat at a time, so `new_game_params`
-    /// hands them the sequential regime instead — the same refusal `play`
-    /// makes at launch, and the reason this default is safe to publish.
+    /// The product is hard-committed to sequential turns: the stock world
+    /// rolls sequential, and taking a seat in it stays sequential.
     #[test]
     fn taking_a_seat_in_the_stock_world_still_plays_sequentially() {
         let stock = stock_opening_params(0);
-        assert_eq!(stock.turn_structure, TurnStructure::Simultaneous);
+        assert_eq!(stock.turn_structure, TurnStructure::Sequential);
 
         let seated = new_game_params(&stock, &json!({"spectate": false}));
         assert!(!seated.spectate);
@@ -10312,10 +10316,44 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("area.classList.toggle(\"player-hud-compact\", width <= PLAYER_HUD_COMPACT_WIDTH);"));
         assert!(EMBEDDED_INDEX.contains("#maparea.player-hud-compact #playerhud"));
-        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38, avoidsSidebar:true"));
+        assert!(EMBEDDED_INDEX.contains("avoidsSidebar:true}"));
         assert!(EMBEDDED_INDEX.contains(
             "function hudWidgetMinX(config, margin = hudWidgetMargin())"
         ));
+    }
+
+    /// The turn plate's width is the viewer's, through the same seam
+    /// affordance as the command deck's edge: drag it, nudge it with arrow
+    /// keys, double-click it back to the stylesheet's density default. Past
+    /// the split width the plate spends the room sideways rather than
+    /// downward — era and turn counter on one line, the settings below in
+    /// two columns — so widening buys information density instead of
+    /// whitespace. The seam re-renders with the masthead every frame, so the
+    /// press must be caught on the permanent #playerhud element.
+    #[test]
+    fn browser_lets_the_turn_plate_widen_into_two_columns() {
+        for contract in [
+            "const TURN_PLATE_WIDTH_STORAGE_KEY = \"civvis-turn-plate-width-v1\";",
+            "const TURN_PLATE_MIN_WIDTH = 148;",
+            "const TURN_PLATE_SPLIT_WIDTH = 252;",
+            "function applyTurnPlateWidth(width, persist = true) {",
+            "function turnPlateMaxWidth() {",
+            "data-turn-plate-seam role=\"separator\"",
+            "beginTurnPlateSeamGesture(event);",
+            "applyTurnPlateWidth(turnPlateWidth, false);",
+            "grid-template-columns: var(--turn-plate-width, 164px) minmax(0, 1fr);",
+            "var(--turn-plate-width, clamp(148px, 33%, 164px))",
+            "var(--turn-plate-width, 168px)",
+            ".turn-plate-seam {",
+            "#playerhud.turn-plate-wide .victory-turn {",
+            "#playerhud.turn-plate-wide .turn-settings {",
+            "grid-template-columns: repeat(2, minmax(max-content, 1fr)); column-gap: 14px;",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(contract),
+                "turn plate width contract is missing: {contract}"
+            );
+        }
     }
 
     /// Player-row color is reserved for a current war. Friendships and
