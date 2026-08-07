@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::name::Name;
 use crate::game::{
-    City, Game, Item, RememberedCity, Unit, DIPLOMATIC_VICTORY_POINTS, EXOPLANET_DESTINATION,
-    EXOPLANET_TARGETS,
+    City, Game, Item, RememberedCity, Unit, UnitMoveTrail, DIPLOMATIC_VICTORY_POINTS,
+    EXOPLANET_DESTINATION, EXOPLANET_TARGETS,
 };
 use crate::world::Tile;
 use crate::Pos;
@@ -855,6 +855,12 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         // itself, and a client needs the account to place the blast on the map
         // rather than inferring one from a ring of fallout.
         "nuclear_strikes": nuclear_strikes_json(g),
+        // Where each unit has walked lately, oldest first. The client draws
+        // these as movement tails and walks its move animations along them.
+        // Unlike wars and strikes this is exactly the kind of thing fog is
+        // for, so a seated view gets its own routes whole and everyone
+        // else's clipped to the stretches it can currently see.
+        "unit_move_trails": unit_move_trails_json(g, pid, omniscient, &vis),
         "winner": g.winner,
         "winners": g.winning_players(),
         "victory_type": g.victory_type,
@@ -1219,6 +1225,44 @@ fn nuclear_strikes_json(g: &Game) -> Vec<Value> {
             })
         })
         .collect()
+}
+
+/// The walked-route ledger, through the viewer's fog. The omniscient
+/// spectator and a unit's own player read a route whole; anyone else gets it
+/// cut down to the visible stretches, each emitted as its own trail so a
+/// client never has to reason about gaps — a route that dips into fog simply
+/// arrives as two shorter ones.
+fn unit_move_trails_json(g: &Game, pid: usize, omniscient: bool, vis: &BTreeSet<Pos>) -> Vec<Value> {
+    let trail_json = |trail: &UnitMoveTrail, path: &[Pos]| {
+        json!({
+            "unit": trail.unit,
+            "owner": trail.owner,
+            "turn": trail.turn,
+            "path": path.iter().map(|p| [p.0, p.1]).collect::<Vec<_>>(),
+        })
+    };
+    let mut out = Vec::new();
+    for trail in &g.unit_move_trails {
+        if omniscient || trail.owner == pid {
+            out.push(trail_json(trail, &trail.path));
+            continue;
+        }
+        let mut run: Vec<Pos> = Vec::new();
+        for &pos in &trail.path {
+            if vis.contains(&pos) {
+                run.push(pos);
+                continue;
+            }
+            if run.len() > 1 {
+                out.push(trail_json(trail, &run));
+            }
+            run.clear();
+        }
+        if run.len() > 1 {
+            out.push(trail_json(trail, &run));
+        }
+    }
+    out
 }
 
 /// Public victory-screen metrics. Each progress value is normalized to
@@ -2415,6 +2459,87 @@ mod tests {
                 .expect("the war note");
             assert_eq!(mine["player"], 1);
         }
+    }
+
+    /// The browser draws movement tails straight off this field, so the wire
+    /// shape is pinned here: the spectator reads every walked route whole,
+    /// while a seated view keeps its own routes and sees everyone else's only
+    /// where its fog currently lifts — an enemy walk that dips out of sight
+    /// arrives as the visible stretch alone, and a single glimpsed tile is no
+    /// route at all.
+    #[test]
+    fn move_trails_reach_the_spectator_whole_and_a_seat_through_its_fog() {
+        let mut game = Game::new(2, 18, 12, 40_223, 25, 0);
+        let vis = game.player_visibility(0);
+        let home = *vis.iter().next().expect("a starting seat sees something");
+        let seen = *game
+            .nbrs(home)
+            .iter()
+            .find(|position| vis.contains(*position))
+            .expect("a visible tile has a visible neighbor");
+        let mut dark = game
+            .map
+            .tiles
+            .keys()
+            .filter(|position| !vis.contains(*position))
+            .copied();
+        let dark_a = dark.next().expect("fog exists on a fresh map");
+        let dark_b = dark.next().expect("fog is wider than one tile");
+        game.unit_move_trails.push(UnitMoveTrail {
+            unit: 701,
+            owner: 1,
+            turn: game.turn,
+            path: vec![dark_a, dark_b, home, seen],
+        });
+        game.unit_move_trails.push(UnitMoveTrail {
+            unit: 702,
+            owner: 1,
+            turn: game.turn,
+            path: vec![dark_a, home, dark_b],
+        });
+        game.unit_move_trails.push(UnitMoveTrail {
+            unit: 703,
+            owner: 0,
+            turn: game.turn,
+            path: vec![dark_a, dark_b],
+        });
+
+        let spectated = observation_spectator(&game, 0);
+        let whole = spectated["unit_move_trails"].as_array().unwrap();
+        assert_eq!(whole.len(), 3, "the spectator reads every route whole");
+        assert_eq!(whole[0]["unit"], 701);
+        assert_eq!(whole[0]["owner"], 1);
+        assert_eq!(whole[0]["turn"], serde_json::json!(game.turn));
+        assert_eq!(
+            whole[0]["path"],
+            serde_json::json!([
+                [dark_a.0, dark_a.1],
+                [dark_b.0, dark_b.1],
+                [home.0, home.1],
+                [seen.0, seen.1]
+            ])
+        );
+
+        let watched = observation_player_view(&game, 0);
+        let fogged = watched["unit_move_trails"].as_array().unwrap();
+        assert_eq!(
+            fogged.len(),
+            2,
+            "one clipped enemy stretch, one whole own route; the glimpsed \
+             single tile is no route"
+        );
+        assert_eq!(fogged[0]["unit"], 701);
+        assert_eq!(
+            fogged[0]["path"],
+            serde_json::json!([[home.0, home.1], [seen.0, seen.1]]),
+            "an enemy walk survives only where the fog lifts"
+        );
+        assert_eq!(fogged[1]["unit"], 703);
+        assert_eq!(
+            fogged[1]["path"],
+            serde_json::json!([[dark_a.0, dark_a.1], [dark_b.0, dark_b.1]]),
+            "a seat remembers its own walking wherever it went"
+        );
     }
 
     /// The browser draws its blast, writes its log entry and marks its war card

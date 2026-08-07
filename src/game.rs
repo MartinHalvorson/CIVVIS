@@ -4549,6 +4549,180 @@ mod belief_runtime_tests {
         assert!(old_save.nuclear_strikes.is_empty());
     }
 
+    /// An empty plains board with an interior tile to walk from, so a route
+    /// test controls every step cost and nothing ambushes the walker.
+    fn flat_walking_game(seed: u64) -> (Game, Pos) {
+        let mut game = Game::new_full(2, 20, 14, seed, 40, 0, false);
+        let ids: Vec<u32> = game.units.keys().copied().collect();
+        for id in ids {
+            game.remove_unit(id);
+        }
+        game.map.clear_rivers();
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.owner_city = None;
+            tile.hills = false;
+            tile.road = 0;
+        }
+        let center = *game
+            .map
+            .tiles
+            .keys()
+            .find(|p| game.wdisk(**p, 2).len() == 19)
+            .expect("controlled map has an interior tile");
+        game.current = 0;
+        (game, center)
+    }
+
+    /// The ledger's whole reason to exist: a spectator frame is one seat's
+    /// entire turn, so the board diff alone cannot say which tiles carried a
+    /// unit to where it ended up. The recorded route must be the engine's own
+    /// executed path, tile by tile.
+    #[test]
+    fn a_move_records_its_exact_walked_route() {
+        let (mut game, start) = flat_walking_game(52_001);
+        let soldier = game.spawn_unit("warrior", 0, start);
+        let destination = *game
+            .wdisk(start, 2)
+            .iter()
+            .find(|position| game.wdist(start, **position) == 2)
+            .expect("an interior tile has a neighbor two steps out");
+        let mut expected = vec![start];
+        expected.extend(game.path_to(soldier, destination).expect("plains walk"));
+        game.apply(
+            0,
+            &Action::MoveTo {
+                unit: soldier,
+                to: destination,
+            },
+        )
+        .unwrap();
+        let trail = game.unit_move_trails.last().expect("the walk is recorded");
+        assert_eq!(trail.unit, soldier);
+        assert_eq!(trail.owner, 0);
+        assert_eq!(trail.turn, game.turn);
+        assert_eq!(trail.path, expected);
+        assert_eq!(*trail.path.last().unwrap(), game.units[&soldier].pos);
+        for hop in trail.path.windows(2) {
+            assert_eq!(game.wdist(hop[0], hop[1]), 1, "a route only walks");
+        }
+    }
+
+    /// One unit's steps within one turn read back as a single route, and the
+    /// turn boundary starts a fresh one — that boundary is what lets a client
+    /// age tails out N turns after they were walked.
+    #[test]
+    fn steps_chain_within_a_turn_and_break_at_the_boundary() {
+        let (mut game, start) = flat_walking_game(52_002);
+        let soldier = game.spawn_unit("warrior", 0, start);
+        let first = game.nbrs(start)[0];
+        let second = *game
+            .nbrs(first)
+            .iter()
+            .find(|position| game.wdist(start, **position) == 2)
+            .expect("a neighbor's neighbor lies two steps from home");
+        game.apply(
+            0,
+            &Action::Move {
+                unit: soldier,
+                to: first,
+            },
+        )
+        .unwrap();
+        game.units.get_mut(&soldier).unwrap().moves_left = 2.0;
+        game.apply(
+            0,
+            &Action::Move {
+                unit: soldier,
+                to: second,
+            },
+        )
+        .unwrap();
+        assert_eq!(game.unit_move_trails.len(), 1, "same turn, same route");
+        assert_eq!(game.unit_move_trails[0].path, vec![start, first, second]);
+
+        game.turn += 1;
+        game.units.get_mut(&soldier).unwrap().moves_left = 2.0;
+        game.apply(
+            0,
+            &Action::Move {
+                unit: soldier,
+                to: first,
+            },
+        )
+        .unwrap();
+        assert_eq!(game.unit_move_trails.len(), 2, "a new turn walks fresh");
+        assert_eq!(game.unit_move_trails[1].path, vec![second, first]);
+        assert_eq!(game.unit_move_trails[1].turn, game.turn);
+    }
+
+    /// A reloaded game keeps the tails a client was drawing, and a save
+    /// written before the ledger existed loads as an empty one rather than
+    /// refusing to open — the same four-sided `serde` proof the strike ledger
+    /// needed.
+    #[test]
+    fn the_trail_ledger_survives_a_save_round_trip() {
+        let (mut game, start) = flat_walking_game(52_003);
+        let soldier = game.spawn_unit("warrior", 0, start);
+        game.apply(
+            0,
+            &Action::Move {
+                unit: soldier,
+                to: game.nbrs(start)[0],
+            },
+        )
+        .unwrap();
+        assert_eq!(game.unit_move_trails.len(), 1);
+
+        let encoded = serde_json::to_value(&game).unwrap();
+        let restored: Game = serde_json::from_value(encoded).unwrap();
+        assert_eq!(restored.unit_move_trails, game.unit_move_trails);
+
+        let mut older = serde_json::to_value(&game).unwrap();
+        older
+            .as_object_mut()
+            .unwrap()
+            .remove("unit_move_trails")
+            .expect("the field is written");
+        let old_save: Game = serde_json::from_value(older).unwrap();
+        assert!(old_save.unit_move_trails.is_empty());
+    }
+
+    /// The ledger is a tail, not a chronicle: however long a game runs, the
+    /// oldest walks fall off rather than the save growing forever.
+    #[test]
+    fn the_trail_ledger_stays_bounded() {
+        let (mut game, start) = flat_walking_game(52_004);
+        let step = game.nbrs(start)[0];
+        for walker in 0..600u32 {
+            game.record_move_step(0, 900_000 + walker, start, step);
+        }
+        assert_eq!(game.unit_move_trails.len(), 512);
+        assert_eq!(
+            game.unit_move_trails.first().unwrap().unit,
+            900_088,
+            "the oldest walks are the ones that fell off"
+        );
+    }
+
+    /// Teleport-style relocations are not walks: a route that "walked" an
+    /// airlift would draw a march across the whole map.
+    #[test]
+    fn a_long_jump_never_chains_into_a_walked_route() {
+        let (mut game, start) = flat_walking_game(52_005);
+        let far = *game
+            .wdisk(start, 2)
+            .iter()
+            .find(|position| game.wdist(start, **position) == 2)
+            .expect("an interior tile has a neighbor two steps out");
+        game.record_move_step(0, 900_000, start, far);
+        assert!(game.unit_move_trails.is_empty());
+    }
+
     /// Fallout that only cost yields would make a crater the safest ground on
     /// the map: nothing contests it, and a wounded army could sit in it and
     /// heal.
@@ -14907,6 +15081,25 @@ pub struct NuclearStrike {
     pub units_destroyed: u32,
 }
 
+/// The tile-by-tile route one unit walked, recorded as it stepped rather than
+/// reconstructed from a board diff.
+///
+/// A spectator frame is one seat's whole turn, so the board alone says only
+/// where a unit ended up — not which tiles carried it there. The client draws
+/// these as movement tails and walks its move animation along them, so the
+/// route has to be the executed truth: a ZOC stop or an exhausted unit ends
+/// the record where the unit actually stood.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub struct UnitMoveTrail {
+    pub unit: u32,
+    pub owner: usize,
+    pub turn: u32,
+    /// The tile the unit stood on, then every tile it stepped to, in order.
+    /// Always at least two entries, and every hop is adjacent: teleport-style
+    /// relocations (airlift) never chain into a walked route.
+    pub path: Vec<Pos>,
+}
+
 /// The engine's account of one bilateral front, so every client and every
 /// reloaded save tells the same story about it. All fronts opened by one
 /// declaration share `conflict`; city-states are participants in their
@@ -16697,6 +16890,11 @@ pub struct Game {
     /// worth carrying in every frame of a five-hundred-turn game.
     #[serde(default)]
     pub nuclear_strikes: Vec<NuclearStrike>,
+    /// Where each unit has walked lately, oldest first and bounded like the
+    /// strike ledger: a client draws the recent tail, and the full walking
+    /// history of a long game is not worth carrying in every frame.
+    #[serde(default)]
+    pub unit_move_trails: Vec<UnitMoveTrail>,
     pub barb_pid: Option<usize>,
     pub barb_camps: BTreeMap<Pos, u32>,
     /// Coastal camps are naval outposts; the set is persisted so a camp does
@@ -16919,6 +17117,8 @@ struct GameSer {
     #[serde(default)]
     nuclear_strikes: Vec<NuclearStrike>,
     #[serde(default)]
+    unit_move_trails: Vec<UnitMoveTrail>,
+    #[serde(default)]
     barb_pid: Option<usize>,
     #[serde(default)]
     barb_camps: Vec<(Pos, u32)>,
@@ -17082,6 +17282,7 @@ impl From<GameSer> for Game {
             siege: SiegeCensus::default(),
             concluded_wars: s.concluded_wars,
             nuclear_strikes: s.nuclear_strikes,
+            unit_move_trails: s.unit_move_trails,
             barb_pid: s.barb_pid,
             barb_camps: s.barb_camps.into_iter().collect(),
             barb_naval_camps: s.barb_naval_camps.into_iter().collect(),
@@ -17249,6 +17450,7 @@ impl From<Game> for GameSer {
             wars: g.wars.into_iter().collect(),
             concluded_wars: g.concluded_wars,
             nuclear_strikes: g.nuclear_strikes,
+            unit_move_trails: g.unit_move_trails,
             barb_pid: g.barb_pid,
             barb_camps: g.barb_camps.into_iter().collect(),
             barb_naval_camps: g.barb_naval_camps.into_iter().collect(),
@@ -17587,6 +17789,7 @@ impl Game {
             siege: SiegeCensus::default(),
             concluded_wars: Vec::new(),
             nuclear_strikes: Vec::new(),
+            unit_move_trails: Vec::new(),
             barb_pid: None,
             barb_camps: BTreeMap::new(),
             barb_naval_camps: BTreeSet::new(),
@@ -41812,7 +42015,39 @@ impl Game {
         }
         self.maybe_clear_camp(uid);
         self.maybe_goody_hut(uid);
+        self.record_move_step(pid, uid, u.pos, to);
         Ok(())
+    }
+
+    /// Chain one executed step onto the walked-route ledger. Consecutive steps
+    /// of one unit in one turn extend a single trail, so a whole `MoveTo`
+    /// reads as one route however many `do_move` calls carried it out.
+    fn record_move_step(&mut self, pid: usize, uid: u32, from: Pos, to: Pos) {
+        // Only a walked, adjacent hop belongs on a route. `do_move`'s airlift
+        // branch returns before recording, and this keeps any future
+        // teleport-style relocation from drawing as a march across the map.
+        if self.wdist(from, to) != 1 {
+            return;
+        }
+        if let Some(last) = self.unit_move_trails.last_mut() {
+            if last.unit == uid && last.turn == self.turn && last.path.last() == Some(&from) {
+                last.path.push(to);
+                return;
+            }
+        }
+        self.unit_move_trails.push(UnitMoveTrail {
+            unit: uid,
+            owner: pid,
+            turn: self.turn,
+            path: vec![from, to],
+        });
+        // A client draws the last few turns of this list; the whole walking
+        // history of a long game is not worth carrying in every frame.
+        const TRAILS_KEPT: usize = 512;
+        if self.unit_move_trails.len() > TRAILS_KEPT {
+            let excess = self.unit_move_trails.len() - TRAILS_KEPT;
+            self.unit_move_trails.drain(..excess);
+        }
     }
 
     pub(crate) fn tile_defense_bonus(&self, pos: Pos) -> f64 {
