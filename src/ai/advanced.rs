@@ -2267,6 +2267,16 @@ impl AdvancedAi {
         self.wide_map_capacity = false;
     }
 
+    /// A city losing hitpoints is besieged, whatever the fog says. See
+    /// `BasicAi::garrison_under_fire` for the t115 measurement.
+    pub fn enable_garrison_under_fire(&mut self) {
+        self.base.garrison_under_fire = true;
+    }
+
+    pub fn disable_garrison_under_fire(&mut self) {
+        self.base.garrison_under_fire = false;
+    }
+
     /// Enable explicit battlefield roles: the land-unit counter cycle, safe
     /// ranged standoff, wall-focused siege/support, and cavalry job priority.
     /// Production Advanced enables this at construction; the method exists for
@@ -2471,6 +2481,9 @@ impl AdvancedAi {
         // ten- and eleven-city rivals; the stock nine-ceiling was the binding
         // constant. See `wide_map_capacity`.
         self.enable_wide_map_capacity();
+        // The other half of the same three-defeat measurement: the capital that
+        // fell bleeding with an empty hostile list. See garrison_under_fire.
+        self.enable_garrison_under_fire();
         // Raj, Wisselbanken, Collective Activism and the International Space
         // Agency all scale off SUZERAIN city-states and pay nothing at zero.
         // Live run `civvis-20260803T220954Z` held Raj AND Wisselbanken slotted
@@ -20909,6 +20922,45 @@ mod tests {
     use super::*;
     use crate::ai::run_game;
     use crate::game::{GameOptions, GovernorState};
+
+    #[test]
+    fn a_bleeding_city_is_besieged_whatever_the_fog_says() {
+        // The t115 shape from run civvis-20260807T181839Z: city under fire,
+        // hostile list empty, production about to pick a culture building.
+        let mut game = Game::new_full(2, 28, 18, 7, 1_000, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("seat starts with a settler");
+        let position = game.units[&settler].pos;
+        let capital = game.found_city_for(0, position, None);
+        game.remove_unit(settler);
+        game.players[0].techs.insert(crate::name!("masonry"));
+        game.cities.get_mut(&capital).unwrap().hp = 165; // damage 35 of 200
+
+        let mut treated = AdvancedAi::new();
+        treated.enable_garrison_under_fire();
+        let item = treated.base.besieged_city_item(&game, 0, capital);
+        assert_eq!(
+            item,
+            Some(Item::Building { building: crate::name!("walls") }),
+            "a bleeding city must reach for walls with zero visible besiegers"
+        );
+
+        let stock = AdvancedAi::new();
+        assert_eq!(
+            stock.base.besieged_city_item(&game, 0, capital),
+            None,
+            "the frozen controllers keep the two-visible-besiegers gate"
+        );
+
+        let mut bridged = AdvancedAi::new();
+        bridged.enable_live_bridge();
+        assert!(bridged.base.garrison_under_fire);
+        bridged.disable_garrison_under_fire();
+        assert!(!bridged.base.garrison_under_fire);
+    }
 
     #[test]
     fn wide_map_capacity_prices_uncontested_land_and_stock_stays_capped() {

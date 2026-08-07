@@ -847,6 +847,7 @@ fn withhold_live_treatment(
         // only holds if the merge actually picks them up.
         "housing-districts" => ai.disable_housing_districts(),
         "wide-map-capacity" => ai.disable_wide_map_capacity(),
+        "garrison-under-fire" => ai.disable_garrison_under_fire(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
