@@ -207,7 +207,7 @@ narrated war ledger per action, matching `run_game`. Interleaved
 binary-vs-binary A/B on this host, 16 civilizations, 64×40, no
 city-states, 100 turns, seed 7,311,002, `--jobs 16`:
 
-| Binary | Wall clock (interleaved runs) | 
+| Binary | Wall clock (interleaved runs) |
 |---|---:|
 | before (#1326) | 5.35s / 5.48s / 5.52s |
 | pipelined | **4.04s / 4.08s / 4.13s** (~1.33×) |
