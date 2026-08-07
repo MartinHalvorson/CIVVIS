@@ -3021,6 +3021,23 @@ function hudWidgetMinX(config, margin = hudWidgetMargin()) {
   return Math.max(margin, Math.min(Math.max(margin, area.clientWidth - margin), inset));
 }
 
+// A globe is charted azimuthally, so on a planet world the minimap frame has no
+// honest shape but a square: both of its axes answer to one side.
+function hudWidgetIsSquare(config) {
+  return Boolean(config.square) && typeof planetMap === "function" && planetMap();
+}
+
+// The one place a proposed width and height become that side. Every caller
+// resolves it *before* it measures where the frame sits, because a square
+// settled afterwards would shrink one axis while its position still described
+// the wider frame — which is how the minimap used to slide out of its corner.
+function squareHudWidgetSide(config, width, height, maxWidth, maxHeight) {
+  const maxSide = Math.max(1, Math.min(maxWidth, maxHeight));
+  const minSide = Math.min(maxSide, Math.max(Math.min(config.minWidth, maxWidth),
+                                             Math.min(config.minHeight, maxHeight)));
+  return Math.max(minSide, Math.min(maxSide, Math.min(width, height)));
+}
+
 function clampHudWidget(config, metrics) {
   const margin = hudWidgetMargin();
   const minX = hudWidgetMinX(config, margin);
@@ -3030,12 +3047,8 @@ function clampHudWidget(config, metrics) {
   const minHeight = Math.min(config.minHeight, maxHeight);
   let width = Math.max(minWidth, Math.min(maxWidth, Number(metrics.width) || minWidth));
   let height = Math.max(minHeight, Math.min(maxHeight, Number(metrics.height) || minHeight));
-  if (config.square && typeof planetMap === "function" && planetMap()) {
-    const maxSide = Math.max(1, Math.min(maxWidth, maxHeight));
-    const minSide = Math.min(maxSide, Math.max(minWidth, minHeight));
-    const side = Math.max(minSide, Math.min(maxSide, Math.min(width, height)));
-    width = side; height = side;
-  }
+  if (hudWidgetIsSquare(config))
+    width = height = squareHudWidgetSide(config, width, height, maxWidth, maxHeight);
   const maxX = Math.max(minX, area.clientWidth - margin - width);
   const maxY = Math.max(margin, area.clientHeight - margin - height);
   return {
@@ -3075,8 +3088,12 @@ function metricsFromSaved(config, saved) {
     : 1;
   // v3 layouts did not carry a basis. Keep those exact once, then every new
   // deliberate resize stores one and becomes proportionate on future screens.
-  const width = (Number(saved.width) || config.minWidth) * sizeScale;
-  const height = (Number(saved.height) || config.minHeight) * sizeScale;
+  let width = (Number(saved.width) || config.minWidth) * sizeScale;
+  let height = (Number(saved.height) || config.minHeight) * sizeScale;
+  // Settle the square before the travel range is measured against it, so a
+  // frame saved flush against a wall opens flush against it again.
+  if (hudWidgetIsSquare(config))
+    width = height = squareHudWidgetSide(config, width, height, maxWidth, maxHeight);
   const travelX = Math.max(0, area.clientWidth - margin - width - minX);
   const travelY = Math.max(0, area.clientHeight - margin * 2 - height);
   const xRatio = Math.max(0, Math.min(1, Number(saved.xRatio) || 0));
@@ -3232,21 +3249,61 @@ function resetAllHudWidgets() {
   if (state) drawPlayerHud();
 }
 
+// A square frame cannot answer a dragged edge on its own axis alone: the other
+// axis has to follow it, and some edge has to hold still while it does. Hold
+// the edges the gesture is not dragging; on an axis the gesture never touches,
+// hold whichever edge is nearer its wall. The world minimap, which lives in the
+// lower-right corner, then grows and shrinks *into* that corner rather than
+// creeping away from it, and every one of the eight handles resizes the frame
+// instead of sliding it — dragging the left edge of a square used to move the
+// whole panel left, because the side was settled after the position was.
+function squareHudResize(config, box, start, edge, limits) {
+  const {margin, minX, maxRight, maxBottom, maxHeight} = limits;
+  const dragsX = edge.includes("w") || edge.includes("e");
+  const dragsY = edge.includes("n") || edge.includes("s");
+  const holdRight = edge.includes("w") ||
+    (!dragsX && maxRight - box.right <= box.left - minX);
+  const holdBottom = edge.includes("n") ||
+    (!dragsY && maxBottom - box.bottom <= box.top - margin);
+  const width = box.right - box.left, height = box.bottom - box.top;
+  // Room the held edges leave. Bounding the side by it here means a growing
+  // square stops against a wall, instead of overshooting and being clamped
+  // back off the corner it was pinned to.
+  const roomX = holdRight ? box.right - minX : maxRight - box.left;
+  const roomY = Math.min(holdBottom ? box.bottom - margin : maxBottom - box.top, maxHeight);
+  // Both axes of a corner drag propose a side. The one the pointer has
+  // committed to — the axis it has pulled furthest — is the one that wins.
+  const proposed = dragsX && dragsY
+    ? (Math.abs(width - start.width) >= Math.abs(height - start.height) ? width : height)
+    : dragsX ? width : height;
+  const side = squareHudWidgetSide(config, proposed, proposed, roomX, roomY);
+  return {
+    x:holdRight ? box.right - side : box.left,
+    y:holdBottom ? box.bottom - side : box.top,
+    width:side, height:side,
+  };
+}
+
 function resizeHudWidget(config, start, edge, dx, dy) {
   const margin = hudWidgetMargin();
   const minX = hudWidgetMinX(config, margin);
-  const minWidth = Math.min(config.minWidth, Math.max(1, area.clientWidth - margin - minX));
+  const maxRight = area.clientWidth - margin;
+  const maxBottom = area.clientHeight - margin;
+  const minWidth = Math.min(config.minWidth, Math.max(1, maxRight - minX));
   const maxHeight = hudWidgetMaxHeight(config, margin);
   const minHeight = Math.min(config.minHeight, maxHeight);
   let left = start.x, right = start.x + start.width;
   let top = start.y, bottom = start.y + start.height;
   if (edge.includes("w")) left = Math.max(minX, Math.min(right - minWidth, left + dx));
-  if (edge.includes("e")) right = Math.min(area.clientWidth - margin, Math.max(left + minWidth, right + dx));
+  if (edge.includes("e")) right = Math.min(maxRight, Math.max(left + minWidth, right + dx));
   // Clamping the height alone would let a top-edge drag push the bottom edge
   // down instead of simply stopping, so the ceiling is applied to the moving
   // edge itself.
   if (edge.includes("n")) top = Math.max(margin, Math.max(bottom - maxHeight, Math.min(bottom - minHeight, top + dy)));
-  if (edge.includes("s")) bottom = Math.min(area.clientHeight - margin, Math.min(top + maxHeight, Math.max(top + minHeight, bottom + dy)));
+  if (edge.includes("s")) bottom = Math.min(maxBottom, Math.min(top + maxHeight, Math.max(top + minHeight, bottom + dy)));
+  if (hudWidgetIsSquare(config))
+    return squareHudResize(config, {left, right, top, bottom}, start, edge,
+                           {margin, minX, maxRight, maxBottom, maxHeight});
   return {x:left, y:top, width:right - left, height:bottom - top};
 }
 

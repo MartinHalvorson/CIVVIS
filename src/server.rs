@@ -9576,6 +9576,35 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "position: absolute; z-index: 1; right: 10px; bottom: 9px;"
         ));
+        // On a globe the minimap frame is square, so a dragged edge has to
+        // carry the other axis with it. The square is settled *while* the
+        // gesture still knows which edges it is not dragging — those edges are
+        // held, and the room they leave bounds the side. Settling it after the
+        // position, as the frame's first square did, silently slid the whole
+        // panel out of its lower-right corner instead of resizing it.
+        assert!(EMBEDDED_INDEX.contains("function squareHudResize(config, box, start, edge, limits)"));
+        for held in [
+            "const holdRight = edge.includes(\"w\") ||",
+            "const holdBottom = edge.includes(\"n\") ||",
+            "const roomX = holdRight ? box.right - minX : maxRight - box.left;",
+            "x:holdRight ? box.right - side : box.left,",
+            "y:holdBottom ? box.bottom - side : box.top,",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(held),
+                "a square resize holds the edges the gesture is not dragging: {held}"
+            );
+        }
+        // Both the live clamp and a restored layout resolve the side through
+        // the one helper, before either measures where the frame sits.
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("width = height = squareHudWidgetSide(config, width, height, maxWidth, maxHeight);")
+                .count(),
+            2,
+            "clampHudWidget and metricsFromSaved share one square resolver"
+        );
+        assert!(EMBEDDED_INDEX.contains("function hudWidgetIsSquare(config) {"));
         assert!(!EMBEDDED_INDEX.contains("--player-hud-width"));
         // Every path keeps its top three plus the player's own civilization
         // when that row is lower in this particular victory race.
