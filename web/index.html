@@ -2265,6 +2265,55 @@
   .display-settings-group-body > .setting-row,
   .display-settings-group-body > .speed-row { margin-top: 2px; }
   .display-settings-group-body > .overlay-options { margin-top: 0; padding-top: 0; border-top: 0; }
+  /* One menu per overlay. The checkbox in the header shows or hides the
+     overlay itself without opening the menu; the title bar is what expands
+     it, so presence and settings are two different gestures on one row. */
+  .overlay-menus { display: grid; gap: 6px; }
+  .overlay-menu {
+    overflow: hidden; border: 1px solid var(--line-soft); border-radius: 8px;
+    background: #0a151277;
+  }
+  .overlay-menu > summary {
+    min-height: 30px; display: flex; align-items: center; gap: 8px;
+    padding: 5px 8px; color: var(--muted); cursor: pointer;
+    list-style: none; user-select: none;
+    font-size: var(--type-small); font-weight: 800;
+  }
+  .overlay-menu > summary::-webkit-details-marker { display: none; }
+  .overlay-menu > summary::after {
+    content: "+"; flex: 0 0 auto; margin-left: auto;
+    color: var(--gold); font-size: var(--type-body); line-height: 1;
+  }
+  .overlay-menu[open] > summary { border-bottom: 1px solid var(--line-soft); color: var(--text); }
+  .overlay-menu[open] > summary::after { content: "−"; }
+  .overlay-menu > summary input[type="checkbox"] { flex: 0 0 auto; margin: 0; }
+  .overlay-menu-title { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .overlay-menu-title small {
+    color: var(--faint); font-size: var(--type-label); font-weight: 650;
+    letter-spacing: 0; text-transform: none;
+  }
+  .overlay-menu-body { display: grid; gap: 7px; padding: 8px; }
+  .overlay-menu-help { line-height: 1.35; }
+  .overlay-menu-reset { justify-self: start; }
+  /* The standings' column roster: check a column in or out of the table,
+     drag a row to put the columns in a different order. */
+  .hud-column-list { display: grid; gap: 2px; }
+  .hud-column-item {
+    display: flex; align-items: center; gap: 7px; padding: 3px 6px;
+    border: 1px solid transparent; border-radius: 6px; background: #ffffff06;
+    cursor: grab;
+  }
+  .hud-column-item.dragging { opacity: .45; border-color: var(--gold); background: #d7b66a14; }
+  .hud-column-item .hud-column-grip {
+    flex: 0 0 auto; color: #5b7268; font-size: var(--type-label); line-height: 1;
+  }
+  .hud-column-item label {
+    min-width: 0; flex: 1 1 auto; display: flex; align-items: center; gap: 7px;
+    overflow: hidden; color: #c7d3ce; cursor: pointer;
+    font-size: var(--type-small); font-weight: 750; white-space: nowrap;
+  }
+  .hud-column-item input[type="checkbox"] { flex: 0 0 auto; margin: 0; }
+  .hud-column-item.hidden-col label { color: var(--faint); }
   .performance-stats {
     overflow: hidden; border: 1px solid var(--line-soft); border-radius: 9px; background: #07100e99;
   }
@@ -2615,22 +2664,17 @@
        afford whole names; a narrow one gives the identity up first, because a
        clipped name still reads and a clipped number lies. */
     --hud-identity-bias: 1;
-    --hud-identity-column: minmax(
-      calc(var(--hud-rank-min) + var(--hud-ident-min) * 5
-           + var(--hud-ident-num-min) * 2 + var(--hud-ident-odds-min)), 12.937fr);
-    /* Twelve cells and the eleven gutters between them. */
-    --hud-stats-column: minmax(
-      calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), 12fr);
-    --hud-column-gap: 6px;
-    /* Rank has its own dedicated column. Civilization, leader, player, age and the
+    /* One flat track per visible column, in the viewer's own order. Rank has
+       its own dedicated column. Civilization, leader, player, age and the
        plan are labels, and their cells ellipsize. Elo, its live delta and the
        odds pair are figures on the taller floors: with no minimum at all they
        collapsed on a 1440px screen and rendered "1792" as "179" and "11%" as
        "1" — a truncated number that reads as a different, smaller number.
-       Watch-as keeps its fixed track between Leader and Player, which is why the
-       bar for that seam is drawn on Leader's edge. Its extra four-pixel tail is
-       the visual gutter before Player. */
-    --hud-identity-tracks:
+       Watch-as is a fixed track, so no share drag can clip its label. What
+       follows is the shipped arrangement; once the page has booted,
+       syncPlayerHudColumns() rewrites it from the viewer's column model —
+       order, visibility, shares and any content-fitted floors together. */
+    --hud-tracks:
       minmax(var(--hud-rank-min), .7fr) minmax(var(--hud-ident-min), 2.035fr)
       minmax(var(--hud-ident-min), 1.85fr) var(--hud-watch-column)
       minmax(var(--hud-ident-min), 1.85fr)
@@ -2638,8 +2682,8 @@
       minmax(var(--hud-ident-num-min), .85fr)
       minmax(var(--hud-ident-odds-min), 1.3fr)
       minmax(var(--hud-ident-min), 1.3fr)
-      minmax(var(--hud-ident-min), 2.035fr);
-    --hud-stat-tracks: repeat(12, minmax(var(--hud-stat-min), 1fr));
+      minmax(var(--hud-ident-min), 2.035fr)
+      repeat(12, minmax(var(--hud-stat-min), 1fr));
     --hud-lock-column: 13px; --hud-row-height: 26px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
     display: grid; grid-template-columns: 164px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
@@ -2686,10 +2730,13 @@
      the same reason, which is why the width breakpoints move them together. */
   .ribbon-stat-heading {
     position: relative; min-height: 12px; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px)
-      var(--hud-watch-column) var(--hud-identity-column) var(--hud-stats-column);
-    align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;
+    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-tracks);
+    align-items: stretch; column-gap: var(--hud-stat-gap, 3px); padding: 0 4px 0 3px;
     border: 1px solid transparent;
+    /* Every visible column at its own floor. A panel narrower than that no
+       longer crushes the cells: the standings keep this width and scroll
+       sideways inside their own frame instead. */
+    min-width: var(--hud-table-min, 0px);
   }
   /* The title bar used to spend a whole row saying "Player stats". The empty
      lock column already leads every table row, so its compact grip keeps the
@@ -2699,12 +2746,9 @@
     display: grid; place-items: center; padding: 0; color: #d7b66aa6;
   }
   #playerhud .player-standings-drag::before { font-size: var(--type-control); }
-  .diplomacy-identity-head {
-    min-width: 0; display: grid; grid-column: 2 / 4;
-    grid-template-columns: var(--hud-identity-tracks); overflow: hidden;
-    color: #a9bbb4; font-size: var(--type-micro); font-weight: 950; letter-spacing: .025em;
-  }
-  /* `clip`, not `ellipsis`, and a dragged column is not a reason to change it.
+  /* Every column heading is one cell of the flat track list, marked with the
+     column it stands for so the seam bars and the reorder gesture can find it.
+     `clip`, not `ellipsis`, and a dragged column is not a reason to change it.
      The fitter sizes these heads by comparing scrollWidth with clientWidth,
      which are integers, while the browser applies text-overflow on any
      sub-pixel overflow at all — so a head the fitter has correctly settled at
@@ -2712,13 +2756,28 @@
      whole character saying so. Measured at 1600px: ELO in its 60px column
      renders whole under `clip` and as "EL…" under `ellipsis`. Every head is
      short enough to stand at its own floor, and each carries a title. */
-  .diplomacy-identity-head > span {
-    min-width: 0; overflow: hidden; padding-inline: 3px;
-    border-left: 1px solid #ffffff10; text-overflow: clip; white-space: nowrap;
+  .ribbon-stat-heading .hud-head-cell {
+    min-width: 0; overflow: hidden; text-overflow: clip; white-space: nowrap;
+    color: #a9bbb4; font-weight: 950;
+    /* The heading strip is where columns are sorted, resized and picked up to
+       reorder; the rows below keep native touch scrolling for the panel. */
+    touch-action: none;
   }
-  .diplomacy-identity-head > span:first-child { border-left-color: transparent; }
-  .diplomacy-identity-head .numeric { text-align: right; }
-  .diplomacy-identity-head .diplomacy-odds-head { padding-inline: 2px; }
+  .hud-head-identity {
+    padding-inline: 3px; border-left: 1px solid #ffffff10;
+    font-size: var(--type-micro); letter-spacing: .025em;
+  }
+  .player-standings-drag + .hud-head-cell { border-left-color: transparent; }
+  .ribbon-stat-heading .numeric { text-align: right; }
+  .ribbon-stat-heading .diplomacy-odds-head { padding-inline: 2px; }
+  /* The stat gutters separate these columns, so the heads do not also need a
+     rule between every pair — twelve hairlines over twelve short words read
+     as a fence. */
+  .hud-head-stat {
+    display: grid; place-items: center; border-left: 0;
+    font-size: var(--type-caption); letter-spacing: .015em;
+  }
+  .hud-head-watch { display: grid; align-items: center; border-left: 0; padding-inline: 0; }
   /* Every data heading is also its sort target. The invisible button keeps the
      compact label's exact footprint; the active direction sits in the corner
      instead of spending a character of a narrow heading such as SCORE. */
@@ -2775,19 +2834,6 @@
     background: linear-gradient(180deg, #dfc477, #b98c3d);
     box-shadow: inset 0 1px #fff5;
   }
-  .diplomacy-stat-head {
-    min-width: 0; display: grid; grid-column: 4;
-    grid-template-columns: var(--hud-stat-tracks);
-    column-gap: var(--hud-stat-gap, 0px);
-    color: #a9bbb4; font-size: var(--type-caption); font-weight: 950; letter-spacing: .015em;
-  }
-  /* The gutter separates the columns, so the heads do not also need a rule
-     between every pair — ten hairlines over ten short words read as a fence. */
-  .diplomacy-stat-head span {
-    min-width: 0; display: grid; place-items: center; overflow: hidden;
-    text-overflow: clip;
-  }
-
   /* One thin bar stands on each seam between two data columns, and dragging it
      moves width from the column on its left into the column on its right. The
      layer is inert and only the bars themselves take the pointer, so the heads
@@ -2824,11 +2870,30 @@
   body.hud-columns-resizing { cursor: col-resize; }
   body.hud-columns-resizing * { cursor: col-resize !important; }
   body.hud-columns-resizing #playerhud { user-select: none; }
+  /* Reordering a column by its heading: the ghost names what is being carried
+     and follows the pointer, while the gold marker stands on the seam where
+     the column will land when it is let go. */
+  .hud-reorder-marker {
+    position: absolute; top: -4px; bottom: -5px; width: 2px; z-index: 4;
+    background: var(--gold-bright); box-shadow: 0 0 6px #d7b66a80;
+    pointer-events: none;
+  }
+  .hud-column-ghost {
+    position: fixed; z-index: 300; padding: 3px 8px;
+    border: 1px solid var(--gold); border-radius: 6px;
+    background: #10201bf2; color: #ecd37e; white-space: nowrap;
+    font: 900 var(--type-micro)/1.2 var(--font-ui); letter-spacing: .05em;
+    text-transform: uppercase; pointer-events: none;
+    transform: translate(-50%, -130%); box-shadow: 0 8px 22px #000b;
+  }
+  body.hud-columns-reordering { cursor: grabbing; }
+  body.hud-columns-reordering * { cursor: grabbing !important; }
+  body.hud-columns-reordering #playerhud { user-select: none; }
   /* Every row keeps the same readable height instead of being squeezed to fit
      the panel. A custom or physically constrained HUD scrolls rather than
      shrinking the rows into illegibility. */
   #playerhud .diplomacy-ribbon {
-    flex: 1; min-width: 0; min-height: 0; display: grid;
+    flex: 1; min-width: var(--hud-table-min, 0px); min-height: 0; display: grid;
     grid-template-columns: minmax(0, 1fr);
     grid-auto-rows: var(--hud-row-height);
     grid-auto-flow: row; align-content: start; gap: var(--hud-row-gap); padding: 0;
@@ -2837,31 +2902,22 @@
   }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar { width: 3px; }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar-thumb { background: #476057; border-radius: 4px; }
-  /* One line, four regions: the lock, identity with its adjacent Watch-as
-     action, then the twelve values. Rank and Civilization are independent
-     identity facts; Civilization itself carries the former Empire/capital
-     action. */
+  /* One line, one region per column: the lock, then every visible column in
+     the viewer's own order on the same flat tracks the heading uses. The
+     markup emits the cells in that order, so the card needs no per-cell
+     column assignments — the tracks and the cells cannot disagree. */
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px)
-      var(--hud-watch-column) var(--hud-identity-column) var(--hud-stats-column);
+    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-tracks);
     grid-template-rows: minmax(0, 1fr);
-    align-items: center; gap: var(--hud-column-gap); margin: 0; padding: 1px 4px 1px 3px;
+    align-items: center; column-gap: var(--hud-stat-gap, 3px); row-gap: 0;
+    margin: 0; padding: 1px 4px 1px 3px;
     overflow: hidden; border-radius: 7px;
-  }
-  #playerhud .diplomacy-identity-grid {
-    min-width: 0; display: grid; grid-column: 2 / 4; grid-row: 1;
-    grid-template-columns: var(--hud-identity-tracks); align-items: stretch; overflow: hidden;
   }
   /* Watch-as sits in the same fixed track as the All button heading it, and it
      is inset by the same single pixel, so the two read as one column rather
      than as a head that is four pixels wider than everything under it. */
-  #playerhud .watch-as-link { grid-column: 4; grid-row: 1; align-self: center; justify-self: stretch; }
-  #playerhud .diplomacy-rank { grid-column: 1; grid-row: 1; }
-  #playerhud .diplomacy-civ-link { grid-column: 2; grid-row: 1; }
-  #playerhud .diplomacy-leader-link { grid-column: 3; grid-row: 1; }
-  #playerhud .diplomacy-identity-secondary { grid-column: 5 / 11; grid-row: 1; }
-  #playerhud .diplomacy-stats { grid-column: 4; grid-row: 1; }
+  #playerhud .watch-as-link { align-self: center; justify-self: stretch; }
 
   /* Locking a seat keeps its row in view while the rest of the table scrolls
      past it — one row, even when the table seats two of that civilization. The
@@ -2889,34 +2945,13 @@
   #playerhud .watch-as-link {
     width: calc(100% - 2px); height: 22px; margin: 0 1px; font-size: var(--type-micro);
   }
-  /* Every identity fact uses the same tracks as the heading above it.
-     Variable-length names can ellipsize inside their own cell without moving
-     ELO, its live delta, win odds or strategy to a different horizontal
-     position on each row. */
+  /* Every identity fact is one cell on the same flat tracks as the heading
+     above it. Variable-length names can ellipsize inside their own cell
+     without moving ELO, its live delta, win odds or strategy to a different
+     horizontal position on each row. */
   #playerhud .diplomacy-identity {
     position: relative; min-width: 0; display: grid;
     align-items: stretch; gap: 0; overflow: hidden; padding-block: 0;
-  }
-  /* Player, ELO, ELO Δ, WIN%, AGE and PLAN are six of the identity block's tracks,
-     but they are drawn inside one button that spans all six — so the button has
-     to divide itself along exactly the lines its parent already drew.
-     `subgrid` is what makes that literal. A copy of the ratios cannot be:
-     the shares here are `1 : .55 : .55 : .7 : 1.1`, which is the same proportion
-     the heading uses, and the columns still came apart in two ways that a
-     reading of the stylesheet does not show.
-     - **Floors.** The heads carry the 30px label floor and the 60px figure
-       floor; a copy carrying `minmax(0, …)` keeps shrinking after the heads
-       have stopped. Measured on a 1280px screen: the ELO head stood at its
-       60px floor over a 27.5px figure, and the value under the WIN% head was
-       11.5px to the left of it.
-     - **The seam bars.** A drag rewrites `--hud-identity-tracks`, which is
-       the heading's list *and* this block's parent — but a copy of the old
-       ratios does not hear about it at all. Dragging the ELO/Δ bar 26px on
-       a 1920px screen moved the head 21px and left every figure where it was.
-     With subgrid these six tracks are not equal to the heading's, they are
-     the same tracks, so no drag and no floor can separate them again. */
-  #playerhud .diplomacy-identity-secondary {
-    grid-template-columns: subgrid;
   }
   #playerhud .diplomacy-identity-field {
     min-width: 0; display: flex; align-items: center; gap: 3px;
@@ -2955,18 +2990,24 @@
     position: absolute; right: 1px; top: 50%; margin: 0; transform: translateY(-50%);
     font-size: var(--type-caption);
   }
-  #playerhud .diplomacy-stats {
-    align-self: stretch; display: grid; grid-template-columns: var(--hud-stat-tracks);
-    grid-template-rows: minmax(0, 1fr); row-gap: 0;
-    column-gap: var(--hud-stat-gap, 0px);
-  }
   /* No hairline between values: the gutter above already separates them, and a
      grid of 80 ruled cells reads as a spreadsheet rather than a scoreboard.
-     The cell is the positioning context for the religion marker. */
+     The cell is the positioning context for the religion marker. Each value
+     is its own button now — the whole cell still answers with the Watch-as
+     action the old full-width stats button carried — so the app's raised
+     button chrome is stripped back to a bare cell here. */
   #playerhud .ribbon-stat {
-    position: relative;
-    min-height: 0; display: grid; place-content: center; padding: 0;
-    border-left: 0; border-top: 0;
+    position: relative; align-self: stretch;
+    min-width: 0; min-height: 0; display: grid; place-content: center;
+    margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none;
+    color: inherit; background: none; font: inherit; text-align: center;
+    cursor: pointer; transform: none; transition: background .12s ease;
+  }
+  #playerhud .ribbon-stat:hover, #playerhud .ribbon-stat:focus-visible {
+    background: #ffffff0a; transform: none;
+  }
+  #playerhud .ribbon-stat:focus-visible {
+    outline: 1px solid var(--gold-bright); outline-offset: -1px;
   }
   /* A truncated name still reads; a truncated number lies. The identity column
      is allowed to ellipsize and gives up width first, so every Elo score stays whole
@@ -3169,7 +3210,7 @@
   @media (max-width: 1300px) {
     #playerhud {
       grid-template-columns: 144px minmax(0, 1fr);
-      --hud-ident-min: 33.5px; --hud-column-gap: 4px; --hud-stat-min: 34px;
+      --hud-ident-min: 33.5px; --hud-stat-min: 34px;
     }
   }
   @media (max-width: 1180px) {
@@ -3180,7 +3221,7 @@
        #playerhud[data-type-size="compact"]. */
     #playerhud {
       grid-template-columns: 140px minmax(0, 1fr);
-      --hud-ident-min: 27.5px; --hud-column-gap: 3px;
+      --hud-ident-min: 27.5px;
       --hud-watch-column: 70px;
       --hud-stat-min: 32px; --hud-stat-gap: 2px;
     }
@@ -3239,7 +3280,7 @@
        own head at one end of the table and two pixels right of it at the
        other. */
     #playerhud .diplomacy-card, #playerhud .ribbon-stat-heading { padding-inline: 2px; }
-    .diplomacy-stat-head { font-size: var(--type-micro); }
+    .hud-head-stat { font-size: var(--type-micro); }
   }
   /* A wide browser can still leave a narrow map after the viewer opens the
      command deck's right seam. The HUD follows the map's actual width, not the
@@ -3255,7 +3296,7 @@
     right: var(--panel-edge); width: auto; padding: 4px;
     grid-template-columns: 140px minmax(0, 1fr);
     --hud-lock-column: 11px; --hud-watch-column: 70px; --hud-ident-min: 27.5px;
-    --hud-column-gap: 3px; --hud-stat-min: 32px; --hud-stat-gap: 2px;
+    --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }
   #maparea.player-hud-compact #victoryhud {
     top: calc(var(--panel-edge) + min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + var(--panel-gap));
@@ -3289,7 +3330,7 @@
   #maparea.player-hud-compact .victory-track:first-child { border-left-color: transparent; }
   #maparea.player-hud-compact #playerhud .diplomacy-card,
   #maparea.player-hud-compact #playerhud .ribbon-stat-heading { padding-inline: 2px; }
-  #maparea.player-hud-compact .diplomacy-stat-head { font-size: var(--type-micro); }
+  #maparea.player-hud-compact .hud-head-stat { font-size: var(--type-micro); }
   #maparea.player-hud-narrow #playerhud {
     --hud-watch-column: 68px; --hud-ident-min: 21px; --hud-stat-min: 30px; --hud-stat-gap: 2px;
   }
@@ -3328,23 +3369,15 @@
      inside the panel, so their heads overflow by the same 3px either way. */
   #playerhud[data-type-size="compact"] {
     grid-template-columns: clamp(148px, 33%, 164px) minmax(0, 1fr);
-    --hud-ident-min: 25px; --hud-column-gap: 4px;
+    --hud-ident-min: 25px;
     --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }
   #playerhud[data-type-size="compact"] > .player-standings:focus-visible {
     outline: 1px solid #d7b66a70; outline-offset: -1px; border-radius: 6px;
   }
-  /* Twelve complete numeric columns have a real minimum width. When a custom or
-     phone-sized box cannot supply it, keep a readable type floor and scroll the
-     table inside its own panel instead of crushing or spilling its cells.
-     803px makes room for the dedicated Rank column as well as the identity tracks,
-     twelve 32px values with 2px gutters, the lock, widened watch action, and
-     padding. */
-  #playerhud[data-type-size="compact"] .ribbon-stat-heading,
-  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 803px; }
   #playerhud[data-type-size="roomy"] {
     grid-template-columns: 168px minmax(0, 1fr);
-    --hud-ident-min: 61px; --hud-column-gap: 7px;
+    --hud-ident-min: 61px;
     --hud-identity-bias: 1.25; --hud-stat-min: 42px;
     --hud-row-height: 30px;
   }
@@ -3964,6 +3997,71 @@
             </select>
           </div>
         </div>
+        <details class="display-settings-group" id="map-overlays-settings" data-advanced-settings="display-overlays">
+          <summary><span class="advanced-settings-summary">Map overlays<small>Information panels shown over the map</small></span></summary>
+          <div class="display-settings-group-body">
+            <div class="overlay-options overlay-menus" role="group" aria-labelledby="overlay-options-title">
+              <h2 id="overlay-options-title">Overlays</h2>
+              <details class="overlay-menu" data-overlay-menu="players" data-advanced-settings="display-overlay-players">
+                <summary>
+                  <input type="checkbox" data-overlay="players" checked
+                         title="Show or hide the player standings" aria-label="Show the player standings overlay">
+                  <span class="overlay-menu-title">Player standings<small>Roster, ratings &amp; per-civ metrics</small></span>
+                </summary>
+                <div class="overlay-menu-body">
+                  <div class="small overlay-menu-help">Check a column to show it; drag a row here — or a column heading in the table itself — to reorder. Headings sort, and the thin bar between two headings resizes them.</div>
+                  <div class="hud-column-list" id="hud-column-list" role="group" aria-label="Player standings columns"></div>
+                  <button class="ghost overlay-menu-reset" id="reset-hud-columns" type="button">Reset columns, order &amp; widths</button>
+                </div>
+              </details>
+              <details class="overlay-menu" data-overlay-menu="victory" data-advanced-settings="display-overlay-victory">
+                <summary>
+                  <input type="checkbox" data-overlay="victory" checked
+                         title="Show or hide the victory tracker" aria-label="Show the victory tracker overlay">
+                  <span class="overlay-menu-title">Victory tracker<small>Progress toward each victory path</small></span>
+                </summary>
+                <div class="overlay-menu-body">
+                  <div class="small overlay-menu-help">Drag its title bar to move it, any edge or corner to resize; the layout saves automatically.</div>
+                  <button class="ghost overlay-menu-reset" type="button" data-hud-widget-reset="victory">Reset position &amp; size</button>
+                </div>
+              </details>
+              <details class="overlay-menu" data-overlay-menu="minimap" data-advanced-settings="display-overlay-minimap">
+                <summary>
+                  <input type="checkbox" data-overlay="minimap" checked
+                         title="Show or hide the world minimap" aria-label="Show the world minimap overlay">
+                  <span class="overlay-menu-title">World minimap<small>The whole world at a glance</small></span>
+                </summary>
+                <div class="overlay-menu-body">
+                  <div class="small overlay-menu-help">Drag its title bar to move it, any edge or corner to resize. Render resolution under Performance options changes its sharpness.</div>
+                  <button class="ghost overlay-menu-reset" type="button" data-hud-widget-reset="minimap">Reset position &amp; size</button>
+                </div>
+              </details>
+              <details class="overlay-menu" data-overlay-menu="controls" data-advanced-settings="display-overlay-controls">
+                <summary>
+                  <input type="checkbox" data-overlay="controls" checked
+                         title="Show or hide the map controls" aria-label="Show the map controls overlay">
+                  <span class="overlay-menu-title">Map controls<small>Zoom, bearing &amp; framing</small></span>
+                </summary>
+                <div class="overlay-menu-body">
+                  <div class="small overlay-menu-help">The dock under the map with zoom, bearing and framing controls. Hide it here or with its ✕; keyboard shortcuts keep working either way.</div>
+                </div>
+              </details>
+              <details class="overlay-menu" data-overlay-menu="lenses" data-advanced-settings="display-overlay-lenses">
+                <summary>
+                  <input type="checkbox" data-overlay="lenses" checked
+                         title="Show or hide the map lenses" aria-label="Show the map lenses overlay">
+                  <span class="overlay-menu-title">Map lenses<small>Specialised map readings</small></span>
+                </summary>
+                <div class="overlay-menu-body">
+                  <div class="small overlay-menu-help">Lens buttons recolor the map by a single reading — hiding this overlay also switches any active lens off.</div>
+                </div>
+              </details>
+              <div class="small overlay-layout-help">Drag a title bar to move an overlay, any edge or corner to resize; the layout saves automatically.</div>
+              <div class="small overlay-layout-help">In the standings, drag the thin bar between two column headings to rebalance them; double-click it to fit the column to its contents. ◉ locks a row in view, and locks carry into the next game.</div>
+              <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions, sizes &amp; columns</button>
+            </div>
+          </div>
+        </details>
         <details class="display-settings-group" id="map-options-settings" data-advanced-settings="display-map">
           <summary><span class="advanced-settings-summary">Map options<small>Tile detail, animations &amp; map edges</small></span></summary>
           <div class="display-settings-group-body">
@@ -3997,24 +4095,6 @@
                 <label class="overlay-option"><input type="checkbox" id="wrapxchk" checked>Left–right wraparound</label>
                 <label class="overlay-option"><input type="checkbox" id="wrapychk">Top–bottom wraparound</label>
               </div>
-            </div>
-          </div>
-        </details>
-        <details class="display-settings-group" id="map-overlays-settings" data-advanced-settings="display-overlays">
-          <summary><span class="advanced-settings-summary">Map overlays<small>Information panels shown over the map</small></span></summary>
-          <div class="display-settings-group-body">
-            <div class="overlay-options" role="group" aria-labelledby="overlay-options-title">
-              <h2 id="overlay-options-title">Visible overlays</h2>
-              <div class="overlay-option-grid">
-                <label class="overlay-option"><input type="checkbox" data-overlay="players" checked>Player standings</label>
-                <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory tracker</label>
-                <label class="overlay-option"><input type="checkbox" data-overlay="minimap" checked>World minimap</label>
-                <label class="overlay-option"><input type="checkbox" data-overlay="controls" checked>Map controls</label>
-                <label class="overlay-option"><input type="checkbox" data-overlay="lenses" checked>Map lenses</label>
-              </div>
-              <div class="small overlay-layout-help">Drag a title bar to move an overlay, any edge or corner to resize; the layout saves automatically.</div>
-              <div class="small overlay-layout-help">In the standings, drag the thin bar between two column headings to rebalance them; double-click it to reset the pair. ◉ locks a row in view, and locks carry into the next game.</div>
-              <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions, sizes &amp; columns</button>
             </div>
           </div>
         </details>
