@@ -2302,7 +2302,10 @@ mod tests {
         let index: &str = &index_owned;
 
         // Apollo 11 flew Saturn V, Mars gets the Starship silhouette, and the
-        // exoplanet mission gets the explicitly oversized version of it.
+        // exoplanet mission gets the same silhouette at exactly twice the
+        // scale — doubled uniformly, with a matching double-size plume, so the
+        // monumental ship keeps rocket proportions instead of reading as an
+        // egg with fins.
         assert!(index.contains(
             "moon:{project:SKY_CHAIN.moon, duration:2800, body:\"moon\", rocket:\"saturn_v\"}"
         ));
@@ -2314,7 +2317,8 @@ mod tests {
         ));
         assert!(index.contains("function drawMissionRocket(rocket, player, size, now"));
         assert!(index.contains("length:starshipLength * 2"));
-        assert!(index.contains("halfWidth:starshipHalfWidth * 4"));
+        assert!(index.contains("halfWidth:starshipHalfWidth * 2, plume:2,"));
+        assert!(index.contains("const flame = size * (shape.plume || 1);"));
 
         // Spaceflight visuals default to visible, retain a viewer preference,
         // and treat the perpetual satellite orbit like a rocket animation.
