@@ -4869,6 +4869,11 @@ async function boot() {
   bootBusy = true;
   try {
     RULES = await fetchJSON("/rules");
+    // The engine's stock opening setup: the single description of the world
+    // nobody has decided anything about. The controls below stamp their
+    // defaults from it rather than repeating its values here, so tweaking
+    // the stock world is one engine-side change.
+    const stockSetup = RULES.default_setup || {};
     // Rules arrive after the shell. Building district buttons now keeps the
     // initial page light and, importantly, does not calculate a single tile
     // until a viewer actually selects one of them.
@@ -4922,18 +4927,24 @@ async function boot() {
       sizes.innerHTML = RULES.map_sizes.map(size =>
         `<option value="${size.default_players}">${size.name} · ${size.default_players} civs · ${size.default_city_states} city-states · ${size.width}×${size.height}</option>`
       ).join("");
+      const stockPlayers = String(stockSetup.players);
       if ([...sizes.options].some(option => option.value === chosen)) {
         sizes.value = chosen;
-      } else if ([...sizes.options].some(option => option.value === "4")) {
-        sizes.value = "4";
+      } else if ([...sizes.options].some(option => option.value === stockPlayers)) {
+        sizes.value = stockPlayers;
       }
       // The sizes this build offers decide which team splits it can seat.
       syncTeams();
     }
     if (Array.isArray(RULES.map_scripts)) {
-      document.getElementById("maptype").innerHTML = RULES.map_scripts.map(script =>
+      const maps = document.getElementById("maptype");
+      const chosen = maps.value;
+      maps.innerHTML = RULES.map_scripts.map(script =>
         `<option value="${script.id}" title="${escapeAttr(script.description)}">${script.name}</option>`
       ).join("");
+      const offered = value => [...maps.options].some(option => option.value === value);
+      if (offered(chosen)) maps.value = chosen;
+      else if (offered(stockSetup.map)) maps.value = stockSetup.map;
     }
     // The world's shape and how its heat is laid out are settings of their own:
     // any map type can be laid out either way, with heat following latitude or
@@ -4942,10 +4953,11 @@ async function boot() {
       if (!Array.isArray(list)) continue;
       const select = document.getElementById(id);
       const chosen = select.value;
-      // A new game opens on a globe. A live world's value still wins below,
-      // so reopening its setup describes the world actually on screen.
-      const defaultValue = id === "mapshape" && list.some(entry => entry.id === "planet")
-        ? "planet" : chosen;
+      // A new game opens on the stock world's shape and heat layout. A live
+      // world's value still wins below, so reopening its setup describes the
+      // world actually on screen.
+      const stock = id === "mapshape" ? stockSetup.shape : stockSetup.poles;
+      const defaultValue = list.some(entry => entry.id === stock) ? stock : chosen;
       select.innerHTML = list.map(entry =>
         `<option value="${entry.id}" title="${escapeAttr(entry.description)}"` +
         `${entry.id === defaultValue ? " selected" : ""}>${entry.name}</option>`
@@ -4968,10 +4980,12 @@ async function boot() {
       if (stock) document.getElementById("difficulty").value = stock[0];
     }
     if (Array.isArray(RULES.game_speeds)) {
-      document.getElementById("gamespeed").innerHTML = RULES.game_speeds.map(speed =>
+      const speeds = document.getElementById("gamespeed");
+      speeds.innerHTML = RULES.game_speeds.map(speed =>
         `<option value="${speed.id}" title="${speed.description}">${speed.name} · ${speed.turn_limit} turns</option>`
       ).join("");
-      document.getElementById("gamespeed").value = "online";
+      if ([...speeds.options].some(option => option.value === stockSetup.speed))
+        speeds.value = stockSetup.speed;
     }
     // The ruleset carries the other game's vocabulary too, and the mode may
     // already be selected by the time it lands.

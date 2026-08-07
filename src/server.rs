@@ -3458,6 +3458,68 @@ fn major_teams(game: &Game) -> Vec<Option<usize>> {
         .collect()
 }
 
+/// The stock opening world: four majors playing themselves out on the Tiny
+/// Tennis Ball globe.
+///
+/// This is the one description of "the game nobody has decided anything
+/// about yet". The browser build opens every civvis.ai visit on it (see
+/// `wasm::opening_params`), `/rules` publishes it as `default_setup` so the
+/// setup panel stamps its controls from here rather than from copies of
+/// these values in the markup, and the lobby's own `selected` attributes are
+/// held to it by test. Tweak this function to change what a first visit
+/// loads into.
+fn stock_opening_params(seed: u64) -> Params {
+    let size = MapSize::for_players(4);
+    let map_topology = MapTopology::Planet;
+    let (width, height) = size.dimensions(map_topology);
+    Params {
+        num_players: 4,
+        width,
+        height,
+        seed,
+        base_ruleset: BaseRuleset::Civ6,
+        start_era: 0,
+        future_era: FutureEra::Classic,
+        turn_structure: TurnStructure::Sequential,
+        map_script: MapScript::TeninsBall,
+        map_topology,
+        map_poles: MapPoles::Poles,
+        game_speed: GameSpeed::Online,
+        max_turns: GameSpeed::Online.turn_limit(),
+        victory_conditions: VictoryConditions {
+            science: true,
+            culture: true,
+            religious: true,
+            diplomatic: true,
+            domination: true,
+            score: true,
+        },
+        num_city_states: size.default_city_states,
+        spectate: true,
+        difficulty: "prince".to_string(),
+        speed: GameSpeed::Online.id().to_string(),
+        teams: Vec::new(),
+        leader_pool: LeaderPool::Civ6,
+        civs: Vec::new(),
+        supervised: false,
+        league_dir: None,
+        league_record: false,
+        force_strategy: None,
+    }
+}
+
+/// [`stock_opening_params`] as the setup panel reads it. The seed is
+/// removed: the stock world is a description, not a particular roll of it,
+/// and a published seed would end up prefilled in the lobby's seed input.
+fn default_setup_json() -> Value {
+    let mut setup = simulation_settings(&stock_opening_params(0));
+    setup
+        .as_object_mut()
+        .expect("simulation settings are an object")
+        .remove("seed");
+    setup
+}
+
 fn simulation_settings(params: &Params) -> Value {
     let victories = [
         (params.victory_conditions.science, "science"),
@@ -4489,6 +4551,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "map_topologies": MAP_TOPOLOGIES,
                     "map_poles": MAP_POLES,
                     "game_speeds": CIV6_GAME_SPEEDS,
+                    // The stock opening setup, so the lobby's defaults are
+                    // read from the engine rather than repeated in markup.
+                    "default_setup": default_setup_json(),
                     // The other game's vocabulary, for the mode that plays it.
                     // It never changes while a server runs, unlike the host
                     // report at `/civ6`, which is a different question asked of
@@ -4877,10 +4942,12 @@ mod tests {
     use crate::game::{
         Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
     };
-    use crate::server::{generated_ai_name, simulation_settings};
+    use crate::server::{
+        default_setup_json, generated_ai_name, simulation_settings, stock_opening_params,
+    };
     use crate::setup::{
         future_era_from_id, start_era_from_id, BaseRuleset, FutureEra, GameSpeed, MapPoles,
-        MapScript, MapTopology, TurnStructure, MAP_POLES,
+        MapScript, MapSize, MapTopology, TurnStructure, MAP_POLES,
     };
     use serde_json::{json, Value};
     use std::io::{Read, Write};
@@ -8539,7 +8606,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("RULES.map_topologies"));
         assert!(EMBEDDED_INDEX.contains("const chosen = select.value;"));
         assert!(EMBEDDED_INDEX.contains(
-            "const defaultValue = id === \"mapshape\" && list.some(entry => entry.id === \"planet\")"
+            "const stock = id === \"mapshape\" ? stockSetup.shape : stockSetup.poles;"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "if ([...select.options].some(option => option.value === chosen)) select.value = chosen;"
@@ -9998,6 +10065,100 @@ mod tests {
         assert!(side_rule.contains("order: -1"));
         assert!(EMBEDDED_INDEX.contains("<strong>${reportedTurn()}</strong>"));
         assert!(!EMBEDDED_INDEX.contains("${state.turn}/${maxTurns}"));
+    }
+
+    /// The first world a civvis.ai visitor ever waits on is the smallest
+    /// stock one: four majors on the Tiny Tennis Ball globe, sized by the
+    /// shipped table, spectated, at Online speed. The browser build's
+    /// `wasm::opening_params` is this function with the page's seed, so the
+    /// contract is tested here, where the suite actually runs.
+    #[test]
+    fn the_stock_opening_world_is_the_tiny_tennis_ball_exhibition() {
+        let params = stock_opening_params(7);
+        let size = MapSize::for_players(params.num_players);
+
+        assert_eq!(params.num_players, 4);
+        assert_eq!(params.map_script, MapScript::TeninsBall);
+        assert_eq!(params.map_topology, MapTopology::Planet);
+        assert_eq!(
+            (params.width, params.height),
+            size.dimensions(MapTopology::Planet)
+        );
+        assert_eq!(params.num_city_states, size.default_city_states);
+        assert_eq!(params.game_speed, GameSpeed::Online);
+        assert!(params.spectate);
+        assert_eq!(params.seed, 7);
+    }
+
+    /// `/rules` publishes the stock opening setup in the same vocabulary the
+    /// staged `next_game_settings` uses, minus the seed — a description of
+    /// the stock world, not a particular roll of it, and nothing the lobby
+    /// would prefill its seed input from.
+    #[test]
+    fn the_published_default_setup_is_the_stock_opening_world() {
+        let setup = default_setup_json();
+        let expected = simulation_settings(&stock_opening_params(0));
+
+        assert!(setup.get("seed").is_none(), "{setup}");
+        for (key, value) in expected.as_object().unwrap() {
+            if key == "seed" {
+                continue;
+            }
+            assert_eq!(setup.get(key), Some(value), "default_setup.{key}");
+        }
+        // The lobby stamps its controls from the published setup rather than
+        // repeating the stock world's values in its own code.
+        assert!(EMBEDDED_INDEX.contains("const stockSetup = RULES.default_setup || {};"));
+        assert!(EMBEDDED_INDEX.contains("const stockPlayers = String(stockSetup.players);"));
+        assert!(EMBEDDED_INDEX.contains("else if (offered(stockSetup.map)) maps.value = stockSetup.map;"));
+        assert!(EMBEDDED_INDEX
+            .contains("if ([...speeds.options].some(option => option.value === stockSetup.speed))"));
+    }
+
+    /// The markup's own `selected` attributes must describe the same world
+    /// the engine publishes, or the panel would flash one default before
+    /// `/rules` stamps the other. Each lobby select's marked option — or its
+    /// first option, for a select that marks none — is read out of the page
+    /// and compared against the stock opening setup.
+    #[test]
+    fn the_lobby_markup_agrees_with_the_stock_opening_setup() {
+        let marked_default = |select_id: &str| {
+            let at = EMBEDDED_INDEX
+                .find(&format!("id=\"{select_id}\""))
+                .unwrap_or_else(|| panic!("browser setup is missing the {select_id} select"));
+            let tail = &EMBEDDED_INDEX[at..];
+            let body = &tail[..tail.find("</select>").expect("unterminated select")];
+            // The value attribute closest before the `selected` mark — or,
+            // for a select that marks nothing, before the first option's own
+            // closing bracket, because an unmarked select opens on its first
+            // option.
+            let anchor = body.find(" selected").unwrap_or_else(|| {
+                let first = body.find("<option").expect("empty select");
+                first + body[first..].find('>').expect("unterminated option")
+            });
+            let start = body[..anchor].rfind("value=\"").expect("option without a value") + 7;
+            body[start..start + body[start..].find('"').expect("unterminated value")].to_string()
+        };
+
+        let setup = default_setup_json();
+        let text = |key: &str| setup[key].as_str().unwrap().to_string();
+        for (select_id, stock) in [
+            ("np", setup["players"].to_string()),
+            ("maptype", text("map")),
+            ("mapshape", text("shape")),
+            ("mappoles", text("poles")),
+            ("gamespeed", text("speed")),
+            ("startera", text("start_era")),
+            ("futureera", text("future_era")),
+            ("baseruleset", text("base_ruleset")),
+            ("leaderpool", text("leader_pool")),
+        ] {
+            assert_eq!(
+                marked_default(select_id),
+                stock,
+                "the {select_id} select's markup default drifted from the stock opening setup"
+            );
+        }
     }
 
     #[test]
