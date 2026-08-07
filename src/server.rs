@@ -3514,13 +3514,13 @@ fn stock_opening_params(seed: u64) -> Params {
         base_ruleset: BaseRuleset::Civ6,
         start_era: 0,
         future_era: FutureEra::Classic,
-        // A spectated table has nobody at the keyboard, so it plays the
-        // regime the automated surfaces already default to: every seat plans
-        // the turn against the same frozen world and the plans commit
-        // together. Taking a seat here is still sequential — `new_game_params`
-        // downgrades a played game the same way `play` refuses the flag —
-        // so this changes what a visitor watches, not what they can play.
-        turn_structure: TurnStructure::Simultaneous,
+        // The product is sequential, full stop: every world this server
+        // rolls — watched or played — runs the one-seat-at-a-time regime,
+        // and no request can pick anything else. The simultaneous driver
+        // stays in the engine for research runs that launch with
+        // `--turn-structure simultaneous`; it is simply not selectable
+        // from here.
+        turn_structure: TurnStructure::Sequential,
         map_script: MapScript::TeninsBall,
         map_topology,
         map_poles: MapPoles::Poles,
@@ -3730,15 +3730,11 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(era) = request["future_era"].as_str().and_then(future_era_from_id) {
         p.future_era = era;
     }
-    // The turn structure follows the same refuse-unknown contract. Whether a
-    // simultaneous request can be *honoured* also depends on who is seated,
-    // which the end of this function settles once every field has landed.
-    if let Some(v) = request["turn_structure"]
-        .as_str()
-        .and_then(crate::setup::turn_structure_from_id)
-    {
-        p.turn_structure = v;
-    }
+    // The turn structure is deliberately absent from this ladder: the
+    // product is hard-committed to sequential turns, so a request cannot
+    // select the regime at all. A world only plays simultaneous when the
+    // server itself was launched into it (`--turn-structure` on a research
+    // build), and the base params carry that through restarts below.
     if let Some(v) = request["map_script"].as_str().and_then(MapScript::from_id) {
         p.map_script = v;
         // `planet` used to name a world type; it now names a shape. A client
@@ -7534,21 +7530,30 @@ mod tests {
         assert!(state.get("simultaneous").is_none());
     }
 
+    /// The product is hard-committed to sequential turns, so the regime is
+    /// not a request's to choose: a `turn_structure` field is ignored for
+    /// watched and played tables alike. Only the base params carry it — a
+    /// research server launched into the simultaneous regime keeps it
+    /// across restarts, and a human seat still downgrades to sequential.
     #[test]
-    fn new_game_carries_the_turn_structure_for_a_watched_table_only() {
+    fn a_request_cannot_select_the_turn_structure() {
         let mut spectated = current();
         spectated.spectate = true;
         let asked = new_game_params(&spectated, &json!({"turn_structure": "simultaneous"}));
-        assert_eq!(asked.turn_structure, TurnStructure::Simultaneous);
-        // An unknown id leaves the setting where it was, like every rung.
-        let nonsense = new_game_params(&asked, &json!({"turn_structure": "psychic"}));
-        assert_eq!(nonsense.turn_structure, TurnStructure::Simultaneous);
-        let back = new_game_params(&asked, &json!({"turn_structure": "sequential"}));
-        assert_eq!(back.turn_structure, TurnStructure::Sequential);
-        // A game with a human seat is sequential by construction: the rest
-        // of such a request lands, the regime does not.
+        assert_eq!(asked.turn_structure, TurnStructure::Sequential);
         let played = new_game_params(&current(), &json!({"turn_structure": "simultaneous"}));
         assert_eq!(played.turn_structure, TurnStructure::Sequential);
+
+        // A research build's simultaneous world survives a restart request
+        // that never mentions the regime, and a seated human still gets the
+        // sequential game `play` would have handed them.
+        let mut research = current();
+        research.spectate = true;
+        research.turn_structure = TurnStructure::Simultaneous;
+        let restarted = new_game_params(&research, &json!({"players": 5}));
+        assert_eq!(restarted.turn_structure, TurnStructure::Simultaneous);
+        let seated = new_game_params(&research, &json!({"spectate": false}));
+        assert_eq!(seated.turn_structure, TurnStructure::Sequential);
     }
 
     fn current() -> Params {
@@ -10195,19 +10200,16 @@ mod tests {
         assert_eq!(params.num_city_states, size.default_city_states);
         assert_eq!(params.game_speed, GameSpeed::Online);
         assert!(params.spectate);
-        assert_eq!(params.turn_structure, TurnStructure::Simultaneous);
+        assert_eq!(params.turn_structure, TurnStructure::Sequential);
         assert_eq!(params.seed, 7);
     }
 
-    /// The stock world is watched, never played, so its regime is the one
-    /// every unattended surface already defaults to. A visitor who takes a
-    /// seat is a live human consulted one seat at a time, so `new_game_params`
-    /// hands them the sequential regime instead — the same refusal `play`
-    /// makes at launch, and the reason this default is safe to publish.
+    /// The product is hard-committed to sequential turns: the stock world
+    /// rolls sequential, and taking a seat in it stays sequential.
     #[test]
     fn taking_a_seat_in_the_stock_world_still_plays_sequentially() {
         let stock = stock_opening_params(0);
-        assert_eq!(stock.turn_structure, TurnStructure::Simultaneous);
+        assert_eq!(stock.turn_structure, TurnStructure::Sequential);
 
         let seated = new_game_params(&stock, &json!({"spectate": false}));
         assert!(!seated.spectate);
