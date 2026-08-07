@@ -395,6 +395,7 @@ pub enum MapScript {
     Fjords,
     Islands,
     WaterWorld,
+    Battlefield,
 }
 
 impl MapScript {
@@ -414,7 +415,18 @@ impl MapScript {
             Self::Fjords => "fjords",
             Self::Islands => "islands",
             Self::WaterWorld => "water_world",
+            Self::Battlefield => "battlefield",
         }
+    }
+
+    /// Whether the script draws the Tactics battlefield: a small bounded
+    /// arena for unit combat rather than a world to settle. The battlefield
+    /// is flat-only (a globe has no opposite corners), keeps every terrain
+    /// feature that shapes a fight — mountains, rivers, woods, water — and
+    /// places no resources, tribal villages, natural wonders, or
+    /// city-states, because nothing on it exists to be developed.
+    pub const fn is_battlefield(self) -> bool {
+        matches!(self, Self::Battlefield)
     }
 
     /// Whether the script draws a fixed world instead of rolling a new one.
@@ -467,6 +479,10 @@ impl MapScript {
             Self::Fjords => 60,
             Self::Islands => 22,
             Self::WaterWorld => 5,
+            // Ground everywhere except the one-column seam that seals the
+            // cylinder's east-west wrap into a bounded arena, plus a pond or
+            // two so rivers have somewhere to reach the sea.
+            Self::Battlefield => 88,
         }
     }
 
@@ -647,8 +663,10 @@ pub struct MapScriptSpec {
     pub script: MapScript,
 }
 
-/// The world types in the order [`MapScript`] declares them.
-pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 14] = [
+/// The world types in the order [`MapScript`] declares them. The Battlefield
+/// sits last because it is not a world at all: the Tactics game mode's small
+/// bounded arena, offered by the lobby only when that mode is chosen.
+pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 15] = [
     MapScriptSpec {
         id: "land_only",
         name: "Land Only",
@@ -733,6 +751,44 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 14] = [
         description: "Almost nothing but ocean — scattered specks of land, and the sea lanes between them are the map.",
         script: MapScript::WaterWorld,
     },
+    MapScriptSpec {
+        id: "battlefield",
+        name: "Battlefield",
+        description: "A small bounded arena for tactical unit combat: open ground shaped by mountains, rivers, woods and water, with no resources and nothing to develop.",
+        script: MapScript::Battlefield,
+    },
+];
+
+/// The world types a lobby offers for the Civ game mode: every script but the
+/// battlefield, which is not a world and belongs to the Tactics mode's own
+/// menu. Both menus stay data-driven from the one authoritative roster.
+pub fn world_map_scripts() -> Vec<&'static MapScriptSpec> {
+    CIV6_MAP_SCRIPTS.iter().filter(|spec| !spec.script.is_battlefield()).collect()
+}
+
+/// The Tactics mode's map menu: today just the battlefield, published as a
+/// list so a second arena can arrive without a protocol change.
+pub fn battlefield_map_scripts() -> Vec<&'static MapScriptSpec> {
+    CIV6_MAP_SCRIPTS.iter().filter(|spec| spec.script.is_battlefield()).collect()
+}
+
+/// A Tactics battlefield size. The advertised name counts the fighting ground;
+/// `width` carries one extra column of sea that seals the flat map's east-west
+/// wrap seam, so the arena plays as a true bounded rectangle.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct BattlefieldSize {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub width: i32,
+    pub height: i32,
+}
+
+/// The battlefields the Tactics mode offers, smallest first. Squares seat the
+/// two sides in opposite corners; the rectangle seats them at opposite ends.
+pub const BATTLEFIELD_SIZES: [BattlefieldSize; 3] = [
+    BattlefieldSize { id: "10x10", name: "Square · 10×10", width: 11, height: 10 },
+    BattlefieldSize { id: "10x20", name: "March · 10×20", width: 11, height: 20 },
+    BattlefieldSize { id: "20x20", name: "Field · 20×20", width: 21, height: 20 },
 ];
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -1113,6 +1169,7 @@ mod tests {
     use super::{
         last_start_era, playable_start_eras, start_era_from_id, start_era_id,
         stock_start_era_id, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology,
+        BATTLEFIELD_SIZES,
         BASE_RULESETS, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, MAP_POLES,
         MAP_TOPOLOGIES, START_ERAS,
     };
@@ -1344,6 +1401,7 @@ mod tests {
                 MapScript::Fjords,
                 MapScript::Islands,
                 MapScript::WaterWorld,
+                MapScript::Battlefield,
             ]
         );
         assert_eq!(MapScript::LandOnly.land_percent(), 95);
@@ -1367,6 +1425,41 @@ mod tests {
             .find(|spec| spec.id == "tenins_ball")
             .expect("the Tennis Ball map is listed");
         assert_eq!(tennis_ball.name, "Tennis Ball");
+    }
+
+    /// The Tactics battlefield is an arena, not a world: only the Battlefield
+    /// script is one, and every offered size advertises its fighting ground
+    /// while carrying the one extra column of sea that seals the flat wrap
+    /// seam into a bounded rectangle.
+    #[test]
+    fn the_battlefield_is_an_arena_rather_than_a_world() {
+        for spec in CIV6_MAP_SCRIPTS {
+            assert_eq!(
+                spec.script.is_battlefield(),
+                spec.script == MapScript::Battlefield,
+                "{}",
+                spec.id
+            );
+        }
+        assert_eq!(MapScript::from_id("battlefield"), Some(MapScript::Battlefield));
+        for size in BATTLEFIELD_SIZES {
+            let ground: Vec<i32> = size
+                .id
+                .split('x')
+                .map(|side| side.parse().expect("battlefield ids read WxH"))
+                .collect();
+            assert_eq!(ground.len(), 2, "{}", size.id);
+            assert_eq!(size.width, ground[0] + 1, "{} carries the seam column", size.id);
+            assert_eq!(size.height, ground[1], "{}", size.id);
+            // No battlefield collides with a real map size: the seam column
+            // keeps them off the settlement sizes' dimension table.
+            assert!(MapSize::from_dimensions(size.width, size.height).is_none(), "{}", size.id);
+        }
+        // Squares seat opposite corners, the rectangle opposite ends; both
+        // need the long axis unwrapped, which the flat map's hard north-south
+        // edges provide. Nothing here is taller than it is wide only by the
+        // seam column.
+        assert_eq!(BATTLEFIELD_SIZES.len(), 3);
     }
 
     /// The world's shape and its poles are settings of their own, orthogonal to

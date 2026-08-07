@@ -17890,6 +17890,14 @@ impl Game {
         for (i, pos) in spawns.iter().take(num_players).enumerate() {
             g.spawn_unit("settler", i, *pos);
             g.spawn_unit("warrior", i, *pos);
+            // A battlefield seat opens with a small army rather than a bare
+            // escort — the arena exists for the fight, not the buildup — and
+            // every side receives the same one, so the battle starts fair.
+            if map_script.is_battlefield() {
+                for kind in ["warrior", "slinger", "spearman"] {
+                    g.spawn_unit(kind, i, *pos);
+                }
+            }
             // Above Prince the AI seats open with extra units, exactly as the
             // shipped `Eras.xml` bonus start table describes.
             if !g.is_human_seat(i) {
@@ -17955,6 +17963,9 @@ impl Game {
         // dormant until the first Loyalty revolt, so it neither receives a
         // start nor consumes a turn in games where every city stays loyal.
         g.ensure_free_city_player();
+        // No third force on a battlefield: barbarian camps on an arena a
+        // dozen tiles across would decide more battles than the two sides do.
+        let barbarians = barbarians && !map_script.is_battlefield();
         if barbarians {
             let pid = g.players.len();
             let mut barb = Player::new(pid, "Barbarians", true);
@@ -67700,6 +67711,42 @@ mod district_mechanics {
             elapsed < std::time::Duration::from_secs(120),
             "setting up a land-heavy globe took {elapsed:?}"
         );
+    }
+
+    /// A Tactics battlefield opens as a two-sided arena: flat even when a
+    /// globe was asked for, the requested city-states refused, no barbarian
+    /// third force, and every side holding the same small opening army beside
+    /// its settler — the arena exists for the fight, not the buildup.
+    #[test]
+    fn a_battlefield_game_opens_as_a_two_sided_arena() {
+        let game = Game::new_with(GameOptions {
+            map_script: MapScript::Battlefield,
+            map_topology: MapTopology::Planet,
+            ..GameOptions::new(2, 11, 10, 90_411, 250, 3)
+        });
+        assert!(game.map.sphere().is_none(), "the arena must be flat");
+        assert_eq!((game.map.width, game.map.height), (11, 10));
+        assert!(game.barb_pid.is_none(), "no third force on a battlefield");
+        // Two majors and the dormant Free Cities seat: the three city-states
+        // asked for were refused by the arena.
+        assert_eq!(game.players.len(), 3);
+        assert!(game.players.iter().all(|player| !player.is_minor || player.is_free_city));
+        for seat in 0..2 {
+            let mut opening: Vec<&str> = game
+                .units
+                .values()
+                .filter(|unit| unit.owner == seat)
+                .map(|unit| unit.kind.as_str())
+                .collect();
+            opening.sort_unstable();
+            assert_eq!(
+                opening,
+                ["settler", "slinger", "spearman", "warrior", "warrior"],
+                "seat {seat} must open with the battlefield army"
+            );
+        }
+        // Nothing on the arena exists to be developed.
+        assert!(game.map.tiles.values().all(|tile| tile.resource.is_none()));
     }
 
     #[test]

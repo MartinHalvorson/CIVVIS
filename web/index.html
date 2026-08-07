@@ -1573,6 +1573,9 @@
      stays on screen and is not carried is a promise about the run that the run
      does not keep. See docs/CIV6_GAME_MODE.md. */
   body.playing-civ6 .civ6-hidden { display: none; }
+  /* A battlefield is flat by construction and temperate throughout, so the
+     shape and climate controls would be promises the arena does not keep. */
+  body.playing-tactics .tactics-hidden { display: none; }
   /* Whether this computer can play the verification-only mode at all, and what
      a run it can see is doing. It is retained everywhere and refused where it
      cannot run, so the refusal has somewhere to be read: a dead Steam client
@@ -4148,7 +4151,7 @@
       </summary>
       <div class="sec settings-sec" id="game-settings">
       <div id="newgame-options">
-        <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
+        <label class="small">Human players<select id="humanplayers" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
           <option value="single">Single player</option>
           <option value="civ6" hidden>Play Firaxis Civ 6 with computer control</option>
@@ -4166,7 +4169,7 @@
           <option value="10">Large · 10 civs · 15 city-states · 96×60</option>
           <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
         </select></label>
-        <label class="small civ6-hidden">World shape<select id="mapshape" style="margin-top:4px">
+        <label class="small civ6-hidden tactics-hidden">World shape<select id="mapshape" style="margin-top:4px">
           <option value="flat">Flat</option>
           <option value="planet" selected>Planet</option>
         </select></label>
@@ -4236,6 +4239,11 @@
             <option value="6">6</option>
           </select></label>
         </div>
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="5">Game mode<select id="gamemode" style="margin-top:4px"
+          title="Civ is the full game. Tactics is a playground for tactical unit combat: a small flat battlefield with mountains, rivers, woods and water but no resources or city-states, where two evenly-armed sides begin in opposite corners of a square arena or at opposite ends of a long one.">
+          <option value="civ" selected>Civ</option>
+          <option value="tactics">Tactics</option>
+        </select></label>
         <label class="small game-advanced-setting" data-advanced-order="10">Base game ruleset<select id="baseruleset" style="margin-top:4px">
           <option value="civ6" selected>Civ 6</option>
         </select></label>
@@ -4266,7 +4274,7 @@
             </table>
           </div>
         </div>
-        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="50">Thermal distribution<select id="mappoles" style="margin-top:4px">
+        <label class="small game-advanced-setting civ6-hidden tactics-hidden" data-advanced-order="50">Thermal distribution<select id="mappoles" style="margin-top:4px">
           <option value="poles">Hot equator, cold poles</option>
           <option value="randomized">Randomized</option>
         </select></label>
@@ -4278,7 +4286,7 @@
         </select></label>
         <label class="small game-advanced-setting human-setting" data-advanced-order="80">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
         <details class="advanced-settings" id="game-advanced-settings" data-advanced-settings="game">
-          <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Base ruleset, teams, leader pool, selection, climate &amp; seed</small></span></summary>
+          <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Game mode, base ruleset, teams, leader pool, selection, climate &amp; seed</small></span></summary>
           <div class="advanced-settings-body" id="game-advanced-settings-body"></div>
         </details>
         <details class="advanced-settings civ6-hidden" id="game-mod-settings" data-advanced-settings="mods">
