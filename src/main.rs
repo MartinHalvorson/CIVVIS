@@ -938,9 +938,17 @@ fn future_era(args: &[String]) -> setup::FutureEra {
 
 /// Whether the seats of a game turn act one after another or plan against a
 /// shared snapshot and commit together. Same contract as the eras: an unknown
-/// id is refused rather than quietly played as the stock regime.
-fn turn_structure(args: &[String]) -> setup::TurnStructure {
-    let id = arg_text(args, "--turn-structure", setup::TurnStructure::default().id());
+/// id is refused rather than quietly played as some stock regime.
+///
+/// The default is the caller's to name, because it is a per-command choice:
+/// headless simulation and a spectated table default to `simultaneous` for
+/// throughput, while a played game is sequential by construction and every
+/// rating instrument (benchmark, tournament, league, elo, selfplay, evolve)
+/// stays a sequential-regime instrument whose records must not claim
+/// otherwise. `TurnStructure::default()` itself stays `Sequential` as the
+/// save-compatibility and setup-contract anchor.
+fn turn_structure(args: &[String], default: setup::TurnStructure) -> setup::TurnStructure {
+    let id = arg_text(args, "--turn-structure", default.id());
     setup::turn_structure_from_id(&id).unwrap_or_else(|| {
         let known: Vec<&str> = setup::TURN_STRUCTURES.iter().map(|spec| spec.id).collect();
         eprintln!("unknown turn structure {id:?}; choose one of: {}", known.join(", "));
@@ -949,8 +957,14 @@ fn turn_structure(args: &[String]) -> setup::TurnStructure {
 }
 
 /// Difficulty and speed are chosen the same way everywhere: by name, against
-/// the shipped ruleset, with the stock levels as defaults.
-fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
+/// the shipped ruleset, with the stock levels as defaults. The turn-structure
+/// default is the command's own (see [`turn_structure`]).
+fn game_options(
+    args: &[String],
+    players: i64,
+    seed: u64,
+    default_structure: setup::TurnStructure,
+) -> GameOptions {
     let rules = Rules::embedded();
     let difficulty = arg_text(args, "--difficulty", &default_difficulty());
     if !rules.difficulties.contains_key(&difficulty) {
@@ -1094,7 +1108,7 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
             }
             modes
         },
-        turn_structure: turn_structure(args),
+        turn_structure: turn_structure(args, default_structure),
         ..GameOptions::new(
             player_count,
             auto_dimension(args, "--width", players, true),
@@ -1260,10 +1274,14 @@ fn main() {
         "simulate" => {
             let players = arg(&args, "--players", 4);
             let g0 = Instant::now();
+            // Headless simulation is what the simultaneous regime exists
+            // for, so it is the default here; `--turn-structure sequential`
+            // asks for the stock regime explicitly.
             let mut g = Game::new_with(game_options(
                 &args,
                 players,
                 arg(&args, "--seed", 0) as u64,
+                setup::TurnStructure::Simultaneous,
             ));
             // The two regimes want opposite parallelism. Sequential seats
             // cannot deliberate concurrently, so `--jobs` feeds the clone-
@@ -1293,7 +1311,8 @@ fn main() {
             let games = arg(&args, "--games", 10);
             let start = arg(&args, "--start-seed", 0);
             let jobs = jobs_arg(&args);
-            let simultaneous = turn_structure(&args) == setup::TurnStructure::Simultaneous;
+            let simultaneous = turn_structure(&args, setup::TurnStructure::Simultaneous)
+                == setup::TurnStructure::Simultaneous;
             // A sequential soak has only one useful frontier: independent
             // games. Simultaneous games have a second one inside each game —
             // every ready civilization can plan at once. Keep the total
@@ -1313,7 +1332,12 @@ fn main() {
                 let seed = start + index as i64;
                 let t0 = Instant::now();
                 let result = std::panic::catch_unwind(|| {
-                    let mut g = Game::new_with(game_options(&args, players, seed as u64));
+                    let mut g = Game::new_with(game_options(
+                        &args,
+                        players,
+                        seed as u64,
+                        setup::TurnStructure::Simultaneous,
+                    ));
                     let mut ais = AdvancedAi::fleet(&g);
                     let simultaneous = if g.turn_structure == setup::TurnStructure::Simultaneous {
                         // Spread a non-divisible budget across the first live
@@ -1575,7 +1599,12 @@ fn main() {
             let players = arg(&args, "--players", 6);
             let warmup = arg(&args, "--turns", 150) as u32;
             let samples = arg(&args, "--samples", 5000) as usize;
-            let mut g = Game::new_with(game_options(&args, players, arg(&args, "--seed", 0) as u64));
+            let mut g = Game::new_with(game_options(
+                &args,
+                players,
+                arg(&args, "--seed", 0) as u64,
+                setup::TurnStructure::Sequential,
+            ));
             let mut ais = AdvancedAi::fleet(&g);
             // Play in to the requested turn first: an empty map clones far
             // faster than a settled one, and a settled one is what an agent
@@ -1894,7 +1923,12 @@ fn main() {
         }
         "selfplay" => {
             let players = arg(&args, "--players", 4).max(2);
-            let options = game_options(&args, players, arg(&args, "--seed", 0) as u64);
+            let options = game_options(
+                &args,
+                players,
+                arg(&args, "--seed", 0) as u64,
+                setup::TurnStructure::Sequential,
+            );
             let counterfactual = args.iter().any(|arg| arg == "--counterfactual");
             let cfg = civvis::selfplay::SelfPlayCfg {
                 games: arg(&args, "--games", 20) as usize,
@@ -2246,15 +2280,25 @@ fn main() {
                         .subsec_nanos() as u64
                 }
             };
-            let play_options = game_options(&args, players, seed);
             // A played game consults the human seat live, one seat at a
             // time, which is the sequential regime by construction. A
             // spectated table has nobody at the keyboard, so it plays the
-            // simultaneous regime as one whole planned turn per pace tick.
+            // simultaneous regime as one whole planned turn per pace tick —
+            // and defaults to it, like the rest of the automated surfaces.
             // Refuse the combination that cannot be honoured rather than
             // quietly playing a different game than the flag asked for;
             // `simulate` and `soak` play it headless either way.
             let spectate = args.iter().any(|a| a == "--spectate" || a == "--watch");
+            let play_options = game_options(
+                &args,
+                players,
+                seed,
+                if spectate {
+                    setup::TurnStructure::Simultaneous
+                } else {
+                    setup::TurnStructure::Sequential
+                },
+            );
             if !spectate && play_options.turn_structure == setup::TurnStructure::Simultaneous {
                 eprintln!(
                     "a played game is sequential by construction; simultaneous \
@@ -2439,7 +2483,8 @@ fn main() {
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
                       [--disasters 0|1|2|3|4] [--barbarians on|off] \
-                      [--turn-structure sequential|simultaneous] \
+                      [--turn-structure sequential|simultaneous (simulate, soak, and spectated \
+                       play default to simultaneous; everything else stays sequential)] \
                       [--game-modes apocalypse,secret_societies] \
                       [--leader-pool civ6|historical|today] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
@@ -2458,17 +2503,17 @@ mod tests {
     use super::{
         game_options, jobs_arg, map_topology, parse_tournament_entrants,
         simultaneous_soak_job_split, single_simulation_jobs_arg, strict_f64_arg, strict_i64_arg,
-        ADVANCED_V1_SOURCE_CONTRACT_FNV,
+        turn_structure, ADVANCED_V1_SOURCE_CONTRACT_FNV,
         DEFAULT_TOURNAMENT_ENTRANTS, SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
     };
     use civvis::game::{Action, Game};
-    use civvis::setup::{MapSize, MapTopology};
+    use civvis::setup::{MapSize, MapTopology, TurnStructure};
 
     #[test]
     fn omitted_map_shape_defaults_to_planet() {
         assert_eq!(map_topology(&[]), MapTopology::Planet);
 
-        let options = game_options(&[], 2, 71_004);
+        let options = game_options(&[], 2, 71_004, TurnStructure::Sequential);
         let size = MapSize::for_players(2);
         assert_eq!(options.map_topology, MapTopology::Planet);
         assert_eq!(
@@ -2480,6 +2525,44 @@ mod tests {
         assert_eq!(map_topology(&flat), MapTopology::Flat);
     }
 
+    /// The turn-structure default is per command: the surfaces that exist
+    /// for throughput (simulate, soak, a spectated table) hand this helper
+    /// `Simultaneous`, the rating instruments and played games hand it
+    /// `Sequential`, and an explicit flag always wins over either. The
+    /// anchor `TurnStructure::default()` stays `Sequential` for saves and
+    /// the setup contract — that half of the promise is asserted in
+    /// `simultaneous.rs`.
+    #[test]
+    fn the_turn_structure_default_is_the_callers_and_the_flag_still_wins() {
+        assert_eq!(
+            turn_structure(&[], TurnStructure::Simultaneous),
+            TurnStructure::Simultaneous
+        );
+        assert_eq!(
+            turn_structure(&[], TurnStructure::Sequential),
+            TurnStructure::Sequential
+        );
+        let sequential = vec!["--turn-structure".to_string(), "sequential".to_string()];
+        assert_eq!(
+            turn_structure(&sequential, TurnStructure::Simultaneous),
+            TurnStructure::Sequential
+        );
+        let simultaneous = vec!["--turn-structure".to_string(), "simultaneous".to_string()];
+        assert_eq!(
+            turn_structure(&simultaneous, TurnStructure::Sequential),
+            TurnStructure::Simultaneous
+        );
+        // The default threads through a whole options build unchanged.
+        assert_eq!(
+            game_options(&[], 4, 71_006, TurnStructure::Simultaneous).turn_structure,
+            TurnStructure::Simultaneous
+        );
+        assert_eq!(
+            game_options(&sequential, 4, 71_006, TurnStructure::Simultaneous).turn_structure,
+            TurnStructure::Sequential
+        );
+    }
+
     /// The stock game somebody gets by asking for nothing: a Tennis Ball
     /// world. The four-seat half of the promise lives in the `play` arm's
     /// `--players` default, and the serde default stays Pangaea so a client
@@ -2488,7 +2571,7 @@ mod tests {
     fn omitted_map_defaults_to_the_tennis_ball() {
         use civvis::setup::MapScript;
 
-        let options = game_options(&[], 4, 71_005);
+        let options = game_options(&[], 4, 71_005, TurnStructure::Sequential);
         assert_eq!(options.map_script, MapScript::TeninsBall);
 
         // An explicit choice still wins, under either accepted spelling.
@@ -2498,7 +2581,11 @@ mod tests {
             ("tenins_ball", MapScript::TeninsBall),
         ] {
             let args = vec!["--map".to_string(), asked.to_string()];
-            assert_eq!(game_options(&args, 4, 71_005).map_script, chosen, "{asked}");
+            assert_eq!(
+                game_options(&args, 4, 71_005, TurnStructure::Sequential).map_script,
+                chosen,
+                "{asked}"
+            );
         }
     }
 
