@@ -1,0 +1,10 @@
+  "GET /wasm/league.json HTTP/1.1" 200 -
+  "POST /wasm/league-result HTTP/1.1" 200 -
+  "POST /wasm/league-result HTTP/1.1" 403 -
+/opt/homebrew/Cellar/python@3.14/3.14.2/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 403: 'Forbidden'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.513s
+
+OK
