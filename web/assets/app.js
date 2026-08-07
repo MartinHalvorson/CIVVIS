@@ -1439,11 +1439,10 @@ function syncResponsivePanelGeometry() {
     ?.getBoundingClientRect().height || 0;
   const controlHeight = Math.max(46, Math.round(measuredControlHeight));
   const controlClearance = edge + controlHeight + gap;
-  // The player masthead scrolls internally below this ceiling. Let the cap
-  // fall below its ordinary two-row preference on a very short quadrant so the
-  // victory band and minimap retain a visible gap instead of painting through
-  // one another.
-  const maxPlayerHeight = Math.round(clampPanelDimension(height * .38, 104, 280));
+  // The masthead's height belongs to the viewer: the only ceiling is the map
+  // area itself, less its margins. The instruments below share whatever the
+  // chosen height leaves via their own clamped floors.
+  const maxPlayerHeight = Math.round(Math.max(104, height - edge * 2));
   const requestedPlayerHeight = Number.parseFloat(area.style.getPropertyValue("--player-hud-height")) || 200;
   const playerReserve = Math.min(requestedPlayerHeight, maxPlayerHeight);
   const shape = typeof planetMap === "function" && planetMap() ? "planet" : "flat";
@@ -1825,22 +1824,14 @@ function playerHudContentHeight(rows) {
   return Math.max(PLAYER_HUD_MIN_HEIGHT, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());
 }
 
-function playerHudMaxContentHeight() {
-  // A saved layout is restored before the first world state supplies its row
-  // count. Leave that first restore bounded only by the map; drawPlayerHud()
-  // publishes the exact roster ceiling once it knows the rows.
-  const height = Number.parseFloat(area.style.getPropertyValue("--player-hud-content-height"));
-  return Number.isFinite(height) ? height : Infinity;
-}
-
 const HUD_WIDGETS = {
   // A player row is one line: the turn plate, an identity and twelve fixed metric
   // columns side by side, which is why the standings want the map's width and
-  // very little of its height. They are capped below two-fifths of that height
-  // however they are sized — by the player count, by a dragged edge, or by a
-  // layout saved earlier — so a large table never swallows the world.
+  // very little of its height. The default height still ends at the final
+  // civilization row, but a dragged edge answers to nothing except the map
+  // itself: how much world the masthead covers is the viewer's own call.
   players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:PLAYER_HUD_MIN_HEIGHT,
-            maxHeight:playerHudMaxContentHeight, maxHeightRatio:.38, avoidsSidebar:true},
+            avoidsSidebar:true},
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88, avoidsSidebar:true},
   minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96,
             avoidsSidebar:true, square:true},
@@ -3042,14 +3033,12 @@ function hudWidgetMetrics(element) {
 }
 
 // The tallest a widget may be: the map it floats over, less its margins, and
-// less again for any widget that claims a content or proportional ceiling.
+// less again for any widget that claims a content ceiling.
 function hudWidgetMaxHeight(config, margin = hudWidgetMargin()) {
   const contentCeiling = typeof config.maxHeight === "function"
     ? config.maxHeight()
     : Number.isFinite(config.maxHeight) ? config.maxHeight : Infinity;
-  const ratioCeiling = config.maxHeightRatio
-    ? area.clientHeight * config.maxHeightRatio : Infinity;
-  return Math.max(1, Math.min(area.clientHeight - margin * 2, contentCeiling, ratioCeiling));
+  return Math.max(1, Math.min(area.clientHeight - margin * 2, contentCeiling));
 }
 
 // Saved HUD positions are local to #maparea. On a desktop the command deck is
@@ -3249,7 +3238,10 @@ function resetHudWidget(name, persist = true) {
   config.element.classList.remove("layout-widget-custom", "layout-widget-active");
   // The tracker reads its neighbours' heights to know where to start and stop.
   // Hand those back to the stylesheet at the same moment the neighbour returns.
-  if (name === "players") area.style.removeProperty("--player-hud-height");
+  if (name === "players") {
+    area.style.removeProperty("--player-hud-height");
+    applyTurnPlateWidth(null);
+  }
   if (name === "minimap") syncDefaultMinimapGeometry();
   if ((name === "players" || name === "victory") && state) drawPlayerHud();
   if (persist) saveHudLayout();
@@ -4233,6 +4225,131 @@ window.addEventListener("resize", () => {
   else scheduleSidebarGeometry();
 });
 requestAnimationFrame(scheduleSidebarGeometry);
+
+// ── The turn plate's own width ─────────────────────────────────────────────
+//
+// The plate column is a fixed track the stylesheet sizes by density, and the
+// seam on its right edge is the command deck's affordance brought inside the
+// masthead: drag it and the plate keeps the width, the standings re-divide
+// what remains. Width is a small local preference like the deck's. Past
+// TURN_PLATE_SPLIT_WIDTH the plate has more width than one settings column
+// can spend, so it goes wide instead of tall: the era and the turn counter
+// share the first line and the settings below divide into two columns.
+//
+// The seam is re-rendered with the masthead's markup every frame, so nothing
+// binds to the element itself: the press is caught on #playerhud, which is
+// permanent, and the drag lives on window like every layout gesture here.
+const TURN_PLATE_WIDTH_STORAGE_KEY = "civvis-turn-plate-width-v1";
+const TURN_PLATE_MIN_WIDTH = 148;
+const TURN_PLATE_SPLIT_WIDTH = 252;
+let turnPlateWidth = (() => {
+  const saved = Number(localStorage.getItem(TURN_PLATE_WIDTH_STORAGE_KEY));
+  return Number.isFinite(saved) && saved >= TURN_PLATE_MIN_WIDTH
+    ? Math.round(saved) : null;
+})();
+let turnPlateSeamGesture = null;
+
+// The standings keep a readable stretch beside the plate. They scroll
+// sideways inside their own frame, so the table survives any division — this
+// floor only keeps the plate from swallowing the whole masthead.
+function turnPlateMaxWidth() {
+  const hud = document.getElementById("playerhud");
+  return Math.max(TURN_PLATE_MIN_WIDTH, (hud?.clientWidth || 0) - 240);
+}
+
+function applyTurnPlateWidth(width, persist = true) {
+  const hud = document.getElementById("playerhud");
+  if (!hud) return;
+  // `Number(null)` is 0, and a clamped 0 is the minimum width — so a reset
+  // has to be told apart from a narrow drag before any arithmetic happens.
+  const candidate = width === null || width === undefined ? NaN : Number(width);
+  turnPlateWidth = Number.isFinite(candidate)
+    ? Math.round(Math.max(TURN_PLATE_MIN_WIDTH, Math.min(turnPlateMaxWidth(), candidate)))
+    : null;
+  if (turnPlateWidth === null) hud.style.removeProperty("--turn-plate-width");
+  else hud.style.setProperty("--turn-plate-width", `${turnPlateWidth}px`);
+  hud.classList.toggle("turn-plate-wide",
+    turnPlateWidth !== null && turnPlateWidth >= TURN_PLATE_SPLIT_WIDTH);
+  const seam = hud.querySelector("[data-turn-plate-seam]");
+  if (seam) {
+    seam.setAttribute("aria-valuemin", `${TURN_PLATE_MIN_WIDTH}`);
+    seam.setAttribute("aria-valuemax", `${Math.round(turnPlateMaxWidth())}`);
+    seam.setAttribute("aria-valuenow",
+      `${turnPlateWidth ?? Math.round(hud.querySelector(".victory-turn")?.getBoundingClientRect().width || TURN_PLATE_MIN_WIDTH)}`);
+  }
+  if (persist) {
+    try {
+      if (turnPlateWidth === null) localStorage.removeItem(TURN_PLATE_WIDTH_STORAGE_KEY);
+      else localStorage.setItem(TURN_PLATE_WIDTH_STORAGE_KEY, `${turnPlateWidth}`);
+    } catch (_) {}
+  }
+}
+
+function beginTurnPlateSeamGesture(event) {
+  if (event.button !== undefined && event.button !== 0) return;
+  const plate = document.getElementById("playerhud")?.querySelector(".victory-turn");
+  if (!plate) return;
+  event.preventDefault();
+  event.stopPropagation();
+  turnPlateSeamGesture = {
+    pointerId:event.pointerId, startX:event.clientX,
+    startWidth:plate.getBoundingClientRect().width, moved:false,
+  };
+  document.body.classList.add("layout-resizing");
+  document.body.style.setProperty("--layout-resize-cursor", "col-resize");
+}
+
+function moveTurnPlateSeamGesture(event) {
+  const gesture = turnPlateSeamGesture;
+  if (!gesture || event.pointerId !== gesture.pointerId) return;
+  event.preventDefault();
+  const dx = event.clientX - gesture.startX;
+  if (Math.abs(dx) > 1) gesture.moved = true;
+  if (gesture.moved) applyTurnPlateWidth(gesture.startWidth + dx, false);
+}
+
+function finishTurnPlateSeamGesture(event) {
+  const gesture = turnPlateSeamGesture;
+  if (!gesture || (event && event.pointerId !== gesture.pointerId)) return;
+  turnPlateSeamGesture = null;
+  document.body.classList.remove("layout-resizing");
+  document.body.style.removeProperty("--layout-resize-cursor");
+  if (gesture.moved) applyTurnPlateWidth(turnPlateWidth);
+}
+
+{
+  const hud = document.getElementById("playerhud");
+  hud?.addEventListener("pointerdown", event => {
+    if (event.target.closest?.("[data-turn-plate-seam]"))
+      beginTurnPlateSeamGesture(event);
+  });
+  hud?.addEventListener("dblclick", event => {
+    if (!event.target.closest?.("[data-turn-plate-seam]")) return;
+    event.preventDefault();
+    applyTurnPlateWidth(null);
+  });
+  hud?.addEventListener("keydown", event => {
+    const seam = event.target.closest?.("[data-turn-plate-seam]");
+    if (!seam) return;
+    const step = event.shiftKey ? 24 : 8;
+    const current = turnPlateWidth
+      ?? hud.querySelector(".victory-turn")?.getBoundingClientRect().width
+      ?? TURN_PLATE_MIN_WIDTH;
+    let next = null;
+    if (event.key === "ArrowLeft") next = current - step;
+    if (event.key === "ArrowRight") next = current + step;
+    if (event.key === "Home") next = TURN_PLATE_MIN_WIDTH;
+    if (event.key === "End") next = turnPlateMaxWidth();
+    if (next === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    applyTurnPlateWidth(next);
+  });
+  window.addEventListener("pointermove", moveTurnPlateSeamGesture, {passive:false});
+  window.addEventListener("pointerup", finishTurnPlateSeamGesture);
+  window.addEventListener("pointercancel", finishTurnPlateSeamGesture);
+  applyTurnPlateWidth(turnPlateWidth, false);
+}
 
 function screenToWorld(sx, sy) {
   const vx = (sx - MAPW / 2) / cam.scale;
@@ -20309,10 +20426,10 @@ function drawPlayerHud() {
   // counter; every additional civilization gets exactly one more row.
   const requestedHeight = playerHudContentHeight(rows);
   const mapArea = document.getElementById("maparea");
-  mapArea.style.setProperty("--player-hud-content-height", `${requestedHeight}px`);
   if (!HUD_LAYOUT.players) {
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
   } else if (hudLayoutGesture?.name !== "players") {
+    // A window can shrink under a saved height; the map bound still holds.
     const metrics = hudWidgetMetrics(hud);
     if (metrics.height > hudWidgetMaxHeight(HUD_WIDGETS.players))
       applyHudWidgetMetrics("players", metrics);
@@ -20331,6 +20448,9 @@ function drawPlayerHud() {
   const html =
     `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore it in Display Settings" title="Hide player standings · restore in Display Settings">✕</button>` +
     hudTurnPlate() +
+    `<button class="turn-plate-seam" type="button" data-turn-plate-seam role="separator" ` +
+    `aria-orientation="vertical" aria-label="Turn plate width; drag or use arrow keys, double-click resets" ` +
+    `title="Drag to size the turn plate · double-click resets"></button>` +
     `<div class="player-standings" tabindex="0" aria-label="Player statistics; scroll horizontally for every column">` +
     `<div class="ribbon-stat-heading">` +
     `<span class="player-standings-drag widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
@@ -20554,6 +20674,8 @@ function drawPlayerHud() {
   observePlayerRibbon();
   syncPlayerLockPins();
   syncPlayerHudColumnGrips();
+  // innerHTML also replaced the plate seam; restamp its width and range.
+  applyTurnPlateWidth(turnPlateWidth, false);
   // The masthead is as tall as the table it holds, so a civilization met or
   // destroyed moves the map area's top edge as surely as dragging it does.
   refitMapAreaToChrome();
