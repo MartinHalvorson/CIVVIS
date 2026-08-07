@@ -2574,6 +2574,20 @@ impl AdvancedAi {
         // the live median Aqueduct order lands at turn 164. Making the district
         // reachable in the build lists cannot beat the tech that gates it.
         self.enable_housing_research();
+        self.enable_joint_tactics();
+    }
+
+    /// Plan each engagement's attacks as one joint problem instead of one
+    /// unit at a time in a fixed class order. Measured on `battle_bench`
+    /// (1000 paired fresh seeds a cell, seats swapped): combined arms +275,
+    /// ranged-heavy +363, siege +206, melee-only within noise, all against
+    /// the production controller the bridge extends. The whole-game gate
+    /// stays inconclusive (`docs/TACTICS.md` §6), so the tournament
+    /// `advanced` entrant keeps the greedy commitment rule and the deployed
+    /// bridge — where the operator asked for the strongest battlefield play,
+    /// not a rating — takes the search.
+    pub fn enable_joint_tactics(&mut self) {
+        self.joint_tactics = true;
     }
 
     /// Hold ONE live-bridge flag off so an arm can price it. These exist for
@@ -2581,6 +2595,10 @@ impl AdvancedAi {
     /// turns a repair back off.
     pub fn disable_home_defense(&mut self) {
         self.base.home_defense = false;
+    }
+
+    pub fn disable_joint_tactics(&mut self) {
+        self.joint_tactics = false;
     }
 
     pub fn disable_solvent_faith_army(&mut self) {
