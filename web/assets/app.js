@@ -27780,6 +27780,8 @@ let civ6StatusTimer = null;
 let civ6StatusInFlight = false;
 let civvisMapOptions = null;
 let civvisSizeOptions = null;
+let civVictoryChoices = null;
+let victoryRoster = "civvis";
 document.getElementById("humanplayers").addEventListener("change", syncSetupMode);
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
@@ -28256,6 +28258,7 @@ function syncSetupMode() {
   document.body.classList.toggle("playing-tactics", tactics);
   syncMapRoster(civ6, tactics);
   syncBattlefieldSizes(tactics);
+  syncBattlefieldVictories(tactics);
   // The control's label is not relabelled from here. This runs once during
   // load, before the settings state it would read has been initialised, and
   // `#newgame-options`'s delegated change listener already relabels it on
@@ -28317,6 +28320,26 @@ function syncMapRoster(civ6, tactics) {
   }
   select.dataset.roster = roster;
   syncEarthShape();
+}
+// An arena is fought over, not converted or researched to death: entering
+// Tactics points the victory checkboxes at Domination and Score — still
+// ordinary checkboxes anyone can override — and leaving it puts back
+// whatever was chosen for the Civ game. Its two state variables are declared
+// with the other mode state, before the wiring that calls this during load.
+function syncBattlefieldVictories(tactics) {
+  const roster = tactics ? "tactics" : "civvis";
+  if (roster === victoryRoster) return;
+  victoryRoster = roster;
+  const boxes = VICTORY_TRACKS
+    .map(track => [track.id, document.getElementById(`victory-${track.id}`)])
+    .filter(([, box]) => box);
+  if (tactics) {
+    civVictoryChoices = new Set(boxes.filter(([, box]) => box.checked).map(([id]) => id));
+    for (const [id, box] of boxes) box.checked = id === "domination" || id === "score";
+  } else if (civVictoryChoices) {
+    for (const [id, box] of boxes) box.checked = civVictoryChoices.has(id);
+  }
+  syncRequiredVictoriesCap();
 }
 // The world-size control is the battlefield-size control in Tactics: the same
 // select carrying a different roster, exactly as the map control does for

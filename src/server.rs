@@ -7672,6 +7672,12 @@ mod tests {
         assert!(EMBEDDED_INDEX
             .contains("document.body.classList.toggle(\"playing-tactics\", tactics);"));
         assert!(EMBEDDED_INDEX.contains("body.playing-tactics .tactics-hidden { display: none; }"));
+        // An arena is fought over: entering Tactics points the victory
+        // checkboxes at Domination and Score — still ordinary checkboxes —
+        // and leaving it restores the Civ game's own choices.
+        assert!(EMBEDDED_INDEX.contains("function syncBattlefieldVictories(tactics)"));
+        assert!(EMBEDDED_INDEX
+            .contains("box.checked = id === \"domination\" || id === \"score\";"));
     }
 
     fn current() -> Params {
