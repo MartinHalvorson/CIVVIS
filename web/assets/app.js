@@ -5868,15 +5868,13 @@ function paceHeldOpen() {
   return [document.getElementById("specspeed"), document.querySelector("[data-hud-pace]")]
     .some(select => select && document.activeElement === select);
 }
-// Only the standings' own copies of the pace and turn-structure selects die
-// when the standings repaint, so only those copies need to hold the repaint
-// while one is held open. The sidebar #specspeed lives outside #playerhud
-// and never has this problem.
+// Only the standings' own copy of the pace select dies when the standings
+// repaint, so only that copy needs to hold the repaint while it is held
+// open. The sidebar #specspeed lives outside #playerhud and never has this
+// problem.
 function hudPaceHeldOpen() {
-  return ["[data-hud-pace]", "[data-hud-turns]"].some(selector => {
-    const select = document.querySelector(selector);
-    return !!select && document.activeElement === select;
-  });
+  const select = document.querySelector("[data-hud-pace]");
+  return !!select && document.activeElement === select;
 }
 function paceOffered(select, ms) {
   return [...select.options].some(o => +o.value === ms);
@@ -19852,25 +19850,12 @@ function hudTurnPlate() {
     ? `<span class="turn-pace-choice"><select data-hud-pace title="Change watch pace" ` +
       `aria-label="Watch pace">${watchPaceOptions}</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span>`
     : `<b>${watchPace}</b>`;
-  // The turn structure is a game rule, not a display choice, so a pick can
-  // never land on the running world: the select opens a dialog that offers to
-  // restart now, apply to the next game, or go back. The select itself always
-  // names the regime the world on screen is actually playing, and a queued
-  // change is flagged beside it until the world that honours it arrives.
-  const turnStructureLive = state.turn_structure === "simultaneous" ? "simultaneous" : "sequential";
-  if (selectedTurnStructure === turnStructureLive) selectedTurnStructure = null;
-  const turnStructureName = turnStructureLive === "simultaneous" ? "Simultaneous" : "Sequential";
-  const queuedTurnStructure = state.next_game_settings?.turn_structure;
-  const turnsQueuedNote = SPEC && queuedTurnStructure && queuedTurnStructure !== turnStructureLive
-    ? `<small class="turn-toll" title="${escapeAttr(titleCase(queuedTurnStructure))} turns begin with the next game">(next)</small>`
-    : "";
-  const turnStructureValue = SPEC
-    ? `<span class="turn-pace-choice"><select data-hud-turns title="Change turn structure" ` +
-      `aria-label="Turn structure">` +
-      `<option value="sequential"${turnStructureLive === "sequential" ? " selected" : ""}>Sequential</option>` +
-      `<option value="simultaneous"${turnStructureLive === "simultaneous" ? " selected" : ""}>Simultaneous</option>` +
-      `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span>${turnsQueuedNote}`
-    : `<b>${turnStructureName}</b>`;
+  // The turn regime is the world's rule, not a viewer choice — the product
+  // rolls only sequential worlds, so the plate simply names what the world
+  // on screen is playing. A research build launched with `--turn-structure
+  // simultaneous` still reads honestly here.
+  const turnStructureName = state.turn_structure === "simultaneous" ? "Simultaneous" : "Sequential";
+  const turnStructureValue = `<b>${turnStructureName}</b>`;
   // "Remaining" is a count of who is still playing, so a civilization that has
   // been wiped off the map no longer appears in it. The count it was taken out
   // of is worth as much as the count itself — eight remaining reads very
@@ -20617,11 +20602,6 @@ function runHudAction(target) {
 // cursor, and keep click for keyboard activation — which reports no press.
 const hudRibbon = document.getElementById("playerhud");
 hudRibbon.addEventListener("change", ev => {
-  const turns = ev.target.closest?.("[data-hud-turns]");
-  if (turns) {
-    chooseTurnStructure(turns);
-    return;
-  }
   const pace = ev.target.closest?.("[data-hud-pace]");
   if (!pace) return;
   chooseWatchPace(pace.value);
@@ -20635,9 +20615,6 @@ hudRibbon.addEventListener("change", ev => {
 // leaves it, paint whatever those held snapshots changed.
 hudRibbon.addEventListener("focusout", ev => {
   if (ev.target.closest?.("[data-hud-pace]") && state) drawPlayerHud();
-});
-hudRibbon.addEventListener("focusout", ev => {
-  if (ev.target.closest?.("[data-hud-turns]") && state) drawPlayerHud();
 });
 hudRibbon.addEventListener("mousedown", ev => {
   if (ev.button !== 0) return;
@@ -27815,11 +27792,6 @@ function selectedSimulationSettings() {
           leader_selection: leaderSelection,
           base_ruleset: baseRuleset, start_era: startEra,
           future_era: futureEra,
-          // The turn structure has no lobby control: it is chosen from the
-          // turn plate's own select, held here until the world that honours
-          // it arrives, and follows the live game otherwise.
-          turn_structure: selectedTurnStructure
-            ?? (state?.turn_structure === "simultaneous" ? "simultaneous" : "sequential"),
           // Automatic mode carries the split rule. Custom mode carries the
           // table's seat-by-seat team assignment and civilization choices.
           teams,
@@ -27915,9 +27887,6 @@ function applyQueuedSimulationSettings(settings) {
   document.getElementById("baseruleset").value = settings.base_ruleset || "civ6";
   if (settings.start_era) document.getElementById("startera").value = settings.start_era;
   if (settings.future_era) document.getElementById("futureera").value = settings.future_era;
-  // A reloaded page keeps a queued turn-structure change the same way it
-  // keeps every other staged setting.
-  if (settings.turn_structure) selectedTurnStructure = settings.turn_structure;
   const victories = new Set(settings.victories || []);
   for (const track of VICTORY_TRACKS)
     document.getElementById(`victory-${track.id}`).checked = victories.has(track.id);
@@ -27973,77 +27942,6 @@ function stageSelectedSimulationSettings() {
     if (queued.error) throw new Error(queued.error);
   });
   settingsStageChain.catch(error => showNewSimulationError(error, "save settings"));
-}
-// The viewer's held turn-structure choice: null follows the live game, and a
-// value stands from the moment a dialog choice lands until a world playing
-// that regime arrives (hudTurnPlate dissolves it on match). It rides in every
-// settings payload exactly like a lobby control's value.
-let selectedTurnStructure = null;
-const TURN_STRUCTURE_EXPLANATIONS = {
-  sequential: "Civilizations act one after another; each sees the world exactly as the previous one left it.",
-  simultaneous: "Every civilization plans the turn against the same snapshot of the world, and the plans are then committed together; a plan the world has outrun is dropped.",
-};
-let turnStructureDialog = null;
-function closeTurnStructureDialog() {
-  turnStructureDialog?.remove();
-  turnStructureDialog = null;
-}
-function dismissTurnStructureDialog() {
-  closeTurnStructureDialog();
-  // The select falls back to naming the live regime on the next paint.
-  if (state) drawPlayerHud();
-}
-// Changing the turn structure is a rules change, and the running world cannot
-// change its rules mid-game: the pick opens a dialog offering the only three
-// honest answers — restart into the regime now, let this game finish and
-// start the next one under it, or go back.
-function chooseTurnStructure(select) {
-  const chosen = select.value === "simultaneous" ? "simultaneous" : "sequential";
-  select.blur();
-  const live = state?.turn_structure === "simultaneous" ? "simultaneous" : "sequential";
-  if (chosen === live) {
-    dismissTurnStructureDialog();
-    return;
-  }
-  openTurnStructureDialog(chosen);
-}
-function openTurnStructureDialog(chosen) {
-  closeTurnStructureDialog();
-  const name = chosen === "simultaneous" ? "Simultaneous" : "Sequential";
-  const dialog = document.createElement("div");
-  dialog.id = "turn-structure-dialog";
-  dialog.innerHTML =
-    `<div class="turns-dialog-card" role="dialog" aria-modal="true" aria-label="Switch to ${name.toLowerCase()} turns">` +
-    `<h3>${name} turns</h3>` +
-    `<p>${TURN_STRUCTURE_EXPLANATIONS[chosen]}</p>` +
-    `<p>The world on screen keeps the rules it began with, so the switch needs a new game.</p>` +
-    `<div class="turns-dialog-actions">` +
-    `<button data-turns-restart class="primary">Restart now</button>` +
-    `<button data-turns-queue>After this game</button>` +
-    `<button data-turns-back>Go back</button>` +
-    `</div></div>`;
-  dialog.addEventListener("mousedown", ev => {
-    // The scrim is the dialog element itself; a press on it is a dismissal.
-    if (ev.target === dialog) dismissTurnStructureDialog();
-  });
-  dialog.addEventListener("keydown", ev => {
-    if (ev.key === "Escape") dismissTurnStructureDialog();
-  });
-  dialog.querySelector("[data-turns-back]").onclick = dismissTurnStructureDialog;
-  dialog.querySelector("[data-turns-queue]").onclick = () => {
-    selectedTurnStructure = chosen;
-    closeTurnStructureDialog();
-    stageSelectedSimulationSettings();
-    if (state) drawPlayerHud();
-  };
-  dialog.querySelector("[data-turns-restart]").onclick = () => {
-    selectedTurnStructure = chosen;
-    closeTurnStructureDialog();
-    startNewSimulation("turn_structure").catch(error => showNewSimulationError(error));
-  };
-  document.body.appendChild(dialog);
-  turnStructureDialog = dialog;
-  dialog.querySelector("[data-turns-back]").focus();
 }
 function newSimulationPayload() {
   const setupError = worldSetupInputError();
