@@ -291,10 +291,12 @@ if [[ "${civvis_mode}" == "rust" ]]; then
     export CIVVIS_SUPERVISOR_SOURCE="${state_dir}/rust-source"
     export CIVVIS_SPECTATOR_LOG="${log_file}"
     export CARGO_BUILD_JOBS="2"
+    # No world flags. The stock opening world is the engine's to describe --
+    # `stock_opening_params` in src/server.rs -- and the supervisor's defaults
+    # follow it, so both desktop channels and civvis.ai open on the same game.
+    # Restating it here is what let the Rust and WASM channels drift apart.
     /usr/bin/nohup /usr/bin/python3 "${supervisor_script}" \
         --port "${civvis_port}" \
-        --players 6 --width 74 --height 46 --city-states 9 \
-        --turns 250 --speed online --map continents --shape flat --poles poles \
         --victories science,culture,religious,diplomatic,domination,score \
         --fixed-setup --source-check-interval 1200 \
         --live-refresh-grace 315360000 --no-open \

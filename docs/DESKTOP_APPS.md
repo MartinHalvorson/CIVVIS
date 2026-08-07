@@ -85,11 +85,20 @@ timestamped generated artifacts to consume the disk without bound.
 
 ## Shared opening exhibition
 
-Both apps open directly into AI simulation with six major civilizations on a
-Small 74x46 flat Continents map, nine city-states, no teams, an Ancient start,
-Online game speed, Blitz 500 ms watch speed, normal hot-equator/cold-poles
-latitude, and every victory condition enabled. The builder fails closed if the
-native launcher or WASM opening parameters drift from that contract.
+Both apps open directly into AI simulation on **the engine's stock opening
+world** — the same world civvis.ai opens on, described once by
+`stock_opening_params` in `src/server.rs` and by nothing else. No teams, an
+Ancient start, Blitz 500 ms watch speed, normal hot-equator/cold-poles
+latitude, and every victory condition enabled.
+
+This section deliberately does not restate the seat count, map or shape.
+Repeating those values here is what let the two channels drift apart: the WASM
+channel follows the engine, so when the stock world moved to the Tiny Tennis
+Ball globe the native channel's hardcoded launcher flags kept it on a flat
+Continents map and the apps quietly stopped showing the same game. The
+launcher now passes no world flags at all, the supervisor's defaults are held
+to the engine's values by `verify_default_contract`, and the builder fails
+closed if either drifts.
 
 ## Channel and provenance contracts
 
