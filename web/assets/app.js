@@ -17563,22 +17563,32 @@ function drawPlanetMap() {
   return true;
 }
 
-// One wake polyline in view space: a dark casing under the owner's color so
-// it reads on any terrain, transparent at the tail and strong at the head.
-function strokeUnitTrail(points, color, alpha) {
+// Head-to-tail ink for one route stroke. Both layers of a trail fade on the
+// same ramp, so a route reads as one line in the owner's colors rather than a
+// solid outline with a fading fill inside it. The flat map hands over `[x, y]`
+// pairs and the globe hands over cell centers, so read a point either way.
+const trailPointXY = point => Array.isArray(point) ? point : [point.x, point.y];
+function trailRamp(points, hex, from, to) {
+  const [startX, startY] = trailPointXY(points[0]);
+  const [endX, endY] = trailPointXY(points[points.length - 1]);
+  const ramp = cx.createLinearGradient(startX, startY, endX, endY);
+  ramp.addColorStop(0, hex + from);
+  ramp.addColorStop(1, hex + to);
+  return ramp;
+}
+
+// One wake polyline in view space: the owner's jersey, primary filled and
+// trimmed in its secondary exactly as its territory and tokens are, so a wake
+// names its civilization at a glance. Transparent at the tail, strong at the
+// head.
+function strokeUnitTrail(points, color, trim, alpha) {
   if (points.length < 2 || alpha <= 0) return;
-  const [startX, startY] = points[0];
-  const [endX, endY] = points[points.length - 1];
-  const tint = cx.createLinearGradient(startX, startY, endX, endY);
-  tint.addColorStop(0, color + "00");
-  tint.addColorStop(1, color + "e0");
-  const casing = cx.createLinearGradient(startX, startY, endX, endY);
-  casing.addColorStop(0, "#0d111700");
-  casing.addColorStop(1, "#0d1117b0");
+  const tint = trailRamp(points, color, "00", "e0");
+  const edge = trailRamp(points, trim, "00", "e0");
   cx.save();
   cx.globalAlpha = alpha;
   cx.lineCap = "round";
-  cx.strokeStyle = casing; cx.lineWidth = 5.4;   // casing, so it reads on sand
+  cx.strokeStyle = edge; cx.lineWidth = 5.4;   // the jersey trim, proud of the fill
   cx.beginPath();
   points.forEach(([px, py], index) => index ? cx.lineTo(px, py + 7) : cx.moveTo(px, py + 7));
   cx.stroke();
@@ -17592,22 +17602,22 @@ function strokeUnitTrail(points, color, alpha) {
 // unit draws above them. Each holds full strength until its own step has
 // landed, then fades over the viewer's configured linger.
 // The persistent tail's stroke: thinner and steadier than the wake above, so
-// several turns of routes can sit on the map without gunking it up. The mild
+// several turns of routes can sit on the map without gunking it up. It wears
+// the same jersey — the civilization's primary down the middle, its secondary
+// as a hairline trim — because with several empires' routes on one map at once,
+// whose route it is matters more than anything else the line can say. The mild
 // head-to-tail ramp keeps direction readable, while stopping short of the
 // wake's fully transparent start — a route's oldest tiles are exactly what a
 // tail exists to show.
-function strokeUnitTailRoute(points, color, alpha) {
+function strokeUnitTailRoute(points, color, trim, alpha) {
   if (points.length < 2 || alpha <= 0) return;
-  const [startX, startY] = points[0];
-  const [endX, endY] = points[points.length - 1];
-  const tint = cx.createLinearGradient(startX, startY, endX, endY);
-  tint.addColorStop(0, color + "66");
-  tint.addColorStop(1, color + "e6");
+  const tint = trailRamp(points, color, "66", "e6");
+  const edge = trailRamp(points, trim, "66", "e6");
   cx.save();
   cx.globalAlpha = alpha;
   cx.lineCap = "round";
   cx.lineJoin = "round";
-  cx.strokeStyle = "#0d1117b0"; cx.lineWidth = 2.4; // casing, so it reads on sand
+  cx.strokeStyle = edge; cx.lineWidth = 2.4;  // the jersey trim, proud of the fill
   cx.beginPath();
   points.forEach(([px, py], index) => index ? cx.lineTo(px, py + 7) : cx.moveTo(px, py + 7));
   cx.stroke();
@@ -17621,17 +17631,15 @@ function strokeUnitTailRoute(points, color, alpha) {
 // The globe's own tail stroke. Planet points are screen-space cell centers
 // under a pixel transform, so the widths are literal pixels rather than the
 // flat map's zoom-scaled world units, and there is no ground drop to apply.
-function strokePlanetTailRoute(points, color, alpha) {
+function strokePlanetTailRoute(points, color, trim, alpha) {
   if (points.length < 2 || alpha <= 0) return;
-  const start = points[0], end = points[points.length - 1];
-  const tint = cx.createLinearGradient(start.x, start.y, end.x, end.y);
-  tint.addColorStop(0, color + "66");
-  tint.addColorStop(1, color + "e6");
+  const tint = trailRamp(points, color, "66", "e6");
+  const edge = trailRamp(points, trim, "66", "e6");
   cx.save();
   cx.globalAlpha = alpha;
   cx.lineCap = "round";
   cx.lineJoin = "round";
-  cx.strokeStyle = "#0d1117b0"; cx.lineWidth = 2.2;
+  cx.strokeStyle = edge; cx.lineWidth = 2.2;  // the jersey trim, proud of the fill
   cx.beginPath();
   points.forEach((p, index) => index ? cx.lineTo(p.x, p.y) : cx.moveTo(p.x, p.y));
   cx.stroke();
@@ -17657,10 +17665,10 @@ function drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha) {
     const path = trail.path;
     if (!Array.isArray(path) || path.length < 2) continue;
     const alpha = unitAlpha * 0.6 * (1 - age / UNIT_TAIL_TURNS);
-    const color = pcol(trail.owner);
+    const color = pcol(trail.owner), trim = pcol2(trail.owner);
     let run = [];
     const flush = () => {
-      if (run.length > 1) strokePlanetTailRoute(run, color, alpha);
+      if (run.length > 1) strokePlanetTailRoute(run, color, trim, alpha);
       run = [];
     };
     for (const pos of path) {
@@ -17694,7 +17702,7 @@ function drawUnitMovementTails(unitAlpha) {
       nearX = point.x; nearY = point.y;
       return mapPointToView(point);
     });
-    strokeUnitTailRoute(points, pcol(trail.owner),
+    strokeUnitTailRoute(points, pcol(trail.owner), pcol2(trail.owner),
                         unitAlpha * 0.6 * (1 - age / UNIT_TAIL_TURNS));
   }
 }
@@ -18489,7 +18497,7 @@ function drawScene() {
     // swells then fades over the step so it never becomes permanent clutter.
     // The turn tails above keep the walked route on the ground afterward.
     if (moving) {
-      strokeUnitTrail(trailPoints, pcol(u.owner),
+      strokeUnitTrail(trailPoints, pcol(u.owner), pcol2(u.owner),
                       unitAlpha * 0.75 * Math.sin(mv.e * Math.PI));
     }
     if (anim.strike && anim.strike.id === u.id) {

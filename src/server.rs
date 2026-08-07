@@ -5166,6 +5166,33 @@ mod tests {
         }
     }
 
+    /// A route is drawn in its owner's jersey — the primary down the middle,
+    /// the secondary as the hairline that outlines it — and not in the dark
+    /// casing that used to carry both layers. With several empires walking at
+    /// once, whose route a line is outranks every other thing the line can
+    /// say, so both painters and the in-flight wake take the pair together.
+    #[test]
+    fn browser_paints_every_movement_trail_in_its_owners_jersey() {
+        for contract in [
+            "function strokeUnitTrail(points, color, trim, alpha) {",
+            "function strokeUnitTailRoute(points, color, trim, alpha) {",
+            "function strokePlanetTailRoute(points, color, trim, alpha) {",
+            "strokeUnitTrail(trailPoints, pcol(u.owner), pcol2(u.owner),",
+            "strokeUnitTailRoute(points, pcol(trail.owner), pcol2(trail.owner),",
+            "const color = pcol(trail.owner), trim = pcol2(trail.owner);",
+            "if (run.length > 1) strokePlanetTailRoute(run, color, trim, alpha);",
+            // Both layers ride the same head-to-tail ramp, so a fading route
+            // stays two jersey colours instead of collapsing to its outline.
+            "function trailRamp(points, hex, from, to) {",
+            "const edge = trailRamp(points, trim, \"66\", \"e6\");",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(contract),
+                "movement trail jersey contract is missing: {contract}"
+            );
+        }
+    }
+
     #[test]
     fn browser_gives_every_shipped_improvement_a_named_tile_marker() {
         let markers = EMBEDDED_INDEX
