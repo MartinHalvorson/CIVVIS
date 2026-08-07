@@ -14,19 +14,33 @@ sequential regime that deliberation cannot be parallelized across seats,
 because each seat's information set includes the previous seat's whole
 turn. Freezing the information set at the top of the turn removes exactly
 that dependency and nothing else: seat deliberation becomes independent
-work, and the planning phase fans it out across up to `--jobs` threads
-(`run_structured_jobs`). Only the deliberation is concurrent — the prepare
-and the commit stay strictly serial, every planning world and RNG stream is
-fixed before the first worker starts, and results are consumed in seat
-order, so the fan-out is an execution detail: `jobs = 1` and `jobs = N`
-produce byte-for-byte the same game and census (test:
-`parallel_planning_is_an_execution_detail`). A scoped seat-planner fleet is
-started once for the whole headless game and reuses its workers on every
-cycle; it owns only the AI borrows while each request carries an owned private
-world. This avoids creating fresh worker threads on every cycle. Under
-`simulate`, a simultaneous game therefore takes `--jobs` at the full batch
-default (one per core) and skips the AIs' inner WorkPool, while sequential
-games keep the intra-turn frontier pool with its measured knee of four.
+work, fanned across up to `--jobs` threads (`run_structured_jobs`).
+
+The multi-worker cycle is *pipelined*: each engine phase is still strictly
+serial in itself — one prepare walk, one commit cursor — but all three
+phases run at once. A persistent prepare thread empty-forwards the rolling
+world through the seats and ships each seat's private world to the planner
+fleet the moment it is cloned; the fleet deliberates; and the simulation
+thread commits every plan in turn-cursor order the moment it is available,
+blocking only while the seat under the cursor is genuinely undecided.
+Before the pipeline, the two serial phases ran back to back around the
+fan-out and had come to dominate it — at 16 seats they were about 60% of
+the parallel run's wall clock. Every planning world and RNG stream is
+still fixed before its worker starts, and every commit decision reads
+accumulated state (which seats are planned, each seat's actions), never
+event arrival order, so the pipeline remains an execution detail:
+`jobs = 1` and `jobs = N` produce byte-for-byte the same game and census
+(tests: `parallel_planning_is_an_execution_detail`,
+`pipelined_planning_is_an_execution_detail_on_eliminating_boards`). The
+scoped seat-planner fleet and its prepare thread are started once for the
+whole headless game; each request carries an owned private world. Under
+`simulate`, a simultaneous game takes `--jobs` at the full batch default
+(one per core) and skips the AIs' inner WorkPool, while sequential games
+keep the intra-turn frontier pool with its measured knee of four. (Handing
+the planning seats the leftover budget as a shared inner pool was tried
+and rejected: pool-present AIs play differently than pool-absent ones —
+`fleet_parallel` only promises equivalence across pool *sizes* — so it
+would have made `--jobs` change the game, and it measured no faster.)
 
 `soak` uses the same budget without nested oversubscription. If there are at
 least as many games as jobs, it retains the ordinary one-game-per-worker
@@ -90,6 +104,14 @@ play. Read it before trusting any result measured in this mode.
 
 ## Boundaries
 
+- **The regime is fixed at game start.** Changing the turn structure is a
+  rules change, and a running world never changes its rules mid-game — the
+  same commitment a map script makes, and the deliberate answer to "should
+  a game be able to switch regimes in flight?" (no). The spectator's
+  `Turns:` select therefore only ever starts a *new* game under the chosen
+  regime ("Restart now", `/new`) or stages it for the automatic next game
+  ("After this game", `/next-game-settings`); it never mutates the world in
+  flight, and a resumed save keeps the regime it was created under.
 - **A played game is sequential by construction.** A human seat is
   consulted live, one seat at a time, so `civvis play` without
   `--spectate` refuses the flag and `--resume` refuses a simultaneous
@@ -172,6 +194,40 @@ These are local directional measurements, not a promise that every map shape
 has the same knee. Always use an explicit `--jobs` when calibrating a new
 machine or player count, and compare normalized reports before trusting a
 throughput result.
+
+### 9985WX pipeline validation (2026-08-07, ci profile)
+
+Phase timing on the 16-seat workload above showed the parallel run
+spending ~1.5s in the serial prepare walk, ~2.2s in the serial commit, and
+~2.2s of wall on deliberation — the two serial phases, run back to back,
+had come to dominate the fan-out they bracket. The cycle was therefore
+pipelined (persistent prepare thread, streamed planning worlds, in-order
+commit on arrival), and the headless runner stopped re-syncing the
+narrated war ledger per action, matching `run_game`. Interleaved
+binary-vs-binary A/B on this host, 16 civilizations, 64×40, no
+city-states, 100 turns, seed 7,311,002, `--jobs 16`:
+
+| Binary | Wall clock (interleaved runs) |
+|---|---:|
+| before (#1326) | 5.35s / 5.48s / 5.52s |
+| pipelined | **4.04s / 4.08s / 4.13s** (~1.33×) |
+
+A heavier table — 32 civilizations with stock city-states on the
+automatic map, 40 turns, `--jobs 32` — went 148.6s/150.1s before to
+132.3s/133.7s pipelined (~1.12×; that workload is deliberation-bound, so
+the serial phases the pipeline hides are a smaller share of it). The
+normalized output of the two binaries is identical at both sizes, which
+also confirms the war-ledger skip is invisible to reports and saves.
+
+Normalized `simulate` output stays byte-identical across `--jobs 1/16/32`
+on the pipelined driver: the pipeline is scheduling, not semantics. The
+prepare walk and the commit cursor are now the two irreducible serial
+chains, and the prepare walk is the slightly longer one — an upkeep-only
+forward (touching only the seat being opened, rather than one whole empty
+`EndTurn` per seat) remains the standing follow-up for very large tables.
+The sequential regime's intra-turn knee was re-measured on this host and
+holds at four: 16-civilization 50-turn sequential runs at `--jobs` 4/8/16
+land at 3.4s/3.2s/3.3s, within host noise of one another.
 
 Before comparing regimes, run paired seeds both ways and read the drop
 rate alongside the outcome distributions — one seed is never a result.

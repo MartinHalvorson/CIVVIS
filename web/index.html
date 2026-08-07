@@ -316,13 +316,14 @@
     font-size: .58em; letter-spacing: .025em; text-transform: lowercase;
   }
   .tagline {
-    max-width: 225px; margin-top: 9px; color: #dde6e2; font-size: var(--type-body);
+    margin-top: 9px; color: #dde6e2; font-size: var(--type-body);
     font-weight: 650; letter-spacing: .015em; line-height: 1.36;
   }
-  /* Each phrase starts its own line but may wrap inside itself: the copy
-     lane is now the band minus the globe's third, which is too narrow to
-     promise any phrase a single line. */
-  .tagline span { display: block; }
+  /* The lockup is always the same two lines: the simulator's name, then its
+     purpose. Each phrase owns exactly one line at every band — never joined
+     into a sentence, never folded mid-phrase — so the spans are unbreakable
+     and the text fitter shrinks the type into the lane instead of wrapping. */
+  .tagline span { display: block; white-space: nowrap; }
   .tagline span + span { color: #bccac4; }
   /* A split-screen deck cannot afford the landing-page-sized mark and title.
      The compact band preserves both, but reflows the lockup: the copy column
@@ -347,17 +348,8 @@
     font-size: clamp(15px, calc((100cqw - 64px) / 4.85), 28px);
   }
   #side[data-type-size="compact"] .tagline {
-    grid-column: 1 / -1; max-width: none; margin-top: 0;
+    grid-column: 1 / -1; margin-top: 0;
     font-size: var(--type-small);
-  }
-  /* Past the width where the whole sentence fits beside the globe, the
-     stacked two-line lockup reads as leftover narrow-screen furniture. Join
-     the tagline into its single line there; 620px of band leaves ~200px of
-     slack at the shared body size, so the line cannot be what overflows. */
-  @container (min-width: 620px) {
-    .side-head .tagline { max-width: none; }
-    .side-head .tagline span { display: inline; }
-    .side-head .tagline span + span::before { content: " "; }
   }
   /* The deck is a column: the fixed panels take the height they need and the
      two chronicles share whatever is left, so a tall screen reads more
