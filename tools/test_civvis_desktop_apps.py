@@ -47,13 +47,19 @@ class DesktopAppsTests(unittest.TestCase):
             rendered[app.mode] = text
 
         for expected in (
-            "--players 6 --width 74 --height 46 --city-states 9",
-            "--turns 250 --speed online --map continents --shape flat --poles poles",
             "--victories science,culture,religious,diplomatic,domination,score",
             "--fixed-setup --source-check-interval 1200",
         ):
             self.assertIn(expected, rendered["rust"])
             self.assertIn(expected, rendered["wasm"])
+        # The launcher names no world. The stock opening world belongs to
+        # `stock_opening_params` in src/server.rs, the supervisor's defaults
+        # follow it, and a flag here would be the third copy that let the Rust
+        # and WASM channels quietly stop showing the same game.
+        for world_flag in ("--players", "--width", "--height", "--city-states",
+                           "--turns", "--map", "--shape", "--poles", "--speed"):
+            self.assertNotIn(world_flag, rendered["rust"])
+            self.assertNotIn(world_flag, rendered["wasm"])
         self.assertIn('readonly civvis_port="8785"', rendered["rust"])
         self.assertIn('readonly civvis_port="8790"', rendered["wasm"])
         self.assertIn(
@@ -448,9 +454,11 @@ class DesktopAppsTests(unittest.TestCase):
         page = (ROOT / "web/index.html").read_text(encoding="utf-8") + (
             ROOT / "web/assets/app.js"
         ).read_text(encoding="utf-8")
-        self.assertIn('channel === "rust") document.title = "CIVVIS (Rust)"', page)
+        self.assertIn(
+            'channel === "rust") document.title = "CIVVIS · Civ VI Simulator (Rust)"', page
+        )
         self.assertIn('channel === "wasm" || channel === "beta"', page)
-        self.assertIn('document.title = "CIVVIS (Wasm)"', page)
+        self.assertIn('document.title = "CIVVIS · Civ VI Simulator (Wasm)"', page)
 
 
 if __name__ == "__main__":

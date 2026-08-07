@@ -192,42 +192,119 @@ def build_environment(base: Mapping[str, str]) -> Dict[str, str]:
     return env
 
 
+# The engine's stock opening world, as named by `stock_opening_params` in
+# `src/server.rs`. These are the field names to read out of it, mapped to the
+# supervisor option each one governs.
+STOCK_WORLD_FIELDS = {
+    "num_players": "players",
+    "map_script": "map",
+    "map_topology": "shape",
+    "map_poles": "poles",
+    "game_speed": "speed",
+}
+# Rust spellings of the values, as the id strings every other surface uses.
+STOCK_WORLD_IDS = {
+    "MapScript::TeninsBall": "tenins_ball",
+    "MapTopology::Planet": "planet",
+    "MapPoles::Poles": "poles",
+    "GameSpeed::Online": "online",
+}
+
+
+def read_stock_opening_world(source: pathlib.Path) -> Dict[str, str]:
+    """The stock opening world, read from the engine that defines it.
+
+    `stock_opening_params` in `src/server.rs` is the single description of the
+    world a first visit opens on; `wasm::opening_params` and `/rules`
+    `default_setup` are both it. Nothing else may restate those values, so this
+    reads them rather than keeping a second copy that can rot — which is
+    exactly what the fragment list here used to be, and why it went on passing
+    a world nobody shipped until it stopped matching any file at all.
+    """
+    server = (source / "src/server.rs").read_text(encoding="utf-8")
+    start = server.find("fn stock_opening_params(")
+    if start < 0:
+        raise DesktopAppError(
+            "src/server.rs no longer defines stock_opening_params; the desktop "
+            "default contract has lost the engine it reads from"
+        )
+    body = server[start : server.find("\n}", start)]
+    world: Dict[str, str] = {}
+    for field, option in STOCK_WORLD_FIELDS.items():
+        # Either `field: Value,` or Rust's shorthand `field,` with the value
+        # bound just above as `let field = Value;`.
+        found = re.search(rf"^\s*{field}: ([^,\n]+),", body, re.MULTILINE) or re.search(
+            rf"^\s*let {field} = ([^;\n]+);", body, re.MULTILINE
+        )
+        if not found:
+            raise DesktopAppError(
+                f"stock_opening_params no longer names {field}; the desktop "
+                "default contract cannot be checked against the engine"
+            )
+        value = found.group(1).strip()
+        if "::" in value and value not in STOCK_WORLD_IDS:
+            raise DesktopAppError(
+                f"stock_opening_params names {field} as {value}, whose id string "
+                f"this contract does not know; add it to STOCK_WORLD_IDS"
+            )
+        world[option] = STOCK_WORLD_IDS.get(value, value)
+    return world
+
+
+def supervisor_option_defaults(supervisor: str) -> Dict[str, str]:
+    """Each `--option` the supervisor declares, mapped to its argparse default.
+
+    Parsed per `add_argument` call rather than by searching the whole file:
+    the option strings also appear in the `civvis play` argument list, and an
+    option that lost its default must not silently borrow the next one's.
+    """
+    defaults: Dict[str, str] = {}
+    calls = [found.start() for found in re.finditer(r"parser\.add_argument\(", supervisor)]
+    for index, at in enumerate(calls):
+        call = supervisor[at : calls[index + 1] if index + 1 < len(calls) else len(supervisor)]
+        name = re.search(r'"--([\w-]+)"', call)
+        value = re.search(r'default=("?)([\w.-]+)\1', call)
+        if name and value:
+            defaults[name.group(1)] = value.group(2)
+    return defaults
+
+
 def verify_default_contract(source: pathlib.Path, template: pathlib.Path) -> None:
     launcher = template.read_text(encoding="utf-8")
-    rust_fragments = (
-        "--players 6 --width 74 --height 46 --city-states 9",
-        "--turns 250 --speed online --map continents --shape flat --poles poles",
-        "--victories science,culture,religious,diplomatic,domination,score",
-        "--fixed-setup --source-check-interval 1200",
-    )
     supervisor = (source / "tools/spectator_supervisor.py").read_text(encoding="utf-8")
+    world = read_stock_opening_world(source)
+
+    missing: List[str] = []
+    # The desktop channels must not restate the world at all. The launcher
+    # passes operational flags only, so the supervisor's own defaults — checked
+    # against the engine below — are what both channels open on. A world flag
+    # here would be a third copy, and the one that silently diverged before.
+    for option in ("--players", "--width", "--height", "--city-states", "--turns",
+                   "--map", "--shape", "--poles", "--speed"):
+        if option in launcher:
+            missing.append(f"launcher pins {option}; the engine's stock world decides it")
+    for fragment in ("--fixed-setup --source-check-interval 1200",):
+        if fragment not in launcher:
+            missing.append(fragment)
+
+    # The supervisor is the one place a Python surface names the world, and it
+    # must name the engine's.
+    declared = supervisor_option_defaults(supervisor)
+    for option, value in world.items():
+        if option not in declared:
+            missing.append(f"supervisor no longer declares a --{option} default")
+        elif declared[option] != value:
+            missing.append(
+                f"supervisor --{option} default is {declared[option]!r}, "
+                f"the engine's stock world is {value!r}"
+            )
     supervisor_fragments = (
         'SIMULATION_SPEED = "online"',
         'SIMULATION_START_ERA = "ancient"',
         '"--spectate",',
         '"--supervised",',
     )
-    wasm = (source / "src/wasm.rs").read_text(encoding="utf-8")
-    wasm_fragments = (
-        "static PACE: Cell<u64> = const { Cell::new(500) };",
-        "num_players: 6,",
-        "map_script: MapScript::Continents,",
-        "map_topology: MapTopology::Flat,",
-        "map_poles: MapPoles::Poles,",
-        "game_speed: GameSpeed::Online,",
-        "start_era: 0,",
-        "science: true,",
-        "culture: true,",
-        "religious: true,",
-        "diplomatic: true,",
-        "domination: true,",
-        "score: true,",
-        "spectate: true,",
-        "teams: Vec::new(),",
-    )
-    missing = [fragment for fragment in rust_fragments if fragment not in launcher]
     missing += [fragment for fragment in supervisor_fragments if fragment not in supervisor]
-    missing += [fragment for fragment in wasm_fragments if fragment not in wasm]
     if missing:
         raise DesktopAppError("desktop default contract drifted: " + ", ".join(missing))
 

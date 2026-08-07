@@ -63,6 +63,10 @@ MAP_TYPES = (
     "islands",
     "water_world",
     "true_start_earth",
+    # The stock opening world's own map, and so the default below. Leaving it
+    # out meant the exhibition could never roll the one world the product
+    # actually opens on.
+    "tenins_ball",
 )
 MAP_SHAPES = ("flat", "planet")
 MAP_POLES = ("poles", "randomized")
@@ -1495,16 +1499,21 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--players", type=int, default=4)
-    parser.add_argument("--width", type=int, default=60)
-    parser.add_argument("--height", type=int, default=38)
-    parser.add_argument("--city-states", type=int, default=6)
+    # A board size is nobody's default here. `civvis play` derives width,
+    # height and the city-state count from the seat count and world shape
+    # through `MapSize::for_players`, so leaving these unset keeps the engine
+    # the only thing that decides them -- and keeps this file from carrying a
+    # third copy of the stock world that can drift out from under it.
+    parser.add_argument("--width", type=int, default=None)
+    parser.add_argument("--height", type=int, default=None)
+    parser.add_argument("--city-states", type=int, default=None)
     parser.add_argument("--turns", type=int, default=250)
     parser.add_argument(
         "--map",
         choices=MAP_TYPES,
-        default="pangaea",
+        default="tenins_ball",
     )
-    parser.add_argument("--shape", choices=MAP_SHAPES, default="flat")
+    parser.add_argument("--shape", choices=MAP_SHAPES, default="planet")
     parser.add_argument("--poles", choices=MAP_POLES, default="poles")
     parser.add_argument(
         "--speed",
