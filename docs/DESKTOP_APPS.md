@@ -87,7 +87,7 @@ timestamped generated artifacts to consume the disk without bound.
 
 Both apps open directly into AI simulation with six major civilizations on a
 Small 74x46 flat Continents map, nine city-states, no teams, an Ancient start,
-Online game speed, Blitz 1000 ms watch speed, normal hot-equator/cold-poles
+Online game speed, Blitz 500 ms watch speed, normal hot-equator/cold-poles
 latitude, and every victory condition enabled. The builder fails closed if the
 native launcher or WASM opening parameters drift from that contract.
 

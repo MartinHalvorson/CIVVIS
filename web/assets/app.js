@@ -44,8 +44,7 @@ function initAdvancedSettings() {
   moveByOrder(game, ".game-advanced-setting", document.getElementById("game-advanced-settings-body"));
   const basic = [
     ["gamemode", true], ["np", true], ["mapshape", true], ["maptype", true],
-    ["startera", true], ["era-mods-settings", false], ["gamespeed", true],
-    ["turnlimit", true],
+    ["startera", true], ["gamespeed", true],
   ].map(([id, label]) => label
     ? document.getElementById(id).closest("label")
     : document.getElementById(id));
@@ -2335,13 +2334,13 @@ if (playerHudPanel) {
 // that keeps both dimensions inside it. Wrapped prose is deliberately absent:
 // it keeps the shared body scale and lets its panel scroll naturally.
 const RESPONSIVE_TEXT_RULES = [
-  // The tagline is fitted only while its two lines are unbreakable: wrapped
-  // prose never overflows its own box, so on the compact band — where the
-  // spans are allowed to wrap — measuring could only ever pin the ceiling.
-  // The compact entry instead writes the band's own size, which also retires
-  // a stale fitted size left behind when the deck crosses the band boundary.
+  // The tagline's two phrases are unbreakable on every band — the simulator's
+  // name on the first line, its purpose on the second — so both entries
+  // measure for real and shrink the run instead of letting it fold. The split
+  // keeps the compact band's smaller ceiling and retires a stale fitted size
+  // left behind when the deck crosses the band boundary.
   {selector:"#side:not([data-type-size=compact]) .tagline span", min:12, max:15},
-  {selector:"#side[data-type-size=compact] .tagline span", min:12, max:12},
+  {selector:"#side[data-type-size=compact] .tagline span", min:10, max:12},
   {selector:"#side .section-title > span:last-child", min:10, max:13},
   {selector:"#side .event-scope", min:9, max:12},
   {selector:"#side .sec h2", min:10, max:12},
@@ -4930,7 +4929,6 @@ async function boot() {
       }
       // The sizes this build offers decide which team splits it can seat.
       syncTeams();
-      syncWorldSetupInputs();
     }
     if (Array.isArray(RULES.map_scripts)) {
       document.getElementById("maptype").innerHTML = RULES.map_scripts.map(script =>
@@ -4974,7 +4972,6 @@ async function boot() {
         `<option value="${speed.id}" title="${speed.description}">${speed.name} · ${speed.turn_limit} turns</option>`
       ).join("");
       document.getElementById("gamespeed").value = "online";
-      syncWorldSetupInputs();
     }
     // The ruleset carries the other game's vocabulary too, and the mode may
     // already be selected by the time it lands.
@@ -5472,7 +5469,7 @@ document.addEventListener("visibilitychange", () => {
 });
 // Watch pace is a whole-turn budget. Lightning is zero, so the server takes no
 // wait at all. A pick also has to outlive the server that received it. Every
-// game is a new process starting at the default second per turn, and the
+// game is a new process starting at the default half-second per turn, and the
 // exhibition cycles games all day. A viewer who chose Lightning was quietly
 // returned to Blitz at the next world. A chosen pace is remembered and handed
 // to whatever server the page finds itself talking to.
@@ -5517,7 +5514,7 @@ function restorePace() {
 }
 function specPace() {
   const select = document.getElementById("specspeed");
-  return select ? +select.value : 1000;
+  return select ? +select.value : 500;
 }
 // The interval is a browser preference like watch pace rather than a world
 // setting. A supervised successor is a fresh process, so remember it here and
@@ -5577,9 +5574,9 @@ function refreshRenderResolution() {
 }
 // At rapid exhibition speeds the acting seat changes too quickly to read; its
 // marker becomes a flickering distraction rather than useful turn context.
-// Four seconds is the first pace where the viewer can follow a whole turn, so
+// Two seconds is the first pace where the viewer can follow a whole turn, so
 // only Standard and slower paces mark the acting civilization in the HUD.
-const PLAYER_HUD_ACTIVE_MIN_PACE_MS = 4000;
+const PLAYER_HUD_ACTIVE_MIN_PACE_MS = 2000;
 function highlightActingPlayerInHud() {
   const pace = Number(state?.pace);
   return SPEC && Number.isFinite(pace) && pace >= PLAYER_HUD_ACTIVE_MIN_PACE_MS;
@@ -6084,10 +6081,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
     document.getElementById("gamespeed").value = st.game_speed || "standard";
-    setOptionalWorldNumber("turnlimit", st.max_turns,
-      defaultTurnLimitForSpeed(st.game_speed));
     setOptionalWorldNumber("mapseed", st.seed);
-    syncWorldSetupInputs();
     document.getElementById("leaderpool").value = normalizedLeaderPoolId(st.leader_pool || "civ6");
     syncLeaderPool();
     // The seat a person is playing and the handicap they are playing it on are
@@ -27159,10 +27153,8 @@ document.getElementById("maptype").addEventListener("change", syncEarthShape);
 // before the panel's own delegated listener stages what is now selected.
 document.getElementById("np").addEventListener("change", () => {
   syncTeams();
-  syncWorldSetupInputs();
   syncCustomLeaderSelection();
 });
-document.getElementById("gamespeed").addEventListener("change", syncWorldSetupInputs);
 document.getElementById("savebtn").onclick = () => writeSave();
 syncSetupMode();
 syncEarthShape();
@@ -27241,7 +27233,6 @@ function readOptionalWholeSetting(id) {
 }
 function worldSetupInputError() {
   for (const [id, label] of [
-    ["turnlimit", "Turn limit"],
     ["mapseed", "Map seed"],
   ]) {
     const input = document.getElementById(id);
@@ -27249,12 +27240,6 @@ function worldSetupInputError() {
       return `${label} must be a whole number in the range shown`;
   }
   return "";
-}
-function defaultTurnLimitForSpeed(speed = readSetting("gamespeed")) {
-  const entry = Array.isArray(RULES?.game_speeds)
-    ? RULES.game_speeds.find(candidate => candidate.id === speed)
-    : null;
-  return Number(entry?.turn_limit);
 }
 function setOptionalWorldNumber(id, value, defaultValue = Number.NaN) {
   const input = document.getElementById(id);
@@ -27264,19 +27249,6 @@ function setOptionalWorldNumber(id, value, defaultValue = Number.NaN) {
   const automatic = Number.isSafeInteger(defaultValue) && number === defaultValue;
   if (input) input.value = Number.isSafeInteger(number) && number >= min && number <= max && !automatic
     ? String(number) : "";
-}
-function syncWorldSetupInputs() {
-  const turnLimit = document.getElementById("turnlimit");
-  const turnLimitHint = document.getElementById("turnlimit-hint");
-  const turnDefault = defaultTurnLimitForSpeed();
-  if (turnLimit) {
-    const detail = Number.isSafeInteger(turnDefault)
-      ? `${turnDefault} turns at this speed`
-      : "the selected game speed's normal limit";
-    turnLimit.placeholder = `Speed default · ${detail}`;
-    turnLimit.title = `Leave blank to use ${detail}`;
-    if (turnLimitHint) turnLimitHint.textContent = `Leave blank to use ${detail}.`;
-  }
 }
 // What this computer can do about the other game, and what a run it can see is
 // doing. The verification-only mode is retained everywhere and refused where it
@@ -27357,7 +27329,6 @@ function selectedSimulationSettings() {
   const teams = leaderSelection === "custom" && customLeaders.length === np
     ? customLeaders.map(row => row.team === "" ? null : Number(row.team))
     : teamAssignment(np, readSetting("teams"));
-  const turnLimit = readOptionalWholeSetting("turnlimit");
   const mapSeed = readOptionalWholeSetting("mapseed");
   // In the Civilization VI mode the map control holds one of that game's
   // scripts, so it travels as `civ6_map` and `map_script` keeps a world this
@@ -27385,7 +27356,6 @@ function selectedSimulationSettings() {
           teams,
           ...(leaderSelection === "custom" ? {custom_leaders: customLeaders} : {}),
           victory_conditions: victoryConditions,
-          ...(turnLimit === null ? {} : {max_turns: turnLimit}),
           ...(mapSeed === null ? {} : {seed: mapSeed}),
           spectate: gameMode === "ai_sim",
           ...(civ6 ? {mode: "civ6", civ6_map: civ6Map} : {}),
@@ -27467,10 +27437,7 @@ function applyQueuedSimulationSettings(settings) {
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
   syncEarthShape();
   document.getElementById("gamespeed").value = settings.speed;
-  setOptionalWorldNumber("turnlimit", settings.turns,
-    defaultTurnLimitForSpeed(settings.speed));
   setOptionalWorldNumber("mapseed", settings.seed);
-  syncWorldSetupInputs();
   document.getElementById("leaderpool").value = normalizedLeaderPoolId(settings.leader_pool || "civ6");
   if (settings.leader_selection)
     document.getElementById("leaderselection").value = settings.leader_selection;

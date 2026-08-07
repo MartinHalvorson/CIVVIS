@@ -172,7 +172,7 @@ confirm the audit still has teeth.
 
 A viewer slower than the pace now sets the pace, by design — the alternative is
 turns nobody sees. A full-size map costs the page about 55ms a frame, well
-inside the 1s Blitz budget, so a foreground tab does not slow the exhibition.
+inside the 0.5s Blitz budget, so a foreground tab does not slow the exhibition.
 
 A page that is not being presented — a backgrounded tab, a headless browser with
 nobody watching — gets no animation frames, so it stops asking, is dropped after
