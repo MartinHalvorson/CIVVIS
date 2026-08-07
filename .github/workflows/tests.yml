@@ -10,7 +10,14 @@ permissions:
 
 concurrency:
   group: cargo-test-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Cancelling a superseded PR run is pure savings. On `main` it was pure
+  # loss: every push shares one group, merges land minutes apart, and the
+  # gate takes longer than that — so the post-merge run that AGENTS.md and
+  # docs/VERSION_CONTROL.md cite as the reason `strict = false` is safe was
+  # usually cancelled by the next merge before it finished. A cancelled run
+  # also skips the cache post step, so the only cache lineage other branches
+  # can restore from was rarely re-saved. Queue on main, cancel on PRs.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   cargo-test:
@@ -19,6 +26,20 @@ jobs:
     # private repo went unpaid and every job died in three seconds on a billing
     # message; that is not a reason to keep running strangers' pull requests on
     # somebody's laptop.
+    #
+    # Every task starts as a draft PR whose first push is an empty claim
+    # commit (`civvis_collab.py start`), which used to burn one full run of
+    # all three jobs on a diff of zero bytes — at fleet velocity, a large
+    # slice of total CI spend producing no information. `changed_files` in
+    # the event payload is 0 exactly then and updates on every synchronize,
+    # so real pushes always run. A skipped required check counts as
+    # satisfied, but the only PR this can wave through is one whose entire
+    # diff against `main` is empty — a merge of nothing. (Deliberately NOT
+    # `draft == false`: that would leave the required check "skipped" while
+    # `ship` marks ready and arms auto-merge, and in the seconds before the
+    # ready_for_review run registers, auto-merge could land unvalidated
+    # code.)
+    if: github.event_name != 'pull_request' || github.event.pull_request.changed_files > 0
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -35,27 +56,28 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: sudo apt-get update && sudo apt-get install -y lld
-      # This gate has never had a cache, and a cold build of a 100k-line crate
-      # at release optimisation is what makes the merge race in
-      # docs/VERSION_CONTROL.md hurt. The key is the lockfile, NOT the commit
-      # SHA: a SHA in the key means every push writes a new entry, nothing ever
-      # hits, and the 10 GB quota evicts itself. `restore-keys` still gives a
-      # near-miss the previous build to start from when dependencies change.
+      # Only the dependency registry is cached. `target` was cached here too,
+      # but against this crate's shape it could not help: the workspace is a
+      # single ~220k-line crate with CARGO_INCREMENTAL pinned to 0, so any
+      # source change re-derives every `civvis` artifact from scratch and the
+      # only reusable bytes are the dozen small dependency crates. Worse, the
+      # lockfile-only key meant the entry hit exactly and was therefore never
+      # re-saved (actions/cache entries are immutable) — a frozen multi-GB
+      # `target/` from whichever commit first populated it, downloaded and
+      # unpacked on every run to contribute nothing. The key stays the
+      # lockfile, NOT the commit SHA: a SHA in the key means every push
+      # writes a new entry, nothing ever hits, and the 10 GB quota evicts
+      # itself. `-deps` is a fresh lineage so the old keys' dead payloads
+      # cannot be restored while they age out.
       - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-            target
-          # `-lld` in the key: RUSTFLAGS changes every unit's fingerprint, so
-          # artifacts cached under the old flags can never be reused — without
-          # a new key this job would restore a dead cache and rebuild deps on
-          # every run forever (actions/cache entries are immutable; the old
-          # key's entry would squat there unchanged).
-          key: cargo-ci-lld-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-ci-deps-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-ci-lld-${{ runner.os }}-
+            cargo-ci-deps-${{ runner.os }}-
       # The `ci` profile inherits `release`, so tests run at the same
       # optimisation level; it only drops the single-codegen-unit and LTO
       # settings that exist to buy the production spectator about four percent
@@ -95,6 +117,9 @@ jobs:
   # the time and catches the whole class of failure, which is names and types
   # drifting out from under a target nobody compiles by hand.
   published-build:
+    # Same zero-diff guard as cargo-test: the empty claim commit that opens
+    # every task's draft PR carries nothing this job could check.
+    if: github.event_name != 'pull_request' || github.event.pull_request.changed_files > 0
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -104,18 +129,19 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-      # Its own key: this target dir holds wasm artifacts and must not be
-      # shared with the native gate's.
+      # Registry only, same reasoning as the native gate's cache: a
+      # single-crate workspace with incremental off re-typechecks everything
+      # on any change, so cached wasm `target` artifacts were dead weight
+      # behind a never-resaved key.
       - uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-            target
-          key: cargo-wasm-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-wasm-deps-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-wasm-${{ runner.os }}-
+            cargo-wasm-deps-${{ runner.os }}-
       - run: cargo check --lib --locked --target wasm32-unknown-unknown
       # The publish pipeline's own tests. #1289 moved the viewer's script to
       # assets/app.js and broke both the stable-lane build and these tests
@@ -128,6 +154,7 @@ jobs:
   # insurance: `luac -p` every mod script, then run the one piece of agent logic
   # that has an argument rather than an engine call.
   control-mod:
+    if: github.event_name != 'pull_request' || github.event.pull_request.changed_files > 0
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
