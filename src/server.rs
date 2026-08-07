@@ -8095,7 +8095,7 @@ mod tests {
                 "the {setting} setting still offers a non-answer"
             );
         }
-        for input in ["turnlimit", "mapseed"] {
+        for input in ["mapseed"] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("id=\"{input}\" type=\"number\"")),
                 "browser setup is missing the {input} numeric input"
@@ -8121,7 +8121,10 @@ mod tests {
             !EMBEDDED_INDEX.contains("num_city_states: cityStates"),
             "the lobby should not send a custom city-state count"
         );
-        assert!(EMBEDDED_INDEX.contains("max_turns: turnLimit"));
+        assert!(
+            !EMBEDDED_INDEX.contains("max_turns: turnLimit"),
+            "the turn cap should come from the selected game speed"
+        );
         // None of the machinery that used to stand in for an unmade decision
         // survives anywhere in the client.
         for gone in [
@@ -8656,17 +8659,16 @@ mod tests {
 
         // The lobby's reading order. `#newgame-options` is a two-column grid
         // filled row by row, so document order is the visible reading path:
-        // mode and size, then geography, era, clock and victories. The rules,
-        // roster, teams, climate and seed stay in the advanced drawer.
+        // mode and size, then geography, then era and clock sharing one row,
+        // then victories. The rules, roster, teams, climate and seed stay in
+        // the advanced drawer; the era mods live in the mods drawer.
         let order = [
             "gamemode",
             "np",
             "mapshape",
             "maptype",
             "startera",
-            "futureera",
             "gamespeed",
-            "turnlimit",
         ]
         .map(|setting| {
             EMBEDDED_INDEX
@@ -8675,10 +8677,12 @@ mod tests {
         });
         assert!(
             order.windows(2).all(|pair| pair[0] < pair[1]),
-            "lobby order must read mode/size, shape/map, start/era, speed/cap"
+            "lobby order must read mode/size, shape/map, era/speed"
         );
-        assert!(EMBEDDED_INDEX.find("id=\"turnlimit\"").unwrap()
+        assert!(EMBEDDED_INDEX.find("id=\"gamespeed\"").unwrap()
             < EMBEDDED_INDEX.find("id=\"victory-options\"").unwrap());
+        assert!(EMBEDDED_INDEX.find("id=\"game-mod-settings\"").unwrap()
+            < EMBEDDED_INDEX.find("id=\"futureera\"").unwrap());
         // The advanced drawer starts with the ruleset, team split and leader
         // roster. The custom table sits under its selection mode, followed by
         // climate and seed. Human-only leader/difficulty fields remain there
@@ -8697,9 +8701,7 @@ mod tests {
         for normal in [
             "class=\"small civ6-hidden\">World shape",
             "class=\"small civ6-hidden\">Start era",
-            "class=\"advanced-settings era-mods-settings civ6-hidden\"",
             "class=\"small era-future-setting\">Future era",
-            "class=\"small civ6-hidden\">Custom turn cap",
             "class=\"victory-options civ6-hidden\" id=\"victory-options\"",
         ] {
             assert!(EMBEDDED_INDEX.contains(normal), "missing normal setting: {normal}");
@@ -8708,9 +8710,8 @@ mod tests {
             "[\"gamemode\", true], [\"np\", true], [\"mapshape\", true], [\"maptype\", true],"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "[\"startera\", true], [\"era-mods-settings\", false], [\"gamespeed\", true],"
+            "[\"startera\", true], [\"gamespeed\", true],"
         ));
-        assert!(EMBEDDED_INDEX.contains("[\"turnlimit\", true],"));
         assert!(EMBEDDED_INDEX.contains(
             "basic.push(document.getElementById(\"victory-options\"), document.getElementById(\"saves-group\"));"
         ));
@@ -8878,7 +8879,7 @@ mod tests {
         // The world size decides which splits exist, so it re-fits them before
         // the panel's own delegated listener stages what is now selected.
         assert!(EMBEDDED_INDEX.contains(
-            "document.getElementById(\"np\").addEventListener(\"change\", () => {\n  syncTeams();\n  syncWorldSetupInputs();\n  syncCustomLeaderSelection();\n});"
+            "document.getElementById(\"np\").addEventListener(\"change\", () => {\n  syncTeams();\n  syncCustomLeaderSelection();\n});"
         ));
         // The server is handed the seat-by-seat assignment, never the rule
         // that produced it; a world on screen is read back the other way.
@@ -11813,7 +11814,6 @@ mod tests {
         for piece in [
             "id=\"leader\"",
             "id=\"difficulty\"",
-            "id=\"turnlimit\"",
             "id=\"mapseed\"",
             "id=\"saves-group\"",
             "function syncSetupMode()",
@@ -11841,10 +11841,10 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             ": {civs: civ6 || !leader ? [] : [leader], difficulty})"
         ));
-        // Turn cap and seed are common world settings, while the leader and
-        // difficulty above remain the single-player additions. City-states
-        // follow the selected map-size profile and need no separate control.
-        assert!(EMBEDDED_INDEX.contains("function syncWorldSetupInputs()"));
+        // The seed is a common world setting, while the leader and difficulty
+        // above remain the single-player additions. City-states follow the
+        // selected map-size profile, and the turn cap follows the selected
+        // game speed; neither needs a separate control.
         assert!(EMBEDDED_INDEX.contains("setOptionalWorldNumber(\"mapseed\", st.seed);"));
         // A build without the save endpoints hides the group rather than
         // offering one that cannot work.
@@ -11942,9 +11942,7 @@ mod tests {
             "class=\"small civ6-hidden\">World shape",
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"50\"", // thermal
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"60\"", // map seed
-            "class=\"small civ6-hidden\">Custom turn cap",
             "class=\"small civ6-hidden\">Start era",
-            "class=\"advanced-settings era-mods-settings civ6-hidden\"",
             "class=\"victory-options civ6-hidden\"",
             "class=\"advanced-settings civ6-hidden\" id=\"game-mod-settings\"",
         ] {
