@@ -937,6 +937,14 @@ mod tests {
         g
     }
 
+    /// The *anchor* default. Command surfaces built for throughput
+    /// (`simulate`, `soak`, spectated `play`) choose simultaneous at the
+    /// CLI — that half lives in `main.rs`
+    /// (`the_turn_structure_default_is_the_callers_and_the_flag_still_wins`)
+    /// — but `TurnStructure::default()` is what a field-less legacy save,
+    /// `GameOptions`, and the Elo setup contract deserialize through, and
+    /// it must stay `Sequential` or every one of those quietly changes
+    /// meaning.
     #[test]
     fn the_default_structure_is_sequential_and_unchanged() {
         assert_eq!(TurnStructure::default(), TurnStructure::Sequential);

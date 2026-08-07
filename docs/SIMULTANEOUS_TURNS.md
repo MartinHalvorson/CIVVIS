@@ -1,12 +1,22 @@
 # Simultaneous turns
 
-`--turn-structure simultaneous` is a rules variant of the turn cycle, chosen
-at setup like a map script and recorded on the save. The stock regime —
-`sequential`, the default everywhere — lets each civilization act on the
-world exactly as the previous one left it. The simultaneous regime freezes
-the world at the top of each game turn, lets every seat plan its complete
-turn against that same snapshot, and then commits the plans in seat order
-under the ordinary rules.
+`--turn-structure` names a rules variant of the turn cycle, chosen at setup
+like a map script and recorded on the save. The stock regime — `sequential`
+— lets each civilization act on the world exactly as the previous one left
+it. The simultaneous regime freezes the world at the top of each game turn,
+lets every seat plan its complete turn against that same snapshot, and then
+commits the plans in seat order under the ordinary rules.
+
+The default is per surface, and deliberate. The surfaces that exist for
+throughput — `simulate`, `soak`, and a spectated `play` table — default to
+`simultaneous`; its ceiling is higher, and it is where the optimization
+work goes. Everything whose meaning depends on the stock regime defaults
+to `sequential` and stays there: a played game (sequential by
+construction), every rating instrument (`benchmark`, `tournament`,
+`league`, `elo`, `selfplay`, `evolve` — the Glicko-2 table is a
+sequential-regime instrument), and `TurnStructure::default()` itself, which
+is the anchor a field-less legacy save deserializes through. An explicit
+`--turn-structure` always wins over any of these defaults.
 
 It exists for throughput. Roughly two thirds of simulator runtime is the
 AIs' own deliberation (`docs/SIMULATOR_PERFORMANCE.md`), and under the
@@ -85,11 +95,16 @@ through the ordinary rules, which is what buys the guarantees below.
   engine's determinism invariants — failed applies consume no RNG, one
   serialized stream — apply unchanged.
 - **Same seed, same game** (test: `a_simultaneous_game_is_deterministic`).
-- **The default is untouched.** A sequential game through the structured
-  driver is byte-for-byte the game `run_game` plays (test:
-  `the_default_structure_is_sequential_and_unchanged`), and the option
-  defaults to sequential in `GameOptions`, the CLI, the server, and old
-  saves.
+- **The sequential game is untouched, and the anchor stays sequential.**
+  A sequential game through the structured driver is byte-for-byte the
+  game `run_game` plays (test:
+  `the_default_structure_is_sequential_and_unchanged`), and
+  `TurnStructure::default()` — what `GameOptions`, a field-less legacy
+  save, and the Elo setup contract deserialize through — stays
+  `Sequential`. The simultaneous default lives only at the command
+  surfaces built for throughput (`simulate`, `soak`, spectated `play`;
+  test: `the_turn_structure_default_is_the_callers_and_the_flag_still_wins`),
+  so no save, played game, or rating ledger changes meaning.
 
 ## The census
 
@@ -139,8 +154,9 @@ play. Read it before trusting any result measured in this mode.
 ## Using it
 
 ```bash
-civvis simulate --players 6 --turn-structure simultaneous --seed 7311002
-civvis soak --games 20 --turn-structure simultaneous
+civvis simulate --players 6 --seed 7311002      # simultaneous by default
+civvis soak --games 20                          # simultaneous by default
+civvis simulate --players 6 --turn-structure sequential  # the stock regime
 ```
 
 ## Measured (2026-08-06, ci profile, shared host — directional)
