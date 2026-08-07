@@ -367,13 +367,16 @@ a public repository, so those are free and unmetered — there is no minute budg
 to manage and no reason for the gate to depend on any particular machine being
 awake.
 
-`cargo-test` caches the cargo registry and `target/` with `actions/cache`, keyed
-on the **lockfile**, with `restore-keys` for a near-miss. The key must never
-contain the commit SHA: that writes a fresh entry on every push, nothing ever
-hits, and the 10 GB quota evicts itself — the gate then pays for a cold build of
-a 100k-line crate at release optimisation every time, which is what makes the
-merge race above hurt. If a run looks slow, check the cache actually hit before
-blaming anything else; the `Cache restored from key:` line is in the job log.
+`cargo-test` caches the cargo **registry only** with `actions/cache`, keyed on
+the **lockfile**, with `restore-keys` for a near-miss. `target/` is deliberately
+not cached: the workspace is a single crate with `CARGO_INCREMENTAL: 0`, so any
+source change re-derives every `civvis` artifact from scratch, and a lockfile
+key hits exactly and is never re-saved — the cached `target/` was a frozen
+multi-GB payload downloaded on every run to contribute nothing. The key must
+never contain the commit SHA: that writes a fresh entry on every push, nothing
+ever hits, and the 10 GB quota evicts itself. If a run looks slow, check the
+cache actually hit before blaming anything else; the `Cache restored from key:`
+line is in the job log.
 
 For about an hour on 2026-07-25 this ran on two self-hosted runners instead.
 That was a workaround for the repository being *private* with unpaid metered
