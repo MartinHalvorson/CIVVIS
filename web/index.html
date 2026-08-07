@@ -165,11 +165,11 @@
        screens. JavaScript publishes only the part that actually overlaps this
        area, so the standings can start clear of it in either arrangement. */
     --player-hud-left: 0px;
-    /* The masthead ends at its final civilization row rather than at an
-       arbitrary share of the screen. Before a world arrives, reserve the
-       two-seat floor: it keeps the era and turn counter visible. */
-    --player-hud-content-height: 106px;
-    --player-hud-max-height: min(var(--player-hud-content-height), calc(100% - 8px));
+    /* The masthead's default height ends at its final civilization row, and
+       a dragged height answers to nothing except the map area itself — the
+       responsive pass keeps this ceiling current; this is only its floor
+       before that pass first runs. */
+    --player-hud-max-height: calc(100% - 8px);
   }
   /* The map area: the rectangle of #maparea the world is drawn into. It is the
      whole of it until the panels crowd it or a viewer sets it by hand, and
@@ -798,6 +798,36 @@
   /* Neither half of a row gives up width, and nothing here ellipsizes: a
      setting is shown whole or the block is drawn a quarter-point smaller. */
   .turn-setting > span, .turn-setting > b, .turn-setting > .turn-pace-choice { flex: 0 0 auto; }
+  /* The seam on the plate's right edge: the command deck's resize affordance
+     brought inside the masthead. As a grid item overlapping the plate cell it
+     rides the plate's edge at every density, leaning into the panel gap. */
+  .turn-plate-seam {
+    position: relative; z-index: 8; grid-column: 1; grid-row: 1;
+    justify-self: end; align-self: stretch; width: 7px;
+    margin: 9px -6px 9px 0; padding: 0; border: 0; border-radius: 4px;
+    background: transparent; cursor: col-resize; touch-action: none;
+  }
+  .turn-plate-seam::before {
+    content: ""; position: absolute; inset: 0 2px; border-radius: 2px;
+    background: #d7b66a2e;
+  }
+  .turn-plate-seam:hover::before, .turn-plate-seam:focus-visible::before { background: #d7b66a8c; }
+  .turn-plate-seam:focus-visible { outline: 1px solid #d7b66a70; outline-offset: 1px; }
+  /* A widened plate goes wide instead of tall: the era and the turn counter
+     share the first line, and the settings below divide into two columns. */
+  #playerhud.turn-plate-wide .victory-turn {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
+    column-gap: 10px; align-items: center;
+  }
+  #playerhud.turn-plate-wide .turn-era { grid-column: 1; grid-row: 1; text-align: left; }
+  #playerhud.turn-plate-wide .turn-count {
+    grid-column: 2; grid-row: 1; margin: 0; justify-content: flex-end;
+  }
+  #playerhud.turn-plate-wide .turn-settings {
+    grid-column: 1 / -1; grid-row: 2; align-self: start;
+    grid-template-columns: repeat(2, minmax(max-content, 1fr)); column-gap: 14px;
+  }
   /* Tabular figures so a count changing from 10 to 9 moves the row by exactly
      one digit's width instead of an arbitrary one — the block is refitted on
      that width, and a proportional 1 would re-size all four rows mid-game. */
@@ -2592,7 +2622,7 @@
     position: absolute; z-index: 7; pointer-events: auto;
     top: var(--panel-edge); left: max(var(--panel-edge), var(--player-hud-left, 0px));
     right: calc(var(--victory-hud-width) + var(--panel-gap) + var(--panel-edge)); width: auto;
-    height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
+    height: min(var(--player-hud-height, 106px), var(--player-hud-max-height));
     /* Wide enough for the whole of "Watch as" at the fitter's own type size.
        At 68px the button's own text overflowed its content box by a pixel and
        Chrome clipped the final "s" — a control labelled "Watch a". */
@@ -2660,7 +2690,7 @@
       repeat(12, minmax(var(--hud-stat-min), 1fr));
     --hud-lock-column: 13px; --hud-row-height: 26px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
-    display: grid; grid-template-columns: 164px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+    display: grid; grid-template-columns: var(--turn-plate-width, 164px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
     align-items: stretch; gap: 5px; min-width: 0; padding: 5px;
     overflow: visible; transform: none;
     border: 1px solid #526a618f; border-radius: 12px;
@@ -3235,7 +3265,7 @@
       --hud-ident-min: 31px;
     }
     #victoryhud, body.overlay-minimap-hidden #victoryhud {
-      top: calc(var(--panel-edge) + min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + var(--panel-gap));
+      top: calc(var(--panel-edge) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
       left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: var(--panel-edge); bottom: auto; width: auto;
       height: var(--compact-victory-hud-height);
       grid-template-columns: minmax(0, 1fr); padding: 4px;
@@ -3276,7 +3306,7 @@
     --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }
   #maparea.player-hud-compact #victoryhud {
-    top: calc(var(--panel-edge) + min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + var(--panel-gap));
+    top: calc(var(--panel-edge) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
     left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: var(--panel-edge); bottom: auto; width: auto;
     height: var(--compact-victory-hud-height);
     grid-template-columns: minmax(0, 1fr); padding: 4px;
@@ -3345,7 +3375,7 @@
      they have already passed their 680px minimum in this band and scroll
      inside the panel, so their heads overflow by the same 3px either way. */
   #playerhud[data-type-size="compact"] {
-    grid-template-columns: clamp(148px, 33%, 164px) minmax(0, 1fr);
+    grid-template-columns: var(--turn-plate-width, clamp(148px, 33%, 164px)) minmax(0, 1fr);
     --hud-ident-min: 25px;
     --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }
@@ -3353,7 +3383,7 @@
     outline: 1px solid #d7b66a70; outline-offset: -1px; border-radius: 6px;
   }
   #playerhud[data-type-size="roomy"] {
-    grid-template-columns: 168px minmax(0, 1fr);
+    grid-template-columns: var(--turn-plate-width, 168px) minmax(0, 1fr);
     --hud-ident-min: 61px;
     --hud-identity-bias: 1.25; --hud-stat-min: 42px;
     --hud-row-height: 30px;

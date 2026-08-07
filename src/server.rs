@@ -9298,22 +9298,24 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("top: calc(var(--pin-head, 0) * var(--hud-row-pitch));"));
         assert!(EMBEDDED_INDEX.contains("bottom: calc(var(--pin-tail, 0) * var(--hud-row-pitch));"));
         // The standings grow through every civilization shown in the ribbon,
-        // with a two-seat floor that keeps the turn counter visible before
-        // enough rows exist to do so on their own.
-        assert!(EMBEDDED_INDEX.contains("--player-hud-content-height: 106px;"));
+        // with a two-seat floor that keeps the turn counter visible before a
+        // world arrives. The default height still ends at the final row, but a
+        // dragged height answers to nothing except the map area itself: the
+        // old two-fifths ratio and roster-content ceilings are deliberately
+        // absent from the players widget.
         assert!(EMBEDDED_INDEX.contains(
-            "--player-hud-max-height: min(var(--player-hud-content-height), calc(100% - 8px));"
+            "height: min(var(--player-hud-height, 106px), var(--player-hud-max-height));"
         ));
+        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: calc(100% - 8px);"));
+        assert!(EMBEDDED_INDEX.contains("const maxPlayerHeight = Math.round(Math.max(104, height - edge * 2));"));
         assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_MIN_ROWS = 2;"));
         assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_ROW_PITCH = PLAYER_HUD_ROW_HEIGHT + PLAYER_HUD_ROW_GAP;"));
         assert!(EMBEDDED_INDEX.contains("function playerHudRowPitch()"));
         assert!(EMBEDDED_INDEX.contains("return Math.max(PLAYER_HUD_MIN_HEIGHT, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());"));
-        assert!(EMBEDDED_INDEX.contains("maxHeight:playerHudMaxContentHeight"));
-        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38, avoidsSidebar:true"));
+        assert!(EMBEDDED_INDEX.contains("minHeight:PLAYER_HUD_MIN_HEIGHT,\n            avoidsSidebar:true}"));
+        assert!(!EMBEDDED_INDEX.contains("maxHeightRatio"), "the masthead height cap is retired");
+        assert!(!EMBEDDED_INDEX.contains("--player-hud-content-height"), "the roster ceiling is retired");
         assert!(EMBEDDED_INDEX.contains("const requestedHeight = playerHudContentHeight(rows);"));
-        assert!(EMBEDDED_INDEX.contains(
-            "mapArea.style.setProperty(\"--player-hud-content-height\", `${requestedHeight}px`);"
-        ));
         assert!(EMBEDDED_INDEX.contains("if (state && hudLayoutGesture?.name !== \"players\") drawPlayerHud();"));
         assert!(EMBEDDED_INDEX.contains(
             "const playerScroll = hud.querySelector(\".diplomacy-ribbon\")?.scrollTop || 0;"
@@ -10314,10 +10316,44 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("area.classList.toggle(\"player-hud-compact\", width <= PLAYER_HUD_COMPACT_WIDTH);"));
         assert!(EMBEDDED_INDEX.contains("#maparea.player-hud-compact #playerhud"));
-        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38, avoidsSidebar:true"));
+        assert!(EMBEDDED_INDEX.contains("avoidsSidebar:true}"));
         assert!(EMBEDDED_INDEX.contains(
             "function hudWidgetMinX(config, margin = hudWidgetMargin())"
         ));
+    }
+
+    /// The turn plate's width is the viewer's, through the same seam
+    /// affordance as the command deck's edge: drag it, nudge it with arrow
+    /// keys, double-click it back to the stylesheet's density default. Past
+    /// the split width the plate spends the room sideways rather than
+    /// downward — era and turn counter on one line, the settings below in
+    /// two columns — so widening buys information density instead of
+    /// whitespace. The seam re-renders with the masthead every frame, so the
+    /// press must be caught on the permanent #playerhud element.
+    #[test]
+    fn browser_lets_the_turn_plate_widen_into_two_columns() {
+        for contract in [
+            "const TURN_PLATE_WIDTH_STORAGE_KEY = \"civvis-turn-plate-width-v1\";",
+            "const TURN_PLATE_MIN_WIDTH = 148;",
+            "const TURN_PLATE_SPLIT_WIDTH = 252;",
+            "function applyTurnPlateWidth(width, persist = true) {",
+            "function turnPlateMaxWidth() {",
+            "data-turn-plate-seam role=\"separator\"",
+            "beginTurnPlateSeamGesture(event);",
+            "applyTurnPlateWidth(turnPlateWidth, false);",
+            "grid-template-columns: var(--turn-plate-width, 164px) minmax(0, 1fr);",
+            "var(--turn-plate-width, clamp(148px, 33%, 164px))",
+            "var(--turn-plate-width, 168px)",
+            ".turn-plate-seam {",
+            "#playerhud.turn-plate-wide .victory-turn {",
+            "#playerhud.turn-plate-wide .turn-settings {",
+            "grid-template-columns: repeat(2, minmax(max-content, 1fr)); column-gap: 14px;",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(contract),
+                "turn plate width contract is missing: {contract}"
+            );
+        }
     }
 
     /// Player-row color is reserved for a current war. Friendships and
