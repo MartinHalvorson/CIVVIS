@@ -9016,13 +9016,41 @@ mod tests {
         ] {
             assert!(EMBEDDED_INDEX.contains(normal), "missing normal setting: {normal}");
         }
-        // The endgame rules sit directly under the victory checkboxes they
-        // depend on. The Mercy Rule ships selected at 95% win odds — the
-        // engine-side default in `stock_opening_params` and this markup must
-        // tell the same story — and the Require-N cap tracks the enabled
-        // victory conditions live in the client.
-        assert!(EMBEDDED_INDEX.find("id=\"victory-options\"").unwrap()
-            < EMBEDDED_INDEX.find("id=\"victory-endgame\"").unwrap());
+        // The endgame rules live *inside* the victory card, not beside it.
+        // Both only mean something against the boxes ticked there, and the
+        // short setup pass re-parents `#victory-options` alone (the
+        // `basic.push` pinned below): a sibling block stays where the markup
+        // put it and is stranded above the settings it qualifies. Walk the
+        // div nesting, since document order alone does not say "within".
+        let card = EMBEDDED_INDEX.find("id=\"victory-options\"").unwrap();
+        let endgame_at = EMBEDDED_INDEX.find("id=\"victory-endgame\"").unwrap();
+        let mut cursor = card;
+        let mut depth = 1usize;
+        let card_end = loop {
+            let open = EMBEDDED_INDEX[cursor..].find("<div").map(|at| cursor + at);
+            let close = EMBEDDED_INDEX[cursor..]
+                .find("</div>")
+                .map(|at| cursor + at)
+                .expect("the victory-conditions card never closes");
+            if open.is_some_and(|open| open < close) {
+                depth += 1;
+                cursor = open.unwrap() + "<div".len();
+                continue;
+            }
+            depth -= 1;
+            if depth == 0 {
+                break close;
+            }
+            cursor = close + "</div>".len();
+        };
+        assert!(
+            card < endgame_at && endgame_at < card_end,
+            "the Mercy Rule and Require-N selects belong inside the victory-conditions card"
+        );
+        // The Mercy Rule ships selected at 95% win odds — the engine-side
+        // default in `stock_opening_params` and this markup must tell the same
+        // story — and the Require-N cap tracks the enabled victory conditions
+        // live in the client.
         for endgame in [
             "class=\"victory-endgame civ6-hidden\" id=\"victory-endgame\"",
             "<option value=\"0.95\" selected>95% win odds</option>",
