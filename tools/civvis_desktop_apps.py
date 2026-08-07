@@ -34,7 +34,7 @@ GENERATED_BUILD_NAME = re.compile(r"^build-[0-9a-f]+-\d{8}T\d{6}Z$")
 TEMPLATE_TOKENS = ("MODE", "LABEL", "COMMIT", "COMMIT_TIME", "BUILT_AT", "REPO")
 DEFAULT_PRESET = (
     "AI simulation; Small 74x46 flat Continents; 6 majors;\n"
-    "9 city-states; free for all; Ancient; Online/250 turns; Blitz/1000 ms;\n"
+    "9 city-states; free for all; Ancient; Online/250 turns; Blitz/500 ms;\n"
     "hot equator and cold poles; science, culture, religious, diplomatic,\n"
     "domination, and score victories enabled."
 )
@@ -209,7 +209,7 @@ def verify_default_contract(source: pathlib.Path, template: pathlib.Path) -> Non
     )
     wasm = (source / "src/wasm.rs").read_text(encoding="utf-8")
     wasm_fragments = (
-        "static PACE: Cell<u64> = const { Cell::new(1_000) };",
+        "static PACE: Cell<u64> = const { Cell::new(500) };",
         "num_players: 6,",
         "map_script: MapScript::Continents,",
         "map_topology: MapTopology::Flat,",
