@@ -2216,10 +2216,9 @@
     overflow: hidden; color: var(--faint); font-size: var(--type-label); font-weight: 650;
     letter-spacing: .02em; text-overflow: ellipsis; text-transform: none; white-space: nowrap;
   }
-  .era-mods-settings { margin-top: 0; }
   .era-mods-body {
     display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px;
-    padding: 10px 10px 11px; align-items: end;
+    align-items: end;
   }
   .era-mod-option { margin: 0; }
   .era-future-setting { min-width: 0; }
@@ -4111,16 +4110,6 @@
           <option value="stone_age" disabled>Stone Age · later</option>
           <option value="ancient" selected>Ancient</option>
         </select></label>
-        <details class="advanced-settings era-mods-settings civ6-hidden" id="era-mods-settings" data-advanced-settings="era-mods">
-          <summary><span class="advanced-settings-summary">Era mods<small>Ice Age and future-era rules</small></span></summary>
-          <div class="era-mods-body">
-            <label class="mod-option era-mod-option"><input type="checkbox" id="iceagemod" disabled><span>Ice Age<small>Later</small></span></label>
-            <label class="small era-future-setting">Future era<select id="futureera" style="margin-top:4px">
-              <option value="classic" selected>Regular Future Era</option>
-              <option value="modified" disabled>Modified Future Era · later</option>
-            </select></label>
-          </div>
-        </details>
         <label class="small">Game speed<select id="gamespeed" style="margin-top:4px">
           <option value="online" selected>Online · 250 turns</option>
           <option value="quick">Quick · 330 turns</option>
@@ -4128,9 +4117,6 @@
           <option value="epic">Epic · 750 turns</option>
           <option value="marathon">Marathon · 1500 turns</option>
         </select></label>
-        <label class="small civ6-hidden">Custom turn cap<input id="turnlimit" type="number" min="1" max="4294967295" step="1"
-          inputmode="numeric" placeholder="Speed default" aria-describedby="turnlimit-hint"
-          title="Leave blank to use the selected game speed's normal turn limit"><small class="setup-number-hint" id="turnlimit-hint">Leave blank to use the selected game speed's normal turn limit.</small></label>
         <div class="utility-group" id="saves-group" style="display:none">
           <div class="city-group-head" style="margin-bottom:6px">Saved games<span id="saves-count"></span></div>
           <div id="saves-list"></div>
@@ -4218,6 +4204,16 @@
                   <label class="mod-option"><input type="checkbox" data-game-mod="detailed-map-tacks"><span>Detailed Map Tacks<small>Planning tools</small></span></label>
                   <label class="mod-option"><input type="checkbox" data-game-mod="extended-policy-cards"><span>Extended Policy Cards<small>Policy yield previews</small></span></label>
                   <label class="mod-option"><input type="checkbox" data-game-mod="sukritacts-oceans"><span>Sukritact's Oceans<small>Expanded ocean rules</small></span></label>
+                </div>
+              </div>
+              <div class="mod-tier">
+                <div class="mod-tier-title">Era mods</div>
+                <div class="era-mods-body">
+                  <label class="mod-option era-mod-option"><input type="checkbox" id="iceagemod" disabled><span>Ice Age<small>Later</small></span></label>
+                  <label class="small era-future-setting">Future era<select id="futureera" style="margin-top:4px">
+                    <option value="classic" selected>Regular Future Era</option>
+                    <option value="modified" disabled>Modified Future Era · later</option>
+                  </select></label>
                 </div>
               </div>
             </div>
