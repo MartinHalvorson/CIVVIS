@@ -1052,8 +1052,10 @@ const BLAST_MS = 3000;
 // The delivery ahead of it. The ledger names the launch platform and where it
 // fired from, so the picture can show the arc instead of a city detonating
 // out of nowhere. Flight rides the same record: its t0 is the *arrival*, so
-// every blast painter stays oblivious to the missile phase.
-const MISSILE_FLIGHT_MS = 1400;
+// every blast painter stays oblivious to the missile phase. 824ms is the
+// original 1400ms delivery sped up by 70%: a strike should arrive like a
+// strike, and the blast is the part worth three seconds, not the commute.
+const MISSILE_FLIGHT_MS = 824;
 // Start a detonation for every strike that appeared between these two frames.
 //
 // Read from the strike ledger rather than from the board, because the board
@@ -18749,6 +18751,40 @@ function blastGeometry(b, e) {
   const ee = 1 - (1 - e) * (1 - e);
   return { x, y, reach, ee };
 }
+// The explosion itself, shared by both projections. The hatched disk and the
+// wave fronts are the *diagram* of the blast; this is the blast: a fireball
+// that bursts out of ground zero to the edge of the tiles the device actually
+// hit — `reach` is the damage radius, so covering it is reporting, not
+// decoration — then cools from white heart through orange to soot and burns
+// out, leaving the diagram to finish the three seconds. `squashY` is the flat
+// board's dimetric squash (1 on the globe, whose tilt lives in the
+// transform); `seed` keeps simultaneous strikes from roiling in unison.
+function drawBlastFireball(x, y, reach, e, squashY, seed) {
+  if (e >= 0.88) return;
+  // The burst is over in the first fifth — a shockwave is not a slow bloom —
+  // and the front roils unevenly so it reads as fire, not a surveyed circle.
+  const grow = Math.min(1, e / 0.2);
+  const swell = 1 - (1 - grow) * (1 - grow) * (1 - grow);
+  const roil = 1 + 0.05 * Math.sin(e * 21 + seed) + 0.04 * Math.sin(e * 34 + seed * 2.7);
+  const r = reach * (0.12 + 0.85 * swell) * roil;
+  // Cooling walks every colour stop inward while the whole ball fades, so the
+  // centre dims last, the way the heat actually leaves.
+  const cool = Math.max(0, Math.min(1, (e - 0.2) / 0.68));
+  const fade = e < 0.55 ? 1 : Math.max(0, 1 - (e - 0.55) / 0.33);
+  cx.save();
+  // Scale the frame, not the path: a circular gradient clipped by a squashed
+  // ellipse would cut its own rim off at the top and bottom.
+  cx.translate(x, y); cx.scale(1, squashY);
+  const ball = cx.createRadialGradient(0, 0, 0, 0, 0, r);
+  ball.addColorStop(0, `rgba(255,${244 - Math.round(cool * 90)},${214 - Math.round(cool * 150)},${(0.96 * fade).toFixed(3)})`);
+  ball.addColorStop(0.35 + cool * 0.25, `rgba(255,${170 - Math.round(cool * 60)},60,${(0.8 * fade).toFixed(3)})`);
+  ball.addColorStop(0.8, `rgba(${200 - Math.round(cool * 90)},${70 - Math.round(cool * 30)},30,${(0.55 * fade).toFixed(3)})`);
+  ball.addColorStop(1, "rgba(40,20,12,0)");
+  cx.globalAlpha = 1;
+  cx.fillStyle = ball;
+  cx.beginPath(); cx.arc(0, 0, r, 0, 7); cx.fill();
+  cx.restore();
+}
 function drawNuclearBlasts(now) {
   for (let i = anim.blasts.length - 1; i >= 0; i--) {
     const b = anim.blasts[i];
@@ -18801,16 +18837,10 @@ function drawStrategicBlast(b, x, y, reach, e, ee) {
     cx.lineWidth = 3.2 * (1 - re) + 1;
     cx.beginPath(); cx.ellipse(x, y, rr, rr * YS, 0, 0, 7); cx.stroke();
   }
-  // A hot pip at ground zero for the first beat, so the tile itself is not
-  // ambiguous once the rings have travelled off it.
-  if (e < 0.34) {
-    const pe = e / 0.34;
-    cx.globalAlpha = 1 - pe;
-    cx.fillStyle = "#fff6e2";
-    cx.beginPath();
-    cx.ellipse(x, y, reach * (0.24 + pe * 0.2), reach * (0.24 + pe * 0.2) * YS, 0, 0, 7);
-    cx.fill();
-  }
+  // The explosion, grown out to the edge of the damage. It replaces the old
+  // ground-zero pip: the fireball's white heart marks the tile, and its rim
+  // says how far the engine actually reached.
+  drawBlastFireball(x, y, reach, e, YS, x * 0.013 + y * 0.007);
   // The symbol, rising clear of the disk and holding for most of the animation:
   // on a flat map this is what says "nuclear" rather than "a big battle". It
   // starts above the city nameplate rather than climbing through it — struck
@@ -19114,12 +19144,8 @@ function drawPlanetStrategicBlast(b, x, y, reach, e, inradius) {
     cx.lineWidth = 3.2 * (1 - re) + 1;
     cx.beginPath(); cx.arc(x, y, rr, 0, 7); cx.stroke();
   }
-  if (e < 0.34) {
-    const pe = e / 0.34;
-    cx.globalAlpha = 1 - pe;
-    cx.fillStyle = "#fff6e2";
-    cx.beginPath(); cx.arc(x, y, reach * (0.24 + pe * 0.2), 0, 7); cx.fill();
-  }
+  // The explosion; the tilt lives in the transform, so no squash here.
+  drawBlastFireball(x, y, reach, e, 1, x * 0.013 + y * 0.007);
   // The symbol, sized to the cell rather than the flat board's fixed type.
   const lift = inradius * (2.2 + ee * 1.4);
   cx.globalAlpha = e < 0.75 ? 1 : Math.max(0, (1 - e) / 0.25);
