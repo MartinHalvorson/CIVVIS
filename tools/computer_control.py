@@ -353,13 +353,25 @@ def bundle_report() -> dict:
                               "CivvisControl").exists()}
 
 
-def screenshot(out: Path, max_dimension: "int | None" = 1400) -> Path:
+def screenshot(out: Path, max_dimension: "int | None" = 1400) -> dict:
+    """Capture the screen, downscaled; returns the path AND the scale.
+
+    The scale is not a nicety. A 1400-wide capture of a 1728-point screen is
+    0.81 of reality, and a click aimed at coordinates read off it lands 19%
+    high and left of the target — measured 2026-08-07, when exactly that slip
+    put a menu click on the ad carousel and opened the Steam store over the
+    game. Divide screenshot coordinates by `scale` before clicking.
+    """
     subprocess.run(["screencapture", "-x", "-t", "png", str(out)], check=True,
                    timeout=30)
+    scale = 1.0
     if max_dimension:
         subprocess.run(["sips", "-Z", str(max_dimension), str(out)],
                        capture_output=True, timeout=60)
-    return out
+        size = desktop_points()
+        if size:
+            scale = min(1.0, max_dimension / max(size))
+    return {"screenshot": str(out), "scale": round(scale, 4)}
 
 
 def main() -> int:
@@ -389,7 +401,7 @@ def main() -> int:
     elif args.verb == "bundle":
         result = bundle_report()
     else:
-        result = {"screenshot": str(screenshot(args.out, args.max_dimension))}
+        result = screenshot(args.out, args.max_dimension)
     json.dump(result, sys.stdout, indent=2)
     print()
     return 0

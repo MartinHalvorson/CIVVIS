@@ -162,6 +162,20 @@ class GameProcessParseTest(unittest.TestCase):
         self.assertNotIn(50000, {r["pid"] for r in rows if r["role"] == "child"})
 
 
+class ScreenshotScaleTest(unittest.TestCase):
+    def test_the_scale_that_put_a_click_on_the_ad_carousel_is_reported(self) -> None:
+        with mock.patch.object(cc.subprocess, "run"), \
+             mock.patch.object(cc, "desktop_points", return_value=(1728, 1117)):
+            report = cc.screenshot(Path("/tmp/x.png"), max_dimension=1400)
+        self.assertAlmostEqual(report["scale"], 0.8102, places=4)
+
+    def test_a_capture_smaller_than_the_cap_is_not_upscaled(self) -> None:
+        with mock.patch.object(cc.subprocess, "run"), \
+             mock.patch.object(cc, "desktop_points", return_value=(1280, 800)):
+            report = cc.screenshot(Path("/tmp/x.png"), max_dimension=1400)
+        self.assertEqual(report["scale"], 1.0)
+
+
 class LayoutReportTest(unittest.TestCase):
     def test_every_assignment_is_reported_even_when_a_window_is_missing(self) -> None:
         with mock.patch.object(cc, "desktop_points", return_value=(1728, 1117)), \
