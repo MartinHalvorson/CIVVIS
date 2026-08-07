@@ -1,22 +1,3 @@
 # Contributing
 
-- Read [`AGENTS.md`](AGENTS.md) and
-  [`docs/VERSION_CONTROL.md`](docs/VERSION_CONTROL.md) before starting. Every
-  task uses a unique branch and worktree, one active writer, an early draft PR,
-  and squash merge into protected `main`. Development checkouts must not use a
-  daemon that stages, commits, pulls, merges, rebases, or pushes.
-- Start tasks with `python3 tools/civvis_collab.py start ...`; the launcher
-  publishes the ownership claim before implementation begins.
-- Pure Rust; serde is the only dependency. Keep it that way.
-- All game content changes go in `data/*.json`, not code.
-- All state mutation goes through `Game::apply`; new actions need: an
-  `Action` variant, a handler, `legal_actions` coverage, and a test.
-- Run `cargo test --profile ci` and a `civvis soak` before pushing.
-- Determinism is sacred: any randomness must come from `game.rng` or a
-  seeded AI-local `Rng`.
-- The GUI (`web/index.html`) must only speak the JSON protocol — no
-  engine-specific coupling beyond `/state`, `/action`, `/rules`, `/new`.
-
-CI runs `cargo test --profile ci --locked` for every PR and push to `main`.
-The `ci` profile inherits `release`; it only drops the single-codegen-unit and
-LTO settings, which cuts the gate from about 156s to 39s locally.
+If you have ideas I'd love to hear them. No promises! But I'll try my best. Maybe just open an issue and I'll take a look. I'm going to hold off on accepting code contributions right now. It's a bit of a risk at the moment to be accepting code and it's not that hard for me to whip things up so I'll probably keep it that way. Feel free to clone or fork though. Maybe in the future this will change.
