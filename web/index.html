@@ -2186,7 +2186,19 @@
   #saves-group { grid-column: 1 / -1; }
   .victory-options { grid-column: 1 / -1; padding: 9px 10px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080; }
   .victory-options h2 { margin-bottom: 8px; }
-  .victory-option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 9px; }
+  /* Three across when the sidebar can spell the longest condition out, fewer
+     when it cannot. "Domination" is a single unbreakable word about 83px wide,
+     so a fixed `repeat(3, 1fr)` handed it a 66px column at the default sidebar
+     and it ran under the Score checkbox beside it — a checkbox label cannot
+     shrink past its longest word, it can only spill. The `max()` floor stops a
+     track ever falling below the word; the `(100% - 18px) / 3` half caps the
+     row at three, so widening the sidebar never reflows six conditions into
+     four columns and a stray pair. That 18px is the two column gaps a
+     three-column row spends — keep it in step with the 9px gap below. */
+  .victory-option-grid {
+    display: grid; gap: 7px 9px;
+    grid-template-columns: repeat(auto-fit, minmax(max(92px, (100% - 18px) / 3), 1fr));
+  }
   .victory-option { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--muted); font-size: var(--type-small); cursor: pointer; }
   .victory-option input { margin: 0; }
   /* Both endgame rules only mean something against the boxes ticked above —
