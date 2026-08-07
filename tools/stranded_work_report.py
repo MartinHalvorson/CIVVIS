@@ -22,6 +22,14 @@ branch, age, subject, line counts — so triage happens from the issue without
 an archaeology session. An empty report writes "nothing stranded" rather than
 skipping the update: silence must be distinguishable from breakage.
 
+Closing the issue is the operator's "cycle remediated" signal, not the end of
+the report: the upsert finds the issue in either state and keeps writing the
+timeline into it, and reopens it only when an actionable row — a commentless
+close or an idle branch — appears again. Rescue snapshots alone never reopen
+it; they are preserved history and would otherwise pin the issue open
+forever. Before 2026-08-07 the search covered open issues only, so the first
+close would have silently forked the timeline into a fresh issue.
+
     GH_TOKEN=... ./tools/stranded_work_report.py [--dry-run]
 """
 
@@ -131,14 +139,15 @@ def rescue_refs() -> list[str]:
     return rows
 
 
-def compose(now: datetime.datetime) -> str:
+def compose(now: datetime.datetime) -> tuple[str, bool]:
+    """The report body, and whether any row actually demands a remedy."""
     sections = [
-        ("Closed without a word", commentless_closes(now),
+        ("Closed without a word", commentless_closes(now), True,
          "Add a closing comment stating why, or reopen and land it."),
-        ("Idle branches holding real commits", idle_branches(now),
+        ("Idle branches holding real commits", idle_branches(now), True,
          "Open a PR, hand the branch off, or delete it with the reason in a "
          "closing comment on its claim PR."),
-        ("Rescue snapshots (`refs/civvis/wip/*`)", rescue_refs(),
+        ("Rescue snapshots (`refs/civvis/wip/*`)", rescue_refs(), False,
          "Land what was meant to land; the rest is preserved history and can "
          "stay."),
     ]
@@ -147,27 +156,32 @@ def compose(now: datetime.datetime) -> str:
         f"`tools/stranded_work_report.py`. One issue, updated in place; "
         f"its edit history is the timeline._",
     ]
-    for title, rows, remedy in sections:
+    actionable = False
+    for title, rows, demands_remedy, remedy in sections:
+        actionable = actionable or (demands_remedy and bool(rows))
         parts.append(f"\n## {title}\n")
         parts.append("\n".join(rows) if rows else "Nothing stranded here today.")
         if rows:
             parts.append(f"\n_Remedy: {remedy}_")
-    return "\n".join(parts)
+    return "\n".join(parts), actionable
 
 
-def upsert(body: str) -> None:
-    issues = api(f"/repos/{REPOSITORY}/issues?state=open"
+def upsert(body: str, actionable: bool) -> None:
+    issues = api(f"/repos/{REPOSITORY}/issues?state=all"
                  f"&labels={ISSUE_LABEL}&per_page=10")
     existing = next((i for i in issues if i["title"] == ISSUE_TITLE), None)
-    if existing:
-        api(f"/repos/{REPOSITORY}/issues/{existing['number']}", "PATCH",
-            {"body": body})
-        print(f"updated issue #{existing['number']}")
-    else:
+    if existing is None:
         created = api(f"/repos/{REPOSITORY}/issues", "POST",
                       {"title": ISSUE_TITLE, "body": body,
                        "labels": [ISSUE_LABEL]})
         print(f"created issue #{created['number']}")
+        return
+    update: dict[str, str] = {"body": body}
+    if actionable and existing["state"] == "closed":
+        update["state"] = "open"
+    api(f"/repos/{REPOSITORY}/issues/{existing['number']}", "PATCH", update)
+    reopened = " and reopened it" if "state" in update else ""
+    print(f"updated issue #{existing['number']}{reopened}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -177,11 +191,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     now = datetime.datetime.now(datetime.timezone.utc).replace(
         microsecond=0, tzinfo=None)
-    body = compose(now)
+    body, actionable = compose(now)
     if args.dry_run:
         print(body)
         return 0
-    upsert(body)
+    upsert(body, actionable)
     return 0
 
 

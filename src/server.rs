@@ -9370,16 +9370,20 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("data-victory-focus=\"${isFocus}\""));
         assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
-        // A masthead row is one line: the lock track, then one flat track per
-        // visible column in the viewer's own order. Heading and rows read the
-        // same list, so the tracks and the cells cannot disagree.
+        // A masthead row is one flat track per visible column in the viewer's
+        // own order — the row lock included, riding in the model on its fixed
+        // track. Heading and rows read the same list, so the tracks and the
+        // cells cannot disagree.
         assert_eq!(
             EMBEDDED_INDEX
-                .matches("grid-template-columns: var(--hud-lock-column, 0px) var(--hud-tracks);")
+                .matches("grid-template-columns: var(--hud-tracks);")
                 .count(),
             2,
             "the heading and every row stand on the same flat track list"
         );
+        assert!(EMBEDDED_INDEX.contains(
+            "{key:\"lock\", label:\"Row lock\", block:\"identity\", min:\"--hud-lock-column\", width:0, fixed:true},"
+        ), "the row lock leads the model on its own fixed track");
         // The values claim their width first and the identity cells flex, so a
         // narrow masthead ellipsizes a name rather than running two figures
         // together. Every data column is a share rather than a pixel count.
@@ -9404,8 +9408,11 @@ mod tests {
         // share would undo a dragged column on the next window resize, so no
         // media rule may set either track list or either enclosing track.
         assert!(EMBEDDED_INDEX.contains(
-            "--hud-ident-min: 30px; --hud-ident-num-min: 60px; --hud-ident-odds-min: 76px;"
+            "--hud-ident-min: 30px; --hud-ident-num-min: 60px;"
         ));
+        assert!(EMBEDDED_INDEX.contains(
+            "--hud-odds-min: 27px; --hud-odds-trend-min: 13px;"
+        ), "the three odds columns stand on floors of their own");
         assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-num-min:").count(), 1,
             "the Elo floor is declared once and holds at every width: a full \
              score needs the same room on a laptop as on a wall");
@@ -9414,19 +9421,16 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "hud.style.setProperty(\"--hud-ident-num-min\", floor);"
         ), "a rating longer than the signed five-digit floor raises its shared track");
-        assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-odds-min:").count(), 1,
-            "and so does the two-category odds cell's own floor");
+        // Start, trend and Now are three columns of their own, each with a
+        // labelled, sortable heading of its own.
         assert!(EMBEDDED_INDEX.contains(
-            "grid-template-columns: minmax(0, 1fr) 11px minmax(0, 1fr);"
-        ), "Start and Now flank one fixed-width trend column");
-        assert!(EMBEDDED_INDEX.contains(
-            "playerHudSortHead(\"win_start\", \"START\", \"Win odds at the start of the game\")"
+            "win_start:[\"START\", \"Win odds at the start of the game\", \"numeric\"],"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "playerHudSortHead(\"win_delta\", \"Δ\", \"Change in win odds\", \"odds-trend-head\")"
+            "win_delta:[\"Δ\", \"Change in win odds\", \"odds-trend-head\"],"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "playerHudSortHead(\"win\", \"NOW\", \"Current win odds\")"
+            "win:[\"NOW\", \"Current win odds\", \"numeric\"],"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "elo_delta:[\"Δ\", \"Live Elo position against the living field\", \"numeric\"],"
@@ -9541,10 +9545,10 @@ mod tests {
         // width from the column on its left into the column on its right.
         assert!(EMBEDDED_INDEX.contains("const HUD_COLUMN_STORAGE_KEY = \"civvis-hud-columns-v1\";"));
         // Every fact in the player HUD can order its rows. Rank is the first
-        // dedicated standings column and is derived from the score standing,
-        // while Watch-as and lock cells are actions, deliberately outside the
-        // model, so an operator never has to sort a meaningless column just to
-        // reach ELO, a yield, or an active plan.
+        // dedicated standings column and is derived from the score standing.
+        // Watch-as and the row lock ride in the model on fixed tracks — so
+        // they can be hidden or moved like any column — but they are actions,
+        // not facts, and deliberately take no sort target.
         assert!(EMBEDDED_INDEX.contains(
             "...PLAYER_HUD_COLUMNS.filter(column => !column.fixed).map(column => column.key),"
         ), "every fact is sortable; the fixed Watch-as action is not a fact");
@@ -9577,16 +9581,13 @@ mod tests {
             "the NOW Win heading should order by its current estimate");
         assert!(EMBEDDED_INDEX.contains("if (delta > .02) return {symbol:\"↗\", direction:\"up\"};"));
         assert!(EMBEDDED_INDEX.contains("if (delta < -.02) return {symbol:\"↘\", direction:\"down\"};"));
-        for key in ["rank", "civ", "leader", "player", "elo", "elo_delta", "age", "plan"] {
+        for key in [
+            "rank", "civ", "leader", "player", "elo", "elo_delta", "win_start", "win_delta",
+            "win", "age", "plan",
+        ] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("{key}:[")),
                 "the {key} heading should carry a sortable label"
-            );
-        }
-        for key in ["win_start", "win_delta", "win"] {
-            assert!(
-                EMBEDDED_INDEX.contains(&format!("playerHudSortHead(\"{key}\"")),
-                "the {key} heading should be sortable"
             );
         }
         assert!(EMBEDDED_INDEX.contains(
