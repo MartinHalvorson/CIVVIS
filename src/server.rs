@@ -582,6 +582,14 @@ pub struct Session {
     /// distorting play — so the spectator state carries it alongside the
     /// turn structure itself.
     simultaneous_census: crate::simultaneous::SimultaneousCensus,
+    /// How many planning workers the next simultaneous cycle may use.
+    ///
+    /// One everywhere by default: the browser build has no threads, and a
+    /// game a person is playing must not commandeer their machine. The
+    /// exhibition pacer raises it while the pace is Lightning and lowers it
+    /// back when a viewer slows down. The game is byte-for-byte identical at
+    /// any count — the dial buys throughput, never different play.
+    simultaneous_jobs: usize,
 }
 
 /// The identity of a person playing a seat.
@@ -1505,13 +1513,9 @@ const FRAME_WAIT_RECHECK: Duration = Duration::from_millis(100);
 /// is answered with the one it already has. Short enough that a finished
 /// game's restart countdown still ticks over once a second on screen.
 const STATE_LONG_POLL: Duration = Duration::from_millis(1_000);
-/// The unlimited pace steps flat out for this long, then rests. The rest is
-/// also when the single-threaded accept loop gets a real slot, so the page
-/// keeps loading state while the stepper runs.
-const UNLIMITED_WORK_SLICE_MS: u64 = 90;
-/// The rest after each work slice: ten milliseconds in every hundred holds
-/// Lightning near 90% of a core instead of pinning it outright.
-const UNLIMITED_REST_MS: u64 = 10;
+/// The unlimited pace still hands the accept loop a slot this often, so the
+/// page keeps loading state while the stepper runs flat out.
+const UNLIMITED_BREATH_MS: u64 = 100;
 /// Blitz is the first watch pace where every player's completed turn becomes
 /// its own frame. Faster custom paces retain Lightning's one-frame-per-round
 /// throughput; every offered pace at or above this threshold is seat-by-seat.
@@ -1521,6 +1525,27 @@ const MINOR_SHARE: f64 = 0.25;
 
 fn publishes_player_turn_frames(pace_ms: u64) -> bool {
     pace_ms >= PLAYER_TURN_FRAME_MIN_PACE_MS
+}
+
+/// The planning fleet Lightning turns loose on a simultaneous world: nine
+/// cores in every ten, so a tenth of the machine stays free for whatever
+/// else the host is running. Any actual pace keeps the serial cycle — a
+/// paced turn spends its wall clock on the budget, not on compute — and a
+/// sequential world ignores the figure entirely, because its seats each
+/// act on the world the previous seat left and cannot deliberate together.
+fn simultaneous_jobs_for(pace_ms: u64) -> usize {
+    if pace_ms != 0 {
+        return 1;
+    }
+    static FLEET: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *FLEET.get_or_init(|| {
+        std::thread::available_parallelism().map_or(1, |cores| nine_tenths_of(cores.get()))
+    })
+}
+
+/// Nine tenths rounded down, never below one worker.
+fn nine_tenths_of(cores: usize) -> usize {
+    (cores * 9 / 10).max(1)
 }
 
 fn spectator_frame(game: &Game, sequence: u64) -> SpectatorFrame {
@@ -2215,6 +2240,7 @@ impl Session {
             human_players,
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
+            simultaneous_jobs: 1,
         }
     }
 
@@ -2313,6 +2339,7 @@ impl Session {
             human_players,
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
+            simultaneous_jobs: 1,
         }
     }
 
@@ -2857,14 +2884,21 @@ impl Session {
         }
         // A simultaneous game advances one whole game turn per step: every
         // seat plans against the same frozen world and the plans commit
-        // through the ordinary rules. Serial on purpose (`jobs = 1`) — the
-        // browser build has no thread pool, and a watched game spends its
-        // pace budget per turn rather than per seat. An aborted cycle is
-        // never retried: the driver has already said a retry would replay
-        // the same turn forever, so the world sits still instead.
+        // through the ordinary rules. `simultaneous_jobs` is how many
+        // planning workers the cycle may spread those seats across — one by
+        // default, most of the machine while the exhibition runs at
+        // Lightning — and the driver promises the same game at any count.
+        // An aborted cycle is never retried: the driver has already said a
+        // retry would replay the same turn forever, so the world sits still
+        // instead.
         if g.turn_structure == TurnStructure::Simultaneous {
             if !self.simultaneous_census.aborted
-                && !crate::simultaneous::step_cycle(g, &mut self.ais, 1, &mut self.simultaneous_census)
+                && !crate::simultaneous::step_cycle(
+                    g,
+                    &mut self.ais,
+                    self.simultaneous_jobs,
+                    &mut self.simultaneous_census,
+                )
             {
                 eprintln!(
                     "[server] simultaneous cycle aborted on turn {}: {}",
@@ -3901,6 +3935,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 let step_started = Instant::now();
                 let turn_before = s.game.turn;
                 let finished_before = s.game.winner.is_some();
+                s.simultaneous_jobs = simultaneous_jobs_for(pace);
                 let pid = s.step_quietly();
                 turn_compute_us += step_started.elapsed().as_micros() as u64;
                 if spectator_step_completes_frame(pace, turn_before, finished_before, &s.game) {
@@ -3969,13 +4004,12 @@ fn auto_step_loop(sh: Arc<Shared>) {
         }
         drop(simulation_frame_gate);
         if pace == 0 && !waiting {
-            // Unlimited: no wait between steps. Yield anyway, and after each
-            // work slice rest long enough to hold the stepper near 90% of a
-            // core and give the single-threaded accept loop a real slot, or
-            // /state would starve behind the session lock.
-            if unlimited_since.elapsed() >= Duration::from_millis(UNLIMITED_WORK_SLICE_MS) {
-                std::thread::sleep(Duration::from_millis(UNLIMITED_REST_MS));
+            // Unlimited: no wait between steps. Yield anyway, and give the
+            // single-threaded accept loop a real slot a few times a second,
+            // or /state would starve behind the session lock.
+            if unlimited_since.elapsed() >= Duration::from_millis(UNLIMITED_BREATH_MS) {
                 unlimited_since = Instant::now();
+                std::thread::sleep(Duration::from_millis(1));
             } else {
                 std::thread::yield_now();
             }
@@ -4866,7 +4900,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 mod tests {
     use super::{
         automatic_successor_seed, chronicle_world_events, final_countdown_ms, held_frame,
-        new_game_params, publishes_player_turn_frames, query_value, request_path, save_path,
+        new_game_params, nine_tenths_of, publishes_player_turn_frames, query_value, request_path,
+        save_path, simultaneous_jobs_for,
         seat_delay_ms, spectator_frame, spectator_step_completes_frame, staged_next_game_params,
         strategy_roster, tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot,
         ChronicleState, FrameDelivery, Params, Session, Shared, SpectatorFrame,
@@ -5069,6 +5104,53 @@ mod tests {
                 "{pace}ms is Blitz or slower"
             );
         }
+    }
+
+    #[test]
+    fn lightning_fleet_leaves_a_tenth_of_the_cores_free() {
+        assert_eq!(nine_tenths_of(1), 1);
+        assert_eq!(nine_tenths_of(2), 1);
+        assert_eq!(nine_tenths_of(4), 3);
+        assert_eq!(nine_tenths_of(10), 9);
+        assert_eq!(nine_tenths_of(16), 14);
+        assert_eq!(nine_tenths_of(128), 115);
+        for pace in [500, 1_000, 2_000, 4_000, 60_000] {
+            assert_eq!(
+                simultaneous_jobs_for(pace),
+                1,
+                "{pace}ms spends wall clock on the budget, not on compute"
+            );
+        }
+        assert!(simultaneous_jobs_for(0) >= 1);
+    }
+
+    /// The spectator's own step path, not only the driver underneath it: a
+    /// simultaneous world stepped with a Lightning-sized fleet must play
+    /// byte-for-byte the game the serial cycle plays, or a viewer changing
+    /// pace would change history.
+    #[test]
+    fn lightning_fleet_steps_the_same_simultaneous_game() {
+        let mut params = current();
+        params.spectate = true;
+        params.num_players = 3;
+        params.num_city_states = 2;
+        params.width = 30;
+        params.height = 20;
+        params.seed = 20_260_807;
+        params.turn_structure = TurnStructure::Simultaneous;
+        let mut serial = Session::new(params.clone());
+        let mut fleet = Session::new(params);
+        fleet.simultaneous_jobs = 4;
+        for _ in 0..3 {
+            serial.step_quietly();
+            fleet.step_quietly();
+        }
+        assert!(serial.game.turn > 1, "the serial reference must have advanced");
+        assert_eq!(
+            serde_json::to_value(&serial.game).expect("a serializable world"),
+            serde_json::to_value(&fleet.game).expect("a serializable world"),
+            "the fleet must play the serial game exactly"
+        );
     }
 
     /// The simulation already seats Civ-style: majors first, then
