@@ -23,9 +23,18 @@ jobs:
     timeout-minutes: 45
     env:
       CARGO_INCREMENTAL: 0
+      # lld instead of GNU ld for the test binaries. Six test executables each
+      # link the ~85 MB libcivvis rlib, and the default linker does that work
+      # serially per binary on a 4-core runner; lld is the one compile-time
+      # lever a 2026-08-06 local A/B could not measure on macOS (codegen-units
+      # 256 and opt-level 2 both measured as noise there and were dropped).
+      # If the gate's compile phase does not measurably improve, revert this —
+      # the flag is not worth carrying for free.
+      RUSTFLAGS: -C link-arg=-fuse-ld=lld
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y lld
       # This gate has never had a cache, and a cold build of a 100k-line crate
       # at release optimisation is what makes the merge race in
       # docs/VERSION_CONTROL.md hurt. The key is the lockfile, NOT the commit
@@ -39,16 +48,33 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: cargo-ci-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          # `-lld` in the key: RUSTFLAGS changes every unit's fingerprint, so
+          # artifacts cached under the old flags can never be reused — without
+          # a new key this job would restore a dead cache and rebuild deps on
+          # every run forever (actions/cache entries are immutable; the old
+          # key's entry would squat there unchanged).
+          key: cargo-ci-lld-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-ci-${{ runner.os }}-
+            cargo-ci-lld-${{ runner.os }}-
       # The `ci` profile inherits `release`, so tests run at the same
       # optimisation level; it only drops the single-codegen-unit and LTO
       # settings that exist to buy the production spectator about four percent
       # simulation throughput. The gate does not run rated games, and
       # serialising the backend over a 100k-line crate is what made this the
       # slowest step in the merge path.
-      - run: cargo test --profile ci --locked
+      #
+      # nextest instead of `cargo test` for the run phase, for two measured
+      # reasons. `cargo test` runs the nine test binaries one after another,
+      # so the lib binary's wall-clock tail — the spectator tests that sleep
+      # on real sockets — sets the phase's floor on this 4-core runner;
+      # nextest schedules every test from every binary in one worker pool.
+      # And it prints per-test times, so the next 19-second sleeper shows up
+      # in this log instead of hiding inside a two-minute total. Compilation
+      # is identical (`--cargo-profile ci`); doc-tests do not run under
+      # nextest, and this crate has none that execute (every doc fence is
+      # `text` or `ignore`, 3 ignored stubs).
+      - uses: taiki-e/install-action@nextest
+      - run: cargo nextest run --cargo-profile ci --locked
 
       # ⚠ The worktree audit is the only guard against a whole class of loss
       # that is invisible to every other gate here: finished work left unstaged

@@ -279,8 +279,15 @@ def check_engine(report: Report) -> None:
     if not cargo.exists():
         report.warn("cargo", "not found; engine tests skipped")
         return
+    # `--profile ci`, not `--release`: the release profile exists for the
+    # shipped spectator's ~4% simulation throughput and pays for it with
+    # `codegen-units = 1` plus thin LTO — the slowest possible build of a
+    # ~212k-line crate, run here while an operator waits. The ci profile is
+    # the one built for gating (Cargo.toml documents the split), compiles in
+    # a fraction of the time, and is the stricter check besides: it turns
+    # `debug-assertions` back on, which `--release` compiles out.
     done = subprocess.run(
-        [str(cargo), "test", "--release", "--lib"],
+        [str(cargo), "test", "--profile", "ci", "--lib"],
         cwd=ROOT, capture_output=True, timeout=3600,
     )
     tail = done.stdout.decode(errors="replace").strip().splitlines()

@@ -1326,6 +1326,53 @@ const WORLD_MINIMAP_REFERENCE = {
   flat: {width:336, height:168},
   planet: {width:240, height:240},
 };
+// How large a hex the thumbnail may draw while it frames known ground rather
+// than the whole world (see miniBounds). The reference frame is sized for a
+// charted world; fitted to a first city's dozen tiles it hands those tiles
+// back as giant hexes in a mostly-black corner. Capping the scale and letting
+// the frame shrink to what that scale needs keeps a young thumbnail small —
+// it grows with what is known and reaches the standard instrument only when
+// the known ground fills it, at which point the ordinary fit takes over.
+const MINI_KNOWN_HEX_LIMIT = 5.5;
+// Pixels the frame spends around the chart itself: its own 6px padding on each
+// side, the fit margin miniLayout keeps, and the label row above the canvas.
+const MINI_FRAME_CHROME = {width:20, height:38};
+function knownChartFrameCap() {
+  const tiles = state?.map?.tiles;
+  // Mirrors the branch miniBounds takes: a spectator and a circumnavigated
+  // world frame the whole world at the standard size. The globe has its own
+  // rule below — its chart is global at any frame size.
+  if (!tiles?.length || planetMap()) return null;
+  if (!chartIsOpen() && !mapEdgeVeiled()) return null;
+  const bounds = miniBounds();
+  const unitWidth = SQ3 * (bounds.maxU - bounds.minU + 1);
+  const unitHeight = 1.5 * (bounds.maxR - bounds.minR) + 2;
+  // Measured turned, exactly as miniLayout fits it, so the frame asks for the
+  // room the chart's own corners take at this bearing.
+  const cos = Math.abs(Math.cos(chartRot())), sin = Math.abs(Math.sin(chartRot()));
+  return {
+    width:(unitWidth * cos + unitHeight * sin) * MINI_KNOWN_HEX_LIMIT + MINI_FRAME_CHROME.width,
+    height:(unitWidth * sin + unitHeight * cos) * MINI_KNOWN_HEX_LIMIT + MINI_FRAME_CHROME.height,
+  };
+}
+// The globe's corner chart is global by design — its crop always holds the
+// same share of the sphere, so a frame of any size shows the same ground and
+// a barely-explored planet is a large square of fog around a speck of known
+// ground. The frame cannot zoom the chart, but it can stop spending the
+// standard square on that fog: its side follows the known cap's angular size,
+// with room for this much unexplored context around it, until the cap has
+// earned the standard instrument.
+const MINI_KNOWN_GLOBE_CONTEXT = 2;
+function knownGlobeFrameShare() {
+  const tiles = state?.map?.tiles;
+  if (!tiles?.length || !planetMap() || wentAround()) return null;
+  // The angular radius of the spherical cap holding the known share of the
+  // world's tiles, against the half-angle the chart's square crop reaches.
+  const share = Math.min(.5,
+    tiles.length / Math.max(1, state.map.width * state.map.height));
+  const reach = Math.acos(1 - 2 * share);
+  return Math.min(1, MINI_KNOWN_GLOBE_CONTEXT * reach / AZIMUTHAL_MINI_SQUARE_HALF);
+}
 function clampPanelDimension(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -1353,8 +1400,24 @@ function syncResponsivePanelGeometry() {
   const compactMinimapHeight = Math.round(clampPanelDimension(height * .19, 80, 148));
   const planetMinimapSide = Math.round(clampPanelDimension(
     Math.min(compactMinimapWidth, compactMinimapHeight), 130, 148));
-  const compactInstrumentWidth = shape === "planet" ? planetMinimapSide : compactMinimapWidth;
-  const compactInstrumentHeight = shape === "planet" ? planetMinimapSide : compactMinimapHeight;
+  // While the thumbnail frames known ground the frame follows the known
+  // extent, so a barely-explored world gets a small minimap instead of a
+  // standard frame full of giant hexes (flat) or fog (globe). Each shape has
+  // its own measure and the other's is always null.
+  const knownFrameCap = knownChartFrameCap();
+  const knownGlobeShare = knownGlobeFrameShare();
+  let compactInstrumentWidth = shape === "planet" ? planetMinimapSide : compactMinimapWidth;
+  let compactInstrumentHeight = shape === "planet" ? planetMinimapSide : compactMinimapHeight;
+  if (knownFrameCap) {
+    compactInstrumentWidth = Math.round(clampPanelDimension(
+      knownFrameCap.width, 130, compactInstrumentWidth));
+    compactInstrumentHeight = Math.round(clampPanelDimension(
+      knownFrameCap.height, 80, compactInstrumentHeight));
+  } else if (knownGlobeShare !== null && knownGlobeShare < 1) {
+    compactInstrumentWidth = Math.round(clampPanelDimension(
+      compactInstrumentWidth * knownGlobeShare, 130, compactInstrumentWidth));
+    compactInstrumentHeight = compactInstrumentWidth;
+  }
   // Reserve the complete lower-left instrument stack before sizing the band
   // above it. The smaller of the natural band and the remaining space keeps a
   // common 960x540 quadrant from having the tracker overlap the minimap.
@@ -1379,11 +1442,21 @@ function syncResponsivePanelGeometry() {
     referenceDiagonal * reference.width;
   const wideMinimapMax = shape === "planet" ? 194
     : Math.min(360, Math.max(180, width * .32));
-  const wideMinimapWidth = Math.round(clampPanelDimension(
+  let wideMinimapWidth = Math.round(clampPanelDimension(
     diagonalWidth, 180, wideMinimapMax));
-  const wideMinimapHeight = Math.round(clampPanelDimension(
+  let wideMinimapHeight = Math.round(clampPanelDimension(
     shape === "planet" ? wideMinimapWidth
       : wideMinimapWidth * reference.height / reference.width, 96, 194));
+  if (knownFrameCap) {
+    wideMinimapWidth = Math.round(clampPanelDimension(
+      knownFrameCap.width, 130, wideMinimapWidth));
+    wideMinimapHeight = Math.round(clampPanelDimension(
+      knownFrameCap.height, 96, wideMinimapHeight));
+  } else if (knownGlobeShare !== null && knownGlobeShare < 1) {
+    wideMinimapWidth = Math.round(clampPanelDimension(
+      wideMinimapWidth * knownGlobeShare, 130, wideMinimapWidth));
+    wideMinimapHeight = wideMinimapWidth;
+  }
   const victoryWidth = Math.round(clampPanelDimension(width * .15, 156, 280));
   const style = area.style;
   style.setProperty("--panel-edge", `${edge}px`);
@@ -4842,8 +4915,8 @@ async function boot() {
       ).join("");
       if ([...sizes.options].some(option => option.value === chosen)) {
         sizes.value = chosen;
-      } else if ([...sizes.options].some(option => option.value === "6")) {
-        sizes.value = "6";
+      } else if ([...sizes.options].some(option => option.value === "4")) {
+        sizes.value = "4";
       }
       // The sizes this build offers decide which team splits it can seat.
       syncTeams();
@@ -5911,7 +5984,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     // offering to restart it as a free-for-all.
     syncTeams();
     document.getElementById("teams").value = teamRuleFromArray(st.teams);
-    document.getElementById("maptype").value = st.map.script || "pangaea";
+    document.getElementById("maptype").value = st.map.script || "tenins_ball";
     document.getElementById("mapshape").value = st.map.shape || "planet";
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
@@ -11784,6 +11857,29 @@ const SKY_LAUNCH_FLIGHTS = {
   mars:{project:SKY_CHAIN.mars, duration:3600, body:"mars", rocket:"starship"},
   expedition:{project:SKY_CHAIN.expedition, duration:3000, body:"exo", rocket:"starship_xl"},
 };
+// A mission lifts off from the Spaceport that ran its project, not from the
+// palace lawn. The completion frame no longer says which city built it, but
+// the frame before still holds the project at the head of one city's queue;
+// failing that, any city of the empire with a Spaceport is still the pad the
+// rocket must have used, and only an empire with no visible Spaceport at all
+// falls back to its anchor city.
+function citySpaceportPos(city) {
+  for (const [district, encoded] of Object.entries(city?.districts || {})) {
+    if (district !== "spaceport" &&
+        RULES?.districts?.[district]?.replaces !== "spaceport") continue;
+    const [pos] = districtIconPositions(encoded);
+    if (pos) return pos;
+  }
+  return null;
+}
+function skyLaunchOrigin(prev, next, pid, project) {
+  const owned = st => (st?.cities || []).filter(city => city.owner === pid);
+  const launcher = owned(prev).find(city => (city.queue || [])[0]?.project === project);
+  const launched = launcher &&
+    (owned(next).find(city => city.id === launcher.id) || launcher);
+  return citySpaceportPos(launched) ||
+    owned(next).map(citySpaceportPos).find(Boolean) || null;
+}
 function queueSkyLaunches(prev, next, now = performance.now()) {
   if (!SHOW_ROCKET_ANIMATIONS || !prev || !next || prev.seed !== next.seed || REDUCED_MOTION_QUERY.matches) return;
   const before = new Map((prev.players || []).map(player => [player.id, player]));
@@ -11806,7 +11902,8 @@ function queueSkyLaunches(prev, next, now = performance.now()) {
         (candidate.science_projects || []).includes(flight.project))
         .map(candidate => ({id:candidate.id}));
       const target = +player.victories?.science?.distance_target || 50;
-      const origin = statePlayerAnchor(next, player.id)?.pos;
+      const origin = skyLaunchOrigin(prev, next, player.id, flight.project) ||
+        statePlayerAnchor(next, player.id)?.pos;
       // A launch is a wall-clock event, not a turn-frame decoration. Fast
       // spectators can advance dozens of turns during one flight, so freeze
       // everything the route inherited from the completion frame. In
@@ -16137,9 +16234,12 @@ function drawPlanetEmpireLabels(cells, scale, radius, visible, spectator) {
   }
   if (!sections.length) return;
 
-  const zoomOut = Math.max(0, Math.min(1,
-    (PLANET_MAJOR_CITY_LABEL_SCALE - scale) / .38));
-  const fontSize = 17 + zoomOut * 7;
+  // Size the type by the Earth on the screen, not by the zoom ladder. The old
+  // ramp grew the font as the camera pulled away, so a globe shrunk to a ball
+  // wore captions a third of its own width. Tying the size to the on-screen
+  // radius keeps a survey label smaller than the world it names, and the floor
+  // hands over to the radius fade above before the type becomes unreadable.
+  const fontSize = Math.max(9, Math.min(17, radius * .075));
   const boxes = [];
   sections.sort((a, b) => b.area - a.area);
   cx.save();
@@ -16154,7 +16254,7 @@ function drawPlanetEmpireLabels(cells, scale, radius, visible, spectator) {
     boxes.push(box);
     const [, light] = jerseyLanes(section.owner);
     cx.globalAlpha = alpha;
-    cx.strokeStyle = "#07100f"; cx.lineWidth = Math.max(3.5, fontSize * .22);
+    cx.strokeStyle = "#07100f"; cx.lineWidth = Math.max(2, fontSize * .22);
     cx.strokeText(section.label, section.x, section.y);
     cx.fillStyle = light;
     cx.fillText(section.label, section.x, section.y);
@@ -18872,7 +18972,7 @@ function hudTurnPlate() {
   const playerView = SPEC && state.view_player !== null && state.view_player !== undefined;
   const identity = SPEC ? viewer : state.players[0];
   const viewLabel = playerView ? "Player view" : SPEC ? "Observing" : "Your empire";
-  const mapName = titleCase(state.map.script || "pangaea");
+  const mapName = titleCase(state.map.script || "tenins_ball");
   const speedName = titleCase(state.game_speed || "standard");
   const paceSelect = document.getElementById("specspeed");
   const paceOption = paceSelect?.selectedOptions[0];
