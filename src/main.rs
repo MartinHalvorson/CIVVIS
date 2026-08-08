@@ -1014,6 +1014,7 @@ fn tactics_rules(args: &[String]) -> setup::TacticsRules {
             .max(0) as u32,
         best_of: arg(args, "--tactics-best-of", i64::from(stock.best_of)).max(1) as u32,
         unique_units: flag_or(args, "--tactics-unique-units", stock.unique_units),
+        fog: flag_or(args, "--tactics-fog", stock.fog),
     }
     .sanitized()
 }
