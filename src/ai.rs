@@ -1636,6 +1636,11 @@ pub struct BasicAi {
     /// chart. Off for the frozen native controllers. See
     /// `recon_is_the_missing_arm`.
     recon_replacement: bool,
+    /// Price a revealed natural wonder's ring into the settle scorer, so a
+    /// founding site that would work the wonder's neighbours gets credit for
+    /// the wonder's modeled appeal and projected yields. Off for the frozen
+    /// native controllers. See `AdvancedAi::natural_wonder_ring_value`.
+    wonder_ring_settle_value: bool,
     /// Keep the land army out of the water: exclude water from a land unit's
     /// exploration goals, bring an already-embarked unit ashore whether or not
     /// it has an upgrade waiting, and let `peacetime_step` know when
@@ -2779,6 +2784,7 @@ impl BasicAi {
             siege_muster: false,
             siege_role: false,
             recon_replacement: false,
+            wonder_ring_settle_value: false,
             come_ashore: false,
             home_defense: false,
             loyalty_rate_alarm: false,
@@ -2818,6 +2824,7 @@ impl BasicAi {
             siege_muster: false,
             siege_role: false,
             recon_replacement: false,
+            wonder_ring_settle_value: false,
             come_ashore: false,
             home_defense: false,
             loyalty_rate_alarm: false,
