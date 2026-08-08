@@ -9,7 +9,7 @@ use crate::think;
 use crate::Pos;
 use std::cell::RefCell;
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 /// A bounded first-step initiative bonus breaks positional and formation ties
 /// in favor of doing something useful with the turn. Four points can overcome
@@ -1683,6 +1683,21 @@ pub struct BasicAi {
     /// needs four. Without this floor the rush plans a war it never builds
     /// the army for, which is the failure the census caught.
     pub(crate) rush_military_floor: usize,
+    /// Let a housing-short city reach for a building that adds housing before a
+    /// cheaper one that adds none. See the sort in `pick_item`.
+    pub(crate) housing_buildings: bool,
+    /// Discount motionless Settlers from the expansion gate's in-flight test.
+    /// The Civilization VI bridge turns this on; native tournament games leave
+    /// it off so their recorded ladders and the frozen `advanced_v1` rating
+    /// anchor keep replaying the historical controller.
+    pub(crate) settler_strand_discount: bool,
+    /// Each owned Settler's last seen tile and how many consecutive turns it
+    /// has stood on it. See [`BasicAi::stranded_settlers`] for why the
+    /// expansion gate needs this and nothing else does.
+    settler_idle: BTreeMap<u32, (Pos, u32)>,
+    /// The turn `settler_idle` was last advanced, so a second production pass
+    /// in one turn cannot double-count a settler as idle.
+    settler_idle_turn: Option<u32>,
     /// Where this agent tells an observer what it is doing. Off unless a
     /// spectator attached one; see [`crate::reasoning`].
     pub(crate) journal: Journal,
@@ -2730,6 +2745,10 @@ impl BasicAi {
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
+            housing_buildings: false,
+            settler_strand_discount: false,
+            settler_idle: BTreeMap::new(),
+            settler_idle_turn: None,
             journal: Journal::default(),
         }
     }
@@ -2763,6 +2782,10 @@ impl BasicAi {
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
+            housing_buildings: false,
+            settler_strand_discount: false,
+            settler_idle: BTreeMap::new(),
+            settler_idle_turn: None,
             journal: Journal::default(),
         }
     }
@@ -4439,7 +4462,104 @@ impl BasicAi {
         }
     }
 
+    /// A settler that has not moved in this many consecutive turns is not
+    /// walking anywhere. Same threshold the Civ VI mod already uses for the
+    /// same decision (`STRANDED_SETTLER_TURNS` in `CivvisControlAgent.lua`),
+    /// so the two halves of the live bridge cannot disagree about which
+    /// settlers count.
+    const STRANDED_SETTLER_TURNS: u32 = 12;
+
+    /// Advance each owned Settler's idle counter, once per turn.
+    ///
+    /// Position is the whole tell. A settler with a target it can reach moves
+    /// every turn; one that has been standing on the same tile for a dozen
+    /// turns is either blocked, refused by every site it can see, or
+    /// oscillating between two — and in all three cases it is not going to
+    /// found a city on its own.
+    fn refresh_settler_idle(&mut self, g: &Game, pid: usize) {
+        if !self.settler_strand_discount || self.settler_idle_turn == Some(g.turn) {
+            return;
+        }
+        self.settler_idle_turn = Some(g.turn);
+        let mut seen: BTreeSet<u32> = BTreeSet::new();
+        for uid in g.player_unit_ids(pid) {
+            let unit = &g.units[&uid];
+            if unit.kind.as_str() != "settler" {
+                continue;
+            }
+            seen.insert(uid);
+            match self.settler_idle.get(&uid) {
+                Some((last, idle)) if *last == unit.pos => {
+                    let idle = idle.saturating_add(1);
+                    self.settler_idle.insert(uid, (unit.pos, idle));
+                }
+                _ => {
+                    self.settler_idle.insert(uid, (unit.pos, 0));
+                }
+            }
+        }
+        // A founded city consumes its settler and a killed one is simply gone.
+        // Either way the id must not keep a stale idle streak that a recycled
+        // id could inherit.
+        self.settler_idle.retain(|uid, _| seen.contains(uid));
+    }
+
+    /// How many of this player's Settlers have stopped making progress.
+    ///
+    /// ⚠ THIS EXISTS BECAUSE ONE STUCK SETTLER USED TO END AN EMPIRE'S
+    /// EXPANSION FOR THE REST OF THE GAME. The production and gold gates below
+    /// both ask `settlers == 0` — "is a settler already in flight" — so a
+    /// settler that never founds anything keeps the answer at "yes" forever.
+    ///
+    /// Measured over the 25 live Civilization VI runs of 2026-08-07/08:
+    /// "a settler is already in flight" is **86% of every refusal to build
+    /// one** (1,548 of 1,767 logged reasons), the median game's longest-lived
+    /// single settler survives **86 turns** of a 250-turn game without
+    /// founding, and nine of those runs carried one alive for 82-171 turns
+    /// having moved five times or fewer. Those empires finished on a median of
+    /// **5 cities against a `city_target` of 7.8 and a window open to turn
+    /// 198** — the target and the window were never the binding constraint,
+    /// this gate was. Final score tracked city count at r = 0.81, and all 21
+    /// completed games were lost with a median score 0.46x the leader's.
+    ///
+    /// ⚠ THIS IS A DISCOUNT, NOT A LIFTED CAP, and the distinction is the
+    /// whole safety argument. `room` above still counts EVERY settler against
+    /// `city_target`, so the empire cannot walk more settlers than cities it
+    /// still wants — which is what stops a repeat of the uncapped gate that
+    /// once ordered seventeen settlers and founded two cities. Discounting a
+    /// stranded settler does not rescue it either; it stops one stuck unit
+    /// from also costing every future one.
+    ///
+    /// The Civ VI mod's own ladder already made exactly this fix and records
+    /// the same finding ("with `SettlersInFlight = 1` its mere existence stops
+    /// the empire ordering another one FOREVER"). The mod is the FALLBACK
+    /// decider; under `--civvis-decides` this function is the one that runs,
+    /// and it never got the repair.
+    fn stranded_settlers(&self, g: &Game, pid: usize) -> usize {
+        if !self.settler_strand_discount {
+            return 0;
+        }
+        g.player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| {
+                g.units
+                    .get(uid)
+                    .is_some_and(|unit| unit.kind.as_str() == "settler")
+                    && self
+                        .settler_idle
+                        .get(uid)
+                        .is_some_and(|(_, idle)| *idle >= Self::STRANDED_SETTLER_TURNS)
+            })
+            .count()
+    }
+
+    /// Settlers that are actually walking to a site, for the expansion gate.
+    fn walking_settlers(&self, g: &Game, pid: usize, settlers: usize) -> usize {
+        settlers.saturating_sub(self.stranded_settlers(g, pid))
+    }
+
     fn cities(&mut self, g: &mut Game, pid: usize) {
+        self.refresh_settler_idle(g, pid);
         let mut settlers: usize = 0;
         let mut builders = 0;
         let mut traders = 0;
@@ -5562,7 +5682,7 @@ impl BasicAi {
         }
 
         if !self.minor
-            && settlers == 0
+            && self.walking_settlers(g, pid, settlers) == 0
             && (n_cities as f64) < self.w.city_target
             && (g.turn as f64) < self.w.settler_stop_turn
             && self.has_practical_settle_site(g, pid)
@@ -6133,8 +6253,13 @@ impl BasicAi {
         // "the site search found nothing" is distinguishable from "the window
         // closed" without attaching a debugger to a finished run.
         if !self.minor && !self.barb {
+            // ⚠ `room` deliberately counts EVERY settler, including stranded
+            // ones. The cap on how many cities the empire is still trying to
+            // reach must not move; only the "one at a time" serialisation is
+            // discounted. See `stranded_settlers`.
             let room = ((n_cities + settlers) as f64) < self.w.city_target;
-            let none_in_flight = settlers == 0;
+            let stranded = self.stranded_settlers(g, pid);
+            let none_in_flight = settlers.saturating_sub(stranded) == 0;
             let grown = (city_pop as f64) >= self.w.settler_min_pop;
             let in_window = (g.turn as f64) < self.w.settler_stop_turn;
             if room && none_in_flight && grown && in_window {
@@ -6164,8 +6289,8 @@ impl BasicAi {
                 }
                 think!(self.journal, Cities, Detail,
                        "No settler: {}", why.join(", ");
-                       "{n_cities} cities and {settlers} settlers against a target \
-                        of {:.1}, turn {} of {:.0}",
+                       "{n_cities} cities and {settlers} settlers ({stranded} \
+                        stranded) against a target of {:.1}, turn {} of {:.0}",
                        self.w.city_target, g.turn, self.w.settler_stop_turn);
             }
         }
@@ -6430,6 +6555,49 @@ impl BasicAi {
             // — that argument belongs elsewhere — and a building with no slots keeps
             // its exact position. What it stops is the alphabet deciding a real
             // question.
+            // ★★★★★ CHEAPEST-FIRST IS BLIND TO THE ONE THING STOPPING THIS CITY.
+            //
+            // The comment below says "cheapest-first is untouched as a policy —
+            // that argument belongs elsewhere". This is that argument, made as
+            // narrowly as it can be made: a city that has run out of HOUSING
+            // reaches for a building that adds some before a cheaper one that
+            // adds none. Every other pair keeps its exact order.
+            //
+            // The district block ~150 lines above already does this for
+            // `aqueduct` and `neighborhood`, and `buy_gold_infrastructure`
+            // already weights `spec.housing` by the same need on the gold path.
+            // The production path — which is where the baseline governor makes
+            // most of an empire's builds — ranked by price alone, so a Sewer was
+            // worth exactly its cost to a city that could not grow another
+            // citizen.
+            //
+            // Measured at the final turn of the 24 completed live runs of
+            // 2026-08-07/08, over all 116 cities: **44% are housing-STOPPED**
+            // (pop >= housing, growth halted) and another 9% are throttled at
+            // headroom 1, against a median food surplus of +6.5 a turn — the
+            // food is there and the housing is not. Coverage of the buildings
+            // that would fix it: Sewer 0.42 per city, Water Mill 0.47.
+            //
+            // Population is what district slots are made of (one per three), and
+            // a score fit over the same 24 games prices a district at +9.34 —
+            // the largest single term. The settler repair raised cities 5 -> 8
+            // and districts stayed flat at 30 -> 31, because the new cities
+            // could not grow into their slots. This is that ceiling.
+            //
+            // ⚠ Capped by the shortfall exactly as the district block is, so a
+            // city one short does not outrank its whole queue to over-build by
+            // three.
+            let housing_short = if self.housing_buildings && !self.minor {
+                (HOUSING_HEADROOM_TARGET - g.city_housing_headroom(&g.cities[&cid])).max(0.0)
+            } else {
+                0.0
+            };
+            let housing_lift = |building: &Name| -> f64 {
+                if housing_short <= 0.0 {
+                    return 0.0;
+                }
+                housing_short.min(g.rules.buildings[building].housing.max(0.0))
+            };
             let tiebreak = self.slot_kind_tiebreak;
             let slot_worth = |b: &Name| -> f64 {
                 if !tiebreak {
@@ -6445,7 +6613,10 @@ impl BasicAi {
                     .sum()
             };
             buildable.sort_by(|a, b| {
-                a.0.cmp(&b.0)
+                housing_lift(&b.1)
+                    .partial_cmp(&housing_lift(&a.1))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.0.cmp(&b.0))
                     .then_with(|| {
                         // ⚠⚠ ONLY WHEN BOTH CANDIDATES HAVE SLOTS. My first version
                         // compared slot worth across every cost tie, which is a far
@@ -10766,6 +10937,126 @@ mod tests {
             .expect("the developed city has a placed wonder fallback");
         assert!(matches!(wonder, Item::Wonder { .. }));
         assert!(game.can_produce(0, city, &wonder));
+    }
+
+    /// A settler standing still does not hold the expansion gate shut.
+    ///
+    /// This is the whole repair: `stranded_settlers` must reach 1 only after
+    /// `STRANDED_SETTLER_TURNS` consecutive motionless turns, and any real
+    /// move must reset the streak so a genuinely walking settler keeps the
+    /// gate closed exactly as before.
+    #[test]
+    fn a_settler_that_stops_walking_stops_blocking_the_next_one() {
+        let mut game = Game::new_full(
+            1, 24, 16, crate::rng::fixture_seed("STRANDED", 91_774), 250, 0, false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let capital = game.cities[&game.player_city_ids(0)[0]].pos;
+        let parked = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            .map(|(position, _)| *position)
+            .find(|position| game.wdist(capital, *position) == 3)
+            .unwrap();
+        let settler = game.spawn_unit("settler", 0, parked);
+
+        let mut ai = BasicAi::new();
+        ai.settler_strand_discount = true;
+        // One motionless turn short of the threshold the settler is still
+        // "in flight" and the empire must not order another one.
+        // The first sighting only records where the settler is, so the streak
+        // reaches the threshold one turn after that: sightings 1..=N leave it
+        // at N-1 idle turns, all of them inside the patience window.
+        for turn in 1..=BasicAi::STRANDED_SETTLER_TURNS {
+            game.turn = turn;
+            ai.refresh_settler_idle(&game, 0);
+            assert_eq!(
+                ai.stranded_settlers(&game, 0),
+                0,
+                "turn {turn} is inside the patience window"
+            );
+            assert_eq!(ai.walking_settlers(&game, 0, 1), 1);
+        }
+
+        game.turn = BasicAi::STRANDED_SETTLER_TURNS + 1;
+        ai.refresh_settler_idle(&game, 0);
+        assert_eq!(ai.stranded_settlers(&game, 0), 1, "parked long enough to be stranded");
+        // The gate below reads exactly this: one settler, none of it walking.
+        assert_eq!(ai.walking_settlers(&game, 0, 1), 0);
+
+        // Moving resets the streak: a settler that is genuinely walking must
+        // still serialise expansion, which is what the cap is for.
+        let stepped = game
+            .map
+            .tiles
+            .iter()
+            .map(|(position, _)| *position)
+            .find(|position| {
+                *position != parked
+                    && game.wdist(parked, *position) == 1
+                    && game
+                        .map
+                        .tiles
+                        .get(position)
+                        .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            })
+            .unwrap();
+        game.units.get_mut(&settler).unwrap().pos = stepped;
+        game.turn = BasicAi::STRANDED_SETTLER_TURNS + 2;
+        ai.refresh_settler_idle(&game, 0);
+        assert_eq!(ai.stranded_settlers(&game, 0), 0, "a moving settler is not stranded");
+        assert_eq!(ai.walking_settlers(&game, 0, 1), 1);
+
+        // A founded or killed settler must not leave its streak behind for a
+        // recycled unit id to inherit.
+        game.units.remove(&settler);
+        game.turn = BasicAi::STRANDED_SETTLER_TURNS + 3;
+        ai.refresh_settler_idle(&game, 0);
+        assert_eq!(ai.stranded_settlers(&game, 0), 0);
+        assert!(ai.settler_idle.is_empty(), "dead settlers are pruned");
+    }
+
+    /// The frozen `advanced_v1` anchor and every native tournament game keep
+    /// the historical gate: without the treatment a parked settler is still
+    /// "in flight", so their recorded ladders stay comparable.
+    #[test]
+    fn without_the_treatment_a_parked_settler_still_blocks_expansion() {
+        let mut game = Game::new_full(
+            1, 24, 16, crate::rng::fixture_seed("STRANDED", 91_774), 250, 0, false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let capital = game.cities[&game.player_city_ids(0)[0]].pos;
+        let parked = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            .map(|(position, _)| *position)
+            .find(|position| game.wdist(capital, *position) == 3)
+            .unwrap();
+        game.spawn_unit("settler", 0, parked);
+
+        let mut ai = BasicAi::new();
+        assert!(!ai.settler_strand_discount, "off unless the bridge asks");
+        for turn in 1..=(BasicAi::STRANDED_SETTLER_TURNS * 3) {
+            game.turn = turn;
+            ai.refresh_settler_idle(&game, 0);
+            assert_eq!(ai.stranded_settlers(&game, 0), 0);
+            assert_eq!(ai.walking_settlers(&game, 0, 1), 1, "still in flight at turn {turn}");
+        }
+        assert!(ai.settler_idle.is_empty(), "no bookkeeping when the treatment is off");
     }
 
     #[test]
