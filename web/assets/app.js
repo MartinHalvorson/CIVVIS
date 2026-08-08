@@ -9054,14 +9054,25 @@ const BUILT_WONDER_PAINTER = {
 const WORLD_WONDER_SIZE_SCALE = 1.6;
 const WORLD_WONDER_OUTLINE_COLOR = "#f4d34f";
 const WORLD_WONDER_OUTLINE_RADIUS = 1.05;
+// A dark keyline immediately outside the gold one. Gold at map scale sits on
+// desert, plains and grassland that are all within a step of its own value, so
+// the mark that says "wonder" was doing its work against whichever ground it
+// happened to land on. A thin dark edge gives the gold something to be bright
+// against, so it reads the same on sand as it does in forest — the same reason
+// a map border runs two tones rather than one.
+const WORLD_WONDER_KEYLINE_COLOR = "#10151d";
+// Thinner than the gold: this is a separating line, not a second outline, and
+// at map scale the whole mark is only a few pixels wide.
+const WORLD_WONDER_KEYLINE_RADIUS = 0.62;
 const WORLD_WONDER_SPRITE_SIZE = 192;
 const WORLD_WONDER_SPRITE_CENTER = WORLD_WONDER_SPRITE_SIZE / 2;
 const WORLD_WONDER_SPRITE_CACHE = new Map();
 
 // Paint the code-native silhouette once into a transparent sprite, expand its
-// alpha by a pixel or two, and then put the original art back on top. A canvas
-// shadow would ring every pillar and stair separately; this keeps the yellow
-// mark around the wonder as one small, readable edge.
+// alpha by a pixel or two in gold and by a little more in dark, and then put
+// the original art back on top. A canvas shadow would ring every pillar and
+// stair separately; this keeps the mark around the wonder as one small,
+// readable edge — a gold band with a dark keyline holding it off the ground.
 function worldWonderOutlinedSprite(wonder, painter, art, k) {
   const cacheKey = `${wonder}:${k}`;
   const cached = WORLD_WONDER_SPRITE_CACHE.get(cacheKey);
@@ -9096,23 +9107,41 @@ function worldWonderOutlinedSprite(wonder, painter, art, k) {
     cx = mainContext;
   }
 
-  const maskCanvas = makeCanvas();
-  const maskContext = maskCanvas.getContext("2d");
-  maskContext.drawImage(artCanvas, 0, 0);
-  maskContext.globalCompositeOperation = "source-in";
-  maskContext.fillStyle = WORLD_WONDER_OUTLINE_COLOR;
-  maskContext.fillRect(0, 0, WORLD_WONDER_SPRITE_SIZE, WORLD_WONDER_SPRITE_SIZE);
-  maskContext.globalCompositeOperation = "source-over";
+  // The silhouette in one flat colour. Two of these are needed now — gold for
+  // the outline and dark for the keyline outside it — so it is made to order
+  // rather than built once and recoloured.
+  const silhouette = color => {
+    const maskCanvas = makeCanvas();
+    const maskContext = maskCanvas.getContext("2d");
+    maskContext.drawImage(artCanvas, 0, 0);
+    maskContext.globalCompositeOperation = "source-in";
+    maskContext.fillStyle = color;
+    maskContext.fillRect(0, 0, WORLD_WONDER_SPRITE_SIZE, WORLD_WONDER_SPRITE_SIZE);
+    maskContext.globalCompositeOperation = "source-over";
+    return maskCanvas;
+  };
 
   const outlinedCanvas = makeCanvas();
   const outlinedContext = outlinedCanvas.getContext("2d");
-  const radius = Math.max(.8, WORLD_WONDER_OUTLINE_RADIUS * k / ((S / 31) * .72));
-  const steps = 12;
-  for (let i = 0; i < steps; i++) {
-    const angle = i * Math.PI * 2 / steps;
-    outlinedContext.drawImage(maskCanvas, Math.cos(angle) * radius,
-                              Math.sin(angle) * radius);
-  }
+  const unit = k / ((S / 31) * .72);
+  const radius = Math.max(.8, WORLD_WONDER_OUTLINE_RADIUS * unit);
+  const keyline = radius + Math.max(.5, WORLD_WONDER_KEYLINE_RADIUS * unit);
+  // Ring the silhouette by stamping it around a circle: the union of the
+  // offsets is the dilated shape. Painted outermost first, so each ring covers
+  // the one before it and only its own width is left showing — dark, then
+  // gold, then the art itself on top.
+  const ring = (mask, distance) => {
+    // Enough stamps that neighbouring offsets overlap rather than scallop the
+    // edge; the wider ring needs more of them than the inner one.
+    const steps = Math.max(12, Math.ceil(distance * 8));
+    for (let i = 0; i < steps; i++) {
+      const angle = i * Math.PI * 2 / steps;
+      outlinedContext.drawImage(mask, Math.cos(angle) * distance,
+                                Math.sin(angle) * distance);
+    }
+  };
+  ring(silhouette(WORLD_WONDER_KEYLINE_COLOR), keyline);
+  ring(silhouette(WORLD_WONDER_OUTLINE_COLOR), radius);
   outlinedContext.drawImage(artCanvas, 0, 0);
   WORLD_WONDER_SPRITE_CACHE.set(cacheKey, outlinedCanvas);
   return outlinedCanvas;
