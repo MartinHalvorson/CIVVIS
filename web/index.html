@@ -9,6 +9,15 @@
     const channel = location.pathname.split("/").find(part => ["rust", "wasm", "beta"].includes(part));
     if (channel === "rust") document.title = "CIVVIS · Civ VI Simulator (Rust)";
     if (channel === "wasm" || channel === "beta") document.title = "CIVVIS · Civ VI Simulator (Wasm)";
+    // The published site serves a landing page at /home; a desktop build has
+    // no such route, so the header's Home link only appears on hosts that
+    // have one — the domain itself and Cloudflare Pages previews of it.
+    if (/(^|\.)civvis\.ai$|\.pages\.dev$/.test(location.hostname)) {
+      document.addEventListener("DOMContentLoaded", () => {
+        const home = document.getElementById("homelink");
+        if (home) home.hidden = false;
+      });
+    }
   })();
 </script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%2307110f'/%3E%3Ccircle cx='16' cy='16' r='12.5' fill='%23d7b66a' stroke='%23f6e4ac'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-family='Georgia,serif' font-size='15' font-weight='700' fill='%2315221c'%3EV%3C/text%3E%3C/svg%3E">
@@ -165,11 +174,11 @@
        screens. JavaScript publishes only the part that actually overlaps this
        area, so the standings can start clear of it in either arrangement. */
     --player-hud-left: 0px;
-    /* The masthead ends at its final civilization row rather than at an
-       arbitrary share of the screen. Before a world arrives, reserve the
-       two-seat floor: it keeps the era and turn counter visible. */
-    --player-hud-content-height: 106px;
-    --player-hud-max-height: min(var(--player-hud-content-height), calc(100% - 8px));
+    /* The masthead's default height ends at its final civilization row, and
+       a dragged height answers to nothing except the map area itself — the
+       responsive pass keeps this ceiling current; this is only its floor
+       before that pass first runs. */
+    --player-hud-max-height: calc(100% - 8px);
   }
   /* The map area: the rectangle of #maparea the world is drawn into. It is the
      whole of it until the panels crowd it or a viewer sets it by hand, and
@@ -325,6 +334,13 @@
      and the text fitter shrinks the type into the lane instead of wrapping. */
   .tagline span { display: block; white-space: nowrap; }
   .tagline span + span { color: #bccac4; }
+  .home-link {
+    display: inline-block; margin-top: 8px; padding: 3px 10px 4px;
+    color: var(--muted); font-size: var(--type-label); font-weight: 650;
+    letter-spacing: .14em; text-transform: uppercase; text-decoration: none;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2);
+  }
+  .home-link:hover { color: var(--gold-bright); border-color: var(--gold); }
   /* A split-screen deck cannot afford the landing-page-sized mark and title.
      The compact band preserves both, but reflows the lockup: the copy column
      dissolves (display: contents) so the tagline steps out of the mark's
@@ -350,6 +366,11 @@
   #side[data-type-size="compact"] .tagline {
     grid-column: 1 / -1; margin-top: 0;
     font-size: var(--type-small);
+  }
+  /* In the compact reflow the copy column dissolves, so the link takes a
+     band-wide row of its own under the tagline rather than a grid cell. */
+  #side[data-type-size="compact"] .home-link {
+    grid-column: 1 / -1; justify-self: start; margin-top: 0;
   }
   /* The deck is a column: the fixed panels take the height they need and the
      two chronicles share whatever is left, so a tall screen reads more
@@ -574,12 +595,13 @@
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px;
   }
   /* The lenses come in two sets — the global whole-map perspectives and the
-     per-district adjacency forecasts — switched by this row of tabs above
+     per-district adjacency forecasts — switched by this row of tabs beneath
      them. One set shows at a time; a dot on a tab marks the set holding the
-     active lens while the other set is displayed. */
+     active lens while the other set is displayed. The row sits at the foot of
+     the drawer, next to the dock header the lenses open from. */
   #map-lens-sets {
-    display: flex; gap: 3px; margin-bottom: 6px; padding-bottom: 6px;
-    border-bottom: 1px solid #ffffff0d;
+    display: flex; gap: 3px; margin-top: 6px; padding-top: 6px;
+    border-top: 1px solid #ffffff0d;
   }
   #map-lens-sets[hidden] { display: none; }
   #map-lens-sets button { flex: 1 1 0; display: block; height: 26px; text-align: center; }
@@ -798,6 +820,36 @@
   /* Neither half of a row gives up width, and nothing here ellipsizes: a
      setting is shown whole or the block is drawn a quarter-point smaller. */
   .turn-setting > span, .turn-setting > b, .turn-setting > .turn-pace-choice { flex: 0 0 auto; }
+  /* The seam on the plate's right edge: the command deck's resize affordance
+     brought inside the masthead. As a grid item overlapping the plate cell it
+     rides the plate's edge at every density, leaning into the panel gap. */
+  .turn-plate-seam {
+    position: relative; z-index: 8; grid-column: 1; grid-row: 1;
+    justify-self: end; align-self: stretch; width: 7px;
+    margin: 9px -6px 9px 0; padding: 0; border: 0; border-radius: 4px;
+    background: transparent; cursor: col-resize; touch-action: none;
+  }
+  .turn-plate-seam::before {
+    content: ""; position: absolute; inset: 0 2px; border-radius: 2px;
+    background: #d7b66a2e;
+  }
+  .turn-plate-seam:hover::before, .turn-plate-seam:focus-visible::before { background: #d7b66a8c; }
+  .turn-plate-seam:focus-visible { outline: 1px solid #d7b66a70; outline-offset: 1px; }
+  /* A widened plate goes wide instead of tall: the era and the turn counter
+     share the first line, and the settings below divide into two columns. */
+  #playerhud.turn-plate-wide .victory-turn {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
+    column-gap: 10px; align-items: center;
+  }
+  #playerhud.turn-plate-wide .turn-era { grid-column: 1; grid-row: 1; text-align: left; }
+  #playerhud.turn-plate-wide .turn-count {
+    grid-column: 2; grid-row: 1; margin: 0; justify-content: flex-end;
+  }
+  #playerhud.turn-plate-wide .turn-settings {
+    grid-column: 1 / -1; grid-row: 2; align-self: start;
+    grid-template-columns: repeat(2, minmax(max-content, 1fr)); column-gap: 14px;
+  }
   /* Tabular figures so a count changing from 10 to 9 moves the row by exactly
      one digit's width instead of an arbitrary one — the block is refitted on
      that width, and a proportional 1 would re-size all four rows mid-game. */
@@ -838,26 +890,6 @@
     margin-left: .32em; color: #90a29b; font-size: .7em; font-weight: 700;
     font-variant-numeric: tabular-nums; letter-spacing: -.01em; white-space: nowrap;
   }
-  /* Switching the turn structure needs a new world, so the pick opens a small
-     dialog over the map: restart now, queue it for the next game, or go back.
-     The element itself is the scrim; the card is its only child. */
-  #turn-structure-dialog {
-    position: fixed; inset: 0; z-index: 96; display: grid; place-items: center;
-    padding: 16px; background: #040a08a8; backdrop-filter: blur(3px);
-  }
-  .turns-dialog-card {
-    width: min(400px, 100%); padding: 20px 22px;
-    color: var(--text); background: radial-gradient(circle at top, #2c3524, #0c1714f7 65%);
-    border: 1px solid var(--gold); border-radius: 16px;
-    box-shadow: 0 24px 90px #000e, 0 0 60px #d7b66a22;
-  }
-  .turns-dialog-card h3 {
-    margin: 0 0 8px; color: var(--gold-bright); font: 600 22px/1.15 Georgia, serif;
-  }
-  .turns-dialog-card p { margin: 0 0 10px; font-size: var(--type-control); line-height: 1.55; }
-  .turns-dialog-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
-  .turns-dialog-actions .primary { grid-column: 1 / -1; }
-  .turns-dialog-actions button { margin: 0; }
   /* Borrowed turns. It sits under the turn cap because that cap is the thing
      it explains: the number went up because somebody asked it to. */
   .turn-playon {
@@ -1043,15 +1075,8 @@
      would compete with the protected width reserved for the full score. */
   .diplomacy-elo-value.provisional { opacity: 0.62; }
   .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
-  /* Start and Now are two numeric categories on matching tracks. The narrow
-     middle track belongs only to the trend glyph, so the three tokens no longer
-     run together as one unexplained number. */
-  .diplomacy-expected-value, .diplomacy-odds-head {
-    width: 100%; display: grid;
-    grid-template-columns: minmax(0, 1fr) 11px minmax(0, 1fr);
-    align-items: center; column-gap: 1px;
-    font-variant-numeric: tabular-nums;
-  }
+  /* Start, trend and Now are three columns of their own; the shared classes
+     below keep the opening estimate dimmed against the current one. */
   .diplomacy-expected .odds-start { opacity: .62; }
   .diplomacy-expected .odds-start, .diplomacy-expected .odds-now {
     min-width: 0; overflow: hidden; text-overflow: clip; text-align: right;
@@ -1061,7 +1086,6 @@
   }
   .diplomacy-expected .odds-move.up { color: #8fd6a4; opacity: 1; }
   .diplomacy-expected .odds-move.down { color: #f2a09b; opacity: 1; }
-  .diplomacy-expected .odds-unavailable { grid-column: 1 / -1; text-align: center; }
   .diplomacy-player { flex: 1 1 auto; color: #d9e1dc; font-weight: 750; }
   /* The mark leads the CIV cell from a gutter of its own. It is emitted on
      every row, empty where there is no stance to report, so that the rank
@@ -1097,6 +1121,10 @@
   .ribbon-stat.faith { --stat-color: #eee7cf; }
   .ribbon-stat.gold { --stat-color: #e8c64c; }
   .ribbon-stat.military { --stat-color: #f2a09b; }
+  /* The hazard amber the detonation log and the war ledger's nuclear badge
+     already use, so a stockpile in the standings and the strike it becomes
+     read as the same subject. */
+  .ribbon-stat.nukes { --stat-color: #ffb04a; }
   .ribbon-stat.cities { --stat-color: #d6c49b; }
   .ribbon-stat.population { --stat-color: #d8a36d; }
   .ribbon-stat.suzerain { --stat-color: #8dd6b1; }
@@ -1571,6 +1599,14 @@
      stays on screen and is not carried is a promise about the run that the run
      does not keep. See docs/CIV6_GAME_MODE.md. */
   body.playing-civ6 .civ6-hidden { display: none; }
+  /* A battlefield is flat by construction and temperate throughout, so the
+     shape and climate controls would be promises the arena does not keep. */
+  body.playing-tactics .tactics-hidden { display: none; }
+  /* The mirror of `.tactics-hidden`: settings that exist only for the arena,
+     hidden until Tactics is the mode. `display` is restored rather than set,
+     so each element keeps whatever layout its own rule gives it. */
+  .tactics-only { display: none; }
+  body.playing-tactics .tactics-only { display: revert; }
   /* Whether this computer can play the verification-only mode at all, and what
      a run it can see is doing. It is retained everywhere and refused where it
      cannot run, so the refusal has somewhere to be read: a dead Steam client
@@ -2181,9 +2217,50 @@
   #saves-group { grid-column: 1 / -1; }
   .victory-options { grid-column: 1 / -1; padding: 9px 10px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080; }
   .victory-options h2 { margin-bottom: 8px; }
-  .victory-option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 9px; }
+  /* Three across when the sidebar can spell the longest condition out, fewer
+     when it cannot. "Domination" is a single unbreakable word about 83px wide,
+     so a fixed `repeat(3, 1fr)` handed it a 66px column at the default sidebar
+     and it ran under the Score checkbox beside it — a checkbox label cannot
+     shrink past its longest word, it can only spill. The `max()` floor stops a
+     track ever falling below the word; the `(100% - 18px) / 3` half caps the
+     row at three, so widening the sidebar never reflows six conditions into
+     four columns and a stray pair. That 18px is the two column gaps a
+     three-column row spends — keep it in step with the 9px gap below. */
+  .victory-option-grid {
+    display: grid; gap: 7px 9px;
+    grid-template-columns: repeat(auto-fit, minmax(max(92px, (100% - 18px) / 3), 1fr));
+  }
   .victory-option { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--muted); font-size: var(--type-small); cursor: pointer; }
   .victory-option input { margin: 0; }
+  /* Both endgame rules only mean something against the boxes ticked above —
+     the Mercy Rule ends a game those conditions are still deciding, and
+     Require N counts them — so they read as the card's second row rather than
+     a separate setting adrift in the two-column setup grid. "95% win odds"
+     needs about 150px to spell itself out, so the pair sits side by side only
+     in a sidebar wide enough for that and stacks rather than clipping below
+     it. Bottom alignment keeps the two selects on one line even though
+     "Require N Victory Types" wraps to a second line and "Mercy Rule" does
+     not. */
+  .victory-endgame {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px 10px; align-items: end; margin-top: 9px; padding-top: 9px;
+    border-top: 1px solid var(--line-soft);
+  }
+  .victory-endgame > label { min-width: 0; }
+  .victory-endgame select { width: 100%; }
+  /* The arena's economy, laid out like the endgame row above it and by the
+     same rule: side by side wherever the sidebar can spell a label out,
+     stacked below that, bottom-aligned so wrapped labels cannot knock their
+     controls off one another's line. */
+  body.playing-tactics .tactics-options { display: grid; }
+  .tactics-options {
+    grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px 10px; align-items: end; padding: 9px 10px 10px;
+    border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080;
+  }
+  .tactics-options h2 { grid-column: 1 / -1; margin-bottom: 0; }
+  .tactics-options > label { min-width: 0; }
+  .tactics-options select { width: 100%; }
   /* The first setup pass stays short. Less common rules live behind one
      disclosure at the bottom of each panel, where they remain discoverable
      without making every new game begin with a wall of switches. */
@@ -2620,7 +2697,7 @@
     position: absolute; z-index: 7; pointer-events: auto;
     top: var(--panel-edge); left: max(var(--panel-edge), var(--player-hud-left, 0px));
     right: calc(var(--victory-hud-width) + var(--panel-gap) + var(--panel-edge)); width: auto;
-    height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
+    height: min(var(--player-hud-height, 106px), var(--player-hud-max-height));
     /* Wide enough for the whole of "Watch as" at the fitter's own type size.
        At 68px the button's own text overflowed its content box by a pixel and
        Chrome clipped the final "s" — a control labelled "Watch a". */
@@ -2650,14 +2727,13 @@
        whole at the fitter's 13px ceiling. `syncPlayerHudEloFloor()` raises that
        floor before layout when either live value needs more. A label that gives
        up width ellipsizes and keeps its tooltip, where a figure that gives up
-       width becomes a smaller number that is simply wrong. The odds cell carries
-       two separately aligned figures and the arrow between them, so it stands on
-       a wider floor of its own: 76px keeps the longer START label and both
-       numeric tracks whole at the fitter's 9px floor. Each breakpoint below
-       moves the label floor only, and keeps the five labels, two figure cells,
-       odds cell and fixed rank track adding up to what the identity block claims
-       at that width. */
-    --hud-ident-min: 30px; --hud-ident-num-min: 60px; --hud-ident-odds-min: 76px;
+       width becomes a smaller number that is simply wrong. The odds columns
+       stand on floors of their own: 27px keeps a three-digit percentage and
+       the START and NOW heads whole at the fitter's floor, and the narrow
+       trend column needs only its arrow. Each breakpoint below moves the
+       label floor only. */
+    --hud-ident-min: 30px; --hud-ident-num-min: 60px;
+    --hud-odds-min: 27px; --hud-odds-trend-min: 13px;
     --hud-rank-min: 30px;
     /* How much of the flexible width the identity block asks for relative to
        the values, over and above the sum of its own columns. A wide panel can
@@ -2675,18 +2751,21 @@
        syncPlayerHudColumns() rewrites it from the viewer's column model —
        order, visibility, shares and any content-fitted floors together. */
     --hud-tracks:
+      var(--hud-lock-column)
       minmax(var(--hud-rank-min), .7fr) minmax(var(--hud-ident-min), 2.035fr)
       minmax(var(--hud-ident-min), 1.85fr) var(--hud-watch-column)
       minmax(var(--hud-ident-min), 1.85fr)
       minmax(var(--hud-ident-num-min), 1.017fr)
       minmax(var(--hud-ident-num-min), .85fr)
-      minmax(var(--hud-ident-odds-min), 1.3fr)
+      minmax(var(--hud-odds-min), .55fr)
+      minmax(var(--hud-odds-trend-min), .2fr)
+      minmax(var(--hud-odds-min), .55fr)
       minmax(var(--hud-ident-min), 1.3fr)
       minmax(var(--hud-ident-min), 2.035fr)
       repeat(12, minmax(var(--hud-stat-min), 1fr));
     --hud-lock-column: 13px; --hud-row-height: 26px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
-    display: grid; grid-template-columns: 164px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
+    display: grid; grid-template-columns: var(--turn-plate-width, 164px) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
     align-items: stretch; gap: 5px; min-width: 0; padding: 5px;
     overflow: visible; transform: none;
     border: 1px solid #526a618f; border-radius: 12px;
@@ -2730,7 +2809,7 @@
      the same reason, which is why the width breakpoints move them together. */
   .ribbon-stat-heading {
     position: relative; min-height: 12px; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-tracks);
+    grid-template-columns: var(--hud-tracks);
     align-items: stretch; column-gap: var(--hud-stat-gap, 3px); padding: 0 4px 0 3px;
     border: 1px solid transparent;
     /* Every visible column at its own floor. A panel narrower than that no
@@ -2742,7 +2821,7 @@
      lock column already leads every table row, so its compact grip keeps the
      movable-panel affordance without pushing the data below the turn plate. */
   #playerhud .player-standings-drag {
-    grid-column: 1; grid-row: 1; z-index: 3; min-width: 0; min-height: 0;
+    z-index: 3; min-width: 0; min-height: 0;
     display: grid; place-items: center; padding: 0; color: #d7b66aa6;
   }
   #playerhud .player-standings-drag::before { font-size: var(--type-control); }
@@ -2767,9 +2846,12 @@
     padding-inline: 3px; border-left: 1px solid #ffffff10;
     font-size: var(--type-micro); letter-spacing: .025em;
   }
-  .player-standings-drag + .hud-head-cell { border-left-color: transparent; }
+  .player-standings-drag + .hud-head-cell,
+  .ribbon-stat-heading > .hud-head-cell:first-child { border-left-color: transparent; }
   .ribbon-stat-heading .numeric { text-align: right; }
-  .ribbon-stat-heading .diplomacy-odds-head { padding-inline: 2px; }
+  .ribbon-stat-heading .odds-trend-head {
+    color: #738981; font-size: .88em; font-weight: 800; text-align: center;
+  }
   /* The stat gutters separate these columns, so the heads do not also need a
      rule between every pair — twelve hairlines over twelve short words read
      as a fence. */
@@ -2908,7 +2990,7 @@
      column assignments — the tracks and the cells cannot disagree. */
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
-    grid-template-columns: var(--hud-lock-column, 0px) var(--hud-tracks);
+    grid-template-columns: var(--hud-tracks);
     grid-template-rows: minmax(0, 1fr);
     align-items: center; column-gap: var(--hud-stat-gap, 3px); row-gap: 0;
     margin: 0; padding: 1px 4px 1px 3px;
@@ -2924,7 +3006,7 @@
      control is a quiet dot until it is switched on or reached by pointer or
      keyboard, so twelve of them do not compete with the numbers beside them. */
   #playerhud .lock-toggle {
-    grid-column: 1; width: 13px; height: 13px; display: grid; place-items: center;
+    width: 13px; height: 13px; display: grid; place-items: center;
     margin: 0; padding: 0; border: 0; border-radius: 4px; box-shadow: none;
     color: #43594f; background: transparent; font-size: var(--type-label); line-height: 1;
     transition: color .12s ease, background .12s ease;
@@ -2971,8 +3053,7 @@
   #playerhud .diplomacy-player { color: #d9e1dc; font-weight: 750; }
   #playerhud .diplomacy-civ, #playerhud .diplomacy-leader-name,
   #playerhud .diplomacy-player, #playerhud .diplomacy-elo-value,
-  #playerhud .diplomacy-elo-delta-value,
-  #playerhud .diplomacy-expected-value, #playerhud .diplomacy-age .civ-age,
+  #playerhud .diplomacy-elo-delta-value, #playerhud .diplomacy-age .civ-age,
   #playerhud .diplomacy-strategy .ai-plan {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
@@ -2980,6 +3061,7 @@
   #playerhud .diplomacy-expected {
     justify-content: flex-end; text-align: right; font-variant-numeric: tabular-nums;
   }
+  #playerhud .diplomacy-odds-trend { justify-content: center; text-align: center; }
   #playerhud .diplomacy-age .civ-age { display: block; color: #c7d3ce; font-weight: 850; }
   #playerhud .diplomacy-age .civ-age.heroic { color: #d7b6ff; }
   #playerhud .diplomacy-age .civ-age.golden { color: var(--gold-bright); }
@@ -3258,7 +3340,7 @@
       --hud-ident-min: 31px;
     }
     #victoryhud, body.overlay-minimap-hidden #victoryhud {
-      top: calc(var(--panel-edge) + min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + var(--panel-gap));
+      top: calc(var(--panel-edge) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
       left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: var(--panel-edge); bottom: auto; width: auto;
       height: var(--compact-victory-hud-height);
       grid-template-columns: minmax(0, 1fr); padding: 4px;
@@ -3299,7 +3381,7 @@
     --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }
   #maparea.player-hud-compact #victoryhud {
-    top: calc(var(--panel-edge) + min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + var(--panel-gap));
+    top: calc(var(--panel-edge) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
     left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: var(--panel-edge); bottom: auto; width: auto;
     height: var(--compact-victory-hud-height);
     grid-template-columns: minmax(0, 1fr); padding: 4px;
@@ -3368,7 +3450,7 @@
      they have already passed their 680px minimum in this band and scroll
      inside the panel, so their heads overflow by the same 3px either way. */
   #playerhud[data-type-size="compact"] {
-    grid-template-columns: clamp(148px, 33%, 164px) minmax(0, 1fr);
+    grid-template-columns: var(--turn-plate-width, clamp(148px, 33%, 164px)) minmax(0, 1fr);
     --hud-ident-min: 25px;
     --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }
@@ -3376,7 +3458,7 @@
     outline: 1px solid #d7b66a70; outline-offset: -1px; border-radius: 6px;
   }
   #playerhud[data-type-size="roomy"] {
-    grid-template-columns: 168px minmax(0, 1fr);
+    grid-template-columns: var(--turn-plate-width, 168px) minmax(0, 1fr);
     --hud-ident-min: 61px;
     --hud-identity-bias: 1.25; --hud-stat-min: 42px;
     --hud-row-height: 30px;
@@ -3900,6 +3982,9 @@
       <div class="brand-copy">
         <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
         <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for AI strategy development</span></div>
+        <!-- Only the published site has a /home to go to; the head script
+             unhides this on the hosts that serve one. -->
+        <a class="home-link" id="homelink" href="/home" hidden>⌂ Home</a>
       </div>
     </div>
   </div>
@@ -4077,38 +4162,34 @@
             <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span></label>
             <label class="setting-row"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
             <label class="setting-row"><span><input type="checkbox" id="rocketanimchk" checked> Show rocket &amp; satellite animations</span></label>
-            <div class="speed-row"><span>Unit trails</span>
-              <select id="unittrails" aria-label="Unit trail linger"
-                      title="How long each unit's movement trail lingers after its step — a linger makes Lightning and Blitz paces easier to follow">
-                <option value="0" selected>Move only</option>
-                <option value="200">Linger 0.2s</option>
-                <option value="500">Linger 0.5s</option>
-                <option value="1000">Linger 1s</option>
-                <option value="2000">Linger 2s</option>
-              </select>
-            </div>
             <label class="setting-row"><span><input type="checkbox" id="inertiachk" checked> Enable world pan inertia</span></label>
-            <div class="overlay-options" id="flat-map-wrap-settings" role="group"
-                 aria-labelledby="flat-map-wrap-title">
-              <h2 id="flat-map-wrap-title">Flat map wraparound</h2>
-              <div class="overlay-option-grid">
-                <label class="overlay-option"><input type="checkbox" id="wrapxchk" checked>Left–right wraparound</label>
-                <label class="overlay-option"><input type="checkbox" id="wrapychk">Top–bottom wraparound</label>
-              </div>
-            </div>
           </div>
         </details>
         <details class="display-settings-group" id="performance-options-settings" data-advanced-settings="display-performance">
           <summary><span class="advanced-settings-summary">Performance options<small>Resolution, viewer timing &amp; workload</small></span></summary>
           <div class="display-settings-group-body">
+            <div class="speed-row render-resolution-row"><span>Performance</span>
+              <select id="performancepreset" aria-label="Overall performance preset"
+                      title="One control for the quality-versus-speed trade; it picks the render resolution below">
+                <option value="quality" selected>High quality</option>
+                <option value="balanced">Balanced</option>
+                <option value="fast">Fast</option>
+                <option value="custom" disabled hidden>Custom</option>
+              </select>
+            </div>
             <div class="speed-row render-resolution-row"><span>Render resolution</span>
               <select id="renderresolution" aria-label="Map render resolution"
                       title="Changes map and minimap sharpness; does not change simulation speed">
-                <option value="native" selected>Native</option>
-                <option value="balanced">Balanced</option>
-                <option value="performance">Performance</option>
+                <option value="native" selected>Native · this display</option>
+                <option value="4320">8K · 4320p</option>
+                <option value="2160">4K UHD · 2160p</option>
+                <option value="1440">QHD · 1440p</option>
+                <option value="1080">FHD · 1080p</option>
+                <option value="720">HD · 720p</option>
+                <option value="480">SD · 480p</option>
               </select>
             </div>
+            <div class="small render-resolution-help">A resolution is the picture's height; its width follows the window's shape. Choices above this display's own pixels render at native.</div>
             <div class="performance-stats" id="performance-stats" aria-label="Viewer performance statistics">
               <div class="performance-stat-row"><span class="performance-stat-name">Canvas</span><output class="performance-stat-value" id="performance-canvas-value">Sampling…</output></div>
               <div class="performance-stat-row"><span class="performance-stat-name">Workload</span><output class="performance-stat-value" id="performance-workload-value">Waiting for a map…</output></div>
@@ -4151,7 +4232,12 @@
       </summary>
       <div class="sec settings-sec" id="game-settings">
       <div id="newgame-options">
-        <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
+        <label class="small civ6-hidden">Game mode<select id="gamemode" style="margin-top:4px"
+          title="Civ is the full game. Tactics is a playground for tactical unit combat: a small flat battlefield with mountains, rivers, woods and water but no resources or city-states, where two evenly-armed sides begin in opposite corners of a square arena or at opposite ends of a long one.">
+          <option value="civ" selected>Civ</option>
+          <option value="tactics">Tactics</option>
+        </select></label>
+        <label class="small">Human players<select id="humanplayers" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
           <option value="single">Single player</option>
           <option value="civ6" hidden>Play Firaxis Civ 6 with computer control</option>
@@ -4169,7 +4255,7 @@
           <option value="10">Large · 10 civs · 15 city-states · 96×60</option>
           <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
         </select></label>
-        <label class="small civ6-hidden">World shape<select id="mapshape" style="margin-top:4px">
+        <label class="small civ6-hidden tactics-hidden">World shape<select id="mapshape" style="margin-top:4px">
           <option value="flat">Flat</option>
           <option value="planet" selected>Planet</option>
         </select></label>
@@ -4219,6 +4305,87 @@
             <label class="victory-option"><input type="checkbox" id="victory-domination" checked>Domination</label>
             <label class="victory-option"><input type="checkbox" id="victory-score" checked>Score</label>
           </div>
+          <div class="victory-endgame civ6-hidden" id="victory-endgame">
+            <label class="small">Mercy Rule<select id="mercyrule" style="margin-top:4px"
+              title="End the game the moment one civilization's live win odds reach this share — the same calibrated estimate the spectator ribbon shows. None plays every game to its natural end.">
+              <option value="">None</option>
+              <option value="0.99">99% win odds</option>
+              <option value="0.97">97% win odds</option>
+              <option value="0.95" selected>95% win odds</option>
+              <option value="0.90">90% win odds</option>
+            </select></label>
+            <label class="small">Require N Victory Types<span class="setup-info" style="cursor:help;opacity:.7"
+              title="Option to require multiple victory types to be won before a winner is declared. Each type is banked the usual way: Science by reaching the exoplanet, Culture by the culture victory, Religion by world conversion, Diplomacy at 20 Diplomatic Victory points, Domination by taking every other capital — and Score is banked at the turn limit by the leading scorer. The first civilization holding N different types wins; if the clock runs out first, whoever banked the most types takes it. The choice caps at the number of victory conditions enabled above."> ⓘ</span><select id="requiredvictories" style="margin-top:4px">
+              <option value="1" selected>1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+            </select></label>
+          </div>
+        </div>
+        <div class="tactics-options tactics-only" id="tactics-options" role="group" aria-labelledby="tactics-options-title">
+          <h2 id="tactics-options-title">Tactics settings</h2>
+          <label class="small">Fog of war<span class="setup-info" style="cursor:help;opacity:.7"
+            title="Off, both commanders see the whole field: an arena is meant to test what each side does with what is in front of it rather than who finds the other first, and both armies are set down out of each other's sight with no city to march on and no border to trespass. On, each side sees only what its own units can, and finding the enemy is part of the battle. Either way the rule is symmetric — it is never a handicap given to one side."> ⓘ</span><select id="tacticsfog" style="margin-top:4px">
+            <option value="0" selected>Off · the whole field</option>
+            <option value="1">On · only what a side can see</option>
+          </select></label>
+          <label class="small">Turn limit<span class="setup-info" style="cursor:help;opacity:.7"
+            title="The last turn either side may play. If both sides still have an army when it ends, the battle is a draw — remaining units and score never manufacture a winner."> ⓘ</span><select id="tacticsturnlimit" style="margin-top:4px">
+            <option value="50">50 turns</option>
+            <option value="100" selected>100 turns</option>
+            <option value="150">150 turns</option>
+            <option value="200">200 turns</option>
+          </select></label>
+          <label class="small">Capture the flag<span class="setup-info" style="cursor:help;opacity:.7"
+            title="On, a single flag is planted on ground both sides reach evenly, and the battle is won the moment either side's unit takes its tile — a race as much as a fight, with no cities on the field at all. Off, a battle is decided the way an arena always has been: by the armies, and by the city each side holds if the economy grants one. The clock can still run out first either way, which stays a draw."> ⓘ</span><select id="tacticsflag" style="margin-top:4px">
+            <option value="0" selected>Off · last army standing</option>
+            <option value="1">On · first to the flag wins</option>
+          </select></label>
+          <label class="small">Cities per side<span class="setup-info" style="cursor:help;opacity:.7"
+            title="An arena is handed its economy rather than earning it. With one city, each side has somewhere to build reinforcements and a place the other side can take; with none, each side is exactly the army it was dealt and the battle is decided by that army alone. Either way no Settler is ever produced and the city is placed at setup, so there is no founding decision to make. Capture the flag overrides this: a flag battle always plays city-less."> ⓘ</span><select id="tacticscities" style="margin-top:4px">
+            <option value="1" selected>1 · reinforcements</option>
+            <option value="0">0 · armies only</option>
+          </select></label>
+          <label class="small">Production per turn<span class="setup-info" style="cursor:help;opacity:.7"
+            title="Flat Production the city collects every turn, identically for both sides. A Warrior costs 40 and a Modern Armor 680, so a higher figure keeps reinforcements arriving in the later eras. The city collects no Food and never grows."> ⓘ</span><select id="tacticsproduction" style="margin-top:4px">
+            <option value="0">0 · no reinforcements</option>
+            <option value="15">15 · slow</option>
+            <option value="30" selected>30 · steady</option>
+            <option value="60">60 · fast</option>
+            <option value="120">120 · relentless</option>
+          </select></label>
+          <label class="small">Gold per turn<span class="setup-info" style="cursor:help;opacity:.7"
+            title="Flat Gold both sides collect every turn. An arena charges no unit upkeep, so this is upgrade money and nothing else: it buys a damaged Warrior its way up to a Swordsman once the technology is in."> ⓘ</span><select id="tacticsgold" style="margin-top:4px">
+            <option value="0">0 · no upgrades</option>
+            <option value="15">15 · slow</option>
+            <option value="30" selected>30 · steady</option>
+            <option value="60">60 · fast</option>
+            <option value="120">120 · relentless</option>
+          </select></label>
+          <label class="small">Turns per technology<span class="setup-info" style="cursor:help;opacity:.7"
+            title="How long a side spends on whatever it is researching, in any era. Science is set as a pace rather than a figure because a technology costs some seventeen times more late in the tree than at the start, so a flat yield would flood the opening and stall later. There is no civics tree and no policies: an arena is decided by the fighting."> ⓘ</span><select id="tacticsturnspertech" style="margin-top:4px">
+            <option value="0">Never · frozen at the start era</option>
+            <option value="3">3 · rapid</option>
+            <option value="5" selected>5 · steady</option>
+            <option value="10">10 · slow</option>
+            <option value="20">20 · glacial</option>
+          </select></label>
+          <label class="small">Match length<span class="setup-info" style="cursor:help;opacity:.7"
+            title="How many battles the same two civilizations fight before the match is decided. One is a single battle. Anything longer is a series taken by the first side to win more than half of it, fought on fresh ground every time with the two sides changing ends between battles, so the result is about the two civilizations rather than about one roll of the map or one corner of the arena."> ⓘ</span><select id="tacticsbestof" style="margin-top:4px">
+            <option value="1" selected>1 · a single battle</option>
+            <option value="3">Best of 3</option>
+            <option value="5">Best of 5</option>
+            <option value="7">Best of 7</option>
+            <option value="11">Best of 11</option>
+          </select></label>
+          <label class="small">Unique units<span class="setup-info" style="cursor:help;opacity:.7"
+            title="Whether each civilization fields its own unique units. Off, both sides are dealt the identical roster and build from the identical menu, so the only thing separating them is how they are played — which is what an arena is for. On, a civilization's replacements arrive in its opening army and its build menu, and the match becomes a test of the two civilizations as well as of the play."> ⓘ</span><select id="tacticsuniqueunits" style="margin-top:4px">
+            <option value="0" selected>Off · identical rosters</option>
+            <option value="1">On · each civilization's own</option>
+          </select></label>
         </div>
         <label class="small game-advanced-setting" data-advanced-order="10">Base game ruleset<select id="baseruleset" style="margin-top:4px">
           <option value="civ6" selected>Civ 6</option>
@@ -4250,10 +4417,19 @@
             </table>
           </div>
         </div>
-        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="50">Thermal distribution<select id="mappoles" style="margin-top:4px">
+        <label class="small game-advanced-setting civ6-hidden tactics-hidden" data-advanced-order="50">Thermal distribution<select id="mappoles" style="margin-top:4px">
           <option value="poles">Hot equator, cold poles</option>
           <option value="randomized">Randomized</option>
         </select></label>
+        <div class="overlay-options game-advanced-setting civ6-hidden tactics-hidden" id="flat-map-wrap-settings"
+             data-advanced-order="55" role="group" aria-labelledby="flat-map-wrap-title">
+          <h2 id="flat-map-wrap-title">Flat map wraparound</h2>
+          <div class="small custom-leader-help">Whether a flat chart is unrolled about the camera, so sailing off one edge comes back round on the other. A globe follows its own shape, and an arena its four walls.</div>
+          <div class="overlay-option-grid">
+            <label class="overlay-option"><input type="checkbox" id="wrapxchk" checked>Left–right wraparound</label>
+            <label class="overlay-option"><input type="checkbox" id="wrapychk">Top–bottom wraparound</label>
+          </div>
+        </div>
         <label class="small game-advanced-setting civ6-hidden" data-advanced-order="60">Map seed<input id="mapseed" type="number" min="0" max="9007199254740991" step="1"
           inputmode="numeric" placeholder="Random" aria-describedby="mapseed-hint"
           title="Leave blank for a fresh random map; use a seed to replay one exactly"><small class="setup-number-hint" id="mapseed-hint">Leave blank for a fresh random map.</small></label>
@@ -4262,7 +4438,7 @@
         </select></label>
         <label class="small game-advanced-setting human-setting" data-advanced-order="80">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
         <details class="advanced-settings" id="game-advanced-settings" data-advanced-settings="game">
-          <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Base ruleset, teams, leader pool, selection, climate &amp; seed</small></span></summary>
+          <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Base ruleset, teams, leader pool, selection, climate, wraparound &amp; seed</small></span></summary>
           <div class="advanced-settings-body" id="game-advanced-settings-body"></div>
         </details>
         <details class="advanced-settings civ6-hidden" id="game-mod-settings" data-advanced-settings="mods">
@@ -4426,18 +4602,6 @@
           </button>
           <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Display Settings" title="Hide map lenses · restore in Display Settings">✕</button>
         </div>
-        <div id="map-lens-sets" role="tablist" aria-label="Map lens sets" hidden>
-          <button id="lens-set-global" type="button" role="tab" aria-selected="true"
-            aria-controls="map-lens-strip" data-lens-set="global"
-            title="Global lenses — whole-map perspectives">
-            <span class="map-lens-label">Global</span>
-          </button>
-          <button id="lens-set-district" type="button" role="tab" aria-selected="false"
-            aria-controls="district-lens-list" data-lens-set="district"
-            title="District adjacency lenses — per-district yield forecasts">
-            <span class="map-lens-label">District adjacency</span>
-          </button>
-        </div>
         <div id="map-lens-strip" role="none">
           <button type="button" data-map-lens="continent" aria-pressed="false"
             title="Continent lens — geographic continent regions">
@@ -4491,6 +4655,18 @@
           </button>
         </div>
         <div id="district-lens-list" role="group" aria-label="District adjacency lenses" hidden></div>
+        <div id="map-lens-sets" role="tablist" aria-label="Map lens sets" hidden>
+          <button id="lens-set-global" type="button" role="tab" aria-selected="true"
+            aria-controls="map-lens-strip" data-lens-set="global"
+            title="Global lenses — whole-map perspectives">
+            <span class="map-lens-label">Global</span>
+          </button>
+          <button id="lens-set-district" type="button" role="tab" aria-selected="false"
+            aria-controls="district-lens-list" data-lens-set="district"
+            title="District adjacency lenses — per-district yield forecasts">
+            <span class="map-lens-label">District adjacency</span>
+          </button>
+        </div>
       </div>
     </div>
   </details>

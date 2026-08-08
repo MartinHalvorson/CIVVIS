@@ -13,6 +13,12 @@ measurement:
 - The mod goes in the *install's* ``DLC`` tree. No user ``Mods`` directory is
   scanned, so a mod placed in one is never discovered and nothing logs why. The
   install is only added to, and ``uninstall`` reverts it completely.
+- That tree is inside a signed application bundle, so installing INVALIDATES
+  the bundle's code signature and uninstalling restores it (issue #1342).
+  ``signature_report()`` is how the harness says so out loud, with the offending
+  files attributed to this mod rather than left as an anonymous "sealed resource
+  is missing or invalid". It is a fact to report, not a failure to refuse on: a
+  host with a healthy trust record plays perfectly well with the seal broken.
 - The modding database indexes scanned folders by path and mtime, so a newly
   written mod folder is not noticed until ``Mods.sqlite`` is dropped. Without
   that the scan reports the previous contents and the new script never runs.
@@ -223,6 +229,127 @@ def installed_config() -> dict | None:
     return json.loads(path.read_text())
 
 
+# ------------------------------------------------------- the seal we break
+#
+# Installing this mod invalidates the game bundle's sealed resource manifest,
+# and until now nothing in the harness said so. Measured on macOS 26.5.1 with
+# Civ 6 1.0.12.54 (issue #1342): after `install()`, `codesign -v` reports "a
+# sealed resource is missing or invalid" and names one `file added:` line per
+# file written; after `uninstall()` it reports "valid on disk" and "satisfies
+# its Designated Requirement" again.
+#
+# ⚠ THE BROKEN SEAL IS NOT, BY ITSELF, WHAT REFUSES THE GAME, and conflating
+# the two sends the operator to the wrong repair. A host with a fresh trust
+# record launches and plays with the seal broken; a host with a poisoned trust
+# record is refused by Gatekeeper even with the signature VALID and the mod
+# removed (measured both ways, `docs/CIV6_COMPUTER_CONTROL.md`). So this
+# reports the seal as a fact with an author attached, rather than as a health
+# bit -- "we did this, and `--uninstall` undoes it" is a different situation
+# from "something else did this", and only the second needs a human.
+#
+# ⚠⚠ AND RELOCATING THE MOD IS NOT THE FIX, however obvious it looks. Installing
+# into the user `Mods` directory instead would touch no signed bundle and would
+# also never run: no user `Mods` directory is scanned on this build, so the mod
+# is never discovered and NOTHING LOGS WHY -- the run reports "CIVVIS decided
+# nothing", four layers from the cause.
+#
+# The game's own scan index says so directly, which is worth keeping here
+# because prose has not stopped anyone proposing the move. `Mods.sqlite` in the
+# live user directory holds 74 `ScannedFiles` rows and every one of them is
+# relative to the install tree; `select Path from ScannedFiles where Path not
+# like '../../../%'` returns nothing at all, while `../../../DLC/CivvisControl`
+# is present and indexed. A third-party mod sitting in
+# `~/Library/Application Support/Sid Meier's Civilization VI/Mods` since July
+# appears nowhere in it -- and note that is the LEGACY user directory anyway;
+# `civ6_env.user_dir()` resolves the live one to the nested path, which has no
+# `Mods` directory at all.
+#
+# Re-signing is equally unavailable: `_CodeSignature/` is not writable without
+# App Management permission, and `codesign --force --deep --sign -` fails with
+# an internal error on `Civ6_Exe_Child`. All of this is in
+# `docs/CIV6_COMPUTER_CONTROL.md` and issue #1342; do not spend another cycle
+# rediscovering it.
+
+
+def bundle_dir() -> Path | None:
+    """The signed application bundle the mod is installed inside, if any.
+
+    Walked up from ``install_dir()`` rather than rebuilt from ``civ6_env``, so
+    the bundle this reports and the bundle ``install()`` actually breaks cannot
+    drift apart -- the failure mode where two checks quietly disagree about a
+    path is the one this project has already paid for twice. ``None`` means the
+    mod is not inside a bundle at all, which is also the answer to "does
+    installing still break a signature?".
+    """
+    for parent in install_dir().parents:
+        if parent.suffix == ".app":
+            return parent
+    return None
+
+
+def seal_breakers(output: str, mod_dir: Path) -> tuple[list[str], list[str]]:
+    """Split ``codesign``'s complaint into this mod's files and everything else.
+
+    ``codesign -v --verbose=2`` names each offending path on its own line::
+
+        …/Civ6.app: a sealed resource is missing or invalid
+        file added: …/Civ6.app/Contents/Assets/DLC/CivvisControl/config.json
+        file modified: …/Civ6.app/Contents/Resources/something-else
+
+    A line names a file when the text after its first ``": "`` is an absolute
+    path; the leading summary line is the other way round (a path, then a
+    sentence), which is what distinguishes them without matching on the exact
+    verdict words -- ``added``, ``modified`` and ``missing`` all appear, and a
+    future macOS is free to add another.
+
+    Returns ``(ours, foreign)``. ``ours`` is reversible by ``--uninstall``;
+    anything in ``foreign`` is not, and is the only half worth waking a human
+    over.
+    """
+    ours: list[str] = []
+    foreign: list[str] = []
+    root = str(mod_dir)
+    for line in output.splitlines():
+        _, sep, rest = line.partition(": ")
+        if not sep or not rest.startswith("/"):
+            continue
+        (ours if rest == root or rest.startswith(root + "/") else foreign).append(rest)
+    return ours, foreign
+
+
+def signature_report() -> dict:
+    """Whether the bundle is still sealed, and whose files broke it.
+
+    Keys: ``bundle`` (path or None), ``state`` (``valid``/``broken``/
+    ``unknown``/``no-bundle``), ``ours``, ``foreign``, ``detail``.
+    """
+    bundle = bundle_dir()
+    if bundle is None:
+        return {"bundle": None, "state": "no-bundle", "ours": [], "foreign": [],
+                "detail": "the mod does not install inside an application bundle"}
+    try:
+        done = subprocess.run(
+            ["codesign", "-v", "--verbose=2", str(bundle)],
+            capture_output=True, text=True, timeout=120,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        return {"bundle": str(bundle), "state": "unknown", "ours": [], "foreign": [],
+                "detail": f"could not run codesign: {error}"}
+    # codesign writes its verdict AND its file list to stderr.
+    output = (done.stderr or "") + (done.stdout or "")
+    if done.returncode == 0:
+        return {"bundle": str(bundle), "state": "valid", "ours": [], "foreign": [],
+                "detail": "valid on disk"}
+    ours, foreign = seal_breakers(output, install_dir())
+    detail = next(
+        (ln.split(": ", 1)[1] for ln in output.splitlines()
+         if ": " in ln and not ln.split(": ", 1)[1].startswith("/")),
+        f"codesign exited {done.returncode}",
+    )
+    return {"bundle": str(bundle), "state": "broken", "ours": ours,
+            "foreign": foreign, "detail": detail}
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -232,14 +359,28 @@ if __name__ == "__main__":
     ap.add_argument("--config", help="JSON file of settings to bake in")
     args = ap.parse_args()
 
+    def print_signature() -> None:
+        """Say what the install or teardown just did to the bundle's seal."""
+        seal = signature_report()
+        print(f"signature   : {seal['state']} — {seal['detail']}")
+        if seal["ours"]:
+            print(f"              {len(seal['ours'])} file(s) added by this mod; "
+                  f"--uninstall restores the seal")
+        for path in seal["foreign"]:
+            # Not ours, so not ours to fix — and teardown will not touch it.
+            print(f"              NOT this mod: {path}")
+
     if args.uninstall:
         print("removed" if uninstall() else "not installed")
+        print_signature()
     elif args.config:
         target = install(json.loads(Path(args.config).read_text()))
         print(f"installed -> {target}")
+        print_signature()
     if args.status:
         target = install_dir()
         print(f"install dir : {target}  ({'present' if target.is_dir() else 'absent'})")
+        print_signature()
         cfg = installed_config()
         if cfg:
             for key in sorted(cfg):
