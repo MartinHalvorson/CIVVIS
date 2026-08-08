@@ -2,6 +2,7 @@ import importlib.util
 import os
 import pathlib
 import plistlib
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -13,6 +14,13 @@ SCRIPT = ROOT / "tools/civvis_desktop_apps.py"
 SPEC = importlib.util.spec_from_file_location("civvis_desktop_apps", SCRIPT)
 desktop = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(desktop)
+
+# The launchers are zsh, and so is the tab watcher. A Linux CI runner has
+# no zsh, so the checks that parse or run one announce themselves as
+# skipped there rather than erroring — the rest of the suite, including the
+# default contract, is platform-independent and must still run.
+ZSH = shutil.which("zsh")
+NEEDS_ZSH = unittest.skipUnless(ZSH, "zsh is not installed on this runner")
 
 
 class DesktopAppsTests(unittest.TestCase):
@@ -40,20 +48,32 @@ class DesktopAppsTests(unittest.TestCase):
             self.assertIn('readonly civvis_mode="{}"'.format(app.mode), text)
             self.assertIn('readonly civvis_commit="{}"'.format(self.revision.commit), text)
             self.assertIn('readonly civvis_repo="{}"'.format(ROOT), text)
-            with tempfile.NamedTemporaryFile("w", suffix=".zsh", encoding="utf-8") as launcher:
-                launcher.write(text)
-                launcher.flush()
-                subprocess.run(("/bin/zsh", "-n", launcher.name), check=True)
+            # Only the syntax check needs zsh; everything this test asserts
+            # about what the launcher says is plain text, and must keep running
+            # on a runner that has no zsh.
+            if ZSH:
+                with tempfile.NamedTemporaryFile(
+                    "w", suffix=".zsh", encoding="utf-8"
+                ) as launcher:
+                    launcher.write(text)
+                    launcher.flush()
+                    subprocess.run((ZSH, "-n", launcher.name), check=True)
             rendered[app.mode] = text
 
         for expected in (
-            "--players 6 --width 74 --height 46 --city-states 9",
-            "--turns 250 --speed online --map continents --shape flat --poles poles",
             "--victories science,culture,religious,diplomatic,domination,score",
             "--fixed-setup --source-check-interval 1200",
         ):
             self.assertIn(expected, rendered["rust"])
             self.assertIn(expected, rendered["wasm"])
+        # The launcher names no world. The stock opening world belongs to
+        # `stock_opening_params` in src/server.rs, the supervisor's defaults
+        # follow it, and a flag here would be the third copy that let the Rust
+        # and WASM channels quietly stop showing the same game.
+        for world_flag in ("--players", "--width", "--height", "--city-states",
+                           "--turns", "--map", "--shape", "--poles", "--speed"):
+            self.assertNotIn(world_flag, rendered["rust"])
+            self.assertNotIn(world_flag, rendered["wasm"])
         self.assertIn('readonly civvis_port="8785"', rendered["rust"])
         self.assertIn('readonly civvis_port="8790"', rendered["wasm"])
         self.assertIn(
@@ -144,6 +164,7 @@ class DesktopAppsTests(unittest.TestCase):
                 self.assertTrue(info["LSUIElement"])
             self.assertEqual(len(identifiers), 2)
 
+    @NEEDS_ZSH
     def test_native_launcher_executes_the_adjacent_zsh_script(self):
         source = ROOT / "tools/desktop/CIVVIS Launcher.c"
         with tempfile.TemporaryDirectory() as held:
@@ -433,9 +454,10 @@ class DesktopAppsTests(unittest.TestCase):
             )
             self.assertTrue(unrelated.is_dir())
 
+    @NEEDS_ZSH
     def test_tab_watcher_is_valid_zsh_and_owns_both_lifecycles(self):
         watcher = ROOT / "tools/desktop/CIVVIS Tab Watcher.zsh.in"
-        subprocess.run(("/bin/zsh", "-n", str(watcher)), check=True)
+        subprocess.run((ZSH, "-n", str(watcher)), check=True)
         text = watcher.read_text(encoding="utf-8")
         self.assertIn("chrome_has_tab", text)
         self.assertIn("stop_owned_processes", text)
@@ -448,9 +470,11 @@ class DesktopAppsTests(unittest.TestCase):
         page = (ROOT / "web/index.html").read_text(encoding="utf-8") + (
             ROOT / "web/assets/app.js"
         ).read_text(encoding="utf-8")
-        self.assertIn('channel === "rust") document.title = "CIVVIS (Rust)"', page)
+        self.assertIn(
+            'channel === "rust") document.title = "CIVVIS · Civ VI Simulator (Rust)"', page
+        )
         self.assertIn('channel === "wasm" || channel === "beta"', page)
-        self.assertIn('document.title = "CIVVIS (Wasm)"', page)
+        self.assertIn('document.title = "CIVVIS · Civ VI Simulator (Wasm)"', page)
 
 
 if __name__ == "__main__":

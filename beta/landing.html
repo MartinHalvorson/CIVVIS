@@ -4,10 +4,26 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CIVVIS</title>
-<meta name="description" content="A Civilization VI-shaped strategy engine that plays itself — AI civilizations founding, expanding, warring and winning, watched turn by turn.">
+<meta name="description" content="A Civilization VI-shaped strategy engine that plays itself — AI civilizations founding, expanding, warring and winning, watched turn by turn. Pick a world and watch it run.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%2307110f'/%3E%3Ccircle cx='16' cy='16' r='12.5' fill='%23d7b66a' stroke='%23f6e4ac'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-family='Georgia,serif' font-size='15' font-weight='700' fill='%2315221c'%3EV%3C/text%3E%3C/svg%3E">
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    color-scheme: dark;
+    --ink: #07110f;
+    --panel: #0d1817;
+    --line: #24413a;
+    --text: #e8e2d2;
+    --muted: #a9b8ae;
+    --faint: #6f8279;
+    --gold: #d7b66a;
+    --gold-bright: #f6e4ac;
+    --sea: #0b1c22;
+    --sea-deep: #081418;
+    --land: #2e5842;
+    --land-2: #3c6a4e;
+    --blue: #76cde4;
+    --danger: #cf7a6b;
+  }
   * { box-sizing: border-box; }
   body {
     margin: 0;
@@ -15,14 +31,13 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 42px;
-    padding: 48px 24px;
+    gap: 44px;
+    padding: 56px 24px 48px;
     background:
       radial-gradient(ellipse 120% 80% at 50% -10%, #143026 0%, transparent 60%),
       radial-gradient(ellipse 90% 60% at 50% 110%, #101f2e 0%, transparent 55%),
-      #07110f;
-    color: #e8e2d2;
+      var(--ink);
+    color: var(--text);
     font-family: Georgia, "Times New Roman", serif;
     text-align: center;
   }
@@ -35,7 +50,7 @@
     font-weight: 400;
     letter-spacing: 0.28em;
     text-indent: 0.28em;
-    color: #d7b66a;
+    color: var(--gold);
     text-shadow: 0 0 44px rgba(215, 182, 106, 0.24);
   }
 
@@ -43,14 +58,14 @@
     width: 92px;
     height: 1px;
     margin: 26px auto;
-    background: linear-gradient(90deg, transparent, #d7b66a, transparent);
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
   }
 
   .blurb {
     margin: 0;
     font-size: clamp(15px, 2.4vw, 18px);
     line-height: 1.72;
-    color: #a9b8ae;
+    color: var(--muted);
   }
 
   nav {
@@ -70,21 +85,117 @@
     letter-spacing: 0.2em;
     text-transform: uppercase;
     text-decoration: none;
-    border: 1px solid #24413a;
-    color: #e8e2d2;
+    border: 1px solid var(--line);
+    color: var(--text);
     background: rgba(13, 26, 23, 0.7);
     transition: border-color 160ms ease, color 160ms ease, transform 160ms ease;
   }
-  a.button:hover { border-color: #d7b66a; color: #f6e4ac; transform: translateY(-1px); }
+  a.button:hover { border-color: var(--gold); color: var(--gold-bright); transform: translateY(-1px); }
 
   a.button.primary {
-    background: #d7b66a;
-    border-color: #d7b66a;
+    background: var(--gold);
+    border-color: var(--gold);
     color: #15221c;
   }
-  a.button.primary:hover { background: #f6e4ac; border-color: #f6e4ac; color: #15221c; }
+  a.button.primary:hover { background: var(--gold-bright); border-color: var(--gold-bright); color: #15221c; }
 
-  svg { width: 17px; height: 17px; flex: none; }
+  a.button svg { width: 17px; height: 17px; flex: none; }
+
+  /* ------------------------------------------------------------ presets */
+
+  section {
+    width: 100%;
+    max-width: 1080px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  h2 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  h2 strong { color: var(--gold); font-weight: 400; }
+
+  .lede {
+    margin: -10px auto 0;
+    max-width: 560px;
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--faint);
+  }
+
+  .presets {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 18px;
+    text-align: left;
+  }
+
+  /* The four games, one per quadrant: Civ upper-left, Tactics upper-right,
+     city settling lower-left, Sim City lower-right. A fixed two-column grid
+     rather than auto-fit, because the corners are the point. */
+  .quadrants {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    text-align: left;
+  }
+  @media (max-width: 700px) {
+    .quadrants { grid-template-columns: 1fr; }
+  }
+
+  a.card {
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    color: inherit;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+  }
+  a.card:hover, a.card:focus-visible {
+    border-color: var(--gold);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
+  }
+  a.card:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  .card svg { display: block; width: 100%; height: auto; }
+
+  .card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px 18px 18px;
+    border-top: 1px solid var(--line);
+  }
+  .card h3 {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 400;
+    color: var(--gold);
+    letter-spacing: 0.04em;
+  }
+  .card p {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: var(--muted);
+  }
+  .card .settings {
+    margin-top: 4px;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
 
   footer {
     font-size: 11px;
@@ -94,7 +205,8 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    a.button { transition: none; }
+    a.button, a.card { transition: none; }
+    a.button:hover, a.card:hover { transform: none; }
   }
 </style>
 </head>
@@ -128,6 +240,312 @@
   <a class="button" href="/rust">Rust build</a>
   <a class="button" href="/wasm">WASM build</a>
 </nav>
+
+<!--
+  The four quadrants are the page's face: the games the engine plays, one per
+  corner — Civ, Tactics, city settling, Sim City — each a link into the
+  simulator with a preset tuned to that game. Like every card on this page,
+  the links carry lobby choices on the query string for beta/shim.js.
+-->
+<section aria-label="The four games">
+  <h2>Four games, <strong>one engine</strong></h2>
+  <p class="lede">
+    Pick the game you want to watch. Each corner starts a simulation already
+    tuned to it — the engine plays, you watch.
+  </p>
+  <div class="quadrants">
+
+    <a class="card" href="/">
+      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
+        <rect width="320" height="180" fill="var(--sea)"/>
+        <path d="M30 60 Q60 30 120 40 Q170 48 160 84 Q150 116 92 122 Q40 118 30 60 Z" fill="var(--land)"/>
+        <path d="M190 96 Q230 78 276 92 Q298 104 288 130 Q268 152 220 146 Q188 134 190 96 Z" fill="var(--land-2)"/>
+        <circle cx="86" cy="76" r="4" fill="var(--gold)"/>
+        <circle cx="126" cy="62" r="3" fill="var(--gold)"/>
+        <circle cx="244" cy="118" r="4" fill="var(--danger)"/>
+        <path d="M126 62 Q186 74 244 118" stroke="var(--gold)" stroke-width="1" stroke-dasharray="3 4" fill="none" opacity="0.6"/>
+      </svg>
+      <div class="card-body">
+        <h3>Civ</h3>
+        <p>The complete game: whole civilizations founded, grown, allied and
+        fought until one of them wins the world.</p>
+        <div class="settings">Full game · A fresh world every visit</div>
+      </div>
+    </a>
+
+    <a class="card" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20">
+      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
+        <rect width="320" height="180" fill="var(--sea-deep)"/>
+        <rect x="70" y="20" width="180" height="140" rx="6" fill="var(--panel)" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.5"/>
+        <path d="M115 20 V160 M160 20 V160 M205 20 V160 M70 66 H250 M70 113 H250" stroke="var(--line)" stroke-width="1"/>
+        <rect x="86" y="52" width="14" height="14" fill="var(--blue)" opacity="0.9"/>
+        <rect x="86" y="88" width="14" height="14" fill="var(--blue)" opacity="0.9"/>
+        <rect x="108" y="70" width="14" height="14" fill="var(--blue)" opacity="0.6"/>
+        <rect x="220" y="52" width="14" height="14" fill="var(--danger)" opacity="0.9"/>
+        <rect x="220" y="88" width="14" height="14" fill="var(--danger)" opacity="0.9"/>
+        <rect x="198" y="70" width="14" height="14" fill="var(--danger)" opacity="0.6"/>
+      </svg>
+      <div class="card-body">
+        <h3>Tactics</h3>
+        <p>The fighting on its own: two even armies, one bounded field, no
+        economy to hide behind — decided by ground and formation.</p>
+        <div class="settings">Tactics · 20×20 field · Information era</div>
+      </div>
+    </a>
+
+    <a class="card" href="/?players=12&amp;map=land_only">
+      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
+        <rect width="320" height="180" fill="var(--land)"/>
+        <path d="M0 150 Q60 136 132 144 Q220 152 320 140 L320 180 L0 180 Z" fill="var(--sea)"/>
+        <circle cx="96" cy="72" r="6" fill="var(--gold)"/>
+        <circle cx="96" cy="72" r="12" fill="none" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.5"/>
+        <circle cx="96" cy="72" r="19" fill="none" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.25"/>
+        <circle cx="176" cy="52" r="3.5" fill="var(--gold-bright)"/>
+        <circle cx="222" cy="96" r="3.5" fill="var(--gold-bright)"/>
+        <circle cx="150" cy="112" r="3.5" fill="var(--gold-bright)"/>
+        <path d="M108 66 Q140 52 172 53" stroke="var(--gold-bright)" stroke-width="1" stroke-dasharray="2 5" fill="none" opacity="0.7"/>
+        <path d="M110 78 Q168 92 218 95" stroke="var(--gold-bright)" stroke-width="1" stroke-dasharray="2 5" fill="none" opacity="0.7"/>
+        <path d="M104 82 Q126 100 146 109" stroke="var(--gold-bright)" stroke-width="1" stroke-dasharray="2 5" fill="none" opacity="0.7"/>
+      </svg>
+      <div class="card-body">
+        <h3>City Settling</h3>
+        <p>The land rush: twelve civilizations on a continent of open ground,
+        and every turn another banner further out on the frontier.</p>
+        <div class="settings">12 civs · Land only · Ancient start</div>
+      </div>
+    </a>
+
+    <a class="card" href="/?players=6&amp;map=islands&amp;victories=science">
+      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
+        <rect width="320" height="180" fill="var(--sea-deep)"/>
+        <path d="M0 150 Q80 140 160 146 Q240 150 320 144 L320 180 L0 180 Z" fill="var(--land)"/>
+        <rect x="92" y="96" width="16" height="52" fill="var(--panel)" stroke="var(--line)"/>
+        <rect x="116" y="76" width="18" height="72" fill="var(--panel)" stroke="var(--gold)" stroke-opacity="0.5"/>
+        <rect x="142" y="108" width="14" height="40" fill="var(--panel)" stroke="var(--line)"/>
+        <rect x="164" y="62" width="20" height="86" fill="var(--panel)" stroke="var(--gold)" stroke-opacity="0.5"/>
+        <rect x="192" y="92" width="16" height="56" fill="var(--panel)" stroke="var(--line)"/>
+        <path d="M120 84 h10 M120 94 h10 M168 70 h12 M168 80 h12 M168 90 h12 M195 100 h10 M195 110 h10" stroke="var(--gold)" stroke-width="2" stroke-opacity="0.8"/>
+        <circle cx="248" cy="40" r="3" fill="var(--gold)"/>
+        <path d="M244 52 L248 44 L252 52 Z" fill="var(--gold-bright)"/>
+      </svg>
+      <div class="card-body">
+        <h3>Sim City</h3>
+        <p>The building with no fighting to do. Its own mode is on the
+        roadmap; until it arrives, the nearest world: island builders left in
+        peace, racing for orbit.</p>
+        <div class="settings">6 civs · Islands · Science only</div>
+      </div>
+    </a>
+
+  </div>
+</section>
+
+<!--
+  Each card is a link into the simulator with lobby choices already made —
+  beta/shim.js reads them off the query string and posts the one /new request
+  the setup screen would have. The settings line under each description uses
+  the lobby's own vocabulary, so a card doubles as a worked example of the
+  parameters: players, map, shape, era, speed, victories, arena.
+-->
+<section aria-label="Preset simulations">
+  <h2>Pick a world, <strong>watch it run</strong></h2>
+  <p class="lede">
+    Every card starts a simulation in your browser with its settings already
+    chosen. Nothing to install, nobody to sign in as — the engine plays, you
+    watch.
+  </p>
+  <div class="presets">
+
+    <a class="card" href="/">
+      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
+        <defs><clipPath id="tennis-ball"><circle cx="160" cy="90" r="66"/></clipPath></defs>
+        <rect width="320" height="180" fill="var(--sea-deep)"/>
+        <g clip-path="url(#tennis-ball)">
+          <rect x="94" y="24" width="132" height="132" fill="var(--land)"/>
+          <path d="M226 14 Q170 50 172 90 Q174 130 118 166 L94 166 Q150 130 148 90 Q146 50 202 14 Z" fill="var(--sea)"/>
+          <circle cx="128" cy="58" r="4" fill="var(--gold)"/>
+          <circle cx="196" cy="122" r="4" fill="var(--gold)"/>
+        </g>
+        <circle cx="160" cy="90" r="66" fill="none" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.6"/>
+      </svg>
+      <div class="card-body">
+        <h3>The Exhibition</h3>
+        <p>The front page's stock world: four civilizations on a Tennis Ball
+        globe — two land lobes split by an ocean seam that loops the whole
+        planet — from a seed nobody has watched before.</p>
+        <div class="settings">4 civs · Tennis Ball · Globe</div>
+      </div>
+    </a>
+
+    <a class="card" href="/?players=12&amp;map=pangaea&amp;victories=domination">
+      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
+        <rect width="320" height="180" fill="var(--sea)"/>
+        <path d="M40 96 Q36 48 96 36 Q160 24 226 40 Q288 54 280 100 Q272 140 200 150 Q116 158 68 136 Q42 122 40 96 Z" fill="var(--land)"/>
+        <path d="M96 90 L146 90 L138 78 L172 96 L138 114 L146 102 L96 102 Z" fill="var(--gold)"/>
+        <path d="M224 90 L174 90 L182 78 L148 96 L182 114 L174 102 L224 102 Z" fill="var(--danger)" opacity="0.9"/>
+        <path d="M160 82 L164 92 L160 110 L156 92 Z" fill="var(--gold-bright)" opacity="0.8"/>
+      </svg>
+      <div class="card-body">
+        <h3>World War</h3>
+        <p>Twelve civilizations share one landmass, and the only victory left
+        on the table is taking it from each other.</p>
+        <div class="settings">12 civs · Pangaea · Domination only</div>
+      </div>
+    </a>
+
+    <a class="card" href="/?players=8&amp;map=islands">
+      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
+        <rect width="320" height="180" fill="var(--sea)"/>
+        <ellipse cx="52" cy="52" rx="22" ry="13" fill="var(--land)"/>
+        <ellipse cx="128" cy="34" rx="15" ry="9" fill="var(--land-2)"/>
+        <ellipse cx="228" cy="48" rx="26" ry="14" fill="var(--land)"/>
+        <ellipse cx="296" cy="92" rx="17" ry="10" fill="var(--land-2)"/>
+        <ellipse cx="66" cy="126" rx="19" ry="11" fill="var(--land-2)"/>
+        <ellipse cx="160" cy="98" rx="13" ry="8" fill="var(--land)"/>
+        <ellipse cx="238" cy="140" rx="22" ry="12" fill="var(--land)"/>
+        <ellipse cx="140" cy="152" rx="12" ry="7" fill="var(--land-2)"/>
+        <path d="M104 72 l6 -12 l2 12 Z" fill="var(--gold)"/>
+        <path d="M104 73 h10" stroke="var(--gold)" stroke-width="2"/>
+        <path d="M196 116 l6 -12 l2 12 Z" fill="var(--gold)"/>
+        <path d="M196 117 h10" stroke="var(--gold)" stroke-width="2"/>
+      </svg>
+      <div class="card-body">
+        <h3>Island Empires</h3>
+        <p>An archipelago with no mainland to fall back on. Whoever rules the
+        water decides what happens on every shore.</p>
+        <div class="settings">8 civs · Island plates</div>
+      </div>
+    </a>
+
+    <a class="card" href="/?map=planet&amp;players=8">
+      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
+        <rect width="320" height="180" fill="var(--sea-deep)"/>
+        <circle cx="160" cy="90" r="66" fill="var(--sea)" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.6"/>
+        <path d="M120 58 Q142 42 168 52 Q186 60 176 76 Q160 88 136 82 Q116 74 120 58 Z" fill="var(--land)"/>
+        <path d="M168 108 Q192 100 206 114 Q212 128 192 136 Q170 142 160 128 Q156 114 168 108 Z" fill="var(--land-2)"/>
+        <ellipse cx="160" cy="90" rx="66" ry="22" fill="none" stroke="var(--gold)" stroke-width="0.7" stroke-opacity="0.35"/>
+        <ellipse cx="160" cy="90" rx="26" ry="66" fill="none" stroke="var(--gold)" stroke-width="0.7" stroke-opacity="0.35"/>
+        <circle cx="160" cy="90" r="66" fill="none" stroke="var(--gold)" stroke-width="0.7" stroke-opacity="0.35" stroke-dasharray="2 6"/>
+      </svg>
+      <div class="card-body">
+        <h3>The Whole Planet</h3>
+        <p>A closed geodesic globe — hexagons, twelve pentagons, and no map
+        edge anywhere. Navies sail all the way around.</p>
+        <div class="settings">8 civs · Small continents · Globe</div>
+      </div>
+    </a>
+
+    <a class="card" href="/?map=true_start_earth&amp;players=10">
+      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
+        <rect width="320" height="180" fill="var(--sea)"/>
+        <path d="M48 38 Q76 28 92 44 Q98 58 82 64 Q90 74 80 92 Q68 116 58 138 Q52 118 56 96 Q46 78 42 58 Q42 44 48 38 Z" fill="var(--land)"/>
+        <path d="M140 34 Q182 24 232 34 Q272 42 284 62 Q270 66 252 62 Q262 76 250 84 Q234 88 224 76 Q216 92 200 88 Q188 82 190 66 Q168 62 152 52 Q140 44 140 34 Z" fill="var(--land-2)"/>
+        <path d="M176 92 Q196 88 206 102 Q212 120 200 136 Q186 146 176 132 Q168 112 176 92 Z" fill="var(--land)"/>
+        <path d="M256 116 Q274 112 282 124 Q284 136 270 140 Q256 140 252 128 Z" fill="var(--land-2)"/>
+        <circle cx="186" cy="60" r="3" fill="var(--gold)"/>
+        <circle cx="196" cy="100" r="3" fill="var(--gold)"/>
+        <circle cx="248" cy="58" r="3" fill="var(--gold)"/>
+        <circle cx="66" cy="84" r="3" fill="var(--gold)"/>
+      </svg>
+      <div class="card-body">
+        <h3>True Start Earth</h3>
+        <p>Earth itself, with every civilization founded where history actually
+        put it — and free to do better this time.</p>
+        <div class="settings">10 civs · Earth · True start</div>
+      </div>
+    </a>
+
+    <a class="card" href="/?map=water_world&amp;players=6">
+      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
+        <rect width="320" height="180" fill="var(--sea)"/>
+        <path d="M0 40 Q40 34 80 40 T160 40 T240 40 T320 40" stroke="var(--blue)" stroke-width="1" fill="none" opacity="0.18"/>
+        <path d="M0 84 Q40 78 80 84 T160 84 T240 84 T320 84" stroke="var(--blue)" stroke-width="1" fill="none" opacity="0.14"/>
+        <path d="M0 128 Q40 122 80 128 T160 128 T240 128 T320 128" stroke="var(--blue)" stroke-width="1" fill="none" opacity="0.1"/>
+        <ellipse cx="84" cy="62" rx="11" ry="6" fill="var(--land)"/>
+        <ellipse cx="216" cy="104" rx="13" ry="7" fill="var(--land-2)"/>
+        <ellipse cx="160" cy="48" rx="7" ry="4" fill="var(--land-2)"/>
+        <ellipse cx="272" cy="60" rx="6" ry="4" fill="var(--land)"/>
+        <ellipse cx="58" cy="124" rx="8" ry="5" fill="var(--land-2)"/>
+        <circle cx="216" cy="100" r="3" fill="var(--gold)"/>
+      </svg>
+      <div class="card-body">
+        <h3>Water World</h3>
+        <p>Five percent land. Every scrap of it gets settled, contested and
+        fought over — the rest is a navy's game.</p>
+        <div class="settings">6 civs · Water world</div>
+      </div>
+    </a>
+
+    <a class="card" href="/?era=atomic&amp;players=8&amp;victories=science,domination">
+      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
+        <rect width="320" height="180" fill="var(--sea-deep)"/>
+        <path d="M0 150 Q80 138 160 146 Q240 152 320 142 L320 180 L0 180 Z" fill="var(--land)"/>
+        <ellipse cx="160" cy="70" rx="104" ry="40" fill="none" stroke="var(--gold)" stroke-width="0.8" stroke-opacity="0.4"/>
+        <circle cx="256" cy="46" r="3" fill="var(--gold)"/>
+        <path d="M156 128 L160 96 L164 128 Z" fill="var(--gold-bright)"/>
+        <rect x="156" y="60" width="8" height="42" rx="3" fill="var(--text)"/>
+        <path d="M160 44 L166 62 L154 62 Z" fill="var(--danger)"/>
+        <path d="M156 100 L148 112 L156 108 Z" fill="var(--text)" opacity="0.8"/>
+        <path d="M164 100 L172 112 L164 108 Z" fill="var(--text)" opacity="0.8"/>
+      </svg>
+      <div class="card-body">
+        <h3>The Atomic Age</h3>
+        <p>Skip five thousand years of build-up. Eight powers begin with the
+        bomb in reach, racing for orbit — or for each other.</p>
+        <div class="settings">8 civs · Atomic start · Science &amp; domination</div>
+      </div>
+    </a>
+
+    <a class="card" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20">
+      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
+        <rect width="320" height="180" fill="var(--sea-deep)"/>
+        <rect x="70" y="20" width="180" height="140" rx="6" fill="var(--panel)" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.5"/>
+        <path d="M115 20 V160 M160 20 V160 M205 20 V160 M70 66 H250 M70 113 H250" stroke="var(--line)" stroke-width="1"/>
+        <rect x="82" y="46" width="14" height="14" fill="var(--blue)" opacity="0.9"/>
+        <rect x="82" y="82" width="14" height="14" fill="var(--blue)" opacity="0.9"/>
+        <rect x="82" y="118" width="14" height="14" fill="var(--blue)" opacity="0.9"/>
+        <rect x="104" y="64" width="14" height="14" fill="var(--blue)" opacity="0.6"/>
+        <rect x="104" y="100" width="14" height="14" fill="var(--blue)" opacity="0.6"/>
+        <rect x="224" y="46" width="14" height="14" fill="var(--danger)" opacity="0.9"/>
+        <rect x="224" y="82" width="14" height="14" fill="var(--danger)" opacity="0.9"/>
+        <rect x="224" y="118" width="14" height="14" fill="var(--danger)" opacity="0.9"/>
+        <rect x="202" y="64" width="14" height="14" fill="var(--danger)" opacity="0.6"/>
+        <rect x="202" y="100" width="14" height="14" fill="var(--danger)" opacity="0.6"/>
+      </svg>
+      <div class="card-body">
+        <h3>Arena · Combined Arms</h3>
+        <p>The Tactics mode with everything unlocked: two modern armies, one
+        square field, and no economy to hide behind.</p>
+        <div class="settings">Tactics · 20×20 field · Information era</div>
+      </div>
+    </a>
+
+    <a class="card" href="/?map=battlefield&amp;players=2&amp;arena=10x20">
+      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
+        <rect width="320" height="180" fill="var(--sea-deep)"/>
+        <rect x="30" y="55" width="260" height="70" rx="6" fill="var(--panel)" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.5"/>
+        <path d="M95 55 V125 M160 55 V125 M225 55 V125" stroke="var(--line)" stroke-width="1"/>
+        <circle cx="58" cy="74" r="6" fill="var(--gold)"/>
+        <circle cx="58" cy="90" r="6" fill="var(--gold)"/>
+        <circle cx="58" cy="106" r="6" fill="var(--gold)"/>
+        <circle cx="78" cy="82" r="6" fill="var(--gold)" opacity="0.6"/>
+        <circle cx="78" cy="98" r="6" fill="var(--gold)" opacity="0.6"/>
+        <circle cx="262" cy="74" r="6" fill="var(--danger)"/>
+        <circle cx="262" cy="90" r="6" fill="var(--danger)"/>
+        <circle cx="262" cy="106" r="6" fill="var(--danger)"/>
+        <circle cx="242" cy="82" r="6" fill="var(--danger)" opacity="0.6"/>
+        <circle cx="242" cy="98" r="6" fill="var(--danger)" opacity="0.6"/>
+      </svg>
+      <div class="card-body">
+        <h3>Arena · Spear and Shield</h3>
+        <p>The same duel with everything stripped away: ancient lines meeting
+        on a long march, decided by ground and formation.</p>
+        <div class="settings">Tactics · 10×20 march · Ancient era</div>
+      </div>
+    </a>
+
+  </div>
+</section>
 
 <footer>Martin Halvorson</footer>
 

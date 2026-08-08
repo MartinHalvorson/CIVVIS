@@ -159,14 +159,19 @@ because they selected a leader they have not played before.
 ## Watching players in the game HUD
 
 `civvis play --spectate --league league/` ranks live-eligible strategies first
-by the lower 95% Wilson **outright-win** bound for the full table size. The
-exact leader/civilization placement rating breaks an equal bound. It samples
-from the top three with 3:2:1 rank weight, avoids repeats, and exhausts exact
-profiles before using an unprofiled fallback. A roster does not switch from the
-legacy placement-only policy until it has enough exact profiles to fill the
-initial three-entry pool. Thus one human plus five AI seats uses six-player
-evidence, not five-player evidence, and removing seat one's pick cannot switch
-seat two back to a different objective.
+by the lower 95% Wilson **outright-win** bound for the full table size, with
+the overall placement rating breaking an equal bound. It samples from the top
+three with 3:2:1 rank weight, avoids repeats, and exhausts exact profiles
+before using an unprofiled fallback; the sampled entrants are then assigned to
+the table's civilizations by Latin square over the league round
+(`rating::rotate_seating`), so quality decides who plays and the rotation
+decides which civ they play. Seating by a strategy's rating *on the civ being
+seated* was the feedback loop in docs/RATING.md — one strategy played Rome 200
+games out of 200 — and is gone. A roster does not switch from the legacy
+placement-only policy until it has enough exact profiles to fill the initial
+three-entry pool. Thus one human plus five AI seats uses six-player evidence,
+not five-player evidence, and removing seat one's pick cannot switch seat two
+back to a different objective.
 
 The spectator HUD lists, per player: **civ, league username + strategy, its
 elo** (exact leader/civ rating after game one, ±RD on hover), the live **Elo
@@ -244,7 +249,16 @@ league instead.
 
 ## Selection
 
-Every `--evolve-every` rounds (default 4):
+Every `--evolve-every` rounds (default 4). A live recorder reaches the same
+selection on a games cadence: one rated exhibition game is one rating period,
+so every 64 recorded games — the offline parity of 4 rounds × 16 games — the
+recorder breeds and retires inside the same league lock and atomic write as
+the ratings, judging win evidence at the table size just played. A large
+inherited roster shrinks by one entrant per sweep rather than being culled to
+`--pop` at once, a roster at or under `--pop` only grows, and each sweep
+appends a `round,born,retired` row to `selection.csv` so a frozen roster is
+visible instead of silent (the committed snapshot reached round 4002 with no
+entrant born after round 60 because live games never selected).
 
 - **Breed** `max(1, --pop / 4)` offspring with quality-diversity pressure
   across seven niches: the six victory lanes plus an untargeted generalist.

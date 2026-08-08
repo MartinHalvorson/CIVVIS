@@ -28,10 +28,11 @@ use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::name::Name;
 use crate::rules::Rules;
 use crate::setup::{
-    future_era_from_id, future_era_id, start_era_from_id, start_era_id, turn_structure_id,
-    BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology, TurnStructure,
-    BASE_RULESETS, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, FUTURE_ERAS, MAP_POLES,
-    MAP_TOPOLOGIES, START_ERAS,
+    battlefield_map_scripts, future_era_from_id, future_era_id, start_era_from_id, start_era_id,
+    turn_structure_id, world_map_scripts, BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript,
+    MapSize, MapTopology, TacticsRules, TurnStructure, BASE_RULESETS, BATTLEFIELD_SIZES,
+    CIV6_GAME_SPEEDS,
+    CIV6_MAP_SIZES, FUTURE_ERAS, MAP_POLES, MAP_TOPOLOGIES, START_ERAS,
 };
 use crate::Pos;
 
@@ -481,6 +482,14 @@ pub struct Params {
     pub game_speed: GameSpeed,
     pub max_turns: u32,
     pub victory_conditions: VictoryConditions,
+    /// The Mercy Rule threshold for new games, if any. See `Game::mercy_rule`.
+    pub mercy_rule: Option<f64>,
+    /// Distinct victory types required to win. See
+    /// `Game::effective_required_victories`.
+    pub required_victory_types: usize,
+    /// What a Tactics arena grants its two sides. Read only when the map
+    /// script is the battlefield; a world earns its yields instead.
+    pub tactics: TacticsRules,
     pub num_city_states: usize,
     /// All players AI-driven; the GUI just watches (auto-steps via /step).
     pub spectate: bool,
@@ -1261,6 +1270,13 @@ pub struct Shared {
     /// the restart — so a settings control that queued behind an AI turn put
     /// the whole restart behind it too.
     next_game_params: Mutex<Option<Params>>,
+    /// The Tactics match in progress, when the arena is being played as a
+    /// series rather than as one battle.
+    ///
+    /// It lives here rather than on the `Session` because a match outlives
+    /// the battles it is made of, and `start_automatic_next_game` replaces
+    /// the whole session between them.
+    match_series: Mutex<Option<crate::setup::MatchSeries>>,
     pub pace_ms: AtomicU64,
     /// How long a completed spectator game remains on its result screen.
     /// This is a viewer preference, not part of the simulated world: each
@@ -1552,7 +1568,7 @@ fn spectator_frame(game: &Game, sequence: u64) -> SpectatorFrame {
     SpectatorFrame {
         seed: game.seed,
         turn: game.turn,
-        finished: game.winner.is_some(),
+        finished: game.is_finished(),
         sequence,
     }
 }
@@ -1565,7 +1581,7 @@ fn spectator_step_completes_frame(
 ) -> bool {
     publishes_player_turn_frames(pace_ms)
         || game.turn != turn_before
-        || game.winner.is_some() != finished_before
+        || game.is_finished() != finished_before
 }
 
 /// The result countdown can only use the four values the viewer can select.
@@ -1849,7 +1865,7 @@ impl Shared {
                     .get(0)
                     .is_some_and(|player| !player.alive);
             if session.game.seed != expected_seed
-                || (session.game.winner.is_none() && !human_was_eliminated)
+                || (!session.game.is_finished() && !human_was_eliminated)
             {
                 return Err("automatic restart requires a finished game".into());
             }
@@ -1902,6 +1918,57 @@ impl Shared {
     /// Hand the queue to the world that is about to consume it.
     fn take_next_game_params(&self) -> Option<Params> {
         self.next_game_params.lock().unwrap().take()
+    }
+
+    /// The Tactics match in progress, for `/state`.
+    fn match_series(&self) -> Option<crate::setup::MatchSeries> {
+        self.match_series.lock().unwrap().clone()
+    }
+
+    /// Carry a Tactics match on past the battle that just finished.
+    ///
+    /// Records the result, then hands the next battle the same two
+    /// civilizations with the sides swapped over — which is the whole point
+    /// of a series, because a match in which one civilization held the same
+    /// corner every time would be measuring the corner. A match that has
+    /// been settled is cleared here and the next battle opens a fresh one, so
+    /// an exhibition left running plays match after match rather than one
+    /// endless tally.
+    fn advance_match(&self, finished: &Game, next: Option<Params>) -> Option<Params> {
+        let mut next = next?;
+        let mut held = self.match_series.lock().unwrap();
+        if !next.map_script.is_battlefield() || next.tactics.best_of <= 1 {
+            *held = None;
+            return Some(next);
+        }
+        let contenders: Vec<String> = finished
+            .players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .map(|player| player.civ.clone())
+            .collect();
+        let fresh = || crate::setup::MatchSeries::new(next.tactics.best_of, contenders.clone());
+        let series = held.get_or_insert_with(fresh);
+        if series.decided() {
+            // The battle before this one settled the match, and its final
+            // scoreline has had its turn on the result screen.
+            *series = fresh();
+        } else {
+            series.record(
+                finished
+                    .winner
+                    .and_then(|pid| finished.players.get(pid))
+                    .map(|player| player.civ.as_str()),
+            );
+        }
+        // The pair is the match's, in a fixed order, so "which end" is
+        // decided by how many battles have been played and nothing else.
+        let mut pair: Vec<String> = series.wins.keys().cloned().collect();
+        if series.played() % 2 == 1 {
+            pair.reverse();
+        }
+        next.civs = pair;
+        Some(next)
     }
 
     /// The request the supervisor is being asked to act on, if any.
@@ -1963,11 +2030,14 @@ fn automatic_successor_seed(seed: u64) -> u64 {
 impl Session {
     /// Seat AIs plus each seat's league identity. With a roster to seat from,
     /// each major gets a rank-weighted sample from the top three proven winners
-    /// for this table size (`league::seat_by_civ_seeded`), with its exact
-    /// leader/civilization placement rating breaking win-bound ties and repeats
-    /// avoided while possible. Otherwise majors run the default hierarchical
-    /// AI, which the league rates as its "advanced" entrant, so a loaded roster
-    /// can still label those seats with an elo.
+    /// for this table size (`league::seat_by_civ_seeded`), overall placement
+    /// rating breaking win-bound ties, repeats avoided while possible, and the
+    /// sampled entrants rotated across the table's civilizations by Latin
+    /// square over the league round — never seated by their rating on the civ
+    /// itself, which is the confound documented in docs/RATING.md. Otherwise
+    /// majors run the default hierarchical AI, which the league rates as its
+    /// "advanced" entrant, so a loaded roster can still label those seats with
+    /// an elo.
     ///
     /// A seat somebody is playing is never seated from the roster. Whoever is
     /// at the keyboard is their own player — `register_human_players` gives
@@ -2189,6 +2259,7 @@ impl Session {
             civs: params.civs.clone(),
             leader_pool: params.leader_pool,
             randomize_civs: true,
+            tactics: params.tactics,
             ..GameOptions::new(
                 params.num_players,
                 params.width,
@@ -2199,6 +2270,8 @@ impl Session {
             )
         });
         game.victory_conditions = params.victory_conditions;
+        game.mercy_rule = params.mercy_rule;
+        game.required_victory_types = params.required_victory_types;
         // The hierarchical agent is the stock major-civilization default when
         // no league strategy is seated. Minors/barbarians retain the cheaper
         // baseline because they do not need empire-level planning.
@@ -2281,6 +2354,9 @@ impl Session {
         params.speed = game.speed.clone();
         params.leader_pool = game.leader_pool;
         params.victory_conditions = game.victory_conditions;
+        params.mercy_rule = game.mercy_rule;
+        params.required_victory_types = game.required_victory_types;
+        params.tactics = game.tactics;
         params.teams = game
             .players
             .iter()
@@ -2311,7 +2387,7 @@ impl Session {
         let chronicle = ChronicleState::from_game(&game);
         // A match restored with its winner already decided was rated when it
         // finished; rating it again on the next step would count it twice.
-        let league_recorded = game.winner.is_some();
+        let league_recorded = game.is_finished();
         // A save carries the world, not the person: whoever reloads it is a
         // new player again, and a decided game has nothing left to rate, so
         // it registers nobody.
@@ -2380,14 +2456,14 @@ impl Session {
             let expected_instance = finished["server_instance"]
                 .as_u64()
                 .ok_or_else(|| "replace_finished.server_instance must be an integer".to_string())?;
-            if self.game.winner.is_none()
+            if !self.game.is_finished()
                 || self.game.seed != expected_seed
                 || expected_instance != process_identity() as u64
             {
                 return Err("finished game is no longer the active session".into());
             }
         } else if self.params.spectate
-            && self.game.winner.is_none()
+            && !self.game.is_finished()
             && request["force"].as_bool() != Some(true)
         {
             // Old spectator pages used an unguarded result timer. If one
@@ -2820,7 +2896,10 @@ impl Session {
                 o["simultaneous"] = json!(self.simultaneous_census);
             }
             o["teams"] = json!(major_teams(&self.game));
-            o["victory_conditions"] = json!(self.game.victory_conditions);
+            o["victory_conditions"] = json!(self.game.effective_victory_conditions());
+            o["mercy_rule"] = json!(self.game.mercy_rule);
+            o["required_victory_types"] = json!(self.game.effective_required_victories());
+            o["victories_won"] = json!(self.game.victories_won);
             o["legal_actions"] = json!([]);
             // Lets a long-running spectator notice that its server was
             // rebuilt/restarted between games and reload the latest UI.
@@ -2846,7 +2925,10 @@ impl Session {
         o["leader_pool"] = json!(self.game.leader_pool.id());
         o["turn_structure"] = json!(self.game.turn_structure.id());
         o["teams"] = json!(major_teams(&self.game));
-        o["victory_conditions"] = json!(self.game.victory_conditions);
+        o["victory_conditions"] = json!(self.game.effective_victory_conditions());
+        o["mercy_rule"] = json!(self.game.mercy_rule);
+        o["required_victory_types"] = json!(self.game.effective_required_victories());
+        o["victories_won"] = json!(self.game.victories_won);
         o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
         o["server_instance"] = json!(process_identity());
         o["server_commit"] = json!(runtime_commit("unknown"));
@@ -2879,7 +2961,7 @@ impl Session {
     pub fn step_quietly(&mut self) -> usize {
         let g = &mut self.game;
         let pid = g.current;
-        if g.winner.is_some() {
+        if g.is_finished() {
             return pid;
         }
         // A simultaneous game advances one whole game turn per step: every
@@ -2910,7 +2992,7 @@ impl Session {
             return pid;
         }
         self.ais[pid].take_turn(g, pid);
-        if g.current == pid && g.winner.is_none() {
+        if g.current == pid && !g.is_finished() {
             let _ = g.apply(pid, &Action::EndTurn);
         }
         // Every way of advancing the world funnels through here — the browser
@@ -2942,7 +3024,7 @@ impl Session {
     /// table: the elo on screen is whatever the last offline league run left
     /// behind, no matter who keeps winning.
     fn record_league_result(&mut self) {
-        if self.league_recorded || self.game.winner.is_none() || !self.params.league_record {
+        if self.league_recorded || !self.game.is_finished() || !self.params.league_record {
             return;
         }
         // The ratings are a sequential-regime instrument. A simultaneous
@@ -2970,17 +3052,18 @@ impl Session {
                 }
             })
             .collect();
-        let winner = self.game.winner.unwrap();
+        let winner = self.game.winner;
+        let drawn = self.game.is_draw();
         // Same ordering and competition ranks as a distributed league game:
-        // the declared winner stands alone, while equal non-winner scores are
-        // draws rather than arbitrary wins for the lower player id.
+        // the declared winner stands alone, while a terminal Tactics draw
+        // gives every rated seat the same rank regardless of material left.
         let rated: Vec<usize> = (0..seat_names.len())
             .filter(|pid| seat_names[*pid].is_some())
             .collect();
         let (rated, ranks) = crate::league::competition_ranking(
             rated,
-            Some(winner),
-            |pid| self.game.score(pid),
+            winner,
+            |pid| if drawn { 0 } else { self.game.score(pid) },
         );
         let seats: Vec<crate::league::LiveGameSeat> = rated
             .iter()
@@ -2999,11 +3082,11 @@ impl Session {
                     leader,
                     civilization,
                     rank: ranks[place],
-                    won: *pid == winner,
+                    won: winner == Some(*pid),
                 }
             })
             .collect();
-        let victory = self.game.victory_type.clone().unwrap_or_default();
+        let victory = self.game.victory_label().unwrap_or_default();
         let Some(updated) = crate::league::record_ranked_game(
             &dir,
             &seats,
@@ -3030,7 +3113,7 @@ impl Session {
         let mut steps = Vec::new();
         for _ in 0..count.clamp(1, 12) {
             steps.push(self.spectator_step());
-            if self.game.winner.is_some() {
+            if self.game.is_finished() {
                 break;
             }
         }
@@ -3126,23 +3209,23 @@ impl Session {
             |limit| limit.saturating_sub(self.game.turn).saturating_add(1),
         );
         for _ in 0..turns.min(remaining) {
-            if self.game.winner.is_some() || !self.game.players[0].alive {
+            if self.game.is_finished() || !self.game.players[0].alive {
                 break;
             }
             self.ais[0].take_turn(&mut self.game, 0);
-            if self.game.current == 0 && self.game.winner.is_none() {
+            if self.game.current == 0 && !self.game.is_finished() {
                 let _ = self.game.apply(0, &Action::EndTurn);
             }
             let g = &mut self.game;
             let mut guard = 0;
-            while g.winner.is_none()
+            while !g.is_finished()
                 && g.current != 0
                 && g.players[0].alive
                 && guard < 2 * g.players.len()
             {
                 let pid = g.current;
                 self.ais[pid].take_turn(g, pid);
-                if g.current == pid && g.winner.is_none() {
+                if g.current == pid && !g.is_finished() {
                     let _ = g.apply(pid, &Action::EndTurn);
                 }
                 guard += 1;
@@ -3167,14 +3250,14 @@ impl Session {
         if !self.params.spectate {
             let g = &mut self.game;
             let mut guard = 0;
-            while g.winner.is_none()
+            while !g.is_finished()
                 && g.current != 0
                 && g.players[0].alive
                 && guard < 2 * g.players.len()
             {
                 let pid = g.current;
                 self.ais[pid].take_turn(g, pid);
-                if g.current == pid && g.winner.is_none() {
+                if g.current == pid && !g.is_finished() {
                     let _ = g.apply(pid, &Action::EndTurn);
                 }
                 guard += 1;
@@ -3194,14 +3277,14 @@ impl Session {
         if matches!(action, Action::EndTurn) {
             let g = &mut self.game;
             let mut guard = 0;
-            while g.winner.is_none()
+            while !g.is_finished()
                 && g.current != 0
                 && g.players[0].alive
                 && guard < 2 * g.players.len()
             {
                 let pid = g.current;
                 self.ais[pid].take_turn(g, pid);
-                if g.current == pid && g.winner.is_none() {
+                if g.current == pid && !g.is_finished() {
                     let _ = g.apply(pid, &Action::EndTurn);
                 }
                 guard += 1;
@@ -3311,6 +3394,8 @@ fn list_saves() -> Vec<Value> {
                 "difficulty": game.difficulty,
                 "speed": game.game_speed.id(),
                 "winner": game.winner,
+                "finished": game.is_finished(),
+                "draw": game.is_draw(),
                 "bytes": raw.len(),
             }))
         })
@@ -3493,7 +3578,7 @@ fn major_teams(game: &Game) -> Vec<Option<usize>> {
 }
 
 /// The stock opening world: four majors playing themselves out on the Tiny
-/// Tennis Ball globe.
+/// Tennis Ball globe, under simultaneous turns.
 ///
 /// This is the one description of "the game nobody has decided anything
 /// about yet". The browser build opens every civvis.ai visit on it (see
@@ -3514,6 +3599,12 @@ fn stock_opening_params(seed: u64) -> Params {
         base_ruleset: BaseRuleset::Civ6,
         start_era: 0,
         future_era: FutureEra::Classic,
+        // The product is sequential, full stop: every world this server
+        // rolls — watched or played — runs the one-seat-at-a-time regime,
+        // and no request can pick anything else. The simultaneous driver
+        // stays in the engine for research runs that launch with
+        // `--turn-structure simultaneous`; it is simply not selectable
+        // from here.
         turn_structure: TurnStructure::Sequential,
         map_script: MapScript::TeninsBall,
         map_topology,
@@ -3528,6 +3619,15 @@ fn stock_opening_params(seed: u64) -> Params {
             domination: true,
             score: true,
         },
+        // The shipped Mercy Rule default: a game ends the moment one seat's
+        // live win odds reach 95%. docs/ADJUDICATION.md holds the measured
+        // agreement ladder behind the setup options.
+        mercy_rule: Some(0.95),
+        required_victory_types: 1,
+        // The stock world is not an arena, so this is carried rather than
+        // read. It still ships the mode's own defaults, so that picking
+        // Tactics in the lobby needs no other setting changed.
+        tactics: TacticsRules::default(),
         num_city_states: size.default_city_states,
         spectate: true,
         difficulty: "prince".to_string(),
@@ -3584,6 +3684,8 @@ fn simulation_settings(params: &Params) -> Value {
         "leader_pool": params.leader_pool.id(),
         "teams": params.teams,
         "victories": victories,
+        "mercy_rule": params.mercy_rule,
+        "required_victory_types": params.required_victory_types,
     })
 }
 
@@ -3724,15 +3826,11 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(era) = request["future_era"].as_str().and_then(future_era_from_id) {
         p.future_era = era;
     }
-    // The turn structure follows the same refuse-unknown contract. Whether a
-    // simultaneous request can be *honoured* also depends on who is seated,
-    // which the end of this function settles once every field has landed.
-    if let Some(v) = request["turn_structure"]
-        .as_str()
-        .and_then(crate::setup::turn_structure_from_id)
-    {
-        p.turn_structure = v;
-    }
+    // The turn structure is deliberately absent from this ladder: the
+    // product is hard-committed to sequential turns, so a request cannot
+    // select the regime at all. A world only plays simultaneous when the
+    // server itself was launched into it (`--turn-structure` on a research
+    // build), and the base params carry that through restarts below.
     if let Some(v) = request["map_script"].as_str().and_then(MapScript::from_id) {
         p.map_script = v;
         // `planet` used to name a world type; it now names a shape. A client
@@ -3740,6 +3838,20 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         // used to mean, so the shape comes along with the type.
         if request["map_script"].as_str() == Some("planet") {
             p.map_topology = MapTopology::Planet;
+        }
+        // The Tactics planet has a deliberately custom globe size rather than
+        // one of the ordinary Civ size ladder's rectangles. A browser sends
+        // the dimensions explicitly, but direct clients still get the same
+        // small world when they name the script alone.
+        if v.is_planet_battlefield()
+            && request["width"].as_i64().is_none()
+            && request["height"].as_i64().is_none()
+        {
+            if let Some(size) = BATTLEFIELD_SIZES.iter().find(|size| size.script == v) {
+                p.width = size.width;
+                p.height = size.height;
+                p.map_topology = size.topology;
+            }
         }
     }
     if let Some(v) = request["map_topology"].as_str().and_then(MapTopology::from_id) {
@@ -3819,6 +3931,51 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
             }
         }
     }
+    // A present key always wins, including an explicit null for "no mercy";
+    // an absent key keeps the stock default, so clients that predate the
+    // option still get the shipped 95% rule. The band rejects thresholds a
+    // typo could smuggle in: below 0.5 a "leader" is not even favoured.
+    if let Some(value) = request.as_object().and_then(|o| o.get("mercy_rule")) {
+        p.mercy_rule = value.as_f64().filter(|v| (0.5..1.0).contains(v));
+    }
+    if let Some(n) = request["required_victory_types"].as_u64() {
+        p.required_victory_types = (n as usize).clamp(1, VictoryConditions::NAMES.len());
+    }
+    // The Tactics economy. Each figure is independent, so a lobby that moves
+    // one leaves the rest at the stock grant, and every one of them is
+    // clamped rather than trusted: these arrive from the same request body
+    // as everything else above.
+    if let Some(n) = request["tactics_cities"].as_u64() {
+        p.tactics.cities = n.min(1) as u8;
+    }
+    for (key, field) in [
+        ("tactics_production", 0),
+        ("tactics_gold", 1),
+        ("tactics_turns_per_tech", 2),
+    ] {
+        let Some(n) = request[key].as_u64() else { continue };
+        match field {
+            0 => p.tactics.production = n.min(u64::from(TacticsRules::MAX_YIELD)) as u32,
+            1 => p.tactics.gold = n.min(u64::from(TacticsRules::MAX_YIELD)) as u32,
+            _ => {
+                p.tactics.turns_per_tech =
+                    n.min(u64::from(TacticsRules::MAX_TURNS_PER_TECH)) as u32
+            }
+        }
+    }
+    if let Some(n) = request["tactics_best_of"].as_u64() {
+        p.tactics.best_of = n.min(u64::from(TacticsRules::MAX_BEST_OF)) as u32;
+    }
+    if let Some(n) = request["tactics_turn_limit"].as_u64() {
+        p.tactics.turn_limit = n.min(u64::from(u32::MAX)) as u32;
+    }
+    if let Some(on) = request["tactics_unique_units"].as_bool() {
+        p.tactics.unique_units = on;
+    }
+    if let Some(on) = request["tactics_fog"].as_bool() {
+        p.tactics.fog = on;
+    }
+    p.tactics = p.tactics.sanitized();
     // Advanced clients can still deliberately override individual stock
     // settings by sending them alongside num_players.
     if let Some(v) = request["width"].as_i64() {
@@ -3861,6 +4018,40 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
             // asked for a specific one in the same request.
             p.max_turns = requested_turn_limit(request).unwrap_or(spec.turns);
         }
+    }
+    // A Tactics map seats no city-states. The bounded battlefield is flat by
+    // construction; the Tactics planet stays Planet so its two cities can be
+    // placed on opposite sides of the globe. This lands after every override
+    // above so the published next-game settings honestly describe the game
+    // that will start; the engine enforces both again when the world is built.
+    // A later request that moves the map back to a world restores the size
+    // profile's city-states through its own `num_players` stamp.
+    if p.map_script.is_battlefield() {
+        p.map_topology = if p.map_script.is_planet_battlefield() {
+            MapTopology::Planet
+        } else {
+            MapTopology::Flat
+        };
+        p.num_city_states = 0;
+        // And it keeps the selected battle clock rather than a civilization's
+        // five hundred turns. An explicit general `turn_limit` in the same
+        // request still wins, for direct clients that deliberately override
+        // the Tactics menu.
+        if requested_turn_limit(request).is_none() {
+            p.max_turns = p.tactics.turn_limit;
+        }
+        // A battle is decided by the battle. Domination is the lane the last
+        // army standing arrives through. The clock is not a score lane: if
+        // both armies survive it, neither won and the battle is a draw.
+        p.victory_conditions = VictoryConditions {
+            science: false,
+            culture: false,
+            religious: false,
+            diplomatic: false,
+            domination: true,
+            score: false,
+        };
+        p.required_victory_types = 1;
     }
     // Only a spectated table plays the simultaneous regime. A human seat is
     // consulted live, one seat at a time — sequential by construction — so
@@ -3968,13 +4159,20 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 std::thread::sleep(Duration::from_millis(300));
                 continue;
             }
-            if s.game.winner.is_some() {
+            if s.game.is_finished() {
                 let t0 = *over_since.get_or_insert_with(Instant::now);
                 let left = final_countdown_ms(&sh)
                     .saturating_sub(t0.elapsed().as_millis() as u64);
                 sh.restart_in.store(left, Ordering::Relaxed);
                 if left == 0 {
-                    s.start_automatic_next_game(sh.take_next_game_params());
+                    // A Tactics match is a series, and the series outlives
+                    // the battle: score this one and set the next one's sides
+                    // before the world it was played on is replaced.
+                    let queued = sh
+                        .take_next_game_params()
+                        .or_else(|| s.params.tactics.best_of.gt(&1).then(|| s.params.clone()));
+                    let queued = sh.advance_match(&s.game, queued);
+                    s.start_automatic_next_game(queued);
                     sh.current_seed.store(s.game.seed, Ordering::Relaxed);
                     sh.adopt_live_params(&s.params);
                     over_since = None;
@@ -3996,7 +4194,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 sh.restart_in.store(u64::MAX, Ordering::Relaxed);
                 let step_started = Instant::now();
                 let turn_before = s.game.turn;
-                let finished_before = s.game.winner.is_some();
+                let finished_before = s.game.is_finished();
                 s.simultaneous_jobs = simultaneous_jobs_for(pace);
                 let pid = s.step_quietly();
                 turn_compute_us += step_started.elapsed().as_micros() as u64;
@@ -4011,7 +4209,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 // world" and only then began counting. The viewer must get
                 // every millisecond of the selected window to choose one more
                 // turn.
-                if s.game.winner.is_some() {
+                if s.game.is_finished() {
                     over_since = Some(Instant::now());
                     sh.restart_in
                         .store(final_countdown_ms(&sh), Ordering::Relaxed);
@@ -4106,6 +4304,21 @@ fn decorate(o: &mut Value, sh: &Shared) {
         // instead of using their one-second long-poll cadence as a clock.
         o["restart_in_ms"] = json!(r);
         o["restart_in"] = json!(r.div_ceil(1000));
+    }
+    // The match this battle belongs to, when the arena is being played as a
+    // series. Absent for a single battle, so a viewer that finds it knows a
+    // scoreline is worth showing.
+    if let Some(series) = sh.match_series() {
+        o["tactics_match"] = json!({
+            "best_of": series.best_of,
+            "wins_needed": series.wins_needed(),
+            "played": series.played(),
+            "wins": series.wins,
+            "drawn": series.drawn,
+            "scoreline": series.scoreline(),
+            "winner": series.winner(),
+            "decided": series.decided(),
+        });
     }
     o["pace"] = json!(sh.pace_ms.load(Ordering::Relaxed));
     o["between_game_countdown_ms"] =
@@ -4332,7 +4545,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 &json!({
                     "turn": game.turn,
                     "winner": game.winner,
+                    "finished": game.is_finished(),
+                    "draw": game.is_draw(),
                     "victory_type": game.victory_type,
+                    // How that result is denoted, so a supervisor reading the
+                    // cheap endpoint can report a Mercy Rule ending by the
+                    // lane it ended on rather than by the bare word. Same
+                    // field, same meaning, as the one `/state` publishes.
+                    "victory_label": game.victory_label(),
                     "spectate": session.params.spectate,
                     // Published frames no viewer ever drew. At Blitz and
                     // slower this counts player turns, not only round turns.
@@ -4581,7 +4801,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "base_rulesets": BASE_RULESETS,
                     "start_eras": START_ERAS,
                     "future_eras": FUTURE_ERAS,
-                    "map_scripts": CIV6_MAP_SCRIPTS,
+                    // The Civ mode's worlds and the Tactics mode's arenas are
+                    // separate menus cut from the one authoritative roster:
+                    // a battlefield is not a world a Civ game should offer.
+                    "map_scripts": world_map_scripts(),
+                    "battlefield_scripts": battlefield_map_scripts(),
+                    "battlefield_sizes": BATTLEFIELD_SIZES,
                     "map_topologies": MAP_TOPOLOGIES,
                     "map_poles": MAP_POLES,
                     "game_speeds": CIV6_GAME_SPEEDS,
@@ -4981,8 +5206,10 @@ mod tests {
         default_setup_json, generated_ai_name, simulation_settings, stock_opening_params,
     };
     use crate::setup::{
-        future_era_from_id, start_era_from_id, BaseRuleset, FutureEra, GameSpeed, MapPoles,
-        MapScript, MapSize, MapTopology, TurnStructure, MAP_POLES,
+        battlefield_map_scripts, future_era_from_id, start_era_from_id, world_map_scripts,
+        TacticsRules,
+        BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology,
+        TurnStructure, BATTLEFIELD_SIZES, MAP_POLES,
     };
     use serde_json::{json, Value};
     use std::io::{Read, Write};
@@ -5065,50 +5292,29 @@ mod tests {
         for contract in [
             "DISPLAY_RESOURCE_CAPS_STORAGE_KEY",
             "fetchJSON(\"/machine-metrics\", {cache: \"no-store\"}, 3000)",
-            "Prefer Performance resolution",
+            "Prefer the Fast preset",
             "Machine telemetry is unavailable here.",
         ] {
             assert!(EMBEDDED_INDEX.contains(contract), "missing display load contract: {contract}");
         }
     }
 
-    /// Lightning and Blitz resolve a step faster than an eye can find the
-    /// token that took it, so a watcher can ask each unit's wake to linger a
-    /// configured beat after the move lands. Pin the whole chain: the
-    /// control, the persisted preference, the recorded wake, the lingering
-    /// painter, and the ticker that keeps a fading wake animating.
-    #[test]
-    fn browser_lets_a_watcher_keep_unit_trails_lingering() {
-        for contract in [
-            "id=\"unittrails\" aria-label=\"Unit trail linger\"",
-            "<option value=\"0\" selected>Move only</option>",
-            "<option value=\"200\">Linger 0.2s</option>",
-            "<option value=\"500\">Linger 0.5s</option>",
-            "<option value=\"1000\">Linger 1s</option>",
-            "<option value=\"2000\">Linger 2s</option>",
-            "const UNIT_TRAIL_LINGER_STORAGE_KEY = \"civvis-unit-trail-linger\";",
-            "const UNIT_TRAIL_LINGER_VALUES = [0, 200, 500, 1000, 2000];",
-            "function setUnitTrailLinger(value) {",
-            "trails.onchange = () => setUnitTrailLinger(trails.value);",
-            "function drawLingeringUnitTrails(unitAlpha, now) {",
-            "drawLingeringUnitTrails(unitAlpha, now);",
-            "anim.trails.length > 0 ||",
-        ] {
-            assert!(
-                EMBEDDED_INDEX.contains(contract),
-                "unit trail linger contract is missing: {contract}"
-            );
-        }
-    }
-
-    /// The tail that outlives the wake: the engine's walked-route ledger,
+    /// The one movement-history control: the engine's walked-route ledger,
     /// held on the map for a chosen number of turns and traced tile by tile.
-    /// Pin the whole chain: the control under Watch pace, the persisted
-    /// preference, the turn-aged painter behind the empire-lens gate the
-    /// wake shares, and the ledger route that lets a spectator tween walk
-    /// the exact tiles instead of teleporting a multi-hex step.
+    /// Turn tails replaced the wall-clock wake linger (#1308) outright — a
+    /// turn is the unit fast watching actually measures in — so this also
+    /// pins the linger's absence. Pin the whole chain: the control under
+    /// Watch pace, the persisted preference, the turn-aged painter behind
+    /// the empire-lens gate, and the ledger route that lets a spectator
+    /// tween walk the exact tiles instead of teleporting a multi-hex step.
     #[test]
     fn browser_traces_each_units_walked_route_for_n_turns() {
+        for gone in ["unittrails", "UNIT_TRAIL_LINGER", "drawLingeringUnitTrails"] {
+            assert!(
+                !EMBEDDED_INDEX.contains(gone),
+                "the retired wake linger left {gone} behind"
+            );
+        }
         for contract in [
             "id=\"unittail\" aria-label=\"Unit tail turns\"",
             "<option value=\"0\">0 (no tail)</option>",
@@ -5118,9 +5324,8 @@ mod tests {
             "const UNIT_TAIL_TURNS_MAX = 5;",
             "function setUnitTailTurns(value) {",
             "tail.onchange = () => setUnitTailTurns(tail.value);",
-            "if (mapLens !== \"empire\") {",
+            "if (mapLens !== \"empire\") drawUnitMovementTails(unitAlpha);",
             "function drawUnitMovementTails(unitAlpha) {",
-            "drawUnitMovementTails(unitAlpha);",
             "function drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha) {",
             "if (!empireLens) drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha);",
             "state.unit_move_trails",
@@ -5130,6 +5335,33 @@ mod tests {
             assert!(
                 EMBEDDED_INDEX.contains(contract),
                 "unit movement tail contract is missing: {contract}"
+            );
+        }
+    }
+
+    /// A route is drawn in its owner's jersey — the primary down the middle,
+    /// the secondary as the hairline that outlines it — and not in the dark
+    /// casing that used to carry both layers. With several empires walking at
+    /// once, whose route a line is outranks every other thing the line can
+    /// say, so both painters and the in-flight wake take the pair together.
+    #[test]
+    fn browser_paints_every_movement_trail_in_its_owners_jersey() {
+        for contract in [
+            "function strokeUnitTrail(points, color, trim, alpha) {",
+            "function strokeUnitTailRoute(points, color, trim, alpha) {",
+            "function strokePlanetTailRoute(points, color, trim, alpha) {",
+            "strokeUnitTrail(trailPoints, pcol(u.owner), pcol2(u.owner),",
+            "strokeUnitTailRoute(points, pcol(trail.owner), pcol2(trail.owner),",
+            "const color = pcol(trail.owner), trim = pcol2(trail.owner);",
+            "if (run.length > 1) strokePlanetTailRoute(run, color, trim, alpha);",
+            // Both layers ride the same head-to-tail ramp, so a fading route
+            // stays two jersey colours instead of collapsing to its outline.
+            "function trailRamp(points, hex, from, to) {",
+            "const edge = trailRamp(points, trim, \"66\", \"e6\");",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(contract),
+                "movement trail jersey contract is missing: {contract}"
             );
         }
     }
@@ -5301,7 +5533,7 @@ mod tests {
         let mut sequence = 0;
         let mut frames = Vec::new();
         let mut movement_seen = false;
-        while session.game.turn == opening_turn && session.game.winner.is_none() {
+        while session.game.turn == opening_turn && !session.game.is_finished() {
             let acting = session.game.current;
             let positions = session
                 .game
@@ -5310,7 +5542,7 @@ mod tests {
                 .map(|(id, unit)| (*id, (unit.owner, unit.pos)))
                 .collect::<std::collections::BTreeMap<_, _>>();
             let turn_before = session.game.turn;
-            let finished_before = session.game.winner.is_some();
+            let finished_before = session.game.is_finished();
             let (stepped, _) = session.step();
             assert_eq!(stepped, acting);
             seen.push(stepped);
@@ -5345,7 +5577,7 @@ mod tests {
             );
             assert_eq!(
                 lightning_boundary,
-                session.game.turn != turn_before || session.game.winner.is_some(),
+                session.game.turn != turn_before || session.game.is_finished(),
                 "Lightning should publish only the round/result boundary"
             );
         }
@@ -5436,6 +5668,17 @@ mod tests {
     }
 
     #[test]
+    fn a_draw_is_a_finished_spectator_frame_without_a_winner() {
+        let mut game = Session::new(current()).game;
+        game.turn = 51;
+        game.victory_type = Some(crate::game::DRAW_RESULT.to_string());
+        assert!(game.winner.is_none());
+        let frame = spectator_frame(&game, 9);
+        assert!(frame.finished);
+        assert!(spectator_step_completes_frame(0, game.turn, false, &game));
+    }
+
+    #[test]
     fn a_mid_turn_victory_wakes_the_waiting_state_request_immediately() {
         let mut session = Session::new(current());
         session.game.turn = 7;
@@ -5446,6 +5689,7 @@ mod tests {
             supervisor_request: Mutex::new(None),
             live_params: Mutex::new(session.params.clone()),
             next_game_params: Mutex::new(session.take_resumed_next_game_params()),
+        match_series: Mutex::new(None),
             session: Mutex::new(session),
             pace_ms: AtomicU64::new(0),
             between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
@@ -5950,7 +6194,7 @@ mod tests {
     fn next_painted_state(viewer: &str, state: &Value) -> String {
         let seed = state["seed"].as_u64().expect("a world");
         let turn = state["turn"].as_u64().expect("a turn");
-        let finished = u8::from(!state["winner"].is_null());
+        let finished = u8::from(state["finished"].as_bool().unwrap_or(false));
         let frame = state["frame_sequence"].as_u64().expect("a frame sequence");
         format!(
             "/state?painted={turn}&world={seed}&finished={finished}&frame={frame}\
@@ -6984,7 +7228,7 @@ mod tests {
         // both for the simulation gate and for the missed-frame audit.
         assert!(EMBEDDED_INDEX.contains("paintedFrame = {seed:st.seed, turn:st.turn,"));
         assert!(EMBEDDED_INDEX
-            .contains("finished:st.winner !== null && st.winner !== undefined"));
+            .contains("finished:gameFinished(st)"));
         assert!(EMBEDDED_INDEX
             .contains("&frame=${paintedFrame.sequence}"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/state\" + paintedQuery())"));
@@ -7350,7 +7594,7 @@ mod tests {
                 per_turn.push(std::mem::take(&mut this_turn));
                 turn = session.game.turn;
             }
-            if session.game.winner.is_some() {
+            if session.game.is_finished() {
                 break;
             }
         }
@@ -7550,27 +7794,187 @@ mod tests {
         assert!(state.get("simultaneous").is_none());
     }
 
+    /// The product is hard-committed to sequential turns, so the regime is
+    /// not a request's to choose: a `turn_structure` field is ignored for
+    /// watched and played tables alike. Only the base params carry it — a
+    /// research server launched into the simultaneous regime keeps it
+    /// across restarts, and a human seat still downgrades to sequential.
     #[test]
-    fn new_game_carries_the_turn_structure_for_a_watched_table_only() {
+    fn a_request_cannot_select_the_turn_structure() {
         let mut spectated = current();
         spectated.spectate = true;
         let asked = new_game_params(&spectated, &json!({"turn_structure": "simultaneous"}));
-        assert_eq!(asked.turn_structure, TurnStructure::Simultaneous);
-        // An unknown id leaves the setting where it was, like every rung.
-        let nonsense = new_game_params(&asked, &json!({"turn_structure": "psychic"}));
-        assert_eq!(nonsense.turn_structure, TurnStructure::Simultaneous);
-        let back = new_game_params(&asked, &json!({"turn_structure": "sequential"}));
-        assert_eq!(back.turn_structure, TurnStructure::Sequential);
-        // A game with a human seat is sequential by construction: the rest
-        // of such a request lands, the regime does not.
+        assert_eq!(asked.turn_structure, TurnStructure::Sequential);
         let played = new_game_params(&current(), &json!({"turn_structure": "simultaneous"}));
         assert_eq!(played.turn_structure, TurnStructure::Sequential);
+
+        // A research build's simultaneous world survives a restart request
+        // that never mentions the regime, and a seated human still gets the
+        // sequential game `play` would have handed them.
+        let mut research = current();
+        research.spectate = true;
+        research.turn_structure = TurnStructure::Simultaneous;
+        let restarted = new_game_params(&research, &json!({"players": 5}));
+        assert_eq!(restarted.turn_structure, TurnStructure::Simultaneous);
+        let seated = new_game_params(&research, &json!({"spectate": false}));
+        assert_eq!(seated.turn_structure, TurnStructure::Sequential);
+    }
+
+    /// A battlefield request is an arena, whatever else it asks for: the
+    /// shape comes back flat — a globe has no opposite corners — the
+    /// city-states come back zero, and the explicit arena dimensions survive
+    /// the size ladder that `num_players` stamps. Leaving Tactics restores
+    /// the size profile's own city-states through the next `num_players`.
+    #[test]
+    fn a_battlefield_request_is_flat_bounded_and_without_city_states() {
+        let tactics = new_game_params(
+            &current(),
+            &json!({
+                "num_players": 2, "map_script": "battlefield",
+                "map_topology": "planet", "width": 11, "height": 10,
+            }),
+        );
+        assert_eq!(tactics.map_script, MapScript::Battlefield);
+        assert_eq!(tactics.map_topology, MapTopology::Flat);
+        assert_eq!((tactics.width, tactics.height), (11, 10));
+        assert_eq!(tactics.num_city_states, 0);
+        assert_eq!(tactics.num_players, 2);
+
+        let back = new_game_params(&tactics, &json!({
+            "num_players": 2, "map_script": "pangaea",
+        }));
+        assert_eq!(back.map_script, MapScript::Pangaea);
+        assert_eq!(
+            back.num_city_states,
+            MapSize::for_players(2).default_city_states,
+            "leaving Tactics must restore the size profile's city-states"
+        );
+    }
+
+    #[test]
+    fn a_tactics_planet_request_keeps_its_small_globe() {
+        let planet = new_game_params(
+            &current(),
+            &json!({"num_players": 2, "map_script": "tactics_planet"}),
+        );
+        assert_eq!(planet.map_script, MapScript::TacticsPlanet);
+        assert_eq!(planet.map_topology, MapTopology::Planet);
+        assert_eq!((planet.width, planet.height), (40, 18));
+        assert_eq!(planet.num_city_states, 0);
+    }
+
+    /// The match settings reach the server from the lobby the same way the
+    /// economy grants do, and are normalized rather than trusted.
+    #[test]
+    fn a_match_request_is_an_odd_series_and_a_roster_choice() {
+        let ask = |body: Value| new_game_params(&current(), &body);
+
+        let match_of_seven = ask(json!({
+            "num_players": 2, "map_script": "battlefield",
+            "tactics_best_of": 7, "tactics_unique_units": true,
+            "tactics_turn_limit": 150,
+        }));
+        assert_eq!(match_of_seven.tactics.best_of, 7);
+        assert!(match_of_seven.tactics.unique_units);
+        assert_eq!(match_of_seven.tactics.turn_limit, 150);
+        assert_eq!(match_of_seven.max_turns, 150);
+
+        // An even request is rounded up to the odd series above it, and an
+        // absurd one is capped.
+        assert_eq!(
+            ask(json!({"map_script": "battlefield", "tactics_best_of": 4})).tactics.best_of,
+            5
+        );
+        assert_eq!(
+            ask(json!({"map_script": "battlefield", "tactics_best_of": 10_000})).tactics.best_of,
+            TacticsRules::MAX_BEST_OF
+        );
+        assert_eq!(
+            ask(json!({"map_script": "battlefield", "tactics_best_of": 0})).tactics.best_of,
+            1
+        );
+        assert_eq!(
+            ask(json!({"map_script": "battlefield", "tactics_turn_limit": 149}))
+                .tactics
+                .turn_limit,
+            150,
+            "a hand-written deadline uses the closest published option"
+        );
+        assert_eq!(
+            ask(json!({
+                "map_script": "battlefield",
+                "tactics_turn_limit": 200,
+                "max_turns": 73,
+            }))
+            .max_turns,
+            73,
+            "the explicit general override remains authoritative"
+        );
+
+        // Silence keeps the stock setup: one battle, and the identical
+        // roster on both sides, which is what the mode claims to be.
+        let stock = ask(json!({"num_players": 2, "map_script": "battlefield"}));
+        assert_eq!(stock.tactics.best_of, 1);
+        assert_eq!(stock.tactics.turn_limit, 100);
+        assert_eq!(stock.max_turns, 100);
+        assert!(!stock.tactics.unique_units);
+        assert_eq!(stock.tactics, TacticsRules::default());
+    }
+
+    /// The lobby's two map menus are cut from the one authoritative roster:
+    /// the Civ mode offers every world and no arena, the Tactics mode offers
+    /// the battlefield, and a battlefield size is exactly the fighting ground
+    /// its name advertises — the arena is bounded by its own topology rather
+    /// than by a column of sea.
+    #[test]
+    fn the_map_menus_split_worlds_from_battlefields() {
+        assert!(world_map_scripts()
+            .iter()
+            .all(|spec| !spec.script.is_battlefield()));
+        assert_eq!(
+            world_map_scripts().len() + battlefield_map_scripts().len(),
+            crate::setup::CIV6_MAP_SCRIPTS.len()
+        );
+        assert!(battlefield_map_scripts()
+            .iter()
+            .all(|spec| spec.script.is_battlefield()));
+        assert_eq!(battlefield_map_scripts()[0].id, "battlefield");
+        let sizes = serde_json::to_value(BATTLEFIELD_SIZES).expect("battlefield sizes serialize");
+        assert_eq!(sizes[0]["id"], json!("10x10"));
+        assert_eq!(sizes[0]["width"], json!(10));
+        assert_eq!(sizes[0]["height"], json!(10));
+        assert_eq!(sizes[3]["id"], json!("planet"));
+        assert_eq!(sizes[3]["script"], json!("tactics_planet"));
+        assert_eq!(sizes[3]["topology"], json!("planet"));
+        assert_eq!(sizes[3]["width"], json!(40));
+        assert_eq!(sizes[3]["height"], json!(18));
+        // The lobby swaps its size and map rosters from these lists and
+        // sends the arena's dimensions explicitly.
+        assert!(EMBEDDED_INDEX.contains("RULES.battlefield_sizes"));
+        assert!(EMBEDDED_INDEX.contains("RULES.battlefield_scripts"));
+        assert!(EMBEDDED_INDEX.contains(
+            "...(battlefield ? {width: battlefield.width, height: battlefield.height} : {})"
+        ));
+        // Tactics is a body state beside the other two, and the controls a
+        // battlefield cannot honour are hidden under it.
+        assert!(EMBEDDED_INDEX
+            .contains("document.body.classList.toggle(\"playing-tactics\", tactics);"));
+        assert!(EMBEDDED_INDEX.contains("body.playing-tactics .tactics-hidden { display: none; }"));
+        // An arena is fought over: entering Tactics leaves Domination as its
+        // one victory lane. Its deadline is a draw, not Score. Leaving it
+        // restores the Civ game's own choices.
+        assert!(EMBEDDED_INDEX.contains("function syncBattlefieldVictories(tactics)"));
+        assert!(EMBEDDED_INDEX
+            .contains("box.checked = id === \"domination\";"));
     }
 
     fn current() -> Params {
         Params {
             map_topology: MapTopology::Flat,
             map_poles: MapPoles::Poles,
+            mercy_rule: None,
+            required_victory_types: 1,
+            tactics: TacticsRules::default(),
             base_ruleset: BaseRuleset::Civ6,
             start_era: 0,
             future_era: FutureEra::Classic,
@@ -7934,7 +8338,7 @@ mod tests {
             );
         }
         assert!(EMBEDDED_INDEX.contains(
-            "[\"gamemode\", true], [\"np\", true], [\"mapshape\", true], [\"maptype\", true],"
+            "[\"gamemode\", true], [\"humanplayers\", true], [\"np\", true], [\"mapshape\", true],"
         ));
     }
 
@@ -8252,6 +8656,7 @@ mod tests {
     fn every_game_setting_is_answered_before_a_game_starts() {
         for setting in [
             "baseruleset",
+            "humanplayers",
             "gamemode",
             "startera",
             "futureera",
@@ -8298,7 +8703,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("const settings = selectedSimulationSettings();"));
         assert!(EMBEDDED_INDEX.contains("seed: settings.seed ?? Math.floor(Math.random() * 1e9)"));
         assert!(EMBEDDED_INDEX.contains("const changed = human || (activeSimulationSettingsKey"));
-        assert!(EMBEDDED_INDEX.contains("spectate: gameMode === \"ai_sim\","));
+        assert!(EMBEDDED_INDEX.contains("spectate: humanPlayers === \"ai_sim\","));
         assert!(
             !EMBEDDED_INDEX.contains("num_city_states: cityStates"),
             "the lobby should not send a custom city-state count"
@@ -8512,8 +8917,15 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("RULES.map_sizes.map(size =>"));
         assert!(EMBEDDED_INDEX.contains("RULES.map_scripts.map(script =>"));
         assert!(EMBEDDED_INDEX.contains("RULES.game_speeds.map(speed =>"));
+        assert!(EMBEDDED_INDEX.contains("id=\"humanplayers\""));
+        assert!(EMBEDDED_INDEX.contains(">Human players<"));
         assert!(EMBEDDED_INDEX.contains("id=\"gamemode\""));
-        // The game mode leads the primary path. The advanced ruleset and the
+        assert!(EMBEDDED_INDEX.contains(">Game mode<"));
+        // The Tactics game mode is offered beside Civ, from the markup: the
+        // choice between whole games is not data the server rosters.
+        assert!(EMBEDDED_INDEX.contains("<option value=\"civ\" selected>Civ</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"tactics\">Tactics</option>"));
+        // Who plays leads the primary path. The advanced ruleset and the
         // start-era ladder still come from the server, so a new ruleset — or a
         // rung somebody finally builds — never means editing the markup.
         assert!(EMBEDDED_INDEX.contains("id=\"baseruleset\""));
@@ -8524,8 +8936,20 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("RULES.start_eras.map(era =>"));
         assert!(EMBEDDED_INDEX.contains("base_ruleset: baseRuleset, start_era: startEra,"));
         assert!(
-            EMBEDDED_INDEX.find(">Game mode<") < EMBEDDED_INDEX.find(">Base game ruleset<"),
-            "the game mode must lead the primary setup path"
+            EMBEDDED_INDEX.find(">Human players<") < EMBEDDED_INDEX.find(">Base game ruleset<"),
+            "who plays must lead the primary setup path"
+        );
+        // Which game is being set up decides what every control under it
+        // means — the size roster, the map roster, the victory conditions and
+        // the arena card all follow it — so it is asked before who is playing
+        // it rather than from behind a disclosure most of the way down.
+        assert!(
+            EMBEDDED_INDEX.find(">Game mode<") < EMBEDDED_INDEX.find(">Human players<"),
+            "the game mode must lead the whole setup panel"
+        );
+        assert!(
+            !EMBEDDED_INDEX.contains("data-advanced-order=\"5\""),
+            "the game mode must not be back in the advanced drawer"
         );
         // The eon that used to sit above the era is gone from the lobby, and
         // the ladder it hung off with it.
@@ -8835,17 +9259,19 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("st.seed !== state.seed"));
         assert!(!EMBEDDED_INDEX.contains("id=\"head-newgame\""));
         // The mode still decides whether anyone is watching or playing.
-        assert!(EMBEDDED_INDEX.contains("spectate: gameMode === \"ai_sim\""));
+        assert!(EMBEDDED_INDEX.contains("spectate: humanPlayers === \"ai_sim\""));
         assert!(!EMBEDDED_INDEX.contains("id=\"specchk\""));
         assert!(!EMBEDDED_INDEX.contains("RULES.map_sizes.filter"));
 
         // The lobby's reading order. `#newgame-options` is a two-column grid
         // filled row by row, so document order is the visible reading path:
-        // mode and size, then geography, then era and clock sharing one row,
-        // then victories. The rules, roster, teams, climate and seed stay in
-        // the advanced drawer; the era mods live in the mods drawer.
+        // which game and who plays it, then size and geography, then era and
+        // clock sharing one row, then victories. The rules, roster, teams,
+        // climate, wraparound and seed stay in the advanced drawer; the era
+        // mods live in the mods drawer.
         let order = [
             "gamemode",
+            "humanplayers",
             "np",
             "mapshape",
             "maptype",
@@ -8859,7 +9285,7 @@ mod tests {
         });
         assert!(
             order.windows(2).all(|pair| pair[0] < pair[1]),
-            "lobby order must read mode/size, shape/map, era/speed"
+            "lobby order must read mode/players, size/shape, map/era, speed"
         );
         assert!(EMBEDDED_INDEX.find("id=\"gamespeed\"").unwrap()
             < EMBEDDED_INDEX.find("id=\"victory-options\"").unwrap());
@@ -8867,36 +9293,152 @@ mod tests {
             < EMBEDDED_INDEX.find("id=\"futureera\"").unwrap());
         // The advanced drawer starts with the ruleset, team split and leader
         // roster. The custom table sits under its selection mode, followed by
-        // climate and seed. Human-only leader/difficulty fields remain there
-        // too, so they do not interrupt the primary simulation path.
+        // climate, the flat chart's wraparound and the seed. Human-only
+        // leader/difficulty fields remain there too, so they do not interrupt
+        // the primary simulation path.
         for advanced in [
             "class=\"small game-advanced-setting\" data-advanced-order=\"10\">Base game ruleset",
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"20\">Teams",
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\">Leader pool",
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\">Leader selection",
             "class=\"custom-leader-selection game-advanced-setting civ6-hidden\" data-advanced-order=\"45\"",
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"50\">Thermal distribution",
+            "class=\"small game-advanced-setting civ6-hidden tactics-hidden\" data-advanced-order=\"50\">Thermal distribution",
+            "class=\"overlay-options game-advanced-setting civ6-hidden tactics-hidden\" id=\"flat-map-wrap-settings\"",
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"60\">Map seed",
         ] {
             assert!(EMBEDDED_INDEX.contains(advanced), "missing advanced setting: {advanced}");
         }
+        // The game mode is a lobby control now, not a drawer one.
+        assert!(EMBEDDED_INDEX.contains("class=\"small civ6-hidden\">Game mode"));
         for normal in [
-            "class=\"small civ6-hidden\">World shape",
+            "class=\"small civ6-hidden tactics-hidden\">World shape",
             "class=\"small civ6-hidden\">Start era",
             "class=\"small era-future-setting\">Future era",
             "class=\"victory-options civ6-hidden\" id=\"victory-options\"",
         ] {
             assert!(EMBEDDED_INDEX.contains(normal), "missing normal setting: {normal}");
         }
+        // The endgame rules live *inside* the victory card, not beside it.
+        // Both only mean something against the boxes ticked there, and the
+        // short setup pass re-parents `#victory-options` alone (the
+        // `basic.push` pinned below): a sibling block stays where the markup
+        // put it and is stranded above the settings it qualifies. Walk the
+        // div nesting, since document order alone does not say "within".
+        let card = EMBEDDED_INDEX.find("id=\"victory-options\"").unwrap();
+        let endgame_at = EMBEDDED_INDEX.find("id=\"victory-endgame\"").unwrap();
+        let mut cursor = card;
+        let mut depth = 1usize;
+        let card_end = loop {
+            let open = EMBEDDED_INDEX[cursor..].find("<div").map(|at| cursor + at);
+            let close = EMBEDDED_INDEX[cursor..]
+                .find("</div>")
+                .map(|at| cursor + at)
+                .expect("the victory-conditions card never closes");
+            if open.is_some_and(|open| open < close) {
+                depth += 1;
+                cursor = open.unwrap() + "<div".len();
+                continue;
+            }
+            depth -= 1;
+            if depth == 0 {
+                break close;
+            }
+            cursor = close + "</div>".len();
+        };
+        assert!(
+            card < endgame_at && endgame_at < card_end,
+            "the Mercy Rule and Require-N selects belong inside the victory-conditions card"
+        );
+        // The Mercy Rule ships selected at 95% win odds — the engine-side
+        // default in `stock_opening_params` and this markup must tell the same
+        // story — and the Require-N cap tracks the enabled victory conditions
+        // live in the client.
+        for endgame in [
+            "class=\"victory-endgame civ6-hidden\" id=\"victory-endgame\"",
+            "<option value=\"0.95\" selected>95% win odds</option>",
+            "id=\"requiredvictories\"",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(endgame), "missing endgame setting: {endgame}");
+        }
+        assert!(EMBEDDED_INDEX.contains("function syncRequiredVictoriesCap"));
+        assert!(EMBEDDED_INDEX.contains("required_victory_types: requiredVictories,"));
         assert!(EMBEDDED_INDEX.contains(
-            "[\"gamemode\", true], [\"np\", true], [\"mapshape\", true], [\"maptype\", true],"
+            "[\"gamemode\", true], [\"humanplayers\", true], [\"np\", true], [\"mapshape\", true],"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "[\"startera\", true], [\"gamespeed\", true],"
+            "[\"maptype\", true], [\"startera\", true], [\"gamespeed\", true],"
         ));
+        // Every card the short setup pass shows has to be named here. One
+        // that is not stays where the markup put it while the named ones move
+        // ahead of the advanced drawer, which strands it above the whole form
+        // — the way the endgame rules were stranded until they were nested.
         assert!(EMBEDDED_INDEX.contains(
-            "basic.push(document.getElementById(\"victory-options\"), document.getElementById(\"saves-group\"));"
+            "basic.push(document.getElementById(\"victory-options\"),\n    document.getElementById(\"tactics-options\"), document.getElementById(\"saves-group\"));"
         ));
+        // The arena card: it appears only in Tactics and carries everything
+        // the mode is set up with — whether the field is fogged, its deadline,
+        // the four economy grants, how many battles the match is, and whether
+        // the two civilizations field their own units. The engine reads them
+        // only on a battlefield, so they travel from every lobby
+        // unconditionally. It is named for the mode rather than for the
+        // grants, because the grants are no longer all of it.
+        assert!(EMBEDDED_INDEX.contains(">Tactics settings</h2>"));
+        assert!(EMBEDDED_INDEX.contains(".tactics-only { display: none; }"));
+        assert!(EMBEDDED_INDEX
+            .contains("body.playing-tactics .tactics-only { display: revert; }"));
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"tactics-options tactics-only\" id=\"tactics-options\""
+        ));
+        for arena in [
+            ("tacticsturnlimit", "tactics_turn_limit"),
+            ("tacticscities", "tactics_cities"),
+            ("tacticsproduction", "tactics_production"),
+            ("tacticsgold", "tactics_gold"),
+            ("tacticsturnspertech", "tactics_turns_per_tech"),
+            ("tacticsbestof", "tactics_best_of"),
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("id=\"{}\"", arena.0)),
+                "the arena card is missing the {} control",
+                arena.0
+            );
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("{}: Number(readSetting(\"{}\"))", arena.1, arena.0)),
+                "the {} control must reach the server as {}",
+                arena.0,
+                arena.1
+            );
+        }
+        // Unique units and the fog are the two arena settings that are a
+        // yes/no rather than a figure, so they travel as booleans rather than
+        // through `Number`.
+        assert!(EMBEDDED_INDEX.contains("id=\"tacticsuniqueunits\""));
+        assert!(EMBEDDED_INDEX
+            .contains("tactics_unique_units: readSetting(\"tacticsuniqueunits\") === \"1\","));
+        assert!(EMBEDDED_INDEX.contains("id=\"tacticsfog\""));
+        assert!(EMBEDDED_INDEX.contains("tactics_fog: readSetting(\"tacticsfog\") === \"1\","));
+        // Unfogged is the default: an arena has always shown both commanders
+        // the whole field, and the option is the deliberate departure.
+        assert!(EMBEDDED_INDEX.contains("<option value=\"0\" selected>Off · the whole field</option>"));
+        for limit in TacticsRules::TURN_LIMITS {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("<option value=\"{limit}\"")),
+                "the turn-limit ladder is missing {limit}"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains("<option value=\"100\" selected>100 turns</option>"));
+        // Every offered match length is odd, so wins cannot split evenly.
+        for length in ["1", "3", "5", "7", "11"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("<option value=\"{length}\"")),
+                "the match-length ladder is missing {length}"
+            );
+            assert_eq!(
+                length.parse::<u32>().expect("a match length is a number") % 2,
+                1,
+                "an even match length can be split with nothing left to play"
+            );
+        }
         // Display Settings is a short reading path: observer controls first,
         // then the overlay menus — the panels a viewer reaches for most — then
         // map options, and finally performance.
@@ -8912,12 +9454,14 @@ mod tests {
             }),
             "Display Settings sections should read observer, overlays, map, performance"
         );
-        // Performance options read outward from the one control the viewer can
-        // change: the resolution being drawn at, the map that resolution has to
-        // cover, how fast this browser draws it, and last the simulation behind
-        // it — turn cost, a whole run's projected length, the run on screen, and
-        // the runs this page has already watched end to end.
+        // Performance options read outward from the controls the viewer can
+        // change: the one-word quality-versus-speed preset, the resolution it
+        // picks, the map that resolution has to cover, how fast this browser
+        // draws it, and last the simulation behind it — turn cost, a whole
+        // run's projected length, the run on screen, and the runs this page
+        // has already watched end to end.
         let performance_markers = [
+            "id=\"performancepreset\"",
             "id=\"renderresolution\"",
             "id=\"performance-canvas-value\"",
             "id=\"performance-workload-value\"",
@@ -8940,9 +9484,38 @@ mod tests {
             performance_markers.windows(2).all(|pair| {
                 EMBEDDED_INDEX.find(pair[0]).unwrap() < EMBEDDED_INDEX.find(pair[1]).unwrap()
             }),
-            "performance options should read resolution, canvas, workload, render, slow \
-             frames, then the simulation rows"
+            "performance options should read preset, resolution, canvas, workload, render, \
+             slow frames, then the simulation rows"
         );
+        // The preset is one word for the quality-versus-speed trade; the
+        // resolution names the broadcast tiers as picture heights, and the
+        // display's native grid is always the ceiling — never a multiplier
+        // table the viewer has to translate. A hand-picked resolution that
+        // matches no preset reads back as Custom instead of impersonating one.
+        for preset in ["quality", "balanced", "fast", "custom"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("<option value=\"{preset}\"")),
+                "performance preset should offer {preset}"
+            );
+        }
+        for tier in ["native", "4320", "2160", "1440", "1080", "720", "480"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("<option value=\"{tier}\"")),
+                "render resolution should offer {tier}"
+            );
+        }
+        for resolution_contract in [
+            "const RENDER_RESOLUTION_LINES = {",
+            "const PERFORMANCE_PRESET_RESOLUTION = {",
+            "const RENDER_RESOLUTION_LEGACY = { balanced: \"1440\", performance: \"720\" };",
+            "return Math.min(displayDpr, lines / Math.max(1, viewHeight));",
+            "function performancePresetFor(resolution) {",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(resolution_contract),
+                "render resolution contract is missing: {resolution_contract}"
+            );
+        }
         // The simulation rows are the reason the panel can answer "how long does
         // a whole game take" at all, and every build must be able to fill them:
         // the published browser build reports no turn cost of its own, so the
@@ -9309,22 +9882,24 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("top: calc(var(--pin-head, 0) * var(--hud-row-pitch));"));
         assert!(EMBEDDED_INDEX.contains("bottom: calc(var(--pin-tail, 0) * var(--hud-row-pitch));"));
         // The standings grow through every civilization shown in the ribbon,
-        // with a two-seat floor that keeps the turn counter visible before
-        // enough rows exist to do so on their own.
-        assert!(EMBEDDED_INDEX.contains("--player-hud-content-height: 106px;"));
+        // with a two-seat floor that keeps the turn counter visible before a
+        // world arrives. The default height still ends at the final row, but a
+        // dragged height answers to nothing except the map area itself: the
+        // old two-fifths ratio and roster-content ceilings are deliberately
+        // absent from the players widget.
         assert!(EMBEDDED_INDEX.contains(
-            "--player-hud-max-height: min(var(--player-hud-content-height), calc(100% - 8px));"
+            "height: min(var(--player-hud-height, 106px), var(--player-hud-max-height));"
         ));
+        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: calc(100% - 8px);"));
+        assert!(EMBEDDED_INDEX.contains("const maxPlayerHeight = Math.round(Math.max(104, height - edge * 2));"));
         assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_MIN_ROWS = 2;"));
         assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_ROW_PITCH = PLAYER_HUD_ROW_HEIGHT + PLAYER_HUD_ROW_GAP;"));
         assert!(EMBEDDED_INDEX.contains("function playerHudRowPitch()"));
         assert!(EMBEDDED_INDEX.contains("return Math.max(PLAYER_HUD_MIN_HEIGHT, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());"));
-        assert!(EMBEDDED_INDEX.contains("maxHeight:playerHudMaxContentHeight"));
-        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38, avoidsSidebar:true"));
+        assert!(EMBEDDED_INDEX.contains("minHeight:PLAYER_HUD_MIN_HEIGHT,\n            avoidsSidebar:true}"));
+        assert!(!EMBEDDED_INDEX.contains("maxHeightRatio"), "the masthead height cap is retired");
+        assert!(!EMBEDDED_INDEX.contains("--player-hud-content-height"), "the roster ceiling is retired");
         assert!(EMBEDDED_INDEX.contains("const requestedHeight = playerHudContentHeight(rows);"));
-        assert!(EMBEDDED_INDEX.contains(
-            "mapArea.style.setProperty(\"--player-hud-content-height\", `${requestedHeight}px`);"
-        ));
         assert!(EMBEDDED_INDEX.contains("if (state && hudLayoutGesture?.name !== \"players\") drawPlayerHud();"));
         assert!(EMBEDDED_INDEX.contains(
             "const playerScroll = hud.querySelector(\".diplomacy-ribbon\")?.scrollTop || 0;"
@@ -9371,6 +9946,35 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "position: absolute; z-index: 1; right: 10px; bottom: 9px;"
         ));
+        // On a globe the minimap frame is square, so a dragged edge has to
+        // carry the other axis with it. The square is settled *while* the
+        // gesture still knows which edges it is not dragging — those edges are
+        // held, and the room they leave bounds the side. Settling it after the
+        // position, as the frame's first square did, silently slid the whole
+        // panel out of its lower-right corner instead of resizing it.
+        assert!(EMBEDDED_INDEX.contains("function squareHudResize(config, box, start, edge, limits)"));
+        for held in [
+            "const holdRight = edge.includes(\"w\") ||",
+            "const holdBottom = edge.includes(\"n\") ||",
+            "const roomX = holdRight ? box.right - minX : maxRight - box.left;",
+            "x:holdRight ? box.right - side : box.left,",
+            "y:holdBottom ? box.bottom - side : box.top,",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(held),
+                "a square resize holds the edges the gesture is not dragging: {held}"
+            );
+        }
+        // Both the live clamp and a restored layout resolve the side through
+        // the one helper, before either measures where the frame sits.
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("width = height = squareHudWidgetSide(config, width, height, maxWidth, maxHeight);")
+                .count(),
+            2,
+            "clampHudWidget and metricsFromSaved share one square resolver"
+        );
+        assert!(EMBEDDED_INDEX.contains("function hudWidgetIsSquare(config) {"));
         assert!(!EMBEDDED_INDEX.contains("--player-hud-width"));
         // Every path keeps its top three plus the player's own civilization
         // when that row is lower in this particular victory race.
@@ -9381,16 +9985,20 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("data-victory-focus=\"${isFocus}\""));
         assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
-        // A masthead row is one line: the lock track, then one flat track per
-        // visible column in the viewer's own order. Heading and rows read the
-        // same list, so the tracks and the cells cannot disagree.
+        // A masthead row is one flat track per visible column in the viewer's
+        // own order — the row lock included, riding in the model on its fixed
+        // track. Heading and rows read the same list, so the tracks and the
+        // cells cannot disagree.
         assert_eq!(
             EMBEDDED_INDEX
-                .matches("grid-template-columns: var(--hud-lock-column, 0px) var(--hud-tracks);")
+                .matches("grid-template-columns: var(--hud-tracks);")
                 .count(),
             2,
             "the heading and every row stand on the same flat track list"
         );
+        assert!(EMBEDDED_INDEX.contains(
+            "{key:\"lock\", label:\"Row lock\", block:\"identity\", min:\"--hud-lock-column\", width:0, fixed:true},"
+        ), "the row lock leads the model on its own fixed track");
         // The values claim their width first and the identity cells flex, so a
         // narrow masthead ellipsizes a name rather than running two figures
         // together. Every data column is a share rather than a pixel count.
@@ -9407,6 +10015,45 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("hud.style.setProperty(\"--hud-table-min\", tableMin);"));
         assert!(EMBEDDED_INDEX.contains("min-width: var(--hud-table-min, 0px);"));
         assert!(EMBEDDED_INDEX.contains("function visiblePlayerHudColumns()"));
+        // NUK is the one column that does not exist for most of a game: no
+        // civilization can hold a device before the first Manhattan Project on
+        // the board is finished, so the shipped twelve value columns above stay
+        // twelve until one is. A column that does not exist is out of the table
+        // *and* off the Display Settings roster — it is not a column the viewer
+        // chose to hide, so a checkbox for it would promise something it cannot
+        // do — and it can never be the last column standing between the viewer
+        // and an empty table.
+        assert!(EMBEDDED_INDEX.contains("function nuclearStandingsInPlay()"));
+        assert!(EMBEDDED_INDEX.contains("return Boolean(state.nuclear_weapons_unlocked) ||"),
+            "the world finishing the research that unlocks devices reveals NUK");
+        assert!(EMBEDDED_INDEX.contains(
+            "player.science_projects?.includes?.(\"manhattan_project\") ||"
+        ), "a finished Manhattan Project is the same news from an older server");
+        assert!(EMBEDDED_INDEX.contains("playerNuclearStockpile(player) > 0));"),
+            "and so is a stockpile that outlived the empire that built it");
+        assert!(EMBEDDED_INDEX.contains(
+            "return Boolean(column) && (!column.exists || column.exists());"
+        ), "every other column exists from turn one and declares no test at all");
+        assert!(EMBEDDED_INDEX.contains(
+            ".filter(column => playerHudColumnExists(column) &&\n      \
+             !playerHudHiddenColumns.has(column.key));"
+        ), "the table shows the columns that exist and that the viewer keeps");
+        assert!(EMBEDDED_INDEX.contains("if (!playerHudColumnExists(column)) return \"\";"),
+            "the Display Settings roster offers no checkbox for a column that cannot appear");
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("PLAYER_HUD_COLUMNS.filter(playerHudColumnExists)")
+                .count(),
+            3,
+            "both all-hidden guards and the roster signature count existing columns only"
+        );
+        // A column can arrive between two frames, and the tracks its cells
+        // stand on are written from the same model — so the repaint that adds
+        // the head has to rewrite them, or the new cell lands in an implicit
+        // track outside the list.
+        assert!(EMBEDDED_INDEX.contains(
+            "  syncPlayerHudColumns();\n  syncHudColumnRoster();"
+        ), "a repaint restates the tracks and the roster the arriving column changed");
         assert!(EMBEDDED_INDEX.contains(
             "const HUD_COLUMN_LAYOUT_STORAGE_KEY = \"civvis-hud-column-layout-v1\";"
         ), "order, visibility and content-fitted floors persist beside the shares");
@@ -9415,8 +10062,11 @@ mod tests {
         // share would undo a dragged column on the next window resize, so no
         // media rule may set either track list or either enclosing track.
         assert!(EMBEDDED_INDEX.contains(
-            "--hud-ident-min: 30px; --hud-ident-num-min: 60px; --hud-ident-odds-min: 76px;"
+            "--hud-ident-min: 30px; --hud-ident-num-min: 60px;"
         ));
+        assert!(EMBEDDED_INDEX.contains(
+            "--hud-odds-min: 27px; --hud-odds-trend-min: 13px;"
+        ), "the three odds columns stand on floors of their own");
         assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-num-min:").count(), 1,
             "the Elo floor is declared once and holds at every width: a full \
              score needs the same room on a laptop as on a wall");
@@ -9425,19 +10075,16 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "hud.style.setProperty(\"--hud-ident-num-min\", floor);"
         ), "a rating longer than the signed five-digit floor raises its shared track");
-        assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-odds-min:").count(), 1,
-            "and so does the two-category odds cell's own floor");
+        // Start, trend and Now are three columns of their own, each with a
+        // labelled, sortable heading of its own.
         assert!(EMBEDDED_INDEX.contains(
-            "grid-template-columns: minmax(0, 1fr) 11px minmax(0, 1fr);"
-        ), "Start and Now flank one fixed-width trend column");
-        assert!(EMBEDDED_INDEX.contains(
-            "playerHudSortHead(\"win_start\", \"START\", \"Win odds at the start of the game\")"
+            "win_start:[\"START\", \"Win odds at the start of the game\", \"numeric\"],"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "playerHudSortHead(\"win_delta\", \"Δ\", \"Change in win odds\", \"odds-trend-head\")"
+            "win_delta:[\"Δ\", \"Change in win odds\", \"odds-trend-head\"],"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "playerHudSortHead(\"win\", \"NOW\", \"Current win odds\")"
+            "win:[\"NOW\", \"Current win odds\", \"numeric\"],"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "elo_delta:[\"Δ\", \"Live Elo position against the living field\", \"numeric\"],"
@@ -9457,7 +10104,7 @@ mod tests {
         fn assert_hud_stat_order(source: &str, section: &str) {
             let expected = [
                 "cities", "population", "food", "production", "science", "culture", "faith", "gold",
-                "military", "wonders", "suzerain", "score",
+                "military", "nukes", "wonders", "suzerain", "score",
             ];
             let mut cursor = 0;
             for key in expected {
@@ -9496,7 +10143,7 @@ mod tests {
             // walks `key:[` anchors rather than quoted keys.
             let expected = [
                 "cities", "population", "food", "production", "science", "culture", "faith",
-                "gold", "military", "wonders", "suzerain", "score",
+                "gold", "military", "nukes", "wonders", "suzerain", "score",
             ];
             let mut cursor = 0;
             for key in expected {
@@ -9552,10 +10199,10 @@ mod tests {
         // width from the column on its left into the column on its right.
         assert!(EMBEDDED_INDEX.contains("const HUD_COLUMN_STORAGE_KEY = \"civvis-hud-columns-v1\";"));
         // Every fact in the player HUD can order its rows. Rank is the first
-        // dedicated standings column and is derived from the score standing,
-        // while Watch-as and lock cells are actions, deliberately outside the
-        // model, so an operator never has to sort a meaningless column just to
-        // reach ELO, a yield, or an active plan.
+        // dedicated standings column and is derived from the score standing.
+        // Watch-as and the row lock ride in the model on fixed tracks — so
+        // they can be hidden or moved like any column — but they are actions,
+        // not facts, and deliberately take no sort target.
         assert!(EMBEDDED_INDEX.contains(
             "...PLAYER_HUD_COLUMNS.filter(column => !column.fixed).map(column => column.key),"
         ), "every fact is sortable; the fixed Watch-as action is not a fact");
@@ -9588,16 +10235,13 @@ mod tests {
             "the NOW Win heading should order by its current estimate");
         assert!(EMBEDDED_INDEX.contains("if (delta > .02) return {symbol:\"↗\", direction:\"up\"};"));
         assert!(EMBEDDED_INDEX.contains("if (delta < -.02) return {symbol:\"↘\", direction:\"down\"};"));
-        for key in ["rank", "civ", "leader", "player", "elo", "elo_delta", "age", "plan"] {
+        for key in [
+            "rank", "civ", "leader", "player", "elo", "elo_delta", "win_start", "win_delta",
+            "win", "age", "plan",
+        ] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("{key}:[")),
                 "the {key} heading should carry a sortable label"
-            );
-        }
-        for key in ["win_start", "win_delta", "win"] {
-            assert!(
-                EMBEDDED_INDEX.contains(&format!("playerHudSortHead(\"{key}\"")),
-                "the {key} heading should be sortable"
             );
         }
         assert!(EMBEDDED_INDEX.contains(
@@ -9815,11 +10459,37 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
         assert!(EMBEDDED_INDEX.contains("const focusBounds = mapFocusBounds();"));
         assert!(EMBEDDED_INDEX.contains("return { min:centered, max:centered };"));
-        // Flat charts expose both wrapping axes as persistent display choices.
-        // East-west starts on, north-south starts off, and both the projected
-        // tile positions and canonical hit-test positions consume the choice.
+        // Flat charts expose both wrapping axes as persistent choices. They
+        // describe the world being set up rather than the panel a viewer
+        // watches from, so they sit in Game setup's advanced drawer and not in
+        // Display Settings' map options. East-west starts on, north-south
+        // starts off, and both the projected tile positions and canonical
+        // hit-test positions consume the choice.
         assert!(EMBEDDED_INDEX.contains("id=\"wrapxchk\" checked"));
         assert!(EMBEDDED_INDEX.contains("id=\"wrapychk\""));
+        // Inside `#newgame-options` and ahead of the drawer the reorder pass
+        // moves it into — which is also what places it after Display Settings'
+        // map options rather than inside them.
+        let wraparound = EMBEDDED_INDEX.find("id=\"flat-map-wrap-settings\"").unwrap();
+        assert!(
+            EMBEDDED_INDEX.find("id=\"newgame-options\"").unwrap() < wraparound
+                && wraparound < EMBEDDED_INDEX.find("id=\"game-advanced-settings\"").unwrap(),
+            "the wraparound choices belong to the game setup panel, not Display Settings"
+        );
+        assert!(
+            EMBEDDED_INDEX.find("id=\"map-options-settings\"").unwrap() < wraparound,
+            "the wraparound choices must not be back in Display Settings"
+        );
+        // A viewer preference inside `#newgame-options` must not stage an
+        // otherwise identical simulation through the panel's delegated change
+        // listener — the same rule the saved mod pack follows.
+        assert!(EMBEDDED_INDEX.contains("const keepInTheViewer = event => event.stopPropagation();"));
+        assert!(EMBEDDED_INDEX.contains(
+            "setFlatMapWrap(\"x\", wrapXBox.checked); keepInTheViewer(event);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "setFlatMapWrap(\"y\", wrapYBox.checked); keepInTheViewer(event);"
+        ));
         assert!(EMBEDDED_INDEX.contains(
             "let FLAT_MAP_WRAP_X = localStorage.getItem(\"civvis-flat-map-wrap-x\") !== \"0\";"
         ));
@@ -10191,9 +10861,10 @@ mod tests {
 
     /// The first world a civvis.ai visitor ever waits on is the smallest
     /// stock one: four majors on the Tiny Tennis Ball globe, sized by the
-    /// shipped table, spectated, at Online speed. The browser build's
-    /// `wasm::opening_params` is this function with the page's seed, so the
-    /// contract is tested here, where the suite actually runs.
+    /// shipped table, spectated, at Online speed, under simultaneous turns.
+    /// The browser build's `wasm::opening_params` is this function with the
+    /// page's seed, so the contract is tested here, where the suite actually
+    /// runs.
     #[test]
     fn the_stock_opening_world_is_the_tiny_tennis_ball_exhibition() {
         let params = stock_opening_params(7);
@@ -10209,7 +10880,20 @@ mod tests {
         assert_eq!(params.num_city_states, size.default_city_states);
         assert_eq!(params.game_speed, GameSpeed::Online);
         assert!(params.spectate);
+        assert_eq!(params.turn_structure, TurnStructure::Sequential);
         assert_eq!(params.seed, 7);
+    }
+
+    /// The product is hard-committed to sequential turns: the stock world
+    /// rolls sequential, and taking a seat in it stays sequential.
+    #[test]
+    fn taking_a_seat_in_the_stock_world_still_plays_sequentially() {
+        let stock = stock_opening_params(0);
+        assert_eq!(stock.turn_structure, TurnStructure::Sequential);
+
+        let seated = new_game_params(&stock, &json!({"spectate": false}));
+        assert!(!seated.spectate);
+        assert_eq!(seated.turn_structure, TurnStructure::Sequential);
     }
 
     /// `/rules` publishes the stock opening setup in the same vocabulary the
@@ -10310,10 +10994,44 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("area.classList.toggle(\"player-hud-compact\", width <= PLAYER_HUD_COMPACT_WIDTH);"));
         assert!(EMBEDDED_INDEX.contains("#maparea.player-hud-compact #playerhud"));
-        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38, avoidsSidebar:true"));
+        assert!(EMBEDDED_INDEX.contains("avoidsSidebar:true}"));
         assert!(EMBEDDED_INDEX.contains(
             "function hudWidgetMinX(config, margin = hudWidgetMargin())"
         ));
+    }
+
+    /// The turn plate's width is the viewer's, through the same seam
+    /// affordance as the command deck's edge: drag it, nudge it with arrow
+    /// keys, double-click it back to the stylesheet's density default. Past
+    /// the split width the plate spends the room sideways rather than
+    /// downward — era and turn counter on one line, the settings below in
+    /// two columns — so widening buys information density instead of
+    /// whitespace. The seam re-renders with the masthead every frame, so the
+    /// press must be caught on the permanent #playerhud element.
+    #[test]
+    fn browser_lets_the_turn_plate_widen_into_two_columns() {
+        for contract in [
+            "const TURN_PLATE_WIDTH_STORAGE_KEY = \"civvis-turn-plate-width-v1\";",
+            "const TURN_PLATE_MIN_WIDTH = 148;",
+            "const TURN_PLATE_SPLIT_WIDTH = 252;",
+            "function applyTurnPlateWidth(width, persist = true) {",
+            "function turnPlateMaxWidth() {",
+            "data-turn-plate-seam role=\"separator\"",
+            "beginTurnPlateSeamGesture(event);",
+            "applyTurnPlateWidth(turnPlateWidth, false);",
+            "grid-template-columns: var(--turn-plate-width, 164px) minmax(0, 1fr);",
+            "var(--turn-plate-width, clamp(148px, 33%, 164px))",
+            "var(--turn-plate-width, 168px)",
+            ".turn-plate-seam {",
+            "#playerhud.turn-plate-wide .victory-turn {",
+            "#playerhud.turn-plate-wide .turn-settings {",
+            "grid-template-columns: repeat(2, minmax(max-content, 1fr)); column-gap: 14px;",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(contract),
+                "turn plate width contract is missing: {contract}"
+            );
+        }
     }
 
     /// Player-row color is reserved for a current war. Friendships and
@@ -11170,6 +11888,8 @@ mod tests {
                 "leader_pool": "historical",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
+                "mercy_rule": null,
+                "required_victory_types": 1,
             })
         );
 
@@ -11243,6 +11963,7 @@ mod tests {
             supervisor_request: Mutex::new(None),
             live_params: Mutex::new(session.params.clone()),
             next_game_params: Mutex::new(session.take_resumed_next_game_params()),
+        match_series: Mutex::new(None),
             session: Mutex::new(session),
             pace_ms: AtomicU64::new(0),
             between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
@@ -11330,6 +12051,8 @@ mod tests {
                 "leader_pool": "historical",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
+                "mercy_rule": null,
+                "required_victory_types": 1,
             })
         );
     }
@@ -12119,7 +12842,7 @@ mod tests {
         // by that game. Its *difficulty* still travels, because that is the one
         // setting the mode exists for.
         assert!(EMBEDDED_INDEX.contains(
-            "...(gameMode === \"ai_sim\"\n            ? (leaderSelection === \"custom\" ? {civs: customCivs} : {})"
+            "...(humanPlayers === \"ai_sim\"\n            ? (leaderSelection === \"custom\" ? {civs: customCivs} : {})"
         ));
         assert!(EMBEDDED_INDEX.contains(
             ": {civs: civ6 || !leader ? [] : [leader], difficulty})"
@@ -12191,7 +12914,7 @@ mod tests {
         // Settings staged for the next simulation describe a spectated world,
         // so they may only adopt that mode while one is on screen.
         assert!(EMBEDDED_INDEX
-            .contains("if (SPEC) document.getElementById(\"gamemode\").value = \"ai_sim\";"));
+            .contains("if (SPEC) document.getElementById(\"humanplayers\").value = \"ai_sim\";"));
     }
 
     /// The verification-only mode plays the other game, so the panel it is
@@ -12217,13 +12940,15 @@ mod tests {
         // Exactly the rows that are not carried, and no others. Difficulty is
         // deliberately absent: it is the setting the mode exists for.
         for row in [
+            "class=\"small civ6-hidden\">Game mode",
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"20\"", // teams
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\"", // leader pool
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\"", // leader selection
             "class=\"custom-leader-selection game-advanced-setting civ6-hidden\"", // custom table
             "class=\"small game-advanced-setting human-setting civ6-hidden\"",
-            "class=\"small civ6-hidden\">World shape",
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"50\"", // thermal
+            "class=\"small civ6-hidden tactics-hidden\">World shape",
+            "class=\"small game-advanced-setting civ6-hidden tactics-hidden\" data-advanced-order=\"50\"", // thermal
+            "class=\"overlay-options game-advanced-setting civ6-hidden tactics-hidden\"", // wraparound
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"60\"", // map seed
             "class=\"small civ6-hidden\">Start era",
             "class=\"victory-options civ6-hidden\"",
@@ -12234,12 +12959,12 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("class=\"small human-setting civ6-hidden\">Difficulty"));
         // The map control becomes the other game's roster rather than a
         // filtered copy of ours; neither list contains the other.
-        assert!(EMBEDDED_INDEX.contains("function syncMapRoster(civ6)"));
+        assert!(EMBEDDED_INDEX.contains("function syncMapRoster(civ6, tactics)"));
         assert!(EMBEDDED_INDEX.contains("const carried = maps.find(map => map.civvis === chosen);"));
         // The one start control is named after the game it starts.
         assert!(EMBEDDED_INDEX.contains("? \"Play Firaxis Civ 6\""));
         assert!(EMBEDDED_INDEX
-            .contains("if (readSetting(\"gamemode\") === \"civ6\") { startCiv6Game(); return; }"));
+            .contains("if (readSetting(\"humanplayers\") === \"civ6\") { startCiv6Game(); return; }"));
         assert!(EMBEDDED_INDEX.contains("await fetchJSON(\"/civ6/start\", {method: \"POST\","));
         // A refusal is shown rather than hidden. A run that silently never
         // starts is how a dead Steam client cost eleven ladder attempts.
@@ -12467,28 +13192,28 @@ mod tests {
     /// error toast for pressing the only lit control on the screen. The
     /// finale offers the one thing still useful instead: another game.
     #[test]
-    fn browser_stops_asking_for_turns_once_somebody_has_won() {
-        // The winner test's `over` became `won`, because elimination now
-        // disables the button on the same path — same contract, wider reason.
-        // Auto-play is the third reason: the seat is on loan while it runs.
+    fn browser_stops_asking_for_turns_after_any_terminal_result() {
+        // A win and a draw both end the engine. Elimination and Auto-play are
+        // the two other reasons the seat cannot act.
         assert!(EMBEDDED_INDEX
-            .contains("const won = state.winner !== null && state.winner !== undefined;"));
-        assert!(EMBEDDED_INDEX.contains("button.disabled = won || eliminated || autoplaying;"));
+            .contains("const over = gameFinished(state);"));
+        assert!(EMBEDDED_INDEX.contains("button.disabled = over || eliminated || autoplaying;"));
         assert!(EMBEDDED_INDEX.contains("The game is over<span class=\"endturn-hint\">"));
         // The keys agree with the button.
         assert!(EMBEDDED_INDEX
-            .contains("if (state.winner !== null && state.winner !== undefined) return;"));
+            .contains("if (gameFinished(state)) return;"));
         // And a human finale offers a way on; a spectated one keeps its
         // countdown, because the supervisor owns that handoff.
         assert!(EMBEDDED_INDEX.contains("class=\"primary winner-again\" onclick=\"startNewSimulation()\""));
         assert!(EMBEDDED_INDEX.contains("id=\"respawn\" role=\"timer\""));
-        // Both finales also offer three ways to keep this world. It is the
-        // reason the countdown has to be long enough to read — a button nobody
-        // can reach before the next world loads is not an offer.
+        // A victory finale also offers three ways to keep its world. A draw
+        // has no victor/result to play on past and offers the next battle.
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-look-around\""));
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-next-victory\""));
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-indefinite\""));
         assert!(EMBEDDED_INDEX.contains("Take a look around"));
+        assert!(EMBEDDED_INDEX.contains("<span class=\"winner-kicker\">Battle drawn</span>"));
+        assert!(EMBEDDED_INDEX.contains("<span class=\"winner-verdict\">Turn limit reached</span>"));
         // The two rules that resume play are named for what the person wants
         // rather than for the rule they select. "Continue" alone did not say
         // what it continues *to* — the two play-on buttons differ only in
@@ -12533,8 +13258,9 @@ mod tests {
         // never arms this one on top of the countdown it already publishes.
         assert!(EMBEDDED_INDEX
             .contains("if (SPEC || finaleCountdownResult === signature) return;"));
-        // Both human endings count down: a victory and a last city lost.
-        assert_eq!(EMBEDDED_INDEX.matches("armFinaleCountdown(signature);").count(), 2);
+        // All three human endings count down: a victory, a last city lost,
+        // and a Tactics draw.
+        assert_eq!(EMBEDDED_INDEX.matches("armFinaleCountdown(signature);").count(), 3);
         // Any input stops it, the three ways to keep the world stop it, and a
         // result screen that goes away takes it with it.
         assert!(EMBEDDED_INDEX.contains(
@@ -13222,7 +13948,7 @@ mod tests {
     fn browser_tells_the_player_when_they_have_been_eliminated() {
         assert!(EMBEDDED_INDEX
             .contains("const eliminated = state.players[0] && state.players[0].alive === false;"));
-        assert!(EMBEDDED_INDEX.contains("button.disabled = won || eliminated || autoplaying;"));
+        assert!(EMBEDDED_INDEX.contains("button.disabled = over || eliminated || autoplaying;"));
         assert!(EMBEDDED_INDEX.contains("Your civilization has fallen<span class=\"endturn-hint\">"));
         // The keys agree with the button.
         assert!(EMBEDDED_INDEX
@@ -13230,9 +13956,9 @@ mod tests {
         // A defeat draws the finale card, and the victory path must not wipe
         // a card it did not draw.
         assert!(EMBEDDED_INDEX.contains("st.players[0].alive === false;"));
-        assert!(EMBEDDED_INDEX.contains("} else if (!fallen) {"));
+        assert!(EMBEDDED_INDEX.contains("} else if (!fallen && !drawn) {"));
         // A spectated world has nobody to eliminate.
-        assert!(EMBEDDED_INDEX.contains("const fallen = !SPEC && !hasWinner"));
+        assert!(EMBEDDED_INDEX.contains("const fallen = !SPEC && !gameFinished(st)"));
     }
 
     #[test]
@@ -14102,6 +14828,7 @@ pub fn serve_with_game(
         supervisor_request: Mutex::new(None),
         live_params: Mutex::new(session.params.clone()),
         next_game_params: Mutex::new(session.take_resumed_next_game_params()),
+        match_series: Mutex::new(None),
         session: Mutex::new(session),
         pace_ms: AtomicU64::new(500), // half a second per turn by default
         between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),

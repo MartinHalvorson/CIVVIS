@@ -40,11 +40,13 @@ refuse to start. Shared files are normal in this repository.
 | Every validation checkbox is ticked | ready PRs only | run each check, then change `- [ ]` to `- [x]` |
 
 Being behind `main` is **not** a policy failure. It is reported as a notice.
-GitHub's branch protection runs with `strict = true`, so it refuses the merge
-itself until you update, and `ship` re-merges `main` on its own whenever it sees
-the base move. Failing the check as well only painted a red X on a PR whose
-author had done nothing wrong and could not durably fix, because `main` moves
-again while CI runs.
+GitHub's branch protection runs with `strict = false` — a PR behind `main`
+merges without updating first, and the push to `main` reruns the full gate on
+the actual squash result. Do **not** chase the base: `ship` merges `main`
+exactly once before going ready, and re-merging on every base move is the
+churn that killed 58 of 133 cargo-test runs (44%) in a single day. Failing
+the check as well only painted a red X on a PR whose author had done nothing
+wrong and could not durably fix, because `main` moves again while CI runs.
 
 Merging something that *was* behind `main` is still a hard error — the
 post-merge auditor catches it. The rule is enforced where it can be satisfied,

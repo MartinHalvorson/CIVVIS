@@ -42,18 +42,22 @@ function initAdvancedSettings() {
   const game = document.getElementById("newgame-options");
   const gameAdvanced = document.getElementById("game-advanced-settings");
   moveByOrder(game, ".game-advanced-setting", document.getElementById("game-advanced-settings-body"));
+  // Which game is being set up decides what every control under it means, so
+  // it is asked first — before who is playing it, the way a menu asks for the
+  // game before the seats.
   const basic = [
-    ["gamemode", true], ["np", true], ["mapshape", true], ["maptype", true],
-    ["startera", true], ["gamespeed", true],
+    ["gamemode", true], ["humanplayers", true], ["np", true], ["mapshape", true],
+    ["maptype", true], ["startera", true], ["gamespeed", true],
   ].map(([id, label]) => label
     ? document.getElementById(id).closest("label")
     : document.getElementById(id));
-  basic.push(document.getElementById("victory-options"), document.getElementById("saves-group"));
+  basic.push(document.getElementById("victory-options"),
+    document.getElementById("tactics-options"), document.getElementById("saves-group"));
   for (const node of basic) gameAdvanced.before(node);
   // The Civ 6 host line describes the mode chosen directly above it, so it
   // follows that control through the reorder rather than staying where the
   // source happens to put it.
-  document.getElementById("gamemode").closest("label")
+  document.getElementById("humanplayers").closest("label")
     .after(document.getElementById("civ6-status"));
 
   let disclosureState = {};
@@ -423,9 +427,20 @@ const BLDG_ICON = { monument:"🗿", granary:"🌾", walls:"🧱", medieval_wall
                     shrine:"⛩", library:"📜", market:"⚖", barracks:"🛡",
                     lighthouse:"🗼", amphitheater:"🎭", aqueduct:"⛲", arena:"🎪",
                     workshop:"🔧", armory:"🛡", bank:"🏦", university:"🎓" };
-const DISTRICT_COLOR = { campus:"#4aa3df", holy_site:"#e8e4ef", commercial_hub:"#e2c04a",
-                         harbor:"#5ec8d8", encampment:"#c0392b", theater_square:"#c678dd",
-                         industrial_zone:"#e67e22", entertainment_complex:"#e75480" };
+// Hues are Civ VI's own district language, at the game's saturation rather
+// than softened for the map: science blue, culture violet, faith a pale
+// sky-white, gold a yellow coin, production orange, military red, amenities
+// magenta, and the Government Plaza its own pink — the one district whose
+// color in the base game says "government" and not a yield.
+//
+// Harbor is the deep sea blue rather than the cyan it used to be. Cyan is the
+// aqueduct family's (`water` below), and a Harbor next to a Dam was two
+// near-identical light blues; sea blue is both truer to the game and the only
+// pair of blues on a coastal city that a glance has to separate.
+const DISTRICT_COLOR = { campus:"#3aa7e0", holy_site:"#e6f1f9", commercial_hub:"#f2c73d",
+                         harbor:"#2280ac", encampment:"#c8352b", theater_square:"#9b51d8",
+                         industrial_zone:"#e07b1e", entertainment_complex:"#d94f8f",
+                         government_plaza:"#f58fc0" };
 // Every unique district is its parent in a local hat — a Seowon is a Campus,
 // an Ikanda an Encampment — so they share a silhouette and a color. Grouping by
 // family is also what keeps thirty-five kinds down to a set of shapes a player
@@ -446,47 +461,18 @@ const DISTRICT_FAMILY = {
   government_plaza:"civic", diplomatic_quarter:"civic",
   preserve:"preserve", city_center:"civic",
 };
+// A unique district wears its parent's color, so these repeat the table above
+// and add the families no base district names directly. `civic` is what is
+// left of the old government tan once the Government Plaza takes its own pink:
+// the City Center and the Diplomatic Quarter.
 const FAMILY_COLOR = {
-  campus:"#4aa3df", faith:"#ece6f4", war:"#c0392b", trade:"#e2c04a",
-  harbor:"#5ec8d8", culture:"#c678dd", industry:"#e67e22", fun:"#e75480",
-  water:"#7fb8d8", homes:"#bda684", air:"#9fb0c4", civic:"#d8c58a",
-  preserve:"#6fbf73",
+  campus:"#3aa7e0", faith:"#e6f1f9", war:"#c8352b", trade:"#f2c73d",
+  harbor:"#2280ac", culture:"#9b51d8", industry:"#e07b1e", fun:"#d94f8f",
+  water:"#7ec8e8", homes:"#b99b6e", air:"#9fb0c4", civic:"#d8c58a",
+  preserve:"#5fb85f",
 };
 const districtColor = d =>
   DISTRICT_COLOR[d] || FAMILY_COLOR[DISTRICT_FAMILY[d]] || "#ddd";
-// The broad family silhouette makes a district legible from a distance; its
-// completed buildings then give the tile a small but real sense of growth. A
-// unique building uses the same architectural language as the building it
-// replaces, with a few cases named here where its role is more useful than its
-// spelling (a Madrasa still reads as a school, a Film Studio as a broadcast
-// house). Everything else has a family-and-tier fallback below.
-const DISTRICT_BUILDING_KIND = {
-  library:"books", madrasa:"books", navigation_school:"books", alchemical_society:"lab",
-  university:"academy", research_lab:"lab",
-  shrine:"shrine", temple:"temple", stave_church:"shrine", prasat:"temple",
-  cathedral:"temple", dar_e_mehr:"shrine", gurdwara:"temple", meeting_house:"shrine",
-  mosque:"temple", pagoda:"shrine", stupa:"shrine", synagogue:"temple", wat:"temple",
-  market:"market", sukiennice:"market", grand_bazaar:"market", gilded_vault:"bank",
-  bank:"bank", stock_exchange:"tower",
-  barracks:"fort", basilikoi_paides:"fort", ordu:"fort", stable:"stable", armory:"fort",
-  military_academy:"academy",
-  lighthouse:"lighthouse", shipyard:"shipyard", seaport:"port",
-  amphitheater:"theater", marae:"theater", art_museum:"museum", archaeological_museum:"museum",
-  broadcast_center:"broadcast", film_studio:"broadcast",
-  workshop:"workshop", electronics_factory:"factory", factory:"factory",
-  coal_power_plant:"plant", oil_power_plant:"plant", nuclear_power_plant:"plant",
-  arena:"arena", tlachtli:"arena", thermal_bath:"bath", zoo:"park", stadium:"stadium",
-  ferris_wheel:"ferris", aquarium:"aquarium", aquatics_center:"stadium",
-  food_market:"market", shopping_mall:"mall",
-  hangar:"hangar", airport:"airport",
-  consulate:"civic", chancery:"civic",
-  grove:"grove", sanctuary:"sanctuary",
-  hydroelectric_dam:"plant",
-  ancestral_hall:"civic", audience_chamber:"civic", warlords_throne:"civic",
-  foreign_ministry:"civic", intelligence_agency:"tower", grand_masters_chapel:"shrine",
-  queens_bibliotheque:"books", national_history_museum:"museum", royal_society:"civic",
-  war_department:"fort",
-};
 // Text yields — tooltips and the sidebar, where a yield is a word in a line
 // rather than a mark on the map. The map's numbered-marker palette lives with
 // `drawTileYields`.
@@ -809,25 +795,14 @@ let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") ===
 // Space-race flights and satellites are on unless a viewer explicitly turns
 // their animated visual effects off. The completed mission remains in state.
 let SHOW_ROCKET_ANIMATIONS = localStorage.getItem("civvis-show-rocket-animations") !== "0";
-// How long a unit's movement wake stays on the map after its step lands.
-// Zero is the original behavior — a comet only while the tween itself runs —
-// while a linger keeps who-went-where readable at Lightning and Blitz paces,
-// where a step resolves faster than an eye can find the token that took it.
-const UNIT_TRAIL_LINGER_STORAGE_KEY = "civvis-unit-trail-linger";
-const UNIT_TRAIL_LINGER_VALUES = [0, 200, 500, 1000, 2000];
-// Enough for every mover of a large late-game turn; bounds draw cost when a
-// whole war resolves in one Lightning poll.
-const UNIT_TRAIL_LIMIT = 240;
-let UNIT_TRAIL_LINGER_MS = (() => {
-  const saved = Number(localStorage.getItem(UNIT_TRAIL_LINGER_STORAGE_KEY));
-  return UNIT_TRAIL_LINGER_VALUES.includes(saved) ? saved : 0;
-})();
 // How many turns each unit's walked tile route stays traced on the map.
-// Unlike the wall-clock wake linger above, this ages in game time: a route
-// walked on turn T is held until T + N, so at any pace the map shows where
-// the last N turns of movement actually went. The routes ride in on
-// `state.unit_move_trails` — the engine's walked-route ledger — so they are
-// the executed tiles, not a guess reconstructed from a board diff.
+// This ages in game time rather than on the wall clock, so at any watch pace
+// the map shows where the last N turns of movement actually went — which is
+// what keeps who-went-where readable at Lightning and Blitz, where a step
+// resolves faster than an eye can find the token that took it. The routes
+// ride in on `state.unit_move_trails` — the engine's walked-route ledger —
+// so they are the executed tiles, not a guess reconstructed from a board
+// diff.
 const UNIT_TAIL_TURNS_STORAGE_KEY = "civvis-unit-tail-turns";
 const UNIT_TAIL_TURNS_MAX = 5;
 let UNIT_TAIL_TURNS = (() => {
@@ -985,7 +960,7 @@ applyOverlayVisibility();
 // burst — a device is the only event on this board that deserves several
 // seconds and the whole frame.
 const anim = { moves: new Map(), floats: [], sparks: [], deaths: [],
-               claims: [], strike: null, blasts: [], trails: [],
+               claims: [], strike: null, blasts: [],
                skyLaunches: [] };
 // Detonations already shown. The engine gives every strike a unique id
 // precisely so a client can answer this without comparing fields: two devices
@@ -1045,7 +1020,6 @@ function resetAnim() {
   anim.deaths.length = 0;
   anim.claims.length = 0;
   anim.blasts.length = 0;
-  anim.trails.length = 0;
   anim.skyLaunches.length = 0;
   seenBlasts = new Set();
   anim.strike = null;
@@ -1064,8 +1038,10 @@ const BLAST_MS = 3000;
 // The delivery ahead of it. The ledger names the launch platform and where it
 // fired from, so the picture can show the arc instead of a city detonating
 // out of nowhere. Flight rides the same record: its t0 is the *arrival*, so
-// every blast painter stays oblivious to the missile phase.
-const MISSILE_FLIGHT_MS = 1400;
+// every blast painter stays oblivious to the missile phase. 824ms is the
+// original 1400ms delivery sped up by 70%: a strike should arrive like a
+// strike, and the blast is the part worth three seconds, not the commute.
+const MISSILE_FLIGHT_MS = 824;
 // Start a detonation for every strike that appeared between these two frames.
 //
 // Read from the strike ledger rather than from the board, because the board
@@ -1186,16 +1162,6 @@ function animateDiff(prev, next) {
                                 fromCity: cityKeys.has(key(pu.pos)),
                                 toCity: cityKeys.has(key(nu.pos)),
                                 t0: now, dur });
-        // The lingering wake outlives both the tween and the unit itself — a
-        // trail that survives its casualty is what makes a fast battle
-        // readable after the fact.
-        if (UNIT_TRAIL_LINGER_MS > 0) {
-          anim.trails.push({ unit: nu.id, points: mapPoints, owner: nu.owner,
-                             t0: now, moveDur: dur,
-                             linger: UNIT_TRAIL_LINGER_MS });
-          if (anim.trails.length > UNIT_TRAIL_LIMIT)
-            anim.trails.splice(0, anim.trails.length - UNIT_TRAIL_LIMIT);
-        }
       }
     }
     if (unitHasHealth(nu) && unitHasHealth(pu) && nu.hp < pu.hp) {
@@ -1439,11 +1405,10 @@ function syncResponsivePanelGeometry() {
     ?.getBoundingClientRect().height || 0;
   const controlHeight = Math.max(46, Math.round(measuredControlHeight));
   const controlClearance = edge + controlHeight + gap;
-  // The player masthead scrolls internally below this ceiling. Let the cap
-  // fall below its ordinary two-row preference on a very short quadrant so the
-  // victory band and minimap retain a visible gap instead of painting through
-  // one another.
-  const maxPlayerHeight = Math.round(clampPanelDimension(height * .38, 104, 280));
+  // The masthead's height belongs to the viewer: the only ceiling is the map
+  // area itself, less its margins. The instruments below share whatever the
+  // chosen height leaves via their own clamped floors.
+  const maxPlayerHeight = Math.round(Math.max(104, height - edge * 2));
   const requestedPlayerHeight = Number.parseFloat(area.style.getPropertyValue("--player-hud-height")) || 200;
   const playerReserve = Math.min(requestedPlayerHeight, maxPlayerHeight);
   const shape = typeof planetMap === "function" && planetMap() ? "planet" : "flat";
@@ -1601,10 +1566,13 @@ function syncMapViewport() {
   style.setProperty("--map-area-width", `${viewWidth}px`);
   style.setProperty("--map-area-height", `${viewHeight}px`);
   document.body.classList.toggle("map-area-inset", left > 0 || top > 0 || right > 0 || bottom > 0);
-  // The backing store is native resolution, and it belongs to the viewport
-  // rather than to the container the viewport sits in. Resizing it also wipes
-  // the canvas, so a caller that repaints only on a change has to be told
-  // about a display whose pixel ratio moved under a viewport that did not.
+  // The backing store belongs to the viewport rather than to the container
+  // the viewport sits in, and its scale is settled here because the render
+  // resolution is measured against the viewport height this call just
+  // computed. Resizing it also wipes the canvas, so a caller that repaints
+  // only on a change has to be told about a display whose pixel ratio moved
+  // under a viewport that did not.
+  DPR = renderedDpr(viewHeight);
   const backingWidth = Math.max(1, Math.round(viewWidth * DPR));
   const backingHeight = Math.max(1, Math.round(viewHeight * DPR));
   if (cv.width !== backingWidth) { cv.width = backingWidth; changed = true; }
@@ -1825,22 +1793,14 @@ function playerHudContentHeight(rows) {
   return Math.max(PLAYER_HUD_MIN_HEIGHT, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());
 }
 
-function playerHudMaxContentHeight() {
-  // A saved layout is restored before the first world state supplies its row
-  // count. Leave that first restore bounded only by the map; drawPlayerHud()
-  // publishes the exact roster ceiling once it knows the rows.
-  const height = Number.parseFloat(area.style.getPropertyValue("--player-hud-content-height"));
-  return Number.isFinite(height) ? height : Infinity;
-}
-
 const HUD_WIDGETS = {
   // A player row is one line: the turn plate, an identity and twelve fixed metric
   // columns side by side, which is why the standings want the map's width and
-  // very little of its height. They are capped below two-fifths of that height
-  // however they are sized — by the player count, by a dragged edge, or by a
-  // layout saved earlier — so a large table never swallows the world.
+  // very little of its height. The default height still ends at the final
+  // civilization row, but a dragged edge answers to nothing except the map
+  // itself: how much world the masthead covers is the viewer's own call.
   players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:PLAYER_HUD_MIN_HEIGHT,
-            maxHeight:playerHudMaxContentHeight, maxHeightRatio:.38, avoidsSidebar:true},
+            avoidsSidebar:true},
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88, avoidsSidebar:true},
   minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96,
             avoidsSidebar:true, square:true},
@@ -1887,6 +1847,10 @@ const HUD_ELO_MAX_TYPE_SIZE = 13;
 // the model as a real, reorderable column on a fixed track; it is an action
 // rather than a fact, which is why it is the one column with no sort target.
 const PLAYER_HUD_COLUMNS = [
+  // The row lock leads the table exactly as its fixed track always did; as a
+  // model column it can now be checked out of the table or moved like any
+  // other. Its heading doubles as the panel's drag handle.
+  {key:"lock", label:"Row lock", block:"identity", min:"--hud-lock-column", width:0, fixed:true},
   {key:"rank", label:"Score rank", block:"identity", min:"--hud-rank-min", width:.7},
   {key:"civ", label:"Civilization", block:"identity", min:"--hud-ident-min", width:2.035},
   {key:"leader", label:"Leader", block:"identity", min:"--hud-ident-min", width:1.85},
@@ -1894,26 +1858,33 @@ const PLAYER_HUD_COLUMNS = [
   {key:"player", label:"Player", block:"identity", min:"--hud-ident-min", width:1.85},
   {key:"elo", label:"Elo rating", block:"identity", min:"--hud-ident-num-min", width:1.017},
   {key:"elo_delta", label:"Elo delta", block:"identity", min:"--hud-ident-num-min", width:.85},
-  // One column, two figures: the odds this seat started with and the odds it
-  // holds now. They are dragged, saved and measured as a single column because
-  // they are read as a single movement.
-  {key:"win", label:"Win odds", block:"identity", min:"--hud-ident-odds-min", width:1.3},
+  // One movement, three columns: the odds this seat started with, the trend
+  // between them, and the odds it holds now — each separately sortable,
+  // sized, shown and placed, reading START · Δ · NOW by default.
+  {key:"win_start", label:"Win odds · start", block:"identity", min:"--hud-odds-min", width:.55},
+  {key:"win_delta", label:"Win odds trend", block:"identity", min:"--hud-odds-trend-min", width:.2},
+  {key:"win", label:"Win odds · now", block:"identity", min:"--hud-odds-min", width:.55},
   {key:"age", label:"Age", block:"identity", min:"--hud-ident-min", width:1.3},
   {key:"plan", label:"Plan", block:"identity", min:"--hud-ident-min", width:2.035},
+  // A column may declare when it exists at all. Everything without that test
+  // is a fact every game has from turn one; the nuclear stockpile is the one
+  // that has to be invented first, so it joins the table beside the military
+  // strength it changes the meaning of.
   ...[["cities", "Cities"], ["population", "Population"], ["food", "Food"], ["production", "Production"],
       ["science", "Science"], ["culture", "Culture"], ["faith", "Faith"],
-      ["gold", "Gold"], ["military", "Military"], ["wonders", "Wonders"],
+      ["gold", "Gold"], ["military", "Military"],
+      ["nukes", "Nuclear stockpile", nuclearStandingsInPlay],
+      ["wonders", "Wonders"],
       ["suzerain", "Suzerainty"], ["score", "Score"]]
-    .map(([key, label]) => ({key, label, block:"stats", min:"--hud-stat-min", width:1})),
+    .map(([key, label, exists]) =>
+      ({key, label, block:"stats", min:"--hud-stat-min", width:1, exists})),
 ];
 const PLAYER_HUD_COLUMN_BY_KEY = new Map(PLAYER_HUD_COLUMNS.map(column => [column.key, column]));
-// Every named standings fact is sortable. Rank is the score standing,
-// while start, change and current chance are individually labelled tracks
-// inside Win odds. Watch-as and the row lock are actions rather than facts, so
-// neither is part of this set.
+// Every named standings fact is sortable. Rank is the score standing, and
+// the odds trio are three facts of their own now. Watch-as and the row lock
+// are actions rather than facts, so neither is part of this set.
 const PLAYER_HUD_SORTABLE_COLUMNS = new Set([
   ...PLAYER_HUD_COLUMNS.filter(column => !column.fixed).map(column => column.key),
-  "win_start", "win_delta",
 ]);
 const PLAYER_HUD_TEXT_SORT_COLUMNS = new Set(["civ", "leader", "player", "plan"]);
 const PLAYER_HUD_AGE_SORT_ORDER = {dark:0, normal:1, golden:2, heroic:3};
@@ -1948,7 +1919,20 @@ try {
     // Saved keys keep their saved places; columns this build has that the
     // save does not know join at the end rather than being lost.
     const known = saved.order.filter(key => PLAYER_HUD_COLUMN_BY_KEY.has(key));
-    playerHudColumnOrder = [...new Set([...known, ...playerHudColumnOrder])];
+    let merged = [...new Set([...known, ...playerHudColumnOrder])];
+    // Columns that joined the model after a save was written go back to their
+    // shipped places rather than the end: the row lock leads the table, and
+    // the odds trio stands where the one Win odds column stood.
+    if (!known.includes("lock"))
+      merged = ["lock", ...merged.filter(key => key !== "lock")];
+    for (const [key, before] of [["win_delta", "win"], ["win_start", "win_delta"]])
+      if (!known.includes(key)) {
+        const rest = merged.filter(other => other !== key);
+        const at = rest.indexOf(before);
+        rest.splice(at < 0 ? rest.length : at, 0, key);
+        merged = rest;
+      }
+    playerHudColumnOrder = merged;
   }
   if (Array.isArray(saved.hidden))
     playerHudHiddenColumns = new Set(
@@ -1959,8 +1943,11 @@ try {
       if (PLAYER_HUD_COLUMN_BY_KEY.has(key) && Number.isFinite(floor) && floor > 0)
         playerHudColumnMinPx.set(key, Math.min(Math.round(floor), 600));
     }
-  // An all-hidden save would leave nothing to click to get the columns back.
-  if (PLAYER_HUD_COLUMNS.every(column => playerHudHiddenColumns.has(column.key)))
+  // An all-hidden save would leave nothing to click to get the columns back —
+  // and a column this world has not invented yet cannot be the one thing
+  // keeping the table on screen.
+  if (PLAYER_HUD_COLUMNS.filter(playerHudColumnExists)
+      .every(column => playerHudHiddenColumns.has(column.key)))
     playerHudHiddenColumns = new Set();
 } catch (_) {}
 
@@ -1974,10 +1961,52 @@ function savePlayerHudColumnLayout() {
   } catch (_) {}
 }
 
+// ── A column that does not exist yet ───────────────────────────────────────
+//
+// Every other standings figure is a fact of the world from the first turn:
+// a civilization always has cities, faith and a military, even when the count
+// is nought. A nuclear stockpile is not — for most of a game nobody on the
+// board *can* hold a device, and a column of zeroes down every row is a column
+// of noise in a table that is already competing for width.
+//
+// So the column arrives with the weapon and stays for the rest of the game.
+// What puts it there is the first civilization to finish the research that
+// unlocks nuclear devices: the moment the bomb becomes a thing this world
+// contains is the moment the standings start needing somewhere to say who has
+// one. It arrives a Manhattan Project ahead of the first device rather than
+// with it, so the column is already standing, at nought, while the race to
+// build the first one is the thing worth watching.
+//
+// That trigger is a world fact and names nobody, so it costs no seat any fog.
+// The two clauses after it ask the same question of the board itself, for a
+// page talking to a server too old to state it: a met civilization that has
+// finished the Manhattan Project, or that is holding devices, is proof the
+// research happened whether or not anybody said so.
+function nuclearStandingsInPlay() {
+  if (!state) return false;
+  return Boolean(state.nuclear_weapons_unlocked) ||
+    Boolean(state.players?.some(player =>
+      player.science_projects?.includes?.("manhattan_project") ||
+      playerNuclearStockpile(player) > 0));
+}
+
+// Both classes of device, as one arsenal.
+function playerNuclearStockpile(player) {
+  return (+player.nuclear_devices || 0) + (+player.thermonuclear_devices || 0);
+}
+
+// A column the world has not invented yet is not in the table, and is not on
+// the Display Settings roster either — it is not a column the viewer has
+// hidden, so offering them a checkbox that changes nothing would be a lie.
+function playerHudColumnExists(column) {
+  return Boolean(column) && (!column.exists || column.exists());
+}
+
 function visiblePlayerHudColumns() {
   return playerHudColumnOrder
     .map(key => PLAYER_HUD_COLUMN_BY_KEY.get(key))
-    .filter(column => column && !playerHudHiddenColumns.has(column.key));
+    .filter(column => playerHudColumnExists(column) &&
+      !playerHudHiddenColumns.has(column.key));
 }
 
 // One bar per seam between two adjacent flexible columns. A fixed track such
@@ -2119,12 +2148,16 @@ const PLAYER_HUD_HEAD_LABELS = {
   leader:["LEADER", "Leader"], player:["PLAYER", "Player"],
   elo:["ELO", "Elo rating", "numeric"],
   elo_delta:["Δ", "Live Elo position against the living field", "numeric"],
+  win_start:["START", "Win odds at the start of the game", "numeric"],
+  win_delta:["Δ", "Change in win odds", "odds-trend-head"],
+  win:["NOW", "Current win odds", "numeric"],
   age:["AGE", "Civilization age"], plan:["PLAN", "AI active strategy"],
   cities:["CITY", "Cities controlled"], population:["POP", "Total population"],
   food:["FOOD", "Food per turn"], production:["PROD", "Production per turn"],
   science:["SCI", "Science per turn"], culture:["CUL", "Culture per turn"],
   faith:["FPT", "Faith per turn"], gold:["GPT", "Net Gold per turn"],
-  military:["MIL", "Military strength"], wonders:["WNDR", "World wonders controlled"],
+  military:["MIL", "Military strength"], nukes:["NUK", "Nuclear devices held"],
+  wonders:["WNDR", "World wonders controlled"],
   suzerain:["SUZ", "City-states under suzerainty"], score:["SCORE", "Score"],
 };
 
@@ -2133,6 +2166,14 @@ const PLAYER_HUD_HEAD_LABELS = {
 // fit all find a column through that one attribute.
 function playerHudColumnHead(column) {
   const attrs = `data-hud-col="${column.key}"`;
+  // The row lock's heading is the panel's own drag handle, exactly where the
+  // old fixed lock track kept it. It moves the whole standings panel, so it
+  // deliberately does not take part in the column-reorder gesture.
+  if (column.key === "lock") {
+    return `<span class="hud-head-cell hud-head-lock player-standings-drag widget-drag-handle" ` +
+      `${attrs} data-widget-drag tabindex="0" role="button" ` +
+      `aria-label="Move player standings; use arrow keys or drag" title="Drag to move · arrow keys also move"></span>`;
+  }
   // The Watch-as column's heading is the inverse of every action below it:
   // leave any one civilization's fog and return to the omniscient table.
   // Keeping it in the column makes that relationship visible, while the
@@ -2143,17 +2184,6 @@ function playerHudColumnHead(column) {
       `aria-pressed="${state.view_player === null || state.view_player === undefined}" ` +
       `title="Spectator mode · see everyone with full map visibility" ` +
       `aria-label="Spectator mode: see everyone with full map visibility">All</button></span>`;
-  }
-  // ELO's live position delta is its own draggable column. The two win
-  // estimates remain named categories on matching inner tracks; their Δ owns
-  // the narrow middle track used by each row's trend glyph. The outer cell
-  // remains one draggable Win odds column, so adding those labels does not
-  // add two more masthead seams.
-  if (column.key === "win") {
-    return `<span class="hud-head-cell hud-head-identity diplomacy-odds-head numeric" ${attrs}>` +
-      playerHudSortHead("win_start", "START", "Win odds at the start of the game") +
-      playerHudSortHead("win_delta", "Δ", "Change in win odds", "odds-trend-head") +
-      playerHudSortHead("win", "NOW", "Current win odds") + `</span>`;
   }
   const [label, title, extra] = PLAYER_HUD_HEAD_LABELS[column.key];
   const classes = column.block === "stats"
@@ -2199,10 +2229,10 @@ function syncPlayerHudColumns(placeGrips = true) {
     ? `var(${column.min})`
     : `minmax(${playerHudColumnMinExpr(column)}, ` +
       `${playerHudColumnFlex(column, bias).toFixed(4)}fr)`).join(" ");
-  // Every column floor, the lock track, one gutter per column and the panel's
-  // own padding and border. 9px is that chrome: 4px + 3px padding, 2px border.
-  const tableMin = `calc(var(--hud-lock-column, 0px) + 9px + ` +
-    `${columns.length} * var(--hud-stat-gap, 3px) + ` +
+  // Every column floor, one gutter per seam and the panel's own padding and
+  // border. 9px is that chrome: 4px + 3px padding, 2px border.
+  const tableMin = `calc(9px + ` +
+    `${Math.max(0, columns.length - 1)} * var(--hud-stat-gap, 3px) + ` +
     columns.map(column => column.fixed ? `var(${column.min})`
       : playerHudColumnMinExpr(column)).join(" + ") + `)`;
   if (`${tracks}|${tableMin}` !== playerHudColumnCss) {
@@ -2621,8 +2651,11 @@ function setPlayerHudColumnVisible(key, visible) {
   if (!column) return;
   const hidden = new Set(playerHudHiddenColumns);
   if (visible) hidden.delete(key); else hidden.add(key);
-  // An empty table would leave nothing on screen to bring a column back.
-  if (PLAYER_HUD_COLUMNS.every(other => hidden.has(other.key))) {
+  // An empty table would leave nothing on screen to bring a column back. A
+  // column the world has not invented yet cannot be what is holding the table
+  // open, so it does not count towards this.
+  if (PLAYER_HUD_COLUMNS.filter(playerHudColumnExists)
+      .every(other => hidden.has(other.key))) {
     renderHudColumnList();
     return;
   }
@@ -2638,13 +2671,26 @@ function renderHudColumnList() {
   if (!list) return;
   list.innerHTML = playerHudColumnOrder.map(key => {
     const column = PLAYER_HUD_COLUMN_BY_KEY.get(key);
-    if (!column) return "";
+    if (!playerHudColumnExists(column)) return "";
     const checked = !playerHudHiddenColumns.has(key);
     return `<div class="hud-column-item${checked ? "" : " hidden-col"}" draggable="true" data-hud-column-item="${key}">` +
       `<span class="hud-column-grip" aria-hidden="true">⠿</span>` +
       `<label title="${checked ? "Uncheck to remove" : "Check to show"} the ${column.label} column · drag to reorder">` +
       `<input type="checkbox" data-hud-column-toggle="${key}"${checked ? " checked" : ""}> ${column.label}</label></div>`;
   }).join("");
+}
+
+// The roster lists the columns that exist, and that set changes at most once a
+// game — when the world reaches the bomb. Rebuild it on the change rather than
+// on every frame the standings repaint: this list holds live checkboxes and a
+// drag gesture of its own.
+let playerHudExistingColumns = "";
+function syncHudColumnRoster() {
+  const existing = PLAYER_HUD_COLUMNS.filter(playerHudColumnExists)
+    .map(column => column.key).join(",");
+  if (existing === playerHudExistingColumns) return;
+  playerHudExistingColumns = existing;
+  renderHudColumnList();
 }
 
 function finishPlayerHudReorderGesture(event) {
@@ -2697,7 +2743,7 @@ if (playerHudPanel) {
     const grip = event.target.closest?.(".hud-col-grip");
     if (grip) { beginPlayerHudColumnGesture(event, grip); return; }
     const head = event.target.closest?.(".hud-head-cell");
-    if (head && head.closest(".ribbon-stat-heading"))
+    if (head && head.closest(".ribbon-stat-heading") && !head.closest("[data-widget-drag]"))
       beginPlayerHudReorderGesture(event, head);
   });
   playerHudPanel.addEventListener("keydown", event => {
@@ -2751,7 +2797,7 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .diplomacy-player", min:9, max:13},
   {selector:"#playerhud .diplomacy-elo-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
   {selector:"#playerhud .diplomacy-elo-delta-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
-  {selector:"#playerhud .diplomacy-expected-value", min:9, max:13},
+  {selector:"#playerhud .diplomacy-expected span", min:9, max:13},
   {selector:"#playerhud .diplomacy-age .civ-age", min:9, max:12},
   {selector:"#playerhud .diplomacy-strategy .ai-plan", min:9, max:12},
   // Measured against the cell, not against itself. The figure sits in a grid
@@ -3042,14 +3088,12 @@ function hudWidgetMetrics(element) {
 }
 
 // The tallest a widget may be: the map it floats over, less its margins, and
-// less again for any widget that claims a content or proportional ceiling.
+// less again for any widget that claims a content ceiling.
 function hudWidgetMaxHeight(config, margin = hudWidgetMargin()) {
   const contentCeiling = typeof config.maxHeight === "function"
     ? config.maxHeight()
     : Number.isFinite(config.maxHeight) ? config.maxHeight : Infinity;
-  const ratioCeiling = config.maxHeightRatio
-    ? area.clientHeight * config.maxHeightRatio : Infinity;
-  return Math.max(1, Math.min(area.clientHeight - margin * 2, contentCeiling, ratioCeiling));
+  return Math.max(1, Math.min(area.clientHeight - margin * 2, contentCeiling));
 }
 
 // Saved HUD positions are local to #maparea. On a desktop the command deck is
@@ -3062,6 +3106,23 @@ function hudWidgetMinX(config, margin = hudWidgetMargin()) {
   return Math.max(margin, Math.min(Math.max(margin, area.clientWidth - margin), inset));
 }
 
+// A globe is charted azimuthally, so on a planet world the minimap frame has no
+// honest shape but a square: both of its axes answer to one side.
+function hudWidgetIsSquare(config) {
+  return Boolean(config.square) && typeof planetMap === "function" && planetMap();
+}
+
+// The one place a proposed width and height become that side. Every caller
+// resolves it *before* it measures where the frame sits, because a square
+// settled afterwards would shrink one axis while its position still described
+// the wider frame — which is how the minimap used to slide out of its corner.
+function squareHudWidgetSide(config, width, height, maxWidth, maxHeight) {
+  const maxSide = Math.max(1, Math.min(maxWidth, maxHeight));
+  const minSide = Math.min(maxSide, Math.max(Math.min(config.minWidth, maxWidth),
+                                             Math.min(config.minHeight, maxHeight)));
+  return Math.max(minSide, Math.min(maxSide, Math.min(width, height)));
+}
+
 function clampHudWidget(config, metrics) {
   const margin = hudWidgetMargin();
   const minX = hudWidgetMinX(config, margin);
@@ -3071,12 +3132,8 @@ function clampHudWidget(config, metrics) {
   const minHeight = Math.min(config.minHeight, maxHeight);
   let width = Math.max(minWidth, Math.min(maxWidth, Number(metrics.width) || minWidth));
   let height = Math.max(minHeight, Math.min(maxHeight, Number(metrics.height) || minHeight));
-  if (config.square && typeof planetMap === "function" && planetMap()) {
-    const maxSide = Math.max(1, Math.min(maxWidth, maxHeight));
-    const minSide = Math.min(maxSide, Math.max(minWidth, minHeight));
-    const side = Math.max(minSide, Math.min(maxSide, Math.min(width, height)));
-    width = side; height = side;
-  }
+  if (hudWidgetIsSquare(config))
+    width = height = squareHudWidgetSide(config, width, height, maxWidth, maxHeight);
   const maxX = Math.max(minX, area.clientWidth - margin - width);
   const maxY = Math.max(margin, area.clientHeight - margin - height);
   return {
@@ -3116,8 +3173,12 @@ function metricsFromSaved(config, saved) {
     : 1;
   // v3 layouts did not carry a basis. Keep those exact once, then every new
   // deliberate resize stores one and becomes proportionate on future screens.
-  const width = (Number(saved.width) || config.minWidth) * sizeScale;
-  const height = (Number(saved.height) || config.minHeight) * sizeScale;
+  let width = (Number(saved.width) || config.minWidth) * sizeScale;
+  let height = (Number(saved.height) || config.minHeight) * sizeScale;
+  // Settle the square before the travel range is measured against it, so a
+  // frame saved flush against a wall opens flush against it again.
+  if (hudWidgetIsSquare(config))
+    width = height = squareHudWidgetSide(config, width, height, maxWidth, maxHeight);
   const travelX = Math.max(0, area.clientWidth - margin - width - minX);
   const travelY = Math.max(0, area.clientHeight - margin * 2 - height);
   const xRatio = Math.max(0, Math.min(1, Number(saved.xRatio) || 0));
@@ -3249,7 +3310,10 @@ function resetHudWidget(name, persist = true) {
   config.element.classList.remove("layout-widget-custom", "layout-widget-active");
   // The tracker reads its neighbours' heights to know where to start and stop.
   // Hand those back to the stylesheet at the same moment the neighbour returns.
-  if (name === "players") area.style.removeProperty("--player-hud-height");
+  if (name === "players") {
+    area.style.removeProperty("--player-hud-height");
+    applyTurnPlateWidth(null);
+  }
   if (name === "minimap") syncDefaultMinimapGeometry();
   if ((name === "players" || name === "victory") && state) drawPlayerHud();
   if (persist) saveHudLayout();
@@ -3270,21 +3334,61 @@ function resetAllHudWidgets() {
   if (state) drawPlayerHud();
 }
 
+// A square frame cannot answer a dragged edge on its own axis alone: the other
+// axis has to follow it, and some edge has to hold still while it does. Hold
+// the edges the gesture is not dragging; on an axis the gesture never touches,
+// hold whichever edge is nearer its wall. The world minimap, which lives in the
+// lower-right corner, then grows and shrinks *into* that corner rather than
+// creeping away from it, and every one of the eight handles resizes the frame
+// instead of sliding it — dragging the left edge of a square used to move the
+// whole panel left, because the side was settled after the position was.
+function squareHudResize(config, box, start, edge, limits) {
+  const {margin, minX, maxRight, maxBottom, maxHeight} = limits;
+  const dragsX = edge.includes("w") || edge.includes("e");
+  const dragsY = edge.includes("n") || edge.includes("s");
+  const holdRight = edge.includes("w") ||
+    (!dragsX && maxRight - box.right <= box.left - minX);
+  const holdBottom = edge.includes("n") ||
+    (!dragsY && maxBottom - box.bottom <= box.top - margin);
+  const width = box.right - box.left, height = box.bottom - box.top;
+  // Room the held edges leave. Bounding the side by it here means a growing
+  // square stops against a wall, instead of overshooting and being clamped
+  // back off the corner it was pinned to.
+  const roomX = holdRight ? box.right - minX : maxRight - box.left;
+  const roomY = Math.min(holdBottom ? box.bottom - margin : maxBottom - box.top, maxHeight);
+  // Both axes of a corner drag propose a side. The one the pointer has
+  // committed to — the axis it has pulled furthest — is the one that wins.
+  const proposed = dragsX && dragsY
+    ? (Math.abs(width - start.width) >= Math.abs(height - start.height) ? width : height)
+    : dragsX ? width : height;
+  const side = squareHudWidgetSide(config, proposed, proposed, roomX, roomY);
+  return {
+    x:holdRight ? box.right - side : box.left,
+    y:holdBottom ? box.bottom - side : box.top,
+    width:side, height:side,
+  };
+}
+
 function resizeHudWidget(config, start, edge, dx, dy) {
   const margin = hudWidgetMargin();
   const minX = hudWidgetMinX(config, margin);
-  const minWidth = Math.min(config.minWidth, Math.max(1, area.clientWidth - margin - minX));
+  const maxRight = area.clientWidth - margin;
+  const maxBottom = area.clientHeight - margin;
+  const minWidth = Math.min(config.minWidth, Math.max(1, maxRight - minX));
   const maxHeight = hudWidgetMaxHeight(config, margin);
   const minHeight = Math.min(config.minHeight, maxHeight);
   let left = start.x, right = start.x + start.width;
   let top = start.y, bottom = start.y + start.height;
   if (edge.includes("w")) left = Math.max(minX, Math.min(right - minWidth, left + dx));
-  if (edge.includes("e")) right = Math.min(area.clientWidth - margin, Math.max(left + minWidth, right + dx));
+  if (edge.includes("e")) right = Math.min(maxRight, Math.max(left + minWidth, right + dx));
   // Clamping the height alone would let a top-edge drag push the bottom edge
   // down instead of simply stopping, so the ceiling is applied to the moving
   // edge itself.
   if (edge.includes("n")) top = Math.max(margin, Math.max(bottom - maxHeight, Math.min(bottom - minHeight, top + dy)));
-  if (edge.includes("s")) bottom = Math.min(area.clientHeight - margin, Math.min(top + maxHeight, Math.max(top + minHeight, bottom + dy)));
+  if (edge.includes("s")) bottom = Math.min(maxBottom, Math.min(top + maxHeight, Math.max(top + minHeight, bottom + dy)));
+  if (hudWidgetIsSquare(config))
+    return squareHudResize(config, {left, right, top, bottom}, start, edge,
+                           {margin, minX, maxRight, maxBottom, maxHeight});
   return {x:left, y:top, width:right - left, height:bottom - top};
 }
 
@@ -3442,23 +3546,50 @@ function unregisterDossierWidget(id) {
 
 for (const [name, config] of Object.entries(HUD_WIDGETS)) bindHudWidget(name, config);
 document.getElementById("reset-overlay-layout").addEventListener("click", resetAllHudWidgets);
-// The canvas fills physical pixels, not CSS pixels. A retained cap lets a
-// Retina/4K viewer trade only map/minimap sharpness for paint headroom while
-// ordinary 1× displays retain their native backing store at every setting.
+// The canvas fills physical pixels, not CSS pixels. A render resolution names
+// the tallest picture the map may be drawn at — the familiar broadcast tiers —
+// and the width follows the viewport's own shape, so one setting means the
+// same picture on every window and display. The display's native pixel grid
+// is always the ceiling: a tier above it renders at native rather than paying
+// for pixels this screen cannot show, and a tier below it trades map/minimap
+// sharpness for paint headroom.
 const RENDER_RESOLUTION_KEY = "civvis-render-resolution";
-const RENDER_RESOLUTION_CAP = {
+const RENDER_RESOLUTION_LINES = {
   native: Infinity,
-  balanced: 1.5,
-  performance: 1,
+  "4320": 4320,   // 8K
+  "2160": 2160,   // 4K UHD
+  "1440": 1440,   // QHD
+  "1080": 1080,   // FHD
+  "720": 720,     // HD
+  "480": 480,     // SD
+};
+// The renamed pre-dimension tiers, read once so a stored choice keeps its
+// spirit: Balanced capped a Retina display near QHD, and Performance chose
+// speed over sharpness.
+const RENDER_RESOLUTION_LEGACY = { balanced: "1440", performance: "720" };
+// One high-level control over the quality-versus-speed trade. Each preset is
+// simply a named render resolution; a hand-picked resolution that matches no
+// preset reads back as Custom rather than pretending to be one of them.
+const PERFORMANCE_PRESET_RESOLUTION = {
+  quality: "native",
+  balanced: "1440",
+  fast: "720",
 };
 let renderResolution = "native";
 function renderResolutionOffered(value) {
-  return Object.prototype.hasOwnProperty.call(RENDER_RESOLUTION_CAP, value);
+  return Object.prototype.hasOwnProperty.call(RENDER_RESOLUTION_LINES, value);
 }
-function renderedDpr() {
+function performancePresetFor(resolution) {
+  for (const [preset, presetResolution] of Object.entries(PERFORMANCE_PRESET_RESOLUTION))
+    if (presetResolution === resolution) return preset;
+  return "custom";
+}
+function renderedDpr(viewHeight = MAPH) {
   const reported = Number(window.devicePixelRatio);
   const displayDpr = Number.isFinite(reported) && reported > 0 ? reported : 1;
-  return Math.min(displayDpr, RENDER_RESOLUTION_CAP[renderResolution]);
+  const lines = RENDER_RESOLUTION_LINES[renderResolution];
+  if (!Number.isFinite(lines)) return displayDpr;
+  return Math.min(displayDpr, lines / Math.max(1, viewHeight));
 }
 let DPR = renderedDpr();
 applySavedHudLayouts();
@@ -3582,11 +3713,22 @@ function worldWrapsX() {
   if (typeof state.map.wrap_x === "boolean") return state.map.wrap_x;
   return state.map.script !== "inland_sea";
 }
+// A bounded arena, walled on all four sides rather than seamed east to west.
+// Those walls are a rule of the match and not a way of drawing it: an archer
+// on one wall is the width of the field from the far wall, and a flank that
+// walks off the east side must not arrive behind the enemy in the west. So
+// the two display controls below may close a seam the world has and never
+// open one it does not — on a walled field a unit drawn past the wall is a
+// unit off the map.
+function worldIsWalled() {
+  return !!state && !planetMap() && !worldWrapsX();
+}
 function mapWrapsX() {
-  return planetMap() ? worldWrapsX() : FLAT_MAP_WRAP_X;
+  if (planetMap()) return worldWrapsX();
+  return !worldIsWalled() && FLAT_MAP_WRAP_X;
 }
 function mapWrapsY() {
-  return !!state && !planetMap() && FLAT_MAP_WRAP_Y;
+  return !!state && !planetMap() && !worldIsWalled() && FLAT_MAP_WRAP_Y;
 }
 // Where the chart is unrolled about: the camera once the world is known to
 // come back on itself, and one fixed place until then.
@@ -4036,7 +4178,6 @@ function syncMiniCanvas() {
 }
 
 function resize() {
-  DPR = renderedDpr();
   syncDefaultMinimapGeometry();
   // The widgets are placed first and the map area is measured against where
   // they landed, so a fitted area is never one window size out of date. The
@@ -4234,6 +4375,131 @@ window.addEventListener("resize", () => {
 });
 requestAnimationFrame(scheduleSidebarGeometry);
 
+// ── The turn plate's own width ─────────────────────────────────────────────
+//
+// The plate column is a fixed track the stylesheet sizes by density, and the
+// seam on its right edge is the command deck's affordance brought inside the
+// masthead: drag it and the plate keeps the width, the standings re-divide
+// what remains. Width is a small local preference like the deck's. Past
+// TURN_PLATE_SPLIT_WIDTH the plate has more width than one settings column
+// can spend, so it goes wide instead of tall: the era and the turn counter
+// share the first line and the settings below divide into two columns.
+//
+// The seam is re-rendered with the masthead's markup every frame, so nothing
+// binds to the element itself: the press is caught on #playerhud, which is
+// permanent, and the drag lives on window like every layout gesture here.
+const TURN_PLATE_WIDTH_STORAGE_KEY = "civvis-turn-plate-width-v1";
+const TURN_PLATE_MIN_WIDTH = 148;
+const TURN_PLATE_SPLIT_WIDTH = 252;
+let turnPlateWidth = (() => {
+  const saved = Number(localStorage.getItem(TURN_PLATE_WIDTH_STORAGE_KEY));
+  return Number.isFinite(saved) && saved >= TURN_PLATE_MIN_WIDTH
+    ? Math.round(saved) : null;
+})();
+let turnPlateSeamGesture = null;
+
+// The standings keep a readable stretch beside the plate. They scroll
+// sideways inside their own frame, so the table survives any division — this
+// floor only keeps the plate from swallowing the whole masthead.
+function turnPlateMaxWidth() {
+  const hud = document.getElementById("playerhud");
+  return Math.max(TURN_PLATE_MIN_WIDTH, (hud?.clientWidth || 0) - 240);
+}
+
+function applyTurnPlateWidth(width, persist = true) {
+  const hud = document.getElementById("playerhud");
+  if (!hud) return;
+  // `Number(null)` is 0, and a clamped 0 is the minimum width — so a reset
+  // has to be told apart from a narrow drag before any arithmetic happens.
+  const candidate = width === null || width === undefined ? NaN : Number(width);
+  turnPlateWidth = Number.isFinite(candidate)
+    ? Math.round(Math.max(TURN_PLATE_MIN_WIDTH, Math.min(turnPlateMaxWidth(), candidate)))
+    : null;
+  if (turnPlateWidth === null) hud.style.removeProperty("--turn-plate-width");
+  else hud.style.setProperty("--turn-plate-width", `${turnPlateWidth}px`);
+  hud.classList.toggle("turn-plate-wide",
+    turnPlateWidth !== null && turnPlateWidth >= TURN_PLATE_SPLIT_WIDTH);
+  const seam = hud.querySelector("[data-turn-plate-seam]");
+  if (seam) {
+    seam.setAttribute("aria-valuemin", `${TURN_PLATE_MIN_WIDTH}`);
+    seam.setAttribute("aria-valuemax", `${Math.round(turnPlateMaxWidth())}`);
+    seam.setAttribute("aria-valuenow",
+      `${turnPlateWidth ?? Math.round(hud.querySelector(".victory-turn")?.getBoundingClientRect().width || TURN_PLATE_MIN_WIDTH)}`);
+  }
+  if (persist) {
+    try {
+      if (turnPlateWidth === null) localStorage.removeItem(TURN_PLATE_WIDTH_STORAGE_KEY);
+      else localStorage.setItem(TURN_PLATE_WIDTH_STORAGE_KEY, `${turnPlateWidth}`);
+    } catch (_) {}
+  }
+}
+
+function beginTurnPlateSeamGesture(event) {
+  if (event.button !== undefined && event.button !== 0) return;
+  const plate = document.getElementById("playerhud")?.querySelector(".victory-turn");
+  if (!plate) return;
+  event.preventDefault();
+  event.stopPropagation();
+  turnPlateSeamGesture = {
+    pointerId:event.pointerId, startX:event.clientX,
+    startWidth:plate.getBoundingClientRect().width, moved:false,
+  };
+  document.body.classList.add("layout-resizing");
+  document.body.style.setProperty("--layout-resize-cursor", "col-resize");
+}
+
+function moveTurnPlateSeamGesture(event) {
+  const gesture = turnPlateSeamGesture;
+  if (!gesture || event.pointerId !== gesture.pointerId) return;
+  event.preventDefault();
+  const dx = event.clientX - gesture.startX;
+  if (Math.abs(dx) > 1) gesture.moved = true;
+  if (gesture.moved) applyTurnPlateWidth(gesture.startWidth + dx, false);
+}
+
+function finishTurnPlateSeamGesture(event) {
+  const gesture = turnPlateSeamGesture;
+  if (!gesture || (event && event.pointerId !== gesture.pointerId)) return;
+  turnPlateSeamGesture = null;
+  document.body.classList.remove("layout-resizing");
+  document.body.style.removeProperty("--layout-resize-cursor");
+  if (gesture.moved) applyTurnPlateWidth(turnPlateWidth);
+}
+
+{
+  const hud = document.getElementById("playerhud");
+  hud?.addEventListener("pointerdown", event => {
+    if (event.target.closest?.("[data-turn-plate-seam]"))
+      beginTurnPlateSeamGesture(event);
+  });
+  hud?.addEventListener("dblclick", event => {
+    if (!event.target.closest?.("[data-turn-plate-seam]")) return;
+    event.preventDefault();
+    applyTurnPlateWidth(null);
+  });
+  hud?.addEventListener("keydown", event => {
+    const seam = event.target.closest?.("[data-turn-plate-seam]");
+    if (!seam) return;
+    const step = event.shiftKey ? 24 : 8;
+    const current = turnPlateWidth
+      ?? hud.querySelector(".victory-turn")?.getBoundingClientRect().width
+      ?? TURN_PLATE_MIN_WIDTH;
+    let next = null;
+    if (event.key === "ArrowLeft") next = current - step;
+    if (event.key === "ArrowRight") next = current + step;
+    if (event.key === "Home") next = TURN_PLATE_MIN_WIDTH;
+    if (event.key === "End") next = turnPlateMaxWidth();
+    if (next === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    applyTurnPlateWidth(next);
+  });
+  window.addEventListener("pointermove", moveTurnPlateSeamGesture, {passive:false});
+  window.addEventListener("pointerup", finishTurnPlateSeamGesture);
+  window.addEventListener("pointercancel", finishTurnPlateSeamGesture);
+  applyTurnPlateWidth(turnPlateWidth, false);
+}
+
 function screenToWorld(sx, sy) {
   const vx = (sx - MAPW / 2) / cam.scale;
   const vy = (sy - MAPH / 2) / cam.scale / mapProjectionY();
@@ -4381,9 +4647,9 @@ function performanceRecommendation(frameAverage, frameP95, renderP95, sampleCoun
   if (sampleCount < 8) return "Measuring viewer performance…";
   const fps = frameAverage > 0 ? 1000 / frameAverage : 0;
   if (fps < 45 || frameP95 > 33.3 || renderP95 > 22)
-    return "Performance mode recommended — lower render resolution or hide optional map detail.";
+    return "The Fast preset is recommended — lower the render resolution or hide optional map detail.";
   if (fps < 55 || frameP95 > 20 || renderP95 > 14)
-    return "Running acceptably — Balanced resolution may help as the map gets busier.";
+    return "Running acceptably — the Balanced preset may help as the map gets busier.";
   return "Running smoothly at the current display settings.";
 }
 function updatePerformanceStatsDisplay(now = performance.now(), force = false) {
@@ -4475,7 +4741,7 @@ function updateSimulationStatsDisplay(now) {
   const runs = simulationLedger.runs;
   const last = runs[runs.length - 1];
   lastValue.textContent = last
-    ? `${performanceDuration(last.ms)} · ${titleCase(last.victory || "score")} victory`
+    ? `${performanceDuration(last.ms)} · ${victoryVerdict(last.victory, last.victoryLabel)}`
     : "None finished yet";
   countValue.textContent = runs.length
     ? `${performanceInteger(runs.length)} this session · avg ${performanceDuration(performanceAverage(runs.map(run => run.ms)))}`
@@ -4537,7 +4803,7 @@ function trackSimulationRun(st, now) {
   if (st?.spectate !== true) return;
   const seed = st?.seed;
   const turn = typeof st?.turn === "number" && Number.isFinite(st.turn) ? st.turn : null;
-  const finished = st?.winner !== null && st?.winner !== undefined;
+  const finished = gameFinished(st);
   // A different seed is a different world, and the same seed at an earlier turn
   // is that world restarted. Either way the run being timed is a new one.
   if (seed !== simulationLedger.seed ||
@@ -4570,6 +4836,9 @@ function trackSimulationRun(st, now) {
   simulationLedger.runs.push({
     ms: now - simulationLedger.startedAt,
     victory: typeof st?.victory_type === "string" ? st.victory_type : null,
+    // The Mercy Rule's notation is composed by the engine, so a finished run
+    // has to keep it to still say what it ended on once the world is gone.
+    victoryLabel: typeof st?.victory_label === "string" ? st.victory_label : null,
   });
   if (simulationLedger.runs.length > SIMULATION_RUN_LIMIT) simulationLedger.runs.shift();
 }
@@ -4580,11 +4849,11 @@ const DISPLAY_RESOURCE_CAPS_STORAGE_KEY = "civvis-display-resource-caps-v1";
 const DISPLAY_RESOURCE_CAP_VALUES = [10, 20, 30, 40, 50, 60, 70, 80, 90];
 const DISPLAY_RESOURCE_CAP_DEFAULT = 70;
 const DISPLAY_CPU_GUIDANCE_CONTROLS = [
-  "renderresolution", "yieldchk", "reschk", "resourcedisplay", "rocketanimchk",
-  "unittrails", "unittail",
+  "performancepreset", "renderresolution", "yieldchk", "reschk",
+  "resourcedisplay", "rocketanimchk", "unittail",
 ];
 const DISPLAY_MEMORY_GUIDANCE_CONTROLS = [
-  "renderresolution", "resourcedisplay", "reset-overlay-layout",
+  "performancepreset", "renderresolution", "resourcedisplay", "reset-overlay-layout",
 ];
 let displayResourceCaps = {cpu: DISPLAY_RESOURCE_CAP_DEFAULT, memory: DISPLAY_RESOURCE_CAP_DEFAULT};
 let machineMetrics = {cpu: null, memory: null, status: "sampling", samples: 0, everAvailable: false};
@@ -4680,15 +4949,15 @@ function updateMachineMetricsDisplay() {
   } else if (machineMetrics.status === "unavailable") {
     advice.textContent = "Machine telemetry is unavailable here. Use the display choices below manually.";
   } else if (cpuOver && memoryOver) {
-    advice.textContent = "CPU and memory are over their warning thresholds. Prefer Performance resolution, then reduce tile layers, animations, or unneeded overlays below.";
+    advice.textContent = "CPU and memory are over their warning thresholds. Prefer the Fast preset, then reduce tile layers, animations, or unneeded overlays below.";
   } else if (cpuOver) {
-    advice.textContent = "CPU is over its warning threshold. Prefer Performance resolution, then reduce yields, resource markers, or rocket and satellite animations below.";
+    advice.textContent = "CPU is over its warning threshold. Prefer the Fast preset, then reduce yields, resource markers, or rocket and satellite animations below.";
   } else if (memoryOver) {
-    advice.textContent = "Memory is over its warning threshold. Prefer Balanced or Performance resolution and hide unneeded overlays below.";
+    advice.textContent = "Memory is over its warning threshold. Prefer the Balanced or Fast preset and hide unneeded overlays below.";
   } else if (cpuNear || memoryNear) {
     advice.textContent = "Near a selected warning threshold. Lower render resolution or optional map detail below before load rises further.";
   } else {
-    advice.textContent = "Within the selected warning thresholds. Native resolution and optional map detail are available.";
+    advice.textContent = "Within the selected warning thresholds. High quality — this display's native resolution — and optional map detail are available.";
   }
 }
 function setDisplayResourceCap(kind, value) {
@@ -5381,6 +5650,18 @@ async function boot() {
       if ([...speeds.options].some(option => option.value === stockSetup.speed))
         speeds.value = stockSetup.speed;
     }
+    // The endgame rules stamp from the same stock setup: the shipped Mercy
+    // Rule default lives engine-side, not in this markup.
+    setMercySelect(document.getElementById("mercyrule"), stockSetup.mercy_rule);
+    const requiredVictoriesSelect = document.getElementById("requiredvictories");
+    if (requiredVictoriesSelect && stockSetup.required_victory_types)
+      requiredVictoriesSelect.value = String(stockSetup.required_victory_types);
+    const victoryGroup = document.getElementById("victory-options");
+    if (victoryGroup && !victoryGroup.dataset.capwired) {
+      victoryGroup.dataset.capwired = "1";
+      victoryGroup.addEventListener("change", syncRequiredVictoriesCap);
+    }
+    syncRequiredVictoriesCap();
     // The ruleset carries the other game's vocabulary too, and the mode may
     // already be selected by the time it lands.
     syncSetupMode();
@@ -5415,7 +5696,7 @@ async function send(action) {
   // so an action pass works through nearby groups before returning to a unit
   // the player already considered. Anything else — a half-move, a city order
   // — leaves the selection be.
-  if (action.unit !== undefined && state && !SPEC && state.winner === null &&
+  if (action.unit !== undefined && state && !SPEC && !gameFinished(state) &&
       (!sel || sel.id !== action.unit || !unitNeedsOrders(sel))) {
     advanceToNextActionUnit(true);
   } else {
@@ -5437,7 +5718,7 @@ function updateSpecPauseButtons() {
   // alone does not mean the simulation has never run. Seat 0 still acting is
   // the untouched opening position; a paused world there is started, not
   // resumed. Every later paused position resumes in the ordinary sense.
-  const atStart = state?.turn === 1 && state?.current === 0 && state?.winner == null;
+  const atStart = state?.turn === 1 && state?.current === 0 && !gameFinished(state);
   const action = specPaused ? (atStart ? "Start" : "Resume") : "Pause";
   const icon = specPaused ? "▶" : "⏸";
   const main = document.getElementById("specpause");
@@ -5460,7 +5741,7 @@ function toggleSpecPause() {
   setPace({paused: specPaused});
 }
 setInterval(reportSpecStatus, 4000);
-// --- Live time: the turn plate's stopwatch, under its Watch pace row. It
+// --- Live time: the turn plate's stopwatch, above its Watch pace row. It
 // reads how long the world on screen has actually been playing: it starts
 // with the world's first unpaused frame, stops while the simulation is paused
 // or a result is on screen, and a new world starts it over from zero. A
@@ -5483,7 +5764,7 @@ function liveClockLabel() {
 // Paused covers the unstarted opening as well: a clock that has never run
 // and is not running reads 0:00, which is what an unstarted game has played.
 function syncLiveClockRun() {
-  const over = !!state && state.winner !== null && state.winner !== undefined;
+  const over = gameFinished(state);
   const shouldRun = SPEC && !!state && !specPaused && !over;
   if (shouldRun && liveClock.runningSince === null) {
     liveClock.runningSince = Date.now();
@@ -5526,7 +5807,7 @@ function restoreLiveClock(st) {
   // The world kept playing while no document watched it, so the time away is
   // live time too — but only when the clock was running on both sides of the
   // gap; a pause of unknown length inside it would otherwise be counted.
-  if (stored.running && st.paused === false && st.winner == null)
+  if (stored.running && st.paused === false && !gameFinished(st))
     liveClock.ms += Math.max(0, Date.now() - (Number(stored.wall) || Date.now()));
 }
 // The plate is only rebuilt when a frame changes it, which at a slow watch
@@ -5594,7 +5875,7 @@ function adoptTiles(st) {
   if (!map) return st;
   if (Array.isArray(map.tiles)) {
     tileStore = {seed: st.seed, turn: st.turn,
-                 finished:st.winner !== null && st.winner !== undefined,
+                 finished:gameFinished(st),
                  sequence:stateFrameSequence(st),
                  tiles: map.tiles};
     return st;
@@ -5606,7 +5887,7 @@ function adoptTiles(st) {
   const tiles = tileStore.tiles.slice();
   for (const [at, tile] of patch) tiles[at] = tile;
   tileStore = {seed: st.seed, turn: st.turn,
-               finished:st.winner !== null && st.winner !== undefined,
+               finished:gameFinished(st),
                sequence:stateFrameSequence(st), tiles};
   map.tiles = tiles;
   return st;
@@ -5890,15 +6171,13 @@ function paceHeldOpen() {
   return [document.getElementById("specspeed"), document.querySelector("[data-hud-pace]")]
     .some(select => select && document.activeElement === select);
 }
-// Only the standings' own copies of the pace and turn-structure selects die
-// when the standings repaint, so only those copies need to hold the repaint
-// while one is held open. The sidebar #specspeed lives outside #playerhud
-// and never has this problem.
+// Only the standings' own copy of the pace select dies when the standings
+// repaint, so only that copy needs to hold the repaint while it is held
+// open. The sidebar #specspeed lives outside #playerhud and never has this
+// problem.
 function hudPaceHeldOpen() {
-  return ["[data-hud-pace]", "[data-hud-turns]"].some(selector => {
-    const select = document.querySelector(selector);
-    return !!select && document.activeElement === select;
-  });
+  const select = document.querySelector("[data-hud-pace]");
+  return !!select && document.activeElement === select;
 }
 function paceOffered(select, ms) {
   return [...select.options].some(o => +o.value === ms);
@@ -5961,21 +6240,29 @@ function restoreBetweenGameCountdown() {
   betweenGameCountdownChoice = ms;
   select.value = String(ms);
 }
+function syncPerformancePresetSelect() {
+  const select = document.getElementById("performancepreset");
+  if (select) select.value = performancePresetFor(renderResolution);
+}
 function rememberRenderResolution(value) {
-  renderResolution = renderResolutionOffered(value) ? value : "native";
+  const migrated = RENDER_RESOLUTION_LEGACY[value] || value;
+  renderResolution = renderResolutionOffered(migrated) ? migrated : "native";
   try { localStorage.setItem(RENDER_RESOLUTION_KEY, renderResolution); } catch (e) {}
+  const select = document.getElementById("renderresolution");
+  if (select) select.value = renderResolution;
+  syncPerformancePresetSelect();
 }
 function restoreRenderResolution() {
   const select = document.getElementById("renderresolution");
   if (!select) return;
   let stored = null;
   try { stored = localStorage.getItem(RENDER_RESOLUTION_KEY); } catch (e) {}
-  if (!renderResolutionOffered(stored)) return;
-  renderResolution = stored;
-  select.value = stored;
+  if (stored === null) { syncPerformancePresetSelect(); return; }
+  // rememberRenderResolution also rewrites a stored pre-dimension tier as the
+  // dimension it kept the spirit of, so the migration happens exactly once.
+  rememberRenderResolution(stored);
 }
 function refreshRenderResolution() {
-  DPR = renderedDpr();
   syncMapViewport();
   syncMiniCanvas();
   if (state) { draw(); drawMini(); }
@@ -6475,16 +6762,30 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   syncViewPlayer();
   if (newWorld && st.seed !== undefined) { lastSeed = st.seed; loadTacks(); }
   if (newWorld) {
+    // The game mode belongs to this world too: a battlefield on screen reads
+    // back as Tactics, with the size control holding its Tactics map rather than a
+    // seat count. The mode is in place before the size and map are read back
+    // so both controls hold the roster those values live in.
+    const tactics = isBattlefieldMapScript(st.map.script);
+    document.getElementById("gamemode").value = tactics ? "tactics" : "civ";
+    syncSetupMode();
     const majors = st.players.filter(p => !p.is_minor && !p.is_barbarian).length;
     const playerSelect = document.getElementById("np");
-    if ([...playerSelect.options].some(o => +o.value === majors))
+    const arena = tactics ? battlefieldSizes().find(size =>
+      (!size.script || size.script === st.map.script) &&
+      size.width === st.map.width && size.height === st.map.height) : null;
+    if (arena) {
+      playerSelect.value = arena.id;
+    } else if ([...playerSelect.options].some(o => +o.value === majors)) {
       playerSelect.value = String(majors);
+    }
     // Teams belong to this world as much as its map does, so a page that
     // reloads over a running team game reads that game back rather than
     // offering to restart it as a free-for-all.
     syncTeams();
     document.getElementById("teams").value = teamRuleFromArray(st.teams);
     document.getElementById("maptype").value = st.map.script || "tenins_ball";
+    if (tactics) syncBattlefieldSizes(true);
     document.getElementById("mapshape").value = st.map.shape || "planet";
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
@@ -6513,6 +6814,29 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       const checkbox = document.getElementById(`victory-${track.id}`);
       if (checkbox) checkbox.checked = st.victory_conditions?.[track.id] !== false;
     }
+    if (st.mercy_rule !== undefined)
+      setMercySelect(document.getElementById("mercyrule"), st.mercy_rule);
+    const requiredRestore = document.getElementById("requiredvictories");
+    if (requiredRestore && st.required_victory_types)
+      requiredRestore.value = String(st.required_victory_types);
+    if (tactics && st.tactics) {
+      const arenaSettings = {
+        tacticsfog: st.tactics.fog ? "1" : "0",
+        tacticsturnlimit: String(st.tactics.turn_limit ?? st.max_turns ?? 100),
+        tacticscities: String(st.tactics.cities ?? 1),
+        tacticsproduction: String(st.tactics.production ?? 30),
+        tacticsgold: String(st.tactics.gold ?? 30),
+        tacticsturnspertech: String(st.tactics.turns_per_tech ?? 5),
+        tacticsbestof: String(st.tactics.best_of ?? 1),
+        tacticsuniqueunits: st.tactics.unique_units ? "1" : "0",
+      };
+      for (const [id, value] of Object.entries(arenaSettings)) {
+        const select = document.getElementById(id);
+        if (select && [...select.options].some(option => option.value === value))
+          select.value = value;
+      }
+    }
+    syncRequiredVictoriesCap();
     activeSimulationSettingsKey = simulationSettingsKey(selectedSimulationSettings());
     applyQueuedSimulationSettings(st.next_game_settings);
     updateRestartSimulationButton();
@@ -6538,10 +6862,11 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     setTimeout(() => errEl.style.display = "none", 2500); }
   const w = document.getElementById("winner");
   const hasWinner = st.winner !== null && st.winner !== undefined;
+  const drawn = gameDrawn(st);
   // Being eliminated ends the game for the person at the keyboard even though
   // the world plays on. Say so, rather than leaving them on a live-looking
   // map they cannot touch.
-  const fallen = !SPEC && !hasWinner && st.players[0] && st.players[0].alive === false;
+  const fallen = !SPEC && !gameFinished(st) && st.players[0] && st.players[0].alive === false;
   if (fallen) {
     const signature = `fallen|${st.seed}|${st.turn}`;
     w.classList.add("visible");
@@ -6560,6 +6885,39 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       armFinaleCountdown(signature);
     }
   }
+  if (drawn) {
+    if (SPEC && st.supervised)
+      waitForSupervisedSuccessor(st.server_instance, st.seed);
+    const signature = `${st.seed}|draw|${reportedTurn(st)}`;
+    w.style.setProperty("--winner-color", "#c8b887");
+    w.classList.add("visible");
+    if (w.dataset.signature !== signature) {
+      w.dataset.signature = signature;
+      w.innerHTML = `<div class="winner-content">
+        <span class="winner-kicker">Battle drawn</span>
+        <span class="winner-mark" aria-hidden="true">◇</span>
+        <strong class="winner-title">No side wins</strong>
+        <span class="winner-verdict">Turn limit reached</span>
+        <span class="winner-meta">Turn ${reportedTurn(st)} · Both sides survive</span>
+        ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
+        ${SPEC ? `` : `<button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
+          title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>`}
+      </div>`;
+      armFinaleCountdown(signature);
+    }
+    const respawn = document.getElementById("respawn");
+    if (respawn) {
+      if (st.paused) {
+        clearExhibitionCountdown();
+        respawn.textContent = "Final frame · exhibition paused";
+      } else if (st.restart_in !== undefined) {
+        syncExhibitionCountdown(st);
+      } else {
+        clearExhibitionCountdown();
+        respawn.textContent = "Preparing the next battle";
+      }
+    }
+  }
   if (hasWinner) {
     const p = st.players[st.winner];
     const winnerIds = Array.isArray(st.winners) && st.winners.length ? st.winners : [st.winner];
@@ -6571,7 +6929,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     // map visible until that request times out (or the page is refreshed).
     if (SPEC && st.supervised)
       waitForSupervisedSuccessor(st.server_instance, st.seed);
-    const verdict = titleCase(st.victory_type || "score") + " victory";
+    const verdict = victoryVerdict(st.victory_type, st.victory_label);
     const signature = `${st.seed}|${winnerIds.join(",")}|${verdict}|${st.turn}`;
     w.style.setProperty("--winner-color", pcol(st.winner));
     w.classList.add("visible");
@@ -6614,7 +6972,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         respawn.textContent = "Preparing the next world";
       }
     }
-  } else if (!fallen) {
+  } else if (!fallen && !drawn) {
     w.classList.remove("visible");
     w.style.removeProperty("--winner-color");
     if (w.dataset.signature) { delete w.dataset.signature; w.replaceChildren(); }
@@ -6640,7 +6998,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   // successor world painted nothing, and must not claim it did.
   if (st.turn !== undefined && st.seed !== undefined)
     paintedFrame = {seed:st.seed, turn:st.turn,
-                    finished:st.winner !== null && st.winner !== undefined,
+                    finished:gameFinished(st),
                     sequence:stateFrameSequence(st)};
   finishWorldTransition(st);
 }
@@ -7959,14 +8317,41 @@ function tri(ax, ay, bx, by, ccx, ccy) {
   cx.closePath(); cx.fill();
 }
 
-// Districts are pieces of a city rather than badges laid on top of the map.
-// Keep their visual centre just above the tile centre: the front terrace can
-// still touch the ground, while the skyline has room to read as architecture.
-const DISTRICT_ICON_LIFT = 3.5;
-// Districts are their own tile, not a minor terrain badge.  This deliberately
-// fills most of the hex while leaving enough of the edge visible for roads,
-// borders, and the cell's underlying terrain to remain readable.
-const DISTRICT_ICON_SCALE = 1.8;
+// Districts are colored squares — board-game tokens rather than tiny
+// architecture. The family color IS the identity (blue = science, purple =
+// culture, orange = industry), readable from survey zoom without a key, and
+// the token is deliberately flat: solid color, thin outline, no lighting.
+// Completed buildings stand on the token as dark bars; see `drawDistrictBars`.
+//
+// Square, not round, because the other painted piece on a tile is a unit, and
+// a unit's command token is a circle (a capsule for civilians). Two colored
+// discs a tile apart are told apart only by reading their contents; a square
+// beside a circle is told apart by silhouette, at any zoom, before either
+// resolves. It is a true square rather than a projected one, for the same
+// reason the unit token is a true circle: these are pieces set on the board,
+// not paint applied to it. Sized to cover the ground the disc covered —
+// 4·h² ≈ π·(0.56·S)²·YS — so the swap changes shape, not weight.
+const DISTRICT_TOKEN_HALF = S * 0.48;  // 34.6px side ≈ 38% of a hex's area
+
+// The token's outline. Its corners are barely rounded — enough that it reads
+// as a printed counter rather than a raw fill, not enough to start rounding
+// back toward the unit tokens it exists to be distinct from.
+function districtTokenPath(x, y, half) {
+  cx.beginPath();
+  cx.roundRect(x - half, y - half, half * 2, half * 2, half * .16);
+}
+
+// Positive amounts mix a district color toward white, negative toward black.
+// The dark end is the ink that the token's bars and glyphs share, so every
+// family's furniture is automatically a deep shade of its own color.
+function districtShade(color, amount) {
+  const hex = color.length === 4
+    ? "#" + [...color.slice(1)].map(ch => ch + ch).join("") : color;
+  const target = amount < 0 ? 0 : 255, weight = Math.abs(amount);
+  const mixed = [1, 3, 5].map(at => Math.round(
+    parseInt(hex.slice(at, at + 2), 16) * (1 - weight) + target * weight));
+  return `rgb(${mixed.join(",")})`;
+}
 
 function districtIconPositions(value) {
   if (!Array.isArray(value)) return [];
@@ -8016,324 +8401,123 @@ function districtBuildingsByTile() {
   return byTile;
 }
 
-function districtBuildingKind(id, family, index) {
-  if (DISTRICT_BUILDING_KIND[id]) return DISTRICT_BUILDING_KIND[id];
-  const tiers = {
-    campus:["books", "academy", "lab"], faith:["shrine", "temple", "temple"],
-    war:["fort", "stable", "academy"], trade:["market", "bank", "tower"],
-    harbor:["lighthouse", "shipyard", "port"], culture:["theater", "museum", "broadcast"],
-    industry:["workshop", "factory", "plant"], fun:["arena", "park", "stadium"],
-    water:["plant"], homes:["market", "mall"], air:["hangar", "airport"],
-    civic:["civic", "civic", "tower"], preserve:["grove", "sanctuary"],
-  };
-  const sequence = tiers[family] || ["house"];
-  return sequence[Math.min(index, sequence.length - 1)];
-}
+// A district's completed buildings are up to three bars standing on the lower
+// half of the token — a tiny bar chart of how far the district has grown.
+// Slots fill left to right in build order (cheapest first, matching the sort
+// in `districtBuildingsByTile`). A pillaged building's bar falls to a third
+// of its height, and the full bar's ghost outline stays standing over the
+// stub so the fall reads as damage rather than youth.
+const DISTRICT_BAR_SEATS = [-7.2, 0, 7.2];
+const DISTRICT_BAR_WIDTH = 4.6, DISTRICT_BAR_HEIGHT = 11;
+const DISTRICT_BAR_BASELINE = 11.5;
 
-// A completed building is deliberately a tiny structure, not an emoji or a
-// text label. The small set of rooflines and landmarks is enough to distinguish
-// a school from a market or a factory at map scale, while sharing one material
-// and outline language with the district terrace underneath it.
-function drawDistrictBuilding(kind, x, y, scale, pillaged) {
-  const ink = "#1a2025", stone = "#ece8d8", roof = "#a65342";
-  const rect = (left, top, width, height, fill = stone) => {
-    cx.fillStyle = fill; cx.beginPath(); cx.rect(left, top, width, height); cx.fill(); cx.stroke();
-  };
-  const roofed = (width = 7, height = 5, roofColor = roof) => {
-    rect(-width / 2, -height, width, height);
-    cx.fillStyle = roofColor; cx.beginPath();
-    cx.moveTo(-width / 2 - 1.1, -height); cx.lineTo(0, -height - 4.2);
-    cx.lineTo(width / 2 + 1.1, -height); cx.closePath(); cx.fill(); cx.stroke();
-  };
-  cx.save();
-  cx.translate(x, y); cx.scale(scale, scale);
-  cx.lineJoin = "round"; cx.lineCap = "round";
-  cx.strokeStyle = ink; cx.lineWidth = 1.05;
-  if (pillaged) cx.globalAlpha = .5;
-
-  if (kind === "books") {
-    rect(-4.2, -5.2, 8.4, 5.2);
-    cx.fillStyle = "#6da7c8";
-    for (const bx of [-2.5, -.7, 1.1]) cx.fillRect(bx, -4.5, 1.1, 3.1);
-    cx.fillStyle = roof; cx.beginPath();
-    cx.moveTo(-5, -5.2); cx.lineTo(0, -9); cx.lineTo(5, -5.2); cx.closePath(); cx.fill(); cx.stroke();
-  } else if (kind === "academy" || kind === "lab") {
-    rect(-3.8, -4.2, 7.6, 4.2, kind === "lab" ? "#b8d8d2" : stone);
-    cx.fillStyle = kind === "lab" ? "#71b9c4" : stone;
-    cx.beginPath(); cx.arc(0, -4.1, 3.8, Math.PI, 0); cx.fill(); cx.stroke();
-    cx.beginPath(); cx.moveTo(1.5, -7.2); cx.lineTo(4.7, -10.1); cx.stroke();
-    if (kind === "lab") { cx.fillStyle = "#d6f5ee"; cx.beginPath(); cx.arc(4.8, -10.2, 1.2, 0, 7); cx.fill(); }
-  } else if (kind === "shrine" || kind === "temple") {
-    rect(-3.4, -5.3, 6.8, 5.3, stone);
-    cx.fillStyle = kind === "temple" ? "#d7c48e" : "#bd7159";
-    cx.beginPath(); cx.moveTo(-4.5, -5.3); cx.lineTo(0, -9.5); cx.lineTo(4.5, -5.3);
-    cx.closePath(); cx.fill(); cx.stroke();
-    cx.beginPath(); cx.moveTo(0, -9.5); cx.lineTo(0, -12); cx.stroke();
-  } else if (kind === "market") {
-    rect(-4.5, -4.8, 9, 4.8);
-    cx.fillStyle = "#d9ad4e"; cx.beginPath();
-    cx.moveTo(-5.2, -4.8); cx.lineTo(-3.5, -8.3); cx.lineTo(3.5, -8.3);
-    cx.lineTo(5.2, -4.8); cx.closePath(); cx.fill(); cx.stroke();
-    cx.strokeStyle = "#9b5541"; cx.lineWidth = 1.2;
-    for (const bx of [-2.1, .2, 2.5]) { cx.beginPath(); cx.moveTo(bx, -8.1); cx.lineTo(bx + .7, -5); cx.stroke(); }
-  } else if (kind === "bank" || kind === "tower" || kind === "civic") {
-    const height = kind === "tower" ? 10.6 : 7.2;
-    rect(-3.5, -height, 7, height, kind === "bank" ? "#d9c67d" : stone);
-    if (kind === "civic" || kind === "museum") {
-      cx.fillStyle = "#c7b789"; cx.beginPath();
-      cx.moveTo(-4.8, -height); cx.lineTo(0, -height - 3.2); cx.lineTo(4.8, -height);
-      cx.closePath(); cx.fill(); cx.stroke();
-    }
-    cx.strokeStyle = "#637d8a"; cx.lineWidth = .75;
-    for (const bx of [-1.9, 0, 1.9]) { cx.beginPath(); cx.moveTo(bx, -height + 1.3); cx.lineTo(bx, -1.2); cx.stroke(); }
-  } else if (kind === "fort" || kind === "stable") {
-    rect(-4.4, -6.2, 8.8, 6.2, kind === "stable" ? "#b48b61" : "#97938a");
-    if (kind === "fort") {
-      cx.fillStyle = "#97938a";
-      for (const bx of [-4.4, -1.45, 1.5]) cx.fillRect(bx, -8.2, 2.4, 2.2);
-      cx.strokeRect(-4.4, -8.2, 8.8, 2.2);
-    } else {
-      cx.fillStyle = roof; cx.beginPath();
-      cx.moveTo(-5.4, -6.2); cx.lineTo(0, -10); cx.lineTo(5.4, -6.2); cx.closePath(); cx.fill(); cx.stroke();
-    }
-  } else if (kind === "lighthouse") {
-    cx.fillStyle = stone; cx.beginPath();
-    cx.moveTo(-2.6, 0); cx.lineTo(-1.6, -9.5); cx.lineTo(1.6, -9.5); cx.lineTo(2.6, 0);
-    cx.closePath(); cx.fill(); cx.stroke();
-    cx.fillStyle = "#d9574f"; cx.fillRect(-2.2, -11.2, 4.4, 1.7); cx.strokeRect(-2.2, -11.2, 4.4, 1.7);
-  } else if (kind === "shipyard" || kind === "port") {
-    cx.strokeStyle = "#705239"; cx.lineWidth = 1.4;
-    cx.beginPath(); cx.moveTo(-5, -.5); cx.lineTo(5, -.5); cx.stroke();
-    for (const bx of [-3.5, 1.5]) { cx.beginPath(); cx.moveTo(bx, -.5); cx.lineTo(bx, 2); cx.stroke(); }
-    cx.strokeStyle = ink; cx.lineWidth = 1;
-    cx.beginPath(); cx.moveTo(1.5, -.5); cx.lineTo(1.5, -10); cx.lineTo(5.4, -5.8); cx.stroke();
-    if (kind === "port") { cx.fillStyle = "#d5d0bd"; cx.beginPath(); cx.ellipse(-3, -2.8, 3, 1.8, 0, 0, 7); cx.fill(); cx.stroke(); }
-  } else if (kind === "theater" || kind === "arena" || kind === "stadium") {
-    const wide = kind === "stadium" ? 5.8 : kind === "arena" ? 4.7 : 4.1;
-    cx.fillStyle = kind === "theater" ? "#d5c5df" : stone;
-    cx.beginPath(); cx.ellipse(0, -2.8, wide, 3.6, 0, Math.PI, 0); cx.fill(); cx.stroke();
-    cx.strokeStyle = ink; cx.lineWidth = .9;
-    cx.beginPath(); cx.ellipse(0, -2.8, wide * .52, 1.55, 0, Math.PI, 0); cx.stroke();
-    if (kind === "stadium") { cx.strokeStyle = "#d9ad4e"; cx.beginPath(); cx.moveTo(-wide, -6); cx.lineTo(-wide, -9); cx.moveTo(wide, -6); cx.lineTo(wide, -9); cx.stroke(); }
-  } else if (kind === "museum" || kind === "broadcast") {
-    if (kind === "museum") {
-      rect(-4.2, -5.5, 8.4, 5.5); cx.fillStyle = "#c8c0aa"; cx.beginPath();
-      cx.moveTo(-5, -5.5); cx.lineTo(0, -9); cx.lineTo(5, -5.5); cx.closePath(); cx.fill(); cx.stroke();
-    } else {
-      rect(-3.2, -4.3, 6.4, 4.3, "#aab6be");
-      cx.beginPath(); cx.moveTo(0, -4.3); cx.lineTo(0, -11); cx.stroke();
-      for (const side of [-1, 1]) { cx.beginPath(); cx.moveTo(0, -9); cx.lineTo(side * 3.1, -6.7); cx.stroke(); }
-    }
-  } else if (kind === "workshop" || kind === "factory" || kind === "plant") {
-    rect(-5, -5.2, 10, 5.2, kind === "plant" ? "#889ca0" : "#88796a");
-    cx.fillStyle = "#b5a069"; cx.beginPath();
-    cx.moveTo(-5.6, -5.2); cx.lineTo(-2.5, -8.5); cx.lineTo(.3, -5.2);
-    cx.lineTo(2.6, -8.5); cx.lineTo(5.6, -5.2); cx.closePath(); cx.fill(); cx.stroke();
-    if (kind !== "workshop") { rect(2.3, -10.5, 2.4, 5.5, "#77685f"); }
-    if (kind === "plant") { cx.fillStyle = "#e6d565"; cx.beginPath(); cx.moveTo(-1, -7.5); cx.lineTo(1.2, -7.5); cx.lineTo(0, -4.3); cx.lineTo(2.1, -4.3); cx.lineTo(-1.4, -.9); cx.lineTo(-.4, -4.1); cx.lineTo(-2, -4.1); cx.closePath(); cx.fill(); }
-  } else if (kind === "park" || kind === "grove" || kind === "sanctuary") {
-    const foliage = kind === "sanctuary" ? "#5f8e6b" : "#3e7a45";
-    for (const [tx, ty, size] of [[-2.7, 0, .72], [1.8, -1.2, 1], [4, .5, .55]]) {
-      cx.fillStyle = foliage; cx.beginPath();
-      cx.moveTo(tx - 3 * size, ty); cx.lineTo(tx, ty - 7 * size); cx.lineTo(tx + 3 * size, ty);
-      cx.closePath(); cx.fill(); cx.stroke();
-    }
-  } else if (kind === "ferris") {
-    cx.strokeStyle = "#f1df91"; cx.lineWidth = 1.15; cx.beginPath(); cx.arc(0, -5, 4.8, 0, 7); cx.stroke();
-    for (let angle = 0; angle < 7; angle += Math.PI / 3) {
-      cx.beginPath(); cx.moveTo(0, -5); cx.lineTo(Math.cos(angle) * 4.8, -5 + Math.sin(angle) * 4.8); cx.stroke();
-    }
-    cx.beginPath(); cx.moveTo(-3.5, 0); cx.lineTo(0, -2.2); cx.lineTo(3.5, 0); cx.stroke();
-  } else if (kind === "aquarium" || kind === "bath") {
-    cx.fillStyle = kind === "bath" ? "#bcd9d1" : "#73b7c8";
-    cx.beginPath(); cx.ellipse(0, -2.5, 5.1, 3.2, 0, 0, 7); cx.fill(); cx.stroke();
-    cx.strokeStyle = "#e9f6ed"; cx.lineWidth = .85; cx.beginPath(); cx.arc(0, -2.5, 2.6, .15, 2.9); cx.stroke();
-  } else if (kind === "hangar" || kind === "airport") {
-    cx.fillStyle = "#b7c2c7"; cx.beginPath(); cx.arc(-1.3, -1.3, 4.7, Math.PI, 0); cx.fill(); cx.stroke();
-    cx.strokeStyle = "#f2efe2"; cx.lineWidth = 1.15; cx.setLineDash([2, 2]);
-    cx.beginPath(); cx.moveTo(-5.5, 1.6); cx.lineTo(5.5, .2); cx.stroke(); cx.setLineDash([]);
-    if (kind === "airport") { cx.strokeStyle = ink; cx.beginPath(); cx.moveTo(2, -4); cx.lineTo(4.2, -7); cx.stroke(); }
-  } else if (kind === "mall") {
-    rect(-5.2, -5.1, 10.4, 5.1, "#d9c8a5");
-    cx.fillStyle = "#7da6b7"; cx.fillRect(-3.6, -3.9, 7.2, 1.8); cx.strokeRect(-3.6, -3.9, 7.2, 1.8);
-  } else {
-    roofed();
-  }
-
-  if (pillaged) {
-    cx.strokeStyle = "#d8443a"; cx.lineWidth = 1.35;
-    cx.beginPath(); cx.moveTo(-4.6, 1); cx.lineTo(4.6, -10.4); cx.stroke();
-  }
-  cx.restore();
-}
-
-function drawDistrictBuildingCluster(buildings, family) {
-  if (!buildings?.length) return;
-  const visible = buildings.length > 3 ? buildings.slice(-3) : buildings;
-  const seats = visible.length === 1 ? [[0, 3.6, 1.05]]
-    : visible.length === 2 ? [[-4.6, 4.2, .9], [4.8, 2.8, 1.02]]
-    : [[-7, 4.25, .79], [0, 2.45, .98], [7, 4.25, .79]];
-  // A few tiny streets stop three separate glyphs from looking like a row of
-  // UI pips. Their shared origin makes the cluster read as one district.
-  cx.save();
-  cx.strokeStyle = "rgba(33,38,42,.34)"; cx.lineWidth = .75;
-  for (const [sx, sy] of seats) {
-    cx.beginPath(); cx.moveTo(0, 5.7); cx.lineTo(sx, sy + .3); cx.stroke();
-  }
-  cx.restore();
-  visible.forEach((building, index) => {
+function drawDistrictBars(x, y, buildings, ink) {
+  for (const [index, building] of
+       buildings.slice(0, DISTRICT_BAR_SEATS.length).entries()) {
     const entry = typeof building === "string" ? {id:building} : building;
-    const [sx, sy, scale] = seats[index];
-    drawDistrictBuilding(districtBuildingKind(entry.id, family, index), sx, sy, scale,
-                         Boolean(entry.pillaged));
-  });
+    const left = x + DISTRICT_BAR_SEATS[index] - DISTRICT_BAR_WIDTH / 2;
+    const base = y + DISTRICT_BAR_BASELINE;
+    const height = entry.pillaged ? DISTRICT_BAR_HEIGHT / 3 : DISTRICT_BAR_HEIGHT;
+    if (entry.pillaged) {
+      cx.save(); cx.globalAlpha *= .38;
+      cx.strokeStyle = ink; cx.lineWidth = 1;
+      cx.strokeRect(left, base - DISTRICT_BAR_HEIGHT,
+                    DISTRICT_BAR_WIDTH, DISTRICT_BAR_HEIGHT);
+      cx.restore();
+    }
+    cx.fillStyle = ink;
+    cx.fillRect(left, base - height, DISTRICT_BAR_WIDTH, height);
+    cx.strokeStyle = "rgba(12,16,22,.5)"; cx.lineWidth = .9;
+    cx.strokeRect(left, base - height, DISTRICT_BAR_WIDTH, height);
+  }
 }
 
-// A district was a bright rounded chip with one letter stamped on it, which is
-// a label rather than a place — and with only eight of the thirty-five kinds
-// given a color, most of them were a white chip reading "H" or "A". They are
-// built now, in the same painted language as improvements: a terrace in the
-// family's color so the district reads from survey zoom, a landmark tells you
-// its purpose, and the completed structures in front tell you how far it has
-// grown without opening the city panel.
-function drawDistrict(t, x, y, buildings = []) {
-  const fam = DISTRICT_FAMILY[t.district] || "civic";
-  const col = districtColor(t.district);
-  const anchorX = x, anchorY = y - DISTRICT_ICON_LIFT;
+// Nature and water infrastructure keep a small drawn symbol: a green or
+// water-blue token alone doesn't say aqueduct, canal, dam, or kept woodland
+// the way plain color says science or industry. The glyph sits on the upper
+// half of the token, in the same dark ink as the building bars.
+function drawDistrictGlyph(t, x, y, ink) {
+  const fam = districtIconFamily(t.district);
+  if (fam !== "water" && fam !== "preserve") return;
+  const gy = y - 7;
   cx.save();
-  cx.translate(anchorX, anchorY);
-  cx.scale(DISTRICT_ICON_SCALE, DISTRICT_ICON_SCALE);
-  x = 0; y = 0;
-  if (t.pillaged) cx.globalAlpha = 0.6;
-  cx.lineJoin = "round";
-  const dir = -LITF;
-  contactAO(x, y + 8, 13, 4.4, .24);                   // footing
-  const terrace = new Path2D();                        // paved terrace
-  terrace.moveTo(x - 13, y + 4); terrace.lineTo(x, y - 1.5);
-  terrace.lineTo(x + 13, y + 4); terrace.lineTo(x, y + 9.5); terrace.closePath();
-  // Paving takes the light across its width, and the two lower edges get a
-  // lip, so the terrace reads as a raised platform the buildings stand on
-  // rather than a coloured lozenge printed on the ground.
-  volume(terrace, matteMat(col, dir, 13), dir, skyRim(col), "rgba(14,18,26,.72)", 1.2);
-  cx.strokeStyle = "rgba(255,255,255,.2)"; cx.lineWidth = 1;
-  cx.beginPath();
-  cx.moveTo(x - 13, y + 4); cx.lineTo(x, y - 1.5); cx.lineTo(x + 13, y + 4); cx.stroke();
-  cx.strokeStyle = "rgba(10,14,20,.35)";
-  cx.beginPath();
-  cx.moveTo(x - 13, y + 4); cx.lineTo(x, y + 9.5); cx.lineTo(x + 13, y + 4); cx.stroke();
-  const dark = "#1b202a", pale = "#f2eee2";
-  cx.strokeStyle = dark; cx.lineWidth = 1.1;
-  if (fam === "campus") {                              // observatory dome
-    cx.fillStyle = pale;
-    cx.beginPath(); cx.arc(x, y - 2, 6, Math.PI, 0); cx.fill(); cx.stroke();
-    cx.fillRect(x - 6, y - 2, 12, 2.6); cx.strokeRect(x - 6, y - 2, 12, 2.6);
-    cx.strokeStyle = dark;
-    cx.beginPath(); cx.moveTo(x + 1, y - 5); cx.lineTo(x + 7, y - 10); cx.stroke();
-  } else if (fam === "faith") {                        // temple and spire
-    cx.fillStyle = pale;
+  cx.strokeStyle = ink; cx.fillStyle = ink;
+  cx.lineWidth = 1.9; cx.lineCap = "round"; cx.lineJoin = "round";
+  if (fam === "preserve") {                        // one deliberate fir
+    // Crown at gy-9.6: the tallest thing any glyph draws, and the square token
+    // has a flat top edge where the disc's rim curved away from it.
+    tri(x - 6.2, gy + 5.5, x, gy - 6.5, x + 6.2, gy + 5.5);
+    tri(x - 4.6, gy - 1.5, x, gy - 9.6, x + 4.6, gy - 1.5);
+    cx.fillRect(x - 1.3, gy + 5.5, 2.6, 3.4);
+  } else if (t.district === "canal") {             // straight banks, water between
     cx.beginPath();
-    cx.moveTo(x - 6, y + 1); cx.lineTo(x - 6, y - 4); cx.lineTo(x, y - 8);
-    cx.lineTo(x + 6, y - 4); cx.lineTo(x + 6, y + 1); cx.closePath();
-    cx.fill(); cx.stroke();
-    cx.beginPath(); cx.moveTo(x, y - 8); cx.lineTo(x, y - 14); cx.stroke();
-    cx.beginPath(); cx.moveTo(x - 2.4, y - 12); cx.lineTo(x + 2.4, y - 12); cx.stroke();
-  } else if (fam === "war") {                          // crenellated tower
-    cx.fillStyle = "#8d8578";
-    cx.beginPath(); cx.rect(x - 5.5, y - 8, 11, 9); cx.fill(); cx.stroke();
-    for (const cxo of [-5.5, -1.8, 1.8]) cx.fillRect(x + cxo, y - 11, 3.7, 3.2);
-    cx.strokeRect(x - 5.5, y - 11, 11, 3.2);
-  } else if (fam === "trade") {                        // market awning
-    cx.fillStyle = pale;
-    cx.beginPath(); cx.rect(x - 7, y - 3, 14, 4.5); cx.fill(); cx.stroke();
-    cx.fillStyle = "#c94b45";
+    cx.moveTo(x - 10, gy - 4.5); cx.lineTo(x + 10, gy - 4.5);
+    cx.moveTo(x - 10, gy + 4.5); cx.lineTo(x + 10, gy + 4.5);
+    cx.stroke();
+    cx.lineWidth = 1.5;
+    cx.beginPath(); cx.moveTo(x - 7, gy);
+    cx.quadraticCurveTo(x - 3.5, gy - 3, x, gy);
+    cx.quadraticCurveTo(x + 3.5, gy + 3, x + 7, gy);
+    cx.stroke();
+  } else if (t.district === "dam") {               // bowed wall, spill below
     cx.beginPath();
-    cx.moveTo(x - 9, y - 3); cx.lineTo(x - 5, y - 8); cx.lineTo(x + 5, y - 8);
-    cx.lineTo(x + 9, y - 3); cx.closePath(); cx.fill(); cx.stroke();
-  } else if (fam === "harbor") {                       // pier and mast
-    cx.strokeStyle = "#6b5236"; cx.lineWidth = 1.5;
-    cx.beginPath(); cx.moveTo(x - 9, y + 1); cx.lineTo(x + 6, y + 1); cx.stroke();
-    for (const px of [-7, -1, 5]) {
-      cx.beginPath(); cx.moveTo(x + px, y + 1); cx.lineTo(x + px, y + 5); cx.stroke();
-    }
-    cx.strokeStyle = dark; cx.lineWidth = 1.1;
-    cx.beginPath(); cx.moveTo(x + 3, y + 1); cx.lineTo(x + 3, y - 10); cx.stroke();
-    cx.fillStyle = pale;
+    cx.moveTo(x - 9.5, gy - 5); cx.quadraticCurveTo(x, gy - .5, x + 9.5, gy - 5);
+    cx.moveTo(x - 9.5, gy); cx.quadraticCurveTo(x, gy + 4.5, x + 9.5, gy);
+    cx.stroke();
+    cx.lineWidth = 1.5;
+    cx.beginPath(); cx.moveTo(x - 5.5, gy + 8);
+    cx.quadraticCurveTo(x - 2.75, gy + 5.5, x, gy + 8);
+    cx.quadraticCurveTo(x + 2.75, gy + 10.5, x + 5.5, gy + 8);
+    cx.stroke();
+  } else {                                         // aqueduct family: an arcade
     cx.beginPath();
-    cx.moveTo(x + 3.8, y - 10); cx.lineTo(x + 9.5, y - 3); cx.lineTo(x + 3.8, y - 3);
-    cx.closePath(); cx.fill();
-  } else if (fam === "culture") {                      // amphitheatre
-    cx.fillStyle = pale;
-    cx.beginPath(); cx.arc(x, y + 1, 8, Math.PI, 0); cx.fill(); cx.stroke();
-    cx.strokeStyle = dark;
-    cx.beginPath(); cx.arc(x, y + 1, 5, Math.PI, 0); cx.stroke();
-    cx.beginPath(); cx.arc(x, y + 1, 2.4, Math.PI, 0); cx.stroke();
-  } else if (fam === "industry") {                     // works and chimney
-    cx.fillStyle = "#6f6559";
-    cx.beginPath(); cx.rect(x - 8, y - 5, 12, 6.5); cx.fill(); cx.stroke();
-    cx.fillRect(x + 4, y - 12, 4.5, 13.5); cx.strokeRect(x + 4, y - 12, 4.5, 13.5);
-    cx.fillStyle = "#ffffff5c";
-    cx.beginPath(); cx.arc(x + 6, y - 14.5, 3.1, 0, 7); cx.fill();
-  } else if (fam === "fun") {                          // arena with banners
-    cx.fillStyle = pale;
-    cx.beginPath(); cx.ellipse(x, y - 2, 8.5, 5, 0, 0, 7); cx.fill(); cx.stroke();
-    cx.strokeStyle = dark;
-    cx.beginPath(); cx.ellipse(x, y - 2, 4.4, 2.4, 0, 0, 7); cx.stroke();
-    cx.fillStyle = "#e75480";
-    for (const px of [-8, 8]) {
-      cx.beginPath(); cx.moveTo(x + px, y - 6); cx.lineTo(x + px, y - 12); cx.stroke();
+    cx.moveTo(x - 10.5, gy - 5.5); cx.lineTo(x + 10.5, gy - 5.5); cx.stroke();
+    for (const px of [-5.2, 5.2]) {
       cx.beginPath();
-      cx.moveTo(x + px, y - 12); cx.lineTo(x + px + 4.2, y - 10.5);
-      cx.lineTo(x + px, y - 9); cx.closePath(); cx.fill();
+      cx.moveTo(x + px - 3.6, gy + 7); cx.lineTo(x + px - 3.6, gy - 1);
+      cx.arc(x + px, gy - 1, 3.6, Math.PI, 0);
+      cx.lineTo(x + px + 3.6, gy + 7);
+      cx.stroke();
     }
-  } else if (fam === "water") {                        // aqueduct arches
-    cx.fillStyle = pale;
-    cx.beginPath(); cx.rect(x - 10, y - 8, 20, 3.4); cx.fill(); cx.stroke();
-    for (const px of [-7, 0, 7]) {
-      cx.beginPath(); cx.moveTo(x + px - 2.6, y + 1); cx.lineTo(x + px - 2.6, y - 3);
-      cx.arc(x + px, y - 3, 2.6, Math.PI, 0);
-      cx.lineTo(x + px + 2.6, y + 1); cx.stroke();
-    }
-  } else if (fam === "homes") {                        // a couple of houses
-    cx.fillStyle = pale;
-    for (const [hx, hy, s] of [[-5, 0, 1], [4.5, -2, 0.85]]) {
-      cx.beginPath(); cx.rect(x + hx - 4 * s, y + hy - 4 * s, 8 * s, 5 * s);
-      cx.fill(); cx.stroke();
-      cx.fillStyle = "#a8593f";
-      cx.beginPath();
-      cx.moveTo(x + hx - 5.2 * s, y + hy - 4 * s); cx.lineTo(x + hx, y + hy - 8.4 * s);
-      cx.lineTo(x + hx + 5.2 * s, y + hy - 4 * s); cx.closePath();
-      cx.fill(); cx.stroke();
-      cx.fillStyle = pale;
-    }
-  } else if (fam === "air") {                          // hangar and strip
-    cx.fillStyle = "#b9c2cc";
-    cx.beginPath(); cx.arc(x - 1, y - 1, 7, Math.PI, 0); cx.fill(); cx.stroke();
-    cx.strokeStyle = pale; cx.lineWidth = 1.6; cx.setLineDash([3, 3]);
-    cx.beginPath(); cx.moveTo(x - 9, y + 4.5); cx.lineTo(x + 10, y + 2); cx.stroke();
-    cx.setLineDash([]); cx.lineWidth = 1.1; cx.strokeStyle = dark;
-  } else if (fam === "preserve") {                     // kept woodland
-    for (const [tx, ty, s] of [[-5, 1, 1], [4, -1, 1.2], [0, 3, 0.8]]) {
-      cx.fillStyle = "#2f6b34";
-      cx.beginPath();
-      cx.moveTo(x + tx - 4.4 * s, y + ty); cx.lineTo(x + tx, y + ty - 9 * s);
-      cx.lineTo(x + tx + 4.4 * s, y + ty); cx.closePath(); cx.fill(); cx.stroke();
-    }
-  } else {                                             // civic colonnade
-    cx.fillStyle = pale;
-    cx.beginPath();
-    cx.moveTo(x - 9, y - 5); cx.lineTo(x, y - 10); cx.lineTo(x + 9, y - 5);
-    cx.closePath(); cx.fill(); cx.stroke();
-    for (const px of [-6, -2, 2, 6]) cx.fillRect(x + px - 1.1, y - 5, 2.2, 6.5);
-    cx.strokeRect(x - 7.4, y - 5, 14.8, 6.5);
   }
-  drawDistrictBuildingCluster(buildings, fam);
+  cx.restore();
+}
+
+// A district was a painted terrace with a landmark and miniature buildings,
+// which read beautifully up close and muddily from the survey zoom where a
+// spectator actually lives. It is now a solid color token: the square names
+// the family, the bars count its completed buildings, and a hilltop district
+// lets the hill's crest show above its rim instead of flattening the terrain
+// away.
+function drawDistrict(t, x, y, buildings = []) {
+  const col = districtColor(t.district);
+  const hx = DISTRICT_TOKEN_HALF, hy = hx;
+  const ink = districtShade(col, -.55);
+  cx.save();
+  if (t.pillaged) cx.globalAlpha *= .6;
+  cx.lineJoin = "round";
+  // The hill this district is built on, cresting past the rim in the same
+  // stroked-mound hand as the strategic hill mark.
+  if (t.hills) {
+    cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
+    cx.beginPath();
+    cx.ellipse(x - 8, y - hy + 3, 8, 7.5, 0, Math.PI, 0);
+    cx.ellipse(x + 7, y - hy + 4.5, 7.5, 6.5, 0, Math.PI, 0);
+    cx.stroke();
+  }
+  // The token itself: one solid color and a thin ink outline, nothing else —
+  // a printed counter on the board rather than a lit game piece.
+  cx.fillStyle = col;
+  districtTokenPath(x, y, hx); cx.fill();
+  cx.strokeStyle = "rgba(13,18,24,.78)"; cx.lineWidth = 1.6; cx.stroke();
+  drawDistrictGlyph(t, x, y, ink);
+  drawDistrictBars(x, y, buildings, ink);
   cx.restore();
   if (t.pillaged) {
     cx.strokeStyle = "#d8443a"; cx.lineWidth = 2.4; cx.lineCap = "round";
-    cx.beginPath(); cx.moveTo(anchorX - 9 * DISTRICT_ICON_SCALE,
-                               anchorY + 8 * DISTRICT_ICON_SCALE);
-    cx.lineTo(anchorX + 9 * DISTRICT_ICON_SCALE,
-              anchorY - 10 * DISTRICT_ICON_SCALE); cx.stroke();
+    cx.beginPath();
+    cx.moveTo(x - hx * .7, y + hy * .7); cx.lineTo(x + hx * .7, y - hy * .7);
+    cx.stroke();
     cx.lineCap = "butt";
   }
 }
@@ -15076,20 +15260,25 @@ function skyLaunchPoint(start, end, progress, bend) {
 
 // All launch views use one silhouette vocabulary. Apollo 11's Saturn V is a
 // long, staged white stack; Mars uses the compact stainless Starship outline;
-// the exoplanet ship deliberately takes that same outline to monumental scale.
-// Keeping the dimensions here makes the promised 2x length and 4x width exact
-// in both projections rather than two hand-tuned approximations.
+// the exoplanet ship is that same outline at exactly twice the scale — still
+// unmistakably a rocket, just monumental. Widening it faster than lengthening
+// it (an earlier 4x width) squashed the aspect ratio to ~1.5:1 and read as an
+// egg with fins. `plume` scales the engine flame with the hull, so the doubled
+// ship is not pushed by a normal-size flame. Keeping the dimensions here makes
+// the doubling exact in both projections rather than two hand-tuned
+// approximations.
 function skyRocketGeometry(rocket, size) {
   const starshipLength = size * 3.4;
   const starshipHalfWidth = size * .55;
   if (rocket === "starship_xl") return {
     family:"starship", length:starshipLength * 2,
-    halfWidth:starshipHalfWidth * 4,
+    halfWidth:starshipHalfWidth * 2, plume:2,
   };
   if (rocket === "starship") return {
     family:"starship", length:starshipLength, halfWidth:starshipHalfWidth,
+    plume:1,
   };
-  return {family:"saturn_v", length:size * 4.7, halfWidth:size * .52};
+  return {family:"saturn_v", length:size * 4.7, halfWidth:size * .52, plume:1};
 }
 
 // Draw in a local frame whose +x axis is the flight direction. `pixel` is one
@@ -15100,18 +15289,19 @@ function drawMissionRocket(rocket, player, size, now, pixel = 1, alpha = 1) {
   const shape = skyRocketGeometry(rocket, size);
   const nose = shape.length / 2, tail = -shape.length / 2;
   const colour = pcol(player.id), dark = pcol2(player.id);
-  const flicker = size * (1.8 + .32 * Math.sin(now / 75 + player.id));
-  const flameHalf = Math.max(size * .42, shape.halfWidth * .32);
+  const flame = size * (shape.plume || 1);
+  const flicker = flame * (1.8 + .32 * Math.sin(now / 75 + player.id));
+  const flameHalf = Math.max(flame * .42, shape.halfWidth * .32);
 
   cx.save();
   // A warm, transparent plume ties the diagrammatic craft to the rest of the
   // game's effects without turning any of the three silhouettes into clip art.
-  const plume = cx.createLinearGradient(tail - flicker, 0, tail + size * .3, 0);
+  const plume = cx.createLinearGradient(tail - flicker, 0, tail + flame * .3, 0);
   plume.addColorStop(0, "rgba(255,173,69,0)");
   plume.addColorStop(.62, "rgba(255,176,70,.68)");
   plume.addColorStop(1, "rgba(255,244,191,.94)");
   cx.globalAlpha = alpha * .92; cx.fillStyle = plume;
-  cx.beginPath(); cx.moveTo(tail + size * .18, 0);
+  cx.beginPath(); cx.moveTo(tail + flame * .18, 0);
   cx.lineTo(tail - flicker, -flameHalf);
   cx.lineTo(tail - flicker * .82, flameHalf); cx.closePath(); cx.fill();
 
@@ -15151,7 +15341,7 @@ function drawMissionRocket(rocket, player, size, now, pixel = 1, alpha = 1) {
   } else {
     // Starship: a stainless tapered hull, dark heat-shield belly, forward
     // flaps and broad aft fins. The XL craft uses precisely the same drawing;
-    // only skyRocketGeometry makes it twice as long and four times as wide.
+    // only skyRocketGeometry doubles every dimension.
     const steel = cx.createLinearGradient(0, -shape.halfWidth, 0, shape.halfWidth);
     steel.addColorStop(0, "#f2f5f3"); steel.addColorStop(.48, "#aeb9bd");
     steel.addColorStop(1, "#65737a");
@@ -16801,9 +16991,11 @@ function drawEmpireDistrictBadge(x, y, tile, scale = 1) {
   cx.save(); cx.textAlign = "center"; cx.textBaseline = "middle";
   if (tile.wonder) drawWorldWonderIcon(tile.wonder, x, y + 3.5 * scale, .45 * scale);
   if (district) {
-    const radius = 7.5 * scale;
+    // The lens badge is the map token shrunk to a label: the same square,
+    // covering the same ink as the 7.5px disc it replaces (7.5·√π/2).
+    const half = 6.6 * scale;
     cx.fillStyle = districtColor(district); cx.strokeStyle = "#101716"; cx.lineWidth = 2 * scale;
-    cx.beginPath(); cx.arc(x, y, radius, 0, Math.PI * 2); cx.fill(); cx.stroke();
+    districtTokenPath(x, y, half); cx.fill(); cx.stroke();
     const label = districtAdjacencyLabel(tile);
     if (label) {
       cx.font = `900 ${8 * scale}px Inter,sans-serif`; cx.lineWidth = 3 * scale;
@@ -17545,22 +17737,32 @@ function drawPlanetMap() {
   return true;
 }
 
-// One wake polyline in view space: a dark casing under the owner's color so
-// it reads on any terrain, transparent at the tail and strong at the head.
-function strokeUnitTrail(points, color, alpha) {
+// Head-to-tail ink for one route stroke. Both layers of a trail fade on the
+// same ramp, so a route reads as one line in the owner's colors rather than a
+// solid outline with a fading fill inside it. The flat map hands over `[x, y]`
+// pairs and the globe hands over cell centers, so read a point either way.
+const trailPointXY = point => Array.isArray(point) ? point : [point.x, point.y];
+function trailRamp(points, hex, from, to) {
+  const [startX, startY] = trailPointXY(points[0]);
+  const [endX, endY] = trailPointXY(points[points.length - 1]);
+  const ramp = cx.createLinearGradient(startX, startY, endX, endY);
+  ramp.addColorStop(0, hex + from);
+  ramp.addColorStop(1, hex + to);
+  return ramp;
+}
+
+// One wake polyline in view space: the owner's jersey, primary filled and
+// trimmed in its secondary exactly as its territory and tokens are, so a wake
+// names its civilization at a glance. Transparent at the tail, strong at the
+// head.
+function strokeUnitTrail(points, color, trim, alpha) {
   if (points.length < 2 || alpha <= 0) return;
-  const [startX, startY] = points[0];
-  const [endX, endY] = points[points.length - 1];
-  const tint = cx.createLinearGradient(startX, startY, endX, endY);
-  tint.addColorStop(0, color + "00");
-  tint.addColorStop(1, color + "e0");
-  const casing = cx.createLinearGradient(startX, startY, endX, endY);
-  casing.addColorStop(0, "#0d111700");
-  casing.addColorStop(1, "#0d1117b0");
+  const tint = trailRamp(points, color, "00", "e0");
+  const edge = trailRamp(points, trim, "00", "e0");
   cx.save();
   cx.globalAlpha = alpha;
   cx.lineCap = "round";
-  cx.strokeStyle = casing; cx.lineWidth = 5.4;   // casing, so it reads on sand
+  cx.strokeStyle = edge; cx.lineWidth = 5.4;   // the jersey trim, proud of the fill
   cx.beginPath();
   points.forEach(([px, py], index) => index ? cx.lineTo(px, py + 7) : cx.moveTo(px, py + 7));
   cx.stroke();
@@ -17574,22 +17776,22 @@ function strokeUnitTrail(points, color, alpha) {
 // unit draws above them. Each holds full strength until its own step has
 // landed, then fades over the viewer's configured linger.
 // The persistent tail's stroke: thinner and steadier than the wake above, so
-// several turns of routes can sit on the map without gunking it up. The mild
+// several turns of routes can sit on the map without gunking it up. It wears
+// the same jersey — the civilization's primary down the middle, its secondary
+// as a hairline trim — because with several empires' routes on one map at once,
+// whose route it is matters more than anything else the line can say. The mild
 // head-to-tail ramp keeps direction readable, while stopping short of the
 // wake's fully transparent start — a route's oldest tiles are exactly what a
 // tail exists to show.
-function strokeUnitTailRoute(points, color, alpha) {
+function strokeUnitTailRoute(points, color, trim, alpha) {
   if (points.length < 2 || alpha <= 0) return;
-  const [startX, startY] = points[0];
-  const [endX, endY] = points[points.length - 1];
-  const tint = cx.createLinearGradient(startX, startY, endX, endY);
-  tint.addColorStop(0, color + "66");
-  tint.addColorStop(1, color + "e6");
+  const tint = trailRamp(points, color, "66", "e6");
+  const edge = trailRamp(points, trim, "66", "e6");
   cx.save();
   cx.globalAlpha = alpha;
   cx.lineCap = "round";
   cx.lineJoin = "round";
-  cx.strokeStyle = "#0d1117b0"; cx.lineWidth = 2.4; // casing, so it reads on sand
+  cx.strokeStyle = edge; cx.lineWidth = 2.4;  // the jersey trim, proud of the fill
   cx.beginPath();
   points.forEach(([px, py], index) => index ? cx.lineTo(px, py + 7) : cx.moveTo(px, py + 7));
   cx.stroke();
@@ -17603,17 +17805,15 @@ function strokeUnitTailRoute(points, color, alpha) {
 // The globe's own tail stroke. Planet points are screen-space cell centers
 // under a pixel transform, so the widths are literal pixels rather than the
 // flat map's zoom-scaled world units, and there is no ground drop to apply.
-function strokePlanetTailRoute(points, color, alpha) {
+function strokePlanetTailRoute(points, color, trim, alpha) {
   if (points.length < 2 || alpha <= 0) return;
-  const start = points[0], end = points[points.length - 1];
-  const tint = cx.createLinearGradient(start.x, start.y, end.x, end.y);
-  tint.addColorStop(0, color + "66");
-  tint.addColorStop(1, color + "e6");
+  const tint = trailRamp(points, color, "66", "e6");
+  const edge = trailRamp(points, trim, "66", "e6");
   cx.save();
   cx.globalAlpha = alpha;
   cx.lineCap = "round";
   cx.lineJoin = "round";
-  cx.strokeStyle = "#0d1117b0"; cx.lineWidth = 2.2;
+  cx.strokeStyle = edge; cx.lineWidth = 2.2;  // the jersey trim, proud of the fill
   cx.beginPath();
   points.forEach((p, index) => index ? cx.lineTo(p.x, p.y) : cx.moveTo(p.x, p.y));
   cx.stroke();
@@ -17639,10 +17839,10 @@ function drawPlanetUnitMovementTails(cellByKey, onSheet, unitAlpha) {
     const path = trail.path;
     if (!Array.isArray(path) || path.length < 2) continue;
     const alpha = unitAlpha * 0.6 * (1 - age / UNIT_TAIL_TURNS);
-    const color = pcol(trail.owner);
+    const color = pcol(trail.owner), trim = pcol2(trail.owner);
     let run = [];
     const flush = () => {
-      if (run.length > 1) strokePlanetTailRoute(run, color, alpha);
+      if (run.length > 1) strokePlanetTailRoute(run, color, trim, alpha);
       run = [];
     };
     for (const pos of path) {
@@ -17676,29 +17876,9 @@ function drawUnitMovementTails(unitAlpha) {
       nearX = point.x; nearY = point.y;
       return mapPointToView(point);
     });
-    strokeUnitTailRoute(points, pcol(trail.owner),
+    strokeUnitTailRoute(points, pcol(trail.owner), pcol2(trail.owner),
                         unitAlpha * 0.6 * (1 - age / UNIT_TAIL_TURNS));
   }
-}
-
-function drawLingeringUnitTrails(unitAlpha, now) {
-  if (!anim.trails.length) return;
-  const alive = [];
-  for (const trail of anim.trails) {
-    const age = now - trail.t0;
-    if (age > trail.moveDur + trail.linger) continue;
-    alive.push(trail);
-    // While its tween is on screen the in-flight comet owns this wake, and a
-    // beat of slack keeps the completion frame from painting it twice. The
-    // age test matters too: a casualty's orphaned move record is never
-    // sampled again, and it must not suppress the wake of the very unit the
-    // watcher most wants to trace.
-    if (age < trail.moveDur + 50 && anim.moves.has(trail.unit)) continue;
-    const fade = Math.min(1, Math.max(0, 1 - (age - trail.moveDur) / trail.linger));
-    strokeUnitTrail(trail.points.map(mapPointToView),
-                    pcol(trail.owner), unitAlpha * 0.75 * fade);
-  }
-  anim.trails = alive;
 }
 
 function drawScene() {
@@ -18465,12 +18645,7 @@ function drawScene() {
   const strategicUnitStacks = strategicUnitStackSlots(drawnUnits, anim.moves);
   const now = performance.now();
   const unitAlpha = mapLens === "settler" ? SETTLER_LENS_UNIT_ALPHA : 1;
-  if (mapLens !== "empire") {
-    // Tails under wakes: the persistent record is ground ink, the fresh wake
-    // glows over it.
-    drawUnitMovementTails(unitAlpha);
-    drawLingeringUnitTrails(unitAlpha, now);
-  }
+  if (mapLens !== "empire") drawUnitMovementTails(unitAlpha);
   for (const u of sorted) {
     const [tileX, tileY] = worldXY(u.pos);
     let x = tileX, y = tileY;
@@ -18494,12 +18669,10 @@ function drawScene() {
     // eye can otherwise only catch whichever unit it happened to be pointed
     // at; a trail in the owner's color says who went where after the fact, and
     // swells then fades over the step so it never becomes permanent clutter.
-    // Under a configured linger it swells and then holds instead, and the
-    // lingering pass owns the fade once the step has landed.
+    // The turn tails above keep the walked route on the ground afterward.
     if (moving) {
-      const swell = UNIT_TRAIL_LINGER_MS > 0 ? Math.min(mv.e, .5) : mv.e;
-      strokeUnitTrail(trailPoints, pcol(u.owner),
-                      unitAlpha * 0.75 * Math.sin(swell * Math.PI));
+      strokeUnitTrail(trailPoints, pcol(u.owner), pcol2(u.owner),
+                      unitAlpha * 0.75 * Math.sin(mv.e * Math.PI));
     }
     if (anim.strike && anim.strike.id === u.id) {
       const st2 = anim.strike;
@@ -18660,6 +18833,40 @@ function blastGeometry(b, e) {
   const ee = 1 - (1 - e) * (1 - e);
   return { x, y, reach, ee };
 }
+// The explosion itself, shared by both projections. The hatched disk and the
+// wave fronts are the *diagram* of the blast; this is the blast: a fireball
+// that bursts out of ground zero to the edge of the tiles the device actually
+// hit — `reach` is the damage radius, so covering it is reporting, not
+// decoration — then cools from white heart through orange to soot and burns
+// out, leaving the diagram to finish the three seconds. `squashY` is the flat
+// board's dimetric squash (1 on the globe, whose tilt lives in the
+// transform); `seed` keeps simultaneous strikes from roiling in unison.
+function drawBlastFireball(x, y, reach, e, squashY, seed) {
+  if (e >= 0.88) return;
+  // The burst is over in the first fifth — a shockwave is not a slow bloom —
+  // and the front roils unevenly so it reads as fire, not a surveyed circle.
+  const grow = Math.min(1, e / 0.2);
+  const swell = 1 - (1 - grow) * (1 - grow) * (1 - grow);
+  const roil = 1 + 0.05 * Math.sin(e * 21 + seed) + 0.04 * Math.sin(e * 34 + seed * 2.7);
+  const r = reach * (0.12 + 0.85 * swell) * roil;
+  // Cooling walks every colour stop inward while the whole ball fades, so the
+  // centre dims last, the way the heat actually leaves.
+  const cool = Math.max(0, Math.min(1, (e - 0.2) / 0.68));
+  const fade = e < 0.55 ? 1 : Math.max(0, 1 - (e - 0.55) / 0.33);
+  cx.save();
+  // Scale the frame, not the path: a circular gradient clipped by a squashed
+  // ellipse would cut its own rim off at the top and bottom.
+  cx.translate(x, y); cx.scale(1, squashY);
+  const ball = cx.createRadialGradient(0, 0, 0, 0, 0, r);
+  ball.addColorStop(0, `rgba(255,${244 - Math.round(cool * 90)},${214 - Math.round(cool * 150)},${(0.96 * fade).toFixed(3)})`);
+  ball.addColorStop(0.35 + cool * 0.25, `rgba(255,${170 - Math.round(cool * 60)},60,${(0.8 * fade).toFixed(3)})`);
+  ball.addColorStop(0.8, `rgba(${200 - Math.round(cool * 90)},${70 - Math.round(cool * 30)},30,${(0.55 * fade).toFixed(3)})`);
+  ball.addColorStop(1, "rgba(40,20,12,0)");
+  cx.globalAlpha = 1;
+  cx.fillStyle = ball;
+  cx.beginPath(); cx.arc(0, 0, r, 0, 7); cx.fill();
+  cx.restore();
+}
 function drawNuclearBlasts(now) {
   for (let i = anim.blasts.length - 1; i >= 0; i--) {
     const b = anim.blasts[i];
@@ -18712,16 +18919,10 @@ function drawStrategicBlast(b, x, y, reach, e, ee) {
     cx.lineWidth = 3.2 * (1 - re) + 1;
     cx.beginPath(); cx.ellipse(x, y, rr, rr * YS, 0, 0, 7); cx.stroke();
   }
-  // A hot pip at ground zero for the first beat, so the tile itself is not
-  // ambiguous once the rings have travelled off it.
-  if (e < 0.34) {
-    const pe = e / 0.34;
-    cx.globalAlpha = 1 - pe;
-    cx.fillStyle = "#fff6e2";
-    cx.beginPath();
-    cx.ellipse(x, y, reach * (0.24 + pe * 0.2), reach * (0.24 + pe * 0.2) * YS, 0, 0, 7);
-    cx.fill();
-  }
+  // The explosion, grown out to the edge of the damage. It replaces the old
+  // ground-zero pip: the fireball's white heart marks the tile, and its rim
+  // says how far the engine actually reached.
+  drawBlastFireball(x, y, reach, e, YS, x * 0.013 + y * 0.007);
   // The symbol, rising clear of the disk and holding for most of the animation:
   // on a flat map this is what says "nuclear" rather than "a big battle". It
   // starts above the city nameplate rather than climbing through it — struck
@@ -19025,12 +19226,8 @@ function drawPlanetStrategicBlast(b, x, y, reach, e, inradius) {
     cx.lineWidth = 3.2 * (1 - re) + 1;
     cx.beginPath(); cx.arc(x, y, rr, 0, 7); cx.stroke();
   }
-  if (e < 0.34) {
-    const pe = e / 0.34;
-    cx.globalAlpha = 1 - pe;
-    cx.fillStyle = "#fff6e2";
-    cx.beginPath(); cx.arc(x, y, reach * (0.24 + pe * 0.2), 0, 7); cx.fill();
-  }
+  // The explosion; the tilt lives in the transform, so no squash here.
+  drawBlastFireball(x, y, reach, e, 1, x * 0.013 + y * 0.007);
   // The symbol, sized to the cell rather than the flat board's fixed type.
   const lift = inradius * (2.2 + ee * 1.4);
   cx.globalAlpha = e < 0.75 ? 1 : Math.max(0, (1 - e) / 0.25);
@@ -19707,10 +19904,20 @@ function victoryMetric(player, victory) {
   return player.victories?.[victory] || { progress: 0 };
 }
 
-// The turn a world is reported on. A score victory is the turn limit's own
-// tiebreak, and the count that settles it is taken on the wrap out of the
-// final turn, so a finished 250-turn game reads turn 250 rather than the turn
-// 251 nobody plays. A live world is always on the turn it is playing.
+function gameFinished(st = state) {
+  // `finished` is authoritative for new servers because a draw has no winner;
+  // the winner fallback keeps this client compatible with older servers.
+  return st?.finished === true || (st?.winner !== null && st?.winner !== undefined);
+}
+function gameDrawn(st = state) {
+  return st?.draw === true || (gameFinished(st) && st?.victory_type === "draw" &&
+    (st?.winner === null || st?.winner === undefined));
+}
+
+// The turn a world is reported on. A score victory or Tactics draw is settled
+// on the wrap out of the final turn, so a finished 250-turn game reads turn
+// 250 rather than the turn 251 nobody plays. A live world is always on the
+// turn it is playing.
 function reportedTurn(st) {
   const world = st || state;
   return world?.victory_turn ?? world?.turn;
@@ -19901,25 +20108,12 @@ function hudTurnPlate() {
     ? `<span class="turn-pace-choice"><select data-hud-pace title="Change watch pace" ` +
       `aria-label="Watch pace">${watchPaceOptions}</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span>`
     : `<b>${watchPace}</b>`;
-  // The turn structure is a game rule, not a display choice, so a pick can
-  // never land on the running world: the select opens a dialog that offers to
-  // restart now, apply to the next game, or go back. The select itself always
-  // names the regime the world on screen is actually playing, and a queued
-  // change is flagged beside it until the world that honours it arrives.
-  const turnStructureLive = state.turn_structure === "simultaneous" ? "simultaneous" : "sequential";
-  if (selectedTurnStructure === turnStructureLive) selectedTurnStructure = null;
-  const turnStructureName = turnStructureLive === "simultaneous" ? "Simultaneous" : "Sequential";
-  const queuedTurnStructure = state.next_game_settings?.turn_structure;
-  const turnsQueuedNote = SPEC && queuedTurnStructure && queuedTurnStructure !== turnStructureLive
-    ? `<small class="turn-toll" title="${escapeAttr(titleCase(queuedTurnStructure))} turns begin with the next game">(next)</small>`
-    : "";
-  const turnStructureValue = SPEC
-    ? `<span class="turn-pace-choice"><select data-hud-turns title="Change turn structure" ` +
-      `aria-label="Turn structure">` +
-      `<option value="sequential"${turnStructureLive === "sequential" ? " selected" : ""}>Sequential</option>` +
-      `<option value="simultaneous"${turnStructureLive === "simultaneous" ? " selected" : ""}>Simultaneous</option>` +
-      `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span>${turnsQueuedNote}`
-    : `<b>${turnStructureName}</b>`;
+  // The turn regime is the world's rule, not a viewer choice — the product
+  // rolls only sequential worlds, so the plate simply names what the world
+  // on screen is playing. A research build launched with `--turn-structure
+  // simultaneous` still reads honestly here.
+  const turnStructureName = state.turn_structure === "simultaneous" ? "Simultaneous" : "Sequential";
+  const turnStructureValue = `<b>${turnStructureName}</b>`;
   // "Remaining" is a count of who is still playing, so a civilization that has
   // been wiped off the map no longer appears in it. The count it was taken out
   // of is worth as much as the count itself — eight remaining reads very
@@ -19960,7 +20154,7 @@ function hudTurnPlate() {
   const turnCountClasses = ["turn-count", compactTurn && "turn-count-long",
     decided && "turn-count-playing-on"].filter(Boolean).join(" ");
   const playOnLabel = decided
-    ? `Playing on past ${decided.civ || "the winner"}'s ${titleCase(decided.victory_type || "score")} victory on turn ${decided.turn}` +
+    ? `Playing on past ${decided.civ || "the winner"}'s ${victoryVerdict(decided.victory_type, decided.victory_label)} on turn ${decided.turn}` +
       (decided.mode === "indefinite" ? " indefinitely" : " until the next victory")
     : "";
   const context = identityContext + (playOnLabel ? ` · ${playOnLabel}` : "");
@@ -19970,8 +20164,9 @@ function hudTurnPlate() {
   // belongs to the watched regimes only.
   const liveTimeText = SPEC ? liveClockLabel() : null;
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
-    `game speed ${speedName}; ${turnStructureName.toLowerCase()} turns; watch pace ${watchPace}; ` +
+    `game speed ${speedName}; ${turnStructureName.toLowerCase()} turns; ` +
     (liveTimeText ? `live time ${liveTimeText}; ` : ``) +
+    `watch pace ${watchPace}; ` +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
     `${cityStateCount} city states remaining, ${cityStatesLost} eliminated`;
   // A count and the toll it was taken out of are one reading, so they share a
@@ -19993,11 +20188,11 @@ function hudTurnPlate() {
     `<div class="turn-settings" aria-label="Game setup">` +
     `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
     `<div class="turn-setting"><span>Turns:</span>${turnStructureValue}</div>` +
-    `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
     (liveTimeText !== null
       ? `<div class="turn-setting" title="How long this world has been playing. Pauses stop the clock; a restart starts it over.">` +
         `<span>Live time:</span><b data-live-time>${liveTimeText}</b></div>`
       : ``) +
+    `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
     rosterRow("Civs:", civCount, civsLost) +
     rosterRow("City states:", cityStateCount, cityStatesLost) +
     `</div></section>`;
@@ -20146,6 +20341,20 @@ function foundedReligionMarker(player) {
   return player.founded_religion_exists ? "*" : "";
 }
 
+// NUK carries the whole arsenal as one figure; its tooltip is what that
+// arsenal is made of, because a thermonuclear device is a second ring of blast
+// and a heavier upkeep rather than another bomb of the same kind. A
+// civilization holding nothing says so in words: a bare "0" in a column that
+// only exists at all under fog reads like a missing observation.
+function nuclearStockpileTitle(player) {
+  const fission = +player.nuclear_devices || 0;
+  const fusion = +player.thermonuclear_devices || 0;
+  const total = fission + fusion;
+  if (!total) return "No nuclear devices held";
+  return `Nuclear devices held: ${exactStat(total)} · ` +
+    `${exactStat(fission)} nuclear · ${exactStat(fusion)} thermonuclear`;
+}
+
 // ── Win odds: what a seat was worth before the game, and what it is worth now ─
 //
 // A whole per cent is all a 26px row can carry, with two exceptions at the ends
@@ -20205,19 +20414,6 @@ function eloDeltaTitle(player) {
     : `Live Elo position against the living field: ${signedEloDelta(delta)}`;
 }
 
-function playerOddsFigures(player) {
-  const start = oddsPct(player.odds_start);
-  const now = oddsPct(player.odds_now);
-  if (start === null && now === null) {
-    return `<span class="diplomacy-expected-value"><span class="odds-unavailable">—</span></span>`;
-  }
-  const movement = oddsMovement(player);
-  return `<span class="diplomacy-expected-value">` +
-    `<span class="odds-start">${start ?? "—"}</span>` +
-    `<span class="odds-move ${movement.direction}" aria-label="Win chance trend ${movement.direction}">${movement.symbol}</span>` +
-    `<span class="odds-now">${now ?? "—"}</span></span>`;
-}
-
 function anyVictoryEnabled() {
   return VICTORY_TRACKS.some(track => state?.victory_conditions?.[track.id] !== false);
 }
@@ -20251,6 +20447,7 @@ function playerHudStats(player, rank) {
     ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(player.faith)} banked`, foundedReligionMarker(player)],
     ["gold", "GPT", goldPerTurn, `Net Gold: ${exactStat(goldPerTurn)} per turn · ${exactStat(player.gold)} banked`],
     ["military", "MIL", player.military, `Military strength: ${exactStat(player.military)}`],
+    ["nukes", "NUK", playerNuclearStockpile(player), nuclearStockpileTitle(player)],
     ["wonders", "WNDR", player.wonder_count, `World wonders controlled: ${exactStat(player.wonder_count)}`],
     ["suzerain", "SUZ", player.suzerain_count, `City-states under suzerainty: ${exactStat(player.suzerain_count)}`],
     ["score", "SCORE", player.score, `Score: ${exactStat(player.score)} · rank ${rank}`],
@@ -20309,10 +20506,10 @@ function drawPlayerHud() {
   // counter; every additional civilization gets exactly one more row.
   const requestedHeight = playerHudContentHeight(rows);
   const mapArea = document.getElementById("maparea");
-  mapArea.style.setProperty("--player-hud-content-height", `${requestedHeight}px`);
   if (!HUD_LAYOUT.players) {
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
   } else if (hudLayoutGesture?.name !== "players") {
+    // A window can shrink under a saved height; the map bound still holds.
     const metrics = hudWidgetMetrics(hud);
     if (metrics.height > hudWidgetMaxHeight(HUD_WIDGETS.players))
       applyHudWidgetMetrics("players", metrics);
@@ -20331,10 +20528,11 @@ function drawPlayerHud() {
   const html =
     `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore it in Display Settings" title="Hide player standings · restore in Display Settings">✕</button>` +
     hudTurnPlate() +
+    `<button class="turn-plate-seam" type="button" data-turn-plate-seam role="separator" ` +
+    `aria-orientation="vertical" aria-label="Turn plate width; drag or use arrow keys, double-click resets" ` +
+    `title="Drag to size the turn plate · double-click resets"></button>` +
     `<div class="player-standings" tabindex="0" aria-label="Player statistics; scroll horizontally for every column">` +
     `<div class="ribbon-stat-heading">` +
-    `<span class="player-standings-drag widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
-    `aria-label="Move player standings; use arrow keys or drag" title="Drag to move · arrow keys also move"></span>` +
     visibleColumns.map(playerHudColumnHead).join("") +
     // The bars stand on the seams of the heading they are laid over, and are
     // rebuilt with it so that a repaint can never orphan one.
@@ -20463,6 +20661,9 @@ function drawPlayerHud() {
         `aria-label="${expanded ? "Close" : "Open"} dossier for ${p.civ}, rank ${rank}, ${relationSummary}"`;
       const rowCell = column => {
         switch (column.key) {
+          case "lock":
+            return `<button class="lock-toggle" data-hud-col="lock" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
+              `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>`;
           case "rank":
             return `<span class="diplomacy-rank" data-hud-col="rank" title="Score rank ${rank}">#${rank}</span>`;
           // A civilization with no capital leaves this button disabled, and a
@@ -20492,15 +20693,24 @@ function drawPlayerHud() {
             return `<button class="diplomacy-identity" data-hud-col="elo_delta" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-elo-delta" title="${escapeAttr(eloDeltaTitle(p))}">` +
               `<span class="diplomacy-elo-delta-value">${playerEloDelta}</span></span></button>`;
-          // The per-cent sign lives in the WIN% column head, not in eight or
-          // twelve repetitions of the value. Two named numeric categories sit
-          // inside the outer Win odds cell: Start, a narrow trend track, and
-          // Now. Matching grid tracks keep every opening estimate, arrow and
-          // current estimate aligned down the table.
+          // The per-cent sign lives in the START and NOW column heads, not in
+          // eight or twelve repetitions of the value. Start, trend and Now are
+          // three columns of their own; each cell still carries the full odds
+          // story in its tooltip.
+          case "win_start":
+            return `<button class="diplomacy-identity" data-hud-col="win_start" ${dossierAttrs}>` +
+              `<span class="diplomacy-identity-field diplomacy-expected" title="${escapeAttr(oddsTitle(p))}">` +
+              `<span class="odds-start">${startPct ?? "—"}</span></span></button>`;
+          case "win_delta": {
+            const movement = oddsMovement(p);
+            return `<button class="diplomacy-identity" data-hud-col="win_delta" ${dossierAttrs}>` +
+              `<span class="diplomacy-identity-field diplomacy-expected diplomacy-odds-trend" title="${escapeAttr(oddsTitle(p))}">` +
+              `<span class="odds-move ${movement.direction}" aria-label="Win chance trend ${movement.direction}">${movement.symbol}</span></span></button>`;
+          }
           case "win":
             return `<button class="diplomacy-identity" data-hud-col="win" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-expected" title="${escapeAttr(oddsTitle(p))}">` +
-              playerOddsFigures(p) + `</span></button>`;
+              `<span class="odds-now">${nowPct ?? "—"}</span></span></button>`;
           case "age":
             return `<button class="diplomacy-identity" data-hud-col="age" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-age" title="${ageTitle}">` +
@@ -20528,8 +20738,6 @@ function drawPlayerHud() {
           `<b>${kind === "score" ? ribbonScore(value) : ribbonStat(value)}</b>${markerHtml}</button>`;
       };
       return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
-        `<button class="lock-toggle" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
-        `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>` +
         visibleColumns.map(rowCell).join("") + `</div>`;
     }).join("") + `</div>` + hudResizeHandles("player standings");
   drawDossierWindows(scoreRankedMajors, rankById, relationById);
@@ -20553,7 +20761,15 @@ function drawPlayerHud() {
   // innerHTML replaced the elements the observer was watching.
   observePlayerRibbon();
   syncPlayerLockPins();
-  syncPlayerHudColumnGrips();
+  // Not only the bars: a column can *arrive* between two frames — the turn the
+  // world reaches the bomb adds NUK to the heading and to every row — and the
+  // tracks those cells stand on are written from the same model. Left to the
+  // bars alone the new cell would land in an implicit track outside the list.
+  // This is a string comparison on every other frame.
+  syncPlayerHudColumns();
+  syncHudColumnRoster();
+  // innerHTML also replaced the plate seam; restamp its width and range.
+  applyTurnPlateWidth(turnPlateWidth, false);
   // The masthead is as tall as the table it holds, so a civilization met or
   // destroyed moves the map area's top edge as surely as dragging it does.
   refitMapAreaToChrome();
@@ -20666,11 +20882,6 @@ function runHudAction(target) {
 // cursor, and keep click for keyboard activation — which reports no press.
 const hudRibbon = document.getElementById("playerhud");
 hudRibbon.addEventListener("change", ev => {
-  const turns = ev.target.closest?.("[data-hud-turns]");
-  if (turns) {
-    chooseTurnStructure(turns);
-    return;
-  }
   const pace = ev.target.closest?.("[data-hud-pace]");
   if (!pace) return;
   chooseWatchPace(pace.value);
@@ -20684,9 +20895,6 @@ hudRibbon.addEventListener("change", ev => {
 // leaves it, paint whatever those held snapshots changed.
 hudRibbon.addEventListener("focusout", ev => {
   if (ev.target.closest?.("[data-hud-pace]") && state) drawPlayerHud();
-});
-hudRibbon.addEventListener("focusout", ev => {
-  if (ev.target.closest?.("[data-hud-turns]") && state) drawPlayerHud();
 });
 hudRibbon.addEventListener("mousedown", ev => {
   if (ev.button !== 0) return;
@@ -22293,6 +22501,18 @@ function governorStatus(governor) {
   return "Established";
 }
 function titleCase(n) { return (n || "").replaceAll("_", " ").replace(/\b\w/g, c => c.toUpperCase()); }
+// How a finished game's result is denoted. An ordinary result is named by its
+// victory type — a "Science victory". A Mercy Rule ending is denoted by the
+// notation the engine composed for it, "Mercy Rule - Science", naming the lane
+// the board was still being decided on when the odds crossed; that notation is
+// the whole verdict, so it takes neither the title-casing nor the "victory"
+// suffix. Kept in one place because the finish screen, the play-on plate and
+// the session's run list all have to say the same thing about the same game.
+function victoryVerdict(type, label) {
+  if (type === "draw") return "Draw";
+  if (type === "mercy") return label || "Mercy Rule";
+  return titleCase(type || "score") + " victory";
+}
 function researchCard(kind, name, progress, total, perTurn, boosted) {
   const eta = perTurn > 0 ? Math.max(1, Math.ceil((total - progress) / perTurn)) : "∞";
   const pct = Math.min(100, 100 * progress / Math.max(1, total));
@@ -24634,7 +24854,7 @@ syncMapSearchCivilizations();
 syncMapSearchStatus();
 // The lens dock offers two sets — the global whole-map lenses and the
 // district adjacency forecasts — and shows one at a time, switched by the
-// tab row above them. Expanding the dock starts on the global set.
+// tab row beneath them. Expanding the dock starts on the global set.
 let mapLensSet = "global";
 function syncMapLensSets() {
   const strip = document.getElementById("map-lens-strip");
@@ -26830,7 +27050,7 @@ function nextAction() {
 // A blocker is {kind, icon, label, detail, tone, act}. `act` takes the player
 // to the decision; it never makes it for them.
 function turnBlockers() {
-  if (!state || SPEC || state.winner !== null && state.winner !== undefined) return [];
+  if (!state || SPEC || gameFinished(state)) return [];
   const me = state.me, out = [];
   const legal = type => state.legal_actions.filter(a => a.type === type);
   if (legal("keep_city").length || legal("raze_city").length || legal("liberate_city").length)
@@ -26999,25 +27219,25 @@ function drawTurnLoop() {
   // the world plays on without you and the engine answers `end_turn` with
   // "not your turn". Leaving the button live would earn a red error toast
   // from the only lit control on the screen.
-  const won = state.winner !== null && state.winner !== undefined;
+  const over = gameFinished(state);
   const eliminated = state.players[0] && state.players[0].alive === false;
-  button.disabled = won || eliminated || autoplaying;
+  button.disabled = over || eliminated || autoplaying;
   // Auto-play holds the seat. Say so on the button rather than leaving a lit
   // control that quietly does nothing while an agent plays.
-  if (autoplaying && !won && !eliminated) {
+  if (autoplaying && !over && !eliminated) {
     button.classList.remove("blocked");
     button.innerHTML = `An agent is playing<span class="endturn-hint">Stop auto-play to take the seat back</span>`;
     button.title = "Your seat is on loan until auto-play finishes or is stopped.";
     return;
   }
-  if (won || eliminated) {
+  if (over || eliminated) {
     button.classList.remove("blocked");
-    button.innerHTML = eliminated && !won
+    button.innerHTML = eliminated && !over
       ? `Your civilization has fallen<span class="endturn-hint">Start another below</span>`
       : `The game is over<span class="endturn-hint">Start another below</span>`;
-    button.title = eliminated && !won
+    button.title = eliminated && !over
       ? "Your last city is gone. Start a new game from Game setup."
-      : "This world has its victor. Start a new game from Game setup.";
+      : "This world has reached its result. Start a new game from Game setup.";
     return;
   }
   // The capture modal disables the button outright; leave that alone.
@@ -27035,7 +27255,7 @@ function advanceTurn(force = false) {
   // The seat is on loan while auto-play runs; taking it back mid-turn would
   // race a batch the agent is already playing.
   if (autoplaying) return;
-  if (state.winner !== null && state.winner !== undefined) return;
+  if (gameFinished(state)) return;
   if (state.players[0] && state.players[0].alive === false) return;
   const blockers = turnBlockers();
   const next = blockers.find(b => b.kind !== "capture");
@@ -27131,17 +27351,6 @@ function setShowRocketAnimations(on) {
   if (!SHOW_ROCKET_ANIMATIONS) anim.skyLaunches.length = 0;
   if (state) draw();
 }
-function setUnitTrailLinger(value) {
-  const ms = Number(value);
-  UNIT_TRAIL_LINGER_MS = UNIT_TRAIL_LINGER_VALUES.includes(ms) ? ms : 0;
-  localStorage.setItem(UNIT_TRAIL_LINGER_STORAGE_KEY, String(UNIT_TRAIL_LINGER_MS));
-  const select = document.getElementById("unittrails");
-  if (select) select.value = String(UNIT_TRAIL_LINGER_MS);
-  // Turning the linger off clears wakes already on the map at once, which
-  // makes the preference reliable even while a battle is animating.
-  if (!UNIT_TRAIL_LINGER_MS) anim.trails.length = 0;
-  if (state) draw();
-}
 function setUnitTailTurns(value) {
   const turns = Number(value);
   UNIT_TAIL_TURNS = Number.isInteger(turns) && turns >= 0 && turns <= UNIT_TAIL_TURNS_MAX
@@ -27162,7 +27371,9 @@ function setWorldPanInertia(on) {
 }
 function syncFlatMapWrapControls() {
   const group = document.getElementById("flat-map-wrap-settings");
-  if (group) group.hidden = !!state && planetMap();
+  // A globe follows its own shape and an arena its four walls, so neither has
+  // anything for these two to decide.
+  if (group) group.hidden = !!state && (planetMap() || worldIsWalled());
   const xBox = document.getElementById("wrapxchk");
   const yBox = document.getElementById("wrapychk");
   if (xBox) xBox.checked = FLAT_MAP_WRAP_X;
@@ -27179,7 +27390,7 @@ function setFlatMapWrap(axis, on) {
     localStorage.setItem("civvis-flat-map-wrap-y", enabled ? "1" : "0");
   }
   syncFlatMapWrapControls();
-  if (!state || planetMap()) return;
+  if (!state || planetMap() || worldIsWalled()) return;
   cameraFlight = null; cameraZoom = null; clearCameraInertia();
   // A camera can be several copies away after a long wrapped pan. When that
   // axis becomes bounded, carry it to the equivalent place in the base copy
@@ -27665,6 +27876,10 @@ let civ6Status = null;
 let civ6StatusTimer = null;
 let civ6StatusInFlight = false;
 let civvisMapOptions = null;
+let civvisSizeOptions = null;
+let civVictoryChoices = null;
+let victoryRoster = "civvis";
+document.getElementById("humanplayers").addEventListener("change", syncSetupMode);
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("leaderselection").addEventListener("change", syncCustomLeaderSelection);
@@ -27677,7 +27892,10 @@ document.getElementById("custom-leader-table").addEventListener("change", event 
   if (elo && selected)
     elo.innerHTML = customEloOptions(event.target.value, selected.dataset.leader || "", "");
 });
-document.getElementById("maptype").addEventListener("change", syncEarthShape);
+document.getElementById("maptype").addEventListener("change", () => {
+  syncEarthShape();
+  if (readSetting("gamemode") === "tactics") syncBattlefieldSizes(true);
+});
 // Bound on the select itself, so it has re-fitted the splits to the new size
 // before the panel's own delegated listener stages what is now selected.
 document.getElementById("np").addEventListener("change", () => {
@@ -27713,6 +27931,11 @@ document.getElementById("renderresolution").onchange = () => {
   rememberRenderResolution(document.getElementById("renderresolution").value);
   refreshRenderResolution();
 };
+document.getElementById("performancepreset").onchange = () => {
+  const preset = document.getElementById("performancepreset").value;
+  rememberRenderResolution(PERFORMANCE_PRESET_RESOLUTION[preset] || "native");
+  refreshRenderResolution();
+};
 restoreRenderResolution();
 async function spectatePlayer(player) {
   if (!state || viewChanging) return;
@@ -27745,6 +27968,27 @@ let settingsStageChain = Promise.resolve();
 function readSetting(id) {
   const select = document.getElementById(id);
   return select ? select.value : "";
+}
+// The Mercy Rule select stores its threshold as the option's text number, so
+// a value arriving as 0.9 must still find the "0.90" option: match on the
+// number, not the string.
+function setMercySelect(select, value) {
+  if (!select) return;
+  const target = value == null ? null : Number(value);
+  const match = [...select.options].find(option =>
+    (option.value === "" ? null : Number(option.value)) === target);
+  if (match) select.value = match.value;
+}
+// Require-N can never exceed the victory conditions actually enabled: cap the
+// choices live as the checkboxes change, and pull an over-cap selection down.
+function syncRequiredVictoriesCap() {
+  const select = document.getElementById("requiredvictories");
+  if (!select) return;
+  const enabled = VICTORY_TRACKS.filter(track =>
+    readVictorySetting(`victory-${track.id}`)).length || 1;
+  for (const option of select.options)
+    option.disabled = Number(option.value) > enabled;
+  if (Number(select.value) > enabled) select.value = String(enabled);
 }
 function readVictorySetting(id) {
   const box = document.getElementById(id);
@@ -27838,10 +28082,15 @@ function drawCiv6Status() {
   runLine.hidden = !runLine.innerHTML;
 }
 function selectedSimulationSettings() {
-  const np = +readSetting("np");
-  const gameMode = readSetting("gamemode");
+  const humanPlayers = readSetting("humanplayers");
+  // In Tactics the size control holds a map-size id rather than a seat count:
+  // every Tactics map seats two sides, and its dimensions travel
+  // explicitly because no seat count implies them.
+  const tactics = humanPlayers !== "civ6" && readSetting("gamemode") === "tactics";
+  const battlefield = tactics ? battlefieldSize(readSetting("np")) : null;
+  const np = battlefield ? 2 : +readSetting("np");
   const mapScript = readSetting("maptype");
-  const mapTopology = readSetting("mapshape");
+  const mapTopology = battlefield ? (battlefield.topology || "flat") : readSetting("mapshape");
   const mapPoles = readSetting("mappoles");
   const gameSpeed = readSetting("gamespeed");
   const leaderPool = readSetting("leaderpool");
@@ -27850,6 +28099,8 @@ function selectedSimulationSettings() {
   const futureEra = readSetting("futureera");
   const victoryConditions = Object.fromEntries(VICTORY_TRACKS.map(track =>
     [track.id, readVictorySetting(`victory-${track.id}`)]));
+  const mercyRule = readSetting("mercyrule");
+  const requiredVictories = Number(readSetting("requiredvictories")) || 1;
   const leader = readSetting("leader");
   const difficulty = readSetting("difficulty");
   const leaderSelection = readSetting("leaderselection") || "automatic";
@@ -27864,7 +28115,7 @@ function selectedSimulationSettings() {
   // engine could still build — the payload has to stay a valid description of a
   // CIVVIS world for the settings staging and the summary line, which are the
   // same code in every mode.
-  const civ6 = gameMode === "civ6";
+  const civ6 = humanPlayers === "civ6";
   const civ6Map = civ6 ? mapScript : "";
   const ourMap = civ6
     ? (civ6Maps().find(map => map.id === civ6Map) || {}).civvis || "continents"
@@ -27875,24 +28126,37 @@ function selectedSimulationSettings() {
           leader_selection: leaderSelection,
           base_ruleset: baseRuleset, start_era: startEra,
           future_era: futureEra,
-          // The turn structure has no lobby control: it is chosen from the
-          // turn plate's own select, held here until the world that honours
-          // it arrives, and follows the live game otherwise.
-          turn_structure: selectedTurnStructure
-            ?? (state?.turn_structure === "simultaneous" ? "simultaneous" : "sequential"),
           // Automatic mode carries the split rule. Custom mode carries the
           // table's seat-by-seat team assignment and civilization choices.
           teams,
           ...(leaderSelection === "custom" ? {custom_leaders: customLeaders} : {}),
           victory_conditions: victoryConditions,
+          mercy_rule: mercyRule === "" ? null : Number(mercyRule),
+          required_victory_types: requiredVictories,
+          // The arena's settings travel always, not only in Tactics: the
+          // server reads them on a battlefield and carries them everywhere
+          // else, so a world is unaffected and a mode switch needs no second
+          // request.
+          tactics_fog: readSetting("tacticsfog") === "1",
+          tactics_turn_limit: Number(readSetting("tacticsturnlimit")) || 100,
+          tactics_cities: Number(readSetting("tacticscities")) || 0,
+          tactics_production: Number(readSetting("tacticsproduction")) || 0,
+          tactics_gold: Number(readSetting("tacticsgold")) || 0,
+          tactics_turns_per_tech: Number(readSetting("tacticsturnspertech")) || 0,
+          tactics_best_of: Number(readSetting("tacticsbestof")) || 1,
+          tactics_unique_units: readSetting("tacticsuniqueunits") === "1",
           ...(mapSeed === null ? {} : {seed: mapSeed}),
-          spectate: gameMode === "ai_sim",
+          // A battlefield's dimensions are its own setting: no seat count
+          // implies an arena size, so the chosen one travels explicitly and
+          // the server derives everything else from the battlefield map.
+          ...(battlefield ? {width: battlefield.width, height: battlefield.height} : {}),
+          spectate: humanPlayers === "ai_sim",
           ...(civ6 ? {mode: "civ6", civ6_map: civ6Map} : {}),
           // A spectated world has nobody to hand a leader or a handicap to.
           // Neither has this one, but its difficulty is the point of it: the
           // other game hands its handicap bonuses to human seats only, which is
           // what makes the ladder climbable from one.
-          ...(gameMode === "ai_sim"
+          ...(humanPlayers === "ai_sim"
             ? (leaderSelection === "custom" ? {civs: customCivs} : {})
             : {civs: civ6 || !leader ? [] : [leader], difficulty})};
 }
@@ -27908,11 +28172,14 @@ function selectedSimulationSummary(settings = null) {
     return (option?.textContent || (value ?? select.value) || "").toString().trim();
   };
   const spectate = settings ? settings.spectate
-    : document.getElementById("gamemode").value === "ai_sim";
+    : document.getElementById("humanplayers").value === "ai_sim";
   const civ6 = settings ? settings.mode === "civ6"
-    : document.getElementById("gamemode").value === "civ6";
+    : document.getElementById("humanplayers").value === "civ6";
+  const tactics = settings ? isBattlefieldMapScript(settings.map_script)
+    : readSetting("gamemode") === "tactics";
   const mode = civ6 ? "Firaxis Civ 6"
     : spectate === true ? "AI simulation" : "Single player";
+  const arena = !civ6 && tactics ? "Tactics" : "";
   // The world-size option already includes its dimensions and seat count; the
   // compact first clause is enough to identify the choice without turning the
   // handoff screen into a settings table.
@@ -27939,12 +28206,13 @@ function selectedSimulationSummary(settings = null) {
   // Free-for-all is what you get by choosing nothing, so only a real division
   // is worth a clause — and it is named by its split, which is the part that
   // depends on a size this line has already reported.
-  const players = settings ? settings.num_players : +document.getElementById("np").value;
+  const players = settings ? settings.num_players
+    : +document.getElementById("np").value || 2;
   const teamRule = settings
     ? teamRuleFromArray(settings.teams)
     : document.getElementById("teams")?.value;
   const teams = teamRule && teamRule !== "ffa" ? teamPhrase(players, teamRule) : "";
-  return [mode, size, map, speed, era, future, teams].filter(Boolean).join(" · ");
+  return [mode, arena, size, map, speed, era, future, teams].filter(Boolean).join(" · ");
 }
 function simulationSettingsKey(settings) {
   return JSON.stringify(settings);
@@ -27954,14 +28222,27 @@ function applyQueuedSimulationSettings(settings) {
   // Staged settings describe a spectated world, so they adopt that mode while
   // one is on screen. They must not overrule the person who just asked for a
   // single-player game and is now looking at it.
-  if (SPEC) document.getElementById("gamemode").value = "ai_sim";
+  if (SPEC) document.getElementById("humanplayers").value = "ai_sim";
+  // The staged map says which game mode the queue describes: a battlefield
+  // is the Tactics mode's arena, and the size control reads back as the
+  // battlefield whose dimensions the queue carries.
+  const tactics = isBattlefieldMapScript(settings.map);
+  document.getElementById("gamemode").value = tactics ? "tactics" : "civ";
   syncSetupMode();
-  document.getElementById("np").value = String(settings.players);
+  if (tactics) {
+    const size = battlefieldSizes().find(size =>
+      (!size.script || size.script === settings.map) &&
+      size.width === settings.width && size.height === settings.height);
+    if (size) document.getElementById("np").value = size.id;
+  } else {
+    document.getElementById("np").value = String(settings.players);
+  }
   // The staged size decides which splits exist, so it is in place first and
   // the queued assignment is read back as the rule that would produce it.
   syncTeams();
   document.getElementById("teams").value = teamRuleFromArray(settings.teams);
   document.getElementById("maptype").value = settings.map;
+  if (tactics) syncBattlefieldSizes(true);
   if (settings.shape) document.getElementById("mapshape").value = settings.shape;
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
   syncEarthShape();
@@ -27975,9 +28256,6 @@ function applyQueuedSimulationSettings(settings) {
   document.getElementById("baseruleset").value = settings.base_ruleset || "civ6";
   if (settings.start_era) document.getElementById("startera").value = settings.start_era;
   if (settings.future_era) document.getElementById("futureera").value = settings.future_era;
-  // A reloaded page keeps a queued turn-structure change the same way it
-  // keeps every other staged setting.
-  if (settings.turn_structure) selectedTurnStructure = settings.turn_structure;
   const victories = new Set(settings.victories || []);
   for (const track of VICTORY_TRACKS)
     document.getElementById(`victory-${track.id}`).checked = victories.has(track.id);
@@ -28034,77 +28312,6 @@ function stageSelectedSimulationSettings() {
   });
   settingsStageChain.catch(error => showNewSimulationError(error, "save settings"));
 }
-// The viewer's held turn-structure choice: null follows the live game, and a
-// value stands from the moment a dialog choice lands until a world playing
-// that regime arrives (hudTurnPlate dissolves it on match). It rides in every
-// settings payload exactly like a lobby control's value.
-let selectedTurnStructure = null;
-const TURN_STRUCTURE_EXPLANATIONS = {
-  sequential: "Civilizations act one after another; each sees the world exactly as the previous one left it.",
-  simultaneous: "Every civilization plans the turn against the same snapshot of the world, and the plans are then committed together; a plan the world has outrun is dropped.",
-};
-let turnStructureDialog = null;
-function closeTurnStructureDialog() {
-  turnStructureDialog?.remove();
-  turnStructureDialog = null;
-}
-function dismissTurnStructureDialog() {
-  closeTurnStructureDialog();
-  // The select falls back to naming the live regime on the next paint.
-  if (state) drawPlayerHud();
-}
-// Changing the turn structure is a rules change, and the running world cannot
-// change its rules mid-game: the pick opens a dialog offering the only three
-// honest answers — restart into the regime now, let this game finish and
-// start the next one under it, or go back.
-function chooseTurnStructure(select) {
-  const chosen = select.value === "simultaneous" ? "simultaneous" : "sequential";
-  select.blur();
-  const live = state?.turn_structure === "simultaneous" ? "simultaneous" : "sequential";
-  if (chosen === live) {
-    dismissTurnStructureDialog();
-    return;
-  }
-  openTurnStructureDialog(chosen);
-}
-function openTurnStructureDialog(chosen) {
-  closeTurnStructureDialog();
-  const name = chosen === "simultaneous" ? "Simultaneous" : "Sequential";
-  const dialog = document.createElement("div");
-  dialog.id = "turn-structure-dialog";
-  dialog.innerHTML =
-    `<div class="turns-dialog-card" role="dialog" aria-modal="true" aria-label="Switch to ${name.toLowerCase()} turns">` +
-    `<h3>${name} turns</h3>` +
-    `<p>${TURN_STRUCTURE_EXPLANATIONS[chosen]}</p>` +
-    `<p>The world on screen keeps the rules it began with, so the switch needs a new game.</p>` +
-    `<div class="turns-dialog-actions">` +
-    `<button data-turns-restart class="primary">Restart now</button>` +
-    `<button data-turns-queue>After this game</button>` +
-    `<button data-turns-back>Go back</button>` +
-    `</div></div>`;
-  dialog.addEventListener("mousedown", ev => {
-    // The scrim is the dialog element itself; a press on it is a dismissal.
-    if (ev.target === dialog) dismissTurnStructureDialog();
-  });
-  dialog.addEventListener("keydown", ev => {
-    if (ev.key === "Escape") dismissTurnStructureDialog();
-  });
-  dialog.querySelector("[data-turns-back]").onclick = dismissTurnStructureDialog;
-  dialog.querySelector("[data-turns-queue]").onclick = () => {
-    selectedTurnStructure = chosen;
-    closeTurnStructureDialog();
-    stageSelectedSimulationSettings();
-    if (state) drawPlayerHud();
-  };
-  dialog.querySelector("[data-turns-restart]").onclick = () => {
-    selectedTurnStructure = chosen;
-    closeTurnStructureDialog();
-    startNewSimulation("turn_structure").catch(error => showNewSimulationError(error));
-  };
-  document.body.appendChild(dialog);
-  turnStructureDialog = dialog;
-  dialog.querySelector("[data-turns-back]").focus();
-}
 function newSimulationPayload() {
   const setupError = worldSetupInputError();
   if (setupError) throw new Error(setupError);
@@ -28141,7 +28348,7 @@ function showNewSimulationError(error, action = "start simulation") {
 // AI-only simulation. Once a world is on screen it opens on that world's mode
 // instead, so the persistent restart control describes what it will start.
 function adoptRunningMode() {
-  const select = document.getElementById("gamemode");
+  const select = document.getElementById("humanplayers");
   if (!select || !state) return;
   select.value = SPEC ? "ai_sim" : "single";
   syncSetupMode();
@@ -28156,12 +28363,22 @@ function adoptRunningMode() {
 // seats, which is the whole reason to occupy one), and nobody is at the
 // keyboard once it starts. So the settings follow single player and the
 // controls follow the simulation. See docs/CIV6_GAME_MODE.md.
+//
+// Tactics is a game-mode axis rather than a fourth keyboard state: who plays
+// is still the Human players control, and what they play — the full Civ game
+// or a battlefield arena — swaps the size and map rosters the way Civ 6
+// swaps the map list. Civ 6 outranks it while chosen, because that mode's
+// panel configures the other game entirely.
 function syncSetupMode() {
-  const mode = (document.getElementById("gamemode") || {}).value || "ai_sim";
-  const civ6 = mode === "civ6";
-  document.body.classList.toggle("spectating", mode === "ai_sim");
+  const seats = (document.getElementById("humanplayers") || {}).value || "ai_sim";
+  const civ6 = seats === "civ6";
+  const tactics = !civ6 && readSetting("gamemode") === "tactics";
+  document.body.classList.toggle("spectating", seats === "ai_sim");
   document.body.classList.toggle("playing-civ6", civ6);
-  syncMapRoster(civ6);
+  document.body.classList.toggle("playing-tactics", tactics);
+  syncMapRoster(civ6, tactics);
+  syncBattlefieldSizes(tactics);
+  syncBattlefieldVictories(tactics);
   // The control's label is not relabelled from here. This runs once during
   // load, before the settings state it would read has been initialised, and
   // `#newgame-options`'s delegated change listener already relabels it on
@@ -28176,31 +28393,115 @@ function syncSetupMode() {
 function civ6Maps() {
   return (RULES && RULES.civ6 && Array.isArray(RULES.civ6.maps)) ? RULES.civ6.maps : [];
 }
-function syncMapRoster(civ6) {
+function battlefieldScripts() {
+  return (RULES && Array.isArray(RULES.battlefield_scripts)) ? RULES.battlefield_scripts : [];
+}
+function battlefieldSizes() {
+  return (RULES && Array.isArray(RULES.battlefield_sizes)) ? RULES.battlefield_sizes : [];
+}
+function battlefieldSizesForScript(script) {
+  return battlefieldSizes().filter(size => !size.script || size.script === script);
+}
+function battlefieldSize(id) {
+  return battlefieldSizes().find(size => size.id === id) || null;
+}
+function isBattlefieldMapScript(id) {
+  return id === "battlefield" || battlefieldScripts().some(script => script.id === id);
+}
+function syncMapRoster(civ6, tactics) {
   const select = document.getElementById("maptype");
   if (!select) return;
   const maps = civ6Maps();
   // Before /rules has answered there is nothing to swap to; syncSetupMode runs
   // again once it has.
   if (civ6 && !maps.length) return;
-  const roster = civ6 ? "civ6" : "civvis";
+  if (tactics && !battlefieldScripts().length) return;
+  const roster = civ6 ? "civ6" : tactics ? "tactics" : "civvis";
   // `/rules` refills this control after load, so what is put back must be
   // whatever it holds now rather than the markup it was born with.
-  if (select.dataset.roster !== "civ6") civvisMapOptions = select.innerHTML;
-  if (select.dataset.roster === roster) return;
+  if (select.dataset.roster !== "civ6" && select.dataset.roster !== "tactics")
+    civvisMapOptions = select.innerHTML;
+  if ((select.dataset.roster || "civvis") === roster) return;
   const chosen = select.value;
+  // The world chosen for the Civ game survives a round trip through either
+  // other roster, so flipping a mode on and off costs nobody their map.
+  if (select.dataset.roster !== "civ6" && select.dataset.roster !== "tactics")
+    select.dataset.civvisChoice = chosen;
   if (civ6) {
     select.innerHTML = maps.map(map =>
       `<option value="${escapeAttr(map.id)}">${map.name}</option>`).join("");
     const carried = maps.find(map => map.civvis === chosen);
     select.value = carried ? carried.id : (RULES.civ6.default_map || maps[0].id);
+  } else if (tactics) {
+    // The Tactics menu is the battlefield roster from the same /rules
+    // answer, so a second arena can arrive without a page change.
+    select.innerHTML = battlefieldScripts().map(script =>
+      `<option value="${escapeAttr(script.id)}" title="${escapeAttr(script.description)}">${script.name}</option>`).join("");
   } else {
     select.innerHTML = civvisMapOptions;
     const carried = maps.find(map => map.id === chosen);
-    if (carried && carried.civvis) select.value = carried.civvis;
+    const restored = carried && carried.civvis ? carried.civvis : select.dataset.civvisChoice;
+    if (restored && [...select.options].some(option => option.value === restored))
+      select.value = restored;
   }
   select.dataset.roster = roster;
   syncEarthShape();
+}
+// An arena is fought over, not converted or researched to death: entering
+// Tactics has one victory lane: last army standing through Domination. Its
+// clock is a draw deadline, not Score. Leaving it puts back whatever was
+// chosen for the Civ game. Its two state variables are declared with the
+// other mode state, before the wiring that calls this during load.
+function syncBattlefieldVictories(tactics) {
+  const roster = tactics ? "tactics" : "civvis";
+  if (roster === victoryRoster) return;
+  victoryRoster = roster;
+  const boxes = VICTORY_TRACKS
+    .map(track => [track.id, document.getElementById(`victory-${track.id}`)])
+    .filter(([, box]) => box);
+  if (tactics) {
+    civVictoryChoices = new Set(boxes.filter(([, box]) => box.checked).map(([id]) => id));
+    for (const [id, box] of boxes) box.checked = id === "domination";
+  } else if (civVictoryChoices) {
+    for (const [id, box] of boxes) box.checked = civVictoryChoices.has(id);
+  }
+  syncRequiredVictoriesCap();
+}
+// The world-size control is the Tactics-map-size control in Tactics: the same
+// select carries a different roster, exactly as the map control does for Civ 6
+// above. Every Tactics map seats exactly two sides, so the option says so and
+// the seat-dependent controls re-fit when the roster moves either way.
+function syncBattlefieldSizes(tactics) {
+  const sizes = document.getElementById("np");
+  if (!sizes) return;
+  if (tactics && !battlefieldSizes().length) return;
+  const roster = tactics ? "tactics" : "civvis";
+  const sameRoster = (sizes.dataset.roster || "civvis") === roster;
+  if (sizes.dataset.roster !== "tactics") civvisSizeOptions = sizes.innerHTML;
+  if (tactics) {
+    if (!sameRoster) sizes.dataset.civvisChoice = sizes.value;
+    const script = document.getElementById("maptype")?.value;
+    const available = battlefieldSizesForScript(script);
+    if (!available.length) return;
+    const chosen = sameRoster ? sizes.value : sizes.dataset.tacticsChoice;
+    sizes.innerHTML = available.map(size =>
+      `<option value="${escapeAttr(size.id)}">${size.name} · 2 civs</option>`).join("");
+    const carried = chosen && available.some(size => size.id === chosen)
+      ? chosen : available[0].id;
+    sizes.value = carried;
+    sizes.dataset.tacticsChoice = carried;
+  } else {
+    if (sameRoster) return;
+    const chosen = sizes.value;
+    sizes.dataset.tacticsChoice = chosen;
+    sizes.innerHTML = civvisSizeOptions;
+    const restored = sizes.dataset.civvisChoice;
+    if (restored && [...sizes.options].some(option => option.value === restored))
+      sizes.value = restored;
+  }
+  sizes.dataset.roster = roster;
+  syncTeams();
+  syncCustomLeaderSelection();
 }
 
 function normalizedLeaderPoolId(id) {
@@ -28297,7 +28598,9 @@ function syncCustomLeaderSelection() {
   if (!custom) return;
   const prior = customLeaderRowsFromDom();
   const entries = customLeaderEntries();
-  const players = Math.max(0, Number(readSetting("np")) || 0);
+  // A battlefield id in the size control means two seats, not a seat count.
+  const players = battlefieldSize(readSetting("np"))
+    ? 2 : Math.max(0, Number(readSetting("np")) || 0);
   const rule = readSetting("teams");
   const automaticTeams = teamAssignment(players, rule);
   if (!entries.length || !players) {
@@ -28394,7 +28697,8 @@ function syncTeams() {
   const select = document.getElementById("teams");
   const size = document.getElementById("np");
   if (!select || !size) return;
-  const players = +size.value;
+  // A battlefield id in the size control means two seats, not a seat count.
+  const players = battlefieldSize(size.value) ? 2 : +size.value;
   for (const option of select.options) {
     if (!TEAM_RULES.includes(option.value)) continue;
     const name = option.value === "pairs" ? "Pairs" : `${option.value} teams`;
@@ -28493,7 +28797,7 @@ async function startCiv6Game() {
 }
 async function startNewSimulation(restartSource = "manual") {
   if (newSimulationBusy) return;
-  if (readSetting("gamemode") === "civ6") { startCiv6Game(); return; }
+  if (readSetting("humanplayers") === "civ6") { startCiv6Game(); return; }
   cancelFinaleCountdown();
   const wasPaused = specPaused;
   const payload = {...newSimulationPayload(), paused: wasPaused};
@@ -28654,11 +28958,6 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   rockets.onchange = () => setShowRocketAnimations(rockets.checked);
 }
 {
-  const trails = document.getElementById("unittrails");
-  trails.value = String(UNIT_TRAIL_LINGER_MS);
-  trails.onchange = () => setUnitTrailLinger(trails.value);
-}
-{
   const tail = document.getElementById("unittail");
   tail.value = String(UNIT_TAIL_TURNS);
   tail.onchange = () => setUnitTailTurns(tail.value);
@@ -28668,11 +28967,22 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   inertia.checked = WORLD_PAN_INERTIA;
   inertia.onchange = () => setWorldPanInertia(inertia.checked);
 }
+// These two sit in the setup panel's advanced drawer, beside the settings that
+// do describe the next game. They do not: how a flat chart is unrolled is the
+// viewer's own preference and applies to the world already on screen. So each
+// stops its change event at the box rather than letting `#newgame-options`'s
+// delegated listener stage an otherwise identical simulation — the same rule
+// the saved mod pack follows.
 {
   const wrapXBox = document.getElementById("wrapxchk");
   const wrapYBox = document.getElementById("wrapychk");
-  wrapXBox.onchange = () => setFlatMapWrap("x", wrapXBox.checked);
-  wrapYBox.onchange = () => setFlatMapWrap("y", wrapYBox.checked);
+  const keepInTheViewer = event => event.stopPropagation();
+  wrapXBox.onchange = event => {
+    setFlatMapWrap("x", wrapXBox.checked); keepInTheViewer(event);
+  };
+  wrapYBox.onchange = event => {
+    setFlatMapWrap("y", wrapYBox.checked); keepInTheViewer(event);
+  };
   syncFlatMapWrapControls();
 }
 {
@@ -28693,12 +29003,19 @@ for (const checkbox of document.querySelectorAll("[data-overlay]")) {
 // toggle the overlay alone — never fold the menu open or shut — so the
 // click's default is cancelled on both counts and the visibility change is
 // applied directly. Keyboard toggling arrives here as a click too.
+//
+// The visibility flip is deferred one tick because cancelling the click also
+// runs the checkbox's canceled-activation step AFTER this handler returns,
+// putting the box back how the press found it. Applied synchronously, the
+// flip was silently reverted a moment later: the overlay left the map while
+// its switch stayed checked.
 for (const summary of document.querySelectorAll(".overlay-menu > summary")) {
   summary.addEventListener("click", event => {
     const box = event.target.closest?.("input[data-overlay]");
     if (!box) return;
     event.preventDefault();
-    setOverlayVisibility(box.dataset.overlay, !OVERLAY_VISIBILITY[box.dataset.overlay]);
+    const name = box.dataset.overlay;
+    setTimeout(() => setOverlayVisibility(name, !OVERLAY_VISIBILITY[name]), 0);
   });
 }
 for (const button of document.querySelectorAll("[data-hud-widget-reset]")) {
@@ -28782,8 +29099,7 @@ function animTick(now) {
   const cameraMoving = userCameraMoving || followCameraMoving;
   const active = cameraMoving || anim.moves.size > 0 || anim.floats.length > 0 ||
     anim.sparks.length > 0 || anim.deaths.length > 0 || anim.strike ||
-    anim.blasts.length > 0 ||
-    anim.trails.length > 0 || planetSkyAnimating() || flatSkyAnimating();
+    anim.blasts.length > 0 || planetSkyAnimating() || flatSkyAnimating();
   // Never spend more than about half the wall clock rendering. Measured cost
   // decides: a frame that takes 60ms gets asked for every 130ms rather than
   // every 33, so the view degrades to a slower picture instead of stalling.

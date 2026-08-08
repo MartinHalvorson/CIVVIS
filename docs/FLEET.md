@@ -90,8 +90,11 @@ The three causes it names are the three that have actually happened here:
    mutation before adding more rounds.
 2. **Seating is confounded.** Assigning each civ to whoever is rated best on
    it makes strategy and civilization the same variable — one strategy played
-   Rome 200 games out of 200. Use `rating::rotate_seating`, or the league's own
-   mirrored series, so every strategy draws every civ.
+   Rome 200 games out of 200. The live exhibition now selects entrants on
+   overall quality and rotates them across civs with `rating::rotate_seating`
+   (a Latin square over the league round), but a history recorded before that
+   change, or any custom harness that seats by per-civ rating, still carries
+   the confound — check the seating before trusting the ratings.
 3. **Games end on the turn cap.** 62% of the audited games ended as score
    truncations at turn 250, where the winner is whoever is biggest rather than
    whoever played best. Raise `turns`, or read the victory mix in
