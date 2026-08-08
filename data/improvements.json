@@ -169,15 +169,102 @@
   "terrain": [
    "desert",
    "grassland",
-   "plains",
-   "snow",
-   "tundra"
-  ],
-  "effects": {
-   "religious_unit_heal_rate": 15
-  }
+  "plains",
+  "snow",
+  "tundra"
+ ],
+ "requires_flat": true,
+ "effects": {
+  "religious_unit_heal_rate": 15,
+  "adjacent_district_pair_faith": 1,
+  "housing_after_colonialism": 1
+ }
+},
+"colossal_head": {
+ "plunder_type": "faith",
+ "plunder_amount": 25,
+ "unique_to": "La Venta",
+ "same_adjacent_valid": false,
+ "yields": {
+  "faith": 2
  },
- "mekewap": {
+ "terrain": [
+  "desert",
+  "grassland",
+  "plains",
+  "tundra"
+ ],
+ "requires_flat": true,
+ "effects": {
+  "adjacent_forest_jungle_pair_faith": 1,
+  "adjacent_forest_jungle_faith_after_humanism": 1,
+  "faith_tourism_after_flight": 1
+ }
+},
+"mahavihara": {
+ "plunder_type": "faith",
+ "plunder_amount": 25,
+ "unique_to": "Nalanda",
+ "same_adjacent_valid": false,
+ "housing": 1,
+ "yields": {
+  "science": 2
+ },
+ "terrain": [
+  "desert",
+  "grassland",
+  "plains",
+  "snow",
+  "tundra"
+ ],
+ "requires_flat": true,
+ "effects": {
+  "adjacent_holy_site_faith": 1,
+  "adjacent_campus_science": 1,
+  "adjacent_campus_science_after_scientific_theory": 1
+ }
+},
+"nazca_line": {
+ "plunder_type": "faith",
+ "plunder_amount": 25,
+ "unique_to": "Nazca",
+ "yields": {},
+ "terrain": [
+  "desert"
+ ],
+ "requires_flat": true,
+ "effects": {
+  "unworkable": 1,
+  "adjacent_appeal": 1,
+  "adjacent_faith": 1,
+  "adjacent_resource_faith": 1,
+  "adjacent_desert_food_after_civil_service": 1,
+  "adjacent_flat_production_after_mass_production": 1
+ }
+},
+"moai": {
+ "plunder_type": "faith",
+ "plunder_amount": 25,
+ "unique_to": "Rapa Nui",
+ "yields": {
+  "culture": 1
+ },
+ "terrain": [
+  "grassland",
+  "plains"
+ ],
+ "feature": [
+  "volcanic_soil"
+ ],
+ "effects": {
+  "adjacent_moai_pair_culture": 1,
+  "adjacent_moai_culture_after_medieval_faires": 1,
+  "adjacent_volcanic_soil_culture": 2,
+  "adjacent_coast_lake_culture": 1,
+  "forbid_adjacent_forest_jungle": 1
+ }
+},
+"mekewap": {
   "plunder_type": "heal",
   "plunder_amount": 50,
   "tech": "pottery",
