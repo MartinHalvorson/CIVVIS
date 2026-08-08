@@ -1,0 +1,306 @@
+#!/usr/bin/env python3
+"""Run the Tactics arena benchmark and compare it against the committed baseline.
+
+The Tactics mode exists to develop AI tactical combat, which means every change
+to that AI has to be answerable with a number rather than an impression. This
+runs the standard battery — the same opponents in the same regimes, every time —
+and prints a table beside `docs/TACTICS_BASELINE.md`.
+
+Two things it exists to stop.
+
+**Reading the null as a result.** `advanced_v1` is a frozen copy of the live
+controller, and nearly everything separating them is empire-level machinery
+that an arena never exercises. Rating one against the other on a battlefield
+therefore lands near 50% whatever the tactical AI does, and that number means
+"these two share a tactical core", not "there is no headroom". The battery pairs
+every controller against `basic` as well, which is a genuinely different
+opponent, and it is the `basic` column that moves when tactical play changes.
+
+**Rating two experiments into one ledger.** Each run writes to its own scratch
+ratings file under a temporary directory, never to the committed Tactics ledger.
+The engine also records the arena's economy in the rating profile, so a mixed
+ledger would be refused rather than silently averaged — this simply keeps the
+question from arising.
+
+Usage:
+
+    tools/tactics_bench.py                      # run the battery, compare to baseline
+    tools/tactics_bench.py --games 80           # more games for a tighter interval
+    tools/tactics_bench.py --write-baseline     # record a new baseline
+    tools/tactics_bench.py --only attrition     # one regime while iterating
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+BASELINE = REPO / "docs" / "TACTICS_BASELINE.md"
+
+# The arena the battery is fought on. Fixed rather than configurable: a
+# benchmark whose board moves is not a benchmark, and the numbers in
+# `docs/TACTICS_BASELINE.md` are only comparable because this does not change.
+WIDTH, HEIGHT, PLAYERS = 20, 20, 2
+
+
+@dataclass(frozen=True)
+class Regime:
+    """One arena setup the battery is fought under."""
+
+    key: str
+    title: str
+    why: str
+    flags: tuple[str, ...]
+
+
+# Two regimes because the measured difference between them is the whole point:
+# with a city the objective stands still, without one it walks away, and the
+# advanced controller's results invert completely between the two.
+REGIMES = (
+    Regime(
+        key="capture",
+        title="1 city per side",
+        why="a static objective: the battle is decided by taking the enemy city",
+        flags=(),
+    ),
+    Regime(
+        key="attrition",
+        title="no cities",
+        why="pure combat: the objective is the enemy army, and it moves",
+        flags=("--tactics-cities", "0"),
+    ),
+    Regime(
+        key="attrition-eras",
+        title="no cities, random era",
+        why="pure combat across the whole unit roster rather than one era's",
+        flags=("--tactics-cities", "0", "--start-era", "random"),
+    ),
+)
+
+# `basic` first: it is the informative opponent, and the one whose column is
+# expected to move when tactical play changes.
+MATCHUPS = (("advanced", "basic"), ("advanced", "advanced_v1"))
+
+# The tournament prints one standardized line per rated controller. The
+# pair-score is the order-independent figure with a Wilson interval, which is
+# what a comparison should quote — the online Elo above it is order-sensitive.
+PAIR_LINE = re.compile(
+    r"^\s{2}(?P<name>\S+)\s+[\d.]+\s+\(95%.*?\)\s+pair-score=\s*(?P<score>[\d.]+)/(?P<games>\d+)\s+"
+    r"\((?P<pct>[\d.]+)%,\s*95%\s*(?P<lo>[\d.]+)\.\.(?P<hi>[\d.]+)%\)"
+)
+# When neither controller is the ledger anchor the standardized block is absent,
+# so fall back to the leaderboard's own win counts.
+WIN_LINE = re.compile(r"^\s{2}(?P<name>\S+)\s+[\d.]+\s+games=(?P<games>\d+)\s+wins=(?P<wins>\d+)")
+
+
+@dataclass
+class Result:
+    regime: str
+    left: str
+    right: str
+    wins: float
+    games: int
+    pct: float
+    lo: float | None
+    hi: float | None
+
+    @property
+    def label(self) -> str:
+        return f"{self.left} vs {self.right}"
+
+    def cell(self) -> str:
+        band = f" ({self.lo:.1f}–{self.hi:.1f})" if self.lo is not None else ""
+        return f"{self.pct:.1f}%{band}"
+
+
+def binary(explicit: str | None) -> str:
+    """The civvis binary to benchmark with.
+
+    A benchmark run against a stale build measures the wrong code, and the
+    profile the engine prints cannot catch that — so this refuses to guess
+    between builds and says which it wants.
+    """
+    if explicit:
+        return explicit
+    for profile in ("ci", "release", "debug"):
+        candidate = REPO / "target" / profile / "civvis"
+        if candidate.exists():
+            return str(candidate)
+    sys.exit(
+        "no civvis binary found; build one first:\n"
+        "    cargo build --profile ci --locked\n"
+        "or name it with --binary"
+    )
+
+
+def run_match(exe: str, regime: Regime, left: str, right: str, games: int, ratings: Path) -> Result:
+    command = [
+        exe, "tournament",
+        "--map", "battlefield", "--shape", "flat",
+        "--players", str(PLAYERS), "--width", str(WIDTH), "--height", str(HEIGHT),
+        "--games", str(games),
+        "--ais", f"{left},{right}",
+        "--ratings", str(ratings),
+        *regime.flags,
+    ]
+    finished = subprocess.run(command, capture_output=True, text=True, cwd=REPO)
+    if finished.returncode != 0:
+        sys.exit(f"tournament failed for {regime.key} {left} vs {right}:\n{finished.stderr[-2000:]}")
+
+    for line in finished.stdout.splitlines():
+        found = PAIR_LINE.match(line)
+        if found and found["name"] == left:
+            return Result(
+                regime.key, left, right,
+                float(found["score"]), int(found["games"]), float(found["pct"]),
+                float(found["lo"]), float(found["hi"]),
+            )
+    # No standardized block: read the leaderboard instead. Reported without an
+    # interval, because an order-sensitive win count does not carry one.
+    for line in finished.stdout.splitlines():
+        found = WIN_LINE.match(line)
+        if found and found["name"] == left:
+            wins, total = int(found["wins"]), int(found["games"])
+            pct = 100.0 * wins / total if total else 0.0
+            return Result(regime.key, left, right, wins, total, pct, None, None)
+    sys.exit(f"could not read a result for {left} from:\n{finished.stdout[-2000:]}")
+
+
+def table(results: list[Result]) -> str:
+    matchups = [f"{left} vs {right}" for left, right in MATCHUPS]
+    lines = ["| regime | " + " | ".join(matchups) + " |",
+             "| --- | " + " | ".join("---" for _ in matchups) + " |"]
+    for regime in REGIMES:
+        cells = []
+        for left, right in MATCHUPS:
+            hit = next(
+                (r for r in results if r.regime == regime.key and r.left == left and r.right == right),
+                None,
+            )
+            cells.append(hit.cell() if hit else "—")
+        lines.append(f"| {regime.title} | " + " | ".join(cells) + " |")
+    return "\n".join(lines)
+
+
+def parse_baseline(text: str) -> dict[tuple[str, str, str], float]:
+    """The recorded figures, keyed by regime and matchup.
+
+    Read back out of the committed document rather than a sidecar file, so
+    there is one copy of the numbers and it is the one a person reads.
+    """
+    recorded: dict[tuple[str, str, str], float] = {}
+    for line in text.splitlines():
+        marker = "<!-- bench:"
+        if not line.startswith(marker):
+            continue
+        payload = json.loads(line[len(marker):line.rindex("-->")].strip())
+        recorded[(payload["regime"], payload["left"], payload["right"])] = payload["pct"]
+    return recorded
+
+
+def render_baseline(results: list[Result], games: int) -> str:
+    machine = "\n".join(
+        "<!-- bench: " + json.dumps({
+            "regime": r.regime, "left": r.left, "right": r.right, "pct": r.pct,
+        }) + " -->"
+        for r in results
+    )
+    regimes = "\n".join(f"- **{r.title}** — {r.why}" for r in REGIMES)
+    return f"""# Tactics arena baseline
+
+What the shipped controllers do on the arena, so a change to tactical AI can be
+answered with a number. Regenerate with `tools/tactics_bench.py --write-baseline`
+and quote the diff in the pull request that moves it.
+
+Every figure is the left controller's share of {games} seat-mirrored games on a
+{WIDTH}x{HEIGHT} arena, with a 95% Wilson interval. Seat-mirrored means each
+controller plays both ends of every draw, so a starting-corner advantage cannot
+read as a controller advantage.
+
+## Regimes
+
+{regimes}
+
+## Opponents
+
+`basic` is the informative opponent. `advanced_v1` is a frozen copy of the live
+controller, and nearly everything separating them is empire-level machinery an
+arena never exercises — so that column sits near 50% whatever the tactical AI
+does. **A near-50% result against `advanced_v1` is the expected null, not a
+finding.** Read the `basic` column.
+
+## Results
+
+{table(results)}
+
+{machine}
+"""
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--games", type=int, default=40,
+                        help="seat-mirrored games per matchup (default 40)")
+    parser.add_argument("--binary", help="civvis binary to benchmark (default: newest built)")
+    parser.add_argument("--only", choices=[r.key for r in REGIMES],
+                        help="run one regime while iterating")
+    parser.add_argument("--write-baseline", action="store_true",
+                        help="record these results as the committed baseline")
+    args = parser.parse_args()
+
+    exe = binary(args.binary)
+    regimes = [r for r in REGIMES if not args.only or r.key == args.only]
+
+    results: list[Result] = []
+    # One scratch directory for the whole run, removed after: rated evidence
+    # from a benchmark is not evidence about the shipped ladder.
+    scratch = Path(tempfile.mkdtemp(prefix="tactics-bench-"))
+    try:
+        for regime in regimes:
+            for left, right in MATCHUPS:
+                ratings = scratch / f"{regime.key}-{left}-{right}.json"
+                print(f"… {regime.title}: {left} vs {right}", file=sys.stderr, flush=True)
+                results.append(run_match(exe, regime, left, right, args.games, ratings))
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+    print(table(results))
+
+    if args.write_baseline:
+        BASELINE.parent.mkdir(parents=True, exist_ok=True)
+        BASELINE.write_text(render_baseline(results, args.games))
+        print(f"\nbaseline written to {BASELINE.relative_to(REPO)}")
+        return 0
+
+    if not BASELINE.exists():
+        print("\nno baseline recorded yet; --write-baseline records one")
+        return 0
+
+    recorded = parse_baseline(BASELINE.read_text())
+    print("\nagainst the baseline:")
+    worst = 0.0
+    for result in results:
+        was = recorded.get((result.regime, result.left, result.right))
+        if was is None:
+            print(f"  {result.regime:16} {result.label:26} {result.pct:5.1f}%  (not in the baseline)")
+            continue
+        delta = result.pct - was
+        worst = min(worst, delta)
+        arrow = "+" if delta >= 0 else ""
+        print(f"  {result.regime:16} {result.label:26} {result.pct:5.1f}%  {arrow}{delta:.1f} vs {was:.1f}%")
+    # Reported, never enforced: these intervals are wide at forty games, so a
+    # threshold here would fail honest runs and teach people to ignore it.
+    print(f"\nlargest regression: {worst:.1f} points")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

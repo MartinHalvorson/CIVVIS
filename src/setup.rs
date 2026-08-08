@@ -4,6 +4,8 @@
 //! city-state defaults, religion limits, and observation metadata all consume
 //! the same profile instead of maintaining subtly different tables.
 
+use std::collections::BTreeMap;
+
 use serde::ser::{SerializeStruct, Serializer};
 use serde::{Deserialize, Serialize};
 
@@ -395,6 +397,8 @@ pub enum MapScript {
     Fjords,
     Islands,
     WaterWorld,
+    Battlefield,
+    TacticsPlanet,
 }
 
 impl MapScript {
@@ -414,7 +418,25 @@ impl MapScript {
             Self::Fjords => "fjords",
             Self::Islands => "islands",
             Self::WaterWorld => "water_world",
+            Self::Battlefield => "battlefield",
+            Self::TacticsPlanet => "tactics_planet",
         }
+    }
+
+    /// Whether the script draws a Tactics map rather than a Civ world. Tactics
+    /// has both a bounded arena and a small globe, but both start with two
+    /// cities and armies, skip the development layer, and use the same combat
+    /// rules.
+    pub const fn is_battlefield(self) -> bool {
+        matches!(self, Self::Battlefield | Self::TacticsPlanet)
+    }
+
+    /// Whether this Tactics map is the small globe rather than the bounded
+    /// arena. Its topology is allowed to remain Planet and its land generator
+    /// keeps the ordinary world terrain instead of painting arena ground over
+    /// it.
+    pub const fn is_planet_battlefield(self) -> bool {
+        matches!(self, Self::TacticsPlanet)
     }
 
     /// Whether the script draws a fixed world instead of rolling a new one.
@@ -467,6 +489,14 @@ impl MapScript {
             Self::Fjords => 60,
             Self::Islands => 22,
             Self::WaterWorld => 5,
+            // Ground everywhere except the one-column seam that seals the
+            // cylinder's east-west wrap into a bounded arena, plus a pond or
+            // two so rivers have somewhere to reach the sea.
+            Self::Battlefield => 88,
+            // A compact Pangaea-style landmass on a globe. The Tactics size
+            // is about half a Duel world, so this leaves a small land world
+            // with enough open coastline for two cities on opposite sides.
+            Self::TacticsPlanet => 42,
         }
     }
 
@@ -647,8 +677,10 @@ pub struct MapScriptSpec {
     pub script: MapScript,
 }
 
-/// The world types in the order [`MapScript`] declares them.
-pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 14] = [
+/// The world types in the order [`MapScript`] declares them. The Tactics maps
+/// sit last because they are not Civ worlds: the game mode offers them only
+/// when Tactics is chosen.
+pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 16] = [
     MapScriptSpec {
         id: "land_only",
         name: "Land Only",
@@ -733,7 +765,410 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 14] = [
         description: "Almost nothing but ocean — scattered specks of land, and the sea lanes between them are the map.",
         script: MapScript::WaterWorld,
     },
+    MapScriptSpec {
+        id: "battlefield",
+        name: "Battlefield",
+        description: "A small bounded arena for tactical unit combat: open ground shaped by mountains, rivers, woods and water, with no resources and nothing to develop.",
+        script: MapScript::Battlefield,
+    },
+    MapScriptSpec {
+        id: "tactics_planet",
+        name: "Planet",
+        description: "A small land planet for Tactics: one compact continent on a globe about half the size of Duel, with one city for each side on opposite shores.",
+        script: MapScript::TacticsPlanet,
+    },
 ];
+
+/// The world types a lobby offers for the Civ game mode: every script but the
+/// battlefield, which is not a world and belongs to the Tactics mode's own
+/// menu. Both menus stay data-driven from the one authoritative roster.
+pub fn world_map_scripts() -> Vec<&'static MapScriptSpec> {
+    CIV6_MAP_SCRIPTS.iter().filter(|spec| !spec.script.is_battlefield()).collect()
+}
+
+/// The Tactics mode's map menu, published separately from the Civ world list
+/// so arenas and future tactical worlds can grow without a protocol change.
+pub fn battlefield_map_scripts() -> Vec<&'static MapScriptSpec> {
+    CIV6_MAP_SCRIPTS.iter().filter(|spec| spec.script.is_battlefield()).collect()
+}
+
+/// Which game this is: the whole thing, or one half of it on its own.
+///
+/// Civ is the complete game — a civilization grown, defended and won with.
+/// The other two take one half each and ask whether you can play it: Tactics
+/// is the fighting with no city to build, Sim City is the building with no
+/// fighting to do. They are separate skills, so they are separately rated —
+/// see [`crate::elo::ratings_path_for`] — and a player carries one rating per
+/// mode plus an overall.
+///
+/// The mode is read from the map script rather than stored beside it. An
+/// arena is not a world and a world is not an arena, so the script already
+/// answers the question, and keeping it the only marker means no save, no
+/// `Params` field and no protocol row can ever disagree with the map about
+/// which game is being played.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GameMode {
+    /// The complete grand-strategy game: everything, on a world.
+    #[default]
+    Civ,
+    /// Pure unit tactics: two even armies on an arena, no city building.
+    Tactics,
+    /// Pure development: cities, builders and traders, no fighting.
+    ///
+    /// Declared but not yet playable — `for_script` never returns it, because
+    /// no map script builds one. It is here so the rating layer and the mode
+    /// menus have the third slot from the start rather than growing it later.
+    SimCity,
+}
+
+impl GameMode {
+    pub const ALL: [GameMode; 3] = [GameMode::Civ, GameMode::Tactics, GameMode::SimCity];
+
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Civ => "civ",
+            Self::Tactics => "tactics",
+            Self::SimCity => "simcity",
+        }
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Civ => "Civ",
+            Self::Tactics => "Tactics",
+            Self::SimCity => "Sim City",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|mode| mode.id() == id)
+    }
+
+    /// Whether this mode can be played today.
+    pub const fn is_playable(self) -> bool {
+        !matches!(self, Self::SimCity)
+    }
+
+    /// Which game a world of this type is a game of.
+    pub const fn for_script(script: MapScript) -> GameMode {
+        if script.is_battlefield() {
+            GameMode::Tactics
+        } else {
+            GameMode::Civ
+        }
+    }
+}
+
+/// A Tactics map size. Bounded arenas use their dimensions directly; the
+/// Planet entry uses the same width/height fields as the globe storage shape,
+/// and carries its script and topology so the lobby can send one complete
+/// choice without rebuilding the mapping in JavaScript.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+pub struct BattlefieldSize {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub width: i32,
+    pub height: i32,
+    pub script: MapScript,
+    pub topology: MapTopology,
+}
+
+/// The Tactics maps the setup menu offers, smallest first. The arena entries
+/// are bounded fields; the final entry is a small globe with a compact land
+/// world and opposite-side starts.
+pub const BATTLEFIELD_SIZES: [BattlefieldSize; 4] = [
+    BattlefieldSize {
+        id: "10x10", name: "Square · 10×10", width: 10, height: 10,
+        script: MapScript::Battlefield, topology: MapTopology::Flat,
+    },
+    BattlefieldSize {
+        id: "10x20", name: "March · 10×20", width: 10, height: 20,
+        script: MapScript::Battlefield, topology: MapTopology::Flat,
+    },
+    BattlefieldSize {
+        id: "20x20", name: "Field · 20×20", width: 20, height: 20,
+        script: MapScript::Battlefield, topology: MapTopology::Flat,
+    },
+    BattlefieldSize {
+        id: "planet", name: "Planet · small land world", width: 40, height: 18,
+        script: MapScript::TacticsPlanet, topology: MapTopology::Planet,
+    },
+];
+
+/// The era a game opens in when a sweep asked for a random one.
+///
+/// Seeded off the game's own seed rather than a fresh source, so a run stays
+/// exactly reproducible: the same seed always opens in the same era. The mix
+/// is splitmix64's finalizer, and it earns its place — consecutive seeds are
+/// consecutive integers, so taking them modulo the ladder directly would
+/// march through the eras in lockstep with the seed instead of scattering
+/// them.
+///
+/// Lives here rather than in a caller because both the command line and the
+/// rating tournament roll it, and two implementations of "which era does seed
+/// N open in" would eventually disagree — which would make a replayed
+/// tournament a different experiment from the one that was rated.
+pub fn random_start_era(seed: u64) -> usize {
+    let playable: Vec<usize> = playable_start_eras().filter_map(|spec| spec.era).collect();
+    let mut mix = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    mix = (mix ^ (mix >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    mix = (mix ^ (mix >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    mix ^= mix >> 31;
+    playable[(mix % playable.len() as u64) as usize]
+}
+
+/// Which era a run opens its games in: one fixed rung of the ladder, or a
+/// fresh roll for every game.
+///
+/// A tournament has to carry this as a choice rather than a number, because
+/// the two are different experiments: a ladder rated over one era says what an
+/// AI does with that era's units, and one rated over a spread says what it
+/// does across the roster. The rating profile prints them differently for
+/// exactly that reason, so the two can never share a ledger.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StartEraChoice {
+    Fixed(usize),
+    RandomPerGame,
+}
+
+impl StartEraChoice {
+    /// The era this choice opens the game with `seed` in.
+    pub fn for_seed(self, seed: u64) -> usize {
+        match self {
+            Self::Fixed(era) => era,
+            Self::RandomPerGame => random_start_era(seed),
+        }
+    }
+
+    /// How the rating profile names this choice.
+    pub fn profile_id(self) -> String {
+        match self {
+            Self::Fixed(era) => era.to_string(),
+            Self::RandomPerGame => "random".to_string(),
+        }
+    }
+}
+
+/// The Tactics arena's economy.
+///
+/// An arena has no empire behind it, so nothing here is earned: every figure
+/// is simply granted, identically to both sides, and exists only to keep a
+/// battle supplied. That is the point of the mode as a tactical testbed — the
+/// two sides differ in how they fight and in nothing else, so an outcome is
+/// attributable to the fighting.
+///
+/// The three flat grants answer "how much", and `turns_per_tech` answers "how
+/// fast", because a flat Science figure cannot: a technology costs some
+/// seventeen times more in the Information era than in the Ancient, so a fixed
+/// yield that opens the tree briskly at the start stops opening it at all
+/// later. Asking for a pace instead makes the grant whatever this turn's
+/// research actually costs, divided by the pace — steady unlocks in every era
+/// and at every game speed, without a table to maintain.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TacticsRules {
+    /// Cities each side opens with: 0 for armies alone, or 1.
+    pub cities: u8,
+    /// Production that city collects each turn, flat.
+    pub production: u32,
+    /// Gold each side collects each turn, flat. An arena charges no unit
+    /// upkeep, so this is upgrade money and nothing else.
+    pub gold: u32,
+    /// Turns a side spends on whichever technology it is researching, in any
+    /// era. 0 stops research, freezing both sides at their starting era's
+    /// units.
+    pub turns_per_tech: u32,
+    /// Turns each battle may run before neither side wins and the battle is
+    /// recorded as a draw. The setup surface offers the four values in
+    /// [`Self::TURN_LIMITS`]; old saves predate the choice and load the stock
+    /// 100-turn battle.
+    #[serde(default = "default_tactics_turn_limit")]
+    pub turn_limit: u32,
+    /// Battles the two civilizations fight before a match is decided. 1 is a
+    /// single battle; any higher odd number is a series, taken by the first
+    /// side to win more than half of it.
+    ///
+    /// The pairing is what a series is for: the same two civilizations fight
+    /// the same arena rules on fresh ground each time, so the result is about
+    /// the two of them rather than about one roll of the map.
+    #[serde(default = "one_battle")]
+    pub best_of: u32,
+    /// Whether a civilization may field its own unique units.
+    ///
+    /// Off, both sides field the identical stock roster and the battle is a
+    /// test of play alone — which is the arena's whole claim, so it is the
+    /// default. On, each side's roster and its build menu substitute whatever
+    /// its civilization replaces a stock unit with, and the match becomes a
+    /// test of the two civilizations as well.
+    #[serde(default)]
+    pub unique_units: bool,
+    /// Whether the field is fogged.
+    ///
+    /// Off — the default, and what an arena has always done — both commanders
+    /// see all of it. A battle is meant to be a test of what each side does
+    /// with what is in front of it rather than of who finds the other first,
+    /// and the two armies are set down out of each other's sight with no city
+    /// to march on and no border to trespass: measured, a fogged arena had
+    /// both sides stand in their own deployment bands until the clock decided
+    /// it. On, each side sees only what its own units can, and finding the
+    /// enemy is part of the battle. Either way the rule is symmetric, so it is
+    /// a shape the match is given rather than a handicap one side is dealt.
+    #[serde(default)]
+    pub fog: bool,
+}
+
+fn one_battle() -> u32 {
+    1
+}
+
+fn default_tactics_turn_limit() -> u32 {
+    100
+}
+
+impl TacticsRules {
+    /// The largest figure any of the flat grants may be set to. A ceiling
+    /// exists so a hand-written request cannot mint an arena where the first
+    /// turn buys the whole tech tree's worth of units.
+    pub const MAX_YIELD: u32 = 999;
+    /// The slowest tech pace worth offering; beyond it a battle ends first.
+    pub const MAX_TURNS_PER_TECH: u32 = 99;
+    /// The longest series offered. Beyond this a match is a tournament, and
+    /// `civvis tournament` is the instrument for that.
+    pub const MAX_BEST_OF: u32 = 21;
+    /// Battle clocks offered by every Tactics setup surface, shortest first.
+    pub const TURN_LIMITS: [u32; 4] = [50, 100, 150, 200];
+
+    /// Clamp a requested economy to what the mode can actually play.
+    pub fn sanitized(self) -> Self {
+        Self {
+            cities: self.cities.min(1),
+            production: self.production.min(Self::MAX_YIELD),
+            gold: self.gold.min(Self::MAX_YIELD),
+            turns_per_tech: self.turns_per_tech.min(Self::MAX_TURNS_PER_TECH),
+            turn_limit: *Self::TURN_LIMITS
+                .iter()
+                .min_by_key(|limit| (self.turn_limit.abs_diff(**limit), **limit))
+                .expect("the Tactics turn-limit ladder is nonempty"),
+            // Odd, so a series cannot be split evenly by wins. Drawn battles
+            // can still exhaust the schedule without either side reaching
+            // `wins_needed`; that is an intentionally drawn match.
+            best_of: (self.best_of.max(1) | 1).min(Self::MAX_BEST_OF),
+            unique_units: self.unique_units,
+            fog: self.fog,
+        }
+    }
+
+    /// Battles one side must win to take the match.
+    pub fn wins_needed(self) -> u32 {
+        self.sanitized().best_of / 2 + 1
+    }
+}
+
+impl Default for TacticsRules {
+    /// One city producing a unit every turn or two in the Ancient era, gold
+    /// enough to upgrade a unit every ten turns or so, and a technology every
+    /// five turns. Chosen so a battle keeps arriving at new units and new
+    /// matchups without the arena becoming a production race.
+    fn default() -> Self {
+        Self {
+            cities: 1,
+            production: 30,
+            gold: 30,
+            turns_per_tech: 5,
+            turn_limit: default_tactics_turn_limit(),
+            best_of: 1,
+            unique_units: false,
+            fog: false,
+        }
+    }
+}
+
+/// The running score of a Tactics match: one series of battles between the
+/// same two civilizations.
+///
+/// Kept by civilization rather than by seat, because a match swaps the sides
+/// over between battles. Whichever end of the field a civilization is set
+/// down on, the battle it wins is its own — and a series in which one side
+/// held the same corner every time would be measuring the corner.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct MatchSeries {
+    /// Battles the match is played over. Always odd, so wins cannot split it
+    /// evenly; drawn battles can still use the series up with no match winner.
+    pub best_of: u32,
+    /// Battles won, by civilization, in roster order.
+    pub wins: BTreeMap<String, u32>,
+    /// Battles that reached the selected turn limit with neither side
+    /// eliminated, counted rather than silently dropped so the played total
+    /// always adds up.
+    pub drawn: u32,
+}
+
+impl MatchSeries {
+    /// A fresh match between these civilizations.
+    pub fn new(best_of: u32, contenders: impl IntoIterator<Item = String>) -> Self {
+        Self {
+            best_of: (best_of.max(1) | 1).min(TacticsRules::MAX_BEST_OF),
+            wins: contenders.into_iter().map(|civ| (civ, 0)).collect(),
+            drawn: 0,
+        }
+    }
+
+    /// Battles one civilization must win to take the match.
+    pub fn wins_needed(&self) -> u32 {
+        self.best_of / 2 + 1
+    }
+
+    pub fn played(&self) -> u32 {
+        self.wins.values().sum::<u32>() + self.drawn
+    }
+
+    /// Record a finished battle. `None` is a battle nobody won.
+    pub fn record(&mut self, winner: Option<&str>) {
+        match winner {
+            Some(civ) => *self.wins.entry(civ.to_string()).or_insert(0) += 1,
+            None => self.drawn += 1,
+        }
+    }
+
+    /// The civilization that has taken the match, if one has.
+    pub fn winner(&self) -> Option<&str> {
+        let needed = self.wins_needed();
+        self.wins
+            .iter()
+            .find(|(_, won)| **won >= needed)
+            .map(|(civ, _)| civ.as_str())
+    }
+
+    /// Whether the match is over — either somebody has clinched it, or every
+    /// battle has been played and the draws have used the series up.
+    pub fn decided(&self) -> bool {
+        self.winner().is_some() || self.played() >= self.best_of
+    }
+
+    /// "Greece 3 – 1 Egypt", or "Greece 2 – 1 Egypt (best of 5)" mid-match.
+    pub fn scoreline(&self) -> String {
+        let mut sides: Vec<(&String, &u32)> = self.wins.iter().collect();
+        // Leader first, then roster order, so the line reads as a result.
+        sides.sort_by(|(first_civ, first), (second_civ, second)| {
+            second.cmp(first).then_with(|| first_civ.cmp(second_civ))
+        });
+        let score = sides
+            .iter()
+            .map(|(civ, won)| format!("{civ} {won}"))
+            .collect::<Vec<_>>()
+            .join(" – ");
+        let drawn = if self.drawn > 0 {
+            format!(", {} drawn", self.drawn)
+        } else {
+            String::new()
+        };
+        if self.decided() {
+            format!("{score}{drawn}")
+        } else {
+            format!("{score}{drawn} (best of {})", self.best_of)
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1112,7 +1547,9 @@ mod tests {
 
     use super::{
         last_start_era, playable_start_eras, start_era_from_id, start_era_id,
-        stock_start_era_id, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology,
+        stock_start_era_id, BaseRuleset, GameMode, GameSpeed, MapPoles, MapScript, MapSize,
+        MapTopology, MatchSeries, TacticsRules,
+        BATTLEFIELD_SIZES,
         BASE_RULESETS, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, MAP_POLES,
         MAP_TOPOLOGIES, START_ERAS,
     };
@@ -1344,6 +1781,8 @@ mod tests {
                 MapScript::Fjords,
                 MapScript::Islands,
                 MapScript::WaterWorld,
+                MapScript::Battlefield,
+                MapScript::TacticsPlanet,
             ]
         );
         assert_eq!(MapScript::LandOnly.land_percent(), 95);
@@ -1367,6 +1806,174 @@ mod tests {
             .find(|spec| spec.id == "tenins_ball")
             .expect("the Tennis Ball map is listed");
         assert_eq!(tennis_ball.name, "Tennis Ball");
+    }
+
+    /// Tactics maps are a separate roster from Civ worlds. The Battlefield is
+    /// a bounded arena, while Planet keeps its globe and has a custom small
+    /// land-world size.
+    #[test]
+    fn the_battlefield_is_an_arena_rather_than_a_world() {
+        for spec in CIV6_MAP_SCRIPTS {
+            assert_eq!(
+                spec.script.is_battlefield(),
+                matches!(spec.script, MapScript::Battlefield | MapScript::TacticsPlanet),
+                "{}",
+                spec.id
+            );
+        }
+        assert_eq!(MapScript::from_id("battlefield"), Some(MapScript::Battlefield));
+        assert_eq!(MapScript::from_id("tactics_planet"), Some(MapScript::TacticsPlanet));
+        for size in BATTLEFIELD_SIZES {
+            if size.script == MapScript::Battlefield {
+                let ground: Vec<i32> = size
+                    .id
+                    .split('x')
+                    .map(|side| side.parse().expect("battlefield ids read WxH"))
+                    .collect();
+                assert_eq!(ground.len(), 2, "{}", size.id);
+                assert_eq!(size.width, ground[0], "{} is its own fighting ground", size.id);
+                assert_eq!(size.height, ground[1], "{}", size.id);
+                // Both sides are seated at opposite ends of the long axis,
+                // which is the north-south one at every offered size.
+                assert!(size.height >= size.width, "{} is not taller than it is wide", size.id);
+                assert_eq!(size.topology, MapTopology::Flat, "{}", size.id);
+            } else {
+                assert_eq!(size.script, MapScript::TacticsPlanet, "{}", size.id);
+                assert_eq!(size.id, "planet");
+                assert_eq!(size.topology, MapTopology::Planet, "{}", size.id);
+                assert_eq!((size.width, size.height), (40, 18), "{}", size.id);
+            }
+            // No battlefield collides with a real map size: the smallest
+            // world is wider than the largest arena several times over.
+            assert!(MapSize::from_dimensions(size.width, size.height).is_none(), "{}", size.id);
+        }
+        assert_eq!(BATTLEFIELD_SIZES.len(), 4);
+    }
+
+    /// The three games CIVVIS offers, and how a world says which one it is.
+    ///
+    /// Civ is the whole thing; Tactics and Sim City each take one half of it
+    /// and ask whether you can play that half. The map script is the only
+    /// marker — an arena is not a world — so no save, setting or protocol row
+    /// can disagree with the map about which game is being played.
+    #[test]
+    fn every_world_says_which_of_the_three_games_it_is() {
+        for mode in GameMode::ALL {
+            assert_eq!(GameMode::from_id(mode.id()), Some(mode), "{}", mode.id());
+            assert!(!mode.name().is_empty());
+        }
+        assert_eq!(GameMode::from_id("battlefield"), None);
+        assert_eq!(GameMode::default(), GameMode::Civ);
+        for spec in CIV6_MAP_SCRIPTS {
+            let mode = GameMode::for_script(spec.script);
+            assert_eq!(
+                mode,
+                if spec.script.is_battlefield() { GameMode::Tactics } else { GameMode::Civ },
+                "{}",
+                spec.id
+            );
+            assert!(mode.is_playable(), "{} builds a mode nobody can play", spec.id);
+        }
+        // Sim City is declared and not yet built: it has a name, an id and a
+        // ladder of its own, and no map script produces one.
+        assert!(!GameMode::SimCity.is_playable());
+        assert!(CIV6_MAP_SCRIPTS
+            .iter()
+            .all(|spec| GameMode::for_script(spec.script) != GameMode::SimCity));
+        // One ladder per mode, and no two modes share one.
+        let ladders: std::collections::BTreeSet<&str> = GameMode::ALL
+            .into_iter()
+            .map(crate::elo::ratings_path_for)
+            .collect();
+        assert_eq!(ladders.len(), GameMode::ALL.len());
+        assert_eq!(
+            crate::elo::ratings_path_for(GameMode::Civ),
+            crate::elo::DEFAULT_RATINGS_PATH,
+            "the Civ ladder keeps its own path, so existing ledgers are untouched"
+        );
+    }
+
+    /// A match is a series between two civilizations, and its score belongs
+    /// to the civilizations rather than to the seats they were sitting in —
+    /// because a match swaps the sides over between battles. It is always an
+    /// odd number of battles, so wins cannot split evenly; draws can still
+    /// exhaust it without a winner.
+    #[test]
+    fn a_match_is_an_odd_series_scored_by_civilization() {
+        // An even length is not a match: best of four is best of three with a
+        // dead rubber attached, and can be split with nothing left to play.
+        for asked in [0, 1, 2, 3, 4, 5, 6, 1_000] {
+            let length = TacticsRules { best_of: asked, ..TacticsRules::default() }
+                .sanitized()
+                .best_of;
+            assert_eq!(length % 2, 1, "asked for {asked}, got {length}");
+            assert!((1..=TacticsRules::MAX_BEST_OF).contains(&length), "{length}");
+        }
+        assert_eq!(TacticsRules { best_of: 5, ..TacticsRules::default() }.wins_needed(), 3);
+        assert_eq!(TacticsRules::default().best_of, 1, "one battle unless a match is asked for");
+        assert!(!TacticsRules::default().unique_units, "even rosters unless asked otherwise");
+
+        let mut series = MatchSeries::new(5, ["Greece".to_string(), "Egypt".to_string()]);
+        assert_eq!(series.wins_needed(), 3);
+        assert!(!series.decided());
+        series.record(Some("Greece"));
+        series.record(Some("Egypt"));
+        series.record(Some("Greece"));
+        assert!(!series.decided(), "two of five is not a match");
+        assert_eq!(series.scoreline(), "Greece 2 – Egypt 1 (best of 5)");
+        series.record(Some("Greece"));
+        assert!(series.decided());
+        assert_eq!(series.winner(), Some("Greece"));
+        assert_eq!(series.played(), 4, "a match stops at the battle that settles it");
+        assert_eq!(series.scoreline(), "Greece 3 – Egypt 1");
+
+        // A battle nobody wins is counted rather than dropped, and enough of
+        // them end the match without a winner.
+        let mut drawn = MatchSeries::new(3, ["Rome".to_string(), "Nubia".to_string()]);
+        for _ in 0..3 {
+            drawn.record(None);
+        }
+        assert!(drawn.decided());
+        assert_eq!(drawn.winner(), None);
+        assert_eq!(drawn.played(), 3);
+        assert!(drawn.scoreline().contains("3 drawn"), "{}", drawn.scoreline());
+    }
+
+    /// A battle clock is a small, deliberate Tactics setting rather than an
+    /// arbitrary world-length number. Hand-written requests are normalized to
+    /// the closest offered value, and a save from before the field existed
+    /// receives the same 100-turn default as a new lobby.
+    #[test]
+    fn tactics_turn_limits_use_the_published_ladder_and_survive_old_saves() {
+        assert_eq!(TacticsRules::TURN_LIMITS, [50, 100, 150, 200]);
+        assert_eq!(TacticsRules::default().turn_limit, 100);
+        for limit in TacticsRules::TURN_LIMITS {
+            assert_eq!(
+                TacticsRules { turn_limit: limit, ..TacticsRules::default() }
+                    .sanitized()
+                    .turn_limit,
+                limit
+            );
+        }
+        assert_eq!(
+            TacticsRules { turn_limit: 0, ..TacticsRules::default() }
+                .sanitized()
+                .turn_limit,
+            50
+        );
+        assert_eq!(
+            TacticsRules { turn_limit: 149, ..TacticsRules::default() }
+                .sanitized()
+                .turn_limit,
+            150
+        );
+
+        let mut old = serde_json::to_value(TacticsRules::default()).unwrap();
+        old.as_object_mut().unwrap().remove("turn_limit");
+        assert_eq!(
+            serde_json::from_value::<TacticsRules>(old).unwrap().turn_limit,
+            100
+        );
     }
 
     /// The world's shape and its poles are settings of their own, orthogonal to

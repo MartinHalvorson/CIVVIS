@@ -28,14 +28,10 @@
   <array>
     <string>__PYTHON3__</string>
     <string>__DEPLOY_CHECKOUT__/tools/spectator_supervisor.py</string>
+    <!-- No world flags: the first world is the engine's stock opening world
+         (stock_opening_params in src/server.rs), which the supervisor's own
+         defaults follow. Later worlds are rolled between games as before. -->
     <string>--port</string><string>8765</string>
-    <string>--players</string><string>6</string>
-    <string>--width</string><string>74</string>
-    <string>--height</string><string>46</string>
-    <string>--city-states</string><string>8</string>
-    <string>--turns</string><string>300</string>
-    <string>--map</string><string>continents</string>
-    <string>--speed</string><string>standard</string>
     <string>--cooldown</string><string>8</string>
     <string>--no-open</string>
   </array>
