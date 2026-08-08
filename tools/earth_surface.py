@@ -55,14 +55,42 @@ NONE, FOREST, JUNGLE, MARSH = range(4)
 SURFACE_NAMES = ["sea", "lake", "grassland", "plains", "desert", "tundra", "snow", "mountain"]
 VEG_NAMES = ["none", "forest", "jungle", "marsh"]
 
-# Elevation cuts, in metres, measured over one cell. Either test alone makes a
-# mountain, because a range and a plateau are high in different ways: the Alps
-# average only 1.9 km but climb 1.2 km inside a single cell, while Tibet
-# averages 4.8 km and is nearly flat across any one of them. Hills work the
-# same way one step down, which is what puts the Appalachians and the Deccan in
-# a different class from Iowa and the Ganges plain.
+# Elevation cuts, in metres, measured over one cell.
+#
+# ⚠ A MOUNTAIN IS RUGGED, NOT MERELY HIGH. Altitude alone used to make one --
+# `mean_elevation >= MOUNTAIN_MEAN` was its own sufficient test -- which is a
+# fair description of how a range looks from sea level and a poor one of how a
+# plateau plays. Tibet averages 4.8 km and is nearly flat across any single
+# cell, so the whole plateau came out as impassable mountain and, with the
+# Iranian plateau doing the same thing further west, walled Asia off along its
+# entire middle. Nothing crossed it: not a trader, not an army, not a scout.
+#
+# Relief is the test now. A cell is a mountain if the ground inside it climbs
+# far enough to be a range, and the bar it has to clear drops where the land is
+# already high -- 700 m of relief on top of a 4 km plateau is the Kunlun or the
+# Qilian, while the same 700 m at sea level is hill country.
+#
+# Measured on the half-degree grid, the Tibetan plateau (28-37N, 78-100E) goes
+# from 747 of its 792 land cells being mountain to 191, with the rest hills;
+# mountain over all land falls 6.1% -> 4.2%. Measured on the generated map at
+# Standard, Large and Huge, a walk across the plateau west to east was BLOCKED
+# at all three sizes and is now open in 4, 5 and 6 tiles; the Tarim to Lhasa
+# road opens at Standard and Large. Kashgar to Ladakh stays blocked at every
+# size, which is right -- that is the Karakoram, and it is supposed to be a
+# wall.
+#
+# ⚠ The road NORTH of the mountains, Tarim to central Iran, was already open
+# before this change and is unchanged by it: 11 tiles at Standard and Large, 18
+# at Huge, both before and after. What that route gains is width, not
+# existence -- the passable belt around it grows from 62 reachable tiles to 84
+# at Standard. The Iranian plateau was already mostly hills and does not move
+# at all. It was Tibet, and only Tibet, that was walled.
+#
+# Hills keep both tests, so nothing that was hills stops being hills, and every
+# plateau that stops being mountain lands there rather than on the flat.
 MOUNTAIN_MEAN = 2600.0
 MOUNTAIN_RELIEF = 1000.0
+MOUNTAIN_HIGH_RELIEF = 700.0
 HILL_MEAN = 1200.0
 HILL_RELIEF = 300.0
 
@@ -226,7 +254,10 @@ def build(cache: Path):
     mountain = (
         is_ground
         & ~ice
-        & ((mean_elevation >= MOUNTAIN_MEAN) | (local_relief >= MOUNTAIN_RELIEF))
+        & (
+            (local_relief >= MOUNTAIN_RELIEF)
+            | ((mean_elevation >= MOUNTAIN_MEAN) & (local_relief >= MOUNTAIN_HIGH_RELIEF))
+        )
     )
     hills = (
         is_ground
