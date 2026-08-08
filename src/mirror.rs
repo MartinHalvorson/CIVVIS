@@ -2570,6 +2570,76 @@ mod tests {
         );
     }
 
+    /// ⚠ A mirrored city's buildings are the EXPORT's statement, and `place_city`
+    /// disagrees for a founding-bonus civilization: Rome's Trajan's Column pushes
+    /// a free monument on every placement, while Civilization VI grants it at
+    /// founding only. Run `civvis-20260807T172510Z` (#1366): two cities Rome
+    /// CAPTURED, whose export building lists were empty, mirrored with
+    /// `extra=['monument']` — ghost culture in exactly the captured cities the
+    /// recovery planner was re-valuing. Founded cities masked the seed because
+    /// their real monument is exported and the translation deduplicates.
+    #[test]
+    fn a_captured_city_does_not_inherit_the_seats_founding_bonus_monument() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 160,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(9, 5, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot { turn: 160, ..StateSnapshot::default() };
+        state.seat.civ = "CIVILIZATION_ROME".to_string();
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Rome".to_string(),
+            x: 5,
+            y: 5,
+            pop: 9,
+            capital: true,
+            buildings: vec![
+                "BUILDING_MONUMENT".to_string(),
+                "BUILDING_GRANARY".to_string(),
+            ],
+            ..StateCity::default()
+        });
+        // Captured this game: Civ 6 reports its building list as empty.
+        state.cities.push(StateCity {
+            id: 2,
+            name: "Karkar".to_string(),
+            x: 9,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+
+        let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let karkar = recon
+            .game
+            .cities
+            .values()
+            .find(|city| city.name == "Karkar")
+            .expect("the captured city must be on the board");
+        assert!(
+            karkar.buildings.is_empty(),
+            "the export lists no buildings; the mirror must not model a monument: {:?}",
+            karkar.buildings
+        );
+        let rome = recon
+            .game
+            .cities
+            .values()
+            .find(|city| city.name == "Rome")
+            .expect("the capital must be on the board");
+        assert_eq!(
+            rome.buildings
+                .iter()
+                .filter(|building| **building == Name::new("monument"))
+                .count(),
+            1,
+            "the founded capital's real, exported monument still crosses exactly once"
+        );
+    }
+
     #[test]
     fn a_completed_wonder_keeps_its_type_and_plot() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -9670,6 +9740,20 @@ pub fn rebuild_from_state(
                 // sat on `await` past 98 polls, and the run fell back to the heuristic
                 // ladder (`orders_source: "fallback"`). One Castle ends a run
                 // permanently, because every rebuild hits it again.
+                //
+                // ⚠ STRICTLY THE EXPORT'S LIST, so clear the founding seed first.
+                // `place_city` grants native founding bonuses — Rome's Trajan's
+                // Column pushes a free monument — and Civilization VI applies that
+                // bonus at FOUNDING only, so a city this seat CAPTURED never earned
+                // one the export does not list. Measured on run
+                // `civvis-20260807T172510Z` at turn ~160 (#1366): both cities Rome
+                // captured mirrored with `extra=['monument']` against an EMPTY
+                // export list, +2 ghost culture each, exactly in the captured
+                // cities the recovery planner was re-valuing. Founded Roman cities
+                // hid the seed because their real monument is exported and the push
+                // below deduplicates. The persistent sync already clears before
+                // translating; this is the same discipline.
+                built.buildings.clear();
                 for civ6 in &city.buildings {
                     match civvis_node_name(&game.rules.buildings, civ6, "BUILDING_") {
                         // ★★★★★ THE PALACE IS NOT A LISTED BUILDING IN CIVVIS, AND
