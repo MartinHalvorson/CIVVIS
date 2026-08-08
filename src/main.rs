@@ -971,12 +971,15 @@ fn base_ruleset(args: &[String]) -> BaseRuleset {
 /// consecutive integers, and taking those modulo the ladder length directly
 /// would march through the eras in lockstep with the seed instead of
 /// scattering them.
-/// The arena economy a tournament plays under, read from the same flags
-/// `game_options` reads. A tournament builds its own `GameOptions` per game
-/// rather than going through that function, so without this the `--tactics-*`
-/// flags would be accepted and silently ignored — which is what they were,
-/// and why two arena experiments could be rated into one ledger.
-fn tournament_tactics(args: &[String]) -> setup::TacticsRules {
+/// The arena economy a run plays under, read from the `--tactics-*` flags.
+///
+/// Every launch path needs its own call because they build their world
+/// differently — `soak` and `simulate` through `game_options`, `tournament`
+/// through its own per-game `GameOptions`, and `play` through
+/// `server::Params` — and each one that forgets accepts the flags and
+/// silently ignores them. Both of the others did, in turn; this is the single
+/// reader they now share.
+fn tactics_rules(args: &[String]) -> setup::TacticsRules {
     let stock = setup::TacticsRules::default();
     setup::TacticsRules {
         cities: arg(args, "--tactics-cities", i64::from(stock.cities)).max(0) as u8,
@@ -1084,7 +1087,6 @@ fn game_options(
         speed_spec.turns as i64
     };
     let player_count = players.max(1) as usize;
-    let default_tactics = setup::TacticsRules::default();
     let teams_arg = arg_text(args, "--teams", "");
     let teams = if teams_arg.trim().is_empty() {
         Vec::new()
@@ -1130,19 +1132,7 @@ fn game_options(
         start_era: start_era(args, seed),
         // The arena's economy, so a headless sweep can vary the thing it is
         // training against without going through a lobby. Ignored on a world.
-        tactics: setup::TacticsRules {
-            cities: arg(args, "--tactics-cities", i64::from(default_tactics.cities)).max(0) as u8,
-            production: arg(args, "--tactics-production", i64::from(default_tactics.production))
-                .max(0) as u32,
-            gold: arg(args, "--tactics-gold", i64::from(default_tactics.gold)).max(0) as u32,
-            turns_per_tech: arg(
-                args,
-                "--tactics-turns-per-tech",
-                i64::from(default_tactics.turns_per_tech),
-            )
-            .max(0) as u32,
-        }
-        .sanitized(),
+        tactics: tactics_rules(args),
         future_era: future_era(args),
         map_script: map_script(args),
         map_topology: map_topology(args),
@@ -2197,7 +2187,7 @@ fn main() {
                 } else {
                     setup::StartEraChoice::Fixed(start_era(&args, seed as u64))
                 },
-                tactics: tournament_tactics(&args),
+                tactics: tactics_rules(&args),
                 seed: seed as u64,
                 k,
                 rating_anchor,
@@ -2638,9 +2628,9 @@ fn main() {
                     // The shipped setup defaults: the lobby can change both.
                     mercy_rule: Some(0.95),
                     required_victory_types: 1,
-                    // A launch on the battlefield map plays the mode's stock
-                    // economy; the lobby is where it is changed.
-                    tactics: crate::setup::TacticsRules::default(),
+                    // The lobby can still change these mid-session; this is
+                    // what the launch itself asked for.
+                    tactics: tactics_rules(&args),
                     num_city_states: auto_cs(&args, players),
                     spectate,
                     difficulty: play_options.difficulty,
@@ -2813,7 +2803,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        game_options, jobs_arg, map_topology, parse_tournament_entrants, start_era,
+        game_options, jobs_arg, map_topology, parse_tournament_entrants, start_era, tactics_rules,
         simultaneous_soak_job_split, single_simulation_jobs_arg, strict_f64_arg, strict_i64_arg,
         turn_structure, ADVANCED_V1_SOURCE_CONTRACT_FNV,
         DEFAULT_TOURNAMENT_ENTRANTS, SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
@@ -2826,6 +2816,46 @@ mod tests {
     /// roll comes from the game's own seed, so a soak replayed with the same
     /// `--start-seed` opens in the same eras. Consecutive seeds must not walk
     /// the ladder in lockstep, which is what the mix in `start_era` is for.
+    /// Every launch path reads the arena flags through one function, because
+    /// each path that grew its own copy accepted them and silently ignored
+    /// them: `tournament` rated three "different" experiments identically,
+    /// and `play` launched the stock arena however it was asked. A shared
+    /// reader is the fix, so this pins that it reads what it is given and
+    /// clamps what it cannot play.
+    #[test]
+    fn the_arena_flags_are_read_once_for_every_launch_path() {
+        let stock = civvis::setup::TacticsRules::default();
+        assert_eq!(tactics_rules(&[]), stock, "no flags is the stock arena");
+
+        let asked = [
+            "--tactics-cities".to_string(), "0".to_string(),
+            "--tactics-production".to_string(), "120".to_string(),
+            "--tactics-gold".to_string(), "0".to_string(),
+            "--tactics-turns-per-tech".to_string(), "0".to_string(),
+        ];
+        let rules = tactics_rules(&asked);
+        assert_eq!(rules.cities, 0);
+        assert_eq!(rules.production, 120);
+        assert_eq!(rules.gold, 0);
+        assert_eq!(rules.turns_per_tech, 0);
+
+        // Clamped, not trusted: these reach the same sanitiser the server uses.
+        let silly = [
+            "--tactics-cities".to_string(), "9".to_string(),
+            "--tactics-production".to_string(), "100000".to_string(),
+            "--tactics-turns-per-tech".to_string(), "100000".to_string(),
+        ];
+        let rules = tactics_rules(&silly);
+        assert_eq!(rules.cities, 1, "an arena seats at most one city a side");
+        assert_eq!(rules.production, civvis::setup::TacticsRules::MAX_YIELD);
+        assert_eq!(rules.turns_per_tech, civvis::setup::TacticsRules::MAX_TURNS_PER_TECH);
+
+        // And the world path carries the same answer, so a `play` launch and a
+        // `soak` launch of the same flags are the same arena.
+        let options = game_options(&asked, 2, 7, TurnStructure::Sequential);
+        assert_eq!(options.tactics, tactics_rules(&asked));
+    }
+
     #[test]
     fn a_random_start_era_is_seeded_scattered_and_playable() {
         let args = ["--start-era".to_string(), "random".to_string()];
