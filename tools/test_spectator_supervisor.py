@@ -1009,7 +1009,7 @@ class RecoveryTests(unittest.TestCase):
         finished = {"server_instance": 7, "seed": 11, "winner": 2}
         successor = {"server_instance": 7, "seed": 12, "winner": None}
         with patch.object(
-            supervisor, "read_state", side_effect=[finished, successor]
+            supervisor, "read_status", side_effect=[finished, successor]
         ):
             self.assertEqual(
                 supervisor.wait_for_successor(8766, 7, 11, timeout=0.2),
@@ -1054,7 +1054,7 @@ class RecoveryTests(unittest.TestCase):
                 patch.object(supervisor, "runtime_matches", return_value=True),
                 patch.object(
                     supervisor,
-                    "read_state",
+                    "read_status",
                     side_effect=[active, active, KeyboardInterrupt],
                 ),
                 patch.object(supervisor, "start_server", return_value=process) as start,
@@ -1112,7 +1112,7 @@ class RecoveryTests(unittest.TestCase):
                 ),
                 patch.object(
                     supervisor,
-                    "read_state",
+                    "read_status",
                     side_effect=[active, active, replacement, KeyboardInterrupt],
                 ),
                 patch.object(
@@ -1183,7 +1183,7 @@ class RecoveryTests(unittest.TestCase):
             patch.object(supervisor, "source_snapshot", return_value="current"),
             patch.object(supervisor, "runtime_matches", return_value=True),
             patch.object(
-                supervisor, "read_state", side_effect=[active, KeyboardInterrupt]
+                supervisor, "read_status", side_effect=[active, KeyboardInterrupt]
             ),
             patch.object(supervisor, "start_server") as start,
             patch.object(supervisor, "start_background_prebuild"),
@@ -1699,7 +1699,7 @@ class RecoveryTests(unittest.TestCase):
                 patch.object(supervisor, "pid_listening_on", return_value=None),
                 patch.object(supervisor, "start_server", return_value=process) as start,
                 patch.object(supervisor, "wait_for_server", return_value=state),
-                patch.object(supervisor, "read_state", side_effect=KeyboardInterrupt),
+                patch.object(supervisor, "read_status", side_effect=KeyboardInterrupt),
                 patch.object(supervisor, "stop_server") as stop,
             ):
                 self.assertEqual(supervisor.main(), 0)
@@ -1773,7 +1773,7 @@ class RecoveryTests(unittest.TestCase):
                 patch.object(supervisor, "runtime_matches", side_effect=[False, True]),
                 patch.object(supervisor, "source_snapshot", return_value="fresh"),
                 patch.object(supervisor, "capture_checkpoint", side_effect=prepare),
-                patch.object(supervisor, "read_state", side_effect=[active, active, KeyboardInterrupt]),
+                patch.object(supervisor, "read_status", side_effect=[active, active, KeyboardInterrupt]),
                 patch.object(supervisor, "start_server", side_effect=start),
                 patch.object(supervisor, "wait_for_server", return_value=active),
                 patch.object(supervisor, "stop_server", side_effect=stop),
@@ -1816,9 +1816,11 @@ class RecoveryTests(unittest.TestCase):
             patch.object(supervisor, "runtime_matches", side_effect=[True, False]),
             patch.object(
                 supervisor,
-                "read_state",
+                "read_status",
                 side_effect=[active, active, KeyboardInterrupt],
             ) as read,
+            # Watching a live world must never build the whole observation.
+            patch.object(supervisor, "read_state") as full,
             patch.object(supervisor, "capture_checkpoint", return_value=False),
             patch.object(
                 supervisor, "start_background_prebuild", return_value=worker
@@ -1833,6 +1835,7 @@ class RecoveryTests(unittest.TestCase):
         start_build.assert_called_once_with()
         blocking_build.assert_not_called()
         self.assertEqual(read.call_count, 3)
+        full.assert_not_called()
         stop_build.assert_called_once_with(worker)
 
     def test_running_prebuild_does_not_delay_a_finished_boundary(self):
@@ -1882,11 +1885,15 @@ class RecoveryTests(unittest.TestCase):
                 ),
                 patch.object(
                     supervisor,
-                    "read_state",
+                    "read_status",
                     # The fourth read is the boundary's own re-check for a
                     # player who took the seat during the result cooldown.
                     side_effect=[active, active, finished, finished, KeyboardInterrupt],
                 ) as read,
+                # The single full observation the finished boundary takes.
+                patch.object(
+                    supervisor, "read_state", return_value=finished
+                ) as full,
                 patch.object(supervisor, "capture_checkpoint", return_value=False),
                 patch.object(supervisor, "archive_result"),
                 patch.object(
@@ -1902,6 +1909,9 @@ class RecoveryTests(unittest.TestCase):
 
         start.assert_called_once()
         self.assertEqual(read.call_count, 5)
+        # Five status polls over one whole game, and one full observation:
+        # the finished world the archive and the successor's setup read.
+        self.assertEqual(full.call_count, 1)
         stop_build.assert_called_once_with(worker)
 
     def test_finished_boundary_preserves_verified_runtime_build_time(self):
@@ -1949,9 +1959,10 @@ class RecoveryTests(unittest.TestCase):
                 patch.object(supervisor, "promoted_runtime_id", return_value=None),
                 patch.object(
                     supervisor,
-                    "read_state",
+                    "read_status",
                     side_effect=[active, finished, finished, KeyboardInterrupt],
                 ),
+                patch.object(supervisor, "read_state", return_value=finished),
                 patch.object(supervisor, "archive_result"),
                 patch.object(supervisor, "refresh_runtime_metadata") as refresh,
                 patch.object(supervisor, "write_runtime_metadata") as rewrite,
@@ -2030,11 +2041,12 @@ class RecoveryTests(unittest.TestCase):
                 patch.object(supervisor, "wait_for_server", side_effect=wait),
                 patch.object(
                     supervisor,
-                    "read_state",
+                    "read_status",
                     # The second read is the boundary re-checking whether the
                     # result screen was turned into a single-player game.
                     side_effect=[finished, finished, KeyboardInterrupt],
                 ),
+                patch.object(supervisor, "read_state", return_value=finished),
                 patch.object(supervisor, "archive_result") as archive,
                 patch.object(supervisor, "stop_server", side_effect=stop),
                 patch.object(supervisor.time, "sleep"),
@@ -2105,9 +2117,10 @@ class RecoveryTests(unittest.TestCase):
                 patch.object(supervisor, "wait_for_server", return_value=finished),
                 patch.object(
                     supervisor,
-                    "read_state",
+                    "read_status",
                     side_effect=[finished, playing, KeyboardInterrupt],
                 ),
+                patch.object(supervisor, "read_state", return_value=finished),
                 patch.object(supervisor, "archive_result", return_value=None),
                 patch.object(
                     supervisor,
@@ -2190,9 +2203,10 @@ class RecoveryTests(unittest.TestCase):
                 patch.object(supervisor, "wait_for_server", return_value=finished),
                 patch.object(
                     supervisor,
-                    "read_state",
+                    "read_status",
                     side_effect=[finished, played_on, KeyboardInterrupt],
                 ),
+                patch.object(supervisor, "read_state", return_value=finished),
                 patch.object(supervisor, "archive_result", return_value=None),
                 patch.object(
                     supervisor,
@@ -2241,7 +2255,7 @@ class RecoveryTests(unittest.TestCase):
             patch.object(supervisor, "capture_checkpoint", return_value=True),
             patch.object(
                 supervisor,
-                "read_state",
+                "read_status",
                 side_effect=[active] * 6 + [KeyboardInterrupt],
             ),
             patch.object(
@@ -2446,6 +2460,80 @@ class LiveRefreshTests(unittest.TestCase):
             self._args(["--no-open", "--live-refresh-grace", "0"]).live_refresh_grace,
             0.0,
         )
+
+
+class StatusDocumentContractTests(unittest.TestCase):
+    """The poll loop reads /status, not /state. Every helper it feeds must
+    resolve from the compact document the server actually emits — this is the
+    cross-language field contract, pinned the same way the ranking tool pins
+    its Wilson bounds against the Rust ones."""
+
+    STATUS = {
+        "turn": 118,
+        "winner": None,
+        "finished": False,
+        "draw": False,
+        "victory_type": None,
+        "victory_label": None,
+        "spectate": True,
+        "seed": 774422,
+        "current": 3,
+        "spectator_paused": False,
+        "server_instance": 91_234,
+        "decided": None,
+        "frames_missed": 0,
+        "commit": "abc1234",
+    }
+
+    def test_progress_marker_resolves_from_the_status_document(self):
+        self.assertEqual(
+            supervisor.progress_marker(self.STATUS), (774422, 118, 3, None)
+        )
+
+    def test_nudge_check_reads_the_pause_flag(self):
+        self.assertTrue(supervisor.should_nudge(self.STATUS, 999.0, 1.0))
+        paused = dict(self.STATUS, spectator_paused=True)
+        self.assertFalse(supervisor.should_nudge(paused, 999.0, 1.0))
+
+    def test_play_on_detection_reads_decided_seed_and_winner(self):
+        playing_on = dict(self.STATUS, decided={"winner": 2, "mode": "Indefinite"})
+        self.assertTrue(supervisor.playing_on(playing_on, 774422))
+        self.assertFalse(supervisor.playing_on(self.STATUS, 774422))
+
+    def test_successor_identity_reads_instance_seed_and_winner(self):
+        finished = dict(self.STATUS, winner=2, finished=True)
+        self.assertFalse(supervisor.successor_started(finished, 91_234, 774422))
+        fresh_world = dict(self.STATUS, seed=774423)
+        self.assertTrue(supervisor.successor_started(fresh_world, 91_234, 774422))
+        new_process = dict(self.STATUS, server_instance=91_235)
+        self.assertTrue(supervisor.successor_started(new_process, 91_234, 774422))
+
+    def test_the_compact_probe_asks_the_cheap_endpoint(self):
+        with patch.object(supervisor, "read_json", return_value=self.STATUS) as read:
+            self.assertEqual(supervisor.read_status(8766), self.STATUS)
+        read.assert_called_once_with(8766, "/status", 5.0)
+
+    def test_an_older_runtimes_status_falls_back_to_the_full_observation(self):
+        """A runtime built before these fields is still live after this
+        supervisor re-execs itself from newer source. Its `/status` has no
+        progress marker in it, so driving the loop from that document would
+        silently stop recognising "one more turn" and would nudge a game a
+        viewer had deliberately paused. Read the world the old way instead,
+        until the next boundary swaps the binary."""
+        old_status = {"turn": 118, "winner": None, "spectate": True}
+        world = dict(self.STATUS, players=[])
+        with patch.object(
+            supervisor, "read_json", side_effect=[old_status, world]
+        ) as read:
+            self.assertEqual(supervisor.read_status(8766), world)
+        self.assertEqual(
+            [call.args[1] for call in read.call_args_list], ["/status", "/state"]
+        )
+
+    def test_an_unreachable_server_is_not_mistaken_for_an_old_one(self):
+        with patch.object(supervisor, "read_json", return_value=None) as read:
+            self.assertIsNone(supervisor.read_status(8766))
+        read.assert_called_once_with(8766, "/status", 5.0)
 
 
 if __name__ == "__main__":
