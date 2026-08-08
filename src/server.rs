@@ -3839,6 +3839,20 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         if request["map_script"].as_str() == Some("planet") {
             p.map_topology = MapTopology::Planet;
         }
+        // The Tactics planet has a deliberately custom globe size rather than
+        // one of the ordinary Civ size ladder's rectangles. A browser sends
+        // the dimensions explicitly, but direct clients still get the same
+        // small world when they name the script alone.
+        if v.is_planet_battlefield()
+            && request["width"].as_i64().is_none()
+            && request["height"].as_i64().is_none()
+        {
+            if let Some(size) = BATTLEFIELD_SIZES.iter().find(|size| size.script == v) {
+                p.width = size.width;
+                p.height = size.height;
+                p.map_topology = size.topology;
+            }
+        }
     }
     if let Some(v) = request["map_topology"].as_str().and_then(MapTopology::from_id) {
         p.map_topology = v;
@@ -4005,15 +4019,19 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
             p.max_turns = requested_turn_limit(request).unwrap_or(spec.turns);
         }
     }
-    // A battlefield is an arena, not a world: flat by construction — a globe
-    // has no opposite corners for its two sides — and it seats no
-    // city-states. This lands after every override above so the published
-    // next-game settings honestly describe the game that will start; the
-    // engine enforces both again when the world is built. A later request
-    // that moves the map back to a world restores the size profile's
-    // city-states through its own `num_players` stamp.
+    // A Tactics map seats no city-states. The bounded battlefield is flat by
+    // construction; the Tactics planet stays Planet so its two cities can be
+    // placed on opposite sides of the globe. This lands after every override
+    // above so the published next-game settings honestly describe the game
+    // that will start; the engine enforces both again when the world is built.
+    // A later request that moves the map back to a world restores the size
+    // profile's city-states through its own `num_players` stamp.
     if p.map_script.is_battlefield() {
-        p.map_topology = MapTopology::Flat;
+        p.map_topology = if p.map_script.is_planet_battlefield() {
+            MapTopology::Planet
+        } else {
+            MapTopology::Flat
+        };
         p.num_city_states = 0;
         // And it keeps the selected battle clock rather than a civilization's
         // five hundred turns. An explicit general `turn_limit` in the same
@@ -7833,6 +7851,18 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_tactics_planet_request_keeps_its_small_globe() {
+        let planet = new_game_params(
+            &current(),
+            &json!({"num_players": 2, "map_script": "tactics_planet"}),
+        );
+        assert_eq!(planet.map_script, MapScript::TacticsPlanet);
+        assert_eq!(planet.map_topology, MapTopology::Planet);
+        assert_eq!((planet.width, planet.height), (40, 18));
+        assert_eq!(planet.num_city_states, 0);
+    }
+
     /// The match settings reach the server from the lobby the same way the
     /// economy grants do, and are normalized rather than trusted.
     #[test]
@@ -7913,6 +7943,11 @@ mod tests {
         assert_eq!(sizes[0]["id"], json!("10x10"));
         assert_eq!(sizes[0]["width"], json!(10));
         assert_eq!(sizes[0]["height"], json!(10));
+        assert_eq!(sizes[3]["id"], json!("planet"));
+        assert_eq!(sizes[3]["script"], json!("tactics_planet"));
+        assert_eq!(sizes[3]["topology"], json!("planet"));
+        assert_eq!(sizes[3]["width"], json!(40));
+        assert_eq!(sizes[3]["height"], json!(18));
         // The lobby swaps its size and map rosters from these lists and
         // sends the arena's dimensions explicitly.
         assert!(EMBEDDED_INDEX.contains("RULES.battlefield_sizes"));

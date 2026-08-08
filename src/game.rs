@@ -69000,6 +69000,32 @@ mod district_mechanics {
         assert!(game.map.tiles.values().all(|tile| !game.rules.is_water(tile)));
     }
 
+    #[test]
+    fn a_tactics_planet_game_opens_with_opposite_cities() {
+        let game = Game::new_with(GameOptions {
+            map_script: MapScript::TacticsPlanet,
+            map_topology: MapTopology::Planet,
+            ..GameOptions::new(2, 40, 18, 90_412, 250, 3)
+        });
+        assert!(game.map.sphere().is_some(), "the Tactics planet must be a globe");
+        assert!(game.is_arena());
+        assert_eq!(game.players.iter().filter(|player| !player.is_minor).count(), 2);
+        let cities: Vec<Pos> = (0..2)
+            .map(|owner| {
+                let owned: Vec<Pos> = game
+                    .cities
+                    .values()
+                    .filter(|city| city.owner == owner)
+                    .map(|city| city.pos)
+                    .collect();
+                assert_eq!(owned.len(), 1, "seat {owner} opens with one city");
+                owned[0]
+            })
+            .collect();
+        assert!(game.wdist(cities[0], cities[1]) >= 8, "{cities:?}");
+        assert!(game.is_at_war(0, 1));
+    }
+
     /// The fog is a match setting. An arena lifts it by default — a battle is
     /// a test of what each side does with what is in front of it, not of who
     /// finds the other first — but the mode that puts it back is a real one,
