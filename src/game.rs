@@ -18382,7 +18382,15 @@ impl Game {
         self.map
             .tiles
             .iter()
-            .filter(|(_, tile)| self.rules.is_passable(tile))
+            // Dry ground an army can stand on. `is_passable` alone admits
+            // open water — a ship passes over it — and a flag out at sea is
+            // an objective no land column can ever take, so the battle could
+            // only ever end on the clock. The bounded arena never notices
+            // this, because its own generator paints every tile as passable
+            // land; the small-globe arena keeps ordinary world terrain, and
+            // measured, 13 of 40 of its flags landed on ocean, coast or lake
+            // before this filter existed.
+            .filter(|(_, tile)| self.rules.is_passable(tile) && !self.rules.is_water(tile))
             .map(|(pos, _)| *pos)
             .min_by_key(|pos| {
                 let marches = seats.iter().map(|seat| self.wdist(*seat, *pos));
@@ -69065,6 +69073,39 @@ mod district_mechanics {
         assert_eq!(plain.arena_flag, None);
         let world = Game::new_full(2, 24, 16, 90_412, 100, 0, false);
         assert_eq!(world.arena_flag, None);
+    }
+
+    /// A flag is planted on dry ground, on every arena that can carry one.
+    ///
+    /// The bounded arena cannot get this wrong — its generator paints every
+    /// tile as passable land — but the small-globe arena keeps ordinary
+    /// world terrain, and picking by `is_passable` alone put 13 of 40 of its
+    /// flags out on ocean, coast or lake: an objective no land column can
+    /// ever reach, so the battle could only end on the clock. Both shapes
+    /// are swept here because the rule is about the objective, not about one
+    /// map.
+    #[test]
+    fn a_flag_is_never_planted_on_water() {
+        for (label, script, width, height) in [
+            ("the bounded arena", MapScript::Battlefield, 20, 20),
+            ("the small-globe arena", MapScript::TacticsPlanet, 40, 24),
+        ] {
+            for seed in 0..12u64 {
+                let game = Game::new_with(GameOptions {
+                    map_script: script,
+                    tactics: TacticsRules { flag: true, ..TacticsRules::default() }.sanitized(),
+                    ..GameOptions::new(2, width, height, seed * 977 + 13, 200, 0)
+                });
+                let flag = game.arena_flag.expect("a flag battle plants its flag");
+                let tile = &game.map.tiles[&flag];
+                assert!(
+                    !game.rules.is_water(tile),
+                    "{label} planted its flag on {} at {flag:?}, which no army can hold",
+                    tile.terrain
+                );
+                assert!(game.rules.is_passable(tile), "{label} planted an unreachable flag");
+            }
+        }
     }
 
     /// Taking the flag tile is the whole victory condition: the moment a
