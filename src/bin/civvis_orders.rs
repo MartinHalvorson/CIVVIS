@@ -860,6 +860,7 @@ fn withhold_live_treatment(
         "war-patience" => ai.disable_war_patience(),
         "recon-replacement" => ai.disable_recon_replacement(),
         "siege-commitment" => ai.disable_siege_commitment(),
+        "wonder-ring-settle-value" => ai.disable_wonder_ring_settle_value(),
         other => {
             return Err(format!(
                 "unknown --without treatment {other:?}; this binary can withhold: \
@@ -871,7 +872,7 @@ fn withhold_live_treatment(
                  muster-at-command-radius, war-economy, war-reinforcement, war-patience, \
                  recon-replacement, wide-map-capacity, garrison-under-fire, \
                  escort-unstick, religion-sues-peace, stranded-settler-discount, \
-                 siege-commitment"
+                 siege-commitment, wonder-ring-settle-value"
             ))
         }
     }

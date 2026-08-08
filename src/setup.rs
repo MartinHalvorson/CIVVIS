@@ -1015,6 +1015,17 @@ pub struct TacticsRules {
     /// a shape the match is given rather than a handicap one side is dealt.
     #[serde(default)]
     pub fog: bool,
+    /// Whether the battle is decided by a flag instead of by cities.
+    ///
+    /// On, a single flag is planted on the ground the two sides reach as
+    /// evenly as the field allows, and the battle is won the moment either
+    /// side's unit takes its tile. There are no cities at all in this shape —
+    /// the flag is the one objective, so `cities` is forced to 0 — and the
+    /// clock can still run out first, which stays a draw. Off — the default —
+    /// a battle is decided the way an arena always has been: by the armies,
+    /// and by the city each side holds if the economy grants one.
+    #[serde(default)]
+    pub flag: bool,
 }
 
 fn one_battle() -> u32 {
@@ -1041,7 +1052,10 @@ impl TacticsRules {
     /// Clamp a requested economy to what the mode can actually play.
     pub fn sanitized(self) -> Self {
         Self {
-            cities: self.cities.min(1),
+            // A capture-the-flag battle has one objective, and it is not a
+            // city: the flag replaces the city outright rather than joining
+            // it, so the flag shape always plays city-less.
+            cities: if self.flag { 0 } else { self.cities.min(1) },
             production: self.production.min(Self::MAX_YIELD),
             gold: self.gold.min(Self::MAX_YIELD),
             turns_per_tech: self.turns_per_tech.min(Self::MAX_TURNS_PER_TECH),
@@ -1055,6 +1069,7 @@ impl TacticsRules {
             best_of: (self.best_of.max(1) | 1).min(Self::MAX_BEST_OF),
             unique_units: self.unique_units,
             fog: self.fog,
+            flag: self.flag,
         }
     }
 
@@ -1079,6 +1094,7 @@ impl Default for TacticsRules {
             best_of: 1,
             unique_units: false,
             fog: false,
+            flag: false,
         }
     }
 }
@@ -1897,6 +1913,20 @@ mod tests {
     /// to the civilizations rather than to the seats they were sitting in —
     /// because a match swaps the sides over between battles. It is always an
     /// odd number of battles, so wins cannot split evenly; draws can still
+    /// The flag is a replacement objective, not an addition: asking for it
+    /// plays city-less whatever the cities knob said, and old saves — written
+    /// before the shape existed — load with it off.
+    #[test]
+    fn a_flag_battle_is_always_city_less() {
+        assert!(!TacticsRules::default().flag, "cities decide a battle unless a flag is asked for");
+        let flagged = TacticsRules { flag: true, cities: 1, ..TacticsRules::default() }.sanitized();
+        assert_eq!(flagged.cities, 0, "the flag replaces the city objective outright");
+        assert!(flagged.flag);
+        let mut old = serde_json::to_value(TacticsRules::default()).unwrap();
+        old.as_object_mut().unwrap().remove("flag");
+        assert!(!serde_json::from_value::<TacticsRules>(old).unwrap().flag);
+    }
+
     /// exhaust it without a winner.
     #[test]
     fn a_match_is_an_odd_series_scored_by_civilization() {

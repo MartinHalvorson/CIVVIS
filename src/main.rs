@@ -789,13 +789,32 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// is the shipped expression minus zero — the anchor's campaign ordering is
 /// byte-identical by construction. Compatibility re-pin, not an Elo-protocol
 /// change.
+/// The wonder-ring settle credit (#1378) adds one term to
+/// `settle_value_visible`, behind `BasicAi::wonder_ring_settle_value`. Both
+/// constructors leave the flag false and only `enable_live_bridge` sets it,
+/// so under the anchor `natural_wonder_ring_value` returns 0.0 on its first
+/// line and the added `value += 0.0` cannot move any site score — and the
+/// anchor reaches `settle_value_visible` only through constructors that keep
+/// `settlement_safety` true, which `legacy()` does not. The anchor's settle
+/// ordering is byte-identical by construction. Compatibility re-pin, not an
+/// Elo-protocol change.
 #[cfg(test)]
 /// Merging `origin/main` into this branch brings both sides' live-bridge
 /// treatments into one `BasicAi`/`AdvancedAi`. Every one of them is off in both
 /// constructors and set only by `enable_live_bridge`, so the anchor's decision
 /// stream is unchanged by the union. Compatibility re-pin, not an Elo-protocol
 /// change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x069f_4171_b579_4ae8;
+/// The capture-the-flag objective gives both controllers one new march: land
+/// columns aim at `Game::arena_flag` when it is `Some`. The field is `Some`
+/// only on a battlefield whose match asked for the flag — a shape that did
+/// not exist before this pin — and `None` on every world and every arena any
+/// rated game has been played on, so both guards reduce to a `None` test and
+/// the anchor's decision stream is identical by construction. The same shape
+/// as the #1399 re-pin, with the objective as the flag. Pinned over the
+/// merge with main's own re-pins, every one off in both constructors as
+/// their entries above record. Compatibility re-pin, not an Elo-protocol
+/// change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x57dc_924c_50e3_308f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -1050,6 +1069,7 @@ fn tactics_rules(args: &[String]) -> setup::TacticsRules {
         best_of: arg(args, "--tactics-best-of", i64::from(stock.best_of)).max(1) as u32,
         unique_units: flag_or(args, "--tactics-unique-units", stock.unique_units),
         fog: flag_or(args, "--tactics-fog", stock.fog),
+        flag: flag_or(args, "--tactics-flag", stock.flag),
     }
     .sanitized()
 }
@@ -2994,6 +3014,17 @@ mod tests {
         assert_eq!(rules.gold, 0);
         assert_eq!(rules.turns_per_tech, 0);
         assert_eq!(rules.turn_limit, 150);
+
+        // The flag objective travels the same shared reader, and drags the
+        // city out of the battle the way every other surface does.
+        let flagged = [
+            "--map".to_string(), "battlefield".to_string(),
+            "--tactics-flag".to_string(),
+            "--tactics-cities".to_string(), "1".to_string(),
+        ];
+        let rules = tactics_rules(&flagged);
+        assert!(rules.flag);
+        assert_eq!(rules.cities, 0, "the flag replaces the city objective");
 
         // Clamped, not trusted: these reach the same sanitiser the server uses.
         let silly = [
