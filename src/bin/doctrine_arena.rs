@@ -121,7 +121,7 @@ fn profile_run(name: &str, seeds: usize, start_seed: u64, jobs: usize) {
     println!("doctrine_arena --profile {name}: {seeds} seeds a position");
     println!("no treatment and no p -- this is a description of how one agent fights");
     println!();
-    println!("position                role{PROFILE_HEADER}");
+    println!("{:<24}{:<22}{PROFILE_HEADER}", "position", "role (swing)");
     for spec in POSITIONS {
         let results: Vec<MatchedPosition> = map(seeds, jobs, |index| {
             matched_position(spec, start_seed + index as u64, name, name, &builtin_ai)
@@ -135,10 +135,9 @@ fn profile_run(name: &str, seeds: usize, start_seed: u64, jobs: usize) {
             let ledger = merged(played.iter().map(|row| row.a_by_role[role].clone()));
             let swing = ledger.material_swing() / played.len() as f64;
             println!(
-                "{:<24}{}{}",
+                "{:<24}{}",
                 if role == 0 { spec.id } else { "" },
-                profile_row(&format!("{role} ({swing:+.0})"), ledger.profile()),
-                ""
+                profile_row(&format!("role {role} ({swing:+.0})"), ledger.profile()),
             );
         }
     }

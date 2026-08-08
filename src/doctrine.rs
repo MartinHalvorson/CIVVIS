@@ -962,6 +962,12 @@ pub fn build(spec: &Position, seed: u64) -> Option<Game> {
         map_script: MapScript::Battlefield,
         speed: GameSpeed::Standard.id().to_string(),
         barbarians: false,
+        // Written out in full rather than spread over a default on purpose: a
+        // new arena rule is a new variable in every position here, and it
+        // should not arrive silently. Fog stays off — a position is a posed
+        // problem, and a commander who cannot see the problem is being
+        // measured on reconnaissance instead of on the decision the
+        // engagement turned on.
         tactics: crate::setup::TacticsRules {
             cities: 0,
             production: 0,
@@ -969,6 +975,7 @@ pub fn build(spec: &Position, seed: u64) -> Option<Game> {
             turns_per_tech: 0,
             best_of: 1,
             unique_units: false,
+            fog: false,
         },
         ..crate::game::GameOptions::new(2, spec.width, spec.height, seed, spec.turns + 8, 0)
     });
@@ -1024,19 +1031,24 @@ pub fn build(spec: &Position, seed: u64) -> Option<Game> {
 /// The tile a unit actually forms up on: the nudged one when it is usable,
 /// otherwise the nearest usable tile outward from where it was wanted.
 fn muster(g: &Game, wanted: Pos, rng: &mut Rng) -> Option<Pos> {
-    let mut candidates = vec![wanted];
-    // One tile of slop, in a random direction, ahead of the exact spot half
-    // the time. Enough to make seeds independent, far too little to turn a
-    // deployment into a different one.
+    let mut candidates = Vec::new();
+    // One tile of slop, in a random direction, tried ahead of the exact spot
+    // half the time. The ring rather than the disk, so a nudge is a nudge:
+    // `wdisk` includes the centre, and drawing from it would leave the unit
+    // where it started a seventh of the time it was meant to move.
     if rng.chance(0.5) {
-        let ring = g.wdisk(wanted, 1);
+        let ring = g.wring(wanted, 1);
         if !ring.is_empty() {
-            candidates.insert(0, ring[rng.below(ring.len())]);
+            candidates.push(ring[rng.below(ring.len())]);
         }
     }
-    for radius in 0..=3 {
-        candidates.extend(g.wdisk(wanted, radius));
-    }
+    candidates.push(wanted);
+    // Then outward from where it was wanted. `wdisk` is a whole disk and is
+    // not ordered by distance, so sorting is what makes "the nearest usable
+    // tile" true rather than "some usable tile within three".
+    let mut outward = g.wdisk(wanted, 3);
+    outward.sort_by_key(|pos| (g.wdist(wanted, *pos), *pos));
+    candidates.extend(outward);
     candidates.into_iter().find(|pos| usable(g, *pos))
 }
 
@@ -1156,6 +1168,46 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The muster has to actually vary, or every seed replays one game and a
+    /// run of 60 has the resolving power of a run of one. It also has to stay
+    /// close to the written deployment, or the position stops being the
+    /// position.
+    #[test]
+    fn the_muster_varies_between_seeds_without_leaving_the_position() {
+        let spec = &POSITIONS[0];
+        let mut layouts = std::collections::BTreeSet::new();
+        for seed in 0u64..12 {
+            let game = build(spec, seed).expect("buildable");
+            let mut layout: Vec<(usize, Pos)> = Vec::new();
+            for role in 0..2 {
+                for uid in game.player_unit_ids(role) {
+                    layout.push((role, game.units[&uid].pos));
+                }
+            }
+            layout.sort();
+            // Every unit is within the slop the muster is allowed, measured
+            // against the nearest cell its own force asked for.
+            for (role, pos) in &layout {
+                let nearest = spec.forces[*role]
+                    .iter()
+                    .map(|deploy| game.wdist(hex::offset_to_axial(deploy.col, deploy.row), *pos))
+                    .min()
+                    .unwrap_or(i32::MAX);
+                assert!(
+                    nearest <= 3,
+                    "{} seated a unit {nearest} tiles from anything it deployed",
+                    spec.id
+                );
+            }
+            layouts.insert(layout);
+        }
+        assert!(
+            layouts.len() > 1,
+            "12 seeds produced one layout: the muster is not varying and every \
+             seed is the same game"
+        );
     }
 
     /// The terrain is the position. A generated map would make these boards

@@ -122,37 +122,44 @@ army that was supposed to envelop mean it failed.
 
 | position | mean swing | +/- se | t | sign p | better/worse |
 | --- | --- | --- | --- | --- | --- |
-| `central_position` | +2.3 | 35.9 | 0.07 | 0.4966 | 30/24 |
-| `oblique_order` | +155.2 | 43.9 | 3.53 | 0.0814 | 35/21 |
-| `the_defile` | +12.0 | 15.4 | 0.78 | 1.0000 | 26/25 |
-| `the_ridge` | +90.0 | 44.2 | 2.04 | 0.4966 | 24/30 |
-| `double_envelopment` | +30.5 | 25.9 | 1.18 | 0.1839 | 28/18 |
-| **`the_reserve`** | **−270.5** | **62.0** | **−4.36** | **0.0018** | **16/40** |
-| `the_river_line` | +155.8 | 60.1 | 2.59 | 0.1480 | 35/23 |
-| ALL POSITIONS | +25.0 | 17.8 | 1.41 | 0.5355 | 194/181 |
+| `central_position` | +46.5 | 31.7 | 1.47 | 0.2976 | 34/25 |
+| `oblique_order` | +72.0 | 36.9 | 1.95 | 0.4188 | 31/24 |
+| `the_defile` | +45.3 | 17.2 | 2.64 | 0.0213 | 33/16 |
+| `the_ridge` | +118.8 | 48.0 | 2.48 | 0.5682 | 27/22 |
+| `double_envelopment` | +44.0 | 33.0 | 1.33 | 0.4614 | 26/20 |
+| **`the_reserve`** | **−189.2** | **58.5** | **−3.23** | **0.0005** | **15/42** |
+| `the_river_line` | +89.3 | 51.4 | 1.74 | 0.0331 | 37/20 |
+| ALL POSITIONS | +32.4 | 16.3 | 1.99 | 0.0870 | 203/169 |
 
-The pooled row is the caveat above, demonstrated: `+25.0` on a run containing a
-`+155` and a `−270`.
+The pooled row is the caveat above, demonstrated: `+32.4` on a run containing a
+`+119` and a `−189`. `the_ridge` is the other caveat: a `+118.8` mean beside a
+27/22 split and a sign p of 0.57 — `advanced` wins that position big and loses
+it small, and the two tests are answering different questions about it.
 
 ### `advanced` commits to contact locally outnumbered
 
 `the_reserve` is the one position where `advanced` is beaten, and beaten badly —
-511 units killed against 632 lost, replicated from a first run at 40 seeds
-(−267.5, p = 0.0076) to 60 (−270.5, p = 0.0018). The profile names it:
+536 units killed against 621 lost. It has now survived three runs and one change
+to the instrument: 40 seeds (−267.5, p = 0.0076), 60 seeds (−270.5, p = 0.0018),
+and 60 seeds again after the muster was fixed (−189.2, p = 0.0005). The mean
+moved and the split did not, which is what a real effect looks like when the
+sampling around it changes. The profile names it:
 
 ```
                       concentr.  disper.  envelop.  focus  ground  screen  contact
-advanced r0 (-89)         -0.46    +1.90     +0.18    91%      7%     28%      88%
-basic     r0 (+46)        +1.11    +1.71     +0.18    95%     10%     46%      88%
-advanced r1 (-46)         -1.11    +2.28     +0.15    92%      4%     25%      88%
-basic     r1 (+89)        +0.46    +2.09     +0.21    97%      6%     44%      88%
+advanced r0 (-15)         -0.11    +1.87     +0.21    93%      9%     32%      86%
+basic     r0 (+80)        +1.18    +1.67     +0.17    96%     10%     50%      85%
+advanced r1 (-80)         -1.18    +2.18     +0.12    89%      4%     25%      85%
+basic     r1 (+15)        +0.11    +2.02     +0.20    93%      6%     39%      86%
 ```
 
 In **both** roles `advanced` is on the negative side of the local force ratio
-and `basic` on the positive side: it arrives at the point of contact outnumbered
-by half a unit to a full one, and its ranged units spend 25–28% of their time
-screened against `basic`'s 44–46%. This is Napoleon's actual complaint about
-reserves, measured — the reserve is being fed in rather than committed.
+and `basic` on the positive side, and the gap is widest in role 1 — the *far*
+reserve, the one that has to march before it can help, where `advanced` fights
+at −1.18 and loses 80 material a seed. Its ranged units spend 25–32% of their
+time screened against `basic`'s 39–50%, and its army is the more spread out of
+the two in that role (2.18 against 2.02). This is Napoleon's actual complaint
+about reserves, measured — the reserve is being fed in rather than committed.
 
 Worth stating what this does **not** yet establish: the arena shows the
 correlation between arriving outnumbered and losing the position, not that
@@ -160,6 +167,40 @@ forcing concentration would fix it. The next step is a treatment that prices
 local force ratio in the joint plan, run through this harness and then through
 `battle_bench` and `tools/tactics_bench.py`, because a gain here is a necessary
 condition for the whole-game gate and never a substitute for it.
+
+### The arena separates two controllers a win rate calls a coin flip
+
+`docs/TACTICS_BASELINE.md` warns that `advanced_v1` — a frozen copy of the live
+controller — sits near 50% against `advanced` in the Tactics-mode win-rate
+battery, because nearly everything separating them is empire machinery an arena
+never exercises, and that **a near-50% result there is the expected null rather
+than a finding**.
+
+The doctrine arena resolves the same pair decisively. 40 seeds a position, both
+roles:
+
+| position | mean swing | t | sign p | better/worse |
+| --- | --- | --- | --- | --- |
+| `central_position` | +97.2 | 2.46 | 0.0017 | 29/9 |
+| `oblique_order` | +466.0 | 7.11 | 0.0000 | 33/7 |
+| `the_defile` | +5.5 | 0.26 | 1.0000 | 12/13 |
+| `the_ridge` | +897.8 | 16.94 | 0.0000 | 39/1 |
+| `double_envelopment` | +335.8 | 14.35 | 0.0000 | 39/0 |
+| `the_reserve` | +501.2 | 6.60 | 0.0000 | 33/6 |
+| `the_river_line` | +265.5 | 3.27 | 0.0807 | 26/14 |
+| ALL POSITIONS | +367.0 | 13.79 | 0.0000 | 211/50 |
+
+`advanced` is ahead on six of seven, two of them at 39 seeds to 0 or 1, and
+`the_defile` is a genuine null rather than a small win (12/13). This is the
+resolving-power argument `src/skirmish.rs` makes, on harder ground: a signed
+material swing carries far more information per game than a win or a loss does,
+and posing seven different problems finds separation that one problem asked
+repeatedly does not.
+
+Note that `the_reserve` — the position `advanced` loses to `basic` — is one it
+wins hugely against `advanced_v1` (+501.2). Losing a position is not the same as
+being bad at it, and this is why the arena reports opponents separately rather
+than a single tactical rating.
 
 ### `advanced` spreads its fire against a dense mass
 
