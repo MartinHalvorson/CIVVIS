@@ -730,11 +730,18 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// directly into its historical fog-target selection. The focused regression
 /// asserts that split on the same staged board. A matched release
 /// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed 31337
-/// --jobs 1 --deployment-comparison` report was byte-identical to current
-/// `origin/main` (SHA-256 `1bebbaa15ee7388b3d9427c1d49726d8e29b2328113c9b9409cb60bb7ae813e0`).
+/// --jobs 1 --deployment-comparison` report was byte-identical to the
+/// then-current `origin/main` (SHA-256
+/// `1bebbaa15ee7388b3d9427c1d49726d8e29b2328113c9b9409cb60bb7ae813e0`).
 /// Compatibility re-pin, not an Elo-protocol change.
+/// #1384 teaches the joint planner withdrawals and handoff steps and keeps the
+/// per-unit movers off units the plan moved without a blow
+/// (`tactics_withdrawn`). `AdvancedAi::legacy()` leaves `joint_tactics` false,
+/// so the plan never runs, the set stays empty, and the anchor's only new
+/// executable is a set-membership test against an empty set — the same shape
+/// #1363 re-pinned. Compatibility re-pin over the #1382 merge.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbd95_1f29_8ffa_1943;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc213_b891_8f46_f8ec;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
