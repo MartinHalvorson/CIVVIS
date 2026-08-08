@@ -13355,7 +13355,10 @@ impl AdvancedAi {
                 }
             }
             Item::Unit { unit } if unit == "spy" => {
-                let active = g.spies.values().filter(|spy| spy.owner == pid).count();
+                // `Game::spy_agents`, not the agent map: a live game's Spies
+                // are mirrored units and the map is empty, so this valuation
+                // used to re-price a Spy the host would refuse.
+                let active = g.spy_agents(pid);
                 let strategic = match plan.strategy {
                     GrandStrategy::Science | GrandStrategy::Culture => 850.0,
                     GrandStrategy::Diplomacy | GrandStrategy::Conquest => 1_050.0,

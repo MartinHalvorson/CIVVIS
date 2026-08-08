@@ -765,8 +765,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// it false, and both new tests assert the off path is unchanged, so the
 /// anchor's decision stream is identical by construction. Compatibility
 /// re-pin, not an Elo-protocol change.
+/// #1402 counts mirrored `UNIT_SPY` units as espionage agents in the spy
+/// capacity test. A native CIVVIS Spy is a `Game::spies` entry and never a
+/// unit — the production arm returns before `place_new_unit` — so the unit
+/// census contributes 0 to `spy_agents` in every native game and the anchor
+/// sees the same number it always did. Identical by construction, on a rated
+/// profile and off it. Compatibility re-pin, not an Elo-protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x61b8_2d7d_8678_05b4;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa095_45be_8953_1869;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
