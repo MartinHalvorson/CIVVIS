@@ -18,6 +18,11 @@ each one corresponds to a defect that actually shipped:
   mod installed     The installed copy under Civ6.app is a COPY, not a symlink.
                     Editing the worktree and forgetting the sync means measuring
                     yesterday's mod.
+  bundle signature  Installing the mod writes inside the signed `Civ6.app` and
+                    unsigns it, and nothing in the harness said so — leaving
+                    "we just broke the seal, and --uninstall restores it"
+                    indistinguishable from "something else broke it", when only
+                    the second needs a human.
   harness syntax    Same argument for the Python side.
   modinfo XML       A malformed .modinfo silently drops the whole mod.
   engine tests      The library test suite was found UNCOMPILABLE this session --
@@ -156,6 +161,63 @@ def check_installed(report: Report) -> None:
             report.warn(path.name, "installed source differs; harness syncs at attempt start")
         else:
             report.ok(path.name, "matches worktree source")
+
+
+def check_bundle(report: Report) -> None:
+    """Is the game still signed — and if not, is it OUR doing or somebody's?
+
+    ⚠ THIS CHECK EXISTS BECAUSE THE HARNESS UNSIGNS THE GAME AND NEVER SAID SO.
+    Installing the control mod writes into `Civ6.app/Contents/Assets/DLC/`,
+    inside a signed bundle, so every install invalidates the sealed resource
+    manifest (issue #1342, measured on macOS 26.5.1 / Civ 6 1.0.12.54).
+    Preflight gates a ladder and did not check the signature it was about to
+    break, so the state surfaced — if at all — after a batch rather than before
+    one.
+
+    ⚠ WARN, NEVER FAIL, and the asymmetry is deliberate. A broken seal is not
+    what refuses a launch: a host with a healthy trust record plays perfectly
+    well with the mod installed, and a host with a poisoned one is refused with
+    the signature VALID and the mod removed. Failing here would refuse every
+    run on a working machine, which is the exact mistake `check_host` already
+    documents for the Steam sign-in check.
+
+    The attribution is the useful part. "A sealed resource is missing or
+    invalid" naming only our own files is expected and reversible with
+    `install.py --uninstall`; the same message naming somebody else's files is
+    a different problem that teardown will not fix.
+    """
+    print("bundle signature")
+    sys.path.insert(0, str(ROOT / "tools"))
+    from civ6_control import install
+
+    try:
+        seal = install.signature_report()
+    except SystemExit as exc:
+        # `civ6_env.install_dir` exits when the game is not installed. Preflight
+        # is routinely run on machines that only ever edit the mod.
+        report.warn("codesign", f"no Civilization VI install to check ({exc})")
+        return
+
+    if seal["state"] == "valid":
+        report.ok("codesign", "valid on disk — the mod is not installed")
+    elif seal["state"] in ("unknown", "no-bundle"):
+        report.warn("codesign", seal["detail"])
+    elif seal["foreign"]:
+        report.warn(
+            "codesign",
+            f"{seal['detail']}; the named files include {len(seal['foreign'])} this "
+            f"mod did NOT write, which --uninstall will not restore, starting with "
+            f"{seal['foreign'][0]}",
+        )
+    elif seal["ours"]:
+        report.warn(
+            "codesign",
+            f"{seal['detail']} — broken by this mod's {len(seal['ours'])} installed "
+            f"file(s), which is expected; `install.py --uninstall` restores it. A "
+            f"refused launch on top of this is a trust-record problem, not this",
+        )
+    else:
+        report.warn("codesign", f"{seal['detail']}; no offending file was named")
 
 
 def steam_account_id() -> int | None:
@@ -421,6 +483,7 @@ def main() -> int:
     check_modinfo(report)
     check_python(report)
     check_installed(report)
+    check_bundle(report)
     check_host(report)
     if not args.skip_engine:
         check_engine(report)
