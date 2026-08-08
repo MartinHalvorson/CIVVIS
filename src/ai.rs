@@ -1683,6 +1683,9 @@ pub struct BasicAi {
     /// needs four. Without this floor the rush plans a war it never builds
     /// the army for, which is the failure the census caught.
     pub(crate) rush_military_floor: usize,
+    /// Let a housing-short city reach for a building that adds housing before a
+    /// cheaper one that adds none. See the sort in `pick_item`.
+    pub(crate) housing_buildings: bool,
     /// Discount motionless Settlers from the expansion gate's in-flight test.
     /// The Civilization VI bridge turns this on; native tournament games leave
     /// it off so their recorded ladders and the frozen `advanced_v1` rating
@@ -2742,6 +2745,7 @@ impl BasicAi {
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
+            housing_buildings: false,
             settler_strand_discount: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
@@ -2778,6 +2782,7 @@ impl BasicAi {
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
+            housing_buildings: false,
             settler_strand_discount: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
@@ -6550,6 +6555,49 @@ impl BasicAi {
             // — that argument belongs elsewhere — and a building with no slots keeps
             // its exact position. What it stops is the alphabet deciding a real
             // question.
+            // ★★★★★ CHEAPEST-FIRST IS BLIND TO THE ONE THING STOPPING THIS CITY.
+            //
+            // The comment below says "cheapest-first is untouched as a policy —
+            // that argument belongs elsewhere". This is that argument, made as
+            // narrowly as it can be made: a city that has run out of HOUSING
+            // reaches for a building that adds some before a cheaper one that
+            // adds none. Every other pair keeps its exact order.
+            //
+            // The district block ~150 lines above already does this for
+            // `aqueduct` and `neighborhood`, and `buy_gold_infrastructure`
+            // already weights `spec.housing` by the same need on the gold path.
+            // The production path — which is where the baseline governor makes
+            // most of an empire's builds — ranked by price alone, so a Sewer was
+            // worth exactly its cost to a city that could not grow another
+            // citizen.
+            //
+            // Measured at the final turn of the 24 completed live runs of
+            // 2026-08-07/08, over all 116 cities: **44% are housing-STOPPED**
+            // (pop >= housing, growth halted) and another 9% are throttled at
+            // headroom 1, against a median food surplus of +6.5 a turn — the
+            // food is there and the housing is not. Coverage of the buildings
+            // that would fix it: Sewer 0.42 per city, Water Mill 0.47.
+            //
+            // Population is what district slots are made of (one per three), and
+            // a score fit over the same 24 games prices a district at +9.34 —
+            // the largest single term. The settler repair raised cities 5 -> 8
+            // and districts stayed flat at 30 -> 31, because the new cities
+            // could not grow into their slots. This is that ceiling.
+            //
+            // ⚠ Capped by the shortfall exactly as the district block is, so a
+            // city one short does not outrank its whole queue to over-build by
+            // three.
+            let housing_short = if self.housing_buildings && !self.minor {
+                (HOUSING_HEADROOM_TARGET - g.city_housing_headroom(&g.cities[&cid])).max(0.0)
+            } else {
+                0.0
+            };
+            let housing_lift = |building: &Name| -> f64 {
+                if housing_short <= 0.0 {
+                    return 0.0;
+                }
+                housing_short.min(g.rules.buildings[building].housing.max(0.0))
+            };
             let tiebreak = self.slot_kind_tiebreak;
             let slot_worth = |b: &Name| -> f64 {
                 if !tiebreak {
@@ -6565,7 +6613,10 @@ impl BasicAi {
                     .sum()
             };
             buildable.sort_by(|a, b| {
-                a.0.cmp(&b.0)
+                housing_lift(&b.1)
+                    .partial_cmp(&housing_lift(&a.1))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.0.cmp(&b.0))
                     .then_with(|| {
                         // ⚠⚠ ONLY WHEN BOTH CANDIDATES HAVE SLOTS. My first version
                         // compared slot worth across every cost tie, which is a far

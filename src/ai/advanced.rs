@@ -2680,6 +2680,13 @@ impl AdvancedAi {
         // as #999 and #1003: a repair the governor making most of the builds
         // could not reach.
         self.enable_housing_districts();
+        // ⚠ AND THE SAME REPAIR ON THE PRODUCTION PATH. `housing_districts`
+        // fixes the two DISTRICTS that raise the ceiling; the buildings that do
+        // it — Sewer, Water Mill, Granary — were ranked by price alone, because
+        // the baseline governor's building sort has no housing term at all.
+        // 44% of our cities end housing-STOPPED against a median food surplus of
+        // +6.5 a turn. See the sort in `BasicAi::pick_item`.
+        self.enable_housing_buildings();
         // ⚠⚠ AND THE EMPIRE STOPS BUILDING CAMPUSES AT HALF ITS CITIES.
         // `balanced_core` pays a Campus +130 only while `district_count * 2 <
         // city_count`, so the term switches off at half coverage — and measured
@@ -2778,6 +2785,16 @@ impl AdvancedAi {
     /// Neighborhood together take 1.6% of district orders.
     pub fn enable_housing_districts(&mut self) {
         self.base.housing_districts = true;
+    }
+
+    /// Let a housing-short city prefer a building that raises its ceiling.
+    pub fn enable_housing_buildings(&mut self) {
+        self.base.housing_buildings = true;
+    }
+
+    /// Hold the housing-building preference off, for the controlled arm.
+    pub fn disable_housing_buildings(&mut self) {
+        self.base.housing_buildings = false;
     }
 
     pub fn disable_housing_districts(&mut self) {
@@ -36236,6 +36253,20 @@ mod research_probe {
         live.disable_housing_districts();
         assert!(!live.base.housing_districts, "and the control arm holds it off");
     }
+    /// Off by default, set only by the live bridge, and holdable off on its own.
+    #[test]
+    fn only_the_live_bridge_lets_a_capped_city_buy_its_ceiling() {
+        assert!(
+            !AdvancedAi::new().base.housing_buildings,
+            "the frozen tournament controller must keep its recorded ladders"
+        );
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.base.housing_buildings, "the deployment turns it on");
+        live.disable_housing_buildings();
+        assert!(!live.base.housing_buildings, "and the control arm holds it off");
+    }
+
     /// Off by default, set only by the live bridge, and holdable off on its own
     /// so the arm is a controlled comparison — which is what makes the repair
     /// measurable rather than merely deployed.

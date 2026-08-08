@@ -847,6 +847,7 @@ fn withhold_live_treatment(
         // only holds if the merge actually picks them up.
         "housing-districts" => ai.disable_housing_districts(),
         "stranded-settler-discount" => ai.disable_stranded_settler_discount(),
+        "housing-buildings" => ai.disable_housing_buildings(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1922,7 +1923,9 @@ fn main() {
         // `null` for an ordinary development build, which is honest: the
         // treatment list is the identity that always reports.
         "revision": civvis::server::runtime_commit_or_none(),
-        "treatments": civvis::elo::LIVE_BRIDGE_TREATMENTS,
+        // ⚠ A SLICE, NOT THE ARRAY: serde implements `Serialize` for arrays up
+        // to 32 elements only, and this list is now longer.
+        "treatments": civvis::elo::LIVE_BRIDGE_TREATMENTS.as_slice(),
     }));
 
     // ★★★★ HOLD THE SITE ACROSS A TURN THE SETTLER COULD NOT MOVE.

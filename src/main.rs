@@ -775,8 +775,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the treatment can be held off for a controlled arm. It only writes `false`
 /// into a field the anchor already reads as `false`. Compatibility re-pin, not
 /// an Elo-protocol change.
+/// #1405 gives the baseline governor's building sort a housing term, behind
+/// `BasicAi::housing_buildings`. The field is `false` in both `BasicAi`
+/// constructors and set only by `enable_live_bridge`, and `housing_lift`
+/// returns 0.0 whenever it is off, so the comparator is the identity it always
+/// was on the anchor. Compatibility re-pin, not an Elo-protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6ae0_7b4d_f3b0_28f5;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc238_1286_6eb6_35ac;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
