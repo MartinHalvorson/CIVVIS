@@ -199,7 +199,11 @@ fn main() {
     );
     println!(
         "genome: {}",
-        if on_champion { "evolved champion (as shipped)" } else { "Weights::default() (the fallback)" }
+        if on_champion {
+            "evolved champion (as shipped)"
+        } else {
+            "Weights::default() (the fallback)"
+        }
     );
     println!("focal seat rotates with the map index so no seat position is privileged\n");
 
@@ -216,13 +220,32 @@ fn main() {
         let mut cells: Vec<Cell> = Vec::with_capacity(conditions);
         for at in &commits_for_map {
             cells.push(play(
-                players, width, height, seed, turns, city_states, focal, lane, Some(*at),
-                &genome, may_expand,
+                players,
+                width,
+                height,
+                seed,
+                turns,
+                city_states,
+                focal,
+                lane,
+                Some(*at),
+                &genome,
+                may_expand,
             ));
         }
         // The control is adaptive, never targeted, so the flag cannot reach it.
         cells.push(play(
-            players, width, height, seed, turns, city_states, focal, lane, None, &genome, false,
+            players,
+            width,
+            height,
+            seed,
+            turns,
+            city_states,
+            focal,
+            lane,
+            None,
+            &genome,
+            false,
         ));
         cells
     });
@@ -244,8 +267,11 @@ fn main() {
         };
         let wins = wins_by_condition[slot].iter().filter(|won| **won).count();
         let fired = rows.iter().filter(|row| row[slot].committed).count();
-        let end: f64 =
-            rows.iter().map(|row| row[slot].end_turn as f64).sum::<f64>() / n.max(1) as f64;
+        let end: f64 = rows
+            .iter()
+            .map(|row| row[slot].end_turn as f64)
+            .sum::<f64>()
+            / n.max(1) as f64;
         let fired_text = if slot == commits.len() {
             "n/a".to_string()
         } else {
@@ -287,8 +313,11 @@ fn main() {
     let control_share = control.iter().filter(|won| **won).count() as f64 / n.max(1) as f64;
     let first = wins_by_condition[0].iter().filter(|won| **won).count() as f64 / n.max(1) as f64;
     let last_slot = commits.len() - 1;
-    let last =
-        wins_by_condition[last_slot].iter().filter(|won| **won).count() as f64 / n.max(1) as f64;
+    let last = wins_by_condition[last_slot]
+        .iter()
+        .filter(|won| **won)
+        .count() as f64
+        / n.max(1) as f64;
     println!();
     if first < control_share + 0.10 {
         println!(

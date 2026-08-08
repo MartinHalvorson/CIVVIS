@@ -842,7 +842,10 @@ fn make_ai(kind: &StrategyKind, seed: u64) -> Box<dyn Ai> {
     match kind {
         StrategyKind::Builtin { ai } => crate::elo::builtin_ai(ai, seed),
         StrategyKind::Advanced { weights, target } => {
-            match target.as_deref().and_then(|t| t.parse::<VictoryTarget>().ok()) {
+            match target
+                .as_deref()
+                .and_then(|t| t.parse::<VictoryTarget>().ok())
+            {
                 Some(t) => Box::new(AdvancedAi::with_weights_and_target(weights.clone(), t)),
                 None => Box::new(AdvancedAi::with_weights(weights.clone())),
             }
@@ -1003,29 +1006,60 @@ fn niche_elites(league: &League, table_size: usize) -> std::collections::BTreeSe
 fn username_pool(lane: Option<&str>) -> &'static [&'static str] {
     match lane {
         Some("science") => &[
-            "TechPriest", "LabRat", "BeakerBaron", "Eureka", "MoonshotMax", "QuantumLeap",
+            "TechPriest",
+            "LabRat",
+            "BeakerBaron",
+            "Eureka",
+            "MoonshotMax",
+            "QuantumLeap",
         ],
         Some("culture") => &[
-            "CultureVulture", "OperaGhost", "PoetLaureate", "Wonderstruck", "TourismTycoon",
+            "CultureVulture",
+            "OperaGhost",
+            "PoetLaureate",
+            "Wonderstruck",
+            "TourismTycoon",
             "MuseTamer",
         ],
         Some("religious") => &[
-            "ProphetMotive", "HolyRoller", "ZealotZed", "ApostlePaula", "FaithHealer",
+            "ProphetMotive",
+            "HolyRoller",
+            "ZealotZed",
+            "ApostlePaula",
+            "FaithHealer",
             "TitheCollector",
         ],
         Some("diplomatic") => &[
-            "SilverTongue", "Peacemonger", "Suzerain", "GrandBroker", "EnvoyElite",
+            "SilverTongue",
+            "Peacemonger",
+            "Suzerain",
+            "GrandBroker",
+            "EnvoyElite",
             "CityStateFan",
         ],
         Some("domination") => &[
-            "Warmonger", "SiegeLord", "BloodAndIron", "LegionLarry", "RaiderRex",
+            "Warmonger",
+            "SiegeLord",
+            "BloodAndIron",
+            "LegionLarry",
+            "RaiderRex",
             "CapitalCollector",
         ],
         Some("score") => &[
-            "PointHoarder", "ScoreKeeper", "TallyHo", "GrindKing", "MaxiMin", "NumbersNed",
+            "PointHoarder",
+            "ScoreKeeper",
+            "TallyHo",
+            "GrindKing",
+            "MaxiMin",
+            "NumbersNed",
         ],
         _ => &[
-            "WildCard", "DarkHorse", "Maverick", "FreeSpirit", "Opportunist", "JackKnife",
+            "WildCard",
+            "DarkHorse",
+            "Maverick",
+            "FreeSpirit",
+            "Opportunist",
+            "JackKnife",
         ],
     }
 }
@@ -1432,8 +1466,7 @@ fn validate_manifest(manifest: &RoundManifest, league: &League) -> io::Result<()
         || manifest.engine != work_engine()
         || manifest.round != league.round
         || manifest.strategies != league.strategies
-        || manifest.config.rules_fingerprint
-            != crate::rules::Rules::embedded().source_fingerprint()
+        || manifest.config.rules_fingerprint != crate::rules::Rules::embedded().source_fingerprint()
         || manifest.config.players_per_game < 2
         || manifest.config.width <= 0
         || manifest.config.height <= 0
@@ -1481,8 +1514,8 @@ fn validate_manifest(manifest: &RoundManifest, league: &League) -> io::Result<()
     for (series_index, series) in manifest.jobs.chunks(players).enumerate() {
         let base = &series[0];
         for (rotation, job) in series.iter().enumerate() {
-            let rotated_correctly = (0..players)
-                .all(|seat| job.table[seat] == base.table[(seat + rotation) % players]);
+            let rotated_correctly =
+                (0..players).all(|seat| job.table[seat] == base.table[(seat + rotation) % players]);
             if job.mirror_series != series_index as u32
                 || job.rotation != rotation as u32
                 || job.seed != base.seed
@@ -1644,11 +1677,7 @@ fn validate_result(
 fn seed_league(dir: &str) -> League {
     let mut strategies = Vec::new();
     let mut builtin = |name: &str, ai: &str, anchor: bool| {
-        let mut s = Strategy::new(
-            name,
-            StrategyKind::Builtin { ai: ai.to_string() },
-            0,
-        );
+        let mut s = Strategy::new(name, StrategyKind::Builtin { ai: ai.to_string() }, 0);
         s.anchor = anchor;
         strategies.push(s);
     };
@@ -2010,9 +2039,7 @@ fn reconcile_required_entrants(league: &mut League) -> bool {
                 strategy.anchor = true;
                 changed = true;
             }
-            if strategy
-                .exclude_from_live(SEARCH_COST_EXCLUSION.0, SEARCH_COST_EXCLUSION.1)
-            {
+            if strategy.exclude_from_live(SEARCH_COST_EXCLUSION.0, SEARCH_COST_EXCLUSION.1) {
                 changed = true;
             }
         }
@@ -2239,13 +2266,7 @@ pub(crate) fn competition_ranking<F>(
 where
     F: Fn(usize) -> i64,
 {
-    players.sort_by_key(|pid| {
-        (
-            winner != Some(*pid),
-            std::cmp::Reverse(score(*pid)),
-            *pid,
-        )
-    });
+    players.sort_by_key(|pid| (winner != Some(*pid), std::cmp::Reverse(score(*pid)), *pid));
     let mut ranks = Vec::with_capacity(players.len());
     for (place, pid) in players.iter().copied().enumerate() {
         let same_as_previous = place > 0
@@ -2295,11 +2316,10 @@ fn play_job(manifest: &RoundManifest, job: &WorkJob, worker: &str) -> StoredOutc
         .collect();
     run_game(&mut game, &mut ais);
 
-    let (ranked, ranks) = competition_ranking(
-        (0..cfg.players_per_game).collect(),
-        game.winner,
-        |pid| game.score(pid),
-    );
+    let (ranked, ranks) =
+        competition_ranking((0..cfg.players_per_game).collect(), game.winner, |pid| {
+            game.score(pid)
+        });
     StoredOutcome {
         schema_version: WORK_SCHEMA_VERSION,
         engine: manifest.engine.clone(),
@@ -2520,9 +2540,11 @@ fn valid_live_game_seats(seats: &[LiveGameSeat]) -> bool {
                 || seat.leader.trim().is_empty()
                 || seat.civilization.trim().is_empty()
         })
-        || seats.iter().enumerate().skip(1).any(|(place, seat)| {
-            seat.rank != seats[place - 1].rank && seat.rank != place as u32
-        })
+        || seats
+            .iter()
+            .enumerate()
+            .skip(1)
+            .any(|(place, seat)| seat.rank != seats[place - 1].rank && seat.rank != place as u32)
     {
         return false;
     }
@@ -2573,10 +2595,7 @@ pub fn record_ranked_game(
     let outcome = Outcome {
         placements: placements?,
         leaders: seats.iter().map(|seat| seat.leader.clone()).collect(),
-        civs: seats
-            .iter()
-            .map(|seat| seat.civilization.clone())
-            .collect(),
+        civs: seats.iter().map(|seat| seat.civilization.clone()).collect(),
         ranks: seats.iter().map(|seat| seat.rank).collect(),
         won: seats.iter().map(|seat| seat.won).collect(),
         seed,
@@ -2701,11 +2720,8 @@ fn evolve_league(
             let pb = parents[rng.below(pool)];
             let wa = genome_of(&league.strategies[pa].kind).unwrap();
             let wb = genome_of(&league.strategies[pb].kind).unwrap();
-            let child = crate::evolve::mutate(
-                &crate::evolve::crossover(&wa, &wb, rng),
-                rng,
-                &bounds,
-            );
+            let child =
+                crate::evolve::mutate(&crate::evolve::crossover(&wa, &wb, rng), rng, &bounds);
             // The niche assignment is deliberate rather than inherited by
             // chance: otherwise generalist parents make specialist lanes
             // exponentially unlikely and eventually erase them.
@@ -2933,17 +2949,14 @@ pub fn seat_by_leader_civ_seeded(
                 let win_order = if use_win_evidence {
                     exact_win_lower_confidence_for(&league.strategies[*b], table_size)
                         .expect("the win-evidence pool contains only exact profiles")
-                        .total_cmp(&exact_win_lower_confidence_for(
-                            &league.strategies[*a],
-                            table_size,
+                        .total_cmp(
+                            &exact_win_lower_confidence_for(&league.strategies[*a], table_size)
+                                .expect("the win-evidence pool contains only exact profiles"),
                         )
-                        .expect("the win-evidence pool contains only exact profiles"))
                 } else {
                     std::cmp::Ordering::Equal
                 };
-                win_order
-                    .then_with(|| eb.total_cmp(&ea))
-                    .then(a.cmp(b))
+                win_order.then_with(|| eb.total_cmp(&ea)).then(a.cmp(b))
             });
             pool.truncate(sample_size);
             let weights: Vec<f64> = (1..=pool.len()).rev().map(|rank| rank as f64).collect();
@@ -3002,7 +3015,10 @@ pub fn make_send_ai(kind: &StrategyKind, seed: u64) -> Box<dyn Ai + Send> {
             _ => Box::new(AdvancedAi::new()),
         },
         StrategyKind::Advanced { weights, target } => {
-            match target.as_deref().and_then(|t| t.parse::<VictoryTarget>().ok()) {
+            match target
+                .as_deref()
+                .and_then(|t| t.parse::<VictoryTarget>().ok())
+            {
                 Some(t) => Box::new(AdvancedAi::with_weights_and_target(weights.clone(), t)),
                 None => Box::new(AdvancedAi::with_weights(weights.clone())),
             }
@@ -3235,9 +3251,7 @@ fn try_finalize_round(
                 .zip(&outcome.leaders)
                 .zip(&outcome.civs)
                 .zip(&outcome.ranks)
-                .map(|(((name, leader), civ), rank)| {
-                    format!("{name}@{leader}@{civ}@{rank}")
-                })
+                .map(|(((name, leader), civ), rank)| format!("{name}@{leader}@{civ}@{rank}"))
                 .collect();
             format!(
                 "{round},{},{},{},{}",
@@ -3534,7 +3548,9 @@ mod tests {
     fn a_single_civ_game_does_not_outweigh_the_global_record() {
         let mut strong = Strategy::new(
             "adv-religious",
-            StrategyKind::Builtin { ai: "advanced".to_string() },
+            StrategyKind::Builtin {
+                ai: "advanced".to_string(),
+            },
             1,
         );
         strong.games = 123;
@@ -3542,10 +3558,18 @@ mod tests {
         let global = strong.strength_bound();
         assert!(global > 0.3, "the global record should be strong: {global}");
 
-        strong.leader_elo.entry("Wilfrid Laurier".to_string()).or_default().insert(
-            "Canada".to_string(),
-            CivRating { games: 1, wins: 0, ..CivRating::default() },
-        );
+        strong
+            .leader_elo
+            .entry("Wilfrid Laurier".to_string())
+            .or_default()
+            .insert(
+                "Canada".to_string(),
+                CivRating {
+                    games: 1,
+                    wins: 0,
+                    ..CivRating::default()
+                },
+            );
 
         // The one-game row must NOT drag the estimate below the global record.
         let narrowed = strategy_strength(&strong, Some("Canada"));
@@ -3559,16 +3583,26 @@ mod tests {
         // genuine thin-but-excellent record — measured, not hypothesised.
         let mut lucky = Strategy::new(
             "g56-48",
-            StrategyKind::Builtin { ai: "advanced".to_string() },
+            StrategyKind::Builtin {
+                ai: "advanced".to_string(),
+            },
             1,
         );
         lucky.games = 100;
         lucky.wins = 20;
         let lucky_global = lucky.strength_bound();
-        lucky.leader_elo.entry("Trajan".to_string()).or_default().insert(
-            "Rome".to_string(),
-            CivRating { games: 5, wins: 5, ..CivRating::default() },
-        );
+        lucky
+            .leader_elo
+            .entry("Trajan".to_string())
+            .or_default()
+            .insert(
+                "Rome".to_string(),
+                CivRating {
+                    games: 5,
+                    wins: 5,
+                    ..CivRating::default()
+                },
+            );
         let raised = strategy_strength(&lucky, Some("Rome"));
         assert!(
             raised > lucky_global,
@@ -3579,10 +3613,18 @@ mod tests {
         // ⚠ But a real sample MUST still narrow — that is the whole point of the
         // `civ` argument, and a fix that disabled narrowing would be worse than
         // the defect.
-        strong.leader_elo.get_mut("Wilfrid Laurier").unwrap().insert(
-            "Canada".to_string(),
-            CivRating { games: MIN_CIV_GAMES, wins: 0, ..CivRating::default() },
-        );
+        strong
+            .leader_elo
+            .get_mut("Wilfrid Laurier")
+            .unwrap()
+            .insert(
+                "Canada".to_string(),
+                CivRating {
+                    games: MIN_CIV_GAMES,
+                    wins: 0,
+                    ..CivRating::default()
+                },
+            );
         let real = strategy_strength(&strong, Some("Canada"));
         assert!(
             real < global,
@@ -3607,7 +3649,9 @@ mod tests {
         // still the number they started with.
         let mut fresh = Strategy::new(
             "newcomer",
-            StrategyKind::Builtin { ai: "advanced".to_string() },
+            StrategyKind::Builtin {
+                ai: "advanced".to_string(),
+            },
             0,
         );
         let shown = display_rating(Some(&fresh), "Rome");
@@ -3629,7 +3673,12 @@ mod tests {
             .or_default()
             .insert(
                 "Rome".to_string(),
-                CivRating { rating: 1610.0, rd: 180.0, games: 3, ..CivRating::default() },
+                CivRating {
+                    rating: 1610.0,
+                    rd: 180.0,
+                    games: 3,
+                    ..CivRating::default()
+                },
             );
         let shown = display_rating(Some(&fresh), "Rome");
         assert_eq!((shown.rating, shown.rd), (1610.0, 180.0));
@@ -3827,14 +3876,12 @@ mod tests {
         // Player 2 won despite a lower score. Players 0 and 1 have equal
         // scores and must remain a draw after the winner is lifted above them.
         let scores = [40, 40, 10, 5];
-        let (players, ranks) =
-            competition_ranking(vec![0, 1, 2, 3], Some(2), |pid| scores[pid]);
+        let (players, ranks) = competition_ranking(vec![0, 1, 2, 3], Some(2), |pid| scores[pid]);
         assert_eq!(players, vec![2, 0, 1, 3]);
         assert_eq!(ranks, vec![0, 1, 1, 3]);
 
         // Without a declared winner, the best score can itself be tied.
-        let (players, ranks) =
-            competition_ranking(vec![0, 1, 2, 3], None, |pid| scores[pid]);
+        let (players, ranks) = competition_ranking(vec![0, 1, 2, 3], None, |pid| scores[pid]);
         assert_eq!(players, vec![0, 1, 2, 3]);
         assert_eq!(ranks, vec![0, 0, 2, 3]);
     }
@@ -4022,7 +4069,10 @@ mod tests {
         assert_eq!(reloaded.round, 3);
 
         let (_, next) = register_player(dir).expect("registered again");
-        assert_eq!(load_league(dir).unwrap().strategies[next].username, "Player2");
+        assert_eq!(
+            load_league(dir).unwrap().strategies[next].username,
+            "Player2"
+        );
 
         // A game a person actually finishes rates them, and rates them alone
         // among the two of them — nothing was credited to `advanced`.
@@ -4031,10 +4081,22 @@ mod tests {
             ("advanced".to_string(), "Egypt".to_string()),
         ];
         let rated = record_game(dir, &placements, 9, 140, "science").expect("rated");
-        let person = rated.strategies.iter().find(|s| s.name == "player").unwrap();
+        let person = rated
+            .strategies
+            .iter()
+            .find(|s| s.name == "player")
+            .unwrap();
         assert_eq!((person.games, person.wins), (1, 1));
         assert!(person.rating > BASE_RATING);
-        assert_eq!(rated.strategies.iter().find(|s| s.name == "player2").unwrap().games, 0);
+        assert_eq!(
+            rated
+                .strategies
+                .iter()
+                .find(|s| s.name == "player2")
+                .unwrap()
+                .games,
+            0
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 
@@ -4162,9 +4224,7 @@ mod tests {
         );
         assert!(rated.strategies[0].leader_elo["Live Leader"].contains_key("Rome"));
         let matches = fs::read_to_string(Path::new(dir).join("matches.csv")).unwrap();
-        assert!(matches.contains(
-            "a@Live Leader@Rome@0|b@Pericles@Greece@1|c@Cleopatra@Egypt@1"
-        ));
+        assert!(matches.contains("a@Live Leader@Rome@0|b@Pericles@Greece@1|c@Cleopatra@Egypt@1"));
 
         let mut invalid = seats;
         invalid[1].rank = 2;
@@ -4215,7 +4275,13 @@ mod tests {
         let mut league = League {
             round: 0,
             strategies: vec![
-                Strategy::new("gen", StrategyKind::Builtin { ai: "advanced".into() }, 0),
+                Strategy::new(
+                    "gen",
+                    StrategyKind::Builtin {
+                        ai: "advanced".into(),
+                    },
+                    0,
+                ),
                 Strategy::new(
                     "rome-expert",
                     StrategyKind::Advanced {
@@ -4280,7 +4346,10 @@ mod tests {
             seen.insert(seat_by_civ_seeded(&league, &["Byzantium".into()], 4, seed, 3)[0]);
         }
         assert_eq!(seen, BTreeSet::from([0, 1, 2]));
-        assert!(!seen.contains(&3), "the fourth-rated strategy is outside the pool");
+        assert!(
+            !seen.contains(&3),
+            "the fourth-rated strategy is outside the pool"
+        );
         assert_eq!(
             seat_by_civ_seeded(&league, &["Byzantium".into()], 4, 17, 3),
             seat_by_civ_seeded(&league, &["Byzantium".into()], 4, 17, 3),
@@ -4318,13 +4387,7 @@ mod tests {
 
         let mut seen = BTreeSet::new();
         for seed in 0..128 {
-            seen.insert(seat_by_civ_seeded(
-                &league,
-                &["Byzantium".into()],
-                4,
-                seed,
-                2,
-            )[0]);
+            seen.insert(seat_by_civ_seeded(&league, &["Byzantium".into()], 4, seed, 2)[0]);
         }
         assert_eq!(seen, BTreeSet::from([2, 3]));
         assert!(
@@ -4514,7 +4577,9 @@ mod tests {
                 .map(|index| {
                     Strategy::new(
                         &format!("strategy-{index}"),
-                        StrategyKind::Builtin { ai: "advanced".into() },
+                        StrategyKind::Builtin {
+                            ai: "advanced".into(),
+                        },
                         0,
                     )
                 })
@@ -4841,9 +4906,13 @@ mod tests {
         let mut six_player_star = Strategy::new("six-player-star", kind(), 0);
         six_player_star.games = 100;
         six_player_star.wins = 20;
-        six_player_star
-            .wins_by_table_size
-            .insert(6, WinEvidence { games: 40, wins: 20 });
+        six_player_star.wins_by_table_size.insert(
+            6,
+            WinEvidence {
+                games: 40,
+                wins: 20,
+            },
+        );
         let league = League {
             round: 0,
             strategies: vec![duel_star, six_player_star],
@@ -5249,7 +5318,13 @@ mod tests {
         let mut league = League {
             round: 0,
             strategies: vec![
-                Strategy::new("advanced", StrategyKind::Builtin { ai: "advanced".into() }, 0),
+                Strategy::new(
+                    "advanced",
+                    StrategyKind::Builtin {
+                        ai: "advanced".into(),
+                    },
+                    0,
+                ),
                 Strategy::new(
                     "adv-science",
                     StrategyKind::Advanced {
@@ -5290,9 +5365,17 @@ mod tests {
             league.strategies.iter().map(|s| &s.username).collect();
         assert_eq!(handles.len(), league.strategies.len(), "handle collision");
         // backfill is a pure function of names: rerunning changes nothing
-        let before: Vec<String> = league.strategies.iter().map(|s| s.username.clone()).collect();
+        let before: Vec<String> = league
+            .strategies
+            .iter()
+            .map(|s| s.username.clone())
+            .collect();
         ensure_usernames(&mut league);
-        let after: Vec<String> = league.strategies.iter().map(|s| s.username.clone()).collect();
+        let after: Vec<String> = league
+            .strategies
+            .iter()
+            .map(|s| s.username.clone())
+            .collect();
         assert_eq!(before, after);
         // the leaderboard lists every player's handle with elo next to it
         let table = standings(&league);
@@ -5347,12 +5430,7 @@ mod tests {
         let _ = fs::remove_dir_all(&base);
     }
 
-    fn publish_test_result(
-        cfg: &LeagueCfg,
-        manifest: &RoundManifest,
-        job: &WorkJob,
-        worker: &str,
-    ) {
+    fn publish_test_result(cfg: &LeagueCfg, manifest: &RoundManifest, job: &WorkJob, worker: &str) {
         atomic_write_json(
             &result_path(&cfg.dir, manifest.round, &job.id),
             &StoredOutcome {
@@ -5643,9 +5721,7 @@ mod searching_anchor_tests {
             .iter()
             .find(|strategy| strategy.name == "advanced_evolved")
             .expect("the founding roster can play the embedded champion");
-        assert!(
-            matches!(&evolved.kind, StrategyKind::Builtin { ai } if ai == "advanced_evolved")
-        );
+        assert!(matches!(&evolved.kind, StrategyKind::Builtin { ai } if ai == "advanced_evolved"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -5704,9 +5780,7 @@ mod searching_anchor_tests {
             .iter()
             .find(|strategy| strategy.name == "advanced_evolved")
             .expect("the embedded champion is now reachable");
-        assert!(
-            matches!(&evolved.kind, StrategyKind::Builtin { ai } if ai == "advanced_evolved")
-        );
+        assert!(matches!(&evolved.kind, StrategyKind::Builtin { ai } if ai == "advanced_evolved"));
         assert_eq!(evolved.username, "TheHeir");
         assert_eq!(evolved.rating, legacy.strategies[0].rating);
         assert_eq!((evolved.rd, evolved.vol), (BASE_RD, BASE_VOL));
@@ -5941,9 +6015,7 @@ mod searching_anchor_tests {
             .find(|s| s.name == "advanced")
             .expect("the shipped roster retains its scripted anchor");
 
-        assert!(
-            matches!(&strategic.kind, StrategyKind::Builtin { ai } if ai == "strategic")
-        );
+        assert!(matches!(&strategic.kind, StrategyKind::Builtin { ai } if ai == "strategic"));
         assert!(strategic.anchor);
         assert!(!strategic.retired);
         assert!(strategic.league_only);

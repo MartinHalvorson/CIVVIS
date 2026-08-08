@@ -118,10 +118,7 @@ fn print_mechanism_census(arm: ExpansionArm, maps: &[MapResult]) {
     let Some(first) = maps.first() else {
         return;
     };
-    let seats: Vec<&Funnel> = maps
-        .iter()
-        .flat_map(|result| result.seats.iter())
-        .collect();
+    let seats: Vec<&Funnel> = maps.iter().flat_map(|result| result.seats.iter()).collect();
     let Some(sample) = seats.first() else {
         return;
     };
@@ -303,9 +300,7 @@ fn main() {
         .and_then(|index| args.get(index + 1))
         .map(|name| {
             ExpansionArm::parse(name).unwrap_or_else(|| {
-                eprintln!(
-                    "unknown --arm {name:?}; choose stock, late, dispatch, or complete"
-                );
+                eprintln!("unknown --arm {name:?}; choose stock, late, dispatch, or complete");
                 std::process::exit(2);
             })
         });
@@ -325,11 +320,7 @@ fn main() {
         eprintln!("unknown thermal distribution {poles_name:?}");
         std::process::exit(2);
     });
-    let victory_names = text(
-        &args,
-        "--victories",
-        &VictoryConditions::NAMES.join(","),
-    );
+    let victory_names = text(&args, "--victories", &VictoryConditions::NAMES.join(","));
     let victory_conditions = VictoryConditions::parse(&victory_names).unwrap_or_else(|why| {
         eprintln!("--victories: {why}");
         std::process::exit(2);
@@ -436,7 +427,10 @@ fn main() {
                     .player_unit_ids(*pid)
                     .into_iter()
                     .filter(|uid| {
-                        game.units.get(uid).map(|u| u.kind == "settler").unwrap_or(false)
+                        game.units
+                            .get(uid)
+                            .map(|u| u.kind == "settler")
+                            .unwrap_or(false)
                     })
                     .count();
 
@@ -484,13 +478,10 @@ fn main() {
                 }
             }
         }
-        let stock_deadline = game.standard_duration(300).min(
-            game.max_turns
-                .saturating_sub(game.standard_duration(50)),
-        );
-        let late_deadline = game
-            .max_turns
-            .saturating_sub(game.standard_duration(50));
+        let stock_deadline = game
+            .standard_duration(300)
+            .min(game.max_turns.saturating_sub(game.standard_duration(50)));
+        let late_deadline = game.max_turns.saturating_sub(game.standard_duration(50));
         for (slot, pid) in majors.iter().enumerate() {
             let census = fleet[*pid].expansion_census();
             let funnel = &mut funnels[slot];
@@ -536,12 +527,25 @@ fn main() {
     let total = at_target + in_flight + small + closed + residual;
 
     println!("seats sampled            {}", seats.len());
-    println!("cities at end            {:.2}", sum(|f| f.cities_final) / n);
-    println!("planned target at end    {:.2}", sum(|f| f.target_final) / n);
-    println!("settlers started         {:.2} per seat", sum(|f| f.started) / n);
+    println!(
+        "cities at end            {:.2}",
+        sum(|f| f.cities_final) / n
+    );
+    println!(
+        "planned target at end    {:.2}",
+        sum(|f| f.target_final) / n
+    );
+    println!(
+        "settlers started         {:.2} per seat",
+        sum(|f| f.started) / n
+    );
     println!("\nwhere every seat-turn went (attribution is first-failing gate):");
     let row = |label: &str, value: f64| {
-        println!("  {label:<26} {:6.1}%  ({:.0} seat-turns)", value * 100.0 / total, value)
+        println!(
+            "  {label:<26} {:6.1}%  ({:.0} seat-turns)",
+            value * 100.0 / total,
+            value
+        )
     };
     row("already at target", at_target);
     row("settler already walking", in_flight);

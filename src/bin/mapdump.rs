@@ -286,7 +286,10 @@ fn main() {
                     clustered += 1;
                 }
             }
-            println!("{kind}: {total} tiles, {}% in clusters", share(clustered, total));
+            println!(
+                "{kind}: {total} tiles, {}% in clusters",
+                share(clustered, total)
+            );
         }
     }
 }

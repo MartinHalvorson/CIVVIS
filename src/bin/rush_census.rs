@@ -145,7 +145,10 @@ fn snapshot(g: &Game, majors: &[usize]) -> Snapshot {
         if player.civics.contains(&civvis::name!("craftsmanship")) {
             s.craftsmanship += 1;
         }
-        if player.civics.contains(&civvis::name!("political_philosophy")) {
+        if player
+            .civics
+            .contains(&civvis::name!("political_philosophy"))
+        {
             s.political_philosophy += 1;
         }
         s.military += g
@@ -165,7 +168,10 @@ fn snapshot(g: &Game, majors: &[usize]) -> Snapshot {
             .map(|u| u.pos)
             .collect();
         s.melee += melee.len() as f64;
-        if majors.iter().any(|other| *other != pid && g.is_at_war(pid, *other)) {
+        if majors
+            .iter()
+            .any(|other| *other != pid && g.is_at_war(pid, *other))
+        {
             s.at_war += 1;
         }
         // Measured against **every** rival major capital, not the nearest.
@@ -192,19 +198,31 @@ fn snapshot(g: &Game, majors: &[usize]) -> Snapshot {
                 .min()
                 .unwrap_or(i32::MAX)
         };
-        s.staged += melee.iter().filter(|pos| nearest_capital(**pos) <= 5).count() as f64;
+        s.staged += melee
+            .iter()
+            .filter(|pos| nearest_capital(**pos) <= 5)
+            .count() as f64;
         // Per-capital, so a stack split across two objectives is not credited
         // as one siege.
         for capital in rival_capitals.iter() {
-            let ring = melee.iter().filter(|pos| g.wdist(**pos, *capital) <= 1).count() as f64;
-            let near = melee.iter().filter(|pos| g.wdist(**pos, *capital) <= 5).count() as f64;
+            let ring = melee
+                .iter()
+                .filter(|pos| g.wdist(**pos, *capital) <= 1)
+                .count() as f64;
+            let near = melee
+                .iter()
+                .filter(|pos| g.wdist(**pos, *capital) <= 5)
+                .count() as f64;
             s.max_adjacent = s.max_adjacent.max(ring);
             s.max_staged = s.max_staged.max(near);
         }
         // Adjacency is the one that matters: a melee unit on a ring tile can
         // attack the city this turn and contributes to sealing the siege ring
         // that stops it healing 20 HP a turn.
-        s.adjacent += melee.iter().filter(|pos| nearest_capital(**pos) <= 1).count() as f64;
+        s.adjacent += melee
+            .iter()
+            .filter(|pos| nearest_capital(**pos) <= 1)
+            .count() as f64;
 
         let Some(cid) = g
             .player_city_ids(pid)
@@ -350,7 +368,10 @@ fn main() {
                     }
                 }
                 prev_owned = owners_now;
-                let dead = majors.iter().filter(|pid| !game.players[**pid].alive).count();
+                let dead = majors
+                    .iter()
+                    .filter(|pid| !game.players[**pid].alive)
+                    .count();
                 if dead > prev_dead {
                     if let Some(last) = result.campaigns.last_mut() {
                         if last.2.is_none() {
@@ -362,9 +383,10 @@ fn main() {
             }
 
             if result.first_war.is_none()
-                && majors.iter().enumerate().any(|(i, a)| {
-                    majors.iter().skip(i + 1).any(|b| game.is_at_war(*a, *b))
-                })
+                && majors
+                    .iter()
+                    .enumerate()
+                    .any(|(i, a)| majors.iter().skip(i + 1).any(|b| game.is_at_war(*a, *b)))
             {
                 result.first_war = Some(turn);
             }
@@ -394,14 +416,20 @@ fn main() {
                 result.marks.push(snapshot(&game, &majors));
             }
             if turn == 50 {
-                result.alive_at_50 = majors.iter().filter(|pid| game.players[**pid].alive).count();
+                result.alive_at_50 = majors
+                    .iter()
+                    .filter(|pid| game.players[**pid].alive)
+                    .count();
             }
             if turn == 60 {
                 result.blows_by_60 = game.siege.blows;
                 result.damage_by_60 = game.siege.damage;
             }
         }
-        result.alive_at_end = majors.iter().filter(|pid| game.players[**pid].alive).count();
+        result.alive_at_end = majors
+            .iter()
+            .filter(|pid| game.players[**pid].alive)
+            .count();
         while result.marks.len() < MARKS.len() {
             result.marks.push(Snapshot::default());
         }
@@ -456,8 +484,17 @@ fn main() {
     println!("\n=== THE DEFENDER, BY TURN ===");
     println!(
         "{:>5}{:>9}{:>10}{:>10}{:>9}{:>8}{:>9}{:>8}{:>8}{:>10}{:>8}",
-        "turn", "walled%", "cap.str", "garrison", "melee", "staged", "adjac",
-        "MAXstg", "MAXadj", "atwar%", "agoge%"
+        "turn",
+        "walled%",
+        "cap.str",
+        "garrison",
+        "melee",
+        "staged",
+        "adjac",
+        "MAXstg",
+        "MAXadj",
+        "atwar%",
+        "agoge%"
     );
     for (index, mark) in MARKS.iter().enumerate() {
         let mut caps = 0.0;
@@ -510,8 +547,11 @@ fn main() {
         "  maps with any war between majors     : {}/{}  {}",
         wars.len(),
         per_map.len(),
-        if wars.is_empty() { String::new() } else {
-            let mut w = wars.clone(); w.sort_unstable();
+        if wars.is_empty() {
+            String::new()
+        } else {
+            let mut w = wars.clone();
+            w.sort_unstable();
             format!("(first war: median turn {})", w[w.len() / 2])
         }
     );
@@ -522,14 +562,11 @@ fn main() {
         if captures.is_empty() {
             String::new()
         } else {
-            format!(
-                "(first capture: median turn {})",
-                {
-                    let mut c = captures.clone();
-                    c.sort_unstable();
-                    c[c.len() / 2]
-                }
-            )
+            format!("(first capture: median turn {})", {
+                let mut c = captures.clone();
+                c.sort_unstable();
+                c[c.len() / 2]
+            })
         }
     );
     println!(
@@ -550,8 +587,10 @@ fn main() {
         per_map.iter().map(|m| m.alive_at_50 as f64).sum::<f64>() / per_map.len().max(1) as f64;
     let aliveend: f64 =
         per_map.iter().map(|m| m.alive_at_end as f64).sum::<f64>() / per_map.len().max(1) as f64;
-    let camps: Vec<(u32, Option<u32>, Option<u32>)> =
-        per_map.iter().flat_map(|m| m.campaigns.iter().copied()).collect();
+    let camps: Vec<(u32, Option<u32>, Option<u32>)> = per_map
+        .iter()
+        .flat_map(|m| m.campaigns.iter().copied())
+        .collect();
     let med = |mut v: Vec<u32>| -> String {
         if v.is_empty() {
             return "-".to_string();
@@ -562,8 +601,15 @@ fn main() {
     // Split by when the war opened. A rush is an *early* war; pooling it with
     // the late opportunistic wars that make up most of the sample describes
     // neither.
-    for (label, lo, hi) in [("EARLY (declared < t50)", 0u32, 50u32), ("LATE (t50+)", 50, u32::MAX)] {
-        let set: Vec<_> = camps.iter().filter(|c| c.0 >= lo && c.0 < hi).copied().collect();
+    for (label, lo, hi) in [
+        ("EARLY (declared < t50)", 0u32, 50u32),
+        ("LATE (t50+)", 50, u32::MAX),
+    ] {
+        let set: Vec<_> = camps
+            .iter()
+            .filter(|c| c.0 >= lo && c.0 < hi)
+            .copied()
+            .collect();
         if set.is_empty() {
             continue;
         }

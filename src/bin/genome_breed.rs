@@ -306,7 +306,11 @@ fn main() {
     );
     println!(
         "  statistic: {}",
-        if on_wins { "WIN RATE -- unbiased, noisy; parity 0.500" } else { "victory-lane progress -- cheap, BIASED; parity 0.500" }
+        if on_wins {
+            "WIN RATE -- unbiased, noisy; parity 0.500"
+        } else {
+            "victory-lane progress -- cheap, BIASED; parity 0.500"
+        }
     );
     println!("  the shipped genome is member 0 of generation 0\n");
 
@@ -445,8 +449,17 @@ fn main() {
                 2.0 * (0.25f64 / (maps as f64 * 2.0)).sqrt()
             );
         } else {
-            println!("  genome: {}", incumbent.iter().map(|g| format!("{g:.3}")).collect::<Vec<_>>().join(","));
-            println!("  Re-measure this against the SHIPPED genome on fresh maps before believing it:");
+            println!(
+                "  genome: {}",
+                incumbent
+                    .iter()
+                    .map(|g| format!("{g:.3}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+            println!(
+                "  Re-measure this against the SHIPPED genome on fresh maps before believing it:"
+            );
             println!("  a chain of accepted steps is still a chain of comparisons against a moving target.");
         }
         return;

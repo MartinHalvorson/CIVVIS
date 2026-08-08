@@ -204,7 +204,13 @@ fn shapes(shares: &[f64], treated: &[bool], lanes: &[f64]) -> Vec<f64> {
             / lane_total
     };
 
-    vec![mean * shares.len() as f64 / 2.0, power(2.0), power(4.0), top, lane]
+    vec![
+        mean * shares.len() as f64 / 2.0,
+        power(2.0),
+        power(4.0),
+        top,
+        lane,
+    ]
 }
 
 const SHAPE_NAMES: [&str; 5] = [
@@ -225,9 +231,7 @@ fn main() {
     let seed0 = number(&args, "--seed", 1_800_000) as u64;
     let jobs = number(&args, "--jobs", parallel::default_jobs());
 
-    println!(
-        "proxy_fit: {maps} games, {players}p {width}x{height}, {turns} turns, seed {seed0}"
-    );
+    println!("proxy_fit: {maps} games, {players}p {width}x{height}, {turns} turns, seed {seed0}");
     println!("  every seat carries a genome drawn at random, so the proxies see real spread");
     println!("  AUC = P(a winner outranks a non-winner); 0.500 is a coin flip\n");
 
@@ -261,14 +265,23 @@ fn main() {
             }
         };
         let (treat_deck, control_deck) = (pick(arms[0]), pick(arms[1]));
-        println!("scoring deck {} vs {} under each candidate statistic\n", arms[0], arms[1]);
+        println!(
+            "scoring deck {} vs {} under each candidate statistic\n",
+            arms[0], arms[1]
+        );
         let rows: Vec<Vec<f64>> = parallel::map(maps, jobs, move |index| {
             let mut out = vec![0.0; SHAPE_NAMES.len()];
             for direction in 0..2usize {
                 let seed = seed0 + index as u64;
                 let mut game = Game::new(players, width, height, seed, turns, 0);
-                let treat_w = Weights { policy_deck: treat_deck, ..Weights::default() };
-                let control_w = Weights { policy_deck: control_deck, ..Weights::default() };
+                let treat_w = Weights {
+                    policy_deck: treat_deck,
+                    ..Weights::default()
+                };
+                let control_w = Weights {
+                    policy_deck: control_deck,
+                    ..Weights::default()
+                };
                 let mut a: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &treat_w);
                 let mut b: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &control_w);
                 let is_treated = |pid: usize| pid % 2 == direction;
@@ -453,9 +466,8 @@ fn main() {
         let majors: Vec<usize> = (0..game.players.len())
             .filter(|pid| !game.players[*pid].is_minor)
             .collect();
-        let column = |f: &dyn Fn(usize) -> f64| -> Vec<f64> {
-            majors.iter().map(|pid| f(*pid)).collect()
-        };
+        let column =
+            |f: &dyn Fn(usize) -> f64| -> Vec<f64> { majors.iter().map(|pid| f(*pid)).collect() };
         let scores = column(&|pid| game.score(pid) as f64);
         let lanes = column(&|pid| game.victory_threat(pid));
         let cities = column(&|pid| game.player_city_ids(pid).len() as f64);
@@ -520,7 +532,10 @@ fn main() {
         .find(|(_, name)| *name == "score share")
         .map(|(v, _)| *v)
         .unwrap_or(f64::NAN);
-    println!("\nbest proxy: {} at AUC {:.3}; score share is {score_auc:.3}", best.1, best.0);
+    println!(
+        "\nbest proxy: {} at AUC {:.3}; score share is {score_auc:.3}",
+        best.1, best.0
+    );
 
     // The first version of this conclusion was wrong, and the error is worth
     // keeping visible because it is easy to repeat: it compared the best proxy

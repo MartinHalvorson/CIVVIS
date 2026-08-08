@@ -171,9 +171,16 @@ fn main() {
 
     println!("\nadvanced:  {advanced_per:.1} ms a game-turn ({advanced_turns} turns)");
     println!("strategic: {strategic_per:.1} ms a game-turn ({strategic_turns} turns)");
-    println!("one searching seat among {}: {one_per:.1} ms a game-turn", seats - 1);
-    println!("ratio, all searching: median {median:.1}x, range {low:.1}x..{high:.1}x over {games} seeds");
-    println!("ratio, ONE searching seat: median {seat_median:.1}x  <- the cost of seating one entry");
+    println!(
+        "one searching seat among {}: {one_per:.1} ms a game-turn",
+        seats - 1
+    );
+    println!(
+        "ratio, all searching: median {median:.1}x, range {low:.1}x..{high:.1}x over {games} seeds"
+    );
+    println!(
+        "ratio, ONE searching seat: median {seat_median:.1}x  <- the cost of seating one entry"
+    );
 
     // The consequence is spelled out because the whole point is to decide
     // something, and a ratio without a threshold is a number nobody acts on.
@@ -190,7 +197,5 @@ fn main() {
              on an agent that cannot ship, and the direction is to make it cheaper instead"
         }
     );
-    println!(
-        "note: the joint axis (#589) costs about 2.5x again on top of whatever this says."
-    );
+    println!("note: the joint axis (#589) costs about 2.5x again on top of whatever this says.");
 }

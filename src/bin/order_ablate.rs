@@ -36,9 +36,9 @@
 //!
 //! The control arm is the stock agent, so parity is 0.500 and a *negative*
 //! edge is the expected direction: randomising a decision should not help.
-use civvis::name::Name;
 use civvis::ai::{AdvancedAi, Ai, Weights};
 use civvis::game::{Action, Game};
+use civvis::name::Name;
 use civvis::parallel;
 use civvis::rng::Rng;
 

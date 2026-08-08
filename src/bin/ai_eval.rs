@@ -665,9 +665,7 @@ impl Metrics {
                 "builder" => self.builders += 1.0,
                 "trader" => self.traders += 1.0,
                 "missionary" => self.missionaries += 1.0,
-                _ if g.rules.units[unit.kind].class == "support" => {
-                    self.support_units += 1.0
-                }
+                _ if g.rules.units[unit.kind].class == "support" => self.support_units += 1.0,
                 _ => {}
             }
             if g.rules.units[unit.kind].class == "military" {
@@ -1055,8 +1053,8 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
             .enumerate()
             .map(|(index, profile)| {
                 let profile_seed = matrix_profile_seed(seed, index);
-                let profile_confirm_seed = confirm_base_seed
-                    .map(|prior| matrix_profile_seed(prior, index));
+                let profile_confirm_seed =
+                    confirm_base_seed.map(|prior| matrix_profile_seed(prior, index));
                 let child_args = matrix_child_args(MatrixChildRequest {
                     challenger,
                     incumbent,
@@ -1085,8 +1083,8 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                     let difficulty = difficulty.clone();
                     scope.spawn(move || {
                         let profile_seed = matrix_profile_seed(seed, index);
-                        let profile_confirm_seed = confirm_base_seed
-                            .map(|prior| matrix_profile_seed(prior, index));
+                        let profile_confirm_seed =
+                            confirm_base_seed.map(|prior| matrix_profile_seed(prior, index));
                         let child_args = matrix_child_args(MatrixChildRequest {
                             challenger,
                             incumbent,
@@ -1226,10 +1224,8 @@ fn main() {
             std::process::exit(3);
         }
     } else if !args.iter().any(|arg| arg == "--allow-degraded") {
-        let degraded: Vec<&AgentProvenance> = provenance
-            .iter()
-            .filter(|entry| entry.degraded())
-            .collect();
+        let degraded: Vec<&AgentProvenance> =
+            provenance.iter().filter(|entry| entry.degraded()).collect();
         if !degraded.is_empty() {
             for entry in degraded {
                 eprintln!(
@@ -1286,10 +1282,8 @@ fn main() {
     // `--confirm <prior-seed>` is the claim that this run is the *replication*
     // of one already made elsewhere. It must name a different seed, because a
     // rerun on the same seed re-measures the same maps and confirms nothing.
-    let confirm_seed = args
-        .iter()
-        .position(|arg| arg == "--confirm")
-        .map(|index| match args.get(index + 1).and_then(|v| v.parse::<u64>().ok()) {
+    let confirm_seed = args.iter().position(|arg| arg == "--confirm").map(|index| {
+        match args.get(index + 1).and_then(|v| v.parse::<u64>().ok()) {
             Some(prior) if prior != seed => prior,
             Some(_) => {
                 eprintln!(
@@ -1302,7 +1296,8 @@ fn main() {
                 eprintln!("--confirm needs the seed of the run being confirmed");
                 std::process::exit(2);
             }
-        });
+        }
+    });
     // The exhibition varies all three world axes and pins its enabled victory
     // set. An evaluator that cannot name them silently measures a different
     // game: historically Pangaea/flat/fixed-roster/all-victories, whatever the
@@ -1487,13 +1482,10 @@ fn main() {
                         usize::from(expansion.dispatch_productions > 0);
                     metrics.dispatch_settler_seats +=
                         usize::from(!expansion.dispatch_settler_turns.is_empty());
-                    let stock_deadline = game.standard_duration(300).min(
-                        game.max_turns
-                            .saturating_sub(game.standard_duration(50)),
-                    );
-                    let late_deadline = game
-                        .max_turns
-                        .saturating_sub(game.standard_duration(50));
+                    let stock_deadline = game
+                        .standard_duration(300)
+                        .min(game.max_turns.saturating_sub(game.standard_duration(50)));
+                    let late_deadline = game.max_turns.saturating_sub(game.standard_duration(50));
                     metrics.expansion_deadlines = Some((stock_deadline, late_deadline));
                     metrics.dispatch_late_settler_seats += usize::from(
                         expansion
@@ -1501,9 +1493,8 @@ fn main() {
                             .iter()
                             .any(|turn| *turn >= stock_deadline && *turn < late_deadline),
                     );
-                    metrics.advanced_late_settler_seats += usize::from(
-                        !expansion.advanced_late_settler_turns.is_empty(),
-                    );
+                    metrics.advanced_late_settler_seats +=
+                        usize::from(!expansion.advanced_late_settler_turns.is_empty());
                 }
                 totals.get_mut(*name).unwrap().record(
                     &game,
@@ -1945,7 +1936,10 @@ mod tests {
 
     #[test]
     fn a_size_the_gate_did_not_select_says_so_rather_than_claiming_confirmation() {
-        for verdict in [PromotionVerdict::Inconclusive, PromotionVerdict::Insufficient] {
+        for verdict in [
+            PromotionVerdict::Inconclusive,
+            PromotionVerdict::Insufficient,
+        ] {
             let line = effect_size_line(12.0, verdict, 4000, None);
             assert!(line.contains("not gate-selected"), "{line}");
             assert!(!line.contains("DISCOVERY ESTIMATE"), "{line}");
@@ -2090,11 +2084,9 @@ mod tests {
         );
 
         let same_seed = vec!["--confirm".to_string(), "82000000".to_string()];
-        assert!(
-            matrix_confirmation_base_seed(&same_seed, 82_000_000)
-                .expect_err("same matrix seed must be rejected")
-                .contains("disjoint matrix base seed")
-        );
+        assert!(matrix_confirmation_base_seed(&same_seed, 82_000_000)
+            .expect_err("same matrix seed must be rejected")
+            .contains("disjoint matrix base seed"));
     }
 
     #[test]
@@ -2108,7 +2100,9 @@ mod tests {
         assert_eq!(matrix_job_budgets(12), [4, 8]);
         for jobs in 2..32 {
             assert_eq!(matrix_job_budgets(jobs).iter().sum::<usize>(), jobs);
-            assert!(matrix_job_budgets(jobs).into_iter().all(|budget| budget > 0));
+            assert!(matrix_job_budgets(jobs)
+                .into_iter()
+                .all(|budget| budget > 0));
         }
     }
 

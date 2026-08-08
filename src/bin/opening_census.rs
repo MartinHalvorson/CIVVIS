@@ -62,11 +62,11 @@
 //! is not close to the seat count, the observation is broken, not the agent.
 use std::collections::{BTreeMap, BTreeSet};
 
-use civvis::name::Name;
 use civvis::ai::{AdvancedAi, Ai};
 use civvis::game::{Action, Game, GameOptions, Item};
-use civvis::rules::Yields;
+use civvis::name::Name;
 use civvis::parallel;
+use civvis::rules::Yields;
 
 type TilePosition = (i32, i32);
 type SettlerTrace = (u32, TilePosition, TilePosition, u32);
@@ -536,9 +536,7 @@ fn main() {
                     .collect();
                 let aims_now: Vec<(u32, Option<(i32, i32)>)> = settlers_now
                     .iter()
-                    .map(|(id, _)| {
-                        (*id, agent.settler_target(*id).map(|p| (p.0, p.1)))
-                    })
+                    .map(|(id, _)| (*id, agent.settler_target(*id).map(|p| (p.0, p.1))))
                     .collect();
                 let fleet_aim_missing: BTreeSet<u32> = settlers_now
                     .iter()
@@ -625,10 +623,10 @@ fn main() {
                         }
                     }
                     for (id, pos) in &settlers_now {
-                        let entry = seat
-                            .live_settlers
-                            .entry(*id)
-                            .or_insert((turn + 1, *pos, *pos, 0));
+                        let entry =
+                            seat.live_settlers
+                                .entry(*id)
+                                .or_insert((turn + 1, *pos, *pos, 0));
                         if entry.2 != *pos {
                             entry.3 += 1;
                             entry.2 = *pos;
@@ -754,7 +752,11 @@ fn main() {
     // Pooling those with real openings makes a one-item sequence the modal
     // opening and reads as agreement; they are absence of data instead.
     let dead = all.iter().filter(|s| s.builds.is_empty()).count();
-    let seats: Vec<Seat> = all.iter().filter(|s| !s.builds.is_empty()).cloned().collect();
+    let seats: Vec<Seat> = all
+        .iter()
+        .filter(|s| !s.builds.is_empty())
+        .cloned()
+        .collect();
     if seats.is_empty() {
         println!("no major seat held a capital inside the window");
         return;
@@ -1068,11 +1070,7 @@ fn main() {
             food_se,
             greedy_mean,
             greedy_se,
-            format!(
-                "{:.2}->{:.2}",
-                food_mean - eaten,
-                greedy_mean - eaten
-            ),
+            format!("{:.2}->{:.2}", food_mean - eaten, greedy_mean - eaten),
             format!("{prod_mean:.2}->{gprod_mean:.2}")
         );
     }
@@ -1151,10 +1149,7 @@ fn main() {
     let crowd: u32 = seats.iter().map(|s| s.still_crowded).sum();
     let unex: u32 = seats.iter().map(|s| s.still_unexplained).sum();
     let still_total = (no_t + spent + crowd + unex).max(1);
-    let no_t_building: u32 = seats
-        .iter()
-        .map(|s| s.still_no_target_while_building)
-        .sum();
+    let no_t_building: u32 = seats.iter().map(|s| s.still_no_target_while_building).sum();
     println!(
         "\nwhy a settler stood still ({still_total} such settler-turns):\n  \
          {no_t:6} held no destination at all               ({:.0}%)\n  \

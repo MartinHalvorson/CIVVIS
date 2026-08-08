@@ -7,11 +7,11 @@ use super::{
     Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, PolicyDeck, UnitDoctrine, Weights,
 };
 use crate::belief::{BeliefState, CitySighting};
-use crate::name::Name;
-use crate::parallel::WorkPool;
 use crate::game::{
     Action, ActionFamilies, CityDirective, CityRole, CongressResolution, DiplomaticDeal, Game, Item,
 };
+use crate::name::Name;
+use crate::parallel::WorkPool;
 use crate::reasoning::{plain, Journal};
 use crate::rules::Yields;
 use crate::think;
@@ -2436,8 +2436,8 @@ impl AdvancedAi {
                 | GrandStrategy::Religion
                 | GrandStrategy::Diplomacy
         ) && !Self::victory_strategy_enabled(g, plan.strategy);
-        let useful_religious_opening = plan.strategy == GrandStrategy::Religion
-            && self.religious_opening_viable(g, pid);
+        let useful_religious_opening =
+            plan.strategy == GrandStrategy::Religion && self.religious_opening_viable(g, pid);
         if unavailable_victory_plan && !useful_religious_opening {
             return true;
         }
@@ -2467,7 +2467,11 @@ impl AdvancedAi {
             }
         }
         if let Some(forced) = self.forced_target_player {
-            if !g.players.get(forced).map(|player| player.alive).unwrap_or(false)
+            if !g
+                .players
+                .get(forced)
+                .map(|player| player.alive)
+                .unwrap_or(false)
                 || (plan.target_player != Some(forced)
                     && self.campaign_target_legal(g, pid, forced))
             {
@@ -2874,11 +2878,7 @@ impl AdvancedAi {
         let mean_specialty = (totals.science + totals.culture + totals.faith + totals.gold) / count;
 
         let mut directives = BTreeMap::new();
-        for ((cid, ys), pressure) in cities
-            .into_iter()
-            .zip(city_yields)
-            .zip(pressures)
-        {
+        for ((cid, ys), pressure) in cities.into_iter().zip(city_yields).zip(pressures) {
             let specialty = ys.science + ys.culture + ys.faith + ys.gold;
             // `BASTION_PRESSURE` is the same 0.45 `threatened_city` treats as
             // a locally competitive hostile force, so the city's own governor
@@ -2913,8 +2913,7 @@ impl AdvancedAi {
                     pressure,
                     // Measured harmful in isolation (43.8%, Elo -44,
                     // p=0.0107). Reachable only through the frozen controls.
-                    halt_growth: self.city_strategy_halt_growth
-                        && role == CityRole::Bastion,
+                    halt_growth: self.city_strategy_halt_growth && role == CityRole::Bastion,
                 },
             );
         }
@@ -2937,14 +2936,14 @@ impl AdvancedAi {
                     city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 3;
                 let wall_max = g.city_max_wall_hp(city);
                 let damaged = city.hp < 200 || city.wall_hp < wall_max;
-                let breached = city.hp < 160
-                    || (wall_max > 0 && city.wall_hp.saturating_mul(2) < wall_max);
+                let breached =
+                    city.hp < 160 || (wall_max > 0 && city.wall_hp.saturating_mul(2) < wall_max);
                 // A scout or losing skirmisher in the outer city radius is a
                 // tactical contact, not an empire-wide emergency. Recovery is
                 // reserved for a locally competitive force or a damaged city
                 // whose remaining defenders cannot safely absorb another hit.
-                let critical = danger >= 0.90
-                    || (danger >= 0.45 && (breached || (recently_hit && damaged)));
+                let critical =
+                    danger >= 0.90 || (danger >= 0.45 && (breached || (recently_hit && damaged)));
                 critical.then_some((
                     danger,
                     (200 - city.hp).max(0) + (wall_max - city.wall_hp).max(0),
@@ -2972,9 +2971,11 @@ impl AdvancedAi {
             return None;
         }
         let city_ids = g.player_city_ids(pid);
-        let has_holy_site = city_ids
-            .iter()
-            .any(|cid| g.cities[cid].districts.contains_key(crate::name!("holy_site")));
+        let has_holy_site = city_ids.iter().any(|cid| {
+            g.cities[cid]
+                .districts
+                .contains_key(crate::name!("holy_site"))
+        });
         let holy_site_planned = city_ids.iter().any(|cid| {
             matches!(
                 g.cities[cid].queue.first(),
@@ -3284,8 +3285,7 @@ impl AdvancedAi {
             },
             VictoryFocus {
                 strategy: GrandStrategy::Culture,
-                progress: culture
-                    .max((!self.civ_blind && player.civ == "Greece") as i32 * 45),
+                progress: culture.max((!self.civ_blind && player.civ == "Greece") as i32 * 45),
             },
             VictoryFocus {
                 strategy: GrandStrategy::Religion,
@@ -3766,7 +3766,9 @@ impl AdvancedAi {
         );
         let basil_tagma_timing = g.has_ability(pid, "taxis")
             && (g.players[pid].religion.is_some()
-                || g.players[pid].civics.contains(&crate::name!("divine_right")));
+                || g.players[pid]
+                    .civics
+                    .contains(&crate::name!("divine_right")));
         // The ancient rush is a *window*, not a preference, so it is decided
         // beside the other timing arm rather than among the victory lanes.
         let rush_victim = self.early_rush_victim(g, pid);
@@ -3819,11 +3821,11 @@ impl AdvancedAi {
         // stays released until the war ends.
         let recovery_is_stale = self.bounded_recovery
             && self.major_war_since.is_some_and(|started| {
-                g.turn.saturating_sub(started)
-                    >= g.standard_duration(RECOVERY_POSTURE_LIMIT).max(1)
+                g.turn.saturating_sub(started) >= g.standard_duration(RECOVERY_POSTURE_LIMIT).max(1)
             });
         let (mut strategy, mut because, trigger) = if at_war
-            && (threatened_city.is_some() || (my_power * 1.25 < strongest_rival && !recovery_is_stale))
+            && (threatened_city.is_some()
+                || (my_power * 1.25 < strongest_rival && !recovery_is_stale))
         {
             (
                 GrandStrategy::Recovery,
@@ -3977,7 +3979,10 @@ impl AdvancedAi {
         // rival. In particular, this gives hostile city-states an explicit
         // city objective that the force-group planner can actually consume.
         let forced_target = self.forced_target_player.filter(|target| {
-            g.players.get(*target).map(|player| player.alive).unwrap_or(false)
+            g.players
+                .get(*target)
+                .map(|player| player.alive)
+                .unwrap_or(false)
                 && self.campaign_target_legal(g, pid, *target)
         });
         let target_player = if let Some(emergency) = &emergency_objective {
@@ -3987,48 +3992,44 @@ impl AdvancedAi {
             // generic value sort would happily re-aim the column at a richer
             // rival two weeks' march away.
             rush_victim.map(|(target, _)| target).or_else(|| {
-            forced_target.or_else(|| {
-                denial
-                    .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
-                    .map(|(rival, _)| rival)
-                    .or_else(|| {
-                        let mut candidates: Vec<_> = major_rivals
-                            .iter()
-                            .copied()
-                            .filter(|rival| self.campaign_target_legal(g, pid, *rival))
-                            .collect();
-                        if strategy == GrandStrategy::Conquest {
-                            candidates.extend(
-                                g.players
-                                    .iter()
-                                    .filter(|player| player.is_minor)
-                                    .filter(|player| {
-                                        self.campaign_target_legal(g, pid, player.id)
-                                    })
-                                    .map(|player| player.id),
-                            );
-                        }
-                        candidates
-                            .into_iter()
-                            .map(|rival| {
-                                (
-                                    rival,
-                                    self.campaign_target_value_with_culture(
-                                        g,
-                                        pid,
+                forced_target.or_else(|| {
+                    denial
+                        .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
+                        .map(|(rival, _)| rival)
+                        .or_else(|| {
+                            let mut candidates: Vec<_> = major_rivals
+                                .iter()
+                                .copied()
+                                .filter(|rival| self.campaign_target_legal(g, pid, *rival))
+                                .collect();
+                            if strategy == GrandStrategy::Conquest {
+                                candidates.extend(
+                                    g.players
+                                        .iter()
+                                        .filter(|player| player.is_minor)
+                                        .filter(|player| {
+                                            self.campaign_target_legal(g, pid, player.id)
+                                        })
+                                        .map(|player| player.id),
+                                );
+                            }
+                            candidates
+                                .into_iter()
+                                .map(|rival| {
+                                    (
                                         rival,
-                                        rival_culture_pressures.get(&rival).copied(),
-                                    ),
-                                )
-                            })
-                            .min_by(|a, b| {
-                                a.1.partial_cmp(&b.1)
-                                    .unwrap()
-                                    .then(a.0.cmp(&b.0))
-                            })
-                            .map(|(rival, _)| rival)
-                    })
-            })
+                                        self.campaign_target_value_with_culture(
+                                            g,
+                                            pid,
+                                            rival,
+                                            rival_culture_pressures.get(&rival).copied(),
+                                        ),
+                                    )
+                                })
+                                .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap().then(a.0.cmp(&b.0)))
+                                .map(|(rival, _)| rival)
+                        })
+                })
             })
         } else {
             // A suzerained city-state joins its major's war, but it is not a
@@ -4054,11 +4055,7 @@ impl AdvancedAi {
                         ),
                     )
                 })
-                .min_by(|a, b| {
-                    a.1.partial_cmp(&b.1)
-                        .unwrap()
-                        .then(a.0.cmp(&b.0))
-                })
+                .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap().then(a.0.cmp(&b.0)))
                 .map(|(rival, _)| rival)
         };
         let target_city = emergency_objective
@@ -4070,7 +4067,8 @@ impl AdvancedAi {
             // `campaign_city_value` sort would otherwise send the column at
             // whichever border town scored best.
             .or_else(|| {
-                rush_victim.filter(|(target, _)| target_player == Some(*target))
+                rush_victim
+                    .filter(|(target, _)| target_player == Some(*target))
                     .map(|(_, capital)| capital)
             })
             .or_else(|| {
@@ -4218,8 +4216,7 @@ impl AdvancedAi {
         let restore_stop = self.base.w.settler_stop_turn;
         let restore_builders = self.base.w.builder_per_city;
         self.base.w.city_target = restore_target.max(plan.desired_cities as f64);
-        self.base.w.settler_stop_turn =
-            restore_stop.max(Self::stock_expansion_deadline(g) as f64);
+        self.base.w.settler_stop_turn = restore_stop.max(Self::stock_expansion_deadline(g) as f64);
         self.base.w.builder_per_city = restore_builders.max(PRODUCTION_BUILDERS_PER_CITY);
         self.base.cities(g, pid);
         self.base.w.city_target = restore_target;
@@ -4367,26 +4364,22 @@ impl AdvancedAi {
     fn yield_value(&self, yields: Yields, strategy: GrandStrategy) -> f64 {
         let (food, prod, gold, science, culture, faith): (f64, f64, f64, f64, f64, f64) =
             match strategy {
-            GrandStrategy::Expansion => (2.0, 2.2, 0.9, 1.2, 1.2, 0.5),
-            GrandStrategy::Science => (1.4, 2.0, 1.0, 4.2, 1.2, 0.4),
-            GrandStrategy::Culture => (1.4, 1.8, 1.0, 1.3, 4.2, 0.8),
-            GrandStrategy::Religion => (1.4, 1.8, 0.9, 1.1, 1.5, 4.5),
-            GrandStrategy::Diplomacy => (1.4, 1.7, 2.2, 1.2, 2.8, 0.7),
-            // War changes the production mix; it does not make the technology and
-            // civic trees optional. In the live controller, culture at 0.8 remained
-            // the empire's least valuable ordinary yield for eighty wartime turns,
-            // even after the army had grown to 85 units. Keep production dominant,
-            // but retain a real research/civic floor so a long campaign can unlock
-            // upgrades, governments, and economic cards.
-            GrandStrategy::Conquest if self.victory_planning => {
-                (1.2, 2.8, 1.4, 1.9, 1.2, 0.3)
-            }
-            GrandStrategy::Recovery if self.victory_planning => {
-                (1.6, 3.2, 1.5, 1.2, 1.1, 0.3)
-            }
-            GrandStrategy::Conquest => (1.2, 2.8, 1.4, 1.7, 0.8, 0.3),
-            GrandStrategy::Recovery => (1.6, 3.2, 1.5, 1.0, 0.8, 0.3),
-        };
+                GrandStrategy::Expansion => (2.0, 2.2, 0.9, 1.2, 1.2, 0.5),
+                GrandStrategy::Science => (1.4, 2.0, 1.0, 4.2, 1.2, 0.4),
+                GrandStrategy::Culture => (1.4, 1.8, 1.0, 1.3, 4.2, 0.8),
+                GrandStrategy::Religion => (1.4, 1.8, 0.9, 1.1, 1.5, 4.5),
+                GrandStrategy::Diplomacy => (1.4, 1.7, 2.2, 1.2, 2.8, 0.7),
+                // War changes the production mix; it does not make the technology and
+                // civic trees optional. In the live controller, culture at 0.8 remained
+                // the empire's least valuable ordinary yield for eighty wartime turns,
+                // even after the army had grown to 85 units. Keep production dominant,
+                // but retain a real research/civic floor so a long campaign can unlock
+                // upgrades, governments, and economic cards.
+                GrandStrategy::Conquest if self.victory_planning => (1.2, 2.8, 1.4, 1.9, 1.2, 0.3),
+                GrandStrategy::Recovery if self.victory_planning => (1.6, 3.2, 1.5, 1.2, 1.1, 0.3),
+                GrandStrategy::Conquest => (1.2, 2.8, 1.4, 1.7, 0.8, 0.3),
+                GrandStrategy::Recovery => (1.6, 3.2, 1.5, 1.0, 0.8, 0.3),
+            };
         // The anchor above is the *lane's* opinion of a beaker and is left
         // exactly as promoted. `research_weight` is a floor under it, not a
         // replacement: the Science lane's 4.2 always wins, and with
@@ -4622,7 +4615,14 @@ impl AdvancedAi {
         if value <= baseline + 0.01 {
             return;
         }
-        let _ = g.apply(pid, &Action::MoveProduct { from, to, product: Name::new(&product) });
+        let _ = g.apply(
+            pid,
+            &Action::MoveProduct {
+                from,
+                to,
+                product: Name::new(&product),
+            },
+        );
     }
 
     /// The technology behind the best Campus building this empire is already
@@ -4725,8 +4725,8 @@ impl AdvancedAi {
             .unwrap_or(plan.strategy);
         if g.players[pid].research.is_none() {
             let available = g.available_techs(pid);
-            let science_commitment = objective == GrandStrategy::Science
-                || self.diplomatic_science_backup(g, pid, plan);
+            let science_commitment =
+                objective == GrandStrategy::Science || self.diplomatic_science_backup(g, pid, plan);
             let forced_goal = match objective {
                 _ if g.has_ability(pid, "taxis")
                     && g.players[pid].religion.is_none()
@@ -4749,7 +4749,11 @@ impl AdvancedAi {
                 // **4 movement against 2**, which halves the nine-to-twelve
                 // turn march that is the lane's other binding cost. At 195
                 // science it is also cheaper to reach than iron working's 225.
-                _ if plan.rush && !g.players[pid].techs.contains(&crate::name!("horseback_riding")) => {
+                _ if plan.rush
+                    && !g.players[pid]
+                        .techs
+                        .contains(&crate::name!("horseback_riding")) =>
+                {
                     Some("horseback_riding")
                 }
                 _ if science_commitment => [
@@ -4764,10 +4768,14 @@ impl AdvancedAi {
                 GrandStrategy::Culture => ["printing", "radio", "computers"]
                     .into_iter()
                     .find(|tech| !g.players[pid].techs.contains(&Name::new(tech))),
-                GrandStrategy::Diplomacy if !g.players[pid].techs.contains(&crate::name!("seasteads")) => {
+                GrandStrategy::Diplomacy
+                    if !g.players[pid].techs.contains(&crate::name!("seasteads")) =>
+                {
                     Some("seasteads")
                 }
-                GrandStrategy::Religion if !g.players[pid].techs.contains(&crate::name!("astrology")) => {
+                GrandStrategy::Religion
+                    if !g.players[pid].techs.contains(&crate::name!("astrology")) =>
+                {
                     Some("astrology")
                 }
                 _ => None,
@@ -4809,8 +4817,11 @@ impl AdvancedAi {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     let why = match (forced_goal, &goal_pick) {
                         (Some(goal), Some(_)) => {
-                            format!("the cheapest step toward {}, which {} needs",
-                                    plain(goal), objective.as_str())
+                            format!(
+                                "the cheapest step toward {}, which {} needs",
+                                plain(goal),
+                                objective.as_str()
+                            )
                         }
                         _ => {
                             let runner_up = available
@@ -4823,25 +4834,37 @@ impl AdvancedAi {
                                         .then_with(|| b.cmp(a))
                                 })
                                 .map(|other| {
-                                    format!("ahead of {} at {:.0}", plain(other),
-                                            self.tech_value(g, pid, other, plan.strategy))
+                                    format!(
+                                        "ahead of {} at {:.0}",
+                                        plain(other),
+                                        self.tech_value(g, pid, other, plan.strategy)
+                                    )
                                 })
                                 .unwrap_or_else(|| "with nothing else on offer".to_string());
-                            format!("worth {:.0} to the {} plan, {runner_up}",
-                                    self.tech_value(g, pid, &tech, plan.strategy),
-                                    plan.strategy.as_str())
+                            format!(
+                                "worth {:.0} to the {} plan, {runner_up}",
+                                self.tech_value(g, pid, &tech, plan.strategy),
+                                plan.strategy.as_str()
+                            )
                         }
                     };
                     think!(self.journal(), Research, Decision, "Researching {}", plain(&tech); "{why}");
                 }
-                let _ = g.apply(pid, &Action::Research { tech: Name::new(&tech) });
+                let _ = g.apply(
+                    pid,
+                    &Action::Research {
+                        tech: Name::new(&tech),
+                    },
+                );
             }
         }
         if g.players[pid].civic.is_none() {
             let available = g.available_civics(pid);
             let forced_goal = match objective {
                 _ if g.has_ability(pid, "taxis")
-                    && !g.players[pid].civics.contains(&crate::name!("divine_right")) =>
+                    && !g.players[pid]
+                        .civics
+                        .contains(&crate::name!("divine_right")) =>
                 {
                     Some("divine_right")
                 }
@@ -4856,15 +4879,21 @@ impl AdvancedAi {
                 ]
                 .into_iter()
                 .find(|civic| !g.players[pid].civics.contains(&Name::new(civic))),
-                GrandStrategy::Science if !g.players[pid].civics.contains(&crate::name!("space_race")) => {
+                GrandStrategy::Science
+                    if !g.players[pid].civics.contains(&crate::name!("space_race")) =>
+                {
                     Some("space_race")
                 }
                 GrandStrategy::Diplomacy
-                    if !g.players[pid].civics.contains(&crate::name!("global_warming_mitigation")) =>
+                    if !g.players[pid]
+                        .civics
+                        .contains(&crate::name!("global_warming_mitigation")) =>
                 {
                     Some("global_warming_mitigation")
                 }
-                GrandStrategy::Religion if !g.players[pid].civics.contains(&crate::name!("theology")) => {
+                GrandStrategy::Religion
+                    if !g.players[pid].civics.contains(&crate::name!("theology")) =>
+                {
                     Some("theology")
                 }
                 _ => None,
@@ -4897,8 +4926,11 @@ impl AdvancedAi {
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     let why = match (forced_goal, &goal_pick) {
                         (Some(goal), Some(_)) => {
-                            format!("the cheapest step toward {}, which {} needs",
-                                    plain(goal), objective.as_str())
+                            format!(
+                                "the cheapest step toward {}, which {} needs",
+                                plain(goal),
+                                objective.as_str()
+                            )
                         }
                         _ => {
                             let runner_up = available
@@ -4911,19 +4943,29 @@ impl AdvancedAi {
                                         .then_with(|| b.cmp(a))
                                 })
                                 .map(|other| {
-                                    format!("ahead of {} at {:.0}", plain(other),
-                                            self.civic_value(g, pid, other, plan.strategy))
+                                    format!(
+                                        "ahead of {} at {:.0}",
+                                        plain(other),
+                                        self.civic_value(g, pid, other, plan.strategy)
+                                    )
                                 })
                                 .unwrap_or_else(|| "with nothing else on offer".to_string());
-                            format!("worth {:.0} to the {} plan, {runner_up}",
-                                    self.civic_value(g, pid, &civic, plan.strategy),
-                                    plan.strategy.as_str())
+                            format!(
+                                "worth {:.0} to the {} plan, {runner_up}",
+                                self.civic_value(g, pid, &civic, plan.strategy),
+                                plan.strategy.as_str()
+                            )
                         }
                     };
                     think!(self.journal(), Research, Decision, "Adopting the {} civic", plain(&civic);
                            "{why}");
                 }
-                let _ = g.apply(pid, &Action::Civic { civic: Name::new(&civic) });
+                let _ = g.apply(
+                    pid,
+                    &Action::Civic {
+                        civic: Name::new(&civic),
+                    },
+                );
             }
         }
     }
@@ -4947,7 +4989,9 @@ impl AdvancedAi {
     fn advanced_secret_society(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
         if !g.game_mode("secret_societies")
             || g.players[pid].secret_society.is_some()
-            || !g.players[pid].civics.contains(&crate::name!("code_of_laws"))
+            || !g.players[pid]
+                .civics
+                .contains(&crate::name!("code_of_laws"))
         {
             return;
         }
@@ -5145,7 +5189,12 @@ impl AdvancedAi {
                    "{choice_capacity} policy slots against {current_capacity} now; \
                     the {} plan wants it",
                    objective.as_str());
-            let _ = g.apply(pid, &Action::Government { government: Name::new(&government) });
+            let _ = g.apply(
+                pid,
+                &Action::Government {
+                    government: Name::new(&government),
+                },
+            );
         }
     }
 
@@ -5156,8 +5205,7 @@ impl AdvancedAi {
     /// fails and the old card is restored.
     fn policy_swap_fits(g: &Game, pid: usize, current: &Name, candidate: &str) -> bool {
         let slots = g.gov_slots(pid);
-        let (mut military, mut economic, mut diplomatic, mut wildcard) =
-            (0i64, 0i64, 0i64, 0i64);
+        let (mut military, mut economic, mut diplomatic, mut wildcard) = (0i64, 0i64, 0i64, 0i64);
         let mut count = |card: &str| match g.rules.policies[card].slot.as_str() {
             "military" => military += 1,
             "economic" => economic += 1,
@@ -5401,22 +5449,26 @@ impl AdvancedAi {
         // slot it would otherwise fill from the tail of its list.
         if self.research_economy {
             const RESEARCH_MULTIPLIERS: [&str; 2] = ["rationalism", "natural_philosophy"];
-            let has_campus = city_ids.iter().any(|city| {
-                g.city_has_district_family(&g.cities[city], crate::name!("campus"))
-            });
+            let has_campus = city_ids
+                .iter()
+                .any(|city| g.city_has_district_family(&g.cities[city], crate::name!("campus")));
             if has_campus {
                 desired.retain(|card| !RESEARCH_MULTIPLIERS.contains(card));
                 let at = desired.len().min(RESEARCH_DECK_INSERT);
                 desired.splice(at..at, RESEARCH_MULTIPLIERS);
             }
         }
-        let elite_active = g.players[pid].policies.contains(&crate::name!("elite_forces"));
+        let elite_active = g.players[pid]
+            .policies
+            .contains(&crate::name!("elite_forces"));
         let elite_affordable = if elite_active {
             g.players[pid].gold_per_turn >= 5.0
         } else {
             g.players[pid].gold_per_turn >= military as f64 * 2.0 + 5.0
         };
-        let robber_active = g.players[pid].policies.contains(&crate::name!("robber_barons"));
+        let robber_active = g.players[pid]
+            .policies
+            .contains(&crate::name!("robber_barons"));
         let robber_pays = city_ids.iter().any(|city| {
             let city = &g.cities[city];
             city.buildings.iter().any(|building| {
@@ -5473,9 +5525,7 @@ impl AdvancedAi {
         }
         temporary.extend(desired);
         desired = temporary;
-        desired.retain(|card| {
-            g.rules.policies[*card].offered(&g.players[pid].age, g.world_era)
-        });
+        desired.retain(|card| g.rules.policies[*card].offered(&g.players[pid].age, g.world_era));
 
         // If circumstances changed, remove a downside-bearing Dark Age card
         // immediately.  Most importantly, Isolationism can never coexist with
@@ -5484,10 +5534,7 @@ impl AdvancedAi {
         let unsafe_dark_cards: Vec<Name> = g.players[pid]
             .policies
             .iter()
-            .filter(|card| {
-                g.rules.policies[card].dark_age
-                    && !desired_set.contains(card.as_str())
-            })
+            .filter(|card| g.rules.policies[card].dark_age && !desired_set.contains(card.as_str()))
             .cloned()
             .collect();
         for card in unsafe_dark_cards {
@@ -5507,14 +5554,14 @@ impl AdvancedAi {
                 .filter(|card| g.players[pid].policies.contains(&Name::new(card)))
                 .collect();
             think!(self.journal(), Policies, Detail,
-                   "Policy portfolio for the {} plan", objective.as_str();
-                   "wants, in order: {}; already slotted: {}",
-                   desired.iter().map(|card| plain(card)).collect::<Vec<_>>().join(", "),
-                   if held.is_empty() {
-                       "none".to_string()
-                   } else {
-                       held.iter().map(|card| plain(card)).collect::<Vec<_>>().join(", ")
-                   });
+            "Policy portfolio for the {} plan", objective.as_str();
+            "wants, in order: {}; already slotted: {}",
+            desired.iter().map(|card| plain(card)).collect::<Vec<_>>().join(", "),
+            if held.is_empty() {
+                "none".to_string()
+            } else {
+                held.iter().map(|card| plain(card)).collect::<Vec<_>>().join(", ")
+            });
         }
 
         let wanted = desired.len();
@@ -5560,12 +5607,7 @@ impl AdvancedAi {
                 key(first).cmp(&key(second)).then(first.cmp(second))
             });
             for current in replaceable {
-                let _ = g.apply(
-                    pid,
-                    &Action::UnslotPolicy {
-                        policy: current,
-                    },
-                );
+                let _ = g.apply(pid, &Action::UnslotPolicy { policy: current });
                 if g.apply(
                     pid,
                     &Action::SlotPolicy {
@@ -5922,7 +5964,11 @@ impl AdvancedAi {
             // The engine only offers a pact to an existing Ally. Its value is
             // protection against a surprise declaration, but it is never
             // worth protecting the campaign target (handled above).
-            value += if partner_power > my_power * 0.8 { 95.0 } else { 55.0 };
+            value += if partner_power > my_power * 0.8 {
+                95.0
+            } else {
+                55.0
+            };
         }
         if let Some(target) = deal.joint_war_target {
             let strategic_target = plan.target_player == Some(target)
@@ -5941,7 +5987,10 @@ impl AdvancedAi {
                 (plan.strategy, promise),
                 (GrandStrategy::Expansion, "no_settling")
                     | (GrandStrategy::Religion, "no_conversion")
-                    | (GrandStrategy::Conquest | GrandStrategy::Recovery, "no_city_state_attack")
+                    | (
+                        GrandStrategy::Conquest | GrandStrategy::Recovery,
+                        "no_city_state_attack"
+                    )
             );
             value += if conflicts_with_plan { -130.0 } else { 20.0 };
         }
@@ -6071,7 +6120,11 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         denied_partner: Option<usize>,
     ) {
-        if g.turn % 12 != pid as u32 % 12 || !g.players[pid].civics.contains(&crate::name!("civil_service")) {
+        if g.turn % 12 != pid as u32 % 12
+            || !g.players[pid]
+                .civics
+                .contains(&crate::name!("civil_service"))
+        {
             return;
         }
         let kind = match plan.strategy {
@@ -6188,7 +6241,9 @@ impl AdvancedAi {
                     player: partner,
                     give_gold: 0.0,
                     request_gold: 0.0,
-                    open_borders: g.players[pid].civics.contains(&crate::name!("early_empire")),
+                    open_borders: g.players[pid]
+                        .civics
+                        .contains(&crate::name!("early_empire")),
                     friendship: true,
                     peace: false,
                     alliance: Some(kind.to_string()),
@@ -6813,9 +6868,7 @@ impl AdvancedAi {
             .and_then(|city| g.cities.get(&city))
             .map(|city| city.owner);
         territory != Some(target)
-            && territory.is_none_or(|owner| {
-                owner == pid || g.has_open_borders(pid, owner)
-            })
+            && territory.is_none_or(|owner| owner == pid || g.has_open_borders(pid, owner))
     }
 
     fn staged_campaign_units(
@@ -6834,14 +6887,7 @@ impl AdvancedAi {
                     && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
                     && (spec.is_melee_capable() || spec.has_ranged_attack())
                     && unit.hp as f64 > self.base.w.withdraw_hp
-                    && self.campaign_staging_position(
-                        g,
-                        pid,
-                        target,
-                        *uid,
-                        objective,
-                        unit.pos,
-                    )
+                    && self.campaign_staging_position(g, pid, target, *uid, objective, unit.pos)
             })
             .collect()
     }
@@ -6965,8 +7011,7 @@ impl AdvancedAi {
             // window. What makes the rush work is the staged stack against an
             // unwalled capital, which is what the readiness gate checks.
             .filter(|player| {
-                g.is_at_war(pid, player.id)
-                    || g.military_power(player.id) <= my_power * 1.15 + 5.0
+                g.is_at_war(pid, player.id) || g.military_power(player.id) <= my_power * 1.15 + 5.0
             })
             .filter_map(|player| {
                 // The capital while they have one, otherwise whatever is
@@ -6979,12 +7024,16 @@ impl AdvancedAi {
                     .into_iter()
                     .find(|cid| g.cities[cid].is_capital)
                     .or_else(|| {
-                        g.player_city_ids(player.id)
-                            .into_iter()
-                            .min_by_key(|cid| {
-                                let pos = g.cities[cid].pos;
-                                (mine.iter().map(|own| g.wdist(*own, pos)).min().unwrap_or(i32::MAX), *cid)
-                            })
+                        g.player_city_ids(player.id).into_iter().min_by_key(|cid| {
+                            let pos = g.cities[cid].pos;
+                            (
+                                mine.iter()
+                                    .map(|own| g.wdist(*own, pos))
+                                    .min()
+                                    .unwrap_or(i32::MAX),
+                                *cid,
+                            )
+                        })
                     })?;
                 let city = &g.cities[&capital];
                 // The window is defined by the walls, so test the walls rather
@@ -7007,10 +7056,7 @@ impl AdvancedAi {
             // deterministic across a mirrored pair.
             .min_by(|a, b| {
                 a.2.cmp(&b.2)
-                    .then(
-                        g.military_power(a.0)
-                            .total_cmp(&g.military_power(b.0)),
-                    )
+                    .then(g.military_power(a.0).total_cmp(&g.military_power(b.0)))
                     .then(a.0.cmp(&b.0))
             })
             .map(|(target, capital, _)| (target, capital))
@@ -7054,10 +7100,7 @@ impl AdvancedAi {
             .iter()
             .filter_map(|uid| g.units.get(uid))
             .map(|unit| {
-                let attack = crate::game::effective_strength(
-                    g.unit_strength(unit, false),
-                    unit.hp,
-                );
+                let attack = crate::game::effective_strength(g.unit_strength(unit, false), unit.hp);
                 let out = 30.0 * ((attack - defense) / 25.0).exp();
                 let incoming = (30.0 * ((defense - attack) / 25.0).exp()).max(1.0);
                 let blows = (unit.hp as f64 / incoming).floor().max(1.0);
@@ -7078,9 +7121,9 @@ impl AdvancedAi {
         committed_domination: bool,
     ) -> bool {
         let units = self.staged_campaign_units(g, pid, target, objective);
-        let has_capturer = units.iter().any(|uid| {
-            g.rules.units[g.units[uid].kind].is_melee_capable()
-        });
+        let has_capturer = units
+            .iter()
+            .any(|uid| g.rules.units[g.units[uid].kind].is_melee_capable());
         let ratio = self.local_strength_ratio(g, pid, &units, &[target], objective);
         let formation_ready = units.len() >= 3 || (units.len() >= 2 && ratio >= 1.60);
         let minimum_ratio = if committed_domination { 0.90 } else { 1.05 };
@@ -7138,7 +7181,16 @@ impl AdvancedAi {
         if g.wdist(here, objective) <= 1 {
             if depleted && g.can_move(uid, objective) {
                 // The city is open. Walking in *is* the capture.
-                return Some(g.apply(pid, &Action::Move { unit: uid, to: objective }).is_ok());
+                return Some(
+                    g.apply(
+                        pid,
+                        &Action::Move {
+                            unit: uid,
+                            to: objective,
+                        },
+                    )
+                    .is_ok(),
+                );
             }
             let attacked = g
                 .apply(
@@ -7185,9 +7237,9 @@ impl AdvancedAi {
             .filter(|pos| {
                 *pos != objective
                     && g.unit_can_traverse(uid, *pos)
-                    && g.units_at(*pos).iter().all(|other| {
-                        g.units.get(other).is_some_and(|other| other.owner != pid)
-                    })
+                    && g.units_at(*pos)
+                        .iter()
+                        .all(|other| g.units.get(other).is_some_and(|other| other.owner != pid))
             })
             .collect();
         if ring.is_empty() {
@@ -7210,7 +7262,16 @@ impl AdvancedAi {
                 .route_step_to_any(uid, &goals)
                 .filter(|pos| g.can_move(uid, *pos))
             {
-                return Some(g.apply(pid, &Action::Move { unit: uid, to: next }).is_ok());
+                return Some(
+                    g.apply(
+                        pid,
+                        &Action::Move {
+                            unit: uid,
+                            to: next,
+                        },
+                    )
+                    .is_ok(),
+                );
             }
         }
         None
@@ -7276,7 +7337,16 @@ impl AdvancedAi {
             return Some(self.base.fortify_or_stop(g, pid, uid));
         }
         debug_assert_ne!(next, current);
-        Some(g.apply(pid, &Action::Move { unit: uid, to: next }).is_ok())
+        Some(
+            g.apply(
+                pid,
+                &Action::Move {
+                    unit: uid,
+                    to: next,
+                },
+            )
+            .is_ok(),
+        )
     }
 
     fn advanced_diplomacy(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
@@ -7595,14 +7665,14 @@ impl AdvancedAi {
                         _ => String::new(),
                     };
                     think!(self.journal(), Military, Strategy,
-                           "Declaring war on {}", g.players[target].civ;
-                           "{my_power:.0} power against their {target_power:.0}, the army is \
-                            staged within reach of the first objective{casus}{}",
-                           if urgent_denial {
-                               ", and they are close enough to winning that waiting loses it"
-                           } else {
-                               ""
-                           });
+                    "Declaring war on {}", g.players[target].civ;
+                    "{my_power:.0} power against their {target_power:.0}, the army is \
+                     staged within reach of the first objective{casus}{}",
+                    if urgent_denial {
+                        ", and they are close enough to winning that waiting loses it"
+                    } else {
+                        ""
+                    });
                 }
                 let _ = g.apply(pid, &action);
             }
@@ -7749,7 +7819,9 @@ impl AdvancedAi {
         let gold_reserve = 150.0 + 50.0 * city_count;
         let faith_reserve = match strategy {
             GrandStrategy::Religion => 250.0,
-            GrandStrategy::Culture if g.players[pid].civics.contains(&crate::name!("cold_war")) => 700.0,
+            GrandStrategy::Culture if g.players[pid].civics.contains(&crate::name!("cold_war")) => {
+                700.0
+            }
             _ => 100.0,
         };
         let mut candidates = Vec::new();
@@ -7844,10 +7916,7 @@ impl AdvancedAi {
             // enumeration path. The specialized projection is a headless
             // simulation optimization, gated by the attached work pool.
             return g
-                .legal_actions_within(
-                    pid,
-                    ActionFamilies::PURCHASES | ActionFamilies::EMPIRE,
-                )
+                .legal_actions_within(pid, ActionFamilies::PURCHASES | ActionFamilies::EMPIRE)
                 .into_iter()
                 .filter(|action| {
                     matches!(
@@ -7912,15 +7981,11 @@ impl AdvancedAi {
     fn advanced_gold_spending(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) -> bool {
         let city_count = g.player_city_ids(pid).len();
         let reserve = match plan.strategy {
-            GrandStrategy::Diplomacy | GrandStrategy::Culture => {
-                300.0 + 75.0 * city_count as f64
-            }
+            GrandStrategy::Diplomacy | GrandStrategy::Culture => 300.0 + 75.0 * city_count as f64,
             GrandStrategy::Expansion => 250.0 + 75.0 * city_count as f64,
             GrandStrategy::Science => 250.0 + 50.0 * city_count as f64,
             GrandStrategy::Religion => 150.0 + 50.0 * city_count as f64,
-            GrandStrategy::Conquest | GrandStrategy::Recovery => {
-                75.0 + 25.0 * city_count as f64
-            }
+            GrandStrategy::Conquest | GrandStrategy::Recovery => 75.0 + 25.0 * city_count as f64,
         };
         let purchase_limit = city_count.clamp(1, 4);
         let unit_purchase_limit = if g.players[pid].gold > reserve + 1_000.0 {
@@ -7942,12 +8007,7 @@ impl AdvancedAi {
             // dropped below.
             let memo = g.query_memo();
             for action in self.legal_purchase_actions(g, pid) {
-                if let Action::BuyPlot {
-                    city: _,
-                    pos,
-                    cost,
-                } = &action
-                {
+                if let Action::BuyPlot { city: _, pos, cost } = &action {
                     if bank + f64::EPSILON < reserve + 200.0 + cost {
                         continue;
                     }
@@ -7969,9 +8029,8 @@ impl AdvancedAi {
                     if tile.resource.is_some() && resource.is_none() {
                         visible_tile.resource = None;
                     }
-                    let yields = self
-                        .yield_value(g.rules.tile_yields(&visible_tile), plan.strategy)
-                        * 24.0;
+                    let yields =
+                        self.yield_value(g.rules.tile_yields(&visible_tile), plan.strategy) * 24.0;
                     let resource = resource
                         .map(|spec| match spec.class.as_str() {
                             "luxury" => 260.0,
@@ -7984,7 +8043,8 @@ impl AdvancedAi {
                         .feature
                         .as_ref()
                         .and_then(|name| g.rules.features.get(name))
-                        .is_some_and(|feature| feature.natural_wonder) as u8 as f64
+                        .is_some_and(|feature| feature.natural_wonder)
+                        as u8 as f64
                         * 320.0;
                     let base_score = yields + resource + wonder - cost * 0.70;
                     // Use adjacency as a cheap shortlist signal. Exact site
@@ -8103,11 +8163,7 @@ impl AdvancedAi {
                 let plot_scores = self.gold_plot_scores(score_context, &plot_options);
                 for ((_, _, _, action), score) in plot_options.into_iter().zip(plot_scores) {
                     if let Some(score) = score {
-                        candidates.push((
-                            score,
-                            std::cmp::Reverse(format!("{action:?}")),
-                            action,
-                        ));
+                        candidates.push((score, std::cmp::Reverse(format!("{action:?}")), action));
                     }
                 }
             }
@@ -8117,7 +8173,9 @@ impl AdvancedAi {
                     .total_cmp(&right.0)
                     .then_with(|| left.1.cmp(&right.1))
             });
-            let Some((score, _, action)) = best else { break };
+            let Some((score, _, action)) = best else {
+                break;
+            };
             let is_unit = matches!(action, Action::Buy { .. });
             let before = g.players[pid].gold;
             if g.apply(pid, &action).is_err() {
@@ -8126,7 +8184,12 @@ impl AdvancedAi {
             if self.journal().wants(crate::reasoning::Level::Decision) {
                 let spent = (before - g.players[pid].gold).max(0.0);
                 let (city, what) = match &action {
-                    Action::Buy { city, unit, formation, .. } => (
+                    Action::Buy {
+                        city,
+                        unit,
+                        formation,
+                        ..
+                    } => (
                         Some(*city),
                         if *formation == 0 {
                             plain(unit)
@@ -8204,9 +8267,7 @@ impl AdvancedAi {
     ) -> Vec<Option<f64>> {
         options
             .iter()
-            .map(|(action, city, item)| {
-                self.gold_purchase_score(context, action, *city, item)
-            })
+            .map(|(action, city, item)| self.gold_purchase_score(context, action, *city, item))
             .collect()
     }
 
@@ -8257,9 +8318,7 @@ impl AdvancedAi {
     ) -> Vec<Option<f64>> {
         options
             .iter()
-            .map(|(_, base_score, _, action)| {
-                self.gold_plot_score(context, action, *base_score)
-            })
+            .map(|(_, base_score, _, action)| self.gold_plot_score(context, action, *base_score))
             .collect()
     }
 
@@ -8278,9 +8337,11 @@ impl AdvancedAi {
 
     fn religious_production(&self, g: &mut Game, pid: usize) {
         let city_ids = g.player_city_ids(pid);
-        let has_holy_site = city_ids
-            .iter()
-            .any(|cid| g.cities[cid].districts.contains_key(crate::name!("holy_site")));
+        let has_holy_site = city_ids.iter().any(|cid| {
+            g.cities[cid]
+                .districts
+                .contains_key(crate::name!("holy_site"))
+        });
         if !has_holy_site {
             let holy_site_planned = city_ids.iter().any(|cid| {
                 matches!(
@@ -8358,7 +8419,9 @@ impl AdvancedAi {
                         building: crate::name!("shrine"),
                     };
                     if g.cities[cid].queue.is_empty()
-                        && g.cities[cid].districts.contains_key(crate::name!("holy_site"))
+                        && g.cities[cid]
+                            .districts
+                            .contains_key(crate::name!("holy_site"))
                         && g.can_produce(pid, *cid, &item)
                     {
                         let _ = g.apply(pid, &Action::Produce { city: *cid, item });
@@ -8377,7 +8440,9 @@ impl AdvancedAi {
                     .iter()
                     .filter(|cid| {
                         g.cities[cid].queue.is_empty()
-                            && g.cities[cid].districts.contains_key(crate::name!("holy_site"))
+                            && g.cities[cid]
+                                .districts
+                                .contains_key(crate::name!("holy_site"))
                             && g.can_produce(pid, **cid, &prayers)
                     })
                     .max_by(|left, right| {
@@ -8406,7 +8471,9 @@ impl AdvancedAi {
                     building: Name::new(building),
                 };
                 if g.cities[cid].queue.is_empty()
-                    && g.cities[cid].districts.contains_key(crate::name!("holy_site"))
+                    && g.cities[cid]
+                        .districts
+                        .contains_key(crate::name!("holy_site"))
                     && g.can_produce(pid, *cid, &item)
                 {
                     let _ = g.apply(pid, &Action::Produce { city: *cid, item });
@@ -8609,9 +8676,7 @@ impl AdvancedAi {
         } else {
             0
         };
-        let priorities: &[&str] = if home_under_pressure
-            && inquisition_launched
-            && inquisitors < 2
+        let priorities: &[&str] = if home_under_pressure && inquisition_launched && inquisitors < 2
         {
             &["inquisitor", "apostle", "missionary", "guru"]
         } else if !offensive {
@@ -8742,7 +8807,9 @@ impl AdvancedAi {
             GrandStrategy::Culture if !g.national_park_sites(pid).is_empty() => {
                 g.naturalist_purchase_cost(pid)
             }
-            GrandStrategy::Culture if g.players[pid].civics.contains(&crate::name!("cold_war")) => 700.0,
+            GrandStrategy::Culture if g.players[pid].civics.contains(&crate::name!("cold_war")) => {
+                700.0
+            }
             _ => 80.0,
         };
         let best = self
@@ -8912,7 +8979,10 @@ impl AdvancedAi {
                 let yields = g.city_yields(city_id);
                 let own = city.owner == pid;
                 let commercial = city.districts.keys().any(|district| {
-                    matches!(g.district_family(*district).as_str(), "commercial_hub" | "harbor")
+                    matches!(
+                        g.district_family(*district).as_str(),
+                        "commercial_hub" | "harbor"
+                    )
                 }) as i32 as f64;
                 let holy = city
                     .districts
@@ -9042,8 +9112,14 @@ impl AdvancedAi {
                         })
                         .flatten()
                 }) {
-                    if g.apply(pid, &Action::AppointGovernor { governor: Name::new(&governor), city })
-                        .is_ok()
+                    if g.apply(
+                        pid,
+                        &Action::AppointGovernor {
+                            governor: Name::new(&governor),
+                            city,
+                        },
+                    )
+                    .is_ok()
                     {
                         continue;
                     }
@@ -9078,8 +9154,14 @@ impl AdvancedAi {
                         })
                         .flatten()
                 }) {
-                    if g.apply(pid, &Action::AppointGovernor { governor: Name::new(&governor), city })
-                        .is_ok()
+                    if g.apply(
+                        pid,
+                        &Action::AppointGovernor {
+                            governor: Name::new(&governor),
+                            city,
+                        },
+                    )
+                    .is_ok()
                     {
                         continue;
                     }
@@ -9134,7 +9216,6 @@ impl AdvancedAi {
             think!(self.journal(), Government, Decision, "Posting {} to {where_}", plain(&governor);
                    "the city the {} plan gets most from", plan.strategy.as_str());
         }
-
     }
 
     /// ★★★★★ FAITH BUYS THE SOLDIER; GOLD PAYS FOR IT, EVERY TURN, FOREVER.
@@ -9353,7 +9434,9 @@ impl AdvancedAi {
                 g.player_city_ids(pid)
                     .into_iter()
                     .filter(|cid| {
-                        g.cities[cid].districts.contains_key(crate::name!("spaceport"))
+                        g.cities[cid]
+                            .districts
+                            .contains_key(crate::name!("spaceport"))
                             && g.can_produce(pid, *cid, &project_item)
                             && !matches!(
                                 g.cities[cid].queue.first(),
@@ -9385,7 +9468,11 @@ impl AdvancedAi {
         let city_ids = g.player_city_ids(pid);
         let built_spaceports = city_ids
             .iter()
-            .filter(|cid| g.cities[cid].districts.contains_key(crate::name!("spaceport")))
+            .filter(|cid| {
+                g.cities[cid]
+                    .districts
+                    .contains_key(crate::name!("spaceport"))
+            })
             .count();
         let queued_spaceports = city_ids
             .iter()
@@ -9417,7 +9504,9 @@ impl AdvancedAi {
         }
         let mut best: Option<(f64, u32, Pos)> = None;
         for cid in city_ids {
-            if g.cities[&cid].districts.contains_key(crate::name!("spaceport"))
+            if g.cities[&cid]
+                .districts
+                .contains_key(crate::name!("spaceport"))
                 || matches!(
                     g.cities[&cid].queue.first(),
                     Some(Item::District { district, .. }) if district == "spaceport"
@@ -9674,11 +9763,18 @@ impl AdvancedAi {
                             0
                         } + match plan.strategy {
                             GrandStrategy::Science => {
-                                i32::from(target.districts.contains_key(crate::name!("campus"))) * 90
-                                    + i32::from(target.districts.contains_key(crate::name!("spaceport"))) * 150
+                                i32::from(target.districts.contains_key(crate::name!("campus")))
+                                    * 90
+                                    + i32::from(
+                                        target.districts.contains_key(crate::name!("spaceport")),
+                                    ) * 150
                             }
                             GrandStrategy::Culture => {
-                                i32::from(target.districts.contains_key(crate::name!("theater_square"))) * 140
+                                i32::from(
+                                    target
+                                        .districts
+                                        .contains_key(crate::name!("theater_square")),
+                                ) * 140
                             }
                             GrandStrategy::Diplomacy => {
                                 i32::from(g.players[target.owner].is_minor) * 180
@@ -9688,7 +9784,13 @@ impl AdvancedAi {
                                     + i32::from(g.players[target.owner].governors.contains(city))
                                         * 120
                             }
-                            _ => i32::from(target.districts.contains_key(crate::name!("commercial_hub"))) * 70,
+                            _ => {
+                                i32::from(
+                                    target
+                                        .districts
+                                        .contains_key(crate::name!("commercial_hub")),
+                                ) * 70
+                            }
                         };
                         Some((
                             strategic
@@ -9743,13 +9845,7 @@ impl AdvancedAi {
                 .filter(|(name, candidate)| {
                     candidate.class == "support"
                         && candidate.anti_air_strength > 0.0
-                        && g.can_produce(
-                            pid,
-                            cid,
-                            &Item::Unit {
-                                unit: **name,
-                            },
-                        )
+                        && g.can_produce(pid, cid, &Item::Unit { unit: **name })
                 })
                 .map(|(_, candidate)| candidate.anti_air_strength)
                 .fold(0.0_f64, f64::max);
@@ -9920,27 +10016,19 @@ impl AdvancedAi {
             {
                 for item in g.producible_items(pid, city.id) {
                     let Item::Unit { unit } = item else { continue };
-                    if g.rules.units[&unit].class != "support"
-                        || unit == "military_engineer"
-                    {
+                    if g.rules.units[&unit].class != "support" || unit == "military_engineer" {
                         continue;
                     }
-                    let value = self.production_value(
-                        g,
-                        pid,
-                        city.id,
-                        &Item::Unit { unit },
-                        plan,
-                        &counts,
-                    );
-                    if best.as_ref().is_none_or(
-                        |(old, old_city, old_unit): &(f64, u32, String)| {
+                    let value =
+                        self.production_value(g, pid, city.id, &Item::Unit { unit }, plan, &counts);
+                    if best
+                        .as_ref()
+                        .is_none_or(|(old, old_city, old_unit): &(f64, u32, String)| {
                             value > *old + 1e-9
                                 || ((value - *old).abs() < 1e-9
-                                    && (city.id, unit.as_str())
-                                        < (*old_city, old_unit.as_str()))
-                        },
-                    ) {
+                                    && (city.id, unit.as_str()) < (*old_city, old_unit.as_str()))
+                        })
+                    {
                         best = Some((value, city.id, unit.to_string()));
                     }
                 }
@@ -9955,7 +10043,9 @@ impl AdvancedAi {
                 pid,
                 &Action::Produce {
                     city,
-                    item: Item::Unit { unit: Name::new(&unit) },
+                    item: Item::Unit {
+                        unit: Name::new(&unit),
+                    },
                 },
             );
         }
@@ -10049,25 +10139,25 @@ impl AdvancedAi {
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
             // so `production_value` is only ever consulted on an idle city.
-            let committed: Option<(f64, Item)> = g.cities[&cid].queue.first().cloned().map(|item| {
-                let value = self.production_value(g, pid, cid, &item, plan, &counts);
-                (value, item)
-            });
+            let committed: Option<(f64, Item)> =
+                g.cities[&cid].queue.first().cloned().map(|item| {
+                    let value = self.production_value(g, pid, cid, &item, plan, &counts);
+                    (value, item)
+                });
             if committed.is_some() && self.preempt_margin <= 1.0 {
                 continue;
             }
             let best: Option<(f64, String, Item)> = {
                 let _memo = g.query_memo();
-                let items = g
-                    .producible_items(pid, cid)
-                    .into_iter()
-                    .filter(|item| {
-                        let Item::Project { project } = item else {
-                            return true;
-                        };
-                        let spec = &g.rules.projects[project];
-                        spec.repeatable
-                            || !g.cities.values().any(|city| {
+                let items =
+                    g.producible_items(pid, cid)
+                        .into_iter()
+                        .filter(|item| {
+                            let Item::Project { project } = item else {
+                                return true;
+                            };
+                            let spec = &g.rules.projects[project];
+                            spec.repeatable || !g.cities.values().any(|city| {
                                 city.owner == pid
                                     && city.id != cid
                                     && matches!(
@@ -10075,8 +10165,8 @@ impl AdvancedAi {
                                         Some(Item::Project { project: queued }) if queued == project
                                     )
                             })
-                    })
-                    .collect::<Vec<_>>();
+                        })
+                        .collect::<Vec<_>>();
                 let scores = self.production_values(g, pid, cid, &items, plan, counts);
                 let mut best = None;
                 for (item, score) in items.into_iter().zip(scores) {
@@ -10084,8 +10174,7 @@ impl AdvancedAi {
                     let replace = best
                         .as_ref()
                         .map(|(old, old_key, _): &(f64, String, Item)| {
-                            score > *old + 1e-9
-                                || ((score - *old).abs() < 1e-9 && key < *old_key)
+                            score > *old + 1e-9 || ((score - *old).abs() < 1e-9 && key < *old_key)
                         })
                         .unwrap_or(true);
                     if replace {
@@ -10161,8 +10250,7 @@ impl AdvancedAi {
                             }
                         }
                     }
-                    let is_settler =
-                        matches!(&item, Item::Unit { unit } if unit == "settler");
+                    let is_settler = matches!(&item, Item::Unit { unit } if unit == "settler");
                     counts.add_item(g, &item);
                     if adaptive_expansion_dispatch {
                         self.expansion_census.dispatch_productions += 1;
@@ -10256,7 +10344,10 @@ impl AdvancedAi {
             Item::District { district, .. } => crate::reasoning::plain(district.as_str()),
             Item::Wonder { wonder, .. } => crate::reasoning::plain(wonder.as_str()),
             Item::Repair { repair, .. } => {
-                format!("repairs to the {}", crate::reasoning::plain(repair.as_str()))
+                format!(
+                    "repairs to the {}",
+                    crate::reasoning::plain(repair.as_str())
+                )
             }
             Item::Project { project } => crate::reasoning::plain(project.as_str()),
             Item::Product { product } => crate::reasoning::plain(product.as_str()),
@@ -10465,8 +10556,7 @@ impl AdvancedAi {
             }) {
                 continue;
             }
-            let defense =
-                crate::game::effective_strength(g.unit_strength(enemy, true), enemy.hp);
+            let defense = crate::game::effective_strength(g.unit_strength(enemy, true), enemy.hp);
             best_defense = Some(best_defense.map_or(defense, |had: f64| had.min(defense)));
         }
         let Some(defense) = best_defense else {
@@ -10507,7 +10597,9 @@ impl AdvancedAi {
             self.religious_production(g, pid);
             return;
         }
-        let divine_right = g.players[pid].civics.contains(&crate::name!("divine_right"));
+        let divine_right = g.players[pid]
+            .civics
+            .contains(&crate::name!("divine_right"));
         let city_ids = g.player_city_ids(pid);
         let tagma = Item::Unit {
             unit: crate::name!("tagma"),
@@ -10525,7 +10617,8 @@ impl AdvancedAi {
         let mut committed_tagmata = existing_tagmata + queued_tagmata;
 
         for city in city_ids {
-            let has_hippodrome = g.city_has_district_family(&g.cities[&city], crate::name!("hippodrome"));
+            let has_hippodrome =
+                g.city_has_district_family(&g.cities[&city], crate::name!("hippodrome"));
             if !has_hippodrome {
                 let hippodrome = g
                     .producible_items(pid, city)
@@ -10537,8 +10630,7 @@ impl AdvancedAi {
                     let production = g.city_yields(city).production.max(1.0);
                     let remaining = g.item_remaining_cost_for_city(pid, city, &hippodrome);
                     let staged = !divine_right && remaining <= production * 1.15;
-                    let building_hippodrome =
-                        g.cities[&city].queue.first() == Some(&hippodrome);
+                    let building_hippodrome = g.cities[&city].queue.first() == Some(&hippodrome);
                     if divine_right || !staged {
                         if !building_hippodrome {
                             let _ = g.apply(
@@ -10568,9 +10660,9 @@ impl AdvancedAi {
                                     Item::Unit { unit }
                                         if g.rules.units[unit].promotion_class == "heavy_cavalry"
                                 );
-                                let value =
-                                    self.production_value(g, pid, city, &item, plan, &counts)
-                                        + if cavalry { 500.0 } else { 0.0 };
+                                let value = self
+                                    .production_value(g, pid, city, &item, plan, &counts)
+                                    + if cavalry { 500.0 } else { 0.0 };
                                 (value, std::cmp::Reverse(format!("{item:?}")), item)
                             })
                             .max_by(|left, right| {
@@ -10589,15 +10681,14 @@ impl AdvancedAi {
                 && committed_tagmata < target_tagmata
                 && g.can_produce(pid, city, &tagma)
                 && g.cities[&city].queue.first() != Some(&tagma)
-                && g
-                    .apply(
-                        pid,
-                        &Action::Produce {
-                            city,
-                            item: tagma.clone(),
-                        },
-                    )
-                    .is_ok()
+                && g.apply(
+                    pid,
+                    &Action::Produce {
+                        city,
+                        item: tagma.clone(),
+                    },
+                )
+                .is_ok()
             {
                 committed_tagmata += 1;
             }
@@ -10712,13 +10803,8 @@ impl AdvancedAi {
         if contestable == 0 {
             return 0.0;
         }
-        let expected_envoys = self.projected_stream_envoys(
-            g,
-            pid,
-            influence_per_turn,
-            starts_after,
-            remaining_turns,
-        );
+        let expected_envoys =
+            self.projected_stream_envoys(g, pid, influence_per_turn, starts_after, remaining_turns);
         // Three envoys establish first suzerainty. Extra income is still
         // useful for defense, but projecting beyond three per currently open
         // contest lets a very long score game crowd out every other system.
@@ -10754,10 +10840,7 @@ impl AdvancedAi {
 
         let city_ids = g.player_city_ids(pid);
         let diplomatic_city = city_ids.iter().copied().find(|city| {
-            g.city_has_district_family(
-                &g.cities[city],
-                crate::name!("diplomatic_quarter"),
-            )
+            g.city_has_district_family(&g.cities[city], crate::name!("diplomatic_quarter"))
         });
         let queued_district = city_ids.iter().any(|city| {
             g.cities[city].queue.iter().any(|item| {
@@ -10771,9 +10854,10 @@ impl AdvancedAi {
                 .any(|building| building == "consulate")
         });
         let consulate_queued = city_ids.iter().any(|city| {
-            g.cities[city].queue.iter().any(|item| {
-                matches!(item, Item::Building { building } if building == "consulate")
-            })
+            g.cities[city]
+                .queue
+                .iter()
+                .any(|item| matches!(item, Item::Building { building } if building == "consulate"))
         });
         let chancery_built = diplomatic_city.is_some_and(|city| {
             g.cities[&city]
@@ -10782,9 +10866,10 @@ impl AdvancedAi {
                 .any(|building| building == "chancery")
         });
         let chancery_queued = city_ids.iter().any(|city| {
-            g.cities[city].queue.iter().any(|item| {
-                matches!(item, Item::Building { building } if building == "chancery")
-            })
+            g.cities[city]
+                .queue
+                .iter()
+                .any(|item| matches!(item, Item::Building { building } if building == "chancery"))
         });
 
         // The target is the first incomplete stage. A stage already in any
@@ -10815,15 +10900,18 @@ impl AdvancedAi {
                 continue;
             }
             let production = g.city_yields(city).production.max(0.1);
-            for item in g.producible_items(pid, city).into_iter().filter(|item| match item {
-                Item::District { district, .. } => {
-                    target == "diplomatic_quarter" && district == target
-                }
-                Item::Building { building } => building == target,
-                _ => false,
-            }) {
-                let build_turns =
-                    g.item_remaining_cost_for_city(pid, city, &item) / production;
+            for item in g
+                .producible_items(pid, city)
+                .into_iter()
+                .filter(|item| match item {
+                    Item::District { district, .. } => {
+                        target == "diplomatic_quarter" && district == target
+                    }
+                    Item::Building { building } => building == target,
+                    _ => false,
+                })
+            {
+                let build_turns = g.item_remaining_cost_for_city(pid, city, &item) / production;
                 if build_turns > remaining_turns + f64::EPSILON {
                     continue;
                 }
@@ -10857,16 +10945,16 @@ impl AdvancedAi {
                     continue;
                 }
                 let key = format!("{item:?}");
-                let replace = best.as_ref().is_none_or(
-                    |(old_envoys, old_turns, old_city, old_key, _)| {
-                        total_envoys > *old_envoys + 1e-9
-                            || ((total_envoys - *old_envoys).abs() <= 1e-9
-                                && (stream_start < *old_turns - 1e-9
-                                    || ((stream_start - *old_turns).abs() <= 1e-9
-                                        && (city < *old_city
-                                            || (city == *old_city && key < *old_key)))))
-                    },
-                );
+                let replace =
+                    best.as_ref()
+                        .is_none_or(|(old_envoys, old_turns, old_city, old_key, _)| {
+                            total_envoys > *old_envoys + 1e-9
+                                || ((total_envoys - *old_envoys).abs() <= 1e-9
+                                    && (stream_start < *old_turns - 1e-9
+                                        || ((stream_start - *old_turns).abs() <= 1e-9
+                                            && (city < *old_city
+                                                || (city == *old_city && key < *old_key)))))
+                        });
                 if replace {
                     best = Some((total_envoys, stream_start, city, key, item));
                 }
@@ -11075,15 +11163,8 @@ impl AdvancedAi {
                 } else {
                     desired_military
                 };
-                let current = if naval {
-                    counts.naval
-                } else {
-                    land_military
-                };
-                if self.victory_planning
-                    && current >= desired.saturating_add(2)
-                    && !threatened
-                {
+                let current = if naval { counts.naval } else { land_military };
+                if self.victory_planning && current >= desired.saturating_add(2) && !threatened {
                     return -2_000.0;
                 }
                 let effective_power = spec.strength.max(spec.ranged_attack_strength())
@@ -11161,13 +11242,7 @@ impl AdvancedAi {
                             candidate.class == "military"
                                 && candidate.domain == spec.domain
                                 && candidate.has_ranged_attack() == spec.has_ranged_attack()
-                                && g.can_produce(
-                                    pid,
-                                    cid,
-                                    &Item::Unit {
-                                        unit: **name,
-                                    },
-                                )
+                                && g.can_produce(pid, cid, &Item::Unit { unit: **name })
                         })
                         .map(|(_, candidate)| {
                             candidate.strength.max(candidate.ranged_attack_strength())
@@ -11266,8 +11341,8 @@ impl AdvancedAi {
                     return -10_000.0;
                 }
                 if spec.wonder {
-                    let wonder_civ = !self.civ_blind
-                        && matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
+                    let wonder_civ =
+                        !self.civ_blind && matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
                     if threatened
                         || city.buildings.len() < 3
                         || turns > remaining_turns * 0.65
@@ -11309,8 +11384,7 @@ impl AdvancedAi {
                         && matches!(
                             plan.strategy,
                             GrandStrategy::Conquest | GrandStrategy::Recovery
-                        )
-                    {
+                        ) {
                         spec.district
                             .map(|district| g.district_family(district))
                             .and_then(|family| {
@@ -11331,16 +11405,16 @@ impl AdvancedAi {
                                             })
                                     })
                                     .count();
-                                let copies = g
-                                    .cities
-                                    .values()
-                                    .filter(|candidate| {
-                                        candidate.owner == pid
-                                            && candidate.buildings.iter().any(|built| {
-                                                g.building_is_family(*built, building)
-                                            })
-                                    })
-                                    .count();
+                                let copies =
+                                    g.cities
+                                        .values()
+                                        .filter(|candidate| {
+                                            candidate.owner == pid
+                                                && candidate.buildings.iter().any(|built| {
+                                                    g.building_is_family(*built, building)
+                                                })
+                                        })
+                                        .count();
                                 let debt = districts.saturating_sub(copies);
                                 (debt > 0).then_some(base.0 + base.1 * debt as f64)
                             })
@@ -11667,8 +11741,8 @@ impl AdvancedAi {
             }
             Item::Wonder { wonder, .. } => {
                 let spec = &g.rules.wonders[wonder];
-                let wonder_civ = !self.civ_blind
-                    && matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
+                let wonder_civ =
+                    !self.civ_blind && matches!(g.players[pid].civ.as_str(), "Egypt" | "China");
                 let already_queued = g.cities.values().any(|other| {
                     matches!(
                         other.queue.first(),
@@ -12180,9 +12254,8 @@ impl AdvancedAi {
         let horizon = g.standard_duration(SETTLEMENT_FORECAST_HORIZON) as f64;
         let growth_readiness = forecast.turns_to_four.map_or_else(
             || {
-                -4.0
-                    * SETTLEMENT_FORECAST_POPULATION
-                        .saturating_sub(forecast.reached_population) as f64
+                -4.0 * SETTLEMENT_FORECAST_POPULATION.saturating_sub(forecast.reached_population)
+                    as f64
             },
             |turns| 8.0 * (1.0 - turns / horizon.max(1.0)).max(0.0),
         );
@@ -12192,10 +12265,8 @@ impl AdvancedAi {
             .take(SETTLEMENT_FORECAST_POPULATION)
             .filter(|tile| tile.yields.food >= 2.0 || tile.yields.production >= 2.0)
             .count() as f64;
-        let mut value = forecast.score
-            + (housing - 2.0) * 4.0
-            + growth_readiness
-            + dependable_jobs * 0.75;
+        let mut value =
+            forecast.score + (housing - 2.0) * 4.0 + growth_readiness + dependable_jobs * 0.75;
         value += self.settlement_adjacency_value(g, pid, pos);
 
         let enemy_distance = g
@@ -12239,22 +12310,24 @@ impl AdvancedAi {
         visible: &TileBits,
         discount_support: bool,
     ) -> f64 {
-        let escorted = discount_support && uid
-            .and_then(|unit| g.units.get(&unit))
-            .and_then(|unit| unit.linked_to)
-            .and_then(|escort| g.units.get(&escort))
-            .is_some_and(|escort| {
-                escort.owner == pid
-                    && g.rules.units[escort.kind].class == "military"
-                    && g.rules.units[escort.kind].domain.as_deref() != Some("air")
+        let escorted = discount_support
+            && uid
+                .and_then(|unit| g.units.get(&unit))
+                .and_then(|unit| unit.linked_to)
+                .and_then(|escort| g.units.get(&escort))
+                .is_some_and(|escort| {
+                    escort.owner == pid
+                        && g.rules.units[escort.kind].class == "military"
+                        && g.rules.units[escort.kind].domain.as_deref() != Some("air")
+                });
+        let nearby_escort = discount_support
+            && g.units.values().any(|unit| {
+                unit.owner == pid
+                    && g.rules.units[unit.kind].class == "military"
+                    && g.rules.units[unit.kind].domain.as_deref() != Some("air")
+                    && g.rules.units[unit.kind].domain.as_deref() != Some("sea")
+                    && g.wdist(unit.pos, pos) <= 1
             });
-        let nearby_escort = discount_support && g.units.values().any(|unit| {
-            unit.owner == pid
-                && g.rules.units[unit.kind].class == "military"
-                && g.rules.units[unit.kind].domain.as_deref() != Some("air")
-                && g.rules.units[unit.kind].domain.as_deref() != Some("sea")
-                && g.wdist(unit.pos, pos) <= 1
-        });
         let mut risk = 0.0;
         for unit in g.units.values() {
             if unit.owner == pid
@@ -12275,8 +12348,8 @@ impl AdvancedAi {
                 1
             };
             let approach_range = attack_range + spec.moves.ceil() as i32;
-            let strength = crate::game::effective_strength(g.unit_strength(unit, false), unit.hp)
-                .max(1.0);
+            let strength =
+                crate::game::effective_strength(g.unit_strength(unit, false), unit.hp).max(1.0);
             if distance <= attack_range {
                 risk += 34.0 + strength * 0.45;
             } else if distance <= approach_range {
@@ -12284,10 +12357,7 @@ impl AdvancedAi {
             }
         }
         for city in g.cities.values() {
-            if city.owner == pid
-                || !g.is_at_war(pid, city.owner)
-                || !g.sees(visible, city.pos)
-            {
+            if city.owner == pid || !g.is_at_war(pid, city.owner) || !g.sees(visible, city.pos) {
                 continue;
             }
             let distance = g.wdist(city.pos, pos);
@@ -12312,13 +12382,7 @@ impl AdvancedAi {
         }
     }
 
-    fn settlement_safety_penalty(
-        &self,
-        g: &Game,
-        pid: usize,
-        pos: Pos,
-        visible: &TileBits,
-    ) -> f64 {
+    fn settlement_safety_penalty(&self, g: &Game, pid: usize, pos: Pos, visible: &TileBits) -> f64 {
         let support_distance = g
             .player_city_ids(pid)
             .into_iter()
@@ -12355,13 +12419,7 @@ impl AdvancedAi {
     /// attack envelope. In that case try a legal lower-risk sidestep that
     /// still makes progress; if none exists, hold and let the target search
     /// reconsider rather than donating the settler to the threat.
-    fn settler_step_toward_safe(
-        &self,
-        g: &mut Game,
-        pid: usize,
-        uid: u32,
-        target: Pos,
-    ) -> bool {
+    fn settler_step_toward_safe(&self, g: &mut Game, pid: usize, uid: u32, target: Pos) -> bool {
         self.settlement_unit_step_toward_safe(g, pid, uid, Some(uid), false, target)
     }
 
@@ -12410,8 +12468,7 @@ impl AdvancedAi {
                     return false;
                 }
                 let spec = &g.rules.units[unit.kind];
-                if spec.class != "military"
-                    || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                if spec.class != "military" || matches!(spec.domain.as_deref(), Some("sea" | "air"))
                 {
                     return false;
                 }
@@ -12421,15 +12478,11 @@ impl AdvancedAi {
                     1
                 };
                 let attack_reach = attack_range + spec.moves.ceil() as i32;
-                let attacker = crate::game::effective_strength(
-                    g.unit_strength(unit, false),
-                    unit.hp,
-                );
+                let attacker =
+                    crate::game::effective_strength(g.unit_strength(unit, false), unit.hp);
                 let escort = &g.units[&moving_uid];
-                let defender = crate::game::effective_strength(
-                    g.unit_strength(escort, false),
-                    escort.hp,
-                );
+                let defender =
+                    crate::game::effective_strength(g.unit_strength(escort, false), escort.hp);
                 g.wdist(unit.pos, next) <= attack_reach && attacker > defender * 1.5
             });
         let planned_risk = self.settlement_tile_risk_with_support(
@@ -12466,21 +12519,14 @@ impl AdvancedAi {
                     !formation_outmatched,
                 );
                 let progress = current_distance - g.wdist(position, target);
-                let score = progress as f64 * 8.0
-                    - risk * 1.5
-                    - g.step_cost(current, position) * 0.5;
+                let score =
+                    progress as f64 * 8.0 - risk * 1.5 - g.step_cost(current, position) * 0.5;
                 (score, risk, position, progress)
             })
             .collect::<Vec<_>>();
-        alternatives.sort_by(|a, b| {
-            b.0.partial_cmp(&a.0)
-                .unwrap()
-                .then(a.2.cmp(&b.2))
-        });
+        alternatives.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap().then(a.2.cmp(&b.2)));
         for (_, risk, position, progress) in alternatives {
-            if risk + 5.0 >= planned_risk
-                || (progress < 0 && risk > planned_risk * 0.5)
-            {
+            if risk + 5.0 >= planned_risk || (progress < 0 && risk > planned_risk * 0.5) {
                 continue;
             }
             if self.base.path_move(g, pid, moving_uid, position) {
@@ -12608,9 +12654,9 @@ impl AdvancedAi {
                 Some("sea" | "air")
             )
         });
-        let has_naval_force = military_units.iter().any(|unit| {
-            g.rules.units[g.units[unit].kind].domain.as_deref() == Some("sea")
-        });
+        let has_naval_force = military_units
+            .iter()
+            .any(|unit| g.rules.units[g.units[unit].kind].domain.as_deref() == Some("sea"));
         // With no army yet, value prospective land staging rather than
         // declaring every objective sealed. Once forces exist, only count
         // adjacent tiles that the relevant land or naval arm can exploit.
@@ -12765,13 +12811,7 @@ impl AdvancedAi {
     /// `hex::offset_to_axial`. Getting this wrong is silent — both are pairs of small
     /// integers — and it cost this project a run that reported "no legal revealed
     /// site" on a map with 323 revealed plots.
-    pub fn settle_ranking(
-        &self,
-        g: &Game,
-        pid: usize,
-        from: Pos,
-        radius: i32,
-    ) -> Vec<(Pos, f64)> {
+    pub fn settle_ranking(&self, g: &Game, pid: usize, from: Pos, radius: i32) -> Vec<(Pos, f64)> {
         self.settle_sites(g, pid, from, radius)
     }
 
@@ -12780,7 +12820,11 @@ impl AdvancedAi {
         let mut emergency_sites = Vec::new();
         let visible = self.battlefront_visibility(g, pid);
         let distance_penalty = if self.settlement_safety {
-            if radius > 12 { 0.78 } else { 1.25 }
+            if radius > 12 {
+                0.78
+            } else {
+                1.25
+            }
         } else if radius > 12 {
             0.45
         } else {
@@ -12862,11 +12906,7 @@ impl AdvancedAi {
             })
             .collect::<Vec<_>>();
         if routed.is_empty() {
-            return BasicAi::first_reachable_settle_site(
-                g,
-                uid,
-                &candidates,
-            );
+            return BasicAi::first_reachable_settle_site(g, uid, &candidates);
         }
         routed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         routed.into_iter().next()
@@ -13092,9 +13132,9 @@ impl AdvancedAi {
             return true;
         }
         if let Some(escort) = g.units[&uid].linked_to.filter(|peer| {
-            g.units.get(peer).is_some_and(|escort| {
-                g.rules.units[escort.kind].domain.as_deref() == Some("sea")
-            })
+            g.units
+                .get(peer)
+                .is_some_and(|escort| g.rules.units[escort.kind].domain.as_deref() == Some("sea"))
         }) {
             if g.wdist(current, target) == 1 {
                 return g.apply(pid, &Action::UnlinkUnits { unit: escort }).is_ok();
@@ -13397,7 +13437,8 @@ impl AdvancedAi {
         let Some((_, city)) = self.best_trade_route_destination(g, pid, origin, strategy) else {
             return false;
         };
-        g.apply(pid, &Action::TradeRoute { unit: uid, city }).is_ok()
+        g.apply(pid, &Action::TradeRoute { unit: uid, city })
+            .is_ok()
     }
 
     fn best_trade_route_destination(
@@ -13951,7 +13992,9 @@ impl AdvancedAi {
                                 g.rules.is_water(tile)
                                     && g.rules.is_passable(tile)
                                     && (tile.terrain != "ocean"
-                                        || g.players[pid].techs.contains(&crate::name!("cartography")))
+                                        || g.players[pid]
+                                            .techs
+                                            .contains(&crate::name!("cartography")))
                             })
                         })
                         .min_by_key(|pos| (g.wdist(anchor, *pos), *pos))
@@ -14553,24 +14596,17 @@ impl AdvancedAi {
             if self.base.tactical_strategy {
                 value -= self.base.w.mv_threat
                     * threat_caution
-                    * self.base.projected_counter_damage(
-                        g,
-                        uid,
-                        tile,
-                        &projected_hostiles,
-                    );
+                    * self
+                        .base
+                        .projected_counter_damage(g, uid, tile, &projected_hostiles);
             } else {
-                for enemy in g
-                    .units
-                    .values()
-                    .filter(|other| {
-                        enemies.contains(&other.owner)
-                            && visible.as_ref().is_none_or(|visible| {
-                                g.sees(visible, other.pos)
-                                    && self.battlefront_unit_visible(g, pid, other.id)
-                            })
-                    })
-                {
+                for enemy in g.units.values().filter(|other| {
+                    enemies.contains(&other.owner)
+                        && visible.as_ref().is_none_or(|visible| {
+                            g.sees(visible, other.pos)
+                                && self.battlefront_unit_visible(g, pid, other.id)
+                        })
+                }) {
                     let enemy_spec = &g.rules.units[enemy.kind];
                     if enemy_spec.class != "military"
                         || (!enemy_spec.is_melee_capable() && !enemy_spec.has_ranged_attack())
@@ -14596,7 +14632,8 @@ impl AdvancedAi {
                     }
                 }
             }
-            value += self.strike_opening_value(g, pid, uid, tile, group, &enemies, visible.as_ref());
+            value +=
+                self.strike_opening_value(g, pid, uid, tile, group, &enemies, visible.as_ref());
             if self.ranged_tile_is_blind(g, pid, uid, tile, &enemies, visible.as_ref()) {
                 value -= BLIND_RANGED_TILE;
                 Self::note_blind_tile();
@@ -14819,8 +14856,7 @@ impl AdvancedAi {
                 if moved.apply(enemy, &movement).is_err() {
                     continue;
                 }
-                let followups =
-                    Self::forcing_attacks_to(&moved, enemy, victim_pos, Some(attacker));
+                let followups = Self::forcing_attacks_to(&moved, enemy, victim_pos, Some(attacker));
                 for followup in followups {
                     let mut branch = moved.clone();
                     if branch.apply(enemy, &followup).is_err() {
@@ -14882,13 +14918,7 @@ impl AdvancedAi {
                 .into_iter()
                 .map(|(immediate, _, branch)| {
                     immediate
-                        + Self::forcing_reply_line(
-                            work_pool,
-                            &branch,
-                            enemy,
-                            victim,
-                            depth - 1,
-                        )
+                        + Self::forcing_reply_line(work_pool, &branch, enemy, victim, depth - 1)
                 })
                 .collect(),
         };
@@ -14948,8 +14978,7 @@ impl AdvancedAi {
             .then(|| after.city_at(target))
             .flatten()
             .filter(|city| {
-                after.cities[city].owner != pid
-                    && after.is_at_war(pid, after.cities[city].owner)
+                after.cities[city].owner != pid && after.is_at_war(pid, after.cities[city].owner)
             });
         let target_encampment = target_city
             .is_none()
@@ -15089,8 +15118,10 @@ impl AdvancedAi {
         let Ok(tally) = Self::illegal_attack_tally().lock() else {
             return Vec::new();
         };
-        let mut rows: Vec<(String, usize)> =
-            tally.iter().map(|(why, count)| (why.clone(), *count)).collect();
+        let mut rows: Vec<(String, usize)> = tally
+            .iter()
+            .map(|(why, count)| (why.clone(), *count))
+            .collect();
         rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         rows
     }
@@ -15162,13 +15193,7 @@ impl AdvancedAi {
     }
 
     fn forcing_reply_penalty(&self, g: &Game, pid: usize, uid: u32, action: &Action) -> f64 {
-        Self::forcing_reply_penalty_owned(
-            self.work_pool.clone(),
-            g.clone(),
-            pid,
-            uid,
-            action,
-        )
+        Self::forcing_reply_penalty_owned(self.work_pool.clone(), g.clone(), pid, uid, action)
     }
 
     /// Evaluate an air strike by making it on a cloned position. This captures
@@ -15606,7 +15631,15 @@ impl AdvancedAi {
         };
         let here = g.units[&uid].pos;
         if let Some(target_unit) = condemnable(g, here) {
-            if g.apply(pid, &Action::CondemnHeretic { unit: uid, target_unit }).is_ok() {
+            if g.apply(
+                pid,
+                &Action::CondemnHeretic {
+                    unit: uid,
+                    target_unit,
+                },
+            )
+            .is_ok()
+            {
                 return true;
             }
         }
@@ -15632,7 +15665,13 @@ impl AdvancedAi {
             return false;
         }
         if let Some(target_unit) = condemnable(g, to) {
-            let _ = g.apply(pid, &Action::CondemnHeretic { unit: uid, target_unit });
+            let _ = g.apply(
+                pid,
+                &Action::CondemnHeretic {
+                    unit: uid,
+                    target_unit,
+                },
+            );
         }
         true
     }
@@ -15701,9 +15740,7 @@ impl AdvancedAi {
                            "the formation failed to get closer to {target:?}; the site will be \
                             reconsidered after a cooldown"; target);
                     let unlinked = g.apply(pid, &Action::UnlinkUnits { unit: uid }).is_ok();
-                    return Some(
-                        moved || unlinked || self.base.fortify_or_stop(g, pid, uid),
-                    );
+                    return Some(moved || unlinked || self.base.fortify_or_stop(g, pid, uid));
                 }
             }
             return Some(moved || self.base.fortify_or_stop(g, pid, uid));
@@ -15817,8 +15854,8 @@ impl AdvancedAi {
         uid: u32,
         plan: &StrategicPlan,
     ) -> bool {
-        let decline_settlers = self.counts(g, pid).settlers > 0
-            || !self.base.has_practical_settle_site(g, pid);
+        let decline_settlers =
+            self.counts(g, pid).settlers > 0 || !self.base.has_practical_settle_site(g, pid);
         self.advanced_military_step_with_decline(g, pid, uid, plan, decline_settlers)
     }
 
@@ -15838,9 +15875,7 @@ impl AdvancedAi {
             && g.nbrs(unit.pos).into_iter().any(|position| {
                 g.units_at(position).iter().any(|other| {
                     let other = &g.units[other];
-                    other.owner != pid
-                        && g.is_at_war(pid, other.owner)
-                        && other.kind == "settler"
+                    other.owner != pid && g.is_at_war(pid, other.owner) && other.kind == "settler"
                 })
             });
         if !unwanted_settler_adjacent
@@ -16049,8 +16084,8 @@ impl AdvancedAi {
         {
             let threshold = self.base.attack_threshold(g, uid, pos);
             let ranged = matches!(&action, Action::Ranged { .. });
-            let mut score = attack_value - threshold
-                + self.base.tactical_action_bonus(g, uid, pos, ranged);
+            let mut score =
+                attack_value - threshold + self.base.tactical_action_bonus(g, uid, pos, ranged);
             if plan
                 .target_city
                 .is_some_and(|cid| g.cities.get(&cid).is_some_and(|c| c.pos == pos))
@@ -16066,8 +16101,7 @@ impl AdvancedAi {
             let caution = group
                 .as_ref()
                 .map(|orders| {
-                    self.base.w.local_superiority
-                        * (1.0 - orders.local_strength_ratio).max(0.0)
+                    self.base.w.local_superiority * (1.0 - orders.local_strength_ratio).max(0.0)
                 })
                 .unwrap_or(0.0);
             score -= caution;
@@ -16078,7 +16112,12 @@ impl AdvancedAi {
                 .map(|(old, bp, _, _)| score > *old || (score == *old && pos < *bp))
                 .unwrap_or(true)
             {
-                best = Some((score, pos, action, [attack_value, threshold, caution, reply]));
+                best = Some((
+                    score,
+                    pos,
+                    action,
+                    [attack_value, threshold, caution, reply],
+                ));
             }
         }
         if let Some((score, at, action, parts)) = best {
@@ -16094,17 +16133,16 @@ impl AdvancedAi {
                         .city_at(at)
                         .and_then(|cid| g.cities.get(&cid))
                         .map(|city| city.name.clone())
-                        .or_else(|| {
-                            g.units_at(at)
-                                .first()
-                                .map(|oid| plain(&g.units[oid].kind))
-                        })
+                        .or_else(|| g.units_at(at).first().map(|oid| plain(&g.units[oid].kind)))
                         .unwrap_or_else(|| format!("{at:?}"));
                     let orders = group
                         .as_ref()
                         .map(|orders| {
-                            format!("{} group at {:.2} local strength",
-                                    orders.posture.as_str(), orders.local_strength_ratio)
+                            format!(
+                                "{} group at {:.2} local strength",
+                                orders.posture.as_str(),
+                                orders.local_strength_ratio
+                            )
                         })
                         .unwrap_or_else(|| "unattached".to_string());
                     think!(self.journal(), Military, Detail,
@@ -16141,9 +16179,7 @@ impl AdvancedAi {
                     .city_at(at)
                     .and_then(|cid| g.cities.get(&cid))
                     .map(|city| city.name.clone())
-                    .or_else(|| {
-                        g.units_at(at).first().map(|oid| plain(&g.units[oid].kind))
-                    })
+                    .or_else(|| g.units_at(at).first().map(|oid| plain(&g.units[oid].kind)))
                     .unwrap_or_else(|| format!("{at:?}"));
                 think!(self.journal(), Military, Detail,
                        "{} declines {defender}", plain(&unit.kind);
@@ -16212,14 +16248,7 @@ impl AdvancedAi {
                 .or_else(|| self.base.nearest_enemy(g, pid, uid, &enemies))
         };
         if let Some(orders) = &group {
-            return self.coordinated_tactical_step(
-                g,
-                pid,
-                uid,
-                orders,
-                &enemies,
-                decline_settlers,
-            );
+            return self.coordinated_tactical_step(g, pid, uid, orders, &enemies, decline_settlers);
         }
         match campaign {
             Some(target) => self
@@ -16372,7 +16401,9 @@ impl AdvancedAi {
                 let b = &g.units[with];
                 let valid_formation = match (a.formation, b.formation) {
                     (0, 0) => g.players[pid].civics.contains(&crate::name!("nationalism")),
-                    (0, 1) | (1, 0) => g.players[pid].civics.contains(&crate::name!("mobilization")),
+                    (0, 1) | (1, 0) => g.players[pid]
+                        .civics
+                        .contains(&crate::name!("mobilization")),
                     _ => false,
                 };
                 if a.kind != b.kind
@@ -16734,13 +16765,7 @@ impl AdvancedAi {
                 _ if self.victory_planning && class == "religious" => {
                     self.advanced_religious_step(g, pid, uid, religious_offensive)
                 }
-                _ => self.advanced_military_step_with_decline(
-                    g,
-                    pid,
-                    uid,
-                    plan,
-                    decline_settlers,
-                ),
+                _ => self.advanced_military_step_with_decline(g, pid, uid, plan, decline_settlers),
             };
             if !acted {
                 break;
@@ -16829,9 +16854,9 @@ impl AdvancedAi {
                     // available to the general planner can damage, remove,
                     // convert, or alter the shared map and therefore ends the
                     // immutable-position batch after it is committed.
-                    Action::AirRebase { .. } | Action::AirPatrol { .. } | Action::Fortify { .. } => {
-                        false
-                    }
+                    Action::AirRebase { .. }
+                    | Action::AirPatrol { .. }
+                    | Action::Fortify { .. } => false,
                     _ => true,
                 };
                 if g.apply(pid, action).is_err() {
@@ -16935,8 +16960,8 @@ impl AdvancedAi {
         // Settlement feasibility is an empire/map question, not a unit
         // question. It used to rescan the known world and recompute empire
         // counts up to eight times for every military unit in the same turn.
-        let decline_settlers = self.counts(g, pid).settlers > 0
-            || !self.base.has_practical_settle_site(g, pid);
+        let decline_settlers =
+            self.counts(g, pid).settlers > 0 || !self.base.has_practical_settle_site(g, pid);
         // Decide the engagement as one problem before any unit commits. Units
         // this resolves keep their own movement logic below; only the choice
         // of what to attack is taken out of the greedy per-unit path.
@@ -17139,9 +17164,8 @@ impl AdvancedAi {
             } else {
                 source.pop
             };
-            let mut pressure = source_pop as f64
-                * (10 - distance) as f64
-                * age_factor(source_owner);
+            let mut pressure =
+                source_pop as f64 * (10 - distance) as f64 * age_factor(source_owner);
             if source.is_capital && source.original_owner == source_owner {
                 pressure += source_pop as f64;
             }
@@ -17181,9 +17205,7 @@ impl AdvancedAi {
             .players
             .iter()
             .filter(|candidate| {
-                !candidate.is_minor
-                    && !candidate.is_barbarian
-                    && !g.same_team(pid, candidate.id)
+                !candidate.is_minor && !candidate.is_barbarian && !g.same_team(pid, candidate.id)
             })
             .all(|original_owner| {
                 if original_owner.id == pid {
@@ -17200,8 +17222,7 @@ impl AdvancedAi {
             return false;
         }
 
-        let loyalty_delta =
-            Self::population_loyalty_delta_with_capture(g, pid, city_id, true);
+        let loyalty_delta = Self::population_loyalty_delta_with_capture(g, pid, city_id, true);
         let turns_to_flip = if loyalty_delta < 0.0 {
             50.0 / -loyalty_delta
         } else {
@@ -17410,9 +17431,8 @@ impl AdvancedAi {
                         value += 35.0;
                     }
                     if hopeless_occupation {
-                        value -= 240.0
-                            + -loyalty_delta * 18.0
-                            + (8.0 - turns_to_flip).max(0.0) * 30.0;
+                        value -=
+                            240.0 + -loyalty_delta * 18.0 + (8.0 - turns_to_flip).max(0.0) * 30.0;
                     }
                 }
                 Action::RazeCity { .. } => {
@@ -17650,10 +17670,8 @@ impl AdvancedAi {
             if self.victory_planning && plan.strategy == GrandStrategy::Culture {
                 self.culture_spending(g, pid);
             }
-            let adaptive_expansion_dispatch = self.adaptive_expansion_dispatches(
-                &plan,
-                active_victory_target,
-            );
+            let adaptive_expansion_dispatch =
+                self.adaptive_expansion_dispatches(&plan, active_victory_target);
             if plan.strategy == GrandStrategy::Recovery
                 || active_victory_target.is_some()
                 || adaptive_expansion_dispatch
@@ -17819,10 +17837,7 @@ mod tests {
     #[test]
     fn production_advanced_scales_cities_development_and_home_defense_together() {
         let production = AdvancedAi::new();
-        assert_eq!(
-            production.city_target_floor,
-            PRODUCTION_CITY_TARGET_FLOOR
-        );
+        assert_eq!(production.city_target_floor, PRODUCTION_CITY_TARGET_FLOOR);
         assert!(production.plan_city_target);
         assert_eq!(production.base.w.city_target, 4.0);
         assert_eq!(production.base.w.builder_per_city, 0.5);
@@ -17870,12 +17885,14 @@ mod tests {
             .iter()
             .filter(|(_, tile)| game.rules.is_passable(tile) && !game.rules.is_water(tile))
             .find_map(|(pos, _)| {
-                game.nbrs(*pos).into_iter().find(|next| {
-                    game.map.get(*next).is_some_and(|tile| {
-                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                game.nbrs(*pos)
+                    .into_iter()
+                    .find(|next| {
+                        game.map.get(*next).is_some_and(|tile| {
+                            game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                        })
                     })
-                })
-                .map(|next| (*pos, next))
+                    .map(|next| (*pos, next))
             })
             .expect("map has adjacent land");
         game.spawn_test_unit("settler", 0, civilian_step);
@@ -18193,7 +18210,13 @@ mod tests {
             vec![crate::name!("library"), crate::name!("university")];
         // Everything Chemistry needs except Sanitation, exactly as the live
         // empire held it.
-        for tech in ["writing", "education", "scientific_theory", "economics", "replaceable_parts"] {
+        for tech in [
+            "writing",
+            "education",
+            "scientific_theory",
+            "economics",
+            "replaceable_parts",
+        ] {
             game.players[0].techs.insert(Name::new(tech));
         }
 
@@ -18204,7 +18227,10 @@ mod tests {
             "a Campus with a University and no Research Lab wants Chemistry"
         );
         assert!(
-            !game.available_techs(0).iter().any(|tech| tech == "chemistry"),
+            !game
+                .available_techs(0)
+                .iter()
+                .any(|tech| tech == "chemistry"),
             "and the argmax cannot see it: Chemistry is not an available tech"
         );
         assert!(
@@ -18319,7 +18345,9 @@ mod tests {
         ai.refresh_research_weight(&game);
         ai.strategic_policies(&mut game, 0, GrandStrategy::Religion);
         assert!(
-            !game.players[0].policies.contains(&crate::name!("rationalism")),
+            !game.players[0]
+                .policies
+                .contains(&crate::name!("rationalism")),
             "Rationalism multiplies Campus buildings this empire does not have"
         );
     }
@@ -18510,11 +18538,9 @@ mod tests {
             "the new unit ceiling stays outside the advanced_v1 evaluation anchor"
         );
         let library_value = ai.production_value(&game, 0, city, &library, &plan, &counts);
-        let amphitheater_value =
-            ai.production_value(&game, 0, city, &amphitheater, &plan, &counts);
+        let amphitheater_value = ai.production_value(&game, 0, city, &amphitheater, &plan, &counts);
         assert!(
-            library_value
-                > ai.production_value(&game, 0, city, &campus_project, &plan, &counts),
+            library_value > ai.production_value(&game, 0, city, &campus_project, &plan, &counts),
             "the missing first Campus building must beat a quiet repeatable project"
         );
         assert!(
@@ -18533,11 +18559,15 @@ mod tests {
         game.players[0].policies.clear();
         ai.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
         assert!(
-            game.players[0].policies.contains(&crate::name!("rationalism")),
+            game.players[0]
+                .policies
+                .contains(&crate::name!("rationalism")),
             "a saturated army should use an economic slot to multiply Campus buildings"
         );
         assert!(
-            game.players[0].policies.contains(&crate::name!("grand_opera")),
+            game.players[0]
+                .policies
+                .contains(&crate::name!("grand_opera")),
             "a saturated army should use the other economic slot for Theater buildings"
         );
     }
@@ -18657,7 +18687,8 @@ mod tests {
         // None and only the power gap can fire the arm.
         let rival_home = game.cities[&game.player_city_ids(1)[0]].pos;
         for position in game.wdisk(rival_home, 3) {
-            if game.units_at(position).is_empty() && !game.rules.is_water(&game.map.tiles[&position])
+            if game.units_at(position).is_empty()
+                && !game.rules.is_water(&game.map.tiles[&position])
             {
                 game.spawn_test_unit("swordsman", 1, position);
             }
@@ -18862,16 +18893,14 @@ mod tests {
         let picket = game.spawn_test_unit("scout", 0, picket_pos);
         ai.advanced_wmd_strikes(&mut game, 0, &plan);
         assert_eq!(
-            game.players[0].counters["project_effect:thermonuclear_devices"],
-            1,
+            game.players[0].counters["project_effect:thermonuclear_devices"], 1,
             "no launch while a friendly unit stands in the blast"
         );
 
         game.remove_unit(picket);
         ai.advanced_wmd_strikes(&mut game, 0, &plan);
         assert_eq!(
-            game.players[0].counters["project_effect:thermonuclear_devices"],
-            0,
+            game.players[0].counters["project_effect:thermonuclear_devices"], 0,
             "the hard city draws the device once the blast is clean"
         );
         assert!(game.map.tiles[&target].fallout_until > game.turn);
@@ -18999,7 +19028,10 @@ mod tests {
         let mut ai = AdvancedAi::new();
         assert!(ai.advanced_settler_step(&mut g, 0, settler));
         let chosen = ai.settler_targets[&settler];
-        assert!(g.wdist(chosen, target) <= 1, "the target stays on the useful island");
+        assert!(
+            g.wdist(chosen, target) <= 1,
+            "the target stays on the useful island"
+        );
         assert!(g.wdist(source, chosen) > 8, "the colony remains strategic");
         assert!(g
             .map
@@ -19525,8 +19557,7 @@ mod tests {
         game.current = 0;
         game.turn = 60;
         game.record_contact(0, 1);
-        game.apply(0, &Action::DeclareWar { player: 1 })
-            .unwrap();
+        game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
         game.turn = game
             .peace_available_at(0, 1)
             .expect("the new war has a mandatory minimum");
@@ -19550,9 +19581,10 @@ mod tests {
             game.is_at_war(0, 1),
             "an outmatched defender cannot impose white peace unilaterally"
         );
-        assert!(game.pending_deals.iter().any(|deal| {
-            deal.from == 1 && deal.to == 0 && deal.peace
-        }));
+        assert!(game
+            .pending_deals
+            .iter()
+            .any(|deal| { deal.from == 1 && deal.to == 0 && deal.peace }));
 
         let winning_campaign = StrategicPlan {
             // A threatened home city can temporarily classify even a much
@@ -20173,8 +20205,7 @@ mod tests {
             .next()
             .expect("test map has a legal second-city site");
         let settler = game.spawn_test_unit("settler", 0, second_site);
-        game.apply(0, &Action::FoundCity { unit: settler })
-            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
 
         for unit in game.units.keys().copied().collect::<Vec<_>>() {
             game.remove_unit(unit);
@@ -20343,7 +20374,9 @@ mod tests {
                 .into_iter()
                 .find(|unit| religious.units[unit].kind == "settler")
                 .unwrap();
-            religious.apply(pid, &Action::FoundCity { unit: settler }).unwrap();
+            religious
+                .apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
         }
         religious.current = 0;
         religious.turn = 60;
@@ -20582,10 +20615,7 @@ mod tests {
         let mut weighed = AdvancedAi::new();
         weighed.settlement_safety = false;
         weighed.defensible_sites = true;
-        assert!(
-            !plain.defensible_sites,
-            "the measurement flag ships off"
-        );
+        assert!(!plain.defensible_sites, "the measurement flag ships off");
 
         // With no camp anywhere, only the isolation term can fire.
         assert!(game.barb_camps.is_empty());
@@ -20607,11 +20637,7 @@ mod tests {
         let camp = *game
             .nbrs(home)
             .iter()
-            .find(|pos| {
-                game.map
-                    .get(**pos)
-                    .is_some_and(|t| !game.rules.is_water(t))
-            })
+            .find(|pos| game.map.get(**pos).is_some_and(|t| !game.rules.is_water(t)))
             .expect("a founded city has a passable neighbour");
         game.barb_camps.insert(camp, 0);
         assert!(
@@ -20802,8 +20828,14 @@ mod tests {
         let ai = AdvancedAi::new();
         let spike = ai.settlement_growth_forecast(&spike, 0, center);
         let broad = ai.settlement_growth_forecast(&broad, 0, center);
-        assert!(spike.reached_population < 4, "one tile should stall: {spike:?}");
-        assert_eq!(broad.reached_population, 4, "four jobs should mature: {broad:?}");
+        assert!(
+            spike.reached_population < 4,
+            "one tile should stall: {spike:?}"
+        );
+        assert_eq!(
+            broad.reached_population, 4,
+            "four jobs should mature: {broad:?}"
+        );
         assert!(
             broad.score > spike.score,
             "a useful four-pop city should outrank a one-tile mirage: broad={broad:?}, spike={spike:?}"
@@ -20880,9 +20912,9 @@ mod tests {
             .nbrs(origin)
             .into_iter()
             .find(|position| {
-                game.map.get(*position).is_some_and(|tile| {
-                    !game.rules.is_water(tile) && game.rules.is_passable(tile)
-                })
+                game.map
+                    .get(*position)
+                    .is_some_and(|tile| !game.rules.is_water(tile) && game.rules.is_passable(tile))
             })
             .expect("the start has a land neighbor");
         let target = game
@@ -21580,7 +21612,13 @@ mod tests {
     #[test]
     fn competitive_religious_opening_produces_multiple_founders() {
         let mut game = Game::new_full(
-            4, 24, 16, crate::rng::fixture_seed("PROPHET", 76_106), 110, 0, false,
+            4,
+            24,
+            16,
+            crate::rng::fixture_seed("PROPHET", 76_106),
+            110,
+            0,
+            false,
         );
         let mut ais = AdvancedAi::fleet(&game);
         run_game(&mut game, &mut ais);
@@ -21599,7 +21637,9 @@ mod tests {
                     player.techs.contains(&crate::name!("astrology")),
                     game.player_city_ids(player.id)
                         .iter()
-                        .filter(|city| game.cities[city].districts.contains_key(crate::name!("holy_site")))
+                        .filter(|city| game.cities[city]
+                            .districts
+                            .contains_key(crate::name!("holy_site")))
                         .count(),
                 ))
                 .collect::<Vec<_>>()
@@ -21840,7 +21880,8 @@ mod tests {
                 .find(|unit| game.units[unit].kind == "settler")
                 .unwrap();
             game.current = pid;
-            game.apply(pid, &Action::FoundCity { unit: settler }).unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
         }
         game.current = 0;
         game.at_war.insert((0, 1));
@@ -21853,9 +21894,10 @@ mod tests {
             .into_iter()
             .find(|p| {
                 game.units_at(*p).is_empty()
-                    && game.map.get(*p).is_some_and(|t| {
-                        game.rules.is_passable(t) && !game.rules.is_water(t)
-                    })
+                    && game
+                        .map
+                        .get(*p)
+                        .is_some_and(|t| game.rules.is_passable(t) && !game.rules.is_water(t))
             })
             .unwrap();
         // Condemning is a defense of our own territory, so the intruder has
@@ -21868,9 +21910,10 @@ mod tests {
                 *p != home
                     && game.nbrs(home).contains(p)
                     && game.units_at(*p).is_empty()
-                    && game.map.get(*p).is_some_and(|t| {
-                        game.rules.is_passable(t) && !game.rules.is_water(t)
-                    })
+                    && game
+                        .map
+                        .get(*p)
+                        .is_some_and(|t| game.rules.is_passable(t) && !game.rules.is_water(t))
             })
             .unwrap();
         for position in [soldier_tile, intruder_tile] {
@@ -22602,32 +22645,20 @@ mod tests {
         recovery.record_contact(0, minor);
         let mut recovery_plan = plan.clone();
         recovery_plan.strategy = GrandStrategy::Recovery;
-        assert!(!treatment.prioritize_envoy_infrastructure(
-            &mut recovery,
-            0,
-            &recovery_plan
-        ));
+        assert!(!treatment.prioritize_envoy_infrastructure(&mut recovery, 0, &recovery_plan));
         assert!(recovery.cities[&city].queue.is_empty());
 
         let mut threatened = game.clone();
         threatened.record_contact(0, minor);
         let mut threatened_plan = plan.clone();
         threatened_plan.threatened_city = Some(city);
-        assert!(!treatment.prioritize_envoy_infrastructure(
-            &mut threatened,
-            0,
-            &threatened_plan
-        ));
+        assert!(!treatment.prioritize_envoy_infrastructure(&mut threatened, 0, &threatened_plan));
 
         let mut rushing = game.clone();
         rushing.record_contact(0, minor);
         let mut rush_plan = plan.clone();
         rush_plan.rush = true;
-        assert!(!treatment.prioritize_envoy_infrastructure(
-            &mut rushing,
-            0,
-            &rush_plan
-        ));
+        assert!(!treatment.prioritize_envoy_infrastructure(&mut rushing, 0, &rush_plan));
 
         let mut major_war = game.clone();
         major_war.record_contact(0, minor);
@@ -22635,11 +22666,7 @@ mod tests {
         major_war
             .apply(0, &Action::DeclareWar { player: rival })
             .unwrap();
-        assert!(!treatment.prioritize_envoy_infrastructure(
-            &mut major_war,
-            0,
-            &plan
-        ));
+        assert!(!treatment.prioritize_envoy_infrastructure(&mut major_war, 0, &plan));
 
         let mut occupied = game.clone();
         occupied.record_contact(0, minor);
@@ -22659,11 +22686,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert!(!treatment.prioritize_envoy_infrastructure(
-            &mut occupied,
-            0,
-            &plan
-        ));
+        assert!(!treatment.prioritize_envoy_infrastructure(&mut occupied, 0, &plan));
         assert_eq!(occupied.cities[&city].queue.first(), Some(&occupied_item));
 
         let mut quarter = game.clone();
@@ -22692,11 +22715,7 @@ mod tests {
         let mut consulate = game.clone();
         consulate.record_contact(0, minor);
         install_ai_test_district(&mut consulate, city, "diplomatic_quarter");
-        assert!(treatment.prioritize_envoy_infrastructure(
-            &mut consulate,
-            0,
-            &plan
-        ));
+        assert!(treatment.prioritize_envoy_infrastructure(&mut consulate, 0, &plan));
         assert!(matches!(
             consulate.cities[&city].queue.first(),
             Some(Item::Building { building }) if building == "consulate"
@@ -22705,15 +22724,16 @@ mod tests {
         let mut chancery = game.clone();
         chancery.record_contact(0, minor);
         install_ai_test_district(&mut chancery, city, "diplomatic_quarter");
-        chancery.cities.get_mut(&city).unwrap().buildings.push(crate::name!("consulate"));
+        chancery
+            .cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("consulate"));
         chancery.players[0]
             .civics
             .insert(crate::name!("diplomatic_service"));
-        assert!(treatment.prioritize_envoy_infrastructure(
-            &mut chancery,
-            0,
-            &plan
-        ));
+        assert!(treatment.prioritize_envoy_infrastructure(&mut chancery, 0, &plan));
         assert!(matches!(
             chancery.cities[&city].queue.first(),
             Some(Item::Building { building }) if building == "chancery"
@@ -22722,11 +22742,7 @@ mod tests {
         let mut expired = game.clone();
         expired.record_contact(0, minor);
         expired.turn = expired.max_turns;
-        assert!(!treatment.prioritize_envoy_infrastructure(
-            &mut expired,
-            0,
-            &plan
-        ));
+        assert!(!treatment.prioritize_envoy_infrastructure(&mut expired, 0, &plan));
         assert!(expired.cities[&city].queue.is_empty());
     }
 
@@ -23039,10 +23055,7 @@ mod tests {
         assert!(!army.units.contains(&bomber));
         assert!(ai.force_groups.iter().all(|group| {
             group.units.iter().all(|unit| {
-                game.rules.units[game.units[unit].kind]
-                    .domain
-                    .as_deref()
-                    != Some("air")
+                game.rules.units[game.units[unit].kind].domain.as_deref() != Some("air")
             })
         }));
     }
@@ -23079,9 +23092,10 @@ mod tests {
 
         assert!(ai.force_groups.iter().all(|group| {
             group.units.iter().all(|left| {
-                group.units.iter().all(|right| {
-                    game.wdist(game.units[left].pos, game.units[right].pos) <= 6
-                })
+                group
+                    .units
+                    .iter()
+                    .all(|right| game.wdist(game.units[left].pos, game.units[right].pos) <= 6)
             })
         }));
         assert!(!ai
@@ -23126,13 +23140,8 @@ mod tests {
         game.at_war.insert((0, 1));
         let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
 
-        let ratio = ai.local_strength_ratio(
-            &game,
-            0,
-            &[warrior],
-            &[1],
-            game.cities[&target_city].pos,
-        );
+        let ratio =
+            ai.local_strength_ratio(&game, 0, &[warrior], &[1], game.cities[&target_city].pos);
 
         assert!(
             ratio < 0.72,
@@ -23209,9 +23218,9 @@ mod tests {
             .filter(|position| game.wdist(*position, home) == distance)
             .collect();
         candidates.sort_unstable();
-        *candidates.first().unwrap_or_else(|| {
-            panic!("no tile sits exactly {distance} hexes from the capital")
-        })
+        *candidates
+            .first()
+            .unwrap_or_else(|| panic!("no tile sits exactly {distance} hexes from the capital"))
     }
 
     /// The relief radius must scale with the force's pace: cavalry can answer
@@ -23537,7 +23546,10 @@ mod tests {
         game.units.get_mut(&warrior).unwrap().level = 1;
 
         let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
-        assert!(!ai.promote_when_wounded, "the shipped default must be unchanged");
+        assert!(
+            !ai.promote_when_wounded,
+            "the shipped default must be unchanged"
+        );
         assert!(
             !ai.promotion_heal_is_wasted(&game, warrior),
             "the shipped agent never holds a promotion back"
@@ -23642,7 +23654,10 @@ mod tests {
             rush: false,
         };
         let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
-        assert!(!ai.scoped_relief_hold, "the shipped default must be unchanged");
+        assert!(
+            !ai.scoped_relief_hold,
+            "the shipped default must be unchanged"
+        );
         ai.rebuild_force_groups(&game, 0, &plan);
         assert_eq!(
             ai.force_groups
@@ -24052,12 +24067,9 @@ mod tests {
             .into_iter()
             .find(|position| *position != home && game.wdist(home, *position) <= 2)
             .unwrap();
-        let city_centers: BTreeSet<Pos> =
-            game.cities.values().map(|city| city.pos).collect();
+        let city_centers: BTreeSet<Pos> = game.cities.values().map(|city| city.pos).collect();
         for (position, tile) in &mut game.map.tiles {
-            if ![home, origin, target].contains(&position)
-                && !city_centers.contains(&position)
-            {
+            if ![home, origin, target].contains(&position) && !city_centers.contains(&position) {
                 tile.terrain = crate::name!("ocean");
                 tile.feature = None;
             }
@@ -24083,8 +24095,17 @@ mod tests {
         let mut ai = AdvancedAi::new();
         assert!(!ai.base.has_practical_settle_site(&game, 0));
         let mut direct_capture = game.clone();
-        let capture_result = direct_capture.apply(0, &Action::Move { unit: warrior, to: target });
-        assert!(capture_result.is_ok(), "staged capture was not legal: {capture_result:?}");
+        let capture_result = direct_capture.apply(
+            0,
+            &Action::Move {
+                unit: warrior,
+                to: target,
+            },
+        );
+        assert!(
+            capture_result.is_ok(),
+            "staged capture was not legal: {capture_result:?}"
+        );
         assert_eq!(direct_capture.units[&settler].owner, 0);
 
         let _ = ai.advanced_military_step(&mut game, 0, warrior, &plan);
@@ -24233,8 +24254,7 @@ mod tests {
                         .all(|city| game.wdist(city.pos, *position) >= 4)
             })
             .expect("test map has a nearby pressure city site");
-        let pressure_city =
-            game.found_city_for(1, pressure_site, Some("Pressure".to_string()));
+        let pressure_city = game.found_city_for(1, pressure_site, Some("Pressure".to_string()));
         let remote_site = game
             .map
             .tiles
@@ -24263,15 +24283,15 @@ mod tests {
             city.wall_hp = 0;
             city.loyalty = 100.0;
         }
-        let staging = game
-            .nbrs(target)
-            .into_iter()
-            .find(|position| {
-                game.map.get(*position).is_some_and(|tile| {
-                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
-                }) && game.units_at(*position).is_empty()
-            })
-            .expect("the capital has an open melee approach");
+        let staging =
+            game.nbrs(target)
+                .into_iter()
+                .find(|position| {
+                    game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    }) && game.units_at(*position).is_empty()
+                })
+                .expect("the capital has an open melee approach");
         let attacker = game.spawn_test_unit("giant_death_robot", 0, staging);
         game.at_war.insert((0, 1));
         game.current = 0;
@@ -24295,13 +24315,17 @@ mod tests {
 
         assert!(AdvancedAi::should_defer_city_capture(&game, 0, target_city));
         assert!(
-            ai.campaign_city_value(&game, 0, &game.cities[&target_city], GrandStrategy::Conquest)
-                > ai.campaign_city_value(
-                    &game,
-                    0,
-                    &game.cities[&pressure_city],
-                    GrandStrategy::Conquest,
-                ),
+            ai.campaign_city_value(
+                &game,
+                0,
+                &game.cities[&target_city],
+                GrandStrategy::Conquest
+            ) > ai.campaign_city_value(
+                &game,
+                0,
+                &game.cities[&pressure_city],
+                GrandStrategy::Conquest,
+            ),
             "the surrounding pressure city should become the campaign objective first"
         );
         assert_eq!(
@@ -24323,10 +24347,9 @@ mod tests {
             0,
             target_city
         ));
-        assert!(
-            ai.tactical_attack_value(&supported, 0, attacker, &capture, &plan)
-                .is_finite()
-        );
+        assert!(ai
+            .tactical_attack_value(&supported, 0, attacker, &capture, &plan)
+            .is_finite());
         assert!(ai.advanced_military_step(&mut supported, 0, attacker, &plan));
         assert_eq!(supported.cities[&target_city].owner, 0);
     }
@@ -24346,7 +24369,9 @@ mod tests {
             .unwrap()
             .buildings
             .push(crate::name!("archaeological_museum"));
-        game.players[0].civics.insert(crate::name!("natural_history"));
+        game.players[0]
+            .civics
+            .insert(crate::name!("natural_history"));
         let site = game.cities[&city]
             .owned_tiles
             .iter()
@@ -24422,9 +24447,9 @@ mod tests {
         game.players[0]
             .strategic_resources
             .insert(crate::name!("coal"), 0.1);
-        let original_stock_value =
-            450.0 + game.strategic_stockpile(0, crate::name!("coal")).min(50.0) * 18.0
-                + game.climate_phase as f64 * -110.0;
+        let original_stock_value = 450.0
+            + game.strategic_stockpile(0, crate::name!("coal")).min(50.0) * 18.0
+            + game.climate_phase as f64 * -110.0;
         let regrouped_stock_value = 450.0
             + (game.strategic_stockpile(0, crate::name!("coal")).min(50.0) * 18.0
                 + game.climate_phase as f64 * -110.0);
@@ -24515,11 +24540,10 @@ mod tests {
             ai.production_value(&game, 0, city, &nuclear, &plan, &counts) > -9_000.0,
             "the default-off controller retains stock absolute valuation"
         );
-        game.cities
-            .get_mut(&city)
-            .unwrap()
-            .buildings
-            .extend([crate::name!("oil_power_plant"), crate::name!("nuclear_power_plant")]);
+        game.cities.get_mut(&city).unwrap().buildings.extend([
+            crate::name!("oil_power_plant"),
+            crate::name!("nuclear_power_plant"),
+        ]);
         assert!(
             marginal.production_value(&game, 0, city, &coal, &plan, &counts) < -9_000.0,
             "an impossible multiple-plant state fails closed"
@@ -24629,9 +24653,7 @@ mod tests {
             .unwrap()
             .buildings
             .push(crate::name!("amphitheater"));
-        game.players[0]
-            .civics
-            .insert(crate::name!("drama_poetry"));
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
 
         for unit in game.player_unit_ids(0) {
             if game.rules.units[game.units[&unit].kind].class == "military" {
@@ -24647,11 +24669,8 @@ mod tests {
         let project = Item::Project {
             project: crate::name!("theater_square_festival"),
         };
-        let award = game.project_completion_gpp_awards(
-            0,
-            rear_city,
-            "theater_square_festival",
-        )["writer"];
+        let award =
+            game.project_completion_gpp_awards(0, rear_city, "theater_square_festival")["writer"];
         let cost = game.gp_cost(0, "writer");
         game.players[0]
             .gpp
@@ -25139,7 +25158,9 @@ mod tests {
             GrandStrategy::Conquest,
         );
 
-        assert!(game.cities[&city].buildings.contains(&crate::name!("walls")));
+        assert!(game.cities[&city]
+            .buildings
+            .contains(&crate::name!("walls")));
         assert_eq!(game.players[0].faith, 120.0);
         assert_eq!(game.players[0].gold, 10_000.0);
     }
@@ -25307,7 +25328,10 @@ mod tests {
         assert_eq!(ai.legal_purchase_actions(&game, 0), stock_purchases);
         let mut parallel_ai = ai.clone();
         parallel_ai.work_pool = Some(Arc::new(WorkPool::new(4)));
-        assert_eq!(parallel_ai.legal_purchase_actions(&game, 0), stock_purchases);
+        assert_eq!(
+            parallel_ai.legal_purchase_actions(&game, 0),
+            stock_purchases
+        );
         let mut parallel_game = game.clone();
 
         assert!(ai.advanced_gold_spending(&mut game, 0, &plan));
@@ -25414,7 +25438,9 @@ mod tests {
         ai.take_turn(&mut game, 0);
 
         assert!(
-            game.cities[&city].districts.contains_key(crate::name!("campus")),
+            game.cities[&city]
+                .districts
+                .contains_key(crate::name!("campus")),
             "an adaptive Science plan should convert surplus Gold into its Campus immediately"
         );
         assert!(game.players[0].gold >= 300.0);
@@ -25435,9 +25461,15 @@ mod tests {
             0,
             GrandStrategy::Expansion,
         );
-        assert!(culture.players[0].policies.contains(&crate::name!("heritage_tourism")));
-        assert!(culture.players[0].policies.contains(&crate::name!("discipline")));
-        assert!(!culture.players[0].policies.contains(&crate::name!("urban_planning")));
+        assert!(culture.players[0]
+            .policies
+            .contains(&crate::name!("heritage_tourism")));
+        assert!(culture.players[0]
+            .policies
+            .contains(&crate::name!("discipline")));
+        assert!(!culture.players[0]
+            .policies
+            .contains(&crate::name!("urban_planning")));
 
         let mut science = Game::new(2, 24, 16, 79, 200, 0);
         science.players[0].government = Some("chiefdom".to_string());
@@ -25452,10 +25484,13 @@ mod tests {
         );
         assert!(science.players[0]
             .policies
-            
-.contains(&crate::name!("integrated_space_cell")));
-        assert!(science.players[0].policies.contains(&crate::name!("urban_planning")));
-        assert!(!science.players[0].policies.contains(&crate::name!("discipline")));
+            .contains(&crate::name!("integrated_space_cell")));
+        assert!(science.players[0]
+            .policies
+            .contains(&crate::name!("urban_planning")));
+        assert!(!science.players[0]
+            .policies
+            .contains(&crate::name!("discipline")));
 
         let mut reactive = culture.clone();
         reactive.players[0].policies.clear();
@@ -25463,7 +25498,9 @@ mod tests {
             .policies
             .extend([crate::name!("discipline"), crate::name!("urban_planning")]);
         AdvancedAi::new().strategic_policies(&mut reactive, 0, GrandStrategy::Culture);
-        assert!(reactive.players[0].policies.contains(&crate::name!("heritage_tourism")));
+        assert!(reactive.players[0]
+            .policies
+            .contains(&crate::name!("heritage_tourism")));
     }
 
     #[test]
@@ -25496,14 +25533,16 @@ mod tests {
 
         assert!(game.players[0]
             .policies
-            
-.contains(&crate::name!("integrated_space_cell")));
+            .contains(&crate::name!("integrated_space_cell")));
         assert!(game.players[0]
             .policies
-            
-.contains(&crate::name!("future_victory_science")));
-        assert!(game.players[0].policies.contains(&crate::name!("five_year_plan")));
-        assert!(game.players[0].policies.contains(&crate::name!("rationalism")));
+            .contains(&crate::name!("future_victory_science")));
+        assert!(game.players[0]
+            .policies
+            .contains(&crate::name!("five_year_plan")));
+        assert!(game.players[0]
+            .policies
+            .contains(&crate::name!("rationalism")));
         assert!(ancient
             .iter()
             .all(|card| !game.players[0].policies.contains(&Name::new(card))));
@@ -25589,19 +25628,21 @@ mod tests {
                 "cryptography",
             ],
         );
-        valid.players[0]
-            .civics
-            .extend([
-                crate::name!("ideology"),
-                crate::name!("mercantilism"),
-                crate::name!("the_enlightenment"),
-            ]);
+        valid.players[0].civics.extend([
+            crate::name!("ideology"),
+            crate::name!("mercantilism"),
+            crate::name!("the_enlightenment"),
+        ]);
         let log_before = valid.log.len();
 
         AdvancedAi::new().strategic_policies(&mut valid, 0, GrandStrategy::Conquest);
 
-        assert!(valid.players[0].policies.contains(&crate::name!("logistics")));
-        assert!(!valid.players[0].policies.contains(&crate::name!("rationalism")));
+        assert!(valid.players[0]
+            .policies
+            .contains(&crate::name!("logistics")));
+        assert!(!valid.players[0]
+            .policies
+            .contains(&crate::name!("rationalism")));
         assert_eq!(
             valid
                 .log
@@ -25636,22 +25677,32 @@ mod tests {
             0,
             GrandStrategy::Science,
         );
-        assert!(game.players[0].policies.contains(&crate::name!("monasticism")));
+        assert!(game.players[0]
+            .policies
+            .contains(&crate::name!("monasticism")));
 
         game.players[0].policies.clear();
-        game.players[0].policies.insert(crate::name!("isolationism"));
+        game.players[0]
+            .policies
+            .insert(crate::name!("isolationism"));
         game.spawn_test_unit("settler", 0, game.cities[&city].pos);
         AdvancedAi::new().strategic_policies(&mut game, 0, GrandStrategy::Expansion);
-        assert!(!game.players[0].policies.contains(&crate::name!("isolationism")));
+        assert!(!game.players[0]
+            .policies
+            .contains(&crate::name!("isolationism")));
 
         game.players[0].policies.clear();
         game.at_war.insert((0, 1));
         AdvancedAi::new().strategic_policies(&mut game, 0, GrandStrategy::Conquest);
-        assert!(game.players[0].policies.contains(&crate::name!("twilight_valor")));
+        assert!(game.players[0]
+            .policies
+            .contains(&crate::name!("twilight_valor")));
 
         game.world_era = 8;
         AdvancedAi::new().strategic_policies(&mut game, 0, GrandStrategy::Conquest);
-        assert!(!game.players[0].policies.contains(&crate::name!("twilight_valor")));
+        assert!(!game.players[0]
+            .policies
+            .contains(&crate::name!("twilight_valor")));
     }
 
     #[test]
@@ -25928,11 +25979,7 @@ mod tests {
         science_fallback.players[0]
             .civics
             .insert(crate::name!("divine_right"));
-        AdvancedAi::new().strategic_government(
-            &mut science_fallback,
-            0,
-            GrandStrategy::Science,
-        );
+        AdvancedAi::new().strategic_government(&mut science_fallback, 0, GrandStrategy::Science);
         assert_eq!(
             science_fallback.players[0].government.as_deref(),
             Some("monarchy")
@@ -25943,11 +25990,7 @@ mod tests {
         religion_fallback.players[0]
             .civics
             .insert(crate::name!("exploration"));
-        AdvancedAi::new().strategic_government(
-            &mut religion_fallback,
-            0,
-            GrandStrategy::Religion,
-        );
+        AdvancedAi::new().strategic_government(&mut religion_fallback, 0, GrandStrategy::Religion);
         assert_eq!(
             religion_fallback.players[0].government.as_deref(),
             Some("merchant_republic")
@@ -25981,7 +26024,10 @@ mod tests {
             .insert("merchant_republic".to_string());
         AdvancedAi::new().strategic_government(&mut game, 0, GrandStrategy::Conquest);
         assert!(game.players[0].government.is_none());
-        assert_eq!(game.players[0].pending_government.as_deref(), Some("fascism"));
+        assert_eq!(
+            game.players[0].pending_government.as_deref(),
+            Some("fascism")
+        );
         assert!(game.players[0].anarchy_turns > 0);
     }
 
@@ -26052,7 +26098,9 @@ mod tests {
         game.current = 0;
         let home = game.player_city_ids(0)[0];
         crate::game::vacate_land_combat_purchase_slot(&mut game, 0, home);
-        game.players[0].civics.insert(crate::name!("reformed_church"));
+        game.players[0]
+            .civics
+            .insert(crate::name!("reformed_church"));
         game.players[0].faith = 1_500.0;
         let target = game.player_city_ids(1)[0];
         let plan = StrategicPlan {
@@ -26307,7 +26355,10 @@ mod tests {
 
         let ai = AdvancedAi::targeting(VictoryTarget::Culture);
         let upgrades = ai.worthwhile_improvements(&g, 0, pos, GrandStrategy::Culture);
-        assert_eq!(upgrades.first().map(|name| name.as_str()), Some("seaside_resort"));
+        assert_eq!(
+            upgrades.first().map(|name| name.as_str()),
+            Some("seaside_resort")
+        );
 
         g.map.tiles.get_mut(&pos).unwrap().improvement = Some(crate::name!("seaside_resort"));
         assert!(ai
@@ -26453,11 +26504,10 @@ mod tests {
             .into_iter()
             .find(|uid| !g.available_promotions(*uid).is_empty())
             .or_else(|| {
-                let uid = g.player_unit_ids(0).into_iter().find(|uid| {
-                    !g.rules.units[g.units[uid].kind]
-                        .promotion_class
-                        .is_empty()
-                })?;
+                let uid = g
+                    .player_unit_ids(0)
+                    .into_iter()
+                    .find(|uid| !g.rules.units[g.units[uid].kind].promotion_class.is_empty())?;
                 g.units.get_mut(&uid).unwrap().xp = 15;
                 Some(uid)
             })
@@ -26548,7 +26598,10 @@ mod tests {
             assessed_turn: game.turn,
             rush: false,
         };
-        assert_eq!(ai.settler_escort_step(&mut game, 0, escort, &plan), Some(true));
+        assert_eq!(
+            ai.settler_escort_step(&mut game, 0, escort, &plan),
+            Some(true)
+        );
         assert_eq!(game.units[&settler].pos, game.units[&escort].pos);
         assert!(game.wdist(game.units[&settler].pos, target) < before);
         assert!(!ai.settler_stalls.contains_key(&settler));
@@ -26574,7 +26627,10 @@ mod tests {
             game.turn += 1;
         }
         assert!(!ai.settler_targets.contains_key(&settler));
-        assert_eq!(ai.settler_avoid.get(&settler).map(|(pos, _)| *pos), Some(target));
+        assert_eq!(
+            ai.settler_avoid.get(&settler).map(|(pos, _)| *pos),
+            Some(target)
+        );
         assert_eq!(game.units[&settler].linked_to, None);
         assert_eq!(game.units[&escort].linked_to, None);
     }
@@ -26666,7 +26722,10 @@ mod tests {
 
         assert!(!ai.settler_targets.contains_key(&settler));
         assert!(!ai.settler_closest.contains_key(&settler));
-        assert_eq!(ai.settler_avoid.get(&settler).map(|(pos, _)| *pos), Some(target));
+        assert_eq!(
+            ai.settler_avoid.get(&settler).map(|(pos, _)| *pos),
+            Some(target)
+        );
         assert_eq!(game.units[&settler].linked_to, None);
         assert_eq!(game.units[&escort].linked_to, None);
     }
@@ -26737,7 +26796,11 @@ mod tests {
             })
             .take(2)
             .collect::<Vec<_>>();
-        assert_eq!(threats.len(), 2, "the route has two adjacent attack squares");
+        assert_eq!(
+            threats.len(),
+            2,
+            "the route has two adjacent attack squares"
+        );
         let enemies = threats
             .iter()
             .map(|position| game.spawn_test_unit("warrior", 1, *position))
@@ -26748,14 +26811,8 @@ mod tests {
         }
         let visible = ai.battlefront_visibility(&game, 0);
         assert!(threats.iter().all(|threat| game.sees(&visible, *threat)));
-        let planned_risk = ai.settlement_tile_risk_with_support(
-            &game,
-            0,
-            Some(escort),
-            planned,
-            &visible,
-            false,
-        );
+        let planned_risk =
+            ai.settlement_tile_risk_with_support(&game, 0, Some(escort), planned, &visible, false);
         assert!(planned_risk > SETTLER_STEP_RISK_LIMIT);
 
         let plan = StrategicPlan {
@@ -26774,14 +26831,8 @@ mod tests {
         let after = game.units[&escort].pos;
         assert_ne!(after, planned);
         assert_eq!(game.units[&settler].pos, after);
-        let after_risk = ai.settlement_tile_risk_with_support(
-            &game,
-            0,
-            Some(escort),
-            after,
-            &visible,
-            false,
-        );
+        let after_risk =
+            ai.settlement_tile_risk_with_support(&game, 0, Some(escort), after, &visible, false);
         assert!(
             after == before || after_risk + 5.0 < planned_risk,
             "the formation may hold or take a materially safer detour: \
@@ -26819,7 +26870,6 @@ mod tests {
         assert!(military.len() >= 5);
         assert!(military.iter().any(|uid| g.units[uid].formation == 1));
     }
-
 
     /// A staged battle only tests the code under test if the organic map is
     /// not also fighting one nearby: units and cities the generator placed
@@ -26875,7 +26925,12 @@ mod tests {
                 (ring.len() >= 3).then_some((pos, ring))
             })
             .expect("test map has an open land engagement");
-        for position in [land_target.0, land_target.1[0], land_target.1[1], land_target.1[2]] {
+        for position in [
+            land_target.0,
+            land_target.1[0],
+            land_target.1[1],
+            land_target.1[2],
+        ] {
             let tile = g.map.tiles.get_mut(&position).unwrap();
             tile.terrain = crate::name!("plains");
             tile.feature = None;
@@ -27116,7 +27171,8 @@ mod tests {
     #[test]
     fn coordinated_mover_ignores_a_hostile_missing_from_its_turn_start_frame() {
         let choose = |ai: &AdvancedAi, game: &mut Game, unit: u32, orders: &ForceGroup| {
-            ai.coordinated_tactical_step(game, 0, unit, orders, &[1], false).then_some(())?;
+            ai.coordinated_tactical_step(game, 0, unit, orders, &[1], false)
+                .then_some(())?;
             match game.log.last() {
                 Some((actor, Action::Move { unit: moved, to }))
                     if *actor == 0 && *moved == unit =>
@@ -27179,8 +27235,13 @@ mod tests {
                         let mut legacy = base.clone();
                         legacy.spawn_test_unit("giant_death_robot", 1, hidden);
                         let detour = choose(&AdvancedAi::legacy(), &mut legacy, unit, &orders)?;
-                        (detour != expected)
-                            .then_some((base.clone(), unit, orders.clone(), expected, hidden))
+                        (detour != expected).then_some((
+                            base.clone(),
+                            unit,
+                            orders.clone(),
+                            expected,
+                            hidden,
+                        ))
                     })
             })
             .expect("the fixed open map needs a tactical fork affected by a hostile threat");
@@ -27393,12 +27454,7 @@ mod tests {
         };
         let mut parallel_game = g.clone();
         assert!(ai.advanced_military_step(&mut g, 0, attacker, &plan));
-        assert!(parallel_ai.advanced_military_step(
-            &mut parallel_game,
-            0,
-            attacker,
-            &plan
-        ));
+        assert!(parallel_ai.advanced_military_step(&mut parallel_game, 0, attacker, &plan));
         assert_eq!(
             serde_json::to_value(&g).unwrap(),
             serde_json::to_value(&parallel_game).unwrap()
@@ -27891,30 +27947,30 @@ mod tests {
         for unit in existing {
             game.remove_unit(unit);
         }
-        let (target, origins) = game
-            .map
-            .tiles
-            .keys()
-            .copied()
-            .find_map(|target| {
-                if game.map.get(target).is_none_or(|tile| {
-                    !game.rules.is_passable(tile) || game.rules.is_water(tile)
-                }) {
-                    return None;
-                }
-                let origins = game
-                    .nbrs(target)
-                    .into_iter()
-                    .filter(|position| {
-                        game.map.get(*position).is_some_and(|tile| {
-                            game.rules.is_passable(tile) && !game.rules.is_water(tile)
+        let (target, origins) =
+            game.map
+                .tiles
+                .keys()
+                .copied()
+                .find_map(|target| {
+                    if game.map.get(target).is_none_or(|tile| {
+                        !game.rules.is_passable(tile) || game.rules.is_water(tile)
+                    }) {
+                        return None;
+                    }
+                    let origins = game
+                        .nbrs(target)
+                        .into_iter()
+                        .filter(|position| {
+                            game.map.get(*position).is_some_and(|tile| {
+                                game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                            })
                         })
-                    })
-                    .take(2)
-                    .collect::<Vec<_>>();
-                (origins.len() == 2).then_some((target, origins))
-            })
-            .expect("test map has two approaches to one land tile");
+                        .take(2)
+                        .collect::<Vec<_>>();
+                    (origins.len() == 2).then_some((target, origins))
+                })
+                .expect("test map has two approaches to one land tile");
         let first = game.spawn_test_unit("warrior", 0, origins[0]);
         let second = game.spawn_test_unit("warrior", 0, origins[1]);
         game.current = 0;
@@ -28274,11 +28330,19 @@ mod tests {
     #[test]
     fn basil_stages_hippodromes_then_resumes_them_at_divine_right() {
         let mut game = Game::new_full(
-            2, 24, 16, crate::rng::fixture_seed("BASIL", 111), 200, 0, false,
+            2,
+            24,
+            16,
+            crate::rng::fixture_seed("BASIL", 111),
+            200,
+            0,
+            false,
         );
         game.players[0].civ = "Byzantium".to_string();
         game.players[0].religion = Some("Eastern Orthodoxy".to_string());
-        game.players[0].civics.insert(crate::name!("games_recreation"));
+        game.players[0]
+            .civics
+            .insert(crate::name!("games_recreation"));
         let settler = game
             .player_unit_ids(0)
             .into_iter()
@@ -28575,7 +28639,10 @@ mod tests {
         let observer = game.spawn_test_unit("scout", 0, city_pos);
         let mut ai = AdvancedAi::new();
         ai.belief.observe(&game, 0);
-        assert!(ai.remembered_city(city).is_some(), "the City Center was seen");
+        assert!(
+            ai.remembered_city(city).is_some(),
+            "the City Center was seen"
+        );
         game.remove_unit(observer);
         assert!(
             !game.player_visibility(0).contains(&city_pos),
@@ -28637,8 +28704,8 @@ mod tests {
             .into_iter()
             .find_map(|position| {
                 let scout = game.spawn_test_unit("scout", 0, position);
-                let sees_enemy = game.player_visibility(0).contains(&hidden)
-                    && game.unit_visible_to(enemy, 0);
+                let sees_enemy =
+                    game.player_visibility(0).contains(&hidden) && game.unit_visible_to(enemy, 0);
                 if sees_enemy {
                     Some(scout)
                 } else {
@@ -28838,7 +28905,10 @@ mod tests {
                         .filter(|unit| game.wdist(city.pos, unit.pos) <= 6)
                         .filter(|unit| game.rules.units[unit.kind].class == "military")
                         .map(|unit| {
-                            crate::game::effective_strength(game.unit_strength(unit, false), unit.hp)
+                            crate::game::effective_strength(
+                                game.unit_strength(unit, false),
+                                unit.hp,
+                            )
                         })
                         .sum();
                     let friendly = game.city_strength(*cid)
@@ -29459,7 +29529,11 @@ mod tests {
         }
         if !capital_ratio.is_empty() {
             let cap = capital_ratio.iter().sum::<f64>() / capital_ratio.len() as f64;
-            println!("  capitals alone: {:.1}% ({} sampled)", cap * 100.0, capital_ratio.len());
+            println!(
+                "  capitals alone: {:.1}% ({} sampled)",
+                cap * 100.0,
+                capital_ratio.len()
+            );
         }
         println!();
     }
@@ -29589,21 +29663,21 @@ mod tests {
         let mut game = Game::new_full(2, 28, 18, 91_779, 200, 0, false);
         let mut land: Vec<Pos> = game.map.tiles.keys().copied().collect();
         land.sort();
-        let center = land
-            .into_iter()
-            .find(|pos| {
-                game.map.get(*pos).is_some_and(|tile| {
-                    !game.rules.is_water(tile) && game.rules.is_passable(tile)
-                }) && game
-                    .units
-                    .values()
-                    .all(|unit| game.wdist(unit.pos, *pos) > 5)
-                    && game
-                        .wdisk(*pos, 3)
-                        .iter()
-                        .all(|ring| game.map.get(*ring).is_some())
-            })
-            .expect("map has an interior patch of open ground");
+        let center =
+            land.into_iter()
+                .find(|pos| {
+                    game.map.get(*pos).is_some_and(|tile| {
+                        !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                    }) && game
+                        .units
+                        .values()
+                        .all(|unit| game.wdist(unit.pos, *pos) > 5)
+                        && game
+                            .wdisk(*pos, 3)
+                            .iter()
+                            .all(|ring| game.map.get(*ring).is_some())
+                })
+                .expect("map has an interior patch of open ground");
         // Flatten out to radius 3 so the mountains' own surroundings are
         // controlled too, and silence rivers so fresh-water and Commercial
         // Hub terms cannot differ between the two layouts.
@@ -29631,12 +29705,18 @@ mod tests {
         let mut scattered: Vec<Pos> = Vec::new();
         for pos in &ring2 {
             if scattered.len() < 3
-                && scattered.iter().all(|picked| game.wdist(*picked, *pos) >= 3)
+                && scattered
+                    .iter()
+                    .all(|picked| game.wdist(*picked, *pos) >= 3)
             {
                 scattered.push(*pos);
             }
         }
-        assert_eq!(scattered.len(), 3, "ring two admits three mutually distant peaks");
+        assert_eq!(
+            scattered.len(),
+            3,
+            "ring two admits three mutually distant peaks"
+        );
         for pos in &scattered {
             game.map.tiles.get_mut(pos).unwrap().terrain = crate::name!("mountain");
         }
@@ -29656,7 +29736,11 @@ mod tests {
             .into_iter()
             .filter(|pos| game.wdist(*pos, center) == 2)
             .collect();
-        assert_eq!(cluster.len(), 3, "a ring-one plot touches three ring-two plots");
+        assert_eq!(
+            cluster.len(),
+            3,
+            "a ring-one plot touches three ring-two plots"
+        );
         for pos in &cluster {
             game.map.tiles.get_mut(pos).unwrap().terrain = crate::name!("mountain");
         }
@@ -29735,7 +29819,10 @@ mod tests {
         let n = before_after.len().max(1) as f64;
         let before: f64 = before_after.iter().map(|(b, _)| b).sum::<f64>() / n;
         let after: f64 = before_after.iter().map(|(_, a)| a).sum::<f64>() / n;
-        println!("\n=== settle_value before and after founding: {} sites ===", before_after.len());
+        println!(
+            "\n=== settle_value before and after founding: {} sites ===",
+            before_after.len()
+        );
         println!("  mean settle_value the turn BEFORE the city existed: {before:.1}");
         println!("  mean settle_value once the city owns its ring one:  {after:.1}");
         println!(
@@ -29803,8 +29890,7 @@ mod tests {
         let mut settler_turns_when_clear: Vec<f64> = Vec::new();
 
         for map in 0..8u64 {
-            let mut game =
-                Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
+            let mut game = Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
             let mut ais: Vec<AdvancedAi> =
                 (0..game.players.len()).map(|_| AdvancedAi::new()).collect();
             game.set_fog_memory(false);
@@ -29848,8 +29934,7 @@ mod tests {
                                         all_clear += 1;
                                         // Everything permits a settler. How
                                         // long would one take to pay for?
-                                        let production =
-                                            game.city_yields(cid).production.max(1.0);
+                                        let production = game.city_yields(cid).production.max(1.0);
                                         let cost = game.item_remaining_cost_for_city(
                                             0,
                                             cid,
@@ -29885,11 +29970,26 @@ mod tests {
 
         let pct = |n: u64| n as f64 / short_city_turns.max(1) as f64 * 100.0;
         println!("\n=== expansion funnel [{label}]: {short_city_turns} city-turns while SHORT of target ===");
-        println!("  a settler already walking (serialization)  {fail_serial:>6}  ({:>5.1}%)", pct(fail_serial));
-        println!("  city below pop 2                           {fail_pop:>6}  ({:>5.1}%)", pct(fail_pop));
-        println!("  expansion window shut                      {fail_window:>6}  ({:>5.1}%)", pct(fail_window));
-        println!("  no settle site in reach                    {fail_site:>6}  ({:>5.1}%)", pct(fail_site));
-        println!("  NOTHING blocking — the settler was allowed {all_clear:>6}  ({:>5.1}%)", pct(all_clear));
+        println!(
+            "  a settler already walking (serialization)  {fail_serial:>6}  ({:>5.1}%)",
+            pct(fail_serial)
+        );
+        println!(
+            "  city below pop 2                           {fail_pop:>6}  ({:>5.1}%)",
+            pct(fail_pop)
+        );
+        println!(
+            "  expansion window shut                      {fail_window:>6}  ({:>5.1}%)",
+            pct(fail_window)
+        );
+        println!(
+            "  no settle site in reach                    {fail_site:>6}  ({:>5.1}%)",
+            pct(fail_site)
+        );
+        println!(
+            "  NOTHING blocking — the settler was allowed {all_clear:>6}  ({:>5.1}%)",
+            pct(all_clear)
+        );
         println!("  turns where EXACTLY ONE conjunct failed (a single fix would unblock these):");
         println!("    serialization {sole_serial}   pop<2 {sole_pop}   window {sole_window}   no site {sole_site}");
         if !settler_turns_when_clear.is_empty() {
@@ -29924,8 +30024,7 @@ mod tests {
             let mut opened = 0u64;
             let mut closed = 0u64;
             for map in 0..6u64 {
-                let mut game =
-                    Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
+                let mut game = Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
                 let mut ais: Vec<AdvancedAi> =
                     (0..game.players.len()).map(|_| deployed_agent()).collect();
                 let treated = {
@@ -29955,12 +30054,19 @@ mod tests {
                 }
             }
             let total = agree + opened + closed;
+            println!("\n=== expansion payback vs flat reserve [{label}]: {total} city-turns ===",);
             println!(
-                "\n=== expansion payback vs flat reserve [{label}]: {total} city-turns ===",
+                "  agree                     {agree:>6}  ({:>5.1}%)",
+                agree as f64 / total.max(1) as f64 * 100.0
             );
-            println!("  agree                     {agree:>6}  ({:>5.1}%)", agree as f64 / total.max(1) as f64 * 100.0);
-            println!("  payback OPENS what the flat reserve shut   {opened:>6}  ({:>5.1}%)", opened as f64 / total.max(1) as f64 * 100.0);
-            println!("  payback SHUTS what the flat reserve opened {closed:>6}  ({:>5.1}%)", closed as f64 / total.max(1) as f64 * 100.0);
+            println!(
+                "  payback OPENS what the flat reserve shut   {opened:>6}  ({:>5.1}%)",
+                opened as f64 / total.max(1) as f64 * 100.0
+            );
+            println!(
+                "  payback SHUTS what the flat reserve opened {closed:>6}  ({:>5.1}%)",
+                closed as f64 / total.max(1) as f64 * 100.0
+            );
         }
         println!();
     }
@@ -30007,8 +30113,7 @@ mod tests {
             let maps = 6u64;
 
             for map in 0..maps {
-                let mut game =
-                    Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
+                let mut game = Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
                 let mut ais: Vec<AdvancedAi> =
                     (0..game.players.len()).map(|_| deployed_agent()).collect();
                 game.set_fog_memory(false);
@@ -30068,11 +30173,16 @@ mod tests {
                 }
             }
 
-            println!("\n=== production allocation [{label}]: {total:.0} production over {maps} maps ===");
+            println!(
+                "\n=== production allocation [{label}]: {total:.0} production over {maps} maps ==="
+            );
             let mut rows: Vec<(&&str, &f64)> = spent.iter().collect();
             rows.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap());
             for (kind, amount) in rows {
-                println!("  {kind:<14} {amount:>10.0}  ({:>5.1}%)", amount / total.max(1.0) * 100.0);
+                println!(
+                    "  {kind:<14} {amount:>10.0}  ({:>5.1}%)",
+                    amount / total.max(1.0) * 100.0
+                );
             }
             println!(
                 "  cities held {:.2} against a target of {:.2}",
@@ -30342,8 +30452,7 @@ mod tests {
             let maps = 6u64;
 
             for map in 0..maps {
-                let mut game =
-                    Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
+                let mut game = Game::new_full(players, width, height, 480_000 + map, 200, 1, false);
                 let mut ais: Vec<AdvancedAi> =
                     (0..game.players.len()).map(|_| deployed_agent()).collect();
                 game.set_fog_memory(false);
@@ -30380,7 +30489,10 @@ mod tests {
                 c.sort_by(f64::total_cmp);
                 c[c.len() / 2]
             };
-            println!("\n=== idle treasury [{label}]: {} seat-turns ===", gold_samples.len());
+            println!(
+                "\n=== idle treasury [{label}]: {} seat-turns ===",
+                gold_samples.len()
+            );
             println!(
                 "  Gold held      mean {:.0}   median {:.0}   peak {:.0}",
                 mean(&gold_samples),
@@ -30405,12 +30517,13 @@ mod tests {
                 let share = gold_turns_held.iter().filter(|t| **t > cut).count() as f64
                     / gold_turns_held.len().max(1) as f64
                     * 100.0;
-                println!("    seat-turns holding more than {cut:>4.0} turns of income: {share:>5.1}%");
+                println!(
+                    "    seat-turns holding more than {cut:>4.0} turns of income: {share:>5.1}%"
+                );
             }
         }
         println!();
     }
-
 
     /// The agent a census must measure: the one that ships.
     ///
@@ -30526,12 +30639,18 @@ mod tests {
             let mean = |v: &Vec<f64>| v.iter().sum::<f64>() / v.len().max(1) as f64;
             deficits.sort_unstable();
             let total_deficit: i64 = deficits.iter().sum();
-            println!("\n=== envoy allocation [{label}]: {} seat-turns ===", free_samples.len());
+            println!(
+                "\n=== envoy allocation [{label}]: {} seat-turns ===",
+                free_samples.len()
+            );
             println!(
                 "  ★ envoys UNSPENT in the pool   mean {:.2}   (a pool near zero means resource-bound)",
                 mean(&free_samples)
             );
-            println!("  envoys placed on the board     mean {:.1}", mean(&placed_samples));
+            println!(
+                "  envoys placed on the board     mean {:.1}",
+                mean(&placed_samples)
+            );
             println!(
                 "  city-states met {:.1}, suzerain of {:.1}  ({:.0}% held)",
                 mean(&met_samples),
@@ -30605,7 +30724,13 @@ mod tests {
 
             for map in 0..maps {
                 let mut game = Game::new_full(
-                    players, width, height, 480_000 + map, 200, city_states, false,
+                    players,
+                    width,
+                    height,
+                    480_000 + map,
+                    200,
+                    city_states,
+                    false,
                 );
                 let mut ais: Vec<AdvancedAi> =
                     (0..game.players.len()).map(|_| deployed_agent()).collect();
@@ -30648,11 +30773,12 @@ mod tests {
                     if game.gov_slots(0).diplomatic > 0 {
                         diplo_slot_turns += 1;
                     }
-                    if game
-                        .cities
-                        .values()
-                        .any(|c| c.owner == 0 && c.districts.keys().any(|d| d.as_str() == "diplomatic_quarter"))
-                        && built_here.insert("diplomatic_quarter")
+                    if game.cities.values().any(|c| {
+                        c.owner == 0
+                            && c.districts
+                                .keys()
+                                .any(|d| d.as_str() == "diplomatic_quarter")
+                    }) && built_here.insert("diplomatic_quarter")
                     {
                         diplo_quarter_games += 1;
                     }
@@ -30683,12 +30809,18 @@ mod tests {
             rows.sort_by(|a, b| b.1.cmp(a.1));
             println!("  governments held (top 4):");
             for (name, count) in rows.into_iter().take(4) {
-                println!("    {name:<24} {:>5.1}% of turns", *count as f64 / turns.max(1) as f64 * 100.0);
+                println!(
+                    "    {name:<24} {:>5.1}% of turns",
+                    *count as f64 / turns.max(1) as f64 * 100.0
+                );
             }
             println!("  ★ influence policy cards slotted:");
             for card in CARDS {
                 let n = card_turns.get(card).copied().unwrap_or(0);
-                println!("    {card:<22} {:>5.1}% of turns", n as f64 / turns.max(1) as f64 * 100.0);
+                println!(
+                    "    {card:<22} {:>5.1}% of turns",
+                    n as f64 / turns.max(1) as f64 * 100.0
+                );
             }
             // ⚠ "never chosen" and "never available" are different findings.
             // Both cards need a *diplomatic policy slot* plus a civic, and both
@@ -30697,7 +30829,10 @@ mod tests {
             println!("  availability — was it ever even possible?");
             println!(
                 "    political_philosophy held  {:>5.1}% of turns",
-                civic_turns.get("political_philosophy").copied().unwrap_or(0) as f64
+                civic_turns
+                    .get("political_philosophy")
+                    .copied()
+                    .unwrap_or(0) as f64
                     / turns.max(1) as f64
                     * 100.0
             );
@@ -30710,9 +30845,7 @@ mod tests {
                 "    a diplomatic slot open     {:>5.1}% of turns",
                 diplo_slot_turns as f64 / turns.max(1) as f64 * 100.0
             );
-            println!(
-                "    diplomatic_quarter built   in {diplo_quarter_games} of {maps} games"
-            );
+            println!("    diplomatic_quarter built   in {diplo_quarter_games} of {maps} games");
             println!("  ★ influence buildings ever built:");
             for b in BUILDINGS {
                 let n = building_ever.get(b).copied().unwrap_or(0);
@@ -30769,7 +30902,13 @@ mod research_probe {
                         .any(|d| g.district_family(*d) == crate::name!("campus"))
                 })
                 .count();
-            (cities.len(), campuses, g.players[0].techs.len(), science, g.score(0))
+            (
+                cities.len(),
+                campuses,
+                g.players[0].techs.len(),
+                science,
+                g.score(0),
+            )
         };
         let (mut n, mut ts, mut cs, mut tt, mut tc, mut tsc, mut csc, mut tcp, mut ccp) =
             (0, 0.0, 0.0, 0, 0, 0i64, 0i64, 0, 0);
@@ -30781,8 +30920,14 @@ mod research_probe {
                 t.0, t.1, t.2, t.3, t.4, c.0, c.1, c.2, c.3, c.4
             );
             n += 1;
-            ts += t.3; cs += c.3; tt += t.2; tc += c.2;
-            tsc += t.4 as i64; csc += c.4 as i64; tcp += t.1; ccp += c.1;
+            ts += t.3;
+            cs += c.3;
+            tt += t.2;
+            tc += c.2;
+            tsc += t.4 as i64;
+            csc += c.4 as i64;
+            tcp += t.1;
+            ccp += c.1;
         }
         println!(
             "TOTALS n={n} science {ts:.1} vs {cs:.1} | techs {tt} vs {tc} | campuses {tcp} vs {ccp} | score {tsc} vs {csc}"

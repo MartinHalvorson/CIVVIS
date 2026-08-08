@@ -250,7 +250,10 @@ fn main() {
                 eprintln!("policy_eval: no gene named {name:?}");
                 exit(2);
             };
-            println!("  treatment also sets {name} = {value} (shipped {:.3})", Weights::default().to_vec()[index]);
+            println!(
+                "  treatment also sets {name} = {value} (shipped {:.3})",
+                Weights::default().to_vec()[index]
+            );
             Some((index, value))
         }
         (None, None) => None,

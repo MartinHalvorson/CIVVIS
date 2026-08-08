@@ -114,7 +114,10 @@ fn main() {
     let ai = civvis::ai::AdvancedAi::new();
     let capital = founded.first().copied();
 
-    println!("run           {}", Path::new(&dir).file_name().unwrap().to_string_lossy());
+    println!(
+        "run           {}",
+        Path::new(&dir).file_name().unwrap().to_string_lossy()
+    );
     println!("turn          {}", snapshot.turn);
     println!("world         {}x{}", snapshot.width, snapshot.height);
     println!(
@@ -142,8 +145,11 @@ fn main() {
             .filter(|pos| snapshot.is_revealed(*pos))
             .collect();
         let total = ranked.len();
-        print!("city {} at {chosen:?} (with {placed}/{} prior cities placed): ",
-               index + 1, prior.len());
+        print!(
+            "city {} at {chosen:?} (with {placed}/{} prior cities placed): ",
+            index + 1,
+            prior.len()
+        );
         match ranked.iter().position(|candidate| candidate == chosen) {
             Some(at) => {
                 let pct = 100.0 * (at as f64 + 1.0) / total.max(1) as f64;
@@ -193,9 +199,7 @@ fn main() {
             .map(|(pos, score)| (to_offset(pos), score))
             .filter(|(pos, _)| snapshot.is_revealed(*pos))
             .take(24)
-            .map(|((x, y), score)| {
-                serde_json::json!({ "x": x, "y": y, "score": score })
-            })
+            .map(|((x, y), score)| serde_json::json!({ "x": x, "y": y, "score": score }))
             .collect();
         let doc = serde_json::json!({
             "seed_world": format!("{}x{}", snapshot.width, snapshot.height),
@@ -204,12 +208,16 @@ fn main() {
             "origin": [from.0, from.1],
             "sites": sites,
         });
-        std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap())
-            .unwrap_or_else(|error| {
+        std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap_or_else(
+            |error| {
                 eprintln!("cannot write {path}: {error}");
                 std::process::exit(2);
-            });
-        println!("wrote {} CIVVIS-ranked sites to {path}", doc["sites"].as_array().unwrap().len());
+            },
+        );
+        println!(
+            "wrote {} CIVVIS-ranked sites to {path}",
+            doc["sites"].as_array().unwrap().len()
+        );
         println!();
     }
     println!();

@@ -153,7 +153,11 @@ fn duel(candidate: &Weights, players: usize, w: i32, h: i32, seed: u64, turns: u
         }
         // A win is worth more than the score it ends on, so it still counts --
         // just not as the whole signal.
-        let won = if game.winner.is_some_and(is_treated) { 1.0 } else { 0.0 };
+        let won = if game.winner.is_some_and(is_treated) {
+            1.0
+        } else {
+            0.0
+        };
         share += 0.8 * (mine / table.max(1.0)) + 0.2 * won;
     }
     share / 2.0
@@ -253,7 +257,10 @@ fn main() {
             .filter_map(|piece| piece.trim().parse().ok())
             .collect();
         if parsed.len() != 8 {
-            eprintln!("policy_breed: --genes needs 8 comma-separated numbers, got {}", parsed.len());
+            eprintln!(
+                "policy_breed: --genes needs 8 comma-separated numbers, got {}",
+                parsed.len()
+            );
             std::process::exit(2);
         }
         let mut genes = [0.0f64; 8];

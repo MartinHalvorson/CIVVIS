@@ -271,12 +271,16 @@ impl Sphere {
         if from == to {
             return 0;
         }
+        if self.distance_rows[from as usize].get().is_some()
+            || self.distance_rows[to as usize].get().is_some()
+        {
+            if let Some(distance) = self.cached_distance(from, to) {
+                return distance as i32;
+            }
+        }
         let ring = &self.rings[from as usize];
         if let Ok(at) = ring.binary_search_by_key(&b, |(pos, _)| *pos) {
             return ring[at].1 as i32;
-        }
-        if let Some(distance) = self.cached_distance(from, to) {
-            return distance as i32;
         }
 
         if let Some(source) = self.cache_source(from, to) {
@@ -452,11 +456,11 @@ impl Sphere {
         if self.distance_rows[source as usize].get().is_some() {
             return;
         }
-        let reserved = self.distance_row_count.fetch_update(
-            Ordering::AcqRel,
-            Ordering::Relaxed,
-            |count| (count < self.distance_row_capacity()).then_some(count + 1),
-        );
+        let reserved =
+            self.distance_row_count
+                .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |count| {
+                    (count < self.distance_row_capacity()).then_some(count + 1)
+                });
         if reserved.is_err() {
             return;
         }
@@ -625,7 +629,13 @@ fn blend(weights: [f64; 3], points: [[f64; 3]; 3]) -> [f64; 3] {
 /// Where local coordinate `(u, v)` of a rhombus lands on the globe. Below the
 /// shared diagonal the point is barycentric in face `A B C`, above it in face
 /// `B C D`; the two agree along the diagonal itself.
-fn rhombus_point(corners: &[[f64; 3]; 12], rhombus: [usize; 4], n: i32, u: i32, v: i32) -> [f64; 3] {
+fn rhombus_point(
+    corners: &[[f64; 3]; 12],
+    rhombus: [usize; 4],
+    n: i32,
+    u: i32,
+    v: i32,
+) -> [f64; 3] {
     let [a, b, c, d] = rhombus.map(|index| corners[index]);
     let (n, u, v) = (n as f64, u as f64, v as f64);
     if u + v <= n {
@@ -1047,9 +1057,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .filter(|(index, distance)| {
-                    *index >= 600
-                        && **distance > RING_RADIUS as u16
-                        && used_targets.insert(*index)
+                    *index >= 600 && **distance > RING_RADIUS as u16 && used_targets.insert(*index)
                 })
                 .map(|(index, _)| index)
                 .take(DISTANCE_ROW_ADMISSION_HITS as usize)

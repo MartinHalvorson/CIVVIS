@@ -124,8 +124,10 @@ impl TileMemory {
     /// Note that a remembered tile was looked at again. Cheap: it does not
     /// touch the shared map.
     pub fn mark_seen(&mut self, position: Pos, turn: u32) {
-        if self.tiles.contains_key(&position) {
-            self.stamps.insert(position, turn);
+        if let Some(last) = self.stamps.get_mut(&position) {
+            if *last != turn {
+                *last = turn;
+            }
         }
     }
 

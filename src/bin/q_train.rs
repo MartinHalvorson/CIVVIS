@@ -780,8 +780,12 @@ mod tests {
 
         let mut only_destination = vec![1.0; width];
         mask(&mut only_destination, "destination", width);
-        assert!(only_destination[..destination].iter().all(|value| *value == 0.0));
-        assert!(only_destination[destination..].iter().all(|value| *value == 1.0));
+        assert!(only_destination[..destination]
+            .iter()
+            .all(|value| *value == 0.0));
+        assert!(only_destination[destination..]
+            .iter()
+            .all(|value| *value == 1.0));
 
         let mut only_legacy = vec![1.0; width];
         mask(&mut only_legacy, "legacy-geometry", width);

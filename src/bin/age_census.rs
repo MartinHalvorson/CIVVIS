@@ -92,9 +92,7 @@ fn main() {
     let seed0 = number(&args, "--seed", 900_000) as u64;
     let jobs = number(&args, "--jobs", parallel::default_jobs());
 
-    println!(
-        "age_census: {maps} maps, {players}p {width}x{height}, {turns} turns, seed {seed0}"
-    );
+    println!("age_census: {maps} maps, {players}p {width}x{height}, {turns} turns, seed {seed0}");
 
     let per_map = parallel::map(maps, jobs, move |index| {
         let seed = seed0 + index as u64;
@@ -172,9 +170,8 @@ fn main() {
                             (name.to_string(), game.projected_dedication_score(pid, name))
                         })
                         .collect();
-                    catalogue.sort_by(|left, right| {
-                        right.1.cmp(&left.1).then(left.0.cmp(&right.0))
-                    });
+                    catalogue
+                        .sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
                     let best = catalogue.first().map_or(0, |entry| entry.1);
                     let offered = catalogue.len();
                     pending.push((
@@ -216,10 +213,8 @@ fn main() {
         }
 
         // Final standing: rank by the engine's own score.
-        let mut order: Vec<(usize, i64)> = majors
-            .iter()
-            .map(|pid| (*pid, game.score(*pid)))
-            .collect();
+        let mut order: Vec<(usize, i64)> =
+            majors.iter().map(|pid| (*pid, game.score(*pid))).collect();
         order.sort_by_key(|entry| std::cmp::Reverse(entry.1));
         let seat_count = majors.len();
         majors
@@ -244,7 +239,10 @@ fn main() {
     }
 
     println!("\n== age distribution ==");
-    println!("{:>4}  {:>6} {:>6} {:>6} {:>6}   {:>5}", "era", "dark", "normal", "golden", "heroic", "n");
+    println!(
+        "{:>4}  {:>6} {:>6} {:>6} {:>6}   {:>5}",
+        "era", "dark", "normal", "golden", "heroic", "n"
+    );
     let mut eras: Vec<usize> = entries.iter().map(|entry| entry.era).collect();
     eras.sort_unstable();
     eras.dedup();
@@ -293,7 +291,10 @@ fn main() {
     // A Heroic Age is a Dark Age that reached the *Golden* threshold. Every one
     // is by construction a seat that could also have settled for Normal, so the
     // count is the ceiling on how often a deliberate Dark Age could have paid.
-    println!("heroic ages: {heroic} of {total} transitions ({:.1}%)", 100.0 * heroic as f64 / total as f64);
+    println!(
+        "heroic ages: {heroic} of {total} transitions ({:.1}%)",
+        100.0 * heroic as f64 / total as f64
+    );
     let after_dark: usize = seats
         .iter()
         .flat_map(|seat| seat.entries.windows(2))
@@ -302,7 +303,10 @@ fn main() {
     println!("dark -> heroic in consecutive eras: {after_dark}");
 
     println!("\n== outcome by age history ==");
-    println!("{:>10}  {:>6} {:>8} {:>8}   {:>5}", "held", "win%", "mean rank", "top half", "n");
+    println!(
+        "{:>10}  {:>6} {:>8} {:>8}   {:>5}",
+        "held", "win%", "mean rank", "top half", "n"
+    );
     for age in ["dark", "normal", "golden", "heroic"] {
         let rows: Vec<&Seat> = seats
             .iter()
@@ -315,7 +319,9 @@ fn main() {
     }
     let never_dark: Vec<&Seat> = seats
         .iter()
-        .filter(|seat| !seat.entries.is_empty() && seat.entries.iter().all(|entry| entry.age != "dark"))
+        .filter(|seat| {
+            !seat.entries.is_empty() && seat.entries.iter().all(|entry| entry.age != "dark")
+        })
         .collect();
     outcome_row("never dark", &never_dark);
 
@@ -349,7 +355,10 @@ fn main() {
             })
             .collect();
         println!("\nmargin within {window}:");
-        println!("{:>10}  {:>6} {:>8} {:>8}   {:>5}", "held", "win%", "mean rank", "top half", "n");
+        println!(
+            "{:>10}  {:>6} {:>8} {:>8}   {:>5}",
+            "held", "win%", "mean rank", "top half", "n"
+        );
         outcome_row("just dark", &below);
         outcome_row("just normal", &above);
     }
@@ -359,7 +368,10 @@ fn main() {
     // ever have to clear — and clearing it all the way to Golden from a Dark Age
     // is a Heroic Age, three Dedications instead of one.
     println!("\n== what the era after each age looks like ==");
-    println!("{:>10}  {:>7} {:>7} {:>7} {:>7}   {:>5}", "after", "dark", "normal", "golden", "heroic", "n");
+    println!(
+        "{:>10}  {:>7} {:>7} {:>7} {:>7}   {:>5}",
+        "after", "dark", "normal", "golden", "heroic", "n"
+    );
     for age in ["dark", "normal", "golden", "heroic"] {
         let nexts: Vec<&str> = seats
             .iter()

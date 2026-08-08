@@ -292,7 +292,9 @@ impl JointTactics {
             scored.clear();
             for genome in &population {
                 let (score, played) = self.fitness(g, pid, w, genome, &portfolios, baseline_reply);
-                if generation == 0 && genome.choice == incumbent.choice && genome.order == incumbent.order
+                if generation == 0
+                    && genome.choice == incumbent.choice
+                    && genome.order == incumbent.order
                 {
                     greedy_score = greedy_score.max(score);
                 }
@@ -394,12 +396,10 @@ impl JointTactics {
                     }
                     for (target, action) in Self::strikes_from(g, pid, uid, to, range) {
                         let ranged = matches!(action, Action::Ranged { .. });
-                        let role_bonus = base.tactical_action_bonus_from(
-                            g, uid, to, target, ranged,
-                        );
-                        let prior = Self::strike_prior(g, pid, uid, target, ranged, w)
-                            + role_bonus
-                            - 4.0;
+                        let role_bonus =
+                            base.tactical_action_bonus_from(g, uid, to, target, ranged);
+                        let prior =
+                            Self::strike_prior(g, pid, uid, target, ranged, w) + role_bonus - 4.0;
                         lines.push(Line {
                             prior,
                             toll: base.attack_threshold(g, uid, target) + wounded_margin
@@ -494,22 +494,10 @@ impl JointTactics {
             }
             let distance = g.wdist(from, target);
             if spec.has_ranged_attack() && distance <= range {
-                out.push((
-                    target,
-                    Action::Ranged {
-                        unit: uid,
-                        target,
-                    },
-                ));
+                out.push((target, Action::Ranged { unit: uid, target }));
             }
             if spec.is_melee_capable() && distance == 1 {
-                out.push((
-                    target,
-                    Action::Attack {
-                        unit: uid,
-                        target,
-                    },
-                ));
+                out.push((target, Action::Attack { unit: uid, target }));
             }
         }
         out
@@ -1139,7 +1127,9 @@ mod tests {
     fn one_lone_attacker_is_left_to_the_per_unit_path() {
         let (mut g, mine, _) = firing_line(40, 40);
         g.remove_unit(mine[1]);
-        assert!(JointTactics::default().plan(&g, 0, &BasicAi::new()).is_none());
+        assert!(JointTactics::default()
+            .plan(&g, 0, &BasicAi::new())
+            .is_none());
     }
 
     /// The expectation used by the search has to be the engine's own damage
@@ -1163,5 +1153,4 @@ mod tests {
             );
         }
     }
-
 }

@@ -1,8 +1,8 @@
 //! Ruleset loaded from the shared JSON data files (embedded at compile time).
 use serde::{Deserialize, Serialize};
 
-use crate::rng::Rng;
 use crate::name::Name;
+use crate::rng::Rng;
 use crate::specmap::SpecMap;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, OnceLock};
@@ -954,7 +954,11 @@ pub struct StartBias {
 
 impl StartBias {
     pub fn weight(tier: i32) -> i32 {
-        if tier <= 0 { 0 } else { (6 - tier).max(1) }
+        if tier <= 0 {
+            0
+        } else {
+            (6 - tier).max(1)
+        }
     }
 }
 
@@ -1161,7 +1165,9 @@ fn compile_modifier_selectors(
 ) -> Result<(), String> {
     for (building, yields) in &spec.building_yields {
         if building.is_empty() || building.contains(':') {
-            return Err(format!("modifier {name} has invalid building selector {building:?}"));
+            return Err(format!(
+                "modifier {name} has invalid building selector {building:?}"
+            ));
         }
         for (yield_type, value) in [
             ("food", yields.food),
@@ -1180,7 +1186,9 @@ fn compile_modifier_selectors(
     }
     for (unit, value) in &spec.unit_purchase_discount_pct {
         if unit.is_empty() || unit.contains(':') {
-            return Err(format!("modifier {name} has invalid unit selector {unit:?}"));
+            return Err(format!(
+                "modifier {name} has invalid unit selector {unit:?}"
+            ));
         }
         *effects
             .entry(unit_purchase_discount_effect_key(unit))
@@ -1190,7 +1198,9 @@ fn compile_modifier_selectors(
         if ability.is_empty() || ability.contains(':') {
             return Err(format!("modifier {name} has invalid ability {ability:?}"));
         }
-        *effects.entry(grant_ability_effect_key(ability)).or_insert(0.0) += 1.0;
+        *effects
+            .entry(grant_ability_effect_key(ability))
+            .or_insert(0.0) += 1.0;
     }
     Ok(())
 }
@@ -1600,10 +1610,8 @@ fn random_tree_layout(
         2 + rng.below(regular.len() - 2)
     };
     let (first, second) = regular.split_at(first_len);
-    let mut requirements: BTreeMap<Name, Vec<Name>> = randomized
-        .iter()
-        .map(|name| (*name, Vec::new()))
-        .collect();
+    let mut requirements: BTreeMap<Name, Vec<Name>> =
+        randomized.iter().map(|name| (*name, Vec::new())).collect();
     connect_random_layers(&previous_leaves, first, rng, &mut requirements)?;
     connect_random_layers(first, second, rng, &mut requirements)?;
 
@@ -1669,9 +1677,7 @@ fn apply_tree_layout(
         .collect();
     let previous_leaves: BTreeSet<Name> = tree
         .iter()
-        .filter(|(name, spec)| {
-            spec.era == previous_era && !fixed_parents.contains(*name)
-        })
+        .filter(|(name, spec)| spec.era == previous_era && !fixed_parents.contains(*name))
         .map(|(name, _)| *name)
         .collect();
 
@@ -1766,8 +1772,7 @@ fn apply_tree_layout(
     let terminal = terminals.pop().unwrap();
     let terminal_requires: BTreeSet<Name> = layout[&terminal].requires.iter().cloned().collect();
     if let Some(gateway) = gateways.pop() {
-        let gateway_requires: BTreeSet<Name> =
-            layout[&gateway].requires.iter().cloned().collect();
+        let gateway_requires: BTreeSet<Name> = layout[&gateway].requires.iter().cloned().collect();
         if gateway_requires != second || terminal_requires != BTreeSet::from([gateway]) {
             return Err(format!(
                 "saved randomized {kind} gateway and terminal do not close the second column"
@@ -2035,9 +2040,7 @@ fn add_effects(target: &mut BTreeMap<String, f64>, source: &BTreeMap<String, f64
 }
 
 /// Resolve the modifier graph into bundles that contain no further links.
-fn resolve_modifiers(
-    source: &SpecMap<ModifierSpec>,
-) -> Result<SpecMap<ModifierSpec>, String> {
+fn resolve_modifiers(source: &SpecMap<ModifierSpec>) -> Result<SpecMap<ModifierSpec>, String> {
     fn resolve_one(
         name: &str,
         source: &SpecMap<ModifierSpec>,
@@ -2633,10 +2636,16 @@ mod tests {
             json!({"slot": "economic", "replaces": ["bastions", "serfdom"]}),
         )
         .unwrap();
-        assert_eq!(many.replaces, vec![Name::new("bastions"), Name::new("serfdom")]);
+        assert_eq!(
+            many.replaces,
+            vec![Name::new("bastions"), Name::new("serfdom")]
+        );
 
         let none: PolicySpec = serde_json::from_value(json!({"slot": "economic"})).unwrap();
-        assert!(none.replaces.is_empty(), "a card that retires nothing stays empty");
+        assert!(
+            none.replaces.is_empty(),
+            "a card that retires nothing stays empty"
+        );
     }
 
     #[test]
@@ -2751,7 +2760,10 @@ mod tests {
         let rules = Rules::from_values(files).unwrap();
         // Urban Planning already carries one city Production. Attached values
         // add to local values rather than silently replacing them.
-        assert_eq!(rules.policies["urban_planning"].effects["city_production"], 3.0);
+        assert_eq!(
+            rules.policies["urban_planning"].effects["city_production"],
+            3.0
+        );
         assert_eq!(
             rules.policies["urban_planning"].effects["builder_production_pct"],
             20.0
@@ -2781,7 +2793,9 @@ mod tests {
                 [&building_yield_effect_key("library", "science")],
             3.0
         );
-        assert!(rules.modifiers["production_bundle"].building_yields.is_empty());
+        assert!(rules.modifiers["production_bundle"]
+            .building_yields
+            .is_empty());
         assert!(rules.modifiers["production_bundle"]
             .unit_purchase_discount_pct
             .is_empty());
@@ -2796,7 +2810,10 @@ mod tests {
             json!({"outer": {"modifiers": ["missing"]}}),
         );
         let error = Rules::from_values(dangling).err().unwrap();
-        assert!(error.contains("outer attaches missing modifier missing"), "{error}");
+        assert!(
+            error.contains("outer attaches missing modifier missing"),
+            "{error}"
+        );
 
         let mut cycle = Rules::shipped_values();
         cycle.insert(
@@ -2816,8 +2833,7 @@ mod tests {
     #[test]
     fn rules_objects_cannot_attach_an_unknown_modifier() {
         let mut files = Rules::shipped_values();
-        files.get_mut("policies").unwrap()["urban_planning"]["modifiers"] =
-            json!(["missing"]);
+        files.get_mut("policies").unwrap()["urban_planning"]["modifiers"] = json!(["missing"]);
         let error = Rules::from_values(files).err().unwrap();
         assert!(
             error.contains("policies.json.urban_planning attaches missing modifier missing"),
@@ -2825,11 +2841,7 @@ mod tests {
         );
     }
 
-    fn assert_complete_tree(
-        tree: &SpecMap<TechSpec>,
-        expected: &str,
-        era_counts: [usize; 9],
-    ) {
+    fn assert_complete_tree(tree: &SpecMap<TechSpec>, expected: &str, era_counts: [usize; 9]) {
         let actual: BTreeSet<&str> = tree.keys().map(|name| name.as_str()).collect();
         let expected: BTreeSet<&str> = expected.split_whitespace().collect();
         assert_eq!(actual, expected);
@@ -2933,7 +2945,11 @@ mod tests {
         match gateway {
             Some(gateway) => {
                 assert_eq!(
-                    tree[gateway].requires.iter().cloned().collect::<BTreeSet<_>>(),
+                    tree[gateway]
+                        .requires
+                        .iter()
+                        .cloned()
+                        .collect::<BTreeSet<_>>(),
                     second_owned
                 );
                 assert_eq!(tree[terminal].requires, [Name::new(gateway)]);
@@ -3651,7 +3667,10 @@ mod tests {
         let mut checked = 0usize;
         let check = |family: &str, present: bool, in_any: bool, key: &str| {
             assert!(present, "{family} declares {key}, which its index omits");
-            assert!(in_any, "{key} is declared by {family} but missing from the union");
+            assert!(
+                in_any,
+                "{key} is declared by {family} but missing from the union"
+            );
         };
         for spec in rules.policies.values() {
             for key in spec.effects.keys() {
@@ -3711,10 +3730,16 @@ mod tests {
             }
         }
         for key in rules.tech_effects.keys().chain(rules.civic_effects.keys()) {
-            assert!(index.any(key), "tree effect {key} is missing from the union");
+            assert!(
+                index.any(key),
+                "tree effect {key} is missing from the union"
+            );
             checked += 1;
         }
-        assert!(checked > 500, "expected the shipped ruleset to declare many effects, saw {checked}");
+        assert!(
+            checked > 500,
+            "expected the shipped ruleset to declare many effects, saw {checked}"
+        );
     }
 
     /// The three namespaced families are ruled out on the selector alone, so
@@ -3725,7 +3750,9 @@ mod tests {
         let index = &rules.effect_index;
         for key in index.any.keys() {
             if let Some(rest) = key.strip_prefix(BUILDING_YIELD_EFFECT_PREFIX) {
-                let (selector, _) = rest.split_once(':').expect("a building yield key names a yield");
+                let (selector, _) = rest
+                    .split_once(':')
+                    .expect("a building yield key names a yield");
                 assert!(
                     index.modifies_building_yields(selector),
                     "{key} names building selector {selector}, which the index omits"

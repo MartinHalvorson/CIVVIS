@@ -86,7 +86,7 @@
    "name": "Jerusalem",
    "type": "religious",
    "bonus": "jerusalem",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your cities with Holy Sites exert pressure as if they were Holy Cities (4x Religion pressure on all cities within 10 tiles)."
   },
@@ -110,7 +110,7 @@
    "name": "Antananarivo",
    "type": "cultural",
    "bonus": "antananarivo",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Civilization gains +2% Culture for each Great Person it has ever earned, up to a total of +30%."
   },
@@ -118,7 +118,7 @@
    "name": "Mogadishu",
    "type": "trade",
    "bonus": "mogadishu",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Trader units are immune to being plundered on water tiles."
   },
@@ -126,7 +126,7 @@
    "name": "Cahokia",
    "type": "trade",
    "bonus": "cahokia",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Builders can now make Cahokia Mounds improvements. Cahokia Mounds provide +3 Gold. Cities receive +1 Amenity from their first Cahokia Mound improvement. Upon discovering Natural History, cities receive +1 Amenity from their second Cahokia Mound improvement. +1 Food for every 2 adjacent Districts once Feudalism is discovered or for every adjacent District once Replaceable Parts is researched. Provides +1 Housing. Receive an additional Housing once Cultural Heritage is discovered. Cannot be built adjacent to other Cahokia Mounds."
   },
@@ -134,7 +134,7 @@
    "name": "Akkad",
    "type": "militaristic",
    "bonus": "akkad",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Melee and anti-cavalry unit's attacks do full damage to the city's Walls."
   },
@@ -142,7 +142,7 @@
    "name": "Anshan",
    "type": "scientific",
    "bonus": "anshan",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "+2 Science from each Great Work of Writing. +1 Science from each Relic and Artifact."
   },
@@ -150,7 +150,7 @@
    "name": "Armagh",
    "type": "religious",
    "bonus": "armagh",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Builders can now make Monastery improvements. Monasteries provide +2 Faith. +15 HP healing for friendly religious unit on this tile that has not attacked this turn. +1 Faith for every 2 adjacent Districts. Provides +1 Housing. Receive an additional Housing once Colonialism is discovered. Cannot be built next to another Monastery."
   },
@@ -158,7 +158,7 @@
    "name": "Ayutthaya",
    "type": "cultural",
    "bonus": "ayutthaya",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Gain Culture equal to 10% of the construction cost when finishing buildings."
   },
@@ -166,7 +166,7 @@
    "name": "Bandar Brunei",
    "type": "trade",
    "bonus": "bandar_brunei",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Trading Posts in foreign cities provide +1 Gold to your Trade Routes passing through or going to the city."
   },
@@ -174,7 +174,7 @@
    "name": "Bologna",
    "type": "scientific",
    "bonus": "bologna",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your districts with a building provide +1 Great Person point of their type ( Great Writer, Great Artist, and Great Musician for Theater Square districts with a building)."
   },
@@ -182,7 +182,7 @@
    "name": "Buenos Aires",
    "type": "industrial",
    "bonus": "buenos_aires",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Bonus resources behave like Luxury resources, providing 1 Amenity per type."
   },
@@ -190,7 +190,7 @@
    "name": "Caguana",
    "type": "cultural",
    "bonus": "caguana",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Builders can now make Batey improvements. +1 Culture. +1 Culture for every adjacent Bonus resource and Entertainment Complex (increased to +2 Culture when Exploration is discovered). Provides Tourism after researching Flight. Cannot be built adjacent to another Batey."
   },
@@ -198,7 +198,7 @@
    "name": "Cardiff",
    "type": "industrial",
    "bonus": "cardiff",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Cities receive +2 Power for every Harbor building."
   },
@@ -206,7 +206,7 @@
    "name": "Chinguetti",
    "type": "religious",
    "bonus": "chinguetti",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "International and domestic Trade Routes receive +1 Faith for every follower in this city, of your founded or majority religion."
   },
@@ -214,7 +214,7 @@
    "name": "Fez",
    "type": "scientific",
    "bonus": "fez",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "When you use a religious unit to convert a city for the first time earn 20 Science per Population of that city (on Standard Speed)."
   },
@@ -222,7 +222,7 @@
    "name": "Granada",
    "type": "militaristic",
    "bonus": "granada",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Builders can now make Alc\u00e1zar improvements. Alc\u00e1zars provide +2 Culture. Provides Science equal to 50% of the tile's Appeal. Occupying unit receives +4 Defense Strength, and automatically gains 2 turns of fortification. Provides Tourism after researching Flight. Cannot be built next to another Alc\u00e1zar."
   },
@@ -238,7 +238,7 @@
    "name": "Hunza",
    "type": "trade",
    "bonus": "hunza",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Trade Routes generate +1 Gold for every 5 tiles they travel."
   },
@@ -246,7 +246,7 @@
    "name": "Johannesburg",
    "type": "industrial",
    "bonus": "johannesburg",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Cities receive +1 Production for every improved resource type. After researching Industrialization it becomes +2 Production."
   },
@@ -254,7 +254,7 @@
    "name": "Kumasi",
    "type": "cultural",
    "bonus": "kumasi",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Trade Routes to any city-state provide +2 Culture and +1 Gold for every specialty district in the origin city."
   },
@@ -262,7 +262,7 @@
    "name": "La Venta",
    "type": "religious",
    "bonus": "la_venta",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Builders can now make Colossal Head improvements. Colossal Heads provide +2 Faith. +1 Faith for every 2 adjacent Rainforest or for every adjacent Rainforest once Humanism is discovered. +1 Faith for every 2 adjacent Woods or for every adjacent Woods once Humanism is discovered. Tourism from Faith once Flight is discovered. Cannot be built on Snow or Snow Hills."
   },
@@ -270,7 +270,7 @@
    "name": "Lahore",
    "type": "militaristic",
    "bonus": "lahore",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your cities can now train Nihang units. A unit with a unique Promotion tree that can be purchased with Faith. Combat Strength is increased when Barracks, Armory, and Military Academy buildings are first constructed."
   },
@@ -278,7 +278,7 @@
    "name": "Mexico City",
    "type": "industrial",
    "bonus": "mexico_city",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Regional effects from your Industrial Zone, Water Park, and Entertainment Complex districts reach 3 tiles farther."
   },
@@ -302,7 +302,7 @@
    "name": "Nalanda",
    "type": "scientific",
    "bonus": "nalanda",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Builders can now make Mahavihara improvements. +2 Science and +1 Housing. +1 Faith for every adjacent Holy Site district and +1 Science for every adjacent Campus district. After researching Scientific Theory receive an additional +1 Science for every adjacent Campus. When a player constructs their first Mahavihara receive a random technology. Must be built on flat terrain not adjacent to another Mahavihara."
   },
@@ -310,7 +310,7 @@
    "name": "Nan Madol",
    "type": "cultural",
    "bonus": "nan_madol",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your districts on or next to Coast or Lake tiles provide +2 Culture."
   },
@@ -318,7 +318,7 @@
    "name": "Nazca",
    "type": "religious",
    "bonus": "nazca",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Builders can now make Nazca Line improvements. Nazca Lines provide +1 Faith to adjacent tiles. +1 Faith to adjacent tiles with a resource. +1 Food to adjacent Desert and Desert Hill tiles after discovering Civil Service. +1 Production to adjacent flat tiles after researching Mass Production. +1 Appeal. Can only be built on flat Desert. This tile cannot be worked."
   },
@@ -326,7 +326,7 @@
    "name": "Ngazargamu",
    "type": "militaristic",
    "bonus": "ngazargamu",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Land combat or Support units are 20% cheaper to purchase with Gold for each Encampment district building in that city."
   },
@@ -334,7 +334,7 @@
    "name": "Rapa Nui",
    "type": "cultural",
    "bonus": "rapa_nui",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Builders can now make Moai improvements. Moai provide +1 Culture. +1 Culture for every 2 adjacent Moai. +2 Culture if on or adjacent to a Volcanic Soil tile. +1 Culture if adjacent to a Coast or Lake tile . Additional Culture and Tourism as you advance through the Civics and Technology Tree. Can be built on Plains, Plains Hills, Grassland, Grassland Hills, or Volcanic Soil. Cannot be placed adjacent to a Woods or Rainforest tile."
   },
@@ -342,7 +342,7 @@
    "name": "Samarkand",
    "type": "trade",
    "bonus": "samarkand",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Builders can now make Trading Dome improvements. +2 Gold. +1 Gold for every adjacent Luxury resource. Your outgoing international Trade Routes grant +1 Gold per Trading Dome at the origin. Cannot be built next to another Trading Dome."
   },
@@ -350,7 +350,7 @@
    "name": "Singapore",
    "type": "industrial",
    "bonus": "singapore",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your cities receive +2 Production for each foreign civilization they have a Trade Route to."
   },
@@ -366,7 +366,7 @@
    "name": "Vatican City",
    "type": "religious",
    "bonus": "vatican_city",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "When you activate a Great Person they spread 400 Religious pressure of your founded (or majority) religion to cities within 10 tiles."
   },
@@ -374,7 +374,7 @@
    "name": "Venice",
    "type": "trade",
    "bonus": "venice",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Trade Routes to foreign cities earn +1 Gold for each Luxury resource at the destination."
   },
@@ -382,7 +382,7 @@
    "name": "Wolin",
    "type": "militaristic",
    "bonus": "wolin",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Receive Great General points when a land unit defeats a major or minor civilization's unit and receive Great Admiral points when a naval unit defeats a major or minor civilization's unit equal to 25% of the opposing unit's strength (Standard Speed)."
   },

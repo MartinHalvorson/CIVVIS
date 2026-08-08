@@ -59,17 +59,21 @@ struct Position {
 fn argmax(values: &[(f64, Option<VictoryTarget>)]) -> Option<VictoryTarget> {
     values
         .iter()
-        .fold(None::<(f64, Option<VictoryTarget>)>, |best, (value, target)| {
-            match best {
+        .fold(
+            None::<(f64, Option<VictoryTarget>)>,
+            |best, (value, target)| match best {
                 Some((b, _)) if b >= *value => best,
                 _ => Some((*value, *target)),
-            }
-        })
+            },
+        )
         .and_then(|(_, target)| target)
 }
 
 fn spread(values: &[(f64, Option<VictoryTarget>)]) -> f64 {
-    let max = values.iter().map(|(v, _)| *v).fold(f64::NEG_INFINITY, f64::max);
+    let max = values
+        .iter()
+        .map(|(v, _)| *v)
+        .fold(f64::NEG_INFINITY, f64::max);
     let min = values.iter().map(|(v, _)| *v).fold(f64::INFINITY, f64::min);
     max - min
 }
@@ -171,15 +175,23 @@ fn main() {
         .count();
     if moved == 0 {
         println!("{n} positions, religion branch value identical on every one");
-        println!("\nINERT: the treatment never changed a number the review compares, so it \
+        println!(
+            "\nINERT: the treatment never changed a number the review compares, so it \
                   cannot change a decision. This is not a null result — it is a treatment \
                   that did not apply. Check that the flag reaches `branch_agent` before \
-                  reading anything else into it.");
+                  reading anything else into it."
+        );
         std::process::exit(3);
     }
 
-    let up = positions.iter().filter(|p| p.religion_on > p.religion_off + 1e-9).count();
-    let down = positions.iter().filter(|p| p.religion_on < p.religion_off - 1e-9).count();
+    let up = positions
+        .iter()
+        .filter(|p| p.religion_on > p.religion_off + 1e-9)
+        .count();
+    let down = positions
+        .iter()
+        .filter(|p| p.religion_on < p.religion_off - 1e-9)
+        .count();
     let flipped = positions.iter().filter(|p| p.best_off != p.best_on).count();
     let to_religion = positions
         .iter()

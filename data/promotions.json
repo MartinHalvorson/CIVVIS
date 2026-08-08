@@ -132,5 +132,11 @@
   "disciples": {"class":"warrior_monk","tier":2,"requires":["shadow_strike","twilight_veil"],"effects":{"religious_pressure_on_kill":250},"note":"Spreads its religion after defeating a unit."},
   "sweeping_wind": {"class":"warrior_monk","tier":3,"requires":["exploding_palms","disciples"],"effects":{"extra_attacks":1},"note":"+1 attack per turn when Movement allows."},
   "dancing_crane": {"class":"warrior_monk","tier":3,"requires":["exploding_palms","disciples"],"effects":{"movement":1},"note":"+1 Movement."},
-  "cobra_strike": {"class":"warrior_monk","tier":4,"requires":["sweeping_wind","dancing_crane"],"effects":{"combat_all":15},"note":"+15 Combat Strength."}
+  "cobra_strike": {"class":"warrior_monk","tier":4,"requires":["sweeping_wind","dancing_crane"],"effects":{"combat_all":15},"note":"+15 Combat Strength."},
+
+  "tegh": {"class":"nihang","tier":1,"effects":{"flanking_combat_strength":7},"note":"+7 Combat Strength when flanking."},
+  "trehsool_mukh": {"class":"nihang","tier":1,"effects":{"faith_on_kill_strength_pct":50},"note":"Gain Faith equal to 50% of a defeated unit's base Combat Strength."},
+  "jangi_mojeh": {"class":"nihang","tier":2,"requires":["tegh","sanjo"],"effects":{"movement":1},"note":"+1 Movement."},
+  "sanjo": {"class":"nihang","tier":2,"requires":["trehsool_mukh","jangi_mojeh"],"effects":{"no_wounded_penalty":1},"note":"No Combat Strength penalty when damaged."},
+  "jangi_kara": {"class":"nihang","tier":3,"requires":["jangi_mojeh","sanjo"],"effects":{"lahore_suzerain_combat":10},"note":"+10 Combat Strength while Suzerain of Lahore."}
 }

@@ -29,9 +29,9 @@
 //! agent does, never whether doing it wins -- that costs a paired `ai_eval`.
 use std::collections::{BTreeMap, BTreeSet};
 
-use civvis::name::Name;
-use civvis::ai::{Ai, AdvancedAi};
+use civvis::ai::{AdvancedAi, Ai};
 use civvis::game::{Action, Game};
+use civvis::name::Name;
 use civvis::parallel;
 
 fn number(args: &[String], flag: &str, default: usize) -> usize {
@@ -73,10 +73,8 @@ fn main() {
         let majors: Vec<usize> = (0..game.players.len())
             .filter(|pid| !game.players[*pid].is_minor)
             .collect();
-        let mut seats: BTreeMap<usize, Seat> = majors
-            .iter()
-            .map(|pid| (*pid, Seat::default()))
-            .collect();
+        let mut seats: BTreeMap<usize, Seat> =
+            majors.iter().map(|pid| (*pid, Seat::default())).collect();
 
         for _ in 0..turns {
             if game.winner.is_some() {
@@ -133,7 +131,10 @@ fn main() {
     let offered: f64 = seats.iter().map(|s| s.offered.len() as f64).sum::<f64>() / n;
     let changes: f64 = seats.iter().map(|s| s.changes as f64).sum::<f64>() / n;
     let fill: f64 = seats.iter().map(|s| s.filled_turns as f64).sum::<f64>()
-        / seats.iter().map(|s| s.slot_turns.max(1) as f64).sum::<f64>();
+        / seats
+            .iter()
+            .map(|s| s.slot_turns.max(1) as f64)
+            .sum::<f64>();
     let idle: f64 = seats.iter().map(|s| s.idle_with_offer as f64).sum::<f64>() / n;
 
     let mut ever: BTreeSet<&str> = BTreeSet::new();
