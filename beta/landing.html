@@ -131,7 +131,7 @@
 
   .presets {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: 18px;
     text-align: left;
   }
@@ -246,20 +246,22 @@
 
     <a class="card" href="/">
       <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
-        <rect width="320" height="180" fill="var(--sea)"/>
-        <path d="M28 62 Q48 30 92 38 Q132 44 126 78 Q120 112 78 118 Q34 122 28 92 Z" fill="var(--land)"/>
-        <path d="M182 96 Q192 58 240 54 Q292 52 296 90 Q298 126 250 136 Q198 144 186 120 Z" fill="var(--land-2)"/>
-        <circle cx="70" cy="74" r="4" fill="var(--gold)"/>
-        <circle cx="104" cy="94" r="3" fill="var(--gold)"/>
-        <circle cx="232" cy="86" r="4" fill="var(--gold)"/>
-        <circle cx="266" cy="112" r="3" fill="var(--gold)"/>
-        <path d="M108 84 Q150 70 228 88" stroke="var(--gold)" stroke-width="1" stroke-dasharray="3 4" fill="none" opacity="0.5"/>
+        <defs><clipPath id="tennis-ball"><circle cx="160" cy="90" r="66"/></clipPath></defs>
+        <rect width="320" height="180" fill="var(--sea-deep)"/>
+        <g clip-path="url(#tennis-ball)">
+          <rect x="94" y="24" width="132" height="132" fill="var(--land)"/>
+          <path d="M226 14 Q170 50 172 90 Q174 130 118 166 L94 166 Q150 130 148 90 Q146 50 202 14 Z" fill="var(--sea)"/>
+          <circle cx="128" cy="58" r="4" fill="var(--gold)"/>
+          <circle cx="196" cy="122" r="4" fill="var(--gold)"/>
+        </g>
+        <circle cx="160" cy="90" r="66" fill="none" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.6"/>
       </svg>
       <div class="card-body">
         <h3>The Exhibition</h3>
-        <p>The stock spectacle the channel shows: six civilizations on two
-        continents, from a seed nobody has watched before.</p>
-        <div class="settings">6 civs · Continents · Online speed</div>
+        <p>The front page's stock world: four civilizations on a Tennis Ball
+        globe — two land lobes split by an ocean seam that loops the whole
+        planet — from a seed nobody has watched before.</p>
+        <div class="settings">4 civs · Tennis Ball · Globe</div>
       </div>
     </a>
 
