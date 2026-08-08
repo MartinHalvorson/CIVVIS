@@ -758,8 +758,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the rated profile is identical by construction — the same shape as the
 /// flag re-pins above, with the map script as the flag. Compatibility
 /// re-pin, not an Elo-protocol change.
+/// The siege-commitment term adds one summand to `campaign_city_value`, behind
+/// `AdvancedAi::siege_commitment`. Both constructors leave the flag false and
+/// only `enable_live_bridge` sets it, so under the anchor the `&&` chain
+/// short-circuits on its first test, the term is `0.0`, and the returned score
+/// is the shipped expression minus zero — the anchor's campaign ordering is
+/// byte-identical by construction. Compatibility re-pin, not an Elo-protocol
+/// change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe74a_ee1a_6905_345b;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5544_452c_0a65_9f16;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
