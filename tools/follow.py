@@ -112,14 +112,18 @@ def read_events(run_dir):
 
     A half-written final line is normal, not corruption; dropping it costs at
     most one poll and keeps the reconstruction deterministic.
+
+    The last element is whether the run has exported a map YET, which is the
+    precondition `start_visible_server` needs and this is the only pass that
+    already reads every event. See `main` for what it is guarding.
     """
     path = os.path.join(run_dir, "events.jsonl")
-    good, turn, players, height = [], None, 4, 38
+    good, turn, players, height, tiles = [], None, 4, 38, False
     try:
         with open(path, "rb") as handle:
             raw = handle.read()
     except OSError:
-        return None, None, players, height
+        return None, None, players, height, tiles
     for chunk in raw.split(b"\n"):
         if not chunk.strip():
             continue
@@ -133,11 +137,13 @@ def read_events(run_dir):
             players = int(event.get("players") or players)
         # The map's own height decides the reflection axis; taking it from the
         # export beats assuming a size, because the ladder changes map size.
-        if kind == "tiles" and isinstance(event.get("height"), int):
-            height = event["height"]
+        if kind == "tiles":
+            tiles = True
+            if isinstance(event.get("height"), int):
+                height = event["height"]
         if kind in ("state", "turn") and isinstance(event.get("turn"), int):
             turn = event["turn"]
-    return good, turn, players, height
+    return good, turn, players, height, tiles
 
 
 def mirror_axis(height):
@@ -376,7 +382,7 @@ def rebuild(run_dir, players):
     the next rebuild, and at nice 10 so it never competes with the game whose
     frame budget the controller shares.
     """
-    lines, _, _, height = read_events(run_dir)
+    lines, _, _, height, _ = read_events(run_dir)
     stage = stage_events(lines or [], height)
     process = subprocess.Popen(
         ["nice", "-n", "10", BIN, "play", "--mirror", stage,
@@ -417,6 +423,27 @@ def rebuild(run_dir, players):
                 pass
 
 
+def server_log_reason():
+    """The mirror server's own last words, for a diagnostic that names a cause.
+
+    Bounded read from the end: `server.log` is appended to across every batch
+    this machine has ever run, so it is the one file here that must never be
+    read whole.
+    """
+    path = os.path.join(RIG, "server.log")
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            handle.seek(max(0, handle.tell() - 4096))
+            tail = handle.read().decode("utf-8", "replace")
+    except OSError:
+        return f"no reason recorded in {path}"
+    for line in reversed(tail.splitlines()):
+        if line.strip():
+            return line.strip()
+    return f"no reason recorded in {path}"
+
+
 def start_visible_server(run_dir, players):
     """The window the operator is actually looking at.
 
@@ -436,7 +463,7 @@ def start_visible_server(run_dir, players):
     out = open(os.path.join(RIG, "server.log"), "a")
     # The staged copy, not the run directory: the server's own first read must be
     # turned north-up too, or the window is upside down until the first /load.
-    lines, _, _, height = read_events(run_dir)
+    lines, _, _, height, _ = read_events(run_dir)
     staged = stage_events(lines or [], height)
     process = subprocess.Popen(
         ["nice", "-n", "5", BIN, "play", "--mirror", staged,
@@ -457,7 +484,15 @@ def start_visible_server(run_dir, players):
             hold_the_frame()
             return True
         if process.poll() is not None:
-            log(f"mirror server exited during startup with status {process.returncode}")
+            # The status alone names no cause, and the cause is always one line
+            # away in a DIFFERENT file that nothing pointed at: every refusal the
+            # binary makes — a stage it will not mirror, a port already held, a
+            # flag this build dropped — leaves exit 2 and an explanation on its
+            # stderr, which is `server.log`. Carrying it here is the difference
+            # between a transient wait and a misconfiguration, which this line
+            # otherwise reports identically.
+            log(f"mirror server exited during startup with status "
+                f"{process.returncode}: {server_log_reason()}")
             return False
         time.sleep(1)
     return False
@@ -546,6 +581,7 @@ def main():
     log(f"following {RUNS} -> http://127.0.0.1:{PORT}/")
     current_run, published_turn, published_size, published_at = None, None, None, 0.0
     published_count, misses = 0, 0
+    awaiting_export = False
 
     while True:
         misses = ensure_on_screen(misses)
@@ -560,14 +596,46 @@ def main():
             log(f"following run {os.path.basename(run_dir)}"
                 + (" (idle; showing its last position)" if stale else ""))
             current_run, published_turn, published_size = run_dir, None, None
+            awaiting_export = False
 
-        lines, turn, players, _ = read_events(run_dir)
+        lines, turn, players, _, tiles = read_events(run_dir)
         if lines is None:
             time.sleep(POLL_SECONDS)
             continue
         size = len(lines)
 
         if not server_alive(PORT):
+            # ⚠⚠ SPAWNING HERE BEFORE THE FIRST EXPORT COSTS THE GAME ITS FRAMES.
+            #
+            # `civvis play --mirror` REFUSES a stage with no revealed plots and
+            # exits 2 (`src/main.rs`, "has no tiles to mirror"). That is the
+            # ORDINARY state of a run for its first minutes — the mod exports
+            # every `TileExportEvery` turns and the game has to generate a map
+            # and reach turn 1 first — so this branch used to relaunch a 21 MB
+            # binary that loads the whole game database once per POLL_SECONDS,
+            # forever, and log a line carrying none of that.
+            #
+            # Measured on run civvis-20260807T134625Z: 40 spawn-and-die cycles
+            # in the four minutes while Civilization VI was still generating its
+            # map — precisely the window `docs/CIV6_COMPUTER_CONTROL.md` records
+            # as frame-budget-critical, where a background application starved of
+            # frames is how this project's turn loop stops dead and reads as a
+            # slow machine.
+            #
+            # `rebuild` has always tolerated this exact condition ("Usually 'no
+            # tiles to mirror' on a run that has not exported yet"); only the
+            # server-start path did not. The guard is one-directional on purpose:
+            # no `tiles` event PROVES `revealed_count() == 0`, so it suppresses
+            # only launches that are certain to fail. A stage that has tiles and
+            # still refuses goes down the reporting path below, unchanged.
+            if not tiles:
+                if not awaiting_export:
+                    log("waiting for the run's first map export before starting "
+                        "the mirror server; the game has exported no tiles yet")
+                    awaiting_export = True
+                time.sleep(POLL_SECONDS)
+                continue
+            awaiting_export = False
             if start_visible_server(run_dir, players):
                 published_turn, published_size = turn, size
                 published_at = time.time()

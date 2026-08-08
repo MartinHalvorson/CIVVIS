@@ -2141,6 +2141,57 @@ mod tests {
         assert!(recon.game.units.values().any(|unit| unit.owner == minor.id));
     }
 
+    /// ⚠ `suzerain: -1` is the export's NO-suzerain sentinel, and skipping the
+    /// seeding is not enough to mirror it: our own factual envoys are already
+    /// on the board and no rival delegation is, so three unopposed envoys
+    /// elect seat 0 by walkover. Measured live on `civvis-20260808T003040Z`:
+    /// `taruga suzerain Civ6=-1 CIVVIS=0`.
+    #[test]
+    fn no_suzerain_sentinel_does_not_elect_seat_zero_by_walkover() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(6, 6, "TERRAIN_PLAINS")],
+        }]);
+        let state = StateSnapshot {
+            turn: 30,
+            minors: vec![StateMinor {
+                player: 6,
+                civ: "CIVILIZATION_TARUGA".to_string(),
+                suzerain: -1,
+                envoys: 3,
+                cities: vec![StateCity {
+                    id: 70,
+                    name: "Taruga".to_string(),
+                    x: 6,
+                    y: 6,
+                    pop: 4,
+                    ..StateCity::default()
+                }],
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let recon = rebuild_from_state(&snapshot, &state, 6, 1, 250, 0);
+        let minor = recon
+            .game
+            .players
+            .iter()
+            .find(|player| player.is_minor && player.civ == "Taruga")
+            .expect("Taruga minor seat");
+        // Our delegation is the export's fact and must survive untouched…
+        assert_eq!(recon.game.envoys_at(0, minor.id), 3);
+        // …while the host's "none" answer must be the board's answer too.
+        assert_eq!(
+            recon.game.suzerain_of(minor.id),
+            None,
+            "Civ 6 reported no suzerain (-1); the mirror must not read as ours"
+        );
+    }
+
     #[test]
     fn renamed_city_state_uses_exported_capital_instead_of_legacy_type_id() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -4702,6 +4753,73 @@ mod tests {
         assert!(
             recon.game.can_found_city(supported_settler),
             "the safe control site must remain immediately settleable"
+        );
+    }
+
+    /// ⚠ The export carries a rival's units ONLY under current visibility, so a
+    /// unit arriving here is one the HOST has already let the seat see — its own
+    /// detection rules included. Re-deriving Naval Raider stealth on the mirror
+    /// vetoed that ground truth: run `civvis-20260807T162004Z`, turns 237–251,
+    /// `UNITDATA ⚠ UNIT_NUCLEAR_SUBMARINE@(4, 36) count Civ6=1 CIVVIS=0` — the
+    /// sub was planted, then hidden from the seat's board, orders and threat
+    /// reads because no destroyer of ours stood beside it (#1362).
+    #[test]
+    fn a_visible_rival_naval_raider_is_not_hidden_by_our_own_stealth_rule() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 240,
+            width: 30,
+            height: 30,
+            chunk: 1,
+            plots: vec![plot(20, 9, "TERRAIN_COAST"), plot(5, 5, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot { turn: 240, ..StateSnapshot::default() };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Rome".to_string(),
+            x: 5,
+            y: 5,
+            pop: 6,
+            capital: true,
+            ..StateCity::default()
+        });
+        state.rivals.push(StateRival {
+            player: 5,
+            civ: "CIVILIZATION_AMERICA".to_string(),
+            // The exact unit shape from the live export under `rivals[4]`.
+            units: vec![serde_json::from_str(
+                r#"{"build_charges": 0, "class": "PROMOTION_CLASS_NAVAL_RAIDER",
+                    "combat": 80, "fortified": false, "fortify_turns": 0, "hp": 100,
+                    "kind": "UNIT_NUCLEAR_SUBMARINE", "level": 1, "moves": 0,
+                    "promotions": [], "ranged": 85, "spread_charges": 0,
+                    "x": 20, "y": 9, "xp": 0}"#,
+            )
+            .expect("the issue's unit shape deserializes")],
+            ..StateRival::default()
+        });
+
+        let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let sub = recon
+            .game
+            .units
+            .values()
+            .find(|unit| unit.kind == "nuclear_submarine")
+            .expect("the exported submarine must be planted, not dropped");
+        assert_ne!(sub.owner, 0, "it is the rival's unit");
+        assert!(
+            recon.game.unit_visible_to(sub.id, 0),
+            "the host proved the seat can see this raider; the mirror's own \
+             stealth model must not veto it"
+        );
+        // End to end: the seat's fogged board dump — what the planner and the
+        // mirror checker read — must carry the unit.
+        let view = crate::obs::observation_player_view(&recon.game, 0);
+        assert!(
+            view["units"]
+                .as_array()
+                .expect("units array")
+                .iter()
+                .any(|unit| unit["type"] == "nuclear_submarine"),
+            "the raider must appear on the seat's board"
         );
     }
 
@@ -8919,6 +9037,61 @@ fn mirrored_envoys(player: &crate::game::Player, minor: usize) -> i64 {
         .sum()
 }
 
+/// Seed one mirrored city-state's public suzerainty. `minor.suzerain` is a
+/// host SEAT ID with `-1` meaning no suzerain; the board instead *derives*
+/// suzerainty from envoy counts, so both answers must be constructed. A named
+/// holder gets the minimum winning delegation. The `-1` sentinel needs its own
+/// construction, not just a skip: our factual delegation (`minor.envoys`) is
+/// already seeded and rival delegations are not, so three unopposed envoys of
+/// ours elect seat 0 by walkover — measured live on `civvis-20260808T003040Z`:
+/// `taruga suzerain Civ6=-1 CIVVIS=0`. Civ 6 reporting none while we hold
+/// three or more means some rival at least ties us, so seed that tie on one
+/// alive major; fabricated rival delegations from an earlier suzerainty are
+/// cleared first so a former holder cannot stay elected either. Seat 0's count
+/// is the export's fact and is never touched here.
+fn seed_mirrored_suzerainty(
+    game: &mut crate::game::Game,
+    minor: &StateMinor,
+    owner: usize,
+    seat_of_host: &std::collections::BTreeMap<usize, usize>,
+) {
+    if !minor.is_city_state() {
+        return;
+    }
+    if minor.suzerain >= 0 {
+        if let Some(&holder) = seat_of_host.get(&(minor.suzerain as usize)) {
+            let current = mirrored_envoys(&game.players[holder], owner);
+            let winning = if holder == 0 {
+                minor.envoys.max(3)
+            } else {
+                minor.most_envoys.max(minor.envoys.max(0) + 1).max(3)
+            };
+            set_mirrored_envoys(
+                &mut game.players[holder],
+                owner,
+                current.max(3).max(winning),
+            );
+        }
+        return;
+    }
+    let ours = mirrored_envoys(&game.players[0], owner);
+    let blocker = game
+        .players
+        .iter()
+        .find(|player| player.id != 0 && player.alive && !player.is_minor)
+        .map(|player| player.id);
+    for pid in 1..game.players.len() {
+        if !game.players[pid].is_minor {
+            set_mirrored_envoys(&mut game.players[pid], owner, 0);
+        }
+    }
+    if ours >= 3 {
+        if let Some(blocker) = blocker {
+            set_mirrored_envoys(&mut game.players[blocker], owner, ours);
+        }
+    }
+}
+
 /// Apply public host measurements after the reconstructed economy and city
 /// roster are complete. Yield differences are stored as corrections so an AI
 /// clone can still measure the effect of a candidate policy or building.
@@ -9817,24 +9990,11 @@ pub fn rebuild_from_state(
             }
         }
     }
-    // The suzerain is public even when it is another major. Seed the minimum
-    // winning delegation after every host id has a compact seat mapping.
+    // The suzerain is public even when it is another major — and so is its
+    // absence. Seed the delegations after every host id has a compact seat
+    // mapping.
     for (minor, owner) in minor_assignments {
-        if minor.is_city_state() && minor.suzerain >= 0 {
-            if let Some(&holder) = seat_of_host.get(&(minor.suzerain as usize)) {
-                let current = mirrored_envoys(&game.players[holder], owner);
-                let winning = if holder == 0 {
-                    minor.envoys.max(3)
-                } else {
-                    minor.most_envoys.max(minor.envoys.max(0) + 1).max(3)
-                };
-                set_mirrored_envoys(
-                    &mut game.players[holder],
-                    owner,
-                    current.max(3).max(winning),
-                );
-            }
-        }
+        seed_mirrored_suzerainty(&mut game, minor, owner, &seat_of_host);
     }
 
     // Barbarians go on CIVVIS's own barbarian seat rather than a rival's, so the
@@ -11248,21 +11408,7 @@ impl LiveMirror {
             }
         }
         for (minor, owner) in minor_assignments {
-            if minor.is_city_state() && minor.suzerain >= 0 {
-                if let Some(&holder) = seat_of_host.get(&(minor.suzerain as usize)) {
-                    let current = mirrored_envoys(&self.game.players[holder], owner);
-                    let winning = if holder == 0 {
-                        minor.envoys.max(3)
-                    } else {
-                        minor.most_envoys.max(minor.envoys.max(0) + 1).max(3)
-                    };
-                    set_mirrored_envoys(
-                        &mut self.game.players[holder],
-                        owner,
-                        current.max(3).max(winning),
-                    );
-                }
-            }
+            seed_mirrored_suzerainty(&mut self.game, minor, owner, &seat_of_host);
         }
 
         self.active_trade_route_traders = active_trade_route_traders(state);

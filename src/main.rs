@@ -765,8 +765,37 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// added disjunct is a constant `false` that cannot change the `||`, and
 /// `best_recon` is never reached. The anchor's build order is byte-identical by
 /// construction. Compatibility re-pin, not an Elo-protocol change.
+/// #1401 discounts a motionless Settler from the expansion gate's in-flight
+/// test, so one stuck settler stops costing every future one. It sits behind
+/// `BasicAi::settler_strand_discount`, which `AdvancedAi::enable_live_bridge`
+/// sets and nothing else does — `BasicAi::new` and `with_weights` both leave
+/// it false, and both new tests assert the off path is unchanged, so the
+/// anchor's decision stream is identical by construction. Compatibility
+/// re-pin, not an Elo-protocol change.
+/// #1402 counts mirrored `UNIT_SPY` units as espionage agents in the spy
+/// capacity test. A native CIVVIS Spy is a `Game::spies` entry and never a
+/// unit — the production arm returns before `place_new_unit` — so the unit
+/// census contributes 0 to `spy_agents` in every native game and the anchor
+/// sees the same number it always did. Identical by construction, on a rated
+/// profile and off it. Compatibility re-pin, not an Elo-protocol change.
+/// #1404 adds the missing `disable_stranded_settler_discount` counterpart so
+/// the treatment can be held off for a controlled arm. It only writes `false`
+/// into a field the anchor already reads as `false`. Compatibility re-pin, not
+/// an Elo-protocol change.
+/// The siege-commitment term adds one summand to `campaign_city_value`, behind
+/// `AdvancedAi::siege_commitment`. Both constructors leave the flag false and
+/// only `enable_live_bridge` sets it, so under the anchor the `&&` chain
+/// short-circuits on its first test, the term is `0.0`, and the returned score
+/// is the shipped expression minus zero — the anchor's campaign ordering is
+/// byte-identical by construction. Compatibility re-pin, not an Elo-protocol
+/// change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x024f_67b2_d9bb_3e07;
+/// Merging `origin/main` into this branch brings both sides' live-bridge
+/// treatments into one `BasicAi`/`AdvancedAi`. Every one of them is off in both
+/// constructors and set only by `enable_live_bridge`, so the anchor's decision
+/// stream is unchanged by the union. Compatibility re-pin, not an Elo-protocol
+/// change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x069f_4171_b579_4ae8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
