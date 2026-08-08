@@ -862,6 +862,60 @@ pub const BATTLEFIELD_SIZES: [BattlefieldSize; 3] = [
     BattlefieldSize { id: "20x20", name: "Field · 20×20", width: 20, height: 20 },
 ];
 
+/// The era a game opens in when a sweep asked for a random one.
+///
+/// Seeded off the game's own seed rather than a fresh source, so a run stays
+/// exactly reproducible: the same seed always opens in the same era. The mix
+/// is splitmix64's finalizer, and it earns its place — consecutive seeds are
+/// consecutive integers, so taking them modulo the ladder directly would
+/// march through the eras in lockstep with the seed instead of scattering
+/// them.
+///
+/// Lives here rather than in a caller because both the command line and the
+/// rating tournament roll it, and two implementations of "which era does seed
+/// N open in" would eventually disagree — which would make a replayed
+/// tournament a different experiment from the one that was rated.
+pub fn random_start_era(seed: u64) -> usize {
+    let playable: Vec<usize> = playable_start_eras().filter_map(|spec| spec.era).collect();
+    let mut mix = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    mix = (mix ^ (mix >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    mix = (mix ^ (mix >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    mix ^= mix >> 31;
+    playable[(mix % playable.len() as u64) as usize]
+}
+
+/// Which era a run opens its games in: one fixed rung of the ladder, or a
+/// fresh roll for every game.
+///
+/// A tournament has to carry this as a choice rather than a number, because
+/// the two are different experiments: a ladder rated over one era says what an
+/// AI does with that era's units, and one rated over a spread says what it
+/// does across the roster. The rating profile prints them differently for
+/// exactly that reason, so the two can never share a ledger.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StartEraChoice {
+    Fixed(usize),
+    RandomPerGame,
+}
+
+impl StartEraChoice {
+    /// The era this choice opens the game with `seed` in.
+    pub fn for_seed(self, seed: u64) -> usize {
+        match self {
+            Self::Fixed(era) => era,
+            Self::RandomPerGame => random_start_era(seed),
+        }
+    }
+
+    /// How the rating profile names this choice.
+    pub fn profile_id(self) -> String {
+        match self {
+            Self::Fixed(era) => era.to_string(),
+            Self::RandomPerGame => "random".to_string(),
+        }
+    }
+}
+
 /// The Tactics arena's economy.
 ///
 /// An arena has no empire behind it, so nothing here is earned: every figure
