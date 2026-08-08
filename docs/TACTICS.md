@@ -684,6 +684,22 @@ same-controller battles ended at turn 3 to 5 with no fighting at all — first
 touch on an even field is close to a coin flip, so it measured little beyond
 who owned the fastest unit. With a flag each, the objective sits at the far
 end of the field behind the enemy army, so reaching it means going through
-them: battles run to turn 8 to 50 with a **74% engage** force posture and
-roughly half of both armies destroyed. The race and the fight are the same
-problem, which is what an arena is for.
+them.
+
+Eight same-controller battles, 20x20, stock economy — the spread is the
+finding, so it is given rather than averaged away:
+
+| battle length | surviving army of 48 | force posture |
+| --- | --- | --- |
+| t8, t8, t11 | 46–47 | 44–61% engage |
+| t18, t20 | 40–41 | 57–69% engage |
+| t31, t43, t50 | 22–28 | 74–80% engage |
+
+The mode spans two outcomes rather than producing one. A quarter of battles
+are still quick captures where a fast unit gets through before the lines meet
+and almost nobody dies; the long ones are grinding fights that cost half of
+both armies. Length, engagement and casualties move together, which is what
+says the race and the fight are the same problem rather than two things
+happening in the same battle. Beware quoting a single figure from this: an
+earlier draft of this section cited one game's 74% engage as though it
+described the mode, and the honest range is 44–80%.
