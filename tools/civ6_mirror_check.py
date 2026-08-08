@@ -33,7 +33,7 @@ Requires the mirror server on :8610 (see civvis-civ6-mirror/follow.py).
           the per-turn rates `economy_drift` compares. Same turn, or the delta is
           just income.
 
-## Eight ways this checker itself cried wolf
+## Nine ways this checker itself cried wolf
 
 Each of these is a real bug I nearly reported, caught only by looking again:
 
@@ -75,6 +75,14 @@ Each of these is a real bug I nearly reported, caught only by looking again:
    `turn N`; during that ordinary interval the exact state already exists and
    is the frame the viewer reconstructed. A live check now validates it and
    reports the still-completing turn instead of calling it drift.
+9. It reported a JUST-MET minor's capital as "missing" from the board. `state`
+   updates the moment a city-state is met, but its city plot enters the tiles
+   stream only at the next `TileExportEvery` boundary, so for up to that many
+   turns the board has nowhere to put a city the state already names. Measured
+   live at turn 163 (Johannesburg, met between the turn-160 and turn-164
+   exports; clean again at 165). A one-report disagreement that names a minor
+   met within the export interval is this skew, not a dropped city -- re-check
+   after the next export before reporting it.
 
 ⚠ The board served on :8610 is follow.py's FLIPPED staged copy:
 `board_axial = offset_to_axial(x, TOP - y)`. The flip constant is discovered here

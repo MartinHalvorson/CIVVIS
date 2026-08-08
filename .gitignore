@@ -8,6 +8,14 @@ civvis-play*.log
 /evolved/
 # Runtime league state at the repo root only; data/league/ is a committed snapshot.
 /league/
+# The live mirror's north-up staging copy (tools/follow.py). Untracked and
+# unignored, it left the `main` MANAGEMENT worktree dirty for as long as a game
+# was running — and `civvis_collab.py start` refuses to force-update a dirty
+# management worktree, so a live run disabled the repository's own task launcher
+# and its five-minute synchronization service on that machine. Reproduced
+# 2026-08-07: "cannot start from a synchronized origin/main: refusing to
+# force-update dirty main management worktree".
+/stage/
 *.log
 target-tools/
 bin-run/
