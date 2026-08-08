@@ -8740,6 +8740,8 @@ impl BasicAi {
         // pacing between two sea hexes. A land unit explores land.
         let dry_only = self.come_ashore
             && g.rules.units[g.units[&uid].kind].domain.as_deref() != Some("sea");
+        let unit_is_air = g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("air");
+        let traversal_class = g.traversal_class(uid);
         // The nearest hidden tile is almost always a few hexes away, so walk
         // outward in rings and stop at the first one that holds a candidate
         // instead of testing all nine hundred tiles. The rings partition the
@@ -8767,7 +8769,8 @@ impl BasicAi {
                     .into_iter()
                     .filter(|pos| {
                         !g.players[pid].explored.contains(pos)
-                            && g.unit_can_traverse(uid, *pos)
+                            && !unit_is_air
+                            && g.class_can_traverse_at(traversal_class, *pos)
                             && (!dry_only
                                 || g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile)))
                     })
@@ -8795,7 +8798,8 @@ impl BasicAi {
                 .iter()
                 .filter(|(pos, tile)| {
                     !g.players[pid].explored.contains(pos)
-                        && g.unit_can_traverse(uid, **pos)
+                        && !unit_is_air
+                        && g.class_can_traverse_at(traversal_class, **pos)
                         && (!dry_only || !g.rules.is_water(tile))
                 })
                 .map(|(pos, _)| *pos)

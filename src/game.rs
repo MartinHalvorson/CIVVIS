@@ -26688,6 +26688,12 @@ impl Game {
         self.class_can_traverse(self.traversal_class(uid), tile)
     }
 
+    pub(crate) fn class_can_traverse_at(&self, class: TraversalClass, pos: Pos) -> bool {
+        self.map
+            .get(pos)
+            .is_some_and(|tile| self.class_can_traverse(class, tile))
+    }
+
     /// The [`TraversalClass`] a unit moves as, folding its kind and its
     /// owner's unlocks into the flags the tile predicate reads.
     pub(crate) fn traversal_class(&self, uid: u32) -> TraversalClass {

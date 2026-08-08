@@ -795,7 +795,16 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// constructors and set only by `enable_live_bridge`, so the anchor's decision
 /// stream is unchanged by the union. Compatibility re-pin, not an Elo-protocol
 /// change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x069f_4171_b579_4ae8;
+/// The exploration ring-scan fastpath replaces `unit_can_traverse(uid, pos)`
+/// in `explore_step`'s two candidate filters with a hoisted air-domain check
+/// and a hoisted `TraversalClass` fed to the new `class_can_traverse_at`.
+/// `unit_can_traverse` already answers false for every air unit and otherwise
+/// delegates to `class_can_traverse(traversal_class(uid), tile)`, so the
+/// filter accepts and rejects exactly the same tiles for every unit; only the
+/// per-tile unit lookup and memo probe are hoisted out of the loop. The
+/// anchor's decision stream is identical by construction. Compatibility
+/// re-pin, not an Elo-protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6dba_ba9e_2dbd_86da;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
