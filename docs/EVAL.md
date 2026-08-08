@@ -7314,3 +7314,27 @@ losses per run with the flag on and off. `live_without_peacetime_deterrence`
 exists for exactly that. ⛔ Do not quote the +2.3% military as a gain — it is
 the treatment's input, not its outcome. If a live batch shows cities lost
 unchanged, drop the `enable_live_bridge` call and keep the arm.
+
+## 2026-08-08 — cross-owner escort formations aborted runs mid-batch
+
+An evaluation batch aborted on seed 32,051,026 rather than returning a result.
+A forcing-reply line captured a civilization's last Settler; elimination then
+removed a foreign Battering Ram that was still linked to the attacking Pike
+and Shot, and `enter_tile` dereferenced that cached formation partner. The
+invalid cross-owner link originated when levy control transferred only the
+military member of a city-state escort formation, leaving a `linked_to` edge
+straddling an ownership boundary.
+
+No challenger or control behavior was adjusted. Every unit-ownership transfer
+now routes through `Game::transfer_unit_owner`, which atomically unlinks both
+formation members; a linked leader additionally requires a same-owner,
+symmetric, co-located partner, and tile entry revalidates its cached partner
+after the capture and elimination callbacks. Targeted regressions cover both
+levy directions and the exact elimination shape, and both fail on the
+pre-repair engine — the levy test on the surviving cross-owner link, the
+elimination test on the original `no entry found for key` panic in `relocate`.
+
+⚠ This is an engine repair, not a measurement. Numbers already recorded above
+were produced by the pre-repair engine; a batch that aborted seeds may have
+done so for this reason, so re-run such a batch rather than reusing its
+partial result. Nothing in this entry supersedes an existing baseline.
