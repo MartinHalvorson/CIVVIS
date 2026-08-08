@@ -29,6 +29,14 @@ from typing import Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 
 REPOSITORY_URL = "https://github.com/MartinHalvorson/CIVVIS"
+# The subdirectory `beta/publish.sh` writes the viewer into. It is NOT `beta/`:
+# the published tree is a two-lane site whose viewer lives under `test/`, and
+# `beta/` is only the source directory the publisher is invoked from. Reading
+# the wrong one raised FileNotFoundError after the build had already succeeded,
+# so every desktop app silently stopped rebuilding while CI stayed green —
+# nothing here is exercised by the suite unless a test names this constant.
+# `viewer_lane_matches_the_publisher` pins it against publish.sh itself.
+VIEWER_LANE = "test"
 FULL_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 GENERATED_BUILD_NAME = re.compile(r"^build-[0-9a-f]+-\d{8}T\d{6}Z$")
 TEMPLATE_TOKENS = ("MODE", "LABEL", "COMMIT", "COMMIT_TIME", "BUILT_AT", "REPO")
@@ -388,10 +396,12 @@ def build_artifacts(
         wasm_env = dict(env)
         wasm_env.update({"CARGO_BUILD_JOBS": "2", "CARGO_TARGET_DIR": str(wasm_target)})
         run(("./beta/publish.sh", "--out", str(wasm_site)), cwd=source, env=wasm_env)
-        manifest = json.loads((wasm_site / "beta/build.json").read_text(encoding="utf-8"))
+        manifest = json.loads(
+            (wasm_site / VIEWER_LANE / "build.json").read_text(encoding="utf-8")
+        )
         if manifest.get("commit") != revision.commit:
             raise DesktopAppError("WASM manifest names a different revision")
-        if not (wasm_site / "beta/civvis.wasm").is_file():
+        if not (wasm_site / VIEWER_LANE / "civvis.wasm").is_file():
             raise DesktopAppError("WASM build did not produce civvis.wasm")
         serve_script = build_root / "serve.py"
         shutil.copy2(source / "beta/serve.py", serve_script)
@@ -1071,7 +1081,9 @@ def verify_installed(
     ):
         raise DesktopAppError("WASM rating helper differs from the paired native engine")
     manifest = json.loads(
-        (wasm_app / "Contents/Resources/site/beta/build.json").read_text(encoding="utf-8")
+        (wasm_app / "Contents/Resources/site" / VIEWER_LANE / "build.json").read_text(
+            encoding="utf-8"
+        )
     )
     if manifest.get("commit") != wasm["commit"] or manifest.get("built_at") != wasm["built_at"]:
         raise DesktopAppError("WASM launcher and manifest provenance differ")
