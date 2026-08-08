@@ -24446,17 +24446,21 @@ impl Game {
                             .unwrap_or(0.0);
                     }
                 }
-                let has_district_building = c.buildings.iter().any(|building| {
+                // The building scan stays INSIDE the condition. It walks the
+                // city's whole building list doing a rules lookup and a family
+                // comparison per building, and this runs for every district of
+                // every city every time yields are computed — so the common
+                // case, where nobody is Suzerain of either city-state, must
+                // stop at the two boolean checks.
+                if (self.grants_city_state_unique_bonus(pid, "Stockholm")
+                    || self.grants_city_state_unique_bonus(pid, "Bologna"))
+                    && c.buildings.iter().any(|building| {
                         !c.pillaged_buildings.contains(building)
                             && self.rules.buildings.get(building).is_some_and(|spec| {
                                 spec.district
-
                                     .is_some_and(|family| self.district_is_family(d, family))
                             })
-                    });
-                if (self.grants_city_state_unique_bonus(pid, "Stockholm")
-                    || self.grants_city_state_unique_bonus(pid, "Bologna"))
-                    && has_district_building
+                    })
                 {
                     let kinds: &[&str] = match self.district_family(*d).as_str() {
                         "encampment" => &["general"],
