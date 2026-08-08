@@ -48,7 +48,8 @@ function initAdvancedSettings() {
   ].map(([id, label]) => label
     ? document.getElementById(id).closest("label")
     : document.getElementById(id));
-  basic.push(document.getElementById("victory-options"), document.getElementById("saves-group"));
+  basic.push(document.getElementById("victory-options"),
+    document.getElementById("tactics-options"), document.getElementById("saves-group"));
   for (const node of basic) gameAdvanced.before(node);
   // The Civ 6 host line describes the mode chosen directly above it, so it
   // follows that control through the reorder rather than staying where the
@@ -28000,6 +28001,13 @@ function selectedSimulationSettings() {
           victory_conditions: victoryConditions,
           mercy_rule: mercyRule === "" ? null : Number(mercyRule),
           required_victory_types: requiredVictories,
+          // The arena economy travels always, not only in Tactics: the server
+          // reads it on a battlefield and carries it everywhere else, so a
+          // world is unaffected and a mode switch needs no second request.
+          tactics_cities: Number(readSetting("tacticscities")) || 0,
+          tactics_production: Number(readSetting("tacticsproduction")) || 0,
+          tactics_gold: Number(readSetting("tacticsgold")) || 0,
+          tactics_turns_per_tech: Number(readSetting("tacticsturnspertech")) || 0,
           ...(mapSeed === null ? {} : {seed: mapSeed}),
           // A battlefield's dimensions are its own setting: no seat count
           // implies an arena size, so the chosen one travels explicitly and
