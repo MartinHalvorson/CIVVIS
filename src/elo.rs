@@ -565,11 +565,17 @@ fn tournament_setup_contract(cfg: &TourneyCfg) -> String {
     // the mode had an economy still matches its own profile.
     let arena = if cfg.map_script.is_battlefield() {
         format!(
-            ";arena=cities:{},production:{},gold:{},turns-per-tech:{}",
+            ";arena=cities:{},production:{},gold:{},turns-per-tech:{}{}",
             cfg.tactics.cities,
             cfg.tactics.production,
             cfg.tactics.gold,
             cfg.tactics.turns_per_tech,
+            // A flag battle is a different game from an attrition duel — a
+            // race can be won by a side that would have lost the fight — so
+            // the objective joins the profile. Only when it is the flag:
+            // every arena ledger written before the shape existed stays
+            // matching its own profile.
+            if cfg.tactics.flag { ",objective:flag" } else { "" },
         )
     } else {
         String::new()
@@ -5335,6 +5341,23 @@ mod tests {
             ..TourneyCfg::default()
         };
         assert_ne!(stock, super::tournament_setup_contract(&duel));
+
+        // The flag objective is a third game again — a race, not a siege or
+        // a duel — so it splits the ledger too, and only by *adding* to the
+        // profile, so every arena ledger written before the shape existed
+        // still matches its own.
+        let flagged = TourneyCfg {
+            map_script: MapScript::Battlefield,
+            tactics: crate::setup::TacticsRules {
+                flag: true,
+                ..crate::setup::TacticsRules::default()
+            }
+            .sanitized(),
+            ..TourneyCfg::default()
+        };
+        let race = super::tournament_setup_contract(&flagged);
+        assert!(race.contains("objective:flag"), "{race}");
+        assert!(!stock.contains("objective:flag"), "{stock}");
 
         let spread = TourneyCfg {
             map_script: MapScript::Battlefield,
