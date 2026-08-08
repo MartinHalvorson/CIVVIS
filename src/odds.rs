@@ -427,6 +427,17 @@ fn still_playing(game: &Game, pid: usize) -> bool {
     if !player.alive {
         return false;
     }
+    // The arena's own elimination rule, mirrored: a side is its army, and it
+    // is in the game while it has a unit standing or a city to build one
+    // from. The world test below — a city or a Settler — is exactly the pair
+    // an arena seat never holds, so without this branch every no-city arena
+    // seat read as already out, the living list came back empty, and the
+    // whole table sat at zero for the length of the battle. That, more than
+    // any coefficient, is why no arena game ever crossed a mercy threshold.
+    if game.is_arena() {
+        return !game.player_city_ids(pid).is_empty()
+            || game.units.values().any(|unit| unit.owner == pid);
+    }
     !game.player_city_ids(pid).is_empty()
         || game
             .units
@@ -501,6 +512,39 @@ fn standing_elo(game: &Game, living: &[usize]) -> Vec<Standing> {
 /// prices the same lead against the field and is already sharpened as the clock
 /// runs down. Counting it twice is what makes a young table look decided.
 fn best_race_pct(game: &Game, pid: usize, leading_score: i64) -> f64 {
+    // On an arena the domination race is the destruction of the other army,
+    // and the ordinary meter cannot see it: it counts capitals, an arena
+    // holds none (or one apiece that only changes hands as the game ends),
+    // and the material terms above are floored for Civ-world magnitudes that
+    // an arena's army weights sit under. Measured before this branch existed,
+    // a battle standing at twelve units against one still read as contested —
+    // zero threshold crossings in twenty-four games at any threshold down to
+    // 0.90 — so the Mercy Rule could never fire on the one mode whose games
+    // most reliably outlive their result.
+    //
+    // The share of the surviving strength-weighted army is the arena's race
+    // meter. It is the same quantity the arena's own Score victory ranks at
+    // the clock (`Game::score_parts`), it needs no history to compute, and it
+    // reads 50 exactly when the armies are even, so an undecided battle gains
+    // nothing from either side.
+    if game.is_arena() {
+        // Unconditionally: the arena opens the domination lane whatever the
+        // lobby's checkboxes say (`Game::victory_lane_open`), so the race is
+        // always on. Reading the raw checkbox here would mute the meter in
+        // exactly the games that still end by it.
+        let weight = |seat: usize| game.score_parts(seat)[0].max(0) as f64;
+        let mine = weight(pid);
+        let total: f64 = game
+            .players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian && player.alive)
+            .map(|player| weight(player.id))
+            .sum();
+        if total <= 0.0 {
+            return 0.0;
+        }
+        return (100.0 * mine / total).clamp(0.0, 100.0);
+    }
     let races = game.victory_races(pid, leading_score);
     let enabled = &game.victory_conditions;
     [
@@ -539,8 +583,11 @@ fn clock_progress(game: &Game) -> f64 {
 /// Whether this ruleset leaves any way for the game to produce a winner.
 /// A lobby may deliberately switch every path off; in that world a forced
 /// one-win distribution is not a forecast but a contradiction of the rules.
+/// Asked of the *effective* conditions: an arena opens domination and score
+/// whatever the checkboxes say, so its odds must not read as a zeroed table
+/// just because a launch line switched the world lanes off.
 fn any_victory_enabled(game: &Game) -> bool {
-    let enabled = &game.victory_conditions;
+    let enabled = &game.effective_victory_conditions();
     enabled.science
         || enabled.culture
         || enabled.religious
@@ -623,6 +670,99 @@ mod tests {
     use crate::game::{Game, GameOptions};
     use crate::league::{League, Strategy, StrategyKind};
     use std::collections::BTreeSet;
+
+    fn arena(cities: u8) -> Game {
+        let mut options = GameOptions::new(2, 10, 10, 90_411, 250, 0);
+        options.map_script = crate::setup::MapScript::Battlefield;
+        options.tactics = crate::setup::TacticsRules { cities, ..Default::default() };
+        Game::new_with(options)
+    }
+
+    /// An arena that has been all but decided must say so. Before the arena
+    /// race meter existed the model read cities, capitals and Civ-scale
+    /// material floors — all silent on a battlefield — and a twelve-to-one
+    /// battle still read as contested, so the Mercy Rule could never fire on
+    /// the one mode whose games most reliably outlive their result.
+    #[test]
+    fn a_shattered_arena_army_concedes_the_odds() {
+        let mut game = arena(0);
+        // Reduce one side to a single wounded warrior, by the book: units are
+        // removed through the same call combat resolution uses.
+        let losing: Vec<u32> = game
+            .units
+            .values()
+            .filter(|unit| unit.owner == 1)
+            .map(|unit| unit.id)
+            .collect();
+        for unit in losing.iter().skip(1) {
+            game.remove_unit(*unit);
+        }
+        game.units.get_mut(&losing[0]).unwrap().hp = 20;
+        // Mid-battle on the clock, not the opening: the standing multiplier
+        // sharpens with progress, and a decided battle is decided mid-game.
+        game.turn = 150;
+
+        let table = table(&game, |_pid| 1500.0f64);
+        assert!(
+            table[&0].now > 0.95,
+            "twelve fresh units against one wounded warrior reads {:.3}",
+            table[&0].now
+        );
+        assert_eq!(
+            mercy_leader(&game, 0.95),
+            Some(0),
+            "the Mercy Rule crowns the side that holds the field"
+        );
+    }
+
+    /// Even arena armies are an even table: the race meter reads half each,
+    /// so nothing separates the sides but their priors.
+    #[test]
+    fn an_even_arena_is_an_even_table() {
+        let mut game = arena(0);
+        game.turn = 150;
+        let table = table(&game, |_pid| 1500.0f64);
+        assert!(
+            (table[&0].now - table[&1].now).abs() < 0.02,
+            "even armies read {:.3} against {:.3}",
+            table[&0].now,
+            table[&1].now
+        );
+        assert_eq!(mercy_leader(&game, 0.95), None);
+    }
+
+    /// The arena plays domination whatever the lobby checkboxes say, and the
+    /// odds must speak the same rule: a battlefield launched with only the
+    /// world lanes ticked still has a winner coming, so its table is not
+    /// zeroed and its race meter still moves.
+    #[test]
+    fn arena_odds_survive_a_lobby_that_switched_the_world_lanes_off() {
+        let mut game = arena(0);
+        game.victory_conditions = crate::game::VictoryConditions {
+            science: true,
+            culture: false,
+            religious: false,
+            diplomatic: false,
+            domination: false,
+            score: false,
+        };
+        let losing: Vec<u32> = game
+            .units
+            .values()
+            .filter(|unit| unit.owner == 1)
+            .map(|unit| unit.id)
+            .collect();
+        for unit in losing.iter().skip(1) {
+            game.remove_unit(*unit);
+        }
+        game.turn = 150;
+        let table = table(&game, |_pid| 1500.0f64);
+        assert!(
+            table[&0].now > 0.95,
+            "the arena's own lanes carry the odds, not the checkboxes: {:.3}",
+            table[&0].now
+        );
+    }
 
     fn even_table(players: usize, difficulty: &str, human_seats: &[usize]) -> Game {
         let mut options = GameOptions::new(players, 32, 22, 4_771, 250, 0);

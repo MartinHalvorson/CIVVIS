@@ -168,3 +168,69 @@ the stock budget so games end on victories rather than truncations
 
 Anything else re-proposing "stop decided games early via `odds.rs`" without
 new mechanism should cite this document and stop.
+
+
+## Arenas, 2026-08-08: a new signal, not a reopening
+
+The conclusion above stands for worlds. This section is the case the closing
+clause anticipated — a new mechanism, measured on the profile it would deploy
+to — and it concerns only the Tactics arena, where the model previously had
+no signal at all.
+
+Three blindnesses, found by instrument (0/24 crossings at every threshold in
+battles that ended twelve units against one):
+
+- `still_playing` asked the world's question — a city or a Settler — which an
+  arena seat never holds, so every no-city seat read as already out, the
+  living list came back empty, and the whole table sat at zero for the length
+  of the battle.
+- The domination race counted capitals. An arena holds none, so the model's
+  strongest term (up to `RACE_FULL_ELO`) never moved.
+- The material floors are Civ-scaled (`SCORE_FLOOR` 25 against arena army
+  weights of five to sixty), crushing what little the lead terms saw.
+
+The fix speaks the arena's own rules: `still_playing` mirrors the arena's
+elimination rule (units or a city), and the domination race meter is the share
+of surviving strength-weighted army — the same quantity the arena's Score
+victory ranks at the clock, reading 50 exactly when the armies are even. The
+floors are untouched; the race meter carries the crossing.
+
+Measured on 24 seeds per regime, 2 players, 20x20, adjudicating from turn 40
+every 10 turns:
+
+**No cities (attrition; median battle 613 of a 656-turn clock):**
+
+| threshold | crossed | agreement | mean turns saved | share of compute |
+| --- | --- | --- | --- | --- |
+| 0.90 | 24/24 | 100% (24/24) | 157.0 | 35.3% |
+| 0.95 | 22/24 | 100% (22/22) | 139.4 | 28.7% |
+| 0.98 | 22/24 | 100% (22/22) | 114.8 | 23.6% |
+| 0.995 | 22/24 | 100% (22/22) | 84.4 | 17.4% |
+
+**No cities, random start era:**
+
+| threshold | crossed | agreement | mean turns saved | share of compute |
+| --- | --- | --- | --- | --- |
+| 0.90 | 23/24 | 100% (23/23) | 222.7 | 38.5% |
+| 0.995 | 20/24 | 100% (20/20) | 145.7 | 21.9% |
+
+**One city per side (capture):** 1/24 crossings, 100% on the crossing, 1.4%
+saved — benign, not a failure. Those battles end at turns 13-57, decided
+suddenly by the city falling, so they do not outlive their result and there
+is nothing for adjudication to save. The regimes that bled compute are the
+ones rescued.
+
+Why the arena escapes the world's verdict: damage is permanent and nothing on
+the field rebuilds an army faster than it is destroyed, so a material lead is
+close to irreversible in exactly the way a mid-game Civ lead is not — the
+"ordinary late upsets" the world's calibration must stay soft for do not
+exist here. The world's own tables are unaffected: every change is behind
+`Game::is_arena()` except `any_victory_enabled`, which now reads the
+*effective* victory conditions — identical for any world, and on an arena the
+difference is precisely that its two lanes are open whatever the lobby left
+ticked.
+
+For rated play the tournament still runs `mercy_rule: None`; these tables are
+the pre-registered evidence for turning it on there, not the decision. The
+lobby's shipped 95% default now simply works on arenas, as the setup screen
+already claimed it did.
