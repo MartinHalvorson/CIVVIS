@@ -56963,6 +56963,29 @@ impl Game {
         self.victory_conditions.is_enabled(vtype)
     }
 
+    /// The victory lanes this world actually offers, whatever a lobby or a
+    /// command line left in `victory_conditions`.
+    ///
+    /// This is what a client is told, so that the victory tracker shows the
+    /// battle a Tactics game is deciding rather than a science race nobody on
+    /// the field can run: an arena has no cities, so four of the six lanes
+    /// have nowhere to happen and [`Self::victory_lane_open`] refuses them in
+    /// any case. Publishing the effective set keeps the display and the rule
+    /// the same answer however the world was set up.
+    pub fn effective_victory_conditions(&self) -> VictoryConditions {
+        if !self.is_arena() {
+            return self.victory_conditions;
+        }
+        VictoryConditions {
+            science: false,
+            culture: false,
+            religious: false,
+            diplomatic: false,
+            domination: true,
+            score: true,
+        }
+    }
+
     /// The Require-N setting, clamped to what the lobby actually enabled:
     /// requiring more victory types than exist could never be satisfied, and
     /// zero — a save written before the option existed — is the stock
@@ -68154,6 +68177,43 @@ mod district_mechanics {
             .apply(0, &Action::FoundCity { unit: settler })
             .is_err_and(|refusal| refusal.contains("battlefield")));
         assert!(game.cities.is_empty());
+    }
+
+    /// What a Tactics game tells a client it can be won by. Four of the six
+    /// lanes need cities, an arena has none and no way to found one, and the
+    /// engine refuses them there — so the victory tracker is told about the
+    /// two that can actually decide the battle, whatever the lobby or a
+    /// command line left in the checkboxes.
+    #[test]
+    fn an_arena_publishes_only_the_lanes_a_battle_can_be_decided_by() {
+        let mut game = Game::new_with(GameOptions {
+            map_script: MapScript::Battlefield,
+            ..GameOptions::new(2, 10, 10, 6_161, 250, 0)
+        });
+        // However the world was set up — here, every lane switched on.
+        game.victory_conditions = VictoryConditions {
+            science: true,
+            culture: true,
+            religious: true,
+            diplomatic: true,
+            domination: true,
+            score: true,
+        };
+        game.required_victory_types = 3;
+        let published = game.effective_victory_conditions();
+        for lane in ["science", "culture", "religious", "diplomatic"] {
+            assert!(!published.is_enabled(lane), "{lane} has nowhere to happen on an arena");
+            assert!(!game.set_winner(0, lane), "{lane} must not decide a battle");
+        }
+        assert!(published.is_enabled("domination"));
+        assert!(published.is_enabled("score"));
+        // And a battle is decided once, however many types were required.
+        assert_eq!(game.effective_required_victories(), 1);
+
+        // A Civ world publishes exactly what it was set up with.
+        let mut world = Game::new_full(2, 44, 26, 6_161, 250, 0, false);
+        world.victory_conditions.science = false;
+        assert_eq!(world.effective_victory_conditions(), world.victory_conditions);
     }
 
     /// The turn limit on an arena is a battle's, and what it awards is the

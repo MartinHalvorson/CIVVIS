@@ -2832,7 +2832,7 @@ impl Session {
                 o["simultaneous"] = json!(self.simultaneous_census);
             }
             o["teams"] = json!(major_teams(&self.game));
-            o["victory_conditions"] = json!(self.game.victory_conditions);
+            o["victory_conditions"] = json!(self.game.effective_victory_conditions());
             o["mercy_rule"] = json!(self.game.mercy_rule);
             o["required_victory_types"] = json!(self.game.effective_required_victories());
             o["victories_won"] = json!(self.game.victories_won);
@@ -2861,7 +2861,7 @@ impl Session {
         o["leader_pool"] = json!(self.game.leader_pool.id());
         o["turn_structure"] = json!(self.game.turn_structure.id());
         o["teams"] = json!(major_teams(&self.game));
-        o["victory_conditions"] = json!(self.game.victory_conditions);
+        o["victory_conditions"] = json!(self.game.effective_victory_conditions());
         o["mercy_rule"] = json!(self.game.mercy_rule);
         o["required_victory_types"] = json!(self.game.effective_required_victories());
         o["victories_won"] = json!(self.game.victories_won);
