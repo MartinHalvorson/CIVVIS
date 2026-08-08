@@ -9,6 +9,7 @@ and a saturated fallback must retain science and culture work.
 
 from __future__ import annotations
 
+import json
 import pathlib
 import re
 import unittest
@@ -70,16 +71,49 @@ class ProductionActuatorTests(unittest.TestCase):
         self.assertNotIn('"UNIT_', floor_code)
 
     def test_development_ladder_can_finish_science_and_culture_tiers(self) -> None:
+        """⚠ THE MUSEUMS ARE `MUSEUM_ART`/`MUSEUM_ARTIFACT`, SUBJECT-LAST.
+
+        This test spent since #782 asserting `BUILDING_ART_MUSEUM` and
+        `BUILDING_ARCHAEOLOGICAL_MUSEUM`, which are not names Civilization VI
+        has ever had. #782 corrected the ladder and the test kept pinning the
+        invented spellings — red, but in a suite the gate does not run, so the
+        one check standing guard over the museum rungs was itself broken for
+        six days. `test_every_ladder_type_name_is_one_the_game_has` below is
+        the general form of the defect, and would have caught both.
+        """
         for item in (
             "BUILDING_LIBRARY",
             "BUILDING_UNIVERSITY",
             "BUILDING_RESEARCH_LAB",
             "BUILDING_AMPHITHEATER",
-            "BUILDING_ART_MUSEUM",
-            "BUILDING_ARCHAEOLOGICAL_MUSEUM",
+            "BUILDING_MUSEUM_ART",
+            "BUILDING_MUSEUM_ARTIFACT",
             "BUILDING_BROADCAST_CENTER",
         ):
             self.assertIn(f'"{item}"', self.choose)
+
+    def test_every_ladder_type_name_is_one_the_game_has(self) -> None:
+        """A rung the game cannot resolve is invisible: the ladder moves on.
+
+        That is the property that let a misspelled museum sit in the list
+        across 50 live runs while museums stood in 0 of 119 end-of-game cities
+        — nothing errors, the entry simply never fires. `data/civ6_type_names.json`
+        is the 529 real names extracted from the game, so every quoted type in
+        the whole agent can be checked against it directly.
+        """
+        real = json.loads((ROOT / "data/civ6_type_names.json").read_text(encoding="utf-8"))
+        known = set(real) if isinstance(real, list) else {
+            name for value in real.values()
+            for name in ([value] if isinstance(value, str) else value)
+        }
+        quoted = set(re.findall(
+            r'"((?:BUILDING|UNIT|DISTRICT|PROJECT)_[A-Z0-9_]+)"', self.source))
+        self.assertTrue(quoted, "the agent should name types the game can resolve")
+        invented = sorted(name for name in quoted if name not in known)
+        self.assertEqual(
+            invented, [],
+            "these are not Civilization VI type names, so the rungs naming them "
+            f"can never fire: {invented}")
 
     def test_civilian_purchase_does_not_carry_a_military_formation(self) -> None:
         self.assertIn(

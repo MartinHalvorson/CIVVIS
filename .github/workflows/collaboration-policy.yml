@@ -21,8 +21,27 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Test the policy engine
-        run: python3 -m unittest tools/test_civvis_collab.py tools/test_civvis_push_guard.py tools/test_civvis_fleet.py tools/test_civvis_desktop_apps.py tools/test_spectator_supervisor.py tools/test_tactics_bench.py
+      # ⚠ DISCOVERED, NOT LISTED — THE LIST WAS THE BUG.
+      #
+      # This step named six suites by hand, so the other twenty-five in
+      # `tools/` were run by nobody. Four had been red for days when anyone
+      # finally ran them: `test_civ6_production.py` pinned two building names
+      # Civilization VI has never had, `test_civ6_launcher.py` reached for an
+      # install that only exists on a play host, `test_civ6_play.py` could not
+      # even be collected, and `test_update_readme_rankings.py` raised on a
+      # README a human had shortened. Every one of them is a check that exists
+      # precisely to catch a regression, quietly not catching regressions.
+      #
+      # `test_civvis_desktop_apps.py` is the precedent for the shape of the
+      # answer: it was added here in #1349 after three days red, and its
+      # macOS-only cases carry `skipUnless` so they skip on this runner rather
+      # than fail. A suite that cannot run on ubuntu belongs behind that same
+      # guard — it does not belong outside the gate.
+      #
+      # 647 tests, ~17s. Adding a suite now costs nothing and forgetting to
+      # register one is no longer possible.
+      - name: Test the repository tooling
+        run: python3 -m unittest discover -s tools -p 'test_*.py'
       - name: Validate branch, ownership, overlap, and commits
         if: github.event_name == 'pull_request'
         env:

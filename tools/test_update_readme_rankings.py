@@ -77,9 +77,22 @@ class OfficialRosterTests(unittest.TestCase):
         passed on a table that ranked on the wrong statistic, because it only ever
         checked that the ordering was *self-consistent* — never that the number it
         ordered on was the one that answers the question.
+
+        ⚠ THE BLOCK IS OPTIONAL CONTENT, AND ITS ABSENCE IS NOT A FAILURE.
+        `f5563309` ("Update README.md", 2026-08-02) cut the README from 450
+        lines to 9 by hand, taking the generated ranking with it. This check
+        then raised `IndexError` on every run for six days, unnoticed, because
+        no gate runs this file. Re-inserting 443 generated lines to satisfy a
+        test would be the test dictating the README's shape to the person who
+        just shortened it deliberately. What is worth protecting is the
+        table's completeness *when a table is published*, so that is what this
+        asserts; `python3 tools/update_readme_rankings.py` puts it back if it
+        is ever wanted again.
         """
         roster = rankings.official_roster(ROOT)
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        if rankings.START_MARKER not in readme:
+            self.skipTest("the committed README publishes no ranking block")
         block = readme.split(rankings.START_MARKER, 1)[1].split(
             rankings.END_MARKER, 1
         )[0]
