@@ -3642,6 +3642,13 @@ local GOVERNOR_ORDER = {
 	"GOVERNOR_THE_CARDINAL",
 };
 
+-- The last founding this agent asked the host for, kept until the host either
+-- confirms it or is caught not doing it. `UI.RequestPlayerOperation` is
+-- asynchronous, so nothing on the requesting frame can tell success from a
+-- silent no-op -- and a silent no-op here costs the Great Prophet AND the
+-- religion. See the `kind == "religion"` handler.
+local pendingReligionFounding = nil;
+
 -- Which city each appointed governor was posted to, kept across turns. The engine
 -- has query methods for this but their names differ between builds, and guessing
 -- a Civilization VI API has cost this project three failed fixes today, so the
@@ -5524,6 +5531,37 @@ local function exportState(player, pid, turn)
 		try(function() return playerReligion:GetReligionTypeCreated(); end, -1) or -1;
 	local prophet_pending = religionCreated < 0 and playerReligion ~= nil and
 		try(function() return playerReligion:HasReligiousFoundingUnit(); end, false) or false;
+	-- ★ SAY SO WHEN THE FOUNDING DID NOT TAKE. The request reports `applied`
+	-- because nothing threw; only the turn AFTER can read whether a religion
+	-- exists. Across 24 live runs the answer was always "no religion, and the
+	-- Prophet is gone too", and nothing in the log said so.
+	if pendingReligionFounding ~= nil then
+		local now = try(function() return Game.GetCurrentGameTurn(); end, 0) or 0;
+		if religionCreated >= 0 then
+			emit("religion_founded", {
+				player = pid,
+				turn = now,
+				requested_turn = pendingReligionFounding.turn,
+				religion = pendingReligionFounding.religion,
+				follower = pendingReligionFounding.follower,
+				founder = pendingReligionFounding.founder,
+			});
+			pendingReligionFounding = nil;
+		elseif now > pendingReligionFounding.turn then
+			emit("religion_founding_failed", {
+				player = pid,
+				turn = now,
+				requested_turn = pendingReligionFounding.turn,
+				religion = pendingReligionFounding.religion,
+				-- The two facts that separate the failure modes: whether the
+				-- Prophet survived, and whether the slot is still open.
+				founding_unit_left = prophet_pending,
+				religions_founded = #(try(function()
+					return Game.GetReligion():GetReligions(); end, {}) or {}),
+			});
+			pendingReligionFounding = nil;
+		end
+	end
 	local founded_religion = nil;
 	local founded_religions = {};
 	local religion_beliefs = {};
@@ -7034,13 +7072,41 @@ local function applyOrder(player, pid, row, turn)
 			return false, "cannot_found_religion_here";
 		end
 
-		-- Reproduce the full human path. UnitPanel first starts the Prophet-specific
+		-- Reproduce the full human path. UnitPanel starts the Prophet-specific
 		-- operation that opens religion selection; ReligionScreen then founds the
-		-- named religion and attaches the two selected beliefs. Omitting the first
-		-- request creates the religion but leaves its Prophet occupying the Holy Site.
-		local okOperation = pcall(function()
-			UnitManager.RequestOperation(prophet, foundOperation.Hash);
-		end);
+		-- named religion and attaches the two selected beliefs.
+		--
+		-- ★★★★★ THE PLAYER OPERATION GOES FIRST, AND THAT ORDER IS THE WHOLE FIX.
+		--
+		-- This block used to request the UNIT operation first. Measured across the
+		-- 24 completed live runs of 2026-08-07/08, that sequence has a single,
+		-- perfectly repeatable outcome:
+		--
+		--     turn t-1   prophet 1   prophet_pending false   religion none
+		--     turn t     prophet 1   prophet_pending TRUE    religion none   <- order
+		--     turn t+1   prophet 0   prophet_pending false   religion NONE
+		--
+		-- The Great Prophet is CONSUMED and no religion is created. A religion
+		-- order reached the host in 19 of 24 runs, every one of them reported
+		-- `applied` with zero refusals, and a religion was founded in **0 of 24**.
+		-- All four slots go to rivals in every game, a median 494 Faith banks with
+		-- nothing to buy, and the religious victory lane -- which this controller
+		-- wins 19 games in 50 in the headless evaluator -- is unreachable in live
+		-- play by construction.
+		--
+		-- The comment this replaces already named the mechanism without drawing the
+		-- conclusion: "omitting the first request creates the religion but leaves
+		-- its Prophet occupying the Holy Site". The player operation is what FOUNDS;
+		-- the unit operation only spends the Prophet. Requesting the spend first
+		-- retires the founding unit before the founding it was needed for, and
+		-- `HasReligiousFoundingUnit()` is false by the time the host processes it.
+		--
+		-- ⚠ EVERY ONE OF THESE FLAGS IS A `pcall` VERDICT -- "did not throw" -- and
+		-- this file has been bitten by exactly that before. `ok` cannot mean the
+		-- engine took it, because `UI.RequestPlayerOperation` is asynchronous and
+		-- there is nothing to read back on this frame. `pendingReligionFounding`
+		-- below is how the NEXT turn finds out, so a silent failure stops being
+		-- indistinguishable from success.
 		local found = {};
 		found[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
 		found[PlayerOperations.PARAM_RELIGION_TYPE] = religion.Hash;
@@ -7057,7 +7123,19 @@ local function applyOrder(player, pid, row, turn)
 		end
 		local okFollower = addBelief(follower);
 		local okFounder = addBelief(founder);
-		local ok = okOperation and okFound and okFollower and okFounder;
+		-- Spend the Prophet only after the founding has been asked for.
+		local okOperation = pcall(function()
+			UnitManager.RequestOperation(prophet, foundOperation.Hash);
+		end);
+		local ok = okFound and okFollower and okFounder and okOperation;
+		if ok then
+			pendingReligionFounding = {
+				turn = Game.GetCurrentGameTurn(),
+				religion = religion.ReligionType,
+				follower = followerName,
+				founder = founderName,
+			};
+		end
 		return ok, ok and (religion.ReligionType .. ":" .. followerName .. ":" .. founderName)
 			or "throw";
 	end
