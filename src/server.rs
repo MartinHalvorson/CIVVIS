@@ -6696,6 +6696,58 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
     }
 
+    /// The masthead offers the game mode the deck is not showing, one chip to
+    /// the right of Home. Pinned as one literal because both halves of that
+    /// sentence are the contract: the pair share a row, and Home comes first.
+    #[test]
+    fn viewer_offers_the_other_game_mode_in_a_chip_beside_home() {
+        assert!(EMBEDDED_INDEX.contains(concat!(
+            "<div class=\"head-links\" id=\"headlinks\" hidden>\n",
+            "          <a class=\"home-link\" id=\"homelink\" href=\"/home\">⌂ Home</a>\n",
+            "          <a class=\"home-link\" id=\"modelink\"",
+        )));
+        // A row that draws itself as a flex container outranks the user
+        // agent's `[hidden]`, so it has to restate what hidden means or the
+        // chips appear on desktop builds that honour neither destination.
+        assert!(EMBEDDED_INDEX.contains(".head-links { display: flex;"));
+        assert!(EMBEDDED_INDEX.contains(".head-links[hidden] { display: none; }"));
+        assert!(EMBEDDED_INDEX
+            .contains("#side[data-type-size=\"compact\"] .head-links {\n    grid-column: 1 / -1;"));
+        // The whole row is revealed together, and only on the hosts that
+        // serve a /home to return to and a shim that reads a world out of a
+        // link's query string.
+        assert!(EMBEDDED_INDEX.contains("/(^|\\.)civvis\\.ai$|\\.pages\\.dev$/.test(location.hostname)"));
+        assert!(EMBEDDED_INDEX.contains("const links = document.getElementById(\"headlinks\");"));
+        assert!(EMBEDDED_INDEX.contains("if (links) links.hidden = false;"));
+        // The chip names the mode that is NOT on screen, in both directions.
+        assert!(EMBEDDED_INDEX.contains("function syncModeLink(tactics = watchingBattlefield())"));
+        assert!(EMBEDDED_INDEX.contains("link.textContent = tactics ? \"⊕ Civ\" : \"⚔ Tactics\";"));
+        // Returning to Civ names no settings, which is the stock exhibition,
+        // and neither destination moves a viewer off the lane they arrived
+        // on — `/` and `/test` are different builds of this viewer.
+        assert!(EMBEDDED_INDEX.contains(
+            "link.href = tactics ? location.pathname : `${location.pathname}?${TACTICS_CHIP_QUERY}`;"
+        ));
+        // The live world decides, not the setup drawer's mode select.
+        assert!(EMBEDDED_INDEX.contains("function watchingBattlefield() {"));
+        assert!(EMBEDDED_INDEX.contains("return isBattlefieldMapScript(state.map.script);"));
+        assert!(EMBEDDED_INDEX.contains("syncModeLink(tactics);"));
+        // Settled before the engine answers, so a deep link into a
+        // battlefield never spends its first seconds offering Tactics.
+        assert!(EMBEDDED_INDEX.contains("syncModeLink();\nboot();"));
+        // One Tactics world for the whole site: the chip opens exactly what
+        // the home page's Tactics card opens.
+        const TACTICS_QUERY: &str = "map=battlefield&players=2&era=information&arena=20x20";
+        assert!(EMBEDDED_INDEX
+            .contains(&format!("const TACTICS_CHIP_QUERY = \"{TACTICS_QUERY}\";")));
+        let landing = include_str!("../beta/landing.html");
+        let card = format!("href=\"/?{}\"", TACTICS_QUERY.replace('&', "&amp;"));
+        assert!(
+            landing.contains(&card),
+            "the home page's Tactics card should open the world the chip does: {card}"
+        );
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn promoted_binary_name_carries_the_runtime_revision() {

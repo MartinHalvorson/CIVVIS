@@ -6769,6 +6769,10 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     const tactics = isBattlefieldMapScript(st.map.script);
     document.getElementById("gamemode").value = tactics ? "tactics" : "civ";
     syncSetupMode();
+    // The masthead chip reads the world, not the setup panel: a viewer who
+    // opens the drawer and flips the mode select has not left the game they
+    // are watching, and the chip must keep offering the other one.
+    syncModeLink(tactics);
     const majors = st.players.filter(p => !p.is_minor && !p.is_barbarian).length;
     const playerSelect = document.getElementById("np");
     const arena = tactics ? battlefieldSizes().find(size =>
@@ -28683,6 +28687,39 @@ function battlefieldSize(id) {
 function isBattlefieldMapScript(id) {
   return id === "battlefield" || battlefieldScripts().some(script => script.id === id);
 }
+// The world on screen right now, in the one term the mode chip cares about.
+// Before the first observation the query string is the only evidence there
+// is, and a link into a battlefield carries the map in it — so a deep link
+// never spends its first seconds offering the mode it just opened.
+function watchingBattlefield() {
+  if (state && state.map && state.map.script !== undefined)
+    return isBattlefieldMapScript(state.map.script);
+  const asked = new URL(location.href).searchParams.get("map") || "";
+  return isBattlefieldMapScript(asked.trim().toLowerCase());
+}
+// The world the Tactics side of the chip opens: the same two even armies on
+// the same 20x20 field the home page's Tactics card offers, so the site has
+// one Tactics world rather than two that differ for no reason.
+const TACTICS_CHIP_QUERY = "map=battlefield&players=2&era=information&arena=20x20";
+// The mode chip beside Home. It always names the mode the deck is NOT
+// showing, which makes the whole distance between Civ and Tactics one click
+// in either direction. Going back to Civ asks for nothing at all, because a
+// visit that names no settings is the stock exhibition. Both destinations
+// keep the path this document was served from: the front page and /test are
+// different builds of the viewer, and choosing a game mode is no reason to
+// move a viewer off the lane they came in on.
+function syncModeLink(tactics = watchingBattlefield()) {
+  const link = document.getElementById("modelink");
+  if (!link) return;
+  // A circle crossed by its own equator and meridian: the astronomer's Earth,
+  // and the brand mark directly above it. Both marks are drawn in outline
+  // because the ⌂ they stand beside is — a filled ◉ shouts over it.
+  link.textContent = tactics ? "⊕ Civ" : "⚔ Tactics";
+  link.href = tactics ? location.pathname : `${location.pathname}?${TACTICS_CHIP_QUERY}`;
+  link.title = tactics
+    ? "Leave the arena for the full game: whole civilizations on a fresh world"
+    : "Watch the Tactics mode: two even armies on one bounded field";
+}
 function syncMapRoster(civ6, tactics) {
   const select = document.getElementById("maptype");
   if (!select) return;
@@ -29355,6 +29392,9 @@ if (savedSidebarCollapsed === "1") togglePanel(true, false);
 else if (savedSidebarCollapsed === "0") togglePanel(false, false);
 else if (window.matchMedia("(max-width: 720px)").matches) togglePanel(true, false);
 resize();
+// Settled before the engine has answered, so the chip is never a link to the
+// mode already on screen during the seconds a wasm world takes to open.
+syncModeLink();
 boot();
 
 // --- animation ticker: human-smooth tweens without letting a Retina canvas
