@@ -8,6 +8,7 @@ pub mod actionlog;
 pub mod ai;
 pub mod belief;
 pub mod civ6;
+pub mod doctrine;
 pub mod elo;
 pub mod evolve;
 pub mod fractal;
