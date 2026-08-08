@@ -9359,8 +9359,21 @@ mod river_tests {
         // rainforest and the ice are all where a player expects to find them
         // rather than wherever a fractal happened to cut.
         for (name, longitude, latitude, wanted) in [
-            ("the Himalaya", 86.9, 30.5, "mountain"),
-            ("the Andes", -68.0, -21.0, "mountain"),
+            // ⚠ EVEREST'S OWN LATITUDE, NOT 30.5N. This row read 86.9E/30.5N
+            // and called it "the Himalaya", but the crest at that longitude
+            // runs along 28N -- 30.5N is two and a half degrees behind it, on
+            // the Tibetan plateau. It passed only because altitude alone used
+            // to make a mountain and the whole plateau was therefore one, so
+            // the check that was meant to prove the Himalaya survives sampling
+            // was in fact proving that Tibet did. The plateau is hills now,
+            // and the assertion moved onto the range it names.
+            ("the Himalaya", 86.93, 27.99, "mountain"),
+            ("the Karakoram", 76.5, 35.9, "mountain"),
+            // Aconcagua, for the same reason the Himalaya row moved. This read
+            // 68W/21S, which is the Altiplano -- the Andes' own Tibet, 3.8 km
+            // up and flat -- so it too was passing on a plateau's altitude
+            // rather than on a range. It is asserted as high ground below.
+            ("the Andes", -70.0, -32.65, "mountain"),
             ("the Sahara", 12.0, 23.0, "desert"),
             ("the Arabian desert", 46.0, 21.0, "desert"),
             ("the Australian interior", 132.0, -24.0, "desert"),
@@ -9370,6 +9383,23 @@ mod river_tests {
         ] {
             let tile = &world.tiles[&nearest(longitude, latitude)];
             assert_eq!(tile.terrain, wanted, "{name} came out as {}", tile.terrain);
+        }
+
+        // And the high ground behind the ranges is high ground, not more wall.
+        // A plateau is somewhere a civilization can stand; only the ranges that
+        // border it are impassable.
+        for (name, longitude, latitude) in [
+            ("the Tibetan plateau", 88.0, 32.0),
+            ("the plateau behind Everest", 86.9, 30.5),
+            ("the Altiplano", -68.0, -21.0),
+        ] {
+            let tile = &world.tiles[&nearest(longitude, latitude)];
+            assert_ne!(
+                tile.terrain.as_str(),
+                "mountain",
+                "{name} should be crossable high ground, not a wall"
+            );
+            assert!(tile.hills, "{name} should still read as high ground");
         }
         for (name, longitude, latitude) in [
             ("the Amazon", -62.0, -4.0),
@@ -9414,6 +9444,92 @@ mod river_tests {
                 sphere.distance(home, start) <= 4,
                 "civilization {index} opened {} tiles from its homeland",
                 sphere.distance(home, start)
+            );
+        }
+    }
+
+    /// ⚠ THE PLATEAU IS CROSSABLE AND THE KARAKORAM IS NOT.
+    ///
+    /// Altitude alone used to make a mountain, so Tibet -- 4.8 km up and
+    /// nearly flat -- came out as 747 of its 792 source cells being mountain
+    /// and walled Asia across its middle. Measured on this map before the
+    /// rule changed, a walk across the plateau was blocked at Standard, Large
+    /// and Huge alike; the start tile was often mountain itself, so a unit
+    /// standing there could not take one step.
+    ///
+    /// The pair below is the whole point of the change. A plateau is high
+    /// ground you can walk over and a range is not, and the second assertion
+    /// is what stops "make Tibet passable" from quietly flattening the
+    /// Karakoram too.
+    #[test]
+    fn the_tibetan_plateau_is_hills_to_cross_and_the_karakoram_is_still_a_wall() {
+        let rules = Rules::embedded();
+        for size_id in ["standard", "large", "huge"] {
+            let size = CIV6_MAP_SIZES.iter().find(|size| size.id == size_id).unwrap();
+            let mut rng = Rng::new(31_337);
+            let (world, _) = generate_with_script(
+                &rules,
+                size.width,
+                size.height,
+                4,
+                0,
+                size.natural_wonders,
+                size.continents,
+                MapScript::TrueStartEarth,
+                GLOBE,
+                POLED,
+                &mut rng,
+            );
+            let nearest = |latitude: f64, longitude: f64| -> Pos {
+                let target = earth_direction(longitude, latitude);
+                world
+                    .tiles
+                    .iter()
+                    .map(|(pos, _)| *pos)
+                    .max_by(|a, b| {
+                        dot(world.direction(*a), target)
+                            .partial_cmp(&dot(world.direction(*b), target))
+                            .unwrap()
+                    })
+                    .unwrap()
+            };
+            let walkable = |pos: Pos| -> bool {
+                world.tiles.get(&pos).is_some_and(|tile| {
+                    !rules.is_water(tile) && tile.terrain.as_str() != "mountain"
+                })
+            };
+            // Inside Asia, so a blocked crossing cannot be answered by walking
+            // round the world the other way.
+            let reaches = |from: (f64, f64), to: (f64, f64)| -> bool {
+                let (start, goal) = (nearest(from.0, from.1), nearest(to.0, to.1));
+                let mut seen: BTreeSet<Pos> = [start].into_iter().collect();
+                let mut queue = std::collections::VecDeque::from([start]);
+                while let Some(pos) = queue.pop_front() {
+                    if pos == goal {
+                        return true;
+                    }
+                    for next in world.neighbors(pos) {
+                        let (longitude, latitude) = world.lon_lat(next);
+                        if seen.contains(&next)
+                            || !walkable(next)
+                            || !(20.0..50.0).contains(&latitude)
+                            || !(40.0..110.0).contains(&longitude)
+                        {
+                            continue;
+                        }
+                        seen.insert(next);
+                        queue.push_back(next);
+                    }
+                }
+                false
+            };
+            assert!(
+                reaches((32.0, 80.0), (32.0, 95.0)),
+                "{size_id}: the Tibetan plateau should be crossable west to east"
+            );
+            assert!(
+                !reaches((39.5, 76.0), (34.2, 77.6)),
+                "{size_id}: Kashgar to Ladakh crosses the Karakoram and should not be walkable"
             );
         }
     }
