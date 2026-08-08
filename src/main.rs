@@ -728,8 +728,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// production controller. The condition tests that flag before reading player
 /// sight, reachability, or village state; the frozen path therefore proceeds
 /// directly into its historical fog-target selection. The focused regression
-/// asserts that split on the same staged board. Compatibility re-pin, not an
-/// Elo-protocol change.
+/// asserts that split on the same staged board. A matched release
+/// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed 31337
+/// --jobs 1 --deployment-comparison` report was byte-identical to current
+/// `origin/main` (SHA-256 `1bebbaa15ee7388b3d9427c1d49726d8e29b2328113c9b9409cb60bb7ae813e0`).
+/// Compatibility re-pin, not an Elo-protocol change.
 #[cfg(test)]
 const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbd95_1f29_8ffa_1943;
 
