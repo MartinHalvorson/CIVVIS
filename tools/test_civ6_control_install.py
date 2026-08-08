@@ -336,3 +336,146 @@ class ProtectedInstallTest(unittest.TestCase):
             cleanup.assert_called_once_with(staging, ignore_errors=True)
         finally:
             staging.rmdir()
+
+
+class UnitsBlockerForfeitTest(unittest.TestCase):
+    """Issue #1374: a turn that wedged 900 s on `ENDTURN_BLOCKING_UNITS`.
+
+    Run civvis-20260807T190903Z turn 39 answered the blocker `civvis_complete`
+    once, recorded `attempts:1`, and then sat until an outside watchdog killed
+    the attempt. Two facts make that unrecoverable without an explicit
+    escalation, and both are pinned below:
+
+    * `civvis_complete` changes the board by construction not at all, so the
+      blocker cannot clear itself, and
+    * the shipped `ActionPanel.lua` never requests `ACTION_ENDTURN` while one
+      of three unit blockers is up -- it calls `UI.SelectNextReadyUnit()` --
+      so the plain request at the bottom of `tick` is refused. Only the
+      `{ REASON = "UserForced" }` form (the shipped SHIFT+ENTER path) ends it.
+    """
+
+    def setUp(self) -> None:
+        self.source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+    @property
+    def escalation(self) -> str:
+        return self.source.split(
+            "-- ★★★ A SOFT BLOCKER THAT SURVIVES ITS ANSWER", 1
+        )[1].split("-- Only if the same blocker", 1)[0]
+
+    @property
+    def parking(self) -> str:
+        return self.source.split("local function parkReadyUnits", 1)[1].split(
+            "\nlocal ", 1
+        )[0]
+
+    def test_a_units_blocker_surviving_its_answer_is_parked_dismissed_and_forced(self) -> None:
+        self.assertIn("parkReadyUnits(player)", self.escalation)
+        self.assertIn("dismissBlocker(pid, blocker)", self.escalation)
+        self.assertIn('REASON = "UserForced"', self.escalation)
+
+    def test_forcing_is_reserved_for_the_three_blockers_the_engine_refuses(self) -> None:
+        """The trio `ActionPanel.DoEndTurn` special-cases, and only those.
+
+        Widening this table would force the turn past prompts the engine would
+        have ended normally; narrowing it puts the wedge back.
+        """
+        table = self.source.split("local UNIT_BLOCKERS = {", 1)[1].split("};", 1)[0]
+        self.assertEqual(
+            sorted(
+                line.split("=")[0].strip()
+                for line in table.splitlines()
+                if "=" in line
+            ),
+            [
+                "ENDTURN_BLOCKING_STACKED_UNITS",
+                "ENDTURN_BLOCKING_UNITS",
+                "ENDTURN_BLOCKING_UNIT_NEEDS_ORDERS",
+            ],
+        )
+        self.assertIn("UNIT_BLOCKERS[name] and parkReadyUnits(player)", self.escalation)
+
+    def test_a_civvis_complete_answer_escalates_on_the_very_next_sighting(self) -> None:
+        """Waiting longer buys no information: that answer touched nothing.
+
+        The legacy answer does run `orderUnits`, so it keeps its `MaxSoftPasses`
+        budget before being called stuck.
+        """
+        self.assertIn(
+            'answered == "civvis_complete" and 2 or (cfg.MaxSoftPasses or 3) + 1',
+            self.escalation,
+        )
+
+    def test_parking_forfeits_movement_but_never_calls_the_legacy_movement_ai(self) -> None:
+        """`orderIdle`, not `orderFor`.
+
+        The legacy pass once walked a Settler out of a safe capital into a
+        barbarian capture zone after CIVVIS had deliberately left it in place;
+        skip/fortify/alert/sleep forfeits only the movement that ending the
+        turn forfeits anyway.
+        """
+        self.assertIn("orderIdle(unit)", self.parking)
+        self.assertNotIn("orderFor(", self.parking)
+
+    def test_parking_sweeps_the_roster_after_the_ready_query_jams(self) -> None:
+        """`GetFirstReadyUnit` offers an uncooperative unit forever.
+
+        A forfeit built on that query alone parks one unit, leaves the rest
+        ready, and the blocker comes straight back.
+        """
+        self.assertIn("GetFirstReadyUnit", self.parking)
+        self.assertIn("eachUnit(player", self.parking)
+
+    def test_the_forfeit_retry_is_bounded_and_then_names_the_wedge(self) -> None:
+        self.assertIn("cfg.MaxSoftBlockerForfeits or 3", self.escalation)
+        self.assertIn("seen.forfeits < cap", self.escalation)
+        self.assertIn('emit("wedged"', self.escalation)
+
+    def test_a_blocker_change_ticks_without_the_publish_divider(self) -> None:
+        """A board sitting on a blocker publishes almost nothing.
+
+        Routing `EndTurnBlockingChanged` through the 1-in-16 `onGameCoreTick`
+        divider made every blocker transition wait for fifteen more publish
+        batches that a wedged turn never produces.
+        """
+        self.assertIn("EndTurnBlockingChanged = onEndTurnBlockingChanged", self.source)
+        self.assertNotIn("EndTurnBlockingChanged = onGameCoreTick", self.source)
+
+
+class AgentChunkLocalLimitTest(unittest.TestCase):
+    """The agent's main chunk must stay inside Lua's 200-local ceiling.
+
+    ⚠ THIS IS A SILENT, TOTAL FAILURE, which is why it is worth a test. Lua
+    allows 200 local variables per function and the mod's main chunk is one
+    function, currently within single digits of the limit. Crossing it is a
+    compile error, and a mod script that fails to compile writes NOTHING to any
+    log -- the context loads, the script dies at parse time, and the run is
+    indistinguishable from a game where CIVVIS simply never decided anything.
+    `civ6_preflight.py` catches this with `luac -p`, but only on a host that
+    has `luac` installed; this catches it everywhere, including CI.
+
+    A file-scope `local` is almost always avoidable: nest the helper, hang the
+    value off an existing table, or reuse a neighbouring one.
+    """
+
+    LIMIT = 200
+
+    def test_main_chunk_locals_stay_under_the_limit(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        count = 0
+        for line in source.splitlines():
+            if not line.startswith("local "):
+                continue  # indented locals belong to a nested scope
+            rest = line[len("local "):]
+            if rest.startswith("function "):
+                count += 1
+                continue
+            names = rest.split("=", 1)[0]
+            count += len([n for n in names.split(",") if n.strip()])
+        self.assertLess(
+            count,
+            self.LIMIT,
+            f"CivvisControlAgent.lua declares {count} main-chunk locals; Lua "
+            f"allows {self.LIMIT} and the mod would fail to compile in-game "
+            f"with no log line anywhere. Nest a helper instead of adding one.",
+        )

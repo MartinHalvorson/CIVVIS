@@ -2390,9 +2390,14 @@ end
 -- and it removes the unit from the ready list so the engine stops re-raising
 -- the blocker on every later batch.
 --
--- Same loop discipline as `orderUnits` pass 1: work the game's own ready
--- query to exhaustion, bounded, with a per-unit jam guard, because
--- GetFirstReadyUnit offers an uncooperative unit forever.
+-- Both of `orderUnits`'s passes, for the same reason `orderUnits` has both.
+-- Pass 1 is the game's own ready query, bounded and jam-guarded, because
+-- GetFirstReadyUnit offers an uncooperative unit forever. Pass 2 is the
+-- roster, and skipping it would defeat the whole escalation: the query jams on
+-- the FIRST unit that will not take an order, so a forfeit built on pass 1
+-- alone would park one unit, leave the rest ready, and the blocker would come
+-- straight back -- which is the "nineteen units, three orders given" failure
+-- already recorded above.
 local function parkReadyUnits(player)
 	local parked = 0;
 	local tries = {};
@@ -2404,6 +2409,13 @@ local function parkReadyUnits(player)
 		if tries[id] > 2 then break; end
 		if orderIdle(unit) ~= nil then parked = parked + 1; end
 	end
+	-- No "is it ready?" guard. `GetMovesRemaining` is not trusted anywhere in
+	-- this mod (see `orderUnits` pass 2) and an order that cannot be given
+	-- fails harmlessly, so attempting it on the whole roster is strictly safer
+	-- than guarding it and silently skipping everyone.
+	eachUnit(player, function(unit)
+		if orderIdle(unit) ~= nil then parked = parked + 1; end
+	end);
 	return parked;
 end
 
@@ -4570,10 +4582,13 @@ end
 local turnsPlayed = 0;
 local lastTurnSeen = -1;
 local attempts = 0;
--- Per-turn sightings of each SOFT blocker, by name. `attempts` cannot carry
--- the forfeit decision alone: it counts every blocker the turn showed, so two
--- alternating blockers would reach any small bound with neither one actually
--- stuck. The forfeit fires on the SAME soft blocker surviving its answer.
+-- Per-turn forfeit state for each SOFT blocker, by name:
+-- `{ sightings = <since the last forfeit>, forfeits = <this turn> }`.
+--
+-- `attempts` cannot carry the forfeit decision alone: it counts every blocker
+-- the turn showed, so two alternating blockers would reach any small bound
+-- with neither one actually stuck. The forfeit fires on the SAME soft blocker
+-- surviving its own answer, and `forfeits` is what bounds the retry.
 local softSeen = {};
 
 local inTick = false;
@@ -8851,31 +8866,63 @@ local function tick()
 			--     fire on an early re-sighting after the answer, not on a big
 			--     count.
 			--
-			-- Sighting 1 is the honest answer (`civvis_complete`, or a bounded
-			-- legacy `orderUnits` pass). The same soft blocker coming back says
-			-- that answer did not clear it, so: park the still-ready units
+			-- Sighting 1 is the honest answer. The SAME soft blocker coming back
+			-- says that answer did not clear it, so: park the still-ready units
 			-- (units family only -- position-preserving orders, never the
 			-- legacy movement AI), dismiss the notification exactly as the
-			-- hammer would, report the forfeit, and force the end of turn
-			-- through the same `{ REASON = "UserForced" }` request the shipped
-			-- UI sends for SHIFT+ENTER. Bounded retry: `softSeen` resets on
-			-- firing, so a forfeit that fails to stick re-arms after the same
-			-- number of sightings rather than looping on every batch.
+			-- hammer would, and force the end of turn through the same
+			-- `{ REASON = "UserForced" }` request the shipped UI sends for
+			-- SHIFT+ENTER, which is the only end-turn form that is not refused
+			-- while a units blocker is up.
 			if SOFT_BLOCKERS[name] then
-				softSeen[name] = (softSeen[name] or 0) + 1;
-				if softSeen[name] >= (cfg.SoftBlockerForfeitAttempts or 3) then
-					local parked = UNIT_BLOCKERS[name] and parkReadyUnits(player) or 0;
-					local dropped = dismissBlocker(pid, blocker);
-					emit("dismissed", { turn = turn, blocker = name,
-					                    dismissed = dropped, attempts = attempts,
-					                    answered = answered, parked = parked,
-					                    forced = UNIT_BLOCKERS[name] == true });
-					softSeen[name] = 0;
-					attempts = 0;
-					if UNIT_BLOCKERS[name] then
-						pcall(function()
-							UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" });
-						end);
+				local seen = softSeen[name] or { sightings = 0, forfeits = 0 };
+				softSeen[name] = seen;
+				seen.sightings = seen.sightings + 1;
+				-- How many sightings prove the answer did nothing. A
+				-- `civvis_complete` answer changed the board by construction
+				-- NOT AT ALL -- it means "CIVVIS has already ordered this
+				-- board, keep the legacy AI off it" -- so the second sighting
+				-- is already proof and a third only spends wall clock we do
+				-- not have. The legacy answer really does run `orderUnits`,
+				-- bounded by `MaxSoftPasses`, so it gets that budget first.
+				local bound = cfg.SoftBlockerForfeitAttempts
+					or (answered == "civvis_complete" and 2 or (cfg.MaxSoftPasses or 3) + 1);
+				local cap = cfg.MaxSoftBlockerForfeits or 3;
+				if seen.sightings >= bound then
+					seen.sightings = 0;
+					if seen.forfeits < cap then
+						-- BOUNDED RETRY. Re-arming after `bound` more sightings
+						-- covers a forfeit that did not stick -- the engine can
+						-- raise a fresh units notification for the same units --
+						-- without looping the expensive parking pass on every
+						-- batch of game-core events.
+						seen.forfeits = seen.forfeits + 1;
+						local parked = UNIT_BLOCKERS[name] and parkReadyUnits(player) or 0;
+						local dropped = dismissBlocker(pid, blocker);
+						emit("dismissed", { turn = turn, blocker = name,
+						                    dismissed = dropped, attempts = attempts,
+						                    answered = answered, parked = parked,
+						                    forfeit = seen.forfeits,
+						                    forced = UNIT_BLOCKERS[name] == true });
+						attempts = 0;
+						if UNIT_BLOCKERS[name] then
+							pcall(function()
+								UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+								                 { REASON = "UserForced" });
+							end);
+						end
+					elseif seen.forfeits == cap then
+						-- ⚠ THE RETRY IS SPENT AND THE TURN IS STILL NOT MOVING.
+						-- Say so, once, in the run's own event log. Issue #1374
+						-- died as 900 s of silence that read as a slow machine;
+						-- an outside watchdog killing an attempt should be able
+						-- to point at the prompt that did it. Bumping past `cap`
+						-- is what makes this report once per turn per blocker
+						-- rather than on every later sighting.
+						seen.forfeits = cap + 1;
+						emit("wedged", { turn = turn, blocker = name,
+						                 forfeits = cap, attempts = attempts,
+						                 answered = answered });
 					end
 				end
 			end
