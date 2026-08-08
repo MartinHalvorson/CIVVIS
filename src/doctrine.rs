@@ -547,7 +547,11 @@ struct Observations {
 }
 
 impl DoctrineLedger {
-    fn absorb(&mut self, other: &DoctrineLedger) {
+    /// Fold another ledger into this one. Public because a report merges a
+    /// run's seeds before reading a profile off them: a profile is a ratio,
+    /// and averaging ratios across seeds is not the same number as the ratio
+    /// of the sums.
+    pub fn absorb(&mut self, other: &DoctrineLedger) {
         self.kills += other.kills;
         self.losses += other.losses;
         self.material_destroyed += other.material_destroyed;
@@ -597,9 +601,11 @@ impl DoctrineLedger {
 /// contact, and reporting a zero there would be the harness inventing a fact.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct DoctrineProfile {
-    /// Own units near the point of contact less enemy units near it, averaged
-    /// over the turns there was contact. Positive is local superiority — the
-    /// thing every general on this list was actually trying to arrange.
+    /// Own units near the contact zone less enemy units near it, averaged over
+    /// the turns there was contact. Positive is local superiority — the thing
+    /// every general on this list was actually trying to arrange. Measured
+    /// against a zone shared by both sides, so within one engagement this is
+    /// exactly the negative of the opponent's.
     pub concentration: Option<f64>,
     /// Mean pairwise distance between own units, averaged over turns. Low is
     /// a body that moves together; high is one that has come apart.
@@ -815,7 +821,23 @@ fn account(
 }
 
 /// Read the board and fold one turn of doctrine observations into both sides.
+///
+/// The contact zone is computed **once for the board** rather than once per
+/// side: every unit of either side standing within two tiles of an enemy. Both
+/// sides then count against the same set of tiles, which is what makes
+/// concentration a real local force ratio — one side's figure is exactly the
+/// negative of the other's, and the two rows of a report can be read against
+/// each other. Defining it per side instead lets both armies report themselves
+/// outnumbered at the same contact, which is not a fact about anything.
 fn observe(now: &Snapshot, g: &Game, ledgers: &mut (DoctrineLedger, DoctrineLedger)) {
+    let zone: Vec<Pos> = now
+        .values()
+        .filter(|unit| {
+            now.values()
+                .any(|other| other.owner != unit.owner && g.wdist(unit.pos, other.pos) <= 2)
+        })
+        .map(|unit| unit.pos)
+        .collect();
     for side in [0usize, 1] {
         let mine: Vec<&Seen> = now.values().filter(|unit| unit.owner == side).collect();
         let theirs: Vec<&Seen> = now.values().filter(|unit| unit.owner != side).collect();
@@ -873,19 +895,14 @@ fn observe(now: &Snapshot, g: &Game, ledgers: &mut (DoctrineLedger, DoctrineLedg
         }
 
         // Contact statistics only mean something on turns there was contact.
-        let contact: Vec<Pos> = theirs
-            .iter()
-            .filter(|foe| mine.iter().any(|unit| g.wdist(unit.pos, foe.pos) <= 2))
-            .map(|foe| foe.pos)
-            .collect();
-        if contact.is_empty() {
+        if zone.is_empty() {
             continue;
         }
         obs.contact_turns += 1;
         let near = |units: &[&Seen]| {
             units
                 .iter()
-                .filter(|unit| contact.iter().any(|spot| g.wdist(unit.pos, *spot) <= 2))
+                .filter(|unit| zone.iter().any(|spot| g.wdist(unit.pos, *spot) <= 2))
                 .count() as f64
         };
         obs.local_ratio += near(&mine) - near(&theirs);
@@ -1027,6 +1044,92 @@ fn usable(g: &Game, pos: Pos) -> bool {
     g.map.get(pos).is_some_and(|tile| {
         !g.rules.is_water(tile) && g.rules.is_passable(tile) && g.units_at(pos).is_empty()
     })
+}
+
+/// The paired tests a position result is read through.
+///
+/// `src/bin/battle_bench.rs` keeps a private copy of these, and this is the
+/// one under test — including the overflow that once made the exact sign test
+/// report a **confident null on overwhelming evidence**. A binary that grows a
+/// third copy should use this instead.
+pub mod paired {
+    /// Two-sided sign test: the probability of a split at least this lopsided
+    /// if the treatment did nothing. Ties are dropped, which is the
+    /// conservative convention — counting them as agreement inflates the
+    /// harness's own confidence.
+    ///
+    /// ⚠ The exact form is `tail / 2^n`, and `2f64.powi(n)` is `inf` past
+    /// n≈1023. The binomial coefficients overflow with it, `inf / inf` is
+    /// `NaN`, and Rust's `NaN.min(1.0)` returns **1.0** — so a 1122-to-317
+    /// split once printed `p = 1.0000`. Large n uses the normal approximation
+    /// with a continuity correction, which is accurate far beyond anything a
+    /// decision here turns on.
+    pub fn sign_test(wins: usize, losses: usize) -> f64 {
+        let n = wins + losses;
+        if n == 0 {
+            return 1.0;
+        }
+        let extreme = wins.max(losses);
+        if n > 1000 {
+            let mean = n as f64 / 2.0;
+            let sd = (n as f64 / 4.0).sqrt();
+            let z = ((extreme as f64 - 0.5) - mean) / sd;
+            return erfc(z / 2f64.sqrt()).clamp(0.0, 1.0);
+        }
+        let mut tail = 0.0f64;
+        let mut coefficient = 1.0f64;
+        for k in 0..=n {
+            if k >= extreme || n - k >= extreme {
+                tail += coefficient;
+            }
+            coefficient = coefficient * (n - k) as f64 / (k + 1) as f64;
+        }
+        (tail / 2f64.powi(n as i32)).clamp(0.0, 1.0)
+    }
+
+    /// Mean, standard error, t, and a normal-approximation two-sided p for a
+    /// vector of paired differences.
+    pub fn paired_t(differences: &[f64]) -> (f64, f64, f64, f64) {
+        let n = differences.len();
+        if n < 2 {
+            return (differences.first().copied().unwrap_or(0.0), 0.0, 0.0, 1.0);
+        }
+        let mean = differences.iter().sum::<f64>() / n as f64;
+        let variance =
+            differences.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
+        let stderr = (variance / n as f64).sqrt();
+        if stderr <= 0.0 {
+            // No spread at all. A zero mean is the control's exact null and
+            // its t is 0, not the infinity that dividing by zero suggests; a
+            // non-zero constant difference is unbounded evidence.
+            let t = if mean == 0.0 { 0.0 } else { f64::INFINITY };
+            return (mean, 0.0, t, if mean == 0.0 { 1.0 } else { 0.0 });
+        }
+        let t = mean / stderr;
+        (mean, stderr, t, erfc(t.abs() / 2f64.sqrt()).clamp(0.0, 1.0))
+    }
+
+    /// Abramowitz & Stegun 7.1.26, good to ~1.5e-7.
+    pub fn erfc(x: f64) -> f64 {
+        let z = x.abs();
+        let t = 1.0 / (1.0 + 0.5 * z);
+        let ans = t
+            * (-z * z - 1.265_512_23
+                + t * (1.000_023_68
+                    + t * (0.374_091_96
+                        + t * (0.096_784_18
+                            + t * (-0.186_288_06
+                                + t * (0.278_868_07
+                                    + t * (-1.135_203_98
+                                        + t * (1.488_515_87
+                                            + t * (-0.822_152_23 + t * 0.170_872_77)))))))))
+                .exp();
+        if x >= 0.0 {
+            ans
+        } else {
+            2.0 - ans
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1171,6 +1274,73 @@ mod tests {
                 assert!((0.0..=1.0).contains(&value), "share out of range: {value}");
             }
         }
+    }
+
+    /// Concentration is a local force ratio, so within one engagement one
+    /// side's figure must be exactly the negative of the other's. Measured
+    /// against a per-side contact set instead of a shared zone, both armies
+    /// can report themselves outnumbered at the same contact — which is not a
+    /// fact about anything, and is invisible until someone tries to read the
+    /// two rows against each other.
+    #[test]
+    fn concentration_is_a_local_force_ratio_and_sums_to_zero() {
+        for spec in POSITIONS {
+            let result = matched_position(spec, 51, "advanced", "advanced", &builtin_ai);
+            if result.skipped {
+                continue;
+            }
+            for role in 0..2 {
+                // Within one seating the two roles share a board, so their
+                // summed local ratios must cancel turn by turn.
+                let (Some(first), Some(second)) = (
+                    result.a_by_role[role].profile().concentration,
+                    result.b_by_role[1 - role].profile().concentration,
+                ) else {
+                    continue;
+                };
+                assert!(
+                    (first + second).abs() < 1e-9,
+                    "{} role {role}: {first} against {second} does not cancel",
+                    spec.id
+                );
+            }
+        }
+    }
+
+    /// The sign test must not report a confident null on overwhelming
+    /// evidence. The exact form overflows past n≈1023 and `NaN.min(1.0)` in
+    /// Rust returns 1.0, which is how a 1122-to-317 split once printed
+    /// `p = 1.0000`. Assert the large-n branch on exactly that split, and
+    /// assert the two branches agree either side of the switch.
+    #[test]
+    fn the_sign_test_does_not_overflow_into_a_confident_null() {
+        let p = paired::sign_test(1_122, 317);
+        assert!(p.is_finite() && p < 1e-6, "overwhelming split reported p = {p}");
+        assert!((paired::sign_test(0, 0) - 1.0).abs() < 1e-12);
+        assert!((paired::sign_test(5, 5) - 1.0).abs() < 1e-9, "an even split is p = 1");
+        // Either side of the exact/approximate switch, on the same shape.
+        let exact = paired::sign_test(600, 400);
+        let approximate = paired::sign_test(601, 400);
+        assert!(
+            (exact - approximate).abs() < 5e-3,
+            "the branches disagree: {exact} against {approximate}"
+        );
+    }
+
+    /// A paired t on constant differences has no spread, and reporting a
+    /// finite p there would be the harness inventing precision. One difference
+    /// is a number, not a result.
+    #[test]
+    fn the_paired_t_handles_no_spread_and_too_few_pairs() {
+        let (mean, stderr, _, p) = paired::paired_t(&[4.0, 4.0, 4.0]);
+        assert!((mean - 4.0).abs() < 1e-12);
+        assert_eq!(stderr, 0.0);
+        assert_eq!(p, 0.0, "a constant non-zero difference is not a null");
+        let (mean, _, _, p) = paired::paired_t(&[7.0]);
+        assert!((mean - 7.0).abs() < 1e-12);
+        assert_eq!(p, 1.0, "one pair licenses nothing");
+        let (_, _, _, p) = paired::paired_t(&[0.0, 0.0, 0.0]);
+        assert_eq!(p, 1.0);
     }
 
     /// Identifiers are what a command line and a report key on, so they have
