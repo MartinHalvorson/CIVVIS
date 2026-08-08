@@ -749,8 +749,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `wartime_reinforcement_step` returns `None` on its first line. The anchor's
 /// decisions are byte-identical by construction. Compatibility re-pin, not an
 /// Elo-protocol change.
+/// #1399 breaks the Tactics-arena standoff by switching two pieces of
+/// world-preservation logic off on a battlefield: the per-tile
+/// local-superiority brake on closing moves, and the dangerous-approach
+/// memory whose retreat floor assumes healing that an arena does not have.
+/// Both sit behind a `!g.is_arena()` test, and `is_arena()` is false for
+/// every world a rated game is played on, so the anchor's decision stream on
+/// the rated profile is identical by construction — the same shape as the
+/// flag re-pins above, with the map script as the flag. Compatibility
+/// re-pin, not an Elo-protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x61f7_5b6d_c705_8848;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe74a_ee1a_6905_345b;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
