@@ -782,6 +782,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the treatment can be held off for a controlled arm. It only writes `false`
 /// into a field the anchor already reads as `false`. Compatibility re-pin, not
 /// an Elo-protocol change.
+/// The siege-commitment term adds one summand to `campaign_city_value`, behind
+/// `AdvancedAi::siege_commitment`. Both constructors leave the flag false and
+/// only `enable_live_bridge` sets it, so under the anchor the `&&` chain
+/// short-circuits on its first test, the term is `0.0`, and the returned score
+/// is the shipped expression minus zero — the anchor's campaign ordering is
+/// byte-identical by construction. Compatibility re-pin, not an Elo-protocol
+/// change.
 #[cfg(test)]
 /// Merging `origin/main` into this branch brings both sides' live-bridge
 /// treatments into one `BasicAi`/`AdvancedAi`. Every one of them is off in both
@@ -794,7 +801,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `garrison_walls_item` returns `None` on its first line and the branch can
 /// never take the build. The anchor's build order is byte-identical by
 /// construction. Compatibility re-pin, not an Elo-protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd0b6_70ce_007b_6491;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3f2a_7ede_f2c3_609c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -25,6 +25,29 @@ use std::sync::Arc;
 /// attack unsupported. Below it the group holds on its own account, whatever
 /// else is happening in the empire.
 const LOCAL_SUPERIORITY_FLOOR: f64 = 0.72;
+/// Full health of a city, and the ceiling `Game::end_turn` heals back toward at
+/// `+20` a turn. [`AdvancedAi::siege_commitment`] measures a siege against it.
+const CITY_MAX_HP: i32 = 200;
+/// What one point of health already stripped from a breached city is worth to
+/// [`AdvancedAi::campaign_city_value`], as a reason to finish that city rather
+/// than re-aim.
+///
+/// Sized against the terms it has to beat. A city at 25 hp with its walls down
+/// earns `175 * 1.5 = 262`, where the distance terms it competes with —
+/// `core_distance * 7.0` and `military_distance * 5.0` — swing about 60 over
+/// five tiles, and the largest ordinary pull in the function is a capital's
+/// `180` under Conquest. So a city one blow from falling outranks a better city
+/// that is still whole, which is the intended order, while a city merely
+/// scratched (`20` hp off, worth `30`) does not disturb the shipped ranking at
+/// all. It stays far below `unsupported_capture`'s `10_000` veto, so the
+/// keep/flip/recapture guard still overrules it.
+const SIEGE_COMMITMENT_PER_HP: f64 = 1.5;
+/// How close one of our military units must be to a breached city before its
+/// stripped health counts as *our* siege investment. Six tiles is the same
+/// horizon [`AdvancedAi::defensibility`] and the rival-proximity penalty use.
+/// Without it the campaign could be dragged across the map by damage another
+/// civilization dealt.
+const SIEGE_COMMITMENT_REACH: i32 = 6;
 /// Health above which [`AdvancedAi::promotion_heal_is_wasted`] holds a
 /// promotion back. `do_promote` heals `min(50, 100 - hp)`, so promoting at 100
 /// delivers nothing; 75 asks for at least 25 of the 50 to land before spending
@@ -1057,6 +1080,43 @@ pub struct AdvancedAi {
     /// outmatched (0.62) and Recovery triggers keep the war endable. **Off by
     /// default, live-bridge only.**
     pub war_patience: bool,
+    /// Finish a city the army has already broken open before re-aiming the
+    /// campaign at a fresh one.
+    ///
+    /// ★★★★★ THE ARMY WALKED AWAY FROM A CITY IT HAD ONE BLOW LEFT TO TAKE.
+    /// `campaign_city_value` is re-evaluated from scratch every turn, and the
+    /// only credit it gives a half-taken city is the `0.12`/hp and `0.16`/wall
+    /// discount inside `defenses` — about 37 points between a city at full
+    /// health behind its walls and one at 25 hp with the walls levelled.
+    /// `core_distance * 7.0` and `military_distance * 5.0` routinely swing more
+    /// than that, so a fresh city a few tiles nearer outranks the one the army
+    /// has spent fifteen turns breaking. Civ 6 then heals the abandoned city at
+    /// `+20` hp a turn (`Game::end_turn`), so the siege is not merely paused —
+    /// it is refunded to the defender.
+    ///
+    /// Measured on live run `civvis-20260808T142724Z`, Rome against Phoenicia:
+    ///
+    /// | turn | objective | Biruta |
+    /// |------|-----------|--------|
+    /// | t89  | Biruta    | 145 hp, walls 0 |
+    /// | t90  | Biruta    | **25 hp, walls 0** — one melee blow, force of 6 adjacent, 2.93 local strength |
+    /// | t91  | **Ziz**   | 45 hp |
+    /// | t92  | **Ziz**   | 65 hp |
+    /// | t93+ | Biruta    | 85 → 200 hp while the column walked back |
+    ///
+    /// Over t73-t105 that campaign dealt 338 hp of city damage and handed 200 of
+    /// it straight back, and took nothing. It is the whole live ledger in one
+    /// run: 25 games, **0 captures ever**, while carrying 7.7x the field's
+    /// military score.
+    ///
+    /// The term is the health already stripped from a **breached** city —
+    /// `SIEGE_COMMITMENT_PER_HP` per hp below `CITY_MAX_HP`, credited only while
+    /// one of our military units is within `SIEGE_COMMITMENT_REACH` of it, so
+    /// the campaign cannot be dragged across the map by damage someone else
+    /// dealt. Walls standing means capture is not close and the term is zero,
+    /// which keeps it inert in the ordinary case. **Off by default, live-bridge
+    /// only.**
+    pub siege_commitment: bool,
     /// Aim a relief force at what is actually hitting the city, not at whichever
     /// besieger happens to stand nearest the force.
     ///
@@ -2252,6 +2312,7 @@ impl AdvancedAi {
             war_economy: false,
             war_reinforcement: false,
             war_patience: false,
+            siege_commitment: false,
             relief_targets_the_siege: false,
             blind_objective_units: false,
             settler_price: 1.0,
@@ -2557,6 +2618,14 @@ impl AdvancedAi {
         self.war_patience = true;
     }
 
+    /// Keep the campaign pointed at a city the army has already breached and
+    /// beaten down, instead of re-picking a fresh objective and letting the
+    /// broken one heal. Native tournament games leave this disabled so their
+    /// recorded ladders stay comparable.
+    pub fn enable_siege_commitment(&mut self) {
+        self.siege_commitment = true;
+    }
+
     /// Send a relief force at the units actually besieging the city rather than
     /// the nearest one to itself. Native tournament games leave this disabled so
     /// their recorded ladders stay comparable.
@@ -2821,6 +2890,15 @@ impl AdvancedAi {
         // holds `OVERWHELMING_WAR_RATIO` over the defender: the measured live
         // pattern is one declaration per game and no second attempt.
         self.enable_war_patience();
+        // ⚠ And the war it keeps prosecuting still has to end on a captured
+        // city. The campaign re-picks its objective from scratch every turn and
+        // prices fifteen turns of siege at ~37 points, less than the distance
+        // terms swing; the army walks off a city at 25 hp with its walls down
+        // and Civ 6 heals it back at 20 hp a turn. Live run
+        // `civvis-20260808T142724Z` dealt 338 hp of city damage over t73-t105,
+        // handed 200 of it back, and took nothing — the shape behind 25 live
+        // games and 0 captures on 7.7x the field's military.
+        self.enable_siege_commitment();
         // ⚠⚠ AND THE POPULATION THE SCIENCE IS COMPUTED FROM IS CAPPED BY HOUSING.
         // The lane above decides which specialty district a city builds; none of
         // them raises the ceiling on the citizens who work them. Measured over
@@ -3030,6 +3108,10 @@ impl AdvancedAi {
 
     pub fn disable_war_patience(&mut self) {
         self.war_patience = false;
+    }
+
+    pub fn disable_siege_commitment(&mut self) {
+        self.siege_commitment = false;
     }
 
     pub fn disable_relief_targets_the_siege(&mut self) {
@@ -15341,6 +15423,24 @@ impl AdvancedAi {
         let defenses = observed_strength * 1.8
             + observed_hp.max(0) as f64 * 0.12
             + observed_wall_hp.max(0) as f64 * 0.16;
+        // See [`AdvancedAi::siege_commitment`]. `defenses` above already prefers
+        // a weakened city, but only by ~37 points across the whole health bar —
+        // less than the distance terms swing over five tiles. That is why the
+        // campaign walks off a city at 25 hp with its walls down, and why Civ 6
+        // then heals it back to full at 20 hp a turn. Price the health already
+        // stripped from a *breached* city as the investment it is.
+        //
+        // `military_distance` is the reach test rather than `core_distance`
+        // because the question is whether the army that broke this city can
+        // still finish it, not whether the empire is nearby.
+        let siege_commitment = if self.siege_commitment
+            && observed_wall_hp <= 0
+            && military_distance <= SIEGE_COMMITMENT_REACH
+        {
+            (CITY_MAX_HP - observed_hp).clamp(0, CITY_MAX_HP) as f64 * SIEGE_COMMITMENT_PER_HP
+        } else {
+            0.0
+        };
         let local_balance = (hostile_local - friendly_local).clamp(-250.0, 250.0) * 0.45;
         let approach_cost = (6usize.saturating_sub(approaches)) as f64 * 11.0;
         let development = city.pop.max(1) as f64 * 7.0
@@ -15392,6 +15492,7 @@ impl AdvancedAi {
             - science_denial
             - recapture_value
             - liberation_value
+            - siege_commitment
     }
 
     /// Rank settleable ground the way this agent would, for a caller outside the
@@ -25072,6 +25173,204 @@ mod tests {
                 .target_player
                 .is_some_and(|target| target == 1 || target == minor),
             "the suzerain or the city-state that joined its war must remain actionable"
+        );
+    }
+
+    /// Off by default, set only by the live bridge, holdable off on its own —
+    /// the siege-commitment term follows the same contract as every other
+    /// bridge repair, so the frozen `advanced_v1` anchor keeps its ladder.
+    #[test]
+    fn only_the_live_bridge_finishes_a_siege() {
+        let fresh = AdvancedAi::new();
+        assert!(!fresh.siege_commitment);
+        assert!(!AdvancedAi::legacy().siege_commitment);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.siege_commitment);
+        live.disable_siege_commitment();
+        assert!(!live.siege_commitment);
+    }
+
+    /// What the shipped scorer pays for fifteen turns of siege, and what the
+    /// treatment pays.
+    ///
+    /// `defenses` credits a broken city `0.12` per point of health, so the
+    /// whole health bar is worth 21 — and `core_distance * 7.0` plus
+    /// `military_distance * 5.0` swing about 60 over five tiles. That is the
+    /// arithmetic behind live run `civvis-20260808T142724Z` leaving Biruta at
+    /// 25 hp with its walls down on t90 and re-aiming at Ziz on t91.
+    #[test]
+    fn siege_commitment_prices_the_health_already_stripped_from_a_breach() {
+        let mut game = Game::new_full(2, 30, 18, 7_111, 300, 0, false);
+        for pid in 0..2 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        let enemy = game.player_city_ids(1)[0];
+        let enemy_position = game.cities[&enemy].pos;
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        // A besieger of ours stands on the ring, so the city is both observed
+        // and inside `SIEGE_COMMITMENT_REACH`.
+        let besieger = game
+            .nbrs(enemy_position)
+            .into_iter()
+            .find(|position| {
+                game.map
+                    .get(*position)
+                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            })
+            .expect("the enemy capital has a land approach");
+        game.spawn_test_unit("warrior", 0, besieger);
+
+        let value = |ai: &AdvancedAi, game: &Game| {
+            ai.campaign_city_value(game, 0, &game.cities[&enemy], GrandStrategy::Conquest)
+        };
+        let breach_to = |game: &mut Game, hp: i32| {
+            let city = game.cities.get_mut(&enemy).unwrap();
+            city.hp = hp;
+            city.wall_hp = 0;
+            city.buildings.retain(|building| {
+                !matches!(
+                    building.as_str(),
+                    "walls" | "medieval_walls" | "renaissance_walls"
+                )
+            });
+        };
+
+        let mut shipped = AdvancedAi::targeting(VictoryTarget::Domination);
+        let mut live = AdvancedAi::targeting(VictoryTarget::Domination);
+        live.enable_siege_commitment();
+
+        breach_to(&mut game, CITY_MAX_HP);
+        shipped.belief.observe(&game, 0);
+        live.belief.observe(&game, 0);
+        let shipped_whole = value(&shipped, &game);
+        let live_whole = value(&live, &game);
+        assert_eq!(
+            shipped_whole, live_whole,
+            "a city at full health has had nothing stripped, so the treatment is inert"
+        );
+
+        breach_to(&mut game, 25);
+        shipped.belief.observe(&game, 0);
+        live.belief.observe(&game, 0);
+        let stripped = (CITY_MAX_HP - 25) as f64;
+        let shipped_broken = value(&shipped, &game);
+        let live_broken = value(&live, &game);
+        // The shipped credit for breaking a city almost open. `core_distance`
+        // alone swings 7.0 a tile, so this loses to a fresh objective three
+        // tiles nearer — which is exactly what the live run did.
+        assert!(
+            shipped_whole - shipped_broken < 40.0,
+            "the shipped scorer prices the whole health bar at under 40 points \
+             (measured {}), less than the distance terms swing",
+            shipped_whole - shipped_broken
+        );
+        // Differencing the two controllers over the identical board isolates
+        // the new term from everything else that moves with a city's health.
+        assert!(
+            ((shipped_broken - live_broken) - stripped * SIEGE_COMMITMENT_PER_HP).abs() < 1e-6,
+            "the treatment is worth exactly {SIEGE_COMMITMENT_PER_HP} per stripped point — {} \
+             here — and nothing else changes",
+            stripped * SIEGE_COMMITMENT_PER_HP
+        );
+    }
+
+    /// Walls standing means capture is not close, and damage nobody of ours is
+    /// near is not our investment. Both keep the term at zero, so it stays
+    /// inert outside the case it was measured on.
+    #[test]
+    fn siege_commitment_ignores_an_unbreached_city_and_a_siege_out_of_reach() {
+        let mut game = Game::new_full(2, 30, 18, 7_111, 300, 0, false);
+        for pid in 0..2 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        let enemy = game.player_city_ids(1)[0];
+        let enemy_position = game.cities[&enemy].pos;
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        let mut shipped = AdvancedAi::targeting(VictoryTarget::Domination);
+        let mut live = AdvancedAi::targeting(VictoryTarget::Domination);
+        live.enable_siege_commitment();
+
+        // Differencing the two controllers over one board isolates the term.
+        let gap = |shipped: &AdvancedAi, live: &AdvancedAi, game: &Game| {
+            shipped.campaign_city_value(game, 0, &game.cities[&enemy], GrandStrategy::Conquest)
+                - live.campaign_city_value(game, 0, &game.cities[&enemy], GrandStrategy::Conquest)
+        };
+        let set = |game: &mut Game, hp: i32, wall_hp: i32| {
+            let city = game.cities.get_mut(&enemy).unwrap();
+            city.hp = hp;
+            city.wall_hp = wall_hp;
+        };
+
+        // Beaten down to 25 hp but the walls still stand: capture is not close,
+        // so the term stays out of it.
+        let ring = game
+            .nbrs(enemy_position)
+            .into_iter()
+            .find(|position| {
+                game.map
+                    .get(*position)
+                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            })
+            .expect("the enemy capital has a land approach");
+        let besieger = game.spawn_test_unit("warrior", 0, ring);
+        set(&mut game, 25, 100);
+        shipped.belief.observe(&game, 0);
+        live.belief.observe(&game, 0);
+        assert_eq!(
+            gap(&shipped, &live, &game),
+            0.0,
+            "with the walls up there is no breach to finish"
+        );
+
+        // Breached and beaten down, with a besieger on the ring: full credit.
+        set(&mut game, 25, 0);
+        shipped.belief.observe(&game, 0);
+        live.belief.observe(&game, 0);
+        assert!(
+            (gap(&shipped, &live, &game) - 175.0 * SIEGE_COMMITMENT_PER_HP).abs() < 1e-6,
+            "a breach our army is standing on is worth the health already stripped"
+        );
+
+        // Same breach, but our nearest soldier is beyond the reach horizon.
+        game.remove_unit(besieger);
+        let far = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                game.map
+                    .get(*position)
+                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                    && game.wdist(enemy_position, *position) > SIEGE_COMMITMENT_REACH
+            })
+            .expect("the test map has ground beyond the reach horizon");
+        game.spawn_test_unit("warrior", 0, far);
+        shipped.belief.observe(&game, 0);
+        live.belief.observe(&game, 0);
+        assert_eq!(
+            gap(&shipped, &live, &game),
+            0.0,
+            "damage dealt where no soldier of ours can finish it is not our siege"
         );
     }
 

@@ -859,6 +859,7 @@ fn withhold_live_treatment(
         "war-reinforcement" => ai.disable_war_reinforcement(),
         "war-patience" => ai.disable_war_patience(),
         "recon-replacement" => ai.disable_recon_replacement(),
+        "siege-commitment" => ai.disable_siege_commitment(),
         "garrison-walls" => ai.disable_garrison_walls(),
         other => {
             return Err(format!(
@@ -871,7 +872,7 @@ fn withhold_live_treatment(
                  muster-at-command-radius, war-economy, war-reinforcement, war-patience, \
                  recon-replacement, wide-map-capacity, garrison-under-fire, \
                  escort-unstick, religion-sues-peace, stranded-settler-discount, \
-                 garrison-walls"
+                 siege-commitment, garrison-walls"
             ))
         }
     }
