@@ -63,15 +63,17 @@ fn share(value: Option<f64>) -> String {
     }
 }
 
-const PROFILE_HEADER: &str =
-    "  concentr.  disper.  arrival  envelop.  focus  ground  screen  contact";
+const PROFILE_HEADER: &str = "  concentr.  disper.  arrival     foot  absent  envelop.  \
+focus  ground  screen  contact";
 
 fn profile_row(label: &str, profile: DoctrineProfile) -> String {
     format!(
-        "{label:<22}{:>9}{:>9}{:>9}{:>10}{:>7}{:>8}{:>8}{:>9}",
+        "{label:<22}{:>9}{:>9}{:>9}{:>9}{:>8}{:>10}{:>7}{:>8}{:>8}{:>9}",
         cell(profile.concentration),
         cell(profile.dispersion),
         cell(profile.arrival),
+        cell(profile.foot_arrival),
+        share(profile.absent),
         cell(profile.envelopment),
         share(profile.focus),
         share(profile.ground),
@@ -147,6 +149,8 @@ fn profile_run(name: &str, seeds: usize, start_seed: u64, jobs: usize) {
     println!("concentr.  own units near the contact less enemy units near it, per contact turn");
     println!("disper.    mean distance between own units, per turn -- low is a body that moves as one");
     println!("arrival    spread in turns of when each unit first reached the enemy -- low is 'fight united'");
+    println!("foot       the same, over 2-move units alone: separates a slow line from fast cavalry");
+    println!("absent     share of the force that never reached the enemy at all");
     println!("envelop.   enemy units taken from two or more sides at once, per contact turn");
     println!("focus      share of damage dealt that landed on enemies that died");
     println!("ground     share of own unit-turns on hills or in cover");
