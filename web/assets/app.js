@@ -9070,24 +9070,105 @@ const BUILT_WONDER_PAINTER = {
 
 // Draw one World Wonder at map or badge scale. Returns false only for an
 // unknown (for example, modded) id, so callers retain the generic fallback.
+const WORLD_WONDER_SIZE_SCALE = 1.6;
+const WORLD_WONDER_OUTLINE_COLOR = "#f4d34f";
+const WORLD_WONDER_OUTLINE_RADIUS = 1.05;
+const WORLD_WONDER_SPRITE_SIZE = 192;
+const WORLD_WONDER_SPRITE_CENTER = WORLD_WONDER_SPRITE_SIZE / 2;
+const WORLD_WONDER_SPRITE_CACHE = new Map();
+
+// Paint the code-native silhouette once into a transparent sprite, expand its
+// alpha by a pixel or two, and then put the original art back on top. A canvas
+// shadow would ring every pillar and stair separately; this keeps the yellow
+// mark around the wonder as one small, readable edge.
+function worldWonderOutlinedSprite(wonder, painter, art, k) {
+  const cacheKey = `${wonder}:${k}`;
+  const cached = WORLD_WONDER_SPRITE_CACHE.get(cacheKey);
+  if (cached) return cached;
+
+  const makeCanvas = () => {
+    const surface = document.createElement("canvas");
+    surface.width = WORLD_WONDER_SPRITE_SIZE;
+    surface.height = WORLD_WONDER_SPRITE_SIZE;
+    return surface;
+  };
+  const artCanvas = makeCanvas();
+  const artContext = artCanvas.getContext("2d");
+  artContext.setTransform(1, 0, 0, 1, 0, 0);
+  artContext.clearRect(0, 0, WORLD_WONDER_SPRITE_SIZE, WORLD_WONDER_SPRITE_SIZE);
+  artContext.globalAlpha = 1;
+  artContext.globalCompositeOperation = "source-over";
+  artContext.shadowColor = "transparent";
+  artContext.shadowBlur = 0;
+  artContext.shadowOffsetX = 0;
+  artContext.shadowOffsetY = 0;
+
+  // The painters share the live context through `cx`; swap it only for this
+  // synchronous call, then restore it even if a future painter throws.
+  const mainContext = cx;
+  cx = artContext;
+  try {
+    artContext.lineJoin = "round";
+    painter(WORLD_WONDER_SPRITE_CENTER,
+            WORLD_WONDER_SPRITE_CENTER + 6 * k, k, art);
+  } finally {
+    cx = mainContext;
+  }
+
+  const maskCanvas = makeCanvas();
+  const maskContext = maskCanvas.getContext("2d");
+  maskContext.drawImage(artCanvas, 0, 0);
+  maskContext.globalCompositeOperation = "source-in";
+  maskContext.fillStyle = WORLD_WONDER_OUTLINE_COLOR;
+  maskContext.fillRect(0, 0, WORLD_WONDER_SPRITE_SIZE, WORLD_WONDER_SPRITE_SIZE);
+  maskContext.globalCompositeOperation = "source-over";
+
+  const outlinedCanvas = makeCanvas();
+  const outlinedContext = outlinedCanvas.getContext("2d");
+  const radius = Math.max(.8, WORLD_WONDER_OUTLINE_RADIUS * k / ((S / 31) * .72));
+  const steps = 12;
+  for (let i = 0; i < steps; i++) {
+    const angle = i * Math.PI * 2 / steps;
+    outlinedContext.drawImage(maskCanvas, Math.cos(angle) * radius,
+                              Math.sin(angle) * radius);
+  }
+  outlinedContext.drawImage(artCanvas, 0, 0);
+  WORLD_WONDER_SPRITE_CACHE.set(cacheKey, outlinedCanvas);
+  return outlinedCanvas;
+}
+
 function drawWorldWonder(wonder, x, y, scale = 1) {
   const art = WORLD_WONDER_ART[wonder];
   const painter = art && BUILT_WONDER_PAINTER[art.form];
   if (!painter) return false;
-  const k = (S / 31) * 0.72 * scale;
-  cx.save();
-  cx.lineJoin = "round";
+  const visualScale = scale * WORLD_WONDER_SIZE_SCALE;
+  const k = (S / 31) * 0.72 * visualScale;
+  const mainContext = cx;
+  mainContext.save();
+  mainContext.lineJoin = "round";
   // The glow is the "a wonder is here" cue the compact monument carried, and
   // it has to survive the silhouette changing per wonder.
-  const glow = cx.createRadialGradient(x, y - 3 * scale, Math.max(.5, scale), x, y - 3 * scale, 23 * scale);
+  const glow = mainContext.createRadialGradient(x, y - 3 * visualScale,
+                                                Math.max(.5, visualScale),
+                                                x, y - 3 * visualScale,
+                                                23 * visualScale);
   glow.addColorStop(0, "rgba(255,222,120,.4)");
   glow.addColorStop(1, "rgba(255,222,120,0)");
-  cx.fillStyle = glow;
-  cx.beginPath(); cx.arc(x, y - 3 * scale, 23 * scale, 0, 7); cx.fill();
-  cx.fillStyle = "rgba(0,0,0,.3)";
-  cx.beginPath(); cx.ellipse(x, y + 7 * k, 12 * k, 4 * k, 0, 0, 7); cx.fill();
-  painter(x, y + 6 * k, k, art);
-  cx.restore();
+  mainContext.fillStyle = glow;
+  mainContext.beginPath();
+  mainContext.arc(x, y - 3 * visualScale, 23 * visualScale, 0, 7);
+  mainContext.fill();
+  mainContext.fillStyle = "rgba(0,0,0,.3)";
+  mainContext.beginPath();
+  mainContext.ellipse(x, y + 7 * k, 12 * k, 4 * k, 0, 0, 7);
+  mainContext.fill();
+  mainContext.restore();
+
+  const sprite = worldWonderOutlinedSprite(wonder, painter, art, k);
+  mainContext.save();
+  mainContext.drawImage(sprite, x - WORLD_WONDER_SPRITE_CENTER,
+                         y - WORLD_WONDER_SPRITE_CENTER);
+  mainContext.restore();
   return true;
 }
 
@@ -9096,7 +9177,8 @@ function drawWorldWonder(wonder, x, y, scale = 1) {
 // as a scale-aware fallback, but never use it for a shipped World Wonder.
 function drawWonder(x, y, scale = 1) {
   cx.save();
-  cx.translate(x, y); cx.scale(scale, scale);
+  const visualScale = scale * WORLD_WONDER_SIZE_SCALE;
+  cx.translate(x, y); cx.scale(visualScale, visualScale);
   x = 0; y = 0;
   cx.lineJoin = "round";
   const glow = cx.createRadialGradient(x, y - 3, 1, x, y - 3, 23);
@@ -9106,6 +9188,8 @@ function drawWonder(x, y, scale = 1) {
   cx.beginPath(); cx.arc(x, y - 3, 23, 0, 7); cx.fill();
   cx.fillStyle = "rgba(0,0,0,.3)";
   cx.beginPath(); cx.ellipse(x, y + 8, 12, 4, 0, 0, 7); cx.fill();
+  cx.shadowColor = WORLD_WONDER_OUTLINE_COLOR;
+  cx.shadowBlur = 1.1;
   // Pale gold on pale ground is no contrast at all, and a wonder is the one
   // thing on the map that should never be missed: dark outline throughout, and
   // a lit face against a shadowed one so it reads as carved stone.
