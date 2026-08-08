@@ -58,7 +58,7 @@ mod advanced;
 mod tactics;
 pub use advanced::{
     AdvancedAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan,
-    ExpansionCensus, StrategyCensus, VictoryTarget,
+    ExpansionCensus, StrategyCensus, VictoryTarget, WarTimingCensus,
 };
 
 const TECH_PRIORITY: [&str; 15] = [
@@ -102,6 +102,28 @@ pub struct ForceReport {
     pub strength_ratio: f64,
 }
 
+/// The observer-facing state of one opt-in midgame war appointment.
+///
+/// This deliberately carries the package rather than only the word
+/// "conquest": an evaluator and a spectator need to distinguish a target that
+/// was considered from one whose breakthrough arrived, whose bodies mobilized,
+/// and whose force actually struck.  It is reporting-only and never feeds a
+/// decision back into the simulation.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WarPlanReport {
+    pub phase: &'static str,
+    pub target_player: usize,
+    pub objective_city: u32,
+    pub breakthrough: String,
+    pub assault_unit: String,
+    pub predecessor: Option<String>,
+    pub bodies_required: usize,
+    pub bodies_ready: usize,
+    pub breach_required: bool,
+    pub appointed_turn: u32,
+    pub upgrade_reserve: f64,
+}
+
 /// Everything an agent is willing to say about its own medium-term
 /// intentions. The spectator HUD reads this to explain *why* a civilization
 /// is doing what it does instead of only showing the outcome; nothing here
@@ -119,6 +141,11 @@ pub struct PlanReport {
     pub threatened_city: Option<u32>,
     pub desired_cities: usize,
     pub assessed_turn: u32,
+    /// A separately persistent midgame war appointment, when the
+    /// default-off `advanced_timing_attack` capability is active.  The
+    /// ordinary strategic plan may reassess every few turns; this record pins
+    /// its target and package until an explicit completion or invalidation.
+    pub timing_attack: Option<WarPlanReport>,
     pub forces: Vec<ForceReport>,
 }
 
@@ -149,6 +176,14 @@ pub trait Ai {
     /// is observer-only telemetry for the default-off expansion experiments;
     /// agents without the instrument return `None`.
     fn expansion_census(&self) -> Option<ExpansionCensus> {
+        None
+    }
+
+    /// Lifecycle telemetry for the opt-in midgame war-appointment treatment.
+    /// It is intentionally separate from a final plan snapshot: a treatment
+    /// that never forms a plan and one that forms, mobilizes, and aborts are
+    /// opposite mechanism readings even if both finish a game at peace.
+    fn war_timing_census(&self) -> Option<WarTimingCensus> {
         None
     }
 
@@ -192,6 +227,10 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 
     fn expansion_census(&self) -> Option<ExpansionCensus> {
         (**self).expansion_census()
+    }
+
+    fn war_timing_census(&self) -> Option<WarTimingCensus> {
+        (**self).war_timing_census()
     }
 
     fn joint_tactics_census(&self) -> Option<(usize, usize)> {
