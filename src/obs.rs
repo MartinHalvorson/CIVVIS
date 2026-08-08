@@ -890,6 +890,11 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         "winner": g.winner,
         "winners": g.winning_players(),
         "victory_type": g.victory_type,
+        // How that result is written: the type for every ordinary victory, and
+        // the Mercy Rule's lane notation for a mercy ending, composed here so
+        // every surface says the same thing about the same game. Empty while a
+        // game is live, exactly as `victory_type` is.
+        "victory_label": g.victory_label(),
         // The turn a finished game is reported on, which is `turn` for every
         // victory but the score tiebreak: that one is settled by a count taken
         // on the wrap out of the final turn, so a 250-turn game reads turn 250
@@ -903,6 +908,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "winner": decided.winner,
             "civ": g.players.get(decided.winner).map(|player| player.civ.clone()),
             "victory_type": decided.victory_type,
+            "victory_label": decided.victory_label(),
             "turn": decided.turn,
             "mode": decided.mode.as_str(),
         })),
@@ -3068,6 +3074,44 @@ mod tests {
             finished["victory_turn"],
             json!(250),
             "a 250-turn game is won on turn 250"
+        );
+    }
+
+    /// The Mercy Rule's notation is composed once, in the engine, so the
+    /// finish screen, the play-on plate and anything else reading `/state`
+    /// denote the same win the same way.
+    #[test]
+    fn a_mercy_ending_publishes_its_notation_beside_the_bare_type() {
+        let mut game = Game::new_full(2, 20, 14, 19_069, 250, 0, false);
+        assert!(
+            observation_spectator(&game, 0)["victory_label"].is_null(),
+            "a live world has no verdict to write"
+        );
+        game.winner = Some(0);
+        game.victory_type = Some(crate::game::MERCY_VICTORY.to_string());
+        game.mercy_lanes = vec!["science".to_string()];
+        let finished = observation_spectator(&game, 0);
+        assert_eq!(
+            finished["victory_type"],
+            json!("mercy"),
+            "the engine's own answer is unchanged"
+        );
+        assert_eq!(finished["victory_label"], json!("Mercy Rule - Science"));
+
+        // A world playing on past that result is live again and has no verdict
+        // of its own, but the one it borrowed its turns from keeps the
+        // notation rather than reverting to the bare word.
+        assert!(game.play_on(crate::game::PlayOnMode::UntilNextVictory));
+        let extended = observation_spectator(&game, 0);
+        assert!(extended["victory_label"].is_null());
+        assert_eq!(
+            extended["decided"]["victory_type"],
+            json!("mercy"),
+            "the type a play-on extension suppresses is still the type"
+        );
+        assert_eq!(
+            extended["decided"]["victory_label"],
+            json!("Mercy Rule - Science")
         );
     }
 
