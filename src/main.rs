@@ -821,12 +821,16 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// delegates to `class_can_traverse(traversal_class(uid), tile)`, so the
 /// filter accepts and rejects exactly the same tiles for every unit; only the
 /// per-tile unit lookup and memo probe are hoisted out of the loop. The
-/// anchor's decision stream is identical by construction, and was checked
-/// rather than inferred: clean and candidate release builds produced
-/// byte-identical fixed-seed `ai_eval` deployment-comparison reports. Pinned
-/// over the merge with main's capture-the-flag re-pin above. Compatibility
-/// re-pin, not an Elo-protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x57dc_924c_50e3_308f;
+/// anchor's decision stream is identical by construction. The hoist is safe
+/// across both filters because the second one is reachable only when
+/// `step_toward` returned false, and that return means no `Game::apply`
+/// succeeded — so nothing that `traversal_class` reads can have moved between
+/// the hoist and either use. Checked rather than inferred: clean and candidate
+/// release builds produced byte-identical fixed-seed `ai_eval`
+/// deployment-comparison reports. Pinned over the merge with main's
+/// capture-the-flag re-pin above. Compatibility re-pin, not an Elo-protocol
+/// change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8c9c_d8b4_0311_4289;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
