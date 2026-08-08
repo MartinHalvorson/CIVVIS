@@ -772,9 +772,11 @@ pub fn battlefield_map_scripts() -> Vec<&'static MapScriptSpec> {
     CIV6_MAP_SCRIPTS.iter().filter(|spec| spec.script.is_battlefield()).collect()
 }
 
-/// A Tactics battlefield size. The advertised name counts the fighting ground;
-/// `width` carries one extra column of sea that seals the flat map's east-west
-/// wrap seam, so the arena plays as a true bounded rectangle.
+/// A Tactics battlefield size. The arena is a bounded rectangle — four walls,
+/// no wrap — so its width is its fighting ground and the advertised name is
+/// simply its dimensions. (It carried an extra column of sea until the arena
+/// got a topology of its own: sealing a cylinder's seam with water still left
+/// an archer on one bank in range of the other.)
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct BattlefieldSize {
     pub id: &'static str,
@@ -783,12 +785,13 @@ pub struct BattlefieldSize {
     pub height: i32,
 }
 
-/// The battlefields the Tactics mode offers, smallest first. Squares seat the
-/// two sides in opposite corners; the rectangle seats them at opposite ends.
+/// The battlefields the Tactics mode offers, smallest first. Both sides are
+/// seated at opposite ends of the long axis, facing each other across the
+/// field.
 pub const BATTLEFIELD_SIZES: [BattlefieldSize; 3] = [
-    BattlefieldSize { id: "10x10", name: "Square · 10×10", width: 11, height: 10 },
-    BattlefieldSize { id: "10x20", name: "March · 10×20", width: 11, height: 20 },
-    BattlefieldSize { id: "20x20", name: "Field · 20×20", width: 21, height: 20 },
+    BattlefieldSize { id: "10x10", name: "Square · 10×10", width: 10, height: 10 },
+    BattlefieldSize { id: "10x20", name: "March · 10×20", width: 10, height: 20 },
+    BattlefieldSize { id: "20x20", name: "Field · 20×20", width: 20, height: 20 },
 ];
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -1428,9 +1431,9 @@ mod tests {
     }
 
     /// The Tactics battlefield is an arena, not a world: only the Battlefield
-    /// script is one, and every offered size advertises its fighting ground
-    /// while carrying the one extra column of sea that seals the flat wrap
-    /// seam into a bounded rectangle.
+    /// script is one, and every offered size is exactly the fighting ground
+    /// its name advertises. The arena is bounded by its own topology rather
+    /// than by a rim of sea, so there is no seam column to subtract.
     #[test]
     fn the_battlefield_is_an_arena_rather_than_a_world() {
         for spec in CIV6_MAP_SCRIPTS {
@@ -1449,16 +1452,15 @@ mod tests {
                 .map(|side| side.parse().expect("battlefield ids read WxH"))
                 .collect();
             assert_eq!(ground.len(), 2, "{}", size.id);
-            assert_eq!(size.width, ground[0] + 1, "{} carries the seam column", size.id);
+            assert_eq!(size.width, ground[0], "{} is its own fighting ground", size.id);
             assert_eq!(size.height, ground[1], "{}", size.id);
-            // No battlefield collides with a real map size: the seam column
-            // keeps them off the settlement sizes' dimension table.
+            // Both sides are seated at opposite ends of the long axis, which
+            // is the north-south one at every offered size.
+            assert!(size.height >= size.width, "{} is not taller than it is wide", size.id);
+            // No battlefield collides with a real map size: the smallest
+            // world is wider than the largest arena several times over.
             assert!(MapSize::from_dimensions(size.width, size.height).is_none(), "{}", size.id);
         }
-        // Squares seat opposite corners, the rectangle opposite ends; both
-        // need the long axis unwrapped, which the flat map's hard north-south
-        // edges provide. Nothing here is taller than it is wide only by the
-        // seam column.
         assert_eq!(BATTLEFIELD_SIZES.len(), 3);
     }
 
