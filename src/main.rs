@@ -713,8 +713,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// set-membership test against an empty set; the STOCK `advanced` entrant
 /// (which ships `home_defense = true`) now answers barbarian raiders at home,
 /// recorded here honestly. Compatibility re-pin for the anchor.
+/// #1386 makes production Scouts collect a tribal village they can currently
+/// see and reach before another unseen exploration tile. The shared branch is
+/// behind `BasicAi::tactical_strategy`: it is false for Basic and
+/// `AdvancedAi::legacy()`, and `promoted_policy_envoy` enables it for the
+/// production controller. The condition tests that flag before reading player
+/// sight, reachability, or village state; the frozen path therefore proceeds
+/// directly into its historical fog-target selection. The focused regression
+/// asserts that split on the same staged board. Compatibility re-pin, not an
+/// Elo-protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6937_8a74_85e7_6ba8;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x90ba_5f60_4fd0_dd96;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
