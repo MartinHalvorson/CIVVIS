@@ -42,9 +42,12 @@ function initAdvancedSettings() {
   const game = document.getElementById("newgame-options");
   const gameAdvanced = document.getElementById("game-advanced-settings");
   moveByOrder(game, ".game-advanced-setting", document.getElementById("game-advanced-settings-body"));
+  // Which game is being set up decides what every control under it means, so
+  // it is asked first — before who is playing it, the way a menu asks for the
+  // game before the seats.
   const basic = [
-    ["humanplayers", true], ["np", true], ["mapshape", true], ["maptype", true],
-    ["startera", true], ["gamespeed", true],
+    ["gamemode", true], ["humanplayers", true], ["np", true], ["mapshape", true],
+    ["maptype", true], ["startera", true], ["gamespeed", true],
   ].map(([id, label]) => label
     ? document.getElementById(id).closest("label")
     : document.getElementById(id));
@@ -3698,11 +3701,22 @@ function worldWrapsX() {
   if (typeof state.map.wrap_x === "boolean") return state.map.wrap_x;
   return state.map.script !== "inland_sea";
 }
+// A bounded arena, walled on all four sides rather than seamed east to west.
+// Those walls are a rule of the match and not a way of drawing it: an archer
+// on one wall is the width of the field from the far wall, and a flank that
+// walks off the east side must not arrive behind the enemy in the west. So
+// the two display controls below may close a seam the world has and never
+// open one it does not — on a walled field a unit drawn past the wall is a
+// unit off the map.
+function worldIsWalled() {
+  return !!state && !planetMap() && !worldWrapsX();
+}
 function mapWrapsX() {
-  return planetMap() ? worldWrapsX() : FLAT_MAP_WRAP_X;
+  if (planetMap()) return worldWrapsX();
+  return !worldIsWalled() && FLAT_MAP_WRAP_X;
 }
 function mapWrapsY() {
-  return !!state && !planetMap() && FLAT_MAP_WRAP_Y;
+  return !!state && !planetMap() && !worldIsWalled() && FLAT_MAP_WRAP_Y;
 }
 // Where the chart is unrolled about: the camera once the world is known to
 // come back on itself, and one fixed place until then.
@@ -27261,7 +27275,9 @@ function setWorldPanInertia(on) {
 }
 function syncFlatMapWrapControls() {
   const group = document.getElementById("flat-map-wrap-settings");
-  if (group) group.hidden = !!state && planetMap();
+  // A globe follows its own shape and an arena its four walls, so neither has
+  // anything for these two to decide.
+  if (group) group.hidden = !!state && (planetMap() || worldIsWalled());
   const xBox = document.getElementById("wrapxchk");
   const yBox = document.getElementById("wrapychk");
   if (xBox) xBox.checked = FLAT_MAP_WRAP_X;
@@ -27278,7 +27294,7 @@ function setFlatMapWrap(axis, on) {
     localStorage.setItem("civvis-flat-map-wrap-y", enabled ? "1" : "0");
   }
   syncFlatMapWrapControls();
-  if (!state || planetMap()) return;
+  if (!state || planetMap() || worldIsWalled()) return;
   cameraFlight = null; cameraZoom = null; clearCameraInertia();
   // A camera can be several copies away after a long wrapped pan. When that
   // axis becomes bounded, carry it to the equivalent place in the base copy
@@ -28021,9 +28037,11 @@ function selectedSimulationSettings() {
           victory_conditions: victoryConditions,
           mercy_rule: mercyRule === "" ? null : Number(mercyRule),
           required_victory_types: requiredVictories,
-          // The arena economy travels always, not only in Tactics: the server
-          // reads it on a battlefield and carries it everywhere else, so a
-          // world is unaffected and a mode switch needs no second request.
+          // The arena's settings travel always, not only in Tactics: the
+          // server reads them on a battlefield and carries them everywhere
+          // else, so a world is unaffected and a mode switch needs no second
+          // request.
+          tactics_fog: readSetting("tacticsfog") === "1",
           tactics_cities: Number(readSetting("tacticscities")) || 0,
           tactics_production: Number(readSetting("tacticsproduction")) || 0,
           tactics_gold: Number(readSetting("tacticsgold")) || 0,
@@ -28852,11 +28870,22 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   inertia.checked = WORLD_PAN_INERTIA;
   inertia.onchange = () => setWorldPanInertia(inertia.checked);
 }
+// These two sit in the setup panel's advanced drawer, beside the settings that
+// do describe the next game. They do not: how a flat chart is unrolled is the
+// viewer's own preference and applies to the world already on screen. So each
+// stops its change event at the box rather than letting `#newgame-options`'s
+// delegated listener stage an otherwise identical simulation — the same rule
+// the saved mod pack follows.
 {
   const wrapXBox = document.getElementById("wrapxchk");
   const wrapYBox = document.getElementById("wrapychk");
-  wrapXBox.onchange = () => setFlatMapWrap("x", wrapXBox.checked);
-  wrapYBox.onchange = () => setFlatMapWrap("y", wrapYBox.checked);
+  const keepInTheViewer = event => event.stopPropagation();
+  wrapXBox.onchange = event => {
+    setFlatMapWrap("x", wrapXBox.checked); keepInTheViewer(event);
+  };
+  wrapYBox.onchange = event => {
+    setFlatMapWrap("y", wrapYBox.checked); keepInTheViewer(event);
+  };
   syncFlatMapWrapControls();
 }
 {

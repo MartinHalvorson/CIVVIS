@@ -11460,6 +11460,7 @@ mod district_building_wonder_runtime_tests {
             .find(|unit| !before.contains(unit))
             .unwrap();
         assert_eq!(game.units[&trained].formation, 2);
+        assert_eq!(game.units[&trained].production_cost, 80.0);
         assert_eq!(game.unit_formation_bonus(&game.units[&trained]), 22.0);
     }
 
@@ -11542,6 +11543,7 @@ mod district_building_wonder_runtime_tests {
             .find(|unit| !before.contains(unit))
             .unwrap();
         assert_eq!(game.units[&bought].formation, 1);
+        assert_eq!(game.units[&bought].production_cost, 60.0);
         assert!(game.players[0].gold.abs() < 1e-9);
 
         // Firaxis purchases into the City Center's combat layer, so clear the
@@ -14178,6 +14180,42 @@ fn one_u32() -> u32 {
     1
 }
 
+/// Aggregate combat output and Production investment for one unit kind.
+///
+/// Completed lives are folded into a player's saved ledger when a unit leaves
+/// play. [`Game::unit_lifetime_stats`] adds the units still on the field, so a
+/// finished battle has one observation for every unit it fielded rather than
+/// silently dropping the survivors.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct UnitLifetimeStats {
+    pub units: u64,
+    pub damage_dealt: u64,
+    pub production_cost: f64,
+}
+
+impl UnitLifetimeStats {
+    fn observe(&mut self, unit: &Unit, production_cost: f64) {
+        self.units = self.units.saturating_add(1);
+        self.damage_dealt = self.damage_dealt.saturating_add(unit.damage_dealt);
+        self.production_cost += production_cost;
+    }
+
+    /// Mean enemy-unit HP removed over one observed life.
+    pub fn average_damage(&self) -> Option<f64> {
+        (self.units > 0).then(|| self.damage_dealt as f64 / self.units as f64)
+    }
+
+    /// Mean Production invested in one observed unit.
+    pub fn average_production_cost(&self) -> Option<f64> {
+        (self.units > 0).then(|| self.production_cost / self.units as f64)
+    }
+
+    /// Enemy-unit HP removed per point of Production invested.
+    pub fn damage_per_production(&self) -> Option<f64> {
+        (self.production_cost > 0.0).then(|| self.damage_dealt as f64 / self.production_cost)
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct Unit {
     pub id: u32,
@@ -14186,6 +14224,18 @@ pub struct Unit {
     pub owner: usize,
     pub pos: Pos,
     pub hp: i32,
+    /// Enemy-unit hit points this unit has actually removed over its life.
+    /// Killing blows are capped at the victim's remaining health, so overkill
+    /// cannot make one unit look more productive than another. The counter
+    /// survives saves, promotions, and upgrades with the unit.
+    #[serde(default)]
+    pub damage_dealt: u64,
+    /// Production represented by this unit when it entered play. Directly
+    /// trained formations use their 1.5x/2x price and combined formations add
+    /// their constituents, so the lifetime ledger measures the investment
+    /// that produced the combat output rather than today's upgrade target.
+    #[serde(default)]
+    pub production_cost: f64,
     pub moves_left: f64,
     pub charges: i32,
     #[serde(default)]
@@ -15553,6 +15603,11 @@ pub struct Player {
     pub envoys: Vec<(usize, i64)>, // (city-state pid, envoys placed)
     #[serde(default)]
     pub counters: BTreeMap<String, i64>,
+    /// Completed military-unit lives by the kind the unit carried when it
+    /// left play. Live units are composed with this by
+    /// [`Game::unit_lifetime_stats`].
+    #[serde(default)]
+    pub unit_lifetimes: BTreeMap<Name, UnitLifetimeStats>,
     /// Every great work as an object with its creating era and creator, kept
     /// in lockstep with the ``great_work:*`` counters. Theming reads these.
     #[serde(default)]
@@ -15665,6 +15720,7 @@ impl Player {
             mass_driver_shots: 0,
             envoys: Vec::new(),
             counters: BTreeMap::new(),
+            unit_lifetimes: BTreeMap::new(),
             great_work_pieces: Vec::new(),
             quests: BTreeMap::new(),
             boosted_techs: BTreeSet::new(),
@@ -23566,8 +23622,8 @@ impl Game {
         );
         let dealt = damage(att, def, &mut self.rng);
         let received = damage(def, att, &mut self.rng);
-        self.units.get_mut(&defender_id).unwrap().hp -= dealt;
-        self.units.get_mut(&uid).unwrap().hp -= received;
+        self.apply_unit_damage(uid, defender_id, dealt);
+        self.apply_unit_damage(defender_id, uid, received);
         {
             let unit = self.units.get_mut(&uid).unwrap();
             unit.moves_left = 0.0;
@@ -24909,7 +24965,7 @@ impl Game {
             if let Some(formation) = spec.effects.get(effect) {
                 let formation = (*formation as u8).min(2);
                 if let Some(unit) = self.great_person_formation_unit(pid, formation, domain) {
-                    self.units.get_mut(&unit).unwrap().formation = formation;
+                    self.set_unit_formation(unit, formation);
                     if formation == 1 {
                         bump(&mut self.players[pid], "corps");
                     }
@@ -30781,6 +30837,8 @@ impl Game {
             owner,
             pos,
             hp: 100,
+            damage_dealt: 0,
+            production_cost: spec.cost,
             moves_left: spec.moves,
             charges,
             xp: 0,
@@ -30836,6 +30894,46 @@ impl Game {
     }
 
     pub(crate) fn remove_unit(&mut self, uid: u32) {
+        self.remove_unit_recording_lifetime(uid, true);
+    }
+
+    /// Remove a constituent whose identity continues in a combined formation.
+    /// Its damage and Production are transferred to the surviving unit first,
+    /// so recording a second completed life here would count the same
+    /// investment twice.
+    fn remove_combined_unit(&mut self, uid: u32) {
+        self.remove_unit_recording_lifetime(uid, false);
+    }
+
+    fn unit_accounting_cost(&self, unit: &Unit) -> f64 {
+        if unit.production_cost > 0.0 {
+            return unit.production_cost;
+        }
+        // Saves written before lifetime accounting have no stored investment.
+        // Reconstruct the nominal value rather than turning all of their
+        // surviving units into zero-cost infinite returns.
+        self.rules.units[unit.kind].cost
+            * match unit.formation {
+                0 => 1.0,
+                1 => 1.5,
+                _ => 2.0,
+            }
+    }
+
+    fn set_unit_formation(&mut self, uid: u32, formation: u8) {
+        let kind = self.units[&uid].kind;
+        let cost = self.rules.units[kind].cost
+            * match formation {
+                0 => 1.0,
+                1 => 1.5,
+                _ => 2.0,
+            };
+        let unit = self.units.get_mut(&uid).unwrap();
+        unit.formation = formation;
+        unit.production_cost = cost;
+    }
+
+    fn remove_unit_recording_lifetime(&mut self, uid: u32, record_lifetime: bool) {
         self.barb_scout_homes.remove(&uid);
         self.barb_scout_targets.remove(&uid);
         self.barb_camp_guards.retain(|_, guard| *guard != uid);
@@ -30857,6 +30955,21 @@ impl Game {
                     .collect()
             })
             .unwrap_or_default();
+        if record_lifetime {
+            if let Some(unit) = self
+                .units
+                .get(&uid)
+                .filter(|unit| self.rules.units[unit.kind].class == "military")
+                .cloned()
+            {
+                let cost = self.unit_accounting_cost(&unit);
+                self.players[unit.owner]
+                    .unit_lifetimes
+                    .entry(unit.kind)
+                    .or_default()
+                    .observe(&unit, cost);
+            }
+        }
         if let Some(u) = self.units.remove(&uid) {
             if let Some(other) = u.linked_to {
                 if let Some(peer) = self.units.get_mut(&other) {
@@ -30873,6 +30986,28 @@ impl Game {
         for aircraft in carried_aircraft {
             self.remove_unit(aircraft);
         }
+    }
+
+    /// Combat return by military unit kind for one civilization, including
+    /// completed lives and every unit still on the field at this instant.
+    ///
+    /// At a Tactics result this is the full roster: defeated units came
+    /// through `remove_unit`, and survivors are added here at their final
+    /// accumulated damage. During a live battle the survivor rows are useful
+    /// but naturally still growing.
+    pub fn unit_lifetime_stats(&self, pid: usize) -> BTreeMap<Name, UnitLifetimeStats> {
+        let mut stats = self
+            .players
+            .get(pid)
+            .map(|player| player.unit_lifetimes.clone())
+            .unwrap_or_default();
+        for unit in self.units.values().filter(|unit| {
+            unit.owner == pid && self.rules.units[unit.kind].class == "military"
+        }) {
+            let cost = self.unit_accounting_cost(unit);
+            stats.entry(unit.kind).or_default().observe(unit, cost);
+        }
+        stats
     }
 
     /// Move a unit and keep the occupancy index and revealed ground with it.
@@ -31897,7 +32032,8 @@ impl Game {
     }
 
     fn player_vision(&self, heights: &mut HeightField, pid: usize) -> TileBits {
-        // An arena is a field, and both commanders can see all of it.
+        // An arena is a field, and by default both commanders can see all of
+        // it.
         //
         // A Tactics battle is meant to be a test of what each side does with
         // what is in front of it, not of who finds the other first — and a
@@ -31907,9 +32043,14 @@ impl Game {
         // enemy it cannot see; measured, both sides simply stood in their own
         // deployment bands for five hundred turns and the clock decided it.
         // Lifting the fog is symmetric — it is the rule of the arena, not a
-        // handicap given to one side — and leaves concealment as something a
-        // later mode can put back deliberately.
-        if self.is_arena() {
+        // handicap given to one side.
+        //
+        // That is the default rather than the rule: `tactics.fog` is the
+        // deliberate mode the comment above used to leave for later, and it
+        // simply declines the shortcut so the field is scouted the way a world
+        // is. It is symmetric in the same way — both sides are fogged or
+        // neither is.
+        if self.is_arena() && !self.tactics.fog {
             return TileBits::all(self.map.tiles.len());
         }
         let mut visible = TileBits::with_capacity(self.map.tiles.len());
@@ -42843,6 +42984,23 @@ impl Game {
         unit.acted = true;
     }
 
+    /// Apply one unit's damage to another and credit only health really lost.
+    ///
+    /// Combat rolls are allowed to exceed the target's remaining health so
+    /// the existing death checks can continue to read `hp <= 0`. Lifetime
+    /// output is an economic measurement, though, and must not count that
+    /// overkill. Keeping the subtraction and the credit in one helper also
+    /// prevents melee counter-damage, interceptions, and ranged attacks from
+    /// drifting into different definitions of "damage dealt".
+    fn apply_unit_damage(&mut self, attacker: u32, defender: u32, rolled: i32) {
+        let rolled = rolled.max(0);
+        let actual = self.units[&defender].hp.max(0).min(rolled) as u64;
+        self.units.get_mut(&defender).unwrap().hp -= rolled;
+        if let Some(unit) = self.units.get_mut(&attacker) {
+            unit.damage_dealt = unit.damage_dealt.saturating_add(actual);
+        }
+    }
+
     fn consume_melee_attack(&mut self, uid: u32, target: Pos) {
         let cost = self.unit_step_cost(uid, self.units[&uid].pos, target);
         let remaining = (self.units[&uid].moves_left - cost).max(0.0);
@@ -43108,8 +43266,8 @@ impl Game {
             let ds = effective_strength(def_base, d.hp);
             let dmg_out = damage(att, ds, &mut self.rng);
             let dmg_in = damage(ds, att, &mut self.rng);
-            self.units.get_mut(&did).unwrap().hp -= dmg_out;
-            self.units.get_mut(&uid).unwrap().hp -= dmg_in;
+            self.apply_unit_damage(uid, did, dmg_out);
+            self.apply_unit_damage(did, uid, dmg_in);
             let d_dead = self.units[&did].hp <= 0;
             let downer = self.units[&did].owner;
             self.record_emergency_combat(pid, downer, d_dead);
@@ -43429,7 +43587,7 @@ impl Game {
                 defender.hp,
             );
             let dmg = damage(att, ds, &mut self.rng);
-            self.units.get_mut(&did).unwrap().hp -= dmg;
+            self.apply_unit_damage(uid, did, dmg);
             let defender_dead = self.units[&did].hp <= 0;
             self.record_emergency_combat(pid, downer, defender_dead);
             self.award_unit_combat_xp(uid, &defender, true, true, defender_dead);
@@ -45271,7 +45429,7 @@ impl Game {
                     effective_strength(interceptor_defense, interceptor.hp),
                     &mut self.rng,
                 );
-                self.units.get_mut(&interceptor_id).unwrap().hp -= counter;
+                self.apply_unit_damage(attacker_id, interceptor_id, counter);
                 if self.units[&interceptor_id].hp <= 0 {
                     let owner = self.units[&interceptor_id].owner;
                     self.remove_unit(interceptor_id);
@@ -45279,7 +45437,7 @@ impl Game {
                 }
             }
 
-            self.units.get_mut(&attacker_id).unwrap().hp -= incoming;
+            self.apply_unit_damage(interceptor_id, attacker_id, incoming);
             if self.units[&attacker_id].hp <= 0 {
                 self.remove_unit(attacker_id);
                 self.on_unit_lost(attacker.owner);
@@ -45294,7 +45452,7 @@ impl Game {
         let defender = self.units[&defender_id].clone();
         self.record_war_unit_participation(&attacker, defender.owner);
         self.record_war_unit_participation(&defender, attacker.owner);
-        self.units.get_mut(&defender_id).unwrap().hp -= 65;
+        self.apply_unit_damage(uid, defender_id, 65);
         let killed = self.units[&defender_id].hp <= 0;
         self.record_emergency_combat(pid, defender.owner, killed);
         self.award_unit_combat_xp(uid, &defender, true, true, killed);
@@ -45398,7 +45556,7 @@ impl Game {
             );
             let defense = effective_strength(defense_base, defender.hp);
             let dealt = damage(specialized_attack, defense, &mut self.rng);
-            self.units.get_mut(&defender_id).unwrap().hp -= dealt;
+            self.apply_unit_damage(uid, defender_id, dealt);
             let killed = self.units[&defender_id].hp <= 0;
             self.record_emergency_combat(pid, defender.owner, killed);
             self.award_unit_combat_xp(uid, &defender, true, true, killed);
@@ -45960,7 +46118,7 @@ impl Game {
         let placed = self
             .place_new_unit(unit, pid, pos)
             .ok_or_else(|| "no space to place unit".to_string())?;
-        self.units.get_mut(&placed).unwrap().formation = formation;
+        self.set_unit_formation(placed, formation);
         self.apply_training_district_effects(cid, placed);
         if unit == "builder" {
             self.units.get_mut(&placed).unwrap().charges +=
@@ -46454,12 +46612,16 @@ impl Game {
             / (a_constituents + b_constituents);
         let promotions = ua.promotions.union(&ub.promotions).cloned().collect();
         let xp_bonus_pct = ua.xp_bonus_pct.max(ub.xp_bonus_pct);
-        self.remove_unit(consumed);
+        let damage_dealt = ua.damage_dealt.saturating_add(ub.damage_dealt);
+        let production_cost = self.unit_accounting_cost(&ua) + self.unit_accounting_cost(&ub);
+        self.remove_combined_unit(consumed);
         if self.units[&survivor].pos != destination {
             self.relocate(survivor, destination);
         }
         let unit = self.units.get_mut(&survivor).unwrap();
         unit.formation = formation;
+        unit.damage_dealt = damage_dealt;
+        unit.production_cost = production_cost;
         unit.hp = hp;
         unit.promotions = promotions;
         unit.xp_bonus_pct = xp_bonus_pct;
@@ -46498,7 +46660,7 @@ impl Game {
         };
         let old = unit.formation;
         if target > old {
-            self.units.get_mut(&uid).unwrap().formation = target;
+            self.set_unit_formation(uid, target);
             if old == 0 && target == 1 {
                 bump(&mut self.players[pid], "corps");
             }
@@ -55351,7 +55513,7 @@ impl Game {
                 let Some(placed) = self.place_new_unit(unit, pid, pos) else {
                     return false;
                 };
-                self.units.get_mut(&placed).unwrap().formation = *formation;
+                self.set_unit_formation(placed, *formation);
                 self.cities
                     .get_mut(&cid)
                     .unwrap()
@@ -55366,7 +55528,7 @@ impl Game {
                     && self.empire_wonder_effect(pid, "duplicate_naval_units") > 0.0
                 {
                     if let Some(second) = self.place_new_unit(unit, pid, pos) {
-                        self.units.get_mut(&second).unwrap().formation = *formation;
+                        self.set_unit_formation(second, *formation);
                         self.apply_training_district_effects(cid, second);
                     }
                 }
@@ -58980,6 +59142,7 @@ mod combat_scenarios {
         }
         for player in g.players.iter_mut() {
             player.civ = "Rome".to_string();
+            player.unit_lifetimes.clear();
             player.government = None;
             player.policies.clear();
             player.techs.clear();
@@ -59030,6 +59193,91 @@ mod combat_scenarios {
             .unwrap()
             .districts
             .insert(Name::new(district), position);
+    }
+
+    #[test]
+    fn units_keep_exact_lifetime_damage_without_counting_overkill() {
+        let (mut ranged, target, ring) = controlled_game(41_061);
+        let archer = ranged.spawn_unit("archer", 0, ring[0]);
+        let warrior = ranged.spawn_unit("warrior", 1, target);
+        let hp_before = ranged.units[&warrior].hp;
+        ranged
+            .apply(
+                0,
+                &Action::Ranged {
+                    unit: archer,
+                    target,
+                },
+            )
+            .unwrap();
+        let hp_after = ranged.units[&warrior].hp;
+        assert_eq!(
+            ranged.units[&archer].damage_dealt,
+            (hp_before - hp_after) as u64,
+            "a ranged unit owns exactly the health its shot removed"
+        );
+        assert_eq!(ranged.units[&warrior].damage_dealt, 0);
+
+        let (mut melee, target, ring) = controlled_game(41_062);
+        let attacker = melee.spawn_unit("warrior", 0, ring[0]);
+        let defender = melee.spawn_unit("warrior", 1, target);
+        let attacker_hp = melee.units[&attacker].hp;
+        let defender_hp = melee.units[&defender].hp;
+        melee
+            .apply(
+                0,
+                &Action::Attack {
+                    unit: attacker,
+                    target,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            melee.units[&attacker].damage_dealt,
+            (defender_hp - melee.units[&defender].hp) as u64
+        );
+        assert_eq!(
+            melee.units[&defender].damage_dealt,
+            (attacker_hp - melee.units[&attacker].hp) as u64,
+            "melee counter-damage belongs to the defending unit's lifetime"
+        );
+
+        let (mut overkill, target, ring) = controlled_game(41_063);
+        let attacker = overkill.spawn_unit("warrior", 0, ring[0]);
+        let defender = overkill.spawn_unit("warrior", 1, target);
+        overkill.units.get_mut(&defender).unwrap().hp = 7;
+        overkill.apply_unit_damage(attacker, defender, 30);
+        assert_eq!(overkill.units[&attacker].damage_dealt, 7);
+        assert!(overkill.units[&defender].hp <= 0);
+        let production_cost = overkill.rules.units["warrior"].cost;
+        overkill.remove_unit(attacker);
+        let lifetime = &overkill.unit_lifetime_stats(0)[&crate::name!("warrior")];
+        assert_eq!(lifetime.units, 1);
+        assert_eq!(lifetime.damage_dealt, 7);
+        assert_eq!(lifetime.production_cost, production_cost);
+        assert_eq!(lifetime.average_damage(), Some(7.0));
+        assert_eq!(lifetime.damage_per_production(), Some(7.0 / production_cost));
+
+        let (mut last_blow, target, ring) = controlled_game(41_064);
+        let doomed = last_blow.spawn_unit("warrior", 0, ring[0]);
+        let defender = last_blow.spawn_unit("warrior", 1, target);
+        last_blow.units.get_mut(&doomed).unwrap().hp = 1;
+        last_blow
+            .apply(
+                0,
+                &Action::Attack {
+                    unit: doomed,
+                    target,
+                },
+            )
+            .unwrap();
+        assert!(!last_blow.units.contains_key(&doomed));
+        let recorded = &last_blow.unit_lifetime_stats(0)[&crate::name!("warrior")];
+        assert!(
+            recorded.damage_dealt > 0,
+            "the attack that killed its attacker must survive in the completed-life ledger"
+        );
+        assert!(last_blow.units[&defender].hp < 100);
     }
 
     /// The shipped government Combat Strength abilities carry conditions, and
@@ -59131,6 +59379,7 @@ mod combat_scenarios {
         {
             let unit = game.units.get_mut(&slinger).unwrap();
             unit.hp = 43;
+            unit.damage_dealt = 91;
             unit.xp = 17;
             unit.level = 2;
             unit.promotions.insert(crate::name!("volley"));
@@ -59139,6 +59388,11 @@ mod combat_scenarios {
         let unit = &game.units[&slinger];
         assert_eq!(unit.kind, "archer");
         assert_eq!(unit.hp, 43);
+        assert_eq!(unit.damage_dealt, 91, "an upgrade continues the same lifetime");
+        assert_eq!(
+            unit.production_cost, game.rules.units["slinger"].cost,
+            "an upgrade does not pretend the original unit cost Archer Production"
+        );
         assert_eq!(unit.xp, 17);
         assert_eq!(unit.level, 2);
         assert!(unit.promotions.contains(&Name::new("volley")));
@@ -61930,6 +62184,7 @@ mod combat_scenarios {
         let veteran = g.spawn_unit("warrior", 0, center);
         let recruit = g.spawn_unit("warrior", 0, ring[0]);
         g.units.get_mut(&veteran).unwrap().xp = 20;
+        g.units.get_mut(&veteran).unwrap().damage_dealt = 12;
         g.units.get_mut(&veteran).unwrap().hp = 40;
         g.units.get_mut(&veteran).unwrap().xp_bonus_pct = 10.0;
         g.units
@@ -61938,6 +62193,7 @@ mod combat_scenarios {
             .promotions
             .insert(crate::name!("battlecry"));
         g.units.get_mut(&recruit).unwrap().hp = 80;
+        g.units.get_mut(&recruit).unwrap().damage_dealt = 8;
         g.units.get_mut(&recruit).unwrap().xp_bonus_pct = 25.0;
         g.units
             .get_mut(&recruit)
@@ -61954,6 +62210,12 @@ mod combat_scenarios {
         .unwrap();
         assert!(!g.units.contains_key(&recruit));
         assert_eq!(g.units[&veteran].formation, 1);
+        assert_eq!(g.units[&veteran].damage_dealt, 20);
+        assert_eq!(g.units[&veteran].production_cost, 80.0);
+        assert!(
+            g.players[0].unit_lifetimes.is_empty(),
+            "a constituent continues in the formation instead of ending a second life"
+        );
         assert_eq!(g.units[&veteran].hp, 60);
         assert_eq!(g.units[&veteran].xp, 20);
         assert!(g.units[&veteran].promotions.contains(&Name::new("battlecry")));
@@ -61965,6 +62227,7 @@ mod combat_scenarios {
         g.players[0].civics.insert(crate::name!("mobilization"));
         let third = g.spawn_unit("warrior", 0, ring[1]);
         g.units.get_mut(&third).unwrap().hp = 90;
+        g.units.get_mut(&third).unwrap().damage_dealt = 7;
         g.units
             .get_mut(&third)
             .unwrap()
@@ -61979,6 +62242,8 @@ mod combat_scenarios {
         )
         .unwrap();
         assert_eq!(g.units[&veteran].formation, 2);
+        assert_eq!(g.units[&veteran].damage_dealt, 27);
+        assert_eq!(g.units[&veteran].production_cost, 120.0);
         assert_eq!(g.units[&veteran].hp, 70);
         assert!(g.units[&veteran].promotions.contains(&Name::new("amphibious")));
         assert_eq!(g.unit_unembarked_strength(&g.units[&veteran]), 37.0);
@@ -68760,6 +69025,67 @@ mod district_mechanics {
             .collect();
         assert!(game.wdist(cities[0], cities[1]) >= 8, "{cities:?}");
         assert!(game.is_at_war(0, 1));
+    }
+
+    /// The fog is a match setting. An arena lifts it by default — a battle is
+    /// a test of what each side does with what is in front of it, not of who
+    /// finds the other first — but the mode that puts it back is a real one,
+    /// and it has to be symmetric: both sides fogged or neither, never one.
+    #[test]
+    fn an_arena_is_fogged_only_when_the_match_asked_for_it() {
+        let arena = |fog: bool| {
+            Game::new_with(GameOptions {
+                map_script: MapScript::Battlefield,
+                tactics: TacticsRules { fog, ..TacticsRules::default() },
+                ..GameOptions::new(2, 16, 16, 7_704, 250, 0)
+            })
+        };
+
+        // The default is the field entire, for both commanders alike.
+        let open = arena(false);
+        assert!(open.is_arena());
+        for seat in 0..2 {
+            assert_eq!(
+                open.player_visibility(seat).len(),
+                open.map.tiles.len(),
+                "seat {seat} must see the whole unfogged field"
+            );
+        }
+
+        // Fogged, each side sees only what its own units can — which on an
+        // arena is a fraction of the field, because the two armies are set
+        // down out of each other's sight.
+        let fogged = arena(true);
+        for seat in 0..2 {
+            let seen = fogged.player_visibility(seat);
+            assert!(
+                !seen.is_empty(),
+                "seat {seat} must still see the ground it stands on"
+            );
+            assert!(
+                seen.len() < fogged.map.tiles.len(),
+                "seat {seat} must not see the whole fogged field"
+            );
+        }
+        // Symmetric: the rule is the arena's, not a handicap given to a side.
+        // Two armies do not see the same number of hexes — they stand on
+        // different ground, and sight carries differently over it — so what
+        // has to match is the rule, which is that each side opens out of the
+        // other's sight and has to go and find it.
+        for (viewer, hidden) in [(0, 1), (1, 0)] {
+            let seen = fogged.player_visibility(viewer);
+            assert!(
+                fogged
+                    .units
+                    .values()
+                    .filter(|unit| unit.owner == hidden)
+                    .all(|unit| !seen.contains(&unit.pos)),
+                "seat {viewer} must open with seat {hidden}'s army still to find"
+            );
+        }
+        // And it is the fog that hid the ground, not a different battlefield:
+        // the two arenas are the same field.
+        assert_eq!(open.map.tiles.len(), fogged.map.tiles.len());
     }
 
     /// Unique units are a match setting, and switching them off has to reach

@@ -996,6 +996,19 @@ pub struct TacticsRules {
     /// test of the two civilizations as well.
     #[serde(default)]
     pub unique_units: bool,
+    /// Whether the field is fogged.
+    ///
+    /// Off — the default, and what an arena has always done — both commanders
+    /// see all of it. A battle is meant to be a test of what each side does
+    /// with what is in front of it rather than of who finds the other first,
+    /// and the two armies are set down out of each other's sight with no city
+    /// to march on and no border to trespass: measured, a fogged arena had
+    /// both sides stand in their own deployment bands until the clock decided
+    /// it. On, each side sees only what its own units can, and finding the
+    /// enemy is part of the battle. Either way the rule is symmetric, so it is
+    /// a shape the match is given rather than a handicap one side is dealt.
+    #[serde(default)]
+    pub fog: bool,
 }
 
 fn one_battle() -> u32 {
@@ -1025,6 +1038,7 @@ impl TacticsRules {
             // is best of three with a dead rubber attached.
             best_of: (self.best_of.max(1) | 1).min(Self::MAX_BEST_OF),
             unique_units: self.unique_units,
+            fog: self.fog,
         }
     }
 
@@ -1047,6 +1061,7 @@ impl Default for TacticsRules {
             turns_per_tech: 5,
             best_of: 1,
             unique_units: false,
+            fog: false,
         }
     }
 }

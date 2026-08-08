@@ -31,7 +31,7 @@
 use std::collections::BTreeMap;
 
 use crate::ai::Ai;
-use crate::game::{Action, Game};
+use crate::game::{Action, Game, UnitLifetimeStats};
 use crate::Pos;
 
 /// What one agent did to the other over one scenario.
@@ -49,6 +49,10 @@ pub struct SkirmishLedger {
     pub damage_dealt: f64,
     /// Hit points taken off own units.
     pub damage_taken: f64,
+    /// Combat return by unit kind over every life observed in the scenario.
+    /// Unlike the side-level damage total, these rows credit only damage
+    /// caused by that unit; city and Encampment strikes have no unit to own.
+    pub unit_lifetimes: BTreeMap<String, UnitLifetimeStats>,
 }
 
 impl SkirmishLedger {
@@ -59,6 +63,12 @@ impl SkirmishLedger {
         self.material_lost += other.material_lost;
         self.damage_dealt += other.damage_dealt;
         self.damage_taken += other.damage_taken;
+        for (kind, row) in &other.unit_lifetimes {
+            let total = self.unit_lifetimes.entry(kind.clone()).or_default();
+            total.units = total.units.saturating_add(row.units);
+            total.damage_dealt = total.damage_dealt.saturating_add(row.damage_dealt);
+            total.production_cost += row.production_cost;
+        }
     }
 
     /// The headline: production cost destroyed less production cost lost.
@@ -205,6 +215,21 @@ fn play_skirmish(
         {
             break;
         }
+    }
+    // The engine keeps completed lives when units leave play and composes the
+    // survivors here. Read it only after the final action so a unit killed by
+    // its own melee attack still contributes that attack's outgoing damage.
+    for pid in 0..2 {
+        let ledger = if pid == 0 {
+            &mut ledgers.0
+        } else {
+            &mut ledgers.1
+        };
+        ledger.unit_lifetimes = game
+            .unit_lifetime_stats(pid)
+            .into_iter()
+            .map(|(kind, row)| (kind.to_string(), row))
+            .collect();
     }
     Some((ledgers, game.turn.saturating_sub(start)))
 }
@@ -378,6 +403,30 @@ mod tests {
             "no damage was dealt in {} turns of a declared war",
             result.turns
         );
+        for ledger in [&result.a, &result.b] {
+            for kind in &setup.army {
+                assert!(
+                    ledger.unit_lifetimes.contains_key(kind),
+                    "the lifetime table dropped {kind}"
+                );
+            }
+            let attributed = ledger
+                .unit_lifetimes
+                .values()
+                .map(|row| row.damage_dealt as f64)
+                .sum::<f64>();
+            assert!(
+                attributed <= ledger.damage_dealt + f64::EPSILON,
+                "unit output {attributed} cannot exceed all damage {}",
+                ledger.damage_dealt
+            );
+            assert!(ledger.unit_lifetimes.values().all(|row| {
+                row.units > 0
+                    && row.average_damage().is_some()
+                    && row.average_production_cost().is_some_and(|cost| cost > 0.0)
+                    && row.damage_per_production().is_some()
+            }));
+        }
     }
 
     /// Both seats run the same agent, so anything the pair reports as a
@@ -412,6 +461,10 @@ mod tests {
                 result.paired_difference().abs() < 1e-9,
                 "seed {seed} gave a self-match a paired difference of {}",
                 result.paired_difference()
+            );
+            assert_eq!(
+                result.a.unit_lifetimes, result.b.unit_lifetimes,
+                "the seat swap must cancel lifetime rows as exactly as material"
             );
         }
     }
