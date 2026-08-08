@@ -957,8 +957,33 @@ fn base_ruleset(args: &[String]) -> BaseRuleset {
 /// A rung of the ladder that is declared but not built yet is refused here
 /// rather than quietly played as the Ancient era — the whole point of listing
 /// it is that it is not the same game.
-fn start_era(args: &[String]) -> usize {
+/// The era every civilization opens in.
+///
+/// `--start-era random` is the training lane's answer to overfitting. A
+/// Tactics sweep fought only from the Ancient era teaches an AI Ancient-era
+/// tactics — slingers and warriors on open ground — and nothing about
+/// crossbows behind walls or armour in the open. Varying the opening across
+/// the ladder spreads a sweep over the whole unit roster instead.
+///
+/// The roll comes from the game's own seed rather than a fresh source, so a
+/// soak stays exactly reproducible: the same `--start-seed` replays the same
+/// eras in the same order. The mix is there because consecutive seeds are
+/// consecutive integers, and taking those modulo the ladder length directly
+/// would march through the eras in lockstep with the seed instead of
+/// scattering them.
+fn start_era(args: &[String], seed: u64) -> usize {
     let id = arg_text(args, "--start-era", setup::stock_start_era_id());
+    if id == "random" {
+        let playable: Vec<usize> = setup::playable_start_eras()
+            .filter_map(|spec| spec.era)
+            .collect();
+        // splitmix64's finalizer: cheap, and it decorrelates neighbours.
+        let mut mix = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        mix = (mix ^ (mix >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        mix = (mix ^ (mix >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        mix ^= mix >> 31;
+        return playable[(mix % playable.len() as u64) as usize];
+    }
     setup::start_era_from_id(&id).unwrap_or_else(|| {
         let playable: Vec<&str> = setup::playable_start_eras().map(|spec| spec.id).collect();
         let known = setup::START_ERAS.iter().any(|spec| spec.id == id);
@@ -1050,6 +1075,7 @@ fn game_options(
         speed_spec.turns as i64
     };
     let player_count = players.max(1) as usize;
+    let default_tactics = setup::TacticsRules::default();
     let teams_arg = arg_text(args, "--teams", "");
     let teams = if teams_arg.trim().is_empty() {
         Vec::new()
@@ -1092,7 +1118,22 @@ fn game_options(
     };
     GameOptions {
         base_ruleset: base_ruleset(args),
-        start_era: start_era(args),
+        start_era: start_era(args, seed),
+        // The arena's economy, so a headless sweep can vary the thing it is
+        // training against without going through a lobby. Ignored on a world.
+        tactics: setup::TacticsRules {
+            cities: arg(args, "--tactics-cities", i64::from(default_tactics.cities)).max(0) as u8,
+            production: arg(args, "--tactics-production", i64::from(default_tactics.production))
+                .max(0) as u32,
+            gold: arg(args, "--tactics-gold", i64::from(default_tactics.gold)).max(0) as u32,
+            turns_per_tech: arg(
+                args,
+                "--tactics-turns-per-tech",
+                i64::from(default_tactics.turns_per_tech),
+            )
+            .max(0) as u32,
+        }
+        .sanitized(),
         future_era: future_era(args),
         map_script: map_script(args),
         map_topology: map_topology(args),
@@ -2748,13 +2789,49 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        game_options, jobs_arg, map_topology, parse_tournament_entrants,
+        game_options, jobs_arg, map_topology, parse_tournament_entrants, start_era,
         simultaneous_soak_job_split, single_simulation_jobs_arg, strict_f64_arg, strict_i64_arg,
         turn_structure, ADVANCED_V1_SOURCE_CONTRACT_FNV,
         DEFAULT_TOURNAMENT_ENTRANTS, SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
     };
     use civvis::game::{Action, Game};
     use civvis::setup::{MapSize, MapTopology, TurnStructure};
+
+    /// `--start-era random` spreads a sweep over the whole unit roster
+    /// instead of teaching one era's matchups, and does it reproducibly: the
+    /// roll comes from the game's own seed, so a soak replayed with the same
+    /// `--start-seed` opens in the same eras. Consecutive seeds must not walk
+    /// the ladder in lockstep, which is what the mix in `start_era` is for.
+    #[test]
+    fn a_random_start_era_is_seeded_scattered_and_playable() {
+        let args = ["--start-era".to_string(), "random".to_string()];
+        let playable: Vec<usize> =
+            civvis::setup::playable_start_eras().filter_map(|spec| spec.era).collect();
+        let rolled: Vec<usize> = (0..64).map(|seed| start_era(&args, seed)).collect();
+
+        for era in &rolled {
+            assert!(playable.contains(era), "rolled an era nobody can open in: {era}");
+        }
+        let replay: Vec<usize> = (0..64).map(|seed| start_era(&args, seed)).collect();
+        assert_eq!(rolled, replay, "the same seed must replay the same era");
+
+        let distinct: std::collections::BTreeSet<usize> = rolled.iter().copied().collect();
+        assert!(
+            distinct.len() >= playable.len().min(5),
+            "64 seeds reached only {} of {} eras: {distinct:?}",
+            distinct.len(),
+            playable.len()
+        );
+        // Lockstep would make each seed's era one past its neighbour's.
+        let marching = rolled
+            .windows(2)
+            .filter(|pair| (pair[1] + playable.len() - pair[0]) % playable.len() == 1)
+            .count();
+        assert!(marching < rolled.len() / 2, "the eras march with the seed");
+
+        // Without the flag the ladder is untouched and the seed is ignored.
+        assert_eq!(start_era(&[], 1), start_era(&[], 999_999));
+    }
 
     #[test]
     fn omitted_map_shape_defaults_to_planet() {
