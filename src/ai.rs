@@ -1533,6 +1533,20 @@ pub struct BasicAi {
     /// Off for the frozen native controllers, whose recorded ladders would
     /// otherwise shift underneath them.
     pub(crate) housing_districts: bool,
+    /// Let a city with no Campus order one BEFORE a Builder or Trader.
+    ///
+    /// ⚠ OFF BY DEFAULT. `pick_item` is a first-match CASCADE and districts sit
+    /// at the BOTTOM: military floor -> Settler -> Builder -> Trader -> then
+    /// `DISTRICT_PRIORITY`. Over 30 live runs and 3,608 production decisions
+    /// this function makes 78% of them, and its top picks are Builder 355,
+    /// Spy 148, Trebuchet 148, Trader 115 — all from branches ABOVE districts.
+    /// End-of-game Campus coverage is 50 of 100 cities; 30% of runs finish with
+    /// none.
+    ///
+    /// The Campus is NOT unreachable and NOT under-weighted — `d_campus` is 4.0
+    /// in the live genome, highest of the four. But that weight only ranks
+    /// districts against EACH OTHER; it never ranks one against a Builder.
+    pub(crate) campus_before_builder: bool,
     /// Scale each district family by how much of the empire still lacks it.
     pub(crate) district_coverage: bool,
     /// Break a production COST TIE by which great-work slots can actually be filled.
@@ -2670,6 +2684,7 @@ impl BasicAi {
             culture_focus: false,
             amenity_districts: false,
             housing_districts: false,
+            campus_before_builder: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
@@ -2703,6 +2718,7 @@ impl BasicAi {
             culture_focus: false,
             amenity_districts: false,
             housing_districts: false,
+            campus_before_builder: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
@@ -6061,6 +6077,28 @@ impl BasicAi {
         // with one city cannot say which of them refused. Named individually so
         // "the site search found nothing" is distinguishable from "the window
         // closed" without attaching a debugger to a finished run.
+        // ⚠⚠ THE CASCADE PUTS DISTRICTS LAST, WHICH IS WHY THE CAMPUS IS RARE.
+        //
+        // Priced as an arm rather than shipped, because the COST is unmeasured:
+        // a Campus taken ahead of a Builder is improvements not built, and this
+        // lane has already produced four nulls from changes that looked surer.
+        if self.campus_before_builder && !self.minor && !self.barb {
+            let campus = Self::civ_district(g, pid, "campus");
+            if !g.city_has_district_family(&g.cities[&cid], crate::name!("campus")) {
+                if let Some(pos) = g.district_sites(cid, campus).into_iter().max_by(|a, b| {
+                    g.district_yields(campus, *a)
+                        .total()
+                        .partial_cmp(&g.district_yields(campus, *b).total())
+                        .unwrap()
+                        .then(a.cmp(b))
+                }) {
+                    let item = Item::District { district: campus, pos };
+                    if g.can_produce(pid, cid, &item) {
+                        return Some(item);
+                    }
+                }
+            }
+        }
         if !self.minor && !self.barb {
             let room = ((n_cities + settlers) as f64) < self.w.city_target;
             let none_in_flight = settlers == 0;
