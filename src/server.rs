@@ -4382,6 +4382,15 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "winner": game.winner,
                     "victory_type": game.victory_type,
                     "spectate": session.params.spectate,
+                    // Everything the spectator supervisor's poll loop reads,
+                    // so watching for progress costs this small document
+                    // instead of a multi-megabyte /state observation that
+                    // also queues behind the simulation lock for longer.
+                    "seed": game.seed,
+                    "current": game.current,
+                    "spectator_paused": session.spectator_paused,
+                    "server_instance": process_identity(),
+                    "decided": game.decided,
                     // Published frames no viewer ever drew. At Blitz and
                     // slower this counts player turns, not only round turns.
                     "frames_missed": frames_missed,

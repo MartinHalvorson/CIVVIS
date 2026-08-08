@@ -2426,5 +2426,49 @@ class LiveRefreshTests(unittest.TestCase):
         )
 
 
+class StatusDocumentContractTests(unittest.TestCase):
+    """The poll loop reads /status, not /state. Every helper it feeds must
+    resolve from the compact document the server actually emits — this is the
+    cross-language field contract, pinned the same way the ranking tool pins
+    its Wilson bounds against the Rust ones."""
+
+    STATUS = {
+        "turn": 118,
+        "winner": None,
+        "victory_type": None,
+        "spectate": True,
+        "seed": 774422,
+        "current": 3,
+        "spectator_paused": False,
+        "server_instance": 91_234,
+        "decided": None,
+        "frames_missed": 0,
+        "commit": "abc1234",
+    }
+
+    def test_progress_marker_resolves_from_the_status_document(self):
+        self.assertEqual(
+            supervisor.progress_marker(self.STATUS), (774422, 118, 3, None)
+        )
+
+    def test_nudge_check_reads_the_pause_flag(self):
+        self.assertTrue(supervisor.should_nudge(self.STATUS, 999.0, 1.0))
+        paused = dict(self.STATUS, spectator_paused=True)
+        self.assertFalse(supervisor.should_nudge(paused, 999.0, 1.0))
+
+    def test_play_on_detection_reads_decided_seed_and_winner(self):
+        playing_on = dict(self.STATUS, decided={"winner": 2, "mode": "Indefinite"})
+        self.assertTrue(supervisor.playing_on(playing_on, 774422))
+        self.assertFalse(supervisor.playing_on(self.STATUS, 774422))
+
+    def test_successor_identity_reads_instance_seed_and_winner(self):
+        finished = dict(self.STATUS, winner=2)
+        self.assertFalse(supervisor.successor_started(finished, 91_234, 774422))
+        fresh_world = dict(self.STATUS, seed=774423)
+        self.assertTrue(supervisor.successor_started(fresh_world, 91_234, 774422))
+        new_process = dict(self.STATUS, server_instance=91_235)
+        self.assertTrue(supervisor.successor_started(new_process, 91_234, 774422))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -670,8 +670,26 @@ def read_state(port: int, timeout: float = 5.0) -> dict[str, Any] | None:
     The generic JSON probe stays fast, but the supervisor must not classify a
     valid 8-player observation as unavailable merely because serialization is
     slower than a lightweight health response.
+
+    Read this once per finished game, for the standings and the archive. The
+    poll loop reads `read_status` instead: /state renders the whole world —
+    megabytes, built under the simulation lock — and polling it twice a
+    second to extract four scalars was the server's own /status docstring's
+    named anti-pattern.
     """
     return read_json(port, "/state", timeout)
+
+
+def read_status(port: int, timeout: float = 5.0) -> dict[str, Any] | None:
+    """The compact health document: every field the poll loop consumes.
+
+    Carries seed, turn, current, winner, victory_type, spectate,
+    spectator_paused, server_instance and decided — the progress marker, the
+    nudge check, play-on detection, seat takeover and successor identity all
+    resolve from it. The generous timeout is deliberate: /status still takes
+    the session lock briefly, and a long AI turn must read as busy, not down.
+    """
+    return read_json(port, "/status", timeout)
 
 
 def set_spectator_pause(
@@ -797,13 +815,13 @@ def wait_for_successor(
 ) -> dict[str, Any] | None:
     """Give the server-owned cooldown restart a brief scheduling grace."""
     deadline = time.monotonic() + max(0.0, timeout)
-    latest = read_state(port)
+    latest = read_status(port)
     while not successor_started(latest, finished_instance, finished_seed):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
         time.sleep(min(0.05, remaining))
-        latest = read_state(port)
+        latest = read_status(port)
     return latest
 
 
@@ -1488,7 +1506,7 @@ def wait_for_server(
     while time.monotonic() < deadline:
         if process.poll() is not None:
             raise RuntimeError(f"server exited with status {process.returncode}")
-        state = read_state(port)
+        state = read_status(port)
         if state is not None:
             return state
         time.sleep(0.25)
@@ -1741,7 +1759,7 @@ def main() -> int:
         # leaves the game on screen unmanaged, so take that game over instead.
         listener = pid_listening_on(args.port)
         if listener is not None:
-            if read_state(args.port) is not None:
+            if read_status(args.port) is not None:
                 adopted_pid = listener
                 log(f"a game already owns port {args.port}; taking it over")
             else:
@@ -1842,7 +1860,7 @@ def main() -> int:
                 log(f"cannot adopt PID {adopted_pid}: it is not running")
                 return 2
             log(f"adopted PID {adopted_pid} on port {args.port}")
-            state = read_state(args.port)
+            state = read_status(args.port)
             # An inherited world has an unknown age and an unknown boundary, so
             # a stale runtime under it is refreshed rather than waited on.
             world_started_at = None
@@ -1877,7 +1895,7 @@ def main() -> int:
                 if staged is not None:
                     settings = staged
                     runtime_staged = staged
-                state = read_state(args.port)
+                state = read_status(args.port)
             if manual_request is None and state is None:
                 now = time.monotonic()
                 unavailable_since = unavailable_since or now
@@ -2137,6 +2155,11 @@ def main() -> int:
                 finished_key = current_finished_key
                 finished_seen_at = now
                 update_retry_at = 0.0
+                # The one full observation per finished game: the archive,
+                # the standings and the next-settings chooser read the whole
+                # world. A failed read falls back to the status fields so the
+                # boundary still proceeds.
+                state = read_state(args.port) or state
                 # `victory_turn` is the turn the result is dated on: a score
                 # victory is settled by a count taken on the wrap out of the
                 # final turn, so a finished 250-turn game is reported on turn
@@ -2185,7 +2208,7 @@ def main() -> int:
             # both. That is why the order here is deliberate rather than
             # incidental. It costs nothing either way: the two bodies below are
             # identical apart from the line they log.
-            latest = read_state(args.port)
+            latest = read_status(args.port)
             if playing_on(latest, finished_seed):
                 log("the finished world was asked for more turns; letting it play on")
                 state = latest
