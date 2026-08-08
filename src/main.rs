@@ -758,8 +758,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the rated profile is identical by construction — the same shape as the
 /// flag re-pins above, with the map script as the flag. Compatibility
 /// re-pin, not an Elo-protocol change.
+/// The recon-replacement arm adds one disjunct to `pick_item`'s military-floor
+/// condition and one new chooser, behind `BasicAi::recon_replacement`. Both
+/// constructors leave the flag false and only `enable_live_bridge` sets it, so
+/// under the anchor `recon_is_the_missing_arm` returns on its first line, the
+/// added disjunct is a constant `false` that cannot change the `||`, and
+/// `best_recon` is never reached. The anchor's build order is byte-identical by
+/// construction. Compatibility re-pin, not an Elo-protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe74a_ee1a_6905_345b;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x024f_67b2_d9bb_3e07;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
