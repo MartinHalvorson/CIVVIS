@@ -17966,6 +17966,21 @@ impl Game {
                     .unwrap_or_else(|| panic!("selected leader {civ:?} has no true-start point"))
             })
             .collect();
+        // Which city-states this world seats, decided before the map so their
+        // own sites can steer where they land on a true-start Earth. Its own
+        // stream, like the civilization draw above: a world's city-states
+        // changing must not shift a single number the generator rolls, or
+        // every existing seed would generate a different map.
+        let mut minor_rng = Rng::new(seed ^ 0x4d49_4e4f_5253_4954);
+        let city_state_seats = crate::city_states::seat_selection(
+            &rules.city_states.roster,
+            num_city_states,
+            &mut minor_rng,
+        );
+        let minor_starts: Vec<_> = city_state_seats
+            .iter()
+            .map(|index| rules.city_states.roster[*index].site())
+            .collect();
         let mut rng = Rng::new(seed);
         let map_size = MapSize::from_dimensions(width, height)
             .unwrap_or_else(|| MapSize::for_players(num_players));
@@ -17981,6 +17996,7 @@ impl Game {
             map_topology,
             map_poles,
             &leader_starts,
+            &minor_starts,
             &mut rng,
         );
         // After the world, deliberately: a ruleset with nothing on the Moon
@@ -18168,16 +18184,21 @@ impl Game {
             }
         }
         let major_spawns: Vec<Pos> = spawns.iter().take(num_players).cloned().collect();
-        // Seating order is the roster's, not `CITY_STATE_NAMES`'. The roster
-        // lists Civilization VI's own forty-eight city-states first, so an
-        // ordinary game seats only city-states the real game could have
-        // seated; the extra identities exist for the largest maps alone.
-        let seating: Vec<String> = g
-            .rules
-            .city_states
-            .roster
+        // Seating order is the draw made above, not `CITY_STATE_NAMES`' and no
+        // longer the roster's own order either. `city_states::seat_selection`
+        // deals the six Suzerain types round-robin and, within a type, takes
+        // the identity whose real site is farthest from the ones already
+        // taken — so a world's city-states come from six types and six
+        // continents rather than from the top of a list that runs through
+        // Magna Graecia and the Levant in blocks. It still empties the shipped
+        // forty-eight before reaching any other identity, so an ordinary game
+        // seats only city-states the real game could have seated.
+        //
+        // `seats[i]` matches `minor_starts[i]`, which is what let the map
+        // generator put each of them on its own ground.
+        let seating: Vec<String> = city_state_seats
             .iter()
-            .map(|seat| seat.name.clone())
+            .map(|index| g.rules.city_states.roster[*index].name.clone())
             .collect();
         // Only as many city-states as the ruleset has distinct identities for:
         // every modeled city-state carries its own Suzerain bonus, and two

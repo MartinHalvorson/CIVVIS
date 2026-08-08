@@ -2079,6 +2079,40 @@ pub struct CityStateSpec {
     /// The shipped Suzerain text, for clients and the Civilopedia.
     #[serde(default)]
     pub effect: String,
+    /// Where this city-state really stood, in the WGS84 degrees
+    /// `data/leader_roster.json` already uses for a civilization's homeland.
+    /// True Start Earth seats it here; every other script ignores the position
+    /// but the selector still reads it, to keep a game's city-states spread
+    /// across the world rather than piled into one region.
+    ///
+    /// ⚠ OPTIONAL, AND DELIBERATELY NOT A `TrueStartPoint` WITH A `Default`.
+    /// `CityStateSpec` derives `Default`, so a flattened point would make a
+    /// roster row that forgot its coordinates read as 0°N 0°E — the Gulf of
+    /// Guinea, a real place a thousand miles from anywhere this roster names,
+    /// and indistinguishable from a genuine answer. A mod overlay that omits
+    /// them should fall back to the regional model, so absence is a state the
+    /// data can hold and `site()` is the only way to ask.
+    ///
+    /// Four sites carry two names apiece — Visby/Wisby, Turku City/Abo,
+    /// Bandar Brunei/Brunei, Ayutthaya/Ayutthaya City — and both entries hold
+    /// the same real coordinates, because that is what is true of them.
+    /// Declining to seat both is the selector's job, not the datum's.
+    #[serde(default)]
+    pub latitude: Option<f64>,
+    #[serde(default)]
+    pub longitude: Option<f64>,
+}
+
+impl CityStateSpec {
+    /// The real site, when the roster carries one.
+    pub fn site(&self) -> Option<crate::leader_roster::TrueStartPoint> {
+        match (self.latitude, self.longitude) {
+            (Some(latitude), Some(longitude)) => {
+                Some(crate::leader_roster::TrueStartPoint { latitude, longitude })
+            }
+            _ => None,
+        }
+    }
 }
 
 /// The city-state roster in seating order.
@@ -2882,9 +2916,30 @@ mod tests {
         // seed, so this is not evidence of a strength regression. It IS a real
         // simulation change: ledgers recorded before this fingerprint are not
         // comparable with ledgers recorded after it.
+        // Moved again by giving all 182 city-states their real WGS84 site, so
+        // True Start Earth can seat them where they stood and the selector can
+        // spread a game's draw across the world.
+        //
+        // ⚠ THE CONVENTIONAL COMMAND CANNOT SEE THIS CHANGE, AND SAYING SO IS
+        // THE POINT. `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns
+        // 200 --seed 31337 --jobs 1 --deployment-comparison` came back
+        // byte-identical across the change — but `ai_eval` defaults
+        // `--city-states` to 0, so that run seats no city-states at all and
+        // its silence is structural, not evidence. Read as a compatibility
+        // re-pin it would have been a false green.
+        //
+        // Re-run as `... --city-states 6`, which does exercise them, it is a
+        // real simulation change: game-win share 60.0% -> 70.0% and the
+        // Elo-equivalent +70 -> +147. Both runs are INCONCLUSIVE by the sign
+        // test (p=0.6875 and p=0.1250) and their Wilson intervals overlap
+        // almost entirely (-137..+278 vs -73..+367), so this is not evidence
+        // of a strength change in either direction — but a different set of
+        // city-states carries a different set of Suzerain bonuses, so ledgers
+        // recorded before this fingerprint are not comparable with ledgers
+        // recorded after it.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:72bc36829b67f791"
+            "fnv1a64:d84eccb63bf01582"
         );
     }
 
