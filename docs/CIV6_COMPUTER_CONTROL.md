@@ -413,3 +413,48 @@ Duel heading.
 event naming the controller's own team, with the run's event log kept.
 
 See `docs/CIV6_LADDER.md` for the current standing.
+
+## The host itself is part of the bridge (macOS 26, measured 2026-08-07)
+
+A Steam reinstall on macOS 26.5.1 established four host facts that sit UNDER
+everything above, and `tools/computer_control.py` is the systematic layer that
+reports and manages them (repo tooling only — nothing under `web/` may import
+it, so none of it ships to civvis.ai):
+
+- **Gatekeeper can refuse the game while its process runs.** The refusal is a
+  `CoreServicesUIAgent` modal — *"Civilization VI" is damaged and can't be
+  opened* — and behind it the child initialises nothing: no `Logs/` directory,
+  an events file frozen at zero bytes, a harness reading "slow machine". A
+  poisoned trust record survives a VALID signature (measured: mod removed,
+  `codesign` clean, still refused, on both a direct child exec and a
+  `steam://rungameid` launch). The recovery that works is a Steam
+  **reinstall**; the modal's default button — Move to Trash — is the one thing
+  that must never be pressed, which is why `dismiss` works from a per-owner
+  button allowlist instead of clicking defaults.
+- **Installing the mod invalidates the bundle's seal.** Every file written
+  under `Contents/Assets/DLC/CivvisControl` lands in `codesign -v` as "a
+  sealed resource is missing or invalid"; uninstalling restores "valid on
+  disk". A fresh trust record tolerates the broken seal — the game launches
+  and plays — so `bundle` reports signature and writability as two independent
+  facts rather than one health bit.
+- **The install tree is TCC-protected against Terminal, not against Finder.**
+  Writes into the bundle from Terminal's children fail with "Operation not
+  permitted" even with the game closed, while Finder performs the same
+  operations — which is exactly the fallback `civ6_control/install.py` uses.
+  Symlinking the mod out of the bundle is a DEAD END, not an open idea:
+  Finder's `move (POSIX file … as alias)` dereferences the link and moves its
+  target; moving the link as a folder item is refused (-5000) from a temp
+  directory and times out (-1712) from the home directory. Directory replace
+  through Finder is the mechanism that works.
+- **`Civ6_Exe_Child` bypasses the stub's single-copy refusal.** A leftover
+  child from a torn-down run plus one fresh launch gave two live games, and
+  every `System Events` call addressed to "the" Civ6 process then drives an
+  arbitrary one. `games --ensure-single` enforces the stub's rule from
+  outside: oldest child kept, newer ones culled.
+
+Two host settings belong with these: `PlayIntroVideo 0` in the NESTED
+`AppOptions.txt` (a fresh install resets it to 1, and the first-run cinematic
+then covers the main menu — sixteen straight "no submenu (0 rows)" failures
+while the movie played), and the operator's standing window layout, which
+`layout` applies: terminal lower-left, CIVVIS upper-left, the game upper-right,
+lower-right left free for the operator.

@@ -1568,7 +1568,7 @@ fn spectator_frame(game: &Game, sequence: u64) -> SpectatorFrame {
     SpectatorFrame {
         seed: game.seed,
         turn: game.turn,
-        finished: game.winner.is_some(),
+        finished: game.is_finished(),
         sequence,
     }
 }
@@ -1581,7 +1581,7 @@ fn spectator_step_completes_frame(
 ) -> bool {
     publishes_player_turn_frames(pace_ms)
         || game.turn != turn_before
-        || game.winner.is_some() != finished_before
+        || game.is_finished() != finished_before
 }
 
 /// The result countdown can only use the four values the viewer can select.
@@ -1865,7 +1865,7 @@ impl Shared {
                     .get(0)
                     .is_some_and(|player| !player.alive);
             if session.game.seed != expected_seed
-                || (session.game.winner.is_none() && !human_was_eliminated)
+                || (!session.game.is_finished() && !human_was_eliminated)
             {
                 return Err("automatic restart requires a finished game".into());
             }
@@ -2387,7 +2387,7 @@ impl Session {
         let chronicle = ChronicleState::from_game(&game);
         // A match restored with its winner already decided was rated when it
         // finished; rating it again on the next step would count it twice.
-        let league_recorded = game.winner.is_some();
+        let league_recorded = game.is_finished();
         // A save carries the world, not the person: whoever reloads it is a
         // new player again, and a decided game has nothing left to rate, so
         // it registers nobody.
@@ -2456,14 +2456,14 @@ impl Session {
             let expected_instance = finished["server_instance"]
                 .as_u64()
                 .ok_or_else(|| "replace_finished.server_instance must be an integer".to_string())?;
-            if self.game.winner.is_none()
+            if !self.game.is_finished()
                 || self.game.seed != expected_seed
                 || expected_instance != process_identity() as u64
             {
                 return Err("finished game is no longer the active session".into());
             }
         } else if self.params.spectate
-            && self.game.winner.is_none()
+            && !self.game.is_finished()
             && request["force"].as_bool() != Some(true)
         {
             // Old spectator pages used an unguarded result timer. If one
@@ -2961,7 +2961,7 @@ impl Session {
     pub fn step_quietly(&mut self) -> usize {
         let g = &mut self.game;
         let pid = g.current;
-        if g.winner.is_some() {
+        if g.is_finished() {
             return pid;
         }
         // A simultaneous game advances one whole game turn per step: every
@@ -2992,7 +2992,7 @@ impl Session {
             return pid;
         }
         self.ais[pid].take_turn(g, pid);
-        if g.current == pid && g.winner.is_none() {
+        if g.current == pid && !g.is_finished() {
             let _ = g.apply(pid, &Action::EndTurn);
         }
         // Every way of advancing the world funnels through here — the browser
@@ -3024,7 +3024,7 @@ impl Session {
     /// table: the elo on screen is whatever the last offline league run left
     /// behind, no matter who keeps winning.
     fn record_league_result(&mut self) {
-        if self.league_recorded || self.game.winner.is_none() || !self.params.league_record {
+        if self.league_recorded || !self.game.is_finished() || !self.params.league_record {
             return;
         }
         // The ratings are a sequential-regime instrument. A simultaneous
@@ -3052,17 +3052,18 @@ impl Session {
                 }
             })
             .collect();
-        let winner = self.game.winner.unwrap();
+        let winner = self.game.winner;
+        let drawn = self.game.is_draw();
         // Same ordering and competition ranks as a distributed league game:
-        // the declared winner stands alone, while equal non-winner scores are
-        // draws rather than arbitrary wins for the lower player id.
+        // the declared winner stands alone, while a terminal Tactics draw
+        // gives every rated seat the same rank regardless of material left.
         let rated: Vec<usize> = (0..seat_names.len())
             .filter(|pid| seat_names[*pid].is_some())
             .collect();
         let (rated, ranks) = crate::league::competition_ranking(
             rated,
-            Some(winner),
-            |pid| self.game.score(pid),
+            winner,
+            |pid| if drawn { 0 } else { self.game.score(pid) },
         );
         let seats: Vec<crate::league::LiveGameSeat> = rated
             .iter()
@@ -3081,7 +3082,7 @@ impl Session {
                     leader,
                     civilization,
                     rank: ranks[place],
-                    won: *pid == winner,
+                    won: winner == Some(*pid),
                 }
             })
             .collect();
@@ -3112,7 +3113,7 @@ impl Session {
         let mut steps = Vec::new();
         for _ in 0..count.clamp(1, 12) {
             steps.push(self.spectator_step());
-            if self.game.winner.is_some() {
+            if self.game.is_finished() {
                 break;
             }
         }
@@ -3208,23 +3209,23 @@ impl Session {
             |limit| limit.saturating_sub(self.game.turn).saturating_add(1),
         );
         for _ in 0..turns.min(remaining) {
-            if self.game.winner.is_some() || !self.game.players[0].alive {
+            if self.game.is_finished() || !self.game.players[0].alive {
                 break;
             }
             self.ais[0].take_turn(&mut self.game, 0);
-            if self.game.current == 0 && self.game.winner.is_none() {
+            if self.game.current == 0 && !self.game.is_finished() {
                 let _ = self.game.apply(0, &Action::EndTurn);
             }
             let g = &mut self.game;
             let mut guard = 0;
-            while g.winner.is_none()
+            while !g.is_finished()
                 && g.current != 0
                 && g.players[0].alive
                 && guard < 2 * g.players.len()
             {
                 let pid = g.current;
                 self.ais[pid].take_turn(g, pid);
-                if g.current == pid && g.winner.is_none() {
+                if g.current == pid && !g.is_finished() {
                     let _ = g.apply(pid, &Action::EndTurn);
                 }
                 guard += 1;
@@ -3249,14 +3250,14 @@ impl Session {
         if !self.params.spectate {
             let g = &mut self.game;
             let mut guard = 0;
-            while g.winner.is_none()
+            while !g.is_finished()
                 && g.current != 0
                 && g.players[0].alive
                 && guard < 2 * g.players.len()
             {
                 let pid = g.current;
                 self.ais[pid].take_turn(g, pid);
-                if g.current == pid && g.winner.is_none() {
+                if g.current == pid && !g.is_finished() {
                     let _ = g.apply(pid, &Action::EndTurn);
                 }
                 guard += 1;
@@ -3276,14 +3277,14 @@ impl Session {
         if matches!(action, Action::EndTurn) {
             let g = &mut self.game;
             let mut guard = 0;
-            while g.winner.is_none()
+            while !g.is_finished()
                 && g.current != 0
                 && g.players[0].alive
                 && guard < 2 * g.players.len()
             {
                 let pid = g.current;
                 self.ais[pid].take_turn(g, pid);
-                if g.current == pid && g.winner.is_none() {
+                if g.current == pid && !g.is_finished() {
                     let _ = g.apply(pid, &Action::EndTurn);
                 }
                 guard += 1;
@@ -3393,6 +3394,8 @@ fn list_saves() -> Vec<Value> {
                 "difficulty": game.difficulty,
                 "speed": game.game_speed.id(),
                 "winner": game.winner,
+                "finished": game.is_finished(),
+                "draw": game.is_draw(),
                 "bytes": raw.len(),
             }))
         })
@@ -3836,6 +3839,20 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         if request["map_script"].as_str() == Some("planet") {
             p.map_topology = MapTopology::Planet;
         }
+        // The Tactics planet has a deliberately custom globe size rather than
+        // one of the ordinary Civ size ladder's rectangles. A browser sends
+        // the dimensions explicitly, but direct clients still get the same
+        // small world when they name the script alone.
+        if v.is_planet_battlefield()
+            && request["width"].as_i64().is_none()
+            && request["height"].as_i64().is_none()
+        {
+            if let Some(size) = BATTLEFIELD_SIZES.iter().find(|size| size.script == v) {
+                p.width = size.width;
+                p.height = size.height;
+                p.map_topology = size.topology;
+            }
+        }
     }
     if let Some(v) = request["map_topology"].as_str().and_then(MapTopology::from_id) {
         p.map_topology = v;
@@ -3949,6 +3966,9 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(n) = request["tactics_best_of"].as_u64() {
         p.tactics.best_of = n.min(u64::from(TacticsRules::MAX_BEST_OF)) as u32;
     }
+    if let Some(n) = request["tactics_turn_limit"].as_u64() {
+        p.tactics.turn_limit = n.min(u64::from(u32::MAX)) as u32;
+    }
     if let Some(on) = request["tactics_unique_units"].as_bool() {
         p.tactics.unique_units = on;
     }
@@ -3999,35 +4019,37 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
             p.max_turns = requested_turn_limit(request).unwrap_or(spec.turns);
         }
     }
-    // A battlefield is an arena, not a world: flat by construction — a globe
-    // has no opposite corners for its two sides — and it seats no
-    // city-states. This lands after every override above so the published
-    // next-game settings honestly describe the game that will start; the
-    // engine enforces both again when the world is built. A later request
-    // that moves the map back to a world restores the size profile's
-    // city-states through its own `num_players` stamp.
+    // A Tactics map seats no city-states. The bounded battlefield is flat by
+    // construction; the Tactics planet stays Planet so its two cities can be
+    // placed on opposite sides of the globe. This lands after every override
+    // above so the published next-game settings honestly describe the game
+    // that will start; the engine enforces both again when the world is built.
+    // A later request that moves the map back to a world restores the size
+    // profile's city-states through its own `num_players` stamp.
     if p.map_script.is_battlefield() {
-        p.map_topology = MapTopology::Flat;
+        p.map_topology = if p.map_script.is_planet_battlefield() {
+            MapTopology::Planet
+        } else {
+            MapTopology::Flat
+        };
         p.num_city_states = 0;
-        // And it keeps a battle's clock rather than a civilization's five
-        // hundred turns. An explicit `turn_limit` in the same request still
-        // wins — this only replaces the game speed's own budget, which was
-        // never meant to time a battle.
+        // And it keeps the selected battle clock rather than a civilization's
+        // five hundred turns. An explicit general `turn_limit` in the same
+        // request still wins, for direct clients that deliberately override
+        // the Tactics menu.
         if requested_turn_limit(request).is_none() {
-            p.max_turns = Game::battlefield_turn_limit(p.width, p.height, p.num_players);
+            p.max_turns = p.tactics.turn_limit;
         }
         // A battle is decided by the battle. Domination is the lane the last
-        // army standing arrives through, and Score is the clock's own award
-        // to whoever still holds the field; the four that need cities could
-        // never be reached on an arena, and the engine refuses them there in
-        // any case.
+        // army standing arrives through. The clock is not a score lane: if
+        // both armies survive it, neither won and the battle is a draw.
         p.victory_conditions = VictoryConditions {
             science: false,
             culture: false,
             religious: false,
             diplomatic: false,
             domination: true,
-            score: true,
+            score: false,
         };
         p.required_victory_types = 1;
     }
@@ -4137,7 +4159,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 std::thread::sleep(Duration::from_millis(300));
                 continue;
             }
-            if s.game.winner.is_some() {
+            if s.game.is_finished() {
                 let t0 = *over_since.get_or_insert_with(Instant::now);
                 let left = final_countdown_ms(&sh)
                     .saturating_sub(t0.elapsed().as_millis() as u64);
@@ -4172,7 +4194,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 sh.restart_in.store(u64::MAX, Ordering::Relaxed);
                 let step_started = Instant::now();
                 let turn_before = s.game.turn;
-                let finished_before = s.game.winner.is_some();
+                let finished_before = s.game.is_finished();
                 s.simultaneous_jobs = simultaneous_jobs_for(pace);
                 let pid = s.step_quietly();
                 turn_compute_us += step_started.elapsed().as_micros() as u64;
@@ -4187,7 +4209,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 // world" and only then began counting. The viewer must get
                 // every millisecond of the selected window to choose one more
                 // turn.
-                if s.game.winner.is_some() {
+                if s.game.is_finished() {
                     over_since = Some(Instant::now());
                     sh.restart_in
                         .store(final_countdown_ms(&sh), Ordering::Relaxed);
@@ -4523,6 +4545,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 &json!({
                     "turn": game.turn,
                     "winner": game.winner,
+                    "finished": game.is_finished(),
+                    "draw": game.is_draw(),
                     "victory_type": game.victory_type,
                     // How that result is denoted, so a supervisor reading the
                     // cheap endpoint can report a Mercy Rule ending by the
@@ -5509,7 +5533,7 @@ mod tests {
         let mut sequence = 0;
         let mut frames = Vec::new();
         let mut movement_seen = false;
-        while session.game.turn == opening_turn && session.game.winner.is_none() {
+        while session.game.turn == opening_turn && !session.game.is_finished() {
             let acting = session.game.current;
             let positions = session
                 .game
@@ -5518,7 +5542,7 @@ mod tests {
                 .map(|(id, unit)| (*id, (unit.owner, unit.pos)))
                 .collect::<std::collections::BTreeMap<_, _>>();
             let turn_before = session.game.turn;
-            let finished_before = session.game.winner.is_some();
+            let finished_before = session.game.is_finished();
             let (stepped, _) = session.step();
             assert_eq!(stepped, acting);
             seen.push(stepped);
@@ -5553,7 +5577,7 @@ mod tests {
             );
             assert_eq!(
                 lightning_boundary,
-                session.game.turn != turn_before || session.game.winner.is_some(),
+                session.game.turn != turn_before || session.game.is_finished(),
                 "Lightning should publish only the round/result boundary"
             );
         }
@@ -5641,6 +5665,17 @@ mod tests {
             })
         );
         assert_eq!(held_frame("41:7:maybe"), None);
+    }
+
+    #[test]
+    fn a_draw_is_a_finished_spectator_frame_without_a_winner() {
+        let mut game = Session::new(current()).game;
+        game.turn = 51;
+        game.victory_type = Some(crate::game::DRAW_RESULT.to_string());
+        assert!(game.winner.is_none());
+        let frame = spectator_frame(&game, 9);
+        assert!(frame.finished);
+        assert!(spectator_step_completes_frame(0, game.turn, false, &game));
     }
 
     #[test]
@@ -6159,7 +6194,7 @@ mod tests {
     fn next_painted_state(viewer: &str, state: &Value) -> String {
         let seed = state["seed"].as_u64().expect("a world");
         let turn = state["turn"].as_u64().expect("a turn");
-        let finished = u8::from(!state["winner"].is_null());
+        let finished = u8::from(state["finished"].as_bool().unwrap_or(false));
         let frame = state["frame_sequence"].as_u64().expect("a frame sequence");
         format!(
             "/state?painted={turn}&world={seed}&finished={finished}&frame={frame}\
@@ -7193,7 +7228,7 @@ mod tests {
         // both for the simulation gate and for the missed-frame audit.
         assert!(EMBEDDED_INDEX.contains("paintedFrame = {seed:st.seed, turn:st.turn,"));
         assert!(EMBEDDED_INDEX
-            .contains("finished:st.winner !== null && st.winner !== undefined"));
+            .contains("finished:gameFinished(st)"));
         assert!(EMBEDDED_INDEX
             .contains("&frame=${paintedFrame.sequence}"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/state\" + paintedQuery())"));
@@ -7559,7 +7594,7 @@ mod tests {
                 per_turn.push(std::mem::take(&mut this_turn));
                 turn = session.game.turn;
             }
-            if session.game.winner.is_some() {
+            if session.game.is_finished() {
                 break;
             }
         }
@@ -7816,9 +7851,20 @@ mod tests {
         );
     }
 
-    /// The two match settings reach the server from the lobby the same way
-    /// the economy grants do, and are clamped rather than trusted: a match is
-    /// always an odd number of battles, so it always has a winner.
+    #[test]
+    fn a_tactics_planet_request_keeps_its_small_globe() {
+        let planet = new_game_params(
+            &current(),
+            &json!({"num_players": 2, "map_script": "tactics_planet"}),
+        );
+        assert_eq!(planet.map_script, MapScript::TacticsPlanet);
+        assert_eq!(planet.map_topology, MapTopology::Planet);
+        assert_eq!((planet.width, planet.height), (40, 18));
+        assert_eq!(planet.num_city_states, 0);
+    }
+
+    /// The match settings reach the server from the lobby the same way the
+    /// economy grants do, and are normalized rather than trusted.
     #[test]
     fn a_match_request_is_an_odd_series_and_a_roster_choice() {
         let ask = |body: Value| new_game_params(&current(), &body);
@@ -7826,9 +7872,12 @@ mod tests {
         let match_of_seven = ask(json!({
             "num_players": 2, "map_script": "battlefield",
             "tactics_best_of": 7, "tactics_unique_units": true,
+            "tactics_turn_limit": 150,
         }));
         assert_eq!(match_of_seven.tactics.best_of, 7);
         assert!(match_of_seven.tactics.unique_units);
+        assert_eq!(match_of_seven.tactics.turn_limit, 150);
+        assert_eq!(match_of_seven.max_turns, 150);
 
         // An even request is rounded up to the odd series above it, and an
         // absurd one is capped.
@@ -7844,11 +7893,30 @@ mod tests {
             ask(json!({"map_script": "battlefield", "tactics_best_of": 0})).tactics.best_of,
             1
         );
+        assert_eq!(
+            ask(json!({"map_script": "battlefield", "tactics_turn_limit": 149}))
+                .tactics
+                .turn_limit,
+            150,
+            "a hand-written deadline uses the closest published option"
+        );
+        assert_eq!(
+            ask(json!({
+                "map_script": "battlefield",
+                "tactics_turn_limit": 200,
+                "max_turns": 73,
+            }))
+            .max_turns,
+            73,
+            "the explicit general override remains authoritative"
+        );
 
         // Silence keeps the stock setup: one battle, and the identical
         // roster on both sides, which is what the mode claims to be.
         let stock = ask(json!({"num_players": 2, "map_script": "battlefield"}));
         assert_eq!(stock.tactics.best_of, 1);
+        assert_eq!(stock.tactics.turn_limit, 100);
+        assert_eq!(stock.max_turns, 100);
         assert!(!stock.tactics.unique_units);
         assert_eq!(stock.tactics, TacticsRules::default());
     }
@@ -7875,6 +7943,11 @@ mod tests {
         assert_eq!(sizes[0]["id"], json!("10x10"));
         assert_eq!(sizes[0]["width"], json!(10));
         assert_eq!(sizes[0]["height"], json!(10));
+        assert_eq!(sizes[3]["id"], json!("planet"));
+        assert_eq!(sizes[3]["script"], json!("tactics_planet"));
+        assert_eq!(sizes[3]["topology"], json!("planet"));
+        assert_eq!(sizes[3]["width"], json!(40));
+        assert_eq!(sizes[3]["height"], json!(18));
         // The lobby swaps its size and map rosters from these lists and
         // sends the arena's dimensions explicitly.
         assert!(EMBEDDED_INDEX.contains("RULES.battlefield_sizes"));
@@ -7887,12 +7960,12 @@ mod tests {
         assert!(EMBEDDED_INDEX
             .contains("document.body.classList.toggle(\"playing-tactics\", tactics);"));
         assert!(EMBEDDED_INDEX.contains("body.playing-tactics .tactics-hidden { display: none; }"));
-        // An arena is fought over: entering Tactics points the victory
-        // checkboxes at Domination and Score — still ordinary checkboxes —
-        // and leaving it restores the Civ game's own choices.
+        // An arena is fought over: entering Tactics leaves Domination as its
+        // one victory lane. Its deadline is a draw, not Score. Leaving it
+        // restores the Civ game's own choices.
         assert!(EMBEDDED_INDEX.contains("function syncBattlefieldVictories(tactics)"));
         assert!(EMBEDDED_INDEX
-            .contains("box.checked = id === \"domination\" || id === \"score\";"));
+            .contains("box.checked = id === \"domination\";"));
     }
 
     fn current() -> Params {
@@ -9303,12 +9376,12 @@ mod tests {
             "basic.push(document.getElementById(\"victory-options\"),\n    document.getElementById(\"tactics-options\"), document.getElementById(\"saves-group\"));"
         ));
         // The arena card: it appears only in Tactics and carries everything
-        // the mode is set up with — whether the field is fogged, the four
-        // economy grants, how many battles the match is, and whether the two
-        // civilizations field their own units. The engine reads them only on a
-        // battlefield, so they travel from every lobby unconditionally. It is
-        // named for the mode rather than for the grants, because the grants
-        // are no longer all of it.
+        // the mode is set up with — whether the field is fogged, its deadline,
+        // the four economy grants, how many battles the match is, and whether
+        // the two civilizations field their own units. The engine reads them
+        // only on a battlefield, so they travel from every lobby
+        // unconditionally. It is named for the mode rather than for the
+        // grants, because the grants are no longer all of it.
         assert!(EMBEDDED_INDEX.contains(">Tactics settings</h2>"));
         assert!(EMBEDDED_INDEX.contains(".tactics-only { display: none; }"));
         assert!(EMBEDDED_INDEX
@@ -9317,6 +9390,7 @@ mod tests {
             "class=\"tactics-options tactics-only\" id=\"tactics-options\""
         ));
         for arena in [
+            ("tacticsturnlimit", "tactics_turn_limit"),
             ("tacticscities", "tactics_cities"),
             ("tacticsproduction", "tactics_production"),
             ("tacticsgold", "tactics_gold"),
@@ -9346,7 +9420,14 @@ mod tests {
         // Unfogged is the default: an arena has always shown both commanders
         // the whole field, and the option is the deliberate departure.
         assert!(EMBEDDED_INDEX.contains("<option value=\"0\" selected>Off · the whole field</option>"));
-        // Every offered match length is odd, so a series always has a winner.
+        for limit in TacticsRules::TURN_LIMITS {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("<option value=\"{limit}\"")),
+                "the turn-limit ladder is missing {limit}"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains("<option value=\"100\" selected>100 turns</option>"));
+        // Every offered match length is odd, so wins cannot split evenly.
         for length in ["1", "3", "5", "7", "11"] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("<option value=\"{length}\"")),
@@ -13111,28 +13192,28 @@ mod tests {
     /// error toast for pressing the only lit control on the screen. The
     /// finale offers the one thing still useful instead: another game.
     #[test]
-    fn browser_stops_asking_for_turns_once_somebody_has_won() {
-        // The winner test's `over` became `won`, because elimination now
-        // disables the button on the same path — same contract, wider reason.
-        // Auto-play is the third reason: the seat is on loan while it runs.
+    fn browser_stops_asking_for_turns_after_any_terminal_result() {
+        // A win and a draw both end the engine. Elimination and Auto-play are
+        // the two other reasons the seat cannot act.
         assert!(EMBEDDED_INDEX
-            .contains("const won = state.winner !== null && state.winner !== undefined;"));
-        assert!(EMBEDDED_INDEX.contains("button.disabled = won || eliminated || autoplaying;"));
+            .contains("const over = gameFinished(state);"));
+        assert!(EMBEDDED_INDEX.contains("button.disabled = over || eliminated || autoplaying;"));
         assert!(EMBEDDED_INDEX.contains("The game is over<span class=\"endturn-hint\">"));
         // The keys agree with the button.
         assert!(EMBEDDED_INDEX
-            .contains("if (state.winner !== null && state.winner !== undefined) return;"));
+            .contains("if (gameFinished(state)) return;"));
         // And a human finale offers a way on; a spectated one keeps its
         // countdown, because the supervisor owns that handoff.
         assert!(EMBEDDED_INDEX.contains("class=\"primary winner-again\" onclick=\"startNewSimulation()\""));
         assert!(EMBEDDED_INDEX.contains("id=\"respawn\" role=\"timer\""));
-        // Both finales also offer three ways to keep this world. It is the
-        // reason the countdown has to be long enough to read — a button nobody
-        // can reach before the next world loads is not an offer.
+        // A victory finale also offers three ways to keep its world. A draw
+        // has no victor/result to play on past and offers the next battle.
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-look-around\""));
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-next-victory\""));
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-indefinite\""));
         assert!(EMBEDDED_INDEX.contains("Take a look around"));
+        assert!(EMBEDDED_INDEX.contains("<span class=\"winner-kicker\">Battle drawn</span>"));
+        assert!(EMBEDDED_INDEX.contains("<span class=\"winner-verdict\">Turn limit reached</span>"));
         // The two rules that resume play are named for what the person wants
         // rather than for the rule they select. "Continue" alone did not say
         // what it continues *to* — the two play-on buttons differ only in
@@ -13177,8 +13258,9 @@ mod tests {
         // never arms this one on top of the countdown it already publishes.
         assert!(EMBEDDED_INDEX
             .contains("if (SPEC || finaleCountdownResult === signature) return;"));
-        // Both human endings count down: a victory and a last city lost.
-        assert_eq!(EMBEDDED_INDEX.matches("armFinaleCountdown(signature);").count(), 2);
+        // All three human endings count down: a victory, a last city lost,
+        // and a Tactics draw.
+        assert_eq!(EMBEDDED_INDEX.matches("armFinaleCountdown(signature);").count(), 3);
         // Any input stops it, the three ways to keep the world stop it, and a
         // result screen that goes away takes it with it.
         assert!(EMBEDDED_INDEX.contains(
@@ -13866,7 +13948,7 @@ mod tests {
     fn browser_tells_the_player_when_they_have_been_eliminated() {
         assert!(EMBEDDED_INDEX
             .contains("const eliminated = state.players[0] && state.players[0].alive === false;"));
-        assert!(EMBEDDED_INDEX.contains("button.disabled = won || eliminated || autoplaying;"));
+        assert!(EMBEDDED_INDEX.contains("button.disabled = over || eliminated || autoplaying;"));
         assert!(EMBEDDED_INDEX.contains("Your civilization has fallen<span class=\"endturn-hint\">"));
         // The keys agree with the button.
         assert!(EMBEDDED_INDEX
@@ -13874,9 +13956,9 @@ mod tests {
         // A defeat draws the finale card, and the victory path must not wipe
         // a card it did not draw.
         assert!(EMBEDDED_INDEX.contains("st.players[0].alive === false;"));
-        assert!(EMBEDDED_INDEX.contains("} else if (!fallen) {"));
+        assert!(EMBEDDED_INDEX.contains("} else if (!fallen && !drawn) {"));
         // A spectated world has nobody to eliminate.
-        assert!(EMBEDDED_INDEX.contains("const fallen = !SPEC && !hasWinner"));
+        assert!(EMBEDDED_INDEX.contains("const fallen = !SPEC && !gameFinished(st)"));
     }
 
     #[test]

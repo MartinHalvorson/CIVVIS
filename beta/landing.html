@@ -136,6 +136,19 @@
     text-align: left;
   }
 
+  /* The four games, one per quadrant: Civ upper-left, Tactics upper-right,
+     city settling lower-left, Sim City lower-right. A fixed two-column grid
+     rather than auto-fit, because the corners are the point. */
+  .quadrants {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    text-align: left;
+  }
+  @media (max-width: 700px) {
+    .quadrants { grid-template-columns: 1fr; }
+  }
+
   a.card {
     display: flex;
     flex-direction: column;
@@ -227,6 +240,105 @@
   <a class="button" href="/rust">Rust build</a>
   <a class="button" href="/wasm">WASM build</a>
 </nav>
+
+<!--
+  The four quadrants are the page's face: the games the engine plays, one per
+  corner — Civ, Tactics, city settling, Sim City — each a link into the
+  simulator with a preset tuned to that game. Like every card on this page,
+  the links carry lobby choices on the query string for beta/shim.js.
+-->
+<section aria-label="The four games">
+  <h2>Four games, <strong>one engine</strong></h2>
+  <p class="lede">
+    Pick the game you want to watch. Each corner starts a simulation already
+    tuned to it — the engine plays, you watch.
+  </p>
+  <div class="quadrants">
+
+    <a class="card" href="/">
+      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
+        <rect width="320" height="180" fill="var(--sea)"/>
+        <path d="M30 60 Q60 30 120 40 Q170 48 160 84 Q150 116 92 122 Q40 118 30 60 Z" fill="var(--land)"/>
+        <path d="M190 96 Q230 78 276 92 Q298 104 288 130 Q268 152 220 146 Q188 134 190 96 Z" fill="var(--land-2)"/>
+        <circle cx="86" cy="76" r="4" fill="var(--gold)"/>
+        <circle cx="126" cy="62" r="3" fill="var(--gold)"/>
+        <circle cx="244" cy="118" r="4" fill="var(--danger)"/>
+        <path d="M126 62 Q186 74 244 118" stroke="var(--gold)" stroke-width="1" stroke-dasharray="3 4" fill="none" opacity="0.6"/>
+      </svg>
+      <div class="card-body">
+        <h3>Civ</h3>
+        <p>The complete game: whole civilizations founded, grown, allied and
+        fought until one of them wins the world.</p>
+        <div class="settings">Full game · A fresh world every visit</div>
+      </div>
+    </a>
+
+    <a class="card" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20">
+      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
+        <rect width="320" height="180" fill="var(--sea-deep)"/>
+        <rect x="70" y="20" width="180" height="140" rx="6" fill="var(--panel)" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.5"/>
+        <path d="M115 20 V160 M160 20 V160 M205 20 V160 M70 66 H250 M70 113 H250" stroke="var(--line)" stroke-width="1"/>
+        <rect x="86" y="52" width="14" height="14" fill="var(--blue)" opacity="0.9"/>
+        <rect x="86" y="88" width="14" height="14" fill="var(--blue)" opacity="0.9"/>
+        <rect x="108" y="70" width="14" height="14" fill="var(--blue)" opacity="0.6"/>
+        <rect x="220" y="52" width="14" height="14" fill="var(--danger)" opacity="0.9"/>
+        <rect x="220" y="88" width="14" height="14" fill="var(--danger)" opacity="0.9"/>
+        <rect x="198" y="70" width="14" height="14" fill="var(--danger)" opacity="0.6"/>
+      </svg>
+      <div class="card-body">
+        <h3>Tactics</h3>
+        <p>The fighting on its own: two even armies, one bounded field, no
+        economy to hide behind — decided by ground and formation.</p>
+        <div class="settings">Tactics · 20×20 field · Information era</div>
+      </div>
+    </a>
+
+    <a class="card" href="/?players=12&amp;map=land_only">
+      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
+        <rect width="320" height="180" fill="var(--land)"/>
+        <path d="M0 150 Q60 136 132 144 Q220 152 320 140 L320 180 L0 180 Z" fill="var(--sea)"/>
+        <circle cx="96" cy="72" r="6" fill="var(--gold)"/>
+        <circle cx="96" cy="72" r="12" fill="none" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.5"/>
+        <circle cx="96" cy="72" r="19" fill="none" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.25"/>
+        <circle cx="176" cy="52" r="3.5" fill="var(--gold-bright)"/>
+        <circle cx="222" cy="96" r="3.5" fill="var(--gold-bright)"/>
+        <circle cx="150" cy="112" r="3.5" fill="var(--gold-bright)"/>
+        <path d="M108 66 Q140 52 172 53" stroke="var(--gold-bright)" stroke-width="1" stroke-dasharray="2 5" fill="none" opacity="0.7"/>
+        <path d="M110 78 Q168 92 218 95" stroke="var(--gold-bright)" stroke-width="1" stroke-dasharray="2 5" fill="none" opacity="0.7"/>
+        <path d="M104 82 Q126 100 146 109" stroke="var(--gold-bright)" stroke-width="1" stroke-dasharray="2 5" fill="none" opacity="0.7"/>
+      </svg>
+      <div class="card-body">
+        <h3>City Settling</h3>
+        <p>The land rush: twelve civilizations on a continent of open ground,
+        and every turn another banner further out on the frontier.</p>
+        <div class="settings">12 civs · Land only · Ancient start</div>
+      </div>
+    </a>
+
+    <a class="card" href="/?players=6&amp;map=islands&amp;victories=science">
+      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
+        <rect width="320" height="180" fill="var(--sea-deep)"/>
+        <path d="M0 150 Q80 140 160 146 Q240 150 320 144 L320 180 L0 180 Z" fill="var(--land)"/>
+        <rect x="92" y="96" width="16" height="52" fill="var(--panel)" stroke="var(--line)"/>
+        <rect x="116" y="76" width="18" height="72" fill="var(--panel)" stroke="var(--gold)" stroke-opacity="0.5"/>
+        <rect x="142" y="108" width="14" height="40" fill="var(--panel)" stroke="var(--line)"/>
+        <rect x="164" y="62" width="20" height="86" fill="var(--panel)" stroke="var(--gold)" stroke-opacity="0.5"/>
+        <rect x="192" y="92" width="16" height="56" fill="var(--panel)" stroke="var(--line)"/>
+        <path d="M120 84 h10 M120 94 h10 M168 70 h12 M168 80 h12 M168 90 h12 M195 100 h10 M195 110 h10" stroke="var(--gold)" stroke-width="2" stroke-opacity="0.8"/>
+        <circle cx="248" cy="40" r="3" fill="var(--gold)"/>
+        <path d="M244 52 L248 44 L252 52 Z" fill="var(--gold-bright)"/>
+      </svg>
+      <div class="card-body">
+        <h3>Sim City</h3>
+        <p>The building with no fighting to do. Its own mode is on the
+        roadmap; until it arrives, the nearest world: island builders left in
+        peace, racing for orbit.</p>
+        <div class="settings">6 civs · Islands · Science only</div>
+      </div>
+    </a>
+
+  </div>
+</section>
 
 <!--
   Each card is a link into the simulator with lobby choices already made —
