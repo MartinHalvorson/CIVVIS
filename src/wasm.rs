@@ -131,7 +131,7 @@ fn current_frame(session: &Session) -> SpectatorFrame {
 fn advance_one_frame(session: &mut Session, held: SpectatorFrame) {
     if !session.params.spectate
         || PAUSED.with(Cell::get)
-        || session.game.winner.is_some()
+        || session.game.is_finished()
         || current_frame(session) != held
     {
         return;
@@ -143,7 +143,7 @@ fn advance_one_frame(session: &mut Session, held: SpectatorFrame) {
     const STEP_CAP: usize = 1024;
     for _ in 0..STEP_CAP {
         let turn_before = session.game.turn;
-        let finished_before = session.game.winner.is_some();
+        let finished_before = session.game.is_finished();
         session.step();
         if spectator_step_completes_frame(
             PACE.with(Cell::get),
@@ -264,6 +264,8 @@ fn route(method: &str, target: &str, body: &str) -> Value {
                 "turn": session.game.turn,
                 "seed": session.game.seed,
                 "winner": session.game.winner,
+                "finished": session.game.is_finished(),
+                "draw": session.game.is_draw(),
                 "paused": PAUSED.with(Cell::get),
                 "server_instance": process_identity(),
                 "commit": runtime_commit("unknown"),

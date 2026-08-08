@@ -946,6 +946,12 @@ pub struct TacticsRules {
     /// era. 0 stops research, freezing both sides at their starting era's
     /// units.
     pub turns_per_tech: u32,
+    /// Turns each battle may run before neither side wins and the battle is
+    /// recorded as a draw. The setup surface offers the four values in
+    /// [`Self::TURN_LIMITS`]; old saves predate the choice and load the stock
+    /// 100-turn battle.
+    #[serde(default = "default_tactics_turn_limit")]
+    pub turn_limit: u32,
     /// Battles the two civilizations fight before a match is decided. 1 is a
     /// single battle; any higher odd number is a series, taken by the first
     /// side to win more than half of it.
@@ -983,6 +989,10 @@ fn one_battle() -> u32 {
     1
 }
 
+fn default_tactics_turn_limit() -> u32 {
+    100
+}
+
 impl TacticsRules {
     /// The largest figure any of the flat grants may be set to. A ceiling
     /// exists so a hand-written request cannot mint an arena where the first
@@ -993,6 +1003,8 @@ impl TacticsRules {
     /// The longest series offered. Beyond this a match is a tournament, and
     /// `civvis tournament` is the instrument for that.
     pub const MAX_BEST_OF: u32 = 21;
+    /// Battle clocks offered by every Tactics setup surface, shortest first.
+    pub const TURN_LIMITS: [u32; 4] = [50, 100, 150, 200];
 
     /// Clamp a requested economy to what the mode can actually play.
     pub fn sanitized(self) -> Self {
@@ -1001,9 +1013,13 @@ impl TacticsRules {
             production: self.production.min(Self::MAX_YIELD),
             gold: self.gold.min(Self::MAX_YIELD),
             turns_per_tech: self.turns_per_tech.min(Self::MAX_TURNS_PER_TECH),
-            // Odd, so a series always has a winner: an even one can be split
-            // down the middle with nothing left to play, and "best of four"
-            // is best of three with a dead rubber attached.
+            turn_limit: *Self::TURN_LIMITS
+                .iter()
+                .min_by_key(|limit| (self.turn_limit.abs_diff(**limit), **limit))
+                .expect("the Tactics turn-limit ladder is nonempty"),
+            // Odd, so a series cannot be split evenly by wins. Drawn battles
+            // can still exhaust the schedule without either side reaching
+            // `wins_needed`; that is an intentionally drawn match.
             best_of: (self.best_of.max(1) | 1).min(Self::MAX_BEST_OF),
             unique_units: self.unique_units,
             fog: self.fog,
@@ -1027,6 +1043,7 @@ impl Default for TacticsRules {
             production: 30,
             gold: 30,
             turns_per_tech: 5,
+            turn_limit: default_tactics_turn_limit(),
             best_of: 1,
             unique_units: false,
             fog: false,
@@ -1043,13 +1060,14 @@ impl Default for TacticsRules {
 /// held the same corner every time would be measuring the corner.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MatchSeries {
-    /// Battles the match is played over. Always odd, so it has a winner.
+    /// Battles the match is played over. Always odd, so wins cannot split it
+    /// evenly; drawn battles can still use the series up with no match winner.
     pub best_of: u32,
     /// Battles won, by civilization, in roster order.
     pub wins: BTreeMap<String, u32>,
-    /// Battles that reached the turn limit with no side eliminated and no
-    /// award — vanishingly rare, and counted rather than silently dropped so
-    /// the played total always adds up.
+    /// Battles that reached the selected turn limit with neither side
+    /// eliminated, counted rather than silently dropped so the played total
+    /// always adds up.
     pub drawn: u32,
 }
 
@@ -1837,7 +1855,8 @@ mod tests {
     /// A match is a series between two civilizations, and its score belongs
     /// to the civilizations rather than to the seats they were sitting in —
     /// because a match swaps the sides over between battles. It is always an
-    /// odd number of battles, so it always has a winner.
+    /// odd number of battles, so wins cannot split evenly; draws can still
+    /// exhaust it without a winner.
     #[test]
     fn a_match_is_an_odd_series_scored_by_civilization() {
         // An even length is not a match: best of four is best of three with a
@@ -1877,6 +1896,43 @@ mod tests {
         assert_eq!(drawn.winner(), None);
         assert_eq!(drawn.played(), 3);
         assert!(drawn.scoreline().contains("3 drawn"), "{}", drawn.scoreline());
+    }
+
+    /// A battle clock is a small, deliberate Tactics setting rather than an
+    /// arbitrary world-length number. Hand-written requests are normalized to
+    /// the closest offered value, and a save from before the field existed
+    /// receives the same 100-turn default as a new lobby.
+    #[test]
+    fn tactics_turn_limits_use_the_published_ladder_and_survive_old_saves() {
+        assert_eq!(TacticsRules::TURN_LIMITS, [50, 100, 150, 200]);
+        assert_eq!(TacticsRules::default().turn_limit, 100);
+        for limit in TacticsRules::TURN_LIMITS {
+            assert_eq!(
+                TacticsRules { turn_limit: limit, ..TacticsRules::default() }
+                    .sanitized()
+                    .turn_limit,
+                limit
+            );
+        }
+        assert_eq!(
+            TacticsRules { turn_limit: 0, ..TacticsRules::default() }
+                .sanitized()
+                .turn_limit,
+            50
+        );
+        assert_eq!(
+            TacticsRules { turn_limit: 149, ..TacticsRules::default() }
+                .sanitized()
+                .turn_limit,
+            150
+        );
+
+        let mut old = serde_json::to_value(TacticsRules::default()).unwrap();
+        old.as_object_mut().unwrap().remove("turn_limit");
+        assert_eq!(
+            serde_json::from_value::<TacticsRules>(old).unwrap().turn_limit,
+            100
+        );
     }
 
     /// The world's shape and its poles are settings of their own, orthogonal to

@@ -2,8 +2,9 @@
 
 2026-07-31. Historical record of the tactical-search experiment; companion to
 `src/skirmish.rs` and `src/bin/battle_bench.rs`. §§1–8 are the original
-record, including the removal; §9 (2026-08-07) records the operator-directed
-restoration, the strengthened search, and where it now runs.
+record, including the removal; §§9–10 record the operator-directed
+restoration, subsequent search improvements, and where they now run. §11
+records the arena deadline contract.
 
 ## 1. What the published state of the art is for this problem
 
@@ -600,3 +601,21 @@ move. Fires-check: the search planned on **71 of 303 treated seat-turns
 (23.4%), reaching 261 unit decisions** — up from v2's 47 and 145, because a
 withdrawal is a decision the search can now own on turns that offer no good
 attack at all.
+
+## 11. Arena deadlines are draws (2026-08-08)
+
+Every Tactics setup surface offers a **50, 100, 150, or 200 turn** battle
+clock; 100 is the default. The command-line form is
+`--tactics-turn-limit <turns>`. A general explicit `--turns` value still
+overrides the Tactics choice for launchers that need a one-off cap.
+
+Domination is the arena's only victory lane: the last army standing wins. If
+both sides still have units after the selected final turn, the battle is a
+true draw. Material, health, score, and seat order may describe the position,
+but none breaks the deadline tie.
+
+A draw is terminal even though it has no winner. Raw saves record
+`victory_type: "draw"` with `winner: null`; observation and status documents
+add `finished: true` and `draw: true`. Match series, league records, the
+browser finale, and the production spectator supervisor all use that terminal
+contract, so a drawn battle advances cleanly to the next scheduled game.
