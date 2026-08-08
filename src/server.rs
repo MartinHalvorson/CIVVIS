@@ -1270,6 +1270,13 @@ pub struct Shared {
     /// the restart — so a settings control that queued behind an AI turn put
     /// the whole restart behind it too.
     next_game_params: Mutex<Option<Params>>,
+    /// The Tactics match in progress, when the arena is being played as a
+    /// series rather than as one battle.
+    ///
+    /// It lives here rather than on the `Session` because a match outlives
+    /// the battles it is made of, and `start_automatic_next_game` replaces
+    /// the whole session between them.
+    match_series: Mutex<Option<crate::setup::MatchSeries>>,
     pub pace_ms: AtomicU64,
     /// How long a completed spectator game remains on its result screen.
     /// This is a viewer preference, not part of the simulated world: each
@@ -1911,6 +1918,57 @@ impl Shared {
     /// Hand the queue to the world that is about to consume it.
     fn take_next_game_params(&self) -> Option<Params> {
         self.next_game_params.lock().unwrap().take()
+    }
+
+    /// The Tactics match in progress, for `/state`.
+    fn match_series(&self) -> Option<crate::setup::MatchSeries> {
+        self.match_series.lock().unwrap().clone()
+    }
+
+    /// Carry a Tactics match on past the battle that just finished.
+    ///
+    /// Records the result, then hands the next battle the same two
+    /// civilizations with the sides swapped over — which is the whole point
+    /// of a series, because a match in which one civilization held the same
+    /// corner every time would be measuring the corner. A match that has
+    /// been settled is cleared here and the next battle opens a fresh one, so
+    /// an exhibition left running plays match after match rather than one
+    /// endless tally.
+    fn advance_match(&self, finished: &Game, next: Option<Params>) -> Option<Params> {
+        let mut next = next?;
+        let mut held = self.match_series.lock().unwrap();
+        if !next.map_script.is_battlefield() || next.tactics.best_of <= 1 {
+            *held = None;
+            return Some(next);
+        }
+        let contenders: Vec<String> = finished
+            .players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .map(|player| player.civ.clone())
+            .collect();
+        let fresh = || crate::setup::MatchSeries::new(next.tactics.best_of, contenders.clone());
+        let series = held.get_or_insert_with(fresh);
+        if series.decided() {
+            // The battle before this one settled the match, and its final
+            // scoreline has had its turn on the result screen.
+            *series = fresh();
+        } else {
+            series.record(
+                finished
+                    .winner
+                    .and_then(|pid| finished.players.get(pid))
+                    .map(|player| player.civ.as_str()),
+            );
+        }
+        // The pair is the match's, in a fixed order, so "which end" is
+        // decided by how many battles have been played and nothing else.
+        let mut pair: Vec<String> = series.wins.keys().cloned().collect();
+        if series.played() % 2 == 1 {
+            pair.reverse();
+        }
+        next.civs = pair;
+        Some(next)
     }
 
     /// The request the supervisor is being asked to act on, if any.
@@ -3888,6 +3946,13 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
             }
         }
     }
+    if let Some(n) = request["tactics_best_of"].as_u64() {
+        p.tactics.best_of = n.min(u64::from(TacticsRules::MAX_BEST_OF)) as u32;
+    }
+    if let Some(on) = request["tactics_unique_units"].as_bool() {
+        p.tactics.unique_units = on;
+    }
+    p.tactics = p.tactics.sanitized();
     // Advanced clients can still deliberately override individual stock
     // settings by sending them alongside num_players.
     if let Some(v) = request["width"].as_i64() {
@@ -4075,7 +4140,14 @@ fn auto_step_loop(sh: Arc<Shared>) {
                     .saturating_sub(t0.elapsed().as_millis() as u64);
                 sh.restart_in.store(left, Ordering::Relaxed);
                 if left == 0 {
-                    s.start_automatic_next_game(sh.take_next_game_params());
+                    // A Tactics match is a series, and the series outlives
+                    // the battle: score this one and set the next one's sides
+                    // before the world it was played on is replaced.
+                    let queued = sh
+                        .take_next_game_params()
+                        .or_else(|| s.params.tactics.best_of.gt(&1).then(|| s.params.clone()));
+                    let queued = sh.advance_match(&s.game, queued);
+                    s.start_automatic_next_game(queued);
                     sh.current_seed.store(s.game.seed, Ordering::Relaxed);
                     sh.adopt_live_params(&s.params);
                     over_since = None;
@@ -4207,6 +4279,21 @@ fn decorate(o: &mut Value, sh: &Shared) {
         // instead of using their one-second long-poll cadence as a clock.
         o["restart_in_ms"] = json!(r);
         o["restart_in"] = json!(r.div_ceil(1000));
+    }
+    // The match this battle belongs to, when the arena is being played as a
+    // series. Absent for a single battle, so a viewer that finds it knows a
+    // scoreline is worth showing.
+    if let Some(series) = sh.match_series() {
+        o["tactics_match"] = json!({
+            "best_of": series.best_of,
+            "wins_needed": series.wins_needed(),
+            "played": series.played(),
+            "wins": series.wins,
+            "drawn": series.drawn,
+            "scoreline": series.scoreline(),
+            "winner": series.winner(),
+            "decided": series.decided(),
+        });
     }
     o["pace"] = json!(sh.pace_ms.load(Ordering::Relaxed));
     o["between_game_countdown_ms"] =
@@ -5564,6 +5651,7 @@ mod tests {
             supervisor_request: Mutex::new(None),
             live_params: Mutex::new(session.params.clone()),
             next_game_params: Mutex::new(session.take_resumed_next_game_params()),
+        match_series: Mutex::new(None),
             session: Mutex::new(session),
             pace_ms: AtomicU64::new(0),
             between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
@@ -7725,6 +7813,43 @@ mod tests {
         );
     }
 
+    /// The two match settings reach the server from the lobby the same way
+    /// the economy grants do, and are clamped rather than trusted: a match is
+    /// always an odd number of battles, so it always has a winner.
+    #[test]
+    fn a_match_request_is_an_odd_series_and_a_roster_choice() {
+        let ask = |body: Value| new_game_params(&current(), &body);
+
+        let match_of_seven = ask(json!({
+            "num_players": 2, "map_script": "battlefield",
+            "tactics_best_of": 7, "tactics_unique_units": true,
+        }));
+        assert_eq!(match_of_seven.tactics.best_of, 7);
+        assert!(match_of_seven.tactics.unique_units);
+
+        // An even request is rounded up to the odd series above it, and an
+        // absurd one is capped.
+        assert_eq!(
+            ask(json!({"map_script": "battlefield", "tactics_best_of": 4})).tactics.best_of,
+            5
+        );
+        assert_eq!(
+            ask(json!({"map_script": "battlefield", "tactics_best_of": 10_000})).tactics.best_of,
+            TacticsRules::MAX_BEST_OF
+        );
+        assert_eq!(
+            ask(json!({"map_script": "battlefield", "tactics_best_of": 0})).tactics.best_of,
+            1
+        );
+
+        // Silence keeps the stock setup: one battle, and the identical
+        // roster on both sides, which is what the mode claims to be.
+        let stock = ask(json!({"num_players": 2, "map_script": "battlefield"}));
+        assert_eq!(stock.tactics.best_of, 1);
+        assert!(!stock.tactics.unique_units);
+        assert_eq!(stock.tactics, TacticsRules::default());
+    }
+
     /// The lobby's two map menus are cut from the one authoritative roster:
     /// the Civ mode offers every world and no arena, the Tactics mode offers
     /// the battlefield, and a battlefield size is exactly the fighting ground
@@ -9161,9 +9286,11 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "basic.push(document.getElementById(\"victory-options\"),\n    document.getElementById(\"tactics-options\"), document.getElementById(\"saves-group\"));"
         ));
-        // The arena economy: a card that appears only in Tactics, carrying
-        // the four grants the mode is set up with. The engine reads them only
-        // on a battlefield, so they travel from every lobby unconditionally.
+        // The arena card: it appears only in Tactics and carries everything
+        // the mode is set up with — the four economy grants, how many battles
+        // the match is, and whether the two civilizations field their own
+        // units. The engine reads them only on a battlefield, so they travel
+        // from every lobby unconditionally.
         assert!(EMBEDDED_INDEX.contains(".tactics-only { display: none; }"));
         assert!(EMBEDDED_INDEX
             .contains("body.playing-tactics .tactics-only { display: revert; }"));
@@ -9175,10 +9302,11 @@ mod tests {
             ("tacticsproduction", "tactics_production"),
             ("tacticsgold", "tactics_gold"),
             ("tacticsturnspertech", "tactics_turns_per_tech"),
+            ("tacticsbestof", "tactics_best_of"),
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("id=\"{}\"", arena.0)),
-                "the arena economy is missing the {} control",
+                "the arena card is missing the {} control",
                 arena.0
             );
             assert!(
@@ -9186,6 +9314,23 @@ mod tests {
                 "the {} control must reach the server as {}",
                 arena.0,
                 arena.1
+            );
+        }
+        // Unique units is the one arena setting that is a yes/no rather than
+        // a figure, so it travels as a boolean rather than through `Number`.
+        assert!(EMBEDDED_INDEX.contains("id=\"tacticsuniqueunits\""));
+        assert!(EMBEDDED_INDEX
+            .contains("tactics_unique_units: readSetting(\"tacticsuniqueunits\") === \"1\","));
+        // Every offered match length is odd, so a series always has a winner.
+        for length in ["1", "3", "5", "7", "11"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("<option value=\"{length}\"")),
+                "the match-length ladder is missing {length}"
+            );
+            assert_eq!(
+                length.parse::<u32>().expect("a match length is a number") % 2,
+                1,
+                "an even match length can be split with nothing left to play"
             );
         }
         // Display Settings is a short reading path: observer controls first,
@@ -11686,6 +11831,7 @@ mod tests {
             supervisor_request: Mutex::new(None),
             live_params: Mutex::new(session.params.clone()),
             next_game_params: Mutex::new(session.take_resumed_next_game_params()),
+        match_series: Mutex::new(None),
             session: Mutex::new(session),
             pace_ms: AtomicU64::new(0),
             between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
@@ -14548,6 +14694,7 @@ pub fn serve_with_game(
         supervisor_request: Mutex::new(None),
         live_params: Mutex::new(session.params.clone()),
         next_game_params: Mutex::new(session.take_resumed_next_game_params()),
+        match_series: Mutex::new(None),
         session: Mutex::new(session),
         pace_ms: AtomicU64::new(500), // half a second per turn by default
         between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),

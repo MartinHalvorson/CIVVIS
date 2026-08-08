@@ -18347,7 +18347,14 @@ impl Game {
                 break;
             };
             cursor += 1;
-            self.spawn_unit(kind, pid, pos);
+            // Whatever this civilization fields in that unit's place, which
+            // with unique units switched off is the stock unit itself. Only
+            // the replacements reach the opening roster: a unique that
+            // replaces nothing — Sumeria's War Cart, Egypt's Maryannu Chariot
+            // Archer — is an addition to a build menu in the shipped rules
+            // rather than a substitution, and stays one here.
+            let kind = self.player_unit_replacement(pid, Name::new(kind));
+            self.spawn_unit(kind.as_str(), pid, pos);
         }
     }
 
@@ -18467,10 +18474,14 @@ impl Game {
             Item::Formation { unit, .. } => *unit,
             _ => return false,
         };
-        self.rules
-            .units
-            .get_interned(unit)
-            .is_some_and(|spec| matches!(spec.class.as_str(), "military" | "support"))
+        self.rules.units.get_interned(unit).is_some_and(|spec| {
+            matches!(spec.class.as_str(), "military" | "support")
+                // And a civilization's own units only when the match asked
+                // for them. Off, the two build menus are the same menu, so
+                // whatever separates the two sides is play rather than
+                // roster.
+                && (self.tactics.unique_units || spec.unique_to.is_none())
+        })
     }
 
     /// Handicaps reach the major civilizations only: city-states and
@@ -39500,6 +39511,14 @@ impl Game {
     /// instead of creating Archers that Nubia is not allowed to train.
     pub fn player_unit_replacement(&self, pid: usize, unit: impl AsName) -> Name {
         let unit = unit.as_name();
+        // On an arena with unique units switched off, no civilization has a
+        // replacement — which has to be said here and not only at the build
+        // menu, because this function is also what *suppresses* a stock unit
+        // for the civ that replaces it. Refusing the Hoplite alone would
+        // leave Greece unable to field a Spearman either.
+        if self.is_arena() && !self.tactics.unique_units {
+            return unit;
+        }
         self.rules
             .units
             .iter()
@@ -68457,7 +68476,13 @@ mod district_mechanics {
     /// policy ever lands mid-battle.
     #[test]
     fn an_arena_economy_is_granted_rather_than_earned() {
-        let rules = TacticsRules { cities: 1, production: 30, gold: 30, turns_per_tech: 5 };
+        let rules = TacticsRules {
+            cities: 1,
+            production: 30,
+            gold: 30,
+            turns_per_tech: 5,
+            ..TacticsRules::default()
+        };
         let mut game = Game::new_with(GameOptions {
             map_script: MapScript::Battlefield,
             tactics: rules,
@@ -68709,6 +68734,125 @@ mod district_mechanics {
         assert!(game.map.tiles.values().all(|tile| tile.resource.is_none()));
         assert!(game.map.tiles.values().all(|tile| game.rules.is_passable(tile)));
         assert!(game.map.tiles.values().all(|tile| !game.rules.is_water(tile)));
+    }
+
+    /// Unique units are a match setting, and switching them off has to reach
+    /// both the opening roster and the build menu — and, less obviously, the
+    /// suppression that a replacement normally applies to the stock unit it
+    /// replaces. Refusing the Hoplite alone would leave Greece unable to
+    /// field a Spearman either.
+    #[test]
+    fn an_arena_fields_unique_units_only_when_the_match_asked_for_them() {
+        let arena = |unique_units: bool| {
+            Game::new_with(GameOptions {
+                map_script: MapScript::Battlefield,
+                tactics: TacticsRules { unique_units, ..TacticsRules::default() },
+                // Greece replaces the Spearman with the Hoplite; the Aztecs
+                // replace the Warrior with the Eagle Warrior. Both are in the
+                // opening roster.
+                civs: vec!["Greece".to_string(), "Aztec".to_string()],
+                ..GameOptions::new(2, 10, 10, 3_141, 250, 0)
+            })
+        };
+        let roster = |game: &Game, seat: usize| {
+            let mut kinds: Vec<String> = game
+                .units
+                .values()
+                .filter(|unit| unit.owner == seat)
+                .map(|unit| unit.kind.to_string())
+                .collect();
+            kinds.sort_unstable();
+            kinds.dedup();
+            kinds
+        };
+
+        let even = arena(false);
+        assert_eq!(
+            roster(&even, 0),
+            roster(&even, 1),
+            "with unique units off the two sides field the identical roster"
+        );
+        assert!(!roster(&even, 0).iter().any(|kind| kind == "hoplite"));
+        assert!(!roster(&even, 1).iter().any(|kind| kind == "eagle_warrior"));
+        // Greece keeps its Spearman rather than losing it to a Hoplite it is
+        // not allowed to have.
+        assert!(roster(&even, 0).iter().any(|kind| kind == "spearman"));
+        assert_eq!(even.player_unit_replacement(0, crate::name!("spearman")), crate::name!("spearman"));
+        assert!(!even.arena_allows_production(&Item::Unit { unit: crate::name!("hoplite") }));
+
+        let own = arena(true);
+        assert!(
+            roster(&own, 0).iter().any(|kind| kind == "hoplite"),
+            "Greece fields Hoplites: {:?}",
+            roster(&own, 0)
+        );
+        assert!(!roster(&own, 0).iter().any(|kind| kind == "spearman"));
+        assert!(
+            roster(&own, 1).iter().any(|kind| kind == "eagle_warrior"),
+            "the Aztecs field Eagle Warriors: {:?}",
+            roster(&own, 1)
+        );
+        assert!(own.arena_allows_production(&Item::Unit { unit: crate::name!("hoplite") }));
+        // Either way an arena builds only things that fight.
+        for game in [&even, &own] {
+            assert!(!game.arena_allows_production(&Item::Unit { unit: crate::name!("settler") }));
+        }
+    }
+
+    /// A square arena seats its two sides in opposite corners, a little way
+    /// in; a long one seats them at opposite ends. The inset is scaled rather
+    /// than fixed because a step along the offset diagonal is two hexes of
+    /// real distance, so three hexes in costs twelve hexes of approach — the
+    /// Field's whole margin, and more than the Square has to give.
+    #[test]
+    fn a_square_arena_seats_its_sides_in_opposite_corners() {
+        let seats = |width: i32, height: i32| {
+            let game = Game::new_with(GameOptions {
+                map_script: MapScript::Battlefield,
+                ..GameOptions::new(2, width, height, 4_242, 250, 0)
+            });
+            let mut seats: Vec<(i32, i32)> = (0..2)
+                .map(|seat| {
+                    let city = game
+                        .cities
+                        .values()
+                        .find(|city| city.owner == seat)
+                        .expect("the stock arena economy seats a city per side");
+                    crate::hex::axial_to_offset(city.pos.0, city.pos.1)
+                })
+                .collect();
+            seats.sort_unstable();
+            let apart = {
+                let sides: Vec<Pos> = (0..2)
+                    .map(|seat| {
+                        game.cities.values().find(|city| city.owner == seat).unwrap().pos
+                    })
+                    .collect();
+                game.wdist(sides[0], sides[1])
+            };
+            (seats, apart)
+        };
+
+        // The Field: three hexes in from opposite corners, exactly as asked.
+        let (field, field_apart) = seats(20, 20);
+        assert_eq!(field, vec![(3, 3), (16, 16)]);
+        assert_eq!(field_apart, 19);
+
+        // The Square: the same corners at the size it is. Three hexes in
+        // would leave the two sides four apart and deploying into each other.
+        let (square, square_apart) = seats(10, 10);
+        assert_eq!(square, vec![(1, 1), (8, 8)]);
+        assert!(square_apart >= 10, "{square_apart}");
+
+        // The March is a rectangle, and a rectangle's diagonal is barely
+        // longer than its length: it keeps the two end walls.
+        let (march, march_apart) = seats(10, 20);
+        assert!(
+            march.iter().all(|(col, _)| *col == 5),
+            "a long arena fights up and down the field: {march:?}"
+        );
+        assert_eq!(march.iter().map(|(_, row)| *row).collect::<Vec<_>>(), vec![0, 19]);
+        assert_eq!(march_apart, 19);
     }
 
     /// Nothing walks off a battlefield. The arena's four walls are the map's
