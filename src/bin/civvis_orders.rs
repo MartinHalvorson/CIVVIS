@@ -851,6 +851,7 @@ fn withhold_live_treatment(
         "escort-unstick" => ai.disable_escort_unstick(),
         "religion-sues-peace" => ai.disable_religion_sues_peace(),
         "stranded-settler-discount" => ai.disable_stranded_settler_discount(),
+        "housing-buildings" => ai.disable_housing_buildings(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),

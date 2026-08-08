@@ -16630,6 +16630,26 @@ impl Default for VictoryConditions {
     }
 }
 
+/// The scaffolding roles a simultaneous planning world can play. Not part of
+/// the game state: never serialized, never set on a committed game.
+///
+/// - `Off`: an ordinary, authoritative world. Every rule runs in full.
+/// - `Rolling`: the prepare walk's rolling world. Seats take empty turns so
+///   each later seat plans with upkeep applied; when the walk wraps out of
+///   the cycle the world is discarded, so the wrap's world systems and the
+///   next turn's upkeep are skipped — provably unread state.
+/// - `Seat`: one seat's private planning copy. The world is discarded the
+///   moment its plan is harvested, and the harvest reads only actions logged
+///   *before* the closing `EndTurn`, so that close does the minimum needed
+///   to move the turn cursor and nothing else.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PlanningRole {
+    #[default]
+    Off,
+    Rolling,
+    Seat,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(from = "GameSer", into = "GameSer")]
 pub struct Game {
@@ -16681,6 +16701,14 @@ pub struct Game {
     /// action. On by default; headless rollouts turn it off.
     #[serde(skip, default = "yes")]
     track_war_ledger: bool,
+    /// What this world is *for*. The authoritative game and every sequential
+    /// game run `Off`. The simultaneous driver marks its scaffolding worlds —
+    /// the rolling prepare world and each seat's private planning copy — so
+    /// their `EndTurn` closes can skip work whose results nothing will ever
+    /// read. The committed game never carries a role, so nothing here can
+    /// reach an authoritative byte; see the `do_end_turn` branches.
+    #[serde(skip)]
+    planning_role: PlanningRole,
     /// AI turns apply many actions synchronously, with no observer able to
     /// read the half-finished position. Coalesce their full-empire visibility
     /// refreshes and publish the same final observation once at the boundary.
@@ -17396,6 +17424,7 @@ impl From<GameSer> for Game {
             remembered_under: Vec::new(),
             track_fog_memory: true,
             track_war_ledger: true,
+            planning_role: PlanningRole::Off,
             visibility_batch: VisibilityBatch::default(),
             rng: s.rng,
             seed: s.seed,
@@ -17929,6 +17958,7 @@ impl Game {
             remembered_under: Vec::new(),
             track_fog_memory: true,
             track_war_ledger: true,
+            planning_role: PlanningRole::Off,
             visibility_batch: VisibilityBatch::default(),
             rng,
             seed,
@@ -32334,6 +32364,14 @@ impl Game {
         self.track_war_ledger = track;
     }
 
+    /// Mark this world as simultaneous-planning scaffolding (or ordinary,
+    /// with [`PlanningRole::Off`]). Only the simultaneous driver calls this,
+    /// and only on worlds it will discard; a committed game never carries a
+    /// role. See [`PlanningRole`] for what each role elides.
+    pub fn set_planning_role(&mut self, role: PlanningRole) {
+        self.planning_role = role;
+    }
+
     /// Run a synchronous action sequence while coalescing full visibility
     /// maintenance at its boundary.
     ///
@@ -32375,6 +32413,14 @@ impl Game {
     }
 
     fn flush_deferred_visibility(&mut self) {
+        if self.planning_role == PlanningRole::Seat {
+            // A planning seat's deliberation is the only reader its private
+            // world will ever have, and it has just finished: the boundary
+            // publish is for observers this world cannot acquire.
+            self.visibility_batch.refresh_all = false;
+            self.visibility_batch.refresh_teams.clear();
+            return;
+        }
         if self.visibility_batch.refresh_all {
             self.visibility_batch.refresh_all = false;
             self.visibility_batch.refresh_teams.clear();
@@ -32388,6 +32434,11 @@ impl Game {
     }
 
     fn flush_deferred_visibility_parallel(&mut self, pool: &WorkPool) {
+        if self.planning_role == PlanningRole::Seat {
+            self.visibility_batch.refresh_all = false;
+            self.visibility_batch.refresh_teams.clear();
+            return;
+        }
         if pool.threads() == 1 || self.players.len() < PARALLEL_VISIBILITY_MIN_PLAYERS {
             self.flush_deferred_visibility();
             return;
@@ -32787,16 +32838,40 @@ impl Game {
         }
     }
 
+    /// The vision passes poll `suzerain_of` for every (viewer, city-state)
+    /// pair — an every-major envoy poll each, so one full refresh makes
+    /// seats × minors × majors envoy queries when asked cold. The answers
+    /// cannot change inside one pass: publishing sight records contacts,
+    /// moments, and remembered ground, never envoys, governors, or a seat's
+    /// life. So install the ordinary suzerain memo for the duration of the
+    /// pass. A `QueryMemo` guard can never be alive here — it pins `&Game`,
+    /// and every caller of a refresh holds `&mut Game` — so the slot is
+    /// always free; the install mirrors the guard's outermost discipline
+    /// anyway so nesting stays sound if that ever changes.
+    fn with_suzerain_memo<R>(&mut self, pass: impl FnOnce(&mut Game) -> R) -> R {
+        let installed = self.query_memo.suzerain.borrow().is_none();
+        if installed {
+            *self.query_memo.suzerain.borrow_mut() = Some(BTreeMap::new());
+        }
+        let result = pass(self);
+        if installed {
+            *self.query_memo.suzerain.borrow_mut() = None;
+        }
+        result
+    }
+
     fn refresh_all_visibility(&mut self) {
         let memory_world = if self.track_fog_memory {
             self.memory_world_stamp()
         } else {
             self.snapshot_world_stamp(0)
         };
-        let mut heights = self.height_field();
-        for pid in 0..self.players.len() {
-            self.refresh_player_visibility_via(pid, &mut heights, memory_world);
-        }
+        self.with_suzerain_memo(|game| {
+            let mut heights = game.height_field();
+            for pid in 0..game.players.len() {
+                game.refresh_player_visibility_via(pid, &mut heights, memory_world);
+            }
+        });
     }
 
     /// Compute current sight from one immutable final position, then publish
@@ -32817,12 +32892,17 @@ impl Game {
         let players = Arc::new(players);
         let worker_players = Arc::clone(&players);
         let mut computed = pool.map_stateful(count, states, move |game, indices| {
+            // Worker clones start with an empty query cache; the same
+            // suzerain answers the serial pass memoizes would otherwise be
+            // re-derived from scratch for every seat this worker computes.
+            let memo = game.query_memo();
             let mut results = indices
                 .map(|index| {
                     let visible = game.player_vision_now(worker_players[index]);
                     (index, (visible, None))
                 })
                 .collect::<Vec<_>>();
+            drop(memo);
             if let Some((_, (_, cache))) = results.last_mut() {
                 *cache = Some(game.vision.into_inner());
             }
@@ -32859,12 +32939,14 @@ impl Game {
         } else {
             self.snapshot_world_stamp(pid)
         };
-        let mut heights = self.height_field();
-        for member in members {
-            if self.players[member].alive {
-                self.refresh_player_visibility_via(member, &mut heights, memory_world);
+        self.with_suzerain_memo(|game| {
+            let mut heights = game.height_field();
+            for member in members {
+                if game.players[member].alive {
+                    game.refresh_player_visibility_via(member, &mut heights, memory_world);
+                }
             }
-        }
+        });
     }
 
     fn refresh_team_visibility_parallel(&mut self, pid: usize, pool: &WorkPool) {
@@ -42480,7 +42562,21 @@ impl Game {
             // Once an action succeeds any one of its prerequisites may have
             // changed, so the next helper must derive a fresh catalog.
             self.query_memo.producible.borrow_mut().clear();
-            if monopoly_control_may_change {
+            // A planning world's EndTurn keeps only what planning reads.
+            // On a seat's private copy the close is the last thing the world
+            // ever does: the plan harvest reads the actions logged before it,
+            // so the monopoly census and the every-seat visibility sweep
+            // below would be for nobody. On the rolling prepare world the
+            // walk is an upkeep-only forward: with fog memory off the sweep's
+            // one gameplay product is contact recording, and the authoritative
+            // commit runs the very same sweep on the real world; a contact
+            // that would first arise from mid-walk upkeep reaches the next
+            // cycle's planning worlds one cycle later instead. Mid-turn
+            // actions keep everything — the planning agent still reads its
+            // own world while deliberating.
+            let discarded_close = matches!(action, Action::EndTurn)
+                && self.planning_role != PlanningRole::Off;
+            if monopoly_control_may_change && !discarded_close {
                 self.note_first_monopoly_moments();
             }
             // The war infobox is live during a turn, not only after End Turn.
@@ -42527,7 +42623,9 @@ impl Game {
                     self.sync_war_log();
                 }
             }
-            self.defer_or_refresh_visibility(pid, matches!(action, Action::EndTurn));
+            if !discarded_close {
+                self.defer_or_refresh_visibility(pid, matches!(action, Action::EndTurn));
+            }
             self.log.push(pid, action.clone());
         }
         r
@@ -53970,6 +54068,27 @@ impl Game {
     }
 
     fn do_end_turn(&mut self) {
+        if self.planning_role == PlanningRole::Seat {
+            // A seat's private planning world is discarded the moment its
+            // plan is harvested, and the harvest reads only the actions
+            // logged before this close. All that must still happen is the
+            // cursor movement the planning agent's own turn loop observes.
+            let n = self.players.len();
+            for i in 1..=n {
+                let cand = (self.current + i) % n;
+                if self.players[cand].alive {
+                    if cand != self.current {
+                        let wrapped = cand <= self.current;
+                        self.current = cand;
+                        if wrapped {
+                            self.turn += 1;
+                        }
+                    }
+                    return;
+                }
+            }
+            return;
+        }
         // Strength is part of the live war ledger, not just its opening and
         // closing snapshots. Refresh after every civilization has completed
         // its actions so the next observation sees the latest total and peak.
@@ -53999,6 +54118,15 @@ impl Game {
         self.players[nxt].turn_units.clear();
         self.current = nxt;
         if wrapped {
+            if self.planning_role == PlanningRole::Rolling {
+                // The prepare walk's loop condition is `turn == cycle_turn`:
+                // wrapping out of the cycle is the walk's exit, and the
+                // rolling world is discarded on it. The world systems, the
+                // next turn's upkeep, and the score check below would be
+                // computed for a world nothing will ever read again.
+                self.turn += 1;
+                return;
+            }
             self.turn += 1;
             self.process_climate();
             self.process_disasters();

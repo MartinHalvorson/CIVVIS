@@ -5911,6 +5911,17 @@ end
 -- `plot:GetResourceType()` exposes the map's underlying resource even when the
 -- normal UI still shows bare ground. Exporting that value let the planner use
 -- Niter, Coal, Oil and Antiquity Sites before the player could know they exist.
+--
+-- ⚠ `IsResourceVisible` ALONE IS NOT THE GATE, and this was measured, not
+-- reasoned: on run civvis-20260807T162004Z the seat held 37 techs with
+-- Refining not among them, and the export still carried seven RESOURCE_OIL
+-- plots — `civ6_mirror_check` flagged every one ("raw resource leak(s) hidden
+-- by CIVVIS"), while the shipped database and data/resources.json agree oil
+-- reveals with TECH_REFINING. So on this build the engine call answers true
+-- for a resource the seat has not unlocked. The database's own PrereqTech /
+-- PrereqCivic columns are checked HERE as well, which cannot be wrong about
+-- reveal rules regardless of what the engine call means by "visible" — and
+-- the engine call is kept, because it also hides game-mode-disabled rows.
 local function visibleResourceName(player, plot)
 	local index = try(function() return plot:GetResourceType(); end, -1);
 	if index == nil or index < 0 then return nil; end
@@ -5920,6 +5931,20 @@ local function visibleResourceName(player, plot)
 		if row == nil or resources == nil
 			or not resources:IsResourceVisible(row.Hash) then
 			return nil;
+		end
+		if row.PrereqTech ~= nil then
+			local tech = GameInfo.Technologies[row.PrereqTech];
+			local techs = player:GetTechs();
+			if tech == nil or techs == nil or not techs:HasTech(tech.Index) then
+				return nil;
+			end
+		end
+		if row.PrereqCivic ~= nil then
+			local civic = GameInfo.Civics[row.PrereqCivic];
+			local culture = player:GetCulture();
+			if civic == nil or culture == nil or not culture:HasCivic(civic.Index) then
+				return nil;
+			end
 		end
 		return row.ResourceType;
 	end);
