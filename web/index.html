@@ -595,12 +595,13 @@
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px;
   }
   /* The lenses come in two sets — the global whole-map perspectives and the
-     per-district adjacency forecasts — switched by this row of tabs above
+     per-district adjacency forecasts — switched by this row of tabs beneath
      them. One set shows at a time; a dot on a tab marks the set holding the
-     active lens while the other set is displayed. */
+     active lens while the other set is displayed. The row sits at the foot of
+     the drawer, next to the dock header the lenses open from. */
   #map-lens-sets {
-    display: flex; gap: 3px; margin-bottom: 6px; padding-bottom: 6px;
-    border-bottom: 1px solid #ffffff0d;
+    display: flex; gap: 3px; margin-top: 6px; padding-top: 6px;
+    border-top: 1px solid #ffffff0d;
   }
   #map-lens-sets[hidden] { display: none; }
   #map-lens-sets button { flex: 1 1 0; display: block; height: 26px; text-align: center; }
@@ -4570,18 +4571,6 @@
           </button>
           <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Display Settings" title="Hide map lenses · restore in Display Settings">✕</button>
         </div>
-        <div id="map-lens-sets" role="tablist" aria-label="Map lens sets" hidden>
-          <button id="lens-set-global" type="button" role="tab" aria-selected="true"
-            aria-controls="map-lens-strip" data-lens-set="global"
-            title="Global lenses — whole-map perspectives">
-            <span class="map-lens-label">Global</span>
-          </button>
-          <button id="lens-set-district" type="button" role="tab" aria-selected="false"
-            aria-controls="district-lens-list" data-lens-set="district"
-            title="District adjacency lenses — per-district yield forecasts">
-            <span class="map-lens-label">District adjacency</span>
-          </button>
-        </div>
         <div id="map-lens-strip" role="none">
           <button type="button" data-map-lens="continent" aria-pressed="false"
             title="Continent lens — geographic continent regions">
@@ -4635,6 +4624,18 @@
           </button>
         </div>
         <div id="district-lens-list" role="group" aria-label="District adjacency lenses" hidden></div>
+        <div id="map-lens-sets" role="tablist" aria-label="Map lens sets" hidden>
+          <button id="lens-set-global" type="button" role="tab" aria-selected="true"
+            aria-controls="map-lens-strip" data-lens-set="global"
+            title="Global lenses — whole-map perspectives">
+            <span class="map-lens-label">Global</span>
+          </button>
+          <button id="lens-set-district" type="button" role="tab" aria-selected="false"
+            aria-controls="district-lens-list" data-lens-set="district"
+            title="District adjacency lenses — per-district yield forecasts">
+            <span class="map-lens-label">District adjacency</span>
+          </button>
+        </div>
       </div>
     </div>
   </details>
