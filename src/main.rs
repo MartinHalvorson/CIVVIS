@@ -789,6 +789,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// is the shipped expression minus zero — the anchor's campaign ordering is
 /// byte-identical by construction. Compatibility re-pin, not an Elo-protocol
 /// change.
+/// The wonder-ring settle credit (#1378) adds one term to
+/// `settle_value_visible`, behind `BasicAi::wonder_ring_settle_value`. Both
+/// constructors leave the flag false and only `enable_live_bridge` sets it,
+/// so under the anchor `natural_wonder_ring_value` returns 0.0 on its first
+/// line and the added `value += 0.0` cannot move any site score — and the
+/// anchor reaches `settle_value_visible` only through constructors that keep
+/// `settlement_safety` true, which `legacy()` does not. The anchor's settle
+/// ordering is byte-identical by construction. Compatibility re-pin, not an
+/// Elo-protocol change.
 #[cfg(test)]
 /// Merging `origin/main` into this branch brings both sides' live-bridge
 /// treatments into one `BasicAi`/`AdvancedAi`. Every one of them is off in both
@@ -802,10 +811,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// rated game has been played on, so both guards reduce to a `None` test and
 /// the anchor's decision stream is identical by construction. The same shape
 /// as the #1399 re-pin, with the objective as the flag. Pinned over the
-/// merge with main's own re-pins for the live-bridge and siege arms, which
-/// are off in both constructors as their entries above record.
-/// Compatibility re-pin, not an Elo-protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x708d_8ab8_e525_dc27;
+/// merge with main's own re-pins, every one off in both constructors as
+/// their entries above record. Compatibility re-pin, not an Elo-protocol
+/// change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x57dc_924c_50e3_308f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
