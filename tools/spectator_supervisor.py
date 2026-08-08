@@ -1086,6 +1086,20 @@ def manual_new_game_request(
     return mode, settings, paused
 
 
+def victory_verdict(state: dict[str, Any]) -> str:
+    """How a finished game's result is denoted.
+
+    An ordinary result is named by its victory type -- a "science victory". A
+    Mercy Rule ending is denoted by the notation the engine composed for it,
+    "Mercy Rule - Science", naming the open victory lane the board was still
+    being decided on when the odds crossed; that notation is the whole verdict
+    and takes no "victory" suffix.
+    """
+    if state.get("victory_type") == "mercy":
+        return state.get("victory_label") or "Mercy Rule"
+    return f"{state.get('victory_type') or 'unknown'} victory"
+
+
 def result_standings(state: dict[str, Any]) -> str | None:
     """Format a compact durable record before the result server is retired."""
     players = [
@@ -2146,7 +2160,7 @@ def main() -> int:
                     finished_turn = state.get("turn")
                 log(
                     f"game finished on turn {finished_turn} "
-                    f"({state.get('victory_type') or 'unknown'} victory); checking for updates"
+                    f"({victory_verdict(state)}); checking for updates"
                 )
                 standings = result_standings(state)
                 if standings:

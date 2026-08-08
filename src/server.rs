@@ -3027,7 +3027,7 @@ impl Session {
                 }
             })
             .collect();
-        let victory = self.game.victory_type.clone().unwrap_or_default();
+        let victory = self.game.victory_label().unwrap_or_default();
         let Some(updated) = crate::league::record_ranked_game(
             &dir,
             &seats,
@@ -4434,6 +4434,11 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "turn": game.turn,
                     "winner": game.winner,
                     "victory_type": game.victory_type,
+                    // How that result is denoted, so a supervisor reading the
+                    // cheap endpoint can report a Mercy Rule ending by the
+                    // lane it ended on rather than by the bare word. Same
+                    // field, same meaning, as the one `/state` publishes.
+                    "victory_label": game.victory_label(),
                     "spectate": session.params.spectate,
                     // Published frames no viewer ever drew. At Blitz and
                     // slower this counts player turns, not only round turns.

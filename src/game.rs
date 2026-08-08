@@ -16444,11 +16444,56 @@ impl PlayOnMode {
 pub struct Decided {
     pub winner: usize,
     pub victory_type: String,
+    /// The lanes a Mercy Rule verdict named, carried off the live game so the
+    /// extension can still say what the result it is playing past was decided
+    /// on. Empty for every other victory type, and in saves written before the
+    /// notation existed.
+    #[serde(default)]
+    pub mercy_lanes: Vec<String>,
     /// The turn the victory was declared on, not the turn play resumed.
     pub turn: u32,
     /// Whether this continuation stops at the next distinct result or never.
     #[serde(default)]
     pub mode: PlayOnMode,
+}
+
+impl Decided {
+    /// How this past result is written down and shown. See
+    /// [`Game::victory_label`].
+    pub fn victory_label(&self) -> String {
+        if self.victory_type == MERCY_VICTORY {
+            mercy_label(&self.mercy_lanes)
+        } else {
+            self.victory_type.clone()
+        }
+    }
+}
+
+/// The victory type a Mercy Rule ending is recorded under. It answers to the
+/// setup option rather than the victory checkboxes, so it is not one of
+/// [`VictoryConditions::NAMES`].
+pub const MERCY_VICTORY: &str = "mercy";
+
+/// The notation a Mercy Rule verdict is written and displayed under.
+///
+/// The rule stops a game the victory conditions were still deciding, so the
+/// bare word "mercy" says only that it ended early — never what it ended on.
+/// The notation names the lane the winner led when the odds crossed:
+/// `Mercy Rule - Science`, and both lanes joined when a seat led two at once.
+/// A seat that crossed on standing alone, with no progress in any open lane,
+/// keeps the bare rule.
+///
+/// The joiner is deliberately not a comma. This exact string is written into
+/// the `victory` column of the league's `matches.csv`, and both readers of
+/// that file split its rows on commas (`league::backfill_win_profiles` and
+/// [`crate::rating::parse_matches_csv`]), so a comma here would shift every
+/// later column and make the whole history unparseable.
+pub fn mercy_label(lanes: &[String]) -> String {
+    if lanes.is_empty() {
+        return "Mercy Rule".to_string();
+    }
+    let named: Vec<String> = lanes.iter().map(|lane| pretty(lane)).collect();
+    format!("Mercy Rule - {}", named.join(" + "))
 }
 
 /// Victory paths that can end the game. All paths are enabled by default so
@@ -16659,6 +16704,13 @@ pub struct Game {
     /// natural end.
     #[serde(default)]
     pub mercy_rule: Option<f64>,
+    /// The open victory lanes the Mercy Rule's winner led when the odds
+    /// crossed, read at the crossing because the board that produced them
+    /// stops changing the moment the game does. Empty for every other ending
+    /// and for a mercy crossing on a seat with no race progress at all; see
+    /// [`mercy_label`] for what it is written as.
+    #[serde(default)]
+    pub mercy_lanes: Vec<String>,
     /// How many distinct victory types a winner must hold. Zero or one — and
     /// every save written before the option existed — is the stock game; see
     /// [`Self::effective_required_victories`].
@@ -17140,6 +17192,8 @@ struct GameSer {
     #[serde(default)]
     mercy_rule: Option<f64>,
     #[serde(default)]
+    mercy_lanes: Vec<String>,
+    #[serde(default)]
     required_victory_types: usize,
     #[serde(default)]
     tactics: TacticsRules,
@@ -17309,6 +17363,7 @@ impl From<GameSer> for Game {
             decided: s.decided,
             victory_conditions: s.victory_conditions,
             mercy_rule: s.mercy_rule,
+            mercy_lanes: s.mercy_lanes,
             required_victory_types: s.required_victory_types,
             tactics: s.tactics,
             victories_won: s.victories_won,
@@ -17499,6 +17554,7 @@ impl From<Game> for GameSer {
             decided: g.decided,
             victory_conditions: g.victory_conditions,
             mercy_rule: g.mercy_rule,
+            mercy_lanes: g.mercy_lanes,
             required_victory_types: g.required_victory_types,
             tactics: g.tactics,
             victories_won: g.victories_won,
@@ -17841,6 +17897,7 @@ impl Game {
             decided: None,
             victory_conditions: VictoryConditions::default(),
             mercy_rule,
+            mercy_lanes: Vec::new(),
             required_victory_types,
             tactics,
             victories_won: BTreeMap::new(),
@@ -53776,7 +53833,17 @@ impl Game {
             if self.winner.is_none() {
                 if let Some(threshold) = self.mercy_rule {
                     if let Some(leader) = crate::odds::mercy_leader(self, threshold) {
-                        self.set_winner(leader, "mercy");
+                        // The lanes go on before the crown, not after it: the
+                        // verdict note, the league record and the finish
+                        // screen all read the composed label, and the board
+                        // they are describing is the one standing at this
+                        // crossing. Cleared again if the crown is refused —
+                        // a play-on extension can decline this very result —
+                        // so no unrelated later ending inherits them.
+                        self.mercy_lanes = self.leading_victory_lanes(leader);
+                        if !self.set_winner(leader, MERCY_VICTORY) {
+                            self.mercy_lanes.clear();
+                        }
                     }
                 }
             }
@@ -56928,6 +56995,74 @@ impl Game {
         .fold(0.0_f64, f64::max)
     }
 
+    /// Which open victory lanes `pid` is furthest along, by the same race
+    /// progress [`Self::victory_threat`] takes the maximum of.
+    ///
+    /// This is what the Mercy Rule's notation names, so it answers with the
+    /// lanes rather than the number, and with every lane tied at the front
+    /// rather than one of them: a seat holding two races level is a seat the
+    /// notation has two things to say about. Lanes are read through
+    /// [`Self::victory_lane_open`], so an arena — where four of the six have
+    /// nowhere to happen — can only ever be named for the battle it is
+    /// actually deciding. Score is left out for the reason it is left out of
+    /// the race term in `odds`: it is the standing when the clock runs out,
+    /// not a race anybody is running.
+    ///
+    /// A seat with no progress in any open lane gets an empty answer. That is
+    /// a real state — a leader can cross the odds threshold on standing and
+    /// tempo alone — and the notation says so by naming no lane.
+    pub fn leading_victory_lanes(&self, pid: usize) -> Vec<String> {
+        if !self.victory_eligible(pid) {
+            return Vec::new();
+        }
+        let leading_score = self
+            .players
+            .iter()
+            .filter(|p| !p.is_minor && !p.is_barbarian)
+            .map(|p| self.team_score_rank_key(p.id).0)
+            .max()
+            .unwrap_or(0);
+        let races = self.victory_races(pid, leading_score);
+        let lanes = [
+            ("science", races.science),
+            ("culture", races.culture),
+            ("religious", races.religious),
+            ("diplomatic", races.diplomatic),
+            ("domination", races.domination),
+        ];
+        let open = || {
+            lanes
+                .iter()
+                .filter(|(lane, _)| self.victory_lane_open(lane))
+        };
+        // `total_cmp` rather than `==`: the same ordering the rest of the
+        // engine compares race progress with, and the tie this looks for is
+        // an exact one — two lanes computed to the same value, not two values
+        // that happen to be close.
+        let best = open().map(|(_, progress)| *progress).fold(0.0, f64::max);
+        if best <= 0.0 {
+            return Vec::new();
+        }
+        open()
+            .filter(|(_, progress)| progress.total_cmp(&best) == std::cmp::Ordering::Equal)
+            .map(|(lane, _)| (*lane).to_string())
+            .collect()
+    }
+
+    /// How this game's result is written down and shown: the victory type,
+    /// except that a Mercy Rule ending carries the lane notation instead of
+    /// the bare word. `None` while no result stands — including a world
+    /// playing on past one, which keeps its verdict in
+    /// [`Decided::victory_label`].
+    pub fn victory_label(&self) -> Option<String> {
+        let victory_type = self.victory_type.as_deref()?;
+        Some(if victory_type == MERCY_VICTORY {
+            mercy_label(&self.mercy_lanes)
+        } else {
+            victory_type.to_string()
+        })
+    }
+
     fn check_domination(&mut self) {
         let majors: Vec<usize> = self
             .players
@@ -57050,6 +57185,10 @@ impl Game {
         self.decided = Some(Decided {
             winner,
             victory_type: victory_type.clone(),
+            // Moved rather than copied: the extension is a live, undecided
+            // world again, and a later ending of its own must not be labelled
+            // with the lanes that ended the game before it.
+            mercy_lanes: std::mem::take(&mut self.mercy_lanes),
             turn: decided_on,
             mode,
         });
@@ -57168,14 +57307,17 @@ impl Game {
         } else {
             self.civ_name(pid)
         };
+        // A Mercy Rule ending is announced by its notation rather than called
+        // a "mercy victory": the rule is a concession, and what there is to
+        // report is the lane the board was being decided on when it fired.
+        let verdict = if vtype == MERCY_VICTORY {
+            format!("won by {}", mercy_label(&self.mercy_lanes))
+        } else {
+            format!("won a {vtype} victory")
+        };
         let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
         for seat in seats {
-            self.note(
-                seat,
-                "General",
-                format!("{winner} won a {vtype} victory"),
-                None,
-            );
+            self.note(seat, "General", format!("{winner} {verdict}"), None);
         }
         true
     }
@@ -57189,7 +57331,7 @@ impl Game {
             && (self.victory_lane_open(vtype)
                 // Mercy answers to its own setup option, not the victory
                 // checkboxes: it is a concession rule, not a victory lane.
-                || (vtype == "mercy" && self.mercy_rule.is_some()))
+                || (vtype == MERCY_VICTORY && self.mercy_rule.is_some()))
         {
             // Require-N: short of the requirement, a victory type banks a
             // milestone instead of ending the world. The set dedupes, because
@@ -57197,7 +57339,7 @@ impl Game {
             // while their condition holds. Mercy stays terminal: it is a
             // judgement about the whole game, not one lane of it.
             let required = self.effective_required_victories();
-            if vtype != "mercy" && required > 1 {
+            if vtype != MERCY_VICTORY && required > 1 {
                 let banked = {
                     let types = self.victories_won.entry(pid).or_default();
                     if !types.insert(vtype.to_string()) {
@@ -63161,6 +63303,194 @@ mod victory_conditions {
         assert_eq!(restored.mercy_rule, None);
         assert_eq!(restored.effective_required_victories(), 1);
         assert!(restored.victories_won.is_empty());
+    }
+
+    #[test]
+    fn the_mercy_notation_names_its_lanes_and_never_holds_a_comma() {
+        assert_eq!(mercy_label(&[]), "Mercy Rule");
+        assert_eq!(mercy_label(&["science".to_string()]), "Mercy Rule - Science");
+        assert_eq!(
+            mercy_label(&["science".to_string(), "domination".to_string()]),
+            "Mercy Rule - Science + Domination"
+        );
+        // The joiner is load-bearing. This string is written into the
+        // `victory` column of the league's `matches.csv`, and both readers of
+        // that file cut its rows on commas, so one comma here would shift
+        // every later column and take the whole recorded history with it.
+        for lanes in [
+            Vec::new(),
+            vec!["religious".to_string()],
+            vec!["culture".to_string(), "diplomatic".to_string()],
+            VictoryConditions::NAMES
+                .iter()
+                .map(|name| (*name).to_string())
+                .collect(),
+        ] {
+            let label = mercy_label(&lanes);
+            assert!(!label.contains(','), "{label}");
+        }
+    }
+
+    #[test]
+    fn the_leading_lanes_are_the_open_races_tied_at_the_front() {
+        let mut game = game_with_capitals(2, 91_506, 300);
+        // A fresh two-seat board: each seat holds one of the two capitals, so
+        // Domination alone reads 50% and no other race has started.
+        assert_eq!(game.leading_victory_lanes(0), vec!["domination".to_string()]);
+
+        // Two science projects put Science at 45%, behind Domination. A lane
+        // that is merely under way is not the lane the game is being decided
+        // on, and is not named.
+        for project in ["launch_earth_satellite", "launch_moon_landing"] {
+            game.players[0].science_projects.insert(project.to_string());
+        }
+        assert_eq!(game.leading_victory_lanes(0), vec!["domination".to_string()]);
+
+        // A third puts Science at 65% and out in front on its own.
+        game.players[0]
+            .science_projects
+            .insert("launch_mars_colony".to_string());
+        assert_eq!(game.leading_victory_lanes(0), vec!["science".to_string()]);
+
+        // A lane the lobby switched off is not a lane this world is deciding,
+        // however far along the seat happens to be in it.
+        game.victory_conditions.science = false;
+        assert_eq!(game.leading_victory_lanes(0), vec!["domination".to_string()]);
+
+        // Level on two open lanes is two things to say, not a choice between
+        // them: ten of the twenty Diplomatic points is exactly the 50% the
+        // held capital reads.
+        game.players[0].dvp = DIPLOMATIC_VICTORY_POINTS / 2;
+        assert_eq!(
+            game.leading_victory_lanes(0),
+            vec!["diplomatic".to_string(), "domination".to_string()]
+        );
+
+        // A seat can cross the odds threshold on standing and tempo with no
+        // race under way at all. That is a real board, and the notation says
+        // so by naming no lane rather than inventing one.
+        game.victory_conditions.diplomatic = false;
+        game.victory_conditions.domination = false;
+        assert!(game.leading_victory_lanes(0).is_empty());
+        assert_eq!(mercy_label(&game.leading_victory_lanes(0)), "Mercy Rule");
+    }
+
+    #[test]
+    fn a_mercy_ending_is_denoted_by_the_lane_it_ended_on() {
+        let mut game = game_with_capitals(2, 91_507, 50);
+        game.mercy_rule = Some(0.0);
+        play_to_the_end(&mut game);
+
+        // The recorded type is unchanged — the engine still answers "mercy",
+        // and every rule that keys off it keeps working. What changed is how
+        // the result is written down.
+        assert_eq!(game.victory_type.as_deref(), Some(MERCY_VICTORY));
+        assert_eq!(
+            game.victory_label().as_deref(),
+            Some("Mercy Rule - Domination"),
+            "a floor of zero concedes on the opening board, where the seat's \
+             own capital is the only race anybody has begun"
+        );
+
+        // The seats are told the notation, not that somebody won a "mercy
+        // victory" — the rule is a concession, and the lane is the news.
+        let declared = game
+            .events
+            .iter()
+            .rev()
+            .find(|event| event.text.contains("Mercy Rule - Domination"))
+            .expect("the chronicle records the notation");
+        assert!(
+            declared.text.contains("won by"),
+            "unexpected verdict: {}",
+            declared.text
+        );
+        assert!(!declared.text.contains("mercy victory"));
+
+        // The notation is composed, never stored, so a save carries the lanes
+        // and rebuilds the same string.
+        let encoded = serde_json::to_value(&game).unwrap();
+        let restored: Game = serde_json::from_value(encoded.clone()).unwrap();
+        assert_eq!(restored.mercy_lanes, game.mercy_lanes);
+        assert_eq!(restored.victory_label(), game.victory_label());
+
+        // A save written before the notation existed has no lanes to name and
+        // keeps the bare rule rather than failing to load.
+        let mut legacy = encoded;
+        legacy.as_object_mut().unwrap().remove("mercy_lanes");
+        let restored: Game = serde_json::from_value(legacy).unwrap();
+        assert!(restored.mercy_lanes.is_empty());
+        assert_eq!(restored.victory_label().as_deref(), Some("Mercy Rule"));
+
+        // "One more turn" hands the verdict to `decided` and leaves the live
+        // world with no lanes of its own, so a later ending of the extension
+        // cannot inherit the notation of the game before it.
+        let label = game.victory_label().unwrap();
+        assert!(game.play_on(PlayOnMode::UntilNextVictory));
+        assert!(game.mercy_lanes.is_empty());
+        assert_eq!(game.decided.as_ref().unwrap().victory_label(), label);
+    }
+
+    /// A hand-built board is the easy case. This crosses on played-out worlds,
+    /// where the lanes are whatever the game made them, and holds every
+    /// resulting notation to its invariants.
+    ///
+    /// The rung is well below the shipped ladder, and deliberately so. The
+    /// measurement in docs/ADJUDICATION.md is that 95% arrives only a handful
+    /// of turns before the rules end the game anyway; measured here, no seed
+    /// crosses anything at or above 0.45 inside a test-sized turn budget, and
+    /// the shipped rungs are what `civvis odds-audit` exists to exercise at
+    /// full length. What is under test is the notation on boards nobody wrote
+    /// by hand, and a low rung is how those get reached at all.
+    #[test]
+    fn played_out_mercy_endings_are_all_well_formed_notations() {
+        let mut crossings = 0;
+        for seed in 0..12u64 {
+            let mut game = game_with_capitals(3, 91_600 + seed, 120);
+            game.mercy_rule = Some(0.35);
+            play_to_the_end(&mut game);
+            if game.victory_type.as_deref() != Some(MERCY_VICTORY) {
+                continue;
+            }
+            crossings += 1;
+            let label = game.victory_label().expect("a crowned game has a label");
+            assert_eq!(label, mercy_label(&game.mercy_lanes));
+            assert!(label.starts_with("Mercy Rule"), "seed {seed}: {label}");
+            // The invariant the league's comma-cut history depends on, held
+            // against real boards rather than a hand-written lane list.
+            assert!(!label.contains(','), "seed {seed}: {label}");
+            let winner = game.winner.expect("a mercy ending has a winner");
+            for lane in &game.mercy_lanes {
+                assert!(
+                    game.victory_conditions.is_enabled(lane),
+                    "seed {seed}: named a lane this world switched off: {lane}"
+                );
+                assert_ne!(lane, "score", "Score is a standing, not a race");
+            }
+            assert_eq!(
+                game.mercy_lanes,
+                game.leading_victory_lanes(winner),
+                "seed {seed}: the lanes are the winner's, read at the crossing"
+            );
+        }
+        assert_eq!(
+            crossings, 12,
+            "every seed should concede at a rung this low; a run that stopped \
+             crossing is testing nothing, not passing"
+        );
+    }
+
+    #[test]
+    fn an_ordinary_victory_is_still_written_as_its_bare_type() {
+        let mut game = game_with_capitals(2, 91_508, 300);
+        assert_eq!(game.victory_label(), None, "a live game has no verdict");
+        assert!(game.set_winner(0, "science"));
+        assert_eq!(game.victory_label().as_deref(), Some("science"));
+        assert!(game.mercy_lanes.is_empty(), "only mercy carries lanes");
+        assert!(game
+            .events
+            .iter()
+            .any(|event| event.text.contains("won a science victory")));
     }
 
     #[test]
