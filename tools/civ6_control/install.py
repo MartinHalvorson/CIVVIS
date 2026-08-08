@@ -179,6 +179,61 @@ end tell'''
         raise PermissionError(f"Finder could not remove {path}: {detail}")
 
 
+def _finder_put_file(source: Path, target: Path) -> None:
+    """Land one staged file at `target` through Finder when direct writes 403.
+
+    The duplicate keeps the SOURCE's name, so the caller stages the file under
+    exactly `target.name`. Delete-then-duplicate rather than a replacing copy:
+    Finder's `duplicate ... with replacing` raises its own confirmation sheet
+    on some macOS builds, and a sheet nobody answers is this project's oldest
+    failure mode.
+    """
+    script = f'''tell application "Finder"
+    if exists (POSIX file {json.dumps(str(target))}) then
+        delete (POSIX file {json.dumps(str(target))} as alias)
+    end if
+    duplicate (POSIX file {json.dumps(str(source))} as alias) to (POSIX file {json.dumps(str(target.parent))} as alias)
+end tell'''
+    result = subprocess.run(
+        ["osascript", "-e", script], capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip()
+        raise PermissionError(f"Finder could not write {target}: {detail}")
+
+
+def clear_run_tag() -> bool:
+    """Blank the installed config's RunTag; True if a tag was actually cleared.
+
+    A tag with no game behind it describes nothing, and `gamelock.foreign_run`
+    refuses the NEXT attempt over it — so the climb clears it at teardown. The
+    climb used to rewrite config.json in place, which fails on hosts where the
+    game's TCC rule lets Finder into the bundle and refuses Terminal
+    ("Operation not permitted", measured at the end of both 2026-08-07 games).
+    Owned here, beside install(), so the write path and its Finder fallback
+    cannot drift apart from the module that writes this file everywhere else.
+    """
+    config = install_dir() / "config.json"
+    if not config.is_file():
+        return False
+    data = json.loads(config.read_text())
+    if data.get("RunTag") is None:
+        return False
+    data["RunTag"] = None
+    text = json.dumps(data, indent=2, sort_keys=True)
+    try:
+        config.write_text(text)
+    except PermissionError:
+        staging = Path(tempfile.mkdtemp(prefix="civvis-tagclear-"))
+        try:
+            staged = staging / config.name
+            staged.write_text(text)
+            _finder_put_file(staged, config)
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+    return True
+
+
 def _drop_mod_index() -> None:
     mod_db = env.user_dir() / "Mods.sqlite"
     try:

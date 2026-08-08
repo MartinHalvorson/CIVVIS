@@ -163,15 +163,13 @@ def teardown() -> None:
     # wanted here — not a better-timed check.
     try:
         # Asked of `install`, the module that WRITES this file, so the two cannot
-        # disagree about where it lives.
+        # disagree about where it lives — or about how to write it. The rewrite
+        # used to happen here directly and failed at the end of every game on a
+        # host whose TCC rule admits Finder to the bundle and refuses Terminal;
+        # install.clear_run_tag carries the same Finder fallback install() uses.
         from civ6_control import install  # noqa: PLC0415
-        config = install.install_dir() / "config.json"
-        if config.is_file():
-            data = json.loads(config.read_text())
-            if data.get("RunTag") is not None:
-                data["RunTag"] = None
-                config.write_text(json.dumps(data, indent=1))
-                print("[teardown] cleared the installed run tag", flush=True)
+        if install.clear_run_tag():
+            print("[teardown] cleared the installed run tag", flush=True)
     except (OSError, json.JSONDecodeError) as exc:
         # Never fatal: a batch that cannot tidy up must still be able to run.
         print(f"[teardown] could not clear the run tag: {exc}", flush=True)
