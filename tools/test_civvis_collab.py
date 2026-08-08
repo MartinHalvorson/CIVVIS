@@ -305,6 +305,63 @@ class FreshnessTests(unittest.TestCase):
         self.assertIn("--repo", command)
         self.assertEqual(payload["StartInterval"], collab.FRESHNESS_INTERVAL_SECONDS)
 
+    def test_windows_service_uses_a_hidden_wscript_launcher(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root = base / "repo with spaces"
+            worker = root / ".git" / "managed.py"
+            launcher = root / ".git" / "run-hidden.vbs"
+
+            with patch.object(collab, "main_worktree", return_value=root):
+                launcher_data = collab.windows_freshness_launcher_data(root, worker)
+            launcher_text = launcher_data.decode("utf-16")
+            python_command = subprocess.list2cmdline(
+                (
+                    sys.executable,
+                    str(worker),
+                    "refresh",
+                    "--scheduled",
+                    "--repo",
+                    str(root),
+                )
+            )
+            self.assertIn(
+                f'command = "{python_command.replace(chr(34), chr(34) * 2)}"',
+                launcher_text,
+            )
+            self.assertIn("shell.Run(command, 0, True)", launcher_text)
+            self.assertIn(collab.FRESHNESS_MARKER, launcher_text)
+
+            with patch.object(
+                collab.shutil,
+                "which",
+                return_value=r"C:\Windows\System32\wscript.exe",
+            ):
+                task_command = collab.windows_freshness_task_command(launcher)
+
+        self.assertEqual(
+            task_command,
+            subprocess.list2cmdline(
+                (
+                    r"C:\Windows\System32\wscript.exe",
+                    "//B",
+                    str(launcher),
+                )
+            ),
+        )
+
+    def test_windows_service_fails_closed_without_wscript(self):
+        with patch.object(collab.shutil, "which", return_value=None):
+            with self.assertRaisesRegex(collab.CommandError, "wscript.exe is missing"):
+                collab.windows_freshness_task_command(Path("run-hidden.vbs"))
+
+    def test_utf16_scheduler_definition_is_recognized_as_managed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "run-hidden.vbs"
+            content = f"' {collab.FRESHNESS_MARKER}\nmanaged\n".encode("utf-16")
+            self.assertTrue(collab.write_managed_service(path, content))
+            self.assertFalse(collab.write_managed_service(path, content))
+
     def test_existing_managed_worker_self_updates_from_remote_main(self):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
