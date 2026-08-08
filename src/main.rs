@@ -721,8 +721,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `x`, `!arena && y` is `y`, and the weight pair is returned unchanged), so
 /// the anchor's decisions are byte-identical. Reviewed compatibility re-pin,
 /// not an Elo-protocol change.
+/// #1384 teaches the joint planner withdrawals and handoff steps and keeps the
+/// per-unit movers off units the plan moved without a blow
+/// (`tactics_withdrawn`). `AdvancedAi::legacy()` leaves `joint_tactics` false,
+/// so the plan never runs, the set stays empty, and the anchor's only new
+/// executable is a set-membership test against an empty set — the same shape
+/// #1363 re-pinned. Compatibility re-pin over the #1382 merge.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x44b4_71b2_3212_833b;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe81c_e694_207d_6364;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
