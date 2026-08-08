@@ -1431,6 +1431,10 @@ pub fn build(spec: &Position, seed: u64) -> Option<Game> {
             best_of: 1,
             unique_units: false,
             fog: false,
+            // No flag either: a position is a posed engagement, and a flag
+            // would let a walk to a tile end it before the engagement said
+            // anything.
+            flag: false,
             // The arena's own draw clock, set to the longest it offers so it
             // can never end a position before the ledger's deadline does. A
             // position is read at `spec.turns` and never asks who "won", so

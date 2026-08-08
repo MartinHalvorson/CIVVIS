@@ -3975,6 +3975,9 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(on) = request["tactics_fog"].as_bool() {
         p.tactics.fog = on;
     }
+    if let Some(on) = request["tactics_flag"].as_bool() {
+        p.tactics.flag = on;
+    }
     p.tactics = p.tactics.sanitized();
     // Advanced clients can still deliberately override individual stock
     // settings by sending them alongside num_players.
@@ -7911,6 +7914,15 @@ mod tests {
             "the explicit general override remains authoritative"
         );
 
+        // The flag objective travels the same request, and the sanitiser
+        // takes the city out of the battle before the world is built.
+        let race = ask(json!({
+            "num_players": 2, "map_script": "battlefield",
+            "tactics_flag": true, "tactics_cities": 1,
+        }));
+        assert!(race.tactics.flag);
+        assert_eq!(race.tactics.cities, 0, "a flag battle always plays city-less");
+
         // Silence keeps the stock setup: one battle, and the identical
         // roster on both sides, which is what the mode claims to be.
         let stock = ask(json!({"num_players": 2, "map_script": "battlefield"}));
@@ -7918,6 +7930,7 @@ mod tests {
         assert_eq!(stock.tactics.turn_limit, 100);
         assert_eq!(stock.max_turns, 100);
         assert!(!stock.tactics.unique_units);
+        assert!(!stock.tactics.flag, "cities decide a battle unless the flag is asked for");
         assert_eq!(stock.tactics, TacticsRules::default());
     }
 
@@ -9409,14 +9422,20 @@ mod tests {
                 arena.1
             );
         }
-        // Unique units and the fog are the two arena settings that are a
-        // yes/no rather than a figure, so they travel as booleans rather than
-        // through `Number`.
+        // Unique units, the fog and the flag are the arena settings that are
+        // a yes/no rather than a figure, so they travel as booleans rather
+        // than through `Number`.
         assert!(EMBEDDED_INDEX.contains("id=\"tacticsuniqueunits\""));
         assert!(EMBEDDED_INDEX
             .contains("tactics_unique_units: readSetting(\"tacticsuniqueunits\") === \"1\","));
         assert!(EMBEDDED_INDEX.contains("id=\"tacticsfog\""));
         assert!(EMBEDDED_INDEX.contains("tactics_fog: readSetting(\"tacticsfog\") === \"1\","));
+        assert!(EMBEDDED_INDEX.contains("id=\"tacticsflag\""));
+        assert!(EMBEDDED_INDEX.contains("tactics_flag: readSetting(\"tacticsflag\") === \"1\","));
+        // The viewer knows where the flag stands and what taking it is
+        // called; a lobby that can ask for the objective must also show it.
+        assert!(EMBEDDED_INDEX.contains("state?.arena_flag"));
+        assert!(EMBEDDED_INDEX.contains("if (type === \"flag\") return \"Captured the Flag\";"));
         // Unfogged is the default: an arena has always shown both commanders
         // the whole field, and the option is the deliberate departure.
         assert!(EMBEDDED_INDEX.contains("<option value=\"0\" selected>Off · the whole field</option>"));
