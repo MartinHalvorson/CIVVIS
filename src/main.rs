@@ -759,7 +759,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// flag re-pins above, with the map script as the flag. Compatibility
 /// re-pin, not an Elo-protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe74a_ee1a_6905_345b;
+/// Merging `origin/main` into this branch brings both sides' live-bridge
+/// treatments into one `BasicAi`/`AdvancedAi`. Every one of them is off in both
+/// constructors and set only by `enable_live_bridge`, so the anchor's decision
+/// stream is unchanged by the union. Compatibility re-pin, not an Elo-protocol
+/// change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8fa8_43dd_c2fd_d943;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

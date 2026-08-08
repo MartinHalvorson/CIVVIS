@@ -1925,7 +1925,11 @@ fn main() {
         // `null` for an ordinary development build, which is honest: the
         // treatment list is the identity that always reports.
         "revision": civvis::server::runtime_commit_or_none(),
-        "treatments": civvis::elo::LIVE_BRIDGE_TREATMENTS,
+        // ⚠ `.as_slice()`, not the array. serde implements `Serialize` for
+        // `[T; N]` only up to N = 32, so the registry silently had a ceiling at
+        // 32 treatments: the 33rd stops compiling here, in a binary that has
+        // nothing to do with adding one. A slice has no such bound.
+        "treatments": civvis::elo::LIVE_BRIDGE_TREATMENTS.as_slice(),
     }));
 
     // ★★★★ HOLD THE SITE ACROSS A TURN THE SETTLER COULD NOT MOVE.
