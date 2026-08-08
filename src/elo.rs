@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 99] = [
+pub const EVAL_ONLY_AIS: [&str; 100] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -97,6 +97,7 @@ pub const EVAL_ONLY_AIS: [&str; 99] = [
     "advanced_early_score_alarm",
     "advanced_early_score_build",
     "advanced_evolved_blind",
+    "advanced_campus_above_tie",
     "advanced_settler_commit",
     "advanced_wide_opening",
     "advanced_plan_city_target",
@@ -282,6 +283,7 @@ define_arm_kinds! {
     AdvancedTimingAttack => "advanced_timing_attack",
     AdvancedTimingAttackSelective => "advanced_timing_attack_selective",
     AdvancedTimingAttackRapid => "advanced_timing_attack_rapid",
+    AdvancedCampusAboveTie => "advanced_campus_above_tie",
     AdvancedSettlerCommit => "advanced_settler_commit",
     AdvancedSettlerFirst => "advanced_settler_first",
     AdvancedTargetDomination => "advanced_target_domination",
@@ -1624,6 +1626,15 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // Treatment for the settler-commitment axis: identical to `advanced`
         // except that a settler holds its chosen site across a turn it could
         // not move, for up to three such turns. See `docs/OPENINGS.md` §15.
+        // Prices breaking the Campus out of its 130-point tie with Theatre
+        // Square and Commercial Hub. `campus_every_city` is already on live and
+        // coverage is still 50 of 100 cities, because the Campus is TIED rather
+        // than under-valued and loses the secondary tiebreak.
+        "advanced_campus_above_tie" => {
+            let mut ai = AdvancedAi::new();
+            ai.campus_above_the_tie = true;
+            Box::new(ai)
+        }
         "advanced_settler_commit" => {
             let mut ai = AdvancedAi::new();
             ai.settler_commit = true;
@@ -2827,6 +2838,7 @@ impl ArmKind {
             Self::AdvancedEnvoyPriority => &["policy-deck-legacy"],
             Self::AdvancedEnvoyEconomy => &["envoy-influence", "envoy-priority-off"],
             Self::AdvancedGarrisonLoyalty => &["garrison-loyalty-policy"],
+            Self::AdvancedCampusAboveTie => &["campus-above-the-tie"],
             Self::AdvancedSettlerCommit => &["settler-commitment"],
             // The two arms differ only in the lane they are told to win, which is
             // the axis: the deployed Civ 6 decider is handed one of these by
@@ -3400,6 +3412,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             (Vec::new(), "advanced_timing_attack_selective")
         }
         "advanced_timing_attack_rapid" => (Vec::new(), "advanced_timing_attack_rapid"),
+        "advanced_campus_above_tie" => (Vec::new(), "advanced_campus_above_tie"),
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
         "advanced_target_domination" => (Vec::new(), "advanced_target_domination"),
         "advanced_target_score" => (Vec::new(), "advanced_target_score"),
@@ -4488,7 +4501,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 68] = [
+            const SCRIPTED: [&str; 69] = [
                 "advanced",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
@@ -4511,6 +4524,7 @@ mod tests {
                 "advanced_early_score_alarm",
                 "advanced_early_score_build",
                 "advanced_garrison_loyalty",
+                "advanced_campus_above_tie",
                 "advanced_settler_commit",
                 "advanced_wide_opening",
                 "advanced_plan_city_target",
