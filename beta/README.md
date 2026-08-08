@@ -57,7 +57,7 @@ to be movable.
 | `beta/worker.js` | Runs the module off the main thread. A turn is not a quick call, and the viewer paints on `requestAnimationFrame`; on the page's own thread the engine would stall the frames it exists to produce. |
 | `beta/shim.js` | Intercepts `fetch` before it reaches the network. Also owns the three things that genuinely became the page's job: the turn clock, the selected between-game finale countdown, and saved games in `localStorage`. |
 | `beta/_worker.js` | The whole site's routing: the two lanes, the `/rust` and `/wasm` pointers, the optional gates on `/` and `/test`, and the response headers. |
-| `beta/landing.html` | `civvis.ai/home`. |
+| `beta/landing.html` | `civvis.ai/home` — the landing page: project links and a gallery of preset simulations, each card a settings-carrying link into the simulator. |
 | `beta/download.html` | `civvis.ai/download`. Links `releases/latest/download/<asset>`, so it never needs republishing when a release is cut. |
 | `.github/workflows/release.yml` | Builds those assets for Windows, macOS (both architectures) and Linux on a `v*` tag. |
 | `.github/workflows/to-test-auto-30.yml` | Builds both lanes, checks them, and deploys — half-hourly behind the gate, and on demand. Without the Cloudflare secrets it degrades to a dry run, so the schedule is safe before the account exists. |
@@ -98,6 +98,17 @@ The world is **different every visit**. The engine is deterministic per seed and
 imports nothing, so it cannot vary on its own — the page rolls a seed per load
 and hands it over with the first request. `civvis.ai/test/?game=<n>` pins one,
 which is how a world worth showing gets shared.
+
+Settings travel the same way. A URL can make the lobby's choices before the
+page loads — `?players=12&map=pangaea&victories=domination` opens on that
+world instead of the stock exhibition, and every world after it stays on
+those settings. `shim.js` reads the parameters and posts the one `/new`
+request the setup screen would have; the vocabulary is the lobby's own ids:
+`players`, `map`, `shape`, `poles`, `speed`, `era`, `turns`,
+`victories` (a comma-separated list of tracks), and `arena` (a battlefield's
+dimensions, `20x20`). A value the engine does not recognise leaves the stock
+setting standing, so a mistyped link still opens on a world. The home page's
+preset cards are exactly these links.
 
 ### One property worth knowing
 
