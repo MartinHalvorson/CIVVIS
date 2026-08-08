@@ -1989,12 +1989,54 @@ WantedBy=timers.target
 
 def write_managed_service(path: Path, data: bytes) -> bool:
     existing = path.read_bytes() if path.exists() else b""
-    if existing and FRESHNESS_MARKER.encode("utf-8") not in existing:
+    marker_encodings = ("utf-8", "utf-16-le", "utf-16-be")
+    if existing and not any(
+        FRESHNESS_MARKER.encode(encoding) in existing for encoding in marker_encodings
+    ):
         raise CommandError(f"refusing to replace unmanaged scheduler definition: {path}")
     if existing == data:
         return False
     atomic_write(path, data)
     return True
+
+
+def vbscript_string(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
+def windows_freshness_launcher_data(repo: Path, worker: Path) -> bytes:
+    command = subprocess.list2cmdline(
+        (
+            sys.executable,
+            str(worker),
+            "refresh",
+            "--scheduled",
+            "--repo",
+            str(main_worktree(repo)),
+        )
+    )
+    script = f"""' {FRESHNESS_MARKER}
+Option Explicit
+
+Dim shell
+Dim command
+Dim exitCode
+
+Set shell = CreateObject("WScript.Shell")
+command = {vbscript_string(command)}
+exitCode = shell.Run(command, 0, True)
+WScript.Quit exitCode
+"""
+    return script.encode("utf-16")
+
+
+def windows_freshness_task_command(launcher: Path) -> str:
+    wscript = shutil.which("wscript.exe")
+    if not wscript:
+        raise CommandError(
+            "cannot install a windowless Windows freshness task: wscript.exe is missing"
+        )
+    return subprocess.list2cmdline((wscript, "//B", str(launcher)))
 
 
 def install_freshness_service(repo: Path) -> List[Path]:
@@ -2018,16 +2060,12 @@ def install_freshness_service(repo: Path) -> List[Path]:
         return [path]
     if os.name == "nt":
         name = f"CIVVIS Git Freshness {key}"
-        command = subprocess.list2cmdline(
-            (
-                sys.executable,
-                str(worker),
-                "refresh",
-                "--scheduled",
-                "--repo",
-                str(main_worktree(root)),
-            )
+        launcher = freshness_dir(root) / "run-hidden.vbs"
+        write_managed_service(
+            launcher,
+            windows_freshness_launcher_data(root, worker),
         )
+        command = windows_freshness_task_command(launcher)
         run(
             (
                 "schtasks",
@@ -2044,7 +2082,7 @@ def install_freshness_service(repo: Path) -> List[Path]:
             ),
             cwd=main_worktree(root),
         )
-        return [worker]
+        return [worker, launcher]
     if shutil.which("systemctl"):
         directory = Path.home() / ".config" / "systemd" / "user"
         service = directory / f"civvis-freshness-{key}.service"
