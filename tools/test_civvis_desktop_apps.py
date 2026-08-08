@@ -476,6 +476,49 @@ class DesktopAppsTests(unittest.TestCase):
         self.assertIn('channel === "wasm" || channel === "beta"', page)
         self.assertIn('document.title = "CIVVIS · Civ VI Simulator (Wasm)"', page)
 
+    def test_viewer_lane_matches_the_publisher(self):
+        """The packager must read the lane `beta/publish.sh` actually writes.
+
+        This is the check that was missing. The publisher moved the viewer from
+        `beta/` to `test/` when the site became two lanes, the packager kept
+        reading `beta/build.json`, and every desktop build since failed on a
+        FileNotFoundError raised *after* a successful cargo and wasm build —
+        so the refresh agent burned a full build every cycle for a day and the
+        suite never noticed, because nothing here named the path.
+
+        Pinning the constant against the publisher rather than against the
+        literal "test" means the next rename fails here instead of in a log
+        nobody reads.
+        """
+        # Check the regression itself first, so a reintroduced `beta/` path
+        # fails on the path rather than on a missing constant.
+        # assertFalse rather than assertNotIn: the container is the whole
+        # 1,600-line script, and dumping it buries the one line that matters.
+        packager = SCRIPT.read_text(encoding="utf-8")
+        self.assertFalse(
+            "beta/build.json" in packager,
+            "packager reads beta/build.json; publish.sh writes the manifest "
+            "into the viewer lane, so this raises FileNotFoundError after a "
+            "successful build",
+        )
+        self.assertFalse(
+            "beta/civvis.wasm" in packager,
+            "packager checks beta/civvis.wasm; the module is published into "
+            "the viewer lane",
+        )
+        publish = (ROOT / "beta/publish.sh").read_text(encoding="utf-8")
+        lane = desktop.VIEWER_LANE
+        self.assertIn(
+            f'"$out/{lane}/civvis.wasm"',
+            publish,
+            f"publish.sh does not write civvis.wasm into {lane}/",
+        )
+        self.assertIn(
+            f'"$out/{lane}/"',
+            publish,
+            f"publish.sh does not assemble the page in {lane}/",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
