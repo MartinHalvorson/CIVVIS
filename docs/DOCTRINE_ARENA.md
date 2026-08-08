@@ -1,6 +1,6 @@
 # The doctrine arena
 
-Seven hand-built tactical positions, each posing one decision that a famous
+Eleven hand-built tactical positions, each posing one decision that a famous
 engagement turned on, and an instrument that says not only who won the trade
 but **how each side fought**.
 
@@ -37,6 +37,10 @@ cargo run --release --bin doctrine_arena -- --list
 | `double_envelopment` | Hannibal at Cannae, 216 BC | Five better units round the wings of nine cheap ones |
 | `the_reserve` | Bonaparte at Marengo; the Guard at Waterloo | Commit the reserve together, or feed it in one unit at a time |
 | `the_river_line` | Bonaparte at Lodi 1796; Friedland 1807 | Two crossings; an army astride an obstacle is two armies |
+| `lake_trasimene` | Hannibal at Lake Trasimene, 217 BC | A march column between water and hills must become a formation before it is destroyed a section at a time |
+| `the_breakthrough` | Bonaparte's *masse de rupture*; Guderian at Sedan 1940 | A fist massed on one point against a line holding everywhere |
+| `hammer_and_anvil` | Alexander at Gaugamela, 331 BC | Infantry fixes the front while something fast goes round it |
+| `the_golden_bridge` | Sun Tzu: leave a surrounded enemy a way out | Troops cornered with nowhere to go fight at a price the arithmetic does not predict |
 
 **The board is painted, not generated.** Every tile of every position is written
 down in `POSITIONS`, so the defile is a defile in every run, on every machine,
@@ -103,6 +107,15 @@ zero when the engagement gave nothing to measure it from.
 | `ground` | share of own unit-turns spent on hills or in cover |
 | `screen` | share of own ranged unit-turns with a friendly between them and the enemy |
 | `contact` | share of turns on which the two forces were within two tiles |
+| `arrival` | spread, in turns, of when each unit first reached the enemy — low is "fight united" |
+
+`arrival` is the measurement behind the one thing every general on this list
+agreed on: *march divided, fight united*. It is the standard deviation, over a
+side's units, of the turn on which each first came within two tiles of an enemy.
+A unit that never reached the enemy counts as arriving on the final turn —
+deliberately, because dropping those units would let an army that left half its
+strength standing in the rear report a *tighter* arrival than one that brought
+everything up a turn apart.
 
 The contact zone is computed **once for the board**, not once per side, so
 concentration is a genuine local force ratio: within one engagement one side's
@@ -116,9 +129,12 @@ content of a doctrine is that the right value depends on the position: an army
 holding a defile *should* be dense and static, and the same numbers from an
 army that was supposed to envelop mean it failed.
 
-## What the arena found on its first run
+## What the arena found
 
 `advanced` against `basic`, 60 seeds a position, both roles, 2026-08-08.
+Two positions are clean nulls — `the_breakthrough` (31/28) and
+`the_golden_bridge` (26/29) — which is the arena declining to manufacture a
+result on problems the two agents answer the same way.
 
 | position | mean swing | +/- se | t | sign p | better/worse |
 | --- | --- | --- | --- | --- | --- |
@@ -129,10 +145,14 @@ army that was supposed to envelop mean it failed.
 | `double_envelopment` | +44.0 | 33.0 | 1.33 | 0.4614 | 26/20 |
 | **`the_reserve`** | **−189.2** | **58.5** | **−3.23** | **0.0005** | **15/42** |
 | `the_river_line` | +89.3 | 51.4 | 1.74 | 0.0331 | 37/20 |
-| ALL POSITIONS | +32.4 | 16.3 | 1.99 | 0.0870 | 203/169 |
+| `lake_trasimene` | +114.5 | 57.9 | 1.98 | 0.2203 | 32/22 |
+| `the_breakthrough` | +26.0 | 39.8 | 0.65 | 0.7948 | 31/28 |
+| `hammer_and_anvil` | +176.2 | 35.4 | 4.97 | 0.0005 | 42/15 |
+| `the_golden_bridge` | +5.8 | 27.9 | 0.21 | 0.7877 | 26/29 |
+| ALL POSITIONS | +49.9 | 12.9 | 3.86 | 0.0041 | 334/263 |
 
-The pooled row is the caveat above, demonstrated: `+32.4` on a run containing a
-`+119` and a `−189`. `the_ridge` is the other caveat: a `+118.8` mean beside a
+The pooled row is the caveat above, demonstrated: `+49.9` on a run containing a
+`+176` and a `−189`. `the_ridge` is the other caveat: a `+118.8` mean beside a
 27/22 split and a sign p of 0.57 — `advanced` wins that position big and loses
 it small, and the two tests are answering different questions about it.
 
@@ -201,6 +221,42 @@ Note that `the_reserve` — the position `advanced` loses to `basic` — is one 
 wins hugely against `advanced_v1` (+501.2). Losing a position is not the same as
 being bad at it, and this is why the arena reports opponents separately rather
 than a single tactical rating.
+
+### The signature: `advanced` fights better than it manoeuvres
+
+With `arrival` in the profile, the reserve result stops being a fact about one
+position and becomes a fact about the agent. Comparing `advanced` and `basic`
+**in the same role on the same position**, 60 seeds, arrival spread in turns:
+
+| position | role 0 (adv / basic) | role 1 (adv / basic) |
+| --- | --- | --- |
+| `central_position` | 6.27 / 4.55 | 6.82 / 6.89 |
+| `oblique_order` | 2.79 / 1.72 | 2.27 / 1.72 |
+| `the_defile` | 2.12 / 0.96 | 4.24 / 7.45 |
+| `the_ridge` | 3.54 / 2.25 | 4.02 / 2.88 |
+| `double_envelopment` | 3.74 / 3.99 | 2.68 / 2.25 |
+| `the_reserve` | 5.06 / 2.79 | 6.46 / 3.68 |
+| `the_river_line` | 6.46 / 4.70 | 5.15 / 3.69 |
+| `lake_trasimene` | 2.06 / 1.56 | 1.91 / 0.74 |
+| `the_breakthrough` | 5.50 / 3.46 | 3.67 / 2.04 |
+| `hammer_and_anvil` | 4.54 / 1.97 | 3.90 / 2.39 |
+
+**`advanced` arrives more spread out than `basic` in 17 of 20 cells**, often by
+a factor of two, and the same holds for `screen`: it leaves its ranged units
+unscreened in nearly every cell (`hammer_and_anvil` role 1: 31% against 65%).
+
+It nonetheless wins most positions, and the profile says why that is not a
+contradiction — its `focus` is higher almost everywhere (100% against 94% on
+`the_breakthrough` role 0, 100% against 96% on `hammer_and_anvil` role 1). It
+trades better once engaged and assembles worse getting there. `the_reserve` is
+simply the position built to charge for the second thing, which is why it is the
+one it loses.
+
+That is a sharper target than "improve tactics": the lever is in how the army
+*closes*, not in how it fights once it has. The joint planner in
+`src/ai/tactics.rs` only plans units that are already engaged, which is
+consistent with what this measures — but consistency is not proof, and the
+treatment still has to be built and run through the gates in order.
 
 ### `advanced` spreads its fire against a dense mass
 
