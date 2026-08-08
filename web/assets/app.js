@@ -24742,7 +24742,7 @@ syncMapSearchCivilizations();
 syncMapSearchStatus();
 // The lens dock offers two sets — the global whole-map lenses and the
 // district adjacency forecasts — and shows one at a time, switched by the
-// tab row above them. Expanding the dock starts on the global set.
+// tab row beneath them. Expanding the dock starts on the global set.
 let mapLensSet = "global";
 function syncMapLensSets() {
   const strip = document.getElementById("map-lens-strip");
