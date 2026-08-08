@@ -409,11 +409,18 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         // reload, including its selected deadline. Worlds carry the stock
         // value but never consult it.
         "tactics": g.tactics,
-        // Where the flag stands, on the one arena shape that plants one.
-        // Published to every viewer whatever the fog says: the flag is the
-        // battle's objective, and both commanders marched in knowing where
-        // it is even if neither has seen it yet.
-        "arena_flag": g.arena_flag,
+        // Where each side's flag stands, on the arena shape that plants
+        // them. Published to every viewer **through the fog**, deliberately:
+        // a flag is the battle's objective and its position is common
+        // ground — both commanders marched in knowing where the other's
+        // flag was, and a capture-the-flag battle in which you must first go
+        // and find the thing you are capturing is a different game. What the
+        // fog still hides is everything around it: whose army is standing
+        // there and in what strength.
+        "arena_flags": g.arena_flags
+            .iter()
+            .map(|(owner, at)| json!({"owner": owner, "pos": at}))
+            .collect::<Vec<_>>(),
         // The handicap the game is being played on. The save list has always
         // reported this for games nobody is playing; without it here the setup
         // panel could not tell a reloaded page which difficulty the game on

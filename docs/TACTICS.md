@@ -625,55 +625,65 @@ contract, so a drawn battle advances cleanly to the next scheduled game.
 
 ## 12. Capture the flag (2026-08-08)
 
-An arena can be set up around a **flag** instead of around cities. One flag
-is planted on the field, neither side owns it, and the battle is won the
-moment either side moves a unit onto its tile. The setting is
-`Capture the flag` in the Tactics card, `tactics_flag` on `/new`, and
-`--tactics-flag` on the command line.
+An arena can be set up so that each side is given a **flag** instead of a
+city. A side's flag stands where its city would have stood, and the battle is
+won by moving a unit onto the **other** side's flag. The setting is `Capture
+the flag` in the Tactics card, `tactics_flag` on `/new`, and `--tactics-flag`
+on the command line.
 
-The flag **replaces** the city objective rather than joining it:
-`TacticsRules::sanitized` forces `cities` to 0 whenever the flag is asked
-for, on every surface at once, so a flag battle is always city-less however
-the cities control was left.
+Flags **replace** the city objective rather than joining it:
+`TacticsRules::sanitized` forces `cities` to 0 whenever flags are asked for,
+on every surface at once, so a flag battle is always city-less however the
+cities control was left. Nothing places a flag anywhere but a seat, so a flag
+is on whatever ground the seat is on and inherits the seating's symmetry: the
+two sides open the same distance from each other's objective.
 
-Placement is decided at setup by `Game::battlefield_flag_site` and is not
-random: among the passable tiles it takes the smallest spread in marching
-distance between the two seats, then the shortest march, then position
-order. That gives an even-handed and repeatable site — the same field always
-plants the same flag — and the deployment pass then refuses the flag tile
-itself, so a battle can never open already won.
+Standing on your **own** flag captures nothing. That asymmetry is the whole
+mode: a flag is something to defend as well as something to take, both armies
+deploy around their own, and the opening position is therefore not already
+won. `Game::same_side` is what decides it, so teammates cannot take each
+other's flags either.
 
 The win fires in `Game::relocate`, which is the single point every march,
-melee advance, airlift and retreat passes through, so there is no way to
-reach the tile that does not check it. The result is recorded under a
-victory type of its own, `FLAG_VICTORY` (`"flag"`). Like the Mercy Rule it
-is **not** one of `VictoryConditions::NAMES`: `set_winner` admits it exactly
-when `Game::arena_flag` is `Some`, which is true only on an arena whose
-match asked for a flag. Saves carry `arena_flag`, `/state` publishes it, and
-the viewer draws the flag on its tile through `drawFeatureEffects`, which is
-the one hook both the flat and the globe renderer call. The verdict reads
-"Captured the Flag" in the browser and "captured the flag" in the
+melee advance, airlift and retreat passes through, so there is no way to reach
+a flag that does not check it. The result is recorded under a victory type of
+its own, `FLAG_VICTORY` (`"flag"`). Like the Mercy Rule it is **not** one of
+`VictoryConditions::NAMES`: `set_winner` admits it exactly when the battle has
+flags at all. Saves carry `arena_flags` (seat → position), and the verdict
+reads "Captured the Flag" in the browser and "captured the flag" in the
 supervisor's record.
 
-Both controllers understand the objective — `AdvancedAi::domain_objective`
-returns the flag for land columns, and `BasicAi::military_step` ranks it
-above every other march. Both guards reduce to a `None` test on every world
-and on every arena that existed before the shape did, so the `advanced_v1`
-anchor's decision stream is unchanged by construction; the source-contract
-pin was re-computed as a compatibility re-pin, not an Elo-protocol change.
-Rating profiles append `,objective:flag` **only** when the flag is on, so
-every arena ledger written before this existed still matches its own
-profile.
+Both controllers aim at the enemy flag through `Game::arena_enemy_flag`, which
+returns the nearest flag that is not the asking side's —
+`AdvancedAi::domain_objective` for land columns, and `BasicAi::military_step`
+ranked above every other march. It returns `None` on every world and on every
+arena without flags, so the `advanced_v1` anchor's decision stream is
+unchanged by construction and its source-contract pin is a compatibility
+re-pin rather than an Elo-protocol change.
 
-**Measured, and worth knowing before using this as a combat testbed.** With
-both sides on the same controller, a flag battle is decided at turn 3 to 5
-by whichever side owns the fastest unit, with no fighting at all: 6 of 6
-soak battles ended that way. First-touch on an even field is close to a coin
-flip between identical controllers, which is the honest consequence of the
-rule as specified rather than a defect in it. The mode still discriminates
-between *different* controllers — `advanced` took 4 of 4 seat-mirrored
-battles from `basic`, which pauses for worthwhile exchanges while `advanced`
-commits to the race — so it measures something real, just not attrition. A
-mode where the fighting decides the flag would need the objective held for
-some number of turns rather than merely touched; that variant slots into the
-same `set_winner` seam and is not built.
+**Flags are never hidden.** `/state` publishes `arena_flags` to every viewer
+regardless of fog, and both renderers paint them *after* their fog pass —
+`drawFlatArenaFlags` on the bounded field, `drawPlanetArenaFlags` on the small
+globe, with a contract test pinning that ordering. This is a deliberate rule
+rather than an oversight: both commanders marched in knowing where the other
+side's flag stood, and a capture-the-flag battle in which you must first go
+and find the thing you are capturing is a different game. What the fog still
+hides is everything *around* a flag — whose army is standing on it, and in
+what strength.
+
+The marker is a **column of light** in the owner's jersey, with a pennant at
+its head, rather than a map symbol. A pennant at ground level is a few pixels
+of terrain detail that disappears into a wooded hex; a beam is legible from
+the far wall, at any zoom, and over the fog wash and the blank vellum of
+unexplored ground alike. The globe has no screen-space vertical to raise a
+beam along, so there the same light is a pulsing beacon on the tile itself.
+
+**Measured.** Giving each side its own flag changed what the mode measures.
+The first version of this feature put one neutral flag between the armies, and
+same-controller battles ended at turn 3 to 5 with no fighting at all — first
+touch on an even field is close to a coin flip, so it measured little beyond
+who owned the fastest unit. With a flag each, the objective sits at the far
+end of the field behind the enemy army, so reaching it means going through
+them: battles run to turn 8 to 50 with a **74% engage** force posture and
+roughly half of both armies destroyed. The race and the fight are the same
+problem, which is what an arena is for.

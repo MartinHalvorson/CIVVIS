@@ -9497,7 +9497,31 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("tactics_flag: readSetting(\"tacticsflag\") === \"1\","));
         // The viewer knows where the flag stands and what taking it is
         // called; a lobby that can ask for the objective must also show it.
-        assert!(EMBEDDED_INDEX.contains("state?.arena_flag"));
+        // The viewer knows where the flags stand and what taking one is
+        // called. Both renderers carry a painter, because a flag battle can
+        // be fought on the bounded field or on the small globe, and each
+        // paints AFTER its fog pass — a flag is never hidden.
+        assert!(EMBEDDED_INDEX.contains("state?.arena_flags"));
+        assert!(EMBEDDED_INDEX.contains("function drawFlatArenaFlags("));
+        assert!(EMBEDDED_INDEX.contains("function drawPlanetArenaFlags("));
+        for (painter, fog) in [
+            ("drawFlatArenaFlags();", "drawFlatVisibilityPerimeter(tiles, visible);"),
+            (
+                "drawPlanetArenaFlags(cells, now, onSheet);",
+                "drawPlanetVisibilityPerimeter(cells, visible);",
+            ),
+        ] {
+            let call = EMBEDDED_INDEX
+                .rfind(painter)
+                .unwrap_or_else(|| panic!("{painter} is never called"));
+            let veil = EMBEDDED_INDEX
+                .rfind(fog)
+                .unwrap_or_else(|| panic!("{fog} is never called"));
+            assert!(
+                call > veil,
+                "{painter} must paint after {fog}, or the fog covers the objective"
+            );
+        }
         assert!(EMBEDDED_INDEX.contains("if (type === \"flag\") return \"Captured the Flag\";"));
         // Unfogged is the default: an arena has always shown both commanders
         // the whole field, and the option is the deliberate departure.
