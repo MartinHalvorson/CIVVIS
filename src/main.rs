@@ -782,6 +782,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the treatment can be held off for a controlled arm. It only writes `false`
 /// into a field the anchor already reads as `false`. Compatibility re-pin, not
 /// an Elo-protocol change.
+/// The siege-commitment term adds one summand to `campaign_city_value`, behind
+/// `AdvancedAi::siege_commitment`. Both constructors leave the flag false and
+/// only `enable_live_bridge` sets it, so under the anchor the `&&` chain
+/// short-circuits on its first test, the term is `0.0`, and the returned score
+/// is the shipped expression minus zero — the anchor's campaign ordering is
+/// byte-identical by construction. Compatibility re-pin, not an Elo-protocol
+/// change.
 /// The wonder-ring settle credit (#1378) adds one term to
 /// `settle_value_visible`, behind `BasicAi::wonder_ring_settle_value`. Both
 /// constructors leave the flag false and only `enable_live_bridge` sets it,
@@ -797,7 +804,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// constructors and set only by `enable_live_bridge`, so the anchor's decision
 /// stream is unchanged by the union. Compatibility re-pin, not an Elo-protocol
 /// change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0d32_443c_bb76_9fa5;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x50bf_fed9_e1c4_e204;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

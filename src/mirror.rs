@@ -4756,6 +4756,73 @@ mod tests {
         );
     }
 
+    /// ⚠ The export carries a rival's units ONLY under current visibility, so a
+    /// unit arriving here is one the HOST has already let the seat see — its own
+    /// detection rules included. Re-deriving Naval Raider stealth on the mirror
+    /// vetoed that ground truth: run `civvis-20260807T162004Z`, turns 237–251,
+    /// `UNITDATA ⚠ UNIT_NUCLEAR_SUBMARINE@(4, 36) count Civ6=1 CIVVIS=0` — the
+    /// sub was planted, then hidden from the seat's board, orders and threat
+    /// reads because no destroyer of ours stood beside it (#1362).
+    #[test]
+    fn a_visible_rival_naval_raider_is_not_hidden_by_our_own_stealth_rule() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 240,
+            width: 30,
+            height: 30,
+            chunk: 1,
+            plots: vec![plot(20, 9, "TERRAIN_COAST"), plot(5, 5, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot { turn: 240, ..StateSnapshot::default() };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Rome".to_string(),
+            x: 5,
+            y: 5,
+            pop: 6,
+            capital: true,
+            ..StateCity::default()
+        });
+        state.rivals.push(StateRival {
+            player: 5,
+            civ: "CIVILIZATION_AMERICA".to_string(),
+            // The exact unit shape from the live export under `rivals[4]`.
+            units: vec![serde_json::from_str(
+                r#"{"build_charges": 0, "class": "PROMOTION_CLASS_NAVAL_RAIDER",
+                    "combat": 80, "fortified": false, "fortify_turns": 0, "hp": 100,
+                    "kind": "UNIT_NUCLEAR_SUBMARINE", "level": 1, "moves": 0,
+                    "promotions": [], "ranged": 85, "spread_charges": 0,
+                    "x": 20, "y": 9, "xp": 0}"#,
+            )
+            .expect("the issue's unit shape deserializes")],
+            ..StateRival::default()
+        });
+
+        let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let sub = recon
+            .game
+            .units
+            .values()
+            .find(|unit| unit.kind == "nuclear_submarine")
+            .expect("the exported submarine must be planted, not dropped");
+        assert_ne!(sub.owner, 0, "it is the rival's unit");
+        assert!(
+            recon.game.unit_visible_to(sub.id, 0),
+            "the host proved the seat can see this raider; the mirror's own \
+             stealth model must not veto it"
+        );
+        // End to end: the seat's fogged board dump — what the planner and the
+        // mirror checker read — must carry the unit.
+        let view = crate::obs::observation_player_view(&recon.game, 0);
+        assert!(
+            view["units"]
+                .as_array()
+                .expect("units array")
+                .iter()
+                .any(|unit| unit["type"] == "nuclear_submarine"),
+            "the raider must appear on the seat's board"
+        );
+    }
+
     #[test]
     fn a_seated_but_cityless_minors_ground_is_still_blocked() {
         // Borders are visible before centres are: a city-state's territory can
