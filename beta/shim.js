@@ -103,6 +103,90 @@
     return Math.floor(Math.random() * 0xffffffff) + 1;
   })();
 
+  // The lobby choices a link made before the page loaded. The home page's
+  // preset cards — and anybody sharing a configured world — arrive with
+  // settings in the query string; they become the one `/new` request the
+  // setup screen would have posted, so the first world such a visit watches
+  // is the one the link named rather than the stock exhibition. The worlds
+  // after it stay on theme too: the engine rolls each successor from the
+  // session's own parameters. A value the engine does not recognise is left
+  // where the stock setting stood, exactly as the lobby's own request would
+  // be, so a mistyped link still opens on a world.
+  const OPENING_PRESET = (() => {
+    const search = new URL(window.location.href).searchParams;
+    const whole = (name) => {
+      const value = Number(search.get(name));
+      return Number.isSafeInteger(value) && value > 0 ? value : null;
+    };
+    const word = (name) => {
+      const value = (search.get(name) || "").trim().toLowerCase();
+      return /^[a-z0-9_]+$/.test(value) ? value : null;
+    };
+    const payload = {};
+    // The bounds are the tab's own protection, not rules of the game: the
+    // engine happily builds what a URL asks for, and a hand-typed
+    // `players=5000` would freeze the one machine the game runs on — the
+    // visitor's. A hundred seats is the largest world the lobby offers.
+    const players = whole("players");
+    if (players && players <= 100) payload.num_players = players;
+    const map = word("map");
+    if (map) payload.map_script = map;
+    const shape = word("shape");
+    if (shape) payload.map_topology = shape;
+    const poles = word("poles");
+    if (poles) payload.map_poles = poles;
+    const speed = word("speed");
+    if (speed) payload.game_speed = speed;
+    const era = word("era");
+    if (era) payload.start_era = era;
+    const turns = whole("turns");
+    if (turns) payload.max_turns = turns;
+    // A battlefield's dimensions are their own setting — no seat count
+    // implies an arena size — so they travel as the one token the lobby's
+    // size control uses to name them: `arena=20x20`.
+    const arena = /^(\d{1,2})x(\d{1,2})$/.exec((search.get("arena") || "").trim());
+    if (arena && Number(arena[1]) > 0 && Number(arena[2]) > 0) {
+      payload.width = Number(arena[1]);
+      payload.height = Number(arena[2]);
+    }
+    // `victories=domination,score` enables exactly the named tracks and
+    // disables the rest. The engine re-checks what a mode allows, so a
+    // battlefield link may name none and still end in a battle's two lanes.
+    const victories = search.get("victories");
+    if (victories) {
+      const asked = new Set(victories.split(",").map((track) => track.trim().toLowerCase()));
+      payload.victory_conditions = Object.fromEntries(
+        ["science", "culture", "religious", "diplomatic", "domination", "score"]
+          .map((track) => [track, asked.has(track)]));
+    }
+    if (!Object.keys(payload).length) return null;
+    // By the time this request lands the opening world is a live spectator
+    // game, and replacing one of those is deliberately an explicit act.
+    payload.force = true;
+    return payload;
+  })();
+
+  // The one request that applies the link's settings. Every engine request
+  // waits behind it, so the first `/state` cannot answer with the stock
+  // world a preset visit never asked to see; on failure the stock world is
+  // exactly what should play, and the report says why.
+  let openingPresetStarted = null;
+  function ensureOpeningPreset() {
+    if (OPENING_PRESET === null) return Promise.resolve(null);
+    if (openingPresetStarted === null) {
+      openingPresetStarted = ask("POST", "/new", JSON.stringify(OPENING_PRESET))
+        .then((answer) => {
+          if (answer && answer.error) report.presetError = String(answer.error);
+          return null;
+        })
+        .catch((error) => {
+          report.presetError = String(error.message || error);
+          return null;
+        });
+    }
+    return openingPresetStarted;
+  }
+
   function ask(method, path, body) {
     return new Promise((resolve, reject) => {
       const id = nextId++;
@@ -521,6 +605,7 @@
     // routes read their parameters straight off the query string.
     const relative = target.startsWith("http") ? path + new URL(target).search : target;
     return ensureHostLeague()
+      .then(ensureOpeningPreset)
       .then(() => serve(method, relative, options_.body || ""))
       .catch((error) => json({ error: String(error.message || error) }));
   };
@@ -571,8 +656,11 @@
   }, LOADING_NOTICE_DELAY_MS);
 
   // The engine is ready when it has answered something. `/runtime` is the
-  // cheapest question there is — it builds no observation at all.
-  ask("GET", "/runtime", "")
+  // cheapest question there is — it builds no observation at all. A preset
+  // visit applies its settings first, so the curtain holds until the world
+  // the link named exists rather than dropping on the stock one.
+  ensureOpeningPreset()
+    .then(() => ask("GET", "/runtime", ""))
     .then(() => {
       report.ready = true;
     })

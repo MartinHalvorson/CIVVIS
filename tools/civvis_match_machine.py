@@ -70,6 +70,10 @@ RESUME_STEP_SECONDS = 5.0
 BUILD_CPU_DUTY_CYCLE_SECONDS = 0.4
 BUILD_CPU_MAX_DUTY = 0.35
 BUILD_CPU_TARGET_MARGIN = SHED_ONE_MARGIN + 2.0
+# Every match is pinned to the stock eight-major contract, so measurement
+# need is judged on the exact eight-seat win-evidence bucket the league's own
+# selection reads.
+FOCUS_TABLE_SIZE = 8
 _resource_sample_lock = threading.Lock()
 
 
@@ -525,6 +529,7 @@ class MatchMachine:
         self.resume_not_before = 0.0
         self.strategy_schedule: list[str] = []
         self.strategy_cursor = 0
+        self.schedule_roster: frozenset[str] = frozenset()
 
     def event(self, kind: str, **values: Any) -> None:
         event = {"at": utc_now(), "kind": kind, **values}
@@ -689,15 +694,21 @@ class MatchMachine:
         The normal live selector intentionally samples only the strongest few
         strategies for each civilization. The match machine has a different
         obligation: every unretired strategy must receive repeated evidence,
-        while the strongest Elo entries still get extra focus. One pass covers
-        every active non-human roster entry; the top eight are appended once
-        more as the exploitation half of the cycle.
+        while the strongest Elo entries still get extra focus.
+
+        The full pass is ordered by measurement need — fewest games at the
+        pinned eight-seat table first, widest rating deviation breaking ties —
+        so a newborn the live league just bred is focused within a few
+        launches instead of waiting a whole cycle behind well-measured
+        entries. The top eight by rating are appended once more as the
+        exploitation half of the cycle.
         """
         try:
             roster = json.loads((self.league / "league.json").read_text(encoding="utf-8"))
             strategies = roster.get("strategies", [])
         except (OSError, ValueError):
             self.strategy_schedule = []
+            self.schedule_roster = frozenset()
             return
         candidates = [
             strategy
@@ -708,23 +719,68 @@ class MatchMachine:
             and isinstance(strategy.get("name"), str)
             and strategy["name"].strip()
         ]
-        candidates.sort(
+
+        def games_at_table(strategy: dict) -> int:
+            bucket = strategy.get("wins_by_table_size")
+            if isinstance(bucket, dict):
+                exact = bucket.get(str(FOCUS_TABLE_SIZE))
+                if isinstance(exact, dict):
+                    return int(exact.get("games", 0))
+            return 0
+
+        need_order = sorted(
+            candidates,
+            key=lambda strategy: (
+                games_at_table(strategy),
+                -float(strategy.get("rd", 350.0)),
+                strategy["name"].casefold(),
+            ),
+        )
+        by_rating = sorted(
+            candidates,
             key=lambda strategy: (
                 -float(strategy.get("rating", 1500.0)),
                 strategy["name"].casefold(),
-            )
+            ),
         )
-        names = [strategy["name"] for strategy in candidates]
-        self.strategy_schedule = names + names[: min(8, len(names))]
+        names = [strategy["name"] for strategy in need_order]
+        top = [strategy["name"] for strategy in by_rating[: min(8, len(by_rating))]]
+        self.strategy_schedule = names + top
         self.strategy_cursor %= max(1, len(self.strategy_schedule))
+        self.schedule_roster = frozenset(names)
         self.event(
             "strategy_schedule_ready",
             roster_strategies=len(names),
             scheduled_entries=len(self.strategy_schedule),
-            top_strategies=names[:8],
+            most_needed=names[:8],
+            top_strategies=top,
         )
 
     def next_focus_strategy(self) -> str | None:
+        # Selection now breeds and retires from live games, so the roster
+        # changes underneath a running operator. The schedule was built once
+        # at startup, which meant a newborn never received a focus seat and a
+        # retiree kept burning launches on a --force-strategy the server
+        # silently drops. Rebuild when the active-name set changes — ratings
+        # moving is not a reason, so the cursor keeps its place through
+        # ordinary results — and restart from the most-needed entry when it
+        # does change, which is exactly where a fresh newborn sorts.
+        try:
+            roster = json.loads((self.league / "league.json").read_text(encoding="utf-8"))
+            active = frozenset(
+                strategy["name"]
+                for strategy in roster.get("strategies", [])
+                if isinstance(strategy, dict)
+                and strategy.get("retired") is not True
+                and strategy.get("human") is not True
+                and isinstance(strategy.get("name"), str)
+                and strategy["name"].strip()
+            )
+        except (OSError, ValueError):
+            active = None
+        if active is not None and active != self.schedule_roster:
+            self.refresh_strategy_schedule()
+            self.strategy_cursor = 0
         if not self.strategy_schedule:
             return None
         strategy = self.strategy_schedule[self.strategy_cursor % len(self.strategy_schedule)]
@@ -1161,7 +1217,13 @@ class MatchMachine:
             turn=row.get("turns") if row else status.get("turn"),
             winner=status.get("winner") if row is None else None,
             winner_placement=winner_placement(row),
-            victory=row.get("victory") if row else status.get("victory_type"),
+            # The rated row already carries the engine's own denotation, which
+            # for a Mercy Rule ending names the lane it ended on. An unrated
+            # game has no row, so fall back to the same label off `/status`
+            # rather than to the bare victory type.
+            victory=row.get("victory")
+            if row
+            else (status.get("victory_label") or status.get("victory_type")),
             match_row=row,
             elapsed_seconds=round(time.monotonic() - game.started_monotonic, 1),
             log=game.log,

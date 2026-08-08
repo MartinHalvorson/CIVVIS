@@ -25,6 +25,29 @@ use std::sync::Arc;
 /// attack unsupported. Below it the group holds on its own account, whatever
 /// else is happening in the empire.
 const LOCAL_SUPERIORITY_FLOOR: f64 = 0.72;
+/// Full health of a city, and the ceiling `Game::end_turn` heals back toward at
+/// `+20` a turn. [`AdvancedAi::siege_commitment`] measures a siege against it.
+const CITY_MAX_HP: i32 = 200;
+/// What one point of health already stripped from a breached city is worth to
+/// [`AdvancedAi::campaign_city_value`], as a reason to finish that city rather
+/// than re-aim.
+///
+/// Sized against the terms it has to beat. A city at 25 hp with its walls down
+/// earns `175 * 1.5 = 262`, where the distance terms it competes with —
+/// `core_distance * 7.0` and `military_distance * 5.0` — swing about 60 over
+/// five tiles, and the largest ordinary pull in the function is a capital's
+/// `180` under Conquest. So a city one blow from falling outranks a better city
+/// that is still whole, which is the intended order, while a city merely
+/// scratched (`20` hp off, worth `30`) does not disturb the shipped ranking at
+/// all. It stays far below `unsupported_capture`'s `10_000` veto, so the
+/// keep/flip/recapture guard still overrules it.
+const SIEGE_COMMITMENT_PER_HP: f64 = 1.5;
+/// How close one of our military units must be to a breached city before its
+/// stripped health counts as *our* siege investment. Six tiles is the same
+/// horizon [`AdvancedAi::defensibility`] and the rival-proximity penalty use.
+/// Without it the campaign could be dragged across the map by damage another
+/// civilization dealt.
+const SIEGE_COMMITMENT_REACH: i32 = 6;
 /// Health above which [`AdvancedAi::promotion_heal_is_wasted`] holds a
 /// promotion back. `do_promote` heals `min(50, 100 - hp)`, so promoting at 100
 /// delivers nothing; 75 asks for at least 25 of the 50 to land before spending
@@ -42,6 +65,20 @@ const STRIKE_OPENING_SCALE: f64 = 0.6;
 /// `mv_threat`'s 15.0 at parity, so a blind tile loses to a sighted one a hex
 /// out of position without the unit fleeing contact altogether.
 const BLIND_RANGED_TILE: f64 = 12.0;
+/// A normal tactical candidate already spends two cloned worlds on its exact
+/// exchange and its forcing reply.  The friendly-volley extension below is a
+/// deliberately smaller joint search: inspect only the three best immediate
+/// attacks for a setup that a teammate can finish right now.
+const TACTICAL_VOLLEY_CANDIDATE_LIMIT: usize = 3;
+/// A force can be large late in the game.  Once eight direct finishers have
+/// been checked in deterministic unit order, more choices buy little tactical
+/// signal while multiplying the clone-heavy hot path.
+const TACTICAL_VOLLEY_FINISHER_LIMIT: usize = 8;
+/// The opening shot earns one and a half ordinary kill bonuses when it lets a
+/// teammate finish the same defender.  The actual kill remains priced by the
+/// finisher's exact exchange; this bonus only corrects the first unit's
+/// otherwise myopic ordering.
+const TACTICAL_VOLLEY_KILL_BONUS_SCALE: f64 = 1.5;
 /// Most the wartime army target may be multiplied by when the enemy outweighs
 /// us, used by [`AdvancedAi::enemy_weighted_army_target`]. Two doublings would be an
 /// empire of nothing but soldiers; 2.0 asks a six-city empire at war to want
@@ -77,6 +114,24 @@ const THREAT_RELIEF_RADIUS: i32 = 6;
 /// empires holding `masonry` by then; 60 leaves the lane a margin on the wrong
 /// side of that and keeps it honestly *ancient*.
 const RUSH_WINDOW_CLOSES: u32 = 60;
+/// Empire-wide power multiple over the campaign target above which
+/// `war_patience` stops the stall clause of the peace rules from ending the
+/// war. The fatigue rule (war age ≥ 24 with no campaign progress in 12) exists
+/// so a war that is going nowhere gets sued out — correct when the sides are
+/// close, and a self-inflicted defeat when the attacker outweighs the defender
+/// severalfold and the "stall" is a wall taking its time to fall. 2.5 sits
+/// far above the 1.32 elective-declaration ratio, so patience is only ever
+/// extended to a war the declaration logic already called a walkover, and the
+/// 0.62 outmatched trigger and Recovery trigger keep their shape: the moment
+/// the advantage is gone, so is the patience.
+const OVERWHELMING_WAR_RATIO: f64 = 2.5;
+/// Distance from the campaign objective inside which a force group counts as
+/// the front rather than a rear reinforcement, used by
+/// [`AdvancedAi::wartime_reinforcement_step`]. The staging ring is 3..=5 and
+/// groups are cliques at `command_radius` (6), so 8 covers a front force
+/// anywhere on or just off the ring; a Hold at that range is the measured
+/// posture logic doing its job, not a unit that failed to reach the war.
+const REINFORCEMENT_FRONT_RADIUS: i32 = 8;
 
 /// How long the defensive-war `Recovery` posture may hold on the power-gap
 /// trigger alone before the empire returns to its own lane, in standard turns.
@@ -162,6 +217,21 @@ const SETTLEMENT_FORECAST_POPULATION: usize = 4;
 const SETTLEMENT_FORECAST_HORIZON: u32 = 40;
 const SETTLEMENT_FORECAST_BEAM: usize = 12;
 const SETTLEMENT_SECOND_RING_DELAY: u32 = 5;
+
+/// Each point of a natural wonder's modeled `Features.Appeal`, priced into a
+/// founding site whose work radius holds the wonder. Appeal is what the
+/// unmodeled wonder economics hang from — pantheon faith, appeal districts
+/// and parks, late tourism — none of which the settle scorer can otherwise
+/// see. Three points per appeal puts an ordinary +2 wonder with a one-yield
+/// ring at about 13 points of credit, inside the 10-20 point band issue
+/// #1378 measured a wonder-ring site actually carrying, and lets the +4
+/// Cliffs of Dover and Uluru outbid them without a per-wonder table.
+const NATURAL_WONDER_APPEAL_WEIGHT: f64 = 3.0;
+
+/// A natural wonder projects its modeled `adjacent_yields` onto every
+/// neighbouring tile, and a city founded on the ring can expect to grow into
+/// roughly one full hex ring of them — six tiles.
+const NATURAL_WONDER_RING_TILES: f64 = 6.0;
 
 /// Before Shipbuilding a land Settler may widen its local eight-tile search,
 /// but may not turn a compact expansion problem into a march across the map.
@@ -682,9 +752,27 @@ struct UnitTurnFlags {
     decline_settlers: bool,
 }
 
+/// One exact attack candidate after its ordinary one-unit evaluation.  Keeping
+/// the components lets the bounded friendly-volley extension replace the
+/// reply price with the reply after both teammates have acted, rather than
+/// pretending the opponent moves in the middle of a friendly volley.
+struct TacticalAttackCandidate {
+    score: f64,
+    target: Pos,
+    action: Action,
+    /// Exact attack value, required threshold, local-odds caution, priced
+    /// forcing reply, and any cooperative-volley setup credit.
+    parts: [f64; 5],
+    /// Preserve the generator's deterministic order when scores and targets
+    /// tie (for example, a hybrid unit's ranged and melee actions).
+    order: usize,
+}
+
 #[derive(Clone)]
 enum CityDistance {
     Cylinder(i32),
+    /// A bounded arena: four walls and no seam to measure through.
+    Bounded,
     Globe(Arc<crate::sphere::Sphere>),
 }
 
@@ -692,6 +780,7 @@ impl CityDistance {
     fn between(&self, first: Pos, second: Pos) -> i32 {
         match self {
             CityDistance::Cylinder(width) => crate::hex::wdistance(first, second, *width),
+            CityDistance::Bounded => crate::hex::distance(first, second),
             CityDistance::Globe(sphere) => sphere.distance(first, second),
         }
     }
@@ -979,6 +1068,70 @@ pub struct AdvancedAi {
     /// **Off by default, live-bridge only**, and it takes the MAXIMUM of the two
     /// so an evolved genome that deliberately raises `muster_radius` keeps it.
     pub muster_at_command_radius: bool,
+    /// Give an adaptive Conquest plan the war production path. The routing in
+    /// `take_turn` sends Recovery, targeted lanes, and appointed war plans
+    /// through `advanced_production` — but an adaptive plan that `assess`
+    /// switched to Conquest falls through to the Basic governor, whose army
+    /// target is `mil_per_city * cities` (≈1.4 per city on the deployed
+    /// genome) with none of the enemy weighting, siege appetite, or wartime
+    /// bonuses the war path carries. `docs/RUSH.md` measured the trap from
+    /// the other side: raising the army inside `production_value` was twice
+    /// byte-identical to a no-op, because the plan never reaches it.
+    /// **Off by default, live-bridge only.**
+    pub war_economy: bool,
+    /// Keep marching rear units to the campaign objective after the
+    /// declaration. `campaign_staging_step` assembles the army before the war
+    /// and then stands down; from then on reinforcements form one- and
+    /// two-body cliques at home whose local strength at the objective can
+    /// never clear `LOCAL_SUPERIORITY_FLOOR`, so they hold forever while the
+    /// front fights with whatever staged on declaration day. **Off by
+    /// default, live-bridge only.**
+    pub war_reinforcement: bool,
+    /// Do not let the stall clause of the peace rules end a war the empire is
+    /// overwhelmingly winning. Fatigue (war age ≥ 24, no campaign progress in
+    /// 12) both offers peace and accepts any white peace at +320; while this
+    /// flag is on and the empire holds `OVERWHELMING_WAR_RATIO` over its
+    /// campaign target, the stall clause stands down and the ordinary
+    /// outmatched (0.62) and Recovery triggers keep the war endable. **Off by
+    /// default, live-bridge only.**
+    pub war_patience: bool,
+    /// Finish a city the army has already broken open before re-aiming the
+    /// campaign at a fresh one.
+    ///
+    /// ★★★★★ THE ARMY WALKED AWAY FROM A CITY IT HAD ONE BLOW LEFT TO TAKE.
+    /// `campaign_city_value` is re-evaluated from scratch every turn, and the
+    /// only credit it gives a half-taken city is the `0.12`/hp and `0.16`/wall
+    /// discount inside `defenses` — about 37 points between a city at full
+    /// health behind its walls and one at 25 hp with the walls levelled.
+    /// `core_distance * 7.0` and `military_distance * 5.0` routinely swing more
+    /// than that, so a fresh city a few tiles nearer outranks the one the army
+    /// has spent fifteen turns breaking. Civ 6 then heals the abandoned city at
+    /// `+20` hp a turn (`Game::end_turn`), so the siege is not merely paused —
+    /// it is refunded to the defender.
+    ///
+    /// Measured on live run `civvis-20260808T142724Z`, Rome against Phoenicia:
+    ///
+    /// | turn | objective | Biruta |
+    /// |------|-----------|--------|
+    /// | t89  | Biruta    | 145 hp, walls 0 |
+    /// | t90  | Biruta    | **25 hp, walls 0** — one melee blow, force of 6 adjacent, 2.93 local strength |
+    /// | t91  | **Ziz**   | 45 hp |
+    /// | t92  | **Ziz**   | 65 hp |
+    /// | t93+ | Biruta    | 85 → 200 hp while the column walked back |
+    ///
+    /// Over t73-t105 that campaign dealt 338 hp of city damage and handed 200 of
+    /// it straight back, and took nothing. It is the whole live ledger in one
+    /// run: 25 games, **0 captures ever**, while carrying 7.7x the field's
+    /// military score.
+    ///
+    /// The term is the health already stripped from a **breached** city —
+    /// `SIEGE_COMMITMENT_PER_HP` per hp below `CITY_MAX_HP`, credited only while
+    /// one of our military units is within `SIEGE_COMMITMENT_REACH` of it, so
+    /// the campaign cannot be dragged across the map by damage someone else
+    /// dealt. Walls standing means capture is not close and the term is zero,
+    /// which keeps it inert in the ordinary case. **Off by default, live-bridge
+    /// only.**
+    pub siege_commitment: bool,
     /// Aim a relief force at what is actually hitting the city, not at whichever
     /// besieger happens to stand nearest the force.
     ///
@@ -1159,6 +1312,40 @@ pub struct AdvancedAi {
     /// Consecutive turns each settler has failed to make progress, when
     /// `settler_commit` is on. Reset whenever `settler_closest` improves.
     settler_stalls: BTreeMap<u32, u32>,
+    /// Per-settler (last distance-to-target, turns without closing) while a
+    /// LAND escort formation is trusted to carry it. See `escort_unstick`.
+    escort_march: BTreeMap<u32, (i32, u8)>,
+    /// Release a linked escort that is not actually walking its settler.
+    ///
+    /// ★★★★ THE LINKED BRANCH BELOW RETURNS `true` WITHOUT MOVING ANYTHING —
+    /// it trusts the military layer to march the formation, and the military
+    /// layer owes the settle target nothing. Measured on live Firaxis runs
+    /// 2026-08-07: "Settler advancing with its escort | 9 tiles remain"
+    /// repeated at the SAME distance turn after turn (run
+    /// civvis-20260807T202450Z), and across five completed games settlers
+    /// crossed 0.78 tiles/turn with 45% standstills — while every game's
+    /// score lost to city count. Under the treatment, two consecutive
+    /// no-closer turns release the link (which also clears
+    /// `formation_movement_locked_by_zoc`) and fall through to the ordinary
+    /// self-march. Native tournament controllers keep the frozen behaviour.
+    escort_unstick: bool,
+    /// A Religion strategy sues for peace instead of holding wars that starve
+    /// its own lane.
+    ///
+    /// ★★★★ MEASURED (run civvis-20260807T224914Z, Settler live): at t200 the
+    /// seat had met exactly two rivals and was AT WAR WITH BOTH, so the
+    /// offensive-spread filter's `!is_at_war` excluded every one of the ten
+    /// revealed foreign cities; four charged Buddhist units idled, faith
+    /// banked to 1032, and the game ended with all five rivals' religions
+    /// untouched — while the plan printed `strategy=religion` beside
+    /// `target_player=Some(..)`. The league's 48-of-60 religious wins at this
+    /// turn cap come from spreading to NEUTRAL rivals; a religion plan that
+    /// keeps its wars blockades itself. Under the treatment the Religion
+    /// strategy offers peace to every non-emergency at-war major, on top of
+    /// the existing outmatched/recovery/stalled reasons. Firaxis may refuse
+    /// the deal; offering costs nothing and unblocks the lane the moment it
+    /// lands. Frozen tournament controllers keep the recorded posture.
+    religion_sues_peace: bool,
     /// Total unresolved delay for each Settler. Unlike `settler_stalls`, this
     /// survives a target change so a stranded civilian stops monopolizing the
     /// empire-wide in-flight allowance and attracts an escort.
@@ -1383,6 +1570,28 @@ pub struct AdvancedAi {
     /// Production Advanced enables this. Historical evaluator controls retain
     /// the old flat-gene delegation.
     pub plan_city_target: bool,
+    /// Price the city ceiling off the land the board actually shows, densely.
+    ///
+    /// ★★★★ THE STOCK CEILING IS WHAT LOSES SETTLER GAMES, and three live
+    /// Firaxis games measured it on 2026-08-07. `assess` clamps
+    /// `map_capacity` to nine and prices land at one city per 55 passable
+    /// tiles — bred against CIVVIS rivals who contest ground. Against
+    /// Civilization VI's Settler AI nobody contests anything: all three runs
+    /// saturated at EIGHT cities by t110–t150 while rivals reached ten and
+    /// eleven, and the score sheet followed directly (639 vs 1317; 911 vs
+    /// 1049; techs 51 vs 72 in the first, because science is a city count).
+    /// The empire hit 8 of its own 9-ceiling — what limited it was the
+    /// ceiling, not its ability to reach one, which is the same shape #569
+    /// already established for the six-city planning cap.
+    ///
+    /// Under the treatment the ceiling prices land at one city per 45 tiles
+    /// and clamps at twelve. Self-adapting by construction: on a contested
+    /// league board rivals absorb the land and the computed capacity never
+    /// nears the new ceiling, so bred behaviour is preserved where breeding
+    /// happened; on an uncontested live board the free land IS the signal.
+    /// Native tournament games leave this off so recorded ladders stay
+    /// comparable.
+    pub wide_map_capacity: bool,
     pub city_strategy: bool,
     /// Ablation halves of `city_strategy`, so the loss above can be attributed
     /// rather than guessed at. Each is meaningless unless `city_strategy` is
@@ -1687,6 +1896,49 @@ pub struct AdvancedAi {
     /// rule therefore leaves it off; reachable as `advanced_envoy_priority`.
     pub envoy_priority: bool,
 
+    /// Plan the whole engagement at once instead of committing one unit at a
+    /// time in a fixed class order.
+    ///
+    /// The per-unit evaluator this sits in front of is strong: it scores every
+    /// attack on an exact cloned forward model and extends the line with a
+    /// quiescence reply search. What it cannot do is choose a *set* of attacks.
+    /// Units commit greedily and irreversibly in the order ranged, siege,
+    /// melee, so targets are assigned one at a time, the enemy's answer is
+    /// priced against a half-played turn, and no unit may take a worse attack
+    /// to set up a better one for the unit behind it.
+    ///
+    /// `src/ai/tactics.rs` replaces that commitment rule with a bounded
+    /// Portfolio Online Evolution over the joint assignment — the method
+    /// published for exactly this game shape (Churchill & Buro 2013; Justesen
+    /// et al. 2016; Wang et al. 2016). The greedy incumbent is always in the
+    /// population, so the search cannot score below today's behaviour under its
+    /// own evaluator.
+    ///
+    /// **Off by default until the paired whole-game gate clears.** Reachable as
+    /// the `advanced_joint_tactics` entrant. `docs/TACTICS.md` carries the
+    /// design and the measurements.
+    pub joint_tactics: bool,
+
+    /// Units this turn's joint plan already reached a decision for, including
+    /// the ones it decided should not attack. Their greedy attack selection is
+    /// suppressed so a declined trade is not immediately re-taken by the
+    /// per-unit path; movement is untouched.
+    tactics_resolved: BTreeSet<u32>,
+
+    /// Units the joint plan moved without landing a blow — withdrawals, and
+    /// approaches whose attack the engine refused. The plan was scored with
+    /// these standing exactly where it left them, so the per-unit mover is
+    /// kept off them entirely for the rest of the turn: it would otherwise
+    /// march a fresh retreat straight back into the contact the plan paid
+    /// the fortification forfeit to break.
+    tactics_withdrawn: BTreeSet<u32>,
+
+    /// Turns on which the joint search produced a plan, and unit decisions it
+    /// reached across them. Read by instruments through
+    /// [`AdvancedAi::joint_tactics_census`].
+    tactics_plans: usize,
+    tactics_decisions: usize,
+
     /// Price beakers as the empire's compounding interest rate rather than as
     /// one victory lane's currency.
     ///
@@ -1968,6 +2220,7 @@ impl AdvancedAi {
         self.base.forget_unit_memory();
         self.settler_targets.clear();
         self.settler_stalls.clear();
+        self.escort_march.clear();
         self.settler_blocked_turns.clear();
         self.settler_avoid.clear();
         self.settler_closest.clear();
@@ -1992,6 +2245,11 @@ impl AdvancedAi {
             .settler_stalls
             .iter()
             .filter_map(|(uid, stalls)| map.get(uid).map(|new| (*new, *stalls)))
+            .collect();
+        self.escort_march = self
+            .escort_march
+            .iter()
+            .filter_map(|(uid, held)| map.get(uid).map(|new| (*new, *held)))
             .collect();
         self.settler_blocked_turns = self
             .settler_blocked_turns
@@ -2066,6 +2324,10 @@ impl AdvancedAi {
             siege_tracks_the_wall: false,
             blind_objective_strength: false,
             muster_at_command_radius: false,
+            war_economy: false,
+            war_reinforcement: false,
+            war_patience: false,
+            siege_commitment: false,
             relief_targets_the_siege: false,
             blind_objective_units: false,
             settler_price: 1.0,
@@ -2075,6 +2337,9 @@ impl AdvancedAi {
             adjacency_site_planning: false,
             settler_commit: false,
             settler_stalls: BTreeMap::new(),
+            escort_march: BTreeMap::new(),
+            escort_unstick: false,
+            religion_sues_peace: false,
             settler_blocked_turns: BTreeMap::new(),
             settler_avoid: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
@@ -2089,6 +2354,7 @@ impl AdvancedAi {
             belief_pressure: false,
             city_target_floor: 3,
             plan_city_target: false,
+            wide_map_capacity: false,
             city_strategy: false,
             city_strategy_emphasis: true,
             city_strategy_roles: true,
@@ -2115,6 +2381,11 @@ impl AdvancedAi {
             congress_counter_votes: false,
             envoy_infrastructure: false,
             envoy_priority: false,
+            joint_tactics: false,
+            tactics_resolved: BTreeSet::new(),
+            tactics_withdrawn: BTreeSet::new(),
+            tactics_plans: 0,
+            tactics_decisions: 0,
             research_economy: false,
             campus_every_city: false,
             housing_cards: false,
@@ -2157,11 +2428,70 @@ impl AdvancedAi {
         self.base.home_defense = true;
     }
 
+    /// Stop a Settler that has stopped walking from holding the expansion gate
+    /// shut. Native tournament games leave this disabled so their recorded
+    /// ladders replay the historical controller move for move.
+    pub fn enable_stranded_settler_discount(&mut self) {
+        self.base.settler_strand_discount = true;
+    }
+
     /// Record tactical steps so a unit stepped twice in one turn cannot walk
     /// back onto the tile it just left. Native tournament games leave this
     /// disabled so their recorded ladders replay move-for-move.
     pub fn enable_recorded_tactical_step(&mut self) {
         self.base.recorded_tactical_step = true;
+    }
+
+    /// Price the city ceiling off uncontested land. Native tournament games
+    /// leave this off so recorded ladders stay comparable; see
+    /// `wide_map_capacity` for the live Settler measurement.
+    pub fn enable_wide_map_capacity(&mut self) {
+        self.wide_map_capacity = true;
+    }
+
+    pub fn disable_wide_map_capacity(&mut self) {
+        self.wide_map_capacity = false;
+    }
+
+    /// A city losing hitpoints is besieged, whatever the fog says. See
+    /// `BasicAi::garrison_under_fire` for the t115 measurement.
+    pub fn enable_garrison_under_fire(&mut self) {
+        self.base.garrison_under_fire = true;
+    }
+
+    pub fn disable_garrison_under_fire(&mut self) {
+        self.base.garrison_under_fire = false;
+    }
+
+    /// Order our own ancient walls in the capital and small frontier cities
+    /// once Masonry is in. Native tournament games leave this disabled so
+    /// their recorded ladders stay comparable; see
+    /// `BasicAi::garrison_walls_item` for the t115 measurement.
+    pub fn enable_garrison_walls(&mut self) {
+        self.base.garrison_walls = true;
+    }
+
+    pub fn disable_garrison_walls(&mut self) {
+        self.base.garrison_walls = false;
+    }
+
+    /// Release an escort that is not walking its settler. See `escort_unstick`.
+    pub fn enable_escort_unstick(&mut self) {
+        self.escort_unstick = true;
+    }
+
+    pub fn disable_escort_unstick(&mut self) {
+        self.escort_unstick = false;
+    }
+
+    /// A Religion strategy offers peace to unblock its spread lane. See
+    /// `religion_sues_peace` for the t200 measurement.
+    pub fn enable_religion_sues_peace(&mut self) {
+        self.religion_sues_peace = true;
+    }
+
+    pub fn disable_religion_sues_peace(&mut self) {
+        self.religion_sues_peace = false;
     }
 
     /// Enable explicit battlefield roles: the land-unit counter cycle, safe
@@ -2239,6 +2569,28 @@ impl AdvancedAi {
         self.base.siege_role = true;
     }
 
+    /// Rebuild the recon arm when it is gone and there is ground left to chart.
+    /// Native tournament games leave this disabled so their recorded ladders
+    /// stay comparable.
+    pub fn enable_recon_replacement(&mut self) {
+        self.base.recon_replacement = true;
+    }
+
+    pub fn disable_recon_replacement(&mut self) {
+        self.base.recon_replacement = false;
+    }
+
+    /// Price a revealed natural wonder's ring into the settle scorer. Native
+    /// tournament games leave this disabled so their recorded ladders stay
+    /// comparable.
+    pub fn enable_wonder_ring_settle_value(&mut self) {
+        self.base.wonder_ring_settle_value = true;
+    }
+
+    pub fn disable_wonder_ring_settle_value(&mut self) {
+        self.base.wonder_ring_settle_value = false;
+    }
+
     pub fn disable_siege_role(&mut self) {
         self.base.siege_role = false;
     }
@@ -2269,6 +2621,35 @@ impl AdvancedAi {
     /// comparable.
     pub fn enable_muster_at_command_radius(&mut self) {
         self.muster_at_command_radius = true;
+    }
+
+    /// Send an adaptive Conquest plan through the war production path. Native
+    /// tournament games leave this disabled so their recorded ladders stay
+    /// comparable.
+    pub fn enable_war_economy(&mut self) {
+        self.war_economy = true;
+    }
+
+    /// March rear units to the campaign objective while the war is on. Native
+    /// tournament games leave this disabled so their recorded ladders stay
+    /// comparable.
+    pub fn enable_war_reinforcement(&mut self) {
+        self.war_reinforcement = true;
+    }
+
+    /// Keep prosecuting a war the empire overwhelmingly outweighs instead of
+    /// suing it out as stalled. Native tournament games leave this disabled so
+    /// their recorded ladders stay comparable.
+    pub fn enable_war_patience(&mut self) {
+        self.war_patience = true;
+    }
+
+    /// Keep the campaign pointed at a city the army has already breached and
+    /// beaten down, instead of re-picking a fresh objective and letting the
+    /// broken one heal. Native tournament games leave this disabled so their
+    /// recorded ladders stay comparable.
+    pub fn enable_siege_commitment(&mut self) {
+        self.siege_commitment = true;
     }
 
     /// Send a relief force at the units actually besieging the city rather than
@@ -2364,6 +2745,25 @@ impl AdvancedAi {
         // asking too late; this floor asks it of the strongest MET major in
         // peacetime, under its own far smaller ceiling.
         self.enable_peacetime_deterrence();
+        // Three straight Settler losses were an eight-city empire against
+        // ten- and eleven-city rivals; the stock nine-ceiling was the binding
+        // constant. See `wide_map_capacity`.
+        self.enable_wide_map_capacity();
+        // The other half of the same three-defeat measurement: the capital that
+        // fell bleeding with an empty hostile list. See garrison_under_fire.
+        self.enable_garrison_under_fire();
+        // The other half of that same capital's diagnosis: garrison_under_fire
+        // reacts to a city already bleeding, but the capital that fell had
+        // NEVER ORDERED WALLS — max_wall_damage 0 at t115 with production on
+        // the culture lane and the fog hiding every attacker until adjacency.
+        // See BasicAi::garrison_walls_item.
+        self.enable_garrison_walls();
+        // Settler conversion is the score frontier the first seven live games
+        // isolated; see escort_unstick.
+        self.enable_escort_unstick();
+        // The religion lane was structurally blocked by its own wars; see
+        // religion_sues_peace.
+        self.enable_religion_sues_peace();
         // Raj, Wisselbanken, Collective Activism and the International Space
         // Agency all scale off SUZERAIN city-states and pay nothing at zero.
         // Live run `civvis-20260803T220954Z` held Raj AND Wisselbanken slotted
@@ -2386,6 +2786,24 @@ impl AdvancedAi {
         // taken, zero siege units built in 251 turns with every siege tech in
         // hand. The tournament controller stays frozen.
         self.enable_siege_role();
+        // ⚠ The empire goes blind and the build order never notices. Recon is
+        // not among the counts `pick_item` receives, and `OPENING_MENU` is the
+        // only place a scout is named, so once the openers die nothing replaces
+        // them. Live run `civvis-20260808T142724Z`: zero recon units from turn
+        // ~100 to 251 while the army grew to 22, 77% of the map never seen, and
+        // the eventual winner first met on turn 215 already holding 927 points.
+        self.enable_recon_replacement();
+        // ⚠ A revealed natural wonder is priced into founding only through the
+        // worked tiles the growth forecast can see and a future Holy Site's
+        // adjacency — for the Matterhorn about 2-4 points — while everything
+        // else a wonder-ring city collects (pantheon faith, appeal districts
+        // and parks, late tourism) is invisible to settling, so a breadbasket
+        // outbids any wonder ring by construction. Live run
+        // `civvis-20260807T202450Z` t93 (issue #1378): the settler founded a
+        // 64.6-point site while `FEATURE_MATTERHORN` stood revealed inside the
+        // candidate radius. The tournament controller stays frozen so its
+        // recorded ladders remain comparable.
+        self.enable_wonder_ring_settle_value();
         // ⚠ `unit_can_traverse` says yes to open water for every land unit as
         // soon as embarkation unlocks, so the unexplored ocean becomes a legal
         // exploration goal for the whole army — and the only rule that brought
@@ -2432,6 +2850,19 @@ impl AdvancedAi {
         self.enable_muster_at_command_radius();
         self.enable_relief_targets_the_siege();
         self.enable_blind_objective_units();
+        // ⚠ THE EXPANSION GATE ASKS `settlers == 0`, so a settler that never
+        // founds anything answers "one is already in flight" for the rest of
+        // the game. Across the 25 live runs of 2026-08-07/08 that reason is
+        // 86% of every refusal to build a settler (1,548 of 1,767), the median
+        // game's longest-lived single settler survives 86 turns of 250 without
+        // founding, and nine runs carried one alive for 82-171 turns having
+        // moved five times or fewer. Those empires finished on a median of 5
+        // cities against a `city_target` of 7.8 with the window open to turn
+        // 198 — neither was binding, this was — and lost all 21 completed
+        // games at a median score 0.46x the leader's, with final score
+        // tracking city count at r = 0.81. The mod's fallback ladder already
+        // made this repair; under `--civvis-decides` it is not the decider.
+        self.enable_stranded_settler_discount();
         // ⚠ Faith buys the soldier; GOLD pays for it every turn forever, and
         // `military_faith_spending` never asks about gold — it gates on the faith
         // bank alone. Measured on run `civvis-20260803T014330Z`: faith military
@@ -2466,6 +2897,45 @@ impl AdvancedAi {
         // gated-off flag here would be dead code of the `culture_focus` kind.
         self.enable_district_coverage();
         self.enable_slot_kind_tiebreak();
+        // ⚠⚠ WARS ARE REACHED BUT NEVER CONVERTED. Across the fifteen live
+        // Settler games of 2026-08-07/08 the ledger records four war
+        // declarations and ZERO city captures, and the score losses (639-1317,
+        // 457 at 3 cities on `civvis-20260808T033223Z`) are the direct result:
+        // the games are decided on score at the 250-turn cap, and captures are
+        // the one lever never pulled. Three repairs, separately ablatable,
+        // one causal story — the agent that reaches its own declaration must
+        // also fight the war it declared:
+        // ⚠ An adaptive Conquest plan never reaches `advanced_production` —
+        // it falls through to the Basic governor and an army target of
+        // `mil_per_city * cities` (≈1.4/city on the deployed genome), so the
+        // war is fought on a peacetime economy. `docs/RUSH.md` measured the
+        // routing trap from the other side: raising the army in
+        // `production_value` was twice byte-identical to a no-op.
+        self.enable_war_economy();
+        // ⚠ Reinforcements never reach the front. Force groups are cliques at
+        // `command_radius`, so the trickle of fresh and released units forms
+        // one- and two-body groups at home that can never clear
+        // `LOCAL_SUPERIORITY_FLOOR` at the objective. Measured on run
+        // `civvis-20260808T033223Z`, t217-t225: land forces of one, two and
+        // three against the same objective, every one "too weak locally to
+        // advance", while the empire fielded 10-14 units.
+        self.enable_war_reinforcement();
+        // ⚠ A war that grinds a wall for 12 turns reads as stalled, and
+        // fatigue then offers peace AND accepts any white peace at +320 —
+        // followed by a 30-turn re-declaration lockout. The stall clause is
+        // right when the sides are close and self-defeating when the attacker
+        // holds `OVERWHELMING_WAR_RATIO` over the defender: the measured live
+        // pattern is one declaration per game and no second attempt.
+        self.enable_war_patience();
+        // ⚠ And the war it keeps prosecuting still has to end on a captured
+        // city. The campaign re-picks its objective from scratch every turn and
+        // prices fifteen turns of siege at ~37 points, less than the distance
+        // terms swing; the army walks off a city at 25 hp with its walls down
+        // and Civ 6 heals it back at 20 hp a turn. Live run
+        // `civvis-20260808T142724Z` dealt 338 hp of city damage over t73-t105,
+        // handed 200 of it back, and took nothing — the shape behind 25 live
+        // games and 0 captures on 7.7x the field's military.
+        self.enable_siege_commitment();
         // ⚠⚠ AND THE POPULATION THE SCIENCE IS COMPUTED FROM IS CAPPED BY HOUSING.
         // The lane above decides which specialty district a city builds; none of
         // them raises the ceiling on the citizens who work them. Measured over
@@ -2505,6 +2975,20 @@ impl AdvancedAi {
         // the live median Aqueduct order lands at turn 164. Making the district
         // reachable in the build lists cannot beat the tech that gates it.
         self.enable_housing_research();
+        self.enable_joint_tactics();
+    }
+
+    /// Plan each engagement's attacks as one joint problem instead of one
+    /// unit at a time in a fixed class order. Measured on `battle_bench`
+    /// (1000 paired fresh seeds a cell, seats swapped): combined arms +275,
+    /// ranged-heavy +363, siege +206, melee-only within noise, all against
+    /// the production controller the bridge extends. The whole-game gate
+    /// stays inconclusive (`docs/TACTICS.md` §6), so the tournament
+    /// `advanced` entrant keeps the greedy commitment rule and the deployed
+    /// bridge — where the operator asked for the strongest battlefield play,
+    /// not a rating — takes the search.
+    pub fn enable_joint_tactics(&mut self) {
+        self.joint_tactics = true;
     }
 
     /// Hold ONE live-bridge flag off so an arm can price it. These exist for
@@ -2512,6 +2996,10 @@ impl AdvancedAi {
     /// turns a repair back off.
     pub fn disable_home_defense(&mut self) {
         self.base.home_defense = false;
+    }
+
+    pub fn disable_joint_tactics(&mut self) {
+        self.joint_tactics = false;
     }
 
     pub fn disable_solvent_faith_army(&mut self) {
@@ -2564,6 +3052,17 @@ impl AdvancedAi {
 
     pub fn disable_housing_districts(&mut self) {
         self.base.housing_districts = false;
+    }
+
+    /// Hold the stranded-Settler discount off, for the controlled arm.
+    ///
+    /// ⚠ Every `enable_*` in `enable_live_bridge` needs this counterpart or the
+    /// treatment cannot be ablated: `--without stranded-settler-discount` exits
+    /// 2 on an unknown name, so the one arm that would measure the repair
+    /// against the deployed configuration does not exist. It shipped without
+    /// one; this is that omission.
+    pub fn disable_stranded_settler_discount(&mut self) {
+        self.base.settler_strand_discount = false;
     }
 
     /// Keep asking for a Campus in every city that can still repay one. See
@@ -2634,6 +3133,22 @@ impl AdvancedAi {
 
     pub fn disable_muster_at_command_radius(&mut self) {
         self.muster_at_command_radius = false;
+    }
+
+    pub fn disable_war_economy(&mut self) {
+        self.war_economy = false;
+    }
+
+    pub fn disable_war_reinforcement(&mut self) {
+        self.war_reinforcement = false;
+    }
+
+    pub fn disable_war_patience(&mut self) {
+        self.war_patience = false;
+    }
+
+    pub fn disable_siege_commitment(&mut self) {
+        self.siege_commitment = false;
     }
 
     pub fn disable_relief_targets_the_siege(&mut self) {
@@ -2826,6 +3341,17 @@ impl AdvancedAi {
 
     /// Last set of force orders produced for this agent. This is useful to
     /// observers, evaluators, and tests; orders are rebuilt at every war turn.
+    /// How many turns this agent's joint tactical search actually planned, and
+    /// how many unit decisions it reached. For instruments only.
+    ///
+    /// A treatment that never fires produces a null for the wrong reason, and
+    /// on a whole-game evaluation "the layer barely runs" and "the layer runs
+    /// and does not matter" call for opposite next steps. `battle_bench --cost`
+    /// reports this so the two can be told apart.
+    pub fn joint_tactics_census(&self) -> (usize, usize) {
+        (self.tactics_plans, self.tactics_decisions)
+    }
+
     pub fn force_groups(&self) -> &[ForceGroup] {
         &self.force_groups
     }
@@ -4185,6 +4711,7 @@ impl AdvancedAi {
             .collect::<Vec<_>>();
         let distance = match g.map.topology {
             crate::world::Topology::Cylinder => CityDistance::Cylinder(g.map.width),
+            crate::world::Topology::Rectangle => CityDistance::Bounded,
             crate::world::Topology::Globe(frequency) => {
                 CityDistance::Globe(crate::sphere::sphere(frequency))
             }
@@ -5102,7 +5629,14 @@ impl AdvancedAi {
             .values()
             .filter(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
             .count();
-        let map_capacity = (2 + land / 55).clamp(3, 9);
+        let map_capacity = if self.wide_map_capacity {
+            // Live-bridge pricing: one city per 45 passable tiles, ceiling
+            // twelve. See the `wide_map_capacity` field for the three-game
+            // Settler measurement this bounds.
+            (2 + land / 45).clamp(3, 12)
+        } else {
+            (2 + land / 55).clamp(3, 9)
+        };
         // Expansion must compound before it pays back. Add roughly one city
         // per era instead of continuously raising the target and starving a
         // young empire of districts, buildings, and population growth. Scale
@@ -7438,10 +7972,20 @@ impl AdvancedAi {
             .get(&partner)
             .copied()
             .unwrap_or(0.0);
-        let fatigued = self.major_war_since.is_some_and(|started| {
-            g.turn.saturating_sub(started) >= 24
-                && g.turn.saturating_sub(self.last_campaign_progress) >= 12
-        });
+        // `war_patience`: the stall clause stands down while the empire
+        // overwhelmingly outweighs its own campaign target, so a slow wall
+        // does not sue a walkover out. The 0.85 outmatched clause below is
+        // deliberately untouched — if the advantage is ever lost, so is the
+        // patience.
+        let overwhelming = self.war_patience
+            && plan.strategy == GrandStrategy::Conquest
+            && plan.target_player == Some(partner)
+            && my_power >= partner_power * OVERWHELMING_WAR_RATIO;
+        let fatigued = !overwhelming
+            && self.major_war_since.is_some_and(|started| {
+                g.turn.saturating_sub(started) >= 24
+                    && g.turn.saturating_sub(self.last_campaign_progress) >= 12
+            });
         let denied_partner = plan.target_player == Some(partner)
             && (plan.strategy == GrandStrategy::Conquest
                 || g.is_at_war(pid, partner)
@@ -8865,6 +9409,113 @@ impl AdvancedAi {
         Some(g.apply(pid, &Action::Move { unit: uid, to: next }).is_ok())
     }
 
+    /// March a rear unit toward the campaign objective while the war is on.
+    ///
+    /// `campaign_staging_step` assembles the army before the declaration and
+    /// then deliberately stands down: at war, every field unit belongs to a
+    /// force group. But groups are cliques at `command_radius`, so the
+    /// reinforcement trickle — fresh production, healed units, released
+    /// garrisons — forms one- and two-body groups at home whose local
+    /// strength at the objective can never clear `LOCAL_SUPERIORITY_FLOOR`.
+    /// They hold forever, and the front fights the whole war with whatever
+    /// staged on declaration day. Measured on live run
+    /// `civvis-20260808T033223Z`: the why ledger shows land forces of one,
+    /// two and three against the same objective from t217 to t225, every one
+    /// "too weak locally to advance", while the empire fielded 10-14 units.
+    ///
+    /// Deliberately narrow, in order of what it declines: the homeland keeps
+    /// first claim (any threatened city stands the march down empire-wide),
+    /// the front group and any group already moving keep their measured
+    /// posture logic, a unit in contact belongs to the tactical layer, and a
+    /// unit below `withdraw_hp` heals where it stands. What remains is
+    /// exactly the standing-still rear, and it walks the same road the
+    /// pre-war assembly walked: routed to the objective's 3..=5 staging
+    /// ring, never onto the city tile itself. Groups are rebuilt from the
+    /// board every turn, so an arrival within `command_radius` of the front
+    /// merges into it and takes the front's orders from then on.
+    fn wartime_reinforcement_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        plan: &StrategicPlan,
+        group: Option<&ForceGroup>,
+        enemies: &[usize],
+    ) -> Option<bool> {
+        if !self.war_reinforcement || plan.strategy != GrandStrategy::Conquest {
+            return None;
+        }
+        if plan.threatened_city.is_some() {
+            return None;
+        }
+        let target = plan.target_player?;
+        if !g.is_at_war(pid, target) {
+            return None;
+        }
+        let objective = plan
+            .target_city
+            .and_then(|city| g.cities.get(&city))
+            .filter(|city| city.owner == target)
+            .map(|city| city.pos)?;
+        let rear = group.is_none_or(|group| {
+            matches!(group.posture, ForcePosture::Hold | ForcePosture::Muster)
+                && g.wdist(group.anchor, objective) > REINFORCEMENT_FRONT_RADIUS
+        });
+        if !rear {
+            return None;
+        }
+        let unit = &g.units[&uid];
+        let spec = &g.rules.units[unit.kind];
+        if !matches!(spec.class.as_str(), "military" | "support")
+            || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            || (BasicAi::unit_doctrine(g, uid) == UnitDoctrine::Recon
+                && self.base.has_exploration_target(g, pid, uid))
+        {
+            return None;
+        }
+        if (unit.hp as f64) <= self.base.w.withdraw_hp {
+            return None;
+        }
+        let in_contact = g
+            .units
+            .values()
+            .any(|enemy| enemies.contains(&enemy.owner) && g.wdist(unit.pos, enemy.pos) <= 2);
+        if in_contact {
+            return None;
+        }
+        let here = unit.pos;
+        let kind = unit.kind;
+        // The same road the pre-war assembly walks: route to the objective's
+        // staging ring, never onto the city tile itself (a city is attacked,
+        // not entered, so a route aimed at its tile finds nothing).
+        let goals: HashSet<Pos> = {
+            let _memo = g.query_memo();
+            g.wdisk(objective, 5)
+                .into_iter()
+                .filter(|position| {
+                    (3..=5).contains(&g.wdist(*position, objective))
+                        && g.units_at(*position).is_empty()
+                        && g.city_at(*position).is_none()
+                        && g.map
+                            .get(*position)
+                            .is_some_and(|tile| !g.rules.is_water(tile))
+                })
+                .collect()
+        };
+        let next = g
+            .route_step_to_any(uid, &goals)
+            .filter(|position| *position != here && g.can_move(uid, *position))?;
+        if self.journal().wants(crate::reasoning::Level::Detail) {
+            think!(self.journal(), Military, Detail,
+                   "Reinforcing the campaign with {}", plain(&kind);
+                   "the front at {:?} is {} tiles away and this unit's group cannot \
+                    advance from here",
+                   objective, g.wdist(here, objective);
+                   objective);
+        }
+        Some(g.apply(pid, &Action::Move { unit: uid, to: next }).is_ok())
+    }
+
     /// A predecessor that missed the breakthrough upgrade because it was
     /// abroad returns to the nearest owned city before joining the staging
     /// column. This keeps Mobilize from marching an obsolete body away from
@@ -9284,10 +9935,30 @@ impl AdvancedAi {
             let appointed_objective = self.war_plan.as_ref().is_some_and(|war| {
                 war.phase == WarPhase::Exploit && war.target_player == *other
             });
-            let fatigued = self.major_war_since.is_some_and(|started| {
+            let stalled = self.major_war_since.is_some_and(|started| {
                 g.turn.saturating_sub(started) >= 24
                     && g.turn.saturating_sub(self.last_campaign_progress) >= 12
             });
+            // `war_patience`: a stalled war against the campaign target is
+            // not offered away while the empire holds an overwhelming power
+            // advantage over that target. The outmatched and Recovery offer
+            // triggers below keep their shape.
+            let overwhelming = self.war_patience
+                && plan.strategy == GrandStrategy::Conquest
+                && plan.target_player == Some(*other)
+                && my_power >= g.military_power(*other) * OVERWHELMING_WAR_RATIO;
+            let fatigued = stalled && !overwhelming;
+            if stalled
+                && overwhelming
+                && g.is_at_war(pid, *other)
+                && self.journal().wants(crate::reasoning::Level::Decision)
+            {
+                let their_power = g.military_power(*other);
+                think!(self.journal(), Diplomacy, Decision,
+                       "Pressing the war on {}", g.players[*other].civ;
+                       "the campaign has stalled, but {my_power:.0} power against \
+                        their {their_power:.0} is a war to finish, not to quit");
+            }
             let peace_pending = g.pending_deals.iter().any(|deal| {
                 deal.peace
                     && ((deal.from == pid && deal.to == *other)
@@ -9301,6 +9972,9 @@ impl AdvancedAi {
                 && (my_power < g.military_power(*other) * 0.62
                     || (plan.strategy == GrandStrategy::Recovery
                         && plan.target_player != Some(*other))
+                    || (self.religion_sues_peace
+                        && plan.strategy == GrandStrategy::Religion
+                        && !appointed_objective)
                     || (!appointed_objective
                         && fatigued
                         && g.player_city_ids(*other).len() > 1))
@@ -9312,6 +9986,10 @@ impl AdvancedAi {
                         "outmatched"
                     } else if plan.strategy == GrandStrategy::Recovery {
                         "this is not the war the recovery plan is fighting"
+                    } else if self.religion_sues_peace
+                        && plan.strategy == GrandStrategy::Religion
+                    {
+                        "the religion plan cannot spread into a war"
                     } else {
                         "the war has stalled"
                     };
@@ -12976,7 +13654,10 @@ impl AdvancedAi {
                 }
             }
             Item::Unit { unit } if unit == "spy" => {
-                let active = g.spies.values().filter(|spy| spy.owner == pid).count();
+                // `Game::spy_agents`, not the agent map: a live game's Spies
+                // are mirrored units and the map is empty, so this valuation
+                // used to re-price a Spy the host would refuse.
+                let active = g.spy_agents(pid);
                 let strategic = match plan.strategy {
                     GrandStrategy::Science | GrandStrategy::Culture => 850.0,
                     GrandStrategy::Diplomacy | GrandStrategy::Conquest => 1_050.0,
@@ -14277,6 +14958,7 @@ impl AdvancedAi {
             + growth_readiness
             + dependable_jobs * 0.75;
         value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
+        value += self.natural_wonder_ring_value(g, &positions);
 
         let enemy_distance = g
             .cities
@@ -14293,6 +14975,62 @@ impl AdvancedAi {
             value += self.defensibility(g, pid, pos);
         }
         value
+    }
+
+    /// Credit a founding site for the natural wonders its work radius holds.
+    ///
+    /// Without this term a revealed wonder reaches the settle scorer only
+    /// through the worked tiles the growth forecast can see — for the
+    /// Matterhorn one +1-culture ring tile, about 1.2 weighted points — plus a
+    /// future Holy Site's `natural_wonder` adjacency, about 0.4 more. All of
+    /// the economics that make a human take the wonder ring (pantheon faith of
+    /// the Earth Goddess class, appeal-fed districts and parks, late tourism)
+    /// are invisible at founding, so a breadbasket outbids any wonder ring by
+    /// construction: live run `civvis-20260807T202450Z` t93 founded a
+    /// 64.6-point site while `FEATURE_MATTERHORN` stood revealed inside the
+    /// candidate radius (issue #1378).
+    ///
+    /// The magnitude is read from the wonder's own modeled sheet
+    /// (`data/features.json`) rather than a flat per-wonder constant: each
+    /// point of modeled appeal at `NATURAL_WONDER_APPEAL_WEIGHT`, plus one
+    /// full hex ring of the yields the wonder projects onto its neighbours at
+    /// the same yield weights every other settlement term uses. A multi-tile
+    /// wonder counts once — the credit is for living beside the wonder, not
+    /// for each of its tiles. Gated behind the live-bridge treatment flag so
+    /// the frozen `advanced_v1` anchor's decision stream is unchanged.
+    fn natural_wonder_ring_value(&self, g: &Game, positions: &[Pos]) -> f64 {
+        if !self.base.wonder_ring_settle_value {
+            return 0.0;
+        }
+        let mut wonders: BTreeSet<&str> = BTreeSet::new();
+        for position in positions {
+            let Some(feature) = g.map.get(*position).and_then(|tile| tile.feature.as_deref())
+            else {
+                continue;
+            };
+            if g.rules
+                .features
+                .get(feature)
+                .is_some_and(|spec| spec.natural_wonder)
+            {
+                wonders.insert(feature);
+            }
+        }
+        wonders
+            .iter()
+            .map(|feature| {
+                let spec = &g.rules.features[*feature];
+                let ring = &spec.adjacent_yields;
+                spec.appeal * NATURAL_WONDER_APPEAL_WEIGHT
+                    + (ring.food * 2.0
+                        + ring.production * 2.2
+                        + ring.gold * 0.7
+                        + ring.science * 1.2
+                        + ring.culture * 1.2
+                        + ring.faith * 0.4)
+                        * NATURAL_WONDER_RING_TILES
+            })
+            .sum()
     }
 
     /// Penalize a site for threats the acting player can actually see. Hidden
@@ -14779,6 +15517,24 @@ impl AdvancedAi {
         let defenses = observed_strength * 1.8
             + observed_hp.max(0) as f64 * 0.12
             + observed_wall_hp.max(0) as f64 * 0.16;
+        // See [`AdvancedAi::siege_commitment`]. `defenses` above already prefers
+        // a weakened city, but only by ~37 points across the whole health bar —
+        // less than the distance terms swing over five tiles. That is why the
+        // campaign walks off a city at 25 hp with its walls down, and why Civ 6
+        // then heals it back to full at 20 hp a turn. Price the health already
+        // stripped from a *breached* city as the investment it is.
+        //
+        // `military_distance` is the reach test rather than `core_distance`
+        // because the question is whether the army that broke this city can
+        // still finish it, not whether the empire is nearby.
+        let siege_commitment = if self.siege_commitment
+            && observed_wall_hp <= 0
+            && military_distance <= SIEGE_COMMITMENT_REACH
+        {
+            (CITY_MAX_HP - observed_hp).clamp(0, CITY_MAX_HP) as f64 * SIEGE_COMMITMENT_PER_HP
+        } else {
+            0.0
+        };
         let local_balance = (hostile_local - friendly_local).clamp(-250.0, 250.0) * 0.45;
         let approach_cost = (6usize.saturating_sub(approaches)) as f64 * 11.0;
         let development = city.pop.max(1) as f64 * 7.0
@@ -14830,6 +15586,7 @@ impl AdvancedAi {
             - science_denial
             - recapture_value
             - liberation_value
+            - siege_commitment
     }
 
     /// Rank settleable ground the way this agent would, for a caller outside the
@@ -15309,15 +16066,36 @@ impl AdvancedAi {
                    self.plan.as_ref().map_or(0, |plan| plan.desired_cities); current);
             return g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
         }
-        if g.units[&uid].linked_to.is_some_and(|peer| {
-            g.units.get(&peer).is_some_and(|escort| {
+        if let Some(escort) = g.units[&uid].linked_to.filter(|peer| {
+            g.units.get(peer).is_some_and(|escort| {
                 g.rules.units[escort.kind].class == "military"
                     && g.rules.units[escort.kind].domain.as_deref() != Some("sea")
             })
         }) {
-            think!(self.journal(), Expansion, Detail, "Settler advancing with its escort";
-                   "{} tiles remain to {target:?}", g.wdist(current, target); target);
-            return true;
+            let distance = g.wdist(current, target);
+            let entry = self.escort_march.entry(uid).or_insert((distance, 0));
+            if distance < entry.0 {
+                *entry = (distance, 0);
+            } else {
+                entry.1 = entry.1.saturating_add(1);
+            }
+            if self.escort_unstick && entry.1 >= 2 {
+                self.escort_march.remove(&uid);
+                if g.apply(pid, &Action::UnlinkUnits { unit: escort }).is_ok() {
+                    think!(self.journal(), Expansion, Detail,
+                           "Escort released a stalled settler";
+                           "{distance} tiles to {target:?} unchanged for two turns \
+                            — the formation was not walking, so the settler will";
+                           target);
+                    // fall through to the ordinary self-march below
+                } else {
+                    return true;
+                }
+            } else {
+                think!(self.journal(), Expansion, Detail, "Settler advancing with its escort";
+                       "{} tiles remain to {target:?}", distance; target);
+                return true;
+            }
         }
         if let Some(escort) = g.units[&uid].linked_to.filter(|peer| {
             g.units.get(peer).is_some_and(|escort| {
@@ -16327,6 +17105,17 @@ impl AdvancedAi {
         anchor: Pos,
         enemies: &[usize],
     ) -> Pos {
+        // A capture-the-flag arena has exactly one thing worth marching on:
+        // the battle ends the moment either side's unit takes the flag tile,
+        // so every land column aims there — the army that arrives first wins
+        // outright, and the fight happens wherever the two marches meet.
+        // `arena_flag` is `Some` only on that arena shape, so every world
+        // and every other arena walks past this untouched.
+        if domain == ForceDomain::Land {
+            if let Some(flag) = g.arena_flag {
+                return flag;
+            }
+        }
         let visible = self.battlefront_visibility(g, pid);
         // An ancient rush keeps its objective. `threatened_city` outranks
         // `target_city` here and is an empire-wide fact, so the turn the
@@ -16889,6 +17678,25 @@ impl AdvancedAi {
                 low_hp_unit || capturable_city
             });
             let relieving = plan.threatened_city.is_some();
+            // A Tactics arena has none of the three reasons a Civ army stands
+            // still, so it does none of the three standing-still postures.
+            //
+            // `Recover` assumes time heals: nothing heals on an arena, so a
+            // battered force only gets more battered by waiting. `Hold`
+            // assumes something better is coming: no reinforcement is coming,
+            // because there is no city to build one in. And the superiority
+            // gate below assumes an army is an investment with a homeland
+            // behind it worth preserving — but on a battlefield the army *is*
+            // the game, and a force that declines every even fight simply
+            // loses the field to the clock. Measured with the gate on, two
+            // even armies ground each other down to five apiece and then
+            // circled for three hundred turns without either closing, so
+            // "last army standing" was never reached. This is deliberately
+            // the whole of the difference: everything below is the shipped
+            // Civ doctrine, unchanged, and an arena only stops asking to be
+            // let out of the fight.
+            let arena = g.is_arena();
+            let locally_superior = arena || local_strength_ratio >= LOCAL_SUPERIORITY_FLOOR;
             // ⚠ MEASURED AND REJECTED: letting a rush ignore `relieving` and
             // `Muster` — on the theory that a stack sized against one
             // undefended capital should never stand still — made it *worse*.
@@ -16896,12 +17704,10 @@ impl AdvancedAi {
             // first capture slipped from turn 79 to 96. The two standing-still
             // postures are load-bearing even for a rush; do not retry this
             // without a different mechanism.
-            let posture = if average_hp <= self.base.w.withdraw_hp + 10.0 {
+            let posture = if !arena && average_hp <= self.base.w.withdraw_hp + 10.0 {
                 ForcePosture::Recover
             } else if (focus_target.is_some()
-                && (local_strength_ratio >= LOCAL_SUPERIORITY_FLOOR
-                    || plan.threatened_city.is_some()
-                    || forcing_focus))
+                && (locally_superior || plan.threatened_city.is_some() || forcing_focus))
                 || (units.iter().any(|uid| {
                     g.units.values().any(|enemy| {
                         enemies.contains(&enemy.owner)
@@ -16909,16 +17715,16 @@ impl AdvancedAi {
                                 || (g.sees(&visible, enemy.pos)
                                     && self.battlefront_unit_visible(g, pid, enemy.id)))
                             && g.wdist(g.units[uid].pos, enemy.pos) <= 2
-                            && (local_strength_ratio >= LOCAL_SUPERIORITY_FLOOR
+                            && (locally_superior
                                 || plan.threatened_city.is_some()
                                 || enemy.hp <= 35)
                     })
                 }))
             {
                 ForcePosture::Engage
-            } else if relieving || local_strength_ratio < LOCAL_SUPERIORITY_FLOOR {
+            } else if !arena && (relieving || local_strength_ratio < LOCAL_SUPERIORITY_FLOOR) {
                 ForcePosture::Hold
-            } else if units.len() > 1 && readiness + 1e-9 < self.base.w.muster_readiness {
+            } else if !arena && units.len() > 1 && readiness + 1e-9 < self.base.w.muster_readiness {
                 ForcePosture::Muster
             } else {
                 ForcePosture::Advance
@@ -17085,6 +17891,32 @@ impl AdvancedAi {
         } else {
             Vec::new()
         };
+        // How an arena prices the two halves of an advance differently, and
+        // why it has to.
+        //
+        // The shipped weights charge `mv_threat * caution * expected damage`
+        // for standing where the enemy can reach — up to about 15 — and pay
+        // `objective_progress * progress` — about 3 — for each hex closer to
+        // the objective. In a Civ world that is right: a city does not move,
+        // an army that waits one more turn is an army with one more unit in
+        // it, and there is always something else the empire is doing
+        // meanwhile. On a battlefield all three are false, and the ratio is
+        // fatal, because both sides' threat ranges cover the same ground: a
+        // force that will not stand inside the enemy's reach and a force that
+        // will not be stood over are the same force, and neither ever moves.
+        // Measured on an even 10x10: both armies stopped exactly five hexes
+        // apart — a horseman's four moves plus its attack — and held there
+        // for three hundred turns while both sides' own orders read
+        // "Advance".
+        //
+        // So an arena closes harder and flinches less. Only these two terms
+        // move: everything that decides WHICH tile to close on — cover,
+        // cohesion, role spacing, screening, the strike opening, the blind
+        // ranged tile — is the shipped weighting, and so is every decision
+        // about whether to actually attack once contact is made.
+        const ARENA_ADVANCE_URGENCY: f64 = 3.0;
+        const ARENA_THREAT_CAUTION: f64 = 0.35;
+        let arena = g.is_arena();
         let score = |g: &Game, tile: Pos| -> f64 {
             let objective_distance = g.wdist(tile, target);
             let (progress, cohesion, threat_caution, spacing) = match role {
@@ -17095,6 +17927,14 @@ impl AdvancedAi {
                 ForceRole::Siege => (0.80, 1.30, 1.25, 1.70),
                 ForceRole::Support => (0.65, 1.50, 1.40, 1.20),
                 ForceRole::AirStrike => (1.20, 0.20, 0.75, 0.50),
+            };
+            let (progress, threat_caution) = if arena {
+                (
+                    progress * ARENA_ADVANCE_URGENCY,
+                    threat_caution * ARENA_THREAT_CAUTION,
+                )
+            } else {
+                (progress, threat_caution)
             };
             let mut value = -self.base.w.objective_progress * progress * objective_distance as f64;
             let nearest_friend = group
@@ -17182,7 +18022,17 @@ impl AdvancedAi {
                     }
                 }
             }
-            if group.local_strength_ratio < 1.0 {
+            // The posture selector's superiority gate is already arena-off
+            // (an army that declines every even fight loses the field to the
+            // clock), but this second gate — a per-tile brake on any closing
+            // move while locally weaker — was still on, and it is the
+            // standoff: approaching the enemy mass lowers the local ratio, so
+            // every advancing group brakes exactly at the edge of enemy
+            // reach, on both sides at once. Measured on a 20x20 no-city
+            // arena: armies parked three to six hexes apart with zero units
+            // in contact for 40-62% of the battle, grinding out the clock
+            // through accidental skirmishes.
+            if !arena && group.local_strength_ratio < 1.0 {
                 let advance = g.wdist(upos, target) - objective_distance;
                 value -= self.base.w.local_superiority
                     * (1.0 - group.local_strength_ratio)
@@ -17213,7 +18063,15 @@ impl AdvancedAi {
             }
         }
         if let Some((candidate, pos)) = best {
-            if self.base.unit_objective_memory {
+            // Not on an arena: the danger memory exists to walk a world
+            // army around a kill zone it can come back to with more force,
+            // and its retreat floor is `withdraw_hp` — but nothing heals on
+            // an arena and no more force is coming, so after the first
+            // exchange half of both armies sits near the floor and every
+            // approach reads as a reason to turn around. Measured: the
+            // armies touched, traded, separated, and spent 40-62% of the
+            // battle with zero units in contact.
+            if !arena && self.base.unit_objective_memory {
                 let advancing = g.wdist(pos, target) < g.wdist(upos, target);
                 let danger = self
                     .base
@@ -17707,6 +18565,27 @@ impl AdvancedAi {
         if !after.units.contains_key(&uid) {
             return 135.0;
         }
+        Self::forcing_reply_penalty_from_position(work_pool.as_ref(), &after, pid, &[uid])
+    }
+
+    /// Price the strongest forcing reply from an already-resolved friendly
+    /// position.  Most callers have one exposed attacker; a coordinated
+    /// volley passes both surviving bodies so the opponent is allowed to pick
+    /// whichever member of the pair is actually vulnerable.
+    fn forcing_reply_penalty_from_position(
+        work_pool: Option<&Arc<WorkPool>>,
+        after: &Game,
+        pid: usize,
+        victims: &[u32],
+    ) -> f64 {
+        let victims: Vec<u32> = victims
+            .iter()
+            .copied()
+            .filter(|uid| after.units.contains_key(uid))
+            .collect();
+        if victims.is_empty() {
+            return 0.0;
+        }
         let enemies: Vec<usize> = after
             .players
             .iter()
@@ -17739,14 +18618,15 @@ impl AdvancedAi {
                 city.struck = false;
                 city.encampment_struck = false;
             }
-
-            worst_reply = worst_reply.max(Self::forcing_reply_line(
-                work_pool.as_ref(),
-                &reply_position,
-                enemy,
-                uid,
-                2,
-            ));
+            for victim in &victims {
+                worst_reply = worst_reply.max(Self::forcing_reply_line(
+                    work_pool,
+                    &reply_position,
+                    enemy,
+                    *victim,
+                    2,
+                ));
+            }
         }
         worst_reply
     }
@@ -17759,6 +18639,106 @@ impl AdvancedAi {
             uid,
             action,
         )
+    }
+
+    /// Find a direct, two-unit kill that the normal per-unit evaluator cannot
+    /// see as one line.  The first unit still needs to choose a sound exact
+    /// attack; this only credits it when a surviving teammate in the same
+    /// engaged force can legally remove that *same* defender immediately.
+    ///
+    /// The bounded extension deliberately excludes movement, cities, and
+    /// quiet follow-ups.  It fixes the harmful ordering assumption that the
+    /// enemy replies between two friendly shots without reopening the removed
+    /// portfolio search or its performance cost.
+    fn friendly_volley_extension(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        action: &Action,
+        group: &ForceGroup,
+        plan: &StrategicPlan,
+    ) -> Option<(f64, f64)> {
+        if !self.base.tactical_strategy
+            || group.posture != ForcePosture::Engage
+            || group.units.len() < 2
+        {
+            return None;
+        }
+        let target = match action {
+            Action::Attack { unit, target } | Action::Ranged { unit, target } if *unit == uid => {
+                *target
+            }
+            _ => return None,
+        };
+        let victim = g.units_at(target).into_iter().find(|other| {
+            let defender = &g.units[other];
+            defender.owner != pid
+                && g.is_at_war(pid, defender.owner)
+                && g.rules.units[defender.kind].class == "military"
+        })?;
+        let mut after_first = g.clone();
+        if after_first.apply(pid, action).is_err()
+            || !after_first.units.contains_key(&uid)
+            || !after_first.units.contains_key(&victim)
+        {
+            return None;
+        }
+
+        let mut best: Option<(f64, u32, usize, Game)> = None;
+        for (order, followup) in Self::forcing_attacks_to(&after_first, pid, target, None)
+            .into_iter()
+            .filter_map(|followup| match &followup {
+                Action::Attack { unit, .. } | Action::Ranged { unit, .. }
+                    if *unit != uid && group.units.contains(unit) =>
+                {
+                    Some(followup)
+                }
+                _ => None,
+            })
+            .take(TACTICAL_VOLLEY_FINISHER_LIMIT)
+            .enumerate()
+        {
+            let (finisher, ranged) = match &followup {
+                Action::Attack { unit, .. } => (*unit, false),
+                Action::Ranged { unit, .. } => (*unit, true),
+                _ => unreachable!("friendly volley only retains direct ground attacks"),
+            };
+            let mut after_second = after_first.clone();
+            if after_second.apply(pid, &followup).is_err() || after_second.units.contains_key(&victim)
+            {
+                continue;
+            }
+            let finish_score = Self::tactical_attack_value_owned(
+                after_first.clone(),
+                pid,
+                finisher,
+                &followup,
+                plan,
+            ) - self.base.attack_threshold(&after_first, finisher, target)
+                + self
+                    .base
+                    .tactical_action_bonus(&after_first, finisher, target, ranged);
+            if !finish_score.is_finite() || finish_score <= 0.0 {
+                continue;
+            }
+            let better = best.as_ref().is_none_or(|(old, old_uid, old_order, _)| {
+                finish_score.total_cmp(old).is_gt()
+                    || (finish_score.total_cmp(old).is_eq()
+                        && (finisher, order) < (*old_uid, *old_order))
+            });
+            if better {
+                best = Some((finish_score, finisher, order, after_second));
+            }
+        }
+        let (_, finisher, _, after_second) = best?;
+        let reply = Self::forcing_reply_penalty_from_position(
+            self.work_pool.as_ref(),
+            &after_second,
+            pid,
+            &[uid, finisher],
+        );
+        Some((self.base.w.kill_bonus * TACTICAL_VOLLEY_KILL_BONUS_SCALE, reply))
     }
 
     /// Evaluate an air strike by making it on a cloned position. This captures
@@ -18487,6 +19467,13 @@ impl AdvancedAi {
         let unit = g.units[&uid].clone();
         let rules = std::sync::Arc::clone(&g.rules);
         let spec = &rules.units[unit.kind];
+        // The joint plan spent this unit's turn disengaging (or on an
+        // approach whose blow the engine refused) and scored the position it
+        // now stands in. Every mover below would re-decide that — the
+        // campaign march most of all — so the unit simply holds.
+        if spec.class == "military" && self.tactics_withdrawn.contains(&uid) {
+            return self.base.fortify_or_stop(g, pid, uid);
+        }
         let special_improver = unit.charges > 0 && !spec.builds.is_empty();
         let doctrine = BasicAi::unit_doctrine(g, uid);
         if self.base.unit_objective_memory && spec.class == "military" {
@@ -18575,12 +19562,40 @@ impl AdvancedAi {
                 return self.base.fortify_or_stop(g, pid, uid);
             }
         }
-        let enemies: Vec<usize> = g
+        let mut enemies: Vec<usize> = g
             .players
             .iter()
             .filter(|p| p.id != pid && p.alive && !p.is_barbarian && g.is_at_war(pid, p.id))
             .map(|p| p.id)
             .collect();
+        // ★★★★★ A RAIDER PILLAGING INSIDE THE EMPIRE IS A WAR AT HOME.
+        //
+        // The filter above deliberately keeps the barbarian seat out of the
+        // campaign machinery — a camp is not a war objective. But this same
+        // list feeds the attack scan, `home_defense_objective`,
+        // `nearest_enemy` and the tactical step, so excluding barbarians here
+        // left every one of those layers blind to raiders: with no major war
+        // on, `enemies` was empty and each soldier took the peacetime path
+        // while barbarians pillaged home districts unanswered (observed on
+        // live run `civvis-20260807T172510Z`, turns 40+, six idle military
+        // units). `home_defense` already ships on in production, but it was
+        // being handed a threat list that could not contain the threat.
+        //
+        // Admit the barbarian seat exactly when it has a presence within
+        // `HOME_THREAT_RADIUS` of one of our cities. `nearest_enemy`'s own
+        // near-home and exchange-score gates keep the chase bounded, and the
+        // gate on `home_defense` keeps the frozen Basic and `advanced_v1`
+        // tournament identities exactly where they were.
+        // No `alive` test on the seat: a barbarian player holds no cities, so
+        // on several rosters it reads `alive = false` while its raiders are
+        // very much on the board. The presence check is the liveness test.
+        if self.base.home_defense {
+            if let Some(barb) = g.barb_pid {
+                if !enemies.contains(&barb) && BasicAi::barbarian_presence_at_home(g, pid) {
+                    enemies.push(barb);
+                }
+            }
+        }
         if enemies.is_empty() {
             if spec.domain.as_deref() == Some("sea") {
                 if let Some(settler) = unit
@@ -18640,8 +19655,13 @@ impl AdvancedAi {
             1
         };
         let mut candidates = Vec::new();
+        // The joint search already decided this unit's fight, weighing it
+        // against what the rest of the army is doing. Re-running the greedy
+        // picker here would let a unit take a trade the plan declined on
+        // purpose, so it only keeps its movement.
+        let resolved_by_plan = self.tactics_resolved.contains(&uid);
         for pos in g.wdisk(unit.pos, radius) {
-            if spec.class != "military" {
+            if spec.class != "military" || resolved_by_plan {
                 break;
             }
             if pos == unit.pos || !self.base.is_enemy_tile(g, pos, &enemies) {
@@ -18717,9 +19737,9 @@ impl AdvancedAi {
                 .collect(),
         };
 
-        let mut best: Option<(f64, Pos, Action, [f64; 4])> = None;
-        for ((pos, action), (attack_value, reply_penalty)) in
-            candidates.into_iter().zip(evaluations)
+        let mut scored = Vec::with_capacity(candidates.len());
+        for (order, ((pos, action), (attack_value, reply_penalty))) in
+            candidates.into_iter().zip(evaluations).enumerate()
         {
             let threshold = self.base.attack_threshold(g, uid, pos);
             let ranged = matches!(&action, Action::Ranged { .. });
@@ -18747,15 +19767,86 @@ impl AdvancedAi {
             score -= caution;
             let reply = self.base.w.trade_caution * reply_penalty;
             score -= reply;
-            if best
+            scored.push(TacticalAttackCandidate {
+                score,
+                target: pos,
+                action,
+                parts: [attack_value, threshold, caution, reply, 0.0],
+                order,
+            });
+        }
+
+        // The ordinary evaluator prices one action at a time, so it treats an
+        // enemy reply as if it arrives between a ranged setup shot and the
+        // teammate's finishing blow.  Revisit only a few strongest candidates
+        // with the bounded friendly-volley extension, then replace that reply
+        // price with the exact reply after both friendly actions.
+        if self.base.tactical_strategy
+            && group
                 .as_ref()
-                .map(|(old, bp, _, _)| score > *old || (score == *old && pos < *bp))
-                .unwrap_or(true)
-            {
-                best = Some((score, pos, action, [attack_value, threshold, caution, reply]));
+                .is_some_and(|orders| orders.posture == ForcePosture::Engage)
+        {
+            let focus = group.as_ref().and_then(|orders| orders.focus_target);
+            let mut volley_indices: Vec<usize> = (0..scored.len())
+                .filter(|index| {
+                    g.units_at(scored[*index].target).into_iter().any(|other| {
+                        let defender = &g.units[&other];
+                        defender.owner != pid
+                            && g.is_at_war(pid, defender.owner)
+                            && g.rules.units[defender.kind].class == "military"
+                    })
+                })
+                .collect();
+            volley_indices.sort_by(|left, right| {
+                let left = &scored[*left];
+                let right = &scored[*right];
+                (focus == Some(right.target))
+                    .cmp(&(focus == Some(left.target)))
+                    .then_with(|| right.score.total_cmp(&left.score))
+                    .then_with(|| left.target.cmp(&right.target))
+                    .then_with(|| left.order.cmp(&right.order))
+            });
+            let mut examined_targets = BTreeSet::new();
+            for index in volley_indices {
+                if examined_targets.len() >= TACTICAL_VOLLEY_CANDIDATE_LIMIT
+                    || !examined_targets.insert(scored[index].target)
+                {
+                    continue;
+                }
+                let Some(orders) = group.as_ref() else {
+                    break;
+                };
+                let Some((bonus, followup_reply)) = self.friendly_volley_extension(
+                    g,
+                    pid,
+                    uid,
+                    &scored[index].action,
+                    orders,
+                    plan,
+                ) else {
+                    continue;
+                };
+                let reply = self.base.w.trade_caution * followup_reply;
+                let prior_reply = scored[index].parts[3];
+                scored[index].score += bonus + prior_reply - reply;
+                scored[index].parts[3] = reply;
+                scored[index].parts[4] = bonus;
             }
         }
-        if let Some((score, at, action, parts)) = best {
+        let best = scored.into_iter().max_by(|left, right| {
+            left.score
+                .total_cmp(&right.score)
+                .then_with(|| right.target.cmp(&left.target))
+                .then_with(|| right.order.cmp(&left.order))
+        });
+        if let Some(TacticalAttackCandidate {
+            score,
+            target: at,
+            action,
+            parts,
+            ..
+        }) = best
+        {
             let required_margin = if unit.hp < 55 { 12.0 } else { 0.0 };
             if score > required_margin {
                 if self.journal().wants(crate::reasoning::Level::Detail) {
@@ -18803,14 +19894,15 @@ impl AdvancedAi {
                 // 100 health**, 37 of those Field Cannons. Not one of those 77
                 // decisions left a trace.
                 //
-                // The four terms are named because the score is a sum and
+                // The terms are named because the score is a sum and
                 // knowing it was negative says nothing about which part sank
                 // it. `worth` is the exact forward-model attack value,
                 // `asking` the doctrine threshold from
                 // `BasicAi::attack_threshold`, `caution` the local-superiority
                 // deduction, and `reply` the enemy's best answer priced by
-                // `trade_caution`.
-                let [attack_value, threshold, caution, reply] = parts;
+                // `trade_caution`; `volley` is the bounded cooperative setup
+                // credit when another force member can finish the defender.
+                let [attack_value, threshold, caution, reply, volley] = parts;
                 let defender = g
                     .city_at(at)
                     .and_then(|cid| g.cities.get(&cid))
@@ -18822,7 +19914,7 @@ impl AdvancedAi {
                 think!(self.journal(), Military, Detail,
                        "{} declines {defender}", plain(&unit.kind);
                        "worth {attack_value:.0} against asking {threshold:.0}, \
-                        caution {caution:.0}, reply {reply:.0} — {score:.0} \
+                        caution {caution:.0}, reply {reply:.0}, volley {volley:.0} — {score:.0} \
                         under a margin of {required_margin:.0}, on {} health",
                        unit.hp; at);
             }
@@ -18877,6 +19969,41 @@ impl AdvancedAi {
             }
         }
 
+        // Holding a threatened city outranks the campaign march, and the
+        // homeland gets first claim on this unit before the offensive does.
+        // This mirrors the Basic military step's precedence exactly — that
+        // path had both calls and this one had neither, so a production seat
+        // (which routes every military unit through here) watched raiders
+        // pillage its home districts while its army staged on a border it was
+        // not even at war across. `garrison_step` and `home_defense_objective`
+        // both self-gate on `home_defense` and budget their responders, so
+        // the frozen controllers and the offensive's claim on the rest of the
+        // army are untouched.
+        // Scoped to the barbarian seat on purpose: wartime home defense keeps
+        // its measured shape (these two calls were never on the Advanced path
+        // for major wars, and admitting them there moved the melee bench the
+        // wrong way), while the raider case — which previously had no answer
+        // at all — gets one. A responder the homeland claims marches: the
+        // wartime mover below holds a unit outside the enemy's
+        // move-and-attack reach, right for a front, wrong for a raider, which
+        // it hovers two tiles from forever while the districts burn. Close
+        // instead; once the threat is inside this unit's own attack radius
+        // the scan above takes the trade on the next pass, and even trades
+        // against barbarians are worth taking.
+        if let Some(barb) = g.barb_pid.filter(|barb| enemies.contains(barb)) {
+            let barb_only = [barb];
+            if self.base.garrison_step(g, pid, uid, &barb_only) {
+                return true;
+            }
+            if let Some(threat) = self.base.home_defense_objective(g, pid, uid, &barb_only) {
+                if g.wdist(unit.pos, threat) > radius
+                    && self.base.step_toward(g, pid, uid, threat)
+                {
+                    return true;
+                }
+                return self.base.tactical_step(g, pid, uid, threat, &barb_only, radius);
+            }
+        }
         let defend_target = plan.threatened_city.and_then(|cid| {
             let city = g.cities.get(&cid)?;
             g.units
@@ -18898,6 +20025,17 @@ impl AdvancedAi {
                 .or_else(|| self.base.capture_objective_target(g, pid, uid))
                 .or_else(|| self.base.nearest_enemy(g, pid, uid, &enemies))
         };
+        // Rear reinforcements march before taking group orders: Hold is
+        // correct for a front force that is locally outnumbered, and wrong
+        // for the standing-still trickle at home that will never be locally
+        // superior anywhere. Homeland claims all ran above, and the step
+        // stands down empire-wide while any city is threatened.
+        if let Some(acted) =
+            self.wartime_reinforcement_step(g, pid, uid, plan, group.as_ref(), &enemies)
+        {
+            self.force_groups_dirty = true;
+            return acted;
+        }
         if let Some(orders) = &group {
             return self.coordinated_tactical_step(
                 g,
@@ -19616,6 +20754,40 @@ impl AdvancedAi {
         self.base.clear_prepared_patrol_posts();
     }
 
+    /// Search the turn's whole engagement jointly and play the winning plan.
+    ///
+    /// The plan is replayed onto the authoritative game in the order the
+    /// search played it, starting from the position the search started from,
+    /// so the seeded combat rolls land exactly as they were evaluated.
+    fn plan_engagement(&mut self, g: &mut Game, pid: usize) {
+        let search = super::tactics::JointTactics::default();
+        let Some(plan) = search.plan(g, pid, &self.base) else {
+            return;
+        };
+        let mut played = 0usize;
+        for action in &plan.actions {
+            if g.apply(pid, action).is_ok() {
+                played += 1;
+            }
+        }
+        if played == 0 {
+            return;
+        }
+        self.tactics_resolved.extend(plan.resolved.iter().copied());
+        self.tactics_withdrawn.extend(plan.withdrawn.iter().copied());
+        self.tactics_plans += 1;
+        self.tactics_decisions += plan.resolved.len();
+        self.force_groups_dirty = true;
+        if self.journal().wants(crate::reasoning::Level::Detail) {
+            let gain = plan.score - plan.greedy_score;
+            think!(self.journal(), Military, Detail,
+                   "the army fights as one";
+                   "{played} orders across {} units, worth {:.0} against {:.0} \
+                    for the same units attacking one at a time ({gain:+.0})",
+                   plan.resolved.len(), plan.score, plan.greedy_score);
+        }
+    }
+
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         self.base.begin_movement_turn(g, pid);
         // In a native game a Trader has walking movement and the ordinary unit
@@ -19648,6 +20820,14 @@ impl AdvancedAi {
         // counts up to eight times for every military unit in the same turn.
         let decline_settlers = self.counts(g, pid).settlers > 0
             || !self.base.has_practical_settle_site(g, pid);
+        // Decide the engagement as one problem before any unit commits. Units
+        // this resolves keep their own movement logic below; only the choice
+        // of what to attack is taken out of the greedy per-unit path.
+        self.tactics_resolved.clear();
+        self.tactics_withdrawn.clear();
+        if self.joint_tactics {
+            self.plan_engagement(g, pid);
+        }
         let mut ids = g.player_unit_ids(pid);
         ids.sort_by_key(|uid| {
             let u = &g.units[uid];
@@ -20150,6 +21330,10 @@ impl AdvancedAi {
 }
 
 impl Ai for AdvancedAi {
+    fn joint_tactics_census(&self) -> Option<(usize, usize)> {
+        self.joint_tactics.then(|| self.joint_tactics_census())
+    }
+
     fn expansion_census(&self) -> Option<ExpansionCensus> {
         Some(AdvancedAi::expansion_census(self))
     }
@@ -20401,6 +21585,12 @@ impl AdvancedAi {
                 || active_victory_target.is_some()
                 || adaptive_expansion_dispatch
                 || self.war_plan.is_some()
+                // An adaptive Conquest plan otherwise falls through to the
+                // Basic governor and fights its war on a peacetime army
+                // target. Same shape as adaptive Recovery immediately above:
+                // `delegated_cities` still runs after this for the queues the
+                // war path leaves empty.
+                || (self.war_economy && plan.strategy == GrandStrategy::Conquest)
             {
                 self.advanced_production(g, pid, &plan, adaptive_expansion_dispatch);
             }
@@ -20460,6 +21650,217 @@ mod tests {
     use super::*;
     use crate::ai::run_game;
     use crate::game::{GameOptions, GovernorState};
+
+    #[test]
+    fn a_religion_plan_offers_peace_to_unblock_its_spread_lane() {
+        // The t200 shape from run civvis-20260807T224914Z: strategy=religion,
+        // met two rivals, at war with both, every revealed foreign city
+        // excluded by the offensive-spread war filter.
+        let (mut game, _, _) = timed_war_fixture(5);
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Religion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        let mut treated = AdvancedAi::new();
+        treated.enable_religion_sues_peace();
+        treated.advanced_diplomacy(&mut game, 0, &plan);
+        assert!(
+            treated.peace_offers.contains(&1),
+            "a religion plan at war must offer peace"
+        );
+
+        let mut frozen = AdvancedAi::new();
+        frozen.advanced_diplomacy(&mut game, 0, &plan);
+        assert!(
+            !frozen.peace_offers.contains(&1),
+            "frozen controllers keep the recorded posture"
+        );
+
+        let mut bridged = AdvancedAi::new();
+        bridged.enable_live_bridge();
+        assert!(bridged.religion_sues_peace);
+        bridged.disable_religion_sues_peace();
+        assert!(!bridged.religion_sues_peace);
+    }
+
+    #[test]
+    fn a_stalled_escort_is_released_and_the_settler_walks_itself() {
+        // The measured shape: "Settler advancing with its escort | 9 tiles
+        // remain" at the SAME distance turn after turn (run
+        // civvis-20260807T202450Z) while the linked branch returned true
+        // without moving anything. The contract under test is the RELEASE:
+        // no-closer turns must break the link so the ordinary march can act;
+        // frozen controllers must keep trusting forever.
+        fn fixture() -> (Game, u32, Pos) {
+            let mut game = Game::new_full(2, 28, 18, 3, 1_000, 0, false);
+            // A founded capital first: a zero-city empire takes the
+            // first-city fast path and never reaches the escort march.
+            let first = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("seat starts with a settler");
+            let capital_pos = game.units[&first].pos;
+            game.found_city_for(0, capital_pos, None);
+            game.remove_unit(first);
+
+            let land_at = |game: &Game, want: &dyn Fn(Pos) -> bool| {
+                game.map
+                    .tiles
+                    .iter()
+                    .filter(|(pos, tile)| {
+                        game.rules.is_passable(tile)
+                            && !game.rules.is_water(tile)
+                            && game.units_at(**pos).is_empty()
+                            && want(**pos)
+                    })
+                    .map(|(pos, _)| *pos)
+                    .next()
+            };
+            let start = land_at(&game, &|pos| {
+                game.wdist(pos, capital_pos) >= 5 && game.wdist(pos, capital_pos) <= 7
+            })
+            .expect("fixture offers ground away from the capital");
+            let settler = game.spawn_test_unit("settler", 0, start);
+            let escort = game.spawn_test_unit("warrior", 0, start);
+            game.apply(0, &Action::LinkUnits { unit: settler, with: escort })
+                .expect("test pair must link");
+            let target = land_at(&game, &|pos| {
+                game.wdist(pos, start) >= 6
+                    && game.wdist(pos, start) <= 10
+                    && game.wdist(pos, capital_pos) >= 4
+            })
+            .expect("fixture offers a distant land target");
+            (game, settler, target)
+        }
+
+        let (mut game, settler, target) = fixture();
+        let mut ai = AdvancedAi::new();
+        ai.enable_escort_unstick();
+        for _ in 0..4 {
+            ai.settler_targets.insert(settler, target);
+            ai.advanced_settler_step(&mut game, 0, settler);
+            if game.units[&settler].linked_to.is_none() {
+                break;
+            }
+        }
+        assert!(
+            game.units[&settler].linked_to.is_none(),
+            "a formation that closes no distance must be released"
+        );
+
+        let (mut frozen, fsettler, ftarget) = fixture();
+        let mut stock = AdvancedAi::new();
+        for _ in 0..4 {
+            stock.settler_targets.insert(fsettler, ftarget);
+            stock.advanced_settler_step(&mut frozen, 0, fsettler);
+        }
+        assert!(
+            frozen.units[&fsettler].linked_to.is_some(),
+            "frozen controllers keep the recorded trust"
+        );
+    }
+
+    #[test]
+    fn a_bleeding_city_is_besieged_whatever_the_fog_says() {
+        // The t115 shape from run civvis-20260807T181839Z: city under fire,
+        // hostile list empty, production about to pick a culture building.
+        let mut game = Game::new_full(2, 28, 18, 7, 1_000, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("seat starts with a settler");
+        let position = game.units[&settler].pos;
+        let capital = game.found_city_for(0, position, None);
+        game.remove_unit(settler);
+        game.players[0].techs.insert(crate::name!("masonry"));
+        game.cities.get_mut(&capital).unwrap().hp = 165; // damage 35 of 200
+
+        let mut treated = AdvancedAi::new();
+        treated.enable_garrison_under_fire();
+        let item = treated.base.besieged_city_item(&game, 0, capital);
+        assert_eq!(
+            item,
+            Some(Item::Building { building: crate::name!("walls") }),
+            "a bleeding city must reach for walls with zero visible besiegers"
+        );
+
+        let stock = AdvancedAi::new();
+        assert_eq!(
+            stock.base.besieged_city_item(&game, 0, capital),
+            None,
+            "the frozen controllers keep the two-visible-besiegers gate"
+        );
+
+        let mut bridged = AdvancedAi::new();
+        bridged.enable_live_bridge();
+        assert!(bridged.base.garrison_under_fire);
+        bridged.disable_garrison_under_fire();
+        assert!(!bridged.base.garrison_under_fire);
+    }
+
+    #[test]
+    fn wide_map_capacity_prices_uncontested_land_and_stock_stays_capped() {
+        // The league profile's own board: 74x46, where passable land clears
+        // both ceilings — which is exactly the quantity under test.
+        let mut game = Game::new_full(2, 74, 46, 11, 1_000, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("each major starts with a settler");
+            let position = game.units[&settler].pos;
+            game.found_city_for(pid, position, None);
+            game.remove_unit(settler);
+        }
+        let land = game
+            .map
+            .tiles
+            .values()
+            .filter(|t| game.rules.is_passable(t) && !game.rules.is_water(t))
+            .count();
+        assert!(land > 45 * 10, "fixture must offer ceiling-clearing land");
+
+        let mut stock = AdvancedAi::new();
+        stock.plan_city_target = true;
+        stock.city_target_floor = 6;
+        let mut wide = AdvancedAi::new();
+        wide.plan_city_target = true;
+        wide.city_target_floor = 6;
+        wide.enable_wide_map_capacity();
+
+        let mut late = game;
+        late.turn = 2_000; // past every cadence step: the ceiling decides.
+        late.current = 0;
+        let stock_plan = stock.assess(&late, 0);
+        let wide_plan = wide.assess(&late, 0);
+        assert_eq!(
+            stock_plan.desired_cities, 9,
+            "the stock ceiling is the measured Settler saturation point"
+        );
+        assert_eq!(
+            wide_plan.desired_cities, 12,
+            "uncontested land must lift the treated ceiling past the rivals' ten and eleven"
+        );
+
+        // The live bridge carries the treatment, and the ablation arm removes it.
+        let mut bridged = AdvancedAi::new();
+        bridged.enable_live_bridge();
+        assert!(bridged.wide_map_capacity);
+        bridged.disable_wide_map_capacity();
+        assert!(!bridged.wide_map_capacity);
+    }
 
     fn timed_war_fixture(seed: u64) -> (Game, u32, u32) {
         let mut game = Game::new_full(2, 28, 18, seed, 1_000, 0, false);
@@ -23880,6 +25281,204 @@ mod tests {
         );
     }
 
+    /// Off by default, set only by the live bridge, holdable off on its own —
+    /// the siege-commitment term follows the same contract as every other
+    /// bridge repair, so the frozen `advanced_v1` anchor keeps its ladder.
+    #[test]
+    fn only_the_live_bridge_finishes_a_siege() {
+        let fresh = AdvancedAi::new();
+        assert!(!fresh.siege_commitment);
+        assert!(!AdvancedAi::legacy().siege_commitment);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.siege_commitment);
+        live.disable_siege_commitment();
+        assert!(!live.siege_commitment);
+    }
+
+    /// What the shipped scorer pays for fifteen turns of siege, and what the
+    /// treatment pays.
+    ///
+    /// `defenses` credits a broken city `0.12` per point of health, so the
+    /// whole health bar is worth 21 — and `core_distance * 7.0` plus
+    /// `military_distance * 5.0` swing about 60 over five tiles. That is the
+    /// arithmetic behind live run `civvis-20260808T142724Z` leaving Biruta at
+    /// 25 hp with its walls down on t90 and re-aiming at Ziz on t91.
+    #[test]
+    fn siege_commitment_prices_the_health_already_stripped_from_a_breach() {
+        let mut game = Game::new_full(2, 30, 18, 7_111, 300, 0, false);
+        for pid in 0..2 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        let enemy = game.player_city_ids(1)[0];
+        let enemy_position = game.cities[&enemy].pos;
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        // A besieger of ours stands on the ring, so the city is both observed
+        // and inside `SIEGE_COMMITMENT_REACH`.
+        let besieger = game
+            .nbrs(enemy_position)
+            .into_iter()
+            .find(|position| {
+                game.map
+                    .get(*position)
+                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            })
+            .expect("the enemy capital has a land approach");
+        game.spawn_test_unit("warrior", 0, besieger);
+
+        let value = |ai: &AdvancedAi, game: &Game| {
+            ai.campaign_city_value(game, 0, &game.cities[&enemy], GrandStrategy::Conquest)
+        };
+        let breach_to = |game: &mut Game, hp: i32| {
+            let city = game.cities.get_mut(&enemy).unwrap();
+            city.hp = hp;
+            city.wall_hp = 0;
+            city.buildings.retain(|building| {
+                !matches!(
+                    building.as_str(),
+                    "walls" | "medieval_walls" | "renaissance_walls"
+                )
+            });
+        };
+
+        let mut shipped = AdvancedAi::targeting(VictoryTarget::Domination);
+        let mut live = AdvancedAi::targeting(VictoryTarget::Domination);
+        live.enable_siege_commitment();
+
+        breach_to(&mut game, CITY_MAX_HP);
+        shipped.belief.observe(&game, 0);
+        live.belief.observe(&game, 0);
+        let shipped_whole = value(&shipped, &game);
+        let live_whole = value(&live, &game);
+        assert_eq!(
+            shipped_whole, live_whole,
+            "a city at full health has had nothing stripped, so the treatment is inert"
+        );
+
+        breach_to(&mut game, 25);
+        shipped.belief.observe(&game, 0);
+        live.belief.observe(&game, 0);
+        let stripped = (CITY_MAX_HP - 25) as f64;
+        let shipped_broken = value(&shipped, &game);
+        let live_broken = value(&live, &game);
+        // The shipped credit for breaking a city almost open. `core_distance`
+        // alone swings 7.0 a tile, so this loses to a fresh objective three
+        // tiles nearer — which is exactly what the live run did.
+        assert!(
+            shipped_whole - shipped_broken < 40.0,
+            "the shipped scorer prices the whole health bar at under 40 points \
+             (measured {}), less than the distance terms swing",
+            shipped_whole - shipped_broken
+        );
+        // Differencing the two controllers over the identical board isolates
+        // the new term from everything else that moves with a city's health.
+        assert!(
+            ((shipped_broken - live_broken) - stripped * SIEGE_COMMITMENT_PER_HP).abs() < 1e-6,
+            "the treatment is worth exactly {SIEGE_COMMITMENT_PER_HP} per stripped point — {} \
+             here — and nothing else changes",
+            stripped * SIEGE_COMMITMENT_PER_HP
+        );
+    }
+
+    /// Walls standing means capture is not close, and damage nobody of ours is
+    /// near is not our investment. Both keep the term at zero, so it stays
+    /// inert outside the case it was measured on.
+    #[test]
+    fn siege_commitment_ignores_an_unbreached_city_and_a_siege_out_of_reach() {
+        let mut game = Game::new_full(2, 30, 18, 7_111, 300, 0, false);
+        for pid in 0..2 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        let enemy = game.player_city_ids(1)[0];
+        let enemy_position = game.cities[&enemy].pos;
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        let mut shipped = AdvancedAi::targeting(VictoryTarget::Domination);
+        let mut live = AdvancedAi::targeting(VictoryTarget::Domination);
+        live.enable_siege_commitment();
+
+        // Differencing the two controllers over one board isolates the term.
+        let gap = |shipped: &AdvancedAi, live: &AdvancedAi, game: &Game| {
+            shipped.campaign_city_value(game, 0, &game.cities[&enemy], GrandStrategy::Conquest)
+                - live.campaign_city_value(game, 0, &game.cities[&enemy], GrandStrategy::Conquest)
+        };
+        let set = |game: &mut Game, hp: i32, wall_hp: i32| {
+            let city = game.cities.get_mut(&enemy).unwrap();
+            city.hp = hp;
+            city.wall_hp = wall_hp;
+        };
+
+        // Beaten down to 25 hp but the walls still stand: capture is not close,
+        // so the term stays out of it.
+        let ring = game
+            .nbrs(enemy_position)
+            .into_iter()
+            .find(|position| {
+                game.map
+                    .get(*position)
+                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            })
+            .expect("the enemy capital has a land approach");
+        let besieger = game.spawn_test_unit("warrior", 0, ring);
+        set(&mut game, 25, 100);
+        shipped.belief.observe(&game, 0);
+        live.belief.observe(&game, 0);
+        assert_eq!(
+            gap(&shipped, &live, &game),
+            0.0,
+            "with the walls up there is no breach to finish"
+        );
+
+        // Breached and beaten down, with a besieger on the ring: full credit.
+        set(&mut game, 25, 0);
+        shipped.belief.observe(&game, 0);
+        live.belief.observe(&game, 0);
+        assert!(
+            (gap(&shipped, &live, &game) - 175.0 * SIEGE_COMMITMENT_PER_HP).abs() < 1e-6,
+            "a breach our army is standing on is worth the health already stripped"
+        );
+
+        // Same breach, but our nearest soldier is beyond the reach horizon.
+        game.remove_unit(besieger);
+        let far = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                game.map
+                    .get(*position)
+                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                    && game.wdist(enemy_position, *position) > SIEGE_COMMITMENT_REACH
+            })
+            .expect("the test map has ground beyond the reach horizon");
+        game.spawn_test_unit("warrior", 0, far);
+        shipped.belief.observe(&game, 0);
+        live.belief.observe(&game, 0);
+        assert_eq!(
+            gap(&shipped, &live, &game),
+            0.0,
+            "damage dealt where no soldier of ours can finish it is not our siege"
+        );
+    }
+
     #[test]
     fn campaign_city_ordering_prefers_a_breach_then_the_domination_capital() {
         let mut game = Game::new_full(2, 30, 18, 7_111, 300, 0, false);
@@ -24704,6 +26303,98 @@ mod tests {
         let mut fresh = game;
         assert!(fresh.map.set_river_edge(center, first[5], true));
         assert_eq!(AdvancedAi::settlement_base_housing(&fresh, center), 5.0);
+    }
+
+    /// The defect and the repair of issue #1378 in one shape: a plain
+    /// breadbasket against the same site with the Matterhorn on its first
+    /// ring. Live run `civvis-20260807T202450Z` t93 founded a 64.6-point
+    /// breadbasket while `FEATURE_MATTERHORN` stood revealed inside the
+    /// candidate radius, because the shipped scorer prices a wonder only
+    /// through the worked tiles it can forecast. With the treatment the
+    /// wonder's modeled sheet (appeal 2, +1 culture onto the ring) is credited
+    /// and the wonder ring outbids the breadbasket; held off, the shipped
+    /// score is reproduced exactly.
+    #[test]
+    fn a_wonder_ring_site_outbids_the_breadbasket_only_when_the_bridge_prices_it() {
+        let (mut breadbasket, center, first, second) = settlement_forecast_fixture(8_120);
+        for position in &first {
+            shape_forecast_tile(&mut breadbasket, *position, "grassland", false, None);
+        }
+        let mut wonder_ring = breadbasket.clone();
+        // The breadbasket adds a production hill on its second ring; the
+        // wonder site gives up a workable grassland for an impassable mountain
+        // carrying the Matterhorn — strictly worse ground until the wonder
+        // itself is priced.
+        shape_forecast_tile(&mut breadbasket, second[0], "grassland", true, None);
+        {
+            let tile = wonder_ring.map.tiles.get_mut(&first[0]).unwrap();
+            tile.terrain = Name::new("mountain");
+            tile.hills = false;
+            tile.feature = Some(Name::new("matterhorn"));
+            tile.resource = None;
+        }
+
+        let shipped = AdvancedAi::new();
+        let shipped_bread = shipped.settle_value(&breadbasket, 0, center);
+        let shipped_wonder = shipped.settle_value(&wonder_ring, 0, center);
+        assert!(
+            shipped_bread > shipped_wonder,
+            "the defect: without the treatment the breadbasket outbids the wonder \
+             ring (bread {shipped_bread:.1} vs wonder {shipped_wonder:.1})"
+        );
+
+        let mut bridged = AdvancedAi::new();
+        bridged.enable_wonder_ring_settle_value();
+        let priced_wonder = bridged.settle_value(&wonder_ring, 0, center);
+        let priced_bread = bridged.settle_value(&breadbasket, 0, center);
+        assert!(
+            priced_wonder > priced_bread,
+            "the repair: with the treatment the wonder ring outbids the \
+             breadbasket (wonder {priced_wonder:.1} vs bread {priced_bread:.1})"
+        );
+
+        // The credit is the Matterhorn's own modeled sheet — appeal 2 plus one
+        // hex ring of its +1 culture projection at the shared culture weight —
+        // not a flat constant.
+        let sheet = 2.0 * NATURAL_WONDER_APPEAL_WEIGHT + 1.2 * NATURAL_WONDER_RING_TILES;
+        assert!(
+            (priced_wonder - shipped_wonder - sheet).abs() < 1e-9,
+            "the wonder credit must equal the modeled sheet: got {:.3}, sheet {sheet:.3}",
+            priced_wonder - shipped_wonder
+        );
+        // A site with no wonder in its work radius gains nothing from the
+        // treatment, and holding it off reproduces the shipped score exactly.
+        assert_eq!(priced_bread, shipped_bread);
+        bridged.disable_wonder_ring_settle_value();
+        assert_eq!(bridged.settle_value(&wonder_ring, 0, center), shipped_wonder);
+    }
+
+    /// Pricing the ring must not price the summit. A PASSABLE wonder — the
+    /// Pantanal walks like ordinary grassland — is the sharp case: only
+    /// `tile_is_natural_wonder`, not impassability, keeps the candidate out,
+    /// however large the credit its own ring now carries.
+    #[test]
+    fn the_priced_wonder_ring_still_refuses_to_settle_on_the_wonder() {
+        let (mut game, center, first, _second) = settlement_forecast_fixture(8_121);
+        for position in &first {
+            shape_forecast_tile(&mut game, *position, "grassland", false, None);
+        }
+        {
+            let tile = game.map.tiles.get_mut(&first[0]).unwrap();
+            tile.terrain = Name::new("grassland");
+            tile.feature = Some(Name::new("pantanal"));
+        }
+        let mut bridged = AdvancedAi::new();
+        bridged.enable_wonder_ring_settle_value();
+        let sites = bridged.settle_sites(&game, 0, center, 4);
+        assert!(
+            sites.iter().all(|(pos, _)| *pos != first[0]),
+            "the wonder tile itself must never be offered as a founding site"
+        );
+        assert!(
+            sites.iter().any(|(pos, _)| *pos == center),
+            "while the site beside it stays on the menu"
+        );
     }
 
     #[test]
@@ -31066,6 +32757,143 @@ mod tests {
     }
 
     #[test]
+    fn friendly_volley_reprices_a_two_unit_kill_after_the_finisher() {
+        let mut base = Game::new_full(2, 24, 16, 81_700, 80, 0, false);
+        for unit in base.units.keys().copied().collect::<Vec<_>>() {
+            base.remove_unit(unit);
+        }
+        for tile in base.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        base.current = 0;
+        base.at_war.insert((0, 1));
+        let target = base
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| base.nbrs(*position).len() == 6)
+            .expect("fixture needs an interior tile");
+        let firing_lines: Vec<Pos> = base
+            .wdisk(target, 2)
+            .into_iter()
+            .filter(|position| base.wdist(*position, target) == 2)
+            .take(2)
+            .collect();
+        assert_eq!(firing_lines.len(), 2, "interior tile needs two firing lines");
+        let opener = base.spawn_test_unit("archer", 0, firing_lines[0]);
+        let finisher = base.spawn_test_unit("archer", 0, firing_lines[1]);
+        let defender = base.spawn_test_unit("warrior", 1, target);
+        let opening = Action::Ranged {
+            unit: opener,
+            target,
+        };
+        let finish = Action::Ranged {
+            unit: finisher,
+            target,
+        };
+
+        // Discover an exact seeded-damage window rather than hard-coding a
+        // combat-roll amount: the first shot must leave the defender alive
+        // and the next friendly shot must remove it.
+        let game = (2..=100)
+            .find_map(|hp| {
+                let mut candidate = base.clone();
+                candidate.units.get_mut(&defender).unwrap().hp = hp;
+                let mut after_first = candidate.clone();
+                (after_first.apply(0, &opening).is_ok()
+                    && after_first.units.contains_key(&defender))
+                .then_some(after_first)
+                .and_then(|mut after_first| {
+                    (after_first.apply(0, &finish).is_ok()
+                        && !after_first.units.contains_key(&defender))
+                    .then_some(candidate)
+                })
+            })
+            .expect("two archers must admit a nonlethal-then-lethal damage window");
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let group = ForceGroup {
+            id: opener,
+            domain: ForceDomain::Land,
+            units: vec![opener, finisher],
+            anchor: game.units[&opener].pos,
+            objective: target,
+            focus_target: Some(target),
+            posture: ForcePosture::Engage,
+            readiness: 1.0,
+            local_strength_ratio: 1.0,
+        };
+        let ai = AdvancedAi::new();
+        let first_reply = ai.forcing_reply_penalty(&game, 0, opener, &opening);
+        let (bonus, paired_reply) = ai
+            .friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
+            .expect("the engaged force has an immediate friendly finisher");
+        assert_eq!(
+            bonus,
+            ai.base.w.kill_bonus * TACTICAL_VOLLEY_KILL_BONUS_SCALE
+        );
+        assert!(
+            first_reply > paired_reply,
+            "the defender cannot reply after its friendly-volley kill: first={first_reply}, paired={paired_reply}"
+        );
+        assert!(
+            AdvancedAi::legacy()
+                .friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
+                .is_none(),
+            "the frozen control keeps the production-only tactical extension off"
+        );
+
+        // Give the first shot a reply price high enough that it would decline
+        // in isolation, while the real two-unit line remains worthwhile.  The
+        // live unit step must then use the extension rather than merely expose
+        // it as a helper.
+        let attack_value = ai.tactical_attack_value(&game, 0, opener, &opening, &plan);
+        let threshold = ai.base.attack_threshold(&game, opener, target);
+        let static_score = attack_value - threshold
+            + ai.base.tactical_action_bonus(&game, opener, target, true)
+            + ai.base.w.focus_fire * 10.0
+            + if game.units_at(target).iter().any(|unit| game.units[unit].hp <= 35) {
+                16.0
+            } else {
+                0.0
+            };
+        let trade_caution = (1..=128)
+            .map(|value| value as f64)
+            .find(|trade| {
+                static_score - *trade * first_reply <= 0.0
+                    && static_score + bonus - *trade * paired_reply > 0.0
+            })
+            .expect("the friendly kill must be distinguishable from its interrupted reply");
+        let mut live = AdvancedAi::new();
+        live.base.w.trade_caution = trade_caution;
+        live.force_groups = vec![group.clone()];
+        let mut played = game.clone();
+        assert!(live.advanced_military_step(&mut played, 0, opener, &plan));
+        assert!(played.units.contains_key(&defender), "the opening shot is deliberately nonlethal");
+        assert!(matches!(
+            played.log.last(),
+            Some((0, Action::Ranged { unit, target: hit })) if *unit == opener && *hit == target
+        ));
+
+        let mut parallel = ai.clone();
+        parallel.work_pool = Some(Arc::new(WorkPool::new(4)));
+        assert_eq!(
+            Some((bonus, paired_reply)),
+            parallel.friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
+        );
+    }
+
+    #[test]
     fn forcing_reply_search_avoids_a_poisoned_capture() {
         let mut g = Game::new_full(2, 24, 16, 8_117, 80, 0, false);
         g.at_war.insert((0, 1));
@@ -32414,6 +34242,135 @@ mod tests {
         assert_eq!(
             before, after,
             "a hidden heal, breach, or garrison cannot rewrite the remembered campaign score"
+        );
+    }
+
+    /// ★★★★★ A BARBARIAN PILLAGING INSIDE THE EMPIRE MUST BE ANSWERED WITHOUT
+    /// A MAJOR WAR ON.
+    ///
+    /// The Advanced military step's enemy list carried `!p.is_barbarian`, so
+    /// with no major war running `enemies` was empty and every soldier took
+    /// the peacetime path — and the path that COULD answer,
+    /// `home_defense_objective`, was never consulted by this step at all.
+    /// Observed on live run `civvis-20260807T172510Z` (turns 40+): barbarians
+    /// pillaged home districts for consecutive turns while six military units
+    /// cycled through exploration. The list now admits the barbarian seat
+    /// exactly when it has a presence within `HOME_THREAT_RADIUS` of one of
+    /// our cities, and the campaign chain consults `garrison_step` and
+    /// `home_defense_objective` before the campaign march, mirroring the
+    /// Basic step's precedence.
+    #[test]
+    fn a_barbarian_raider_at_home_is_answered_without_a_major_war() {
+        let mut game = Game::new_full(2, 30, 20, 90_077, 60, 0, true);
+        for player in 0..2 {
+            let settler = game
+                .player_unit_ids(player)
+                .into_iter()
+                .find(|uid| game.units[uid].kind == "settler")
+                .expect("each player opens with a settler");
+            game.current = player;
+            game.apply(player, &Action::FoundCity { unit: settler }).unwrap();
+        }
+        for player in 0..2 {
+            for uid in game.player_unit_ids(player) {
+                game.remove_unit(uid);
+            }
+        }
+        let barb = game.barb_pid.expect("a barbarian-seated game has barb_pid");
+        // Clear construction-time barbarians so the scenario holds exactly the
+        // raider under test.
+        for uid in game.units.keys().copied().collect::<Vec<_>>() {
+            if game.units[&uid].owner == barb {
+                game.remove_unit(uid);
+            }
+        }
+        game.current = 0;
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let open = |g: &Game, pos: Pos| {
+            g.map
+                .get(pos)
+                .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                && g.city_at(pos).is_none()
+                && g.units_at(pos).is_empty()
+        };
+        // Inside the home ring, outside the garrison alarm: the field
+        // response, not the city garrison, is what must answer.
+        let raider_at = game
+            .wdisk(home, crate::ai::HOME_THREAT_RADIUS - 1)
+            .into_iter()
+            .filter(|pos| {
+                open(&game, *pos)
+                    && game.wdist(*pos, home) >= crate::ai::GARRISON_ALERT_RADIUS + 1
+            })
+            .min()
+            .expect("the home ring has open land");
+        game.spawn_test_unit("warrior", barb, raider_at);
+        // Three tiles out: the first step toward the raider is unambiguously
+        // safe (still outside a warrior's move-and-attack reach), so a mover
+        // that received the objective has no cautious reason to hold.
+        let soldier_at = game
+            .wdisk(raider_at, 3)
+            .into_iter()
+            .filter(|pos| open(&game, *pos) && game.wdist(*pos, raider_at) == 3)
+            .min()
+            .expect("open land three tiles from the raider");
+        let soldier = game.spawn_test_unit("warrior", 0, soldier_at);
+
+        assert!(
+            BasicAi::barbarian_presence_at_home(&game, 0),
+            "precondition: the raider stands within the home threat radius"
+        );
+        assert!(
+            !game
+                .players
+                .iter()
+                .any(|p| p.id != 0 && !p.is_barbarian && game.is_at_war(0, p.id)),
+            "precondition: no major war is running, which is exactly when the \
+             old enemy list went empty"
+        );
+
+        // The step is exercised directly, the way the relief-column test does:
+        // this is a test of the enemy list and the objective ordering, not of
+        // battlefront vision, and a spawned raider starts fogged.
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut ai = AdvancedAi::new();
+        ai.battlefront_observation = false;
+        assert_eq!(
+            ai.base.home_defense_objective(&game, 0, soldier, &[barb]),
+            Some(raider_at),
+            "the homeland must claim this unit against the raider once the \
+             barbarian seat is in its enemy list"
+        );
+        let acted = ai.advanced_military_step(&mut game, 0, soldier, &plan);
+        assert!(
+            acted,
+            "the soldier must act on the raider rather than fall through to \
+             the peacetime path"
+        );
+
+        let closed = game
+            .units
+            .get(&soldier)
+            .is_some_and(|unit| game.wdist(unit.pos, raider_at) < 3);
+        let answered = game
+            .units
+            .values()
+            .find(|unit| unit.owner == barb)
+            .map(|raider| raider.hp < 100)
+            .unwrap_or(true);
+        assert!(
+            closed || answered,
+            "a raider pillaging at home must draw the soldier in or take a hit; \
+             the soldier stood at {:?} with the raider untouched at {raider_at:?}",
+            game.units.get(&soldier).map(|unit| unit.pos)
         );
     }
 
@@ -35177,6 +37134,22 @@ mod research_probe {
         assert!(!live.base.housing_districts, "and the control arm holds it off");
     }
     /// Off by default, set only by the live bridge, and holdable off on its own
+    /// so the arm is a controlled comparison — which is what makes the repair
+    /// measurable rather than merely deployed.
+    #[test]
+    fn only_the_live_bridge_discounts_a_stranded_settler() {
+        assert!(
+            !AdvancedAi::new().base.settler_strand_discount,
+            "the frozen tournament controller must keep its recorded ladders"
+        );
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.base.settler_strand_discount, "the deployment turns it on");
+        live.disable_stranded_settler_discount();
+        assert!(!live.base.settler_strand_discount, "and the control arm holds it off");
+    }
+
+    /// Off by default, set only by the live bridge, and holdable off on its own
     /// so the arm is a controlled comparison.
     #[test]
     fn only_the_live_bridge_keeps_asking_for_a_campus() {
@@ -35356,5 +37329,315 @@ mod research_probe {
         // And the whole path short-circuits for a frozen controller.
         let legacy = AdvancedAi::legacy();
         assert_eq!(legacy.unreachable_housing_tech(&game, 0), None);
+    }
+
+    /// Off by default, set only by the live bridge, holdable off on its own —
+    /// the recon-replacement arm follows the same contract as every other
+    /// bridge repair, so the frozen `advanced_v1` anchor keeps its ladder.
+    #[test]
+    fn only_the_live_bridge_replaces_the_recon_arm() {
+        assert!(!AdvancedAi::new().base.recon_replacement);
+        assert!(!AdvancedAi::legacy().base.recon_replacement);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.base.recon_replacement);
+        live.disable_recon_replacement();
+        assert!(!live.base.recon_replacement);
+    }
+
+    /// Off by default, set only by the live bridge, holdable off on its own —
+    /// the wonder-ring settle credit follows the same contract as every other
+    /// bridge repair, so the frozen `advanced_v1` anchor keeps its ladder.
+    #[test]
+    fn only_the_live_bridge_prices_the_wonder_ring_into_settling() {
+        assert!(!AdvancedAi::new().base.wonder_ring_settle_value);
+        assert!(!AdvancedAi::legacy().base.wonder_ring_settle_value);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.base.wonder_ring_settle_value);
+        live.disable_wonder_ring_settle_value();
+        assert!(!live.base.wonder_ring_settle_value);
+    }
+
+    /// Off by default, set only by the live bridge, each holdable off on its
+    /// own — the war-conversion trio follows the same contract as every other
+    /// bridge repair.
+    #[test]
+    fn only_the_live_bridge_fights_the_war_conversion_trio() {
+        let fresh = AdvancedAi::new();
+        assert!(!fresh.war_economy);
+        assert!(!fresh.war_reinforcement);
+        assert!(!fresh.war_patience);
+        let legacy = AdvancedAi::legacy();
+        assert!(!legacy.war_economy && !legacy.war_reinforcement && !legacy.war_patience);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.war_economy && live.war_reinforcement && live.war_patience);
+        live.disable_war_economy();
+        live.disable_war_reinforcement();
+        live.disable_war_patience();
+        assert!(!live.war_economy && !live.war_reinforcement && !live.war_patience);
+    }
+
+    /// The routing in `take_turn` must name the adaptive Conquest plan behind
+    /// the flag: `docs/RUSH.md` measured that raising the army anywhere else
+    /// is a no-op, because an adaptive Conquest plan historically never
+    /// reached `advanced_production` at all.
+    #[test]
+    fn the_war_economy_routes_an_adaptive_conquest_plan_to_war_production() {
+        let src = include_str!("advanced.rs");
+        let block = src
+            .split("|| adaptive_expansion_dispatch")
+            .nth(1)
+            .expect("the production routing condition exists")
+            .split("self.advanced_production(g, pid, &plan, adaptive_expansion_dispatch);")
+            .next()
+            .expect("the routing block ends at the production call");
+        assert!(
+            block.contains("self.war_economy && plan.strategy == GrandStrategy::Conquest"),
+            "the war economy must route exactly the adaptive Conquest plan"
+        );
+    }
+
+    /// A stalled war against an overwhelmed campaign target is neither offered
+    /// away nor accepted away while `war_patience` is on; a stalled war
+    /// against anyone else keeps the shipped fatigue shape.
+    #[test]
+    fn war_patience_holds_the_stall_clause_only_over_an_overwhelmed_target() {
+        let mut game = Game::new_full(2, 24, 16, 7_922, 300, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        let staging = game.cities[&game.player_city_ids(0)[0]].pos;
+        for _ in 0..3 {
+            game.spawn_test_unit("modern_armor", 0, staging);
+        }
+        // The stall offer only goes to a target still holding more than one
+        // city (a one-city empire is finished, not sued); give the defender
+        // its second city before the fatigue arms below.
+        let their_capital = game.cities[&game.player_city_ids(1)[0]].pos;
+        let second_site = game
+            .wdisk(their_capital, 4)
+            .into_iter()
+            .find(|pos| {
+                game.wdist(*pos, their_capital) >= 3
+                    && game.units_at(*pos).is_empty()
+                    && game.city_at(*pos).is_none()
+                    && game
+                        .map
+                        .get(*pos)
+                        .is_some_and(|tile| !game.rules.is_water(tile))
+            })
+            .expect("open land for the defender's second city");
+        game.found_city_for(1, second_site, None);
+        game.current = 0;
+        game.turn = 60;
+        game.record_contact(0, 1);
+        game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+        // War age 40 with no campaign progress in that time: the stall
+        // clause's own conditions hold for every arm below.
+        game.turn = 100;
+        assert!(
+            game.military_power(0) >= game.military_power(1) * OVERWHELMING_WAR_RATIO,
+            "precondition: the attacker overwhelms the defender"
+        );
+        let campaign = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: game.player_city_ids(1).into_iter().next(),
+            threatened_city: None,
+            desired_cities: 2,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let white_peace = DiplomaticDeal {
+            id: 7,
+            from: 1,
+            to: 0,
+            give_gold: 0.0,
+            request_gold: 0.0,
+            open_borders: false,
+            friendship: false,
+            peace: true,
+            alliance: None,
+            defensive_pact: false,
+            joint_war_target: None,
+            promise: None,
+            demand: false,
+            expires: game.turn + 10,
+        };
+
+        // Shipped shape: fatigue accepts the white peace and offers its own.
+        let mut fatigued = AdvancedAi::new();
+        fatigued.major_war_since = Some(60);
+        assert!(
+            fatigued.incoming_deal_value(&game, 0, &white_peace, &campaign) > 0.0,
+            "without the flag, a stalled war accepts white peace"
+        );
+        let mut offering = game.clone();
+        fatigued.advanced_diplomacy(&mut offering, 0, &campaign);
+        assert!(
+            fatigued.peace_offers.contains(&1),
+            "without the flag, a stalled war offers peace to its own target"
+        );
+
+        // With the flag: the stall clause stands down against the overwhelmed
+        // campaign target, and the denied-partner guard refuses the deal.
+        let mut patient = AdvancedAi::new();
+        patient.enable_war_patience();
+        patient.major_war_since = Some(60);
+        assert!(
+            patient.incoming_deal_value(&game, 0, &white_peace, &campaign) < 0.0,
+            "with the flag, an overwhelming attacker keeps prosecuting"
+        );
+        let mut pressed = game.clone();
+        patient.advanced_diplomacy(&mut pressed, 0, &campaign);
+        assert!(
+            !patient.peace_offers.contains(&1),
+            "with the flag, no stall offer goes to the overwhelmed target"
+        );
+
+        // Scope: patience covers exactly the campaign target. The same
+        // stalled war read against a plan that is not fighting player 1
+        // keeps the shipped fatigue acceptance.
+        let unrelated = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        assert!(
+            patient.incoming_deal_value(&game, 0, &white_peace, &unrelated) > 0.0,
+            "patience must not outlive the campaign that justified it"
+        );
+    }
+
+
+    /// The standing rear marches: a unit whose clique cannot advance walks to
+    /// the campaign objective instead of holding at home, and every guard the
+    /// step declines for — flag off, threatened homeland, enemy contact —
+    /// stands it down.
+    #[test]
+    fn wartime_reinforcement_marches_the_standing_rear_to_the_objective() {
+        let mut game = Game::new_full(2, 24, 16, 7_922, 300, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let objective_city = game.player_city_ids(1)[0];
+        let objective = game.cities[&objective_city].pos;
+        game.current = 0;
+        game.turn = 60;
+        game.record_contact(0, 1);
+        game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+        let soldier = game.spawn_test_unit("warrior", 0, home);
+        let start = game.units[&soldier].pos;
+        assert!(
+            game.wdist(start, objective) > REINFORCEMENT_FRONT_RADIUS,
+            "precondition: the unit starts in the rear"
+        );
+
+        let campaign = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(objective_city),
+            threatened_city: None,
+            desired_cities: 2,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        // Off: the step declines and the unit keeps its shipped behaviour.
+        let mut stock = AdvancedAi::new();
+        assert_eq!(
+            stock.wartime_reinforcement_step(&mut game, 0, soldier, &campaign, None, &[1]),
+            None,
+            "off by default"
+        );
+
+        // A threatened homeland stands the march down empire-wide.
+        let mut threatened_plan = campaign.clone();
+        threatened_plan.threatened_city = game.player_city_ids(0).into_iter().next();
+        let mut marching = AdvancedAi::new();
+        marching.enable_war_reinforcement();
+        assert_eq!(
+            marching.wartime_reinforcement_step(
+                &mut game,
+                0,
+                soldier,
+                &threatened_plan,
+                None,
+                &[1]
+            ),
+            None,
+            "the homeland keeps first claim"
+        );
+
+        // On, with the homeland quiet: the rear unit walks toward the war.
+        assert_eq!(
+            marching.wartime_reinforcement_step(&mut game, 0, soldier, &campaign, None, &[1]),
+            Some(true),
+            "the standing rear must march"
+        );
+        assert_ne!(game.units[&soldier].pos, start, "the first step moved");
+        // Walked turn by turn, the march delivers the unit to the staging
+        // ring: the route can step laterally around terrain, so the claim is
+        // arrival, not per-step monotony. Once inside the front radius the
+        // rear gate itself stands the step down.
+        let mut steps = 0;
+        while game.wdist(game.units[&soldier].pos, objective) > 5 && steps < 60 {
+            game.units.get_mut(&soldier).unwrap().moves_left = 2.0;
+            if marching
+                .wartime_reinforcement_step(&mut game, 0, soldier, &campaign, None, &[1])
+                .is_none()
+            {
+                break;
+            }
+            steps += 1;
+        }
+        let after = game.units[&soldier].pos;
+        assert!(
+            game.wdist(after, objective) <= 5,
+            "the march must reach the staging ring; stalled at {:?}, {} from the \
+             objective after {steps} steps",
+            after,
+            game.wdist(after, objective)
+        );
+
+        // In contact, the tactical layer owns the unit and the march declines.
+        let adjacent = game
+            .wdisk(after, 2)
+            .into_iter()
+            .find(|pos| {
+                *pos != after
+                    && game.units_at(*pos).is_empty()
+                    && game.city_at(*pos).is_none()
+                    && game
+                        .map
+                        .get(*pos)
+                        .is_some_and(|tile| !game.rules.is_water(tile))
+            })
+            .expect("open land beside the marcher");
+        game.spawn_test_unit("warrior", 1, adjacent);
+        assert_eq!(
+            marching.wartime_reinforcement_step(&mut game, 0, soldier, &campaign, None, &[1]),
+            None,
+            "a unit in contact belongs to the tactical layer"
+        );
     }
 }

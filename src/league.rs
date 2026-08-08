@@ -2361,7 +2361,9 @@ fn play_job(manifest: &RoundManifest, job: &WorkJob, worker: &str) -> StoredOutc
         won: ranked.iter().map(|pid| game.winner == Some(*pid)).collect(),
         seed: job.seed,
         turn: game.reported_turn(),
-        victory: game.victory_type.clone().unwrap_or_default(),
+        // The label, not the bare type: a listing of past games should say
+        // what a Mercy Rule ending was decided on, not merely that one was.
+        victory: game.victory_label().unwrap_or_default(),
         played_on: utc_date_now(),
     }
 }

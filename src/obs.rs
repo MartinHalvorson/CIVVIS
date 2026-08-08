@@ -405,12 +405,31 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         "turn_limit": g.turn_limit(),
         "seed": g.seed,
         "game_speed": g.game_speed.id(),
+        // The setup panel can faithfully read a running arena back after a
+        // reload, including its selected deadline. Worlds carry the stock
+        // value but never consult it.
+        "tactics": g.tactics,
+        // Where the flag stands, on the one arena shape that plants one.
+        // Published to every viewer whatever the fog says: the flag is the
+        // battle's objective, and both commanders marched in knowing where
+        // it is even if neither has seen it yet.
+        "arena_flag": g.arena_flag,
         // The handicap the game is being played on. The save list has always
         // reported this for games nobody is playing; without it here the setup
         // panel could not tell a reloaded page which difficulty the game on
         // screen was started at, and offered to restart it at the stock one.
         "difficulty": g.difficulty,
         "world_era": g.world_era,
+        // The bomb is invented once, for the whole world. This says only that
+        // somebody has finished the research that unlocks nuclear devices —
+        // never who — so it is a fact about the age like `world_era` beside it
+        // rather than a look inside a rival's tech tree. Nothing un-invents it:
+        // a world that has built the bomb has built it even after the empire
+        // that did is gone. Which research it is comes from the rules, so the
+        // tech's name is not written down a second time here.
+        "nuclear_weapons_unlocked": g.rules.projects.get("build_nuclear_device")
+            .and_then(|spec| spec.tech.as_ref())
+            .is_some_and(|tech| g.players.iter().any(|p| p.techs.contains(tech))),
         "climate_phase": g.climate_phase,
         "climate_points": g.climate_points(),
         "disaster_intensity": g.disaster_intensity(),
@@ -458,6 +477,12 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             // whether it is drawing a rectangle or a globe. It is read off the
             // map rather than off the setup, so a loaded save answers too.
             "shape": if g.map.sphere().is_some() { "planet" } else { "flat" },
+            // Whether east and west are the same edge. A Tactics arena is the
+            // one shape where they are not, and the browser cannot infer that
+            // from `shape`: an arena is flat like every stock script and only
+            // its walls tell it apart. Without this the chart unrolls a walled
+            // field, and a unit at the east wall is drawn past the west one.
+            "wrap_x": g.map.wraps_east_west(),
             "poles": g.map_poles.id(),
             "width": g.map.width,
             "height": g.map.height,
@@ -699,11 +724,25 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             if let Some(adjustment) = g.observed_yield_adjustments.get(&o.id) {
                 output.add(*adjustment);
             }
+            // An arena grants Gold and Science to the side rather than to a
+            // city, so summing cities alone would report zero of both while
+            // the treasury filled and the tree opened — and would report a
+            // side with no city as having no economy at all. Add the grants
+            // where they are actually collected, so the panel says what the
+            // turn is about to do.
+            output.add(g.arena_side_yields(o.id));
             let total_population: i32 = city_ids
                 .iter()
                 .map(|&cid| g.cities[&cid].pop)
                 .sum();
             let military = g.military_power(o.id).round() as i64;
+            // A finished device is an empire-scale fact of the same kind as
+            // military strength, and it goes on the public ledger for the same
+            // reason: the standings ribbon compares empires somebody has met.
+            // The two classes are reported apart because they are two different
+            // weapons — one blast ring against two, and a maintenance bill to
+            // match — and the browser adds them for the one figure it shows.
+            let devices = |key: &str| o.counters.get(key).copied().unwrap_or(0).max(0);
             // Founding is permanent history, but the standings marker is
             // about a faith that is still present now. Compute that from the
             // whole current world so fogged or merely remembered cities do
@@ -784,6 +823,8 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "founded_religion_exists": founded_religion_exists,
                 "yields": yields_json(&output),
                 "military": military,
+                "nuclear_devices": devices("project_effect:nuclear_devices"),
+                "thermonuclear_devices": devices("project_effect:thermonuclear_devices"),
                 // ⚠ WHAT THE HOST SAID, kept apart from what CIVVIS MODELS.
                 // `military` above is `military_power`, which is deliberately
                 // `max(observed, our own strength sum)` — so for our OWN seat,
@@ -863,12 +904,22 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         "unit_move_trails": unit_move_trails_json(g, pid, omniscient, &vis),
         "winner": g.winner,
         "winners": g.winning_players(),
+        // A terminal Tactics draw has no winner, so clients must not infer
+        // liveness from `winner` alone. `draw` makes that one result explicit;
+        // `finished` is the generic lifecycle answer every driver needs.
+        "finished": g.is_finished(),
+        "draw": g.is_draw(),
         "victory_type": g.victory_type,
-        // The turn a finished game is reported on, which is `turn` for every
-        // victory but the score tiebreak: that one is settled by a count taken
-        // on the wrap out of the final turn, so a 250-turn game reads turn 250
+        // How that result is written: the type for every ordinary victory, and
+        // the Mercy Rule's lane notation for a mercy ending, composed here so
+        // every surface says the same thing about the same game. Empty while a
+        // game is live, exactly as `victory_type` is.
+        "victory_label": g.victory_label(),
+        // The turn a finished game is reported on, which is usually the live
+        // turn of a victory. A score tiebreak or Tactics draw is settled on
+        // the wrap out of the final turn, so a 250-turn game reads turn 250
         // and not the turn 251 nobody plays. Empty while a game is live.
-        "victory_turn": g.winner.map(|_| g.reported_turn()),
+        "victory_turn": g.is_finished().then(|| g.reported_turn()),
         // The result this world was already given, if it was asked for one
         // more turn. The game is live again, so `winner` is empty; this is how
         // a viewer is still told whose victory the extra turns are borrowed
@@ -877,6 +928,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "winner": decided.winner,
             "civ": g.players.get(decided.winner).map(|player| player.civ.clone()),
             "victory_type": decided.victory_type,
+            "victory_label": decided.victory_label(),
             "turn": decided.turn,
             "mode": decided.mode.as_str(),
         })),
@@ -1648,6 +1700,39 @@ fn merge(base: &mut Value, ext: Value) {
 mod tests {
     use super::*;
 
+    /// The browser draws a flat chart by unrolling it about the camera, which
+    /// is right for a world and wrong for an arena: a Tactics battlefield is
+    /// walled on all four sides, so a unit at the east wall drawn again past
+    /// the west wall is a unit off the map. `shape` cannot answer it — an
+    /// arena is flat like every stock script — so the observation carries the
+    /// wrap itself, read off the built map so a loaded save answers too.
+    #[test]
+    fn the_observation_says_whether_east_and_west_are_the_same_edge() {
+        let arena = Game::new_with(crate::game::GameOptions {
+            map_script: crate::setup::MapScript::Battlefield,
+            ..crate::game::GameOptions::new(2, 12, 12, 4_402, 60, 0)
+        });
+        assert!(arena.is_arena());
+        assert_eq!(observation_spectator(&arena, 0)["map"]["shape"], "flat");
+        assert_eq!(
+            observation_spectator(&arena, 0)["map"]["wrap_x"],
+            json!(false),
+            "an arena has a wall where a world has a seam"
+        );
+
+        // Every other shape does come back on itself: a cylinder through its
+        // own east-west seam, a globe through its geometry.
+        let world = Game::new_full(2, 20, 14, 4_402, 60, 1, false);
+        assert_eq!(observation_spectator(&world, 0)["map"]["wrap_x"], json!(true));
+        let size = crate::setup::MapSize::for_players(2);
+        let (width, height) = size.dimensions(crate::setup::MapTopology::Planet);
+        let globe = Game::new_with(crate::game::GameOptions {
+            map_topology: crate::setup::MapTopology::Planet,
+            ..crate::game::GameOptions::new(2, width, height, 4_402, 60, 2)
+        });
+        assert_eq!(observation_spectator(&globe, 0)["map"]["wrap_x"], json!(true));
+    }
+
     #[test]
     fn tile_hover_identifies_the_owning_city_and_orders_each_gameplay_layer() {
         let mut game = Game::new_full(2, 20, 14, 19_067, 120, 1, false);
@@ -1935,6 +2020,8 @@ mod tests {
             "government",
             "age",
             "wonder_count",
+            "nuclear_devices",
+            "thermonuclear_devices",
             "opinion_of_me",
         ] {
             assert!(
@@ -1959,6 +2046,88 @@ mod tests {
             json!(true),
             "and the meeting was mutual"
         );
+    }
+
+    /// The standings' NUK column counts finished devices of both classes, so
+    /// the two stockpile counters have to reach the wire separately and unmixed
+    /// with the Manhattan Project that unlocked them. Whether the column exists
+    /// at all is the world's own fact beside `world_era`: nobody can hold a
+    /// device before somebody researches nuclear fission, and no seat learns
+    /// from it who that somebody was.
+    #[test]
+    fn the_world_reports_when_nuclear_weapons_have_been_unlocked() {
+        let mut game = Game::new_full(3, 22, 16, 74_118, 25, 1, false);
+        assert_eq!(
+            observation_spectator(&game, 0)["nuclear_weapons_unlocked"],
+            json!(false),
+            "an ancient world has not invented the bomb"
+        );
+        assert_eq!(
+            observation(&game, 1)["nuclear_weapons_unlocked"],
+            json!(false)
+        );
+
+        game.players[2].techs.insert(crate::name!("nuclear_fission"));
+        for observed in [observation_spectator(&game, 0), observation(&game, 1)] {
+            assert_eq!(
+                observed["nuclear_weapons_unlocked"],
+                json!(true),
+                "the whole world is in the nuclear age once one civilization is"
+            );
+            assert!(
+                observed["players"][2]["techs"].is_null(),
+                "and it still says nothing about whose tech tree it came from"
+            );
+        }
+
+        // History does not un-happen: losing the empire that invented the bomb
+        // does not take the column back off the table.
+        game.players[2].alive = false;
+        assert_eq!(
+            observation_spectator(&game, 0)["nuclear_weapons_unlocked"],
+            json!(true)
+        );
+    }
+
+    /// Both classes of device are counted, apart, for every civilization the
+    /// viewer has met — the same public ledger military strength rides on.
+    #[test]
+    fn player_standings_report_each_civilizations_nuclear_stockpile() {
+        let mut game = Game::new_full(3, 22, 16, 74_117, 25, 1, false);
+        game.players[0]
+            .science_projects
+            .insert("manhattan_project".to_string());
+        game.players[0]
+            .counters
+            .insert("project_effect:nuclear_devices".to_string(), 3);
+        game.players[0]
+            .counters
+            .insert("project_effect:thermonuclear_devices".to_string(), 2);
+
+        let observed = observation_spectator(&game, 0);
+        let armed = &observed["players"][0];
+        assert_eq!(armed["nuclear_devices"], json!(3));
+        assert_eq!(armed["thermonuclear_devices"], json!(2));
+        assert!(
+            armed["science_projects"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|project| project == "manhattan_project"),
+            "the project that unlocks the column is named on the same ledger"
+        );
+        // Everybody else is on the same ledger with an explicit nothing, so a
+        // disarmed row reads as a zero rather than as an unavailable figure.
+        let disarmed = &observed["players"][1];
+        assert_eq!(disarmed["nuclear_devices"], json!(0));
+        assert_eq!(disarmed["thermonuclear_devices"], json!(0));
+
+        const APP: &str = include_str!("../web/assets/app.js");
+        assert!(
+            APP.contains("[\"nukes\", \"Nuclear stockpile\", nuclearStandingsInPlay],"),
+            "the column exists only while the world has finished a Manhattan Project"
+        );
+        assert!(APP.contains("nukes:[\"NUK\", \"Nuclear devices held\"],"));
     }
 
     /// Ages belong to civilizations rather than to the observing seat. Once a
@@ -2958,6 +3127,67 @@ mod tests {
             finished["victory_turn"],
             json!(250),
             "a 250-turn game is won on turn 250"
+        );
+    }
+
+    #[test]
+    fn a_tactics_draw_is_published_as_finished_without_a_winner() {
+        let mut game = Game::new_with(crate::game::GameOptions {
+            map_script: crate::setup::MapScript::Battlefield,
+            tactics: crate::setup::TacticsRules {
+                turn_limit: 50,
+                ..crate::setup::TacticsRules::default()
+            },
+            ..crate::game::GameOptions::new(2, 10, 10, 19_071, 50, 0)
+        });
+        game.turn = 51;
+        game.victory_type = Some(crate::game::DRAW_RESULT.to_string());
+
+        let result = observation_spectator(&game, 0);
+        assert_eq!(result["finished"], json!(true));
+        assert_eq!(result["draw"], json!(true));
+        assert!(result["winner"].is_null());
+        assert_eq!(result["winners"], json!([]));
+        assert_eq!(result["victory_type"], json!(crate::game::DRAW_RESULT));
+        assert_eq!(result["victory_label"], json!(crate::game::DRAW_RESULT));
+        assert_eq!(result["victory_turn"], json!(50));
+    }
+
+    /// The Mercy Rule's notation is composed once, in the engine, so the
+    /// finish screen, the play-on plate and anything else reading `/state`
+    /// denote the same win the same way.
+    #[test]
+    fn a_mercy_ending_publishes_its_notation_beside_the_bare_type() {
+        let mut game = Game::new_full(2, 20, 14, 19_069, 250, 0, false);
+        assert!(
+            observation_spectator(&game, 0)["victory_label"].is_null(),
+            "a live world has no verdict to write"
+        );
+        game.winner = Some(0);
+        game.victory_type = Some(crate::game::MERCY_VICTORY.to_string());
+        game.mercy_lanes = vec!["science".to_string()];
+        let finished = observation_spectator(&game, 0);
+        assert_eq!(
+            finished["victory_type"],
+            json!("mercy"),
+            "the engine's own answer is unchanged"
+        );
+        assert_eq!(finished["victory_label"], json!("Mercy Rule - Science"));
+
+        // A world playing on past that result is live again and has no verdict
+        // of its own, but the one it borrowed its turns from keeps the
+        // notation rather than reverting to the bare word.
+        assert!(game.play_on(crate::game::PlayOnMode::UntilNextVictory));
+        let extended = observation_spectator(&game, 0);
+        assert!(extended["victory_label"].is_null());
+        assert_eq!(
+            extended["decided"]["victory_type"],
+            json!("mercy"),
+            "the type a play-on extension suppresses is still the type"
+        );
+        assert_eq!(
+            extended["decided"]["victory_label"],
+            json!("Mercy Rule - Science")
         );
     }
 

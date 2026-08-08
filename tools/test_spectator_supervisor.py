@@ -413,6 +413,20 @@ class SessionSettingsTests(unittest.TestCase):
         self.assertFalse(supervisor.playing_on({"winner": 0, "seed": 77}, 77))
         self.assertFalse(supervisor.playing_on(None, 77))
 
+    def test_terminal_result_predicate_includes_draws_and_old_wins(self):
+        self.assertFalse(supervisor.game_finished(None))
+        self.assertFalse(supervisor.game_finished({"winner": None}))
+        self.assertTrue(supervisor.game_finished({"winner": 0}))
+        self.assertTrue(supervisor.game_finished({"winner": None, "finished": True}))
+        self.assertTrue(
+            supervisor.game_finished({"winner": None, "victory_type": "draw"}),
+            "raw saves have no computed finished field"
+        )
+        self.assertEqual(
+            supervisor.victory_verdict({"winner": None, "victory_type": "draw"}),
+            "draw",
+        )
+
     def test_selected_settings_override_the_live_game_at_the_next_boundary(self):
         selected = {
             "players": 6,
@@ -981,6 +995,14 @@ class RecoveryTests(unittest.TestCase):
         )
         self.assertTrue(
             supervisor.successor_started({**finished, "seed": 12}, 7, 11)
+        )
+        self.assertFalse(
+            supervisor.successor_started(
+                {**finished, "winner": None, "finished": True, "victory_type": "draw"},
+                7,
+                11,
+            ),
+            "a draw on the same world is still the result being held"
         )
 
     def test_successor_grace_observes_the_server_owned_restart(self):

@@ -245,6 +245,33 @@ unrecognised blocker is reported by name. A blocker that survives
 logged as forfeited — a far better trade than a run that stops dead, because a
 stopped run reports nothing at all.
 
+⚠⚠ **That 40-attempt forfeit is not reachable on a wedged turn, and step 3 is
+refused on one.** Both halves were measured by run `civvis-20260807T190903Z`
+turn 39 (issue #1374), which sat 900 s on `ENDTURN_BLOCKING_UNITS` and died to
+the outside watchdog:
+
+- A board waiting on input publishes almost no game-core events, and
+  `onGameCoreTick` keeps 1 in 16 of the ones it does. `attempts` never passed
+  **1** in fifteen minutes against a bound of 40. Any escalation that counts to
+  a large number is wall-clock unreachable exactly when it is needed.
+- The shipped `ActionPanel.DoEndTurn` never requests `ACTION_ENDTURN` while
+  `ENDTURN_BLOCKING_UNITS`, `ENDTURN_BLOCKING_UNIT_NEEDS_ORDERS` or
+  `ENDTURN_BLOCKING_STACKED_UNITS` is active — it calls
+  `UI.SelectNextReadyUnit()` and waits for a human. Step 3 above is therefore
+  issued into a wall on those three. The only form that gets past them is the
+  one Firaxis reserves for SHIFT+ENTER and calls "Unsupported":
+  `UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" })`.
+
+So a **soft** blocker still current on the sighting after its own answer is
+forfeited immediately rather than at 40: the still-ready units are parked with
+`orderIdle` (skip/fortify/alert/sleep — position-preserving, never the legacy
+`orderFor` pass), the notification is dismissed, and for those three the turn is
+forced. Under `CivvisDecides` the trigger is the second sighting, because the
+`civvis_complete` answer changes nothing by construction and waiting longer buys
+no information. The retry is bounded at `MaxSoftBlockerForfeits` per blocker per
+turn; once it is spent, a `wedged` event names the prompt, so a killed attempt
+says what stopped it instead of reading as a slow machine.
+
 ### The announcement screens close themselves
 
 End-turn blockers are not the only thing that stops a turn. Civilization VI
@@ -413,3 +440,48 @@ Duel heading.
 event naming the controller's own team, with the run's event log kept.
 
 See `docs/CIV6_LADDER.md` for the current standing.
+
+## The host itself is part of the bridge (macOS 26, measured 2026-08-07)
+
+A Steam reinstall on macOS 26.5.1 established four host facts that sit UNDER
+everything above, and `tools/computer_control.py` is the systematic layer that
+reports and manages them (repo tooling only — nothing under `web/` may import
+it, so none of it ships to civvis.ai):
+
+- **Gatekeeper can refuse the game while its process runs.** The refusal is a
+  `CoreServicesUIAgent` modal — *"Civilization VI" is damaged and can't be
+  opened* — and behind it the child initialises nothing: no `Logs/` directory,
+  an events file frozen at zero bytes, a harness reading "slow machine". A
+  poisoned trust record survives a VALID signature (measured: mod removed,
+  `codesign` clean, still refused, on both a direct child exec and a
+  `steam://rungameid` launch). The recovery that works is a Steam
+  **reinstall**; the modal's default button — Move to Trash — is the one thing
+  that must never be pressed, which is why `dismiss` works from a per-owner
+  button allowlist instead of clicking defaults.
+- **Installing the mod invalidates the bundle's seal.** Every file written
+  under `Contents/Assets/DLC/CivvisControl` lands in `codesign -v` as "a
+  sealed resource is missing or invalid"; uninstalling restores "valid on
+  disk". A fresh trust record tolerates the broken seal — the game launches
+  and plays — so `bundle` reports signature and writability as two independent
+  facts rather than one health bit.
+- **The install tree is TCC-protected against Terminal, not against Finder.**
+  Writes into the bundle from Terminal's children fail with "Operation not
+  permitted" even with the game closed, while Finder performs the same
+  operations — which is exactly the fallback `civ6_control/install.py` uses.
+  Symlinking the mod out of the bundle is a DEAD END, not an open idea:
+  Finder's `move (POSIX file … as alias)` dereferences the link and moves its
+  target; moving the link as a folder item is refused (-5000) from a temp
+  directory and times out (-1712) from the home directory. Directory replace
+  through Finder is the mechanism that works.
+- **`Civ6_Exe_Child` bypasses the stub's single-copy refusal.** A leftover
+  child from a torn-down run plus one fresh launch gave two live games, and
+  every `System Events` call addressed to "the" Civ6 process then drives an
+  arbitrary one. `games --ensure-single` enforces the stub's rule from
+  outside: oldest child kept, newer ones culled.
+
+Two host settings belong with these: `PlayIntroVideo 0` in the NESTED
+`AppOptions.txt` (a fresh install resets it to 1, and the first-run cinematic
+then covers the main menu — sixteen straight "no submenu (0 rows)" failures
+while the movie played), and the operator's standing window layout, which
+`layout` applies: terminal lower-left, CIVVIS upper-left, the game upper-right,
+lower-right left free for the operator.

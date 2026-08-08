@@ -107,20 +107,87 @@ jobs:
           fi
 
           # Budget: pace scheduled deploys against 440 of Cloudflare's 500
-          # per month, pro rata by day, so promotions always have room.
-          # Successful runs of this workflow and to-prod-manual-only approximate
-          # deployments; dry runs inflate the count, which errs safe. The two
+          # per month, pro rata by day, so promotions always have room. The two
           # names these workflows carried before 2026-08-04 stay in the sum:
           # a rename must not amnesty the deployments already spent this month.
+          #
+          # Count DEPLOYMENTS, not runs. Most scheduled runs stop at this gate
+          # and deploy nothing, yet they still finish green, so counting runs
+          # made the budget self-fulfilling: skipped ticks land at ~48 a day
+          # against an allowance that grows ~14 a day, so once the total passed
+          # the pace it could never come back under it and the test lane
+          # stopped following main for the rest of the month. Measured on
+          # 2026-08-07, the day it locked: 105 successful runs, 72 of which had
+          # actually deployed, against an allowance of 99 — held back entirely
+          # by the 33 runs that had done nothing.
+          #
+          # A run deployed only if its publish job ran: `publish` here,
+          # `deploy / publish` when to-prod-manual-only calls this workflow in.
+          # A run whose jobs cannot be read counts as a deploy, so an API
+          # stumble slows the cadence rather than overspending the cap.
           month_start="$(date -u +%Y-%m-01)"
           day="$(date -u +%-d)"
           days_in_month="$(python3 -c 'import calendar,datetime; now=datetime.datetime.utcnow(); print(calendar.monthrange(now.year, now.month)[1])')"
-          used=0
-          for wf in to-test-auto-30.yml to-prod-manual-only.yml publish-site.yml promote-site.yml; do
-            n="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${wf}/runs?status=success&created=>=${month_start}&per_page=1" --jq '.total_count' || echo 0)"
-            used=$((used + n))
-          done
+          used="$(MONTH_START="$month_start" python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          from concurrent.futures import ThreadPoolExecutor
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          since = os.environ["MONTH_START"]
+          token = os.environ["GH_TOKEN"]
+
+          def api(path):
+              request = urllib.request.Request(
+                  "https://api.github.com/" + path,
+                  headers={"Authorization": "Bearer " + token,
+                           "Accept": "application/vnd.github+json"})
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          def deployed(run):
+              try:
+                  jobs = api(f"repos/{repo}/actions/runs/{run}/jobs?per_page=50")["jobs"]
+              except Exception:
+                  return 1
+              return int(any(job["conclusion"] == "success"
+                             and job["name"].endswith("publish") for job in jobs))
+
+          # Only a 404 is a real zero — a workflow name this repository has
+          # since dropped. Every other failure has to propagate: swallowing it
+          # would report an empty month and read as a wide-open budget.
+          def runs_for(workflow):
+              found, page = [], 1
+              while True:
+                  try:
+                      batch = api(f"repos/{repo}/actions/workflows/{workflow}/runs"
+                                  f"?status=success&created=>={since}"
+                                  f"&per_page=100&page={page}")["workflow_runs"]
+                  except urllib.error.HTTPError as error:
+                      if error.code == 404:
+                          return found
+                      raise
+                  found += [run["id"] for run in batch]
+                  if len(batch) < 100:
+                      return found
+                  page += 1
+
+          runs = []
+          for workflow in ("to-test-auto-30.yml", "to-prod-manual-only.yml",
+                           "publish-site.yml", "promote-site.yml"):
+              runs += runs_for(workflow)
+
+          with ThreadPoolExecutor(max_workers=8) as pool:
+              print(sum(pool.map(deployed, runs)))
+          PY
+          )" || used=""
           allowed=$((440 * day / days_in_month))
+          # No count is not a licence to spend: skip the tick and ask again in
+          # half an hour, the same answer as being ahead of the pace.
+          if [ -z "$used" ]; then
+            echo "::warning::could not count this month's deployments; skipping this tick"
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           echo "deploys used this month: $used; pace allows: $allowed (day $day/$days_in_month)"
           if [ "$used" -ge "$allowed" ]; then
             echo "go=false" >> "$GITHUB_OUTPUT"

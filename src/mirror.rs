@@ -2141,6 +2141,57 @@ mod tests {
         assert!(recon.game.units.values().any(|unit| unit.owner == minor.id));
     }
 
+    /// ⚠ `suzerain: -1` is the export's NO-suzerain sentinel, and skipping the
+    /// seeding is not enough to mirror it: our own factual envoys are already
+    /// on the board and no rival delegation is, so three unopposed envoys
+    /// elect seat 0 by walkover. Measured live on `civvis-20260808T003040Z`:
+    /// `taruga suzerain Civ6=-1 CIVVIS=0`.
+    #[test]
+    fn no_suzerain_sentinel_does_not_elect_seat_zero_by_walkover() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(6, 6, "TERRAIN_PLAINS")],
+        }]);
+        let state = StateSnapshot {
+            turn: 30,
+            minors: vec![StateMinor {
+                player: 6,
+                civ: "CIVILIZATION_TARUGA".to_string(),
+                suzerain: -1,
+                envoys: 3,
+                cities: vec![StateCity {
+                    id: 70,
+                    name: "Taruga".to_string(),
+                    x: 6,
+                    y: 6,
+                    pop: 4,
+                    ..StateCity::default()
+                }],
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let recon = rebuild_from_state(&snapshot, &state, 6, 1, 250, 0);
+        let minor = recon
+            .game
+            .players
+            .iter()
+            .find(|player| player.is_minor && player.civ == "Taruga")
+            .expect("Taruga minor seat");
+        // Our delegation is the export's fact and must survive untouched…
+        assert_eq!(recon.game.envoys_at(0, minor.id), 3);
+        // …while the host's "none" answer must be the board's answer too.
+        assert_eq!(
+            recon.game.suzerain_of(minor.id),
+            None,
+            "Civ 6 reported no suzerain (-1); the mirror must not read as ours"
+        );
+    }
+
     #[test]
     fn renamed_city_state_uses_exported_capital_instead_of_legacy_type_id() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -2355,6 +2406,69 @@ mod tests {
         );
     }
 
+    #[test]
+    fn live_mirror_permanently_blocks_host_granted_spy_production() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 8,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(6, 5, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 8,
+            civics: vec!["CIVIC_DIPLOMATIC_SERVICE".to_string()],
+            cities: vec![StateCity {
+                id: 1,
+                name: "Delhi".to_string(),
+                x: 5,
+                y: 5,
+                pop: 2,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let spy = crate::game::Item::Unit {
+            unit: crate::name!("spy"),
+        };
+        let city = mirror.cid_of[&1];
+        assert!(
+            !mirror.game.can_produce(0, city, &spy),
+            "the host never accepts a city-built Spy"
+        );
+        assert_eq!(
+            mirror.game.blocked_production[&city],
+            std::collections::BTreeSet::from(["unit:spy".to_string()]),
+            "the live-only block must not suppress unrelated production"
+        );
+
+        // `sync` replaces temporary host-refusal cooldowns. Its permanent host-rule
+        // block must survive that replacement and cover a city first seen this turn.
+        state.turn = 9;
+        state.cities.push(StateCity {
+            id: 2,
+            name: "Agra".to_string(),
+            x: 6,
+            y: 5,
+            pop: 2,
+            ..StateCity::default()
+        });
+        mirror.sync(&snapshot, &state, 0);
+        for host_city in [1, 2] {
+            let city = mirror.cid_of[&host_city];
+            assert!(
+                mirror.game.blocked_production[&city].contains("unit:spy"),
+                "city {host_city} must retain the permanent host rule"
+            );
+            assert!(
+                !mirror.game.can_produce(0, city, &spy),
+                "city {host_city} must not offer an untrainable Spy after sync"
+            );
+        }
+    }
+
     /// ★★★★★ Building aliases cross; a truly unknown building stays observable.
     /// ★★★★★ A building CIVVIS does not model must not take the decider down.
     ///
@@ -2453,6 +2567,76 @@ mod tests {
             !mirror.unmapped.iter().any(|entry| entry.contains("BUILDING_UNIVERSITY")),
             "sync must not reclassify an ordinary University as a wonder: {:?}",
             mirror.unmapped
+        );
+    }
+
+    /// ⚠ A mirrored city's buildings are the EXPORT's statement, and `place_city`
+    /// disagrees for a founding-bonus civilization: Rome's Trajan's Column pushes
+    /// a free monument on every placement, while Civilization VI grants it at
+    /// founding only. Run `civvis-20260807T172510Z` (#1366): two cities Rome
+    /// CAPTURED, whose export building lists were empty, mirrored with
+    /// `extra=['monument']` — ghost culture in exactly the captured cities the
+    /// recovery planner was re-valuing. Founded cities masked the seed because
+    /// their real monument is exported and the translation deduplicates.
+    #[test]
+    fn a_captured_city_does_not_inherit_the_seats_founding_bonus_monument() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 160,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(9, 5, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot { turn: 160, ..StateSnapshot::default() };
+        state.seat.civ = "CIVILIZATION_ROME".to_string();
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Rome".to_string(),
+            x: 5,
+            y: 5,
+            pop: 9,
+            capital: true,
+            buildings: vec![
+                "BUILDING_MONUMENT".to_string(),
+                "BUILDING_GRANARY".to_string(),
+            ],
+            ..StateCity::default()
+        });
+        // Captured this game: Civ 6 reports its building list as empty.
+        state.cities.push(StateCity {
+            id: 2,
+            name: "Karkar".to_string(),
+            x: 9,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+
+        let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let karkar = recon
+            .game
+            .cities
+            .values()
+            .find(|city| city.name == "Karkar")
+            .expect("the captured city must be on the board");
+        assert!(
+            karkar.buildings.is_empty(),
+            "the export lists no buildings; the mirror must not model a monument: {:?}",
+            karkar.buildings
+        );
+        let rome = recon
+            .game
+            .cities
+            .values()
+            .find(|city| city.name == "Rome")
+            .expect("the capital must be on the board");
+        assert_eq!(
+            rome.buildings
+                .iter()
+                .filter(|building| **building == Name::new("monument"))
+                .count(),
+            1,
+            "the founded capital's real, exported monument still crosses exactly once"
         );
     }
 
@@ -4639,6 +4823,73 @@ mod tests {
         assert!(
             recon.game.can_found_city(supported_settler),
             "the safe control site must remain immediately settleable"
+        );
+    }
+
+    /// ⚠ The export carries a rival's units ONLY under current visibility, so a
+    /// unit arriving here is one the HOST has already let the seat see — its own
+    /// detection rules included. Re-deriving Naval Raider stealth on the mirror
+    /// vetoed that ground truth: run `civvis-20260807T162004Z`, turns 237–251,
+    /// `UNITDATA ⚠ UNIT_NUCLEAR_SUBMARINE@(4, 36) count Civ6=1 CIVVIS=0` — the
+    /// sub was planted, then hidden from the seat's board, orders and threat
+    /// reads because no destroyer of ours stood beside it (#1362).
+    #[test]
+    fn a_visible_rival_naval_raider_is_not_hidden_by_our_own_stealth_rule() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 240,
+            width: 30,
+            height: 30,
+            chunk: 1,
+            plots: vec![plot(20, 9, "TERRAIN_COAST"), plot(5, 5, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot { turn: 240, ..StateSnapshot::default() };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Rome".to_string(),
+            x: 5,
+            y: 5,
+            pop: 6,
+            capital: true,
+            ..StateCity::default()
+        });
+        state.rivals.push(StateRival {
+            player: 5,
+            civ: "CIVILIZATION_AMERICA".to_string(),
+            // The exact unit shape from the live export under `rivals[4]`.
+            units: vec![serde_json::from_str(
+                r#"{"build_charges": 0, "class": "PROMOTION_CLASS_NAVAL_RAIDER",
+                    "combat": 80, "fortified": false, "fortify_turns": 0, "hp": 100,
+                    "kind": "UNIT_NUCLEAR_SUBMARINE", "level": 1, "moves": 0,
+                    "promotions": [], "ranged": 85, "spread_charges": 0,
+                    "x": 20, "y": 9, "xp": 0}"#,
+            )
+            .expect("the issue's unit shape deserializes")],
+            ..StateRival::default()
+        });
+
+        let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let sub = recon
+            .game
+            .units
+            .values()
+            .find(|unit| unit.kind == "nuclear_submarine")
+            .expect("the exported submarine must be planted, not dropped");
+        assert_ne!(sub.owner, 0, "it is the rival's unit");
+        assert!(
+            recon.game.unit_visible_to(sub.id, 0),
+            "the host proved the seat can see this raider; the mirror's own \
+             stealth model must not veto it"
+        );
+        // End to end: the seat's fogged board dump — what the planner and the
+        // mirror checker read — must carry the unit.
+        let view = crate::obs::observation_player_view(&recon.game, 0);
+        assert!(
+            view["units"]
+                .as_array()
+                .expect("units array")
+                .iter()
+                .any(|unit| unit["type"] == "nuclear_submarine"),
+            "the raider must appear on the seat's board"
         );
     }
 
@@ -7789,6 +8040,23 @@ fn blocked_production_from(
     out
 }
 
+/// Civilization VI grants Spies through civics and governments; cities cannot train them.
+///
+/// CIVVIS models Spies as ordinary units for standalone simulations, so keep that model
+/// intact and block the host-only mismatch only on reconstructed live boards.
+fn block_live_spy_production(game: &mut crate::game::Game) {
+    let spy = crate::game::Item::Unit {
+        unit: crate::name!("spy"),
+    };
+    let key = crate::game::Game::production_block_key(&spy);
+    let mut blocked = std::mem::take(&mut game.blocked_production);
+    for city in game.player_city_ids(0) {
+        blocked.entry(city).or_default().insert(key.clone());
+    }
+    // Replacing rather than mutating directly also invalidates a previously cached menu.
+    game.replace_blocked_production(blocked);
+}
+
 /// Districts the host refused to place, per Civilization VI city id.
 ///
 /// ★★★★ Read from `build_no_plot`, which the mod emits when
@@ -8839,6 +9107,61 @@ fn mirrored_envoys(player: &crate::game::Player, minor: usize) -> i64 {
         .sum()
 }
 
+/// Seed one mirrored city-state's public suzerainty. `minor.suzerain` is a
+/// host SEAT ID with `-1` meaning no suzerain; the board instead *derives*
+/// suzerainty from envoy counts, so both answers must be constructed. A named
+/// holder gets the minimum winning delegation. The `-1` sentinel needs its own
+/// construction, not just a skip: our factual delegation (`minor.envoys`) is
+/// already seeded and rival delegations are not, so three unopposed envoys of
+/// ours elect seat 0 by walkover — measured live on `civvis-20260808T003040Z`:
+/// `taruga suzerain Civ6=-1 CIVVIS=0`. Civ 6 reporting none while we hold
+/// three or more means some rival at least ties us, so seed that tie on one
+/// alive major; fabricated rival delegations from an earlier suzerainty are
+/// cleared first so a former holder cannot stay elected either. Seat 0's count
+/// is the export's fact and is never touched here.
+fn seed_mirrored_suzerainty(
+    game: &mut crate::game::Game,
+    minor: &StateMinor,
+    owner: usize,
+    seat_of_host: &std::collections::BTreeMap<usize, usize>,
+) {
+    if !minor.is_city_state() {
+        return;
+    }
+    if minor.suzerain >= 0 {
+        if let Some(&holder) = seat_of_host.get(&(minor.suzerain as usize)) {
+            let current = mirrored_envoys(&game.players[holder], owner);
+            let winning = if holder == 0 {
+                minor.envoys.max(3)
+            } else {
+                minor.most_envoys.max(minor.envoys.max(0) + 1).max(3)
+            };
+            set_mirrored_envoys(
+                &mut game.players[holder],
+                owner,
+                current.max(3).max(winning),
+            );
+        }
+        return;
+    }
+    let ours = mirrored_envoys(&game.players[0], owner);
+    let blocker = game
+        .players
+        .iter()
+        .find(|player| player.id != 0 && player.alive && !player.is_minor)
+        .map(|player| player.id);
+    for pid in 1..game.players.len() {
+        if !game.players[pid].is_minor {
+            set_mirrored_envoys(&mut game.players[pid], owner, 0);
+        }
+    }
+    if ours >= 3 {
+        if let Some(blocker) = blocker {
+            set_mirrored_envoys(&mut game.players[blocker], owner, ours);
+        }
+    }
+}
+
 /// Apply public host measurements after the reconstructed economy and city
 /// roster are complete. Yield differences are stored as corrections so an AI
 /// clone can still measure the effect of a candidate policy or building.
@@ -9417,6 +9740,20 @@ pub fn rebuild_from_state(
                 // sat on `await` past 98 polls, and the run fell back to the heuristic
                 // ladder (`orders_source: "fallback"`). One Castle ends a run
                 // permanently, because every rebuild hits it again.
+                //
+                // ⚠ STRICTLY THE EXPORT'S LIST, so clear the founding seed first.
+                // `place_city` grants native founding bonuses — Rome's Trajan's
+                // Column pushes a free monument — and Civilization VI applies that
+                // bonus at FOUNDING only, so a city this seat CAPTURED never earned
+                // one the export does not list. Measured on run
+                // `civvis-20260807T172510Z` at turn ~160 (#1366): both cities Rome
+                // captured mirrored with `extra=['monument']` against an EMPTY
+                // export list, +2 ghost culture each, exactly in the captured
+                // cities the recovery planner was re-valuing. Founded Roman cities
+                // hid the seed because their real monument is exported and the push
+                // below deduplicates. The persistent sync already clears before
+                // translating; this is the same discipline.
+                built.buildings.clear();
                 for civ6 in &city.buildings {
                     match civvis_node_name(&game.rules.buildings, civ6, "BUILDING_") {
                         // ★★★★★ THE PALACE IS NOT A LISTED BUILDING IN CIVVIS, AND
@@ -9737,24 +10074,11 @@ pub fn rebuild_from_state(
             }
         }
     }
-    // The suzerain is public even when it is another major. Seed the minimum
-    // winning delegation after every host id has a compact seat mapping.
+    // The suzerain is public even when it is another major — and so is its
+    // absence. Seed the delegations after every host id has a compact seat
+    // mapping.
     for (minor, owner) in minor_assignments {
-        if minor.is_city_state() && minor.suzerain >= 0 {
-            if let Some(&holder) = seat_of_host.get(&(minor.suzerain as usize)) {
-                let current = mirrored_envoys(&game.players[holder], owner);
-                let winning = if holder == 0 {
-                    minor.envoys.max(3)
-                } else {
-                    minor.most_envoys.max(minor.envoys.max(0) + 1).max(3)
-                };
-                set_mirrored_envoys(
-                    &mut game.players[holder],
-                    owner,
-                    current.max(3).max(winning),
-                );
-            }
-        }
+        seed_mirrored_suzerainty(&mut game, minor, owner, &seat_of_host);
     }
 
     // Barbarians go on CIVVIS's own barbarian seat rather than a rival's, so the
@@ -9839,6 +10163,7 @@ pub fn rebuild_from_state(
     let blocked_production =
         blocked_production_from(&state.refused_production, &city_ids, &game.rules);
     game.replace_blocked_production(blocked_production);
+    block_live_spy_production(&mut game);
     let blocked_purchases =
         blocked_production_from(&state.refused_purchases, &city_ids, &game.rules);
     if std::env::var("CIVVIS_DEBUG_PURCHASE_BLOCK").is_ok() {
@@ -10876,6 +11201,10 @@ impl LiveMirror {
             }
         }
 
+        // This host rule is permanent, unlike a recent refusal cooldown. Apply it after
+        // each replacement and after newly observed cities have been placed.
+        block_live_spy_production(&mut self.game);
+
         // --- rivals ----------------------------------------------------------
         // Rebuilt wholesale: what we can see of them is fog-dependent and they carry
         // no plan of ours worth preserving.
@@ -11163,21 +11492,7 @@ impl LiveMirror {
             }
         }
         for (minor, owner) in minor_assignments {
-            if minor.is_city_state() && minor.suzerain >= 0 {
-                if let Some(&holder) = seat_of_host.get(&(minor.suzerain as usize)) {
-                    let current = mirrored_envoys(&self.game.players[holder], owner);
-                    let winning = if holder == 0 {
-                        minor.envoys.max(3)
-                    } else {
-                        minor.most_envoys.max(minor.envoys.max(0) + 1).max(3)
-                    };
-                    set_mirrored_envoys(
-                        &mut self.game.players[holder],
-                        owner,
-                        current.max(3).max(winning),
-                    );
-                }
-            }
+            seed_mirrored_suzerainty(&mut self.game, minor, owner, &seat_of_host);
         }
 
         self.active_trade_route_traders = active_trade_route_traders(state);
