@@ -740,8 +740,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// so the plan never runs, the set stays empty, and the anchor's only new
 /// executable is a set-membership test against an empty set — the same shape
 /// #1363 re-pinned. Compatibility re-pin over the #1382 merge.
+/// #1393 adds the war-conversion trio (`war_economy`, `war_reinforcement`,
+/// `war_patience`), off by default and set only by `enable_live_bridge`.
+/// `AdvancedAi::legacy()` leaves all three false, so its new executable is
+/// three short-circuiting flag tests: the production routing keeps its
+/// historical arms (`false && _` adds nothing), both fatigue sites reduce to
+/// the shipped expression (`!false &&` is identity), and
+/// `wartime_reinforcement_step` returns `None` on its first line. The anchor's
+/// decisions are byte-identical by construction. Compatibility re-pin, not an
+/// Elo-protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc213_b891_8f46_f8ec;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x61f7_5b6d_c705_8848;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
