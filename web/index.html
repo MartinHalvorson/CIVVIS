@@ -4163,14 +4163,6 @@
             <label class="setting-row"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
             <label class="setting-row"><span><input type="checkbox" id="rocketanimchk" checked> Show rocket &amp; satellite animations</span></label>
             <label class="setting-row"><span><input type="checkbox" id="inertiachk" checked> Enable world pan inertia</span></label>
-            <div class="overlay-options" id="flat-map-wrap-settings" role="group"
-                 aria-labelledby="flat-map-wrap-title">
-              <h2 id="flat-map-wrap-title">Flat map wraparound</h2>
-              <div class="overlay-option-grid">
-                <label class="overlay-option"><input type="checkbox" id="wrapxchk" checked>Left–right wraparound</label>
-                <label class="overlay-option"><input type="checkbox" id="wrapychk">Top–bottom wraparound</label>
-              </div>
-            </div>
           </div>
         </details>
         <details class="display-settings-group" id="performance-options-settings" data-advanced-settings="display-performance">
@@ -4240,6 +4232,11 @@
       </summary>
       <div class="sec settings-sec" id="game-settings">
       <div id="newgame-options">
+        <label class="small civ6-hidden">Game mode<select id="gamemode" style="margin-top:4px"
+          title="Civ is the full game. Tactics is a playground for tactical unit combat: a small flat battlefield with mountains, rivers, woods and water but no resources or city-states, where two evenly-armed sides begin in opposite corners of a square arena or at opposite ends of a long one.">
+          <option value="civ" selected>Civ</option>
+          <option value="tactics">Tactics</option>
+        </select></label>
         <label class="small">Human players<select id="humanplayers" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
           <option value="single">Single player</option>
@@ -4329,7 +4326,12 @@
           </div>
         </div>
         <div class="tactics-options tactics-only" id="tactics-options" role="group" aria-labelledby="tactics-options-title">
-          <h2 id="tactics-options-title">Arena economy</h2>
+          <h2 id="tactics-options-title">Tactics settings</h2>
+          <label class="small">Fog of war<span class="setup-info" style="cursor:help;opacity:.7"
+            title="Off, both commanders see the whole field: an arena is meant to test what each side does with what is in front of it rather than who finds the other first, and both armies are set down out of each other's sight with no city to march on and no border to trespass. On, each side sees only what its own units can, and finding the enemy is part of the battle. Either way the rule is symmetric — it is never a handicap given to one side."> ⓘ</span><select id="tacticsfog" style="margin-top:4px">
+            <option value="0" selected>Off · the whole field</option>
+            <option value="1">On · only what a side can see</option>
+          </select></label>
           <label class="small">Cities per side<span class="setup-info" style="cursor:help;opacity:.7"
             title="An arena is handed its economy rather than earning it. With one city, each side has somewhere to build reinforcements and a place the other side can take; with none, each side is exactly the army it was dealt and the battle is decided by that army alone. Either way no Settler is ever produced and the city is placed at setup, so there is no founding decision to make."> ⓘ</span><select id="tacticscities" style="margin-top:4px">
             <option value="1" selected>1 · reinforcements</option>
@@ -4373,11 +4375,6 @@
             <option value="1">On · each civilization's own</option>
           </select></label>
         </div>
-        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="5">Game mode<select id="gamemode" style="margin-top:4px"
-          title="Civ is the full game. Tactics is a playground for tactical unit combat: a small flat battlefield with mountains, rivers, woods and water but no resources or city-states, where two evenly-armed sides begin in opposite corners of a square arena or at opposite ends of a long one.">
-          <option value="civ" selected>Civ</option>
-          <option value="tactics">Tactics</option>
-        </select></label>
         <label class="small game-advanced-setting" data-advanced-order="10">Base game ruleset<select id="baseruleset" style="margin-top:4px">
           <option value="civ6" selected>Civ 6</option>
         </select></label>
@@ -4412,6 +4409,15 @@
           <option value="poles">Hot equator, cold poles</option>
           <option value="randomized">Randomized</option>
         </select></label>
+        <div class="overlay-options game-advanced-setting civ6-hidden tactics-hidden" id="flat-map-wrap-settings"
+             data-advanced-order="55" role="group" aria-labelledby="flat-map-wrap-title">
+          <h2 id="flat-map-wrap-title">Flat map wraparound</h2>
+          <div class="small custom-leader-help">Whether a flat chart is unrolled about the camera, so sailing off one edge comes back round on the other. A globe follows its own shape, and an arena its four walls.</div>
+          <div class="overlay-option-grid">
+            <label class="overlay-option"><input type="checkbox" id="wrapxchk" checked>Left–right wraparound</label>
+            <label class="overlay-option"><input type="checkbox" id="wrapychk">Top–bottom wraparound</label>
+          </div>
+        </div>
         <label class="small game-advanced-setting civ6-hidden" data-advanced-order="60">Map seed<input id="mapseed" type="number" min="0" max="9007199254740991" step="1"
           inputmode="numeric" placeholder="Random" aria-describedby="mapseed-hint"
           title="Leave blank for a fresh random map; use a seed to replay one exactly"><small class="setup-number-hint" id="mapseed-hint">Leave blank for a fresh random map.</small></label>
@@ -4420,7 +4426,7 @@
         </select></label>
         <label class="small game-advanced-setting human-setting" data-advanced-order="80">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
         <details class="advanced-settings" id="game-advanced-settings" data-advanced-settings="game">
-          <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Game mode, base ruleset, teams, leader pool, selection, climate &amp; seed</small></span></summary>
+          <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Base ruleset, teams, leader pool, selection, climate, wraparound &amp; seed</small></span></summary>
           <div class="advanced-settings-body" id="game-advanced-settings-body"></div>
         </details>
         <details class="advanced-settings civ6-hidden" id="game-mod-settings" data-advanced-settings="mods">

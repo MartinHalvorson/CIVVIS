@@ -3952,6 +3952,9 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(on) = request["tactics_unique_units"].as_bool() {
         p.tactics.unique_units = on;
     }
+    if let Some(on) = request["tactics_fog"].as_bool() {
+        p.tactics.fog = on;
+    }
     p.tactics = p.tactics.sanitized();
     // Advanced clients can still deliberately override individual stock
     // settings by sending them alongside num_players.
@@ -8262,7 +8265,7 @@ mod tests {
             );
         }
         assert!(EMBEDDED_INDEX.contains(
-            "[\"humanplayers\", true], [\"np\", true], [\"mapshape\", true], [\"maptype\", true],"
+            "[\"gamemode\", true], [\"humanplayers\", true], [\"np\", true], [\"mapshape\", true],"
         ));
     }
 
@@ -8863,9 +8866,17 @@ mod tests {
             EMBEDDED_INDEX.find(">Human players<") < EMBEDDED_INDEX.find(">Base game ruleset<"),
             "who plays must lead the primary setup path"
         );
+        // Which game is being set up decides what every control under it
+        // means — the size roster, the map roster, the victory conditions and
+        // the arena card all follow it — so it is asked before who is playing
+        // it rather than from behind a disclosure most of the way down.
         assert!(
-            EMBEDDED_INDEX.find(">Game mode<") < EMBEDDED_INDEX.find(">Base game ruleset<"),
-            "the game mode must lead the advanced drawer"
+            EMBEDDED_INDEX.find(">Game mode<") < EMBEDDED_INDEX.find(">Human players<"),
+            "the game mode must lead the whole setup panel"
+        );
+        assert!(
+            !EMBEDDED_INDEX.contains("data-advanced-order=\"5\""),
+            "the game mode must not be back in the advanced drawer"
         );
         // The eon that used to sit above the era is gone from the lobby, and
         // the ladder it hung off with it.
@@ -9181,10 +9192,12 @@ mod tests {
 
         // The lobby's reading order. `#newgame-options` is a two-column grid
         // filled row by row, so document order is the visible reading path:
-        // mode and size, then geography, then era and clock sharing one row,
-        // then victories. The rules, roster, teams, climate and seed stay in
-        // the advanced drawer; the era mods live in the mods drawer.
+        // which game and who plays it, then size and geography, then era and
+        // clock sharing one row, then victories. The rules, roster, teams,
+        // climate, wraparound and seed stay in the advanced drawer; the era
+        // mods live in the mods drawer.
         let order = [
+            "gamemode",
             "humanplayers",
             "np",
             "mapshape",
@@ -9199,7 +9212,7 @@ mod tests {
         });
         assert!(
             order.windows(2).all(|pair| pair[0] < pair[1]),
-            "lobby order must read players/size, shape/map, era/speed"
+            "lobby order must read mode/players, size/shape, map/era, speed"
         );
         assert!(EMBEDDED_INDEX.find("id=\"gamespeed\"").unwrap()
             < EMBEDDED_INDEX.find("id=\"victory-options\"").unwrap());
@@ -9207,20 +9220,23 @@ mod tests {
             < EMBEDDED_INDEX.find("id=\"futureera\"").unwrap());
         // The advanced drawer starts with the ruleset, team split and leader
         // roster. The custom table sits under its selection mode, followed by
-        // climate and seed. Human-only leader/difficulty fields remain there
-        // too, so they do not interrupt the primary simulation path.
+        // climate, the flat chart's wraparound and the seed. Human-only
+        // leader/difficulty fields remain there too, so they do not interrupt
+        // the primary simulation path.
         for advanced in [
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"5\">Game mode",
             "class=\"small game-advanced-setting\" data-advanced-order=\"10\">Base game ruleset",
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"20\">Teams",
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\">Leader pool",
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\">Leader selection",
             "class=\"custom-leader-selection game-advanced-setting civ6-hidden\" data-advanced-order=\"45\"",
             "class=\"small game-advanced-setting civ6-hidden tactics-hidden\" data-advanced-order=\"50\">Thermal distribution",
+            "class=\"overlay-options game-advanced-setting civ6-hidden tactics-hidden\" id=\"flat-map-wrap-settings\"",
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"60\">Map seed",
         ] {
             assert!(EMBEDDED_INDEX.contains(advanced), "missing advanced setting: {advanced}");
         }
+        // The game mode is a lobby control now, not a drawer one.
+        assert!(EMBEDDED_INDEX.contains("class=\"small civ6-hidden\">Game mode"));
         for normal in [
             "class=\"small civ6-hidden tactics-hidden\">World shape",
             "class=\"small civ6-hidden\">Start era",
@@ -9274,10 +9290,10 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function syncRequiredVictoriesCap"));
         assert!(EMBEDDED_INDEX.contains("required_victory_types: requiredVictories,"));
         assert!(EMBEDDED_INDEX.contains(
-            "[\"humanplayers\", true], [\"np\", true], [\"mapshape\", true], [\"maptype\", true],"
+            "[\"gamemode\", true], [\"humanplayers\", true], [\"np\", true], [\"mapshape\", true],"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "[\"startera\", true], [\"gamespeed\", true],"
+            "[\"maptype\", true], [\"startera\", true], [\"gamespeed\", true],"
         ));
         // Every card the short setup pass shows has to be named here. One
         // that is not stays where the markup put it while the named ones move
@@ -9287,10 +9303,13 @@ mod tests {
             "basic.push(document.getElementById(\"victory-options\"),\n    document.getElementById(\"tactics-options\"), document.getElementById(\"saves-group\"));"
         ));
         // The arena card: it appears only in Tactics and carries everything
-        // the mode is set up with — the four economy grants, how many battles
-        // the match is, and whether the two civilizations field their own
-        // units. The engine reads them only on a battlefield, so they travel
-        // from every lobby unconditionally.
+        // the mode is set up with — whether the field is fogged, the four
+        // economy grants, how many battles the match is, and whether the two
+        // civilizations field their own units. The engine reads them only on a
+        // battlefield, so they travel from every lobby unconditionally. It is
+        // named for the mode rather than for the grants, because the grants
+        // are no longer all of it.
+        assert!(EMBEDDED_INDEX.contains(">Tactics settings</h2>"));
         assert!(EMBEDDED_INDEX.contains(".tactics-only { display: none; }"));
         assert!(EMBEDDED_INDEX
             .contains("body.playing-tactics .tactics-only { display: revert; }"));
@@ -9316,11 +9335,17 @@ mod tests {
                 arena.1
             );
         }
-        // Unique units is the one arena setting that is a yes/no rather than
-        // a figure, so it travels as a boolean rather than through `Number`.
+        // Unique units and the fog are the two arena settings that are a
+        // yes/no rather than a figure, so they travel as booleans rather than
+        // through `Number`.
         assert!(EMBEDDED_INDEX.contains("id=\"tacticsuniqueunits\""));
         assert!(EMBEDDED_INDEX
             .contains("tactics_unique_units: readSetting(\"tacticsuniqueunits\") === \"1\","));
+        assert!(EMBEDDED_INDEX.contains("id=\"tacticsfog\""));
+        assert!(EMBEDDED_INDEX.contains("tactics_fog: readSetting(\"tacticsfog\") === \"1\","));
+        // Unfogged is the default: an arena has always shown both commanders
+        // the whole field, and the option is the deliberate departure.
+        assert!(EMBEDDED_INDEX.contains("<option value=\"0\" selected>Off · the whole field</option>"));
         // Every offered match length is odd, so a series always has a winner.
         for length in ["1", "3", "5", "7", "11"] {
             assert!(
@@ -10353,11 +10378,37 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
         assert!(EMBEDDED_INDEX.contains("const focusBounds = mapFocusBounds();"));
         assert!(EMBEDDED_INDEX.contains("return { min:centered, max:centered };"));
-        // Flat charts expose both wrapping axes as persistent display choices.
-        // East-west starts on, north-south starts off, and both the projected
-        // tile positions and canonical hit-test positions consume the choice.
+        // Flat charts expose both wrapping axes as persistent choices. They
+        // describe the world being set up rather than the panel a viewer
+        // watches from, so they sit in Game setup's advanced drawer and not in
+        // Display Settings' map options. East-west starts on, north-south
+        // starts off, and both the projected tile positions and canonical
+        // hit-test positions consume the choice.
         assert!(EMBEDDED_INDEX.contains("id=\"wrapxchk\" checked"));
         assert!(EMBEDDED_INDEX.contains("id=\"wrapychk\""));
+        // Inside `#newgame-options` and ahead of the drawer the reorder pass
+        // moves it into — which is also what places it after Display Settings'
+        // map options rather than inside them.
+        let wraparound = EMBEDDED_INDEX.find("id=\"flat-map-wrap-settings\"").unwrap();
+        assert!(
+            EMBEDDED_INDEX.find("id=\"newgame-options\"").unwrap() < wraparound
+                && wraparound < EMBEDDED_INDEX.find("id=\"game-advanced-settings\"").unwrap(),
+            "the wraparound choices belong to the game setup panel, not Display Settings"
+        );
+        assert!(
+            EMBEDDED_INDEX.find("id=\"map-options-settings\"").unwrap() < wraparound,
+            "the wraparound choices must not be back in Display Settings"
+        );
+        // A viewer preference inside `#newgame-options` must not stage an
+        // otherwise identical simulation through the panel's delegated change
+        // listener — the same rule the saved mod pack follows.
+        assert!(EMBEDDED_INDEX.contains("const keepInTheViewer = event => event.stopPropagation();"));
+        assert!(EMBEDDED_INDEX.contains(
+            "setFlatMapWrap(\"x\", wrapXBox.checked); keepInTheViewer(event);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "setFlatMapWrap(\"y\", wrapYBox.checked); keepInTheViewer(event);"
+        ));
         assert!(EMBEDDED_INDEX.contains(
             "let FLAT_MAP_WRAP_X = localStorage.getItem(\"civvis-flat-map-wrap-x\") !== \"0\";"
         ));
@@ -12808,7 +12859,7 @@ mod tests {
         // Exactly the rows that are not carried, and no others. Difficulty is
         // deliberately absent: it is the setting the mode exists for.
         for row in [
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"5\"", // game mode
+            "class=\"small civ6-hidden\">Game mode",
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"20\"", // teams
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\"", // leader pool
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\"", // leader selection
@@ -12816,6 +12867,7 @@ mod tests {
             "class=\"small game-advanced-setting human-setting civ6-hidden\"",
             "class=\"small civ6-hidden tactics-hidden\">World shape",
             "class=\"small game-advanced-setting civ6-hidden tactics-hidden\" data-advanced-order=\"50\"", // thermal
+            "class=\"overlay-options game-advanced-setting civ6-hidden tactics-hidden\"", // wraparound
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"60\"", // map seed
             "class=\"small civ6-hidden\">Start era",
             "class=\"victory-options civ6-hidden\"",
