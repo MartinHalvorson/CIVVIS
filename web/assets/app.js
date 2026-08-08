@@ -4803,7 +4803,7 @@ function trackSimulationRun(st, now) {
   if (st?.spectate !== true) return;
   const seed = st?.seed;
   const turn = typeof st?.turn === "number" && Number.isFinite(st.turn) ? st.turn : null;
-  const finished = st?.winner !== null && st?.winner !== undefined;
+  const finished = gameFinished(st);
   // A different seed is a different world, and the same seed at an earlier turn
   // is that world restarted. Either way the run being timed is a new one.
   if (seed !== simulationLedger.seed ||
@@ -5696,7 +5696,7 @@ async function send(action) {
   // so an action pass works through nearby groups before returning to a unit
   // the player already considered. Anything else — a half-move, a city order
   // — leaves the selection be.
-  if (action.unit !== undefined && state && !SPEC && state.winner === null &&
+  if (action.unit !== undefined && state && !SPEC && !gameFinished(state) &&
       (!sel || sel.id !== action.unit || !unitNeedsOrders(sel))) {
     advanceToNextActionUnit(true);
   } else {
@@ -5718,7 +5718,7 @@ function updateSpecPauseButtons() {
   // alone does not mean the simulation has never run. Seat 0 still acting is
   // the untouched opening position; a paused world there is started, not
   // resumed. Every later paused position resumes in the ordinary sense.
-  const atStart = state?.turn === 1 && state?.current === 0 && state?.winner == null;
+  const atStart = state?.turn === 1 && state?.current === 0 && !gameFinished(state);
   const action = specPaused ? (atStart ? "Start" : "Resume") : "Pause";
   const icon = specPaused ? "▶" : "⏸";
   const main = document.getElementById("specpause");
@@ -5764,7 +5764,7 @@ function liveClockLabel() {
 // Paused covers the unstarted opening as well: a clock that has never run
 // and is not running reads 0:00, which is what an unstarted game has played.
 function syncLiveClockRun() {
-  const over = !!state && state.winner !== null && state.winner !== undefined;
+  const over = gameFinished(state);
   const shouldRun = SPEC && !!state && !specPaused && !over;
   if (shouldRun && liveClock.runningSince === null) {
     liveClock.runningSince = Date.now();
@@ -5807,7 +5807,7 @@ function restoreLiveClock(st) {
   // The world kept playing while no document watched it, so the time away is
   // live time too — but only when the clock was running on both sides of the
   // gap; a pause of unknown length inside it would otherwise be counted.
-  if (stored.running && st.paused === false && st.winner == null)
+  if (stored.running && st.paused === false && !gameFinished(st))
     liveClock.ms += Math.max(0, Date.now() - (Number(stored.wall) || Date.now()));
 }
 // The plate is only rebuilt when a frame changes it, which at a slow watch
@@ -5875,7 +5875,7 @@ function adoptTiles(st) {
   if (!map) return st;
   if (Array.isArray(map.tiles)) {
     tileStore = {seed: st.seed, turn: st.turn,
-                 finished:st.winner !== null && st.winner !== undefined,
+                 finished:gameFinished(st),
                  sequence:stateFrameSequence(st),
                  tiles: map.tiles};
     return st;
@@ -5887,7 +5887,7 @@ function adoptTiles(st) {
   const tiles = tileStore.tiles.slice();
   for (const [at, tile] of patch) tiles[at] = tile;
   tileStore = {seed: st.seed, turn: st.turn,
-               finished:st.winner !== null && st.winner !== undefined,
+               finished:gameFinished(st),
                sequence:stateFrameSequence(st), tiles};
   map.tiles = tiles;
   return st;
@@ -6763,15 +6763,16 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   if (newWorld && st.seed !== undefined) { lastSeed = st.seed; loadTacks(); }
   if (newWorld) {
     // The game mode belongs to this world too: a battlefield on screen reads
-    // back as Tactics, with the size control holding its arena rather than a
+    // back as Tactics, with the size control holding its Tactics map rather than a
     // seat count. The mode is in place before the size and map are read back
     // so both controls hold the roster those values live in.
-    const tactics = st.map.script === "battlefield";
+    const tactics = isBattlefieldMapScript(st.map.script);
     document.getElementById("gamemode").value = tactics ? "tactics" : "civ";
     syncSetupMode();
     const majors = st.players.filter(p => !p.is_minor && !p.is_barbarian).length;
     const playerSelect = document.getElementById("np");
     const arena = tactics ? battlefieldSizes().find(size =>
+      (!size.script || size.script === st.map.script) &&
       size.width === st.map.width && size.height === st.map.height) : null;
     if (arena) {
       playerSelect.value = arena.id;
@@ -6784,6 +6785,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     syncTeams();
     document.getElementById("teams").value = teamRuleFromArray(st.teams);
     document.getElementById("maptype").value = st.map.script || "tenins_ball";
+    if (tactics) syncBattlefieldSizes(true);
     document.getElementById("mapshape").value = st.map.shape || "planet";
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
@@ -6817,6 +6819,23 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     const requiredRestore = document.getElementById("requiredvictories");
     if (requiredRestore && st.required_victory_types)
       requiredRestore.value = String(st.required_victory_types);
+    if (tactics && st.tactics) {
+      const arenaSettings = {
+        tacticsfog: st.tactics.fog ? "1" : "0",
+        tacticsturnlimit: String(st.tactics.turn_limit ?? st.max_turns ?? 100),
+        tacticscities: String(st.tactics.cities ?? 1),
+        tacticsproduction: String(st.tactics.production ?? 30),
+        tacticsgold: String(st.tactics.gold ?? 30),
+        tacticsturnspertech: String(st.tactics.turns_per_tech ?? 5),
+        tacticsbestof: String(st.tactics.best_of ?? 1),
+        tacticsuniqueunits: st.tactics.unique_units ? "1" : "0",
+      };
+      for (const [id, value] of Object.entries(arenaSettings)) {
+        const select = document.getElementById(id);
+        if (select && [...select.options].some(option => option.value === value))
+          select.value = value;
+      }
+    }
     syncRequiredVictoriesCap();
     activeSimulationSettingsKey = simulationSettingsKey(selectedSimulationSettings());
     applyQueuedSimulationSettings(st.next_game_settings);
@@ -6843,10 +6862,11 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     setTimeout(() => errEl.style.display = "none", 2500); }
   const w = document.getElementById("winner");
   const hasWinner = st.winner !== null && st.winner !== undefined;
+  const drawn = gameDrawn(st);
   // Being eliminated ends the game for the person at the keyboard even though
   // the world plays on. Say so, rather than leaving them on a live-looking
   // map they cannot touch.
-  const fallen = !SPEC && !hasWinner && st.players[0] && st.players[0].alive === false;
+  const fallen = !SPEC && !gameFinished(st) && st.players[0] && st.players[0].alive === false;
   if (fallen) {
     const signature = `fallen|${st.seed}|${st.turn}`;
     w.classList.add("visible");
@@ -6863,6 +6883,39 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
           title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>
       </div>`;
       armFinaleCountdown(signature);
+    }
+  }
+  if (drawn) {
+    if (SPEC && st.supervised)
+      waitForSupervisedSuccessor(st.server_instance, st.seed);
+    const signature = `${st.seed}|draw|${reportedTurn(st)}`;
+    w.style.setProperty("--winner-color", "#c8b887");
+    w.classList.add("visible");
+    if (w.dataset.signature !== signature) {
+      w.dataset.signature = signature;
+      w.innerHTML = `<div class="winner-content">
+        <span class="winner-kicker">Battle drawn</span>
+        <span class="winner-mark" aria-hidden="true">◇</span>
+        <strong class="winner-title">No side wins</strong>
+        <span class="winner-verdict">Turn limit reached</span>
+        <span class="winner-meta">Turn ${reportedTurn(st)} · Both sides survive</span>
+        ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
+        ${SPEC ? `` : `<button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
+          title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>`}
+      </div>`;
+      armFinaleCountdown(signature);
+    }
+    const respawn = document.getElementById("respawn");
+    if (respawn) {
+      if (st.paused) {
+        clearExhibitionCountdown();
+        respawn.textContent = "Final frame · exhibition paused";
+      } else if (st.restart_in !== undefined) {
+        syncExhibitionCountdown(st);
+      } else {
+        clearExhibitionCountdown();
+        respawn.textContent = "Preparing the next battle";
+      }
     }
   }
   if (hasWinner) {
@@ -6919,7 +6972,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         respawn.textContent = "Preparing the next world";
       }
     }
-  } else if (!fallen) {
+  } else if (!fallen && !drawn) {
     w.classList.remove("visible");
     w.style.removeProperty("--winner-color");
     if (w.dataset.signature) { delete w.dataset.signature; w.replaceChildren(); }
@@ -6945,7 +6998,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   // successor world painted nothing, and must not claim it did.
   if (st.turn !== undefined && st.seed !== undefined)
     paintedFrame = {seed:st.seed, turn:st.turn,
-                    finished:st.winner !== null && st.winner !== undefined,
+                    finished:gameFinished(st),
                     sequence:stateFrameSequence(st)};
   finishWorldTransition(st);
 }
@@ -19851,10 +19904,20 @@ function victoryMetric(player, victory) {
   return player.victories?.[victory] || { progress: 0 };
 }
 
-// The turn a world is reported on. A score victory is the turn limit's own
-// tiebreak, and the count that settles it is taken on the wrap out of the
-// final turn, so a finished 250-turn game reads turn 250 rather than the turn
-// 251 nobody plays. A live world is always on the turn it is playing.
+function gameFinished(st = state) {
+  // `finished` is authoritative for new servers because a draw has no winner;
+  // the winner fallback keeps this client compatible with older servers.
+  return st?.finished === true || (st?.winner !== null && st?.winner !== undefined);
+}
+function gameDrawn(st = state) {
+  return st?.draw === true || (gameFinished(st) && st?.victory_type === "draw" &&
+    (st?.winner === null || st?.winner === undefined));
+}
+
+// The turn a world is reported on. A score victory or Tactics draw is settled
+// on the wrap out of the final turn, so a finished 250-turn game reads turn
+// 250 rather than the turn 251 nobody plays. A live world is always on the
+// turn it is playing.
 function reportedTurn(st) {
   const world = st || state;
   return world?.victory_turn ?? world?.turn;
@@ -22446,6 +22509,7 @@ function titleCase(n) { return (n || "").replaceAll("_", " ").replace(/\b\w/g, c
 // suffix. Kept in one place because the finish screen, the play-on plate and
 // the session's run list all have to say the same thing about the same game.
 function victoryVerdict(type, label) {
+  if (type === "draw") return "Draw";
   if (type === "mercy") return label || "Mercy Rule";
   return titleCase(type || "score") + " victory";
 }
@@ -26986,7 +27050,7 @@ function nextAction() {
 // A blocker is {kind, icon, label, detail, tone, act}. `act` takes the player
 // to the decision; it never makes it for them.
 function turnBlockers() {
-  if (!state || SPEC || state.winner !== null && state.winner !== undefined) return [];
+  if (!state || SPEC || gameFinished(state)) return [];
   const me = state.me, out = [];
   const legal = type => state.legal_actions.filter(a => a.type === type);
   if (legal("keep_city").length || legal("raze_city").length || legal("liberate_city").length)
@@ -27155,25 +27219,25 @@ function drawTurnLoop() {
   // the world plays on without you and the engine answers `end_turn` with
   // "not your turn". Leaving the button live would earn a red error toast
   // from the only lit control on the screen.
-  const won = state.winner !== null && state.winner !== undefined;
+  const over = gameFinished(state);
   const eliminated = state.players[0] && state.players[0].alive === false;
-  button.disabled = won || eliminated || autoplaying;
+  button.disabled = over || eliminated || autoplaying;
   // Auto-play holds the seat. Say so on the button rather than leaving a lit
   // control that quietly does nothing while an agent plays.
-  if (autoplaying && !won && !eliminated) {
+  if (autoplaying && !over && !eliminated) {
     button.classList.remove("blocked");
     button.innerHTML = `An agent is playing<span class="endturn-hint">Stop auto-play to take the seat back</span>`;
     button.title = "Your seat is on loan until auto-play finishes or is stopped.";
     return;
   }
-  if (won || eliminated) {
+  if (over || eliminated) {
     button.classList.remove("blocked");
-    button.innerHTML = eliminated && !won
+    button.innerHTML = eliminated && !over
       ? `Your civilization has fallen<span class="endturn-hint">Start another below</span>`
       : `The game is over<span class="endturn-hint">Start another below</span>`;
-    button.title = eliminated && !won
+    button.title = eliminated && !over
       ? "Your last city is gone. Start a new game from Game setup."
-      : "This world has its victor. Start a new game from Game setup.";
+      : "This world has reached its result. Start a new game from Game setup.";
     return;
   }
   // The capture modal disables the button outright; leave that alone.
@@ -27191,7 +27255,7 @@ function advanceTurn(force = false) {
   // The seat is on loan while auto-play runs; taking it back mid-turn would
   // race a batch the agent is already playing.
   if (autoplaying) return;
-  if (state.winner !== null && state.winner !== undefined) return;
+  if (gameFinished(state)) return;
   if (state.players[0] && state.players[0].alive === false) return;
   const blockers = turnBlockers();
   const next = blockers.find(b => b.kind !== "capture");
@@ -27828,7 +27892,10 @@ document.getElementById("custom-leader-table").addEventListener("change", event 
   if (elo && selected)
     elo.innerHTML = customEloOptions(event.target.value, selected.dataset.leader || "", "");
 });
-document.getElementById("maptype").addEventListener("change", syncEarthShape);
+document.getElementById("maptype").addEventListener("change", () => {
+  syncEarthShape();
+  if (readSetting("gamemode") === "tactics") syncBattlefieldSizes(true);
+});
 // Bound on the select itself, so it has re-fitted the splits to the new size
 // before the panel's own delegated listener stages what is now selected.
 document.getElementById("np").addEventListener("change", () => {
@@ -28016,13 +28083,14 @@ function drawCiv6Status() {
 }
 function selectedSimulationSettings() {
   const humanPlayers = readSetting("humanplayers");
-  // In Tactics the size control holds a battlefield id rather than a seat
-  // count: the arena always seats two sides, and its dimensions travel
+  // In Tactics the size control holds a map-size id rather than a seat count:
+  // every Tactics map seats two sides, and its dimensions travel
   // explicitly because no seat count implies them.
-  const battlefield = humanPlayers === "civ6" ? null : battlefieldSize(readSetting("np"));
+  const tactics = humanPlayers !== "civ6" && readSetting("gamemode") === "tactics";
+  const battlefield = tactics ? battlefieldSize(readSetting("np")) : null;
   const np = battlefield ? 2 : +readSetting("np");
   const mapScript = readSetting("maptype");
-  const mapTopology = battlefield ? "flat" : readSetting("mapshape");
+  const mapTopology = battlefield ? (battlefield.topology || "flat") : readSetting("mapshape");
   const mapPoles = readSetting("mappoles");
   const gameSpeed = readSetting("gamespeed");
   const leaderPool = readSetting("leaderpool");
@@ -28070,6 +28138,7 @@ function selectedSimulationSettings() {
           // else, so a world is unaffected and a mode switch needs no second
           // request.
           tactics_fog: readSetting("tacticsfog") === "1",
+          tactics_turn_limit: Number(readSetting("tacticsturnlimit")) || 100,
           tactics_cities: Number(readSetting("tacticscities")) || 0,
           tactics_production: Number(readSetting("tacticsproduction")) || 0,
           tactics_gold: Number(readSetting("tacticsgold")) || 0,
@@ -28106,7 +28175,7 @@ function selectedSimulationSummary(settings = null) {
     : document.getElementById("humanplayers").value === "ai_sim";
   const civ6 = settings ? settings.mode === "civ6"
     : document.getElementById("humanplayers").value === "civ6";
-  const tactics = settings ? settings.map_script === "battlefield"
+  const tactics = settings ? isBattlefieldMapScript(settings.map_script)
     : readSetting("gamemode") === "tactics";
   const mode = civ6 ? "Firaxis Civ 6"
     : spectate === true ? "AI simulation" : "Single player";
@@ -28157,11 +28226,12 @@ function applyQueuedSimulationSettings(settings) {
   // The staged map says which game mode the queue describes: a battlefield
   // is the Tactics mode's arena, and the size control reads back as the
   // battlefield whose dimensions the queue carries.
-  const tactics = settings.map === "battlefield";
+  const tactics = isBattlefieldMapScript(settings.map);
   document.getElementById("gamemode").value = tactics ? "tactics" : "civ";
   syncSetupMode();
   if (tactics) {
     const size = battlefieldSizes().find(size =>
+      (!size.script || size.script === settings.map) &&
       size.width === settings.width && size.height === settings.height);
     if (size) document.getElementById("np").value = size.id;
   } else {
@@ -28172,6 +28242,7 @@ function applyQueuedSimulationSettings(settings) {
   syncTeams();
   document.getElementById("teams").value = teamRuleFromArray(settings.teams);
   document.getElementById("maptype").value = settings.map;
+  if (tactics) syncBattlefieldSizes(true);
   if (settings.shape) document.getElementById("mapshape").value = settings.shape;
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
   syncEarthShape();
@@ -28328,8 +28399,14 @@ function battlefieldScripts() {
 function battlefieldSizes() {
   return (RULES && Array.isArray(RULES.battlefield_sizes)) ? RULES.battlefield_sizes : [];
 }
+function battlefieldSizesForScript(script) {
+  return battlefieldSizes().filter(size => !size.script || size.script === script);
+}
 function battlefieldSize(id) {
   return battlefieldSizes().find(size => size.id === id) || null;
+}
+function isBattlefieldMapScript(id) {
+  return id === "battlefield" || battlefieldScripts().some(script => script.id === id);
 }
 function syncMapRoster(civ6, tactics) {
   const select = document.getElementById("maptype");
@@ -28371,10 +28448,10 @@ function syncMapRoster(civ6, tactics) {
   syncEarthShape();
 }
 // An arena is fought over, not converted or researched to death: entering
-// Tactics points the victory checkboxes at Domination and Score — still
-// ordinary checkboxes anyone can override — and leaving it puts back
-// whatever was chosen for the Civ game. Its two state variables are declared
-// with the other mode state, before the wiring that calls this during load.
+// Tactics has one victory lane: last army standing through Domination. Its
+// clock is a draw deadline, not Score. Leaving it puts back whatever was
+// chosen for the Civ game. Its two state variables are declared with the
+// other mode state, before the wiring that calls this during load.
 function syncBattlefieldVictories(tactics) {
   const roster = tactics ? "tactics" : "civvis";
   if (roster === victoryRoster) return;
@@ -28384,32 +28461,38 @@ function syncBattlefieldVictories(tactics) {
     .filter(([, box]) => box);
   if (tactics) {
     civVictoryChoices = new Set(boxes.filter(([, box]) => box.checked).map(([id]) => id));
-    for (const [id, box] of boxes) box.checked = id === "domination" || id === "score";
+    for (const [id, box] of boxes) box.checked = id === "domination";
   } else if (civVictoryChoices) {
     for (const [id, box] of boxes) box.checked = civVictoryChoices.has(id);
   }
   syncRequiredVictoriesCap();
 }
-// The world-size control is the battlefield-size control in Tactics: the same
-// select carrying a different roster, exactly as the map control does for
-// Civ 6 above. A battlefield seats exactly two sides, so the option says so
-// and the seat-dependent controls re-fit when the roster moves either way.
+// The world-size control is the Tactics-map-size control in Tactics: the same
+// select carries a different roster, exactly as the map control does for Civ 6
+// above. Every Tactics map seats exactly two sides, so the option says so and
+// the seat-dependent controls re-fit when the roster moves either way.
 function syncBattlefieldSizes(tactics) {
   const sizes = document.getElementById("np");
   if (!sizes) return;
   if (tactics && !battlefieldSizes().length) return;
   const roster = tactics ? "tactics" : "civvis";
+  const sameRoster = (sizes.dataset.roster || "civvis") === roster;
   if (sizes.dataset.roster !== "tactics") civvisSizeOptions = sizes.innerHTML;
-  if ((sizes.dataset.roster || "civvis") === roster) return;
-  const chosen = sizes.value;
   if (tactics) {
-    sizes.dataset.civvisChoice = chosen;
-    sizes.innerHTML = battlefieldSizes().map(size =>
+    if (!sameRoster) sizes.dataset.civvisChoice = sizes.value;
+    const script = document.getElementById("maptype")?.value;
+    const available = battlefieldSizesForScript(script);
+    if (!available.length) return;
+    const chosen = sameRoster ? sizes.value : sizes.dataset.tacticsChoice;
+    sizes.innerHTML = available.map(size =>
       `<option value="${escapeAttr(size.id)}">${size.name} · 2 civs</option>`).join("");
-    const carried = sizes.dataset.tacticsChoice;
-    if (carried && [...sizes.options].some(option => option.value === carried))
-      sizes.value = carried;
+    const carried = chosen && available.some(size => size.id === chosen)
+      ? chosen : available[0].id;
+    sizes.value = carried;
+    sizes.dataset.tacticsChoice = carried;
   } else {
+    if (sameRoster) return;
+    const chosen = sizes.value;
     sizes.dataset.tacticsChoice = chosen;
     sizes.innerHTML = civvisSizeOptions;
     const restored = sizes.dataset.civvisChoice;

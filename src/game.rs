@@ -13233,21 +13233,6 @@ pub const MIRRORED_SEAT: usize = 0;
 
 pub const DIPLOMATIC_VICTORY_POINTS: i64 = 20;
 
-/// Turns a Tactics battle is given for each hex of the march across the
-/// arena, before the fighting is paid for. Two crossings of the long axis:
-/// enough to close, and enough to have to re-cross the field once.
-pub const BATTLEFIELD_TURNS_PER_HEX: u32 = 2;
-
-/// Turns a Tactics battle is given for each unit that has to be destroyed.
-///
-/// A battle's clock is not a civilization's, and what it is really measuring
-/// is not distance but casualties: measured, sixteen units settle it inside a
-/// hundred and twenty turns and thirty-two need two hundred to four hundred,
-/// because most of the clock goes on the last few survivors rather than the
-/// first clash. Twelve apiece covers the ordinary battle with room to spare
-/// while still ending the one where a lone horseman spends the rest of the
-/// game outrunning an army across a walled rectangle.
-pub const BATTLEFIELD_TURNS_PER_UNIT: u32 = 12;
 /// The New Frontier game modes CIVVIS models. Each is a lobby checkbox that
 /// is off in a stock Gathering Storm game and in every tournament lobby.
 pub const GAME_MODES: [&str; 2] = ["apocalypse", "secret_societies"];
@@ -16529,6 +16514,10 @@ impl Decided {
 /// setup option rather than the victory checkboxes, so it is not one of
 /// [`VictoryConditions::NAMES`].
 pub const MERCY_VICTORY: &str = "mercy";
+/// Terminal result recorded when a Tactics deadline expires with both sides
+/// still alive. It is a result label, not a victory lane: `winner` remains
+/// `None`, and match/league consumers record a draw.
+pub const DRAW_RESULT: &str = "draw";
 
 /// The notation a Mercy Rule verdict is written and displayed under.
 ///
@@ -17848,14 +17837,10 @@ impl Game {
         // Only an arena is handed an economy, and only a sane one.
         let tactics = tactics.sanitized();
         // An arena keeps a battle's clock, not a civilization's. Five hundred
-        // turns is the length of a history; a battle on a ten-hex field is
-        // decided in a tenth of that, and the turns after it are one side's
-        // last survivor being chased around a walled rectangle by an army it
-        // can outrun. The budget scales with the ground to cross and with the
-        // army sizes that ground carries, and it is a backstop rather than
-        // the usual ending: most battles reach the last army standing first,
-        // and one that does not is awarded to whoever still holds the field —
-        // see [`Game::score_parts`].
+        // turns is the length of a history; a battle on a ten-hex field should
+        // end much sooner. The selected deadline is a backstop rather than the
+        // usual ending: most battles reach the last army standing first, and
+        // one where both sides survive the clock is a draw.
 
         // A rung past the end of the ladder is clamped rather than fatal: a
         // client from a later build must not be able to construct a world that
@@ -18341,21 +18326,6 @@ impl Game {
     /// Bigger fields take more companies, at a constant density of roughly
     /// one unit per twelve hexes of ground — the same battle on more room
     /// rather than the same army wandering a larger map looking for it.
-    /// How long a Tactics battle on this arena is given before the field is
-    /// awarded to whoever still holds it.
-    ///
-    /// A backstop rather than the usual ending: most battles reach the last
-    /// army standing well inside it, and one that does not is decided on the
-    /// army left standing — see [`Game::score_parts`]. An explicit turn limit
-    /// from a caller still wins; this is only what a Tactics game is given
-    /// when nobody named one, in place of a civilization's five hundred.
-    pub fn battlefield_turn_limit(width: i32, height: i32, players: usize) -> u32 {
-        let tiles = (width.max(1) as usize) * (height.max(1) as usize);
-        let units = Self::battlefield_army(tiles).len() * players.max(1);
-        BATTLEFIELD_TURNS_PER_HEX * (width + height).max(1) as u32
-            + BATTLEFIELD_TURNS_PER_UNIT * units as u32
-    }
-
     pub fn battlefield_army(tiles: usize) -> Vec<&'static str> {
         const COMPANY: [&str; 8] = [
             "warrior",
@@ -21810,7 +21780,7 @@ impl Game {
     /// espionage decisions do not require rebuilding the complete empire
     /// action space for each Spy.
     pub(crate) fn legal_spy_actions(&self, pid: usize, spy_id: u32) -> Vec<Action> {
-        if self.winner.is_some() || self.current != pid {
+        if self.is_finished() || self.current != pid {
             return Vec::new();
         }
         let Some(spy) = self.spies.get(&spy_id) else {
@@ -24048,7 +24018,7 @@ impl Game {
         if !self.victory_conditions.religious {
             return;
         }
-        if self.winner.is_some() {
+        if self.is_finished() {
             return;
         }
         for p in 0..self.players.len() {
@@ -29639,14 +29609,10 @@ impl Game {
     /// Era Score (which the shipped tiebreaker list omits).
     pub fn score_parts(&self, pid: usize) -> [i64; 9] {
         if self.is_arena() {
-            // On an arena a side's standing *is* its army. Every ordinary
-            // category — civics, cities, districts, Population, wonders — is
-            // zero for both sides for the whole battle and would leave the
-            // turn limit awarding the win to whichever seat sorts first. What
-            // it should award it to is whoever is winning the fight, so the
-            // measure is the army left standing, weighted by health, with the
-            // count of units still on the field to separate two armies of the
-            // same weight.
+            // On an arena a side's standing *is* its army. Keep a health-
+            // weighted material score for observations, odds, and reports;
+            // the battle deadline itself is a draw and never crowns this
+            // material leader.
             let mut weight = 0.0;
             let mut standing = 0;
             for unit in self.units.values().filter(|unit| unit.owner == pid) {
@@ -40448,7 +40414,7 @@ impl Game {
     /// only need to resolve one should not generate the rest of the turn's
     /// action space merely to discover whether a decision is pending.
     pub(crate) fn legal_city_disposition_actions(&self, pid: usize) -> Vec<Action> {
-        if self.winner.is_some() || self.current != pid {
+        if self.is_finished() || self.current != pid {
             Vec::new()
         } else {
             self.pending_city_capture_actions(pid)
@@ -40460,7 +40426,7 @@ impl Game {
     /// every city's production, purchases, diplomacy, and every other unit,
     /// even though none of those actions can be selected here.
     pub(crate) fn legal_doctrine_actions(&self, pid: usize, uid: u32) -> Vec<Action> {
-        if self.winner.is_some()
+        if self.is_finished()
             || self.current != pid
             || !self.pending_city_capture_actions(pid).is_empty()
         {
@@ -40538,7 +40504,7 @@ impl Game {
     }
 
     pub(crate) fn legal_unit_upgrade_actions(&self, pid: usize) -> Vec<Action> {
-        if self.winner.is_some()
+        if self.is_finished()
             || self.current != pid
             || !self.pending_city_capture_actions(pid).is_empty()
         {
@@ -40560,7 +40526,7 @@ impl Game {
     /// distribute only city-local work without first paying for the full
     /// empire action list it intends to discard.
     pub(crate) fn purchase_action_city_ids(&self, pid: usize) -> Vec<u32> {
-        if self.winner.is_some()
+        if self.is_finished()
             || self.current != pid
             || !self.pending_city_capture_actions(pid).is_empty()
         {
@@ -40747,7 +40713,7 @@ impl Game {
     /// retained for every non-capture query; all other returned actions belong
     /// to a requested family. See [`ActionFamilies`] for the mapping.
     pub fn legal_actions_within(&self, pid: usize, families: ActionFamilies) -> Vec<Action> {
-        if self.winner.is_some() || self.current != pid {
+        if self.is_finished() || self.current != pid {
             return vec![];
         }
         // Enumerating what a civilization may do asks the same questions of
@@ -42108,7 +42074,7 @@ impl Game {
     }
 
     pub fn apply(&mut self, pid: usize, action: &Action) -> Result<(), String> {
-        if self.winner.is_some() {
+        if self.is_finished() {
             return Err("game over".into());
         }
         if self.current != pid {
@@ -51884,7 +51850,7 @@ impl Game {
     /// remains live for five complete rounds so every sequential player can
     /// spend Favor, after which deterministic majority/tie rules resolve it.
     fn process_congress(&mut self) {
-        if self.winner.is_some() {
+        if self.is_finished() {
             return;
         }
         self.active_congress_effects
@@ -53864,7 +53830,7 @@ impl Game {
     /// Culture victory: visiting tourists must exceed the largest rival
     /// domestic-tourist count.
     fn check_culture_victory(&mut self) {
-        if self.winner.is_some() {
+        if self.is_finished() {
             return;
         }
         let majors: Vec<usize> = self
@@ -53934,72 +53900,77 @@ impl Game {
             // and city-state suzerainty changes that run between player turns.
             self.sync_war_log();
             self.check_culture_victory();
-            // A score victory is only a turn-limit tiebreak, never an
-            // immediate win for crossing an arbitrary score threshold.
+            // A Civ world's clock awards its score tiebreak. A Tactics clock
+            // is deliberately different: if both sides are still alive at
+            // the selected deadline, neither side won the battle.
             if self.turn_limit().is_some_and(|limit| self.turn > limit)
-                && self.winner.is_none()
+                && !self.is_finished()
             {
-                // Ties resolve through the shipped chain (civics, cities,
-                // districts, Population, Great People, religion,
-                // technologies, wonders) before falling back to seat order.
-                let mut best: Option<((i64, [i64; 9]), i64)> = None;
-                let mut best_pid = 0;
-                let mut seen_teams = BTreeSet::new();
-                for pl in &self.players {
-                    if pl.alive && !pl.is_minor && !pl.is_barbarian {
-                        if pl.team.is_some_and(|team| !seen_teams.insert(team)) {
-                            continue;
-                        }
-                        let representative = self
-                            .team_members(pl.id)
-                            .into_iter()
-                            .filter(|member| self.players[*member].alive)
-                            .min()
-                            .unwrap_or(pl.id);
-                        let key = (
-                            self.team_score_rank_key(representative),
-                            -(representative as i64),
-                        );
-                        if best.is_none() || key > best.unwrap() {
-                            best = Some(key);
-                            best_pid = representative;
-                        }
-                    }
-                }
-                if best.is_none() {
+                if self.is_arena() {
+                    self.declare_draw();
+                } else {
+                    // Ties resolve through the shipped chain (civics, cities,
+                    // districts, Population, Great People, religion,
+                    // technologies, wonders) before falling back to seat order.
+                    let mut best: Option<((i64, [i64; 9]), i64)> = None;
+                    let mut best_pid = 0;
+                    let mut seen_teams = BTreeSet::new();
                     for pl in &self.players {
-                        let key = (self.score_rank_key(pl.id), -(pl.id as i64));
-                        if best.is_none() || key > best.unwrap() {
-                            best = Some(key);
-                            best_pid = pl.id;
+                        if pl.alive && !pl.is_minor && !pl.is_barbarian {
+                            if pl.team.is_some_and(|team| !seen_teams.insert(team)) {
+                                continue;
+                            }
+                            let representative = self
+                                .team_members(pl.id)
+                                .into_iter()
+                                .filter(|member| self.players[*member].alive)
+                                .min()
+                                .unwrap_or(pl.id);
+                            let key = (
+                                self.team_score_rank_key(representative),
+                                -(representative as i64),
+                            );
+                            if best.is_none() || key > best.unwrap() {
+                                best = Some(key);
+                                best_pid = representative;
+                            }
                         }
                     }
-                }
-                // The count is taken on the wrap out of the final turn;
-                // `reported_turn` dates the result on the turn the limit
-                // names rather than on that wrap.
-                self.set_winner(best_pid, "score");
-                // Require-N at the limit: the banked score type may not have
-                // completed anybody's set, but the clock still ends the
-                // world. The seat holding the most banked types wins — the
-                // cap scorer breaks ties, having just banked score through
-                // the shipped chain — and the award keeps the turn limit's
-                // own victory type.
-                if self.winner.is_none() && self.effective_required_victories() > 1 {
-                    let most_banked = self
-                        .players
-                        .iter()
-                        .filter(|pl| pl.alive && !pl.is_minor && !pl.is_barbarian)
-                        .max_by_key(|pl| {
-                            (
-                                self.victories_won.get(&pl.id).map_or(0, BTreeSet::len),
-                                pl.id == best_pid,
-                                std::cmp::Reverse(pl.id),
-                            )
-                        })
-                        .map(|pl| pl.id);
-                    if let Some(leader) = most_banked {
-                        self.crown(leader, "score");
+                    if best.is_none() {
+                        for pl in &self.players {
+                            let key = (self.score_rank_key(pl.id), -(pl.id as i64));
+                            if best.is_none() || key > best.unwrap() {
+                                best = Some(key);
+                                best_pid = pl.id;
+                            }
+                        }
+                    }
+                    // The count is taken on the wrap out of the final turn;
+                    // `reported_turn` dates the result on the turn the limit
+                    // names rather than on that wrap.
+                    self.set_winner(best_pid, "score");
+                    // Require-N at the limit: the banked score type may not have
+                    // completed anybody's set, but the clock still ends the
+                    // world. The seat holding the most banked types wins — the
+                    // cap scorer breaks ties, having just banked score through
+                    // the shipped chain — and the award keeps the turn limit's
+                    // own victory type.
+                    if !self.is_finished() && self.effective_required_victories() > 1 {
+                        let most_banked = self
+                            .players
+                            .iter()
+                            .filter(|pl| pl.alive && !pl.is_minor && !pl.is_barbarian)
+                            .max_by_key(|pl| {
+                                (
+                                    self.victories_won.get(&pl.id).map_or(0, BTreeSet::len),
+                                    pl.id == best_pid,
+                                    std::cmp::Reverse(pl.id),
+                                )
+                            })
+                            .map(|pl| pl.id);
+                        if let Some(leader) = most_banked {
+                            self.crown(leader, "score");
+                        }
                     }
                 }
             }
@@ -54011,7 +53982,7 @@ impl Game {
             // the measured agreement ladder). Checked after the real victory
             // sweeps and the turn-limit award, inside the same wrap, so mercy
             // can never outrank a victory the rules just recognised.
-            if self.winner.is_none() {
+            if !self.is_finished() {
                 if let Some(threshold) = self.mercy_rule {
                     if let Some(leader) = crate::odds::mercy_leader(self, threshold) {
                         // The lanes go on before the crown, not after it: the
@@ -54029,7 +54000,7 @@ impl Game {
                 }
             }
         }
-        if self.winner.is_none() {
+        if !self.is_finished() {
             self.begin_turn(self.current);
             // Production, healing, levies, policy effects, and governors can
             // alter a live total at the beginning of the next seat's turn.
@@ -54078,7 +54049,7 @@ impl Game {
         self.process_levies(pid);
         self.process_spies(pid);
         self.advance_exoplanet(pid);
-        if self.winner.is_some() {
+        if self.is_finished() {
             return;
         }
         self.check_boosts(pid);
@@ -57322,6 +57293,18 @@ impl Game {
         self.decided.is_some()
     }
 
+    /// Whether this game has reached any terminal result. Most results name a
+    /// winner; a Tactics battle that reaches its selected deadline is the one
+    /// deliberate exception.
+    pub fn is_finished(&self) -> bool {
+        self.winner.is_some() || self.is_draw()
+    }
+
+    /// Whether the terminal result is a draw rather than a victory.
+    pub fn is_draw(&self) -> bool {
+        self.winner.is_none() && self.victory_type.as_deref() == Some(DRAW_RESULT)
+    }
+
     /// A played-on world has explicitly left its original turn cap behind.
     /// Keep the configured cap itself intact so a save or successor world can
     /// still recover the game settings that created this one.
@@ -57331,15 +57314,14 @@ impl Game {
 
     /// The turn this world is reported on.
     ///
-    /// A score victory is the turn limit's own tiebreak, and the count that
-    /// settles it is taken on the wrap out of the final turn — the one place
-    /// `turn` ever passes the limit. That wrap is bookkeeping, not a turn
-    /// anybody plays: a 250-turn game is decided on turn 250, so turn 250 is
-    /// what every account of the result says. Every other reading, live game
-    /// or any other victory, is the turn being played.
+    /// A score victory or Tactics draw is settled on the wrap out of the final
+    /// turn — the one place `turn` ever passes the limit. That wrap is
+    /// bookkeeping, not a turn anybody plays: a 250-turn game is decided on
+    /// turn 250, so turn 250 is what every account of the result says. Every
+    /// other reading, live game or any other victory, is the turn being played.
     pub fn reported_turn(&self) -> u32 {
         match (self.victory_type.as_deref(), self.turn_limit()) {
-            (Some("score"), Some(limit)) => limit.min(self.turn),
+            (Some("score" | DRAW_RESULT), Some(limit)) => limit.min(self.turn),
             _ => self.turn,
         }
     }
@@ -57416,11 +57398,11 @@ impl Game {
     /// happen in and could never be reached however the checkboxes were left.
     /// What can happen on an arena is that one side is left standing — the
     /// Domination lane, which on a world with no capitals to capture reduces
-    /// to exactly that — or that the clock runs out with both armies still on
-    /// the field and the larger one is awarded it.
+    /// to exactly that. Its clock is a deadline rather than a victory lane:
+    /// both armies surviving it produces a draw.
     fn victory_lane_open(&self, vtype: &str) -> bool {
         if self.is_arena() {
-            return matches!(vtype, "domination" | "score");
+            return vtype == "domination";
         }
         self.victory_conditions.is_enabled(vtype)
     }
@@ -57444,7 +57426,7 @@ impl Game {
             religious: false,
             diplomatic: false,
             domination: true,
-            score: true,
+            score: false,
         }
     }
 
@@ -57453,9 +57435,8 @@ impl Game {
     /// zero — a save written before the option existed — is the stock
     /// single-victory game.
     pub fn effective_required_victories(&self) -> usize {
-        // A battle is decided once. Asking an arena for a second victory type
-        // — of the two it has, one ends the game and the other only fires at
-        // the clock — would leave it unwinnable.
+        // A battle has one victory type: last army standing. Its clock ends
+        // in a draw and is not a second lane to require.
         if self.is_arena() {
             return 1;
         }
@@ -57466,13 +57447,31 @@ impl Game {
         self.required_victory_types.clamp(1, enabled.max(1))
     }
 
+    /// End a Tactics battle at its deadline without crediting either side.
+    fn declare_draw(&mut self) -> bool {
+        if self.is_finished() || self.played_on() {
+            return false;
+        }
+        self.victory_type = Some(DRAW_RESULT.to_string());
+        let seats: Vec<usize> = self.players.iter().map(|player| player.id).collect();
+        for seat in seats {
+            self.note(
+                seat,
+                "General",
+                format!("The Tactics battle ended in a draw after {} turns", self.max_turns),
+                None,
+            );
+        }
+        true
+    }
+
     /// Declare the result: the tail of every victory, shared by the normal
     /// single-victory path, the Require-N completion, and the turn-limit
     /// most-banked-types award. Checks only what every caller must respect —
     /// play-on and an already-decided world — so type legality stays with
     /// [`Self::set_winner`].
     fn crown(&mut self, pid: usize, vtype: &str) -> bool {
-        if self.winner.is_some() || self.play_on_blocks(pid, vtype) {
+        if self.is_finished() || self.play_on_blocks(pid, vtype) {
             return false;
         }
         self.winner = Some(pid);
@@ -57507,7 +57506,7 @@ impl Game {
         if self.play_on_blocks(pid, vtype) {
             return false;
         }
-        if self.winner.is_none()
+        if !self.is_finished()
             && self.victory_eligible(pid)
             && (self.victory_lane_open(vtype)
                 // Mercy answers to its own setup option, not the victory
@@ -69001,6 +69000,32 @@ mod district_mechanics {
         assert!(game.map.tiles.values().all(|tile| !game.rules.is_water(tile)));
     }
 
+    #[test]
+    fn a_tactics_planet_game_opens_with_opposite_cities() {
+        let game = Game::new_with(GameOptions {
+            map_script: MapScript::TacticsPlanet,
+            map_topology: MapTopology::Planet,
+            ..GameOptions::new(2, 40, 18, 90_412, 250, 3)
+        });
+        assert!(game.map.sphere().is_some(), "the Tactics planet must be a globe");
+        assert!(game.is_arena());
+        assert_eq!(game.players.iter().filter(|player| !player.is_minor).count(), 2);
+        let cities: Vec<Pos> = (0..2)
+            .map(|owner| {
+                let owned: Vec<Pos> = game
+                    .cities
+                    .values()
+                    .filter(|city| city.owner == owner)
+                    .map(|city| city.pos)
+                    .collect();
+                assert_eq!(owned.len(), 1, "seat {owner} opens with one city");
+                owned[0]
+            })
+            .collect();
+        assert!(game.wdist(cities[0], cities[1]) >= 8, "{cities:?}");
+        assert!(game.is_at_war(0, 1));
+    }
+
     /// The fog is a match setting. An arena lifts it by default — a battle is
     /// a test of what each side does with what is in front of it, not of who
     /// finds the other first — but the mode that puts it back is a real one,
@@ -69303,10 +69328,9 @@ mod district_mechanics {
     }
 
     /// What a Tactics game tells a client it can be won by. Four of the six
-    /// lanes need cities, an arena has none and no way to found one, and the
-    /// engine refuses them there — so the victory tracker is told about the
-    /// two that can actually decide the battle, whatever the lobby or a
-    /// command line left in the checkboxes.
+    /// lanes need cities, and Score cannot be won because the deadline is a
+    /// draw. The victory tracker is therefore told only about last-army-
+    /// standing Domination, whatever a lobby left in the checkboxes.
     #[test]
     fn an_arena_publishes_only_the_lanes_a_battle_can_be_decided_by() {
         let mut game = Game::new_with(GameOptions {
@@ -69329,7 +69353,8 @@ mod district_mechanics {
             assert!(!game.set_winner(0, lane), "{lane} must not decide a battle");
         }
         assert!(published.is_enabled("domination"));
-        assert!(published.is_enabled("score"));
+        assert!(!published.is_enabled("score"));
+        assert!(!game.set_winner(0, "score"), "the deadline is not a victory lane");
         // And a battle is decided once, however many types were required.
         assert_eq!(game.effective_required_victories(), 1);
 
@@ -69339,33 +69364,38 @@ mod district_mechanics {
         assert_eq!(world.effective_victory_conditions(), world.victory_conditions);
     }
 
-    /// The turn limit on an arena is a battle's, and what it awards is the
-    /// field: with no cities, districts or Population to count, the ordinary
-    /// score is zero for both sides for the whole battle, so the arena counts
-    /// the army left standing instead — weighted by health, because a
-    /// battered survivor is not worth a fresh one.
+    /// Reaching the selected deadline with both sides alive ends the battle
+    /// without inventing a score winner, even when one army is far ahead.
     #[test]
-    fn an_undecided_battle_is_awarded_to_the_army_still_standing() {
+    fn a_tactics_deadline_is_a_terminal_draw() {
         let mut game = Game::new_with(GameOptions {
             map_script: MapScript::Battlefield,
-            ..GameOptions::new(2, 10, 10, 2_215, 250, 0)
+            tactics: TacticsRules { turn_limit: 50, ..TacticsRules::default() },
+            ..GameOptions::new(2, 10, 10, 2_215, 50, 0)
         });
         assert_eq!(game.score(0), game.score(1), "the two armies open even");
-        // A battle's clock, not a civilization's, and long enough to settle
-        // the army it is given.
-        let limit = Game::battlefield_turn_limit(10, 10, 2);
-        assert!((120..400).contains(&limit), "{limit}");
-        // Half of one side's army falls; the field is the other side's.
+        // Half of one side's army falls, but advantage is not victory.
         for uid in game.player_unit_ids(1).into_iter().take(4) {
             game.remove_unit(uid);
         }
         assert!(game.score(0) > game.score(1));
-        // And a whole army is worth more than a battered one of the same size.
-        let mut battered = game.clone();
-        for uid in battered.player_unit_ids(0) {
-            battered.units.get_mut(&uid).unwrap().hp = 20;
-        }
-        assert!(battered.score(0) < game.score(0));
+        game.current = 1;
+        game.turn = 50;
+        game.do_end_turn();
+
+        assert!(game.is_finished());
+        assert!(game.is_draw());
+        assert_eq!(game.winner, None);
+        assert_eq!(game.winning_players(), Vec::<usize>::new());
+        assert_eq!(game.victory_type.as_deref(), Some(DRAW_RESULT));
+        assert_eq!(game.victory_label().as_deref(), Some(DRAW_RESULT));
+        assert_eq!(game.turn, 51, "the result is counted on the final wrap");
+        assert_eq!(game.reported_turn(), 50);
+        assert_eq!(
+            game.apply(game.current, &Action::EndTurn),
+            Err("game over".to_string()),
+            "a draw must stop the engine just like a victory"
+        );
     }
 
     #[test]

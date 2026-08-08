@@ -928,7 +928,12 @@ fn auto_dimension(args: &[String], key: &str, players: i64, width: bool) -> i32 
     // mode's own smallest field is the honest default, and `--width` and
     // `--height` still name any other.
     let (default_width, default_height) = if map_script(args).is_battlefield() {
-        let arena = setup::BATTLEFIELD_SIZES[0];
+        let script = map_script(args);
+        let arena = setup::BATTLEFIELD_SIZES
+            .iter()
+            .find(|size| size.script == script)
+            .copied()
+            .unwrap_or(setup::BATTLEFIELD_SIZES[0]);
         (arena.width, arena.height)
     } else {
         // A globe stores itself in a rectangle of its own shape, so the size's
@@ -1005,6 +1010,7 @@ fn tactics_rules(args: &[String]) -> setup::TacticsRules {
         gold: arg(args, "--tactics-gold", i64::from(stock.gold)).max(0) as u32,
         turns_per_tech: arg(args, "--tactics-turns-per-tech", i64::from(stock.turns_per_tech))
             .max(0) as u32,
+        turn_limit: arg(args, "--tactics-turn-limit", i64::from(stock.turn_limit)).max(0) as u32,
         best_of: arg(args, "--tactics-best-of", i64::from(stock.best_of)).max(1) as u32,
         unique_units: flag_or(args, "--tactics-unique-units", stock.unique_units),
         fog: flag_or(args, "--tactics-fog", stock.fog),
@@ -1149,6 +1155,7 @@ fn game_options(
         eprintln!("unknown game speed {speed:?}; choose one of {:?}", speeds(&rules));
         std::process::exit(2);
     };
+    let tactics = tactics_rules(args);
     // An explicit --turns wins; otherwise every speed brings its own stock
     // budget (Standard is 500 turns / 2050 AD). Short historical defaults
     // ended games at the turn limit before the science, culture, and
@@ -1158,12 +1165,9 @@ fn game_options(
         arg(args, "--turns", speed_spec.turns as i64)
     } else if map_script(args).is_battlefield() {
         // A Tactics battle keeps a battle's clock rather than a game speed's
-        // five hundred turns; `--turns` still names any other.
-        Game::battlefield_turn_limit(
-            auto_dimension(args, "--width", players, true),
-            auto_dimension(args, "--height", players, false),
-            players.max(1) as usize,
-        ) as i64
+        // five hundred turns. Its own four-step ladder names the stock
+        // deadline; the general `--turns` flag above still wins explicitly.
+        i64::from(tactics.turn_limit)
     } else {
         speed_spec.turns as i64
     };
@@ -1202,7 +1206,7 @@ fn game_options(
         start_era: start_era(args, seed),
         // The arena's economy, so a headless sweep can vary the thing it is
         // training against without going through a lobby. Ignored on a world.
-        tactics: tactics_rules(args),
+        tactics,
         future_era: future_era(args),
         map_script: map_script(args),
         map_topology: map_topology(args),
@@ -1302,11 +1306,9 @@ fn speeds(rules: &Rules) -> Vec<&str> {
 }
 
 fn standings(g: &Game) {
-    // A game can legitimately end with nobody having won: a lobby that pins
-    // `--victories` without `score` has no turn-limit tiebreak, so the limit
-    // arrives and no enabled path has been achieved. That is a result to
-    // report, not a reason to abort before printing the standings that say
-    // what actually happened.
+    if g.is_draw() {
+        println!("Draw: turn limit reached on turn {}", g.reported_turn());
+    }
     match g.winner {
         Some(winner) => {
             let w = &g.players[winner];
@@ -1323,10 +1325,11 @@ fn standings(g: &Game) {
                 g.reported_turn()
             );
         }
-        None => println!(
+        None if !g.is_draw() => println!(
             "No winner: turn {} of {}, and no enabled victory was achieved",
             g.turn, g.max_turns
         ),
+        None => {}
     }
     let mut majors: Vec<usize> = g
         .players
@@ -1559,10 +1562,8 @@ fn main() {
                             .iter()
                             .filter(|p| p.is_minor && !p.is_barbarian)
                             .collect();
-                        // A soak line describes a finished game, and a game
-                        // whose turn limit arrived with no enabled victory
-                        // achieved is finished too. Report it as one rather
-                        // than taking the whole run down.
+                        // A soak line describes a terminal result. Tactics
+                        // draws carry no winner but are finished battles.
                         let w = g.winner.map(|winner| &g.players[winner]);
                         let mut flags = String::new();
                         if let Some(simultaneous) = &simultaneous {
@@ -1579,7 +1580,9 @@ fn main() {
                         if w.is_some_and(|w| w.is_minor) {
                             flags.push_str(" MINOR-WINNER");
                         }
-                        if w.is_none() {
+                        if g.is_draw() {
+                            flags.push_str(" DRAW");
+                        } else if w.is_none() {
                             flags.push_str(" NO-WINNER");
                         }
                         // An army nobody ever modernizes is invisible in the
@@ -2894,7 +2897,7 @@ fn main() {
                 "usage: civvis <simulate|soak|odds-audit|benchmark|tournament|league|league-init|rate-game|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais [identity=]controller,...] [--anchor identity|none] [--ratings path] [--standings] [--port N] [--no-open] \
-                      [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield] \
+                      [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield|tactics_planet] \
                       [--shape flat|planet] [--poles poles|randomized] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
@@ -2942,16 +2945,19 @@ mod tests {
         assert_eq!(tactics_rules(&[]), stock, "no flags is the stock arena");
 
         let asked = [
+            "--map".to_string(), "battlefield".to_string(),
             "--tactics-cities".to_string(), "0".to_string(),
             "--tactics-production".to_string(), "120".to_string(),
             "--tactics-gold".to_string(), "0".to_string(),
             "--tactics-turns-per-tech".to_string(), "0".to_string(),
+            "--tactics-turn-limit".to_string(), "150".to_string(),
         ];
         let rules = tactics_rules(&asked);
         assert_eq!(rules.cities, 0);
         assert_eq!(rules.production, 120);
         assert_eq!(rules.gold, 0);
         assert_eq!(rules.turns_per_tech, 0);
+        assert_eq!(rules.turn_limit, 150);
 
         // Clamped, not trusted: these reach the same sanitiser the server uses.
         let silly = [
@@ -2968,6 +2974,18 @@ mod tests {
         // `soak` launch of the same flags are the same arena.
         let options = game_options(&asked, 2, 7, TurnStructure::Sequential);
         assert_eq!(options.tactics, tactics_rules(&asked));
+        assert_eq!(options.max_turns, 150, "the arena uses its selected deadline");
+
+        let explicit = [
+            "--map".to_string(), "battlefield".to_string(),
+            "--tactics-turn-limit".to_string(), "200".to_string(),
+            "--turns".to_string(), "73".to_string(),
+        ];
+        assert_eq!(
+            game_options(&explicit, 2, 8, TurnStructure::Sequential).max_turns,
+            73,
+            "the general explicit turn flag still overrides the Tactics menu"
+        );
     }
 
     #[test]
@@ -3071,6 +3089,7 @@ mod tests {
             ("pangaea", MapScript::Pangaea),
             ("tennis_ball", MapScript::TeninsBall),
             ("tenins_ball", MapScript::TeninsBall),
+            ("tactics_planet", MapScript::TacticsPlanet),
         ] {
             let args = vec!["--map".to_string(), asked.to_string()];
             assert_eq!(
@@ -3079,6 +3098,9 @@ mod tests {
                 "{asked}"
             );
         }
+        let planet = vec!["--map".to_string(), "tactics_planet".to_string()];
+        let options = game_options(&planet, 2, 71_005, TurnStructure::Sequential);
+        assert_eq!((options.width, options.height), (40, 18));
     }
 
     #[test]
