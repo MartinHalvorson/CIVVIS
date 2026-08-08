@@ -16518,6 +16518,11 @@ pub const MERCY_VICTORY: &str = "mercy";
 /// still alive. It is a result label, not a victory lane: `winner` remains
 /// `None`, and match/league consumers record a draw.
 pub const DRAW_RESULT: &str = "draw";
+/// The victory type a capture-the-flag battle is recorded under. Like the
+/// Mercy Rule it answers to its own setup option rather than the victory
+/// checkboxes, so it is not one of [`VictoryConditions::NAMES`]: the flag is
+/// an arena objective, and only a battle set up around one can end this way.
+pub const FLAG_VICTORY: &str = "flag";
 
 /// The notation a Mercy Rule verdict is written and displayed under.
 ///
@@ -16766,6 +16771,12 @@ pub struct Game {
     /// those load as the stock grant, which no world ever reads.
     #[serde(default)]
     pub tactics: TacticsRules,
+    /// Where a capture-the-flag arena's flag stands. `Some` exactly on an
+    /// arena whose match asked for the flag objective; taking this tile is
+    /// what wins the battle. Absent from every world and every other arena,
+    /// and from saves written before the shape existed.
+    #[serde(default)]
+    pub arena_flag: Option<Pos>,
     /// The victory types each seat has banked under Require-N, by player id.
     #[serde(default)]
     pub victories_won: BTreeMap<usize, BTreeSet<String>>,
@@ -17243,6 +17254,8 @@ struct GameSer {
     #[serde(default)]
     tactics: TacticsRules,
     #[serde(default)]
+    arena_flag: Option<Pos>,
+    #[serde(default)]
     victories_won: BTreeMap<usize, BTreeSet<String>>,
     next_id: u32,
     rng: Rng,
@@ -17411,6 +17424,7 @@ impl From<GameSer> for Game {
             mercy_lanes: s.mercy_lanes,
             required_victory_types: s.required_victory_types,
             tactics: s.tactics,
+            arena_flag: s.arena_flag,
             victories_won: s.victories_won,
             next_id: s.next_id,
             map: s.map,
@@ -17602,6 +17616,7 @@ impl From<Game> for GameSer {
             mercy_lanes: g.mercy_lanes,
             required_victory_types: g.required_victory_types,
             tactics: g.tactics,
+            arena_flag: g.arena_flag,
             victories_won: g.victories_won,
             next_id: g.next_id,
             rng: g.rng,
@@ -17941,6 +17956,7 @@ impl Game {
             mercy_lanes: Vec::new(),
             required_victory_types,
             tactics,
+            arena_flag: None,
             victories_won: BTreeMap::new(),
             next_id: 1,
             map,
@@ -18028,6 +18044,13 @@ impl Game {
             let mut player = Player::new(i, civ, false);
             player.team = teams.get(i).copied().flatten();
             g.players.push(player);
+        }
+        // A capture-the-flag arena plants its flag before either army is set
+        // down, so the deployment below can keep the objective tile clear —
+        // a battle must never open already won.
+        if map_script.is_battlefield() && g.tactics.flag {
+            g.arena_flag =
+                g.battlefield_flag_site(&spawns[..num_players.min(spawns.len())]);
         }
         for (i, pos) in spawns.iter().take(num_players).enumerate() {
             if map_script.is_battlefield() {
@@ -18349,6 +18372,26 @@ impl Game {
     /// first turns of the battle would be spent unstacking it. Only one
     /// military unit stands on a hex, so "the next free ground outward" is
     /// the whole rule.
+    /// Where a capture-the-flag arena plants its flag: the passable tile the
+    /// seats reach as evenly as the field allows — first the smallest spread
+    /// in marching distance between the sides, then the shortest march
+    /// overall so the flag sits between the armies rather than off on a
+    /// fair-but-remote wall, then position order so the same field always
+    /// plants the same flag.
+    fn battlefield_flag_site(&self, seats: &[Pos]) -> Option<Pos> {
+        self.map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| self.rules.is_passable(tile))
+            .map(|(pos, _)| *pos)
+            .min_by_key(|pos| {
+                let marches = seats.iter().map(|seat| self.wdist(*seat, *pos));
+                let far = marches.clone().max().unwrap_or(0);
+                let near = marches.min().unwrap_or(0);
+                (far - near, far, *pos)
+            })
+    }
+
     fn deploy_battlefield_army(&mut self, pid: usize, anchor: Pos) {
         let mut ground: Vec<Pos> = self
             .map
@@ -18356,6 +18399,9 @@ impl Game {
             .keys()
             .copied()
             .filter(|pos| self.rules.is_passable(&self.map.tiles[pos]))
+            // Never onto the flag itself: standing on that tile is winning,
+            // and a battle must be fought before it is won.
+            .filter(|pos| Some(*pos) != self.arena_flag)
             .collect();
         ground.sort_by_key(|pos| (self.wdist(anchor, *pos), *pos));
         let mut cursor = 0;
@@ -31000,6 +31046,13 @@ impl Game {
         self.occ.entry(pos).or_default().push(uid);
         let sight = self.unit_sight(uid);
         self.reveal(owner, pos, sight);
+        // Taking the flag decides a capture-the-flag battle on the spot.
+        // Every way a unit changes tiles — a march, a melee advance, an
+        // airlift, a retreat — funnels through here, so this is the one
+        // place the objective needs to be watched from.
+        if self.arena_flag == Some(pos) {
+            self.set_winner(owner, FLAG_VICTORY);
+        }
     }
 
     fn improvement_fortification_at(&self, pos: Pos) -> i32 {
@@ -57492,6 +57545,10 @@ impl Game {
         // report is the lane the board was being decided on when it fired.
         let verdict = if vtype == MERCY_VICTORY {
             format!("won by {}", mercy_label(&self.mercy_lanes))
+        } else if vtype == FLAG_VICTORY {
+            // The verdict names the deed: a flag battle is not "a flag
+            // victory", it is the flag captured.
+            "captured the flag".to_string()
         } else {
             format!("won a {vtype} victory")
         };
@@ -57511,7 +57568,10 @@ impl Game {
             && (self.victory_lane_open(vtype)
                 // Mercy answers to its own setup option, not the victory
                 // checkboxes: it is a concession rule, not a victory lane.
-                || (vtype == MERCY_VICTORY && self.mercy_rule.is_some()))
+                || (vtype == MERCY_VICTORY && self.mercy_rule.is_some())
+                // The flag answers to the arena objective it was planted by:
+                // only a battle set up around one can be won by taking it.
+                || (vtype == FLAG_VICTORY && self.arena_flag.is_some()))
         {
             // Require-N: short of the requirement, a victory type banks a
             // milestone instead of ending the world. The set dedupes, because
@@ -68867,6 +68927,89 @@ mod district_mechanics {
             game.players[0].techs.len() > techs_before,
             "a side with no city still researches"
         );
+    }
+
+    fn flag_arena(seed: u64) -> Game {
+        Game::new_with(GameOptions {
+            map_script: MapScript::Battlefield,
+            // Cities asked for on purpose: the flag must replace them.
+            tactics: TacticsRules { flag: true, cities: 1, ..TacticsRules::default() },
+            ..GameOptions::new(2, 20, 20, seed, 250, 0)
+        })
+    }
+
+    /// A flag battle opens with exactly one objective on the field: a flag
+    /// both sides can reach evenly, no city anywhere, and nobody standing on
+    /// the prize.
+    #[test]
+    fn a_flag_arena_plants_one_even_handed_flag_and_no_cities() {
+        let game = flag_arena(90_412);
+        let flag = game.arena_flag.expect("a flag battle plants its flag");
+        assert!(game.cities.is_empty(), "the flag replaces the city objective outright");
+        assert!(game.units_at(flag).is_empty(), "a battle must never open already won");
+        let reach = |pid: usize| {
+            game.units
+                .values()
+                .filter(|unit| unit.owner == pid)
+                .map(|unit| game.wdist(unit.pos, flag))
+                .min()
+                .expect("both sides open with an army")
+        };
+        assert!(
+            (reach(0) - reach(1)).abs() <= 1,
+            "the flag favours a side: {} hexes against {}",
+            reach(0),
+            reach(1)
+        );
+
+        // Only the shape that asked for a flag gets one; the stock arena and
+        // the stock world both play without.
+        let plain = Game::new_with(GameOptions {
+            map_script: MapScript::Battlefield,
+            ..GameOptions::new(2, 20, 20, 90_412, 250, 0)
+        });
+        assert_eq!(plain.arena_flag, None);
+        let world = Game::new_full(2, 24, 16, 90_412, 100, 0, false);
+        assert_eq!(world.arena_flag, None);
+    }
+
+    /// Taking the flag tile is the whole victory condition: the moment a
+    /// unit stands on it, its side has won, under the flag's own victory
+    /// type rather than a lane no checkbox ever opened.
+    #[test]
+    fn taking_the_flag_tile_wins_the_battle() {
+        let mut game = flag_arena(90_413);
+        let flag = game.arena_flag.unwrap();
+        let uid = game
+            .units
+            .values()
+            .find(|unit| unit.owner == 1)
+            .expect("side two opens with an army")
+            .id;
+        game.relocate(uid, flag);
+        assert_eq!(game.winner, Some(1), "the side that took the tile has won");
+        assert_eq!(game.victory_type.as_deref(), Some(FLAG_VICTORY));
+        assert_eq!(game.victory_label().as_deref(), Some(FLAG_VICTORY));
+        assert!(game.is_finished());
+    }
+
+    /// The flag survives a save: a reloaded battle is still decided by the
+    /// same tile, and a save written before the shape existed still opens.
+    #[test]
+    fn the_flag_survives_a_save_and_older_saves_open_without_one() {
+        let game = flag_arena(90_414);
+        let encoded = serde_json::to_value(&game).unwrap();
+        let restored: Game = serde_json::from_value(encoded).unwrap();
+        assert_eq!(restored.arena_flag, game.arena_flag);
+
+        let mut older = serde_json::to_value(&game).unwrap();
+        older
+            .as_object_mut()
+            .unwrap()
+            .remove("arena_flag")
+            .expect("the field is written");
+        let old_save: Game = serde_json::from_value(older).unwrap();
+        assert_eq!(old_save.arena_flag, None);
     }
 
     /// A zero tech pace freezes the tree: both sides fight the whole battle

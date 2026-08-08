@@ -6822,6 +6822,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     if (tactics && st.tactics) {
       const arenaSettings = {
         tacticsfog: st.tactics.fog ? "1" : "0",
+        tacticsflag: st.tactics.flag ? "1" : "0",
         tacticsturnlimit: String(st.tactics.turn_limit ?? st.max_turns ?? 100),
         tacticscities: String(st.tactics.cities ?? 1),
         tacticsproduction: String(st.tactics.production ?? 30),
@@ -7925,6 +7926,25 @@ function drawFeatureEffects(t, x, y) {
     cx.arc(x - 7, y - 2, 7.5, 0.3, 2.6);
     cx.arc(x + 7, y + 5, 6.5, 3.5, 5.9);
     cx.stroke();
+  }
+  const flagAt = state?.arena_flag;
+  if (flagAt && t.pos[0] === flagAt[0] && t.pos[1] === flagAt[1]) {
+    // The tile a capture-the-flag battle is decided on. Drawn last so the
+    // objective stays legible over any weather the field is having, in a
+    // gold no civilization wears: the flag belongs to whoever takes it.
+    cx.save();
+    cx.lineCap = "round";
+    cx.fillStyle = "#0d111788";
+    cx.beginPath(); cx.ellipse(x, y + 12, 9, 3.2, 0, 0, Math.PI * 2); cx.fill();
+    cx.strokeStyle = "#e9f4f5"; cx.lineWidth = 4;
+    cx.beginPath(); cx.moveTo(x - 5, y + 12); cx.lineTo(x - 5, y - 17); cx.stroke();
+    cx.strokeStyle = "#3a3020"; cx.lineWidth = 2.2;
+    cx.beginPath(); cx.moveTo(x - 5, y + 12); cx.lineTo(x - 5, y - 17); cx.stroke();
+    cx.fillStyle = "#ffd34e"; cx.strokeStyle = "#8a6b14"; cx.lineWidth = 1.2;
+    cx.beginPath();
+    cx.moveTo(x - 4, y - 17); cx.lineTo(x + 14, y - 12.5); cx.lineTo(x - 4, y - 8);
+    cx.closePath(); cx.fill(); cx.stroke();
+    cx.restore();
   }
 }
 
@@ -22511,6 +22531,9 @@ function titleCase(n) { return (n || "").replaceAll("_", " ").replace(/\b\w/g, c
 function victoryVerdict(type, label) {
   if (type === "draw") return "Draw";
   if (type === "mercy") return label || "Mercy Rule";
+  // The flag verdict names the deed rather than a lane: a capture-the-flag
+  // battle is not won by "a flag victory", the flag was captured.
+  if (type === "flag") return "Captured the Flag";
   return titleCase(type || "score") + " victory";
 }
 function researchCard(kind, name, progress, total, perTurn, boosted) {
@@ -28138,6 +28161,7 @@ function selectedSimulationSettings() {
           // else, so a world is unaffected and a mode switch needs no second
           // request.
           tactics_fog: readSetting("tacticsfog") === "1",
+          tactics_flag: readSetting("tacticsflag") === "1",
           tactics_turn_limit: Number(readSetting("tacticsturnlimit")) || 100,
           tactics_cities: Number(readSetting("tacticscities")) || 0,
           tactics_production: Number(readSetting("tacticsproduction")) || 0,
