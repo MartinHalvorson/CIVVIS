@@ -2079,6 +2079,40 @@ pub struct CityStateSpec {
     /// The shipped Suzerain text, for clients and the Civilopedia.
     #[serde(default)]
     pub effect: String,
+    /// Where this city-state really stood, in the WGS84 degrees
+    /// `data/leader_roster.json` already uses for a civilization's homeland.
+    /// True Start Earth seats it here; every other script ignores the position
+    /// but the selector still reads it, to keep a game's city-states spread
+    /// across the world rather than piled into one region.
+    ///
+    /// ⚠ OPTIONAL, AND DELIBERATELY NOT A `TrueStartPoint` WITH A `Default`.
+    /// `CityStateSpec` derives `Default`, so a flattened point would make a
+    /// roster row that forgot its coordinates read as 0°N 0°E — the Gulf of
+    /// Guinea, a real place a thousand miles from anywhere this roster names,
+    /// and indistinguishable from a genuine answer. A mod overlay that omits
+    /// them should fall back to the regional model, so absence is a state the
+    /// data can hold and `site()` is the only way to ask.
+    ///
+    /// Four sites carry two names apiece — Visby/Wisby, Turku City/Abo,
+    /// Bandar Brunei/Brunei, Ayutthaya/Ayutthaya City — and both entries hold
+    /// the same real coordinates, because that is what is true of them.
+    /// Declining to seat both is the selector's job, not the datum's.
+    #[serde(default)]
+    pub latitude: Option<f64>,
+    #[serde(default)]
+    pub longitude: Option<f64>,
+}
+
+impl CityStateSpec {
+    /// The real site, when the roster carries one.
+    pub fn site(&self) -> Option<crate::leader_roster::TrueStartPoint> {
+        match (self.latitude, self.longitude) {
+            (Some(latitude), Some(longitude)) => {
+                Some(crate::leader_roster::TrueStartPoint { latitude, longitude })
+            }
+            _ => None,
+        }
+    }
 }
 
 /// The city-state roster in seating order.

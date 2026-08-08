@@ -879,6 +879,76 @@ fn historic_major_spawns(
     order.into_iter().map(|seat| starts[seat]).collect()
 }
 
+/// Seat city-states at their own sites on a fixed-geography world.
+///
+/// The same walk as [`historic_major_spawns`], with two differences that come
+/// from city-states being seated second rather than first.
+///
+/// The civilizations are already down, so `majors` is a floor this pass may
+/// never break: a city-state that lands on a capital's hex would be relocated
+/// or dropped later, and dropping is what used to leave a game with a third of
+/// the city-states it asked for. Their clearance is the wider
+/// `MINOR_MAJOR_BUFFER`, relaxed one ring at a time exactly as the major pass
+/// relaxes its own, so a crowded region seats a tighter city-state rather than
+/// no city-state.
+///
+/// And a city-state may have no site — a mod overlay's roster row can omit the
+/// coordinates. Those seats are left to the caller, which falls back to the
+/// regional model for the whole draw rather than mixing two placement rules in
+/// one world.
+///
+/// No seat-trading pass. Trading exists because seating order should not
+/// decide which of two civilizations gets Italy, and it is safe there because
+/// the set of occupied hexes never changes. Here the draw is already dispersed
+/// by construction — `city_states::seat_selection` takes the identity farthest
+/// from the ones already chosen — so two city-states rarely want one hex, and
+/// the order they arrive in is not a fairness question between rivals.
+fn historic_minor_spawns(
+    wm: &WorldMap,
+    candidates: &[Pos],
+    sites: &[Option<TrueStartPoint>],
+    majors: &[Pos],
+    count: usize,
+) -> Vec<Pos> {
+    let mut available: Vec<Pos> = candidates.to_vec();
+    let mut starts: Vec<Pos> = Vec::new();
+    for index in 0..count.min(sites.len()) {
+        if available.is_empty() {
+            break;
+        }
+        let Some(home) = sites[index] else { continue };
+        let target = earth_direction(home.longitude, home.latitude);
+        let closest = |pool: &mut dyn Iterator<Item = (usize, &Pos)>| {
+            pool.max_by(|(_, a), (_, b)| {
+                dot(wm.direction(**a), target)
+                    .partial_cmp(&dot(wm.direction(**b), target))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(candidate_index, _)| candidate_index)
+        };
+        let mut selected = None;
+        for separation in (1..=MINOR_MAJOR_BUFFER).rev() {
+            let placed: Vec<Pos> = majors.iter().chain(starts.iter()).copied().collect();
+            let taken = taken_within(wm, &placed, separation - 1);
+            if let Some(candidate) = closest(
+                &mut available
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, candidate)| !taken.contains(candidate)),
+            ) {
+                selected = Some(candidate);
+                break;
+            }
+        }
+        // Every remaining hex is inside somebody's innermost ring. The caller
+        // fills the shortfall the way it fills any other, rather than stacking
+        // a city-state on a capital to keep the count.
+        let Some(selected) = selected else { break };
+        starts.push(available.swap_remove(selected));
+    }
+    starts
+}
+
 /// Every tile within `radius` steps of a start already placed.
 fn taken_within(wm: &WorldMap, starts: &[Pos], radius: i32) -> BTreeSet<Pos> {
     starts
@@ -2896,6 +2966,7 @@ pub fn generate_with_script(
         topology,
         poles,
         &[],
+        &[],
         rng,
     )
 }
@@ -2906,6 +2977,14 @@ pub fn generate_with_script(
 /// is independent of roster identity.  True Start Earth consumes one point per
 /// major in seating order; callers which predate the roster contract pass an
 /// empty slice and preserve the legacy data order.
+///
+/// `minor_starts` is the same contract one rank down: the real site of each
+/// city-state the caller drew, in the order it means to seat them, so a
+/// true-start world puts Jerusalem in the Levant and Cahokia on the
+/// Mississippi instead of wherever the regional cut had room. An entry is
+/// `None` when the roster carries no coordinates for that identity, and an
+/// empty slice keeps the regional model for every seat -- which is what every
+/// other script uses regardless.
 #[allow(clippy::too_many_arguments)]
 pub fn generate_with_script_and_leader_starts(
     rules: &Rules,
@@ -2919,6 +2998,7 @@ pub fn generate_with_script_and_leader_starts(
     topology: MapTopology,
     poles: MapPoles,
     leader_starts: &[TrueStartPoint],
+    minor_starts: &[Option<TrueStartPoint>],
     rng: &mut Rng,
 ) -> (WorldMap, Vec<Pos>) {
     // The world's shape is asked for separately from what fills it. Fixed
@@ -4077,19 +4157,50 @@ pub fn generate_with_script_and_leader_starts(
         cut
     };
     let majors: Vec<Pos> = spawns.clone();
-    let minors = regional_starts(
-        rules,
-        &wm,
-        &minor_regions,
-        &minor_pool,
-        &fertility,
-        StartBuffers {
-            foreign: &majors,
-            foreign_buffer: MINOR_MAJOR_BUFFER,
-            own_buffer: MINOR_MINOR_BUFFER,
-        },
-    );
-    spawns.extend(minors.into_iter().map(|(_, start)| start));
+    // A city-state on True Start Earth belongs where it stood, for the same
+    // reason Rome does. The regional cut above divides each civilization's own
+    // cell so everyone has neighbours to court, which is the right answer on a
+    // rolled world and the wrong one here: it put Jerusalem in Siberia and
+    // Cahokia in the Sahara as readily as anywhere else, on the one map whose
+    // whole promise is that places are where they are.
+    //
+    // The majors are already down, so their hexes are the ones a city-state
+    // must not take; `historic_minor_spawns` seats around them the way
+    // `historic_major_spawns` seats around each other. An identity the roster
+    // has no coordinates for keeps the regional seat it would have had.
+    let historic_minors = script
+        .is_true_start()
+        .then(|| {
+            (!minor_starts.is_empty() && minor_starts.iter().any(Option::is_some))
+                .then(|| {
+                    let candidates = candidates_for(&passable, usize::MAX);
+                    historic_minor_spawns(
+                        &wm,
+                        &candidates,
+                        minor_starts,
+                        &majors,
+                        num_minor_spawns,
+                    )
+                })
+        })
+        .flatten();
+    if let Some(minors) = historic_minors {
+        spawns.extend(minors);
+    } else {
+        let minors = regional_starts(
+            rules,
+            &wm,
+            &minor_regions,
+            &minor_pool,
+            &fertility,
+            StartBuffers {
+                foreign: &majors,
+                foreign_buffer: MINOR_MAJOR_BUFFER,
+                own_buffer: MINOR_MINOR_BUFFER,
+            },
+        );
+        spawns.extend(minors.into_iter().map(|(_, start)| start));
+    }
     if spawns.len() < total_spawns {
         let missing = total_spawns - spawns.len();
         fill_remaining_starts(rules, &wm, &minor_pool, &passable, &mut spawns, missing);
@@ -9334,6 +9445,7 @@ mod river_tests {
             GLOBE,
             POLED,
             &homes,
+            &[],
             &mut rng,
         );
 
@@ -9356,6 +9468,85 @@ mod river_tests {
                 world.distance(nearest_land, spawn)
             );
         }
+    }
+
+    #[test]
+    fn true_start_earth_seats_city_states_on_their_own_ground() {
+        // The regional cut this replaces divides each civilization's own cell,
+        // so a city-state landed wherever its patron had room. Measured on
+        // this seed, the old model opened Cahokia 39 tiles from the
+        // Mississippi, Kabul 33 from Afghanistan, Zanzibar 20 and Venice 17
+        // from theirs; only Jerusalem, at 6, was anywhere near itself. The
+        // same five now open at 0, 2, 0, 5 and 0.
+        let rules = Rules::embedded();
+        let size = CIV6_MAP_SIZES
+            .iter()
+            .find(|size| size.id == "standard")
+            .unwrap();
+        let leaders = ["Rome", "Aztec", "China"];
+        let homes: Vec<TrueStartPoint> = leaders
+            .iter()
+            .map(|civ| leader_roster::true_start(civ).unwrap())
+            .collect();
+        let named = ["Jerusalem", "Cahokia", "Kabul", "Venice", "Zanzibar"];
+        let sites: Vec<Option<TrueStartPoint>> = named
+            .iter()
+            .map(|name| {
+                rules
+                    .city_states
+                    .roster
+                    .iter()
+                    .find(|seat| seat.name == *name)
+                    .unwrap_or_else(|| panic!("{name} is not in the roster"))
+                    .site()
+            })
+            .collect();
+        let mut rng = Rng::new(31_337);
+        let (world, spawns) = generate_with_script_and_leader_starts(
+            &rules,
+            size.width,
+            size.height,
+            leaders.len(),
+            named.len(),
+            size.natural_wonders,
+            size.continents,
+            MapScript::TrueStartEarth,
+            GLOBE,
+            POLED,
+            &homes,
+            &sites,
+            &mut rng,
+        );
+
+        let minors = &spawns[leaders.len()..];
+        assert_eq!(minors.len(), named.len(), "every city-state should be seated");
+        for ((name, site), spawn) in named.iter().zip(&sites).zip(minors) {
+            let site = site.unwrap();
+            let target = earth_direction(site.longitude, site.latitude);
+            let nearest_land = world
+                .tiles
+                .iter()
+                .filter(|(_, tile)| !rules.is_water(tile))
+                .map(|(pos, _)| *pos)
+                .max_by(|a, b| {
+                    dot(world.direction(*a), target)
+                        .partial_cmp(&dot(world.direction(*b), target))
+                        .unwrap()
+                })
+                .unwrap();
+            // Wider than the majors' three tiles on purpose: a city-state is
+            // seated after every capital is down and has to clear them by
+            // `MINOR_MAJOR_BUFFER`, so one named for a site beside a
+            // civilization's own homeland is pushed off it by design.
+            assert!(
+                world.distance(nearest_land, *spawn) <= 8,
+                "{name} opened {} tiles from its own site",
+                world.distance(nearest_land, *spawn)
+            );
+        }
+        // And it is still a legal board: nobody shares a hex with anybody.
+        let occupied: BTreeSet<Pos> = spawns.iter().copied().collect();
+        assert_eq!(occupied.len(), spawns.len(), "two seats share one hex");
     }
 
     /// The modern-nation roster brings its own WGS84 points.  Before a public

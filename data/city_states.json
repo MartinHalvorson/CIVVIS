@@ -1,10 +1,12 @@
 {
  "_source": "Civilization VI final patch: Civilizations, Leaders_XP2.MinorCivBonusType, LeaderTraits, Traits",
- "_note": "`shipped` marks the 48 city-states the game actually seats. Names are identity: append only, never rename or reorder.",
+ "_note": "`shipped` marks the 48 city-states the game actually seats. Names are identity: append only, never rename or reorder. `latitude`/`longitude` are the real site in WGS84 degrees, used to seat city-states historically on True Start Earth.",
  "roster": [
   {
    "name": "Kabul",
    "type": "militaristic",
+   "latitude": 34.53,
+   "longitude": 69.17,
    "bonus": "kabul",
    "implemented": true,
    "shipped": true,
@@ -13,6 +15,8 @@
   {
    "name": "Geneva",
    "type": "scientific",
+   "latitude": 46.2,
+   "longitude": 6.14,
    "bonus": "geneva",
    "implemented": true,
    "shipped": true,
@@ -21,6 +25,8 @@
   {
    "name": "Hattusa",
    "type": "scientific",
+   "latitude": 40.02,
+   "longitude": 34.62,
    "bonus": "hattusa",
    "implemented": true,
    "shipped": true,
@@ -29,6 +35,8 @@
   {
    "name": "Mohenjo-Daro",
    "type": "cultural",
+   "latitude": 27.33,
+   "longitude": 68.14,
    "bonus": "mohenjo_daro",
    "implemented": true,
    "shipped": true,
@@ -37,6 +45,8 @@
   {
    "name": "Yerevan",
    "type": "religious",
+   "latitude": 40.18,
+   "longitude": 44.51,
    "bonus": "yerevan",
    "implemented": true,
    "shipped": true,
@@ -45,6 +55,8 @@
   {
    "name": "Zanzibar",
    "type": "trade",
+   "latitude": -6.16,
+   "longitude": 39.19,
    "bonus": "zanzibar",
    "implemented": true,
    "shipped": true,
@@ -53,6 +65,8 @@
   {
    "name": "Auckland",
    "type": "industrial",
+   "latitude": -36.85,
+   "longitude": 174.76,
    "bonus": "auckland",
    "implemented": true,
    "shipped": true,
@@ -61,6 +75,8 @@
   {
    "name": "Valletta",
    "type": "militaristic",
+   "latitude": 35.9,
+   "longitude": 14.51,
    "bonus": "valletta",
    "implemented": true,
    "shipped": true,
@@ -69,6 +85,8 @@
   {
    "name": "Vilnius",
    "type": "cultural",
+   "latitude": 54.69,
+   "longitude": 25.28,
    "bonus": "vilnius",
    "implemented": true,
    "shipped": true,
@@ -77,6 +95,8 @@
   {
    "name": "Kandy",
    "type": "religious",
+   "latitude": 7.29,
+   "longitude": 80.63,
    "bonus": "kandy",
    "implemented": true,
    "shipped": true,
@@ -85,6 +105,8 @@
   {
    "name": "Jerusalem",
    "type": "religious",
+   "latitude": 31.78,
+   "longitude": 35.22,
    "bonus": "jerusalem",
    "implemented": true,
    "shipped": true,
@@ -93,6 +115,8 @@
   {
    "name": "Brussels",
    "type": "industrial",
+   "latitude": 50.85,
+   "longitude": 4.35,
    "bonus": "brussels",
    "implemented": true,
    "shipped": true,
@@ -101,6 +125,8 @@
   {
    "name": "Preslav",
    "type": "militaristic",
+   "latitude": 43.16,
+   "longitude": 26.82,
    "bonus": "preslav",
    "implemented": true,
    "shipped": true,
@@ -109,6 +135,8 @@
   {
    "name": "Antananarivo",
    "type": "cultural",
+   "latitude": -18.88,
+   "longitude": 47.51,
    "bonus": "antananarivo",
    "implemented": true,
    "shipped": true,
@@ -117,6 +145,8 @@
   {
    "name": "Mogadishu",
    "type": "trade",
+   "latitude": 2.04,
+   "longitude": 45.34,
    "bonus": "mogadishu",
    "implemented": true,
    "shipped": true,
@@ -125,6 +155,8 @@
   {
    "name": "Cahokia",
    "type": "trade",
+   "latitude": 38.66,
+   "longitude": -90.06,
    "bonus": "cahokia",
    "implemented": true,
    "shipped": true,
@@ -133,6 +165,8 @@
   {
    "name": "Akkad",
    "type": "militaristic",
+   "latitude": 33.1,
+   "longitude": 44.1,
    "bonus": "akkad",
    "implemented": true,
    "shipped": true,
@@ -141,6 +175,8 @@
   {
    "name": "Anshan",
    "type": "scientific",
+   "latitude": 30.01,
+   "longitude": 52.4,
    "bonus": "anshan",
    "implemented": true,
    "shipped": true,
@@ -149,6 +185,8 @@
   {
    "name": "Armagh",
    "type": "religious",
+   "latitude": 54.35,
+   "longitude": -6.65,
    "bonus": "armagh",
    "implemented": true,
    "shipped": true,
@@ -157,6 +195,8 @@
   {
    "name": "Ayutthaya",
    "type": "cultural",
+   "latitude": 14.35,
+   "longitude": 100.58,
    "bonus": "ayutthaya",
    "implemented": true,
    "shipped": true,
@@ -165,6 +205,8 @@
   {
    "name": "Bandar Brunei",
    "type": "trade",
+   "latitude": 4.89,
+   "longitude": 114.94,
    "bonus": "bandar_brunei",
    "implemented": true,
    "shipped": true,
@@ -173,6 +215,8 @@
   {
    "name": "Bologna",
    "type": "scientific",
+   "latitude": 44.49,
+   "longitude": 11.34,
    "bonus": "bologna",
    "implemented": true,
    "shipped": true,
@@ -181,6 +225,8 @@
   {
    "name": "Buenos Aires",
    "type": "industrial",
+   "latitude": -34.6,
+   "longitude": -58.38,
    "bonus": "buenos_aires",
    "implemented": true,
    "shipped": true,
@@ -189,6 +235,8 @@
   {
    "name": "Caguana",
    "type": "cultural",
+   "latitude": 18.29,
+   "longitude": -66.79,
    "bonus": "caguana",
    "implemented": true,
    "shipped": true,
@@ -197,6 +245,8 @@
   {
    "name": "Cardiff",
    "type": "industrial",
+   "latitude": 51.48,
+   "longitude": -3.18,
    "bonus": "cardiff",
    "implemented": true,
    "shipped": true,
@@ -205,6 +255,8 @@
   {
    "name": "Chinguetti",
    "type": "religious",
+   "latitude": 20.46,
+   "longitude": -12.36,
    "bonus": "chinguetti",
    "implemented": true,
    "shipped": true,
@@ -213,6 +265,8 @@
   {
    "name": "Fez",
    "type": "scientific",
+   "latitude": 34.03,
+   "longitude": -5.0,
    "bonus": "fez",
    "implemented": true,
    "shipped": true,
@@ -221,6 +275,8 @@
   {
    "name": "Granada",
    "type": "militaristic",
+   "latitude": 37.18,
+   "longitude": -3.6,
    "bonus": "granada",
    "implemented": true,
    "shipped": true,
@@ -229,6 +285,8 @@
   {
    "name": "Hong Kong",
    "type": "industrial",
+   "latitude": 22.32,
+   "longitude": 114.17,
    "bonus": "hong_kong",
    "implemented": true,
    "shipped": true,
@@ -237,6 +295,8 @@
   {
    "name": "Hunza",
    "type": "trade",
+   "latitude": 36.32,
+   "longitude": 74.65,
    "bonus": "hunza",
    "implemented": true,
    "shipped": true,
@@ -245,6 +305,8 @@
   {
    "name": "Johannesburg",
    "type": "industrial",
+   "latitude": -26.2,
+   "longitude": 28.05,
    "bonus": "johannesburg",
    "implemented": true,
    "shipped": true,
@@ -253,6 +315,8 @@
   {
    "name": "Kumasi",
    "type": "cultural",
+   "latitude": 6.69,
+   "longitude": -1.62,
    "bonus": "kumasi",
    "implemented": true,
    "shipped": true,
@@ -261,6 +325,8 @@
   {
    "name": "La Venta",
    "type": "religious",
+   "latitude": 18.1,
+   "longitude": -94.04,
    "bonus": "la_venta",
    "implemented": true,
    "shipped": true,
@@ -269,6 +335,8 @@
   {
    "name": "Lahore",
    "type": "militaristic",
+   "latitude": 31.55,
+   "longitude": 74.34,
    "bonus": "lahore",
    "implemented": true,
    "shipped": true,
@@ -277,6 +345,8 @@
   {
    "name": "Mexico City",
    "type": "industrial",
+   "latitude": 19.43,
+   "longitude": -99.13,
    "bonus": "mexico_city",
    "implemented": true,
    "shipped": true,
@@ -285,6 +355,8 @@
   {
    "name": "Mitla",
    "type": "scientific",
+   "latitude": 16.92,
+   "longitude": -96.36,
    "bonus": "mitla",
    "implemented": true,
    "shipped": true,
@@ -293,6 +365,8 @@
   {
    "name": "Muscat",
    "type": "trade",
+   "latitude": 23.59,
+   "longitude": 58.41,
    "bonus": "muscat",
    "implemented": true,
    "shipped": true,
@@ -301,6 +375,8 @@
   {
    "name": "Nalanda",
    "type": "scientific",
+   "latitude": 25.14,
+   "longitude": 85.44,
    "bonus": "nalanda",
    "implemented": true,
    "shipped": true,
@@ -309,6 +385,8 @@
   {
    "name": "Nan Madol",
    "type": "cultural",
+   "latitude": 6.84,
+   "longitude": 158.33,
    "bonus": "nan_madol",
    "implemented": true,
    "shipped": true,
@@ -317,6 +395,8 @@
   {
    "name": "Nazca",
    "type": "religious",
+   "latitude": -14.83,
+   "longitude": -74.94,
    "bonus": "nazca",
    "implemented": true,
    "shipped": true,
@@ -325,6 +405,8 @@
   {
    "name": "Ngazargamu",
    "type": "militaristic",
+   "latitude": 12.9,
+   "longitude": 13.1,
    "bonus": "ngazargamu",
    "implemented": true,
    "shipped": true,
@@ -333,6 +415,8 @@
   {
    "name": "Rapa Nui",
    "type": "cultural",
+   "latitude": -27.11,
+   "longitude": -109.35,
    "bonus": "rapa_nui",
    "implemented": true,
    "shipped": true,
@@ -341,6 +425,8 @@
   {
    "name": "Samarkand",
    "type": "trade",
+   "latitude": 39.65,
+   "longitude": 66.96,
    "bonus": "samarkand",
    "implemented": true,
    "shipped": true,
@@ -349,6 +435,8 @@
   {
    "name": "Singapore",
    "type": "industrial",
+   "latitude": 1.35,
+   "longitude": 103.82,
    "bonus": "singapore",
    "implemented": true,
    "shipped": true,
@@ -357,6 +445,8 @@
   {
    "name": "Taruga",
    "type": "scientific",
+   "latitude": 8.9,
+   "longitude": 7.8,
    "bonus": "taruga",
    "implemented": true,
    "shipped": true,
@@ -365,6 +455,8 @@
   {
    "name": "Vatican City",
    "type": "religious",
+   "latitude": 41.9,
+   "longitude": 12.45,
    "bonus": "vatican_city",
    "implemented": true,
    "shipped": true,
@@ -373,6 +465,8 @@
   {
    "name": "Venice",
    "type": "trade",
+   "latitude": 45.44,
+   "longitude": 12.34,
    "bonus": "venice",
    "implemented": true,
    "shipped": true,
@@ -381,6 +475,8 @@
   {
    "name": "Wolin",
    "type": "militaristic",
+   "latitude": 53.85,
+   "longitude": 14.62,
    "bonus": "wolin",
    "implemented": true,
    "shipped": true,
@@ -389,542 +485,810 @@
   {
    "name": "Carthage",
    "type": "militaristic",
+   "latitude": 36.85,
+   "longitude": 10.32,
    "bonus": "carthage",
    "implemented": true
   },
   {
    "name": "Stockholm",
    "type": "scientific",
+   "latitude": 59.33,
+   "longitude": 18.07,
    "bonus": "stockholm",
    "implemented": true
   },
   {
    "name": "Seoul",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 37.57,
+   "longitude": 126.98
   },
   {
    "name": "Amsterdam",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 52.37,
+   "longitude": 4.9
   },
   {
    "name": "Akragas",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 37.31,
+   "longitude": 13.58
   },
   {
    "name": "Gela",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 37.07,
+   "longitude": 14.25
   },
   {
    "name": "Tarentum",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 40.47,
+   "longitude": 17.24
   },
   {
    "name": "Croton",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 39.08,
+   "longitude": 17.13
   },
   {
    "name": "Kos",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 36.89,
+   "longitude": 27.29
   },
   {
    "name": "Knidos",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 36.68,
+   "longitude": 27.37
   },
   {
    "name": "Pergamon",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 39.13,
+   "longitude": 27.18
   },
   {
    "name": "Sinope",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 42.03,
+   "longitude": 35.15
   },
   {
    "name": "Massalia",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 43.3,
+   "longitude": 5.37
   },
   {
    "name": "Emporion",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 42.13,
+   "longitude": 3.12
   },
   {
    "name": "Cyrene",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 32.82,
+   "longitude": 21.86
   },
   {
    "name": "Leptis Magna",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 32.64,
+   "longitude": 14.29
   },
   {
    "name": "Thapsus",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 35.62,
+   "longitude": 11.05
   },
   {
    "name": "Malaca",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 36.72,
+   "longitude": -4.42
   },
   {
    "name": "Palmyra",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 34.55,
+   "longitude": 38.27
   },
   {
    "name": "Petra",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 30.33,
+   "longitude": 35.44
   },
   {
    "name": "Ebla",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 35.8,
+   "longitude": 36.8
   },
   {
    "name": "Kadesh",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 34.55,
+   "longitude": 36.52
   },
   {
    "name": "Alalakh",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 36.24,
+   "longitude": 36.38
   },
   {
    "name": "Qatna",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 34.84,
+   "longitude": 36.87
   },
   {
    "name": "Emar",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 35.99,
+   "longitude": 38.12
   },
   {
    "name": "Nuzi",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 35.35,
+   "longitude": 44.2
   },
   {
    "name": "Sicyon",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 37.98,
+   "longitude": 22.72
   },
   {
    "name": "Orchomenus",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 38.49,
+   "longitude": 22.98
   },
   {
    "name": "Tiryns",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 37.6,
+   "longitude": 22.8
   },
   {
    "name": "Megara",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 37.99,
+   "longitude": 23.34
   },
   {
    "name": "Chalcis",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 38.46,
+   "longitude": 23.6
   },
   {
    "name": "Eretria",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 38.4,
+   "longitude": 23.79
   },
   {
    "name": "Dodona",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 39.55,
+   "longitude": 20.79
   },
   {
    "name": "Elis",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 37.89,
+   "longitude": 21.37
   },
   {
    "name": "Capua",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 41.1,
+   "longitude": 14.21
   },
   {
    "name": "Tarquinia",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 42.25,
+   "longitude": 11.76
   },
   {
    "name": "Veii",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 42.03,
+   "longitude": 12.39
   },
   {
    "name": "Perusia",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 43.11,
+   "longitude": 12.39
   },
   {
    "name": "Ancona",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 43.62,
+   "longitude": 13.51
   },
   {
    "name": "Ragusa",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 42.65,
+   "longitude": 18.09
   },
   {
    "name": "Amalfi",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 40.63,
+   "longitude": 14.6
   },
   {
    "name": "Pisa",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 43.72,
+   "longitude": 10.4
   },
   {
    "name": "Lubeck",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 53.87,
+   "longitude": 10.69
   },
   {
    "name": "Rostock",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 54.09,
+   "longitude": 12.13
   },
   {
    "name": "Wismar",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 53.89,
+   "longitude": 11.47
   },
   {
    "name": "Riga",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 56.95,
+   "longitude": 24.11
   },
   {
    "name": "Reval",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 59.44,
+   "longitude": 24.75
   },
   {
    "name": "Visby",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 57.64,
+   "longitude": 18.3
   },
   {
    "name": "Bruges",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 51.21,
+   "longitude": 3.22
   },
   {
    "name": "Ghent",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 51.05,
+   "longitude": 3.72
   },
   {
    "name": "Antwerp",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 51.22,
+   "longitude": 4.4
   },
   {
    "name": "Soest",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 51.57,
+   "longitude": 8.11
   },
   {
    "name": "Bamberg",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 49.89,
+   "longitude": 10.89
   },
   {
    "name": "Goslar",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 51.91,
+   "longitude": 10.43
   },
   {
    "name": "Ulm",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 48.4,
+   "longitude": 9.99
   },
   {
    "name": "Basel City",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 47.56,
+   "longitude": 7.59
   },
   {
    "name": "Sankt Gallen City",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 47.42,
+   "longitude": 9.37
   },
   {
    "name": "Zurich City",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 47.37,
+   "longitude": 8.54
   },
   {
    "name": "Bergen City",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 60.39,
+   "longitude": 5.32
   },
   {
    "name": "Trondheim",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 63.43,
+   "longitude": 10.39
   },
   {
    "name": "Wisby",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 57.64,
+   "longitude": 18.3
   },
   {
    "name": "Elsinore",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 56.04,
+   "longitude": 12.61
   },
   {
    "name": "Malmo",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 55.6,
+   "longitude": 13.0
   },
   {
    "name": "Turku City",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 60.45,
+   "longitude": 22.27
   },
   {
    "name": "Abo",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 60.45,
+   "longitude": 22.27
   },
   {
    "name": "Narva",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 59.38,
+   "longitude": 28.19
   },
   {
    "name": "Derbent",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 42.06,
+   "longitude": 48.29
   },
   {
    "name": "Tanais",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 47.27,
+   "longitude": 39.33
   },
   {
    "name": "Chersonesos",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 44.61,
+   "longitude": 33.49
   },
   {
    "name": "Phanagoria",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 45.28,
+   "longitude": 36.97
   },
   {
    "name": "Sarkel",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 47.55,
+   "longitude": 42.1
   },
   {
    "name": "Itil",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 46.1,
+   "longitude": 47.9
   },
   {
    "name": "Bolghar",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 54.98,
+   "longitude": 49.03
   },
   {
    "name": "Suzdal",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 56.42,
+   "longitude": 40.45
   },
   {
    "name": "Merv City",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 37.66,
+   "longitude": 62.19
   },
   {
    "name": "Balasagun",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 42.81,
+   "longitude": 75.28
   },
   {
    "name": "Talas",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 42.52,
+   "longitude": 72.24
   },
   {
    "name": "Osh",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 40.53,
+   "longitude": 72.8
   },
   {
    "name": "Kashgar",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 39.47,
+   "longitude": 75.99
   },
   {
    "name": "Khotan",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 37.11,
+   "longitude": 79.93
   },
   {
    "name": "Turfan",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 42.95,
+   "longitude": 89.19
   },
   {
    "name": "Dunhuang",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 40.14,
+   "longitude": 94.66
   },
   {
    "name": "Pagan City",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 21.17,
+   "longitude": 94.86
   },
   {
    "name": "Pegu City",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 17.34,
+   "longitude": 96.48
   },
   {
    "name": "Malacca",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 2.2,
+   "longitude": 102.25
   },
   {
    "name": "Brunei",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 4.89,
+   "longitude": 114.94
   },
   {
    "name": "Aceh",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 5.55,
+   "longitude": 95.32
   },
   {
    "name": "Palembang",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": -2.99,
+   "longitude": 104.76
   },
   {
    "name": "Makassar",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": -5.13,
+   "longitude": 119.41
   },
   {
    "name": "Ternate",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 0.79,
+   "longitude": 127.38
   },
   {
    "name": "Tidore",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 0.69,
+   "longitude": 127.4
   },
   {
    "name": "Hoi An City",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 15.88,
+   "longitude": 108.34
   },
   {
    "name": "Luang Prabang",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 19.89,
+   "longitude": 102.14
   },
   {
    "name": "Vientiane",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 17.97,
+   "longitude": 102.6
   },
   {
    "name": "Ayutthaya City",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 14.35,
+   "longitude": 100.58
   },
   {
    "name": "Pattani",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 6.87,
+   "longitude": 101.25
   },
   {
    "name": "Kedah",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 6.12,
+   "longitude": 100.37
   },
   {
    "name": "Manila",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 14.6,
+   "longitude": 120.98
   },
   {
    "name": "Cebu",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 10.32,
+   "longitude": 123.89
   },
   {
    "name": "Ryukyu",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 26.22,
+   "longitude": 127.72
   },
   {
    "name": "Naha",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 26.21,
+   "longitude": 127.68
   },
   {
    "name": "Hakodate",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 41.77,
+   "longitude": 140.73
   },
   {
    "name": "Sakai City",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 34.57,
+   "longitude": 135.48
   },
   {
    "name": "Hakata City",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 33.59,
+   "longitude": 130.4
   },
   {
    "name": "Kamakura City",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 35.32,
+   "longitude": 139.55
   },
   {
    "name": "Dazaifu",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 33.51,
+   "longitude": 130.52
   },
   {
    "name": "Gao City",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 16.27,
+   "longitude": -0.04
   },
   {
    "name": "Kano",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 12.0,
+   "longitude": 8.52
   },
   {
    "name": "Katsina",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 12.99,
+   "longitude": 7.6
   },
   {
    "name": "Zaria",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 11.07,
+   "longitude": 7.72
   },
   {
    "name": "Sokoto",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 13.06,
+   "longitude": 5.24
   },
   {
    "name": "Ife",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 7.47,
+   "longitude": 4.56
   },
   {
    "name": "Nri",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 6.15,
+   "longitude": 6.95
   },
   {
    "name": "Bonny",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 4.45,
+   "longitude": 7.17
   },
   {
    "name": "Cabinda",
-   "type": "religious"
+   "type": "religious",
+   "latitude": -5.55,
+   "longitude": 12.2
   },
   {
    "name": "Ndongo",
-   "type": "trade"
+   "type": "trade",
+   "latitude": -9.7,
+   "longitude": 15.6
   },
   {
    "name": "Adal",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 9.31,
+   "longitude": 42.12
   },
   {
    "name": "Zeila",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 11.36,
+   "longitude": 43.47
   },
   {
    "name": "Berbera",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 10.44,
+   "longitude": 45.01
   },
   {
    "name": "Barawa",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 1.11,
+   "longitude": 44.03
   },
   {
    "name": "Merca",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 1.71,
+   "longitude": 44.77
   },
   {
    "name": "Poverty Point",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 32.63,
+   "longitude": -91.41
   },
   {
    "name": "Chaco",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 36.06,
+   "longitude": -107.96
   },
   {
    "name": "Mesa Verde",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 37.18,
+   "longitude": -108.49
   },
   {
    "name": "Taos",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 36.44,
+   "longitude": -105.55
   },
   {
    "name": "Zuni",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 35.07,
+   "longitude": -108.85
   },
   {
    "name": "Hopi",
-   "type": "religious"
+   "type": "religious",
+   "latitude": 35.83,
+   "longitude": -110.63
   },
   {
    "name": "Acoma",
-   "type": "trade"
+   "type": "trade",
+   "latitude": 34.9,
+   "longitude": -107.58
   },
   {
    "name": "Kabah",
-   "type": "militaristic"
+   "type": "militaristic",
+   "latitude": 20.25,
+   "longitude": -89.65
   },
   {
    "name": "Monte Alban",
-   "type": "scientific"
+   "type": "scientific",
+   "latitude": 17.04,
+   "longitude": -96.77
   },
   {
    "name": "El Tajin",
-   "type": "cultural"
+   "type": "cultural",
+   "latitude": 20.45,
+   "longitude": -97.38
   },
   {
    "name": "Cholula",
-   "type": "industrial"
+   "type": "industrial",
+   "latitude": 19.06,
+   "longitude": -98.3
   },
   {
    "name": "Chan Chan",
-   "type": "religious"
+   "type": "religious",
+   "latitude": -8.11,
+   "longitude": -79.07
   },
   {
    "name": "Chavin",
-   "type": "trade"
+   "type": "trade",
+   "latitude": -9.59,
+   "longitude": -77.18
   }
  ]
 }
