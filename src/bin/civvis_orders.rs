@@ -846,6 +846,7 @@ fn withhold_live_treatment(
         // a `disable_*` alongside every `enable_*` is picked up here for free —
         // only holds if the merge actually picks them up.
         "housing-districts" => ai.disable_housing_districts(),
+        "stranded-settler-discount" => ai.disable_stranded_settler_discount(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),

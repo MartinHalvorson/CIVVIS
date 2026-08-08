@@ -771,8 +771,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// census contributes 0 to `spy_agents` in every native game and the anchor
 /// sees the same number it always did. Identical by construction, on a rated
 /// profile and off it. Compatibility re-pin, not an Elo-protocol change.
+/// #1404 adds the missing `disable_stranded_settler_discount` counterpart so
+/// the treatment can be held off for a controlled arm. It only writes `false`
+/// into a field the anchor already reads as `false`. Compatibility re-pin, not
+/// an Elo-protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa095_45be_8953_1869;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6ae0_7b4d_f3b0_28f5;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
