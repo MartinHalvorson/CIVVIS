@@ -2352,6 +2352,13 @@ impl AdvancedAi {
         self.base.home_defense = true;
     }
 
+    /// Stop a Settler that has stopped walking from holding the expansion gate
+    /// shut. Native tournament games leave this disabled so their recorded
+    /// ladders replay the historical controller move for move.
+    pub fn enable_stranded_settler_discount(&mut self) {
+        self.base.settler_strand_discount = true;
+    }
+
     /// Record tactical steps so a unit stepped twice in one turn cannot walk
     /// back onto the tile it just left. Native tournament games leave this
     /// disabled so their recorded ladders replay move-for-move.
@@ -2737,6 +2744,19 @@ impl AdvancedAi {
         self.enable_muster_at_command_radius();
         self.enable_relief_targets_the_siege();
         self.enable_blind_objective_units();
+        // ⚠ THE EXPANSION GATE ASKS `settlers == 0`, so a settler that never
+        // founds anything answers "one is already in flight" for the rest of
+        // the game. Across the 25 live runs of 2026-08-07/08 that reason is
+        // 86% of every refusal to build a settler (1,548 of 1,767), the median
+        // game's longest-lived single settler survives 86 turns of 250 without
+        // founding, and nine runs carried one alive for 82-171 turns having
+        // moved five times or fewer. Those empires finished on a median of 5
+        // cities against a `city_target` of 7.8 with the window open to turn
+        // 198 — neither was binding, this was — and lost all 21 completed
+        // games at a median score 0.46x the leader's, with final score
+        // tracking city count at r = 0.81. The mod's fallback ladder already
+        // made this repair; under `--civvis-decides` it is not the decider.
+        self.enable_stranded_settler_discount();
         // ⚠ Faith buys the soldier; GOLD pays for it every turn forever, and
         // `military_faith_spending` never asks about gold — it gates on the faith
         // bank alone. Measured on run `civvis-20260803T014330Z`: faith military
@@ -2917,6 +2937,17 @@ impl AdvancedAi {
 
     pub fn disable_housing_districts(&mut self) {
         self.base.housing_districts = false;
+    }
+
+    /// Hold the stranded-Settler discount off, for the controlled arm.
+    ///
+    /// ⚠ Every `enable_*` in `enable_live_bridge` needs this counterpart or the
+    /// treatment cannot be ablated: `--without stranded-settler-discount` exits
+    /// 2 on an unknown name, so the one arm that would measure the repair
+    /// against the deployed configuration does not exist. It shipped without
+    /// one; this is that omission.
+    pub fn disable_stranded_settler_discount(&mut self) {
+        self.base.settler_strand_discount = false;
     }
 
     /// Keep asking for a Campus in every city that can still repay one. See
@@ -13504,7 +13535,10 @@ impl AdvancedAi {
                 }
             }
             Item::Unit { unit } if unit == "spy" => {
-                let active = g.spies.values().filter(|spy| spy.owner == pid).count();
+                // `Game::spy_agents`, not the agent map: a live game's Spies
+                // are mirrored units and the map is empty, so this valuation
+                // used to re-price a Spy the host would refuse.
+                let active = g.spy_agents(pid);
                 let strategic = match plan.strategy {
                     GrandStrategy::Science | GrandStrategy::Culture => 850.0,
                     GrandStrategy::Diplomacy | GrandStrategy::Conquest => 1_050.0,
@@ -36603,6 +36637,22 @@ mod research_probe {
         live.disable_housing_districts();
         assert!(!live.base.housing_districts, "and the control arm holds it off");
     }
+    /// Off by default, set only by the live bridge, and holdable off on its own
+    /// so the arm is a controlled comparison — which is what makes the repair
+    /// measurable rather than merely deployed.
+    #[test]
+    fn only_the_live_bridge_discounts_a_stranded_settler() {
+        assert!(
+            !AdvancedAi::new().base.settler_strand_discount,
+            "the frozen tournament controller must keep its recorded ladders"
+        );
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.base.settler_strand_discount, "the deployment turns it on");
+        live.disable_stranded_settler_discount();
+        assert!(!live.base.settler_strand_discount, "and the control arm holds it off");
+    }
+
     /// Off by default, set only by the live bridge, and holdable off on its own
     /// so the arm is a controlled comparison.
     #[test]
