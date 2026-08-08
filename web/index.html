@@ -1580,6 +1580,11 @@
   /* A battlefield is flat by construction and temperate throughout, so the
      shape and climate controls would be promises the arena does not keep. */
   body.playing-tactics .tactics-hidden { display: none; }
+  /* The mirror of `.tactics-hidden`: settings that exist only for the arena,
+     hidden until Tactics is the mode. `display` is restored rather than set,
+     so each element keeps whatever layout its own rule gives it. */
+  .tactics-only { display: none; }
+  body.playing-tactics .tactics-only { display: revert; }
   /* Whether this computer can play the verification-only mode at all, and what
      a run it can see is doing. It is retained everywhere and refused where it
      cannot run, so the refusal has somewhere to be read: a dead Steam client
@@ -2221,6 +2226,19 @@
   }
   .victory-endgame > label { min-width: 0; }
   .victory-endgame select { width: 100%; }
+  /* The arena's economy, laid out like the endgame row above it and by the
+     same rule: side by side wherever the sidebar can spell a label out,
+     stacked below that, bottom-aligned so wrapped labels cannot knock their
+     controls off one another's line. */
+  body.playing-tactics .tactics-options { display: grid; }
+  .tactics-options {
+    grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px 10px; align-items: end; padding: 9px 10px 10px;
+    border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080;
+  }
+  .tactics-options h2 { grid-column: 1 / -1; margin-bottom: 0; }
+  .tactics-options > label { min-width: 0; }
+  .tactics-options select { width: 100%; }
   /* The first setup pass stays short. Less common rules live behind one
      disclosure at the bottom of each panel, where they remain discoverable
      without making every new game begin with a wall of switches. */
@@ -4284,6 +4302,38 @@
               <option value="6">6</option>
             </select></label>
           </div>
+        </div>
+        <div class="tactics-options tactics-only" id="tactics-options" role="group" aria-labelledby="tactics-options-title">
+          <h2 id="tactics-options-title">Arena economy</h2>
+          <label class="small">Cities per side<span class="setup-info" style="cursor:help;opacity:.7"
+            title="An arena is handed its economy rather than earning it. With one city, each side has somewhere to build reinforcements and a place the other side can take; with none, each side is exactly the army it was dealt and the battle is decided by that army alone. Either way no Settler is ever produced and the city is placed at setup, so there is no founding decision to make."> ⓘ</span><select id="tacticscities" style="margin-top:4px">
+            <option value="1" selected>1 · reinforcements</option>
+            <option value="0">0 · armies only</option>
+          </select></label>
+          <label class="small">Production per turn<span class="setup-info" style="cursor:help;opacity:.7"
+            title="Flat Production the city collects every turn, identically for both sides. A Warrior costs 40 and a Modern Armor 680, so a higher figure keeps reinforcements arriving in the later eras. The city collects no Food and never grows."> ⓘ</span><select id="tacticsproduction" style="margin-top:4px">
+            <option value="0">0 · no reinforcements</option>
+            <option value="15">15 · slow</option>
+            <option value="30" selected>30 · steady</option>
+            <option value="60">60 · fast</option>
+            <option value="120">120 · relentless</option>
+          </select></label>
+          <label class="small">Gold per turn<span class="setup-info" style="cursor:help;opacity:.7"
+            title="Flat Gold both sides collect every turn. An arena charges no unit upkeep, so this is upgrade money and nothing else: it buys a damaged Warrior its way up to a Swordsman once the technology is in."> ⓘ</span><select id="tacticsgold" style="margin-top:4px">
+            <option value="0">0 · no upgrades</option>
+            <option value="15">15 · slow</option>
+            <option value="30" selected>30 · steady</option>
+            <option value="60">60 · fast</option>
+            <option value="120">120 · relentless</option>
+          </select></label>
+          <label class="small">Turns per technology<span class="setup-info" style="cursor:help;opacity:.7"
+            title="How long a side spends on whatever it is researching, in any era. Science is set as a pace rather than a figure because a technology costs some seventeen times more late in the tree than at the start, so a flat yield would flood the opening and stall later. There is no civics tree and no policies: an arena is decided by the fighting."> ⓘ</span><select id="tacticsturnspertech" style="margin-top:4px">
+            <option value="0">Never · frozen at the start era</option>
+            <option value="3">3 · rapid</option>
+            <option value="5" selected>5 · steady</option>
+            <option value="10">10 · slow</option>
+            <option value="20">20 · glacial</option>
+          </select></label>
         </div>
         <label class="small game-advanced-setting civ6-hidden" data-advanced-order="5">Game mode<select id="gamemode" style="margin-top:4px"
           title="Civ is the full game. Tactics is a playground for tactical unit combat: a small flat battlefield with mountains, rivers, woods and water but no resources or city-states, where two evenly-armed sides begin in opposite corners of a square arena or at opposite ends of a long one.">
