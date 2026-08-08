@@ -21,9 +21,9 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
         .unwrap();
 
     for (script_index, spec) in CIV6_MAP_SCRIPTS.iter().enumerate() {
-        // The battlefield arena is in the matrix with its own promises: it
-        // refuses the globe (an arena needs corners) and seats no
-        // city-states, whatever the caller asked for.
+        // Tactics maps are in the matrix with their own promises: the bounded
+        // Battlefield refuses the globe, while the Planet entry keeps it, and
+        // both seat no city-states whatever the caller asked for.
         let seats = if spec.script.is_battlefield() {
             size.default_players
         } else {
@@ -57,7 +57,9 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
                     &mut rng,
                 );
                 let case = format!("{} / {} / {}", spec.id, shape.id(), poles.id());
-                let shape_built = if spec.script.is_battlefield() {
+                let shape_built = if spec.script.is_planet_battlefield() {
+                    MapTopology::Planet
+                } else if spec.script.is_battlefield() {
                     MapTopology::Flat
                 } else {
                     shape
@@ -71,7 +73,7 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
                         // what stops a unit walking off the field.
                         assert_eq!(
                             world.topology,
-                            if spec.script.is_battlefield() {
+                            if spec.script == civvis::setup::MapScript::Battlefield {
                                 Topology::Rectangle
                             } else {
                                 Topology::Cylinder
@@ -141,7 +143,7 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
                     .filter(|tile| !rules.is_water(tile))
                     .count();
                 assert!(land > 0, "{case} generated no land");
-                if spec.script.is_battlefield() {
+                if spec.script == civvis::setup::MapScript::Battlefield {
                     // The arena is the one entry here that is not a world:
                     // every hex of it is ground both sides can walk, because
                     // a lake on a field a dozen tiles across is not terrain
@@ -227,10 +229,12 @@ fn every_world_type_starts_a_game_on_either_shape() {
             assert_eq!(game.map_script, spec.script, "{case} was replaced at setup");
             assert_eq!(
                 game.map.topology,
-                // The battlefield is the one scripted exception to shape
-                // independence: an arena is a walled rectangle, so it is laid
-                // out that way whatever shape the lobby asked for.
-                if spec.script.is_battlefield() {
+                // The bounded Battlefield is the scripted exception to shape
+                // independence; the Tactics Planet intentionally remains a
+                // globe so its cities can face each other around the world.
+                if spec.script.is_planet_battlefield() {
+                    Topology::Globe(size.globe_frequency)
+                } else if spec.script.is_battlefield() {
                     Topology::Rectangle
                 } else if shape.is_globe() {
                     Topology::Globe(size.globe_frequency)

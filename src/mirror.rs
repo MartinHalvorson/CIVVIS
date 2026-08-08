@@ -2355,6 +2355,69 @@ mod tests {
         );
     }
 
+    #[test]
+    fn live_mirror_permanently_blocks_host_granted_spy_production() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 8,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(6, 5, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 8,
+            civics: vec!["CIVIC_DIPLOMATIC_SERVICE".to_string()],
+            cities: vec![StateCity {
+                id: 1,
+                name: "Delhi".to_string(),
+                x: 5,
+                y: 5,
+                pop: 2,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let spy = crate::game::Item::Unit {
+            unit: crate::name!("spy"),
+        };
+        let city = mirror.cid_of[&1];
+        assert!(
+            !mirror.game.can_produce(0, city, &spy),
+            "the host never accepts a city-built Spy"
+        );
+        assert_eq!(
+            mirror.game.blocked_production[&city],
+            std::collections::BTreeSet::from(["unit:spy".to_string()]),
+            "the live-only block must not suppress unrelated production"
+        );
+
+        // `sync` replaces temporary host-refusal cooldowns. Its permanent host-rule
+        // block must survive that replacement and cover a city first seen this turn.
+        state.turn = 9;
+        state.cities.push(StateCity {
+            id: 2,
+            name: "Agra".to_string(),
+            x: 6,
+            y: 5,
+            pop: 2,
+            ..StateCity::default()
+        });
+        mirror.sync(&snapshot, &state, 0);
+        for host_city in [1, 2] {
+            let city = mirror.cid_of[&host_city];
+            assert!(
+                mirror.game.blocked_production[&city].contains("unit:spy"),
+                "city {host_city} must retain the permanent host rule"
+            );
+            assert!(
+                !mirror.game.can_produce(0, city, &spy),
+                "city {host_city} must not offer an untrainable Spy after sync"
+            );
+        }
+    }
+
     /// ★★★★★ Building aliases cross; a truly unknown building stays observable.
     /// ★★★★★ A building CIVVIS does not model must not take the decider down.
     ///
@@ -7789,6 +7852,23 @@ fn blocked_production_from(
     out
 }
 
+/// Civilization VI grants Spies through civics and governments; cities cannot train them.
+///
+/// CIVVIS models Spies as ordinary units for standalone simulations, so keep that model
+/// intact and block the host-only mismatch only on reconstructed live boards.
+fn block_live_spy_production(game: &mut crate::game::Game) {
+    let spy = crate::game::Item::Unit {
+        unit: crate::name!("spy"),
+    };
+    let key = crate::game::Game::production_block_key(&spy);
+    let mut blocked = std::mem::take(&mut game.blocked_production);
+    for city in game.player_city_ids(0) {
+        blocked.entry(city).or_default().insert(key.clone());
+    }
+    // Replacing rather than mutating directly also invalidates a previously cached menu.
+    game.replace_blocked_production(blocked);
+}
+
 /// Districts the host refused to place, per Civilization VI city id.
 ///
 /// ★★★★ Read from `build_no_plot`, which the mod emits when
@@ -9839,6 +9919,7 @@ pub fn rebuild_from_state(
     let blocked_production =
         blocked_production_from(&state.refused_production, &city_ids, &game.rules);
     game.replace_blocked_production(blocked_production);
+    block_live_spy_production(&mut game);
     let blocked_purchases =
         blocked_production_from(&state.refused_purchases, &city_ids, &game.rules);
     if std::env::var("CIVVIS_DEBUG_PURCHASE_BLOCK").is_ok() {
@@ -10875,6 +10956,10 @@ impl LiveMirror {
                 }
             }
         }
+
+        // This host rule is permanent, unlike a recent refusal cooldown. Apply it after
+        // each replacement and after newly observed cities have been placed.
+        block_live_spy_production(&mut self.game);
 
         // --- rivals ----------------------------------------------------------
         // Rebuilt wholesale: what we can see of them is fog-dependent and they carry

@@ -846,6 +846,10 @@ fn withhold_live_treatment(
         // a `disable_*` alongside every `enable_*` is picked up here for free —
         // only holds if the merge actually picks them up.
         "housing-districts" => ai.disable_housing_districts(),
+        "wide-map-capacity" => ai.disable_wide_map_capacity(),
+        "garrison-under-fire" => ai.disable_garrison_under_fire(),
+        "escort-unstick" => ai.disable_escort_unstick(),
+        "religion-sues-peace" => ai.disable_religion_sues_peace(),
         "stranded-settler-discount" => ai.disable_stranded_settler_discount(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
@@ -854,6 +858,7 @@ fn withhold_live_treatment(
         "war-economy" => ai.disable_war_economy(),
         "war-reinforcement" => ai.disable_war_reinforcement(),
         "war-patience" => ai.disable_war_patience(),
+        "recon-replacement" => ai.disable_recon_replacement(),
         other => {
             return Err(format!(
                 "unknown --without treatment {other:?}; this binary can withhold: \
@@ -862,7 +867,9 @@ fn withhold_live_treatment(
                  siege-tracks-wall, blind-objective-strength, blind-objective-units, \
                  siege-role, come-ashore, relief-targets-the-siege, suzerain-cards, \
                  housing-districts, housing-cards, housing-research, campus-every-city, \
-                 muster-at-command-radius, war-economy, war-reinforcement, war-patience"
+                 muster-at-command-radius, war-economy, war-reinforcement, war-patience, \
+                 recon-replacement, wide-map-capacity, garrison-under-fire, \
+                 escort-unstick, religion-sues-peace, stranded-settler-discount"
             ))
         }
     }
@@ -1922,7 +1929,11 @@ fn main() {
         // `null` for an ordinary development build, which is honest: the
         // treatment list is the identity that always reports.
         "revision": civvis::server::runtime_commit_or_none(),
-        "treatments": civvis::elo::LIVE_BRIDGE_TREATMENTS,
+        // ⚠ `.as_slice()`, not the array. serde implements `Serialize` for
+        // `[T; N]` only up to N = 32, so the registry silently had a ceiling at
+        // 32 treatments: the 33rd stops compiling here, in a binary that has
+        // nothing to do with adding one. A slice has no such bound.
+        "treatments": civvis::elo::LIVE_BRIDGE_TREATMENTS.as_slice(),
     }));
 
     // ★★★★ HOLD THE SITE ACROSS A TURN THE SETTLER COULD NOT MOVE.
