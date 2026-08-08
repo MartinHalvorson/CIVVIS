@@ -82,6 +82,7 @@ is the harness talking, not the game.
 cargo run --release --bin doctrine_arena -- --a advanced --b basic --seeds 60
 cargo run --release --bin doctrine_arena -- --position the_reserve --a advanced --b basic
 cargo run --release --bin doctrine_arena -- --profile advanced --seeds 20
+cargo run --release --bin doctrine_arena -- --correlate --a advanced --b basic --seeds 120
 ```
 
 **Read the rows, not the pooled line.** The positions were chosen to pose
@@ -110,6 +111,7 @@ zero when the engagement gave nothing to measure it from.
 | `arrival` | spread, in turns, of when each unit first reached the enemy — low is "fight united" |
 | `foot` | the same over 2-move units alone, which separates a slow line from fast cavalry |
 | `absent` | share of the force that never reached the enemy at all |
+| `vanguard` | share of the force in contact on the turn contact **first** occurred |
 
 `arrival` is the measurement behind the one thing every general on this list
 agreed on: *march divided, fight united*. It is the standard deviation, over a
@@ -127,6 +129,17 @@ Restricting the same spread to units with two movement points or fewer removes
 that explanation entirely. `absent` is the complementary measure: never
 arriving is the strongest form of arriving late, and the one form of it that no
 difference in movement points can explain away.
+
+`vanguard` is the only column here that can support a **causal** claim, and it
+is worth being explicit about why the others cannot. Every other column
+describes an engagement that has already happened, so correlating one against
+the result restates the outcome rather than explaining it — an army being
+destroyed stops arriving, which inflates its own arrival spread. `vanguard` is
+recorded at a single instant, the turn contact first exists, upstream of
+everything the engagement decides. `vanguard_clean` reports the share of those
+instants that had not yet seen a casualty so the guarantee can be checked
+rather than trusted; it runs at 100% on ten of the eleven positions and 86–88%
+on `double_envelopment`.
 
 The contact zone is computed **once for the board**, not once per side, so
 concentration is a genuine local force ratio: within one engagement one side's
@@ -268,6 +281,72 @@ That is a sharper target than "improve tactics": the lever is in how the army
 `src/ai/tactics.rs` only plans units that are already engaged, which is
 consistent with what this measures — but consistency is not proof, and the
 treatment still has to be built and run through the gates in order.
+
+### Does arriving together actually cause winning? Mostly not.
+
+```bash
+cargo run --release --bin doctrine_arena -- --correlate --a advanced --b basic --seeds 120
+```
+
+Per seed, how much more of its force each agent had up at first contact than the
+other, against how much material it went on to win by. 120 seeds a position, run
+on two independent agent pairs:
+
+| position | r (adv/basic) | p | r (adv/adv_v1) | p |
+| --- | --- | --- | --- | --- |
+| **`central_position`** | **+0.30** | **0.0007** | **+0.25** | **0.0042** |
+| `oblique_order` | +0.17 | 0.0594 | +0.18 | 0.0500 |
+| `the_ridge` | +0.04 | 0.7000 | +0.24 | 0.0081 |
+| `the_defile` | +0.05 | 0.5506 | +0.19 | 0.0359 |
+| `double_envelopment` | +0.13 | 0.1621 | +0.14 | 0.1333 |
+| **`the_reserve`** | **−0.06** | **0.5424** | **+0.04** | **0.6426** |
+| `the_river_line` | +0.05 | 0.5943 | +0.16 | 0.0779 |
+| `lake_trasimene` | +0.10 | 0.2552 | −0.02 | 0.8086 |
+| `the_breakthrough` | +0.12 | 0.1977 | −0.09 | 0.3358 |
+| `hammer_and_anvil` | +0.03 | 0.7058 | +0.08 | 0.3577 |
+| `the_golden_bridge` | +0.05 | 0.6146 | +0.07 | 0.4416 |
+| ALL POSITIONS | +0.07 | 0.0108 | +0.14 | 0.0000 |
+
+**Read `r`, not `p`, on the pooled row.** At n = 1320 a correlation of 0.07 is
+"significant" and explains half a percent of the variance. The pooled p is a
+statement about sample size, not about the game.
+
+Two things replicate across both pairs, and they point in opposite directions.
+
+**`central_position` is real** — r ≈ +0.25 to +0.30, p < 0.005 on both pairs,
+and a slope near +1000 material per whole extra share of the force up at first
+contact. It is also exactly the position where the doctrine says it should be:
+the enemy arrives as two columns that have to unite, so how much of your army is
+present when the first of them reaches you is the entire question. Bonaparte's
+own position is the one that rewards Bonaparte's own maxim, and the arena found
+that without being told.
+
+**`the_reserve` is a null** — −0.06 and +0.04, both p > 0.5. And that is the
+position the whole arrival lane was built on.
+
+### What that costs the lane, stated plainly
+
+`advanced` arrives over roughly twice the span `basic` does, the effect is in
+the foot and not the cavalry, and `advanced` loses `the_reserve`. All of that
+stands. What does **not** stand is the step from there to "so make it arrive
+together and it will stop losing `the_reserve`": the between-agent difference
+does not reproduce as a within-agent relationship on that position, on either
+pair.
+
+So the arrival lane is **real but narrow** — a lever on the converging-columns
+problem specifically, and not on the position that motivated it. Whatever costs
+`advanced` `the_reserve`, the evidence does not say it is the arrival spread.
+The remaining candidate visible in the profile is `screen`, where `advanced`
+runs 25–32% against `basic`'s 39–50% on that position; it is not causally clean
+the way `vanguard` is, so it needs the same treatment this section gave arrival
+before anyone builds against it.
+
+This check cost one afternoon and was run **before** any treatment was written.
+That ordering is the point. `docs/TACTICS.md` records what the alternative
+costs: an adjacent-friendly-support term built on exactly this kind of reasoning
+was swept and could not be distinguished from zero at any weight, and #1399
+records a local-superiority brake that had to be removed because both armies
+braked at the edge of enemy reach and the battle deadlocked.
 
 ### The confound, tested and dead
 
