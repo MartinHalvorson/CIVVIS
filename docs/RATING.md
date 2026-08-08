@@ -129,7 +129,10 @@ that, which is why the fix has two halves:
   seating is a *precondition* for the civ term helping rather than hurting,
   and the backtest shows exactly that: on the confounded history the civ term
   makes forecasts slightly worse, because it splits one confounded signal into
-  two noisier halves.
+  two noisier halves. The live exhibition seats this way now:
+  `league::seat_by_civ_seeded` selects entrants on overall quality only and
+  rotates them across the table's civilizations over the league round, so
+  games recorded from here forward are balanced draws.
 
 ## How the model works
 

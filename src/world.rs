@@ -474,7 +474,8 @@ impl PartialEq for TileGrid {
 /// and ends at a northern and a southern edge. Planet is a closed globe — the
 /// hexagons and twelve pentagons of a subdivided icosahedron — whose tiles are
 /// stored in the same rectangle but whose adjacency, distance and latitude all
-/// come from the sphere instead of from the offset coordinates.
+/// come from the sphere instead of from the offset coordinates. Rectangle is
+/// neither: a bounded arena with a wall on all four sides.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Topology {
@@ -482,6 +483,28 @@ pub enum Topology {
     Cylinder,
     /// A geodesic globe, identified by its subdivision frequency.
     Globe(i32),
+    /// A bounded rectangle: four walls, no wrap on either axis.
+    ///
+    /// A cylinder's east and west edges are the same edge, which is what a
+    /// world wants and an arena cannot have — on a Tactics battlefield a
+    /// flank that walks off the east side must not reappear behind the enemy
+    /// in the west, and an archer on one wall must not be in range of a
+    /// spearman on the other. Every question a cylinder answers by wrapping —
+    /// who is adjacent, how far apart, which way is that — this shape answers
+    /// by stopping at the wall.
+    Rectangle,
+}
+
+impl Topology {
+    /// Whether the map's east and west edges are the same edge.
+    ///
+    /// A globe wraps in every direction, but through its own geometry rather
+    /// than through the offset grid's longitudes, so it answers `false` here
+    /// and every wrap-aware helper checks for the sphere first.
+    #[inline]
+    pub const fn wraps_east_west(self) -> bool {
+        matches!(self, Self::Cylinder)
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -518,7 +541,7 @@ impl From<WorldMapSer> for WorldMap {
             tiles: TileGrid::from_tiles(s.width, s.height, s.tiles),
             topology: s.topology,
             globe: match s.topology {
-                Topology::Cylinder => None,
+                Topology::Cylinder | Topology::Rectangle => None,
                 Topology::Globe(frequency) => Some(crate::sphere::sphere(frequency)),
             },
         }
@@ -547,6 +570,15 @@ impl WorldMap {
         }
     }
 
+    /// A bounded arena: the same rectangle of tiles as [`Self::new`], walled
+    /// on all four sides instead of wrapping east to west.
+    pub fn arena(width: i32, height: i32) -> WorldMap {
+        WorldMap {
+            topology: Topology::Rectangle,
+            ..WorldMap::new(width, height)
+        }
+    }
+
     /// An all-ocean globe of the given subdivision frequency: `10n² + 2` tiles
     /// laid out in the rectangle [`crate::sphere`] describes.
     pub fn globe(frequency: i32) -> WorldMap {
@@ -567,9 +599,37 @@ impl WorldMap {
         self.globe.as_deref()
     }
 
+    /// Whether travelling east far enough comes back round to where it began.
+    ///
+    /// A cylinder's two longitudes are one longitude and a globe closes on
+    /// itself through its own geometry; a bounded arena has a wall there
+    /// instead, and is the only shape that answers `false`. The browser needs
+    /// this to know whether the chart it draws may be unrolled at all, so it
+    /// is read off the built map rather than off the setup — a loaded save
+    /// answers too.
+    #[inline]
+    pub fn wraps_east_west(&self) -> bool {
+        self.sphere().is_some() || self.topology.wraps_east_west()
+    }
+
     #[inline]
     pub fn get(&self, pos: Pos) -> Option<&Tile> {
         self.tiles.get(&pos)
+    }
+
+    /// Fold a position back onto the map's own longitudes.
+    ///
+    /// A cylinder's east and west edges are the same edge, so a step past one
+    /// arrives at the other. A bounded rectangle has a wall there instead:
+    /// the position stays outside the grid, and the tile lookup that every
+    /// caller does next is what turns it into "there is nothing that way".
+    #[inline]
+    fn fold(&self, pos: Pos) -> Pos {
+        if self.topology.wraps_east_west() {
+            hex::canon(pos, self.width)
+        } else {
+            pos
+        }
     }
 
     /// The tiles that share an edge with this one, and are on the map.
@@ -580,7 +640,7 @@ impl WorldMap {
         }
         let mut out = hex::Neighbors::new();
         for neighbor in hex::neighbors(pos) {
-            let neighbor = hex::canon(neighbor, self.width);
+            let neighbor = self.fold(neighbor);
             if self.tiles.contains_key(&neighbor) {
                 out.push(neighbor);
             }
@@ -591,15 +651,16 @@ impl WorldMap {
     /// Every direction out of a tile, whether or not the world continues that
     /// way. A cylinder has an edge at the top and the bottom, and rules that
     /// ask "is this hex surrounded?" must see those as directions that lead
-    /// nowhere rather than as directions that do not exist. A globe has no
-    /// edge, so this is simply its neighbours.
+    /// nowhere rather than as directions that do not exist. A bounded arena
+    /// has four such edges rather than two. A globe has none, so this is
+    /// simply its neighbours.
     pub fn around(&self, pos: Pos) -> hex::Neighbors {
         if self.sphere().is_some() {
             return self.neighbors(pos);
         }
         hex::neighbors(pos)
             .into_iter()
-            .map(|neighbor| hex::canon(neighbor, self.width))
+            .map(|neighbor| self.fold(neighbor))
             .collect()
     }
 
@@ -608,7 +669,11 @@ impl WorldMap {
     pub fn distance(&self, a: Pos, b: Pos) -> i32 {
         match self.sphere() {
             Some(sphere) => sphere.distance(a, b),
-            None => hex::wdistance(a, b, self.width),
+            // Measured through the seam on a cylinder, and never through the
+            // wall on an arena: an archer on one edge of a battlefield is the
+            // width of the field away from the far edge, not two steps.
+            None if self.topology.wraps_east_west() => hex::wdistance(a, b, self.width),
+            None => hex::distance(a, b),
         }
     }
 
@@ -619,7 +684,7 @@ impl WorldMap {
         }
         let mut out: Vec<Pos> = hex::disk(center, radius)
             .into_iter()
-            .map(|pos| hex::canon(pos, self.width))
+            .map(|pos| self.fold(pos))
             .filter_map(|pos| self.tiles.index_of(pos).map(|_| pos))
             .collect();
         out.sort_unstable();
@@ -644,7 +709,7 @@ impl WorldMap {
         }
         let mut out: Vec<Pos> = hex::ring(center, radius)
             .into_iter()
-            .map(|pos| hex::canon(pos, self.width))
+            .map(|pos| self.fold(pos))
             .filter_map(|pos| self.tiles.index_of(pos).map(|_| pos))
             .collect();
         out.sort_unstable();
@@ -709,27 +774,28 @@ impl WorldMap {
     }
 
     /// The neighbour `heading` steps around the tile, used by anything that
-    /// travels in a fixed direction. A cylinder counts from due east; a globe
-    /// counts around the tile's own outline.
+    /// travels in a fixed direction. A cylinder or an arena counts from due
+    /// east; a globe counts around the tile's own outline.
     pub fn step(&self, pos: Pos, heading: usize) -> Option<Pos> {
         if self.sphere().is_some() {
             let neighbors = self.neighbors(pos);
             return neighbors.get(heading % neighbors.len().max(1)).copied();
         }
         let step = hex::DIRS[heading % 6];
-        let next = hex::canon((pos.0 + step.0, pos.1 + step.1), self.width);
+        let next = self.fold((pos.0 + step.0, pos.1 + step.1));
         self.tiles.contains_key(&next).then_some(next)
     }
 
     /// Direction index from one adjacent tile to another, accounting for the
     /// east-west cylindrical seam or, on a globe, for the tile's own outline.
+    /// An arena has no seam to account for.
     pub fn direction_to(&self, from: Pos, to: Pos) -> Option<usize> {
         if let Some(sphere) = self.sphere() {
             return sphere.direction_to(from, to);
         }
         hex::neighbors(from)
             .into_iter()
-            .map(|p| hex::canon(p, self.width))
+            .map(|p| self.fold(p))
             .position(|p| p == to)
     }
 
@@ -825,6 +891,15 @@ impl TileBits {
     pub fn with_capacity(tiles: usize) -> TileBits {
         TileBits {
             words: vec![0; tiles.div_ceil(64)],
+        }
+    }
+
+    /// Every tile of a map of `tiles` hexes. The bits past the last tile in
+    /// the final word are set too and are never asked about: nothing looks up
+    /// an index the map has no tile for.
+    pub fn all(tiles: usize) -> TileBits {
+        TileBits {
+            words: vec![u64::MAX; tiles.div_ceil(64)],
         }
     }
 

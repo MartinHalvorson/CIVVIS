@@ -3,7 +3,7 @@
 
 The supervisor checkpoints active matches, revives a crashed or unresponsive
 server from the latest checkpoint, and nudges a spectator whose browser stopped
-stepping. Once a winner appears it retires that server immediately, leaving the
+stepping. Once a terminal result appears it retires that server, leaving the
 rendered result screen visible while it tries the newest stable worktree. A
 broken or changing side edit cannot stall the cycle because the last verified
 runtime starts the successor instead. If that fallback was necessary, the
@@ -63,6 +63,10 @@ MAP_TYPES = (
     "islands",
     "water_world",
     "true_start_earth",
+    # The stock opening world's own map, and so the default below. Leaving it
+    # out meant the exhibition could never roll the one world the product
+    # actually opens on.
+    "tenins_ball",
 )
 MAP_SHAPES = ("flat", "planet")
 MAP_POLES = ("poles", "randomized")
@@ -615,7 +619,7 @@ def prebuild_latest_once() -> bool:
 
 
 def start_background_prebuild() -> subprocess.Popen[str]:
-    """Compile in a separate process so winner polling never waits on Cargo."""
+    """Compile in a separate process so result polling never waits on Cargo."""
     return subprocess.Popen(
         [sys.executable, str(Path(__file__).resolve()), "--prepare-once"],
         cwd=ROOT,
@@ -692,6 +696,24 @@ def step_spectator(port: int, timeout: float = 5.0) -> dict[str, Any] | None:
     return read_json(port, "/step", timeout, "POST")
 
 
+def game_finished(state: dict[str, Any] | None) -> bool:
+    """Whether a state/save carries any terminal result.
+
+    New servers publish the lifecycle directly because a draw intentionally
+    has no winner. The two fallbacks keep recovery compatible with older
+    winner-only observations and with raw saves, which serialize the draw
+    result type but not the computed ``finished`` field.
+    """
+    return bool(
+        state
+        and (
+            state.get("finished") is True
+            or state.get("winner") is not None
+            or state.get("victory_type") == "draw"
+        )
+    )
+
+
 def progress_marker(state: dict[str, Any]) -> tuple[Any, ...]:
     """Identify simulation progress without hashing the large observation."""
     return (
@@ -707,7 +729,7 @@ def resumed_checkpoint(state: dict[str, Any], marker: tuple[Any, ...] | None) ->
     return (
         marker is not None
         and state.get("seed") == marker[0]
-        and state.get("winner") is None
+        and not game_finished(state)
     )
 
 
@@ -738,7 +760,7 @@ def takes_over_the_seat(
     """
     if latest is None or not played_by_hand(latest):
         return False
-    if latest.get("winner") is not None:
+    if game_finished(latest):
         return False
     return (latest.get("server_instance"), latest.get("seed")) != finished_key
 
@@ -754,7 +776,7 @@ def playing_on(state: dict[str, Any] | None, finished_seed: Any) -> bool:
     """
     return (
         state is not None
-        and state.get("winner") is None
+        and not game_finished(state)
         and state.get("decided") is not None
         and state.get("seed") == finished_seed
     )
@@ -781,7 +803,7 @@ def successor_started(
     return state is not None and (
         state.get("server_instance") != finished_instance
         or state.get("seed") != finished_seed
-        or state.get("winner") is None
+        or not game_finished(state)
     )
 
 
@@ -831,7 +853,7 @@ def archive_result(
     timeout: float = 30.0,
 ) -> Path | None:
     """Preserve the exact final save and source metadata before handoff."""
-    if state.get("winner") is None:
+    if not game_finished(state):
         return None
     try:
         with urlopen(f"http://127.0.0.1:{port}/save", timeout=timeout) as response:
@@ -840,7 +862,7 @@ def archive_result(
         if (
             not isinstance(save, dict)
             or save.get("seed") != state.get("seed")
-            or save.get("winner") is None
+            or not game_finished(save)
         ):
             return None
 
@@ -868,6 +890,7 @@ def archive_result(
             "seed": save.get("seed"),
             "turn": save.get("turn"),
             "winner": save.get("winner"),
+            "draw": save.get("victory_type") == "draw",
             "victory_type": save.get("victory_type"),
             "game_speed": save.get("game_speed"),
             "max_turns": save.get("max_turns"),
@@ -890,7 +913,7 @@ def checkpoint_marker(path: Path) -> tuple[Any, ...] | None:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if not isinstance(value, dict) or value.get("winner") is not None:
+    if not isinstance(value, dict) or game_finished(value):
         return None
     return progress_marker(value)
 
@@ -1020,7 +1043,7 @@ def settings_at_boundary(
     selected = normalized_simulation_settings(state.get("next_game_settings"))
     if selected is not None:
         return selected
-    if current_is_authoritative or state.get("winner") is None:
+    if current_is_authoritative or not game_finished(state):
         return dict(current)
     return session_settings(state, current, fixed_setup)
 
@@ -1080,6 +1103,22 @@ def manual_new_game_request(
     ):
         return None
     return mode, settings, paused
+
+
+def victory_verdict(state: dict[str, Any]) -> str:
+    """How a finished game's result is denoted.
+
+    An ordinary result is named by its victory type -- a "science victory". A
+    Mercy Rule ending is denoted by the notation the engine composed for it,
+    "Mercy Rule - Science", naming the open victory lane the board was still
+    being decided on when the odds crossed; that notation is the whole verdict
+    and takes no "victory" suffix.
+    """
+    if state.get("victory_type") == "draw":
+        return "draw"
+    if state.get("victory_type") == "mercy":
+        return state.get("victory_label") or "Mercy Rule"
+    return f"{state.get('victory_type') or 'unknown'} victory"
 
 
 def result_standings(state: dict[str, Any]) -> str | None:
@@ -1495,16 +1534,21 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--players", type=int, default=4)
-    parser.add_argument("--width", type=int, default=60)
-    parser.add_argument("--height", type=int, default=38)
-    parser.add_argument("--city-states", type=int, default=6)
+    # A board size is nobody's default here. `civvis play` derives width,
+    # height and the city-state count from the seat count and world shape
+    # through `MapSize::for_players`, so leaving these unset keeps the engine
+    # the only thing that decides them -- and keeps this file from carrying a
+    # third copy of the stock world that can drift out from under it.
+    parser.add_argument("--width", type=int, default=None)
+    parser.add_argument("--height", type=int, default=None)
+    parser.add_argument("--city-states", type=int, default=None)
     parser.add_argument("--turns", type=int, default=250)
     parser.add_argument(
         "--map",
         choices=MAP_TYPES,
-        default="pangaea",
+        default="tenins_ball",
     )
-    parser.add_argument("--shape", choices=MAP_SHAPES, default="flat")
+    parser.add_argument("--shape", choices=MAP_SHAPES, default="planet")
     parser.add_argument("--poles", choices=MAP_POLES, default="poles")
     parser.add_argument(
         "--speed",
@@ -1993,7 +2037,7 @@ def main() -> int:
                 getattr(args, "fixed_setup", False),
                 current_is_authoritative=runtime_staged is not None,
             )
-            if state.get("winner") is None:
+            if not game_finished(state):
                 finished_key = None
                 now = time.monotonic()
                 if prebuild_process is not None and prebuild_process.poll() is not None:
@@ -2137,7 +2181,7 @@ def main() -> int:
                     finished_turn = state.get("turn")
                 log(
                     f"game finished on turn {finished_turn} "
-                    f"({state.get('victory_type') or 'unknown'} victory); checking for updates"
+                    f"({victory_verdict(state)}); checking for updates"
                 )
                 standings = result_standings(state)
                 if standings:

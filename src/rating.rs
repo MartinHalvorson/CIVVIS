@@ -1846,6 +1846,26 @@ mod tests {
         assert_eq!(m.seats[2].rank, 2);
     }
 
+    /// The Mercy Rule writes its notation into the `victory` column, and this
+    /// file is cut on commas. A label that listed its lanes with one would
+    /// push the placements into the victory field and lose every seat in the
+    /// row, so the notation joins lanes with ` + ` and this is the test that
+    /// says why.
+    #[test]
+    fn a_mercy_notation_survives_the_victory_column() {
+        let victory = crate::game::mercy_label(&["science".to_string(), "domination".to_string()]);
+        let csv = format!(
+            "round,seed,turns,victory,placements\n\
+             61,571192301,198,{victory},alpha@Trajan@Rome@0|beta@Pericles@Greece@1\n"
+        );
+        let history = parse_matches_csv(&csv);
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].victory, "Mercy Rule - Science + Domination");
+        assert_eq!(history[0].seats.len(), 2, "the placements stayed a column");
+        assert_eq!(history[0].seats[0].player, "alpha");
+        assert_eq!(history[0].seats[1].civ, "Greece");
+    }
+
     #[test]
     fn parsing_live_and_v2_rows_separates_context_and_preserves_ties() {
         let csv = "round,seed,turns,victory,placements\n\
