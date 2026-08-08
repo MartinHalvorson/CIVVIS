@@ -54,9 +54,14 @@
 //!
 //! - **Portfolio.** Each engaged unit gets a short list of candidate *lines* —
 //!   an attack from where it stands, a step onto an adjacent tile followed by
-//!   the attack that step opens, or the empty line that declines. Lines are
-//!   generated geometrically (no clones) and pruned to the best few by a
-//!   closed-form damage prior.
+//!   the attack that step opens, a movement-only *withdrawal* out of the
+//!   enemy's strike envelope, or the empty line that declines. A step may
+//!   also land on an engaged teammate's tile — a *handoff*, legal only once
+//!   the teammate has vacated it, which the order permutation arranges and
+//!   the engine enforces. Lines are generated geometrically (no clones) and
+//!   pruned to the best few by a closed-form damage prior; withdrawals are
+//!   appended after that pruning so a retreat never costs the portfolio a
+//!   shot.
 //! - **Genome.** A choice of line per unit, plus a permutation giving the order
 //!   they are played in. Evolving the order is what fixes defect 3; the choice
 //!   vector is what fixes defects 2 and 4.
@@ -116,9 +121,10 @@ use crate::game::{effective_strength, Action, Game};
 use crate::rng::Rng;
 use crate::Pos;
 
-/// A unit's candidate action sequence for this turn: a single attack, or one
+/// A unit's candidate action sequence for this turn: a single attack, one
 /// step onto a tile from which an attack becomes available followed by that
-/// attack, or the empty line that declines to fight.
+/// attack, a movement-only withdrawal out of the enemy's strike envelope, or
+/// the empty line that declines to fight.
 #[derive(Clone, Debug)]
 struct Line {
     actions: Vec<Action>,
