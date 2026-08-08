@@ -17087,6 +17087,17 @@ impl AdvancedAi {
         anchor: Pos,
         enemies: &[usize],
     ) -> Pos {
+        // A capture-the-flag arena has exactly one thing worth marching on:
+        // the battle ends the moment either side's unit takes the flag tile,
+        // so every land column aims there — the army that arrives first wins
+        // outright, and the fight happens wherever the two marches meet.
+        // `arena_flag` is `Some` only on that arena shape, so every world
+        // and every other arena walks past this untouched.
+        if domain == ForceDomain::Land {
+            if let Some(flag) = g.arena_flag {
+                return flag;
+            }
+        }
         let visible = self.battlefront_visibility(g, pid);
         // An ancient rush keeps its objective. `threatened_city` outranks
         // `target_city` here and is an empire-wide fact, so the turn the

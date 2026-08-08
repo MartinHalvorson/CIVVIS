@@ -1118,6 +1118,10 @@ def victory_verdict(state: dict[str, Any]) -> str:
         return "draw"
     if state.get("victory_type") == "mercy":
         return state.get("victory_label") or "Mercy Rule"
+    # The flag verdict names the deed rather than a lane, mirroring
+    # `victoryVerdict` in the viewer: the flag was captured.
+    if state.get("victory_type") == "flag":
+        return "captured the flag"
     return f"{state.get('victory_type') or 'unknown'} victory"
 
 
