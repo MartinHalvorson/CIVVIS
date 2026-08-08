@@ -30,7 +30,8 @@ use crate::rules::Rules;
 use crate::setup::{
     battlefield_map_scripts, future_era_from_id, future_era_id, start_era_from_id, start_era_id,
     turn_structure_id, world_map_scripts, BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript,
-    MapSize, MapTopology, TurnStructure, BASE_RULESETS, BATTLEFIELD_SIZES, CIV6_GAME_SPEEDS,
+    MapSize, MapTopology, TacticsRules, TurnStructure, BASE_RULESETS, BATTLEFIELD_SIZES,
+    CIV6_GAME_SPEEDS,
     CIV6_MAP_SIZES, FUTURE_ERAS, MAP_POLES, MAP_TOPOLOGIES, START_ERAS,
 };
 use crate::Pos;
@@ -486,6 +487,9 @@ pub struct Params {
     /// Distinct victory types required to win. See
     /// `Game::effective_required_victories`.
     pub required_victory_types: usize,
+    /// What a Tactics arena grants its two sides. Read only when the map
+    /// script is the battlefield; a world earns its yields instead.
+    pub tactics: TacticsRules,
     pub num_city_states: usize,
     /// All players AI-driven; the GUI just watches (auto-steps via /step).
     pub spectate: bool,
@@ -2197,6 +2201,7 @@ impl Session {
             civs: params.civs.clone(),
             leader_pool: params.leader_pool,
             randomize_civs: true,
+            tactics: params.tactics,
             ..GameOptions::new(
                 params.num_players,
                 params.width,
@@ -2293,6 +2298,7 @@ impl Session {
         params.victory_conditions = game.victory_conditions;
         params.mercy_rule = game.mercy_rule;
         params.required_victory_types = game.required_victory_types;
+        params.tactics = game.tactics;
         params.teams = game
             .players
             .iter()
@@ -3557,6 +3563,10 @@ fn stock_opening_params(seed: u64) -> Params {
         // agreement ladder behind the setup options.
         mercy_rule: Some(0.95),
         required_victory_types: 1,
+        // The stock world is not an arena, so this is carried rather than
+        // read. It still ships the mode's own defaults, so that picking
+        // Tactics in the lobby needs no other setting changed.
+        tactics: TacticsRules::default(),
         num_city_states: size.default_city_states,
         spectate: true,
         difficulty: "prince".to_string(),
@@ -3855,6 +3865,28 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     }
     if let Some(n) = request["required_victory_types"].as_u64() {
         p.required_victory_types = (n as usize).clamp(1, VictoryConditions::NAMES.len());
+    }
+    // The Tactics economy. Each figure is independent, so a lobby that moves
+    // one leaves the rest at the stock grant, and every one of them is
+    // clamped rather than trusted: these arrive from the same request body
+    // as everything else above.
+    if let Some(n) = request["tactics_cities"].as_u64() {
+        p.tactics.cities = n.min(1) as u8;
+    }
+    for (key, field) in [
+        ("tactics_production", 0),
+        ("tactics_gold", 1),
+        ("tactics_turns_per_tech", 2),
+    ] {
+        let Some(n) = request[key].as_u64() else { continue };
+        match field {
+            0 => p.tactics.production = n.min(u64::from(TacticsRules::MAX_YIELD)) as u32,
+            1 => p.tactics.gold = n.min(u64::from(TacticsRules::MAX_YIELD)) as u32,
+            _ => {
+                p.tactics.turns_per_tech =
+                    n.min(u64::from(TacticsRules::MAX_TURNS_PER_TECH)) as u32
+            }
+        }
     }
     // Advanced clients can still deliberately override individual stock
     // settings by sending them alongside num_players.
@@ -5056,6 +5088,7 @@ mod tests {
     };
     use crate::setup::{
         battlefield_map_scripts, future_era_from_id, start_era_from_id, world_map_scripts,
+        TacticsRules,
         BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology,
         TurnStructure, BATTLEFIELD_SIZES, MAP_POLES,
     };
@@ -7735,6 +7768,7 @@ mod tests {
             map_poles: MapPoles::Poles,
             mercy_rule: None,
             required_victory_types: 1,
+            tactics: TacticsRules::default(),
             base_ruleset: BaseRuleset::Civ6,
             start_era: 0,
             future_era: FutureEra::Classic,
@@ -9115,9 +9149,40 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "[\"startera\", true], [\"gamespeed\", true],"
         ));
+        // Every card the short setup pass shows has to be named here. One
+        // that is not stays where the markup put it while the named ones move
+        // ahead of the advanced drawer, which strands it above the whole form
+        // — the way the endgame rules were stranded until they were nested.
         assert!(EMBEDDED_INDEX.contains(
-            "basic.push(document.getElementById(\"victory-options\"), document.getElementById(\"saves-group\"));"
+            "basic.push(document.getElementById(\"victory-options\"),\n    document.getElementById(\"tactics-options\"), document.getElementById(\"saves-group\"));"
         ));
+        // The arena economy: a card that appears only in Tactics, carrying
+        // the four grants the mode is set up with. The engine reads them only
+        // on a battlefield, so they travel from every lobby unconditionally.
+        assert!(EMBEDDED_INDEX.contains(".tactics-only { display: none; }"));
+        assert!(EMBEDDED_INDEX
+            .contains("body.playing-tactics .tactics-only { display: revert; }"));
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"tactics-options tactics-only\" id=\"tactics-options\""
+        ));
+        for arena in [
+            ("tacticscities", "tactics_cities"),
+            ("tacticsproduction", "tactics_production"),
+            ("tacticsgold", "tactics_gold"),
+            ("tacticsturnspertech", "tactics_turns_per_tech"),
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("id=\"{}\"", arena.0)),
+                "the arena economy is missing the {} control",
+                arena.0
+            );
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("{}: Number(readSetting(\"{}\"))", arena.1, arena.0)),
+                "the {} control must reach the server as {}",
+                arena.0,
+                arena.1
+            );
+        }
         // Display Settings is a short reading path: observer controls first,
         // then the overlay menus — the panels a viewer reaches for most — then
         // map options, and finally performance.

@@ -862,6 +862,65 @@ pub const BATTLEFIELD_SIZES: [BattlefieldSize; 3] = [
     BattlefieldSize { id: "20x20", name: "Field · 20×20", width: 20, height: 20 },
 ];
 
+/// The Tactics arena's economy.
+///
+/// An arena has no empire behind it, so nothing here is earned: every figure
+/// is simply granted, identically to both sides, and exists only to keep a
+/// battle supplied. That is the point of the mode as a tactical testbed — the
+/// two sides differ in how they fight and in nothing else, so an outcome is
+/// attributable to the fighting.
+///
+/// The three flat grants answer "how much", and `turns_per_tech` answers "how
+/// fast", because a flat Science figure cannot: a technology costs some
+/// seventeen times more in the Information era than in the Ancient, so a fixed
+/// yield that opens the tree briskly at the start stops opening it at all
+/// later. Asking for a pace instead makes the grant whatever this turn's
+/// research actually costs, divided by the pace — steady unlocks in every era
+/// and at every game speed, without a table to maintain.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TacticsRules {
+    /// Cities each side opens with: 0 for armies alone, or 1.
+    pub cities: u8,
+    /// Production that city collects each turn, flat.
+    pub production: u32,
+    /// Gold each side collects each turn, flat. An arena charges no unit
+    /// upkeep, so this is upgrade money and nothing else.
+    pub gold: u32,
+    /// Turns a side spends on whichever technology it is researching, in any
+    /// era. 0 stops research, freezing both sides at their starting era's
+    /// units.
+    pub turns_per_tech: u32,
+}
+
+impl TacticsRules {
+    /// The largest figure any of the flat grants may be set to. A ceiling
+    /// exists so a hand-written request cannot mint an arena where the first
+    /// turn buys the whole tech tree's worth of units.
+    pub const MAX_YIELD: u32 = 999;
+    /// The slowest tech pace worth offering; beyond it a battle ends first.
+    pub const MAX_TURNS_PER_TECH: u32 = 99;
+
+    /// Clamp a requested economy to what the mode can actually play.
+    pub fn sanitized(self) -> Self {
+        Self {
+            cities: self.cities.min(1),
+            production: self.production.min(Self::MAX_YIELD),
+            gold: self.gold.min(Self::MAX_YIELD),
+            turns_per_tech: self.turns_per_tech.min(Self::MAX_TURNS_PER_TECH),
+        }
+    }
+}
+
+impl Default for TacticsRules {
+    /// One city producing a unit every turn or two in the Ancient era, gold
+    /// enough to upgrade a unit every ten turns or so, and a technology every
+    /// five turns. Chosen so a battle keeps arriving at new units and new
+    /// matchups without the arena becoming a production race.
+    fn default() -> Self {
+        Self { cities: 1, production: 30, gold: 30, turns_per_tech: 5 }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GameSpeed {

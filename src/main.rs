@@ -2560,6 +2560,9 @@ fn main() {
                     // The shipped setup defaults: the lobby can change both.
                     mercy_rule: Some(0.95),
                     required_victory_types: 1,
+                    // A launch on the battlefield map plays the mode's stock
+                    // economy; the lobby is where it is changed.
+                    tactics: crate::setup::TacticsRules::default(),
                     num_city_states: auto_cs(&args, players),
                     spectate,
                     difficulty: play_options.difficulty,
