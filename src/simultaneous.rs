@@ -947,11 +947,13 @@ mod tests {
         g
     }
 
-    /// The *anchor* default. Command surfaces built for throughput
-    /// (`simulate`, `soak`, spectated `play`) choose simultaneous at the
-    /// CLI — that half lives in `main.rs`
-    /// (`the_turn_structure_default_is_the_callers_and_the_flag_still_wins`)
-    /// — but `TurnStructure::default()` is what a field-less legacy save,
+    /// The *anchor* default. Since #1347 no command surface chooses
+    /// simultaneous on its own — every one of them, throughput surfaces
+    /// included, passes `Sequential` as its default and only an explicit
+    /// `--turn-structure simultaneous` overrides it; that half lives in
+    /// `main.rs`
+    /// (`the_turn_structure_default_is_the_callers_and_the_flag_still_wins`).
+    /// `TurnStructure::default()` is what a field-less legacy save,
     /// `GameOptions`, and the Elo setup contract deserialize through, and
     /// it must stay `Sequential` or every one of those quietly changes
     /// meaning.
