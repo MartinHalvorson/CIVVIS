@@ -324,12 +324,16 @@ impl Sphere {
         if from == to {
             return 0;
         }
+        if self.distance_rows[from as usize].get().is_some()
+            || self.distance_rows[to as usize].get().is_some()
+        {
+            if let Some(distance) = self.cached_distance(from, to) {
+                return distance as i32;
+            }
+        }
         let ring = &self.rings[from as usize];
         if let Ok(at) = ring.binary_search_by_key(&b, |(pos, _)| *pos) {
             return ring[at].1 as i32;
-        }
-        if let Some(distance) = self.cached_distance(from, to) {
-            return distance as i32;
         }
 
         if let Some(source) = self.cache_source(from, to) {

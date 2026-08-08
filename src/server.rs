@@ -4557,6 +4557,15 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     // field, same meaning, as the one `/state` publishes.
                     "victory_label": game.victory_label(),
                     "spectate": session.params.spectate,
+                    // Everything the spectator supervisor's poll loop reads,
+                    // so watching for progress costs this small document
+                    // instead of a multi-megabyte /state observation that
+                    // also queues behind the simulation lock for longer.
+                    "seed": game.seed,
+                    "current": game.current,
+                    "spectator_paused": session.spectator_paused,
+                    "server_instance": process_identity(),
+                    "decided": game.decided,
                     // Published frames no viewer ever drew. At Blitz and
                     // slower this counts player turns, not only round turns.
                     "frames_missed": frames_missed,
@@ -5911,6 +5920,60 @@ mod tests {
         delivery.turns_simulated_without_a_frame(0);
         assert_eq!(delivery.missed, 9);
         assert_eq!(delivery.autoplayed, 15);
+    }
+
+    /// `/status` is the spectator supervisor's poll document, and the fields
+    /// it publishes are a cross-language contract.
+    /// `tools/spectator_supervisor.py` resolves its progress marker, nudge
+    /// check, play-on detection, seat takeover and successor identity entirely
+    /// from this response, and `StatusDocumentContractTests` pins the Python
+    /// half of that against a fixture. A fixture cannot notice a field going
+    /// missing on this side, so this is the half that does: drop one of these
+    /// and the supervisor silently stops recognising a paused game, a world
+    /// asked for one more turn, or a successor process.
+    #[test]
+    fn status_carries_every_field_the_supervisor_polls() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = current();
+        params.num_players = 2;
+        params.num_city_states = 0;
+        params.width = 24;
+        params.height = 16;
+        params.seed = 20_260_807;
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "server never came up");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let status: Value = serde_json::from_str(&http_get(port, "/status").expect("status"))
+            .expect("status is JSON");
+        for field in [
+            "seed",
+            "turn",
+            "current",
+            "winner",
+            "finished",
+            "victory_type",
+            "spectate",
+            "spectator_paused",
+            "server_instance",
+            "decided",
+        ] {
+            assert!(
+                status.get(field).is_some(),
+                "/status dropped `{field}`, which the supervisor's poll loop reads: {status}"
+            );
+        }
+        assert_eq!(status["seed"], json!(20_260_807));
+        assert_eq!(status["server_instance"], json!(std::process::id()));
+        assert_eq!(status["spectator_paused"], json!(false));
+        assert_eq!(status["decided"], Value::Null);
     }
 
     /// `/status` has to be able to see auto-play, which it could not.

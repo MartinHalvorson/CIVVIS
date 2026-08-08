@@ -860,6 +860,10 @@
     "class": "military", "cost": 200, "maintenance": 2, "moves": 3, "strength": 40,
     "buildable": false, "promotion_class": "warrior_monk", "zone_of_control": true
   },
+  "nihang": {
+    "class": "military", "cost": 100, "maintenance": 0, "moves": 2, "strength": 25,
+    "buildable": false, "promotion_class": "nihang", "zone_of_control": true
+  },
   "naturalist": {
     "class": "civilian", "cost": 600, "moves": 4, "charges": 1, "buildable": false,
     "sight": 3,

@@ -22961,6 +22961,10 @@ impl Game {
         {
             return;
         }
+        self.players[pid]
+            .counters
+            .entry(format!("trading_post_city:{}", route.dest))
+            .or_insert(1);
         let post_key = format!("trading_post_in:{destination_owner}");
         let added = match self.players[pid].counters.entry(post_key) {
             std::collections::btree_map::Entry::Vacant(entry) => {
@@ -23507,6 +23511,16 @@ impl Game {
         if converted {
             self.players[pid].gold += self.promotion_effect(&u, "gold_per_conversion");
             self.break_promises_on_conversion(pid, target_owner);
+            if self.grants_city_state_unique_bonus(pid, "Fez")
+                && self.players[pid].religion.as_deref() == Some(religion.as_str())
+            {
+                let key = format!("fez_first_conversion:{cid}");
+                if self.players[pid].counters.insert(key, 1).is_none() {
+                    let population = self.cities[&cid].pop as f64;
+                    self.players[pid].research_overflow +=
+                        self.game_speed.scale(20.0 * population);
+                }
+            }
         }
         let mu = self.units.get_mut(&uid).unwrap();
         mu.charges -= 1;
@@ -23962,14 +23976,17 @@ impl Game {
             .values()
             .filter_map(|c| {
                 self.city_religion(c).map(|r| {
-                    // Civ VI: 1 Pressure per source city, doubled by a Holy
-                    // Site and quadrupled again when it is that religion's
-                    // Holy City (a Holy City with a Holy Site exerts 8).
+                    // A Holy Site doubles its city's passive pressure. Jerusalem
+                    // then makes the player's Holy City four times stronger.
                     let mut boost = 1.0;
-                    if c.districts.contains_key(crate::name!("holy_site")) {
+                    let holy_site = self
+                        .city_has_active_district_family(c, crate::name!("holy_site"));
+                    if holy_site {
                         boost *= 2.0;
                     }
-                    if self
+                    if holy_site
+                        && self.grants_city_state_unique_bonus(c.owner, "Jerusalem")
+                        && self
                         .religion_founder(r)
                         .and_then(|founder| self.players[founder].holy_city)
                         == Some(c.id)
@@ -24396,15 +24413,17 @@ impl Game {
                             .unwrap_or(0.0);
                     }
                 }
-                if self.grants_city_state_unique_bonus(pid, "Stockholm")
-                    && c.buildings.iter().any(|building| {
+                let has_district_building = c.buildings.iter().any(|building| {
                         !c.pillaged_buildings.contains(building)
                             && self.rules.buildings.get(building).is_some_and(|spec| {
                                 spec.district
 
                                     .is_some_and(|family| self.district_is_family(d, family))
                             })
-                    })
+                    });
+                if (self.grants_city_state_unique_bonus(pid, "Stockholm")
+                    || self.grants_city_state_unique_bonus(pid, "Bologna"))
+                    && has_district_building
                 {
                     let kinds: &[&str] = match self.district_family(*d).as_str() {
                         "encampment" => &["general"],
@@ -24922,6 +24941,7 @@ impl Game {
             };
         for _ in 0..activations {
             self.named_great_person_effect(pid, &spec);
+            self.vatican_great_person_pressure(pid);
         }
         self.apply_great_person_district_effects(pid);
         self.refresh_great_person_offers();
@@ -24942,6 +24962,46 @@ impl Game {
         if let Some(city) = target {
             self.expand_borders(city);
         }
+    }
+
+    fn vatican_great_person_pressure(&mut self, pid: usize) {
+        if !self.grants_city_state_unique_bonus(pid, "Vatican City") {
+            return;
+        }
+        let Some(source) = self
+            .cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .max_by_key(|city| (city.pop, Reverse(city.id)))
+            .map(|city| city.id)
+        else {
+            return;
+        };
+        let religion = self.players[pid]
+            .religion
+            .clone()
+            .or_else(|| self.city_religion(&self.cities[&source]).map(str::to_string));
+        let Some(religion) = religion else {
+            return;
+        };
+        let source_pos = self.cities[&source].pos;
+        let targets: Vec<u32> = self
+            .cities
+            .values()
+            .filter(|city| self.wdist(source_pos, city.pos) <= 10)
+            .filter(|city| !self.city_ignores_foreign_religion(city, &religion))
+            .map(|city| city.id)
+            .collect();
+        for cid in targets {
+            *self
+                .cities
+                .get_mut(&cid)
+                .unwrap()
+                .pressure
+                .entry(religion.clone())
+                .or_insert(0.0) += 400.0;
+        }
+        self.check_religious_victory();
     }
 
     fn named_great_person_effect(&mut self, pid: usize, spec: &crate::rules::GreatPersonSpec) {
@@ -25616,6 +25676,9 @@ impl Game {
     /// direct Suzerain. Sharing is deliberately non-transitive: a partner's
     /// own Economic Alliance cannot relay the bonus through a third empire.
     fn grants_city_state_unique_bonus(&self, pid: usize, city_state: &str) -> bool {
+        if self.cs_bonus(city_state).is_none() {
+            return false;
+        }
         let economic_partner = self.alliance_partner(pid, "economic", 3);
         self.players
             .iter()
@@ -26958,6 +27021,23 @@ impl Game {
         {
             s += 5.0;
         }
+        if u.kind == "nihang" {
+            let encampment_buildings = ["barracks", "armory", "military_academy"]
+                .iter()
+                .filter(|family| {
+                    self.cities
+                        .values()
+                        .filter(|city| city.owner == u.owner)
+                        .any(|city| self.city_has_building_family(city, Name::new(family)))
+                })
+                .count() as f64;
+            s += 15.0 * encampment_buildings;
+            if self.promotion_effect(u, "lahore_suzerain_combat") > 0.0
+                && self.grants_city_state_unique_bonus(u.owner, "Lahore")
+            {
+                s += self.promotion_effect(u, "lahore_suzerain_combat");
+            }
+        }
         // Foreign Ministry applies only after a unit is actually levied.
         // While levied, `owner` is the Suzerain and `levied_from` is the
         // city-state that must regain the unit when the contract ends.
@@ -26994,6 +27074,9 @@ impl Game {
             s += self.policy_effect(u.owner, "friendly_combat");
         }
         let wounded_penalty = (10.0 - u.hp.clamp(0, 100) as f64 / 10.0).round();
+        if self.promotion_effect(u, "no_wounded_penalty") > 0.0 {
+            s += wounded_penalty;
+        }
         s += wounded_penalty * self.policy_effect(u.owner, "wounded_penalty_reduction_pct") / 100.0;
         s
     }
@@ -27196,6 +27279,16 @@ impl Game {
                     .get(improvement)
                     .expect("a placed improvement is in the ruleset");
                 h += spec.housing;
+                if self.players[city.owner]
+                    .civics
+                    .contains(&crate::name!("colonialism"))
+                {
+                    h += spec
+                        .effects
+                        .get("housing_after_colonialism")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
                 if improvement == "mound"
                     && self.players[city.owner]
                         .civics
@@ -27677,6 +27770,9 @@ impl Game {
 
     fn note_building_completed_moments(&mut self, pid: usize, building: &str) {
         let spec = self.rules.buildings[building].clone();
+        if self.grants_city_state_unique_bonus(pid, "Ayutthaya") && !spec.wonder {
+            self.players[pid].civic_overflow += self.game_speed.scale(spec.cost * 0.10);
+        }
         if spec
             .unique_to
             .as_deref()
@@ -27795,6 +27891,11 @@ impl Game {
                     .unwrap_or(0.0)
             })
             .sum::<f64>();
+        if self.grants_city_state_unique_bonus(city.owner, "Cardiff")
+            && self.city_has_active_district_family(city, crate::name!("harbor"))
+        {
+            renewable += 2.0;
+        }
         for position in &city.owned_tiles {
             let tile = &self.map.tiles[position];
             if tile.pillaged {
@@ -28957,7 +29058,22 @@ impl Game {
 
                     .and_then(|district| self.city_district_family_position(source, district))
                     .unwrap_or(source.pos);
-                if spec.regional_range <= 0 || self.wdist(origin, city.pos) > spec.regional_range {
+                let regional_range = spec.regional_range
+                    + if self.grants_city_state_unique_bonus(city.owner, "Mexico City")
+                        && spec.district.is_some_and(|district| {
+                            self.district_is_family(district, crate::name!("industrial_zone"))
+                                || self.district_is_family(
+                                    district,
+                                    crate::name!("entertainment_complex"),
+                                )
+                                || self.district_is_family(district, crate::name!("water_park"))
+                        })
+                    {
+                        3
+                    } else {
+                        0
+                    };
+                if regional_range <= 0 || self.wdist(origin, city.pos) > regional_range {
                     continue;
                 }
                 let group = if !spec.regional_group.is_empty() {
@@ -29079,6 +29195,13 @@ impl Game {
         if self.grants_city_state_unique_bonus(pid, "Zanzibar") {
             luxuries.insert(crate::name!("cinnamon"));
             luxuries.insert(crate::name!("cloves"));
+        }
+        if self.grants_city_state_unique_bonus(pid, "Buenos Aires") {
+            for (resource, spec) in &self.rules.resources {
+                if spec.class == "bonus" && self.luxury_access_count(pid, resource, &held) > 0 {
+                    luxuries.insert(*resource);
+                }
+            }
         }
         luxuries
     }
@@ -35128,6 +35251,13 @@ impl Game {
                     .copied()
                     .unwrap_or(0.0);
             }
+            let coast_or_lake = matches!(self.map.tiles[&dpos].terrain.as_str(), "coast" | "lake")
+                || self.nbrs(dpos).iter().any(|neighbor| {
+                    matches!(self.map.tiles[neighbor].terrain.as_str(), "coast" | "lake")
+                });
+            if coast_or_lake && self.grants_city_state_unique_bonus(owner, "Nan Madol") {
+                ys.culture += 2.0;
+            }
         }
         ys
     }
@@ -36186,6 +36316,40 @@ impl Game {
         if tile.drought && !drought_food_protected {
             yields.food = (yields.food - 1.0).max(0.0);
         }
+        for neighbor in self.nbrs(pos) {
+            let adjacent = &self.map.tiles[&neighbor];
+            if adjacent.pillaged || adjacent.improvement.as_deref() != Some("nazca_line") {
+                continue;
+            }
+            let effects = &self.rules.improvements["nazca_line"].effects;
+            yields.faith += effects.get("adjacent_faith").copied().unwrap_or(0.0);
+            if tile.resource.is_some() {
+                yields.faith += effects
+                    .get("adjacent_resource_faith")
+                    .copied()
+                    .unwrap_or(0.0);
+            }
+            if tile.terrain == "desert"
+                && self.players[pid]
+                    .civics
+                    .contains(&crate::name!("civil_service"))
+            {
+                yields.food += effects
+                    .get("adjacent_desert_food_after_civil_service")
+                    .copied()
+                    .unwrap_or(0.0);
+            }
+            if !tile.hills
+                && self.players[pid]
+                    .techs
+                    .contains(&crate::name!("mass_production"))
+            {
+                yields.production += effects
+                    .get("adjacent_flat_production_after_mass_production")
+                    .copied()
+                    .unwrap_or(0.0);
+            }
+        }
         match tile.improvement.as_deref() {
             Some("mine") => yields.production += self.tree_effect(pid, "mine_production"),
             Some("pasture") => {
@@ -36400,6 +36564,127 @@ impl Game {
                             .get("adjacent_district_pair_food_after_feudalism")
                             .copied()
                             .unwrap_or(0.0);
+                }
+            }
+            Some("monastery") => {
+                let effects = &self.rules.improvements["monastery"].effects;
+                let adjacent_districts = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].district.is_some() || self.city_at(**neighbor).is_some()
+                    })
+                    .count() as f64;
+                yields.faith += (adjacent_districts / 2.0).floor()
+                    * effects
+                        .get("adjacent_district_pair_faith")
+                        .copied()
+                        .unwrap_or(0.0);
+            }
+            Some("colossal_head") => {
+                let effects = &self.rules.improvements["colossal_head"].effects;
+                let adjacent_woods_rainforest = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        matches!(
+                            self.map.tiles[neighbor].feature.as_deref(),
+                            Some("forest" | "jungle")
+                        )
+                    })
+                    .count() as f64;
+                yields.faith += if self.players[pid].civics.contains(&crate::name!("humanism")) {
+                    adjacent_woods_rainforest
+                        * effects
+                            .get("adjacent_woods_rainforest_faith_after_humanism")
+                            .copied()
+                            .unwrap_or(0.0)
+                } else {
+                    (adjacent_woods_rainforest / 2.0).floor()
+                        * effects
+                            .get("adjacent_woods_rainforest_pair_faith")
+                            .copied()
+                            .unwrap_or(0.0)
+                };
+            }
+            Some("mahavihara") => {
+                let effects = &self.rules.improvements["mahavihara"].effects;
+                let campus_count = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].district.is_some_and(|district| {
+                            self.district_is_family(district, crate::name!("campus"))
+                        })
+                    })
+                    .count() as f64;
+                let holy_site_count = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].district.is_some_and(|district| {
+                            self.district_is_family(district, crate::name!("holy_site"))
+                        })
+                    })
+                    .count() as f64;
+                let campus_key = if self.players[pid]
+                    .techs
+                    .contains(&crate::name!("scientific_theory"))
+                {
+                    "adjacent_campus_science_after_scientific_theory"
+                } else {
+                    "adjacent_campus_science"
+                };
+                yields.science += campus_count * effects.get(campus_key).copied().unwrap_or(0.0);
+                yields.faith += holy_site_count
+                    * effects
+                        .get("adjacent_holy_site_faith")
+                        .copied()
+                        .unwrap_or(0.0);
+            }
+            Some("moai") => {
+                let effects = &self.rules.improvements["moai"].effects;
+                let adjacent_moai = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("moai")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                yields.culture += if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("medieval_faires"))
+                {
+                    adjacent_moai
+                        * effects
+                            .get("adjacent_moai_culture_after_medieval_faires")
+                            .copied()
+                            .unwrap_or(0.0)
+                } else {
+                    (adjacent_moai / 2.0).floor()
+                        * effects
+                            .get("adjacent_moai_pair_culture")
+                            .copied()
+                            .unwrap_or(0.0)
+                };
+                if tile.feature.as_deref() == Some("volcanic_soil")
+                    || self.nbrs(pos).iter().any(|neighbor| {
+                        self.map.tiles[neighbor].feature.as_deref() == Some("volcanic_soil")
+                    })
+                {
+                    yields.culture += effects
+                        .get("volcanic_adjacent_or_on_culture")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+                if self.nbrs(pos).iter().any(|neighbor| {
+                    matches!(self.map.tiles[neighbor].terrain.as_str(), "coast" | "lake")
+                }) {
+                    yields.culture += effects
+                        .get("adjacent_coast_lake_culture")
+                        .copied()
+                        .unwrap_or(0.0);
                 }
             }
             Some("mekewap") => {
@@ -36964,112 +37249,6 @@ impl Game {
                             .copied()
                             .unwrap_or(0.0)
                 };
-            }
-            Some("colossal_head") => {
-                let effects = &self.rules.improvements["colossal_head"].effects;
-                let adjacent_woods_rainforest = self
-                    .nbrs(pos)
-                    .iter()
-                    .filter(|neighbor| {
-                        matches!(
-                            self.map.tiles[neighbor].feature.as_deref(),
-                            Some("forest" | "jungle")
-                        )
-                    })
-                    .count() as f64;
-                yields.faith += if self.players[pid].civics.contains(&crate::name!("humanism")) {
-                    adjacent_woods_rainforest
-                        * effects
-                            .get("adjacent_woods_rainforest_faith_after_humanism")
-                            .copied()
-                            .unwrap_or(0.0)
-                } else {
-                    (adjacent_woods_rainforest / 2.0).floor()
-                        * effects
-                            .get("adjacent_woods_rainforest_pair_faith")
-                            .copied()
-                            .unwrap_or(0.0)
-                };
-            }
-            Some("mahavihara") => {
-                let effects = &self.rules.improvements["mahavihara"].effects;
-                let campus_count = self
-                    .nbrs(pos)
-                    .iter()
-                    .filter(|neighbor| {
-                        self.map.tiles[neighbor].district.is_some_and(|district| {
-                            self.district_is_family(district, crate::name!("campus"))
-                        })
-                    })
-                    .count() as f64;
-                let holy_site_count = self
-                    .nbrs(pos)
-                    .iter()
-                    .filter(|neighbor| {
-                        self.map.tiles[neighbor].district.is_some_and(|district| {
-                            self.district_is_family(district, crate::name!("holy_site"))
-                        })
-                    })
-                    .count() as f64;
-                let campus_key = if self.players[pid]
-                    .techs
-                    .contains(&crate::name!("scientific_theory"))
-                {
-                    "adjacent_campus_science_after_scientific_theory"
-                } else {
-                    "adjacent_campus_science"
-                };
-                yields.science += campus_count * effects.get(campus_key).copied().unwrap_or(0.0);
-                yields.faith += holy_site_count
-                    * effects
-                        .get("adjacent_holy_site_faith")
-                        .copied()
-                        .unwrap_or(0.0);
-            }
-            Some("moai") => {
-                let effects = &self.rules.improvements["moai"].effects;
-                let adjacent_moai = self
-                    .nbrs(pos)
-                    .iter()
-                    .filter(|neighbor| {
-                        self.map.tiles[neighbor].improvement.as_deref() == Some("moai")
-                            && !self.map.tiles[neighbor].pillaged
-                    })
-                    .count() as f64;
-                yields.culture += if self.players[pid]
-                    .civics
-                    .contains(&crate::name!("medieval_faires"))
-                {
-                    adjacent_moai
-                        * effects
-                            .get("adjacent_moai_culture_after_medieval_faires")
-                            .copied()
-                            .unwrap_or(0.0)
-                } else {
-                    (adjacent_moai / 2.0).floor()
-                        * effects
-                            .get("adjacent_moai_pair_culture")
-                            .copied()
-                            .unwrap_or(0.0)
-                };
-                if tile.feature.as_deref() == Some("volcanic_soil")
-                    || self.nbrs(pos).iter().any(|neighbor| {
-                        self.map.tiles[neighbor].feature.as_deref() == Some("volcanic_soil")
-                    })
-                {
-                    yields.culture += effects
-                        .get("volcanic_adjacent_or_on_culture")
-                        .copied()
-                        .unwrap_or(0.0);
-                }
-                if self.nbrs(pos).iter().any(|neighbor| {
-                    matches!(self.map.tiles[neighbor].terrain.as_str(), "coast" | "lake")
-                }) {
-                    yields.culture += effects
-                        .get("adjacent_coast_lake_culture")
-                        .copied()
-                        .unwrap_or(0.0);
-                }
             }
             _ => {}
         }
@@ -37733,6 +37912,13 @@ impl Game {
                     "relic" => ys.faith += relic_faith * count,
                     _ => {}
                 }
+                if self.grants_city_state_unique_bonus(city.owner, "Anshan") {
+                    match kind.as_str() {
+                        "writing" => ys.science += 2.0 * count,
+                        "artifact" | "relic" => ys.science += count,
+                        _ => {}
+                    }
+                }
             }
             let pieces = self.housed_great_work_pieces(city.owner);
             let (_, theming_culture, _) = self.city_theming(
@@ -37758,6 +37944,41 @@ impl Game {
         ys.science += self.civ_effect(city.owner, "city_science");
         ys.culture += self.civ_effect(city.owner, "city_culture");
         ys.faith += self.civ_effect(city.owner, "city_faith");
+        if self.grants_city_state_unique_bonus(city.owner, "Johannesburg") {
+            let improved_resources: BTreeSet<Name> = city
+                .owned_tiles
+                .iter()
+                .filter_map(|position| {
+                    let tile = self.map.get(*position)?;
+                    let resource = tile.resource.as_ref()?;
+                    self.tile_connects_resource(tile, *resource, *position == city.pos)
+                        .then_some(*resource)
+                })
+                .collect();
+            let per_resource = if self.players[city.owner]
+                .techs
+                .contains(&crate::name!("industrialization"))
+            {
+                2.0
+            } else {
+                1.0
+            };
+            ys.production += per_resource * improved_resources.len() as f64;
+        }
+        if self.grants_city_state_unique_bonus(city.owner, "Singapore") {
+            let partners: BTreeSet<usize> = self
+                .routes
+                .iter()
+                .filter(|route| route.origin == cid)
+                .filter_map(|route| self.cities.get(&route.dest).map(|destination| destination.owner))
+                .filter(|owner| {
+                    *owner != city.owner
+                        && !self.players[*owner].is_minor
+                        && !self.players[*owner].is_barbarian
+                })
+                .collect();
+            ys.production += 2.0 * partners.len() as f64;
+        }
         // Public Transport pays per Neighborhood, not once per city, and its
         // Food and Production are banded by that district's own tile Appeal:
         // PUBLICTRANSPORT_NEIGHBORHOOD_GOLD is unconditional, the Charming
@@ -37813,6 +38034,38 @@ impl Game {
             if let Some(dc) = self.cities.get(&r.dest) {
                 let domestic = dc.owner == city.owner;
                 let mut rys = self.trade_route_yields(city.owner, r.dest);
+                if self.grants_city_state_unique_bonus(city.owner, "Chinguetti") {
+                    if let Some(religion) = self.players[city.owner]
+                        .religion
+                        .as_deref()
+                        .or_else(|| self.city_religion(city))
+                    {
+                        rys.faith += self.religious_followers_in_city(city, religion) as f64;
+                    }
+                }
+                if self.grants_city_state_unique_bonus(city.owner, "Hunza") {
+                    rys.gold += (self.wdist(city.pos, dc.pos) / 5) as f64;
+                }
+                if !domestic
+                    && self.players[dc.owner].is_minor
+                    && !self.players[dc.owner].is_barbarian
+                    && self.grants_city_state_unique_bonus(city.owner, "Kumasi")
+                {
+                    let specialty_districts = city
+                        .districts
+                        .iter()
+                        .filter(|(district, position)| {
+                            self.district_is_active(city, district, **position)
+                                && self
+                                    .rules
+                                    .districts
+                                    .get(*district)
+                                    .is_some_and(|spec| spec.specialty)
+                        })
+                        .count() as f64;
+                    rys.culture += 2.0 * specialty_districts;
+                    rys.gold += specialty_districts;
+                }
                 let route_multiplier = self.route_district_gold_multiplier(city.pos, dc.pos);
                 if route_multiplier > 1.0 {
                     let district_gold = dc
@@ -37839,6 +38092,29 @@ impl Game {
                     rys.gold += self.policy_effect(city.owner, "domestic_trade_gold");
                 }
                 if !domestic {
+                    if self.grants_city_state_unique_bonus(city.owner, "Bandar Brunei") {
+                        let posts = self
+                            .players
+                            .iter()
+                            .filter(|player| {
+                                player
+                                    .counters
+                                    .contains_key(&format!("trading_post_city:{}", dc.id))
+                            })
+                            .count() as f64;
+                        rys.gold += posts;
+                    }
+                    if self.grants_city_state_unique_bonus(city.owner, "Venice") {
+                        rys.gold += dc
+                            .owned_tiles
+                            .iter()
+                            .filter(|position| {
+                                self.map.tiles[position].resource.as_ref().is_some_and(
+                                    |resource| self.rules.resources[resource].class == "luxury",
+                                )
+                            })
+                            .count() as f64;
+                    }
                     rys.gold += self.trading_dome_origin_route_gold(cid);
                     // E-Commerce pays only on international routes.
                     rys.gold += self.policy_effect(city.owner, "international_trade_gold");
@@ -38376,6 +38652,10 @@ impl Game {
         {
             ys.science *= 1.15;
         }
+        if self.grants_city_state_unique_bonus(city.owner, "Antananarivo") {
+            let great_people = self.players[city.owner].great_people.len().min(15) as f64;
+            ys.culture *= 1.0 + 0.02 * great_people;
+        }
         if self.grants_city_state_unique_bonus(city.owner, "Taruga") {
             // +5% Science per *different* improved Strategic resource the
             // city has, so two Iron mines are one resource, not two.
@@ -38666,8 +38946,7 @@ impl Game {
             // (or a compatible resource), not through the terrain hidden below it.
             // Treating the underlying Hills as sufficient offered Mines on Woods;
             // the live engine refused both attempts in the turn-150 Poland trace.
-            let incompatible_feature =
-                t.feature.is_some() && !feature_route && !resource_route;
+            let incompatible_feature = t.feature.is_some() && !feature_route && !resource_route;
             if spec.unbuildable
                 || !self.unlocked(pid, &spec.tech, &spec.civic)
                 || spec.unique_to.as_deref().is_some_and(|owner| {
@@ -42900,6 +43179,9 @@ impl Game {
         if spec.promotion_class == "melee" && other.promotion_class == "anti_cavalry" {
             bonus += 5.0;
         }
+        if u.kind == "nihang" && other.promotion_class == "anti_cavalry" {
+            bonus += 5.0;
+        }
         if u.kind == "hoplite"
             && self.nbrs(u.pos).into_iter().any(|p| {
                 self.units_at(p).into_iter().any(|id| {
@@ -43021,6 +43303,10 @@ impl Game {
             let pct = self.policy_effect(attacker.owner, "earlier_era_kill_gold_pct");
             self.players[attacker.owner].gold += defeated_spec.strength * pct / 100.0;
         }
+        let faith_pct = self.promotion_effect(attacker, "faith_on_kill_strength_pct");
+        if faith_pct > 0.0 {
+            self.players[attacker.owner].faith += defeated_spec.strength * faith_pct / 100.0;
+        }
         if self.rules.units[defeated.kind].domain.as_deref() == Some("sea") {
             let pct = self.promotion_effect(attacker, "gold_from_naval_kill_pct");
             if pct > 0.0 {
@@ -43081,9 +43367,6 @@ impl Game {
 
     fn flanking_bonus(&self, uid: u32, target: Pos) -> f64 {
         let owner = self.units[&uid].owner;
-        if !self.flanking_support_unlocked(owner) {
-            return 0.0;
-        }
         let additional = self
             .nbrs(target)
             .into_iter()
@@ -43097,24 +43380,29 @@ impl Game {
                     && !self.crosses_river(u.pos, target)
             })
             .count();
+        let tegh = if additional > 0 {
+            self.promotion_effect(&self.units[&uid], "flanking_combat_strength")
+        } else {
+            0.0
+        };
+        if !self.flanking_support_unlocked(owner) {
+            return tegh;
+        }
         let multiplier = self
             .promotion_effect(&self.units[&uid], "flanking_multiplier")
             .max(1.0);
-        let naval_multiplier = if self.rules.units[self.units[&uid].kind]
-            .domain
-            .as_deref()
-            == Some("sea")
-        {
-            1.0 + self.players[owner]
-                .counters
-                .get("great_person:naval_flanking_bonus_pct")
-                .copied()
-                .unwrap_or(0) as f64
-                / 100.0
-        } else {
-            1.0
-        };
-        2.0 * additional as f64 * multiplier * naval_multiplier
+        let naval_multiplier =
+            if self.rules.units[self.units[&uid].kind].domain.as_deref() == Some("sea") {
+                1.0 + self.players[owner]
+                    .counters
+                    .get("great_person:naval_flanking_bonus_pct")
+                    .copied()
+                    .unwrap_or(0) as f64
+                    / 100.0
+            } else {
+                1.0
+            };
+        2.0 * additional as f64 * multiplier * naval_multiplier + tegh
     }
 
     /// Melee attacks pay the movement cost of entering the defender's tile.
@@ -43537,10 +43825,15 @@ impl Game {
                     self.siege_support_effects(pid, cid, target, &spec.promotion_class);
                 let basil_cavalry = self.has_ability(pid, "taxis")
                     && spec.cavalry
-                    && self.players[pid].religion.as_deref().is_some_and(|religion| {
-                        self.city_religion(&self.cities[&cid]) == Some(religion)
-                    });
-                let mult = if ram || basil_cavalry { 1.0 } else { 0.15 };
+                    && self.players[pid]
+                        .religion
+                        .as_deref()
+                        .is_some_and(|religion| {
+                            self.city_religion(&self.cities[&cid]) == Some(religion)
+                        });
+        let akkad = self.grants_city_state_unique_bonus(pid, "Akkad")
+            && matches!(spec.promotion_class.as_str(), "melee" | "anti_cavalry");
+        let mult = if ram || basil_cavalry || akkad { 1.0 } else { 0.15 };
                 self.city_take_damage(pid, cid, dmg_out, mult, tower);
                 self.units.get_mut(&uid).unwrap().hp -= dmg_in;
                 if self.units[&uid].hp <= 0 {
@@ -46032,10 +46325,15 @@ impl Game {
         let religious = spec.class == "religious";
         let rock_band = unit == "rock_band";
         let naturalist = unit == "naturalist";
+        let nihang = unit == "nihang"
+            && formation == 0
+            && currency == "faith"
+            && self.grants_city_state_unique_bonus(pid, "Lahore");
         if formation > 0 && (religious || rock_band || naturalist) {
             return None;
         }
-        if spec.class == "military"
+        if !nihang
+            && spec.class == "military"
             && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
             && !self.land_combat_purchase_slot_open(pid, city)
         {
@@ -46070,10 +46368,10 @@ impl Game {
                     formation,
                 }
             };
-            if !self.can_produce(pid, cid, &item) {
+            if !nihang && !self.can_produce(pid, cid, &item) {
                 return None;
             }
-            if currency == "faith" {
+            if currency == "faith" && !nihang {
                 let monumentality = matches!(unit, "builder" | "settler")
                     && self.dedication_active(pid, "monumentality");
                 let faith_land_combat = spec.class == "military"
@@ -46117,6 +46415,26 @@ impl Game {
             && self.dedication_active(pid, "monumentality")
         {
             purchase_discount += 30.0;
+        }
+        if self.grants_city_state_unique_bonus(pid, "Ngazargamu")
+            && (spec.class == "support"
+                || (spec.class == "military"
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))))
+        {
+            let encampment_buildings = city
+                .buildings
+                .iter()
+                .filter(|building| {
+                    !city.pillaged_buildings.contains(*building)
+                        && self.building_district_is_active(city, building)
+                        && self.rules.buildings.get(*building).is_some_and(|building_spec| {
+                            building_spec.district.is_some_and(|district| {
+                                self.district_is_family(district, crate::name!("encampment"))
+                            })
+                        })
+                })
+                .count() as f64;
+            purchase_discount += 20.0 * encampment_buildings;
         }
 
         let (base_cost, multiplier) = if rock_band {
@@ -46176,6 +46494,10 @@ impl Game {
         let religious = spec.class == "religious";
         let rock_band = unit == "rock_band";
         let naturalist = unit == "naturalist";
+        let nihang = unit == "nihang"
+            && formation == 0
+            && currency == "faith"
+            && self.grants_city_state_unique_bonus(pid, "Lahore");
         if !matches!(currency, "gold" | "faith") {
             return Err("unknown purchase currency".into());
         }
@@ -46236,10 +46558,10 @@ impl Game {
                     formation,
                 }
             };
-            if !self.can_produce(pid, cid, &item) {
+            if !nihang && !self.can_produce(pid, cid, &item) {
                 return Err("cannot buy that".into());
             }
-            if currency == "faith" {
+            if currency == "faith" && !nihang {
                 let monumentality = matches!(unit, "builder" | "settler")
                     && self.dedication_active(pid, "monumentality");
                 let faith_land_combat = spec.class == "military"
@@ -52828,7 +53150,7 @@ impl Game {
                 self.grant_random_boosts(pid, era_boosts, false);
             }
         }
-        for pid in majors {
+        for pid in majors.iter().copied() {
             let cities = self.player_city_ids(pid).len().max(1) as i64;
             let player = &mut self.players[pid];
             let normal = if player.normal_age_threshold > 0 {
@@ -54849,6 +55171,25 @@ impl Game {
             if weapon == Some("giant_death_robot") {
                 self.dedication_trigger(pid, "robot_kill", 1);
             }
+        }
+        if !self.players[victim.owner].is_barbarian
+            && self.grants_city_state_unique_bonus(pid, "Wolin")
+            && weapon.is_some_and(|kind| {
+                self.rules
+                    .units
+                    .get(kind)
+                    .is_some_and(|spec| spec.class == "military")
+            })
+        {
+            let point_kind = if self.rules.units[victim.kind].domain.as_deref() == Some("sea") {
+                "admiral"
+            } else {
+                "general"
+            };
+            *self.players[pid]
+                .gpp
+                .entry(point_kind.to_string())
+                .or_insert(0.0) += self.game_speed.scale(self.rules.units[victim.kind].strength * 0.25);
         }
         if !self.players[victim.owner].is_barbarian && self.has_ability(pid, "taxis") {
             if let Some(religion) = self.players[pid].religion.clone() {
