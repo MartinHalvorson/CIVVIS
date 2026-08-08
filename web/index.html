@@ -9,13 +9,15 @@
     const channel = location.pathname.split("/").find(part => ["rust", "wasm", "beta"].includes(part));
     if (channel === "rust") document.title = "CIVVIS · Civ VI Simulator (Rust)";
     if (channel === "wasm" || channel === "beta") document.title = "CIVVIS · Civ VI Simulator (Wasm)";
-    // The published site serves a landing page at /home; a desktop build has
-    // no such route, so the header's Home link only appears on hosts that
-    // have one — the domain itself and Cloudflare Pages previews of it.
+    // The published site serves a landing page at /home, and its wasm shim
+    // opens the world a link's query string names; a desktop build has
+    // neither, so the header's Home link and the Civ/Tactics mode chip beside
+    // it only appear on hosts that honour them — the domain itself and
+    // Cloudflare Pages previews of it.
     if (/(^|\.)civvis\.ai$|\.pages\.dev$/.test(location.hostname)) {
       document.addEventListener("DOMContentLoaded", () => {
-        const home = document.getElementById("homelink");
-        if (home) home.hidden = false;
+        const links = document.getElementById("headlinks");
+        if (links) links.hidden = false;
       });
     }
   })();
@@ -334,8 +336,15 @@
      and the text fitter shrinks the type into the lane instead of wrapping. */
   .tagline span { display: block; white-space: nowrap; }
   .tagline span + span { color: #bccac4; }
+  /* Home, then the mode this deck is not showing. They share a row so the
+     compact reflow below moves the pair as one item rather than stacking two
+     band-wide rows, and so a narrow deck wraps them instead of clipping.
+     `display: flex` outranks the user agent's `[hidden]`, which is why the
+     row has to say what hidden means for itself. */
+  .head-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .head-links[hidden] { display: none; }
   .home-link {
-    display: inline-block; margin-top: 8px; padding: 3px 10px 4px;
+    display: inline-block; padding: 3px 10px 4px;
     color: var(--muted); font-size: var(--type-label); font-weight: 650;
     letter-spacing: .14em; text-transform: uppercase; text-decoration: none;
     border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2);
@@ -367,9 +376,9 @@
     grid-column: 1 / -1; margin-top: 0;
     font-size: var(--type-small);
   }
-  /* In the compact reflow the copy column dissolves, so the link takes a
-     band-wide row of its own under the tagline rather than a grid cell. */
-  #side[data-type-size="compact"] .home-link {
+  /* In the compact reflow the copy column dissolves, so the links take a
+     band-wide row of their own under the tagline rather than a grid cell. */
+  #side[data-type-size="compact"] .head-links {
     grid-column: 1 / -1; justify-self: start; margin-top: 0;
   }
   /* The deck is a column: the fixed panels take the height they need and the
@@ -3982,9 +3991,19 @@
       <div class="brand-copy">
         <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
         <div class="tagline"><span>A <i>Civilization VI</i> Simulator</span><span>for AI strategy development</span></div>
-        <!-- Only the published site has a /home to go to; the head script
-             unhides this on the hosts that serve one. -->
-        <a class="home-link" id="homelink" href="/home" hidden>⌂ Home</a>
+        <!-- Only the published site has a /home to go to, and only its wasm
+             lane opens the world a query string names; the head script
+             unhides this row on the hosts that serve both. The mode chip
+             names the game mode this deck is NOT showing, so the whole
+             distance between Civ and Tactics is one click. Its label and
+             destination are settled by `syncModeLink`; the markup holds the
+             Civ world's side of the pair, which is what a stock visit sees. -->
+        <div class="head-links" id="headlinks" hidden>
+          <a class="home-link" id="homelink" href="/home">⌂ Home</a>
+          <a class="home-link" id="modelink"
+             href="?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20"
+             title="Watch the Tactics mode: two even armies on one bounded field">⚔ Tactics</a>
+        </div>
       </div>
     </div>
   </div>
