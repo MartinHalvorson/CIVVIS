@@ -55,34 +55,123 @@ class MatchMachineTests(unittest.TestCase):
         )
         self.assertEqual(command[command.index("--force-strategy") + 1], "g4-10")
 
+    @staticmethod
+    def schedule_subject(league, strategies):
+        (league / "league.json").write_text(
+            json.dumps({"strategies": strategies}), encoding="utf-8"
+        )
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.league = league
+        subject.strategy_cursor = 0
+        subject.strategy_schedule = []
+        subject.schedule_roster = frozenset()
+        subject.event = mock.Mock()
+        subject.refresh_strategy_schedule()
+        return subject
+
     def test_strategy_schedule_covers_every_unretired_entry_and_repeats_top_eight(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            league = root / "league"
+            league = Path(directory) / "league"
             league.mkdir()
+            # Equal measurement need (no eight-seat games, default RD), so the
+            # full pass falls to name order; the exploitation tail is still
+            # the rating order.
+            subject = self.schedule_subject(
+                league,
+                [
+                    {"name": "low", "rating": 1200},
+                    {"name": "top", "rating": 1800},
+                    {"name": "retired", "rating": 2000, "retired": True},
+                ],
+            )
+            self.assertEqual(subject.strategy_schedule, ["low", "top", "top", "low"])
+            self.assertEqual(
+                [subject.next_focus_strategy() for _ in range(4)],
+                ["low", "top", "top", "low"],
+            )
+
+    def test_strategy_schedule_serves_measurement_need_first(self):
+        with tempfile.TemporaryDirectory() as directory:
+            league = Path(directory) / "league"
+            league.mkdir()
+            subject = self.schedule_subject(
+                league,
+                [
+                    {
+                        "name": "veteran",
+                        "rating": 1900,
+                        "rd": 60,
+                        "wins_by_table_size": {"8": {"games": 500, "wins": 80}},
+                    },
+                    {
+                        "name": "settling",
+                        "rating": 1600,
+                        "rd": 200,
+                        "wins_by_table_size": {"8": {"games": 12, "wins": 2}},
+                    },
+                    {"name": "newborn", "rating": 1500, "rd": 350},
+                ],
+            )
+            # Fewest eight-seat games first; the strongest still headlines the
+            # exploitation tail.
+            self.assertEqual(
+                subject.strategy_schedule[:3], ["newborn", "settling", "veteran"]
+            )
+            self.assertEqual(subject.strategy_schedule[3], "veteran")
+
+    def test_focus_rebuilds_when_selection_changes_the_roster(self):
+        with tempfile.TemporaryDirectory() as directory:
+            league = Path(directory) / "league"
+            league.mkdir()
+            veteran = {
+                "name": "veteran",
+                "rating": 1900,
+                "rd": 60,
+                "wins_by_table_size": {"8": {"games": 500, "wins": 80}},
+            }
+            subject = self.schedule_subject(league, [veteran])
+            self.assertEqual(subject.next_focus_strategy(), "veteran")
+            # A rating-only refresh must not reset the cursor mid-cycle.
+            (league / "league.json").write_text(
+                json.dumps({"strategies": [dict(veteran, rating=1500)]}),
+                encoding="utf-8",
+            )
+            self.assertEqual(subject.strategy_cursor, 1)
+            subject.next_focus_strategy()
+            self.assertEqual(subject.strategy_cursor, 2)
+            # A birth changes the active-name set: rebuild, restart from the
+            # most-needed entry — the newborn — and drop nobody.
+            (league / "league.json").write_text(
+                json.dumps(
+                    {"strategies": [veteran, {"name": "g4032-56", "rd": 350}]}
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(subject.next_focus_strategy(), "g4032-56")
+            self.assertIn("veteran", subject.strategy_schedule)
+
+    def test_focus_drops_a_retiree_at_the_next_launch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            league = Path(directory) / "league"
+            league.mkdir()
+            subject = self.schedule_subject(
+                league,
+                [{"name": "keeper", "rd": 100}, {"name": "culled", "rd": 90}],
+            )
+            self.assertIn("culled", subject.strategy_schedule)
             (league / "league.json").write_text(
                 json.dumps(
                     {
                         "strategies": [
-                            {"name": "low", "rating": 1200},
-                            {"name": "top", "rating": 1800},
-                            {"name": "retired", "rating": 2000, "retired": True},
+                            {"name": "keeper", "rd": 100},
+                            {"name": "culled", "rd": 90, "retired": True},
                         ]
                     }
                 ),
                 encoding="utf-8",
             )
-            subject = machine.MatchMachine.__new__(machine.MatchMachine)
-            subject.league = league
-            subject.strategy_cursor = 0
-            subject.strategy_schedule = []
-            subject.event = mock.Mock()
-            subject.refresh_strategy_schedule()
-            self.assertEqual(subject.strategy_schedule, ["top", "low", "top", "low"])
-            self.assertEqual(
-                [subject.next_focus_strategy() for _ in range(4)],
-                ["top", "low", "top", "low"],
-            )
+            for _ in range(4):
+                self.assertNotEqual(subject.next_focus_strategy(), "culled")
 
     def test_cli_derives_the_stock_turn_limit_for_the_selected_speed(self):
         online = machine.parse_args(["--watch-pid", "1"])

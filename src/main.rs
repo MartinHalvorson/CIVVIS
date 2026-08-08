@@ -700,8 +700,73 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the family it replaces. A doc comment and one test; no executable path
 /// changes, so advanced_v1 is byte-identical by construction. Compatibility
 /// re-pin.
+/// #1360 adds a bounded friendly-volley extension only under
+/// `BasicAi::tactical_strategy`. `AdvancedAi::legacy()` leaves that flag false,
+/// so its unit loop never asks for a paired friendly finisher or replaces a
+/// reply price; this is a reviewed compatibility re-pin, not an Elo-protocol
+/// change.
+/// #1363 restores the joint tactical planner (`joint_tactics`, off everywhere
+/// but the `advanced_joint_tactics` arm and the live bridge) and admits the
+/// barbarian seat to the Advanced military step's enemy list behind
+/// `home_defense`. `AdvancedAi::legacy()` leaves `home_defense` false and
+/// `joint_tactics` false, so the anchor's path gains only inert fields and a
+/// set-membership test against an empty set; the STOCK `advanced` entrant
+/// (which ships `home_defense = true`) now answers barbarian raiders at home,
+/// recorded here honestly. Compatibility re-pin for the anchor.
+/// The Tactics arena adds an arena doctrine to both files, every part of it
+/// behind `Game::is_arena()` — which is false for every world a rated game is
+/// ever played on, because the Battlefield script is not a world and no
+/// rating instrument accepts one. With the flag false the three touched
+/// expressions reduce to the shipped ones by construction (`arena || x` is
+/// `x`, `!arena && y` is `y`, and the weight pair is returned unchanged), so
+/// the anchor's decisions are byte-identical. Reviewed compatibility re-pin,
+/// not an Elo-protocol change.
+/// #1386 makes production Scouts collect a tribal village they can currently
+/// see and reach before another unseen exploration tile. The shared branch is
+/// behind `BasicAi::tactical_strategy`: it is false for Basic and
+/// `AdvancedAi::legacy()`, and `promoted_policy_envoy` enables it for the
+/// production controller. The condition tests that flag before reading player
+/// sight, reachability, or village state; the frozen path therefore proceeds
+/// directly into its historical fog-target selection. The focused regression
+/// asserts that split on the same staged board. A matched release
+/// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed 31337
+/// --jobs 1 --deployment-comparison` report was byte-identical to the
+/// then-current `origin/main` (SHA-256
+/// `1bebbaa15ee7388b3d9427c1d49726d8e29b2328113c9b9409cb60bb7ae813e0`).
+/// Compatibility re-pin, not an Elo-protocol change.
+/// #1384 teaches the joint planner withdrawals and handoff steps and keeps the
+/// per-unit movers off units the plan moved without a blow
+/// (`tactics_withdrawn`). `AdvancedAi::legacy()` leaves `joint_tactics` false,
+/// so the plan never runs, the set stays empty, and the anchor's only new
+/// executable is a set-membership test against an empty set — the same shape
+/// #1363 re-pinned. Compatibility re-pin over the #1382 merge.
+/// #1393 adds the war-conversion trio (`war_economy`, `war_reinforcement`,
+/// `war_patience`), off by default and set only by `enable_live_bridge`.
+/// `AdvancedAi::legacy()` leaves all three false, so its new executable is
+/// three short-circuiting flag tests: the production routing keeps its
+/// historical arms (`false && _` adds nothing), both fatigue sites reduce to
+/// the shipped expression (`!false &&` is identity), and
+/// `wartime_reinforcement_step` returns `None` on its first line. The anchor's
+/// decisions are byte-identical by construction. Compatibility re-pin, not an
+/// Elo-protocol change.
+/// #1399 breaks the Tactics-arena standoff by switching two pieces of
+/// world-preservation logic off on a battlefield: the per-tile
+/// local-superiority brake on closing moves, and the dangerous-approach
+/// memory whose retreat floor assumes healing that an arena does not have.
+/// Both sit behind a `!g.is_arena()` test, and `is_arena()` is false for
+/// every world a rated game is played on, so the anchor's decision stream on
+/// the rated profile is identical by construction — the same shape as the
+/// flag re-pins above, with the map script as the flag. Compatibility
+/// re-pin, not an Elo-protocol change.
+/// The recon-replacement arm adds one disjunct to `pick_item`'s military-floor
+/// condition and one new chooser, behind `BasicAi::recon_replacement`. Both
+/// constructors leave the flag false and only `enable_live_bridge` sets it, so
+/// under the anchor `recon_is_the_missing_arm` returns on its first line, the
+/// added disjunct is a constant `false` that cannot change the `||`, and
+/// `best_recon` is never reached. The anchor's build order is byte-identical by
+/// construction. Compatibility re-pin, not an Elo-protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x81d1_39cb_4a9d_82d7;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x024f_67b2_d9bb_3e07;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -864,15 +929,34 @@ fn auto_cs(args: &[String], players: i64) -> usize {
 }
 
 fn auto_dimension(args: &[String], key: &str, players: i64, width: bool) -> i32 {
-    let size = MapSize::for_players(players.max(1) as usize);
-    // A globe stores itself in a rectangle of its own shape, so the size's
-    // default dimensions depend on which world shape was asked for.
-    let (default_width, default_height) = size.dimensions(map_topology(args));
+    // A Tactics arena is not sized like a world. Left to the world ladder,
+    // `--map battlefield` produced an eighty-hex "arena" that two eight-unit
+    // armies could spend a whole battle failing to find each other on; the
+    // mode's own smallest field is the honest default, and `--width` and
+    // `--height` still name any other.
+    let (default_width, default_height) = if map_script(args).is_battlefield() {
+        let script = map_script(args);
+        let arena = setup::BATTLEFIELD_SIZES
+            .iter()
+            .find(|size| size.script == script)
+            .copied()
+            .unwrap_or(setup::BATTLEFIELD_SIZES[0]);
+        (arena.width, arena.height)
+    } else {
+        // A globe stores itself in a rectangle of its own shape, so the size's
+        // default dimensions depend on which world shape was asked for.
+        MapSize::for_players(players.max(1) as usize).dimensions(map_topology(args))
+    };
     arg(
         args,
         key,
         if width { default_width } else { default_height } as i64,
     ) as i32
+}
+
+/// The world type asked for, as every command reads it.
+fn map_script(args: &[String]) -> MapScript {
+    MapScript::from_id(&arg_text(args, "--map", "tennis_ball")).unwrap_or(MapScript::TeninsBall)
 }
 
 /// The world's shape, which is asked for separately from what fills it.
@@ -903,8 +987,109 @@ fn base_ruleset(args: &[String]) -> BaseRuleset {
 /// A rung of the ladder that is declared but not built yet is refused here
 /// rather than quietly played as the Ancient era — the whole point of listing
 /// it is that it is not the same game.
-fn start_era(args: &[String]) -> usize {
+/// The era every civilization opens in.
+///
+/// `--start-era random` is the training lane's answer to overfitting. A
+/// Tactics sweep fought only from the Ancient era teaches an AI Ancient-era
+/// tactics — slingers and warriors on open ground — and nothing about
+/// crossbows behind walls or armour in the open. Varying the opening across
+/// the ladder spreads a sweep over the whole unit roster instead.
+///
+/// The roll comes from the game's own seed rather than a fresh source, so a
+/// soak stays exactly reproducible: the same `--start-seed` replays the same
+/// eras in the same order. The mix is there because consecutive seeds are
+/// consecutive integers, and taking those modulo the ladder length directly
+/// would march through the eras in lockstep with the seed instead of
+/// scattering them.
+/// The arena economy a run plays under, read from the `--tactics-*` flags.
+///
+/// Every launch path needs its own call because they build their world
+/// differently — `soak` and `simulate` through `game_options`, `tournament`
+/// through its own per-game `GameOptions`, and `play` through
+/// `server::Params` — and each one that forgets accepts the flags and
+/// silently ignores them. Both of the others did, in turn; this is the single
+/// reader they now share.
+fn tactics_rules(args: &[String]) -> setup::TacticsRules {
+    let stock = setup::TacticsRules::default();
+    setup::TacticsRules {
+        cities: arg(args, "--tactics-cities", i64::from(stock.cities)).max(0) as u8,
+        production: arg(args, "--tactics-production", i64::from(stock.production)).max(0) as u32,
+        gold: arg(args, "--tactics-gold", i64::from(stock.gold)).max(0) as u32,
+        turns_per_tech: arg(args, "--tactics-turns-per-tech", i64::from(stock.turns_per_tech))
+            .max(0) as u32,
+        turn_limit: arg(args, "--tactics-turn-limit", i64::from(stock.turn_limit)).max(0) as u32,
+        best_of: arg(args, "--tactics-best-of", i64::from(stock.best_of)).max(1) as u32,
+        unique_units: flag_or(args, "--tactics-unique-units", stock.unique_units),
+        fog: flag_or(args, "--tactics-fog", stock.fog),
+    }
+    .sanitized()
+}
+
+/// The civilizations named on the command line, in seat order.
+fn named_civs(args: &[String]) -> Vec<String> {
+    arg_text(args, "--civs", &arg_text(args, "--civ", ""))
+        .split(',')
+        .map(|civ| civ.trim().to_string())
+        .filter(|civ| !civ.is_empty())
+        .collect()
+}
+
+/// Which roster the seats are drawn from.
+fn leader_pool(args: &[String]) -> LeaderPool {
+    let id = arg_text(args, "--leader-pool", LeaderPool::default().id());
+    let pool = LeaderPool::from_id(&id).unwrap_or_else(|| {
+        eprintln!("unknown leader pool {id:?}; choose civ6, historical, or today");
+        std::process::exit(2);
+    });
+    if !pool.is_available() {
+        eprintln!("leader pool {id:?} has no supplied roster data yet");
+        std::process::exit(2);
+    }
+    pool
+}
+
+/// The civilizations a Tactics match is between, resolved the same way the
+/// engine seats them.
+///
+/// A match has to know its two contenders *before* the first battle, because
+/// it swaps the sides over between battles and keeps the score by
+/// civilization. Naming them explicitly for every battle also makes the
+/// pairing a property of the match rather than of the seating order the stock
+/// fill happened to produce.
+fn match_contenders(args: &[String], players: i64, chosen: &[String]) -> Vec<String> {
+    let rules = Rules::embedded();
+    let mut known: std::collections::BTreeSet<civvis::name::Name> =
+        rules.civs.keys().cloned().collect();
+    known.extend(
+        leader_roster::all()
+            .iter()
+            .filter(|record| record.available)
+            .map(|record| civvis::name::Name::new(&record.civ)),
+    );
+    civvis::game::seat_civs(players.max(1) as usize, chosen, &known, leader_pool(args))
+}
+
+/// An on/off flag that keeps its default when absent, and reads the usual
+/// spellings of both answers when present: `--flag`, `--flag on|off`,
+/// `true|false`, `yes|no`, `1|0`.
+fn flag_or(args: &[String], key: &str, default: bool) -> bool {
+    let Some(index) = args.iter().position(|arg| arg == key) else {
+        return default;
+    };
+    match args.get(index + 1).map(String::as_str) {
+        Some("on" | "true" | "yes" | "1") | None => true,
+        Some("off" | "false" | "no" | "0") => false,
+        // A value that is not an answer is the next flag: `--tactics-unique-
+        // units --games 8` asks for unique units and eight games.
+        Some(_) => true,
+    }
+}
+
+fn start_era(args: &[String], seed: u64) -> usize {
     let id = arg_text(args, "--start-era", setup::stock_start_era_id());
+    if id == "random" {
+        return setup::random_start_era(seed);
+    }
     setup::start_era_from_id(&id).unwrap_or_else(|| {
         let playable: Vec<&str> = setup::playable_start_eras().map(|spec| spec.id).collect();
         let known = setup::START_ERAS.iter().any(|spec| spec.id == id);
@@ -940,13 +1125,11 @@ fn future_era(args: &[String]) -> setup::FutureEra {
 /// shared snapshot and commit together. Same contract as the eras: an unknown
 /// id is refused rather than quietly played as some stock regime.
 ///
-/// The default is the caller's to name, because it is a per-command choice:
-/// headless simulation and a spectated table default to `simultaneous` for
-/// throughput, while a played game is sequential by construction and every
-/// rating instrument (benchmark, tournament, league, elo, selfplay, evolve)
-/// stays a sequential-regime instrument whose records must not claim
-/// otherwise. `TurnStructure::default()` itself stays `Sequential` as the
-/// save-compatibility and setup-contract anchor.
+/// The default is the caller's to name, but today every caller names
+/// `Sequential`: the product is hard-committed to sequential turns, and the
+/// simultaneous driver is a retained research regime reached only through
+/// this explicit flag. `TurnStructure::default()` itself stays `Sequential`
+/// as the save-compatibility and setup-contract anchor.
 fn turn_structure(args: &[String], default: setup::TurnStructure) -> setup::TurnStructure {
     let id = arg_text(args, "--turn-structure", default.id());
     setup::turn_structure_from_id(&id).unwrap_or_else(|| {
@@ -979,6 +1162,7 @@ fn game_options(
         eprintln!("unknown game speed {speed:?}; choose one of {:?}", speeds(&rules));
         std::process::exit(2);
     };
+    let tactics = tactics_rules(args);
     // An explicit --turns wins; otherwise every speed brings its own stock
     // budget (Standard is 500 turns / 2050 AD). Short historical defaults
     // ended games at the turn limit before the science, culture, and
@@ -986,6 +1170,11 @@ fn game_options(
     // ahead on score at an arbitrary cutoff.
     let turns = if args.iter().any(|a| a == "--turns") {
         arg(args, "--turns", speed_spec.turns as i64)
+    } else if map_script(args).is_battlefield() {
+        // A Tactics battle keeps a battle's clock rather than a game speed's
+        // five hundred turns. Its own four-step ladder names the stock
+        // deadline; the general `--turns` flag above still wins explicitly.
+        i64::from(tactics.turn_limit)
     } else {
         speed_spec.turns as i64
     };
@@ -1018,24 +1207,15 @@ fn game_options(
         }
         teams
     };
-    let leader_pool = {
-        let id = arg_text(args, "--leader-pool", LeaderPool::default().id());
-        let pool = LeaderPool::from_id(&id).unwrap_or_else(|| {
-            eprintln!("unknown leader pool {id:?}; choose civ6, historical, or today");
-            std::process::exit(2);
-        });
-        if !pool.is_available() {
-            eprintln!("leader pool {id:?} has no supplied roster data yet");
-            std::process::exit(2);
-        }
-        pool
-    };
+    let leader_pool = leader_pool(args);
     GameOptions {
         base_ruleset: base_ruleset(args),
-        start_era: start_era(args),
+        start_era: start_era(args, seed),
+        // The arena's economy, so a headless sweep can vary the thing it is
+        // training against without going through a lobby. Ignored on a world.
+        tactics,
         future_era: future_era(args),
-        map_script: MapScript::from_id(&arg_text(args, "--map", "tennis_ball"))
-            .unwrap_or(MapScript::TeninsBall),
+        map_script: map_script(args),
         map_topology: map_topology(args),
         map_poles: map_poles(args),
         difficulty,
@@ -1133,26 +1313,30 @@ fn speeds(rules: &Rules) -> Vec<&str> {
 }
 
 fn standings(g: &Game) {
-    // A game can legitimately end with nobody having won: a lobby that pins
-    // `--victories` without `score` has no turn-limit tiebreak, so the limit
-    // arrives and no enabled path has been achieved. That is a result to
-    // report, not a reason to abort before printing the standings that say
-    // what actually happened.
+    if g.is_draw() {
+        println!("Draw: turn limit reached on turn {}", g.reported_turn());
+    }
     match g.winner {
         Some(winner) => {
             let w = &g.players[winner];
+            // The label, not the bare type: this line is how a played game
+            // announces its result, and a Mercy Rule ending has a lane to
+            // name. The fixed-width victory columns in the batch and audit
+            // tables below keep the type — they are a tabulation to scan, and
+            // one of them is a key things are counted under.
             println!(
                 "Winner: {} (player {}) by {} on turn {}",
                 w.civ,
                 w.id,
-                g.victory_type.clone().unwrap_or_default(),
+                g.victory_label().unwrap_or_default(),
                 g.reported_turn()
             );
         }
-        None => println!(
+        None if !g.is_draw() => println!(
             "No winner: turn {} of {}, and no enabled victory was achieved",
             g.turn, g.max_turns
         ),
+        None => {}
     }
     let mut majors: Vec<usize> = g
         .players
@@ -1274,14 +1458,15 @@ fn main() {
         "simulate" => {
             let players = arg(&args, "--players", 4);
             let g0 = Instant::now();
-            // Headless simulation is what the simultaneous regime exists
-            // for, so it is the default here; `--turn-structure sequential`
-            // asks for the stock regime explicitly.
+            // The product is hard-committed to sequential turns, so every
+            // command defaults to the regime the shipped game plays;
+            // `--turn-structure simultaneous` remains the explicit research
+            // escape hatch into the retained driver.
             let mut g = Game::new_with(game_options(
                 &args,
                 players,
                 arg(&args, "--seed", 0) as u64,
-                setup::TurnStructure::Simultaneous,
+                setup::TurnStructure::Sequential,
             ));
             // The two regimes want opposite parallelism. Sequential seats
             // cannot deliberate concurrently, so `--jobs` feeds the clone-
@@ -1311,7 +1496,7 @@ fn main() {
             let games = arg(&args, "--games", 10);
             let start = arg(&args, "--start-seed", 0);
             let jobs = jobs_arg(&args);
-            let simultaneous = turn_structure(&args, setup::TurnStructure::Simultaneous)
+            let simultaneous = turn_structure(&args, setup::TurnStructure::Sequential)
                 == setup::TurnStructure::Simultaneous;
             // A sequential soak has only one useful frontier: independent
             // games. Simultaneous games have a second one inside each game —
@@ -1326,18 +1511,38 @@ fn main() {
             } else {
                 (jobs, 1, 0)
             };
+            // A Tactics match: the same two civilizations over a series of
+            // battles, sides swapped between them. `--games` is how many
+            // battles are actually played, so a best-of-5 run short of five
+            // games simply reports the score it reached.
+            let arena = map_script(&args).is_battlefield();
+            let match_rules = tactics_rules(&args);
+            let contenders = (arena && match_rules.best_of > 1)
+                .then(|| match_contenders(&args, players, &named_civs(&args)));
             // Each game is played on an outer worker, then described on the
             // main one, so a soak reads exactly as it did when it was serial.
             let lines = civvis::parallel::map(games as usize, concurrent_games, |index| {
                 let seed = start + index as i64;
                 let t0 = Instant::now();
+                let contenders = contenders.clone();
                 let result = std::panic::catch_unwind(|| {
-                    let mut g = Game::new_with(game_options(
+                    let mut options = game_options(
                         &args,
                         players,
                         seed as u64,
-                        setup::TurnStructure::Simultaneous,
-                    ));
+                        setup::TurnStructure::Sequential,
+                    );
+                    if let Some(contenders) = contenders {
+                        // The sides change ends at half time, and every
+                        // battle after it. Otherwise a series measures the
+                        // corner one civilization kept sitting in as much as
+                        // it measures the civilization.
+                        options.civs = contenders;
+                        if index % 2 == 1 {
+                            options.civs.reverse();
+                        }
+                    }
+                    let mut g = Game::new_with(options);
                     let mut ais = AdvancedAi::fleet(&g);
                     let simultaneous = if g.turn_structure == setup::TurnStructure::Simultaneous {
                         // Spread a non-divisible budget across the first live
@@ -1364,10 +1569,8 @@ fn main() {
                             .iter()
                             .filter(|p| p.is_minor && !p.is_barbarian)
                             .collect();
-                        // A soak line describes a finished game, and a game
-                        // whose turn limit arrived with no enabled victory
-                        // achieved is finished too. Report it as one rather
-                        // than taking the whole run down.
+                        // A soak line describes a terminal result. Tactics
+                        // draws carry no winner but are finished battles.
                         let w = g.winner.map(|winner| &g.players[winner]);
                         let mut flags = String::new();
                         if let Some(simultaneous) = &simultaneous {
@@ -1384,7 +1587,9 @@ fn main() {
                         if w.is_some_and(|w| w.is_minor) {
                             flags.push_str(" MINOR-WINNER");
                         }
-                        if w.is_none() {
+                        if g.is_draw() {
+                            flags.push_str(" DRAW");
+                        } else if w.is_none() {
                             flags.push_str(" NO-WINNER");
                         }
                         // An army nobody ever modernizes is invisible in the
@@ -1537,7 +1742,7 @@ fn main() {
                             100 * census.hold_threatened / held,
                             100 * census.hold_weak / held,
                         ));
-                        Some(format!(
+                        Some((w.map(|w| w.civ.clone()), format!(
                             "seed {:3}  t{:<4} {:<10} {:<8} majors_alive={}/{} cities={:<2} cs_alive={}/{} [{:.2}s]{}",
                             seed,
                             g.reported_turn(),
@@ -1550,15 +1755,27 @@ fn main() {
                             minors.len(),
                             t0.elapsed().as_secs_f64(),
                             flags
-                        ))
+                        )))
                     }
                     Err(_) => None,
                 }
             });
             let mut fails = 0;
+            let mut series = contenders
+                .map(|civs| setup::MatchSeries::new(match_rules.best_of, civs));
             for (index, line) in lines.into_iter().enumerate() {
                 match line {
-                    Some(line) => println!("{line}"),
+                    Some((winner, line)) => {
+                        println!("{line}");
+                        if let Some(series) = series.as_mut() {
+                            // A match stops at the battle that settles it;
+                            // the rest of `--games` is a dead rubber and is
+                            // reported as unplayed rather than counted.
+                            if !series.decided() {
+                                series.record(winner.as_deref());
+                            }
+                        }
+                    }
                     None => {
                         fails += 1;
                         println!("seed {:3}  CRASH (panic)", start + index as i64);
@@ -1566,7 +1783,193 @@ fn main() {
                 }
             }
             println!("\n{}/{} games completed", games - fails, games);
+            if let Some(series) = series {
+                let verdict = match series.winner() {
+                    Some(civ) => format!("{civ} takes the match"),
+                    None if series.played() >= series.best_of => "match drawn".to_string(),
+                    None => format!(
+                        "match unfinished: {} of {} battles played",
+                        series.played(),
+                        series.best_of
+                    ),
+                };
+                println!("best of {}: {} — {verdict}", series.best_of, series.scoreline());
+            }
             if fails > 0 {
+                std::process::exit(1);
+            }
+        }
+        // Would ending decided games early change who wins? 62% of audited
+        // league games ran to the turn cap, where the winner is whoever is
+        // biggest — most of that tail is compute spent on a settled outcome.
+        // The spectator ribbon already carries a calibrated live win
+        // probability (`odds::table`, Brier- and log-loss-checked at three
+        // phases of completed games). This audit plays every game to its real
+        // end while recording, per threshold, the first world turn the odds
+        // leader crossed it — so agreement between the crossing pick and the
+        // played-out winner, and the turns adjudication would have saved, are
+        // measured exactly rather than estimated. It changes no outcome and
+        // is the pre-registered evidence gate for enabling adjudication in
+        // any loop (docs/ADJUDICATION.md).
+        "odds-audit" => {
+            let players = arg(&args, "--players", 6);
+            let games = arg(&args, "--games", 40);
+            let start = arg(&args, "--start-seed", 0);
+            let jobs = jobs_arg(&args);
+            let start_turn = arg(&args, "--adjudicate-start", 100) as u32;
+            let every = (arg(&args, "--every", 5).max(1)) as u32;
+            let thresholds: Vec<f64> = arg_text(&args, "--thresholds", "0.90,0.95,0.98,0.995")
+                .split(',')
+                .map(|t| t.trim().parse::<f64>().expect("--thresholds wants numbers"))
+                .collect();
+            println!(
+                "odds-audit: {games} games, {players} players, sampling from turn \
+                 {start_turn} every {every}, thresholds {thresholds:?}"
+            );
+            type GameAudit = (Option<usize>, Option<String>, u32, Vec<Option<(usize, u32)>>);
+            let results: Vec<Option<GameAudit>> =
+                civvis::parallel::map(games as usize, jobs, |index| {
+                    let seed = start + index as i64;
+                    std::panic::catch_unwind(|| {
+                        let mut g = Game::new_with(game_options(
+                            &args,
+                            players,
+                            seed as u64,
+                            setup::TurnStructure::Sequential,
+                        ));
+                        let mut ais = AdvancedAi::fleet(&g);
+                        // Same display-state elisions as `run_game`: this is a
+                        // headless rollout and the odds read none of them.
+                        g.set_fog_memory(false);
+                        g.set_war_ledger(false);
+                        let mut crossings: Vec<Option<(usize, u32)>> =
+                            vec![None; thresholds.len()];
+                        let mut last_turn = g.turn;
+                        while g.winner.is_none() && g.turn <= g.max_turns {
+                            let pid = g.current;
+                            ais[pid].take_turn(&mut g, pid);
+                            if g.winner.is_none() && g.current == pid {
+                                let _ = g.apply(pid, &civvis::game::Action::EndTurn);
+                            }
+                            if g.turn == last_turn {
+                                continue;
+                            }
+                            last_turn = g.turn;
+                            let due = g.turn >= start_turn && (g.turn - start_turn) % every == 0;
+                            if !due || g.winner.is_some() || crossings.iter().all(Option::is_some)
+                            {
+                                continue;
+                            }
+                            // A flat 1500 prior for every seat: the audit runs
+                            // stock fleets with no roster, so only the board
+                            // terms — score, military, cities, victory races,
+                            // and the clock — separate the table.
+                            let table = civvis::odds::table(&g, |_pid| 1500.0f64);
+                            let Some((leader, seat)) =
+                                table.iter().max_by(|a, b| a.1.now.total_cmp(&b.1.now))
+                            else {
+                                continue;
+                            };
+                            for (slot, threshold) in thresholds.iter().enumerate() {
+                                if crossings[slot].is_none() && seat.now >= *threshold {
+                                    crossings[slot] = Some((*leader, g.turn));
+                                }
+                            }
+                        }
+                        let end_turn = g.turn.min(g.max_turns);
+                        (g.winner, g.victory_type.clone(), end_turn, crossings)
+                    })
+                    .ok()
+                });
+            let mut crashes = 0;
+            let mut finished: Vec<(i64, GameAudit)> = Vec::new();
+            for (index, result) in results.into_iter().enumerate() {
+                let seed = start + index as i64;
+                match result {
+                    Some(audit) => finished.push((seed, audit)),
+                    None => {
+                        crashes += 1;
+                        println!("seed {seed:4}  CRASH (panic)");
+                    }
+                }
+            }
+            for (seed, (winner, victory, end_turn, crossings)) in &finished {
+                let victory = victory.as_deref().unwrap_or("none");
+                let verdicts: Vec<String> = crossings
+                    .iter()
+                    .zip(&thresholds)
+                    .map(|(crossing, threshold)| match crossing {
+                        Some((pid, turn)) => format!(
+                            "{threshold}:t{turn}{}",
+                            if Some(*pid) == *winner { "=" } else { "!" }
+                        ),
+                        None => format!("{threshold}:-"),
+                    })
+                    .collect();
+                println!(
+                    "seed {seed:4}  t{end_turn:<4} {victory:<10} {}",
+                    verdicts.join(" ")
+                );
+            }
+            // The turn cap awards the score victory, so `score` endings are
+            // truncations of an undecided board and every other ending is a
+            // game the rules finished. Agreement is reported for both because
+            // they answer different questions: natural endings are ground
+            // truth, cap endings are agreement with the truncation rule that
+            // adjudication would replace.
+            println!(
+                "\nthreshold  crossed  agree-all      agree-natural  agree-cap      \
+                 mean-saved  saved-share"
+            );
+            for (slot, threshold) in thresholds.iter().enumerate() {
+                let (mut crossed, mut agree, mut nat, mut nat_agree, mut cap, mut cap_agree) =
+                    (0u32, 0u32, 0u32, 0u32, 0u32, 0u32);
+                let (mut saved, mut total) = (0u64, 0u64);
+                for (_, (winner, victory, end_turn, crossings)) in &finished {
+                    total += u64::from(*end_turn);
+                    let Some((pid, turn)) = crossings[slot] else {
+                        continue;
+                    };
+                    crossed += 1;
+                    saved += u64::from(end_turn.saturating_sub(turn));
+                    let hit = *winner == Some(pid);
+                    agree += u32::from(hit);
+                    if victory.as_deref() == Some("score") {
+                        cap += 1;
+                        cap_agree += u32::from(hit);
+                    } else {
+                        nat += 1;
+                        nat_agree += u32::from(hit);
+                    }
+                }
+                let pct = |num: u32, den: u32| {
+                    if den == 0 {
+                        "     -".to_string()
+                    } else {
+                        format!("{:5.1}%", 100.0 * f64::from(num) / f64::from(den))
+                    }
+                };
+                println!(
+                    "{threshold:<9}  {crossed:3}/{:<3}  {}({agree:3}/{crossed:<3})  \
+                     {}({nat_agree:2}/{nat:<2})  {}({cap_agree:2}/{cap:<2})  {:8.1}    {:5.1}%",
+                    finished.len(),
+                    pct(agree, crossed),
+                    pct(nat_agree, nat),
+                    pct(cap_agree, cap),
+                    if crossed == 0 {
+                        0.0
+                    } else {
+                        saved as f64 / f64::from(crossed)
+                    },
+                    if total == 0 {
+                        0.0
+                    } else {
+                        100.0 * saved as f64 / total as f64
+                    },
+                );
+            }
+            if crashes > 0 {
+                println!("\n{crashes} of {games} games crashed");
                 std::process::exit(1);
             }
         }
@@ -1692,7 +2095,18 @@ fn main() {
             let _ = sink;
         }
         "tournament" => {
-            let ratings_path = arg_text(&args, "--ratings", civvis::elo::DEFAULT_RATINGS_PATH);
+            // Each mode keeps its own ladder: a Tactics rating is earned
+            // against Tactics opponents on an arena and says nothing about
+            // the grand strategy game, so `--map battlefield` writes to the
+            // Tactics ledger unless `--ratings` names another. Offered to the
+            // Civ ledger it would be refused anyway — the profile records the
+            // map script — so this names the right file rather than making
+            // the operator discover the mismatch.
+            let ratings_path = arg_text(
+                &args,
+                "--ratings",
+                civvis::elo::ratings_path_for(setup::GameMode::for_script(map_script(&args))),
+            );
             if args.iter().any(|arg| arg == "--standings") {
                 match civvis::elo::EloPool::load(&ratings_path) {
                     Ok(pool) => print!("{}", civvis::elo::leaderboard(&pool)),
@@ -1888,6 +2302,16 @@ fn main() {
                 // to rank on whole games; see `stock_turns`.
                 max_turns: turns as u32,
                 num_city_states: city_states as usize,
+                // A tournament rolls its own per-game seeds, so the era
+                // choice travels rather than one era resolved here.
+                start_era: if arg_text(&args, "--start-era", setup::stock_start_era_id())
+                    == "random"
+                {
+                    setup::StartEraChoice::RandomPerGame
+                } else {
+                    setup::StartEraChoice::Fixed(start_era(&args, seed as u64))
+                },
+                tactics: tactics_rules(&args),
                 seed: seed as u64,
                 k,
                 rating_anchor,
@@ -2293,11 +2717,7 @@ fn main() {
                 &args,
                 players,
                 seed,
-                if spectate {
-                    setup::TurnStructure::Simultaneous
-                } else {
-                    setup::TurnStructure::Sequential
-                },
+                setup::TurnStructure::Sequential,
             );
             if !spectate && play_options.turn_structure == setup::TurnStructure::Simultaneous {
                 eprintln!(
@@ -2329,6 +2749,12 @@ fn main() {
                     game_speed,
                     max_turns: play_options.max_turns,
                     victory_conditions: victory_conditions(&args),
+                    // The shipped setup defaults: the lobby can change both.
+                    mercy_rule: Some(0.95),
+                    required_victory_types: 1,
+                    // The lobby can still change these mid-session; this is
+                    // what the launch itself asked for.
+                    tactics: tactics_rules(&args),
                     num_city_states: auto_cs(&args, players),
                     spectate,
                     difficulty: play_options.difficulty,
@@ -2475,16 +2901,16 @@ fn main() {
         }
         _ => {
             println!(
-                "usage: civvis <simulate|soak|benchmark|tournament|league|league-init|rate-game|rating|play|evolve|validate|pedia> \
+                "usage: civvis <simulate|soak|odds-audit|benchmark|tournament|league|league-init|rate-game|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais [identity=]controller,...] [--anchor identity|none] [--ratings path] [--standings] [--port N] [--no-open] \
-                      [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world] \
+                      [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield|tactics_planet] \
                       [--shape flat|planet] [--poles poles|randomized] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
                       [--disasters 0|1|2|3|4] [--barbarians on|off] \
-                      [--turn-structure sequential|simultaneous (simulate, soak, and spectated \
-                       play default to simultaneous; everything else stays sequential)] \
+                      [--turn-structure sequential|simultaneous (everything defaults to \
+                       sequential; simultaneous is a research regime)] \
                       [--game-modes apocalypse,secret_societies] \
                       [--leader-pool civ6|historical|today] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
@@ -2501,13 +2927,104 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        game_options, jobs_arg, map_topology, parse_tournament_entrants,
+        game_options, jobs_arg, map_topology, parse_tournament_entrants, start_era, tactics_rules,
         simultaneous_soak_job_split, single_simulation_jobs_arg, strict_f64_arg, strict_i64_arg,
         turn_structure, ADVANCED_V1_SOURCE_CONTRACT_FNV,
         DEFAULT_TOURNAMENT_ENTRANTS, SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
     };
     use civvis::game::{Action, Game};
     use civvis::setup::{MapSize, MapTopology, TurnStructure};
+
+    /// `--start-era random` spreads a sweep over the whole unit roster
+    /// instead of teaching one era's matchups, and does it reproducibly: the
+    /// roll comes from the game's own seed, so a soak replayed with the same
+    /// `--start-seed` opens in the same eras. Consecutive seeds must not walk
+    /// the ladder in lockstep, which is what the mix in `start_era` is for.
+    /// Every launch path reads the arena flags through one function, because
+    /// each path that grew its own copy accepted them and silently ignored
+    /// them: `tournament` rated three "different" experiments identically,
+    /// and `play` launched the stock arena however it was asked. A shared
+    /// reader is the fix, so this pins that it reads what it is given and
+    /// clamps what it cannot play.
+    #[test]
+    fn the_arena_flags_are_read_once_for_every_launch_path() {
+        let stock = civvis::setup::TacticsRules::default();
+        assert_eq!(tactics_rules(&[]), stock, "no flags is the stock arena");
+
+        let asked = [
+            "--map".to_string(), "battlefield".to_string(),
+            "--tactics-cities".to_string(), "0".to_string(),
+            "--tactics-production".to_string(), "120".to_string(),
+            "--tactics-gold".to_string(), "0".to_string(),
+            "--tactics-turns-per-tech".to_string(), "0".to_string(),
+            "--tactics-turn-limit".to_string(), "150".to_string(),
+        ];
+        let rules = tactics_rules(&asked);
+        assert_eq!(rules.cities, 0);
+        assert_eq!(rules.production, 120);
+        assert_eq!(rules.gold, 0);
+        assert_eq!(rules.turns_per_tech, 0);
+        assert_eq!(rules.turn_limit, 150);
+
+        // Clamped, not trusted: these reach the same sanitiser the server uses.
+        let silly = [
+            "--tactics-cities".to_string(), "9".to_string(),
+            "--tactics-production".to_string(), "100000".to_string(),
+            "--tactics-turns-per-tech".to_string(), "100000".to_string(),
+        ];
+        let rules = tactics_rules(&silly);
+        assert_eq!(rules.cities, 1, "an arena seats at most one city a side");
+        assert_eq!(rules.production, civvis::setup::TacticsRules::MAX_YIELD);
+        assert_eq!(rules.turns_per_tech, civvis::setup::TacticsRules::MAX_TURNS_PER_TECH);
+
+        // And the world path carries the same answer, so a `play` launch and a
+        // `soak` launch of the same flags are the same arena.
+        let options = game_options(&asked, 2, 7, TurnStructure::Sequential);
+        assert_eq!(options.tactics, tactics_rules(&asked));
+        assert_eq!(options.max_turns, 150, "the arena uses its selected deadline");
+
+        let explicit = [
+            "--map".to_string(), "battlefield".to_string(),
+            "--tactics-turn-limit".to_string(), "200".to_string(),
+            "--turns".to_string(), "73".to_string(),
+        ];
+        assert_eq!(
+            game_options(&explicit, 2, 8, TurnStructure::Sequential).max_turns,
+            73,
+            "the general explicit turn flag still overrides the Tactics menu"
+        );
+    }
+
+    #[test]
+    fn a_random_start_era_is_seeded_scattered_and_playable() {
+        let args = ["--start-era".to_string(), "random".to_string()];
+        let playable: Vec<usize> =
+            civvis::setup::playable_start_eras().filter_map(|spec| spec.era).collect();
+        let rolled: Vec<usize> = (0..64).map(|seed| start_era(&args, seed)).collect();
+
+        for era in &rolled {
+            assert!(playable.contains(era), "rolled an era nobody can open in: {era}");
+        }
+        let replay: Vec<usize> = (0..64).map(|seed| start_era(&args, seed)).collect();
+        assert_eq!(rolled, replay, "the same seed must replay the same era");
+
+        let distinct: std::collections::BTreeSet<usize> = rolled.iter().copied().collect();
+        assert!(
+            distinct.len() >= playable.len().min(5),
+            "64 seeds reached only {} of {} eras: {distinct:?}",
+            distinct.len(),
+            playable.len()
+        );
+        // Lockstep would make each seed's era one past its neighbour's.
+        let marching = rolled
+            .windows(2)
+            .filter(|pair| (pair[1] + playable.len() - pair[0]) % playable.len() == 1)
+            .count();
+        assert!(marching < rolled.len() / 2, "the eras march with the seed");
+
+        // Without the flag the ladder is untouched and the seed is ignored.
+        assert_eq!(start_era(&[], 1), start_era(&[], 999_999));
+    }
 
     #[test]
     fn omitted_map_shape_defaults_to_planet() {
@@ -2579,6 +3096,7 @@ mod tests {
             ("pangaea", MapScript::Pangaea),
             ("tennis_ball", MapScript::TeninsBall),
             ("tenins_ball", MapScript::TeninsBall),
+            ("tactics_planet", MapScript::TacticsPlanet),
         ] {
             let args = vec!["--map".to_string(), asked.to_string()];
             assert_eq!(
@@ -2587,6 +3105,9 @@ mod tests {
                 "{asked}"
             );
         }
+        let planet = vec!["--map".to_string(), "tactics_planet".to_string()];
+        let options = game_options(&planet, 2, 71_005, TurnStructure::Sequential);
+        assert_eq!((options.width, options.height), (40, 18));
     }
 
     #[test]

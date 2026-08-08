@@ -12,10 +12,20 @@ Civ VI contract:
   victory conditions, and no optional game modes.
 
 The server seats every civilization from the mutable league. Its normal
-selection samples the top three eligible strategies for that exact
-leader/civilization with 3:2:1 rank weights and avoids duplicates until the
-active roster is exhausted. This emphasizes proven players without collapsing
-the table to one strategy.
+selection samples the top three eligible strategies at the table size — with
+the entrants rotated across civilizations by Latin square over the league
+round — and avoids duplicates until the active roster is exhausted. This
+emphasizes proven players without collapsing the table to one strategy.
+
+On top of that, each headless game pins one focus seat (`--force-strategy`)
+from a coverage schedule the operator maintains: a full pass over every
+active entrant ordered by **measurement need** — fewest games at the pinned
+eight-seat table first, widest rating deviation breaking ties — followed by
+the top eight by rating as the exploitation tail. Live selection now breeds
+and retires from these very games, so the schedule rebuilds the moment the
+active-name set changes: a newborn sorts to the front and is focused within
+a few launches, and a retiree stops burning focus slots at the next one.
+Rating drift alone never resets the cycle.
 
 ## Start a 24-hour run
 
