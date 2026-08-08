@@ -68250,6 +68250,50 @@ mod district_mechanics {
         );
     }
 
+    /// A zero tech pace freezes the tree: both sides fight the whole battle
+    /// with the units their starting era gave them. This is the setting a
+    /// sweep uses to isolate one era's matchups, so it has to hold for the
+    /// length of a battle rather than merely start slow.
+    #[test]
+    fn a_zero_tech_pace_freezes_the_tree() {
+        let mut game = Game::new_with(GameOptions {
+            map_script: MapScript::Battlefield,
+            tactics: TacticsRules { turns_per_tech: 0, ..TacticsRules::default() },
+            ..GameOptions::new(2, 10, 10, 90_411, 250, 0)
+        });
+        let cheapest = game
+            .rules
+            .techs
+            .keys()
+            .filter(|name| !game.players[0].techs.contains(*name))
+            .min_by(|a, b| {
+                game.tech_cost(a.as_str())
+                    .total_cmp(&game.tech_cost(b.as_str()))
+            })
+            .copied()
+            .expect("an opening arena has a tree left to climb");
+        game.players[0].research = Some(cheapest.to_string());
+        let techs_before = game.players[0].techs.len();
+        let era_before = game.player_era(0);
+        for _ in 0..40 {
+            game.begin_turn(0);
+        }
+        assert_eq!(game.arena_side_yields(0).science, 0.0, "a zero pace pays no Science");
+        assert_eq!(
+            game.players[0].research_progress, 0.0,
+            "a frozen tree banks no progress"
+        );
+        assert_eq!(
+            game.players[0].techs.len(),
+            techs_before,
+            "no technology completes at a zero pace"
+        );
+        assert_eq!(game.player_era(0), era_before, "the era cannot move either");
+        // Gold is a separate grant and keeps coming: a frozen tree still
+        // upgrades, it just cannot unlock anything new to upgrade into.
+        assert!(game.players[0].gold > 0.0);
+    }
+
     /// A Tactics battlefield opens as a two-sided arena: flat and walled even
     /// when a globe was asked for, the requested city-states refused, no
     /// barbarian third force — and, at the no-city setting, two armies and
