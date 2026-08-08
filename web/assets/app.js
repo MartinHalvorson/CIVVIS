@@ -340,7 +340,7 @@ const CIV6_UNIT_ICON_TYPES = [
   "rocket_artillery", "saka_horse_archer", "scout", "settler", "siege_tower",
   "skirmisher", "slinger", "spearman", "spec_ops", "spy", "submarine",
   "supply_convoy", "swordsman", "tagma", "tank", "toa", "trader", "trebuchet",
-  "war_cart", "warrior", "winged_hussar", "warrior_monk"
+  "war_cart", "warrior", "winged_hussar", "warrior_monk", "nihang"
 ];
 const CIV6_UNIT_ICON_INDEX = new Map(
   CIV6_UNIT_ICON_TYPES.map((type, index) => [type, index]));

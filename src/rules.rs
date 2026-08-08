@@ -2865,9 +2865,26 @@ mod tests {
         // another civilization's unique or a natural wonder, so Rome's frozen
         // path never reads one. Compatibility re-pin; the Elo protocol does not
         // move.
+        //
+        // Moved again by the twenty-three city-state suzerain bonuses salvaged
+        // from an abandoned worktree, which add Lahore's levied `nihang` and its
+        // seven-node promotion tree to the shipped rows.
+        //
+        // ⚠ Unlike every re-pin above, this one is NOT a compatibility re-pin.
+        // The same `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200
+        // --seed 31337 --jobs 1 --deployment-comparison` was NOT byte-identical
+        // across the change: game-win share moved 85.0% -> 75.0% and the
+        // Elo-equivalent +301 -> +191, with the sign test falling from
+        // SIGNIFICANT to INCONCLUSIVE. That is expected rather than alarming —
+        // a suzerain bonus is read by whichever seat holds the envoys, so
+        // seating twenty-three more of them perturbs both sides — and the two
+        // Wilson intervals overlap heavily (+29..+574 vs -40..+422) on a single
+        // seed, so this is not evidence of a strength regression. It IS a real
+        // simulation change: ledgers recorded before this fingerprint are not
+        // comparable with ledgers recorded after it.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:ac92d9f32f829a77"
+            "fnv1a64:72bc36829b67f791"
         );
     }
 
@@ -3417,7 +3434,7 @@ mod tests {
         let rules = Rules::embedded();
         assert_eq!(rules.techs.len(), 77);
         assert_eq!(rules.civics.len(), 61);
-        assert_eq!(rules.units.len(), 89);
+        assert_eq!(rules.units.len(), 90);
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);

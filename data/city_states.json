@@ -86,7 +86,7 @@
    "name": "Jerusalem",
    "type": "religious",
    "bonus": "jerusalem",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your cities with Holy Sites exert pressure as if they were Holy Cities (4x Religion pressure on all cities within 10 tiles)."
   },
@@ -110,7 +110,7 @@
    "name": "Antananarivo",
    "type": "cultural",
    "bonus": "antananarivo",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Civilization gains +2% Culture for each Great Person it has ever earned, up to a total of +30%."
   },
@@ -118,7 +118,7 @@
    "name": "Mogadishu",
    "type": "trade",
    "bonus": "mogadishu",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Trader units are immune to being plundered on water tiles."
   },
@@ -134,7 +134,7 @@
    "name": "Akkad",
    "type": "militaristic",
    "bonus": "akkad",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Melee and anti-cavalry unit's attacks do full damage to the city's Walls."
   },
@@ -142,7 +142,7 @@
    "name": "Anshan",
    "type": "scientific",
    "bonus": "anshan",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "+2 Science from each Great Work of Writing. +1 Science from each Relic and Artifact."
   },
@@ -158,7 +158,7 @@
    "name": "Ayutthaya",
    "type": "cultural",
    "bonus": "ayutthaya",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Gain Culture equal to 10% of the construction cost when finishing buildings."
   },
@@ -166,7 +166,7 @@
    "name": "Bandar Brunei",
    "type": "trade",
    "bonus": "bandar_brunei",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Trading Posts in foreign cities provide +1 Gold to your Trade Routes passing through or going to the city."
   },
@@ -174,7 +174,7 @@
    "name": "Bologna",
    "type": "scientific",
    "bonus": "bologna",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your districts with a building provide +1 Great Person point of their type ( Great Writer, Great Artist, and Great Musician for Theater Square districts with a building)."
   },
@@ -182,7 +182,7 @@
    "name": "Buenos Aires",
    "type": "industrial",
    "bonus": "buenos_aires",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Bonus resources behave like Luxury resources, providing 1 Amenity per type."
   },
@@ -198,7 +198,7 @@
    "name": "Cardiff",
    "type": "industrial",
    "bonus": "cardiff",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Cities receive +2 Power for every Harbor building."
   },
@@ -206,7 +206,7 @@
    "name": "Chinguetti",
    "type": "religious",
    "bonus": "chinguetti",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "International and domestic Trade Routes receive +1 Faith for every follower in this city, of your founded or majority religion."
   },
@@ -214,7 +214,7 @@
    "name": "Fez",
    "type": "scientific",
    "bonus": "fez",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "When you use a religious unit to convert a city for the first time earn 20 Science per Population of that city (on Standard Speed)."
   },
@@ -238,7 +238,7 @@
    "name": "Hunza",
    "type": "trade",
    "bonus": "hunza",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Trade Routes generate +1 Gold for every 5 tiles they travel."
   },
@@ -246,7 +246,7 @@
    "name": "Johannesburg",
    "type": "industrial",
    "bonus": "johannesburg",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Cities receive +1 Production for every improved resource type. After researching Industrialization it becomes +2 Production."
   },
@@ -254,7 +254,7 @@
    "name": "Kumasi",
    "type": "cultural",
    "bonus": "kumasi",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Trade Routes to any city-state provide +2 Culture and +1 Gold for every specialty district in the origin city."
   },
@@ -270,7 +270,7 @@
    "name": "Lahore",
    "type": "militaristic",
    "bonus": "lahore",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your cities can now train Nihang units. A unit with a unique Promotion tree that can be purchased with Faith. Combat Strength is increased when Barracks, Armory, and Military Academy buildings are first constructed."
   },
@@ -278,7 +278,7 @@
    "name": "Mexico City",
    "type": "industrial",
    "bonus": "mexico_city",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Regional effects from your Industrial Zone, Water Park, and Entertainment Complex districts reach 3 tiles farther."
   },
@@ -310,7 +310,7 @@
    "name": "Nan Madol",
    "type": "cultural",
    "bonus": "nan_madol",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your districts on or next to Coast or Lake tiles provide +2 Culture."
   },
@@ -326,7 +326,7 @@
    "name": "Ngazargamu",
    "type": "militaristic",
    "bonus": "ngazargamu",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Land combat or Support units are 20% cheaper to purchase with Gold for each Encampment district building in that city."
   },
@@ -350,7 +350,7 @@
    "name": "Singapore",
    "type": "industrial",
    "bonus": "singapore",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your cities receive +2 Production for each foreign civilization they have a Trade Route to."
   },
@@ -366,7 +366,7 @@
    "name": "Vatican City",
    "type": "religious",
    "bonus": "vatican_city",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "When you activate a Great Person they spread 400 Religious pressure of your founded (or majority) religion to cities within 10 tiles."
   },
@@ -374,7 +374,7 @@
    "name": "Venice",
    "type": "trade",
    "bonus": "venice",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Your Trade Routes to foreign cities earn +1 Gold for each Luxury resource at the destination."
   },
@@ -382,7 +382,7 @@
    "name": "Wolin",
    "type": "militaristic",
    "bonus": "wolin",
-   "implemented": false,
+   "implemented": true,
    "shipped": true,
    "effect": "Receive Great General points when a land unit defeats a major or minor civilization's unit and receive Great Admiral points when a naval unit defeats a major or minor civilization's unit equal to 25% of the opposing unit's strength (Standard Speed)."
   },

@@ -118,6 +118,7 @@ fn civ6_unit_type(name: &civvis::name::Name) -> String {
         "oromo_cavalry" => "ETHIOPIAN_OROMO_CAVALRY",
         "toa" => "MAORI_TOA",
         "crouching_tiger" => "CHINESE_CROUCHING_TIGER",
+        "nihang" => "LAHORE_NIHANG",
         "anti_air_gun" => "ANTIAIR_GUN",
         other => return format!("UNIT_{}", other.to_ascii_uppercase()),
     };
