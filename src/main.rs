@@ -1907,7 +1907,18 @@ fn main() {
             let _ = sink;
         }
         "tournament" => {
-            let ratings_path = arg_text(&args, "--ratings", civvis::elo::DEFAULT_RATINGS_PATH);
+            // Each mode keeps its own ladder: a Tactics rating is earned
+            // against Tactics opponents on an arena and says nothing about
+            // the grand strategy game, so `--map battlefield` writes to the
+            // Tactics ledger unless `--ratings` names another. Offered to the
+            // Civ ledger it would be refused anyway — the profile records the
+            // map script — so this names the right file rather than making
+            // the operator discover the mismatch.
+            let ratings_path = arg_text(
+                &args,
+                "--ratings",
+                civvis::elo::ratings_path_for(setup::GameMode::for_script(map_script(&args))),
+            );
             if args.iter().any(|arg| arg == "--standings") {
                 match civvis::elo::EloPool::load(&ratings_path) {
                     Ok(pool) => print!("{}", civvis::elo::leaderboard(&pool)),

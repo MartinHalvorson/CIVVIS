@@ -772,6 +772,74 @@ pub fn battlefield_map_scripts() -> Vec<&'static MapScriptSpec> {
     CIV6_MAP_SCRIPTS.iter().filter(|spec| spec.script.is_battlefield()).collect()
 }
 
+/// Which game this is: the whole thing, or one half of it on its own.
+///
+/// Civ is the complete game — a civilization grown, defended and won with.
+/// The other two take one half each and ask whether you can play it: Tactics
+/// is the fighting with no city to build, Sim City is the building with no
+/// fighting to do. They are separate skills, so they are separately rated —
+/// see [`crate::elo::ratings_path_for`] — and a player carries one rating per
+/// mode plus an overall.
+///
+/// The mode is read from the map script rather than stored beside it. An
+/// arena is not a world and a world is not an arena, so the script already
+/// answers the question, and keeping it the only marker means no save, no
+/// `Params` field and no protocol row can ever disagree with the map about
+/// which game is being played.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GameMode {
+    /// The complete grand-strategy game: everything, on a world.
+    #[default]
+    Civ,
+    /// Pure unit tactics: two even armies on an arena, no city building.
+    Tactics,
+    /// Pure development: cities, builders and traders, no fighting.
+    ///
+    /// Declared but not yet playable — `for_script` never returns it, because
+    /// no map script builds one. It is here so the rating layer and the mode
+    /// menus have the third slot from the start rather than growing it later.
+    SimCity,
+}
+
+impl GameMode {
+    pub const ALL: [GameMode; 3] = [GameMode::Civ, GameMode::Tactics, GameMode::SimCity];
+
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Civ => "civ",
+            Self::Tactics => "tactics",
+            Self::SimCity => "simcity",
+        }
+    }
+
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Civ => "Civ",
+            Self::Tactics => "Tactics",
+            Self::SimCity => "Sim City",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|mode| mode.id() == id)
+    }
+
+    /// Whether this mode can be played today.
+    pub const fn is_playable(self) -> bool {
+        !matches!(self, Self::SimCity)
+    }
+
+    /// Which game a world of this type is a game of.
+    pub const fn for_script(script: MapScript) -> GameMode {
+        if script.is_battlefield() {
+            GameMode::Tactics
+        } else {
+            GameMode::Civ
+        }
+    }
+}
+
 /// A Tactics battlefield size. The arena is a bounded rectangle — four walls,
 /// no wrap — so its width is its fighting ground and the advertised name is
 /// simply its dimensions. (It carried an extra column of sea until the arena
@@ -1171,7 +1239,8 @@ mod tests {
 
     use super::{
         last_start_era, playable_start_eras, start_era_from_id, start_era_id,
-        stock_start_era_id, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology,
+        stock_start_era_id, BaseRuleset, GameMode, GameSpeed, MapPoles, MapScript, MapSize,
+        MapTopology,
         BATTLEFIELD_SIZES,
         BASE_RULESETS, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, MAP_POLES,
         MAP_TOPOLOGIES, START_ERAS,
@@ -1462,6 +1531,49 @@ mod tests {
             assert!(MapSize::from_dimensions(size.width, size.height).is_none(), "{}", size.id);
         }
         assert_eq!(BATTLEFIELD_SIZES.len(), 3);
+    }
+
+    /// The three games CIVVIS offers, and how a world says which one it is.
+    ///
+    /// Civ is the whole thing; Tactics and Sim City each take one half of it
+    /// and ask whether you can play that half. The map script is the only
+    /// marker — an arena is not a world — so no save, setting or protocol row
+    /// can disagree with the map about which game is being played.
+    #[test]
+    fn every_world_says_which_of_the_three_games_it_is() {
+        for mode in GameMode::ALL {
+            assert_eq!(GameMode::from_id(mode.id()), Some(mode), "{}", mode.id());
+            assert!(!mode.name().is_empty());
+        }
+        assert_eq!(GameMode::from_id("battlefield"), None);
+        assert_eq!(GameMode::default(), GameMode::Civ);
+        for spec in CIV6_MAP_SCRIPTS {
+            let mode = GameMode::for_script(spec.script);
+            assert_eq!(
+                mode,
+                if spec.script.is_battlefield() { GameMode::Tactics } else { GameMode::Civ },
+                "{}",
+                spec.id
+            );
+            assert!(mode.is_playable(), "{} builds a mode nobody can play", spec.id);
+        }
+        // Sim City is declared and not yet built: it has a name, an id and a
+        // ladder of its own, and no map script produces one.
+        assert!(!GameMode::SimCity.is_playable());
+        assert!(CIV6_MAP_SCRIPTS
+            .iter()
+            .all(|spec| GameMode::for_script(spec.script) != GameMode::SimCity));
+        // One ladder per mode, and no two modes share one.
+        let ladders: std::collections::BTreeSet<&str> = GameMode::ALL
+            .into_iter()
+            .map(crate::elo::ratings_path_for)
+            .collect();
+        assert_eq!(ladders.len(), GameMode::ALL.len());
+        assert_eq!(
+            crate::elo::ratings_path_for(GameMode::Civ),
+            crate::elo::DEFAULT_RATINGS_PATH,
+            "the Civ ladder keeps its own path, so existing ledgers are untouched"
+        );
     }
 
     /// The world's shape and its poles are settings of their own, orthogonal to
