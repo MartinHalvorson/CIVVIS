@@ -857,6 +857,7 @@ fn withhold_live_treatment(
         "war-economy" => ai.disable_war_economy(),
         "war-reinforcement" => ai.disable_war_reinforcement(),
         "war-patience" => ai.disable_war_patience(),
+        "recon-replacement" => ai.disable_recon_replacement(),
         other => {
             return Err(format!(
                 "unknown --without treatment {other:?}; this binary can withhold: \
@@ -865,7 +866,8 @@ fn withhold_live_treatment(
                  siege-tracks-wall, blind-objective-strength, blind-objective-units, \
                  siege-role, come-ashore, relief-targets-the-siege, suzerain-cards, \
                  housing-districts, housing-cards, housing-research, campus-every-city, \
-                 muster-at-command-radius, war-economy, war-reinforcement, war-patience"
+                 muster-at-command-radius, war-economy, war-reinforcement, war-patience, \
+                 recon-replacement"
             ))
         }
     }

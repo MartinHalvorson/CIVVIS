@@ -427,12 +427,20 @@ const BLDG_ICON = { monument:"🗿", granary:"🌾", walls:"🧱", medieval_wall
                     shrine:"⛩", library:"📜", market:"⚖", barracks:"🛡",
                     lighthouse:"🗼", amphitheater:"🎭", aqueduct:"⛲", arena:"🎪",
                     workshop:"🔧", armory:"🛡", bank:"🏦", university:"🎓" };
-// Hues follow Civ VI's own yield language — science blue, culture a real
-// violet (not pink; entertainment keeps pink), faith a pale sky-white, gold a
-// yellow coin, production a burnt orange — softened only slightly for the map.
-const DISTRICT_COLOR = { campus:"#3da4dc", holy_site:"#dcebf5", commercial_hub:"#e9c83e",
-                         harbor:"#52bcd4", encampment:"#c0392b", theater_square:"#9855d2",
-                         industrial_zone:"#d4761f", entertainment_complex:"#e75480" };
+// Hues are Civ VI's own district language, at the game's saturation rather
+// than softened for the map: science blue, culture violet, faith a pale
+// sky-white, gold a yellow coin, production orange, military red, amenities
+// magenta, and the Government Plaza its own pink — the one district whose
+// color in the base game says "government" and not a yield.
+//
+// Harbor is the deep sea blue rather than the cyan it used to be. Cyan is the
+// aqueduct family's (`water` below), and a Harbor next to a Dam was two
+// near-identical light blues; sea blue is both truer to the game and the only
+// pair of blues on a coastal city that a glance has to separate.
+const DISTRICT_COLOR = { campus:"#3aa7e0", holy_site:"#e6f1f9", commercial_hub:"#f2c73d",
+                         harbor:"#2280ac", encampment:"#c8352b", theater_square:"#9b51d8",
+                         industrial_zone:"#e07b1e", entertainment_complex:"#d94f8f",
+                         government_plaza:"#f58fc0" };
 // Every unique district is its parent in a local hat — a Seowon is a Campus,
 // an Ikanda an Encampment — so they share a silhouette and a color. Grouping by
 // family is also what keeps thirty-five kinds down to a set of shapes a player
@@ -453,11 +461,15 @@ const DISTRICT_FAMILY = {
   government_plaza:"civic", diplomatic_quarter:"civic",
   preserve:"preserve", city_center:"civic",
 };
+// A unique district wears its parent's color, so these repeat the table above
+// and add the families no base district names directly. `civic` is what is
+// left of the old government tan once the Government Plaza takes its own pink:
+// the City Center and the Diplomatic Quarter.
 const FAMILY_COLOR = {
-  campus:"#3da4dc", faith:"#dcebf5", war:"#c0392b", trade:"#e9c83e",
-  harbor:"#52bcd4", culture:"#9855d2", industry:"#d4761f", fun:"#e75480",
-  water:"#7fb8d8", homes:"#bda684", air:"#9fb0c4", civic:"#d8c58a",
-  preserve:"#6fbf73",
+  campus:"#3aa7e0", faith:"#e6f1f9", war:"#c8352b", trade:"#f2c73d",
+  harbor:"#2280ac", culture:"#9b51d8", industry:"#e07b1e", fun:"#d94f8f",
+  water:"#7ec8e8", homes:"#b99b6e", air:"#9fb0c4", civic:"#d8c58a",
+  preserve:"#5fb85f",
 };
 const districtColor = d =>
   DISTRICT_COLOR[d] || FAMILY_COLOR[DISTRICT_FAMILY[d]] || "#ddd";
@@ -6751,15 +6763,16 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   if (newWorld && st.seed !== undefined) { lastSeed = st.seed; loadTacks(); }
   if (newWorld) {
     // The game mode belongs to this world too: a battlefield on screen reads
-    // back as Tactics, with the size control holding its arena rather than a
+    // back as Tactics, with the size control holding its Tactics map rather than a
     // seat count. The mode is in place before the size and map are read back
     // so both controls hold the roster those values live in.
-    const tactics = st.map.script === "battlefield";
+    const tactics = isBattlefieldMapScript(st.map.script);
     document.getElementById("gamemode").value = tactics ? "tactics" : "civ";
     syncSetupMode();
     const majors = st.players.filter(p => !p.is_minor && !p.is_barbarian).length;
     const playerSelect = document.getElementById("np");
     const arena = tactics ? battlefieldSizes().find(size =>
+      (!size.script || size.script === st.map.script) &&
       size.width === st.map.width && size.height === st.map.height) : null;
     if (arena) {
       playerSelect.value = arena.id;
@@ -6772,6 +6785,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     syncTeams();
     document.getElementById("teams").value = teamRuleFromArray(st.teams);
     document.getElementById("maptype").value = st.map.script || "tenins_ball";
+    if (tactics) syncBattlefieldSizes(true);
     document.getElementById("mapshape").value = st.map.shape || "planet";
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
@@ -8303,15 +8317,32 @@ function tri(ax, ay, bx, by, ccx, ccy) {
   cx.closePath(); cx.fill();
 }
 
-// Districts are colored discs — board-game tokens rather than tiny
+// Districts are colored squares — board-game tokens rather than tiny
 // architecture. The family color IS the identity (blue = science, purple =
 // culture, orange = industry), readable from survey zoom without a key, and
-// the disc is deliberately flat: solid color, thin outline, no lighting.
-// Completed buildings stand on the disc as dark bars; see `drawDistrictBars`.
-const DISTRICT_DISC_RADIUS = S * 0.56;  // π·(0.56·S)² ≈ 38% of a hex's area
+// the token is deliberately flat: solid color, thin outline, no lighting.
+// Completed buildings stand on the token as dark bars; see `drawDistrictBars`.
+//
+// Square, not round, because the other painted piece on a tile is a unit, and
+// a unit's command token is a circle (a capsule for civilians). Two colored
+// discs a tile apart are told apart only by reading their contents; a square
+// beside a circle is told apart by silhouette, at any zoom, before either
+// resolves. It is a true square rather than a projected one, for the same
+// reason the unit token is a true circle: these are pieces set on the board,
+// not paint applied to it. Sized to cover the ground the disc covered —
+// 4·h² ≈ π·(0.56·S)²·YS — so the swap changes shape, not weight.
+const DISTRICT_TOKEN_HALF = S * 0.48;  // 34.6px side ≈ 38% of a hex's area
+
+// The token's outline. Its corners are barely rounded — enough that it reads
+// as a printed counter rather than a raw fill, not enough to start rounding
+// back toward the unit tokens it exists to be distinct from.
+function districtTokenPath(x, y, half) {
+  cx.beginPath();
+  cx.roundRect(x - half, y - half, half * 2, half * 2, half * .16);
+}
 
 // Positive amounts mix a district color toward white, negative toward black.
-// The dark end is the ink that the disc's bars and glyphs share, so every
+// The dark end is the ink that the token's bars and glyphs share, so every
 // family's furniture is automatically a deep shade of its own color.
 function districtShade(color, amount) {
   const hex = color.length === 4
@@ -8371,7 +8402,7 @@ function districtBuildingsByTile() {
 }
 
 // A district's completed buildings are up to three bars standing on the lower
-// half of the disc — a tiny bar chart of how far the district has grown.
+// half of the token — a tiny bar chart of how far the district has grown.
 // Slots fill left to right in build order (cheapest first, matching the sort
 // in `districtBuildingsByTile`). A pillaged building's bar falls to a third
 // of its height, and the full bar's ghost outline stays standing over the
@@ -8402,9 +8433,9 @@ function drawDistrictBars(x, y, buildings, ink) {
 }
 
 // Nature and water infrastructure keep a small drawn symbol: a green or
-// water-blue disc alone doesn't say aqueduct, canal, dam, or kept woodland
+// water-blue token alone doesn't say aqueduct, canal, dam, or kept woodland
 // the way plain color says science or industry. The glyph sits on the upper
-// half of the disc, in the same dark ink as the building bars.
+// half of the token, in the same dark ink as the building bars.
 function drawDistrictGlyph(t, x, y, ink) {
   const fam = districtIconFamily(t.district);
   if (fam !== "water" && fam !== "preserve") return;
@@ -8413,8 +8444,10 @@ function drawDistrictGlyph(t, x, y, ink) {
   cx.strokeStyle = ink; cx.fillStyle = ink;
   cx.lineWidth = 1.9; cx.lineCap = "round"; cx.lineJoin = "round";
   if (fam === "preserve") {                        // one deliberate fir
+    // Crown at gy-9.6: the tallest thing any glyph draws, and the square token
+    // has a flat top edge where the disc's rim curved away from it.
     tri(x - 6.2, gy + 5.5, x, gy - 6.5, x + 6.2, gy + 5.5);
-    tri(x - 4.6, gy - 1.5, x, gy - 10.5, x + 4.6, gy - 1.5);
+    tri(x - 4.6, gy - 1.5, x, gy - 9.6, x + 4.6, gy - 1.5);
     cx.fillRect(x - 1.3, gy + 5.5, 2.6, 3.4);
   } else if (t.district === "canal") {             // straight banks, water between
     cx.beginPath();
@@ -8452,12 +8485,13 @@ function drawDistrictGlyph(t, x, y, ink) {
 
 // A district was a painted terrace with a landmark and miniature buildings,
 // which read beautifully up close and muddily from the survey zoom where a
-// spectator actually lives. It is now a solid color token: the disc names the
-// family, the bars count its completed buildings, and a hilltop district lets
-// the hill's crest show above its rim instead of flattening the terrain away.
+// spectator actually lives. It is now a solid color token: the square names
+// the family, the bars count its completed buildings, and a hilltop district
+// lets the hill's crest show above its rim instead of flattening the terrain
+// away.
 function drawDistrict(t, x, y, buildings = []) {
   const col = districtColor(t.district);
-  const rx = DISTRICT_DISC_RADIUS, ry = rx * YS;
+  const hx = DISTRICT_TOKEN_HALF, hy = hx;
   const ink = districtShade(col, -.55);
   cx.save();
   if (t.pillaged) cx.globalAlpha *= .6;
@@ -8467,14 +8501,14 @@ function drawDistrict(t, x, y, buildings = []) {
   if (t.hills) {
     cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
     cx.beginPath();
-    cx.ellipse(x - 8, y - ry + 3, 8, 7.5, 0, Math.PI, 0);
-    cx.ellipse(x + 7, y - ry + 4.5, 7.5, 6.5, 0, Math.PI, 0);
+    cx.ellipse(x - 8, y - hy + 3, 8, 7.5, 0, Math.PI, 0);
+    cx.ellipse(x + 7, y - hy + 4.5, 7.5, 6.5, 0, Math.PI, 0);
     cx.stroke();
   }
   // The token itself: one solid color and a thin ink outline, nothing else —
   // a printed counter on the board rather than a lit game piece.
   cx.fillStyle = col;
-  cx.beginPath(); cx.ellipse(x, y, rx, ry, 0, 0, 7); cx.fill();
+  districtTokenPath(x, y, hx); cx.fill();
   cx.strokeStyle = "rgba(13,18,24,.78)"; cx.lineWidth = 1.6; cx.stroke();
   drawDistrictGlyph(t, x, y, ink);
   drawDistrictBars(x, y, buildings, ink);
@@ -8482,7 +8516,7 @@ function drawDistrict(t, x, y, buildings = []) {
   if (t.pillaged) {
     cx.strokeStyle = "#d8443a"; cx.lineWidth = 2.4; cx.lineCap = "round";
     cx.beginPath();
-    cx.moveTo(x - rx * .7, y + ry * .7); cx.lineTo(x + rx * .7, y - ry * .7);
+    cx.moveTo(x - hx * .7, y + hy * .7); cx.lineTo(x + hx * .7, y - hy * .7);
     cx.stroke();
     cx.lineCap = "butt";
   }
@@ -16957,9 +16991,11 @@ function drawEmpireDistrictBadge(x, y, tile, scale = 1) {
   cx.save(); cx.textAlign = "center"; cx.textBaseline = "middle";
   if (tile.wonder) drawWorldWonderIcon(tile.wonder, x, y + 3.5 * scale, .45 * scale);
   if (district) {
-    const radius = 7.5 * scale;
+    // The lens badge is the map token shrunk to a label: the same square,
+    // covering the same ink as the 7.5px disc it replaces (7.5·√π/2).
+    const half = 6.6 * scale;
     cx.fillStyle = districtColor(district); cx.strokeStyle = "#101716"; cx.lineWidth = 2 * scale;
-    cx.beginPath(); cx.arc(x, y, radius, 0, Math.PI * 2); cx.fill(); cx.stroke();
+    districtTokenPath(x, y, half); cx.fill(); cx.stroke();
     const label = districtAdjacencyLabel(tile);
     if (label) {
       cx.font = `900 ${8 * scale}px Inter,sans-serif`; cx.lineWidth = 3 * scale;
@@ -27856,7 +27892,10 @@ document.getElementById("custom-leader-table").addEventListener("change", event 
   if (elo && selected)
     elo.innerHTML = customEloOptions(event.target.value, selected.dataset.leader || "", "");
 });
-document.getElementById("maptype").addEventListener("change", syncEarthShape);
+document.getElementById("maptype").addEventListener("change", () => {
+  syncEarthShape();
+  if (readSetting("gamemode") === "tactics") syncBattlefieldSizes(true);
+});
 // Bound on the select itself, so it has re-fitted the splits to the new size
 // before the panel's own delegated listener stages what is now selected.
 document.getElementById("np").addEventListener("change", () => {
@@ -28044,13 +28083,14 @@ function drawCiv6Status() {
 }
 function selectedSimulationSettings() {
   const humanPlayers = readSetting("humanplayers");
-  // In Tactics the size control holds a battlefield id rather than a seat
-  // count: the arena always seats two sides, and its dimensions travel
+  // In Tactics the size control holds a map-size id rather than a seat count:
+  // every Tactics map seats two sides, and its dimensions travel
   // explicitly because no seat count implies them.
-  const battlefield = humanPlayers === "civ6" ? null : battlefieldSize(readSetting("np"));
+  const tactics = humanPlayers !== "civ6" && readSetting("gamemode") === "tactics";
+  const battlefield = tactics ? battlefieldSize(readSetting("np")) : null;
   const np = battlefield ? 2 : +readSetting("np");
   const mapScript = readSetting("maptype");
-  const mapTopology = battlefield ? "flat" : readSetting("mapshape");
+  const mapTopology = battlefield ? (battlefield.topology || "flat") : readSetting("mapshape");
   const mapPoles = readSetting("mappoles");
   const gameSpeed = readSetting("gamespeed");
   const leaderPool = readSetting("leaderpool");
@@ -28135,7 +28175,7 @@ function selectedSimulationSummary(settings = null) {
     : document.getElementById("humanplayers").value === "ai_sim";
   const civ6 = settings ? settings.mode === "civ6"
     : document.getElementById("humanplayers").value === "civ6";
-  const tactics = settings ? settings.map_script === "battlefield"
+  const tactics = settings ? isBattlefieldMapScript(settings.map_script)
     : readSetting("gamemode") === "tactics";
   const mode = civ6 ? "Firaxis Civ 6"
     : spectate === true ? "AI simulation" : "Single player";
@@ -28186,11 +28226,12 @@ function applyQueuedSimulationSettings(settings) {
   // The staged map says which game mode the queue describes: a battlefield
   // is the Tactics mode's arena, and the size control reads back as the
   // battlefield whose dimensions the queue carries.
-  const tactics = settings.map === "battlefield";
+  const tactics = isBattlefieldMapScript(settings.map);
   document.getElementById("gamemode").value = tactics ? "tactics" : "civ";
   syncSetupMode();
   if (tactics) {
     const size = battlefieldSizes().find(size =>
+      (!size.script || size.script === settings.map) &&
       size.width === settings.width && size.height === settings.height);
     if (size) document.getElementById("np").value = size.id;
   } else {
@@ -28201,6 +28242,7 @@ function applyQueuedSimulationSettings(settings) {
   syncTeams();
   document.getElementById("teams").value = teamRuleFromArray(settings.teams);
   document.getElementById("maptype").value = settings.map;
+  if (tactics) syncBattlefieldSizes(true);
   if (settings.shape) document.getElementById("mapshape").value = settings.shape;
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
   syncEarthShape();
@@ -28357,8 +28399,14 @@ function battlefieldScripts() {
 function battlefieldSizes() {
   return (RULES && Array.isArray(RULES.battlefield_sizes)) ? RULES.battlefield_sizes : [];
 }
+function battlefieldSizesForScript(script) {
+  return battlefieldSizes().filter(size => !size.script || size.script === script);
+}
 function battlefieldSize(id) {
   return battlefieldSizes().find(size => size.id === id) || null;
+}
+function isBattlefieldMapScript(id) {
+  return id === "battlefield" || battlefieldScripts().some(script => script.id === id);
 }
 function syncMapRoster(civ6, tactics) {
   const select = document.getElementById("maptype");
@@ -28419,26 +28467,32 @@ function syncBattlefieldVictories(tactics) {
   }
   syncRequiredVictoriesCap();
 }
-// The world-size control is the battlefield-size control in Tactics: the same
-// select carrying a different roster, exactly as the map control does for
-// Civ 6 above. A battlefield seats exactly two sides, so the option says so
-// and the seat-dependent controls re-fit when the roster moves either way.
+// The world-size control is the Tactics-map-size control in Tactics: the same
+// select carries a different roster, exactly as the map control does for Civ 6
+// above. Every Tactics map seats exactly two sides, so the option says so and
+// the seat-dependent controls re-fit when the roster moves either way.
 function syncBattlefieldSizes(tactics) {
   const sizes = document.getElementById("np");
   if (!sizes) return;
   if (tactics && !battlefieldSizes().length) return;
   const roster = tactics ? "tactics" : "civvis";
+  const sameRoster = (sizes.dataset.roster || "civvis") === roster;
   if (sizes.dataset.roster !== "tactics") civvisSizeOptions = sizes.innerHTML;
-  if ((sizes.dataset.roster || "civvis") === roster) return;
-  const chosen = sizes.value;
   if (tactics) {
-    sizes.dataset.civvisChoice = chosen;
-    sizes.innerHTML = battlefieldSizes().map(size =>
+    if (!sameRoster) sizes.dataset.civvisChoice = sizes.value;
+    const script = document.getElementById("maptype")?.value;
+    const available = battlefieldSizesForScript(script);
+    if (!available.length) return;
+    const chosen = sameRoster ? sizes.value : sizes.dataset.tacticsChoice;
+    sizes.innerHTML = available.map(size =>
       `<option value="${escapeAttr(size.id)}">${size.name} · 2 civs</option>`).join("");
-    const carried = sizes.dataset.tacticsChoice;
-    if (carried && [...sizes.options].some(option => option.value === carried))
-      sizes.value = carried;
+    const carried = chosen && available.some(size => size.id === chosen)
+      ? chosen : available[0].id;
+    sizes.value = carried;
+    sizes.dataset.tacticsChoice = carried;
   } else {
+    if (sameRoster) return;
+    const chosen = sizes.value;
     sizes.dataset.tacticsChoice = chosen;
     sizes.innerHTML = civvisSizeOptions;
     const restored = sizes.dataset.civvisChoice;

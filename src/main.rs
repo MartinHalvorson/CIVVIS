@@ -758,13 +758,20 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the rated profile is identical by construction — the same shape as the
 /// flag re-pins above, with the map script as the flag. Compatibility
 /// re-pin, not an Elo-protocol change.
+/// The recon-replacement arm adds one disjunct to `pick_item`'s military-floor
+/// condition and one new chooser, behind `BasicAi::recon_replacement`. Both
+/// constructors leave the flag false and only `enable_live_bridge` sets it, so
+/// under the anchor `recon_is_the_missing_arm` returns on its first line, the
+/// added disjunct is a constant `false` that cannot change the `||`, and
+/// `best_recon` is never reached. The anchor's build order is byte-identical by
+/// construction. Compatibility re-pin, not an Elo-protocol change.
 #[cfg(test)]
 /// Merging `origin/main` into this branch brings both sides' live-bridge
 /// treatments into one `BasicAi`/`AdvancedAi`. Every one of them is off in both
 /// constructors and set only by `enable_live_bridge`, so the anchor's decision
 /// stream is unchanged by the union. Compatibility re-pin, not an Elo-protocol
 /// change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8fa8_43dd_c2fd_d943;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8a27_c3ee_7d98_36fd;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -933,7 +940,12 @@ fn auto_dimension(args: &[String], key: &str, players: i64, width: bool) -> i32 
     // mode's own smallest field is the honest default, and `--width` and
     // `--height` still name any other.
     let (default_width, default_height) = if map_script(args).is_battlefield() {
-        let arena = setup::BATTLEFIELD_SIZES[0];
+        let script = map_script(args);
+        let arena = setup::BATTLEFIELD_SIZES
+            .iter()
+            .find(|size| size.script == script)
+            .copied()
+            .unwrap_or(setup::BATTLEFIELD_SIZES[0]);
         (arena.width, arena.height)
     } else {
         // A globe stores itself in a rectangle of its own shape, so the size's
@@ -2897,7 +2909,7 @@ fn main() {
                 "usage: civvis <simulate|soak|odds-audit|benchmark|tournament|league|league-init|rate-game|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais [identity=]controller,...] [--anchor identity|none] [--ratings path] [--standings] [--port N] [--no-open] \
-                      [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield] \
+                      [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield|tactics_planet] \
                       [--shape flat|planet] [--poles poles|randomized] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
@@ -3089,6 +3101,7 @@ mod tests {
             ("pangaea", MapScript::Pangaea),
             ("tennis_ball", MapScript::TeninsBall),
             ("tenins_ball", MapScript::TeninsBall),
+            ("tactics_planet", MapScript::TacticsPlanet),
         ] {
             let args = vec!["--map".to_string(), asked.to_string()];
             assert_eq!(
@@ -3097,6 +3110,9 @@ mod tests {
                 "{asked}"
             );
         }
+        let planet = vec!["--map".to_string(), "tactics_planet".to_string()];
+        let options = game_options(&planet, 2, 71_005, TurnStructure::Sequential);
+        assert_eq!((options.width, options.height), (40, 18));
     }
 
     #[test]

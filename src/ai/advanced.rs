@@ -2474,6 +2474,17 @@ impl AdvancedAi {
         self.base.siege_role = true;
     }
 
+    /// Rebuild the recon arm when it is gone and there is ground left to chart.
+    /// Native tournament games leave this disabled so their recorded ladders
+    /// stay comparable.
+    pub fn enable_recon_replacement(&mut self) {
+        self.base.recon_replacement = true;
+    }
+
+    pub fn disable_recon_replacement(&mut self) {
+        self.base.recon_replacement = false;
+    }
+
     pub fn disable_siege_role(&mut self) {
         self.base.siege_role = false;
     }
@@ -2655,6 +2666,13 @@ impl AdvancedAi {
         // taken, zero siege units built in 251 turns with every siege tech in
         // hand. The tournament controller stays frozen.
         self.enable_siege_role();
+        // ⚠ The empire goes blind and the build order never notices. Recon is
+        // not among the counts `pick_item` receives, and `OPENING_MENU` is the
+        // only place a scout is named, so once the openers die nothing replaces
+        // them. Live run `civvis-20260808T142724Z`: zero recon units from turn
+        // ~100 to 251 while the army grew to 22, 77% of the map never seen, and
+        // the eventual winner first met on turn 215 already holding 927 points.
+        self.enable_recon_replacement();
         // ⚠ `unit_can_traverse` says yes to open water for every land unit as
         // soon as embarkation unlocks, so the unexplored ocean becomes a legal
         // exploration goal for the whole army — and the only rule that brought
@@ -36747,6 +36765,20 @@ mod research_probe {
         // And the whole path short-circuits for a frozen controller.
         let legacy = AdvancedAi::legacy();
         assert_eq!(legacy.unreachable_housing_tech(&game, 0), None);
+    }
+
+    /// Off by default, set only by the live bridge, holdable off on its own —
+    /// the recon-replacement arm follows the same contract as every other
+    /// bridge repair, so the frozen `advanced_v1` anchor keeps its ladder.
+    #[test]
+    fn only_the_live_bridge_replaces_the_recon_arm() {
+        assert!(!AdvancedAi::new().base.recon_replacement);
+        assert!(!AdvancedAi::legacy().base.recon_replacement);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.base.recon_replacement);
+        live.disable_recon_replacement();
+        assert!(!live.base.recon_replacement);
     }
 
     /// Off by default, set only by the live bridge, each holdable off on its

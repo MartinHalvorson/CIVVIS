@@ -983,7 +983,7 @@ fn flat_land(
             }
             land
         }
-        MapScript::Pangaea => {
+        MapScript::Pangaea | MapScript::TacticsPlanet => {
             // A compact oval gives every seat comparable hinterland while
             // retaining a single coast-to-coast supercontinent. The stock
             // scripts cut their coastline out of a fractal rather than a
@@ -1553,7 +1553,7 @@ fn globe_land(
         ),
         _ => {
             let continents = match script {
-                MapScript::Pangaea => 1,
+                MapScript::Pangaea | MapScript::TacticsPlanet => 1,
                 MapScript::Continents => 2,
                 _ => num_major_spawns.div_ceil(2).clamp(3, 7),
             };
@@ -1842,6 +1842,32 @@ fn battlefield_major_starts(wm: &WorldMap, pool: &BTreeSet<Pos>) -> Option<Vec<P
     let apart = offset_distance(starts[0], hex::axial_to_offset(starts[1].0, starts[1].1))
         >= wm.width.max(wm.height) / 2 + 1;
     apart.then_some(starts)
+}
+
+/// Where the two sides of the Tactics planet begin.
+///
+/// A globe has no meaningful north-west corner or long axis, so the map's
+/// promise is expressed by its surface distance instead: choose the pair of
+/// usable plots that are farthest apart on the sphere. The land generator
+/// gives this script one main continent, and the caller narrows the pool to
+/// it before asking here, so a tiny offshore island cannot steal a capital.
+fn tactics_planet_major_starts(wm: &WorldMap, pool: &BTreeSet<Pos>) -> Option<Vec<Pos>> {
+    let mut best: Option<(i32, Pos, Pos)> = None;
+    for (index, first) in pool.iter().enumerate() {
+        for second in pool.iter().skip(index + 1) {
+            let distance = wm.distance(*first, *second);
+            let replace = best.is_none_or(|(best_distance, best_first, best_second)| {
+                distance > best_distance
+                    || (distance == best_distance
+                        && (*first, *second) < (best_first, best_second))
+            });
+            if replace {
+                best = Some((distance, *first, *second));
+            }
+        }
+    }
+    let (_, first, second) = best?;
+    Some(vec![first, second])
 }
 
 /// Lay out a Tactics arena's ground.
@@ -2681,6 +2707,7 @@ fn large_lake_budget(script: MapScript, num_continents: usize) -> usize {
         // and a lake is the water a canal world does not already have: fresh,
         // enclosed, and nothing a ship arrives by.
         MapScript::Pangaea
+        | MapScript::TacticsPlanet
         | MapScript::InlandSea
         | MapScript::GrandCanals => num_continents,
         MapScript::Continents => num_continents / 2,
@@ -2900,12 +2927,17 @@ pub fn generate_with_script_and_leader_starts(
     // A globe is stored in a rectangle of its own shape, so its size's globe
     // is built rather than the cylinder a flat world lays out.
     //
-    // The battlefield is the one scripted exception to that independence: an
-    // arena needs corners and ends for its two sides to start in, and a globe
-    // has neither. Whatever shape was asked for, it is laid out flat, and the
-    // published world honestly reports the flat shape it was given because
-    // the shape the viewer reads comes from the built world itself.
-    let topology = if script.is_battlefield() { MapTopology::Flat } else { topology };
+    // The bounded battlefield is the one scripted exception to shape
+    // independence among the Tactics maps: it needs corners and ends for its
+    // two sides to start in. The Tactics planet keeps its globe, where its
+    // opposite-side promise is measured over the sphere.
+    let topology = if script.is_planet_battlefield() {
+        MapTopology::Planet
+    } else if script.is_battlefield() {
+        MapTopology::Flat
+    } else {
+        topology
+    };
     // Nothing on a battlefield exists to be developed or discovered, so the
     // arena seats no city-states and plants no natural wonders whatever the
     // size profile that reached this call would have asked for.
@@ -2972,7 +3004,7 @@ pub fn generate_with_script_and_leader_starts(
     // ten-row arena from pole to pole — half of it snow and tundra — but the
     // arena is not a world with a climate, it is fighting ground, so the
     // extremes are brought back to the open terrain the battle is fought on.
-    if script.is_battlefield() {
+    if script == MapScript::Battlefield {
         for pos in &land_list {
             if let Some(tile) = wm.tiles.get_mut(pos) {
                 match tile.terrain.as_str() {
@@ -3699,7 +3731,7 @@ pub fn generate_with_script_and_leader_starts(
     // --- the arena's own ground, laid over whatever the world passes made of
     // it. This runs before the starts are chosen so that both sides are
     // seated on the field they will actually fight over.
-    if script.is_battlefield() {
+    if script == MapScript::Battlefield {
         paint_battlefield_ground(&mut wm, rng);
     }
 
@@ -3822,13 +3854,27 @@ pub fn generate_with_script_and_leader_starts(
     let lobe_ends = (script == MapScript::TeninsBall && num_major_spawns == 4)
         .then(|| tennis_ball_major_starts(&wm, &major_pool))
         .flatten();
-    // A two-seat battlefield's layout is likewise its type's promise: the
-    // sides open in opposite corners of a square arena, at opposite ends of
-    // a long one. More seats than two fall back to the regional model.
-    let arena_ends = (script.is_battlefield() && num_major_spawns == 2)
+    // A two-seat Tactics planet's layout is its type's promise too: the sides
+    // open at the farthest usable plots on the main landmass.
+    let planet_pool = components
+        .first()
+        .map(|component| major_pool.intersection(component).copied().collect::<BTreeSet<_>>())
+        .filter(|pool| pool.len() >= 2);
+    let planet_ends = (script.is_planet_battlefield() && num_major_spawns == 2)
+        .then(|| {
+            planet_pool
+                .as_ref()
+                .map_or_else(|| tactics_planet_major_starts(&wm, &major_pool), |pool| {
+                    tactics_planet_major_starts(&wm, pool)
+                })
+        })
+        .flatten();
+    // A two-seat bounded battlefield instead uses opposite corners or ends of
+    // its rectangle. More seats than two fall back to the regional model.
+    let arena_ends = (script == MapScript::Battlefield && num_major_spawns == 2)
         .then(|| battlefield_major_starts(&wm, &major_pool))
         .flatten();
-    let mut spawns = if let Some(mut starts) = lobe_ends.or(arena_ends) {
+    let mut spawns = if let Some(mut starts) = lobe_ends.or(planet_ends).or(arena_ends) {
         // Seat order should not correlate with the order the ends are listed.
         for index in (1..starts.len()).rev() {
             let other = rng.below(index + 1);
@@ -8809,6 +8855,9 @@ mod river_tests {
                 MapScript::Battlefield => {
                     unreachable!("the battlefield arena is not a rolled world type")
                 }
+                MapScript::TacticsPlanet => {
+                    unreachable!("the Tactics planet is not a flat rolled-world fixture")
+                }
             }
 
             let occupied_components = components
@@ -8851,7 +8900,11 @@ mod river_tests {
     #[test]
     fn the_battlefield_is_a_bounded_resourceless_arena() {
         let rules = Rules::embedded();
-        for (index, size) in crate::setup::BATTLEFIELD_SIZES.into_iter().enumerate() {
+        for (index, size) in crate::setup::BATTLEFIELD_SIZES
+            .into_iter()
+            .filter(|size| size.script == MapScript::Battlefield)
+            .enumerate()
+        {
             let mut rng = Rng::new(83_000 + index as u64);
             // Ask for a poled globe with city-states and wonders on purpose:
             // the arena must refuse all three parts of that request.
@@ -8922,6 +8975,50 @@ mod river_tests {
                     "{}: a side opens inside cover at {spawn:?}", size.id
                 );
             }
+        }
+    }
+
+    #[test]
+    fn the_tactics_planet_is_a_small_land_globe_with_opposite_starts() {
+        let rules = Rules::embedded();
+        let size = crate::setup::BATTLEFIELD_SIZES
+            .into_iter()
+            .find(|size| size.script == MapScript::TacticsPlanet)
+            .expect("the Tactics planet has a published size");
+        let mut rng = Rng::new(84_000);
+        let (world, spawns) = generate_with_script(
+            &rules,
+            size.width,
+            size.height,
+            2,
+            3,
+            2,
+            1,
+            MapScript::TacticsPlanet,
+            GLOBE,
+            POLED,
+            &mut rng,
+        );
+        assert_eq!(world.topology, crate::world::Topology::Globe(globe_frequency(40, 18)));
+        assert_eq!((world.width, world.height), (40, 18));
+        let land = world
+            .tiles
+            .values()
+            .filter(|tile| !rules.is_water(tile))
+            .count();
+        assert!(land > world.tiles.len() / 4, "too little land: {land}");
+        assert!(land < world.tiles.len() * 3 / 4, "too much land: {land}");
+        assert_eq!(spawns.len(), 2);
+        assert!(world.distance(spawns[0], spawns[1]) >= 8, "{spawns:?}");
+        let components = land_components(&world, &rules);
+        assert!(components.iter().any(|component| {
+            component.contains(&spawns[0]) && component.contains(&spawns[1])
+        }));
+        for spawn in spawns {
+            let tile = &world.tiles[&spawn];
+            assert!(rules.is_passable(tile));
+            assert!(tile.resource.is_none());
+            assert!(tile.improvement.is_none());
         }
     }
 

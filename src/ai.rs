@@ -150,6 +150,13 @@ const SIEGE_ARM_MAX: usize = 2;
 /// Beyond it the siege train would spend its life walking.
 const SIEGE_TARGET_REACH: i32 = 20;
 
+/// How many recon units [`BasicAi::recon_is_the_missing_arm`] will rebuild
+/// toward. One, because this repairs blindness rather than buying map control:
+/// the empire that measured the defect had *two* scouts at its peak and still
+/// charted a quarter of the world. Past this the ordinary military choice
+/// resumes, so it cannot become an endless appetite.
+const RECON_ARM_MAX: usize = 1;
+
 /// Railroads are valuable infrastructure, but every tile consumes one Iron
 /// and one Coal. Keep enough of each material for an emergency unit upgrade
 /// instead of letting an idle Engineer pave the stockpile down to zero.
@@ -1594,6 +1601,10 @@ pub struct BasicAi {
     /// Let the unit chooser ask for SIEGE as a role. Off for the frozen native
     /// controllers. See `best_military_role` and `siege_is_the_missing_arm`.
     siege_role: bool,
+    /// Rebuild the recon arm when it is gone and there is still ground to
+    /// chart. Off for the frozen native controllers. See
+    /// `recon_is_the_missing_arm`.
+    recon_replacement: bool,
     /// Keep the land army out of the water: exclude water from a land unit's
     /// exploration goals, bring an already-embarked unit ashore whether or not
     /// it has an upgrade waiting, and let `peacetime_step` know when
@@ -2723,6 +2734,7 @@ impl BasicAi {
             live_religious_purchase_guard: false,
             siege_muster: false,
             siege_role: false,
+            recon_replacement: false,
             come_ashore: false,
             home_defense: false,
             loyalty_rate_alarm: false,
@@ -2757,6 +2769,7 @@ impl BasicAi {
             live_religious_purchase_guard: false,
             siege_muster: false,
             siege_role: false,
+            recon_replacement: false,
             come_ashore: false,
             home_defense: false,
             loyalty_rate_alarm: false,
@@ -5022,6 +5035,37 @@ impl BasicAi {
         best.map(|(_, n)| n)
     }
 
+    /// The strongest land recon unit this city can build right now.
+    ///
+    /// Ranked by movement first and strength second, because what this buys is
+    /// tiles turned over per turn — a Scout that walks further finds a
+    /// civilization sooner than a Ranger that fights better. Land only: the
+    /// caller's trigger asks about unexplored *ground*, and a coastal city that
+    /// answers a land-recon gap with a galley leaves the continent uncharted.
+    fn best_recon(&self, g: &Game, pid: usize, cid: u32) -> Option<String> {
+        let mut best: Option<((f64, f64), String)> = None;
+        for (name, spec) in &g.rules.units {
+            // The same test `unit_doctrine` applies, read off the spec because
+            // there is no unit yet to ask. `siege` is checked first there and
+            // wins over the promotion class, so honour that order.
+            if spec.class != "military"
+                || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                || spec.siege
+                || spec.promotion_class != "recon"
+            {
+                continue;
+            }
+            if !g.can_produce(pid, cid, &Item::Unit { unit: *name }) {
+                continue;
+            }
+            let rank = (spec.moves, spec.strength.max(spec.ranged_attack_strength()));
+            if best.as_ref().map(|(b, _)| rank > *b).unwrap_or(true) {
+                best = Some((rank, name.to_string()));
+            }
+        }
+        best.map(|(_, n)| n)
+    }
+
     fn best_naval_unit(&self, g: &Game, pid: usize, cid: u32) -> Option<Name> {
         if !Self::city_is_coastal(g, cid) {
             return None;
@@ -5182,6 +5226,68 @@ impl BasicAi {
                 && home
                     .iter()
                     .any(|mine| g.wdist(*mine, city.pos) <= SIEGE_TARGET_REACH)
+        })
+    }
+
+    /// Whether this empire has stopped being able to find anything.
+    ///
+    /// ★★★★★ THE SCOUTS DIE AND NOTHING REPLACES THEM, so the map stops being
+    /// revealed and the game is played against whichever rivals happen to live
+    /// next door. `pick_item` is handed counts of settlers, builders, traders,
+    /// siege support, military, melee and ranged — recon is not among them, and
+    /// `OPENING_MENU` is the only place a scout is ever named. Once the openers
+    /// are gone the empire is permanently blind and nothing in the build order
+    /// notices.
+    ///
+    /// Measured on live run `civvis-20260808T142724Z`, 251 turns:
+    ///
+    /// | turn | 25 | 75 | 100 | 150 | 200 | 250 |
+    /// |------|----|----|-----|-----|-----|-----|
+    /// | recon units | 1 | 2 | **0** | **0** | **0** | **0** |
+    /// | majors met | 1 | 2 | 2 | 2 | 2 | 4 |
+    /// | total units | 5 | 12 | 13 | 20 | 11 | 22 |
+    ///
+    /// Zero recon from turn ~100 to the end — 150 turns — while the army grew
+    /// to 22. Not one of the run's logged production decisions is a scout. At
+    /// the final tile export **2,631 of 3,404 plots (77%) had never been seen**.
+    /// The cost is not map trivia: of five major rivals, two were met in the
+    /// first 40 turns and the other three stayed invisible, so the eventual
+    /// winner was first seen on **turn 215 already holding 927 points** against
+    /// our ~540. For 86% of that game every strategic assessment — campaign
+    /// target, runaway-rival pressure, victory-lane denial — ran against the
+    /// two weakest civilizations on the board, and reported us in the lead.
+    ///
+    /// Built from the BOARD like [`BasicAi::siege_is_the_missing_arm`] above,
+    /// and for the same reason: this lives in `BasicAi`, the strategic plan
+    /// does not reach here, and both facts it needs are already present. The
+    /// live bridge mirrors a full-size map and reveals into `explored` as a
+    /// strict subset of it, so the unexplored test is as live against
+    /// Civilization VI as it is in a native game.
+    ///
+    /// ⚠ Bounded by `RECON_ARM_MAX` and by there being ground left to chart, so
+    /// it stops asking as soon as the arm exists or the world runs out.
+    fn recon_is_the_missing_arm(&self, g: &Game, pid: usize) -> bool {
+        if !self.recon_replacement || self.minor || self.barb {
+            return false;
+        }
+        let owned_recon = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == pid && Self::unit_doctrine(g, unit.id) == UnitDoctrine::Recon
+            })
+            .count();
+        if owned_recon >= RECON_ARM_MAX {
+            return false;
+        }
+        // Somewhere left to go. A land scout is what this buys, so ask about
+        // ground it could actually walk to rather than the whole globe —
+        // otherwise an empire that has charted its continent keeps building
+        // scouts to stare at an ocean.
+        g.map.tiles.iter().any(|(pos, tile)| {
+            !g.players[pid].explored.contains(pos)
+                && g.rules.is_passable(tile)
+                && !g.rules.is_water(tile)
         })
     }
 
@@ -6043,9 +6149,24 @@ impl BasicAi {
         // headcount for everything else; this only adds "and we own nothing
         // that breaks a wall we are actually besieging".
         let missing_siege_arm = self.siege_role && self.siege_is_the_missing_arm(g, pid);
-        if can_add_military && ((military as f64) < military_floor || missing_siege_arm) {
+        // ★★★★★ AND THE SAME HEADCOUNT CANNOT SEE THAT THE EMPIRE HAS GONE
+        // BLIND. See [`BasicAi::recon_is_the_missing_arm`]: a floor of bodies
+        // reads a 22-unit army as finished while not one of them explores, and
+        // the run that measured it charted 23% of the world and met the
+        // eventual winner on turn 215. Recon is an arm in exactly the sense
+        // siege is, and it goes missing the same silent way.
+        let missing_recon_arm = self.recon_is_the_missing_arm(g, pid);
+        if can_add_military
+            && ((military as f64) < military_floor || missing_siege_arm || missing_recon_arm)
+        {
             let picked = if missing_siege_arm {
                 self.best_military_role(g, pid, cid, None, true)
+                    .or_else(|| self.combined_arms_unit(g, pid, cid, melee, ranged))
+            } else if missing_recon_arm {
+                // ⚠ Falls through to the ordinary choice rather than forcing
+                // one. A city that cannot build any recon unit at all must not
+                // be pinned on this branch: the empire still needs the build.
+                self.best_recon(g, pid, cid)
                     .or_else(|| self.combined_arms_unit(g, pid, cid, melee, ranged))
             } else if rushing && melee < self.rush_military_floor {
                 self.best_military(g, pid, cid, Some(false))
@@ -6063,8 +6184,9 @@ impl BasicAi {
                 // the two disagreed with no way to tell which was wrong.
                 think!(self.journal, Cities, Detail,
                        "Military floor takes the build";
-                       "holding {military} against a floor of {military_floor:.1}{}",
-                       if missing_siege_arm { ", and the siege arm is missing" } else { "" });
+                       "holding {military} against a floor of {military_floor:.1}{}{}",
+                       if missing_siege_arm { ", and the siege arm is missing" } else { "" },
+                       if missing_recon_arm { ", and the empire has no eyes" } else { "" });
                 return Some(Item::Unit { unit: Name::new(&m) });
             }
         }
@@ -12103,6 +12225,80 @@ mod tests {
         let snapshot = serde_json::to_value(&g).unwrap();
         let g: Game = serde_json::from_value(snapshot).unwrap();
         (g, warrior, bid)
+    }
+
+    /// Build a one-player world whose seat owns a city and has charted only
+    /// part of the map — the shape every empire is in for most of a game.
+    fn blind_empire(seed: u64) -> (Game, BasicAi) {
+        let mut g = Game::new_full(1, 30, 18, seed, 300, 0, false);
+        g.current = 0;
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| g.units[uid].kind == "settler")
+            .unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        for uid in g.player_unit_ids(0) {
+            g.remove_unit(uid);
+        }
+        let mut ai = BasicAi::new();
+        ai.recon_replacement = true;
+        (g, ai)
+    }
+
+    /// The empire owns no recon and there is ground it has never walked, so the
+    /// arm is missing. See `recon_is_the_missing_arm`: this is the state live
+    /// run `civvis-20260808T142724Z` sat in for 150 turns while its army grew
+    /// to 22 units and 77% of the map stayed dark.
+    #[test]
+    fn an_empire_with_no_eyes_and_ground_left_to_walk_is_missing_the_recon_arm() {
+        let (g, ai) = blind_empire(4_411);
+        assert!(
+            g.map
+                .tiles
+                .iter()
+                .any(|(pos, tile)| !g.players[0].explored.contains(pos)
+                    && g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)),
+            "the fixture must leave real ground unexplored"
+        );
+        assert!(ai.recon_is_the_missing_arm(&g, 0));
+
+        // One scout answers it. The arm is repaired, not stockpiled.
+        let mut with_scout = g.clone();
+        let home = with_scout.player_city_ids(0)[0];
+        let pos = with_scout.cities[&home].pos;
+        with_scout.spawn_test_unit("scout", 0, pos);
+        assert!(!ai.recon_is_the_missing_arm(&with_scout, 0));
+    }
+
+    /// An army is not eyes, and a charted world needs none.
+    #[test]
+    fn the_recon_arm_is_not_missing_for_a_soldier_or_a_finished_map() {
+        let (g, ai) = blind_empire(4_412);
+
+        // A stack of soldiers does not explore, so it does not satisfy this.
+        let mut army = g.clone();
+        let pos = army.cities[&army.player_city_ids(0)[0]].pos;
+        for _ in 0..12 {
+            army.spawn_test_unit("warrior", 0, pos);
+        }
+        assert!(
+            ai.recon_is_the_missing_arm(&army, 0),
+            "twelve warriors are twelve bodies and no eyes — exactly the \
+             headcount the military floor already reads as finished"
+        );
+
+        // Nothing left to find: the trigger releases.
+        let mut charted = g.clone();
+        let all: Vec<Pos> = charted.map.tiles.keys().copied().collect();
+        charted.players[0].explored.extend(all);
+        assert!(!ai.recon_is_the_missing_arm(&charted, 0));
+
+        // And it is off unless the live bridge turns it on.
+        let mut shipped = ai.clone();
+        shipped.recon_replacement = false;
+        assert!(!shipped.recon_is_the_missing_arm(&g, 0));
     }
 
     #[test]
