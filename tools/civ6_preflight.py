@@ -333,6 +333,31 @@ def check_host(report: Report) -> None:
         report.ok("game binary", binary.name)
     else:
         report.warn("game binary", f"not found at {binary}")
+    # ⚠ THE HARNESS UNSIGNS THE GAME AND NOTHING SAID SO. `install.py` writes the
+    # mod into `Civ6.app/Contents/Assets/DLC/`, which is inside a signed bundle, so
+    # every install invalidates its sealed resource manifest. On macOS 26 that is
+    # enough for the system to refuse the app outright — and a refused launch is
+    # indistinguishable here from a slow one, because the process stays up while
+    # the core never initialises (see `launcher.gatekeeper_refusal`).
+    #
+    # A WARNING for the reason `check_host` gives above: a broken signature has
+    # still played whole games on hosts whose trust record predates the change, so
+    # failing would refuse runs that would have worked. It is evidence, printed
+    # before a batch instead of reconstructed after sixteen silent attempts.
+    signature = launcher.bundle_signature_error()
+    if signature is None:
+        report.ok("bundle signature", "valid on disk")
+    else:
+        report.warn("bundle signature",
+                    f"{signature}; installing the mod invalidates it, and macOS may "
+                    f"refuse the game outright")
+    # Read LAST, so its advice follows the two facts that explain it.
+    refusal = launcher.gatekeeper_refusal()
+    if refusal:
+        report.fail("macOS Gatekeeper",
+                    f"the system is refusing this app — {refusal} — no run can start "
+                    f"until an operator clears it (Privacy & Security > Open Anyway, "
+                    f"App Management, or Steam's verify integrity)")
 
 
 def check_engine(report: Report) -> None:
