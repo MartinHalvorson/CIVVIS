@@ -539,10 +539,27 @@ fn tournament_setup_contract(cfg: &TourneyCfg) -> String {
         .filter(|victory| VictoryConditions::default().is_enabled(victory))
         .collect::<Vec<_>>()
         .join("+");
+    // An arena's economy decides what the battle is: at one city per side a
+    // 20x20 field is settled in tens of turns by taking the city, at zero it
+    // is an attrition duel running to the clock. Two ladders rated across
+    // those would be measuring different games, so the arena's grants join
+    // the profile — and only for an arena, so every Civ ledger written before
+    // the mode had an economy still matches its own profile.
+    let arena = if cfg.map_script.is_battlefield() {
+        format!(
+            ";arena=cities:{},production:{},gold:{},turns-per-tech:{}",
+            cfg.tactics.cities,
+            cfg.tactics.production,
+            cfg.tactics.gold,
+            cfg.tactics.turns_per_tech,
+        )
+    } else {
+        String::new()
+    };
     format!(
-        "base={};era={};difficulty={};barbarians={};disasters={};modes={};leader-pool={};civilizations={};randomize-civs={};human-seats={};teams={};victories={}",
+        "base={};era={};difficulty={};barbarians={};disasters={};modes={};leader-pool={};civilizations={};randomize-civs={};human-seats={};teams={};victories={}{arena}",
         options.base_ruleset.id(),
-        options.start_era,
+        cfg.start_era.profile_id(),
         options.difficulty,
         options.barbarians,
         options.disaster_intensity,
@@ -3598,6 +3615,13 @@ pub struct TourneyCfg {
     pub map_poles: MapPoles,
     pub max_turns: u32,
     pub num_city_states: usize,
+    /// Which era each game opens in. Part of the experiment, so the profile
+    /// records it and a fixed-era ladder can never absorb a random-era one.
+    pub start_era: crate::setup::StartEraChoice,
+    /// What a Tactics arena grants its two sides. Ignored on a world, and
+    /// recorded in the profile only for an arena, so a Civ ledger written
+    /// before the arena had an economy still matches.
+    pub tactics: crate::setup::TacticsRules,
     pub seed: u64,
     pub k: f64,
     /// Immutable player identity that pins the longitudinal rating scale.
@@ -3632,6 +3656,10 @@ impl Default for TourneyCfg {
             map_poles: MapPoles::default(),
             max_turns,
             num_city_states: size.default_city_states,
+            // The stock ladder is the Ancient-era one every existing ledger
+            // was rated on; a sweep asks for anything else explicitly.
+            start_era: crate::setup::StartEraChoice::Fixed(0),
+            tactics: crate::setup::TacticsRules::default(),
             seed: 0,
             k: 24.0,
             rating_anchor: None,
@@ -3729,6 +3757,10 @@ where
         options.map_script = cfg.map_script;
         options.map_topology = cfg.map_topology;
         options.map_poles = cfg.map_poles;
+        // Rolled from this game's own seed, so the draw and the era it is
+        // fought in replay together.
+        options.start_era = cfg.start_era.for_seed(*gseed);
+        options.tactics = cfg.tactics;
         let mut game = Game::new_with(options);
         let mut ais: Vec<Box<dyn Ai>> = game
             .players
@@ -5222,6 +5254,67 @@ mod tests {
         setup_changed.setup_contract = "difficulty=deity".to_string();
         let error = pool.bind_profile(setup_changed).unwrap_err();
         assert!(error.to_string().contains("rating profile mismatch"));
+    }
+
+    /// An arena's economy and its era choice are part of the experiment, so
+    /// the rating profile carries both — and a world's profile carries
+    /// neither, so every Civ ledger written before the arena had an economy
+    /// still matches its own profile rather than being refused.
+    #[test]
+    fn an_arena_profile_records_the_economy_and_the_era_choice() {
+        let world = TourneyCfg::default();
+        assert!(
+            !super::tournament_setup_contract(&world).contains("arena="),
+            "a world has no arena to describe"
+        );
+        assert!(super::tournament_setup_contract(&world).contains("era=0"));
+
+        let arena = TourneyCfg {
+            map_script: MapScript::Battlefield,
+            ..TourneyCfg::default()
+        };
+        let stock = super::tournament_setup_contract(&arena);
+        assert!(
+            stock.contains("arena=cities:1,production:30,gold:30,turns-per-tech:5"),
+            "the arena grants belong in the profile: {stock}"
+        );
+
+        // The two settings that change what the battle *is* must not share a
+        // ledger: one city is decided by taking it, none is an attrition duel.
+        let duel = TourneyCfg {
+            map_script: MapScript::Battlefield,
+            tactics: crate::setup::TacticsRules {
+                cities: 0,
+                ..crate::setup::TacticsRules::default()
+            },
+            ..TourneyCfg::default()
+        };
+        assert_ne!(stock, super::tournament_setup_contract(&duel));
+
+        let spread = TourneyCfg {
+            map_script: MapScript::Battlefield,
+            start_era: crate::setup::StartEraChoice::RandomPerGame,
+            ..TourneyCfg::default()
+        };
+        let spread_contract = super::tournament_setup_contract(&spread);
+        assert!(spread_contract.contains("era=random"), "{spread_contract}");
+        assert_ne!(stock, spread_contract);
+    }
+
+    /// The era choice resolves per game, so a random-era ladder fights a
+    /// spread rather than one era, and replays it exactly.
+    #[test]
+    fn a_random_era_choice_is_per_game_and_reproducible() {
+        use crate::setup::StartEraChoice;
+        let fixed = StartEraChoice::Fixed(3);
+        assert_eq!(fixed.for_seed(1), 3);
+        assert_eq!(fixed.for_seed(999), 3);
+
+        let rolled: Vec<usize> = (0..48).map(|seed| StartEraChoice::RandomPerGame.for_seed(seed)).collect();
+        let replay: Vec<usize> = (0..48).map(|seed| StartEraChoice::RandomPerGame.for_seed(seed)).collect();
+        assert_eq!(rolled, replay, "the same seed must replay the same era");
+        let distinct: std::collections::BTreeSet<usize> = rolled.iter().copied().collect();
+        assert!(distinct.len() > 1, "a random era choice must actually vary: {distinct:?}");
     }
 
     #[test]

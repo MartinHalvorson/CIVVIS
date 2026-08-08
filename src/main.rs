@@ -971,18 +971,27 @@ fn base_ruleset(args: &[String]) -> BaseRuleset {
 /// consecutive integers, and taking those modulo the ladder length directly
 /// would march through the eras in lockstep with the seed instead of
 /// scattering them.
+/// The arena economy a tournament plays under, read from the same flags
+/// `game_options` reads. A tournament builds its own `GameOptions` per game
+/// rather than going through that function, so without this the `--tactics-*`
+/// flags would be accepted and silently ignored — which is what they were,
+/// and why two arena experiments could be rated into one ledger.
+fn tournament_tactics(args: &[String]) -> setup::TacticsRules {
+    let stock = setup::TacticsRules::default();
+    setup::TacticsRules {
+        cities: arg(args, "--tactics-cities", i64::from(stock.cities)).max(0) as u8,
+        production: arg(args, "--tactics-production", i64::from(stock.production)).max(0) as u32,
+        gold: arg(args, "--tactics-gold", i64::from(stock.gold)).max(0) as u32,
+        turns_per_tech: arg(args, "--tactics-turns-per-tech", i64::from(stock.turns_per_tech))
+            .max(0) as u32,
+    }
+    .sanitized()
+}
+
 fn start_era(args: &[String], seed: u64) -> usize {
     let id = arg_text(args, "--start-era", setup::stock_start_era_id());
     if id == "random" {
-        let playable: Vec<usize> = setup::playable_start_eras()
-            .filter_map(|spec| spec.era)
-            .collect();
-        // splitmix64's finalizer: cheap, and it decorrelates neighbours.
-        let mut mix = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        mix = (mix ^ (mix >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        mix = (mix ^ (mix >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        mix ^= mix >> 31;
-        return playable[(mix % playable.len() as u64) as usize];
+        return setup::random_start_era(seed);
     }
     setup::start_era_from_id(&id).unwrap_or_else(|| {
         let playable: Vec<&str> = setup::playable_start_eras().map(|spec| spec.id).collect();
@@ -2179,6 +2188,16 @@ fn main() {
                 // to rank on whole games; see `stock_turns`.
                 max_turns: turns as u32,
                 num_city_states: city_states as usize,
+                // A tournament rolls its own per-game seeds, so the era
+                // choice travels rather than one era resolved here.
+                start_era: if arg_text(&args, "--start-era", setup::stock_start_era_id())
+                    == "random"
+                {
+                    setup::StartEraChoice::RandomPerGame
+                } else {
+                    setup::StartEraChoice::Fixed(start_era(&args, seed as u64))
+                },
+                tactics: tournament_tactics(&args),
                 seed: seed as u64,
                 k,
                 rating_anchor,
