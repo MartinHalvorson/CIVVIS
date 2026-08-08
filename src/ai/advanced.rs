@@ -1746,6 +1746,14 @@ pub struct AdvancedAi {
     /// per-unit path; movement is untouched.
     tactics_resolved: BTreeSet<u32>,
 
+    /// Units the joint plan moved without landing a blow — withdrawals, and
+    /// approaches whose attack the engine refused. The plan was scored with
+    /// these standing exactly where it left them, so the per-unit mover is
+    /// kept off them entirely for the rest of the turn: it would otherwise
+    /// march a fresh retreat straight back into the contact the plan paid
+    /// the fortification forfeit to break.
+    tactics_withdrawn: BTreeSet<u32>,
+
     /// Turns on which the joint search produced a plan, and unit decisions it
     /// reached across them. Read by instruments through
     /// [`AdvancedAi::joint_tactics_census`].
@@ -2182,6 +2190,7 @@ impl AdvancedAi {
             envoy_priority: false,
             joint_tactics: false,
             tactics_resolved: BTreeSet::new(),
+            tactics_withdrawn: BTreeSet::new(),
             tactics_plans: 0,
             tactics_decisions: 0,
             research_economy: false,
@@ -18707,6 +18716,13 @@ impl AdvancedAi {
         let unit = g.units[&uid].clone();
         let rules = std::sync::Arc::clone(&g.rules);
         let spec = &rules.units[unit.kind];
+        // The joint plan spent this unit's turn disengaging (or on an
+        // approach whose blow the engine refused) and scored the position it
+        // now stands in. Every mover below would re-decide that — the
+        // campaign march most of all — so the unit simply holds.
+        if spec.class == "military" && self.tactics_withdrawn.contains(&uid) {
+            return self.base.fortify_or_stop(g, pid, uid);
+        }
         let special_improver = unit.charges > 0 && !spec.builds.is_empty();
         let doctrine = BasicAi::unit_doctrine(g, uid);
         if self.base.unit_objective_memory && spec.class == "military" {
@@ -19996,6 +20012,7 @@ impl AdvancedAi {
             return;
         }
         self.tactics_resolved.extend(plan.resolved.iter().copied());
+        self.tactics_withdrawn.extend(plan.withdrawn.iter().copied());
         self.tactics_plans += 1;
         self.tactics_decisions += plan.resolved.len();
         self.force_groups_dirty = true;
@@ -20045,6 +20062,7 @@ impl AdvancedAi {
         // this resolves keep their own movement logic below; only the choice
         // of what to attack is taken out of the greedy per-unit path.
         self.tactics_resolved.clear();
+        self.tactics_withdrawn.clear();
         if self.joint_tactics {
             self.plan_engagement(g, pid);
         }

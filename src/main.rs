@@ -713,8 +713,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// set-membership test against an empty set; the STOCK `advanced` entrant
 /// (which ships `home_defense = true`) now answers barbarian raiders at home,
 /// recorded here honestly. Compatibility re-pin for the anchor.
+/// #1384 teaches the joint planner withdrawals and handoff steps and keeps the
+/// per-unit movers off units the plan moved without a blow
+/// (`tactics_withdrawn`). `AdvancedAi::legacy()` leaves `joint_tactics` false,
+/// so the plan never runs, the set stays empty, and the anchor's only new
+/// executable is a set-membership test against an empty set — the same shape
+/// #1363 re-pinned. Compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6937_8a74_85e7_6ba8;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x264b_eb6c_2047_2469;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
