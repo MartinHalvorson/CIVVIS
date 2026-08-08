@@ -17,7 +17,8 @@ use crate::rules::{
 use crate::specmap::SpecMap;
 
 use crate::setup::{
-    BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology, TurnStructure,
+    BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology, TacticsRules,
+    TurnStructure,
 };
 use crate::world::{DistrictFoundation, RememberedTile, Tile, TileBits, TileMemory, WorldMap};
 use crate::{hex, mapgen, Pos};
@@ -16218,6 +16219,9 @@ pub struct GameOptions {
     /// to whoever banked the most. Clamped to the number of enabled victory
     /// conditions.
     pub required_victory_types: usize,
+    /// What a Tactics arena grants its two sides. Ignored on a world, which
+    /// earns its yields rather than being handed them.
+    pub tactics: TacticsRules,
 }
 
 impl GameOptions {
@@ -16255,6 +16259,7 @@ impl GameOptions {
             turn_structure: TurnStructure::default(),
             mercy_rule: None,
             required_victory_types: 1,
+            tactics: TacticsRules::default(),
         }
     }
 }
@@ -16711,6 +16716,11 @@ pub struct Game {
     /// [`Self::effective_required_victories`].
     #[serde(default)]
     pub required_victory_types: usize,
+    /// What this arena grants its two sides each turn. Meaningless on a
+    /// world, and absent from saves written before the arena had an economy —
+    /// those load as the stock grant, which no world ever reads.
+    #[serde(default)]
+    pub tactics: TacticsRules,
     /// The victory types each seat has banked under Require-N, by player id.
     #[serde(default)]
     pub victories_won: BTreeMap<usize, BTreeSet<String>>,
@@ -17186,6 +17196,8 @@ struct GameSer {
     #[serde(default)]
     required_victory_types: usize,
     #[serde(default)]
+    tactics: TacticsRules,
+    #[serde(default)]
     victories_won: BTreeMap<usize, BTreeSet<String>>,
     next_id: u32,
     rng: Rng,
@@ -17353,6 +17365,7 @@ impl From<GameSer> for Game {
             mercy_rule: s.mercy_rule,
             mercy_lanes: s.mercy_lanes,
             required_victory_types: s.required_victory_types,
+            tactics: s.tactics,
             victories_won: s.victories_won,
             next_id: s.next_id,
             map: s.map,
@@ -17543,6 +17556,7 @@ impl From<Game> for GameSer {
             mercy_rule: g.mercy_rule,
             mercy_lanes: g.mercy_lanes,
             required_victory_types: g.required_victory_types,
+            tactics: g.tactics,
             victories_won: g.victories_won,
             next_id: g.next_id,
             rng: g.rng,
@@ -17773,7 +17787,10 @@ impl Game {
             turn_structure,
             mercy_rule,
             required_victory_types,
+            tactics,
         } = options;
+        // Only an arena is handed an economy, and only a sane one.
+        let tactics = tactics.sanitized();
         // An arena keeps a battle's clock, not a civilization's. Five hundred
         // turns is the length of a history; a battle on a ten-hex field is
         // decided in a tenth of that, and the turns after it are one side's
@@ -17882,6 +17899,7 @@ impl Game {
             mercy_rule,
             mercy_lanes: Vec::new(),
             required_victory_types,
+            tactics,
             victories_won: BTreeMap::new(),
             next_id: 1,
             map,
@@ -17972,13 +17990,19 @@ impl Game {
         }
         for (i, pos) in spawns.iter().take(num_players).enumerate() {
             if map_script.is_battlefield() {
-                // A Tactics seat is dropped in as an army and nothing else.
-                // No Settler, so no city is ever founded and the mode stays
-                // what it says it is; no handicap units either, because the
-                // whole claim of the arena is that the two sides are even and
-                // a difficulty bonus would decide the battle at setup. Both
-                // seats receive the identical roster, laid out over their own
-                // end of the field.
+                // A Tactics seat is dropped in as an army, plus at most the
+                // one city its economy is granted through. Never a Settler:
+                // the arena's single city is placed here at setup or the side
+                // has none for the whole battle, so there is no decision
+                // about where or whether to found and no early game spent
+                // walking to a better spot. No handicap units either, because
+                // the whole claim of the arena is that the two sides are even
+                // and a difficulty bonus would decide the battle at setup.
+                // Both seats receive the identical roster, laid out over
+                // their own end of the field.
+                if tactics.cities > 0 {
+                    g.found_city_for(i, *pos, None);
+                }
                 g.deploy_battlefield_army(i, *pos);
                 g.reveal(i, *pos, 3);
                 continue;
@@ -18373,6 +18397,80 @@ impl Game {
     /// and a side is alive exactly as long as it still has a unit standing.
     pub fn is_arena(&self) -> bool {
         self.map_script.is_battlefield()
+    }
+
+    /// The Science an arena hands one side this turn.
+    ///
+    /// A pace rather than a figure, because a technology's cost climbs some
+    /// seventeenfold from the Ancient era to the Information one: any flat
+    /// grant either floods the opening or stalls halfway up the tree. Dividing
+    /// what the current research actually costs by the configured pace lands
+    /// an unlock every `turns_per_tech` turns in every era and at every game
+    /// speed, identically for both sides, with no table to keep current.
+    fn arena_science(&self, pid: usize) -> f64 {
+        let pace = self.tactics.turns_per_tech;
+        if pace == 0 {
+            return 0.0;
+        }
+        // Before a side has chosen what to research, price the pace against
+        // the cheapest thing it could choose: the overflow it banks is then
+        // worth about one turn of the research it is about to start, rather
+        // than of some Information-era tech it cannot reach.
+        let cost = match self.players[pid].research.clone() {
+            Some(tech) => self.tech_cost(tech.as_str()),
+            None => self
+                .rules
+                .techs
+                .keys()
+                .filter(|name| !self.players[pid].techs.contains(*name))
+                .map(|name| self.tech_cost(name.as_str()))
+                .fold(f64::INFINITY, f64::min),
+        };
+        // The whole tree is researched: there is nothing left to pace toward.
+        if !cost.is_finite() {
+            return 0.0;
+        }
+        cost / f64::from(pace)
+    }
+
+    /// What an arena grants one side each turn, over and above whatever its
+    /// city produces. Empty on a world, which earns its yields instead.
+    ///
+    /// Per side rather than per city on purpose: a side set up with no city
+    /// still techs and still banks upgrade money, which is what keeps the
+    /// zero-city arena a real option. Both the turn and the observer read
+    /// this, so the panel cannot drift from what is actually collected.
+    pub fn arena_side_yields(&self, pid: usize) -> Yields {
+        if !self.is_arena() {
+            return Yields::default();
+        }
+        Yields {
+            gold: f64::from(self.tactics.gold),
+            science: self.arena_science(pid),
+            ..Yields::default()
+        }
+    }
+
+    /// Whether an arena will let a city build this item.
+    ///
+    /// The mode is a tactical testbed, so the only thing worth spending
+    /// Production on is something that fights. `military` covers the 69 units
+    /// that do; `support` covers the 9 that make them better at it — the
+    /// battering ram and siege tower that get them through walls, the medic,
+    /// the observation balloon. Everything else a city could queue —
+    /// buildings, districts, wonders, projects, Settlers, Builders, Traders —
+    /// is either meaningless on a bounded arena or would turn the battle into
+    /// the empire game the mode exists to strip away.
+    pub fn arena_allows_production(&self, item: &Item) -> bool {
+        let unit = match item {
+            Item::Unit { unit } => *unit,
+            Item::Formation { unit, .. } => *unit,
+            _ => return false,
+        };
+        self.rules
+            .units
+            .get_interned(unit)
+            .is_some_and(|spec| matches!(spec.class.as_str(), "military" | "support"))
     }
 
     /// Handicaps reach the major civilizations only: city-states and
@@ -37019,6 +37117,20 @@ impl Game {
         weights: Option<Yields>,
         apply_observation: bool,
     ) -> Yields {
+        // An arena's city is a unit tap, not a settlement. It collects the
+        // one flat Production figure both sides are granted and nothing else:
+        // no Food, so it never grows and the two sides cannot drift apart in
+        // size; no Gold or Science, which the arena grants per side in
+        // `begin_turn` so that a side without a city still gets them. This
+        // sits in the shared inner routine deliberately — the AI's weighted
+        // and model views read the same truth as the turn does, so nothing
+        // plans against tile yields the arena will never pay out.
+        if self.is_arena() {
+            return Yields {
+                production: f64::from(self.tactics.production),
+                ..Yields::default()
+            };
+        }
         // A city's yields reach for two empire-wide derivations — its Amenity
         // band and its housed Great Works. Opening a scope here means they are
         // taken once per city rather than once per lookup, and nests harmlessly
@@ -39606,6 +39718,13 @@ impl Game {
     }
 
     pub fn can_produce(&self, pid: usize, cid: u32, item: &Item) -> bool {
+        // An arena builds things that fight and nothing else. Stated once
+        // here, at the gate every queue, every AI production choice and every
+        // client menu already asks, rather than as a rule each of them has to
+        // remember separately.
+        if self.is_arena() && !self.arena_allows_production(item) {
+            return false;
+        }
         let blocked = Self::production_block_key(item);
         if self
             .blocked_production
@@ -53894,6 +54013,21 @@ impl Game {
                 .sum::<f64>()
                 * 0.10;
         }
+        // An arena is granted its economy rather than earning it. Both sides
+        // receive the same flat Gold and the same Science pace whatever they
+        // hold on the field, so a result is attributable to the fighting and
+        // not to a better start — and a side with no city still techs and
+        // still upgrades, which is what makes the no-city setting a real
+        // option rather than a mute one. Culture is deliberately zero: with
+        // no civics tree there is nothing for it to buy, and a policy landing
+        // mid-battle would be exactly the asymmetry the mode excludes.
+        if self.is_arena() {
+            let granted = self.arena_side_yields(pid);
+            sci = granted.science;
+            gold = granted.gold;
+            cul = 0.0;
+            faith = 0.0;
+        }
         // Anarchy: an empire between governments collects no Science,
         // Culture, Gold or Faith. Its upkeep still falls due below.
         let anarchy = self.in_anarchy(pid);
@@ -56609,6 +56743,14 @@ impl Game {
         // running out of units, and nothing else does.
         if self.is_arena() {
             if self.units.values().any(|unit| unit.owner == pid) {
+                return;
+            }
+            // A side that still holds its city is not finished: it collects
+            // Production every turn and the next unit off the queue puts it
+            // back on the field. Losing the last unit ends a side only when
+            // it has nothing left to build one with — which, with the arena
+            // set to no cities, is the moment the last unit falls.
+            if self.cities.values().any(|city| city.owner == pid) {
                 return;
             }
             self.players[pid].alive = false;
@@ -68307,14 +68449,146 @@ mod district_mechanics {
         );
     }
 
+    /// An arena's economy is granted, never earned, and identically to both
+    /// sides: one city per side at the stock setting, producing exactly the
+    /// flat Production figure and no Food to grow on, flat Gold per side to
+    /// upgrade with, and a technology every `turns_per_tech` turns whatever
+    /// era it is. Culture stays at zero, so no civic ever completes and no
+    /// policy ever lands mid-battle.
+    #[test]
+    fn an_arena_economy_is_granted_rather_than_earned() {
+        let rules = TacticsRules { cities: 1, production: 30, gold: 30, turns_per_tech: 5 };
+        let mut game = Game::new_with(GameOptions {
+            map_script: MapScript::Battlefield,
+            tactics: rules,
+            ..GameOptions::new(2, 10, 10, 90_411, 250, 0)
+        });
+        for seat in 0..2 {
+            let cities: Vec<u32> = game
+                .cities
+                .values()
+                .filter(|city| city.owner == seat)
+                .map(|city| city.id)
+                .collect();
+            assert_eq!(cities.len(), 1, "seat {seat} opens with the one granted city");
+            let yields = game.city_yields(cities[0]);
+            assert_eq!(yields.production, 30.0, "the city pays the flat grant");
+            for (name, value) in [
+                ("food", yields.food),
+                ("gold", yields.gold),
+                ("science", yields.science),
+                ("culture", yields.culture),
+            ] {
+                assert_eq!(value, 0.0, "an arena city pays no {name}");
+            }
+        }
+
+        // A side that has met the tech pace has also banked its gold, and has
+        // spent no Culture on a civics tree that is not there. Research is
+        // chosen here rather than waited for: `begin_turn` pays the pace, the
+        // AI turn picks the target, and this test is about the paying.
+        let cheapest = game
+            .rules
+            .techs
+            .keys()
+            .filter(|name| !game.players[0].techs.contains(*name))
+            .min_by(|a, b| {
+                game.tech_cost(a.as_str())
+                    .total_cmp(&game.tech_cost(b.as_str()))
+            })
+            .copied()
+            .expect("an opening arena has a tree left to climb");
+        game.players[0].research = Some(cheapest.to_string());
+        let techs_before = game.players[0].techs.len();
+        let gold_before = game.players[0].gold;
+        for _ in 0..6 {
+            game.begin_turn(0);
+        }
+        assert!(
+            game.players[0].gold >= gold_before + 5.0 * 30.0,
+            "six turns of the flat grant must reach the treasury"
+        );
+        assert_eq!(game.players[0].culture_lifetime, 0.0, "an arena pays no Culture");
+        assert!(game.players[0].civics.is_empty(), "no civic completes on an arena");
+        assert!(
+            game.players[0].techs.len() > techs_before,
+            "a five-turn pace must land a technology inside six turns"
+        );
+
+        // The build menu is what fights and what helps it fight, and nothing
+        // else — including at the no-city setting, where the rule still holds
+        // for a city captured from the other side.
+        let city = *game.cities.keys().next().unwrap();
+        let owner = game.cities[&city].owner;
+        for kind in ["warrior", "battering_ram"] {
+            assert!(
+                game.arena_allows_production(&Item::Unit { unit: Name::new(kind) }),
+                "{kind} is a fighting unit and belongs on an arena"
+            );
+        }
+        for kind in ["settler", "builder", "trader"] {
+            assert!(
+                !game.arena_allows_production(&Item::Unit { unit: Name::new(kind) }),
+                "{kind} is empire-building and does not belong on an arena"
+            );
+        }
+        assert!(
+            !game.can_produce(owner, city, &Item::Building { building: crate::name!("monument") }),
+            "an arena builds no buildings"
+        );
+        assert!(
+            !game.can_produce(owner, city, &Item::Unit { unit: crate::name!("settler") }),
+            "an arena builds no Settlers"
+        );
+    }
+
+    /// The no-city arena still techs and still banks upgrade money: the grant
+    /// is per side, not per city, which is what keeps the zero setting a real
+    /// option rather than a side that can do nothing but walk forward.
+    #[test]
+    fn a_city_less_arena_still_collects_gold_and_science() {
+        let mut game = Game::new_with(GameOptions {
+            map_script: MapScript::Battlefield,
+            tactics: TacticsRules { cities: 0, ..TacticsRules::default() },
+            ..GameOptions::new(2, 10, 10, 90_411, 250, 0)
+        });
+        assert!(game.cities.is_empty());
+        let cheapest = game
+            .rules
+            .techs
+            .keys()
+            .filter(|name| !game.players[0].techs.contains(*name))
+            .min_by(|a, b| {
+                game.tech_cost(a.as_str())
+                    .total_cmp(&game.tech_cost(b.as_str()))
+            })
+            .copied()
+            .expect("an opening arena has a tree left to climb");
+        game.players[0].research = Some(cheapest.to_string());
+        let gold_before = game.players[0].gold;
+        let techs_before = game.players[0].techs.len();
+        for _ in 0..6 {
+            game.begin_turn(0);
+        }
+        assert!(
+            game.players[0].gold > gold_before,
+            "a side with no city still collects its Gold"
+        );
+        assert!(
+            game.players[0].techs.len() > techs_before,
+            "a side with no city still researches"
+        );
+    }
+
     /// A Tactics battlefield opens as a two-sided arena: flat and walled even
     /// when a globe was asked for, the requested city-states refused, no
-    /// barbarian third force — and two armies and nothing else. No Settler,
-    /// so no city is ever founded; no difficulty handicap units, because an
-    /// arena that hands one side a bonus has decided the battle at setup. The
-    /// two rosters are identical, set out over their own ends of the field
-    /// rather than stacked on one hex, and the two sides open at war with
-    /// each other having already met.
+    /// barbarian third force — and, at the no-city setting, two armies and
+    /// nothing else. Never a Settler, at either setting: the arena's city is
+    /// placed at setup or there is none. No difficulty handicap units either,
+    /// because an arena that hands one side a bonus has decided the battle at
+    /// setup. The two rosters are identical, set out over their own ends of
+    /// the field rather than stacked on one hex, and the two sides open at
+    /// war with each other having already met.
     #[test]
     fn a_battlefield_game_opens_as_a_two_sided_arena() {
         let game = Game::new_with(GameOptions {
@@ -68322,6 +68596,7 @@ mod district_mechanics {
             map_topology: MapTopology::Planet,
             // Deity: the handicap table would hand every AI seat extra units.
             difficulty: "deity".to_string(),
+            tactics: TacticsRules { cities: 0, ..TacticsRules::default() },
             ..GameOptions::new(2, 10, 10, 90_411, 250, 3)
         });
         assert!(game.map.sphere().is_none(), "the arena must be flat");
@@ -68332,7 +68607,7 @@ mod district_mechanics {
         // asked for were refused by the arena.
         assert_eq!(game.players.len(), 3);
         assert!(game.players.iter().all(|player| !player.is_minor || player.is_free_city));
-        assert!(game.cities.is_empty(), "an arena opens with no city");
+        assert!(game.cities.is_empty(), "the no-city arena opens with no city");
 
         let roster = |seat: usize| {
             let mut kinds: Vec<&str> = game
@@ -68452,6 +68727,9 @@ mod district_mechanics {
     fn the_last_army_standing_takes_the_field() {
         let mut game = Game::new_with(GameOptions {
             map_script: MapScript::Battlefield,
+            // The no-city arena: a side is exactly its army, so losing the
+            // army is losing the battle with nothing left to rebuild from.
+            tactics: TacticsRules { cities: 0, ..TacticsRules::default() },
             ..GameOptions::new(2, 10, 10, 7_311, 250, 0)
         });
         let losing: Vec<u32> = game.player_unit_ids(1);
@@ -68479,6 +68757,7 @@ mod district_mechanics {
     fn an_arena_has_no_economy_behind_its_army() {
         let mut game = Game::new_with(GameOptions {
             map_script: MapScript::Battlefield,
+            tactics: TacticsRules { cities: 0, ..TacticsRules::default() },
             ..GameOptions::new(2, 10, 10, 5_150, 250, 0)
         });
         let uid = game.player_unit_ids(0)[0];

@@ -709,6 +709,13 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             if let Some(adjustment) = g.observed_yield_adjustments.get(&o.id) {
                 output.add(*adjustment);
             }
+            // An arena grants Gold and Science to the side rather than to a
+            // city, so summing cities alone would report zero of both while
+            // the treasury filled and the tree opened — and would report a
+            // side with no city as having no economy at all. Add the grants
+            // where they are actually collected, so the panel says what the
+            // turn is about to do.
+            output.add(g.arena_side_yields(o.id));
             let total_population: i32 = city_ids
                 .iter()
                 .map(|&cid| g.cities[&cid].pop)
