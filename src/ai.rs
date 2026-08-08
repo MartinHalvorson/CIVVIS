@@ -8464,6 +8464,33 @@ impl BasicAi {
 
     fn explore_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let upos = g.units[&uid].pos;
+        // A tribal village the scout can already reach this turn is a
+        // one-off reward, so production recon should not march past it toward
+        // an arbitrary fogged tile. `tactical_strategy` is false for Basic and
+        // the frozen `advanced_v1` anchor, while production Advanced enables
+        // it. `Game` contains the whole board for simulation purposes; use live
+        // player vision here so reconnaissance does not gain a route to huts
+        // it has never actually seen.
+        let nearby_hut = (self.tactical_strategy && !g.players[pid].is_barbarian)
+            .then(|| {
+                let visible = g.player_vision_now(pid);
+                g.reachable(uid)
+                    .into_iter()
+                    .filter(|pos| g.sees(&visible, *pos))
+                    .filter(|pos| {
+                        g.map
+                            .get(*pos)
+                            .and_then(|tile| tile.improvement.as_deref())
+                            == Some("goody_hut")
+                    })
+                    .min_by_key(|pos| (g.wdist(upos, *pos), *pos))
+            })
+            .flatten();
+        if let Some(hut) = nearby_hut {
+            if self.step_toward(g, pid, uid, hut) {
+                return true;
+            }
+        }
         // `unit_can_traverse` says yes to open water for every land unit the
         // moment embarkation unlocks, so from that turn on the unexplored
         // ocean is a legal exploration goal for the whole army. That is how a
@@ -8815,6 +8842,18 @@ impl BasicAi {
     }
 
     fn healing_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
+        // There is no recovery on a Tactics arena, because nothing heals
+        // there. A unit that dropped below the withdrawal line would be put
+        // into `recovering_units`, sent looking for friendly ground that does
+        // not exist, and left fortified in a corner for the rest of the
+        // battle waiting for hit points that never come — permanently out of
+        // a fight it is still perfectly able to influence. On a battlefield a
+        // damaged unit fights on, and the fact that it is damaged is exactly
+        // why the enemy is coming for it.
+        if g.is_arena() {
+            self.recovering_units.remove(&uid);
+            return None;
+        }
         let withdraw_at_hp = self.w.withdraw_hp.round() as i32;
         let return_at_hp = self.w.rejoin_hp.max(self.w.withdraw_hp + 5.0).round() as i32;
 
@@ -12555,6 +12594,80 @@ mod tests {
             "unexpected assault decision: {:?}",
             g.log.last()
         );
+    }
+
+    #[test]
+    fn production_scout_collects_a_visible_reachable_goody_hut_before_exploring_fog() {
+        let mut g = Game::new_full(1, 24, 16, 38_001, 30, 0, false);
+        for tile in g.map.tiles.values_mut() {
+            if tile.improvement.as_deref() == Some("goody_hut") {
+                tile.improvement = None;
+            }
+        }
+        let (origin, hidden, hut) = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(origin, tile)| {
+                g.rules.is_passable(tile)
+                    && !g.rules.is_water(tile)
+                    && g.units_at(**origin).is_empty()
+                    && g.city_at(**origin).is_none()
+            })
+            .find_map(|(origin, _)| {
+                let mut neighbors: Vec<Pos> = g
+                    .nbrs(*origin)
+                    .into_iter()
+                    .filter(|position| {
+                        g.map.get(*position).is_some_and(|tile| {
+                            g.rules.is_passable(tile)
+                                && !g.rules.is_water(tile)
+                                && g.units_at(*position).is_empty()
+                                && g.city_at(*position).is_none()
+                        })
+                    })
+                    .collect();
+                neighbors.sort();
+                (neighbors.len() >= 2).then_some((*origin, neighbors[0], neighbors[1]))
+            })
+            .expect("test map needs two open tiles beside a scout");
+        for position in [origin, hidden, hut] {
+            let tile = g.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        g.map.tiles.get_mut(&hut).unwrap().improvement = Some(crate::name!("goody_hut"));
+        let scout = g.spawn_test_unit("scout", 0, origin);
+        g.players[0].explored.extend(g.map.tiles.keys().copied());
+        g.players[0].explored.remove(&hidden);
+
+        assert!(
+            g.player_can_see(0, hut),
+            "the tribal village needs to be in the scout's current sight"
+        );
+
+        // This is a production improvement, not a rewrite of the frozen
+        // Basic/advanced_v1 route: their scout keeps pursuing the unseen tile.
+        assert!(!BasicAi::new().tactical_strategy);
+        let mut frozen = g.clone();
+        let mut frozen_ai = BasicAi::new();
+        assert!(frozen_ai.military_step(&mut frozen, 0, scout));
+        assert_eq!(frozen.units[&scout].pos, hidden);
+        assert_eq!(
+            frozen.map.tiles[&hut].improvement.as_deref(),
+            Some("goody_hut")
+        );
+
+        let mut ai = BasicAi::new();
+        ai.tactical_strategy = true;
+        assert!(ai.military_step(&mut g, 0, scout));
+        assert_eq!(g.units[&scout].pos, hut);
+        assert!(g.map.tiles[&hut].improvement.is_none());
+        assert!(matches!(
+            g.log.last(),
+            Some((0, Action::Move { unit, to })) if *unit == scout && *to == hut
+        ));
     }
 
     #[test]

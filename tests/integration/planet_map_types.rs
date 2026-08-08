@@ -19,9 +19,16 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
         .iter()
         .find(|size| size.id == "tiny")
         .unwrap();
-    let seats = size.default_players + size.default_city_states;
 
     for (script_index, spec) in CIV6_MAP_SCRIPTS.iter().enumerate() {
+        // The battlefield arena is in the matrix with its own promises: it
+        // refuses the globe (an arena needs corners) and seats no
+        // city-states, whatever the caller asked for.
+        let seats = if spec.script.is_battlefield() {
+            size.default_players
+        } else {
+            size.default_players + size.default_city_states
+        };
         for (shape_index, shape) in [MapTopology::Flat, MapTopology::Planet]
             .into_iter()
             .enumerate()
@@ -50,10 +57,27 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
                     &mut rng,
                 );
                 let case = format!("{} / {} / {}", spec.id, shape.id(), poles.id());
+                let shape_built = if spec.script.is_battlefield() {
+                    MapTopology::Flat
+                } else {
+                    shape
+                };
 
-                match shape {
+                match shape_built {
                     MapTopology::Flat => {
-                        assert_eq!(world.topology, Topology::Cylinder, "{case} shape");
+                        // A world's flat map is a cylinder: its east and west
+                        // edges are the same edge. An arena's is a bounded
+                        // rectangle with a wall on all four sides, which is
+                        // what stops a unit walking off the field.
+                        assert_eq!(
+                            world.topology,
+                            if spec.script.is_battlefield() {
+                                Topology::Rectangle
+                            } else {
+                                Topology::Cylinder
+                            },
+                            "{case} shape"
+                        );
                         assert_eq!(
                             (world.width, world.height),
                             (size.width, size.height),
@@ -87,7 +111,7 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
                 let mut pentagons = 0;
                 for (position, _) in world.tiles.iter() {
                     let neighbors = world.neighbors(*position);
-                    if shape == MapTopology::Planet {
+                    if shape_built == MapTopology::Planet {
                         match neighbors.len() {
                             5 => pentagons += 1,
                             6 => {}
@@ -107,7 +131,7 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
                 }
                 assert_eq!(
                     pentagons,
-                    if shape == MapTopology::Planet { 12 } else { 0 },
+                    if shape_built == MapTopology::Planet { 12 } else { 0 },
                     "{case} has the wrong number of pentagons"
                 );
 
@@ -117,7 +141,15 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
                     .filter(|tile| !rules.is_water(tile))
                     .count();
                 assert!(land > 0, "{case} generated no land");
-                assert!(land < world.tiles.len(), "{case} generated no water");
+                if spec.script.is_battlefield() {
+                    // The arena is the one entry here that is not a world:
+                    // every hex of it is ground both sides can walk, because
+                    // a lake on a field a dozen tiles across is not terrain
+                    // to fight over, it is a wall that decides the fight.
+                    assert_eq!(land, world.tiles.len(), "{case} put water on an arena");
+                } else {
+                    assert!(land < world.tiles.len(), "{case} generated no water");
+                }
                 assert_eq!(spawns.len(), seats, "{case} did not seat every player");
                 assert_eq!(
                     spawns.iter().copied().collect::<BTreeSet<_>>().len(),
@@ -195,7 +227,12 @@ fn every_world_type_starts_a_game_on_either_shape() {
             assert_eq!(game.map_script, spec.script, "{case} was replaced at setup");
             assert_eq!(
                 game.map.topology,
-                if shape.is_globe() {
+                // The battlefield is the one scripted exception to shape
+                // independence: an arena is a walled rectangle, so it is laid
+                // out that way whatever shape the lobby asked for.
+                if spec.script.is_battlefield() {
+                    Topology::Rectangle
+                } else if shape.is_globe() {
                     Topology::Globe(size.globe_frequency)
                 } else {
                     Topology::Cylinder
@@ -215,7 +252,9 @@ fn every_world_type_starts_a_game_on_either_shape() {
                     .iter()
                     .filter(|player| player.is_minor && !player.is_barbarian)
                     .count(),
-                size.default_city_states,
+                // The arena refuses the city-states it was asked for; every
+                // world seats them all.
+                if spec.script.is_battlefield() { 0 } else { size.default_city_states },
                 "{case} lost a city-state during setup"
             );
             for unit in game.units.values() {

@@ -17,7 +17,8 @@ the calibrated share the spectator ribbon shows, on flat 1500 priors — reach
 the chosen threshold. Setup ladder: **None, 99%, 97%, 95% (shipped default),
 90%**. Checked at every world-turn wrap after the real victory sweeps, so
 mercy never outranks a victory the rules just recognised; recorded as victory
-type `mercy`. Headless/eval constructors default to **off** (`GameOptions`),
+type `mercy` and denoted as `Mercy Rule - <victory type(s)>` (see The notation
+below). Headless/eval constructors default to **off** (`GameOptions`),
 so simulation baselines and rated batch evidence are unchanged; the 95%
 default enters through the setup surfaces (`stock_opening_params`, which the
 lobby stamp and the wasm opening world both follow, and `civvis play`).
@@ -27,6 +28,37 @@ crossed in 23/60 games and agreed with the played-out winner in 91.3% of
 crossings; 0.98 agreed in 100% of 11 crossings; 0.90 agreed in 93.5% of 31.
 A mercy game ending early may therefore occasionally crown a seat the full
 game would not have — that is the rule's nature, chosen deliberately.
+
+### The notation
+
+A mercy ending is written and shown as **`Mercy Rule - <victory type(s)>`**,
+naming the open victory lane the winner led when the odds crossed — `Mercy
+Rule - Science`, or both lanes joined as `Mercy Rule - Science + Domination`
+when a seat led two at exactly the same progress. The rule stops a game the
+victory conditions were still deciding, so the bare word says only that it
+ended early and never what it ended on.
+
+The lanes are `Game::leading_victory_lanes`: the maximum of the same race
+progress `victory_threat` takes, read through `victory_lane_open` so an arena
+can only ever be named for the battle it is actually deciding, and with Score
+left out for the reason `odds` leaves it out of the race term — it is the
+standing when the clock runs out, not a race. Every lane tied at the front is
+named. A seat that crossed on standing and tempo with no race under way keeps
+the bare `Mercy Rule`.
+
+`Game::mercy_lanes` is read at the crossing, because the board that produced
+it stops changing the moment the game does, and it travels into `Decided` when
+a world plays on past the result. The victory *type* is untouched — still
+`mercy`, which is what `set_winner`, `play_on_blocks` and the saves key off.
+Only the label changes, and it is composed in one place
+(`Game::victory_label`, `game::mercy_label`) so the finish screen, the play-on
+plate, `/state` (`victory_label`), the league's `matches.csv` and the Elo
+tournament log all denote a win the same way.
+
+Lanes are joined with ` + ` and never a comma: the label goes into the
+`victory` column of `matches.csv`, whose two readers — `backfill_win_profiles`
+and `rating::parse_matches_csv` — cut rows on commas, so one comma in the
+notation would shift every later column and take the recorded history with it.
 
 Determinism: the crossing ends games, so `odds.rs` computes its
 transcendentals (`pow`, `log`) through `libm` — the same soft-float rule as
@@ -136,3 +168,69 @@ the stock budget so games end on victories rather than truncations
 
 Anything else re-proposing "stop decided games early via `odds.rs`" without
 new mechanism should cite this document and stop.
+
+
+## Arenas, 2026-08-08: a new signal, not a reopening
+
+The conclusion above stands for worlds. This section is the case the closing
+clause anticipated — a new mechanism, measured on the profile it would deploy
+to — and it concerns only the Tactics arena, where the model previously had
+no signal at all.
+
+Three blindnesses, found by instrument (0/24 crossings at every threshold in
+battles that ended twelve units against one):
+
+- `still_playing` asked the world's question — a city or a Settler — which an
+  arena seat never holds, so every no-city seat read as already out, the
+  living list came back empty, and the whole table sat at zero for the length
+  of the battle.
+- The domination race counted capitals. An arena holds none, so the model's
+  strongest term (up to `RACE_FULL_ELO`) never moved.
+- The material floors are Civ-scaled (`SCORE_FLOOR` 25 against arena army
+  weights of five to sixty), crushing what little the lead terms saw.
+
+The fix speaks the arena's own rules: `still_playing` mirrors the arena's
+elimination rule (units or a city), and the domination race meter is the share
+of surviving strength-weighted army — the same quantity the arena's Score
+victory ranks at the clock, reading 50 exactly when the armies are even. The
+floors are untouched; the race meter carries the crossing.
+
+Measured on 24 seeds per regime, 2 players, 20x20, adjudicating from turn 40
+every 10 turns:
+
+**No cities (attrition; median battle 613 of a 656-turn clock):**
+
+| threshold | crossed | agreement | mean turns saved | share of compute |
+| --- | --- | --- | --- | --- |
+| 0.90 | 24/24 | 100% (24/24) | 157.0 | 35.3% |
+| 0.95 | 22/24 | 100% (22/22) | 139.4 | 28.7% |
+| 0.98 | 22/24 | 100% (22/22) | 114.8 | 23.6% |
+| 0.995 | 22/24 | 100% (22/22) | 84.4 | 17.4% |
+
+**No cities, random start era:**
+
+| threshold | crossed | agreement | mean turns saved | share of compute |
+| --- | --- | --- | --- | --- |
+| 0.90 | 23/24 | 100% (23/23) | 222.7 | 38.5% |
+| 0.995 | 20/24 | 100% (20/20) | 145.7 | 21.9% |
+
+**One city per side (capture):** 1/24 crossings, 100% on the crossing, 1.4%
+saved — benign, not a failure. Those battles end at turns 13-57, decided
+suddenly by the city falling, so they do not outlive their result and there
+is nothing for adjudication to save. The regimes that bled compute are the
+ones rescued.
+
+Why the arena escapes the world's verdict: damage is permanent and nothing on
+the field rebuilds an army faster than it is destroyed, so a material lead is
+close to irreversible in exactly the way a mid-game Civ lead is not — the
+"ordinary late upsets" the world's calibration must stay soft for do not
+exist here. The world's own tables are unaffected: every change is behind
+`Game::is_arena()` except `any_victory_enabled`, which now reads the
+*effective* victory conditions — identical for any world, and on an arena the
+difference is precisely that its two lanes are open whatever the lobby left
+ticked.
+
+For rated play the tournament still runs `mercy_rule: None`; these tables are
+the pre-registered evidence for turning it on there, not the decision. The
+lobby's shipped 95% default now simply works on arenas, as the setup screen
+already claimed it did.

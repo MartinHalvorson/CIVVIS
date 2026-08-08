@@ -91,6 +91,24 @@ const THREAT_RELIEF_RADIUS: i32 = 6;
 /// empires holding `masonry` by then; 60 leaves the lane a margin on the wrong
 /// side of that and keeps it honestly *ancient*.
 const RUSH_WINDOW_CLOSES: u32 = 60;
+/// Empire-wide power multiple over the campaign target above which
+/// `war_patience` stops the stall clause of the peace rules from ending the
+/// war. The fatigue rule (war age ≥ 24 with no campaign progress in 12) exists
+/// so a war that is going nowhere gets sued out — correct when the sides are
+/// close, and a self-inflicted defeat when the attacker outweighs the defender
+/// severalfold and the "stall" is a wall taking its time to fall. 2.5 sits
+/// far above the 1.32 elective-declaration ratio, so patience is only ever
+/// extended to a war the declaration logic already called a walkover, and the
+/// 0.62 outmatched trigger and Recovery trigger keep their shape: the moment
+/// the advantage is gone, so is the patience.
+const OVERWHELMING_WAR_RATIO: f64 = 2.5;
+/// Distance from the campaign objective inside which a force group counts as
+/// the front rather than a rear reinforcement, used by
+/// [`AdvancedAi::wartime_reinforcement_step`]. The staging ring is 3..=5 and
+/// groups are cliques at `command_radius` (6), so 8 covers a front force
+/// anywhere on or just off the ring; a Hold at that range is the measured
+/// posture logic doing its job, not a unit that failed to reach the war.
+const REINFORCEMENT_FRONT_RADIUS: i32 = 8;
 
 /// How long the defensive-war `Recovery` posture may hold on the power-gap
 /// trigger alone before the empire returns to its own lane, in standard turns.
@@ -715,6 +733,8 @@ struct TacticalAttackCandidate {
 #[derive(Clone)]
 enum CityDistance {
     Cylinder(i32),
+    /// A bounded arena: four walls and no seam to measure through.
+    Bounded,
     Globe(Arc<crate::sphere::Sphere>),
 }
 
@@ -722,6 +742,7 @@ impl CityDistance {
     fn between(&self, first: Pos, second: Pos) -> i32 {
         match self {
             CityDistance::Cylinder(width) => crate::hex::wdistance(first, second, *width),
+            CityDistance::Bounded => crate::hex::distance(first, second),
             CityDistance::Globe(sphere) => sphere.distance(first, second),
         }
     }
@@ -1009,6 +1030,33 @@ pub struct AdvancedAi {
     /// **Off by default, live-bridge only**, and it takes the MAXIMUM of the two
     /// so an evolved genome that deliberately raises `muster_radius` keeps it.
     pub muster_at_command_radius: bool,
+    /// Give an adaptive Conquest plan the war production path. The routing in
+    /// `take_turn` sends Recovery, targeted lanes, and appointed war plans
+    /// through `advanced_production` — but an adaptive plan that `assess`
+    /// switched to Conquest falls through to the Basic governor, whose army
+    /// target is `mil_per_city * cities` (≈1.4 per city on the deployed
+    /// genome) with none of the enemy weighting, siege appetite, or wartime
+    /// bonuses the war path carries. `docs/RUSH.md` measured the trap from
+    /// the other side: raising the army inside `production_value` was twice
+    /// byte-identical to a no-op, because the plan never reaches it.
+    /// **Off by default, live-bridge only.**
+    pub war_economy: bool,
+    /// Keep marching rear units to the campaign objective after the
+    /// declaration. `campaign_staging_step` assembles the army before the war
+    /// and then stands down; from then on reinforcements form one- and
+    /// two-body cliques at home whose local strength at the objective can
+    /// never clear `LOCAL_SUPERIORITY_FLOOR`, so they hold forever while the
+    /// front fights with whatever staged on declaration day. **Off by
+    /// default, live-bridge only.**
+    pub war_reinforcement: bool,
+    /// Do not let the stall clause of the peace rules end a war the empire is
+    /// overwhelmingly winning. Fatigue (war age ≥ 24, no campaign progress in
+    /// 12) both offers peace and accepts any white peace at +320; while this
+    /// flag is on and the empire holds `OVERWHELMING_WAR_RATIO` over its
+    /// campaign target, the stall clause stands down and the ordinary
+    /// outmatched (0.62) and Recovery triggers keep the war endable. **Off by
+    /// default, live-bridge only.**
+    pub war_patience: bool,
     /// Aim a relief force at what is actually hitting the city, not at whichever
     /// besieger happens to stand nearest the force.
     ///
@@ -1802,6 +1850,14 @@ pub struct AdvancedAi {
     /// per-unit path; movement is untouched.
     tactics_resolved: BTreeSet<u32>,
 
+    /// Units the joint plan moved without landing a blow — withdrawals, and
+    /// approaches whose attack the engine refused. The plan was scored with
+    /// these standing exactly where it left them, so the per-unit mover is
+    /// kept off them entirely for the rest of the turn: it would otherwise
+    /// march a fresh retreat straight back into the contact the plan paid
+    /// the fortification forfeit to break.
+    tactics_withdrawn: BTreeSet<u32>,
+
     /// Turns on which the joint search produced a plan, and unit decisions it
     /// reached across them. Read by instruments through
     /// [`AdvancedAi::joint_tactics_census`].
@@ -2193,6 +2249,9 @@ impl AdvancedAi {
             siege_tracks_the_wall: false,
             blind_objective_strength: false,
             muster_at_command_radius: false,
+            war_economy: false,
+            war_reinforcement: false,
+            war_patience: false,
             relief_targets_the_siege: false,
             blind_objective_units: false,
             settler_price: 1.0,
@@ -2248,6 +2307,7 @@ impl AdvancedAi {
             envoy_priority: false,
             joint_tactics: false,
             tactics_resolved: BTreeSet::new(),
+            tactics_withdrawn: BTreeSet::new(),
             tactics_plans: 0,
             tactics_decisions: 0,
             research_economy: false,
@@ -2444,6 +2504,27 @@ impl AdvancedAi {
     /// comparable.
     pub fn enable_muster_at_command_radius(&mut self) {
         self.muster_at_command_radius = true;
+    }
+
+    /// Send an adaptive Conquest plan through the war production path. Native
+    /// tournament games leave this disabled so their recorded ladders stay
+    /// comparable.
+    pub fn enable_war_economy(&mut self) {
+        self.war_economy = true;
+    }
+
+    /// March rear units to the campaign objective while the war is on. Native
+    /// tournament games leave this disabled so their recorded ladders stay
+    /// comparable.
+    pub fn enable_war_reinforcement(&mut self) {
+        self.war_reinforcement = true;
+    }
+
+    /// Keep prosecuting a war the empire overwhelmingly outweighs instead of
+    /// suing it out as stalled. Native tournament games leave this disabled so
+    /// their recorded ladders stay comparable.
+    pub fn enable_war_patience(&mut self) {
+        self.war_patience = true;
     }
 
     /// Send a relief force at the units actually besieging the city rather than
@@ -2654,6 +2735,36 @@ impl AdvancedAi {
         // gated-off flag here would be dead code of the `culture_focus` kind.
         self.enable_district_coverage();
         self.enable_slot_kind_tiebreak();
+        // ⚠⚠ WARS ARE REACHED BUT NEVER CONVERTED. Across the fifteen live
+        // Settler games of 2026-08-07/08 the ledger records four war
+        // declarations and ZERO city captures, and the score losses (639-1317,
+        // 457 at 3 cities on `civvis-20260808T033223Z`) are the direct result:
+        // the games are decided on score at the 250-turn cap, and captures are
+        // the one lever never pulled. Three repairs, separately ablatable,
+        // one causal story — the agent that reaches its own declaration must
+        // also fight the war it declared:
+        // ⚠ An adaptive Conquest plan never reaches `advanced_production` —
+        // it falls through to the Basic governor and an army target of
+        // `mil_per_city * cities` (≈1.4/city on the deployed genome), so the
+        // war is fought on a peacetime economy. `docs/RUSH.md` measured the
+        // routing trap from the other side: raising the army in
+        // `production_value` was twice byte-identical to a no-op.
+        self.enable_war_economy();
+        // ⚠ Reinforcements never reach the front. Force groups are cliques at
+        // `command_radius`, so the trickle of fresh and released units forms
+        // one- and two-body groups at home that can never clear
+        // `LOCAL_SUPERIORITY_FLOOR` at the objective. Measured on run
+        // `civvis-20260808T033223Z`, t217-t225: land forces of one, two and
+        // three against the same objective, every one "too weak locally to
+        // advance", while the empire fielded 10-14 units.
+        self.enable_war_reinforcement();
+        // ⚠ A war that grinds a wall for 12 turns reads as stalled, and
+        // fatigue then offers peace AND accepts any white peace at +320 —
+        // followed by a 30-turn re-declaration lockout. The stall clause is
+        // right when the sides are close and self-defeating when the attacker
+        // holds `OVERWHELMING_WAR_RATIO` over the defender: the measured live
+        // pattern is one declaration per game and no second attempt.
+        self.enable_war_patience();
         // ⚠⚠ AND THE POPULATION THE SCIENCE IS COMPUTED FROM IS CAPPED BY HOUSING.
         // The lane above decides which specialty district a city builds; none of
         // them raises the ceiling on the citizens who work them. Measured over
@@ -2840,6 +2951,18 @@ impl AdvancedAi {
 
     pub fn disable_muster_at_command_radius(&mut self) {
         self.muster_at_command_radius = false;
+    }
+
+    pub fn disable_war_economy(&mut self) {
+        self.war_economy = false;
+    }
+
+    pub fn disable_war_reinforcement(&mut self) {
+        self.war_reinforcement = false;
+    }
+
+    pub fn disable_war_patience(&mut self) {
+        self.war_patience = false;
     }
 
     pub fn disable_relief_targets_the_siege(&mut self) {
@@ -4402,6 +4525,7 @@ impl AdvancedAi {
             .collect::<Vec<_>>();
         let distance = match g.map.topology {
             crate::world::Topology::Cylinder => CityDistance::Cylinder(g.map.width),
+            crate::world::Topology::Rectangle => CityDistance::Bounded,
             crate::world::Topology::Globe(frequency) => {
                 CityDistance::Globe(crate::sphere::sphere(frequency))
             }
@@ -7662,10 +7786,20 @@ impl AdvancedAi {
             .get(&partner)
             .copied()
             .unwrap_or(0.0);
-        let fatigued = self.major_war_since.is_some_and(|started| {
-            g.turn.saturating_sub(started) >= 24
-                && g.turn.saturating_sub(self.last_campaign_progress) >= 12
-        });
+        // `war_patience`: the stall clause stands down while the empire
+        // overwhelmingly outweighs its own campaign target, so a slow wall
+        // does not sue a walkover out. The 0.85 outmatched clause below is
+        // deliberately untouched — if the advantage is ever lost, so is the
+        // patience.
+        let overwhelming = self.war_patience
+            && plan.strategy == GrandStrategy::Conquest
+            && plan.target_player == Some(partner)
+            && my_power >= partner_power * OVERWHELMING_WAR_RATIO;
+        let fatigued = !overwhelming
+            && self.major_war_since.is_some_and(|started| {
+                g.turn.saturating_sub(started) >= 24
+                    && g.turn.saturating_sub(self.last_campaign_progress) >= 12
+            });
         let denied_partner = plan.target_player == Some(partner)
             && (plan.strategy == GrandStrategy::Conquest
                 || g.is_at_war(pid, partner)
@@ -9089,6 +9223,113 @@ impl AdvancedAi {
         Some(g.apply(pid, &Action::Move { unit: uid, to: next }).is_ok())
     }
 
+    /// March a rear unit toward the campaign objective while the war is on.
+    ///
+    /// `campaign_staging_step` assembles the army before the declaration and
+    /// then deliberately stands down: at war, every field unit belongs to a
+    /// force group. But groups are cliques at `command_radius`, so the
+    /// reinforcement trickle — fresh production, healed units, released
+    /// garrisons — forms one- and two-body groups at home whose local
+    /// strength at the objective can never clear `LOCAL_SUPERIORITY_FLOOR`.
+    /// They hold forever, and the front fights the whole war with whatever
+    /// staged on declaration day. Measured on live run
+    /// `civvis-20260808T033223Z`: the why ledger shows land forces of one,
+    /// two and three against the same objective from t217 to t225, every one
+    /// "too weak locally to advance", while the empire fielded 10-14 units.
+    ///
+    /// Deliberately narrow, in order of what it declines: the homeland keeps
+    /// first claim (any threatened city stands the march down empire-wide),
+    /// the front group and any group already moving keep their measured
+    /// posture logic, a unit in contact belongs to the tactical layer, and a
+    /// unit below `withdraw_hp` heals where it stands. What remains is
+    /// exactly the standing-still rear, and it walks the same road the
+    /// pre-war assembly walked: routed to the objective's 3..=5 staging
+    /// ring, never onto the city tile itself. Groups are rebuilt from the
+    /// board every turn, so an arrival within `command_radius` of the front
+    /// merges into it and takes the front's orders from then on.
+    fn wartime_reinforcement_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        plan: &StrategicPlan,
+        group: Option<&ForceGroup>,
+        enemies: &[usize],
+    ) -> Option<bool> {
+        if !self.war_reinforcement || plan.strategy != GrandStrategy::Conquest {
+            return None;
+        }
+        if plan.threatened_city.is_some() {
+            return None;
+        }
+        let target = plan.target_player?;
+        if !g.is_at_war(pid, target) {
+            return None;
+        }
+        let objective = plan
+            .target_city
+            .and_then(|city| g.cities.get(&city))
+            .filter(|city| city.owner == target)
+            .map(|city| city.pos)?;
+        let rear = group.is_none_or(|group| {
+            matches!(group.posture, ForcePosture::Hold | ForcePosture::Muster)
+                && g.wdist(group.anchor, objective) > REINFORCEMENT_FRONT_RADIUS
+        });
+        if !rear {
+            return None;
+        }
+        let unit = &g.units[&uid];
+        let spec = &g.rules.units[unit.kind];
+        if !matches!(spec.class.as_str(), "military" | "support")
+            || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            || (BasicAi::unit_doctrine(g, uid) == UnitDoctrine::Recon
+                && self.base.has_exploration_target(g, pid, uid))
+        {
+            return None;
+        }
+        if (unit.hp as f64) <= self.base.w.withdraw_hp {
+            return None;
+        }
+        let in_contact = g
+            .units
+            .values()
+            .any(|enemy| enemies.contains(&enemy.owner) && g.wdist(unit.pos, enemy.pos) <= 2);
+        if in_contact {
+            return None;
+        }
+        let here = unit.pos;
+        let kind = unit.kind;
+        // The same road the pre-war assembly walks: route to the objective's
+        // staging ring, never onto the city tile itself (a city is attacked,
+        // not entered, so a route aimed at its tile finds nothing).
+        let goals: HashSet<Pos> = {
+            let _memo = g.query_memo();
+            g.wdisk(objective, 5)
+                .into_iter()
+                .filter(|position| {
+                    (3..=5).contains(&g.wdist(*position, objective))
+                        && g.units_at(*position).is_empty()
+                        && g.city_at(*position).is_none()
+                        && g.map
+                            .get(*position)
+                            .is_some_and(|tile| !g.rules.is_water(tile))
+                })
+                .collect()
+        };
+        let next = g
+            .route_step_to_any(uid, &goals)
+            .filter(|position| *position != here && g.can_move(uid, *position))?;
+        if self.journal().wants(crate::reasoning::Level::Detail) {
+            think!(self.journal(), Military, Detail,
+                   "Reinforcing the campaign with {}", plain(&kind);
+                   "the front at {:?} is {} tiles away and this unit's group cannot \
+                    advance from here",
+                   objective, g.wdist(here, objective);
+                   objective);
+        }
+        Some(g.apply(pid, &Action::Move { unit: uid, to: next }).is_ok())
+    }
+
     /// A predecessor that missed the breakthrough upgrade because it was
     /// abroad returns to the nearest owned city before joining the staging
     /// column. This keeps Mobilize from marching an obsolete body away from
@@ -9508,10 +9749,30 @@ impl AdvancedAi {
             let appointed_objective = self.war_plan.as_ref().is_some_and(|war| {
                 war.phase == WarPhase::Exploit && war.target_player == *other
             });
-            let fatigued = self.major_war_since.is_some_and(|started| {
+            let stalled = self.major_war_since.is_some_and(|started| {
                 g.turn.saturating_sub(started) >= 24
                     && g.turn.saturating_sub(self.last_campaign_progress) >= 12
             });
+            // `war_patience`: a stalled war against the campaign target is
+            // not offered away while the empire holds an overwhelming power
+            // advantage over that target. The outmatched and Recovery offer
+            // triggers below keep their shape.
+            let overwhelming = self.war_patience
+                && plan.strategy == GrandStrategy::Conquest
+                && plan.target_player == Some(*other)
+                && my_power >= g.military_power(*other) * OVERWHELMING_WAR_RATIO;
+            let fatigued = stalled && !overwhelming;
+            if stalled
+                && overwhelming
+                && g.is_at_war(pid, *other)
+                && self.journal().wants(crate::reasoning::Level::Decision)
+            {
+                let their_power = g.military_power(*other);
+                think!(self.journal(), Diplomacy, Decision,
+                       "Pressing the war on {}", g.players[*other].civ;
+                       "the campaign has stalled, but {my_power:.0} power against \
+                        their {their_power:.0} is a war to finish, not to quit");
+            }
             let peace_pending = g.pending_deals.iter().any(|deal| {
                 deal.peace
                     && ((deal.from == pid && deal.to == *other)
@@ -17141,6 +17402,25 @@ impl AdvancedAi {
                 low_hp_unit || capturable_city
             });
             let relieving = plan.threatened_city.is_some();
+            // A Tactics arena has none of the three reasons a Civ army stands
+            // still, so it does none of the three standing-still postures.
+            //
+            // `Recover` assumes time heals: nothing heals on an arena, so a
+            // battered force only gets more battered by waiting. `Hold`
+            // assumes something better is coming: no reinforcement is coming,
+            // because there is no city to build one in. And the superiority
+            // gate below assumes an army is an investment with a homeland
+            // behind it worth preserving — but on a battlefield the army *is*
+            // the game, and a force that declines every even fight simply
+            // loses the field to the clock. Measured with the gate on, two
+            // even armies ground each other down to five apiece and then
+            // circled for three hundred turns without either closing, so
+            // "last army standing" was never reached. This is deliberately
+            // the whole of the difference: everything below is the shipped
+            // Civ doctrine, unchanged, and an arena only stops asking to be
+            // let out of the fight.
+            let arena = g.is_arena();
+            let locally_superior = arena || local_strength_ratio >= LOCAL_SUPERIORITY_FLOOR;
             // ⚠ MEASURED AND REJECTED: letting a rush ignore `relieving` and
             // `Muster` — on the theory that a stack sized against one
             // undefended capital should never stand still — made it *worse*.
@@ -17148,12 +17428,10 @@ impl AdvancedAi {
             // first capture slipped from turn 79 to 96. The two standing-still
             // postures are load-bearing even for a rush; do not retry this
             // without a different mechanism.
-            let posture = if average_hp <= self.base.w.withdraw_hp + 10.0 {
+            let posture = if !arena && average_hp <= self.base.w.withdraw_hp + 10.0 {
                 ForcePosture::Recover
             } else if (focus_target.is_some()
-                && (local_strength_ratio >= LOCAL_SUPERIORITY_FLOOR
-                    || plan.threatened_city.is_some()
-                    || forcing_focus))
+                && (locally_superior || plan.threatened_city.is_some() || forcing_focus))
                 || (units.iter().any(|uid| {
                     g.units.values().any(|enemy| {
                         enemies.contains(&enemy.owner)
@@ -17161,16 +17439,16 @@ impl AdvancedAi {
                                 || (g.sees(&visible, enemy.pos)
                                     && self.battlefront_unit_visible(g, pid, enemy.id)))
                             && g.wdist(g.units[uid].pos, enemy.pos) <= 2
-                            && (local_strength_ratio >= LOCAL_SUPERIORITY_FLOOR
+                            && (locally_superior
                                 || plan.threatened_city.is_some()
                                 || enemy.hp <= 35)
                     })
                 }))
             {
                 ForcePosture::Engage
-            } else if relieving || local_strength_ratio < LOCAL_SUPERIORITY_FLOOR {
+            } else if !arena && (relieving || local_strength_ratio < LOCAL_SUPERIORITY_FLOOR) {
                 ForcePosture::Hold
-            } else if units.len() > 1 && readiness + 1e-9 < self.base.w.muster_readiness {
+            } else if !arena && units.len() > 1 && readiness + 1e-9 < self.base.w.muster_readiness {
                 ForcePosture::Muster
             } else {
                 ForcePosture::Advance
@@ -17337,6 +17615,32 @@ impl AdvancedAi {
         } else {
             Vec::new()
         };
+        // How an arena prices the two halves of an advance differently, and
+        // why it has to.
+        //
+        // The shipped weights charge `mv_threat * caution * expected damage`
+        // for standing where the enemy can reach — up to about 15 — and pay
+        // `objective_progress * progress` — about 3 — for each hex closer to
+        // the objective. In a Civ world that is right: a city does not move,
+        // an army that waits one more turn is an army with one more unit in
+        // it, and there is always something else the empire is doing
+        // meanwhile. On a battlefield all three are false, and the ratio is
+        // fatal, because both sides' threat ranges cover the same ground: a
+        // force that will not stand inside the enemy's reach and a force that
+        // will not be stood over are the same force, and neither ever moves.
+        // Measured on an even 10x10: both armies stopped exactly five hexes
+        // apart — a horseman's four moves plus its attack — and held there
+        // for three hundred turns while both sides' own orders read
+        // "Advance".
+        //
+        // So an arena closes harder and flinches less. Only these two terms
+        // move: everything that decides WHICH tile to close on — cover,
+        // cohesion, role spacing, screening, the strike opening, the blind
+        // ranged tile — is the shipped weighting, and so is every decision
+        // about whether to actually attack once contact is made.
+        const ARENA_ADVANCE_URGENCY: f64 = 3.0;
+        const ARENA_THREAT_CAUTION: f64 = 0.35;
+        let arena = g.is_arena();
         let score = |g: &Game, tile: Pos| -> f64 {
             let objective_distance = g.wdist(tile, target);
             let (progress, cohesion, threat_caution, spacing) = match role {
@@ -17347,6 +17651,14 @@ impl AdvancedAi {
                 ForceRole::Siege => (0.80, 1.30, 1.25, 1.70),
                 ForceRole::Support => (0.65, 1.50, 1.40, 1.20),
                 ForceRole::AirStrike => (1.20, 0.20, 0.75, 0.50),
+            };
+            let (progress, threat_caution) = if arena {
+                (
+                    progress * ARENA_ADVANCE_URGENCY,
+                    threat_caution * ARENA_THREAT_CAUTION,
+                )
+            } else {
+                (progress, threat_caution)
             };
             let mut value = -self.base.w.objective_progress * progress * objective_distance as f64;
             let nearest_friend = group
@@ -17434,7 +17746,17 @@ impl AdvancedAi {
                     }
                 }
             }
-            if group.local_strength_ratio < 1.0 {
+            // The posture selector's superiority gate is already arena-off
+            // (an army that declines every even fight loses the field to the
+            // clock), but this second gate — a per-tile brake on any closing
+            // move while locally weaker — was still on, and it is the
+            // standoff: approaching the enemy mass lowers the local ratio, so
+            // every advancing group brakes exactly at the edge of enemy
+            // reach, on both sides at once. Measured on a 20x20 no-city
+            // arena: armies parked three to six hexes apart with zero units
+            // in contact for 40-62% of the battle, grinding out the clock
+            // through accidental skirmishes.
+            if !arena && group.local_strength_ratio < 1.0 {
                 let advance = g.wdist(upos, target) - objective_distance;
                 value -= self.base.w.local_superiority
                     * (1.0 - group.local_strength_ratio)
@@ -17465,7 +17787,15 @@ impl AdvancedAi {
             }
         }
         if let Some((candidate, pos)) = best {
-            if self.base.unit_objective_memory {
+            // Not on an arena: the danger memory exists to walk a world
+            // army around a kill zone it can come back to with more force,
+            // and its retreat floor is `withdraw_hp` — but nothing heals on
+            // an arena and no more force is coming, so after the first
+            // exchange half of both armies sits near the floor and every
+            // approach reads as a reason to turn around. Measured: the
+            // armies touched, traded, separated, and spent 40-62% of the
+            // battle with zero units in contact.
+            if !arena && self.base.unit_objective_memory {
                 let advancing = g.wdist(pos, target) < g.wdist(upos, target);
                 let danger = self
                     .base
@@ -18861,6 +19191,13 @@ impl AdvancedAi {
         let unit = g.units[&uid].clone();
         let rules = std::sync::Arc::clone(&g.rules);
         let spec = &rules.units[unit.kind];
+        // The joint plan spent this unit's turn disengaging (or on an
+        // approach whose blow the engine refused) and scored the position it
+        // now stands in. Every mover below would re-decide that — the
+        // campaign march most of all — so the unit simply holds.
+        if spec.class == "military" && self.tactics_withdrawn.contains(&uid) {
+            return self.base.fortify_or_stop(g, pid, uid);
+        }
         let special_improver = unit.charges > 0 && !spec.builds.is_empty();
         let doctrine = BasicAi::unit_doctrine(g, uid);
         if self.base.unit_objective_memory && spec.class == "military" {
@@ -19412,6 +19749,17 @@ impl AdvancedAi {
                 .or_else(|| self.base.capture_objective_target(g, pid, uid))
                 .or_else(|| self.base.nearest_enemy(g, pid, uid, &enemies))
         };
+        // Rear reinforcements march before taking group orders: Hold is
+        // correct for a front force that is locally outnumbered, and wrong
+        // for the standing-still trickle at home that will never be locally
+        // superior anywhere. Homeland claims all ran above, and the step
+        // stands down empire-wide while any city is threatened.
+        if let Some(acted) =
+            self.wartime_reinforcement_step(g, pid, uid, plan, group.as_ref(), &enemies)
+        {
+            self.force_groups_dirty = true;
+            return acted;
+        }
         if let Some(orders) = &group {
             return self.coordinated_tactical_step(
                 g,
@@ -20150,6 +20498,7 @@ impl AdvancedAi {
             return;
         }
         self.tactics_resolved.extend(plan.resolved.iter().copied());
+        self.tactics_withdrawn.extend(plan.withdrawn.iter().copied());
         self.tactics_plans += 1;
         self.tactics_decisions += plan.resolved.len();
         self.force_groups_dirty = true;
@@ -20199,6 +20548,7 @@ impl AdvancedAi {
         // this resolves keep their own movement logic below; only the choice
         // of what to attack is taken out of the greedy per-unit path.
         self.tactics_resolved.clear();
+        self.tactics_withdrawn.clear();
         if self.joint_tactics {
             self.plan_engagement(g, pid);
         }
@@ -20959,6 +21309,12 @@ impl AdvancedAi {
                 || active_victory_target.is_some()
                 || adaptive_expansion_dispatch
                 || self.war_plan.is_some()
+                // An adaptive Conquest plan otherwise falls through to the
+                // Basic governor and fights its war on a peacetime army
+                // target. Same shape as adaptive Recovery immediately above:
+                // `delegated_cities` still runs after this for the queues the
+                // war path leaves empty.
+                || (self.war_economy && plan.strategy == GrandStrategy::Conquest)
             {
                 self.advanced_production(g, pid, &plan, adaptive_expansion_dispatch);
             }
@@ -36391,5 +36747,287 @@ mod research_probe {
         // And the whole path short-circuits for a frozen controller.
         let legacy = AdvancedAi::legacy();
         assert_eq!(legacy.unreachable_housing_tech(&game, 0), None);
+    }
+
+    /// Off by default, set only by the live bridge, each holdable off on its
+    /// own — the war-conversion trio follows the same contract as every other
+    /// bridge repair.
+    #[test]
+    fn only_the_live_bridge_fights_the_war_conversion_trio() {
+        let fresh = AdvancedAi::new();
+        assert!(!fresh.war_economy);
+        assert!(!fresh.war_reinforcement);
+        assert!(!fresh.war_patience);
+        let legacy = AdvancedAi::legacy();
+        assert!(!legacy.war_economy && !legacy.war_reinforcement && !legacy.war_patience);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.war_economy && live.war_reinforcement && live.war_patience);
+        live.disable_war_economy();
+        live.disable_war_reinforcement();
+        live.disable_war_patience();
+        assert!(!live.war_economy && !live.war_reinforcement && !live.war_patience);
+    }
+
+    /// The routing in `take_turn` must name the adaptive Conquest plan behind
+    /// the flag: `docs/RUSH.md` measured that raising the army anywhere else
+    /// is a no-op, because an adaptive Conquest plan historically never
+    /// reached `advanced_production` at all.
+    #[test]
+    fn the_war_economy_routes_an_adaptive_conquest_plan_to_war_production() {
+        let src = include_str!("advanced.rs");
+        let block = src
+            .split("|| adaptive_expansion_dispatch")
+            .nth(1)
+            .expect("the production routing condition exists")
+            .split("self.advanced_production(g, pid, &plan, adaptive_expansion_dispatch);")
+            .next()
+            .expect("the routing block ends at the production call");
+        assert!(
+            block.contains("self.war_economy && plan.strategy == GrandStrategy::Conquest"),
+            "the war economy must route exactly the adaptive Conquest plan"
+        );
+    }
+
+    /// A stalled war against an overwhelmed campaign target is neither offered
+    /// away nor accepted away while `war_patience` is on; a stalled war
+    /// against anyone else keeps the shipped fatigue shape.
+    #[test]
+    fn war_patience_holds_the_stall_clause_only_over_an_overwhelmed_target() {
+        let mut game = Game::new_full(2, 24, 16, 7_922, 300, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        let staging = game.cities[&game.player_city_ids(0)[0]].pos;
+        for _ in 0..3 {
+            game.spawn_test_unit("modern_armor", 0, staging);
+        }
+        // The stall offer only goes to a target still holding more than one
+        // city (a one-city empire is finished, not sued); give the defender
+        // its second city before the fatigue arms below.
+        let their_capital = game.cities[&game.player_city_ids(1)[0]].pos;
+        let second_site = game
+            .wdisk(their_capital, 4)
+            .into_iter()
+            .find(|pos| {
+                game.wdist(*pos, their_capital) >= 3
+                    && game.units_at(*pos).is_empty()
+                    && game.city_at(*pos).is_none()
+                    && game
+                        .map
+                        .get(*pos)
+                        .is_some_and(|tile| !game.rules.is_water(tile))
+            })
+            .expect("open land for the defender's second city");
+        game.found_city_for(1, second_site, None);
+        game.current = 0;
+        game.turn = 60;
+        game.record_contact(0, 1);
+        game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+        // War age 40 with no campaign progress in that time: the stall
+        // clause's own conditions hold for every arm below.
+        game.turn = 100;
+        assert!(
+            game.military_power(0) >= game.military_power(1) * OVERWHELMING_WAR_RATIO,
+            "precondition: the attacker overwhelms the defender"
+        );
+        let campaign = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: game.player_city_ids(1).into_iter().next(),
+            threatened_city: None,
+            desired_cities: 2,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let white_peace = DiplomaticDeal {
+            id: 7,
+            from: 1,
+            to: 0,
+            give_gold: 0.0,
+            request_gold: 0.0,
+            open_borders: false,
+            friendship: false,
+            peace: true,
+            alliance: None,
+            defensive_pact: false,
+            joint_war_target: None,
+            promise: None,
+            demand: false,
+            expires: game.turn + 10,
+        };
+
+        // Shipped shape: fatigue accepts the white peace and offers its own.
+        let mut fatigued = AdvancedAi::new();
+        fatigued.major_war_since = Some(60);
+        assert!(
+            fatigued.incoming_deal_value(&game, 0, &white_peace, &campaign) > 0.0,
+            "without the flag, a stalled war accepts white peace"
+        );
+        let mut offering = game.clone();
+        fatigued.advanced_diplomacy(&mut offering, 0, &campaign);
+        assert!(
+            fatigued.peace_offers.contains(&1),
+            "without the flag, a stalled war offers peace to its own target"
+        );
+
+        // With the flag: the stall clause stands down against the overwhelmed
+        // campaign target, and the denied-partner guard refuses the deal.
+        let mut patient = AdvancedAi::new();
+        patient.enable_war_patience();
+        patient.major_war_since = Some(60);
+        assert!(
+            patient.incoming_deal_value(&game, 0, &white_peace, &campaign) < 0.0,
+            "with the flag, an overwhelming attacker keeps prosecuting"
+        );
+        let mut pressed = game.clone();
+        patient.advanced_diplomacy(&mut pressed, 0, &campaign);
+        assert!(
+            !patient.peace_offers.contains(&1),
+            "with the flag, no stall offer goes to the overwhelmed target"
+        );
+
+        // Scope: patience covers exactly the campaign target. The same
+        // stalled war read against a plan that is not fighting player 1
+        // keeps the shipped fatigue acceptance.
+        let unrelated = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        assert!(
+            patient.incoming_deal_value(&game, 0, &white_peace, &unrelated) > 0.0,
+            "patience must not outlive the campaign that justified it"
+        );
+    }
+
+
+    /// The standing rear marches: a unit whose clique cannot advance walks to
+    /// the campaign objective instead of holding at home, and every guard the
+    /// step declines for — flag off, threatened homeland, enemy contact —
+    /// stands it down.
+    #[test]
+    fn wartime_reinforcement_marches_the_standing_rear_to_the_objective() {
+        let mut game = Game::new_full(2, 24, 16, 7_922, 300, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let objective_city = game.player_city_ids(1)[0];
+        let objective = game.cities[&objective_city].pos;
+        game.current = 0;
+        game.turn = 60;
+        game.record_contact(0, 1);
+        game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+        let soldier = game.spawn_test_unit("warrior", 0, home);
+        let start = game.units[&soldier].pos;
+        assert!(
+            game.wdist(start, objective) > REINFORCEMENT_FRONT_RADIUS,
+            "precondition: the unit starts in the rear"
+        );
+
+        let campaign = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(objective_city),
+            threatened_city: None,
+            desired_cities: 2,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        // Off: the step declines and the unit keeps its shipped behaviour.
+        let mut stock = AdvancedAi::new();
+        assert_eq!(
+            stock.wartime_reinforcement_step(&mut game, 0, soldier, &campaign, None, &[1]),
+            None,
+            "off by default"
+        );
+
+        // A threatened homeland stands the march down empire-wide.
+        let mut threatened_plan = campaign.clone();
+        threatened_plan.threatened_city = game.player_city_ids(0).into_iter().next();
+        let mut marching = AdvancedAi::new();
+        marching.enable_war_reinforcement();
+        assert_eq!(
+            marching.wartime_reinforcement_step(
+                &mut game,
+                0,
+                soldier,
+                &threatened_plan,
+                None,
+                &[1]
+            ),
+            None,
+            "the homeland keeps first claim"
+        );
+
+        // On, with the homeland quiet: the rear unit walks toward the war.
+        assert_eq!(
+            marching.wartime_reinforcement_step(&mut game, 0, soldier, &campaign, None, &[1]),
+            Some(true),
+            "the standing rear must march"
+        );
+        assert_ne!(game.units[&soldier].pos, start, "the first step moved");
+        // Walked turn by turn, the march delivers the unit to the staging
+        // ring: the route can step laterally around terrain, so the claim is
+        // arrival, not per-step monotony. Once inside the front radius the
+        // rear gate itself stands the step down.
+        let mut steps = 0;
+        while game.wdist(game.units[&soldier].pos, objective) > 5 && steps < 60 {
+            game.units.get_mut(&soldier).unwrap().moves_left = 2.0;
+            if marching
+                .wartime_reinforcement_step(&mut game, 0, soldier, &campaign, None, &[1])
+                .is_none()
+            {
+                break;
+            }
+            steps += 1;
+        }
+        let after = game.units[&soldier].pos;
+        assert!(
+            game.wdist(after, objective) <= 5,
+            "the march must reach the staging ring; stalled at {:?}, {} from the \
+             objective after {steps} steps",
+            after,
+            game.wdist(after, objective)
+        );
+
+        // In contact, the tactical layer owns the unit and the march declines.
+        let adjacent = game
+            .wdisk(after, 2)
+            .into_iter()
+            .find(|pos| {
+                *pos != after
+                    && game.units_at(*pos).is_empty()
+                    && game.city_at(*pos).is_none()
+                    && game
+                        .map
+                        .get(*pos)
+                        .is_some_and(|tile| !game.rules.is_water(tile))
+            })
+            .expect("open land beside the marcher");
+        game.spawn_test_unit("warrior", 1, adjacent);
+        assert_eq!(
+            marching.wartime_reinforcement_step(&mut game, 0, soldier, &campaign, None, &[1]),
+            None,
+            "a unit in contact belongs to the tactical layer"
+        );
     }
 }
