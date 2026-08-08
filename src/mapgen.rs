@@ -1133,33 +1133,15 @@ fn flat_land(
             )
         }
         MapScript::Battlefield => {
-            // A bounded arena rather than a world: every tile is ground
-            // except the single column of sea that seals the east-west wrap
-            // seam — which is what gives the flat map true corners for the
-            // two sides to start in — and a pond or two in the middle ground,
-            // so rivers have somewhere to run and a flank has something to
-            // hold. The north and south rows stay land: the edge here is the
-            // arena's wall, not its climate.
-            let mut land = BTreeSet::new();
-            for row in 0..height {
-                for col in 1..width {
-                    land.insert(hex::offset_to_axial(col, row));
-                }
-            }
-            // Ponds are sized to the ground — one on the smallest field, a
-            // few on the largest — and kept to the middle band, clear of the
-            // corners and ends where the two sides begin.
-            let middle = offset_region(wm, 3, width - 2, 3, height - 3);
-            if !middle.is_empty() {
-                let seeds: Vec<Pos> = middle.iter().cloned().collect();
-                for _ in 0..(area / 90).clamp(1, 3) {
-                    let seed = seeds[rng.below(seeds.len())];
-                    for pos in grow_blob(wm, &middle, seed, 2 + rng.below(3), rng) {
-                        land.remove(&pos);
-                    }
-                }
-            }
-            land
+            // A bounded arena rather than a world: every tile is ground, and
+            // the four walls are the map's own edges rather than a rim of sea
+            // (`Topology::Rectangle`). There is no water on a battlefield at
+            // all — no coast to hug, no pond to anchor a flank against, and
+            // no seam to walk through — so what decides the fight is the
+            // ground and what each side does with it. The whole field is laid
+            // out again by [`paint_battlefield_ground`] once the world passes
+            // have run; this only says that all of it is land.
+            offset_region(wm, 0, width, 0, height)
         }
         // Answered before the shape was dispatched on, because Earth's
         // coastlines are read rather than rolled and are the same coastlines
@@ -1768,29 +1750,32 @@ fn tennis_ball_major_starts(wm: &WorldMap, pool: &BTreeSet<Pos>) -> Option<Vec<P
     clear.then_some(starts)
 }
 
-/// The two sides of a battlefield begin as far apart as the arena allows: a
-/// square seats them in opposite corners, a taller-than-wide rectangle at
-/// opposite ends of its long axis. Column zero is the arena's sea seam, so
-/// the fighting ground runs from column one to the map's east edge and the
-/// corners are the ground's corners rather than the grid's. Each seat snaps
-/// to the pool tile nearest its target measured *without* the east-west wrap
-/// — the wrapped metric would call the two corners of a square neighbours
-/// through the seam. `None` means the pool had nothing to offer or the two
-/// picks crowded together; the caller falls back to the regional model, so
-/// the promise is a layout, never a lost seat.
+/// How many rows at each end of an arena are that side's deployment band.
+///
+/// The band is where a side's army is set out, and it is left as open ground:
+/// a side that opened the game already inside a wood on a hill would be
+/// holding a fortress it never had to take, which is the opposite of what an
+/// arena is for. All of the cover therefore sits in the ground between the
+/// two bands, which is exactly the ground both sides have to come out and
+/// fight over. Two rows is enough to set out an opening army without stacking
+/// it, on the narrowest field offered.
+pub const BATTLEFIELD_DEPLOYMENT_ROWS: i32 = 2;
+
+/// The two sides of a battlefield begin at opposite ends of its long axis,
+/// each in the middle of its own end wall, so that the two armies face each
+/// other across the field rather than diagonally across a corner. Every
+/// offered arena is at least as tall as it is wide, so that axis runs north
+/// to south; the east-west layout is kept for an arena that arrives the other
+/// way round. `None` means the pool had nothing to offer or the two picks
+/// crowded together; the caller falls back to the regional model, so the
+/// promise is a layout, never a lost seat.
 fn battlefield_major_starts(wm: &WorldMap, pool: &BTreeSet<Pos>) -> Option<Vec<Pos>> {
-    let ground_width = wm.width - 1;
-    let targets = if ground_width == wm.height {
-        [(1, 0), (wm.width - 1, wm.height - 1)]
-    } else if wm.height > ground_width {
-        [(wm.width / 2, 0), (wm.width / 2, wm.height - 1)]
+    let targets = if wm.width > wm.height {
+        [(0, wm.height / 2), (wm.width - 1, wm.height / 2)]
     } else {
-        // No offered size is wider than it is tall, but the layout holds if
-        // one arrives: the long axis runs east-west, its ends hug the seam's
-        // two banks.
-        [(1, wm.height / 2), (wm.width - 1, wm.height / 2)]
+        [(wm.width / 2, 0), (wm.width / 2, wm.height - 1)]
     };
-    let unwrapped = |position: Pos, (col, row): (i32, i32)| {
+    let offset_distance = |position: Pos, (col, row): (i32, i32)| {
         let (c, r) = hex::axial_to_offset(position.0, position.1);
         (c - col).abs() + (r - row).abs()
     };
@@ -1801,8 +1786,8 @@ fn battlefield_major_starts(wm: &WorldMap, pool: &BTreeSet<Pos>) -> Option<Vec<P
             .copied()
             .filter(|position| !starts.contains(position))
             .min_by(|first, second| {
-                unwrapped(*first, target)
-                    .cmp(&unwrapped(*second, target))
+                offset_distance(*first, target)
+                    .cmp(&offset_distance(*second, target))
                     // The pool iterates in `Pos` order, so an exact tie goes
                     // to the lower position and the layout stays a function
                     // of the map alone.
@@ -1812,9 +1797,136 @@ fn battlefield_major_starts(wm: &WorldMap, pool: &BTreeSet<Pos>) -> Option<Vec<P
     }
     // Both snaps drifting toward the middle would be a different battle than
     // the one advertised; ask for at least half the arena between them.
-    let apart = unwrapped(starts[0], hex::axial_to_offset(starts[1].0, starts[1].1))
-        >= ground_width.max(wm.height) / 2 + 1;
+    let apart = offset_distance(starts[0], hex::axial_to_offset(starts[1].0, starts[1].1))
+        >= wm.width.max(wm.height) / 2 + 1;
     apart.then_some(starts)
+}
+
+/// Lay out a Tactics arena's ground.
+///
+/// A world's terrain is rolled from plates, latitude bands and moisture, and
+/// on a hundred-tile field all three degenerate: there is no room for a
+/// fractal to vary, so the arena comes out either uniform or split across a
+/// climate band the battle is not being fought in. #1367 already had to paint
+/// the snow and tundra back out of it. An arena is designed ground rather
+/// than a rolled world, so this lays it out from what a tactical map needs
+/// instead, over whatever the world passes left behind.
+///
+/// What it needs is the defensive palette the mode is about, and nothing that
+/// refuses a unit: open ground to manoeuvre over (no modifier), hills and
+/// woods to hold (+3 to a defender, and woods block sight through them),
+/// jungle that costs a march to enter, and marsh that is worse to be caught
+/// in than the open (-2). Nothing here is water and nothing is impassable, so
+/// every tile is ground both sides can walk and the result is a test of
+/// tactics rather than of who drew the shorter path around a lake.
+fn paint_battlefield_ground(wm: &mut WorldMap, rng: &mut Rng) {
+    let field: Vec<Pos> = wm.tiles.keys().copied().collect();
+    for pos in &field {
+        let tile = wm.tiles.get_mut(pos).unwrap();
+        // Plains and grassland are the two open terrains that carry no
+        // defensive modifier of their own, so which one a tile is decides
+        // nothing about the fight — it is what keeps the field from reading
+        // as one flat colour.
+        tile.terrain = if rng.chance(0.4) { "plains".into() } else { "grassland".into() };
+        tile.hills = false;
+        tile.feature = None;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.district = None;
+        tile.wonder = None;
+        tile.river_edges = [false; 6];
+        tile.cliff_edges = [false; 6];
+        tile.coastal_lowland = 0;
+        tile.continent = Some(0);
+    }
+
+    // The contested ground: everything the two deployment bands do not hold.
+    let (rows, cols) = (wm.height, wm.width);
+    let mut open: BTreeSet<Pos> = if cols > rows {
+        offset_region(
+            wm,
+            BATTLEFIELD_DEPLOYMENT_ROWS,
+            cols - BATTLEFIELD_DEPLOYMENT_ROWS,
+            0,
+            rows,
+        )
+    } else {
+        offset_region(
+            wm,
+            0,
+            cols,
+            BATTLEFIELD_DEPLOYMENT_ROWS,
+            rows - BATTLEFIELD_DEPLOYMENT_ROWS,
+        )
+    };
+    if open.is_empty() {
+        return;
+    }
+    let contested = open.len();
+    let share = |percent: usize| contested * percent / 100;
+
+    // Cover is laid in patches rather than tile by tile, because a wood a
+    // unit can shelter in is a wood several tiles across and scattered single
+    // trees are noise. Roughly half the contested ground ends up under cover
+    // of some kind, which leaves the other half to manoeuvre over.
+    let hills = carve_patches(wm, &mut open, share(22), 3..7, rng);
+    let forest = carve_patches(wm, &mut open, share(18), 3..7, rng);
+    let jungle = carve_patches(wm, &mut open, share(8), 2..5, rng);
+    let marsh = carve_patches(wm, &mut open, share(6), 2..4, rng);
+
+    for pos in &hills {
+        wm.tiles.get_mut(pos).unwrap().hills = true;
+    }
+    for pos in &forest {
+        let tile = wm.tiles.get_mut(pos).unwrap();
+        tile.feature = Some("forest".into());
+        // Wooded hills: the strongest ground on the field, +3 for the trees
+        // on top of +3 for the slope. Rare enough to be a position worth
+        // taking rather than the shape of the whole map.
+        tile.hills = rng.chance(0.25);
+    }
+    for pos in &jungle {
+        wm.tiles.get_mut(pos).unwrap().feature = Some("jungle".into());
+    }
+    for pos in &marsh {
+        let tile = wm.tiles.get_mut(pos).unwrap();
+        // Marsh is low wet ground by definition, and the shipped feature sits
+        // on grassland; a marsh on a hilltop would be neither.
+        tile.terrain = "grassland".into();
+        tile.hills = false;
+        tile.feature = Some("marsh".into());
+    }
+}
+
+/// Carve roughly `target` tiles out of `open` as a handful of blobs, each of
+/// a size drawn from `patch`, and hand back what was taken. Claimed tiles
+/// leave `open`, so successive calls lay disjoint cover.
+fn carve_patches(
+    wm: &WorldMap,
+    open: &mut BTreeSet<Pos>,
+    target: usize,
+    patch: std::ops::Range<usize>,
+    rng: &mut Rng,
+) -> BTreeSet<Pos> {
+    let mut taken = BTreeSet::new();
+    let span = patch.len().max(1);
+    while taken.len() < target && !open.is_empty() {
+        let seeds: Vec<Pos> = open.iter().copied().collect();
+        let seed = seeds[rng.below(seeds.len())];
+        let want = (patch.start + rng.below(span)).clamp(1, target - taken.len());
+        let blob = grow_blob(wm, open, seed, want, rng);
+        // `grow_blob` returns at least its own seed while the seed is in the
+        // allowed set, so this cannot spin; the guard is for the day some
+        // caller passes a target of zero.
+        if blob.is_empty() {
+            break;
+        }
+        for pos in &blob {
+            open.remove(pos);
+        }
+        taken.extend(blob);
+    }
+    taken
 }
 
 /// The three axes a Grand Canals world is cut around: the polar one, and the
@@ -2742,6 +2854,12 @@ pub fn generate_with_script_and_leader_starts(
     let num_natural_wonders = if script.is_battlefield() { 0 } else { num_natural_wonders };
     let mut wm = if topology.is_globe() {
         WorldMap::globe(globe_frequency(width, height))
+    } else if script.is_battlefield() {
+        // Four walls rather than an east-west seam. A world wants its two
+        // longitudes to be the same longitude; an arena must not, or a flank
+        // that walks off the east side arrives behind the enemy in the west
+        // and an archer on one wall is two steps from the far wall.
+        WorldMap::arena(width, height)
     } else {
         WorldMap::new(width, height)
     };
@@ -3517,6 +3635,13 @@ pub fn generate_with_script_and_leader_starts(
         if !hash.is_multiple_of(5) {
             wm.tiles.get_mut(&position).unwrap().coastal_lowland = (hash % 3 + 1) as u8;
         }
+    }
+
+    // --- the arena's own ground, laid over whatever the world passes made of
+    // it. This runs before the starts are chosen so that both sides are
+    // seated on the field they will actually fight over.
+    if script.is_battlefield() {
+        paint_battlefield_ground(&mut wm, rng);
     }
 
     // --- spawns. Civilization VI does not search for good plots and hope they
@@ -4393,16 +4518,19 @@ fn tectonic_profile(script: MapScript) -> TectonicProfile {
             coastal_demote_denominator: 1,
             exact_mountain_percent: Some(20),
         },
-        // The battlefield asks for an exact, modest share of mountains: on a
-        // hundred-tile arena a percentile cut could land anywhere between
-        // none and a wall, and either extreme is a different battle than the
-        // one advertised. Eight percent gives every size a range or two to
-        // anchor a line against without closing the field.
+        // A battlefield has no mountains: on a field a dozen tiles across, an
+        // impassable ridge is not terrain to fight over, it is a wall that
+        // decides the fight before either side moves. Every tile of an arena
+        // is ground both sides can walk, and the relief that survives is
+        // hills — which cost a march and pay a defender, rather than refusing
+        // both. The share is exact rather than a percentile cut because a
+        // percentile on a hundred tiles lands anywhere between none and a
+        // wall.
         MapScript::Battlefield => TectonicProfile {
             plates: 4,
             coastal_demote_numerator: 0,
             coastal_demote_denominator: 1,
-            exact_mountain_percent: Some(8),
+            exact_mountain_percent: Some(0),
             ..standard
         },
         _ => standard,
@@ -8651,13 +8779,16 @@ mod river_tests {
         }
     }
 
-    /// The Tactics battlefield's promises, checked at every offered size: the
-    /// arena comes back flat even when a globe was asked for, one column of
-    /// sea seals the wrap seam, nothing on it exists to be developed or
-    /// discovered — no resources, villages, wonders, city-states, volcanoes,
-    /// fissures, or ice — the ground is temperate with a mountain share to
-    /// anchor a line against, and the two sides open apart: opposite corners
-    /// of a square, opposite ends of the long axis of a rectangle.
+    /// The Tactics battlefield's promises, checked at every offered size:
+    /// the arena comes back flat even when a globe was asked for, and bounded
+    /// — four walls, no wrap, so nothing walks off the field and reappears
+    /// behind the enemy. Every hex of it is land a unit can stand on: no
+    /// water anywhere and no mountain anywhere, because a hundred-tile field
+    /// is too small for either to be terrain rather than a wall. Nothing on
+    /// it exists to be developed or discovered. And the ground carries the
+    /// palette the mode is about — cover that pays a defender, wet ground
+    /// that costs one — with the two sides set down at opposite ends, on
+    /// open ground.
     #[test]
     fn the_battlefield_is_a_bounded_resourceless_arena() {
         let rules = Rules::embedded();
@@ -8671,63 +8802,65 @@ mod river_tests {
             );
             assert!(world.sphere().is_none(), "{}: the arena must be flat", size.id);
             assert_eq!((world.width, world.height), (size.width, size.height), "{}", size.id);
-            for row in 0..world.height {
-                let seam = &world.tiles[&hex::offset_to_axial(0, row)];
-                assert!(
-                    rules.is_water(seam),
-                    "{}: the seam column must be sea at row {row}, got {}",
-                    size.id, seam.terrain
-                );
-            }
-            let mut mountains = 0;
-            let mut water = 0;
+            assert_eq!(
+                world.topology,
+                crate::world::Topology::Rectangle,
+                "{}: an arena is walled, not wrapped", size.id
+            );
+            let mut cover = 0;
+            let mut wet = 0;
+            let mut hills = 0;
             for (pos, tile) in world.tiles.iter() {
+                assert!(rules.is_passable(tile), "{}: impassable ground at {pos:?}", size.id);
+                assert!(!rules.is_water(tile), "{}: water at {pos:?}", size.id);
+                assert_ne!(tile.terrain.as_str(), "mountain", "{}: mountain at {pos:?}", size.id);
                 assert!(tile.resource.is_none(), "{}: resource at {pos:?}", size.id);
                 assert!(tile.improvement.is_none(), "{}: village at {pos:?}", size.id);
-                let wonder = tile
-                    .feature
-                    .as_ref()
-                    .and_then(|feature| rules.features.get(feature))
-                    .is_some_and(|feature| feature.natural_wonder);
-                assert!(!wonder, "{}: natural wonder at {pos:?}", size.id);
-                for gone in ["ice", "volcano", "geothermal_fissure", "volcanic_soil"] {
-                    assert!(
-                        tile.feature.as_deref() != Some(gone),
-                        "{}: {gone} at {pos:?}", size.id
-                    );
-                }
                 assert!(
                     !matches!(tile.terrain.as_str(), "snow" | "tundra" | "desert"),
                     "{}: {} at {pos:?} on temperate ground", size.id, tile.terrain
                 );
-                mountains += (tile.terrain == "mountain") as usize;
-                water += rules.is_water(tile) as usize;
+                let defense = tile
+                    .feature
+                    .as_ref()
+                    .and_then(|feature| rules.features.get(feature))
+                    .map(|feature| {
+                        assert!(!feature.natural_wonder, "{}: natural wonder at {pos:?}", size.id);
+                        feature.defense
+                    })
+                    .unwrap_or(0.0);
+                cover += usize::from(defense > 0.0);
+                wet += usize::from(defense < 0.0);
+                hills += usize::from(tile.hills);
             }
-            assert!(mountains > 0, "{}: no mountain line to anchor against", size.id);
-            // The seam and the ponds are water; the arena is not.
+            // Ground worth fighting over: cover to hold and wet ground to
+            // avoid, both present at every size, and neither swallowing the
+            // field — over half of it stays open to manoeuvre on.
+            assert!(hills > 0, "{}: no high ground", size.id);
+            assert!(cover > 0, "{}: no cover to hold", size.id);
+            assert!(wet > 0, "{}: no ground worse than the open", size.id);
             assert!(
-                water * 4 < world.tiles.len(),
-                "{}: {water} water tiles is not an arena", size.id
+                (cover + hills) * 2 < world.tiles.len() * 3 / 2,
+                "{}: {cover} cover and {hills} hills leaves nowhere to manoeuvre", size.id
             );
             // The three city-states asked for were refused; only the two
-            // sides are seated, and apart.
+            // sides are seated, at opposite ends of the long axis.
             assert_eq!(spawns.len(), 2, "{}: {spawns:?}", size.id);
             let offset: Vec<(i32, i32)> = spawns
                 .iter()
                 .map(|spawn| hex::axial_to_offset(spawn.0, spawn.1))
                 .collect();
-            let spread_cols = (offset[0].0 - offset[1].0).abs();
-            let spread_rows = (offset[0].1 - offset[1].1).abs();
-            let ground = size.width - 1;
-            if ground == size.height {
+            assert!(
+                (offset[0].1 - offset[1].1).abs() >= size.height * 2 / 3,
+                "{}: {offset:?} are not opposite ends", size.id
+            );
+            // Both sides deploy on open ground: neither opens the battle
+            // already holding a wood on a hill it never had to take.
+            for spawn in &spawns {
+                let tile = &world.tiles[spawn];
                 assert!(
-                    spread_cols + spread_rows >= ground,
-                    "{}: {offset:?} are not opposite corners", size.id
-                );
-            } else {
-                assert!(
-                    spread_rows >= size.height * 2 / 3,
-                    "{}: {offset:?} are not opposite ends", size.id
+                    tile.feature.is_none() && !tile.hills,
+                    "{}: a side opens inside cover at {spawn:?}", size.id
                 );
             }
         }

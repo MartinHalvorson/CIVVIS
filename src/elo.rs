@@ -19,7 +19,7 @@ use crate::ai::{AdvancedAi, Ai, BasicAi, RandomAi, Weights};
 use crate::game::{default_speed, Action, Game, GameOptions, VictoryConditions};
 use crate::rng::Rng;
 use crate::rules::Rules;
-use crate::setup::{MapPoles, MapScript, MapSize, MapTopology};
+use crate::setup::{GameMode, MapPoles, MapScript, MapSize, MapTopology};
 
 pub const BUILTIN_AIS: [&str; 10] = [
     "advanced",
@@ -363,6 +363,107 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 pub const ELO_PROTOCOL_VERSION: u32 = 6;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
+/// The Tactics ladder. Pure unit tactics is a different skill from the grand
+/// strategy game, so it is a different rating.
+pub const TACTICS_RATINGS_PATH: &str = "data/elo_ratings_tactics.json";
+/// The Sim City ladder, for the mode's own rating when it arrives.
+pub const SIMCITY_RATINGS_PATH: &str = "data/elo_ratings_simcity.json";
+
+/// Where a mode's ladder lives.
+///
+/// One ledger per mode, so a player carries a Civ rating, a Tactics rating
+/// and — when the mode arrives — a Sim City rating, each earned against the
+/// opponents that mode was played against. The separation is not merely
+/// tidiness: a ledger already refuses a game whose setup does not match its
+/// own profile, and a battlefield differs from a world in the map script the
+/// profile records, so a Tactics result offered to the Civ ladder is rejected
+/// outright rather than quietly averaged in. This names the file that result
+/// belongs in instead.
+pub const fn ratings_path_for(mode: GameMode) -> &'static str {
+    match mode {
+        GameMode::Civ => DEFAULT_RATINGS_PATH,
+        GameMode::Tactics => TACTICS_RATINGS_PATH,
+        GameMode::SimCity => SIMCITY_RATINGS_PATH,
+    }
+}
+
+/// One player's rating across every mode they have played.
+///
+/// `overall` is the games-weighted mean of the per-mode ratings, which is the
+/// honest summary and not a rating in its own right: the ladders are separate
+/// experiments against different opponents on different ground, so a Tactics
+/// 1600 and a Civ 1600 are not the same 1600 and combining them cannot make
+/// them so. What it does say is what a player has actually demonstrated,
+/// weighted by how much of it they have demonstrated.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PlayerRatings {
+    pub player: String,
+    pub overall: f64,
+    pub games: u32,
+    /// Per mode, for the modes this player has games in.
+    pub by_mode: BTreeMap<String, ModeRating>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ModeRating {
+    pub elo: f64,
+    pub games: u32,
+    pub wins: u32,
+}
+
+/// Read every mode's ladder from `dir` and collect each player's ratings.
+///
+/// A missing ladder is a mode nobody has played yet, not an error: Sim City
+/// has no file until Sim City exists, and a fresh checkout has no Tactics
+/// file until the first Tactics tournament is run.
+pub fn player_ratings(dir: &std::path::Path) -> BTreeMap<String, PlayerRatings> {
+    let mut out: BTreeMap<String, PlayerRatings> = BTreeMap::new();
+    for mode in GameMode::ALL {
+        let path = dir.join(
+            std::path::Path::new(ratings_path_for(mode))
+                .file_name()
+                .expect("every ladder path names a file"),
+        );
+        let pool = match EloPool::load(&path) {
+            Ok(pool) => pool,
+            Err(error) => {
+                debug_assert!(
+                    error.kind() == std::io::ErrorKind::NotFound,
+                    "unreadable ladder {}: {error}",
+                    path.display()
+                );
+                continue;
+            }
+        };
+        for (player, rating) in &pool.overall {
+            let entry = out.entry(player.clone()).or_insert_with(|| PlayerRatings {
+                player: player.clone(),
+                overall: 0.0,
+                games: 0,
+                by_mode: BTreeMap::new(),
+            });
+            entry.by_mode.insert(
+                mode.id().to_string(),
+                ModeRating { elo: rating.elo, games: rating.games, wins: rating.wins },
+            );
+        }
+    }
+    for ratings in out.values_mut() {
+        let played: u32 = ratings.by_mode.values().map(|mode| mode.games).sum();
+        ratings.games = played;
+        ratings.overall = if played == 0 {
+            ELO_BASE_RATING
+        } else {
+            ratings
+                .by_mode
+                .values()
+                .map(|mode| mode.elo * f64::from(mode.games))
+                .sum::<f64>()
+                / f64::from(played)
+        };
+    }
+    out
+}
 /// Immutable protocol-v1 baseline retained for historical comparison after
 /// the fog-honest city-pressure repair changed the shared legacy controller.
 pub const HISTORICAL_V1_RATINGS_PATH: &str = "data/elo_ratings_v1.json";
@@ -4064,17 +4165,21 @@ mod tests {
         builtin_ai, builtin_ai_degraded, builtin_ai_strict, builtin_arm, builtin_provenance,
         collapsed_entrants, direct_anchor_performance, expected, leaderboard, league_generalist,
         performance_elo, scheduled_seats, seat_schedule, strict_builtin_arm_in, wilson_interval,
-        win_shares, ArmKind, BuiltinAiBuildError, EloPool, RatedPlayer, RatingKey,
-        TournamentProfile,
+        player_ratings, ratings_path_for, win_shares, ArmKind, BuiltinAiBuildError, EloPool,
+        RatedPlayer, Rating, RatingKey, TournamentProfile,
         TourneyCfg, WeightSource, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE, DEFAULT_RATINGS_PATH,
-        ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, HISTORICAL_V1_RATINGS_PATH,
+        ELO_BASE_RATING, ELO_PROTOCOL_VERSION, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS,
+        HISTORICAL_V1_RATINGS_PATH,
         LIVE_BRIDGE_TREATMENTS,
         HISTORICAL_V2_RATINGS_PATH, HISTORICAL_V3_RATINGS_PATH,
         VALUENET_FILE,
     };
     use std::collections::BTreeSet;
+    use std::path::Path;
     use crate::game::{Action, Game};
     use crate::rng::Rng;
+    use crate::rules::Rules;
+    use crate::setup::{GameMode, MapScript};
 
     #[test]
     fn timed_war_arm_is_one_explicit_axis_and_stays_off_for_control_and_minors() {
@@ -4207,6 +4312,88 @@ mod tests {
         assert!(!control.degraded());
         assert!(control.untrained());
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// A player carries one rating per mode plus an overall. The per-mode
+    /// numbers are the ladders' own; the overall is the games-weighted mean
+    /// of them, so a rating earned over forty games counts for more than one
+    /// earned over four, and a mode nobody has played yet is simply absent
+    /// rather than a 1500 dragging every average toward the middle.
+    #[test]
+    fn a_player_carries_one_rating_per_mode_and_an_overall() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-mode-ratings-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("scratch ladder directory");
+        let write = |mode: GameMode, rows: &[(&str, f64, u32, u32)]| {
+            let mut pool = EloPool::new(&[], ELO_BASE_RATING);
+            // A hand-written ladder has no raw game log to audit its
+            // aggregates against, which is exactly the migrated-ledger shape
+            // `history_complete` exists for.
+            pool.history_complete = false;
+            for (player, elo, games, wins) in rows {
+                pool.overall.insert(
+                    (*player).to_string(),
+                    Rating { elo: *elo, games: *games, wins: *wins },
+                );
+            }
+            let name = Path::new(ratings_path_for(mode))
+                .file_name()
+                .expect("ladder file name");
+            pool.save(&dir.join(name)).expect("write scratch ladder");
+        };
+        write(
+            GameMode::Civ,
+            &[("advanced", 1600.0, 40, 28), ("basic", 1400.0, 40, 6)],
+        );
+        write(GameMode::Tactics, &[("advanced", 1800.0, 10, 9)]);
+        // Sim City has no ladder file: the mode is declared and unplayed.
+
+        let ratings = player_ratings(&dir);
+        let advanced = &ratings["advanced"];
+        assert_eq!(advanced.by_mode["civ"].elo, 1600.0);
+        assert_eq!(advanced.by_mode["tactics"].elo, 1800.0);
+        assert!(!advanced.by_mode.contains_key("simcity"), "an unplayed mode is absent");
+        assert_eq!(advanced.games, 50);
+        // Weighted by games played, not a flat mean of the two ladders: forty
+        // Civ games at 1600 and ten Tactics games at 1800 is 1640, not 1700.
+        assert!((advanced.overall - 1640.0).abs() < 1e-9, "{}", advanced.overall);
+        // A player who has only ever played one mode is that mode's rating.
+        let basic = &ratings["basic"];
+        assert_eq!(basic.by_mode.len(), 1);
+        assert!((basic.overall - 1400.0).abs() < 1e-9);
+
+        // A Tactics result cannot be filed on the Civ ladder even by hand:
+        // the profile records the map script, and the ledger refuses a game
+        // whose setup is not its own.
+        let ladder_profile = |script: MapScript| TournamentProfile {
+            protocol_version: ELO_PROTOCOL_VERSION,
+            rules_fingerprint: Rules::embedded().source_fingerprint().to_string(),
+            setup_contract: "test".to_string(),
+            rating_anchor: None,
+            controller_roster: Vec::new(),
+            players_per_game: 2,
+            width: 10,
+            height: 10,
+            max_turns: 250,
+            num_city_states: 0,
+            speed: "standard".to_string(),
+            map_script: script.id().to_string(),
+            map_topology: "flat".to_string(),
+            map_poles: "poles".to_string(),
+            mods: Vec::new(),
+            k: 24.0,
+        };
+        let civ_profile = ladder_profile(MapScript::Pangaea);
+        let arena_profile = ladder_profile(MapScript::Battlefield);
+        let mut ledger = EloPool::new(&[], ELO_BASE_RATING);
+        ledger.bind_profile(civ_profile).expect("first run binds the ladder");
+        let refusal = ledger.bind_profile(arena_profile).expect_err("modes must not mix");
+        assert!(refusal.to_string().contains("rating profile mismatch"));
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -2832,7 +2832,7 @@ impl Session {
                 o["simultaneous"] = json!(self.simultaneous_census);
             }
             o["teams"] = json!(major_teams(&self.game));
-            o["victory_conditions"] = json!(self.game.victory_conditions);
+            o["victory_conditions"] = json!(self.game.effective_victory_conditions());
             o["mercy_rule"] = json!(self.game.mercy_rule);
             o["required_victory_types"] = json!(self.game.effective_required_victories());
             o["victories_won"] = json!(self.game.victories_won);
@@ -2861,7 +2861,7 @@ impl Session {
         o["leader_pool"] = json!(self.game.leader_pool.id());
         o["turn_structure"] = json!(self.game.turn_structure.id());
         o["teams"] = json!(major_teams(&self.game));
-        o["victory_conditions"] = json!(self.game.victory_conditions);
+        o["victory_conditions"] = json!(self.game.effective_victory_conditions());
         o["mercy_rule"] = json!(self.game.mercy_rule);
         o["required_victory_types"] = json!(self.game.effective_required_victories());
         o["victories_won"] = json!(self.game.victories_won);
@@ -3909,6 +3909,27 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if p.map_script.is_battlefield() {
         p.map_topology = MapTopology::Flat;
         p.num_city_states = 0;
+        // And it keeps a battle's clock rather than a civilization's five
+        // hundred turns. An explicit `turn_limit` in the same request still
+        // wins — this only replaces the game speed's own budget, which was
+        // never meant to time a battle.
+        if requested_turn_limit(request).is_none() {
+            p.max_turns = Game::battlefield_turn_limit(p.width, p.height, p.num_players);
+        }
+        // A battle is decided by the battle. Domination is the lane the last
+        // army standing arrives through, and Score is the clock's own award
+        // to whoever still holds the field; the four that need cities could
+        // never be reached on an arena, and the engine refuses them there in
+        // any case.
+        p.victory_conditions = VictoryConditions {
+            science: false,
+            culture: false,
+            religious: false,
+            diplomatic: false,
+            domination: true,
+            score: true,
+        };
+        p.required_victory_types = 1;
     }
     // Only a spectated table plays the simultaneous regime. A human seat is
     // consulted live, one seat at a time — sequential by construction — so
@@ -7668,8 +7689,9 @@ mod tests {
 
     /// The lobby's two map menus are cut from the one authoritative roster:
     /// the Civ mode offers every world and no arena, the Tactics mode offers
-    /// the battlefield, and the battlefield sizes advertise their fighting
-    /// ground while carrying the seam column that seals the wrap.
+    /// the battlefield, and a battlefield size is exactly the fighting ground
+    /// its name advertises — the arena is bounded by its own topology rather
+    /// than by a column of sea.
     #[test]
     fn the_map_menus_split_worlds_from_battlefields() {
         assert!(world_map_scripts()
@@ -7685,7 +7707,7 @@ mod tests {
         assert_eq!(battlefield_map_scripts()[0].id, "battlefield");
         let sizes = serde_json::to_value(BATTLEFIELD_SIZES).expect("battlefield sizes serialize");
         assert_eq!(sizes[0]["id"], json!("10x10"));
-        assert_eq!(sizes[0]["width"], json!(11));
+        assert_eq!(sizes[0]["width"], json!(10));
         assert_eq!(sizes[0]["height"], json!(10));
         // The lobby swaps its size and map rosters from these lists and
         // sends the arena's dimensions explicitly.
@@ -9672,6 +9694,45 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("hud.style.setProperty(\"--hud-table-min\", tableMin);"));
         assert!(EMBEDDED_INDEX.contains("min-width: var(--hud-table-min, 0px);"));
         assert!(EMBEDDED_INDEX.contains("function visiblePlayerHudColumns()"));
+        // NUK is the one column that does not exist for most of a game: no
+        // civilization can hold a device before the first Manhattan Project on
+        // the board is finished, so the shipped twelve value columns above stay
+        // twelve until one is. A column that does not exist is out of the table
+        // *and* off the Display Settings roster — it is not a column the viewer
+        // chose to hide, so a checkbox for it would promise something it cannot
+        // do — and it can never be the last column standing between the viewer
+        // and an empty table.
+        assert!(EMBEDDED_INDEX.contains("function nuclearStandingsInPlay()"));
+        assert!(EMBEDDED_INDEX.contains("return Boolean(state.nuclear_weapons_unlocked) ||"),
+            "the world finishing the research that unlocks devices reveals NUK");
+        assert!(EMBEDDED_INDEX.contains(
+            "player.science_projects?.includes?.(\"manhattan_project\") ||"
+        ), "a finished Manhattan Project is the same news from an older server");
+        assert!(EMBEDDED_INDEX.contains("playerNuclearStockpile(player) > 0));"),
+            "and so is a stockpile that outlived the empire that built it");
+        assert!(EMBEDDED_INDEX.contains(
+            "return Boolean(column) && (!column.exists || column.exists());"
+        ), "every other column exists from turn one and declares no test at all");
+        assert!(EMBEDDED_INDEX.contains(
+            ".filter(column => playerHudColumnExists(column) &&\n      \
+             !playerHudHiddenColumns.has(column.key));"
+        ), "the table shows the columns that exist and that the viewer keeps");
+        assert!(EMBEDDED_INDEX.contains("if (!playerHudColumnExists(column)) return \"\";"),
+            "the Display Settings roster offers no checkbox for a column that cannot appear");
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("PLAYER_HUD_COLUMNS.filter(playerHudColumnExists)")
+                .count(),
+            3,
+            "both all-hidden guards and the roster signature count existing columns only"
+        );
+        // A column can arrive between two frames, and the tracks its cells
+        // stand on are written from the same model — so the repaint that adds
+        // the head has to rewrite them, or the new cell lands in an implicit
+        // track outside the list.
+        assert!(EMBEDDED_INDEX.contains(
+            "  syncPlayerHudColumns();\n  syncHudColumnRoster();"
+        ), "a repaint restates the tracks and the roster the arriving column changed");
         assert!(EMBEDDED_INDEX.contains(
             "const HUD_COLUMN_LAYOUT_STORAGE_KEY = \"civvis-hud-column-layout-v1\";"
         ), "order, visibility and content-fitted floors persist beside the shares");
@@ -9722,7 +9783,7 @@ mod tests {
         fn assert_hud_stat_order(source: &str, section: &str) {
             let expected = [
                 "cities", "population", "food", "production", "science", "culture", "faith", "gold",
-                "military", "wonders", "suzerain", "score",
+                "military", "nukes", "wonders", "suzerain", "score",
             ];
             let mut cursor = 0;
             for key in expected {
@@ -9761,7 +9822,7 @@ mod tests {
             // walks `key:[` anchors rather than quoted keys.
             let expected = [
                 "cities", "population", "food", "production", "science", "culture", "faith",
-                "gold", "military", "wonders", "suzerain", "score",
+                "gold", "military", "nukes", "wonders", "suzerain", "score",
             ];
             let mut cursor = 0;
             for key in expected {

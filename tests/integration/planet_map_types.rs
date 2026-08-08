@@ -65,7 +65,19 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
 
                 match shape_built {
                     MapTopology::Flat => {
-                        assert_eq!(world.topology, Topology::Cylinder, "{case} shape");
+                        // A world's flat map is a cylinder: its east and west
+                        // edges are the same edge. An arena's is a bounded
+                        // rectangle with a wall on all four sides, which is
+                        // what stops a unit walking off the field.
+                        assert_eq!(
+                            world.topology,
+                            if spec.script.is_battlefield() {
+                                Topology::Rectangle
+                            } else {
+                                Topology::Cylinder
+                            },
+                            "{case} shape"
+                        );
                         assert_eq!(
                             (world.width, world.height),
                             (size.width, size.height),
@@ -129,7 +141,15 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
                     .filter(|tile| !rules.is_water(tile))
                     .count();
                 assert!(land > 0, "{case} generated no land");
-                assert!(land < world.tiles.len(), "{case} generated no water");
+                if spec.script.is_battlefield() {
+                    // The arena is the one entry here that is not a world:
+                    // every hex of it is ground both sides can walk, because
+                    // a lake on a field a dozen tiles across is not terrain
+                    // to fight over, it is a wall that decides the fight.
+                    assert_eq!(land, world.tiles.len(), "{case} put water on an arena");
+                } else {
+                    assert!(land < world.tiles.len(), "{case} generated no water");
+                }
                 assert_eq!(spawns.len(), seats, "{case} did not seat every player");
                 assert_eq!(
                     spawns.iter().copied().collect::<BTreeSet<_>>().len(),
@@ -208,9 +228,11 @@ fn every_world_type_starts_a_game_on_either_shape() {
             assert_eq!(
                 game.map.topology,
                 // The battlefield is the one scripted exception to shape
-                // independence: an arena needs corners, so it is always
-                // laid out flat, whatever shape the lobby asked for.
-                if shape.is_globe() && !spec.script.is_battlefield() {
+                // independence: an arena is a walled rectangle, so it is laid
+                // out that way whatever shape the lobby asked for.
+                if spec.script.is_battlefield() {
+                    Topology::Rectangle
+                } else if shape.is_globe() {
                     Topology::Globe(size.globe_frequency)
                 } else {
                     Topology::Cylinder

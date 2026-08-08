@@ -715,6 +715,8 @@ struct TacticalAttackCandidate {
 #[derive(Clone)]
 enum CityDistance {
     Cylinder(i32),
+    /// A bounded arena: four walls and no seam to measure through.
+    Bounded,
     Globe(Arc<crate::sphere::Sphere>),
 }
 
@@ -722,6 +724,7 @@ impl CityDistance {
     fn between(&self, first: Pos, second: Pos) -> i32 {
         match self {
             CityDistance::Cylinder(width) => crate::hex::wdistance(first, second, *width),
+            CityDistance::Bounded => crate::hex::distance(first, second),
             CityDistance::Globe(sphere) => sphere.distance(first, second),
         }
     }
@@ -4283,6 +4286,7 @@ impl AdvancedAi {
             .collect::<Vec<_>>();
         let distance = match g.map.topology {
             crate::world::Topology::Cylinder => CityDistance::Cylinder(g.map.width),
+            crate::world::Topology::Rectangle => CityDistance::Bounded,
             crate::world::Topology::Globe(frequency) => {
                 CityDistance::Globe(crate::sphere::sphere(frequency))
             }
@@ -16987,6 +16991,25 @@ impl AdvancedAi {
                 low_hp_unit || capturable_city
             });
             let relieving = plan.threatened_city.is_some();
+            // A Tactics arena has none of the three reasons a Civ army stands
+            // still, so it does none of the three standing-still postures.
+            //
+            // `Recover` assumes time heals: nothing heals on an arena, so a
+            // battered force only gets more battered by waiting. `Hold`
+            // assumes something better is coming: no reinforcement is coming,
+            // because there is no city to build one in. And the superiority
+            // gate below assumes an army is an investment with a homeland
+            // behind it worth preserving — but on a battlefield the army *is*
+            // the game, and a force that declines every even fight simply
+            // loses the field to the clock. Measured with the gate on, two
+            // even armies ground each other down to five apiece and then
+            // circled for three hundred turns without either closing, so
+            // "last army standing" was never reached. This is deliberately
+            // the whole of the difference: everything below is the shipped
+            // Civ doctrine, unchanged, and an arena only stops asking to be
+            // let out of the fight.
+            let arena = g.is_arena();
+            let locally_superior = arena || local_strength_ratio >= LOCAL_SUPERIORITY_FLOOR;
             // ⚠ MEASURED AND REJECTED: letting a rush ignore `relieving` and
             // `Muster` — on the theory that a stack sized against one
             // undefended capital should never stand still — made it *worse*.
@@ -16994,12 +17017,10 @@ impl AdvancedAi {
             // first capture slipped from turn 79 to 96. The two standing-still
             // postures are load-bearing even for a rush; do not retry this
             // without a different mechanism.
-            let posture = if average_hp <= self.base.w.withdraw_hp + 10.0 {
+            let posture = if !arena && average_hp <= self.base.w.withdraw_hp + 10.0 {
                 ForcePosture::Recover
             } else if (focus_target.is_some()
-                && (local_strength_ratio >= LOCAL_SUPERIORITY_FLOOR
-                    || plan.threatened_city.is_some()
-                    || forcing_focus))
+                && (locally_superior || plan.threatened_city.is_some() || forcing_focus))
                 || (units.iter().any(|uid| {
                     g.units.values().any(|enemy| {
                         enemies.contains(&enemy.owner)
@@ -17007,16 +17028,16 @@ impl AdvancedAi {
                                 || (g.sees(&visible, enemy.pos)
                                     && self.battlefront_unit_visible(g, pid, enemy.id)))
                             && g.wdist(g.units[uid].pos, enemy.pos) <= 2
-                            && (local_strength_ratio >= LOCAL_SUPERIORITY_FLOOR
+                            && (locally_superior
                                 || plan.threatened_city.is_some()
                                 || enemy.hp <= 35)
                     })
                 }))
             {
                 ForcePosture::Engage
-            } else if relieving || local_strength_ratio < LOCAL_SUPERIORITY_FLOOR {
+            } else if !arena && (relieving || local_strength_ratio < LOCAL_SUPERIORITY_FLOOR) {
                 ForcePosture::Hold
-            } else if units.len() > 1 && readiness + 1e-9 < self.base.w.muster_readiness {
+            } else if !arena && units.len() > 1 && readiness + 1e-9 < self.base.w.muster_readiness {
                 ForcePosture::Muster
             } else {
                 ForcePosture::Advance
@@ -17183,6 +17204,32 @@ impl AdvancedAi {
         } else {
             Vec::new()
         };
+        // How an arena prices the two halves of an advance differently, and
+        // why it has to.
+        //
+        // The shipped weights charge `mv_threat * caution * expected damage`
+        // for standing where the enemy can reach — up to about 15 — and pay
+        // `objective_progress * progress` — about 3 — for each hex closer to
+        // the objective. In a Civ world that is right: a city does not move,
+        // an army that waits one more turn is an army with one more unit in
+        // it, and there is always something else the empire is doing
+        // meanwhile. On a battlefield all three are false, and the ratio is
+        // fatal, because both sides' threat ranges cover the same ground: a
+        // force that will not stand inside the enemy's reach and a force that
+        // will not be stood over are the same force, and neither ever moves.
+        // Measured on an even 10x10: both armies stopped exactly five hexes
+        // apart — a horseman's four moves plus its attack — and held there
+        // for three hundred turns while both sides' own orders read
+        // "Advance".
+        //
+        // So an arena closes harder and flinches less. Only these two terms
+        // move: everything that decides WHICH tile to close on — cover,
+        // cohesion, role spacing, screening, the strike opening, the blind
+        // ranged tile — is the shipped weighting, and so is every decision
+        // about whether to actually attack once contact is made.
+        const ARENA_ADVANCE_URGENCY: f64 = 3.0;
+        const ARENA_THREAT_CAUTION: f64 = 0.35;
+        let arena = g.is_arena();
         let score = |g: &Game, tile: Pos| -> f64 {
             let objective_distance = g.wdist(tile, target);
             let (progress, cohesion, threat_caution, spacing) = match role {
@@ -17193,6 +17240,14 @@ impl AdvancedAi {
                 ForceRole::Siege => (0.80, 1.30, 1.25, 1.70),
                 ForceRole::Support => (0.65, 1.50, 1.40, 1.20),
                 ForceRole::AirStrike => (1.20, 0.20, 0.75, 0.50),
+            };
+            let (progress, threat_caution) = if arena {
+                (
+                    progress * ARENA_ADVANCE_URGENCY,
+                    threat_caution * ARENA_THREAT_CAUTION,
+                )
+            } else {
+                (progress, threat_caution)
             };
             let mut value = -self.base.w.objective_progress * progress * objective_distance as f64;
             let nearest_friend = group
