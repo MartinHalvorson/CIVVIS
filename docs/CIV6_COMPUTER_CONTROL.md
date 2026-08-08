@@ -245,6 +245,33 @@ unrecognised blocker is reported by name. A blocker that survives
 logged as forfeited — a far better trade than a run that stops dead, because a
 stopped run reports nothing at all.
 
+⚠⚠ **That 40-attempt forfeit is not reachable on a wedged turn, and step 3 is
+refused on one.** Both halves were measured by run `civvis-20260807T190903Z`
+turn 39 (issue #1374), which sat 900 s on `ENDTURN_BLOCKING_UNITS` and died to
+the outside watchdog:
+
+- A board waiting on input publishes almost no game-core events, and
+  `onGameCoreTick` keeps 1 in 16 of the ones it does. `attempts` never passed
+  **1** in fifteen minutes against a bound of 40. Any escalation that counts to
+  a large number is wall-clock unreachable exactly when it is needed.
+- The shipped `ActionPanel.DoEndTurn` never requests `ACTION_ENDTURN` while
+  `ENDTURN_BLOCKING_UNITS`, `ENDTURN_BLOCKING_UNIT_NEEDS_ORDERS` or
+  `ENDTURN_BLOCKING_STACKED_UNITS` is active — it calls
+  `UI.SelectNextReadyUnit()` and waits for a human. Step 3 above is therefore
+  issued into a wall on those three. The only form that gets past them is the
+  one Firaxis reserves for SHIFT+ENTER and calls "Unsupported":
+  `UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" })`.
+
+So a **soft** blocker still current on the sighting after its own answer is
+forfeited immediately rather than at 40: the still-ready units are parked with
+`orderIdle` (skip/fortify/alert/sleep — position-preserving, never the legacy
+`orderFor` pass), the notification is dismissed, and for those three the turn is
+forced. Under `CivvisDecides` the trigger is the second sighting, because the
+`civvis_complete` answer changes nothing by construction and waiting longer buys
+no information. The retry is bounded at `MaxSoftBlockerForfeits` per blocker per
+turn; once it is spent, a `wedged` event names the prompt, so a killed attempt
+says what stopped it instead of reading as a slow machine.
+
 ### The announcement screens close themselves
 
 End-turn blockers are not the only thing that stops a turn. Civilization VI
