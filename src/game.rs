@@ -13229,6 +13229,22 @@ pub fn growth_threshold(pop: i32) -> f64 {
 pub const MIRRORED_SEAT: usize = 0;
 
 pub const DIPLOMATIC_VICTORY_POINTS: i64 = 20;
+
+/// Turns a Tactics battle is given for each hex of the march across the
+/// arena, before the fighting is paid for. Two crossings of the long axis:
+/// enough to close, and enough to have to re-cross the field once.
+pub const BATTLEFIELD_TURNS_PER_HEX: u32 = 2;
+
+/// Turns a Tactics battle is given for each unit that has to be destroyed.
+///
+/// A battle's clock is not a civilization's, and what it is really measuring
+/// is not distance but casualties: measured, sixteen units settle it inside a
+/// hundred and twenty turns and thirty-two need two hundred to four hundred,
+/// because most of the clock goes on the last few survivors rather than the
+/// first clash. Twelve apiece covers the ordinary battle with room to spare
+/// while still ending the one where a lone horseman spends the rest of the
+/// game outrunning an army across a walled rectangle.
+pub const BATTLEFIELD_TURNS_PER_UNIT: u32 = 12;
 /// The New Frontier game modes CIVVIS models. Each is a lobby checkbox that
 /// is off in a stock Gathering Storm game and in every tournament lobby.
 pub const GAME_MODES: [&str; 2] = ["apocalypse", "secret_societies"];
@@ -17702,6 +17718,16 @@ impl Game {
             mercy_rule,
             required_victory_types,
         } = options;
+        // An arena keeps a battle's clock, not a civilization's. Five hundred
+        // turns is the length of a history; a battle on a ten-hex field is
+        // decided in a tenth of that, and the turns after it are one side's
+        // last survivor being chased around a walled rectangle by an army it
+        // can outrun. The budget scales with the ground to cross and with the
+        // army sizes that ground carries, and it is a backstop rather than
+        // the usual ending: most battles reach the last army standing first,
+        // and one that does not is awarded to whoever still holds the field —
+        // see [`Game::score_parts`].
+
         // A rung past the end of the ladder is clamped rather than fatal: a
         // client from a later build must not be able to construct a world that
         // reads as a later era than the rules have a tree for.
@@ -17888,16 +17914,20 @@ impl Game {
             g.players.push(player);
         }
         for (i, pos) in spawns.iter().take(num_players).enumerate() {
+            if map_script.is_battlefield() {
+                // A Tactics seat is dropped in as an army and nothing else.
+                // No Settler, so no city is ever founded and the mode stays
+                // what it says it is; no handicap units either, because the
+                // whole claim of the arena is that the two sides are even and
+                // a difficulty bonus would decide the battle at setup. Both
+                // seats receive the identical roster, laid out over their own
+                // end of the field.
+                g.deploy_battlefield_army(i, *pos);
+                g.reveal(i, *pos, 3);
+                continue;
+            }
             g.spawn_unit("settler", i, *pos);
             g.spawn_unit("warrior", i, *pos);
-            // A battlefield seat opens with a small army rather than a bare
-            // escort — the arena exists for the fight, not the buildup — and
-            // every side receives the same one, so the battle starts fair.
-            if map_script.is_battlefield() {
-                for kind in ["warrior", "slinger", "spearman"] {
-                    g.spawn_unit(kind, i, *pos);
-                }
-            }
             // Above Prince the AI seats open with extra units, exactly as the
             // shipped `Eras.xml` bonus start table describes.
             if !g.is_human_seat(i) {
@@ -17909,6 +17939,18 @@ impl Game {
                 }
             }
             g.reveal(i, *pos, 3);
+        }
+        if map_script.is_battlefield() {
+            // The two sides of an arena know perfectly well who they are
+            // facing: they were set down at opposite ends of the same field
+            // to fight each other. Making the introduction explicit keeps the
+            // battle from waiting on somebody's line of sight to reach the
+            // far wall before either army will act on the other.
+            for first in 0..num_players {
+                for second in (first + 1)..num_players {
+                    g.record_contact(first, second);
+                }
+            }
         }
         let major_spawns: Vec<Pos> = spawns.iter().take(num_players).cloned().collect();
         // Seating order is the roster's, not `CITY_STATE_NAMES`'. The roster
@@ -18149,6 +18191,85 @@ impl Game {
     /// center and first ring. Ordinary production rightly fails when that local
     /// placement area is full; starting forces instead spill into the nearest
     /// legal empty tile inside the city-state's local defense area.
+    /// The army one side of a Tactics battlefield is dropped in with, on an
+    /// arena of `tiles` hexes of ground.
+    ///
+    /// A company is the Ancient counter cycle entire, so that no unit on the
+    /// field is without something that beats it and something it beats:
+    /// melee, anti-cavalry that punishes a charge, ranged that punishes
+    /// standing still, and the light and heavy horse that punish an
+    /// unsupported flank. Both sides receive the same list, so what separates
+    /// them is where they put it.
+    ///
+    /// Bigger fields take more companies, at a constant density of roughly
+    /// one unit per twelve hexes of ground — the same battle on more room
+    /// rather than the same army wandering a larger map looking for it.
+    /// How long a Tactics battle on this arena is given before the field is
+    /// awarded to whoever still holds it.
+    ///
+    /// A backstop rather than the usual ending: most battles reach the last
+    /// army standing well inside it, and one that does not is decided on the
+    /// army left standing — see [`Game::score_parts`]. An explicit turn limit
+    /// from a caller still wins; this is only what a Tactics game is given
+    /// when nobody named one, in place of a civilization's five hundred.
+    pub fn battlefield_turn_limit(width: i32, height: i32, players: usize) -> u32 {
+        let tiles = (width.max(1) as usize) * (height.max(1) as usize);
+        let units = Self::battlefield_army(tiles).len() * players.max(1);
+        BATTLEFIELD_TURNS_PER_HEX * (width + height).max(1) as u32
+            + BATTLEFIELD_TURNS_PER_UNIT * units as u32
+    }
+
+    pub fn battlefield_army(tiles: usize) -> Vec<&'static str> {
+        const COMPANY: [&str; 8] = [
+            "warrior",
+            "warrior",
+            "spearman",
+            "spearman",
+            "archer",
+            "archer",
+            "horseman",
+            "heavy_chariot",
+        ];
+        let companies = tiles.div_ceil(100).clamp(1, 3);
+        COMPANY.iter().cycle().take(COMPANY.len() * companies).copied().collect()
+    }
+
+    /// Set out one side's opening army on a Tactics battlefield.
+    ///
+    /// The army is laid out over the side's own end of the field, working
+    /// outward from its start, rather than stacked on the start itself: a
+    /// column of units on one hex is not a formation, it is a queue, and the
+    /// first turns of the battle would be spent unstacking it. Only one
+    /// military unit stands on a hex, so "the next free ground outward" is
+    /// the whole rule.
+    fn deploy_battlefield_army(&mut self, pid: usize, anchor: Pos) {
+        let mut ground: Vec<Pos> = self
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| self.rules.is_passable(&self.map.tiles[pos]))
+            .collect();
+        ground.sort_by_key(|pos| (self.wdist(anchor, *pos), *pos));
+        let mut cursor = 0;
+        for kind in Self::battlefield_army(self.map.tiles.len()) {
+            while ground
+                .get(cursor)
+                .is_some_and(|pos| !self.units_at(*pos).is_empty())
+            {
+                cursor += 1;
+            }
+            let Some(pos) = ground.get(cursor).copied() else {
+                // The arena ran out of ground. Every offered size has room for
+                // its own roster several times over, so this is a floor under
+                // a hand-built field rather than a case the mode reaches.
+                break;
+            };
+            cursor += 1;
+            self.spawn_unit(kind, pid, pos);
+        }
+    }
+
     fn place_city_state_starting_unit(&mut self, kind: &str, owner: usize, center: Pos) {
         if self.place_new_unit(kind, owner, center).is_some() {
             return;
@@ -18183,6 +18304,18 @@ impl Game {
 
     pub fn is_human_seat(&self, pid: usize) -> bool {
         self.human_seats.contains(&pid)
+    }
+
+    /// Whether this world is a Tactics arena rather than a Civ world.
+    ///
+    /// The map script is the mode's only marker — there is no separate mode
+    /// field on `Params` or on a save — so everything the arena decides
+    /// differently asks this. What it decides: the two sides are dropped in
+    /// as armies and nothing else, no city is ever founded, an army costs
+    /// nothing to keep because there is no empire behind it to earn the gold,
+    /// and a side is alive exactly as long as it still has a unit standing.
+    pub fn is_arena(&self) -> bool {
+        self.map_script.is_battlefield()
     }
 
     /// Handicaps reach the major civilizations only: city-states and
@@ -19628,6 +19761,15 @@ impl Game {
         if a == b || self.same_team(a, b) {
             return false;
         }
+        // Two armies are dropped onto an arena to fight each other. There is
+        // nothing else on a battlefield to do and nothing to negotiate over —
+        // no borders, no cities, no trade — so a Tactics game is at war from
+        // its first turn and stays there. Nobody has to declare it and nobody
+        // can sign it away, which is why this is the war state itself rather
+        // than a declaration written into `at_war` at setup.
+        if self.is_arena() {
+            return true;
+        }
         if self
             .players
             .get(a)
@@ -20279,6 +20421,20 @@ impl Game {
         // Barbarian units never recover passively in Civ VI. They can still
         // receive an immediate healing plunder reward, such as from a Farm.
         if self.players[unit.owner].is_barbarian {
+            return 0;
+        }
+        // Nothing recovers on an arena. A Tactics game is one engagement, not
+        // a campaign: there is no friendly territory to fall back into and no
+        // city to garrison, so every hex heals at the same neutral rate and
+        // both sides can always afford to break contact. Measured with
+        // healing on, two even armies ground each other down to about half
+        // and then stalled for four hundred turns — each side pulling a
+        // damaged unit out, standing it still until it was whole again, and
+        // walking it back — so the mode's own victory condition, last army
+        // standing, was never reached. Permanent damage is also what makes
+        // the tactics matter: a trade you win stays won, and focusing fire on
+        // one defender is worth doing.
+        if self.is_arena() {
             return 0;
         }
         // Nothing recovers in fallout. A blast that only cost yields would make
@@ -29260,6 +29416,23 @@ impl Game {
     /// own), Population, Great People, religion, technologies, wonders, then
     /// Era Score (which the shipped tiebreaker list omits).
     pub fn score_parts(&self, pid: usize) -> [i64; 9] {
+        if self.is_arena() {
+            // On an arena a side's standing *is* its army. Every ordinary
+            // category — civics, cities, districts, Population, wonders — is
+            // zero for both sides for the whole battle and would leave the
+            // turn limit awarding the win to whichever seat sorts first. What
+            // it should award it to is whoever is winning the fight, so the
+            // measure is the army left standing, weighted by health, with the
+            // count of units still on the field to separate two armies of the
+            // same weight.
+            let mut weight = 0.0;
+            let mut standing = 0;
+            for unit in self.units.values().filter(|unit| unit.owner == pid) {
+                weight += self.rules.units[unit.kind].strength * f64::from(unit.hp) / 100.0;
+                standing += 1;
+            }
+            return [weight.round() as i64, standing, 0, 0, 0, 0, 0, 0, 0];
+        }
         let p = &self.players[pid];
         let cities: Vec<&City> = self.cities.values().filter(|c| c.owner == pid).collect();
         let districts = cities
@@ -31558,6 +31731,21 @@ impl Game {
     }
 
     fn player_vision(&self, heights: &mut HeightField, pid: usize) -> TileBits {
+        // An arena is a field, and both commanders can see all of it.
+        //
+        // A Tactics battle is meant to be a test of what each side does with
+        // what is in front of it, not of who finds the other first — and a
+        // fogged arena is not even that. Both armies are set down out of each
+        // other's sight, neither has a city to march on or a border to
+        // trespass, and the objective each side would advance toward is an
+        // enemy it cannot see; measured, both sides simply stood in their own
+        // deployment bands for five hundred turns and the clock decided it.
+        // Lifting the fog is symmetric — it is the rule of the arena, not a
+        // handicap given to one side — and leaves concealment as something a
+        // later mode can put back deliberately.
+        if self.is_arena() {
+            return TileBits::all(self.map.tiles.len());
+        }
         let mut visible = TileBits::with_capacity(self.map.tiles.len());
         for viewer in self.visibility_viewers(pid) {
             visible.union_with(&self.base_player_visibility(heights, viewer));
@@ -43124,6 +43312,14 @@ impl Game {
         if u.kind != "settler" {
             return Err("only settlers found cities".into());
         }
+        // Nobody founds a city on a battlefield. No Tactics seat is dropped
+        // in with a Settler, so this is the rule stated where it can be
+        // relied on rather than left as a property of the opening roster: a
+        // Settler that reached an arena some other way still does not turn
+        // the battle into a Civ game.
+        if self.is_arena() {
+            return Err("no cities are founded on a battlefield".into());
+        }
         if self.players[pid].is_barbarian {
             return Err("barbarians do not found cities".into());
         }
@@ -48414,6 +48610,15 @@ impl Game {
     /// base unit and Armies/Armadas cost 200%; policy reductions then apply
     /// once because each formation is a single unit on the map.
     fn unit_gold_maintenance_cost(&self, pid: usize, unit: &Unit) -> f64 {
+        // An arena has no empire behind it — no cities, no income, no
+        // treasury — so an army on one costs nothing to keep. Charged the
+        // ordinary upkeep, a Tactics side would run a deficit it could never
+        // close and bankruptcy would disband the very units the mode exists
+        // to fight with, one every ten turns, before either army reached the
+        // other.
+        if self.is_arena() {
+            return 0.0;
+        }
         let formation = match unit.formation {
             1 => 1.5,
             2.. => 2.0,
@@ -56330,6 +56535,19 @@ impl Game {
         if !self.players[pid].alive || self.barb_pid == Some(pid) {
             return;
         }
+        // Last army standing. On an arena a side is its army: it has no city
+        // to lose and no Settler to found one with, so the ordinary test —
+        // no city and no Settler left — would wipe out both sides the moment
+        // the first casualty of the battle fell. What ends a side here is
+        // running out of units, and nothing else does.
+        if self.is_arena() {
+            if self.units.values().any(|unit| unit.owner == pid) {
+                return;
+            }
+            self.players[pid].alive = false;
+            self.sync_war_log();
+            return;
+        }
         if self.cities.values().any(|c| c.owner == pid) {
             return;
         }
@@ -56728,14 +56946,60 @@ impl Game {
         })
     }
 
+    /// Whether this world can be won this way at all.
+    ///
+    /// A Civ world answers from the lobby's victory checkboxes. A Tactics
+    /// arena answers for itself: there are no cities on it and no way to
+    /// found one, so science, culture, religion and diplomacy have nothing to
+    /// happen in and could never be reached however the checkboxes were left.
+    /// What can happen on an arena is that one side is left standing — the
+    /// Domination lane, which on a world with no capitals to capture reduces
+    /// to exactly that — or that the clock runs out with both armies still on
+    /// the field and the larger one is awarded it.
+    fn victory_lane_open(&self, vtype: &str) -> bool {
+        if self.is_arena() {
+            return matches!(vtype, "domination" | "score");
+        }
+        self.victory_conditions.is_enabled(vtype)
+    }
+
+    /// The victory lanes this world actually offers, whatever a lobby or a
+    /// command line left in `victory_conditions`.
+    ///
+    /// This is what a client is told, so that the victory tracker shows the
+    /// battle a Tactics game is deciding rather than a science race nobody on
+    /// the field can run: an arena has no cities, so four of the six lanes
+    /// have nowhere to happen and [`Self::victory_lane_open`] refuses them in
+    /// any case. Publishing the effective set keeps the display and the rule
+    /// the same answer however the world was set up.
+    pub fn effective_victory_conditions(&self) -> VictoryConditions {
+        if !self.is_arena() {
+            return self.victory_conditions;
+        }
+        VictoryConditions {
+            science: false,
+            culture: false,
+            religious: false,
+            diplomatic: false,
+            domination: true,
+            score: true,
+        }
+    }
+
     /// The Require-N setting, clamped to what the lobby actually enabled:
     /// requiring more victory types than exist could never be satisfied, and
     /// zero — a save written before the option existed — is the stock
     /// single-victory game.
     pub fn effective_required_victories(&self) -> usize {
+        // A battle is decided once. Asking an arena for a second victory type
+        // — of the two it has, one ends the game and the other only fires at
+        // the clock — would leave it unwinnable.
+        if self.is_arena() {
+            return 1;
+        }
         let enabled = VictoryConditions::NAMES
             .iter()
-            .filter(|name| self.victory_conditions.is_enabled(name))
+            .filter(|name| self.victory_lane_open(name))
             .count();
         self.required_victory_types.clamp(1, enabled.max(1))
     }
@@ -56780,7 +57044,7 @@ impl Game {
         }
         if self.winner.is_none()
             && self.victory_eligible(pid)
-            && (self.victory_conditions.is_enabled(vtype)
+            && (self.victory_lane_open(vtype)
                 // Mercy answers to its own setup option, not the victory
                 // checkboxes: it is a concession rule, not a victory lane.
                 || (vtype == "mercy" && self.mercy_rule.is_some()))
@@ -67713,40 +67977,272 @@ mod district_mechanics {
         );
     }
 
-    /// A Tactics battlefield opens as a two-sided arena: flat even when a
-    /// globe was asked for, the requested city-states refused, no barbarian
-    /// third force, and every side holding the same small opening army beside
-    /// its settler — the arena exists for the fight, not the buildup.
+    /// A Tactics battlefield opens as a two-sided arena: flat and walled even
+    /// when a globe was asked for, the requested city-states refused, no
+    /// barbarian third force — and two armies and nothing else. No Settler,
+    /// so no city is ever founded; no difficulty handicap units, because an
+    /// arena that hands one side a bonus has decided the battle at setup. The
+    /// two rosters are identical, set out over their own ends of the field
+    /// rather than stacked on one hex, and the two sides open at war with
+    /// each other having already met.
     #[test]
     fn a_battlefield_game_opens_as_a_two_sided_arena() {
         let game = Game::new_with(GameOptions {
             map_script: MapScript::Battlefield,
             map_topology: MapTopology::Planet,
-            ..GameOptions::new(2, 11, 10, 90_411, 250, 3)
+            // Deity: the handicap table would hand every AI seat extra units.
+            difficulty: "deity".to_string(),
+            ..GameOptions::new(2, 10, 10, 90_411, 250, 3)
         });
         assert!(game.map.sphere().is_none(), "the arena must be flat");
-        assert_eq!((game.map.width, game.map.height), (11, 10));
+        assert_eq!((game.map.width, game.map.height), (10, 10));
+        assert!(game.is_arena());
         assert!(game.barb_pid.is_none(), "no third force on a battlefield");
         // Two majors and the dormant Free Cities seat: the three city-states
         // asked for were refused by the arena.
         assert_eq!(game.players.len(), 3);
         assert!(game.players.iter().all(|player| !player.is_minor || player.is_free_city));
-        for seat in 0..2 {
-            let mut opening: Vec<&str> = game
+        assert!(game.cities.is_empty(), "an arena opens with no city");
+
+        let roster = |seat: usize| {
+            let mut kinds: Vec<&str> = game
                 .units
                 .values()
                 .filter(|unit| unit.owner == seat)
                 .map(|unit| unit.kind.as_str())
                 .collect();
-            opening.sort_unstable();
+            kinds.sort_unstable();
+            kinds
+        };
+        assert_eq!(
+            roster(0),
+            Game::battlefield_army(game.map.tiles.len())
+                .into_iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .flat_map(|kind| {
+                    std::iter::repeat_n(
+                        kind,
+                        Game::battlefield_army(game.map.tiles.len())
+                            .iter()
+                            .filter(|other| **other == kind)
+                            .count(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            "seat 0 opens with the arena roster and nothing else"
+        );
+        assert_eq!(roster(0), roster(1), "the two armies must be even");
+        assert!(
+            !roster(0).contains(&"settler"),
+            "no Settler is dropped onto an arena"
+        );
+
+        for seat in 0..2 {
+            let held: std::collections::BTreeSet<Pos> = game
+                .units
+                .values()
+                .filter(|unit| unit.owner == seat)
+                .map(|unit| unit.pos)
+                .collect();
             assert_eq!(
-                opening,
-                ["settler", "slinger", "spearman", "warrior", "warrior"],
-                "seat {seat} must open with the battlefield army"
+                held.len(),
+                roster(seat).len(),
+                "seat {seat} must be set out over the field, not stacked on one hex"
             );
         }
-        // Nothing on the arena exists to be developed.
+        // The two sides face each other across the field and are already
+        // fighting: nothing on an arena has to be declared or discovered.
+        assert!(game.is_at_war(0, 1));
+        assert!(game.has_met(0, 1) && game.has_met(1, 0));
+        // Nothing on the arena exists to be developed, and every hex of it is
+        // ground both sides can walk.
         assert!(game.map.tiles.values().all(|tile| tile.resource.is_none()));
+        assert!(game.map.tiles.values().all(|tile| game.rules.is_passable(tile)));
+        assert!(game.map.tiles.values().all(|tile| !game.rules.is_water(tile)));
+    }
+
+    /// Nothing walks off a battlefield. The arena's four walls are the map's
+    /// own edges: a hex on the east wall has no neighbour to the east, the
+    /// west wall is the width of the field away rather than one step through
+    /// a seam, and an archer standing on one wall is out of range of the far
+    /// one. On a Civ world's cylinder all three are the other way round.
+    #[test]
+    fn an_arena_is_walled_where_a_world_wraps() {
+        let arena = Game::new_with(GameOptions {
+            map_script: MapScript::Battlefield,
+            ..GameOptions::new(2, 10, 10, 4_411, 250, 0)
+        });
+        let world = Game::new_full(2, 44, 26, 4_411, 250, 0, false);
+        for (game, wraps) in [(&arena, false), (&world, true)] {
+            let width = game.map.width;
+            let west = crate::hex::offset_to_axial(0, 4);
+            let east = crate::hex::offset_to_axial(width - 1, 4);
+            assert_eq!(
+                game.nbrs(west).iter().any(|neighbor| *neighbor == east),
+                wraps,
+                "the two edge columns are neighbours only on a cylinder"
+            );
+            assert_eq!(game.wdist(west, east) == 1, wraps);
+            if !wraps {
+                assert_eq!(
+                    game.wdist(west, east),
+                    width - 1,
+                    "an arena's far wall is the whole field away"
+                );
+                assert_eq!(
+                    game.nbrs(west).len(),
+                    3,
+                    "a hex in the middle of a wall has three neighbours, not six"
+                );
+            }
+        }
+        // And no unit may step through the wall.
+        let west = crate::hex::offset_to_axial(0, 4);
+        let east = crate::hex::offset_to_axial(arena.map.width - 1, 4);
+        let mut arena = arena;
+        assert!(arena.units_at(west).is_empty(), "the wall hex is free to stand on");
+        let uid = arena.spawn_test_unit("horseman", 0, west);
+        assert!(
+            !arena.can_move(uid, east),
+            "a unit on the west wall must not step through it to the east one"
+        );
+        assert!(
+            arena.nbrs(west).iter().all(|next| arena.can_move(uid, *next)),
+            "and it may still walk every way the field continues"
+        );
+    }
+
+    /// Last army standing. A side on an arena is its army: it has no city to
+    /// lose and no Settler to found one with, so the ordinary elimination
+    /// test — no city and no Settler — would end both sides at the first
+    /// casualty. What ends a side here is its last unit, and that ends the
+    /// battle.
+    #[test]
+    fn the_last_army_standing_takes_the_field() {
+        let mut game = Game::new_with(GameOptions {
+            map_script: MapScript::Battlefield,
+            ..GameOptions::new(2, 10, 10, 7_311, 250, 0)
+        });
+        let losing: Vec<u32> = game.player_unit_ids(1);
+        assert!(losing.len() > 1);
+        for uid in &losing[1..] {
+            game.remove_unit(*uid);
+            game.check_elimination(1);
+            assert!(game.players[1].alive, "a side with a unit left is still in the battle");
+            assert!(game.winner.is_none());
+        }
+        game.remove_unit(losing[0]);
+        game.check_elimination(1);
+        game.check_domination();
+        assert!(!game.players[1].alive, "a side with no units left has lost the field");
+        assert_eq!(game.winner, Some(0));
+        assert_eq!(game.victory_type.as_deref(), Some("domination"));
+    }
+
+    /// An arena has no empire behind it, so it runs none of an empire's
+    /// bookkeeping against the army: no city may be founded on it, an army
+    /// costs nothing to keep — bankruptcy would otherwise disband the units
+    /// the mode exists to fight with — and nothing heals, so damage taken in
+    /// a battle is damage kept.
+    #[test]
+    fn an_arena_has_no_economy_behind_its_army() {
+        let mut game = Game::new_with(GameOptions {
+            map_script: MapScript::Battlefield,
+            ..GameOptions::new(2, 10, 10, 5_150, 250, 0)
+        });
+        let uid = game.player_unit_ids(0)[0];
+        assert_eq!(game.unit_heal_rate(uid), 0, "nothing heals on an arena");
+        // Every unit of both armies is free of upkeep, including the ones
+        // whose own ruleset row charges maintenance.
+        assert!(game
+            .units
+            .values()
+            .any(|unit| game.rules.units[unit.kind].maintenance > 0.0));
+        for seat in 0..2 {
+            game.players[seat].gold = 0.0;
+            let before = game.player_unit_ids(seat).len();
+            game.settle_gold_budget(seat, 0.0);
+            assert_eq!(
+                game.player_unit_ids(seat).len(),
+                before,
+                "an arena army must not be disbanded for a deficit it cannot close"
+            );
+            assert_eq!(game.players[seat].bankruptcy_amenity_penalty, 0);
+        }
+        // A Settler that reached an arena some other way still founds nothing.
+        let start = game.units[&game.player_unit_ids(0)[0]].pos;
+        let settler = game.spawn_test_unit("settler", 0, start);
+        assert!(game
+            .apply(0, &Action::FoundCity { unit: settler })
+            .is_err_and(|refusal| refusal.contains("battlefield")));
+        assert!(game.cities.is_empty());
+    }
+
+    /// What a Tactics game tells a client it can be won by. Four of the six
+    /// lanes need cities, an arena has none and no way to found one, and the
+    /// engine refuses them there — so the victory tracker is told about the
+    /// two that can actually decide the battle, whatever the lobby or a
+    /// command line left in the checkboxes.
+    #[test]
+    fn an_arena_publishes_only_the_lanes_a_battle_can_be_decided_by() {
+        let mut game = Game::new_with(GameOptions {
+            map_script: MapScript::Battlefield,
+            ..GameOptions::new(2, 10, 10, 6_161, 250, 0)
+        });
+        // However the world was set up — here, every lane switched on.
+        game.victory_conditions = VictoryConditions {
+            science: true,
+            culture: true,
+            religious: true,
+            diplomatic: true,
+            domination: true,
+            score: true,
+        };
+        game.required_victory_types = 3;
+        let published = game.effective_victory_conditions();
+        for lane in ["science", "culture", "religious", "diplomatic"] {
+            assert!(!published.is_enabled(lane), "{lane} has nowhere to happen on an arena");
+            assert!(!game.set_winner(0, lane), "{lane} must not decide a battle");
+        }
+        assert!(published.is_enabled("domination"));
+        assert!(published.is_enabled("score"));
+        // And a battle is decided once, however many types were required.
+        assert_eq!(game.effective_required_victories(), 1);
+
+        // A Civ world publishes exactly what it was set up with.
+        let mut world = Game::new_full(2, 44, 26, 6_161, 250, 0, false);
+        world.victory_conditions.science = false;
+        assert_eq!(world.effective_victory_conditions(), world.victory_conditions);
+    }
+
+    /// The turn limit on an arena is a battle's, and what it awards is the
+    /// field: with no cities, districts or Population to count, the ordinary
+    /// score is zero for both sides for the whole battle, so the arena counts
+    /// the army left standing instead — weighted by health, because a
+    /// battered survivor is not worth a fresh one.
+    #[test]
+    fn an_undecided_battle_is_awarded_to_the_army_still_standing() {
+        let mut game = Game::new_with(GameOptions {
+            map_script: MapScript::Battlefield,
+            ..GameOptions::new(2, 10, 10, 2_215, 250, 0)
+        });
+        assert_eq!(game.score(0), game.score(1), "the two armies open even");
+        // A battle's clock, not a civilization's, and long enough to settle
+        // the army it is given.
+        let limit = Game::battlefield_turn_limit(10, 10, 2);
+        assert!((120..400).contains(&limit), "{limit}");
+        // Half of one side's army falls; the field is the other side's.
+        for uid in game.player_unit_ids(1).into_iter().take(4) {
+            game.remove_unit(uid);
+        }
+        assert!(game.score(0) > game.score(1));
+        // And a whole army is worth more than a battered one of the same size.
+        let mut battered = game.clone();
+        for uid in battered.player_unit_ids(0) {
+            battered.units.get_mut(&uid).unwrap().hp = 20;
+        }
+        assert!(battered.score(0) < game.score(0));
     }
 
     #[test]

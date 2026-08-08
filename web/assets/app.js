@@ -1850,11 +1850,18 @@ const PLAYER_HUD_COLUMNS = [
   {key:"win", label:"Win odds · now", block:"identity", min:"--hud-odds-min", width:.55},
   {key:"age", label:"Age", block:"identity", min:"--hud-ident-min", width:1.3},
   {key:"plan", label:"Plan", block:"identity", min:"--hud-ident-min", width:2.035},
+  // A column may declare when it exists at all. Everything without that test
+  // is a fact every game has from turn one; the nuclear stockpile is the one
+  // that has to be invented first, so it joins the table beside the military
+  // strength it changes the meaning of.
   ...[["cities", "Cities"], ["population", "Population"], ["food", "Food"], ["production", "Production"],
       ["science", "Science"], ["culture", "Culture"], ["faith", "Faith"],
-      ["gold", "Gold"], ["military", "Military"], ["wonders", "Wonders"],
+      ["gold", "Gold"], ["military", "Military"],
+      ["nukes", "Nuclear stockpile", nuclearStandingsInPlay],
+      ["wonders", "Wonders"],
       ["suzerain", "Suzerainty"], ["score", "Score"]]
-    .map(([key, label]) => ({key, label, block:"stats", min:"--hud-stat-min", width:1})),
+    .map(([key, label, exists]) =>
+      ({key, label, block:"stats", min:"--hud-stat-min", width:1, exists})),
 ];
 const PLAYER_HUD_COLUMN_BY_KEY = new Map(PLAYER_HUD_COLUMNS.map(column => [column.key, column]));
 // Every named standings fact is sortable. Rank is the score standing, and
@@ -1920,8 +1927,11 @@ try {
       if (PLAYER_HUD_COLUMN_BY_KEY.has(key) && Number.isFinite(floor) && floor > 0)
         playerHudColumnMinPx.set(key, Math.min(Math.round(floor), 600));
     }
-  // An all-hidden save would leave nothing to click to get the columns back.
-  if (PLAYER_HUD_COLUMNS.every(column => playerHudHiddenColumns.has(column.key)))
+  // An all-hidden save would leave nothing to click to get the columns back —
+  // and a column this world has not invented yet cannot be the one thing
+  // keeping the table on screen.
+  if (PLAYER_HUD_COLUMNS.filter(playerHudColumnExists)
+      .every(column => playerHudHiddenColumns.has(column.key)))
     playerHudHiddenColumns = new Set();
 } catch (_) {}
 
@@ -1935,10 +1945,52 @@ function savePlayerHudColumnLayout() {
   } catch (_) {}
 }
 
+// ── A column that does not exist yet ───────────────────────────────────────
+//
+// Every other standings figure is a fact of the world from the first turn:
+// a civilization always has cities, faith and a military, even when the count
+// is nought. A nuclear stockpile is not — for most of a game nobody on the
+// board *can* hold a device, and a column of zeroes down every row is a column
+// of noise in a table that is already competing for width.
+//
+// So the column arrives with the weapon and stays for the rest of the game.
+// What puts it there is the first civilization to finish the research that
+// unlocks nuclear devices: the moment the bomb becomes a thing this world
+// contains is the moment the standings start needing somewhere to say who has
+// one. It arrives a Manhattan Project ahead of the first device rather than
+// with it, so the column is already standing, at nought, while the race to
+// build the first one is the thing worth watching.
+//
+// That trigger is a world fact and names nobody, so it costs no seat any fog.
+// The two clauses after it ask the same question of the board itself, for a
+// page talking to a server too old to state it: a met civilization that has
+// finished the Manhattan Project, or that is holding devices, is proof the
+// research happened whether or not anybody said so.
+function nuclearStandingsInPlay() {
+  if (!state) return false;
+  return Boolean(state.nuclear_weapons_unlocked) ||
+    Boolean(state.players?.some(player =>
+      player.science_projects?.includes?.("manhattan_project") ||
+      playerNuclearStockpile(player) > 0));
+}
+
+// Both classes of device, as one arsenal.
+function playerNuclearStockpile(player) {
+  return (+player.nuclear_devices || 0) + (+player.thermonuclear_devices || 0);
+}
+
+// A column the world has not invented yet is not in the table, and is not on
+// the Display Settings roster either — it is not a column the viewer has
+// hidden, so offering them a checkbox that changes nothing would be a lie.
+function playerHudColumnExists(column) {
+  return Boolean(column) && (!column.exists || column.exists());
+}
+
 function visiblePlayerHudColumns() {
   return playerHudColumnOrder
     .map(key => PLAYER_HUD_COLUMN_BY_KEY.get(key))
-    .filter(column => column && !playerHudHiddenColumns.has(column.key));
+    .filter(column => playerHudColumnExists(column) &&
+      !playerHudHiddenColumns.has(column.key));
 }
 
 // One bar per seam between two adjacent flexible columns. A fixed track such
@@ -2088,7 +2140,8 @@ const PLAYER_HUD_HEAD_LABELS = {
   food:["FOOD", "Food per turn"], production:["PROD", "Production per turn"],
   science:["SCI", "Science per turn"], culture:["CUL", "Culture per turn"],
   faith:["FPT", "Faith per turn"], gold:["GPT", "Net Gold per turn"],
-  military:["MIL", "Military strength"], wonders:["WNDR", "World wonders controlled"],
+  military:["MIL", "Military strength"], nukes:["NUK", "Nuclear devices held"],
+  wonders:["WNDR", "World wonders controlled"],
   suzerain:["SUZ", "City-states under suzerainty"], score:["SCORE", "Score"],
 };
 
@@ -2582,8 +2635,11 @@ function setPlayerHudColumnVisible(key, visible) {
   if (!column) return;
   const hidden = new Set(playerHudHiddenColumns);
   if (visible) hidden.delete(key); else hidden.add(key);
-  // An empty table would leave nothing on screen to bring a column back.
-  if (PLAYER_HUD_COLUMNS.every(other => hidden.has(other.key))) {
+  // An empty table would leave nothing on screen to bring a column back. A
+  // column the world has not invented yet cannot be what is holding the table
+  // open, so it does not count towards this.
+  if (PLAYER_HUD_COLUMNS.filter(playerHudColumnExists)
+      .every(other => hidden.has(other.key))) {
     renderHudColumnList();
     return;
   }
@@ -2599,13 +2655,26 @@ function renderHudColumnList() {
   if (!list) return;
   list.innerHTML = playerHudColumnOrder.map(key => {
     const column = PLAYER_HUD_COLUMN_BY_KEY.get(key);
-    if (!column) return "";
+    if (!playerHudColumnExists(column)) return "";
     const checked = !playerHudHiddenColumns.has(key);
     return `<div class="hud-column-item${checked ? "" : " hidden-col"}" draggable="true" data-hud-column-item="${key}">` +
       `<span class="hud-column-grip" aria-hidden="true">⠿</span>` +
       `<label title="${checked ? "Uncheck to remove" : "Check to show"} the ${column.label} column · drag to reorder">` +
       `<input type="checkbox" data-hud-column-toggle="${key}"${checked ? " checked" : ""}> ${column.label}</label></div>`;
   }).join("");
+}
+
+// The roster lists the columns that exist, and that set changes at most once a
+// game — when the world reaches the bomb. Rebuild it on the change rather than
+// on every frame the standings repaint: this list holds live checkboxes and a
+// drag gesture of its own.
+let playerHudExistingColumns = "";
+function syncHudColumnRoster() {
+  const existing = PLAYER_HUD_COLUMNS.filter(playerHudColumnExists)
+    .map(column => column.key).join(",");
+  if (existing === playerHudExistingColumns) return;
+  playerHudExistingColumns = existing;
+  renderHudColumnList();
 }
 
 function finishPlayerHudReorderGesture(event) {
@@ -20157,6 +20226,20 @@ function foundedReligionMarker(player) {
   return player.founded_religion_exists ? "*" : "";
 }
 
+// NUK carries the whole arsenal as one figure; its tooltip is what that
+// arsenal is made of, because a thermonuclear device is a second ring of blast
+// and a heavier upkeep rather than another bomb of the same kind. A
+// civilization holding nothing says so in words: a bare "0" in a column that
+// only exists at all under fog reads like a missing observation.
+function nuclearStockpileTitle(player) {
+  const fission = +player.nuclear_devices || 0;
+  const fusion = +player.thermonuclear_devices || 0;
+  const total = fission + fusion;
+  if (!total) return "No nuclear devices held";
+  return `Nuclear devices held: ${exactStat(total)} · ` +
+    `${exactStat(fission)} nuclear · ${exactStat(fusion)} thermonuclear`;
+}
+
 // ── Win odds: what a seat was worth before the game, and what it is worth now ─
 //
 // A whole per cent is all a 26px row can carry, with two exceptions at the ends
@@ -20249,6 +20332,7 @@ function playerHudStats(player, rank) {
     ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(player.faith)} banked`, foundedReligionMarker(player)],
     ["gold", "GPT", goldPerTurn, `Net Gold: ${exactStat(goldPerTurn)} per turn · ${exactStat(player.gold)} banked`],
     ["military", "MIL", player.military, `Military strength: ${exactStat(player.military)}`],
+    ["nukes", "NUK", playerNuclearStockpile(player), nuclearStockpileTitle(player)],
     ["wonders", "WNDR", player.wonder_count, `World wonders controlled: ${exactStat(player.wonder_count)}`],
     ["suzerain", "SUZ", player.suzerain_count, `City-states under suzerainty: ${exactStat(player.suzerain_count)}`],
     ["score", "SCORE", player.score, `Score: ${exactStat(player.score)} · rank ${rank}`],
@@ -20562,7 +20646,13 @@ function drawPlayerHud() {
   // innerHTML replaced the elements the observer was watching.
   observePlayerRibbon();
   syncPlayerLockPins();
-  syncPlayerHudColumnGrips();
+  // Not only the bars: a column can *arrive* between two frames — the turn the
+  // world reaches the bomb adds NUK to the heading and to every row — and the
+  // tracks those cells stand on are written from the same model. Left to the
+  // bars alone the new cell would land in an implicit track outside the list.
+  // This is a string comparison on every other frame.
+  syncPlayerHudColumns();
+  syncHudColumnRoster();
   // innerHTML also replaced the plate seam; restamp its width and range.
   applyTurnPlateWidth(turnPlateWidth, false);
   // The masthead is as tall as the table it holds, so a civilization met or

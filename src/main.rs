@@ -713,14 +713,22 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// set-membership test against an empty set; the STOCK `advanced` entrant
 /// (which ships `home_defense = true`) now answers barbarian raiders at home,
 /// recorded here honestly. Compatibility re-pin for the anchor.
+/// The Tactics arena adds an arena doctrine to both files, every part of it
+/// behind `Game::is_arena()` — which is false for every world a rated game is
+/// ever played on, because the Battlefield script is not a world and no
+/// rating instrument accepts one. With the flag false the three touched
+/// expressions reduce to the shipped ones by construction (`arena || x` is
+/// `x`, `!arena && y` is `y`, and the weight pair is returned unchanged), so
+/// the anchor's decisions are byte-identical. Reviewed compatibility re-pin,
+/// not an Elo-protocol change.
 /// #1384 teaches the joint planner withdrawals and handoff steps and keeps the
 /// per-unit movers off units the plan moved without a blow
 /// (`tactics_withdrawn`). `AdvancedAi::legacy()` leaves `joint_tactics` false,
 /// so the plan never runs, the set stays empty, and the anchor's only new
 /// executable is a set-membership test against an empty set — the same shape
-/// #1363 re-pinned. Compatibility re-pin.
+/// #1363 re-pinned. Compatibility re-pin over the #1382 merge.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x264b_eb6c_2047_2469;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe81c_e694_207d_6364;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -883,15 +891,29 @@ fn auto_cs(args: &[String], players: i64) -> usize {
 }
 
 fn auto_dimension(args: &[String], key: &str, players: i64, width: bool) -> i32 {
-    let size = MapSize::for_players(players.max(1) as usize);
-    // A globe stores itself in a rectangle of its own shape, so the size's
-    // default dimensions depend on which world shape was asked for.
-    let (default_width, default_height) = size.dimensions(map_topology(args));
+    // A Tactics arena is not sized like a world. Left to the world ladder,
+    // `--map battlefield` produced an eighty-hex "arena" that two eight-unit
+    // armies could spend a whole battle failing to find each other on; the
+    // mode's own smallest field is the honest default, and `--width` and
+    // `--height` still name any other.
+    let (default_width, default_height) = if map_script(args).is_battlefield() {
+        let arena = setup::BATTLEFIELD_SIZES[0];
+        (arena.width, arena.height)
+    } else {
+        // A globe stores itself in a rectangle of its own shape, so the size's
+        // default dimensions depend on which world shape was asked for.
+        MapSize::for_players(players.max(1) as usize).dimensions(map_topology(args))
+    };
     arg(
         args,
         key,
         if width { default_width } else { default_height } as i64,
     ) as i32
+}
+
+/// The world type asked for, as every command reads it.
+fn map_script(args: &[String]) -> MapScript {
+    MapScript::from_id(&arg_text(args, "--map", "tennis_ball")).unwrap_or(MapScript::TeninsBall)
 }
 
 /// The world's shape, which is asked for separately from what fills it.
@@ -1003,6 +1025,14 @@ fn game_options(
     // ahead on score at an arbitrary cutoff.
     let turns = if args.iter().any(|a| a == "--turns") {
         arg(args, "--turns", speed_spec.turns as i64)
+    } else if map_script(args).is_battlefield() {
+        // A Tactics battle keeps a battle's clock rather than a game speed's
+        // five hundred turns; `--turns` still names any other.
+        Game::battlefield_turn_limit(
+            auto_dimension(args, "--width", players, true),
+            auto_dimension(args, "--height", players, false),
+            players.max(1) as usize,
+        ) as i64
     } else {
         speed_spec.turns as i64
     };
@@ -1051,8 +1081,7 @@ fn game_options(
         base_ruleset: base_ruleset(args),
         start_era: start_era(args),
         future_era: future_era(args),
-        map_script: MapScript::from_id(&arg_text(args, "--map", "tennis_ball"))
-            .unwrap_or(MapScript::TeninsBall),
+        map_script: map_script(args),
         map_topology: map_topology(args),
         map_poles: map_poles(args),
         difficulty,
@@ -1884,7 +1913,18 @@ fn main() {
             let _ = sink;
         }
         "tournament" => {
-            let ratings_path = arg_text(&args, "--ratings", civvis::elo::DEFAULT_RATINGS_PATH);
+            // Each mode keeps its own ladder: a Tactics rating is earned
+            // against Tactics opponents on an arena and says nothing about
+            // the grand strategy game, so `--map battlefield` writes to the
+            // Tactics ledger unless `--ratings` names another. Offered to the
+            // Civ ledger it would be refused anyway — the profile records the
+            // map script — so this names the right file rather than making
+            // the operator discover the mismatch.
+            let ratings_path = arg_text(
+                &args,
+                "--ratings",
+                civvis::elo::ratings_path_for(setup::GameMode::for_script(map_script(&args))),
+            );
             if args.iter().any(|arg| arg == "--standings") {
                 match civvis::elo::EloPool::load(&ratings_path) {
                     Ok(pool) => print!("{}", civvis::elo::leaderboard(&pool)),
