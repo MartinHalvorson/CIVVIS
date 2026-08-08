@@ -2463,6 +2463,18 @@ impl AdvancedAi {
         self.base.garrison_under_fire = false;
     }
 
+    /// Order our own ancient walls in the capital and small frontier cities
+    /// once Masonry is in. Native tournament games leave this disabled so
+    /// their recorded ladders stay comparable; see
+    /// `BasicAi::garrison_walls_item` for the t115 measurement.
+    pub fn enable_garrison_walls(&mut self) {
+        self.base.garrison_walls = true;
+    }
+
+    pub fn disable_garrison_walls(&mut self) {
+        self.base.garrison_walls = false;
+    }
+
     /// Release an escort that is not walking its settler. See `escort_unstick`.
     pub fn enable_escort_unstick(&mut self) {
         self.escort_unstick = true;
@@ -2740,6 +2752,12 @@ impl AdvancedAi {
         // The other half of the same three-defeat measurement: the capital that
         // fell bleeding with an empty hostile list. See garrison_under_fire.
         self.enable_garrison_under_fire();
+        // The other half of that same capital's diagnosis: garrison_under_fire
+        // reacts to a city already bleeding, but the capital that fell had
+        // NEVER ORDERED WALLS — max_wall_damage 0 at t115 with production on
+        // the culture lane and the fog hiding every attacker until adjacency.
+        // See BasicAi::garrison_walls_item.
+        self.enable_garrison_walls();
         // Settler conversion is the score frontier the first seven live games
         // isolated; see escort_unstick.
         self.enable_escort_unstick();

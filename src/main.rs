@@ -804,7 +804,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// constructors and set only by `enable_live_bridge`, so the anchor's decision
 /// stream is unchanged by the union. Compatibility re-pin, not an Elo-protocol
 /// change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x50bf_fed9_e1c4_e204;
+/// The garrison-walls arm adds one guarded branch to `pick_item` and its
+/// chooser, behind `BasicAi::garrison_walls`. Both constructors leave the flag
+/// false and only `enable_live_bridge` sets it, so under the anchor
+/// `garrison_walls_item` returns `None` on its first line and the branch can
+/// never take the build. The anchor's build order is byte-identical by
+/// construction. Compatibility re-pin, not an Elo-protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe3e7_cbb4_ecda_00ca;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
