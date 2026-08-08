@@ -42,9 +42,12 @@ function initAdvancedSettings() {
   const game = document.getElementById("newgame-options");
   const gameAdvanced = document.getElementById("game-advanced-settings");
   moveByOrder(game, ".game-advanced-setting", document.getElementById("game-advanced-settings-body"));
+  // Which game is being set up decides what every control under it means, so
+  // it is asked first — before who is playing it, the way a menu asks for the
+  // game before the seats.
   const basic = [
-    ["humanplayers", true], ["np", true], ["mapshape", true], ["maptype", true],
-    ["startera", true], ["gamespeed", true],
+    ["gamemode", true], ["humanplayers", true], ["np", true], ["mapshape", true],
+    ["maptype", true], ["startera", true], ["gamespeed", true],
   ].map(([id, label]) => label
     ? document.getElementById(id).closest("label")
     : document.getElementById(id));
@@ -424,12 +427,20 @@ const BLDG_ICON = { monument:"🗿", granary:"🌾", walls:"🧱", medieval_wall
                     shrine:"⛩", library:"📜", market:"⚖", barracks:"🛡",
                     lighthouse:"🗼", amphitheater:"🎭", aqueduct:"⛲", arena:"🎪",
                     workshop:"🔧", armory:"🛡", bank:"🏦", university:"🎓" };
-// Hues follow Civ VI's own yield language — science blue, culture a real
-// violet (not pink; entertainment keeps pink), faith a pale sky-white, gold a
-// yellow coin, production a burnt orange — softened only slightly for the map.
-const DISTRICT_COLOR = { campus:"#3da4dc", holy_site:"#dcebf5", commercial_hub:"#e9c83e",
-                         harbor:"#52bcd4", encampment:"#c0392b", theater_square:"#9855d2",
-                         industrial_zone:"#d4761f", entertainment_complex:"#e75480" };
+// Hues are Civ VI's own district language, at the game's saturation rather
+// than softened for the map: science blue, culture violet, faith a pale
+// sky-white, gold a yellow coin, production orange, military red, amenities
+// magenta, and the Government Plaza its own pink — the one district whose
+// color in the base game says "government" and not a yield.
+//
+// Harbor is the deep sea blue rather than the cyan it used to be. Cyan is the
+// aqueduct family's (`water` below), and a Harbor next to a Dam was two
+// near-identical light blues; sea blue is both truer to the game and the only
+// pair of blues on a coastal city that a glance has to separate.
+const DISTRICT_COLOR = { campus:"#3aa7e0", holy_site:"#e6f1f9", commercial_hub:"#f2c73d",
+                         harbor:"#2280ac", encampment:"#c8352b", theater_square:"#9b51d8",
+                         industrial_zone:"#e07b1e", entertainment_complex:"#d94f8f",
+                         government_plaza:"#f58fc0" };
 // Every unique district is its parent in a local hat — a Seowon is a Campus,
 // an Ikanda an Encampment — so they share a silhouette and a color. Grouping by
 // family is also what keeps thirty-five kinds down to a set of shapes a player
@@ -450,11 +461,15 @@ const DISTRICT_FAMILY = {
   government_plaza:"civic", diplomatic_quarter:"civic",
   preserve:"preserve", city_center:"civic",
 };
+// A unique district wears its parent's color, so these repeat the table above
+// and add the families no base district names directly. `civic` is what is
+// left of the old government tan once the Government Plaza takes its own pink:
+// the City Center and the Diplomatic Quarter.
 const FAMILY_COLOR = {
-  campus:"#3da4dc", faith:"#dcebf5", war:"#c0392b", trade:"#e9c83e",
-  harbor:"#52bcd4", culture:"#9855d2", industry:"#d4761f", fun:"#e75480",
-  water:"#7fb8d8", homes:"#bda684", air:"#9fb0c4", civic:"#d8c58a",
-  preserve:"#6fbf73",
+  campus:"#3aa7e0", faith:"#e6f1f9", war:"#c8352b", trade:"#f2c73d",
+  harbor:"#2280ac", culture:"#9b51d8", industry:"#e07b1e", fun:"#d94f8f",
+  water:"#7ec8e8", homes:"#b99b6e", air:"#9fb0c4", civic:"#d8c58a",
+  preserve:"#5fb85f",
 };
 const districtColor = d =>
   DISTRICT_COLOR[d] || FAMILY_COLOR[DISTRICT_FAMILY[d]] || "#ddd";
@@ -3698,11 +3713,22 @@ function worldWrapsX() {
   if (typeof state.map.wrap_x === "boolean") return state.map.wrap_x;
   return state.map.script !== "inland_sea";
 }
+// A bounded arena, walled on all four sides rather than seamed east to west.
+// Those walls are a rule of the match and not a way of drawing it: an archer
+// on one wall is the width of the field from the far wall, and a flank that
+// walks off the east side must not arrive behind the enemy in the west. So
+// the two display controls below may close a seam the world has and never
+// open one it does not — on a walled field a unit drawn past the wall is a
+// unit off the map.
+function worldIsWalled() {
+  return !!state && !planetMap() && !worldWrapsX();
+}
 function mapWrapsX() {
-  return planetMap() ? worldWrapsX() : FLAT_MAP_WRAP_X;
+  if (planetMap()) return worldWrapsX();
+  return !worldIsWalled() && FLAT_MAP_WRAP_X;
 }
 function mapWrapsY() {
-  return !!state && !planetMap() && FLAT_MAP_WRAP_Y;
+  return !!state && !planetMap() && !worldIsWalled() && FLAT_MAP_WRAP_Y;
 }
 // Where the chart is unrolled about: the camera once the world is known to
 // come back on itself, and one fixed place until then.
@@ -4777,7 +4803,7 @@ function trackSimulationRun(st, now) {
   if (st?.spectate !== true) return;
   const seed = st?.seed;
   const turn = typeof st?.turn === "number" && Number.isFinite(st.turn) ? st.turn : null;
-  const finished = st?.winner !== null && st?.winner !== undefined;
+  const finished = gameFinished(st);
   // A different seed is a different world, and the same seed at an earlier turn
   // is that world restarted. Either way the run being timed is a new one.
   if (seed !== simulationLedger.seed ||
@@ -5670,7 +5696,7 @@ async function send(action) {
   // so an action pass works through nearby groups before returning to a unit
   // the player already considered. Anything else — a half-move, a city order
   // — leaves the selection be.
-  if (action.unit !== undefined && state && !SPEC && state.winner === null &&
+  if (action.unit !== undefined && state && !SPEC && !gameFinished(state) &&
       (!sel || sel.id !== action.unit || !unitNeedsOrders(sel))) {
     advanceToNextActionUnit(true);
   } else {
@@ -5692,7 +5718,7 @@ function updateSpecPauseButtons() {
   // alone does not mean the simulation has never run. Seat 0 still acting is
   // the untouched opening position; a paused world there is started, not
   // resumed. Every later paused position resumes in the ordinary sense.
-  const atStart = state?.turn === 1 && state?.current === 0 && state?.winner == null;
+  const atStart = state?.turn === 1 && state?.current === 0 && !gameFinished(state);
   const action = specPaused ? (atStart ? "Start" : "Resume") : "Pause";
   const icon = specPaused ? "▶" : "⏸";
   const main = document.getElementById("specpause");
@@ -5738,7 +5764,7 @@ function liveClockLabel() {
 // Paused covers the unstarted opening as well: a clock that has never run
 // and is not running reads 0:00, which is what an unstarted game has played.
 function syncLiveClockRun() {
-  const over = !!state && state.winner !== null && state.winner !== undefined;
+  const over = gameFinished(state);
   const shouldRun = SPEC && !!state && !specPaused && !over;
   if (shouldRun && liveClock.runningSince === null) {
     liveClock.runningSince = Date.now();
@@ -5781,7 +5807,7 @@ function restoreLiveClock(st) {
   // The world kept playing while no document watched it, so the time away is
   // live time too — but only when the clock was running on both sides of the
   // gap; a pause of unknown length inside it would otherwise be counted.
-  if (stored.running && st.paused === false && st.winner == null)
+  if (stored.running && st.paused === false && !gameFinished(st))
     liveClock.ms += Math.max(0, Date.now() - (Number(stored.wall) || Date.now()));
 }
 // The plate is only rebuilt when a frame changes it, which at a slow watch
@@ -5849,7 +5875,7 @@ function adoptTiles(st) {
   if (!map) return st;
   if (Array.isArray(map.tiles)) {
     tileStore = {seed: st.seed, turn: st.turn,
-                 finished:st.winner !== null && st.winner !== undefined,
+                 finished:gameFinished(st),
                  sequence:stateFrameSequence(st),
                  tiles: map.tiles};
     return st;
@@ -5861,7 +5887,7 @@ function adoptTiles(st) {
   const tiles = tileStore.tiles.slice();
   for (const [at, tile] of patch) tiles[at] = tile;
   tileStore = {seed: st.seed, turn: st.turn,
-               finished:st.winner !== null && st.winner !== undefined,
+               finished:gameFinished(st),
                sequence:stateFrameSequence(st), tiles};
   map.tiles = tiles;
   return st;
@@ -6737,15 +6763,16 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   if (newWorld && st.seed !== undefined) { lastSeed = st.seed; loadTacks(); }
   if (newWorld) {
     // The game mode belongs to this world too: a battlefield on screen reads
-    // back as Tactics, with the size control holding its arena rather than a
+    // back as Tactics, with the size control holding its Tactics map rather than a
     // seat count. The mode is in place before the size and map are read back
     // so both controls hold the roster those values live in.
-    const tactics = st.map.script === "battlefield";
+    const tactics = isBattlefieldMapScript(st.map.script);
     document.getElementById("gamemode").value = tactics ? "tactics" : "civ";
     syncSetupMode();
     const majors = st.players.filter(p => !p.is_minor && !p.is_barbarian).length;
     const playerSelect = document.getElementById("np");
     const arena = tactics ? battlefieldSizes().find(size =>
+      (!size.script || size.script === st.map.script) &&
       size.width === st.map.width && size.height === st.map.height) : null;
     if (arena) {
       playerSelect.value = arena.id;
@@ -6758,6 +6785,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     syncTeams();
     document.getElementById("teams").value = teamRuleFromArray(st.teams);
     document.getElementById("maptype").value = st.map.script || "tenins_ball";
+    if (tactics) syncBattlefieldSizes(true);
     document.getElementById("mapshape").value = st.map.shape || "planet";
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
@@ -6791,6 +6819,24 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     const requiredRestore = document.getElementById("requiredvictories");
     if (requiredRestore && st.required_victory_types)
       requiredRestore.value = String(st.required_victory_types);
+    if (tactics && st.tactics) {
+      const arenaSettings = {
+        tacticsfog: st.tactics.fog ? "1" : "0",
+        tacticsflag: st.tactics.flag ? "1" : "0",
+        tacticsturnlimit: String(st.tactics.turn_limit ?? st.max_turns ?? 100),
+        tacticscities: String(st.tactics.cities ?? 1),
+        tacticsproduction: String(st.tactics.production ?? 30),
+        tacticsgold: String(st.tactics.gold ?? 30),
+        tacticsturnspertech: String(st.tactics.turns_per_tech ?? 5),
+        tacticsbestof: String(st.tactics.best_of ?? 1),
+        tacticsuniqueunits: st.tactics.unique_units ? "1" : "0",
+      };
+      for (const [id, value] of Object.entries(arenaSettings)) {
+        const select = document.getElementById(id);
+        if (select && [...select.options].some(option => option.value === value))
+          select.value = value;
+      }
+    }
     syncRequiredVictoriesCap();
     activeSimulationSettingsKey = simulationSettingsKey(selectedSimulationSettings());
     applyQueuedSimulationSettings(st.next_game_settings);
@@ -6817,10 +6863,11 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     setTimeout(() => errEl.style.display = "none", 2500); }
   const w = document.getElementById("winner");
   const hasWinner = st.winner !== null && st.winner !== undefined;
+  const drawn = gameDrawn(st);
   // Being eliminated ends the game for the person at the keyboard even though
   // the world plays on. Say so, rather than leaving them on a live-looking
   // map they cannot touch.
-  const fallen = !SPEC && !hasWinner && st.players[0] && st.players[0].alive === false;
+  const fallen = !SPEC && !gameFinished(st) && st.players[0] && st.players[0].alive === false;
   if (fallen) {
     const signature = `fallen|${st.seed}|${st.turn}`;
     w.classList.add("visible");
@@ -6837,6 +6884,39 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
           title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>
       </div>`;
       armFinaleCountdown(signature);
+    }
+  }
+  if (drawn) {
+    if (SPEC && st.supervised)
+      waitForSupervisedSuccessor(st.server_instance, st.seed);
+    const signature = `${st.seed}|draw|${reportedTurn(st)}`;
+    w.style.setProperty("--winner-color", "#c8b887");
+    w.classList.add("visible");
+    if (w.dataset.signature !== signature) {
+      w.dataset.signature = signature;
+      w.innerHTML = `<div class="winner-content">
+        <span class="winner-kicker">Battle drawn</span>
+        <span class="winner-mark" aria-hidden="true">◇</span>
+        <strong class="winner-title">No side wins</strong>
+        <span class="winner-verdict">Turn limit reached</span>
+        <span class="winner-meta">Turn ${reportedTurn(st)} · Both sides survive</span>
+        ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
+        ${SPEC ? `` : `<button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
+          title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>`}
+      </div>`;
+      armFinaleCountdown(signature);
+    }
+    const respawn = document.getElementById("respawn");
+    if (respawn) {
+      if (st.paused) {
+        clearExhibitionCountdown();
+        respawn.textContent = "Final frame · exhibition paused";
+      } else if (st.restart_in !== undefined) {
+        syncExhibitionCountdown(st);
+      } else {
+        clearExhibitionCountdown();
+        respawn.textContent = "Preparing the next battle";
+      }
     }
   }
   if (hasWinner) {
@@ -6893,7 +6973,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         respawn.textContent = "Preparing the next world";
       }
     }
-  } else if (!fallen) {
+  } else if (!fallen && !drawn) {
     w.classList.remove("visible");
     w.style.removeProperty("--winner-color");
     if (w.dataset.signature) { delete w.dataset.signature; w.replaceChildren(); }
@@ -6919,7 +6999,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   // successor world painted nothing, and must not claim it did.
   if (st.turn !== undefined && st.seed !== undefined)
     paintedFrame = {seed:st.seed, turn:st.turn,
-                    finished:st.winner !== null && st.winner !== undefined,
+                    finished:gameFinished(st),
                     sequence:stateFrameSequence(st)};
   finishWorldTransition(st);
 }
@@ -7847,6 +7927,25 @@ function drawFeatureEffects(t, x, y) {
     cx.arc(x + 7, y + 5, 6.5, 3.5, 5.9);
     cx.stroke();
   }
+  const flagAt = state?.arena_flag;
+  if (flagAt && t.pos[0] === flagAt[0] && t.pos[1] === flagAt[1]) {
+    // The tile a capture-the-flag battle is decided on. Drawn last so the
+    // objective stays legible over any weather the field is having, in a
+    // gold no civilization wears: the flag belongs to whoever takes it.
+    cx.save();
+    cx.lineCap = "round";
+    cx.fillStyle = "#0d111788";
+    cx.beginPath(); cx.ellipse(x, y + 12, 9, 3.2, 0, 0, Math.PI * 2); cx.fill();
+    cx.strokeStyle = "#e9f4f5"; cx.lineWidth = 4;
+    cx.beginPath(); cx.moveTo(x - 5, y + 12); cx.lineTo(x - 5, y - 17); cx.stroke();
+    cx.strokeStyle = "#3a3020"; cx.lineWidth = 2.2;
+    cx.beginPath(); cx.moveTo(x - 5, y + 12); cx.lineTo(x - 5, y - 17); cx.stroke();
+    cx.fillStyle = "#ffd34e"; cx.strokeStyle = "#8a6b14"; cx.lineWidth = 1.2;
+    cx.beginPath();
+    cx.moveTo(x - 4, y - 17); cx.lineTo(x + 14, y - 12.5); cx.lineTo(x - 4, y - 8);
+    cx.closePath(); cx.fill(); cx.stroke();
+    cx.restore();
+  }
 }
 
 // Strategic terrain marks are map symbols rather than reduced illustrations.
@@ -8238,15 +8337,32 @@ function tri(ax, ay, bx, by, ccx, ccy) {
   cx.closePath(); cx.fill();
 }
 
-// Districts are colored discs — board-game tokens rather than tiny
+// Districts are colored squares — board-game tokens rather than tiny
 // architecture. The family color IS the identity (blue = science, purple =
 // culture, orange = industry), readable from survey zoom without a key, and
-// the disc is deliberately flat: solid color, thin outline, no lighting.
-// Completed buildings stand on the disc as dark bars; see `drawDistrictBars`.
-const DISTRICT_DISC_RADIUS = S * 0.56;  // π·(0.56·S)² ≈ 38% of a hex's area
+// the token is deliberately flat: solid color, thin outline, no lighting.
+// Completed buildings stand on the token as dark bars; see `drawDistrictBars`.
+//
+// Square, not round, because the other painted piece on a tile is a unit, and
+// a unit's command token is a circle (a capsule for civilians). Two colored
+// discs a tile apart are told apart only by reading their contents; a square
+// beside a circle is told apart by silhouette, at any zoom, before either
+// resolves. It is a true square rather than a projected one, for the same
+// reason the unit token is a true circle: these are pieces set on the board,
+// not paint applied to it. Sized to cover the ground the disc covered —
+// 4·h² ≈ π·(0.56·S)²·YS — so the swap changes shape, not weight.
+const DISTRICT_TOKEN_HALF = S * 0.48;  // 34.6px side ≈ 38% of a hex's area
+
+// The token's outline. Its corners are barely rounded — enough that it reads
+// as a printed counter rather than a raw fill, not enough to start rounding
+// back toward the unit tokens it exists to be distinct from.
+function districtTokenPath(x, y, half) {
+  cx.beginPath();
+  cx.roundRect(x - half, y - half, half * 2, half * 2, half * .16);
+}
 
 // Positive amounts mix a district color toward white, negative toward black.
-// The dark end is the ink that the disc's bars and glyphs share, so every
+// The dark end is the ink that the token's bars and glyphs share, so every
 // family's furniture is automatically a deep shade of its own color.
 function districtShade(color, amount) {
   const hex = color.length === 4
@@ -8306,7 +8422,7 @@ function districtBuildingsByTile() {
 }
 
 // A district's completed buildings are up to three bars standing on the lower
-// half of the disc — a tiny bar chart of how far the district has grown.
+// half of the token — a tiny bar chart of how far the district has grown.
 // Slots fill left to right in build order (cheapest first, matching the sort
 // in `districtBuildingsByTile`). A pillaged building's bar falls to a third
 // of its height, and the full bar's ghost outline stays standing over the
@@ -8337,9 +8453,9 @@ function drawDistrictBars(x, y, buildings, ink) {
 }
 
 // Nature and water infrastructure keep a small drawn symbol: a green or
-// water-blue disc alone doesn't say aqueduct, canal, dam, or kept woodland
+// water-blue token alone doesn't say aqueduct, canal, dam, or kept woodland
 // the way plain color says science or industry. The glyph sits on the upper
-// half of the disc, in the same dark ink as the building bars.
+// half of the token, in the same dark ink as the building bars.
 function drawDistrictGlyph(t, x, y, ink) {
   const fam = districtIconFamily(t.district);
   if (fam !== "water" && fam !== "preserve") return;
@@ -8348,8 +8464,10 @@ function drawDistrictGlyph(t, x, y, ink) {
   cx.strokeStyle = ink; cx.fillStyle = ink;
   cx.lineWidth = 1.9; cx.lineCap = "round"; cx.lineJoin = "round";
   if (fam === "preserve") {                        // one deliberate fir
+    // Crown at gy-9.6: the tallest thing any glyph draws, and the square token
+    // has a flat top edge where the disc's rim curved away from it.
     tri(x - 6.2, gy + 5.5, x, gy - 6.5, x + 6.2, gy + 5.5);
-    tri(x - 4.6, gy - 1.5, x, gy - 10.5, x + 4.6, gy - 1.5);
+    tri(x - 4.6, gy - 1.5, x, gy - 9.6, x + 4.6, gy - 1.5);
     cx.fillRect(x - 1.3, gy + 5.5, 2.6, 3.4);
   } else if (t.district === "canal") {             // straight banks, water between
     cx.beginPath();
@@ -8387,12 +8505,13 @@ function drawDistrictGlyph(t, x, y, ink) {
 
 // A district was a painted terrace with a landmark and miniature buildings,
 // which read beautifully up close and muddily from the survey zoom where a
-// spectator actually lives. It is now a solid color token: the disc names the
-// family, the bars count its completed buildings, and a hilltop district lets
-// the hill's crest show above its rim instead of flattening the terrain away.
+// spectator actually lives. It is now a solid color token: the square names
+// the family, the bars count its completed buildings, and a hilltop district
+// lets the hill's crest show above its rim instead of flattening the terrain
+// away.
 function drawDistrict(t, x, y, buildings = []) {
   const col = districtColor(t.district);
-  const rx = DISTRICT_DISC_RADIUS, ry = rx * YS;
+  const hx = DISTRICT_TOKEN_HALF, hy = hx;
   const ink = districtShade(col, -.55);
   cx.save();
   if (t.pillaged) cx.globalAlpha *= .6;
@@ -8402,14 +8521,14 @@ function drawDistrict(t, x, y, buildings = []) {
   if (t.hills) {
     cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
     cx.beginPath();
-    cx.ellipse(x - 8, y - ry + 3, 8, 7.5, 0, Math.PI, 0);
-    cx.ellipse(x + 7, y - ry + 4.5, 7.5, 6.5, 0, Math.PI, 0);
+    cx.ellipse(x - 8, y - hy + 3, 8, 7.5, 0, Math.PI, 0);
+    cx.ellipse(x + 7, y - hy + 4.5, 7.5, 6.5, 0, Math.PI, 0);
     cx.stroke();
   }
   // The token itself: one solid color and a thin ink outline, nothing else —
   // a printed counter on the board rather than a lit game piece.
   cx.fillStyle = col;
-  cx.beginPath(); cx.ellipse(x, y, rx, ry, 0, 0, 7); cx.fill();
+  districtTokenPath(x, y, hx); cx.fill();
   cx.strokeStyle = "rgba(13,18,24,.78)"; cx.lineWidth = 1.6; cx.stroke();
   drawDistrictGlyph(t, x, y, ink);
   drawDistrictBars(x, y, buildings, ink);
@@ -8417,7 +8536,7 @@ function drawDistrict(t, x, y, buildings = []) {
   if (t.pillaged) {
     cx.strokeStyle = "#d8443a"; cx.lineWidth = 2.4; cx.lineCap = "round";
     cx.beginPath();
-    cx.moveTo(x - rx * .7, y + ry * .7); cx.lineTo(x + rx * .7, y - ry * .7);
+    cx.moveTo(x - hx * .7, y + hy * .7); cx.lineTo(x + hx * .7, y - hy * .7);
     cx.stroke();
     cx.lineCap = "butt";
   }
@@ -8951,24 +9070,105 @@ const BUILT_WONDER_PAINTER = {
 
 // Draw one World Wonder at map or badge scale. Returns false only for an
 // unknown (for example, modded) id, so callers retain the generic fallback.
+const WORLD_WONDER_SIZE_SCALE = 1.6;
+const WORLD_WONDER_OUTLINE_COLOR = "#f4d34f";
+const WORLD_WONDER_OUTLINE_RADIUS = 1.05;
+const WORLD_WONDER_SPRITE_SIZE = 192;
+const WORLD_WONDER_SPRITE_CENTER = WORLD_WONDER_SPRITE_SIZE / 2;
+const WORLD_WONDER_SPRITE_CACHE = new Map();
+
+// Paint the code-native silhouette once into a transparent sprite, expand its
+// alpha by a pixel or two, and then put the original art back on top. A canvas
+// shadow would ring every pillar and stair separately; this keeps the yellow
+// mark around the wonder as one small, readable edge.
+function worldWonderOutlinedSprite(wonder, painter, art, k) {
+  const cacheKey = `${wonder}:${k}`;
+  const cached = WORLD_WONDER_SPRITE_CACHE.get(cacheKey);
+  if (cached) return cached;
+
+  const makeCanvas = () => {
+    const surface = document.createElement("canvas");
+    surface.width = WORLD_WONDER_SPRITE_SIZE;
+    surface.height = WORLD_WONDER_SPRITE_SIZE;
+    return surface;
+  };
+  const artCanvas = makeCanvas();
+  const artContext = artCanvas.getContext("2d");
+  artContext.setTransform(1, 0, 0, 1, 0, 0);
+  artContext.clearRect(0, 0, WORLD_WONDER_SPRITE_SIZE, WORLD_WONDER_SPRITE_SIZE);
+  artContext.globalAlpha = 1;
+  artContext.globalCompositeOperation = "source-over";
+  artContext.shadowColor = "transparent";
+  artContext.shadowBlur = 0;
+  artContext.shadowOffsetX = 0;
+  artContext.shadowOffsetY = 0;
+
+  // The painters share the live context through `cx`; swap it only for this
+  // synchronous call, then restore it even if a future painter throws.
+  const mainContext = cx;
+  cx = artContext;
+  try {
+    artContext.lineJoin = "round";
+    painter(WORLD_WONDER_SPRITE_CENTER,
+            WORLD_WONDER_SPRITE_CENTER + 6 * k, k, art);
+  } finally {
+    cx = mainContext;
+  }
+
+  const maskCanvas = makeCanvas();
+  const maskContext = maskCanvas.getContext("2d");
+  maskContext.drawImage(artCanvas, 0, 0);
+  maskContext.globalCompositeOperation = "source-in";
+  maskContext.fillStyle = WORLD_WONDER_OUTLINE_COLOR;
+  maskContext.fillRect(0, 0, WORLD_WONDER_SPRITE_SIZE, WORLD_WONDER_SPRITE_SIZE);
+  maskContext.globalCompositeOperation = "source-over";
+
+  const outlinedCanvas = makeCanvas();
+  const outlinedContext = outlinedCanvas.getContext("2d");
+  const radius = Math.max(.8, WORLD_WONDER_OUTLINE_RADIUS * k / ((S / 31) * .72));
+  const steps = 12;
+  for (let i = 0; i < steps; i++) {
+    const angle = i * Math.PI * 2 / steps;
+    outlinedContext.drawImage(maskCanvas, Math.cos(angle) * radius,
+                              Math.sin(angle) * radius);
+  }
+  outlinedContext.drawImage(artCanvas, 0, 0);
+  WORLD_WONDER_SPRITE_CACHE.set(cacheKey, outlinedCanvas);
+  return outlinedCanvas;
+}
+
 function drawWorldWonder(wonder, x, y, scale = 1) {
   const art = WORLD_WONDER_ART[wonder];
   const painter = art && BUILT_WONDER_PAINTER[art.form];
   if (!painter) return false;
-  const k = (S / 31) * 0.72 * scale;
-  cx.save();
-  cx.lineJoin = "round";
+  const visualScale = scale * WORLD_WONDER_SIZE_SCALE;
+  const k = (S / 31) * 0.72 * visualScale;
+  const mainContext = cx;
+  mainContext.save();
+  mainContext.lineJoin = "round";
   // The glow is the "a wonder is here" cue the compact monument carried, and
   // it has to survive the silhouette changing per wonder.
-  const glow = cx.createRadialGradient(x, y - 3 * scale, Math.max(.5, scale), x, y - 3 * scale, 23 * scale);
+  const glow = mainContext.createRadialGradient(x, y - 3 * visualScale,
+                                                Math.max(.5, visualScale),
+                                                x, y - 3 * visualScale,
+                                                23 * visualScale);
   glow.addColorStop(0, "rgba(255,222,120,.4)");
   glow.addColorStop(1, "rgba(255,222,120,0)");
-  cx.fillStyle = glow;
-  cx.beginPath(); cx.arc(x, y - 3 * scale, 23 * scale, 0, 7); cx.fill();
-  cx.fillStyle = "rgba(0,0,0,.3)";
-  cx.beginPath(); cx.ellipse(x, y + 7 * k, 12 * k, 4 * k, 0, 0, 7); cx.fill();
-  painter(x, y + 6 * k, k, art);
-  cx.restore();
+  mainContext.fillStyle = glow;
+  mainContext.beginPath();
+  mainContext.arc(x, y - 3 * visualScale, 23 * visualScale, 0, 7);
+  mainContext.fill();
+  mainContext.fillStyle = "rgba(0,0,0,.3)";
+  mainContext.beginPath();
+  mainContext.ellipse(x, y + 7 * k, 12 * k, 4 * k, 0, 0, 7);
+  mainContext.fill();
+  mainContext.restore();
+
+  const sprite = worldWonderOutlinedSprite(wonder, painter, art, k);
+  mainContext.save();
+  mainContext.drawImage(sprite, x - WORLD_WONDER_SPRITE_CENTER,
+                         y - WORLD_WONDER_SPRITE_CENTER);
+  mainContext.restore();
   return true;
 }
 
@@ -8977,7 +9177,8 @@ function drawWorldWonder(wonder, x, y, scale = 1) {
 // as a scale-aware fallback, but never use it for a shipped World Wonder.
 function drawWonder(x, y, scale = 1) {
   cx.save();
-  cx.translate(x, y); cx.scale(scale, scale);
+  const visualScale = scale * WORLD_WONDER_SIZE_SCALE;
+  cx.translate(x, y); cx.scale(visualScale, visualScale);
   x = 0; y = 0;
   cx.lineJoin = "round";
   const glow = cx.createRadialGradient(x, y - 3, 1, x, y - 3, 23);
@@ -8987,6 +9188,8 @@ function drawWonder(x, y, scale = 1) {
   cx.beginPath(); cx.arc(x, y - 3, 23, 0, 7); cx.fill();
   cx.fillStyle = "rgba(0,0,0,.3)";
   cx.beginPath(); cx.ellipse(x, y + 8, 12, 4, 0, 0, 7); cx.fill();
+  cx.shadowColor = WORLD_WONDER_OUTLINE_COLOR;
+  cx.shadowBlur = 1.1;
   // Pale gold on pale ground is no contrast at all, and a wonder is the one
   // thing on the map that should never be missed: dark outline throughout, and
   // a lit face against a shadowed one so it reads as carved stone.
@@ -16892,9 +17095,11 @@ function drawEmpireDistrictBadge(x, y, tile, scale = 1) {
   cx.save(); cx.textAlign = "center"; cx.textBaseline = "middle";
   if (tile.wonder) drawWorldWonderIcon(tile.wonder, x, y + 3.5 * scale, .45 * scale);
   if (district) {
-    const radius = 7.5 * scale;
+    // The lens badge is the map token shrunk to a label: the same square,
+    // covering the same ink as the 7.5px disc it replaces (7.5·√π/2).
+    const half = 6.6 * scale;
     cx.fillStyle = districtColor(district); cx.strokeStyle = "#101716"; cx.lineWidth = 2 * scale;
-    cx.beginPath(); cx.arc(x, y, radius, 0, Math.PI * 2); cx.fill(); cx.stroke();
+    districtTokenPath(x, y, half); cx.fill(); cx.stroke();
     const label = districtAdjacencyLabel(tile);
     if (label) {
       cx.font = `900 ${8 * scale}px Inter,sans-serif`; cx.lineWidth = 3 * scale;
@@ -19803,10 +20008,20 @@ function victoryMetric(player, victory) {
   return player.victories?.[victory] || { progress: 0 };
 }
 
-// The turn a world is reported on. A score victory is the turn limit's own
-// tiebreak, and the count that settles it is taken on the wrap out of the
-// final turn, so a finished 250-turn game reads turn 250 rather than the turn
-// 251 nobody plays. A live world is always on the turn it is playing.
+function gameFinished(st = state) {
+  // `finished` is authoritative for new servers because a draw has no winner;
+  // the winner fallback keeps this client compatible with older servers.
+  return st?.finished === true || (st?.winner !== null && st?.winner !== undefined);
+}
+function gameDrawn(st = state) {
+  return st?.draw === true || (gameFinished(st) && st?.victory_type === "draw" &&
+    (st?.winner === null || st?.winner === undefined));
+}
+
+// The turn a world is reported on. A score victory or Tactics draw is settled
+// on the wrap out of the final turn, so a finished 250-turn game reads turn
+// 250 rather than the turn 251 nobody plays. A live world is always on the
+// turn it is playing.
 function reportedTurn(st) {
   const world = st || state;
   return world?.victory_turn ?? world?.turn;
@@ -22398,7 +22613,11 @@ function titleCase(n) { return (n || "").replaceAll("_", " ").replace(/\b\w/g, c
 // suffix. Kept in one place because the finish screen, the play-on plate and
 // the session's run list all have to say the same thing about the same game.
 function victoryVerdict(type, label) {
+  if (type === "draw") return "Draw";
   if (type === "mercy") return label || "Mercy Rule";
+  // The flag verdict names the deed rather than a lane: a capture-the-flag
+  // battle is not won by "a flag victory", the flag was captured.
+  if (type === "flag") return "Captured the Flag";
   return titleCase(type || "score") + " victory";
 }
 function researchCard(kind, name, progress, total, perTurn, boosted) {
@@ -26938,7 +27157,7 @@ function nextAction() {
 // A blocker is {kind, icon, label, detail, tone, act}. `act` takes the player
 // to the decision; it never makes it for them.
 function turnBlockers() {
-  if (!state || SPEC || state.winner !== null && state.winner !== undefined) return [];
+  if (!state || SPEC || gameFinished(state)) return [];
   const me = state.me, out = [];
   const legal = type => state.legal_actions.filter(a => a.type === type);
   if (legal("keep_city").length || legal("raze_city").length || legal("liberate_city").length)
@@ -27107,25 +27326,25 @@ function drawTurnLoop() {
   // the world plays on without you and the engine answers `end_turn` with
   // "not your turn". Leaving the button live would earn a red error toast
   // from the only lit control on the screen.
-  const won = state.winner !== null && state.winner !== undefined;
+  const over = gameFinished(state);
   const eliminated = state.players[0] && state.players[0].alive === false;
-  button.disabled = won || eliminated || autoplaying;
+  button.disabled = over || eliminated || autoplaying;
   // Auto-play holds the seat. Say so on the button rather than leaving a lit
   // control that quietly does nothing while an agent plays.
-  if (autoplaying && !won && !eliminated) {
+  if (autoplaying && !over && !eliminated) {
     button.classList.remove("blocked");
     button.innerHTML = `An agent is playing<span class="endturn-hint">Stop auto-play to take the seat back</span>`;
     button.title = "Your seat is on loan until auto-play finishes or is stopped.";
     return;
   }
-  if (won || eliminated) {
+  if (over || eliminated) {
     button.classList.remove("blocked");
-    button.innerHTML = eliminated && !won
+    button.innerHTML = eliminated && !over
       ? `Your civilization has fallen<span class="endturn-hint">Start another below</span>`
       : `The game is over<span class="endturn-hint">Start another below</span>`;
-    button.title = eliminated && !won
+    button.title = eliminated && !over
       ? "Your last city is gone. Start a new game from Game setup."
-      : "This world has its victor. Start a new game from Game setup.";
+      : "This world has reached its result. Start a new game from Game setup.";
     return;
   }
   // The capture modal disables the button outright; leave that alone.
@@ -27143,7 +27362,7 @@ function advanceTurn(force = false) {
   // The seat is on loan while auto-play runs; taking it back mid-turn would
   // race a batch the agent is already playing.
   if (autoplaying) return;
-  if (state.winner !== null && state.winner !== undefined) return;
+  if (gameFinished(state)) return;
   if (state.players[0] && state.players[0].alive === false) return;
   const blockers = turnBlockers();
   const next = blockers.find(b => b.kind !== "capture");
@@ -27259,7 +27478,9 @@ function setWorldPanInertia(on) {
 }
 function syncFlatMapWrapControls() {
   const group = document.getElementById("flat-map-wrap-settings");
-  if (group) group.hidden = !!state && planetMap();
+  // A globe follows its own shape and an arena its four walls, so neither has
+  // anything for these two to decide.
+  if (group) group.hidden = !!state && (planetMap() || worldIsWalled());
   const xBox = document.getElementById("wrapxchk");
   const yBox = document.getElementById("wrapychk");
   if (xBox) xBox.checked = FLAT_MAP_WRAP_X;
@@ -27276,7 +27497,7 @@ function setFlatMapWrap(axis, on) {
     localStorage.setItem("civvis-flat-map-wrap-y", enabled ? "1" : "0");
   }
   syncFlatMapWrapControls();
-  if (!state || planetMap()) return;
+  if (!state || planetMap() || worldIsWalled()) return;
   cameraFlight = null; cameraZoom = null; clearCameraInertia();
   // A camera can be several copies away after a long wrapped pan. When that
   // axis becomes bounded, carry it to the equivalent place in the base copy
@@ -27778,7 +27999,10 @@ document.getElementById("custom-leader-table").addEventListener("change", event 
   if (elo && selected)
     elo.innerHTML = customEloOptions(event.target.value, selected.dataset.leader || "", "");
 });
-document.getElementById("maptype").addEventListener("change", syncEarthShape);
+document.getElementById("maptype").addEventListener("change", () => {
+  syncEarthShape();
+  if (readSetting("gamemode") === "tactics") syncBattlefieldSizes(true);
+});
 // Bound on the select itself, so it has re-fitted the splits to the new size
 // before the panel's own delegated listener stages what is now selected.
 document.getElementById("np").addEventListener("change", () => {
@@ -27966,13 +28190,14 @@ function drawCiv6Status() {
 }
 function selectedSimulationSettings() {
   const humanPlayers = readSetting("humanplayers");
-  // In Tactics the size control holds a battlefield id rather than a seat
-  // count: the arena always seats two sides, and its dimensions travel
+  // In Tactics the size control holds a map-size id rather than a seat count:
+  // every Tactics map seats two sides, and its dimensions travel
   // explicitly because no seat count implies them.
-  const battlefield = humanPlayers === "civ6" ? null : battlefieldSize(readSetting("np"));
+  const tactics = humanPlayers !== "civ6" && readSetting("gamemode") === "tactics";
+  const battlefield = tactics ? battlefieldSize(readSetting("np")) : null;
   const np = battlefield ? 2 : +readSetting("np");
   const mapScript = readSetting("maptype");
-  const mapTopology = battlefield ? "flat" : readSetting("mapshape");
+  const mapTopology = battlefield ? (battlefield.topology || "flat") : readSetting("mapshape");
   const mapPoles = readSetting("mappoles");
   const gameSpeed = readSetting("gamespeed");
   const leaderPool = readSetting("leaderpool");
@@ -28015,9 +28240,13 @@ function selectedSimulationSettings() {
           victory_conditions: victoryConditions,
           mercy_rule: mercyRule === "" ? null : Number(mercyRule),
           required_victory_types: requiredVictories,
-          // The arena economy travels always, not only in Tactics: the server
-          // reads it on a battlefield and carries it everywhere else, so a
-          // world is unaffected and a mode switch needs no second request.
+          // The arena's settings travel always, not only in Tactics: the
+          // server reads them on a battlefield and carries them everywhere
+          // else, so a world is unaffected and a mode switch needs no second
+          // request.
+          tactics_fog: readSetting("tacticsfog") === "1",
+          tactics_flag: readSetting("tacticsflag") === "1",
+          tactics_turn_limit: Number(readSetting("tacticsturnlimit")) || 100,
           tactics_cities: Number(readSetting("tacticscities")) || 0,
           tactics_production: Number(readSetting("tacticsproduction")) || 0,
           tactics_gold: Number(readSetting("tacticsgold")) || 0,
@@ -28054,7 +28283,7 @@ function selectedSimulationSummary(settings = null) {
     : document.getElementById("humanplayers").value === "ai_sim";
   const civ6 = settings ? settings.mode === "civ6"
     : document.getElementById("humanplayers").value === "civ6";
-  const tactics = settings ? settings.map_script === "battlefield"
+  const tactics = settings ? isBattlefieldMapScript(settings.map_script)
     : readSetting("gamemode") === "tactics";
   const mode = civ6 ? "Firaxis Civ 6"
     : spectate === true ? "AI simulation" : "Single player";
@@ -28105,11 +28334,12 @@ function applyQueuedSimulationSettings(settings) {
   // The staged map says which game mode the queue describes: a battlefield
   // is the Tactics mode's arena, and the size control reads back as the
   // battlefield whose dimensions the queue carries.
-  const tactics = settings.map === "battlefield";
+  const tactics = isBattlefieldMapScript(settings.map);
   document.getElementById("gamemode").value = tactics ? "tactics" : "civ";
   syncSetupMode();
   if (tactics) {
     const size = battlefieldSizes().find(size =>
+      (!size.script || size.script === settings.map) &&
       size.width === settings.width && size.height === settings.height);
     if (size) document.getElementById("np").value = size.id;
   } else {
@@ -28120,6 +28350,7 @@ function applyQueuedSimulationSettings(settings) {
   syncTeams();
   document.getElementById("teams").value = teamRuleFromArray(settings.teams);
   document.getElementById("maptype").value = settings.map;
+  if (tactics) syncBattlefieldSizes(true);
   if (settings.shape) document.getElementById("mapshape").value = settings.shape;
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
   syncEarthShape();
@@ -28276,8 +28507,14 @@ function battlefieldScripts() {
 function battlefieldSizes() {
   return (RULES && Array.isArray(RULES.battlefield_sizes)) ? RULES.battlefield_sizes : [];
 }
+function battlefieldSizesForScript(script) {
+  return battlefieldSizes().filter(size => !size.script || size.script === script);
+}
 function battlefieldSize(id) {
   return battlefieldSizes().find(size => size.id === id) || null;
+}
+function isBattlefieldMapScript(id) {
+  return id === "battlefield" || battlefieldScripts().some(script => script.id === id);
 }
 function syncMapRoster(civ6, tactics) {
   const select = document.getElementById("maptype");
@@ -28319,10 +28556,10 @@ function syncMapRoster(civ6, tactics) {
   syncEarthShape();
 }
 // An arena is fought over, not converted or researched to death: entering
-// Tactics points the victory checkboxes at Domination and Score — still
-// ordinary checkboxes anyone can override — and leaving it puts back
-// whatever was chosen for the Civ game. Its two state variables are declared
-// with the other mode state, before the wiring that calls this during load.
+// Tactics has one victory lane: last army standing through Domination. Its
+// clock is a draw deadline, not Score. Leaving it puts back whatever was
+// chosen for the Civ game. Its two state variables are declared with the
+// other mode state, before the wiring that calls this during load.
 function syncBattlefieldVictories(tactics) {
   const roster = tactics ? "tactics" : "civvis";
   if (roster === victoryRoster) return;
@@ -28332,32 +28569,38 @@ function syncBattlefieldVictories(tactics) {
     .filter(([, box]) => box);
   if (tactics) {
     civVictoryChoices = new Set(boxes.filter(([, box]) => box.checked).map(([id]) => id));
-    for (const [id, box] of boxes) box.checked = id === "domination" || id === "score";
+    for (const [id, box] of boxes) box.checked = id === "domination";
   } else if (civVictoryChoices) {
     for (const [id, box] of boxes) box.checked = civVictoryChoices.has(id);
   }
   syncRequiredVictoriesCap();
 }
-// The world-size control is the battlefield-size control in Tactics: the same
-// select carrying a different roster, exactly as the map control does for
-// Civ 6 above. A battlefield seats exactly two sides, so the option says so
-// and the seat-dependent controls re-fit when the roster moves either way.
+// The world-size control is the Tactics-map-size control in Tactics: the same
+// select carries a different roster, exactly as the map control does for Civ 6
+// above. Every Tactics map seats exactly two sides, so the option says so and
+// the seat-dependent controls re-fit when the roster moves either way.
 function syncBattlefieldSizes(tactics) {
   const sizes = document.getElementById("np");
   if (!sizes) return;
   if (tactics && !battlefieldSizes().length) return;
   const roster = tactics ? "tactics" : "civvis";
+  const sameRoster = (sizes.dataset.roster || "civvis") === roster;
   if (sizes.dataset.roster !== "tactics") civvisSizeOptions = sizes.innerHTML;
-  if ((sizes.dataset.roster || "civvis") === roster) return;
-  const chosen = sizes.value;
   if (tactics) {
-    sizes.dataset.civvisChoice = chosen;
-    sizes.innerHTML = battlefieldSizes().map(size =>
+    if (!sameRoster) sizes.dataset.civvisChoice = sizes.value;
+    const script = document.getElementById("maptype")?.value;
+    const available = battlefieldSizesForScript(script);
+    if (!available.length) return;
+    const chosen = sameRoster ? sizes.value : sizes.dataset.tacticsChoice;
+    sizes.innerHTML = available.map(size =>
       `<option value="${escapeAttr(size.id)}">${size.name} · 2 civs</option>`).join("");
-    const carried = sizes.dataset.tacticsChoice;
-    if (carried && [...sizes.options].some(option => option.value === carried))
-      sizes.value = carried;
+    const carried = chosen && available.some(size => size.id === chosen)
+      ? chosen : available[0].id;
+    sizes.value = carried;
+    sizes.dataset.tacticsChoice = carried;
   } else {
+    if (sameRoster) return;
+    const chosen = sizes.value;
     sizes.dataset.tacticsChoice = chosen;
     sizes.innerHTML = civvisSizeOptions;
     const restored = sizes.dataset.civvisChoice;
@@ -28832,11 +29075,22 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   inertia.checked = WORLD_PAN_INERTIA;
   inertia.onchange = () => setWorldPanInertia(inertia.checked);
 }
+// These two sit in the setup panel's advanced drawer, beside the settings that
+// do describe the next game. They do not: how a flat chart is unrolled is the
+// viewer's own preference and applies to the world already on screen. So each
+// stops its change event at the box rather than letting `#newgame-options`'s
+// delegated listener stage an otherwise identical simulation — the same rule
+// the saved mod pack follows.
 {
   const wrapXBox = document.getElementById("wrapxchk");
   const wrapYBox = document.getElementById("wrapychk");
-  wrapXBox.onchange = () => setFlatMapWrap("x", wrapXBox.checked);
-  wrapYBox.onchange = () => setFlatMapWrap("y", wrapYBox.checked);
+  const keepInTheViewer = event => event.stopPropagation();
+  wrapXBox.onchange = event => {
+    setFlatMapWrap("x", wrapXBox.checked); keepInTheViewer(event);
+  };
+  wrapYBox.onchange = event => {
+    setFlatMapWrap("y", wrapYBox.checked); keepInTheViewer(event);
+  };
   syncFlatMapWrapControls();
 }
 {

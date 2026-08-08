@@ -19,7 +19,8 @@ use civvis::ai::{run_game, Ai};
 use civvis::elo::{builtin_ai, BUILTIN_AIS, EVAL_ONLY_AIS};
 use civvis::game::Game;
 use civvis::parallel::{default_jobs, map};
-use civvis::skirmish::{matched_skirmish, MatchedSkirmish, SkirmishSetup};
+use civvis::skirmish::{matched_skirmish, MatchedSkirmish, SkirmishLedger, SkirmishSetup};
+use std::collections::BTreeMap;
 use std::time::Instant;
 
 fn number(args: &[String], key: &str, default: i64) -> i64 {
@@ -210,6 +211,43 @@ fn measure_cost(args: &[String], name: &str) {
     );
 }
 
+/// Print the evidence the aggregate exchange score cannot provide: what each
+/// kind normally returned over one observed life, beside the Production that
+/// life represented. Completed and surviving units are both included; a
+/// survivor's life ends at the scenario boundary for this measurement.
+fn print_unit_lifetimes<'a>(
+    name: &str,
+    ledgers: impl Iterator<Item = &'a SkirmishLedger>,
+) {
+    let mut totals = BTreeMap::new();
+    for ledger in ledgers {
+        for (kind, row) in &ledger.unit_lifetimes {
+            let total = totals
+                .entry(kind.clone())
+                .or_insert_with(civvis::game::UnitLifetimeStats::default);
+            total.units = total.units.saturating_add(row.units);
+            total.damage_dealt = total.damage_dealt.saturating_add(row.damage_dealt);
+            total.production_cost += row.production_cost;
+        }
+    }
+
+    println!();
+    println!("{name} unit lifetime return (enemy-unit HP only):");
+    println!(
+        "  {:<22} {:>8} {:>12} {:>13} {:>13}",
+        "unit", "lives", "prod / unit", "damage / life", "damage / prod"
+    );
+    for (kind, row) in totals {
+        println!(
+            "  {kind:<22} {:>8} {:>12.1} {:>13.1} {:>13.3}",
+            row.units,
+            row.average_production_cost().unwrap_or(0.0),
+            row.average_damage().unwrap_or(0.0),
+            row.damage_per_production().unwrap_or(0.0),
+        );
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let name_a = text(&args, "--a", "advanced_joint_tactics");
@@ -330,6 +368,8 @@ fn main() {
         ratio(a_kills, a_losses),
         ratio(b_kills, b_losses)
     );
+    print_unit_lifetimes(&name_a, played.iter().map(|row| &row.a));
+    print_unit_lifetimes(&name_b, played.iter().map(|row| &row.b));
     println!();
     println!("paired material swing, {name_a} less {name_b}, one number per seed:");
     println!("  mean                 {mean:+.2} +/- {stderr:.2} (standard error)");

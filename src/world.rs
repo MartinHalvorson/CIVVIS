@@ -599,6 +599,19 @@ impl WorldMap {
         self.globe.as_deref()
     }
 
+    /// Whether travelling east far enough comes back round to where it began.
+    ///
+    /// A cylinder's two longitudes are one longitude and a globe closes on
+    /// itself through its own geometry; a bounded arena has a wall there
+    /// instead, and is the only shape that answers `false`. The browser needs
+    /// this to know whether the chart it draws may be unrolled at all, so it
+    /// is read off the built map rather than off the setup — a loaded save
+    /// answers too.
+    #[inline]
+    pub fn wraps_east_west(&self) -> bool {
+        self.sphere().is_some() || self.topology.wraps_east_west()
+    }
+
     #[inline]
     pub fn get(&self, pos: Pos) -> Option<&Tile> {
         self.tiles.get(&pos)

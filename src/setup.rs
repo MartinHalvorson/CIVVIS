@@ -398,6 +398,7 @@ pub enum MapScript {
     Islands,
     WaterWorld,
     Battlefield,
+    TacticsPlanet,
 }
 
 impl MapScript {
@@ -418,17 +419,24 @@ impl MapScript {
             Self::Islands => "islands",
             Self::WaterWorld => "water_world",
             Self::Battlefield => "battlefield",
+            Self::TacticsPlanet => "tactics_planet",
         }
     }
 
-    /// Whether the script draws the Tactics battlefield: a small bounded
-    /// arena for unit combat rather than a world to settle. The battlefield
-    /// is flat-only (a globe has no opposite corners), keeps every terrain
-    /// feature that shapes a fight — mountains, rivers, woods, water — and
-    /// places no resources, tribal villages, natural wonders, or
-    /// city-states, because nothing on it exists to be developed.
+    /// Whether the script draws a Tactics map rather than a Civ world. Tactics
+    /// has both a bounded arena and a small globe, but both start with two
+    /// cities and armies, skip the development layer, and use the same combat
+    /// rules.
     pub const fn is_battlefield(self) -> bool {
-        matches!(self, Self::Battlefield)
+        matches!(self, Self::Battlefield | Self::TacticsPlanet)
+    }
+
+    /// Whether this Tactics map is the small globe rather than the bounded
+    /// arena. Its topology is allowed to remain Planet and its land generator
+    /// keeps the ordinary world terrain instead of painting arena ground over
+    /// it.
+    pub const fn is_planet_battlefield(self) -> bool {
+        matches!(self, Self::TacticsPlanet)
     }
 
     /// Whether the script draws a fixed world instead of rolling a new one.
@@ -485,6 +493,10 @@ impl MapScript {
             // cylinder's east-west wrap into a bounded arena, plus a pond or
             // two so rivers have somewhere to reach the sea.
             Self::Battlefield => 88,
+            // A compact Pangaea-style landmass on a globe. The Tactics size
+            // is about half a Duel world, so this leaves a small land world
+            // with enough open coastline for two cities on opposite sides.
+            Self::TacticsPlanet => 42,
         }
     }
 
@@ -665,10 +677,10 @@ pub struct MapScriptSpec {
     pub script: MapScript,
 }
 
-/// The world types in the order [`MapScript`] declares them. The Battlefield
-/// sits last because it is not a world at all: the Tactics game mode's small
-/// bounded arena, offered by the lobby only when that mode is chosen.
-pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 15] = [
+/// The world types in the order [`MapScript`] declares them. The Tactics maps
+/// sit last because they are not Civ worlds: the game mode offers them only
+/// when Tactics is chosen.
+pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 16] = [
     MapScriptSpec {
         id: "land_only",
         name: "Land Only",
@@ -759,6 +771,12 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 15] = [
         description: "A small bounded arena for tactical unit combat: open ground shaped by mountains, rivers, woods and water, with no resources and nothing to develop.",
         script: MapScript::Battlefield,
     },
+    MapScriptSpec {
+        id: "tactics_planet",
+        name: "Planet",
+        description: "A small land planet for Tactics: one compact continent on a globe about half the size of Duel, with one city for each side on opposite shores.",
+        script: MapScript::TacticsPlanet,
+    },
 ];
 
 /// The world types a lobby offers for the Civ game mode: every script but the
@@ -768,8 +786,8 @@ pub fn world_map_scripts() -> Vec<&'static MapScriptSpec> {
     CIV6_MAP_SCRIPTS.iter().filter(|spec| !spec.script.is_battlefield()).collect()
 }
 
-/// The Tactics mode's map menu: today just the battlefield, published as a
-/// list so a second arena can arrive without a protocol change.
+/// The Tactics mode's map menu, published separately from the Civ world list
+/// so arenas and future tactical worlds can grow without a protocol change.
 pub fn battlefield_map_scripts() -> Vec<&'static MapScriptSpec> {
     CIV6_MAP_SCRIPTS.iter().filter(|spec| spec.script.is_battlefield()).collect()
 }
@@ -842,26 +860,40 @@ impl GameMode {
     }
 }
 
-/// A Tactics battlefield size. The arena is a bounded rectangle — four walls,
-/// no wrap — so its width is its fighting ground and the advertised name is
-/// simply its dimensions. (It carried an extra column of sea until the arena
-/// got a topology of its own: sealing a cylinder's seam with water still left
-/// an archer on one bank in range of the other.)
+/// A Tactics map size. Bounded arenas use their dimensions directly; the
+/// Planet entry uses the same width/height fields as the globe storage shape,
+/// and carries its script and topology so the lobby can send one complete
+/// choice without rebuilding the mapping in JavaScript.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct BattlefieldSize {
     pub id: &'static str,
     pub name: &'static str,
     pub width: i32,
     pub height: i32,
+    pub script: MapScript,
+    pub topology: MapTopology,
 }
 
-/// The battlefields the Tactics mode offers, smallest first. Both sides are
-/// seated at opposite ends of the long axis, facing each other across the
-/// field.
-pub const BATTLEFIELD_SIZES: [BattlefieldSize; 3] = [
-    BattlefieldSize { id: "10x10", name: "Square · 10×10", width: 10, height: 10 },
-    BattlefieldSize { id: "10x20", name: "March · 10×20", width: 10, height: 20 },
-    BattlefieldSize { id: "20x20", name: "Field · 20×20", width: 20, height: 20 },
+/// The Tactics maps the setup menu offers, smallest first. The arena entries
+/// are bounded fields; the final entry is a small globe with a compact land
+/// world and opposite-side starts.
+pub const BATTLEFIELD_SIZES: [BattlefieldSize; 4] = [
+    BattlefieldSize {
+        id: "10x10", name: "Square · 10×10", width: 10, height: 10,
+        script: MapScript::Battlefield, topology: MapTopology::Flat,
+    },
+    BattlefieldSize {
+        id: "10x20", name: "March · 10×20", width: 10, height: 20,
+        script: MapScript::Battlefield, topology: MapTopology::Flat,
+    },
+    BattlefieldSize {
+        id: "20x20", name: "Field · 20×20", width: 20, height: 20,
+        script: MapScript::Battlefield, topology: MapTopology::Flat,
+    },
+    BattlefieldSize {
+        id: "planet", name: "Planet · small land world", width: 40, height: 18,
+        script: MapScript::TacticsPlanet, topology: MapTopology::Planet,
+    },
 ];
 
 /// The era a game opens in when a sweep asked for a random one.
@@ -946,6 +978,12 @@ pub struct TacticsRules {
     /// era. 0 stops research, freezing both sides at their starting era's
     /// units.
     pub turns_per_tech: u32,
+    /// Turns each battle may run before neither side wins and the battle is
+    /// recorded as a draw. The setup surface offers the four values in
+    /// [`Self::TURN_LIMITS`]; old saves predate the choice and load the stock
+    /// 100-turn battle.
+    #[serde(default = "default_tactics_turn_limit")]
+    pub turn_limit: u32,
     /// Battles the two civilizations fight before a match is decided. 1 is a
     /// single battle; any higher odd number is a series, taken by the first
     /// side to win more than half of it.
@@ -964,10 +1002,38 @@ pub struct TacticsRules {
     /// test of the two civilizations as well.
     #[serde(default)]
     pub unique_units: bool,
+    /// Whether the field is fogged.
+    ///
+    /// Off — the default, and what an arena has always done — both commanders
+    /// see all of it. A battle is meant to be a test of what each side does
+    /// with what is in front of it rather than of who finds the other first,
+    /// and the two armies are set down out of each other's sight with no city
+    /// to march on and no border to trespass: measured, a fogged arena had
+    /// both sides stand in their own deployment bands until the clock decided
+    /// it. On, each side sees only what its own units can, and finding the
+    /// enemy is part of the battle. Either way the rule is symmetric, so it is
+    /// a shape the match is given rather than a handicap one side is dealt.
+    #[serde(default)]
+    pub fog: bool,
+    /// Whether the battle is decided by a flag instead of by cities.
+    ///
+    /// On, a single flag is planted on the ground the two sides reach as
+    /// evenly as the field allows, and the battle is won the moment either
+    /// side's unit takes its tile. There are no cities at all in this shape —
+    /// the flag is the one objective, so `cities` is forced to 0 — and the
+    /// clock can still run out first, which stays a draw. Off — the default —
+    /// a battle is decided the way an arena always has been: by the armies,
+    /// and by the city each side holds if the economy grants one.
+    #[serde(default)]
+    pub flag: bool,
 }
 
 fn one_battle() -> u32 {
     1
+}
+
+fn default_tactics_turn_limit() -> u32 {
+    100
 }
 
 impl TacticsRules {
@@ -980,19 +1046,30 @@ impl TacticsRules {
     /// The longest series offered. Beyond this a match is a tournament, and
     /// `civvis tournament` is the instrument for that.
     pub const MAX_BEST_OF: u32 = 21;
+    /// Battle clocks offered by every Tactics setup surface, shortest first.
+    pub const TURN_LIMITS: [u32; 4] = [50, 100, 150, 200];
 
     /// Clamp a requested economy to what the mode can actually play.
     pub fn sanitized(self) -> Self {
         Self {
-            cities: self.cities.min(1),
+            // A capture-the-flag battle has one objective, and it is not a
+            // city: the flag replaces the city outright rather than joining
+            // it, so the flag shape always plays city-less.
+            cities: if self.flag { 0 } else { self.cities.min(1) },
             production: self.production.min(Self::MAX_YIELD),
             gold: self.gold.min(Self::MAX_YIELD),
             turns_per_tech: self.turns_per_tech.min(Self::MAX_TURNS_PER_TECH),
-            // Odd, so a series always has a winner: an even one can be split
-            // down the middle with nothing left to play, and "best of four"
-            // is best of three with a dead rubber attached.
+            turn_limit: *Self::TURN_LIMITS
+                .iter()
+                .min_by_key(|limit| (self.turn_limit.abs_diff(**limit), **limit))
+                .expect("the Tactics turn-limit ladder is nonempty"),
+            // Odd, so a series cannot be split evenly by wins. Drawn battles
+            // can still exhaust the schedule without either side reaching
+            // `wins_needed`; that is an intentionally drawn match.
             best_of: (self.best_of.max(1) | 1).min(Self::MAX_BEST_OF),
             unique_units: self.unique_units,
+            fog: self.fog,
+            flag: self.flag,
         }
     }
 
@@ -1013,8 +1090,11 @@ impl Default for TacticsRules {
             production: 30,
             gold: 30,
             turns_per_tech: 5,
+            turn_limit: default_tactics_turn_limit(),
             best_of: 1,
             unique_units: false,
+            fog: false,
+            flag: false,
         }
     }
 }
@@ -1028,13 +1108,14 @@ impl Default for TacticsRules {
 /// held the same corner every time would be measuring the corner.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MatchSeries {
-    /// Battles the match is played over. Always odd, so it has a winner.
+    /// Battles the match is played over. Always odd, so wins cannot split it
+    /// evenly; drawn battles can still use the series up with no match winner.
     pub best_of: u32,
     /// Battles won, by civilization, in roster order.
     pub wins: BTreeMap<String, u32>,
-    /// Battles that reached the turn limit with no side eliminated and no
-    /// award — vanishingly rare, and counted rather than silently dropped so
-    /// the played total always adds up.
+    /// Battles that reached the selected turn limit with neither side
+    /// eliminated, counted rather than silently dropped so the played total
+    /// always adds up.
     pub drawn: u32,
 }
 
@@ -1717,6 +1798,7 @@ mod tests {
                 MapScript::Islands,
                 MapScript::WaterWorld,
                 MapScript::Battlefield,
+                MapScript::TacticsPlanet,
             ]
         );
         assert_eq!(MapScript::LandOnly.land_percent(), 95);
@@ -1742,38 +1824,46 @@ mod tests {
         assert_eq!(tennis_ball.name, "Tennis Ball");
     }
 
-    /// The Tactics battlefield is an arena, not a world: only the Battlefield
-    /// script is one, and every offered size is exactly the fighting ground
-    /// its name advertises. The arena is bounded by its own topology rather
-    /// than by a rim of sea, so there is no seam column to subtract.
+    /// Tactics maps are a separate roster from Civ worlds. The Battlefield is
+    /// a bounded arena, while Planet keeps its globe and has a custom small
+    /// land-world size.
     #[test]
     fn the_battlefield_is_an_arena_rather_than_a_world() {
         for spec in CIV6_MAP_SCRIPTS {
             assert_eq!(
                 spec.script.is_battlefield(),
-                spec.script == MapScript::Battlefield,
+                matches!(spec.script, MapScript::Battlefield | MapScript::TacticsPlanet),
                 "{}",
                 spec.id
             );
         }
         assert_eq!(MapScript::from_id("battlefield"), Some(MapScript::Battlefield));
+        assert_eq!(MapScript::from_id("tactics_planet"), Some(MapScript::TacticsPlanet));
         for size in BATTLEFIELD_SIZES {
-            let ground: Vec<i32> = size
-                .id
-                .split('x')
-                .map(|side| side.parse().expect("battlefield ids read WxH"))
-                .collect();
-            assert_eq!(ground.len(), 2, "{}", size.id);
-            assert_eq!(size.width, ground[0], "{} is its own fighting ground", size.id);
-            assert_eq!(size.height, ground[1], "{}", size.id);
-            // Both sides are seated at opposite ends of the long axis, which
-            // is the north-south one at every offered size.
-            assert!(size.height >= size.width, "{} is not taller than it is wide", size.id);
+            if size.script == MapScript::Battlefield {
+                let ground: Vec<i32> = size
+                    .id
+                    .split('x')
+                    .map(|side| side.parse().expect("battlefield ids read WxH"))
+                    .collect();
+                assert_eq!(ground.len(), 2, "{}", size.id);
+                assert_eq!(size.width, ground[0], "{} is its own fighting ground", size.id);
+                assert_eq!(size.height, ground[1], "{}", size.id);
+                // Both sides are seated at opposite ends of the long axis,
+                // which is the north-south one at every offered size.
+                assert!(size.height >= size.width, "{} is not taller than it is wide", size.id);
+                assert_eq!(size.topology, MapTopology::Flat, "{}", size.id);
+            } else {
+                assert_eq!(size.script, MapScript::TacticsPlanet, "{}", size.id);
+                assert_eq!(size.id, "planet");
+                assert_eq!(size.topology, MapTopology::Planet, "{}", size.id);
+                assert_eq!((size.width, size.height), (40, 18), "{}", size.id);
+            }
             // No battlefield collides with a real map size: the smallest
             // world is wider than the largest arena several times over.
             assert!(MapSize::from_dimensions(size.width, size.height).is_none(), "{}", size.id);
         }
-        assert_eq!(BATTLEFIELD_SIZES.len(), 3);
+        assert_eq!(BATTLEFIELD_SIZES.len(), 4);
     }
 
     /// The three games CIVVIS offers, and how a world says which one it is.
@@ -1822,7 +1912,22 @@ mod tests {
     /// A match is a series between two civilizations, and its score belongs
     /// to the civilizations rather than to the seats they were sitting in —
     /// because a match swaps the sides over between battles. It is always an
-    /// odd number of battles, so it always has a winner.
+    /// odd number of battles, so wins cannot split evenly; draws can still
+    /// The flag is a replacement objective, not an addition: asking for it
+    /// plays city-less whatever the cities knob said, and old saves — written
+    /// before the shape existed — load with it off.
+    #[test]
+    fn a_flag_battle_is_always_city_less() {
+        assert!(!TacticsRules::default().flag, "cities decide a battle unless a flag is asked for");
+        let flagged = TacticsRules { flag: true, cities: 1, ..TacticsRules::default() }.sanitized();
+        assert_eq!(flagged.cities, 0, "the flag replaces the city objective outright");
+        assert!(flagged.flag);
+        let mut old = serde_json::to_value(TacticsRules::default()).unwrap();
+        old.as_object_mut().unwrap().remove("flag");
+        assert!(!serde_json::from_value::<TacticsRules>(old).unwrap().flag);
+    }
+
+    /// exhaust it without a winner.
     #[test]
     fn a_match_is_an_odd_series_scored_by_civilization() {
         // An even length is not a match: best of four is best of three with a
@@ -1862,6 +1967,43 @@ mod tests {
         assert_eq!(drawn.winner(), None);
         assert_eq!(drawn.played(), 3);
         assert!(drawn.scoreline().contains("3 drawn"), "{}", drawn.scoreline());
+    }
+
+    /// A battle clock is a small, deliberate Tactics setting rather than an
+    /// arbitrary world-length number. Hand-written requests are normalized to
+    /// the closest offered value, and a save from before the field existed
+    /// receives the same 100-turn default as a new lobby.
+    #[test]
+    fn tactics_turn_limits_use_the_published_ladder_and_survive_old_saves() {
+        assert_eq!(TacticsRules::TURN_LIMITS, [50, 100, 150, 200]);
+        assert_eq!(TacticsRules::default().turn_limit, 100);
+        for limit in TacticsRules::TURN_LIMITS {
+            assert_eq!(
+                TacticsRules { turn_limit: limit, ..TacticsRules::default() }
+                    .sanitized()
+                    .turn_limit,
+                limit
+            );
+        }
+        assert_eq!(
+            TacticsRules { turn_limit: 0, ..TacticsRules::default() }
+                .sanitized()
+                .turn_limit,
+            50
+        );
+        assert_eq!(
+            TacticsRules { turn_limit: 149, ..TacticsRules::default() }
+                .sanitized()
+                .turn_limit,
+            150
+        );
+
+        let mut old = serde_json::to_value(TacticsRules::default()).unwrap();
+        old.as_object_mut().unwrap().remove("turn_limit");
+        assert_eq!(
+            serde_json::from_value::<TacticsRules>(old).unwrap().turn_limit,
+            100
+        );
     }
 
     /// The world's shape and its poles are settings of their own, orthogonal to

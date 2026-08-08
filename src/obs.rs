@@ -405,6 +405,15 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         "turn_limit": g.turn_limit(),
         "seed": g.seed,
         "game_speed": g.game_speed.id(),
+        // The setup panel can faithfully read a running arena back after a
+        // reload, including its selected deadline. Worlds carry the stock
+        // value but never consult it.
+        "tactics": g.tactics,
+        // Where the flag stands, on the one arena shape that plants one.
+        // Published to every viewer whatever the fog says: the flag is the
+        // battle's objective, and both commanders marched in knowing where
+        // it is even if neither has seen it yet.
+        "arena_flag": g.arena_flag,
         // The handicap the game is being played on. The save list has always
         // reported this for games nobody is playing; without it here the setup
         // panel could not tell a reloaded page which difficulty the game on
@@ -468,6 +477,12 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             // whether it is drawing a rectangle or a globe. It is read off the
             // map rather than off the setup, so a loaded save answers too.
             "shape": if g.map.sphere().is_some() { "planet" } else { "flat" },
+            // Whether east and west are the same edge. A Tactics arena is the
+            // one shape where they are not, and the browser cannot infer that
+            // from `shape`: an arena is flat like every stock script and only
+            // its walls tell it apart. Without this the chart unrolls a walled
+            // field, and a unit at the east wall is drawn past the west one.
+            "wrap_x": g.map.wraps_east_west(),
             "poles": g.map_poles.id(),
             "width": g.map.width,
             "height": g.map.height,
@@ -889,17 +904,22 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         "unit_move_trails": unit_move_trails_json(g, pid, omniscient, &vis),
         "winner": g.winner,
         "winners": g.winning_players(),
+        // A terminal Tactics draw has no winner, so clients must not infer
+        // liveness from `winner` alone. `draw` makes that one result explicit;
+        // `finished` is the generic lifecycle answer every driver needs.
+        "finished": g.is_finished(),
+        "draw": g.is_draw(),
         "victory_type": g.victory_type,
         // How that result is written: the type for every ordinary victory, and
         // the Mercy Rule's lane notation for a mercy ending, composed here so
         // every surface says the same thing about the same game. Empty while a
         // game is live, exactly as `victory_type` is.
         "victory_label": g.victory_label(),
-        // The turn a finished game is reported on, which is `turn` for every
-        // victory but the score tiebreak: that one is settled by a count taken
-        // on the wrap out of the final turn, so a 250-turn game reads turn 250
+        // The turn a finished game is reported on, which is usually the live
+        // turn of a victory. A score tiebreak or Tactics draw is settled on
+        // the wrap out of the final turn, so a 250-turn game reads turn 250
         // and not the turn 251 nobody plays. Empty while a game is live.
-        "victory_turn": g.winner.map(|_| g.reported_turn()),
+        "victory_turn": g.is_finished().then(|| g.reported_turn()),
         // The result this world was already given, if it was asked for one
         // more turn. The game is live again, so `winner` is empty; this is how
         // a viewer is still told whose victory the extra turns are borrowed
@@ -1679,6 +1699,39 @@ fn merge(base: &mut Value, ext: Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The browser draws a flat chart by unrolling it about the camera, which
+    /// is right for a world and wrong for an arena: a Tactics battlefield is
+    /// walled on all four sides, so a unit at the east wall drawn again past
+    /// the west wall is a unit off the map. `shape` cannot answer it — an
+    /// arena is flat like every stock script — so the observation carries the
+    /// wrap itself, read off the built map so a loaded save answers too.
+    #[test]
+    fn the_observation_says_whether_east_and_west_are_the_same_edge() {
+        let arena = Game::new_with(crate::game::GameOptions {
+            map_script: crate::setup::MapScript::Battlefield,
+            ..crate::game::GameOptions::new(2, 12, 12, 4_402, 60, 0)
+        });
+        assert!(arena.is_arena());
+        assert_eq!(observation_spectator(&arena, 0)["map"]["shape"], "flat");
+        assert_eq!(
+            observation_spectator(&arena, 0)["map"]["wrap_x"],
+            json!(false),
+            "an arena has a wall where a world has a seam"
+        );
+
+        // Every other shape does come back on itself: a cylinder through its
+        // own east-west seam, a globe through its geometry.
+        let world = Game::new_full(2, 20, 14, 4_402, 60, 1, false);
+        assert_eq!(observation_spectator(&world, 0)["map"]["wrap_x"], json!(true));
+        let size = crate::setup::MapSize::for_players(2);
+        let (width, height) = size.dimensions(crate::setup::MapTopology::Planet);
+        let globe = Game::new_with(crate::game::GameOptions {
+            map_topology: crate::setup::MapTopology::Planet,
+            ..crate::game::GameOptions::new(2, width, height, 4_402, 60, 2)
+        });
+        assert_eq!(observation_spectator(&globe, 0)["map"]["wrap_x"], json!(true));
+    }
 
     #[test]
     fn tile_hover_identifies_the_owning_city_and_orders_each_gameplay_layer() {
@@ -3075,6 +3128,29 @@ mod tests {
             json!(250),
             "a 250-turn game is won on turn 250"
         );
+    }
+
+    #[test]
+    fn a_tactics_draw_is_published_as_finished_without_a_winner() {
+        let mut game = Game::new_with(crate::game::GameOptions {
+            map_script: crate::setup::MapScript::Battlefield,
+            tactics: crate::setup::TacticsRules {
+                turn_limit: 50,
+                ..crate::setup::TacticsRules::default()
+            },
+            ..crate::game::GameOptions::new(2, 10, 10, 19_071, 50, 0)
+        });
+        game.turn = 51;
+        game.victory_type = Some(crate::game::DRAW_RESULT.to_string());
+
+        let result = observation_spectator(&game, 0);
+        assert_eq!(result["finished"], json!(true));
+        assert_eq!(result["draw"], json!(true));
+        assert!(result["winner"].is_null());
+        assert_eq!(result["winners"], json!([]));
+        assert_eq!(result["victory_type"], json!(crate::game::DRAW_RESULT));
+        assert_eq!(result["victory_label"], json!(crate::game::DRAW_RESULT));
+        assert_eq!(result["victory_turn"], json!(50));
     }
 
     /// The Mercy Rule's notation is composed once, in the engine, so the
