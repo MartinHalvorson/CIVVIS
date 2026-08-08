@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import call, patch
+from unittest.mock import Mock, call, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -336,6 +336,110 @@ class ProtectedInstallTest(unittest.TestCase):
             cleanup.assert_called_once_with(staging, ignore_errors=True)
         finally:
             staging.rmdir()
+
+
+class SealAttributionTest(unittest.TestCase):
+    """Issue #1342: installing the mod unsigns `Civ6.app`, and nothing said so.
+
+    The literal `codesign -v --verbose=2` output recorded in the issue, and
+    reproduced on this host on 2026-08-08. The point of parsing it is the
+    attribution: our own files are expected and `--uninstall` restores the
+    seal, while anyone else's are a problem teardown cannot fix.
+    """
+
+    MOD = Path(
+        "/Users/x/Library/Application Support/Steam/steamapps/common/"
+        "Sid Meier's Civilization VI/Civ6.app/Contents/Assets/DLC/CivvisControl"
+    )
+    BROKEN = (
+        "/Users/x/Library/Application Support/Steam/steamapps/common/"
+        "Sid Meier's Civilization VI/Civ6.app: a sealed resource is missing or invalid\n"
+        "file added: /Users/x/Library/Application Support/Steam/steamapps/common/"
+        "Sid Meier's Civilization VI/Civ6.app/Contents/Assets/DLC/CivvisControl/config.json\n"
+        "file added: /Users/x/Library/Application Support/Steam/steamapps/common/"
+        "Sid Meier's Civilization VI/Civ6.app/Contents/Assets/DLC/CivvisControl/"
+        "CivvisControlSetup.lua\n"
+        "file added: /Users/x/Library/Application Support/Steam/steamapps/common/"
+        "Sid Meier's Civilization VI/Civ6.app/Contents/Assets/DLC/CivvisControl/"
+        "CivvisControlAgent.lua\n"
+    )
+
+    def test_the_issues_own_codesign_output_is_entirely_our_doing(self) -> None:
+        ours, foreign = install.seal_breakers(self.BROKEN, self.MOD)
+
+        self.assertEqual(len(ours), 3)
+        self.assertEqual(foreign, [])
+        self.assertTrue(all(p.endswith((".json", ".lua")) for p in ours))
+
+    def test_the_summary_line_is_not_read_as_an_offending_file(self) -> None:
+        """`<bundle>: <sentence>` and `file added: <path>` are the same shape
+        reversed, so the parser keys on which half is the path."""
+        ours, foreign = install.seal_breakers(self.BROKEN, self.MOD)
+
+        self.assertNotIn(
+            "a sealed resource is missing or invalid", "".join(ours + foreign)
+        )
+
+    def test_somebody_elses_modification_is_reported_separately(self) -> None:
+        """The half that `--uninstall` will NOT fix."""
+        text = self.BROKEN + (
+            "file modified: /Users/x/Library/Application Support/Steam/steamapps/"
+            "common/Sid Meier's Civilization VI/Civ6.app/Contents/Resources/other\n"
+        )
+
+        ours, foreign = install.seal_breakers(text, self.MOD)
+
+        self.assertEqual(len(ours), 3)
+        self.assertEqual([p.rsplit("/", 1)[-1] for p in foreign], ["other"])
+
+    def test_a_sibling_directory_sharing_our_prefix_is_not_ours(self) -> None:
+        """`CivvisControlOld/` starts with the mod path as a string and is a
+        different directory; claiming it would promise an --uninstall that
+        never removes it."""
+        text = (
+            "file added: " + str(self.MOD) + "Old/leftover.lua\n"
+            "file added: " + str(self.MOD) + "/config.json\n"
+        )
+
+        ours, foreign = install.seal_breakers(text, self.MOD)
+
+        self.assertEqual([p.rsplit("/", 1)[-1] for p in ours], ["config.json"])
+        self.assertEqual([p.rsplit("/", 1)[-1] for p in foreign], ["leftover.lua"])
+
+    def test_bundle_dir_is_the_enclosing_app_not_a_second_hardcoded_path(self) -> None:
+        with patch.object(install, "install_dir", return_value=self.MOD):
+            self.assertEqual(install.bundle_dir(), Path(str(self.MOD).split("/Contents/")[0]))
+
+    def test_an_install_outside_a_bundle_breaks_no_signature(self) -> None:
+        outside = Path("/Users/x/Library/Application Support/Sid Meier's Civ VI/Mods/CivvisControl")
+        with patch.object(install, "install_dir", return_value=outside):
+            self.assertIsNone(install.bundle_dir())
+            self.assertEqual(install.signature_report()["state"], "no-bundle")
+
+    def test_a_valid_bundle_reports_valid_and_names_nobody(self) -> None:
+        with patch.object(install, "install_dir", return_value=self.MOD), \
+             patch.object(install.subprocess, "run",
+                          return_value=Mock(returncode=0, stdout="", stderr="")):
+            seal = install.signature_report()
+
+        self.assertEqual(seal["state"], "valid")
+        self.assertEqual((seal["ours"], seal["foreign"]), ([], []))
+
+    def test_a_broken_bundle_reports_the_verdict_and_attributes_the_files(self) -> None:
+        with patch.object(install, "install_dir", return_value=self.MOD), \
+             patch.object(install.subprocess, "run",
+                          return_value=Mock(returncode=1, stdout="", stderr=self.BROKEN)):
+            seal = install.signature_report()
+
+        self.assertEqual(seal["state"], "broken")
+        self.assertEqual(seal["detail"], "a sealed resource is missing or invalid")
+        self.assertEqual(len(seal["ours"]), 3)
+
+    def test_an_unrunnable_codesign_is_unknown_rather_than_valid(self) -> None:
+        """Absence of a verdict must never be reported as a good one."""
+        with patch.object(install, "install_dir", return_value=self.MOD), \
+             patch.object(install.subprocess, "run", side_effect=OSError("no codesign")):
+            self.assertEqual(install.signature_report()["state"], "unknown")
 
 
 class UnitsBlockerForfeitTest(unittest.TestCase):
