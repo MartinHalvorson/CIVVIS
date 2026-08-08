@@ -721,6 +721,19 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `x`, `!arena && y` is `y`, and the weight pair is returned unchanged), so
 /// the anchor's decisions are byte-identical. Reviewed compatibility re-pin,
 /// not an Elo-protocol change.
+/// #1386 makes production Scouts collect a tribal village they can currently
+/// see and reach before another unseen exploration tile. The shared branch is
+/// behind `BasicAi::tactical_strategy`: it is false for Basic and
+/// `AdvancedAi::legacy()`, and `promoted_policy_envoy` enables it for the
+/// production controller. The condition tests that flag before reading player
+/// sight, reachability, or village state; the frozen path therefore proceeds
+/// directly into its historical fog-target selection. The focused regression
+/// asserts that split on the same staged board. A matched release
+/// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed 31337
+/// --jobs 1 --deployment-comparison` report was byte-identical to the
+/// then-current `origin/main` (SHA-256
+/// `1bebbaa15ee7388b3d9427c1d49726d8e29b2328113c9b9409cb60bb7ae813e0`).
+/// Compatibility re-pin, not an Elo-protocol change.
 /// #1384 teaches the joint planner withdrawals and handoff steps and keeps the
 /// per-unit movers off units the plan moved without a blow
 /// (`tactics_withdrawn`). `AdvancedAi::legacy()` leaves `joint_tactics` false,
@@ -728,7 +741,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// executable is a set-membership test against an empty set — the same shape
 /// #1363 re-pinned. Compatibility re-pin over the #1382 merge.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe81c_e694_207d_6364;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc213_b891_8f46_f8ec;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
