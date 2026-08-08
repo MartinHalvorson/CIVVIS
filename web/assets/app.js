@@ -7927,25 +7927,6 @@ function drawFeatureEffects(t, x, y) {
     cx.arc(x + 7, y + 5, 6.5, 3.5, 5.9);
     cx.stroke();
   }
-  const flagAt = state?.arena_flag;
-  if (flagAt && t.pos[0] === flagAt[0] && t.pos[1] === flagAt[1]) {
-    // The tile a capture-the-flag battle is decided on. Drawn last so the
-    // objective stays legible over any weather the field is having, in a
-    // gold no civilization wears: the flag belongs to whoever takes it.
-    cx.save();
-    cx.lineCap = "round";
-    cx.fillStyle = "#0d111788";
-    cx.beginPath(); cx.ellipse(x, y + 12, 9, 3.2, 0, 0, Math.PI * 2); cx.fill();
-    cx.strokeStyle = "#e9f4f5"; cx.lineWidth = 4;
-    cx.beginPath(); cx.moveTo(x - 5, y + 12); cx.lineTo(x - 5, y - 17); cx.stroke();
-    cx.strokeStyle = "#3a3020"; cx.lineWidth = 2.2;
-    cx.beginPath(); cx.moveTo(x - 5, y + 12); cx.lineTo(x - 5, y - 17); cx.stroke();
-    cx.fillStyle = "#ffd34e"; cx.strokeStyle = "#8a6b14"; cx.lineWidth = 1.2;
-    cx.beginPath();
-    cx.moveTo(x - 4, y - 17); cx.lineTo(x + 14, y - 12.5); cx.lineTo(x - 4, y - 8);
-    cx.closePath(); cx.fill(); cx.stroke();
-    cx.restore();
-  }
 }
 
 // Strategic terrain marks are map symbols rather than reduced illustrations.
@@ -17307,6 +17288,98 @@ function drawEmpireLensFlat(tiles) {
 // it. Each visible component contributes its own boundary, so a distant unit
 // or diplomatic reveal becomes another closed trace rather than being joined
 // to the capital by an invented corridor.
+// The flags a capture-the-flag battle is fought over, as a column of light
+// standing on each one.
+//
+// A column rather than a map symbol, because this marker has a job no symbol
+// can do: it has to be legible through the fog, from across the field, and at
+// whatever zoom the viewer is holding. A pennant at ground level is a few
+// pixels of terrain detail and disappears into a wooded hex; a beam of light
+// is visible from the far wall and reads instantly as "the objective is
+// there". Each column is lit in its owner's jersey so the two flags cannot be
+// confused, and the pennant at its head says which side of the field you are
+// looking at.
+//
+// The position comes from `state.arena_flags` rather than from the tile
+// stream, deliberately: an unexplored tile is not in `TMAP` at all, and the
+// flag still has to draw.
+const ARENA_FLAG_COLUMN = 132;
+// A jersey colour at a chosen alpha, for the gradient stops below. Built on
+// `rgbOf` so it accepts every form a jersey can arrive in — #rgb, #rrggbb, or
+// an already-rgb() string — rather than assuming six hex digits.
+function arenaFlagGlow(color, alpha) {
+  const [r, g, b] = rgbOf(color);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+function drawFlatArenaFlags(now = performance.now()) {
+  const flags = Array.isArray(state?.arena_flags) ? state.arena_flags : [];
+  if (!flags.length) return;
+  for (const flag of flags) {
+    const pos = flag?.pos;
+    if (!Array.isArray(pos)) continue;
+    const tile = TMAP.get(key(pos));
+    const [x, yy] = hexXY(pos[0], pos[1]);
+    const y = yy - (tile ? elev(tile) : 0);
+    // The light half of the jersey pair: several real Civ VI primaries are
+    // near-black, and a black beam is not a beam.
+    const [, glow] = jerseyLanes(flag.owner);
+    // A slow breath, out of phase per side so the two columns do not pulse as
+    // one object. Time-based, so it keeps breathing on a paused battle.
+    const breath = 0.82 + 0.18 * Math.sin(now / 620 + flag.owner * 2.1);
+    const top = y - ARENA_FLAG_COLUMN * breath;
+    cx.save();
+    // Additive light: the column brightens whatever it crosses — terrain,
+    // fog wash, the blank vellum of unexplored ground — instead of painting a
+    // flat bar over it.
+    cx.globalCompositeOperation = "lighter";
+    const beam = cx.createLinearGradient(0, y, 0, top);
+    beam.addColorStop(0, arenaFlagGlow(glow, 0.62));
+    beam.addColorStop(0.35, arenaFlagGlow(glow, 0.3));
+    beam.addColorStop(1, arenaFlagGlow(glow, 0));
+    cx.fillStyle = beam;
+    // Slightly wider at the base than the head, so it sits on the ground
+    // rather than hovering over it.
+    cx.beginPath();
+    cx.moveTo(x - 11, y);
+    cx.lineTo(x - 3.5, top);
+    cx.lineTo(x + 3.5, top);
+    cx.lineTo(x + 11, y);
+    cx.closePath();
+    cx.fill();
+    // The core, bright and narrow, is what carries at low zoom once the wide
+    // halo has faded into the ground colour.
+    const core = cx.createLinearGradient(0, y, 0, top);
+    core.addColorStop(0, arenaFlagGlow(glow, 0.95));
+    core.addColorStop(0.5, arenaFlagGlow(glow, 0.5));
+    core.addColorStop(1, arenaFlagGlow(glow, 0));
+    cx.fillStyle = core;
+    cx.fillRect(x - 1.6, top, 3.2, y - top);
+    // The pool of light the column casts on its own hex.
+    const pool = cx.createRadialGradient(x, y + 2, 0, x, y + 2, 26);
+    pool.addColorStop(0, arenaFlagGlow(glow, 0.5));
+    pool.addColorStop(1, arenaFlagGlow(glow, 0));
+    cx.fillStyle = pool;
+    cx.beginPath();
+    cx.ellipse(x, y + 2, 26, 26 * MAP_PROJECTION * 0.6, 0, 0, Math.PI * 2);
+    cx.fill();
+    cx.restore();
+    // The pennant rides at the head of the column in ordinary paint, so it
+    // stays a readable shape instead of blowing out to white against the
+    // light beneath it.
+    cx.save();
+    cx.fillStyle = glow;
+    cx.strokeStyle = "#0d1117cc";
+    cx.lineWidth = 1.2;
+    cx.beginPath();
+    cx.moveTo(x + 1.6, top);
+    cx.lineTo(x + 19, top + 5.5);
+    cx.lineTo(x + 1.6, top + 11);
+    cx.closePath();
+    cx.fill();
+    cx.stroke();
+    cx.restore();
+  }
+}
 function drawFlatVisibilityPerimeter(tiles, visible) {
   const segments = [];
   for (const tile of tiles) {
@@ -17520,6 +17593,59 @@ function drawPlanetMapSearchHighlights(cells) {
   cx.restore();
 }
 
+// The globe's answer to the flat renderer's column of light. A sphere has no
+// screen-space vertical to raise a beam along — "up" at the horizon of the
+// globe points sideways — so the objective is marked by the light itself: a
+// pulsing halo in the owner's jersey, sized to the cell, with the same
+// pennant at its head. Painted after the fog and the visibility perimeter, so
+// like the flat column it shows through both.
+function drawPlanetArenaFlags(cells, now, onSheet) {
+  const flags = Array.isArray(state?.arena_flags) ? state.arena_flags : [];
+  if (!flags.length) return;
+  const cellByKey = new Map(cells.map(cell => [key(cell.tile.pos), cell]));
+  cx.save();
+  for (const flag of flags) {
+    if (!Array.isArray(flag?.pos)) continue;
+    const cell = cellByKey.get(key(flag.pos));
+    // Round the far side of the world: correctly not drawn.
+    if (!cell || cell.center.z < (onSheet ?? .02)) continue;
+    const [, glow] = jerseyLanes(flag.owner);
+    const breath = 0.82 + 0.18 * Math.sin(now / 620 + flag.owner * 2.1);
+    const reach = Math.max(7, planetCellInradius(cell) * 1.9) * breath;
+    const { x, y } = cell.center;
+    cx.save();
+    cx.globalCompositeOperation = "lighter";
+    const halo = cx.createRadialGradient(x, y, 0, x, y, reach);
+    halo.addColorStop(0, arenaFlagGlow(glow, 0.85));
+    halo.addColorStop(0.45, arenaFlagGlow(glow, 0.36));
+    halo.addColorStop(1, arenaFlagGlow(glow, 0));
+    cx.fillStyle = halo;
+    cx.beginPath();
+    cx.arc(x, y, reach, 0, Math.PI * 2);
+    cx.fill();
+    cx.restore();
+    // The pennant, in ordinary paint so it keeps its shape over the halo.
+    const staff = Math.max(9, reach * 1.15);
+    cx.strokeStyle = "#0d1117cc";
+    cx.lineWidth = 2.6;
+    cx.beginPath(); cx.moveTo(x, y); cx.lineTo(x, y - staff); cx.stroke();
+    cx.strokeStyle = "#e9f4f5";
+    cx.lineWidth = 1.2;
+    cx.beginPath(); cx.moveTo(x, y); cx.lineTo(x, y - staff); cx.stroke();
+    cx.fillStyle = glow;
+    cx.strokeStyle = "#0d1117cc";
+    cx.lineWidth = 1;
+    cx.beginPath();
+    cx.moveTo(x + 1, y - staff);
+    cx.lineTo(x + 1 + staff * 0.62, y - staff + staff * 0.2);
+    cx.lineTo(x + 1, y - staff + staff * 0.4);
+    cx.closePath();
+    cx.fill();
+    cx.stroke();
+  }
+  cx.restore();
+}
+
 function drawPlanetChartMarginalia() {
   if (!HIDDEN_MAP_MONSTER_ATLAS_READY) return;
   const [seedA, seedB] = hiddenMapSeedWords();
@@ -17709,6 +17835,11 @@ function drawPlanetMap() {
   drawPlanetMapSearchHighlights(cells);
   if (!spectator && radius >= SKY_MARKERS)
     drawPlanetVisibilityPerimeter(cells, visible);
+  // The capture-the-flag objectives, through the fog for the same reason the
+  // flat renderer paints them through it. A globe has no screen-space "up" to
+  // stand a column on, so here the light is a beacon on the tile itself: the
+  // same jersey glow and the same pennant, radiating outward.
+  drawPlanetArenaFlags(cells, now, onSheet);
   // The selected unit's movement: range perimeter, then per-seam arrows.
   if (radius >= SKY_MARKERS)
     drawPlanetReachOverlay(cells, camera, scale, centerX, centerY);
@@ -18487,6 +18618,13 @@ function drawScene() {
   drawFlatMapSearchHighlights(tiles);
   if (Number.isInteger(state.view_player))
     drawFlatVisibilityPerimeter(tiles, visible);
+  // --- capture-the-flag objectives. Painted after the fog wash and after the
+  // frontier of the unexplored, because a flag is the one thing on an arena
+  // that is never hidden: both commanders marched in knowing where the other
+  // side's flag stood, and a battle where you must first go and find the
+  // thing you are capturing is a different game. Drawn before the units so a
+  // garrison standing on a flag reads as standing on it.
+  drawFlatArenaFlags();
   // --- selected unit's movement: range perimeter, then per-edge arrows
   drawFlatReachPerimeter();
   drawFlatReachArrows();
