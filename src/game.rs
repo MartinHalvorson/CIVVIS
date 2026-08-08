@@ -24445,9 +24445,9 @@ impl Game {
                                     .is_some_and(|family| self.district_is_family(d, family))
                             })
                     });
-                if self.grants_city_state_unique_bonus(pid, "Stockholm")
-                    || (self.grants_city_state_unique_bonus(pid, "Bologna")
-                        && has_district_building)
+                if (self.grants_city_state_unique_bonus(pid, "Stockholm")
+                    || self.grants_city_state_unique_bonus(pid, "Bologna"))
+                    && has_district_building
                 {
                     let kinds: &[&str] = match self.district_family(*d).as_str() {
                         "encampment" => &["general"],
@@ -36579,7 +36579,7 @@ impl Game {
             }
             Some("colossal_head") => {
                 let effects = &self.rules.improvements["colossal_head"].effects;
-                let adjacent_features = self
+                let adjacent_woods_rainforest = self
                     .nbrs(pos)
                     .iter()
                     .filter(|neighbor| {
@@ -36589,51 +36589,54 @@ impl Game {
                         )
                     })
                     .count() as f64;
-                if self.players[pid]
-                    .civics
-                    .contains(&crate::name!("humanism"))
-                {
-                    yields.faith += adjacent_features
+                yields.faith += if self.players[pid].civics.contains(&crate::name!("humanism")) {
+                    adjacent_woods_rainforest
                         * effects
-                            .get("adjacent_forest_jungle_faith_after_humanism")
+                            .get("adjacent_woods_rainforest_faith_after_humanism")
                             .copied()
-                            .unwrap_or(0.0);
+                            .unwrap_or(0.0)
                 } else {
-                    yields.faith += (adjacent_features / 2.0).floor()
+                    (adjacent_woods_rainforest / 2.0).floor()
                         * effects
-                            .get("adjacent_forest_jungle_pair_faith")
+                            .get("adjacent_woods_rainforest_pair_faith")
                             .copied()
-                            .unwrap_or(0.0);
-                }
+                            .unwrap_or(0.0)
+                };
             }
             Some("mahavihara") => {
                 let effects = &self.rules.improvements["mahavihara"].effects;
-                for neighbor in self.nbrs(pos) {
-                    let Some(district) = self.map.tiles[&neighbor].district else {
-                        continue;
-                    };
-                    if self.district_is_family(district, crate::name!("holy_site")) {
-                        yields.faith += effects
-                            .get("adjacent_holy_site_faith")
-                            .copied()
-                            .unwrap_or(0.0);
-                    }
-                    if self.district_is_family(district, crate::name!("campus")) {
-                        yields.science += effects
-                            .get("adjacent_campus_science")
-                            .copied()
-                            .unwrap_or(0.0);
-                        if self.players[pid]
-                            .techs
-                            .contains(&crate::name!("scientific_theory"))
-                        {
-                            yields.science += effects
-                                .get("adjacent_campus_science_after_scientific_theory")
-                                .copied()
-                                .unwrap_or(0.0);
-                        }
-                    }
-                }
+                let campus_count = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].district.is_some_and(|district| {
+                            self.district_is_family(district, crate::name!("campus"))
+                        })
+                    })
+                    .count() as f64;
+                let holy_site_count = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].district.is_some_and(|district| {
+                            self.district_is_family(district, crate::name!("holy_site"))
+                        })
+                    })
+                    .count() as f64;
+                let campus_key = if self.players[pid]
+                    .techs
+                    .contains(&crate::name!("scientific_theory"))
+                {
+                    "adjacent_campus_science_after_scientific_theory"
+                } else {
+                    "adjacent_campus_science"
+                };
+                yields.science += campus_count * effects.get(campus_key).copied().unwrap_or(0.0);
+                yields.faith += holy_site_count
+                    * effects
+                        .get("adjacent_holy_site_faith")
+                        .copied()
+                        .unwrap_or(0.0);
             }
             Some("moai") => {
                 let effects = &self.rules.improvements["moai"].effects;
@@ -36645,29 +36648,29 @@ impl Game {
                             && !self.map.tiles[neighbor].pillaged
                     })
                     .count() as f64;
-                if self.players[pid]
+                yields.culture += if self.players[pid]
                     .civics
                     .contains(&crate::name!("medieval_faires"))
                 {
-                    yields.culture += adjacent_moai
+                    adjacent_moai
                         * effects
                             .get("adjacent_moai_culture_after_medieval_faires")
                             .copied()
-                            .unwrap_or(0.0);
+                            .unwrap_or(0.0)
                 } else {
-                    yields.culture += (adjacent_moai / 2.0).floor()
+                    (adjacent_moai / 2.0).floor()
                         * effects
                             .get("adjacent_moai_pair_culture")
                             .copied()
-                            .unwrap_or(0.0);
-                }
+                            .unwrap_or(0.0)
+                };
                 if tile.feature.as_deref() == Some("volcanic_soil")
                     || self.nbrs(pos).iter().any(|neighbor| {
                         self.map.tiles[neighbor].feature.as_deref() == Some("volcanic_soil")
                     })
                 {
                     yields.culture += effects
-                        .get("adjacent_volcanic_soil_culture")
+                        .get("volcanic_adjacent_or_on_culture")
                         .copied()
                         .unwrap_or(0.0);
                 }
