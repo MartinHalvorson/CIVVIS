@@ -1574,6 +1574,15 @@ pub struct BasicAi {
     /// Off for the frozen native controllers, whose recorded ladders would
     /// otherwise shift underneath them.
     pub(crate) housing_districts: bool,
+    /// Treat a city that is LOSING HITPOINTS as besieged even when fog hides
+    /// every attacker. Measured on live run civvis-20260807T181839Z, t115:
+    /// Rome at damage 35/200 with the export's hostile list EMPTY -- ranged
+    /// attackers firing from fog -- while production built an amphitheater;
+    /// the capital fell at t117. The two-visible-besiegers gate below stays
+    /// (its 24-map score evidence is untouched); a bleeding city is a THIRD
+    /// proof of siege that fog cannot suppress, and it self-clears because
+    /// Civ 6 city health regenerates once the siege lifts.
+    pub(crate) garrison_under_fire: bool,
     /// Scale each district family by how much of the empire still lacks it.
     pub(crate) district_coverage: bool,
     /// Break a production COST TIE by which great-work slots can actually be filled.
@@ -2718,6 +2727,7 @@ impl BasicAi {
             barb: false,
             amenity_districts: false,
             housing_districts: false,
+            garrison_under_fire: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
@@ -2752,6 +2762,7 @@ impl BasicAi {
             barb: false,
             amenity_districts: false,
             housing_districts: false,
+            garrison_under_fire: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
@@ -5985,7 +5996,9 @@ impl BasicAi {
         // city count while COSTING score: walls and defenders displace the
         // buildings and districts score is actually made of. A raiding party is
         // what takes a city, and a raiding party is more than one unit.
-        if self.visible_besiegers(g, pid, cid) < SIEGE_PRESSURE_MIN {
+        let bleeding = self.garrison_under_fire
+            && g.cities.get(&cid).is_some_and(|city| city.hp < 200);
+        if !bleeding && self.visible_besiegers(g, pid, cid) < SIEGE_PRESSURE_MIN {
             return None;
         }
         for building in ["walls", "medieval_walls", "renaissance_walls"] {

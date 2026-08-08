@@ -766,7 +766,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `best_recon` is never reached. The anchor's build order is byte-identical by
 /// construction. Compatibility re-pin, not an Elo-protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x024f_67b2_d9bb_3e07;
+/// Merging `origin/main` into this branch brings both sides' live-bridge
+/// treatments into one `BasicAi`/`AdvancedAi`. Every one of them is off in both
+/// constructors and set only by `enable_live_bridge`, so the anchor's decision
+/// stream is unchanged by the union. Compatibility re-pin, not an Elo-protocol
+/// change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8a27_c3ee_7d98_36fd;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
