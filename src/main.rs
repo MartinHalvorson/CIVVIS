@@ -805,7 +805,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// merge with main's own re-pins for the live-bridge and siege arms, which
 /// are off in both constructors as their entries above record.
 /// Compatibility re-pin, not an Elo-protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8870_681c_0d42_58f8;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x708d_8ab8_e525_dc27;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
