@@ -1761,16 +1761,58 @@ fn tennis_ball_major_starts(wm: &WorldMap, pool: &BTreeSet<Pos>) -> Option<Vec<P
 /// it, on the narrowest field offered.
 pub const BATTLEFIELD_DEPLOYMENT_ROWS: i32 = 2;
 
-/// The two sides of a battlefield begin at opposite ends of its long axis,
-/// each in the middle of its own end wall, so that the two armies face each
-/// other across the field rather than diagonally across a corner. Every
-/// offered arena is at least as tall as it is wide, so that axis runs north
-/// to south; the east-west layout is kept for an arena that arrives the other
-/// way round. `None` means the pool had nothing to offer or the two picks
-/// crowded together; the caller falls back to the regional model, so the
-/// promise is a layout, never a lost seat.
+/// How far in from its corner a square arena seats a side, on a twenty-hex
+/// field. Scaled to the arena by [`battlefield_corner_inset`].
+///
+/// Off the corner itself, so that the city has ground on every side of it and
+/// the army has somewhere to form up that is not a wedge two hexes wide.
+const BATTLEFIELD_CORNER_INSET_PER_TWENTY: i32 = 3;
+
+/// How far in from the corner this arena seats a side.
+///
+/// Three hexes in on the twenty-hex Field, scaled down for a smaller one —
+/// and the scaling is not fussiness, it is the hex grid. A step along the
+/// north-west/south-east offset diagonal is *two* hexes of real distance, so
+/// an inset costs four hexes of approach for every one it looks like:
+///
+/// | arena | corner to corner | inset 1 | inset 2 | inset 3 |
+/// | --- | --- | --- | --- | --- |
+/// | 10x10 | 14 | 10 | 8 | **4** |
+/// | 20x20 | 29 | 25 | 23 | **19** |
+///
+/// Three hexes in leaves the Field's two sides 19 apart — exactly the
+/// approach the old mid-wall layout gave them — and would leave the Square's
+/// two sides *four* apart, which is not an approach at all: the two armies
+/// would deploy into each other. One hex in gives the Square 10, and that is
+/// the same layout at the size it is.
+fn battlefield_corner_inset(wm: &WorldMap) -> i32 {
+    (wm.width.min(wm.height) * BATTLEFIELD_CORNER_INSET_PER_TWENTY / 20).max(1)
+}
+
+/// Where the two sides of a battlefield begin.
+///
+/// A square arena seats them in opposite corners, a little way in — the
+/// longest line across a square is its diagonal, and a corner start is a
+/// corner to hold rather than a wall to be backed against. A long arena seats
+/// them at opposite ends of its long axis instead, because a rectangle's
+/// diagonal is barely longer than its length and the fight it wants is up and
+/// down the field.
+///
+/// `None` means the pool had nothing to offer or the two picks crowded
+/// together; the caller falls back to the regional model, so the promise is a
+/// layout, never a lost seat.
 fn battlefield_major_starts(wm: &WorldMap, pool: &BTreeSet<Pos>) -> Option<Vec<Pos>> {
-    let targets = if wm.width > wm.height {
+    let inset = battlefield_corner_inset(wm);
+    let targets = if wm.width == wm.height {
+        // North-west and south-east. Of the two diagonals this is the longer
+        // one on an odd-r grid — 14 against 13 on the Square, 29 against 28
+        // on the Field — because it runs against the rows' half-hex offset
+        // rather than along with it.
+        [
+            (inset, inset),
+            (wm.width - 1 - inset, wm.height - 1 - inset),
+        ]
+    } else if wm.width > wm.height {
         [(0, wm.height / 2), (wm.width - 1, wm.height / 2)]
     } else {
         [(wm.width / 2, 0), (wm.width / 2, wm.height - 1)]
@@ -1840,9 +1882,26 @@ fn paint_battlefield_ground(wm: &mut WorldMap, rng: &mut Rng) {
         tile.continent = Some(0);
     }
 
-    // The contested ground: everything the two deployment bands do not hold.
+    // The contested ground: everything the two deployment zones do not hold.
+    // The zones follow the starts — the two corners of a square arena, the
+    // two end walls of a long one — because their whole job is to keep the
+    // cover off the ground a side is set down on.
     let (rows, cols) = (wm.height, wm.width);
-    let mut open: BTreeSet<Pos> = if cols > rows {
+    let mut open: BTreeSet<Pos> = if cols == rows {
+        // A corner's zone is the triangle of ground cut off by a diagonal
+        // that far in, which has to be deep enough to seat the army that
+        // starts in it. Half again the seat's own depth measures out at 15
+        // hexes a corner on the Square for its 8 units and 36 on the Field
+        // for its 24, leaving 70% and 82% of the arena as contested ground.
+        let reach = (battlefield_corner_inset(wm) + BATTLEFIELD_DEPLOYMENT_ROWS) * 3 / 2;
+        offset_region(wm, 0, cols, 0, rows)
+            .into_iter()
+            .filter(|pos| {
+                let (col, row) = hex::axial_to_offset(pos.0, pos.1);
+                (col + row).min(cols - 1 - col + rows - 1 - row) > reach
+            })
+            .collect()
+    } else if cols > rows {
         offset_region(
             wm,
             BATTLEFIELD_DEPLOYMENT_ROWS,

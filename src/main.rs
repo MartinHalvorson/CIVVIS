@@ -987,8 +987,70 @@ fn tactics_rules(args: &[String]) -> setup::TacticsRules {
         gold: arg(args, "--tactics-gold", i64::from(stock.gold)).max(0) as u32,
         turns_per_tech: arg(args, "--tactics-turns-per-tech", i64::from(stock.turns_per_tech))
             .max(0) as u32,
+        best_of: arg(args, "--tactics-best-of", i64::from(stock.best_of)).max(1) as u32,
+        unique_units: flag_or(args, "--tactics-unique-units", stock.unique_units),
     }
     .sanitized()
+}
+
+/// The civilizations named on the command line, in seat order.
+fn named_civs(args: &[String]) -> Vec<String> {
+    arg_text(args, "--civs", &arg_text(args, "--civ", ""))
+        .split(',')
+        .map(|civ| civ.trim().to_string())
+        .filter(|civ| !civ.is_empty())
+        .collect()
+}
+
+/// Which roster the seats are drawn from.
+fn leader_pool(args: &[String]) -> LeaderPool {
+    let id = arg_text(args, "--leader-pool", LeaderPool::default().id());
+    let pool = LeaderPool::from_id(&id).unwrap_or_else(|| {
+        eprintln!("unknown leader pool {id:?}; choose civ6, historical, or today");
+        std::process::exit(2);
+    });
+    if !pool.is_available() {
+        eprintln!("leader pool {id:?} has no supplied roster data yet");
+        std::process::exit(2);
+    }
+    pool
+}
+
+/// The civilizations a Tactics match is between, resolved the same way the
+/// engine seats them.
+///
+/// A match has to know its two contenders *before* the first battle, because
+/// it swaps the sides over between battles and keeps the score by
+/// civilization. Naming them explicitly for every battle also makes the
+/// pairing a property of the match rather than of the seating order the stock
+/// fill happened to produce.
+fn match_contenders(args: &[String], players: i64, chosen: &[String]) -> Vec<String> {
+    let rules = Rules::embedded();
+    let mut known: std::collections::BTreeSet<civvis::name::Name> =
+        rules.civs.keys().cloned().collect();
+    known.extend(
+        leader_roster::all()
+            .iter()
+            .filter(|record| record.available)
+            .map(|record| civvis::name::Name::new(&record.civ)),
+    );
+    civvis::game::seat_civs(players.max(1) as usize, chosen, &known, leader_pool(args))
+}
+
+/// An on/off flag that keeps its default when absent, and reads the usual
+/// spellings of both answers when present: `--flag`, `--flag on|off`,
+/// `true|false`, `yes|no`, `1|0`.
+fn flag_or(args: &[String], key: &str, default: bool) -> bool {
+    let Some(index) = args.iter().position(|arg| arg == key) else {
+        return default;
+    };
+    match args.get(index + 1).map(String::as_str) {
+        Some("on" | "true" | "yes" | "1") | None => true,
+        Some("off" | "false" | "no" | "0") => false,
+        // A value that is not an answer is the next flag: `--tactics-unique-
+        // units --games 8` asks for unique units and eight games.
+        Some(_) => true,
+    }
 }
 
 fn start_era(args: &[String], seed: u64) -> usize {
@@ -1115,18 +1177,7 @@ fn game_options(
         }
         teams
     };
-    let leader_pool = {
-        let id = arg_text(args, "--leader-pool", LeaderPool::default().id());
-        let pool = LeaderPool::from_id(&id).unwrap_or_else(|| {
-            eprintln!("unknown leader pool {id:?}; choose civ6, historical, or today");
-            std::process::exit(2);
-        });
-        if !pool.is_available() {
-            eprintln!("leader pool {id:?} has no supplied roster data yet");
-            std::process::exit(2);
-        }
-        pool
-    };
+    let leader_pool = leader_pool(args);
     GameOptions {
         base_ruleset: base_ruleset(args),
         start_era: start_era(args, seed),
@@ -1431,18 +1482,38 @@ fn main() {
             } else {
                 (jobs, 1, 0)
             };
+            // A Tactics match: the same two civilizations over a series of
+            // battles, sides swapped between them. `--games` is how many
+            // battles are actually played, so a best-of-5 run short of five
+            // games simply reports the score it reached.
+            let arena = map_script(&args).is_battlefield();
+            let match_rules = tactics_rules(&args);
+            let contenders = (arena && match_rules.best_of > 1)
+                .then(|| match_contenders(&args, players, &named_civs(&args)));
             // Each game is played on an outer worker, then described on the
             // main one, so a soak reads exactly as it did when it was serial.
             let lines = civvis::parallel::map(games as usize, concurrent_games, |index| {
                 let seed = start + index as i64;
                 let t0 = Instant::now();
+                let contenders = contenders.clone();
                 let result = std::panic::catch_unwind(|| {
-                    let mut g = Game::new_with(game_options(
+                    let mut options = game_options(
                         &args,
                         players,
                         seed as u64,
                         setup::TurnStructure::Sequential,
-                    ));
+                    );
+                    if let Some(contenders) = contenders {
+                        // The sides change ends at half time, and every
+                        // battle after it. Otherwise a series measures the
+                        // corner one civilization kept sitting in as much as
+                        // it measures the civilization.
+                        options.civs = contenders;
+                        if index % 2 == 1 {
+                            options.civs.reverse();
+                        }
+                    }
+                    let mut g = Game::new_with(options);
                     let mut ais = AdvancedAi::fleet(&g);
                     let simultaneous = if g.turn_structure == setup::TurnStructure::Simultaneous {
                         // Spread a non-divisible budget across the first live
@@ -1642,7 +1713,7 @@ fn main() {
                             100 * census.hold_threatened / held,
                             100 * census.hold_weak / held,
                         ));
-                        Some(format!(
+                        Some((w.map(|w| w.civ.clone()), format!(
                             "seed {:3}  t{:<4} {:<10} {:<8} majors_alive={}/{} cities={:<2} cs_alive={}/{} [{:.2}s]{}",
                             seed,
                             g.reported_turn(),
@@ -1655,15 +1726,27 @@ fn main() {
                             minors.len(),
                             t0.elapsed().as_secs_f64(),
                             flags
-                        ))
+                        )))
                     }
                     Err(_) => None,
                 }
             });
             let mut fails = 0;
+            let mut series = contenders
+                .map(|civs| setup::MatchSeries::new(match_rules.best_of, civs));
             for (index, line) in lines.into_iter().enumerate() {
                 match line {
-                    Some(line) => println!("{line}"),
+                    Some((winner, line)) => {
+                        println!("{line}");
+                        if let Some(series) = series.as_mut() {
+                            // A match stops at the battle that settles it;
+                            // the rest of `--games` is a dead rubber and is
+                            // reported as unplayed rather than counted.
+                            if !series.decided() {
+                                series.record(winner.as_deref());
+                            }
+                        }
+                    }
                     None => {
                         fails += 1;
                         println!("seed {:3}  CRASH (panic)", start + index as i64);
@@ -1671,6 +1754,18 @@ fn main() {
                 }
             }
             println!("\n{}/{} games completed", games - fails, games);
+            if let Some(series) = series {
+                let verdict = match series.winner() {
+                    Some(civ) => format!("{civ} takes the match"),
+                    None if series.played() >= series.best_of => "match drawn".to_string(),
+                    None => format!(
+                        "match unfinished: {} of {} battles played",
+                        series.played(),
+                        series.best_of
+                    ),
+                };
+                println!("best of {}: {} — {verdict}", series.best_of, series.scoreline());
+            }
             if fails > 0 {
                 std::process::exit(1);
             }

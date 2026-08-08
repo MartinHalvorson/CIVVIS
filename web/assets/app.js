@@ -28022,6 +28022,8 @@ function selectedSimulationSettings() {
           tactics_production: Number(readSetting("tacticsproduction")) || 0,
           tactics_gold: Number(readSetting("tacticsgold")) || 0,
           tactics_turns_per_tech: Number(readSetting("tacticsturnspertech")) || 0,
+          tactics_best_of: Number(readSetting("tacticsbestof")) || 1,
+          tactics_unique_units: readSetting("tacticsuniqueunits") === "1",
           ...(mapSeed === null ? {} : {seed: mapSeed}),
           // A battlefield's dimensions are its own setting: no seat count
           // implies an arena size, so the chosen one travels explicitly and

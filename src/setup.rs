@@ -4,6 +4,8 @@
 //! city-state defaults, religion limits, and observation metadata all consume
 //! the same profile instead of maintaining subtly different tables.
 
+use std::collections::BTreeMap;
+
 use serde::ser::{SerializeStruct, Serializer};
 use serde::{Deserialize, Serialize};
 
@@ -944,6 +946,28 @@ pub struct TacticsRules {
     /// era. 0 stops research, freezing both sides at their starting era's
     /// units.
     pub turns_per_tech: u32,
+    /// Battles the two civilizations fight before a match is decided. 1 is a
+    /// single battle; any higher odd number is a series, taken by the first
+    /// side to win more than half of it.
+    ///
+    /// The pairing is what a series is for: the same two civilizations fight
+    /// the same arena rules on fresh ground each time, so the result is about
+    /// the two of them rather than about one roll of the map.
+    #[serde(default = "one_battle")]
+    pub best_of: u32,
+    /// Whether a civilization may field its own unique units.
+    ///
+    /// Off, both sides field the identical stock roster and the battle is a
+    /// test of play alone — which is the arena's whole claim, so it is the
+    /// default. On, each side's roster and its build menu substitute whatever
+    /// its civilization replaces a stock unit with, and the match becomes a
+    /// test of the two civilizations as well.
+    #[serde(default)]
+    pub unique_units: bool,
+}
+
+fn one_battle() -> u32 {
+    1
 }
 
 impl TacticsRules {
@@ -953,6 +977,9 @@ impl TacticsRules {
     pub const MAX_YIELD: u32 = 999;
     /// The slowest tech pace worth offering; beyond it a battle ends first.
     pub const MAX_TURNS_PER_TECH: u32 = 99;
+    /// The longest series offered. Beyond this a match is a tournament, and
+    /// `civvis tournament` is the instrument for that.
+    pub const MAX_BEST_OF: u32 = 21;
 
     /// Clamp a requested economy to what the mode can actually play.
     pub fn sanitized(self) -> Self {
@@ -961,7 +988,17 @@ impl TacticsRules {
             production: self.production.min(Self::MAX_YIELD),
             gold: self.gold.min(Self::MAX_YIELD),
             turns_per_tech: self.turns_per_tech.min(Self::MAX_TURNS_PER_TECH),
+            // Odd, so a series always has a winner: an even one can be split
+            // down the middle with nothing left to play, and "best of four"
+            // is best of three with a dead rubber attached.
+            best_of: (self.best_of.max(1) | 1).min(Self::MAX_BEST_OF),
+            unique_units: self.unique_units,
         }
+    }
+
+    /// Battles one side must win to take the match.
+    pub fn wins_needed(self) -> u32 {
+        self.sanitized().best_of / 2 + 1
     }
 }
 
@@ -971,7 +1008,100 @@ impl Default for TacticsRules {
     /// five turns. Chosen so a battle keeps arriving at new units and new
     /// matchups without the arena becoming a production race.
     fn default() -> Self {
-        Self { cities: 1, production: 30, gold: 30, turns_per_tech: 5 }
+        Self {
+            cities: 1,
+            production: 30,
+            gold: 30,
+            turns_per_tech: 5,
+            best_of: 1,
+            unique_units: false,
+        }
+    }
+}
+
+/// The running score of a Tactics match: one series of battles between the
+/// same two civilizations.
+///
+/// Kept by civilization rather than by seat, because a match swaps the sides
+/// over between battles. Whichever end of the field a civilization is set
+/// down on, the battle it wins is its own — and a series in which one side
+/// held the same corner every time would be measuring the corner.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct MatchSeries {
+    /// Battles the match is played over. Always odd, so it has a winner.
+    pub best_of: u32,
+    /// Battles won, by civilization, in roster order.
+    pub wins: BTreeMap<String, u32>,
+    /// Battles that reached the turn limit with no side eliminated and no
+    /// award — vanishingly rare, and counted rather than silently dropped so
+    /// the played total always adds up.
+    pub drawn: u32,
+}
+
+impl MatchSeries {
+    /// A fresh match between these civilizations.
+    pub fn new(best_of: u32, contenders: impl IntoIterator<Item = String>) -> Self {
+        Self {
+            best_of: (best_of.max(1) | 1).min(TacticsRules::MAX_BEST_OF),
+            wins: contenders.into_iter().map(|civ| (civ, 0)).collect(),
+            drawn: 0,
+        }
+    }
+
+    /// Battles one civilization must win to take the match.
+    pub fn wins_needed(&self) -> u32 {
+        self.best_of / 2 + 1
+    }
+
+    pub fn played(&self) -> u32 {
+        self.wins.values().sum::<u32>() + self.drawn
+    }
+
+    /// Record a finished battle. `None` is a battle nobody won.
+    pub fn record(&mut self, winner: Option<&str>) {
+        match winner {
+            Some(civ) => *self.wins.entry(civ.to_string()).or_insert(0) += 1,
+            None => self.drawn += 1,
+        }
+    }
+
+    /// The civilization that has taken the match, if one has.
+    pub fn winner(&self) -> Option<&str> {
+        let needed = self.wins_needed();
+        self.wins
+            .iter()
+            .find(|(_, won)| **won >= needed)
+            .map(|(civ, _)| civ.as_str())
+    }
+
+    /// Whether the match is over — either somebody has clinched it, or every
+    /// battle has been played and the draws have used the series up.
+    pub fn decided(&self) -> bool {
+        self.winner().is_some() || self.played() >= self.best_of
+    }
+
+    /// "Greece 3 – 1 Egypt", or "Greece 2 – 1 Egypt (best of 5)" mid-match.
+    pub fn scoreline(&self) -> String {
+        let mut sides: Vec<(&String, &u32)> = self.wins.iter().collect();
+        // Leader first, then roster order, so the line reads as a result.
+        sides.sort_by(|(first_civ, first), (second_civ, second)| {
+            second.cmp(first).then_with(|| first_civ.cmp(second_civ))
+        });
+        let score = sides
+            .iter()
+            .map(|(civ, won)| format!("{civ} {won}"))
+            .collect::<Vec<_>>()
+            .join(" – ");
+        let drawn = if self.drawn > 0 {
+            format!(", {} drawn", self.drawn)
+        } else {
+            String::new()
+        };
+        if self.decided() {
+            format!("{score}{drawn}")
+        } else {
+            format!("{score}{drawn} (best of {})", self.best_of)
+        }
     }
 }
 
@@ -1353,7 +1483,7 @@ mod tests {
     use super::{
         last_start_era, playable_start_eras, start_era_from_id, start_era_id,
         stock_start_era_id, BaseRuleset, GameMode, GameSpeed, MapPoles, MapScript, MapSize,
-        MapTopology,
+        MapTopology, MatchSeries, TacticsRules,
         BATTLEFIELD_SIZES,
         BASE_RULESETS, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, MAP_POLES,
         MAP_TOPOLOGIES, START_ERAS,
@@ -1687,6 +1817,51 @@ mod tests {
             crate::elo::DEFAULT_RATINGS_PATH,
             "the Civ ladder keeps its own path, so existing ledgers are untouched"
         );
+    }
+
+    /// A match is a series between two civilizations, and its score belongs
+    /// to the civilizations rather than to the seats they were sitting in —
+    /// because a match swaps the sides over between battles. It is always an
+    /// odd number of battles, so it always has a winner.
+    #[test]
+    fn a_match_is_an_odd_series_scored_by_civilization() {
+        // An even length is not a match: best of four is best of three with a
+        // dead rubber attached, and can be split with nothing left to play.
+        for asked in [0, 1, 2, 3, 4, 5, 6, 1_000] {
+            let length = TacticsRules { best_of: asked, ..TacticsRules::default() }
+                .sanitized()
+                .best_of;
+            assert_eq!(length % 2, 1, "asked for {asked}, got {length}");
+            assert!((1..=TacticsRules::MAX_BEST_OF).contains(&length), "{length}");
+        }
+        assert_eq!(TacticsRules { best_of: 5, ..TacticsRules::default() }.wins_needed(), 3);
+        assert_eq!(TacticsRules::default().best_of, 1, "one battle unless a match is asked for");
+        assert!(!TacticsRules::default().unique_units, "even rosters unless asked otherwise");
+
+        let mut series = MatchSeries::new(5, ["Greece".to_string(), "Egypt".to_string()]);
+        assert_eq!(series.wins_needed(), 3);
+        assert!(!series.decided());
+        series.record(Some("Greece"));
+        series.record(Some("Egypt"));
+        series.record(Some("Greece"));
+        assert!(!series.decided(), "two of five is not a match");
+        assert_eq!(series.scoreline(), "Greece 2 – Egypt 1 (best of 5)");
+        series.record(Some("Greece"));
+        assert!(series.decided());
+        assert_eq!(series.winner(), Some("Greece"));
+        assert_eq!(series.played(), 4, "a match stops at the battle that settles it");
+        assert_eq!(series.scoreline(), "Greece 3 – Egypt 1");
+
+        // A battle nobody wins is counted rather than dropped, and enough of
+        // them end the match without a winner.
+        let mut drawn = MatchSeries::new(3, ["Rome".to_string(), "Nubia".to_string()]);
+        for _ in 0..3 {
+            drawn.record(None);
+        }
+        assert!(drawn.decided());
+        assert_eq!(drawn.winner(), None);
+        assert_eq!(drawn.played(), 3);
+        assert!(drawn.scoreline().contains("3 drawn"), "{}", drawn.scoreline());
     }
 
     /// The world's shape and its poles are settings of their own, orthogonal to
