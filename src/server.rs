@@ -2832,7 +2832,7 @@ impl Session {
                 o["simultaneous"] = json!(self.simultaneous_census);
             }
             o["teams"] = json!(major_teams(&self.game));
-            o["victory_conditions"] = json!(self.game.victory_conditions);
+            o["victory_conditions"] = json!(self.game.effective_victory_conditions());
             o["mercy_rule"] = json!(self.game.mercy_rule);
             o["required_victory_types"] = json!(self.game.effective_required_victories());
             o["victories_won"] = json!(self.game.victories_won);
@@ -2861,7 +2861,7 @@ impl Session {
         o["leader_pool"] = json!(self.game.leader_pool.id());
         o["turn_structure"] = json!(self.game.turn_structure.id());
         o["teams"] = json!(major_teams(&self.game));
-        o["victory_conditions"] = json!(self.game.victory_conditions);
+        o["victory_conditions"] = json!(self.game.effective_victory_conditions());
         o["mercy_rule"] = json!(self.game.mercy_rule);
         o["required_victory_types"] = json!(self.game.effective_required_victories());
         o["victories_won"] = json!(self.game.victories_won);
@@ -3909,6 +3909,27 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if p.map_script.is_battlefield() {
         p.map_topology = MapTopology::Flat;
         p.num_city_states = 0;
+        // And it keeps a battle's clock rather than a civilization's five
+        // hundred turns. An explicit `turn_limit` in the same request still
+        // wins — this only replaces the game speed's own budget, which was
+        // never meant to time a battle.
+        if requested_turn_limit(request).is_none() {
+            p.max_turns = Game::battlefield_turn_limit(p.width, p.height, p.num_players);
+        }
+        // A battle is decided by the battle. Domination is the lane the last
+        // army standing arrives through, and Score is the clock's own award
+        // to whoever still holds the field; the four that need cities could
+        // never be reached on an arena, and the engine refuses them there in
+        // any case.
+        p.victory_conditions = VictoryConditions {
+            science: false,
+            culture: false,
+            religious: false,
+            diplomatic: false,
+            domination: true,
+            score: true,
+        };
+        p.required_victory_types = 1;
     }
     // Only a spectated table plays the simultaneous regime. A human seat is
     // consulted live, one seat at a time — sequential by construction — so
@@ -7668,8 +7689,9 @@ mod tests {
 
     /// The lobby's two map menus are cut from the one authoritative roster:
     /// the Civ mode offers every world and no arena, the Tactics mode offers
-    /// the battlefield, and the battlefield sizes advertise their fighting
-    /// ground while carrying the seam column that seals the wrap.
+    /// the battlefield, and a battlefield size is exactly the fighting ground
+    /// its name advertises — the arena is bounded by its own topology rather
+    /// than by a column of sea.
     #[test]
     fn the_map_menus_split_worlds_from_battlefields() {
         assert!(world_map_scripts()
@@ -7685,7 +7707,7 @@ mod tests {
         assert_eq!(battlefield_map_scripts()[0].id, "battlefield");
         let sizes = serde_json::to_value(BATTLEFIELD_SIZES).expect("battlefield sizes serialize");
         assert_eq!(sizes[0]["id"], json!("10x10"));
-        assert_eq!(sizes[0]["width"], json!(11));
+        assert_eq!(sizes[0]["width"], json!(10));
         assert_eq!(sizes[0]["height"], json!(10));
         // The lobby swaps its size and map rosters from these lists and
         // sends the arena's dimensions explicitly.

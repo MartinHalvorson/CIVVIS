@@ -8802,6 +8802,18 @@ impl BasicAi {
     }
 
     fn healing_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
+        // There is no recovery on a Tactics arena, because nothing heals
+        // there. A unit that dropped below the withdrawal line would be put
+        // into `recovering_units`, sent looking for friendly ground that does
+        // not exist, and left fortified in a corner for the rest of the
+        // battle waiting for hit points that never come — permanently out of
+        // a fight it is still perfectly able to influence. On a battlefield a
+        // damaged unit fights on, and the fact that it is damaged is exactly
+        // why the enemy is coming for it.
+        if g.is_arena() {
+            self.recovering_units.remove(&uid);
+            return None;
+        }
         let withdraw_at_hp = self.w.withdraw_hp.round() as i32;
         let return_at_hp = self.w.rejoin_hp.max(self.w.withdraw_hp + 5.0).round() as i32;
 
