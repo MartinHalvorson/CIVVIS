@@ -247,13 +247,28 @@ def installed_config() -> dict | None:
 # bit -- "we did this, and `--uninstall` undoes it" is a different situation
 # from "something else did this", and only the second needs a human.
 #
-# ⚠ AND RELOCATING THE MOD IS NOT THE FIX. The obvious escape -- install into
-# the user `Mods` directory instead -- is measured DEAD on this build: no user
-# `Mods` directory is scanned, so the mod is never discovered and nothing logs
-# why. Re-signing is equally unavailable, because `_CodeSignature/` is not
-# writable without App Management permission. Both are recorded in
-# `docs/CIV6_COMPUTER_CONTROL.md`; do not spend another cycle rediscovering
-# them.
+# ⚠⚠ AND RELOCATING THE MOD IS NOT THE FIX, however obvious it looks. Installing
+# into the user `Mods` directory instead would touch no signed bundle and would
+# also never run: no user `Mods` directory is scanned on this build, so the mod
+# is never discovered and NOTHING LOGS WHY -- the run reports "CIVVIS decided
+# nothing", four layers from the cause.
+#
+# The game's own scan index says so directly, which is worth keeping here
+# because prose has not stopped anyone proposing the move. `Mods.sqlite` in the
+# live user directory holds 74 `ScannedFiles` rows and every one of them is
+# relative to the install tree; `select Path from ScannedFiles where Path not
+# like '../../../%'` returns nothing at all, while `../../../DLC/CivvisControl`
+# is present and indexed. A third-party mod sitting in
+# `~/Library/Application Support/Sid Meier's Civilization VI/Mods` since July
+# appears nowhere in it -- and note that is the LEGACY user directory anyway;
+# `civ6_env.user_dir()` resolves the live one to the nested path, which has no
+# `Mods` directory at all.
+#
+# Re-signing is equally unavailable: `_CodeSignature/` is not writable without
+# App Management permission, and `codesign --force --deep --sign -` fails with
+# an internal error on `Civ6_Exe_Child`. All of this is in
+# `docs/CIV6_COMPUTER_CONTROL.md` and issue #1342; do not spend another cycle
+# rediscovering it.
 
 
 def bundle_dir() -> Path | None:
