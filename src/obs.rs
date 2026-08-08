@@ -411,6 +411,16 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         // screen was started at, and offered to restart it at the stock one.
         "difficulty": g.difficulty,
         "world_era": g.world_era,
+        // The bomb is invented once, for the whole world. This says only that
+        // somebody has finished the research that unlocks nuclear devices —
+        // never who — so it is a fact about the age like `world_era` beside it
+        // rather than a look inside a rival's tech tree. Nothing un-invents it:
+        // a world that has built the bomb has built it even after the empire
+        // that did is gone. Which research it is comes from the rules, so the
+        // tech's name is not written down a second time here.
+        "nuclear_weapons_unlocked": g.rules.projects.get("build_nuclear_device")
+            .and_then(|spec| spec.tech.as_ref())
+            .is_some_and(|tech| g.players.iter().any(|p| p.techs.contains(tech))),
         "climate_phase": g.climate_phase,
         "climate_points": g.climate_points(),
         "disaster_intensity": g.disaster_intensity(),
@@ -704,6 +714,13 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 .map(|&cid| g.cities[&cid].pop)
                 .sum();
             let military = g.military_power(o.id).round() as i64;
+            // A finished device is an empire-scale fact of the same kind as
+            // military strength, and it goes on the public ledger for the same
+            // reason: the standings ribbon compares empires somebody has met.
+            // The two classes are reported apart because they are two different
+            // weapons — one blast ring against two, and a maintenance bill to
+            // match — and the browser adds them for the one figure it shows.
+            let devices = |key: &str| o.counters.get(key).copied().unwrap_or(0).max(0);
             // Founding is permanent history, but the standings marker is
             // about a faith that is still present now. Compute that from the
             // whole current world so fogged or merely remembered cities do
@@ -784,6 +801,8 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "founded_religion_exists": founded_religion_exists,
                 "yields": yields_json(&output),
                 "military": military,
+                "nuclear_devices": devices("project_effect:nuclear_devices"),
+                "thermonuclear_devices": devices("project_effect:thermonuclear_devices"),
                 // ⚠ WHAT THE HOST SAID, kept apart from what CIVVIS MODELS.
                 // `military` above is `military_power`, which is deliberately
                 // `max(observed, our own strength sum)` — so for our OWN seat,
@@ -1935,6 +1954,8 @@ mod tests {
             "government",
             "age",
             "wonder_count",
+            "nuclear_devices",
+            "thermonuclear_devices",
             "opinion_of_me",
         ] {
             assert!(
@@ -1959,6 +1980,88 @@ mod tests {
             json!(true),
             "and the meeting was mutual"
         );
+    }
+
+    /// The standings' NUK column counts finished devices of both classes, so
+    /// the two stockpile counters have to reach the wire separately and unmixed
+    /// with the Manhattan Project that unlocked them. Whether the column exists
+    /// at all is the world's own fact beside `world_era`: nobody can hold a
+    /// device before somebody researches nuclear fission, and no seat learns
+    /// from it who that somebody was.
+    #[test]
+    fn the_world_reports_when_nuclear_weapons_have_been_unlocked() {
+        let mut game = Game::new_full(3, 22, 16, 74_118, 25, 1, false);
+        assert_eq!(
+            observation_spectator(&game, 0)["nuclear_weapons_unlocked"],
+            json!(false),
+            "an ancient world has not invented the bomb"
+        );
+        assert_eq!(
+            observation(&game, 1)["nuclear_weapons_unlocked"],
+            json!(false)
+        );
+
+        game.players[2].techs.insert(crate::name!("nuclear_fission"));
+        for observed in [observation_spectator(&game, 0), observation(&game, 1)] {
+            assert_eq!(
+                observed["nuclear_weapons_unlocked"],
+                json!(true),
+                "the whole world is in the nuclear age once one civilization is"
+            );
+            assert!(
+                observed["players"][2]["techs"].is_null(),
+                "and it still says nothing about whose tech tree it came from"
+            );
+        }
+
+        // History does not un-happen: losing the empire that invented the bomb
+        // does not take the column back off the table.
+        game.players[2].alive = false;
+        assert_eq!(
+            observation_spectator(&game, 0)["nuclear_weapons_unlocked"],
+            json!(true)
+        );
+    }
+
+    /// Both classes of device are counted, apart, for every civilization the
+    /// viewer has met — the same public ledger military strength rides on.
+    #[test]
+    fn player_standings_report_each_civilizations_nuclear_stockpile() {
+        let mut game = Game::new_full(3, 22, 16, 74_117, 25, 1, false);
+        game.players[0]
+            .science_projects
+            .insert("manhattan_project".to_string());
+        game.players[0]
+            .counters
+            .insert("project_effect:nuclear_devices".to_string(), 3);
+        game.players[0]
+            .counters
+            .insert("project_effect:thermonuclear_devices".to_string(), 2);
+
+        let observed = observation_spectator(&game, 0);
+        let armed = &observed["players"][0];
+        assert_eq!(armed["nuclear_devices"], json!(3));
+        assert_eq!(armed["thermonuclear_devices"], json!(2));
+        assert!(
+            armed["science_projects"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|project| project == "manhattan_project"),
+            "the project that unlocks the column is named on the same ledger"
+        );
+        // Everybody else is on the same ledger with an explicit nothing, so a
+        // disarmed row reads as a zero rather than as an unavailable figure.
+        let disarmed = &observed["players"][1];
+        assert_eq!(disarmed["nuclear_devices"], json!(0));
+        assert_eq!(disarmed["thermonuclear_devices"], json!(0));
+
+        const APP: &str = include_str!("../web/assets/app.js");
+        assert!(
+            APP.contains("[\"nukes\", \"Nuclear stockpile\", nuclearStandingsInPlay],"),
+            "the column exists only while the world has finished a Manhattan Project"
+        );
+        assert!(APP.contains("nukes:[\"NUK\", \"Nuclear devices held\"],"));
     }
 
     /// Ages belong to civilizations rather than to the observing seat. Once a
