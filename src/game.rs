@@ -63289,6 +63289,55 @@ mod victory_conditions {
         assert_eq!(game.decided.as_ref().unwrap().victory_label(), label);
     }
 
+    /// A hand-built board is the easy case. This crosses on played-out worlds,
+    /// where the lanes are whatever the game made them, and holds every
+    /// resulting notation to its invariants.
+    ///
+    /// The rung is well below the shipped ladder, and deliberately so. The
+    /// measurement in docs/ADJUDICATION.md is that 95% arrives only a handful
+    /// of turns before the rules end the game anyway; measured here, no seed
+    /// crosses anything at or above 0.45 inside a test-sized turn budget, and
+    /// the shipped rungs are what `civvis odds-audit` exists to exercise at
+    /// full length. What is under test is the notation on boards nobody wrote
+    /// by hand, and a low rung is how those get reached at all.
+    #[test]
+    fn played_out_mercy_endings_are_all_well_formed_notations() {
+        let mut crossings = 0;
+        for seed in 0..12u64 {
+            let mut game = game_with_capitals(3, 91_600 + seed, 120);
+            game.mercy_rule = Some(0.35);
+            play_to_the_end(&mut game);
+            if game.victory_type.as_deref() != Some(MERCY_VICTORY) {
+                continue;
+            }
+            crossings += 1;
+            let label = game.victory_label().expect("a crowned game has a label");
+            assert_eq!(label, mercy_label(&game.mercy_lanes));
+            assert!(label.starts_with("Mercy Rule"), "seed {seed}: {label}");
+            // The invariant the league's comma-cut history depends on, held
+            // against real boards rather than a hand-written lane list.
+            assert!(!label.contains(','), "seed {seed}: {label}");
+            let winner = game.winner.expect("a mercy ending has a winner");
+            for lane in &game.mercy_lanes {
+                assert!(
+                    game.victory_conditions.is_enabled(lane),
+                    "seed {seed}: named a lane this world switched off: {lane}"
+                );
+                assert_ne!(lane, "score", "Score is a standing, not a race");
+            }
+            assert_eq!(
+                game.mercy_lanes,
+                game.leading_victory_lanes(winner),
+                "seed {seed}: the lanes are the winner's, read at the crossing"
+            );
+        }
+        assert_eq!(
+            crossings, 12,
+            "every seed should concede at a rung this low; a run that stopped \
+             crossing is testing nothing, not passing"
+        );
+    }
+
     #[test]
     fn an_ordinary_victory_is_still_written_as_its_bare_type() {
         let mut game = game_with_capitals(2, 91_508, 300);

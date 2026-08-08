@@ -1181,11 +1181,16 @@ fn standings(g: &Game) {
     match g.winner {
         Some(winner) => {
             let w = &g.players[winner];
+            // The label, not the bare type: this line is how a played game
+            // announces its result, and a Mercy Rule ending has a lane to
+            // name. The fixed-width victory columns in the batch and audit
+            // tables below keep the type — they are a tabulation to scan, and
+            // one of them is a key things are counted under.
             println!(
                 "Winner: {} (player {}) by {} on turn {}",
                 w.civ,
                 w.id,
-                g.victory_type.clone().unwrap_or_default(),
+                g.victory_label().unwrap_or_default(),
                 g.reported_turn()
             );
         }
