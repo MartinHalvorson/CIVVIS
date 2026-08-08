@@ -119,9 +119,16 @@ def on_github(repo: str, sha: str) -> bool:
     landed content a brand new commit with a brand new patch-id, so both of those
     report long-landed branches as unlanded — measured at 98 false alarms out of
     110 worktrees, which is the same as having no check.
+
+    ⚠ `refs/civvis/` counts. Nothing under it is fetched by the default
+    refspec, so a commit this tool has already pushed to `refs/civvis/wip/`
+    would otherwise be reported as disk-only forever — the local mirror ref
+    `push_wip` writes after a successful push is the only local evidence the
+    remote has it, and searching `refs/remotes` alone misses it.
     """
     return bool(git("for-each-ref", "--contains", sha, "--count=1",
-                    "--format=%(refname)", "refs/remotes", repo=repo))
+                    "--format=%(refname)", "refs/remotes", "refs/civvis",
+                    repo=repo))
 
 
 def snapshot(repo: str, tree_path: str, branch: str) -> str | None:
@@ -173,11 +180,47 @@ def snapshot(repo: str, tree_path: str, branch: str) -> str | None:
     # the default refspec — so the FIRST rescue succeeds and every later one is
     # rejected for a lease it cannot know. This ref is a rolling snapshot this
     # tool alone writes; overwriting our own previous snapshot is the point.
+    return commit if push_wip(tree_path, commit, branch) else None
+
+
+def push_wip(tree_path: str, sha: str, branch: str) -> bool:
+    """Force `sha` onto `refs/civvis/wip/<branch>` on the remote.
+
+    ⚠ `--force`, not `--force-with-lease`. The lease needs a remote-tracking
+    ref to compare against, and nothing under refs/civvis/ is ever fetched by
+    the default refspec — so the FIRST rescue succeeds and every later one is
+    rejected for a lease it cannot know. This ref is a rolling snapshot this
+    tool alone writes; overwriting our own previous snapshot is the point.
+    """
+    ref = f"refs/civvis/wip/{branch}"
     pushed = subprocess.run(
         ["git", "-C", tree_path, "-c", "gc.auto=0", "push", "--force",
-         "origin", f"{commit}:{ref}"],
+         "origin", f"{sha}:{ref}"],
         capture_output=True, text=True)
-    return commit if pushed.returncode == 0 else None
+    if pushed.returncode != 0:
+        return False
+    # Mirror the ref locally ONLY after the push succeeded, so `on_github` can
+    # see that this commit is preserved without a network round trip. Writing it
+    # before the push would let a failed push read as a rescue.
+    git("update-ref", ref, sha, repo=tree_path)
+    return True
+
+
+def preserve_head(tree_path: str, head: str, branch: str) -> str | None:
+    """Put a clean worktree's local-only HEAD on the remote, as-is.
+
+    `snapshot` only helps a DIRTY worktree: it exists to capture uncommitted
+    bytes. A CLEAN worktree whose HEAD is on no remote ref is exactly as lossy —
+    the commits exist on one disk and nothing but this ref is holding them — and
+    for a long-lived branch that is far more work than a single dirty tree. This
+    pushes the commit itself rather than a snapshot of it, so the history is
+    preserved verbatim rather than as one squashed tree.
+    """
+    if branch in ("HEAD", "(detached)") or not branch:
+        # A detached HEAD has no name to file the ref under. Use the sha, which
+        # is at least stable and greppable.
+        branch = f"detached/{head[:12]}"
+    return head if push_wip(tree_path, head, branch) else None
 
 
 def audit(repo: str, idle_minutes: int, rescue: bool) -> list[dict]:
@@ -208,9 +251,19 @@ def audit(repo: str, idle_minutes: int, rescue: bool) -> list[dict]:
             })
 
         if head and not on_github(repo, head):
+            # A clean worktree is rescued too. `snapshot` above only fires for a
+            # dirty one, and for years that left the worse case unhandled: a
+            # clean worktree carrying commits that exist on no remote at all.
+            # Measured 2026-08-08 — a branch with 17 such commits reported here
+            # every cycle while `--rescue` pushed nothing, and deleting the
+            # worktree would have destroyed all of them.
+            saved = preserve_head(path, head, branch) if rescue else None
             findings.append({
                 "path": path, "branch": branch, "kind": "COMMIT-NOT-ON-GITHUB",
-                "detail": f"HEAD {head[:8]} is reachable from no remote ref",
+                "detail": f"HEAD {head[:8]} is reachable from no remote ref"
+                          + (f"; preserved -> refs/civvis/wip/{branch}" if saved
+                             else "; NOT PRESERVED" if rescue else ""),
+                "saved": saved,
             })
     return findings
 
@@ -282,6 +335,25 @@ def selftest() -> int:
         found = audit(work, idle_minutes=30, rescue=False)
         assert any(f["kind"] == "COMMIT-NOT-ON-GITHUB" for f in found), \
             f"a local-only commit must be reported, got {found}"
+
+        # ⚠ AND RESCUING IT MUST ACTUALLY PRESERVE IT. Reporting is not saving.
+        # The tree is CLEAN at this point — everything was just committed — so
+        # `snapshot` does not fire, and before 2026-08-08 `--rescue` pushed
+        # nothing here while still exiting as though it had done its job.
+        local_only = git("rev-parse", "HEAD", repo=wt)
+        audit(work, idle_minutes=30, rescue=True)
+        preserved = subprocess.run(
+            ["git", "-C", remote, "rev-parse", "refs/civvis/wip/feat"],
+            capture_output=True, text=True).stdout.strip()
+        assert preserved == local_only, (
+            "a clean worktree's local-only HEAD must be pushed verbatim, "
+            f"remote has {preserved!r}, worktree has {local_only!r}")
+
+        # And once preserved it must stop being reported, or the audit never
+        # converges and a real finding drowns in a permanent false positive.
+        after = audit(work, idle_minutes=30, rescue=False)
+        assert not any(f["kind"] == "COMMIT-NOT-ON-GITHUB" for f in after), \
+            f"a preserved commit must no longer be reported, got {after}"
         print("selftest: ok")
         return 0
     finally:
