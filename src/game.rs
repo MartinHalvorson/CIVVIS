@@ -32934,6 +32934,24 @@ impl Game {
         if !raider && !camouflaged {
             return true;
         }
+        // On a mirrored board every foreign unit arrived from the Civ 6 export,
+        // and the export carries a rival's units ONLY under current visibility —
+        // the HOST has already run its own detection over this raider before
+        // showing it to the seat. Re-deriving stealth here vetoed that ground
+        // truth: measured live on `civvis-20260807T162004Z` turns 237–251
+        // (#1362), a rival UNIT_NUCLEAR_SUBMARINE the export carried in full was
+        // planted and then hidden from the seat's board, orders and threat
+        // reads, because no destroyer of ours stood near it. `host_observed` is
+        // exactly the set of tiles the host proved this seat can see; trust it
+        // the same way `player_vision` already does. Seat-0-gated like that
+        // site, and an ordinary CIVVIS game leaves the set empty.
+        if viewer == MIRRORED_SEAT
+            && self
+                .host_observed
+                .contains(&unit.air_patrol_pos.unwrap_or(unit.pos))
+        {
+            return true;
+        }
         self.player_unit_ids(viewer).into_iter().any(|other_id| {
             let other = &self.units[&other_id];
             let origin = other.air_patrol_pos.unwrap_or(other.pos);
