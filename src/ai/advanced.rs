@@ -1206,6 +1206,23 @@ pub struct AdvancedAi {
     /// `formation_movement_locked_by_zoc`) and fall through to the ordinary
     /// self-march. Native tournament controllers keep the frozen behaviour.
     escort_unstick: bool,
+    /// A Religion strategy sues for peace instead of holding wars that starve
+    /// its own lane.
+    ///
+    /// ★★★★ MEASURED (run civvis-20260807T224914Z, Settler live): at t200 the
+    /// seat had met exactly two rivals and was AT WAR WITH BOTH, so the
+    /// offensive-spread filter's `!is_at_war` excluded every one of the ten
+    /// revealed foreign cities; four charged Buddhist units idled, faith
+    /// banked to 1032, and the game ended with all five rivals' religions
+    /// untouched — while the plan printed `strategy=religion` beside
+    /// `target_player=Some(..)`. The league's 48-of-60 religious wins at this
+    /// turn cap come from spreading to NEUTRAL rivals; a religion plan that
+    /// keeps its wars blockades itself. Under the treatment the Religion
+    /// strategy offers peace to every non-emergency at-war major, on top of
+    /// the existing outmatched/recovery/stalled reasons. Firaxis may refuse
+    /// the deal; offering costs nothing and unblocks the lane the moment it
+    /// lands. Frozen tournament controllers keep the recorded posture.
+    religion_sues_peace: bool,
     /// Total unresolved delay for each Settler. Unlike `settler_stalls`, this
     /// survives a target change so a stranded civilian stops monopolizing the
     /// empire-wide in-flight allowance and attracts an escort.
@@ -2187,6 +2204,7 @@ impl AdvancedAi {
             settler_stalls: BTreeMap::new(),
             escort_march: BTreeMap::new(),
             escort_unstick: false,
+            religion_sues_peace: false,
             settler_blocked_turns: BTreeMap::new(),
             settler_avoid: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
@@ -2309,6 +2327,16 @@ impl AdvancedAi {
 
     pub fn disable_escort_unstick(&mut self) {
         self.escort_unstick = false;
+    }
+
+    /// A Religion strategy offers peace to unblock its spread lane. See
+    /// `religion_sues_peace` for the t200 measurement.
+    pub fn enable_religion_sues_peace(&mut self) {
+        self.religion_sues_peace = true;
+    }
+
+    pub fn disable_religion_sues_peace(&mut self) {
+        self.religion_sues_peace = false;
     }
 
     /// Enable explicit battlefield roles: the land-unit counter cycle, safe
@@ -2521,6 +2549,9 @@ impl AdvancedAi {
         // Settler conversion is the score frontier the first seven live games
         // isolated; see escort_unstick.
         self.enable_escort_unstick();
+        // The religion lane was structurally blocked by its own wars; see
+        // religion_sues_peace.
+        self.enable_religion_sues_peace();
         // Raj, Wisselbanken, Collective Activism and the International Space
         // Agency all scale off SUZERAIN city-states and pay nothing at zero.
         // Live run `civvis-20260803T220954Z` held Raj AND Wisselbanken slotted
@@ -9494,6 +9525,9 @@ impl AdvancedAi {
                 && (my_power < g.military_power(*other) * 0.62
                     || (plan.strategy == GrandStrategy::Recovery
                         && plan.target_player != Some(*other))
+                    || (self.religion_sues_peace
+                        && plan.strategy == GrandStrategy::Religion
+                        && !appointed_objective)
                     || (!appointed_objective
                         && fatigued
                         && g.player_city_ids(*other).len() > 1))
@@ -9505,6 +9539,10 @@ impl AdvancedAi {
                         "outmatched"
                     } else if plan.strategy == GrandStrategy::Recovery {
                         "this is not the war the recovery plan is fighting"
+                    } else if self.religion_sues_peace
+                        && plan.strategy == GrandStrategy::Religion
+                    {
+                        "the religion plan cannot spread into a war"
                     } else {
                         "the war has stalled"
                     };
@@ -20980,6 +21018,47 @@ mod tests {
     use super::*;
     use crate::ai::run_game;
     use crate::game::{GameOptions, GovernorState};
+
+    #[test]
+    fn a_religion_plan_offers_peace_to_unblock_its_spread_lane() {
+        // The t200 shape from run civvis-20260807T224914Z: strategy=religion,
+        // met two rivals, at war with both, every revealed foreign city
+        // excluded by the offensive-spread war filter.
+        let (mut game, _, _) = timed_war_fixture(5);
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Religion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        let mut treated = AdvancedAi::new();
+        treated.enable_religion_sues_peace();
+        treated.advanced_diplomacy(&mut game, 0, &plan);
+        assert!(
+            treated.peace_offers.contains(&1),
+            "a religion plan at war must offer peace"
+        );
+
+        let mut frozen = AdvancedAi::new();
+        frozen.advanced_diplomacy(&mut game, 0, &plan);
+        assert!(
+            !frozen.peace_offers.contains(&1),
+            "frozen controllers keep the recorded posture"
+        );
+
+        let mut bridged = AdvancedAi::new();
+        bridged.enable_live_bridge();
+        assert!(bridged.religion_sues_peace);
+        bridged.disable_religion_sues_peace();
+        assert!(!bridged.religion_sues_peace);
+    }
 
     #[test]
     fn a_stalled_escort_is_released_and_the_settler_walks_itself() {

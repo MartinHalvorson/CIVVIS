@@ -849,6 +849,7 @@ fn withhold_live_treatment(
         "wide-map-capacity" => ai.disable_wide_map_capacity(),
         "garrison-under-fire" => ai.disable_garrison_under_fire(),
         "escort-unstick" => ai.disable_escort_unstick(),
+        "religion-sues-peace" => ai.disable_religion_sues_peace(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
