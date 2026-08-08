@@ -108,6 +108,8 @@ zero when the engagement gave nothing to measure it from.
 | `screen` | share of own ranged unit-turns with a friendly between them and the enemy |
 | `contact` | share of turns on which the two forces were within two tiles |
 | `arrival` | spread, in turns, of when each unit first reached the enemy — low is "fight united" |
+| `foot` | the same over 2-move units alone, which separates a slow line from fast cavalry |
+| `absent` | share of the force that never reached the enemy at all |
 
 `arrival` is the measurement behind the one thing every general on this list
 agreed on: *march divided, fight united*. It is the standard deviation, over a
@@ -116,6 +118,15 @@ A unit that never reached the enemy counts as arriving on the final turn —
 deliberately, because dropping those units would let an army that left half its
 strength standing in the rear report a *tighter* arrival than one that brought
 everything up a turn apart.
+
+`foot` exists because `arrival` on its own cannot answer the obvious objection.
+A four-move horseman reaches the enemy turns before a line of spearmen does
+however well the line is handled, so a wide spread might be a fact about the
+roster and how an agent uses its cavalry rather than about how it marches.
+Restricting the same spread to units with two movement points or fewer removes
+that explanation entirely. `absent` is the complementary measure: never
+arriving is the strongest form of arriving late, and the one form of it that no
+difference in movement points can explain away.
 
 The contact zone is computed **once for the board**, not once per side, so
 concentration is a genuine local force ratio: within one engagement one side's
@@ -257,6 +268,49 @@ That is a sharper target than "improve tactics": the lever is in how the army
 `src/ai/tactics.rs` only plans units that are already engaged, which is
 consistent with what this measures — but consistency is not proof, and the
 treatment still has to be built and run through the gates in order.
+
+### The confound, tested and dead
+
+The arrival result had an obvious alternative explanation: `advanced` might
+simply push its cavalry forward, and a horseman arriving five turns before the
+infantry produces a wide spread no matter how well the infantry is handled.
+`foot` — the same spread over two-move units alone — settles it. 60 seeds, same
+role, same position, `advanced` / `basic`, all-units arrival then foot-only:
+
+| position | role | arrival | foot | gap (all) | gap (foot) |
+| --- | --- | --- | --- | --- | --- |
+| `the_reserve` | 1 | 6.46 / 3.68 | 7.02 / 3.98 | 2.78 | **3.04** |
+| `hammer_and_anvil` | 0 | 4.54 / 1.97 | 4.73 / 1.93 | 2.57 | **2.80** |
+| `the_river_line` | 0 | 6.46 / 4.70 | 6.81 / 4.91 | 1.76 | **1.90** |
+| `the_reserve` | 0 | 5.06 / 2.79 | 5.41 / 2.93 | 2.27 | **2.48** |
+| `the_ridge` | 1 | 4.02 / 2.88 | 4.23 / 2.75 | 1.14 | **1.48** |
+
+`hammer_and_anvil` role 0 is the decisive cell, because it is the position built
+around fast units — a line that holds and two horsemen sent wide. If the cavalry
+were the explanation, that is where the gap should collapse when they are
+removed. It **widens**, from 2.57 to 2.80, and the same happens in every other
+cell above: taking the horse out makes `advanced` look *worse*, not better.
+
+**The line is what comes up piecemeal.** The cavalry was, if anything, masking
+the effect.
+
+### The other thing `absent` found
+
+Two cells report a quarter of an army never reaching the enemy at all:
+
+| position | role | `advanced` absent | `basic` absent | swing |
+| --- | --- | --- | --- | --- |
+| `the_defile` | 1 (the column, seven units, one way in) | **24%** | 3% | +131 / +108 |
+| `the_golden_bridge` | 1 (the encircling, seven units, one mouth) | **24%** | 2% | +150 / +148 |
+
+Both are the large force attacking into a narrow mouth, and in both `advanced`
+holds roughly 1.7 of its 7 units out of the battle entirely where `basic`
+commits everything. Worth being careful here: this is **not** obviously a
+defect. Not feeding a column into a defile one unit at a time is the correct
+answer to that position, and `advanced` wins both roles. But it is a large,
+specific, previously invisible behaviour, and it is the sort of thing that is
+right on a defile and badly wrong in the open — which is exactly why the column
+is reported per position rather than pooled.
 
 ### `advanced` spreads its fire against a dense mass
 

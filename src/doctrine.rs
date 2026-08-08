@@ -788,6 +788,17 @@ struct Observations {
     arrival_n: f64,
     arrival_sum: f64,
     arrival_sq: f64,
+    /// The same three sums over foot units alone, so a spread produced by
+    /// cavalry outriding the line can be told apart from one produced by the
+    /// line itself coming up piecemeal.
+    foot_n: f64,
+    foot_sum: f64,
+    foot_sq: f64,
+    /// Units deployed, and units that never reached the enemy at all. The
+    /// strongest form of arriving late, and the one form of it that no
+    /// difference in movement points can explain.
+    deployed: f64,
+    absent: f64,
 }
 
 impl DoctrineLedger {
@@ -817,6 +828,11 @@ impl DoctrineLedger {
         mine.arrival_n += theirs.arrival_n;
         mine.arrival_sum += theirs.arrival_sum;
         mine.arrival_sq += theirs.arrival_sq;
+        mine.foot_n += theirs.foot_n;
+        mine.foot_sum += theirs.foot_sum;
+        mine.foot_sq += theirs.foot_sq;
+        mine.deployed += theirs.deployed;
+        mine.absent += theirs.absent;
     }
 
     /// Production cost destroyed less production cost lost.
@@ -837,12 +853,9 @@ impl DoctrineLedger {
             ground: (obs.alive > 0.0).then(|| obs.on_good_ground / obs.alive),
             screen: (obs.ranged_alive > 0.0).then(|| obs.screened_ranged / obs.ranged_alive),
             contact: per_turn(obs.contact_turns as f64),
-            arrival: (obs.arrival_n > 1.0).then(|| {
-                let mean = obs.arrival_sum / obs.arrival_n;
-                // Population spread, not a sample estimate: these are all the
-                // units there were, not a draw from a larger force.
-                (obs.arrival_sq / obs.arrival_n - mean * mean).max(0.0).sqrt()
-            }),
+            arrival: spread(obs.arrival_n, obs.arrival_sum, obs.arrival_sq),
+            foot_arrival: spread(obs.foot_n, obs.foot_sum, obs.foot_sq),
+            absent: (obs.deployed > 0.0).then(|| obs.absent / obs.deployed),
         }
     }
 }
@@ -884,6 +897,29 @@ pub struct DoctrineProfile {
     /// general in this list agreed on. A unit that never reached the enemy
     /// counts as arriving at the final turn.
     pub arrival: Option<f64>,
+    /// The same spread over **foot units alone** — two movement points or
+    /// fewer. A horseman with four moves reaches the enemy turns before a
+    /// line of spearmen does however well the line is handled, so [`arrival`]
+    /// on its own cannot tell an agent that manoeuvres badly from one that
+    /// simply uses its cavalry. This column is the one that can: if it moves
+    /// with `arrival`, the march is the finding; if it does not, the cavalry
+    /// was.
+    pub foot_arrival: Option<f64>,
+    /// Share of the force that never reached the enemy at all. The strongest
+    /// form of arriving late, and the one form of it that no difference in
+    /// movement points can explain away.
+    pub absent: Option<f64>,
+}
+
+/// Population standard deviation from running sums. `None` below two
+/// observations, where a spread is not a quantity.
+fn spread(n: f64, sum: f64, square_sum: f64) -> Option<f64> {
+    (n > 1.0).then(|| {
+        let mean = sum / n;
+        // Population, not a sample estimate: these are all the units there
+        // were, not a draw from a larger force.
+        (square_sum / n - mean * mean).max(0.0).sqrt()
+    })
 }
 
 /// One position, one seed, played twice with the roles swapped.
@@ -963,6 +999,12 @@ struct Seen {
     hp: i32,
     pos: Pos,
     ranged: bool,
+    /// Foot, in the sense that matters to a march: two movement points or
+    /// fewer. A four-move horseman reaches the enemy turns before the line
+    /// does no matter how well the line is handled, so the two have to be
+    /// separable before an arrival spread can be read as a fact about the
+    /// agent rather than about the roster.
+    foot: bool,
 }
 
 type Snapshot = BTreeMap<u32, Seen>;
@@ -992,7 +1034,14 @@ fn play_position(
     // "March divided, fight united." The step on which each unit first came
     // within reach of an enemy, so the spread of those steps can say whether
     // the army arrived as a body or as a stream.
-    let mut arrival: BTreeMap<u32, (usize, u32)> = BTreeMap::new();
+    let mut arrival: BTreeMap<u32, u32> = BTreeMap::new();
+    // Who was deployed, and whether each is foot. Taken from the opening
+    // board rather than from the position's text, so a unit that dies before
+    // it ever reaches the enemy is still counted as never having arrived.
+    let roster: BTreeMap<u32, (usize, bool)> = previous
+        .iter()
+        .map(|(uid, unit)| (*uid, (unit.owner, unit.foot)))
+        .collect();
     let mut step = 0u32;
 
     observe(&previous, &game, &mut ledgers);
@@ -1019,7 +1068,7 @@ fn play_position(
             break;
         }
     }
-    settle_arrivals(&arrival, step, spec, &mut ledgers);
+    settle_arrivals(&roster, &arrival, step, &mut ledgers);
     Some((ledgers, game.turn.saturating_sub(start)))
 }
 
@@ -1027,12 +1076,7 @@ fn play_position(
 /// enemy. Two tiles rather than one because that is the range at which a unit
 /// is part of the engagement rather than walking toward it — the same
 /// threshold the contact zone uses.
-fn note_arrivals(
-    now: &Snapshot,
-    g: &Game,
-    step: u32,
-    arrival: &mut BTreeMap<u32, (usize, u32)>,
-) {
+fn note_arrivals(now: &Snapshot, g: &Game, step: u32, arrival: &mut BTreeMap<u32, u32>) {
     for (uid, unit) in now {
         if arrival.contains_key(uid) {
             continue;
@@ -1041,7 +1085,7 @@ fn note_arrivals(
             .values()
             .any(|other| other.owner != unit.owner && g.wdist(unit.pos, other.pos) <= 2);
         if engaged {
-            arrival.insert(*uid, (unit.owner, step));
+            arrival.insert(*uid, step);
         }
     }
 }
@@ -1055,29 +1099,28 @@ fn note_arrivals(
 /// strength standing in the rear report a *tighter* arrival than one that
 /// brought everything up a turn apart.
 fn settle_arrivals(
-    arrival: &BTreeMap<u32, (usize, u32)>,
+    roster: &BTreeMap<u32, (usize, bool)>,
+    arrival: &BTreeMap<u32, u32>,
     last: u32,
-    spec: &Position,
     ledgers: &mut (DoctrineLedger, DoctrineLedger),
 ) {
-    for side in [0usize, 1] {
-        let mut steps: Vec<f64> = arrival
-            .values()
-            .filter(|(owner, _)| *owner == side)
-            .map(|(_, step)| f64::from(*step))
-            .collect();
-        // Every unit the position deployed that never appears above never
-        // reached the enemy at all.
-        let deployed = spec.forces[side].len();
-        while steps.len() < deployed {
-            steps.push(f64::from(last));
-        }
-        let (ledger, _) = split(ledgers, side);
+    for (uid, (side, foot)) in roster {
+        // A unit missing from `arrival` never reached the enemy at all.
+        let reached = arrival.get(uid).copied();
+        let value = f64::from(reached.unwrap_or(last));
+        let (ledger, _) = split(ledgers, *side);
         let obs = &mut ledger.observations;
-        for value in steps {
-            obs.arrival_n += 1.0;
-            obs.arrival_sum += value;
-            obs.arrival_sq += value * value;
+        obs.arrival_n += 1.0;
+        obs.arrival_sum += value;
+        obs.arrival_sq += value * value;
+        obs.deployed += 1.0;
+        if reached.is_none() {
+            obs.absent += 1.0;
+        }
+        if *foot {
+            obs.foot_n += 1.0;
+            obs.foot_sum += value;
+            obs.foot_sq += value * value;
         }
     }
 }
@@ -1087,11 +1130,9 @@ fn snapshot(g: &Game) -> Snapshot {
         .values()
         .filter(|unit| unit.owner < 2 && g.rules.units[unit.kind].class == "military")
         .map(|unit| {
-            let ranged = g
-                .rules
-                .units
-                .get(&unit.kind)
-                .is_some_and(|spec| spec.range > 0);
+            let spec = g.rules.units.get(&unit.kind);
+            let ranged = spec.is_some_and(|spec| spec.range > 0);
+            let foot = spec.is_none_or(|spec| spec.moves <= 2.0);
             (
                 unit.id,
                 Seen {
@@ -1100,6 +1141,7 @@ fn snapshot(g: &Game) -> Snapshot {
                     hp: unit.hp,
                     pos: unit.pos,
                     ranged,
+                    foot,
                 },
             )
         })
@@ -1555,6 +1597,62 @@ mod tests {
             "the far reserve ({reserve}) should arrive less together than a \
              force cornered in a pocket ({pocket})"
         );
+    }
+
+    /// The whole point of the foot split is that it can disagree with the
+    /// all-units figure — that is what lets a spread caused by cavalry
+    /// outriding the line be told apart from one caused by the line. Assert
+    /// the two are actually different measurements on a position that has
+    /// cavalry, and that the foot figure is drawn from fewer units.
+    #[test]
+    fn the_foot_split_is_a_different_measurement_from_the_whole_force() {
+        // hammer_and_anvil is the position built around fast units: role 0
+        // holds a line and sends two horsemen wide.
+        let spec = position("hammer_and_anvil").expect("known");
+        let result = matched_position(spec, 81, "advanced", "advanced", &builtin_ai);
+        let profile = result.a_by_role[0].profile();
+        let (Some(all), Some(foot)) = (profile.arrival, profile.foot_arrival) else {
+            panic!("a position with both foot and horse must report both spreads");
+        };
+        assert!(all >= 0.0 && foot >= 0.0);
+        assert!(
+            (all - foot).abs() > 1e-9,
+            "the foot split reproduced the whole-force figure exactly ({all}), \
+             so it is not separating anything"
+        );
+        // And on a position with no cavalry at all the two must coincide,
+        // because then every unit is foot.
+        let infantry = position("the_golden_bridge").expect("known");
+        let result = matched_position(infantry, 81, "advanced", "advanced", &builtin_ai);
+        let profile = result.a_by_role[0].profile();
+        assert_eq!(
+            profile.arrival, profile.foot_arrival,
+            "a force of nothing but foot must report the same spread twice"
+        );
+    }
+
+    /// `absent` is the one form of arriving late that no difference in
+    /// movement points can explain away, so it has to be a real share of a
+    /// real denominator — every deployed unit, including any that died before
+    /// they ever reached the enemy.
+    #[test]
+    fn absence_is_a_share_of_the_whole_force() {
+        for spec in POSITIONS {
+            let result = matched_position(spec, 82, "advanced", "advanced", &builtin_ai);
+            if result.skipped {
+                continue;
+            }
+            for role in 0..2 {
+                let Some(absent) = result.a_by_role[role].profile().absent else {
+                    panic!("{} role {role} reported no absence share", spec.id);
+                };
+                assert!(
+                    (0.0..=1.0).contains(&absent),
+                    "{} role {role} reported an absence share of {absent}",
+                    spec.id
+                );
+            }
+        }
     }
 
     /// The muster has to actually vary, or every seed replays one game and a
