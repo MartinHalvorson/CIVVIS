@@ -3,11 +3,12 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import call, patch
+from unittest.mock import Mock, call, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -217,6 +218,21 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("UnitManager.CanStartCommand(unit, hash, params)", handler)
         self.assertIn("UnitManager.RequestCommand(unit, hash, params)", handler)
 
+    def test_resource_export_gates_on_the_database_reveal_rules(self) -> None:
+        """IsResourceVisible alone passed pre-Refining oil (7 plots, run
+        civvis-20260807T162004Z); the database PrereqTech/PrereqCivic columns
+        are the reveal truth and must be enforced in the same gate."""
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        gate = source.split("local function visibleResourceName", 1)[1].split(
+            "local function exportTiles", 1
+        )[0]
+        self.assertIn("IsResourceVisible(row.Hash)", gate,
+                      "the engine gate stays; it hides game-mode-disabled rows")
+        self.assertIn("row.PrereqTech", gate)
+        self.assertIn("techs:HasTech(tech.Index)", gate)
+        self.assertIn("row.PrereqCivic", gate)
+        self.assertIn("culture:HasCivic(civic.Index)", gate)
+
     def test_religion_bridge_uses_firaxis_player_operations_and_exports_its_gate(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         handler = source.split('if kind == "religion" then', 1)[1].split(
@@ -352,3 +368,295 @@ class ProtectedInstallTest(unittest.TestCase):
             cleanup.assert_called_once_with(staging, ignore_errors=True)
         finally:
             staging.rmdir()
+
+    def test_clear_run_tag_rewrites_directly_where_it_can(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            mod_dir = Path(temporary)
+            (mod_dir / "config.json").write_text(json.dumps(
+                {"RunTag": "civvis-20260807T152240Z", "Difficulty": "DIFFICULTY_SETTLER"}))
+            with patch.object(install, "install_dir", return_value=mod_dir), \
+                 patch.object(install, "_finder_put_file") as finder:
+                self.assertTrue(install.clear_run_tag())
+            finder.assert_not_called()
+            data = json.loads((mod_dir / "config.json").read_text())
+            self.assertIsNone(data["RunTag"])
+            self.assertEqual(data["Difficulty"], "DIFFICULTY_SETTLER")
+
+    def test_clear_run_tag_lands_through_finder_when_the_bundle_is_protected(self) -> None:
+        """The end of both 2026-08-07 games: read allowed, write refused."""
+        with tempfile.TemporaryDirectory() as temporary:
+            mod_dir = Path(temporary)
+            config = mod_dir / "config.json"
+            config.write_text(json.dumps({"RunTag": "civvis-live"}))
+            real_write = Path.write_text
+
+            def refuse_bundle_writes(path, text, *args, **kwargs):
+                if path == config:
+                    raise PermissionError("Operation not permitted")
+                return real_write(path, text, *args, **kwargs)
+
+            with patch.object(install, "install_dir", return_value=mod_dir), \
+                 patch.object(Path, "write_text", refuse_bundle_writes), \
+                 patch.object(install, "_finder_put_file") as finder:
+                self.assertTrue(install.clear_run_tag())
+            finder.assert_called_once()
+            staged, destination = finder.call_args[0]
+            self.assertEqual(destination, config)
+            self.assertEqual(staged.name, "config.json",
+                             "the duplicate keeps the source's name")
+
+    def test_clear_run_tag_reports_nothing_to_do(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            mod_dir = Path(temporary)
+            with patch.object(install, "install_dir", return_value=mod_dir):
+                self.assertFalse(install.clear_run_tag(), "no config at all")
+            (mod_dir / "config.json").write_text(json.dumps({"RunTag": None}))
+            with patch.object(install, "install_dir", return_value=mod_dir):
+                self.assertFalse(install.clear_run_tag(), "tag already clear")
+
+
+class SealAttributionTest(unittest.TestCase):
+    """Issue #1342: installing the mod unsigns `Civ6.app`, and nothing said so.
+
+    The literal `codesign -v --verbose=2` output recorded in the issue, and
+    reproduced on this host on 2026-08-08. The point of parsing it is the
+    attribution: our own files are expected and `--uninstall` restores the
+    seal, while anyone else's are a problem teardown cannot fix.
+    """
+
+    MOD = Path(
+        "/Users/x/Library/Application Support/Steam/steamapps/common/"
+        "Sid Meier's Civilization VI/Civ6.app/Contents/Assets/DLC/CivvisControl"
+    )
+    BROKEN = (
+        "/Users/x/Library/Application Support/Steam/steamapps/common/"
+        "Sid Meier's Civilization VI/Civ6.app: a sealed resource is missing or invalid\n"
+        "file added: /Users/x/Library/Application Support/Steam/steamapps/common/"
+        "Sid Meier's Civilization VI/Civ6.app/Contents/Assets/DLC/CivvisControl/config.json\n"
+        "file added: /Users/x/Library/Application Support/Steam/steamapps/common/"
+        "Sid Meier's Civilization VI/Civ6.app/Contents/Assets/DLC/CivvisControl/"
+        "CivvisControlSetup.lua\n"
+        "file added: /Users/x/Library/Application Support/Steam/steamapps/common/"
+        "Sid Meier's Civilization VI/Civ6.app/Contents/Assets/DLC/CivvisControl/"
+        "CivvisControlAgent.lua\n"
+    )
+
+    def test_the_issues_own_codesign_output_is_entirely_our_doing(self) -> None:
+        ours, foreign = install.seal_breakers(self.BROKEN, self.MOD)
+
+        self.assertEqual(len(ours), 3)
+        self.assertEqual(foreign, [])
+        self.assertTrue(all(p.endswith((".json", ".lua")) for p in ours))
+
+    def test_the_summary_line_is_not_read_as_an_offending_file(self) -> None:
+        """`<bundle>: <sentence>` and `file added: <path>` are the same shape
+        reversed, so the parser keys on which half is the path."""
+        ours, foreign = install.seal_breakers(self.BROKEN, self.MOD)
+
+        self.assertNotIn(
+            "a sealed resource is missing or invalid", "".join(ours + foreign)
+        )
+
+    def test_somebody_elses_modification_is_reported_separately(self) -> None:
+        """The half that `--uninstall` will NOT fix."""
+        text = self.BROKEN + (
+            "file modified: /Users/x/Library/Application Support/Steam/steamapps/"
+            "common/Sid Meier's Civilization VI/Civ6.app/Contents/Resources/other\n"
+        )
+
+        ours, foreign = install.seal_breakers(text, self.MOD)
+
+        self.assertEqual(len(ours), 3)
+        self.assertEqual([p.rsplit("/", 1)[-1] for p in foreign], ["other"])
+
+    def test_a_sibling_directory_sharing_our_prefix_is_not_ours(self) -> None:
+        """`CivvisControlOld/` starts with the mod path as a string and is a
+        different directory; claiming it would promise an --uninstall that
+        never removes it."""
+        text = (
+            "file added: " + str(self.MOD) + "Old/leftover.lua\n"
+            "file added: " + str(self.MOD) + "/config.json\n"
+        )
+
+        ours, foreign = install.seal_breakers(text, self.MOD)
+
+        self.assertEqual([p.rsplit("/", 1)[-1] for p in ours], ["config.json"])
+        self.assertEqual([p.rsplit("/", 1)[-1] for p in foreign], ["leftover.lua"])
+
+    def test_bundle_dir_is_the_enclosing_app_not_a_second_hardcoded_path(self) -> None:
+        with patch.object(install, "install_dir", return_value=self.MOD):
+            self.assertEqual(install.bundle_dir(), Path(str(self.MOD).split("/Contents/")[0]))
+
+    def test_an_install_outside_a_bundle_breaks_no_signature(self) -> None:
+        outside = Path("/Users/x/Library/Application Support/Sid Meier's Civ VI/Mods/CivvisControl")
+        with patch.object(install, "install_dir", return_value=outside):
+            self.assertIsNone(install.bundle_dir())
+            self.assertEqual(install.signature_report()["state"], "no-bundle")
+
+    def test_a_valid_bundle_reports_valid_and_names_nobody(self) -> None:
+        with patch.object(install, "install_dir", return_value=self.MOD), \
+             patch.object(install.subprocess, "run",
+                          return_value=Mock(returncode=0, stdout="", stderr="")):
+            seal = install.signature_report()
+
+        self.assertEqual(seal["state"], "valid")
+        self.assertEqual((seal["ours"], seal["foreign"]), ([], []))
+
+    def test_a_broken_bundle_reports_the_verdict_and_attributes_the_files(self) -> None:
+        with patch.object(install, "install_dir", return_value=self.MOD), \
+             patch.object(install.subprocess, "run",
+                          return_value=Mock(returncode=1, stdout="", stderr=self.BROKEN)):
+            seal = install.signature_report()
+
+        self.assertEqual(seal["state"], "broken")
+        self.assertEqual(seal["detail"], "a sealed resource is missing or invalid")
+        self.assertEqual(len(seal["ours"]), 3)
+
+    def test_an_unrunnable_codesign_is_unknown_rather_than_valid(self) -> None:
+        """Absence of a verdict must never be reported as a good one."""
+        with patch.object(install, "install_dir", return_value=self.MOD), \
+             patch.object(install.subprocess, "run", side_effect=OSError("no codesign")):
+            self.assertEqual(install.signature_report()["state"], "unknown")
+
+
+class UnitsBlockerForfeitTest(unittest.TestCase):
+    """Issue #1374: a turn that wedged 900 s on `ENDTURN_BLOCKING_UNITS`.
+
+    Run civvis-20260807T190903Z turn 39 answered the blocker `civvis_complete`
+    once, recorded `attempts:1`, and then sat until an outside watchdog killed
+    the attempt. Two facts make that unrecoverable without an explicit
+    escalation, and both are pinned below:
+
+    * `civvis_complete` changes the board by construction not at all, so the
+      blocker cannot clear itself, and
+    * the shipped `ActionPanel.lua` never requests `ACTION_ENDTURN` while one
+      of three unit blockers is up -- it calls `UI.SelectNextReadyUnit()` --
+      so the plain request at the bottom of `tick` is refused. Only the
+      `{ REASON = "UserForced" }` form (the shipped SHIFT+ENTER path) ends it.
+    """
+
+    def setUp(self) -> None:
+        self.source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+    @property
+    def escalation(self) -> str:
+        return self.source.split(
+            "-- ★★★ A SOFT BLOCKER THAT SURVIVES ITS ANSWER", 1
+        )[1].split("-- Only if the same blocker", 1)[0]
+
+    @property
+    def parking(self) -> str:
+        return self.source.split("local function parkReadyUnits", 1)[1].split(
+            "\nlocal ", 1
+        )[0]
+
+    def test_a_units_blocker_surviving_its_answer_is_parked_dismissed_and_forced(self) -> None:
+        self.assertIn("parkReadyUnits(player)", self.escalation)
+        self.assertIn("dismissBlocker(pid, blocker)", self.escalation)
+        self.assertIn('REASON = "UserForced"', self.escalation)
+
+    def test_forcing_is_reserved_for_the_three_blockers_the_engine_refuses(self) -> None:
+        """The trio `ActionPanel.DoEndTurn` special-cases, and only those.
+
+        Widening this table would force the turn past prompts the engine would
+        have ended normally; narrowing it puts the wedge back.
+        """
+        table = self.source.split("local UNIT_BLOCKERS = {", 1)[1].split("};", 1)[0]
+        self.assertEqual(
+            sorted(
+                line.split("=")[0].strip()
+                for line in table.splitlines()
+                if "=" in line
+            ),
+            [
+                "ENDTURN_BLOCKING_STACKED_UNITS",
+                "ENDTURN_BLOCKING_UNITS",
+                "ENDTURN_BLOCKING_UNIT_NEEDS_ORDERS",
+            ],
+        )
+        self.assertIn("UNIT_BLOCKERS[name] and parkReadyUnits(player)", self.escalation)
+
+    def test_a_civvis_complete_answer_escalates_on_the_very_next_sighting(self) -> None:
+        """Waiting longer buys no information: that answer touched nothing.
+
+        The legacy answer does run `orderUnits`, so it keeps its `MaxSoftPasses`
+        budget before being called stuck.
+        """
+        self.assertIn(
+            'answered == "civvis_complete" and 2 or (cfg.MaxSoftPasses or 3) + 1',
+            self.escalation,
+        )
+
+    def test_parking_forfeits_movement_but_never_calls_the_legacy_movement_ai(self) -> None:
+        """`orderIdle`, not `orderFor`.
+
+        The legacy pass once walked a Settler out of a safe capital into a
+        barbarian capture zone after CIVVIS had deliberately left it in place;
+        skip/fortify/alert/sleep forfeits only the movement that ending the
+        turn forfeits anyway.
+        """
+        self.assertIn("orderIdle(unit)", self.parking)
+        self.assertNotIn("orderFor(", self.parking)
+
+    def test_parking_sweeps_the_roster_after_the_ready_query_jams(self) -> None:
+        """`GetFirstReadyUnit` offers an uncooperative unit forever.
+
+        A forfeit built on that query alone parks one unit, leaves the rest
+        ready, and the blocker comes straight back.
+        """
+        self.assertIn("GetFirstReadyUnit", self.parking)
+        self.assertIn("eachUnit(player", self.parking)
+
+    def test_the_forfeit_retry_is_bounded_and_then_names_the_wedge(self) -> None:
+        self.assertIn("cfg.MaxSoftBlockerForfeits or 3", self.escalation)
+        self.assertIn("seen.forfeits < cap", self.escalation)
+        self.assertIn('emit("wedged"', self.escalation)
+
+    def test_a_blocker_change_ticks_without_the_publish_divider(self) -> None:
+        """A board sitting on a blocker publishes almost nothing.
+
+        Routing `EndTurnBlockingChanged` through the 1-in-16 `onGameCoreTick`
+        divider made every blocker transition wait for fifteen more publish
+        batches that a wedged turn never produces.
+        """
+        self.assertIn("EndTurnBlockingChanged = onEndTurnBlockingChanged", self.source)
+        self.assertNotIn("EndTurnBlockingChanged = onGameCoreTick", self.source)
+
+
+class AgentChunkLocalLimitTest(unittest.TestCase):
+    """The agent's main chunk must stay inside Lua's 200-local ceiling.
+
+    ⚠ THIS IS A SILENT, TOTAL FAILURE, which is why it is worth a test. Lua
+    allows 200 local variables per function and the mod's main chunk is one
+    function, currently within single digits of the limit. Crossing it is a
+    compile error, and a mod script that fails to compile writes NOTHING to any
+    log -- the context loads, the script dies at parse time, and the run is
+    indistinguishable from a game where CIVVIS simply never decided anything.
+    `civ6_preflight.py` catches this with `luac -p`, but only on a host that
+    has `luac` installed; this catches it everywhere, including CI.
+
+    A file-scope `local` is almost always avoidable: nest the helper, hang the
+    value off an existing table, or reuse a neighbouring one.
+    """
+
+    LIMIT = 200
+
+    def test_main_chunk_locals_stay_under_the_limit(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        count = 0
+        for line in source.splitlines():
+            if not line.startswith("local "):
+                continue  # indented locals belong to a nested scope
+            rest = line[len("local "):]
+            if rest.startswith("function "):
+                count += 1
+                continue
+            names = rest.split("=", 1)[0]
+            count += len([n for n in names.split(",") if n.strip()])
+        self.assertLess(
+            count,
+            self.LIMIT,
+            f"CivvisControlAgent.lua declares {count} main-chunk locals; Lua "
+            f"allows {self.LIMIT} and the mod would fail to compile in-game "
+            f"with no log line anywhere. Nest a helper instead of adding one.",
+        )

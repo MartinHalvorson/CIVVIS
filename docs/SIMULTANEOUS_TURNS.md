@@ -7,16 +7,16 @@ it. The simultaneous regime freezes the world at the top of each game turn,
 lets every seat plan its complete turn against that same snapshot, and then
 commits the plans in seat order under the ordinary rules.
 
-The default is per surface, and deliberate. The surfaces that exist for
-throughput — `simulate`, `soak`, and a spectated `play` table — default to
-`simultaneous`; its ceiling is higher, and it is where the optimization
-work goes. Everything whose meaning depends on the stock regime defaults
-to `sequential` and stays there: a played game (sequential by
-construction), every rating instrument (`benchmark`, `tournament`,
-`league`, `elo`, `selfplay`, `evolve` — the Glicko-2 table is a
-sequential-regime instrument), and `TurnStructure::default()` itself, which
-is the anchor a field-less legacy save deserializes through. An explicit
-`--turn-structure` always wins over any of these defaults.
+Nothing defaults to it any more. #1347 hard-committed the product to
+sequential turns: every command surface — including the throughput ones,
+`simulate`, `soak`, and a spectated `play` table, which used to default to
+`simultaneous` — now starts a sequential game, as do a played game, every
+rating instrument (`benchmark`, `tournament`, `league`, `elo`, `selfplay`,
+`evolve` — the Glicko-2 table is a sequential-regime instrument) and
+`TurnStructure::default()` itself, which is the anchor a field-less legacy
+save deserializes through. The driver below is intact and supported, but it
+is a research regime reached only by an explicit
+`--turn-structure simultaneous`.
 
 It exists for throughput. Roughly two thirds of simulator runtime is the
 AIs' own deliberation (`docs/SIMULATOR_PERFORMANCE.md`), and under the
@@ -74,6 +74,19 @@ A simultaneous game turn runs in two phases, both in
    RNG stream (the same derived-stream discipline disasters and meteors
    use), and its AI plays its whole turn against the copy. The actions it
    applied there are its plan.
+
+   The forward is *upkeep-only*: the rolling world and the seats' private
+   copies carry a `PlanningRole` marking them as scaffolding, and their
+   `EndTurn` closes shed the work nothing on the planning path reads —
+   the every-seat sight sweep (headless planning reads sight live, never
+   the swept caches; the sweep's one gameplay product, contact recording,
+   still runs authoritatively at commit), the monopoly census, the wrap's
+   world systems on the walk's way out, and everything past the cursor
+   move on a seat's copy once its plan is harvested. The one observable
+   consequence: a contact that would first arise *from mid-walk upkeep*
+   (a levied or spawned unit appearing inside a frozen rival's sight)
+   reaches planning worlds one cycle later than it used to; the committed
+   game records it at exactly the same turn as before.
 2. **Commit.** The plans land on the authoritative world in the same seat
    order, through the very same `Game::apply` calls a sequential game
    makes, each seat closing with the ordinary `EndTurn` so upkeep, the
@@ -84,8 +97,12 @@ A simultaneous game turn runs in two phases, both in
    plan never made (a captured city's fate) is resolved with the first
    legal answer and counted.
 
-Nothing in `game.rs` branches on the regime. Every committed action goes
-through the ordinary rules, which is what buys the guarantees below.
+Nothing in `game.rs` branches on the regime for a committed action: the
+authoritative world never carries a `PlanningRole`, so every committed
+action goes through the ordinary rules in full, which is what buys the
+guarantees below. The role branches exist only on the driver's scaffolding
+worlds, which are discarded without ever being saved, replayed, observed,
+or committed.
 
 ## Guarantees
 
@@ -101,10 +118,10 @@ through the ordinary rules, which is what buys the guarantees below.
   `the_default_structure_is_sequential_and_unchanged`), and
   `TurnStructure::default()` — what `GameOptions`, a field-less legacy
   save, and the Elo setup contract deserialize through — stays
-  `Sequential`. The simultaneous default lives only at the command
-  surfaces built for throughput (`simulate`, `soak`, spectated `play`;
-  test: `the_turn_structure_default_is_the_callers_and_the_flag_still_wins`),
-  so no save, played game, or rating ledger changes meaning.
+  `Sequential`. Since #1347 no surface defaults to the regime at all
+  (test: `the_turn_structure_default_is_the_callers_and_the_flag_still_wins`
+  still holds: the caller's default is what applies, and an explicit flag
+  still wins), so no save, played game, or rating ledger changes meaning.
 
 ## The census
 
@@ -154,9 +171,9 @@ play. Read it before trusting any result measured in this mode.
 ## Using it
 
 ```bash
-civvis simulate --players 6 --seed 7311002      # simultaneous by default
-civvis soak --games 20                          # simultaneous by default
-civvis simulate --players 6 --turn-structure sequential  # the stock regime
+civvis simulate --players 6 --seed 7311002      # sequential, like everything
+civvis simulate --players 6 --seed 7311002 --turn-structure simultaneous
+civvis soak --games 20 --turn-structure simultaneous
 ```
 
 ## Measured (2026-08-06, ci profile, shared host — directional)
@@ -244,6 +261,62 @@ forward (touching only the seat being opened, rather than one whole empty
 The sequential regime's intra-turn knee was re-measured on this host and
 holds at four: 16-civilization 50-turn sequential runs at `--jobs` 4/8/16
 land at 3.4s/3.2s/3.3s, within host noise of one another.
+
+### 9985WX scaffold shedding (2026-08-07, ci profile)
+
+Phase timing on the pipelined driver (16 civilizations with stock
+city-states, 64×40, 100 turns, seed 31337, `--jobs 16`, ~48 planning
+seats per cycle) split an 8.7s wall into: 6.2s prepare-thread closes,
+5.2s commit-thread closes, 2.3s commit waiting on plans, 0.9s applying
+them — and 18.7s of aggregate worker deliberation that 16 workers cover
+in ~1.2s. The closes, not deliberation, were the wall: per boundary the
+engine ran one every-seat sight sweep (`refresh_all_visibility`, the
+single largest cost at 7.6s across all worlds), the next seat's full
+upkeep, and — once per cycle on a world about to be discarded — the whole
+world-turn wrap. That scaffolding is now shed (the upkeep-only forward
+above), the sweep's per-viewer suzerain poll is memoized for the duration
+of any sweep (an every-major envoy scan per city-state per viewer
+otherwise), and the same workload lands at **7.0s**, with the prepare
+thread down to 2.2s of closes and the commit — the authoritative chain —
+left as the pacing serial phase. Full 500-turn budget on the same table:
+104.2s → 98.0s. The census stayed byte-identical to the pre-change binary
+across seeds 31337/7/12345 at 100 turns and across the full 500-turn run,
+so the theoretical mid-walk-contact timing shift has yet to fire on any
+measured seed.
+
+What remains on the serial floor, per 100 turns of this table: ~2.8s of
+authoritative sight sweeps (contact recording at commit boundaries),
+~1.5s of authoritative upkeep, ~0.9s of applies — the committed game's
+own state evolution. Cutting the sweep further needs per-seat vision
+input stamps (skip a seat whose sight inputs provably did not change
+since its last sweep) with a debug-assert recompute check; that is the
+next follow-up if the commit chain is to shrink, and it would benefit
+sequential boundaries identically.
+
+### The same change on 18 CPUs (2026-08-08, ci profile)
+
+Scaffold shedding was re-measured before merge on an Apple M5 Pro laptop
+(18 logical CPUs) against a binary built from that day's `main`,
+alternating paired fixed-seed runs, candidate first, machine warm. The
+size of the win depends heavily on how many cores there are to hide the
+serial chains behind:
+
+| Workload (16 civs, stock city-states, 64×40, `--jobs 16`) | main | shed | wall | CPU |
+|---|---:|---:|---:|---:|
+| simultaneous, 100 turns, seed 31337 | 6.68s / 25.82s CPU | **6.28s / 22.40s** | 1.06× | −13.2% |
+| simultaneous, 300 turns, seed 12345 | 66.21s / 259.45s CPU | **65.67s / 226.09s** | 1.01× | −12.9% |
+| sequential, 100 turns, seed 31337 | 12.89s / 17.63s CPU | **12.76s / 17.08s** | 1.01× | −3.1% |
+
+The CPU reduction — the work actually removed — is stable near 13% and is
+the host-independent number. Wall-clock gain is not: with 18 CPUs rather
+than 128, seat deliberation is a much larger share of the wall, so
+shedding serial scaffolding converts to far less wall time than the 1.24×
+the 9985WX measured, and by 300 turns it is inside noise. Sequential runs
+pick up the suzerain memo alone, worth about 3% of their CPU.
+
+Every normalized report above was byte-identical between the two binaries,
+as were `--jobs` 1/16/32 on the candidate and a four-game simultaneous
+soak's whole report (drops 1.4–1.9%, no aborts).
 
 Before comparing regimes, run paired seeds both ways and read the drop
 rate alongside the outcome distributions — one seed is never a result.

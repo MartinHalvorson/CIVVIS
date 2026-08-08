@@ -2379,6 +2379,46 @@ local function orderUnits(player, pid, turn)
 	return given, stuck;
 end
 
+-- Park every unit the engine still calls ready, WITHOUT inventing moves.
+--
+-- The forfeit lever for `ENDTURN_BLOCKING_UNITS` (issue #1374). With CIVVIS
+-- deciding, a ready unit after `settleTurn` is one CIVVIS deliberately left in
+-- place, so the legacy `orderFor` pass must not touch it -- it once walked a
+-- Settler out of a safe capital into a barbarian capture zone. `orderIdle` is
+-- the position-preserving subset (skip, fortify, alert, sleep): it forfeits
+-- only the unit's remaining movement, which ending the turn forfeits anyway,
+-- and it removes the unit from the ready list so the engine stops re-raising
+-- the blocker on every later batch.
+--
+-- Both of `orderUnits`'s passes, for the same reason `orderUnits` has both.
+-- Pass 1 is the game's own ready query, bounded and jam-guarded, because
+-- GetFirstReadyUnit offers an uncooperative unit forever. Pass 2 is the
+-- roster, and skipping it would defeat the whole escalation: the query jams on
+-- the FIRST unit that will not take an order, so a forfeit built on pass 1
+-- alone would park one unit, leave the rest ready, and the blocker would come
+-- straight back -- which is the "nineteen units, three orders given" failure
+-- already recorded above.
+local function parkReadyUnits(player)
+	local parked = 0;
+	local tries = {};
+	for _ = 1, (cfg.MaxUnitOrders or 40) do
+		local unit = try(function() return player:GetUnits():GetFirstReadyUnit(); end);
+		if unit == nil then break; end
+		local id = try(function() return unit:GetID(); end, -1);
+		tries[id] = (tries[id] or 0) + 1;
+		if tries[id] > 2 then break; end
+		if orderIdle(unit) ~= nil then parked = parked + 1; end
+	end
+	-- No "is it ready?" guard. `GetMovesRemaining` is not trusted anywhere in
+	-- this mod (see `orderUnits` pass 2) and an order that cannot be given
+	-- fails harmlessly, so attempting it on the whole roster is strictly safer
+	-- than guarding it and silently skipping everyone.
+	eachUnit(player, function(unit)
+		if orderIdle(unit) ~= nil then parked = parked + 1; end
+	end);
+	return parked;
+end
+
 -- --------------------------------------------------------- city production
 
 -- ★★★★★ WHETHER A WAR IS BEING LOST, WHICH THE ARMY GATE COULD NOT SEE.
@@ -4378,6 +4418,20 @@ local SOFT_BLOCKERS = {
 	ENDTURN_BLOCKING_SPY_CHOOSE_DRAGNET_PRIORITY = true,
 };
 
+-- The soft blockers the ENGINE will not let a plain end-turn request past.
+--
+-- The shipped ActionPanel.lua special-cases exactly this trio: with one of
+-- them active, its own end-turn click does not request the end of turn at all
+-- -- it calls `UI.SelectNextReadyUnit()` and waits for the human. So the
+-- `UI.RequestAction(ActionTypes.ACTION_ENDTURN)` at the bottom of `tick` is
+-- refused while one of these is up, which no other soft blocker does. These
+-- are the ones whose forfeit needs the parking pass AND the forced request.
+local UNIT_BLOCKERS = {
+	ENDTURN_BLOCKING_UNITS = true,
+	ENDTURN_BLOCKING_UNIT_NEEDS_ORDERS = true,
+	ENDTURN_BLOCKING_STACKED_UNITS = true,
+};
+
 -- Decisions CIVVIS issues orders for, and which the heuristics must therefore not
 -- answer over while CIVVIS's reply is still in flight.
 --
@@ -4535,6 +4589,14 @@ end
 local turnsPlayed = 0;
 local lastTurnSeen = -1;
 local attempts = 0;
+-- Per-turn forfeit state for each SOFT blocker, by name:
+-- `{ sightings = <since the last forfeit>, forfeits = <this turn> }`.
+--
+-- `attempts` cannot carry the forfeit decision alone: it counts every blocker
+-- the turn showed, so two alternating blockers would reach any small bound
+-- with neither one actually stuck. The forfeit fires on the SAME soft blocker
+-- surviving its own answer, and `forfeits` is what bounds the retry.
+local softSeen = {};
 
 local inTick = false;
 local finished = false;
@@ -5887,6 +5949,17 @@ end
 -- `plot:GetResourceType()` exposes the map's underlying resource even when the
 -- normal UI still shows bare ground. Exporting that value let the planner use
 -- Niter, Coal, Oil and Antiquity Sites before the player could know they exist.
+--
+-- ⚠ `IsResourceVisible` ALONE IS NOT THE GATE, and this was measured, not
+-- reasoned: on run civvis-20260807T162004Z the seat held 37 techs with
+-- Refining not among them, and the export still carried seven RESOURCE_OIL
+-- plots — `civ6_mirror_check` flagged every one ("raw resource leak(s) hidden
+-- by CIVVIS"), while the shipped database and data/resources.json agree oil
+-- reveals with TECH_REFINING. So on this build the engine call answers true
+-- for a resource the seat has not unlocked. The database's own PrereqTech /
+-- PrereqCivic columns are checked HERE as well, which cannot be wrong about
+-- reveal rules regardless of what the engine call means by "visible" — and
+-- the engine call is kept, because it also hides game-mode-disabled rows.
 local function visibleResourceName(player, plot)
 	local index = try(function() return plot:GetResourceType(); end, -1);
 	if index == nil or index < 0 then return nil; end
@@ -5896,6 +5969,20 @@ local function visibleResourceName(player, plot)
 		if row == nil or resources == nil
 			or not resources:IsResourceVisible(row.Hash) then
 			return nil;
+		end
+		if row.PrereqTech ~= nil then
+			local tech = GameInfo.Technologies[row.PrereqTech];
+			local techs = player:GetTechs();
+			if tech == nil or techs == nil or not techs:HasTech(tech.Index) then
+				return nil;
+			end
+		end
+		if row.PrereqCivic ~= nil then
+			local civic = GameInfo.Civics[row.PrereqCivic];
+			local culture = player:GetCulture();
+			if civic == nil or culture == nil or not culture:HasCivic(civic.Index) then
+				return nil;
+			end
 		end
 		return row.ResourceType;
 	end);
@@ -8800,6 +8887,7 @@ local function tick()
 			-- turns, and every settler would read stranded within one turn.
 			trackIdleUnits(player);
 			attempts = 0;
+			softSeen = {};
 			passes = {};
 			if cfg.CivvisDecides then
 				-- Publish the board; the decisions land on a later tick, once CIVVIS
@@ -8862,6 +8950,84 @@ local function tick()
 			if attempts == 1 or attempts % (cfg.BlockerReportEvery or 25) == 0 then
 				emit("blocked", { turn = turn, blocker = name,
 				                  attempts = attempts, answered = answered });
+			end
+			-- ★★★ A SOFT BLOCKER THAT SURVIVES ITS ANSWER IS FORFEITED EARLY,
+			-- not left to the MaxBlockedAttempts hammer below. Run
+			-- civvis-20260807T190903Z (issue #1374), turn 39:
+			-- `ENDTURN_BLOCKING_UNITS` answered `civvis_complete`, attempts:1 --
+			-- then the turn sat 900 s until the outside watchdog killed the
+			-- attempt. Two mechanisms compound there:
+			--
+			--   * With a units blocker up, the plain `ACTION_ENDTURN` request at
+			--     the bottom of this function is refused -- the shipped
+			--     ActionPanel.lua shows the engine's contract: its own end-turn
+			--     click selects the next ready unit instead of requesting the
+			--     end of turn.
+			--   * A board waiting on input publishes almost no game-core events,
+			--     so this very function nearly stops running and the 40-attempt
+			--     hammer is wall-clock unreachable. The forfeit therefore has to
+			--     fire on an early re-sighting after the answer, not on a big
+			--     count.
+			--
+			-- Sighting 1 is the honest answer. The SAME soft blocker coming back
+			-- says that answer did not clear it, so: park the still-ready units
+			-- (units family only -- position-preserving orders, never the
+			-- legacy movement AI), dismiss the notification exactly as the
+			-- hammer would, and force the end of turn through the same
+			-- `{ REASON = "UserForced" }` request the shipped UI sends for
+			-- SHIFT+ENTER, which is the only end-turn form that is not refused
+			-- while a units blocker is up.
+			if SOFT_BLOCKERS[name] then
+				local seen = softSeen[name] or { sightings = 0, forfeits = 0 };
+				softSeen[name] = seen;
+				seen.sightings = seen.sightings + 1;
+				-- How many sightings prove the answer did nothing. A
+				-- `civvis_complete` answer changed the board by construction
+				-- NOT AT ALL -- it means "CIVVIS has already ordered this
+				-- board, keep the legacy AI off it" -- so the second sighting
+				-- is already proof and a third only spends wall clock we do
+				-- not have. The legacy answer really does run `orderUnits`,
+				-- bounded by `MaxSoftPasses`, so it gets that budget first.
+				local bound = cfg.SoftBlockerForfeitAttempts
+					or (answered == "civvis_complete" and 2 or (cfg.MaxSoftPasses or 3) + 1);
+				local cap = cfg.MaxSoftBlockerForfeits or 3;
+				if seen.sightings >= bound then
+					seen.sightings = 0;
+					if seen.forfeits < cap then
+						-- BOUNDED RETRY. Re-arming after `bound` more sightings
+						-- covers a forfeit that did not stick -- the engine can
+						-- raise a fresh units notification for the same units --
+						-- without looping the expensive parking pass on every
+						-- batch of game-core events.
+						seen.forfeits = seen.forfeits + 1;
+						local parked = UNIT_BLOCKERS[name] and parkReadyUnits(player) or 0;
+						local dropped = dismissBlocker(pid, blocker);
+						emit("dismissed", { turn = turn, blocker = name,
+						                    dismissed = dropped, attempts = attempts,
+						                    answered = answered, parked = parked,
+						                    forfeit = seen.forfeits,
+						                    forced = UNIT_BLOCKERS[name] == true });
+						attempts = 0;
+						if UNIT_BLOCKERS[name] then
+							pcall(function()
+								UI.RequestAction(ActionTypes.ACTION_ENDTURN,
+								                 { REASON = "UserForced" });
+							end);
+						end
+					elseif seen.forfeits == cap then
+						-- ⚠ THE RETRY IS SPENT AND THE TURN IS STILL NOT MOVING.
+						-- Say so, once, in the run's own event log. Issue #1374
+						-- died as 900 s of silence that read as a slow machine;
+						-- an outside watchdog killing an attempt should be able
+						-- to point at the prompt that did it. Bumping past `cap`
+						-- is what makes this report once per turn per blocker
+						-- rather than on every later sighting.
+						seen.forfeits = cap + 1;
+						emit("wedged", { turn = turn, blocker = name,
+						                 forfeits = cap, attempts = attempts,
+						                 answered = answered });
+					end
+				end
 			end
 			-- Only if the same blocker has survived a whole turn's worth of
 			-- attempts is the notification dropped, and that is reported as the
@@ -8976,6 +9142,22 @@ local function onLocalPlayerTurnBegin()
 	tick();
 end
 
+-- A blocker-state change ticks DIRECTLY, not through the 1-in-16 divider.
+--
+-- `EndTurnBlockingChanged` fires a handful of times per turn -- when a blocker
+-- is answered, dismissed, or replaced by the next one -- and each of those is
+-- precisely the moment the loop has something to do. Routing it through
+-- `onGameCoreTick` made progress wait for fifteen more publish batches, and a
+-- board that is sitting on a blocker is exactly the board that publishes
+-- almost nothing (issue #1374): after the forfeit above dismisses one
+-- notification, the divider could starve the pass that should answer the next
+-- one. `tick` is reentrancy-guarded and cheap when there is nothing to do, so
+-- taking this event undivided costs a few extra passes per turn at most.
+local function onEndTurnBlockingChanged()
+	ensureStarted();
+	tick();
+end
+
 local function onTeamVictory(team, victoryType, eventID)
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
 	local ourTeam = try(function()
@@ -9009,7 +9191,7 @@ function Initialize()
 	for name, handler in pairs({
 		LocalPlayerTurnBegin = onLocalPlayerTurnBegin,
 		GameCoreEventPublishComplete = onGameCoreTick,
-		EndTurnBlockingChanged = onGameCoreTick,
+		EndTurnBlockingChanged = onEndTurnBlockingChanged,
 		CityAddedToMap = onGameCoreTick,
 		UnitAddedToMap = onGameCoreTick,
 		CityProductionCompleted = onGameCoreTick,

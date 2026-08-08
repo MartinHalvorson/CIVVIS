@@ -95,22 +95,113 @@ def launch(args: list[str] | None = None, stdout: Path | None = None) -> subproc
     )
 
 
+def bundle_signature_error() -> str | None:
+    """Why ``codesign`` rejects the installed bundle, or None if it is valid.
+
+    ⚠ INSTALLING THE MOD IS WHAT BREAKS THIS. The mod goes into the install's
+    ``DLC`` tree — inside a *signed application bundle* — so every file
+    ``civ6_control/install.py`` writes invalidates the bundle's sealed resource
+    manifest. ``codesign -v`` then reports "a sealed resource is missing or
+    invalid" and names each added file; uninstalling restores "valid on disk".
+
+    Reported rather than repaired. Re-sealing needs write access to
+    ``Contents/_CodeSignature``, which macOS 26 refuses without App Management
+    permission ("Operation not permitted", even for ``touch``), and a bundle
+    whose signature is broken has still played whole games on hosts whose trust
+    record predates the change. So this is evidence for a diagnostic, not a
+    precondition to enforce.
+    """
+    app = game_binary().parent.parent.parent
+    try:
+        done = subprocess.run(["codesign", "-v", str(app)],
+                              capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as error:
+        return f"could not run codesign: {error}"
+    if done.returncode == 0:
+        return None
+    first = next((line.strip() for line in done.stderr.splitlines() if line.strip()), "")
+    return first or f"codesign exited {done.returncode}"
+
+
+def gatekeeper_refusal() -> str | None:
+    """The text of macOS's "damaged and can't be opened" modal, if it is up.
+
+    ⚠⚠ THIS FAILURE LOOKS EXACTLY LIKE A SLOW MACHINE, AND THAT COST A SESSION.
+    Measured 2026-08-07 on macOS 26.5.1: the game process starts and stays
+    running, so ``env.game_pids()`` is non-empty and the loop below waits out
+    its whole 420 seconds; but the core never initialises, so no ``Logs``
+    directory is ever created, ``events.jsonl`` stays at zero bytes, and the
+    attempt is recorded as a stall. Nothing anywhere names the cause. What is
+    actually on screen is a modal owned by ``CoreServicesUIAgent``:
+
+        "Civilization VI" is damaged and can't be opened. You should move it to
+        the Trash.
+
+    Deliberately NOT dismissed, unlike the crash dialogs ``civ6_civvis_climb``
+    clears. Those sit on top of a working game and stealing their click is the
+    fix; this one IS the refusal, so closing it just runs the next attempt into
+    the same wall. It needs an operator (Open Anyway, App Management, or Steam's
+    verify-integrity), and the useful thing the harness can do is say so once
+    instead of stalling repeatedly.
+    """
+    script = ('tell application "System Events" to tell process '
+              '"CoreServicesUIAgent" to get value of every static text of window 1')
+    try:
+        done = subprocess.run(["osascript", "-e", script],
+                              capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    text = done.stdout.strip()
+    lowered = text.lower()
+    if "damaged" in lowered or "can't be opened" in lowered or "cannot be opened" in lowered:
+        return text
+    return None
+
+
 def wait_for_main_menu(timeout_s: float = 420.0, poll_s: float = 3.0) -> bool:
     """Wait until the game core has scanned mods, which means the menu is up.
 
     ``Modding.log`` gaining its "Discovered" line is the first thing the core
     writes that proves it got past engine init. Polling the process as well
     means a crash fails fast instead of waiting out the whole timeout.
+
+    A macOS refusal is polled for the same reason, and is the one case where a
+    LIVE process is not evidence of progress — see ``gatekeeper_refusal``.
     """
     log = env.logs_dir() / "Modding.log"
     # mach_absolute_time (Python's monotonic clock on macOS) pauses with the
     # machine, so a closed lid cannot consume the whole launch allowance.
     deadline = time.monotonic() + timeout_s
+    # None rather than 0.0, so the FIRST pass always asks. Seeding this with a
+    # number and comparing against the clock made the first check wait out the
+    # throttle instead of the interval: `time.monotonic()` is small at process
+    # start here, so `now - 0.0 >= 15.0` stayed false for the first 15 seconds.
+    refusal_checked: float | None = None
     while time.monotonic() < deadline:
         if log.is_file() and "Discovered" in log.read_text(errors="replace"):
             return True
         if not env.game_pids():
             return False
+        # Every 15s rather than every poll: this shells out to osascript, and the
+        # modal does not arrive and leave between two polls.
+        now = time.monotonic()
+        if refusal_checked is None or now - refusal_checked >= 15.0:
+            refusal_checked = now
+            refusal = gatekeeper_refusal()
+            if refusal:
+                signature = bundle_signature_error()
+                print(f"macOS is REFUSING the game, not loading it: {refusal}",
+                      file=sys.stderr)
+                if signature:
+                    print(f"the installed bundle is also unsigned: {signature}",
+                          file=sys.stderr)
+                print("this needs an operator: System Settings > Privacy & Security "
+                      "> Open Anyway, or grant App Management, or Steam > Civ 6 > "
+                      "Properties > Installed Files > Verify integrity of game files",
+                      file=sys.stderr)
+                return False
         time.sleep(poll_s)
     return False
 

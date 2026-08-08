@@ -72,5 +72,64 @@ class SteamSignInTest(unittest.TestCase):
             self.assertIsNone(civ6_preflight.steam_account_id())
 
 
+class BundleSignatureTest(unittest.TestCase):
+    """Issue #1342: the harness unsigns `Civ6.app` and preflight never looked.
+
+    Every one of these is a WARN. A broken seal does not refuse a launch — a
+    host with a healthy trust record plays with the mod installed, and a host
+    with a poisoned one is refused with the signature valid — so failing here
+    would block runs that would have worked.
+    """
+
+    def _seal(self, **fields):
+        seal = {"bundle": "/Games/Civ6.app", "state": "broken",
+                "ours": [], "foreign": [], "detail": ""}
+        seal.update(fields)
+        return mock.patch(
+            "civ6_control.install.signature_report", return_value=seal
+        )
+
+    def test_a_valid_signature_passes_without_a_warning(self) -> None:
+        report = civ6_preflight.Report()
+        with self._seal(state="valid", detail="valid on disk"):
+            civ6_preflight.check_bundle(report)
+
+        self.assertEqual((report.failures, report.warnings), ([], []))
+
+    def test_our_own_install_warns_and_names_the_reversal(self) -> None:
+        report = civ6_preflight.Report()
+        with self._seal(detail="a sealed resource is missing or invalid",
+                        ours=["/Games/Civ6.app/Contents/Assets/DLC/CivvisControl/a.lua"]):
+            civ6_preflight.check_bundle(report)
+
+        self.assertEqual(report.failures, [])
+        self.assertIn("--uninstall", report.warnings[0])
+
+    def test_a_foreign_file_is_called_out_as_not_ours_to_fix(self) -> None:
+        """The one state teardown cannot resolve, so it must not read like the
+        routine one."""
+        report = civ6_preflight.Report()
+        with self._seal(detail="a sealed resource is missing or invalid",
+                        ours=["/Games/Civ6.app/.../CivvisControl/a.lua"],
+                        foreign=["/Games/Civ6.app/Contents/Resources/other"]):
+            civ6_preflight.check_bundle(report)
+
+        self.assertEqual(report.failures, [])
+        self.assertIn("NOT", report.warnings[0])
+        self.assertIn("/Contents/Resources/other", report.warnings[0])
+
+    def test_no_game_installed_warns_instead_of_exiting_preflight(self) -> None:
+        """⚠ `civ6_env.install_dir` raises SystemExit. Preflight is routinely run
+        on machines that only ever edit the mod, and letting that escape would
+        abort every other check after it."""
+        report = civ6_preflight.Report()
+        with mock.patch("civ6_control.install.signature_report",
+                        side_effect=SystemExit("install not found")):
+            civ6_preflight.check_bundle(report)
+
+        self.assertEqual(report.failures, [])
+        self.assertEqual(len(report.warnings), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

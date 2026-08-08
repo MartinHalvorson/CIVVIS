@@ -409,6 +409,11 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         // reload, including its selected deadline. Worlds carry the stock
         // value but never consult it.
         "tactics": g.tactics,
+        // Where the flag stands, on the one arena shape that plants one.
+        // Published to every viewer whatever the fog says: the flag is the
+        // battle's objective, and both commanders marched in knowing where
+        // it is even if neither has seen it yet.
+        "arena_flag": g.arena_flag,
         // The handicap the game is being played on. The save list has always
         // reported this for games nobody is playing; without it here the setup
         // panel could not tell a reloaded page which difficulty the game on

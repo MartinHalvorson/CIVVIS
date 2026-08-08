@@ -16518,6 +16518,11 @@ pub const MERCY_VICTORY: &str = "mercy";
 /// still alive. It is a result label, not a victory lane: `winner` remains
 /// `None`, and match/league consumers record a draw.
 pub const DRAW_RESULT: &str = "draw";
+/// The victory type a capture-the-flag battle is recorded under. Like the
+/// Mercy Rule it answers to its own setup option rather than the victory
+/// checkboxes, so it is not one of [`VictoryConditions::NAMES`]: the flag is
+/// an arena objective, and only a battle set up around one can end this way.
+pub const FLAG_VICTORY: &str = "flag";
 
 /// The notation a Mercy Rule verdict is written and displayed under.
 ///
@@ -16625,6 +16630,26 @@ impl Default for VictoryConditions {
     }
 }
 
+/// The scaffolding roles a simultaneous planning world can play. Not part of
+/// the game state: never serialized, never set on a committed game.
+///
+/// - `Off`: an ordinary, authoritative world. Every rule runs in full.
+/// - `Rolling`: the prepare walk's rolling world. Seats take empty turns so
+///   each later seat plans with upkeep applied; when the walk wraps out of
+///   the cycle the world is discarded, so the wrap's world systems and the
+///   next turn's upkeep are skipped — provably unread state.
+/// - `Seat`: one seat's private planning copy. The world is discarded the
+///   moment its plan is harvested, and the harvest reads only actions logged
+///   *before* the closing `EndTurn`, so that close does the minimum needed
+///   to move the turn cursor and nothing else.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PlanningRole {
+    #[default]
+    Off,
+    Rolling,
+    Seat,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(from = "GameSer", into = "GameSer")]
 pub struct Game {
@@ -16676,6 +16701,14 @@ pub struct Game {
     /// action. On by default; headless rollouts turn it off.
     #[serde(skip, default = "yes")]
     track_war_ledger: bool,
+    /// What this world is *for*. The authoritative game and every sequential
+    /// game run `Off`. The simultaneous driver marks its scaffolding worlds —
+    /// the rolling prepare world and each seat's private planning copy — so
+    /// their `EndTurn` closes can skip work whose results nothing will ever
+    /// read. The committed game never carries a role, so nothing here can
+    /// reach an authoritative byte; see the `do_end_turn` branches.
+    #[serde(skip)]
+    planning_role: PlanningRole,
     /// AI turns apply many actions synchronously, with no observer able to
     /// read the half-finished position. Coalesce their full-empire visibility
     /// refreshes and publish the same final observation once at the boundary.
@@ -16766,6 +16799,12 @@ pub struct Game {
     /// those load as the stock grant, which no world ever reads.
     #[serde(default)]
     pub tactics: TacticsRules,
+    /// Where a capture-the-flag arena's flag stands. `Some` exactly on an
+    /// arena whose match asked for the flag objective; taking this tile is
+    /// what wins the battle. Absent from every world and every other arena,
+    /// and from saves written before the shape existed.
+    #[serde(default)]
+    pub arena_flag: Option<Pos>,
     /// The victory types each seat has banked under Require-N, by player id.
     #[serde(default)]
     pub victories_won: BTreeMap<usize, BTreeSet<String>>,
@@ -17243,6 +17282,8 @@ struct GameSer {
     #[serde(default)]
     tactics: TacticsRules,
     #[serde(default)]
+    arena_flag: Option<Pos>,
+    #[serde(default)]
     victories_won: BTreeMap<usize, BTreeSet<String>>,
     next_id: u32,
     rng: Rng,
@@ -17383,6 +17424,7 @@ impl From<GameSer> for Game {
             remembered_under: Vec::new(),
             track_fog_memory: true,
             track_war_ledger: true,
+            planning_role: PlanningRole::Off,
             visibility_batch: VisibilityBatch::default(),
             rng: s.rng,
             seed: s.seed,
@@ -17411,6 +17453,7 @@ impl From<GameSer> for Game {
             mercy_lanes: s.mercy_lanes,
             required_victory_types: s.required_victory_types,
             tactics: s.tactics,
+            arena_flag: s.arena_flag,
             victories_won: s.victories_won,
             next_id: s.next_id,
             map: s.map,
@@ -17602,6 +17645,7 @@ impl From<Game> for GameSer {
             mercy_lanes: g.mercy_lanes,
             required_victory_types: g.required_victory_types,
             tactics: g.tactics,
+            arena_flag: g.arena_flag,
             victories_won: g.victories_won,
             next_id: g.next_id,
             rng: g.rng,
@@ -17914,6 +17958,7 @@ impl Game {
             remembered_under: Vec::new(),
             track_fog_memory: true,
             track_war_ledger: true,
+            planning_role: PlanningRole::Off,
             visibility_batch: VisibilityBatch::default(),
             rng,
             seed,
@@ -17941,6 +17986,7 @@ impl Game {
             mercy_lanes: Vec::new(),
             required_victory_types,
             tactics,
+            arena_flag: None,
             victories_won: BTreeMap::new(),
             next_id: 1,
             map,
@@ -18028,6 +18074,13 @@ impl Game {
             let mut player = Player::new(i, civ, false);
             player.team = teams.get(i).copied().flatten();
             g.players.push(player);
+        }
+        // A capture-the-flag arena plants its flag before either army is set
+        // down, so the deployment below can keep the objective tile clear —
+        // a battle must never open already won.
+        if map_script.is_battlefield() && g.tactics.flag {
+            g.arena_flag =
+                g.battlefield_flag_site(&spawns[..num_players.min(spawns.len())]);
         }
         for (i, pos) in spawns.iter().take(num_players).enumerate() {
             if map_script.is_battlefield() {
@@ -18349,6 +18402,34 @@ impl Game {
     /// first turns of the battle would be spent unstacking it. Only one
     /// military unit stands on a hex, so "the next free ground outward" is
     /// the whole rule.
+    /// Where a capture-the-flag arena plants its flag: the passable tile the
+    /// seats reach as evenly as the field allows — first the smallest spread
+    /// in marching distance between the sides, then the shortest march
+    /// overall so the flag sits between the armies rather than off on a
+    /// fair-but-remote wall, then position order so the same field always
+    /// plants the same flag.
+    fn battlefield_flag_site(&self, seats: &[Pos]) -> Option<Pos> {
+        self.map
+            .tiles
+            .iter()
+            // Dry ground an army can stand on. `is_passable` alone admits
+            // open water — a ship passes over it — and a flag out at sea is
+            // an objective no land column can ever take, so the battle could
+            // only ever end on the clock. The bounded arena never notices
+            // this, because its own generator paints every tile as passable
+            // land; the small-globe arena keeps ordinary world terrain, and
+            // measured, 13 of 40 of its flags landed on ocean, coast or lake
+            // before this filter existed.
+            .filter(|(_, tile)| self.rules.is_passable(tile) && !self.rules.is_water(tile))
+            .map(|(pos, _)| *pos)
+            .min_by_key(|pos| {
+                let marches = seats.iter().map(|seat| self.wdist(*seat, *pos));
+                let far = marches.clone().max().unwrap_or(0);
+                let near = marches.min().unwrap_or(0);
+                (far - near, far, *pos)
+            })
+    }
+
     fn deploy_battlefield_army(&mut self, pid: usize, anchor: Pos) {
         let mut ground: Vec<Pos> = self
             .map
@@ -18356,6 +18437,9 @@ impl Game {
             .keys()
             .copied()
             .filter(|pos| self.rules.is_passable(&self.map.tiles[pos]))
+            // Never onto the flag itself: standing on that tile is winning,
+            // and a battle must be fought before it is won.
+            .filter(|pos| Some(*pos) != self.arena_flag)
             .collect();
         ground.sort_by_key(|pos| (self.wdist(anchor, *pos), *pos));
         let mut cursor = 0;
@@ -21530,6 +21614,38 @@ impl Game {
                         .then_some(if spy.level >= 2 { 2.0 } else { 1.0 })
                 })
                 .sum::<f64>()
+    }
+
+    /// How many espionage agents a player actually has.
+    ///
+    /// ⚠ TWO REPRESENTATIONS, AND THE LIVE BRIDGE ONLY EVER FILLS THE SECOND.
+    /// A native CIVVIS Spy is a `self.spies` entry and NOTHING ELSE — the
+    /// production arm inserts it and returns before `place_new_unit`, so
+    /// `self.units` never holds one. Civilization VI has no such split: a Spy
+    /// there is an ordinary `UNIT_SPY`, which is what the mirror imports, so
+    /// `self.spies` stays empty for the whole of a live game.
+    ///
+    /// Everything that asks "am I at spy capacity" read only `self.spies`, so
+    /// in a live game the answer was **always zero**. Measured across the 23
+    /// completed Civilization VI runs of 2026-08-07/08: `UNIT_SPY` is the
+    /// **second most-requested production item in the fleet**, 550 of 5,618
+    /// orders (**9.8% of every production decision**), and **458 of them
+    /// (84%) were refused as unplayable** — while the empire visibly held one
+    /// to four Spies at the time. Each refusal throws that city's production
+    /// back to the control mod's fallback ladder, which is the ladder that
+    /// builds warriors.
+    ///
+    /// Taking the maximum is correct in both worlds and cannot over-count: a
+    /// native game contributes 0 from the unit census, a live game
+    /// contributes 0 from the agent map.
+    pub fn spy_agents(&self, pid: usize) -> usize {
+        let agents = self.spies.values().filter(|spy| spy.owner == pid).count();
+        let units = self
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid && unit.kind == "spy")
+            .count();
+        agents.max(units)
     }
 
     pub fn spy_capacity(&self, pid: usize) -> i64 {
@@ -31000,6 +31116,13 @@ impl Game {
         self.occ.entry(pos).or_default().push(uid);
         let sight = self.unit_sight(uid);
         self.reveal(owner, pos, sight);
+        // Taking the flag decides a capture-the-flag battle on the spot.
+        // Every way a unit changes tiles — a march, a melee advance, an
+        // airlift, a retreat — funnels through here, so this is the one
+        // place the objective needs to be watched from.
+        if self.arena_flag == Some(pos) {
+            self.set_winner(owner, FLAG_VICTORY);
+        }
     }
 
     fn improvement_fortification_at(&self, pos: Pos) -> i32 {
@@ -32241,6 +32364,14 @@ impl Game {
         self.track_war_ledger = track;
     }
 
+    /// Mark this world as simultaneous-planning scaffolding (or ordinary,
+    /// with [`PlanningRole::Off`]). Only the simultaneous driver calls this,
+    /// and only on worlds it will discard; a committed game never carries a
+    /// role. See [`PlanningRole`] for what each role elides.
+    pub fn set_planning_role(&mut self, role: PlanningRole) {
+        self.planning_role = role;
+    }
+
     /// Run a synchronous action sequence while coalescing full visibility
     /// maintenance at its boundary.
     ///
@@ -32282,6 +32413,14 @@ impl Game {
     }
 
     fn flush_deferred_visibility(&mut self) {
+        if self.planning_role == PlanningRole::Seat {
+            // A planning seat's deliberation is the only reader its private
+            // world will ever have, and it has just finished: the boundary
+            // publish is for observers this world cannot acquire.
+            self.visibility_batch.refresh_all = false;
+            self.visibility_batch.refresh_teams.clear();
+            return;
+        }
         if self.visibility_batch.refresh_all {
             self.visibility_batch.refresh_all = false;
             self.visibility_batch.refresh_teams.clear();
@@ -32295,6 +32434,11 @@ impl Game {
     }
 
     fn flush_deferred_visibility_parallel(&mut self, pool: &WorkPool) {
+        if self.planning_role == PlanningRole::Seat {
+            self.visibility_batch.refresh_all = false;
+            self.visibility_batch.refresh_teams.clear();
+            return;
+        }
         if pool.threads() == 1 || self.players.len() < PARALLEL_VISIBILITY_MIN_PLAYERS {
             self.flush_deferred_visibility();
             return;
@@ -32694,16 +32838,40 @@ impl Game {
         }
     }
 
+    /// The vision passes poll `suzerain_of` for every (viewer, city-state)
+    /// pair — an every-major envoy poll each, so one full refresh makes
+    /// seats × minors × majors envoy queries when asked cold. The answers
+    /// cannot change inside one pass: publishing sight records contacts,
+    /// moments, and remembered ground, never envoys, governors, or a seat's
+    /// life. So install the ordinary suzerain memo for the duration of the
+    /// pass. A `QueryMemo` guard can never be alive here — it pins `&Game`,
+    /// and every caller of a refresh holds `&mut Game` — so the slot is
+    /// always free; the install mirrors the guard's outermost discipline
+    /// anyway so nesting stays sound if that ever changes.
+    fn with_suzerain_memo<R>(&mut self, pass: impl FnOnce(&mut Game) -> R) -> R {
+        let installed = self.query_memo.suzerain.borrow().is_none();
+        if installed {
+            *self.query_memo.suzerain.borrow_mut() = Some(BTreeMap::new());
+        }
+        let result = pass(self);
+        if installed {
+            *self.query_memo.suzerain.borrow_mut() = None;
+        }
+        result
+    }
+
     fn refresh_all_visibility(&mut self) {
         let memory_world = if self.track_fog_memory {
             self.memory_world_stamp()
         } else {
             self.snapshot_world_stamp(0)
         };
-        let mut heights = self.height_field();
-        for pid in 0..self.players.len() {
-            self.refresh_player_visibility_via(pid, &mut heights, memory_world);
-        }
+        self.with_suzerain_memo(|game| {
+            let mut heights = game.height_field();
+            for pid in 0..game.players.len() {
+                game.refresh_player_visibility_via(pid, &mut heights, memory_world);
+            }
+        });
     }
 
     /// Compute current sight from one immutable final position, then publish
@@ -32724,12 +32892,17 @@ impl Game {
         let players = Arc::new(players);
         let worker_players = Arc::clone(&players);
         let mut computed = pool.map_stateful(count, states, move |game, indices| {
+            // Worker clones start with an empty query cache; the same
+            // suzerain answers the serial pass memoizes would otherwise be
+            // re-derived from scratch for every seat this worker computes.
+            let memo = game.query_memo();
             let mut results = indices
                 .map(|index| {
                     let visible = game.player_vision_now(worker_players[index]);
                     (index, (visible, None))
                 })
                 .collect::<Vec<_>>();
+            drop(memo);
             if let Some((_, (_, cache))) = results.last_mut() {
                 *cache = Some(game.vision.into_inner());
             }
@@ -32766,12 +32939,14 @@ impl Game {
         } else {
             self.snapshot_world_stamp(pid)
         };
-        let mut heights = self.height_field();
-        for member in members {
-            if self.players[member].alive {
-                self.refresh_player_visibility_via(member, &mut heights, memory_world);
+        self.with_suzerain_memo(|game| {
+            let mut heights = game.height_field();
+            for member in members {
+                if game.players[member].alive {
+                    game.refresh_player_visibility_via(member, &mut heights, memory_world);
+                }
             }
-        }
+        });
     }
 
     fn refresh_team_visibility_parallel(&mut self, pid: usize, pool: &WorkPool) {
@@ -32900,6 +33075,24 @@ impl Game {
         let raider = self.rules.units[unit.kind].promotion_class == "naval_raider";
         let camouflaged = self.promotion_effect(unit, "camouflage") > 0.0;
         if !raider && !camouflaged {
+            return true;
+        }
+        // On a mirrored board every foreign unit arrived from the Civ 6 export,
+        // and the export carries a rival's units ONLY under current visibility —
+        // the HOST has already run its own detection over this raider before
+        // showing it to the seat. Re-deriving stealth here vetoed that ground
+        // truth: measured live on `civvis-20260807T162004Z` turns 237–251
+        // (#1362), a rival UNIT_NUCLEAR_SUBMARINE the export carried in full was
+        // planted and then hidden from the seat's board, orders and threat
+        // reads, because no destroyer of ours stood near it. `host_observed` is
+        // exactly the set of tiles the host proved this seat can see; trust it
+        // the same way `player_vision` already does. Seat-0-gated like that
+        // site, and an ordinary CIVVIS game leaves the set empty.
+        if viewer == MIRRORED_SEAT
+            && self
+                .host_observed
+                .contains(&unit.air_patrol_pos.unwrap_or(unit.pos))
+        {
             return true;
         }
         self.player_unit_ids(viewer).into_iter().any(|other_id| {
@@ -39685,7 +39878,8 @@ impl Game {
             return false;
         }
         if unit == "spy" {
-            let existing = self.spies.values().filter(|spy| spy.owner == pid).count();
+            // Counts mirrored `UNIT_SPY` units too — see `spy_agents`.
+            let existing = self.spy_agents(pid);
             let queued = self
                 .cities
                 .values()
@@ -42368,7 +42562,21 @@ impl Game {
             // Once an action succeeds any one of its prerequisites may have
             // changed, so the next helper must derive a fresh catalog.
             self.query_memo.producible.borrow_mut().clear();
-            if monopoly_control_may_change {
+            // A planning world's EndTurn keeps only what planning reads.
+            // On a seat's private copy the close is the last thing the world
+            // ever does: the plan harvest reads the actions logged before it,
+            // so the monopoly census and the every-seat visibility sweep
+            // below would be for nobody. On the rolling prepare world the
+            // walk is an upkeep-only forward: with fog memory off the sweep's
+            // one gameplay product is contact recording, and the authoritative
+            // commit runs the very same sweep on the real world; a contact
+            // that would first arise from mid-walk upkeep reaches the next
+            // cycle's planning worlds one cycle later instead. Mid-turn
+            // actions keep everything — the planning agent still reads its
+            // own world while deliberating.
+            let discarded_close = matches!(action, Action::EndTurn)
+                && self.planning_role != PlanningRole::Off;
+            if monopoly_control_may_change && !discarded_close {
                 self.note_first_monopoly_moments();
             }
             // The war infobox is live during a turn, not only after End Turn.
@@ -42415,7 +42623,9 @@ impl Game {
                     self.sync_war_log();
                 }
             }
-            self.defer_or_refresh_visibility(pid, matches!(action, Action::EndTurn));
+            if !discarded_close {
+                self.defer_or_refresh_visibility(pid, matches!(action, Action::EndTurn));
+            }
             self.log.push(pid, action.clone());
         }
         r
@@ -53858,6 +54068,27 @@ impl Game {
     }
 
     fn do_end_turn(&mut self) {
+        if self.planning_role == PlanningRole::Seat {
+            // A seat's private planning world is discarded the moment its
+            // plan is harvested, and the harvest reads only the actions
+            // logged before this close. All that must still happen is the
+            // cursor movement the planning agent's own turn loop observes.
+            let n = self.players.len();
+            for i in 1..=n {
+                let cand = (self.current + i) % n;
+                if self.players[cand].alive {
+                    if cand != self.current {
+                        let wrapped = cand <= self.current;
+                        self.current = cand;
+                        if wrapped {
+                            self.turn += 1;
+                        }
+                    }
+                    return;
+                }
+            }
+            return;
+        }
         // Strength is part of the live war ledger, not just its opening and
         // closing snapshots. Refresh after every civilization has completed
         // its actions so the next observation sees the latest total and peak.
@@ -53887,6 +54118,15 @@ impl Game {
         self.players[nxt].turn_units.clear();
         self.current = nxt;
         if wrapped {
+            if self.planning_role == PlanningRole::Rolling {
+                // The prepare walk's loop condition is `turn == cycle_turn`:
+                // wrapping out of the cycle is the walk's exit, and the
+                // rolling world is discarded on it. The world systems, the
+                // next turn's upkeep, and the score check below would be
+                // computed for a world nothing will ever read again.
+                self.turn += 1;
+                return;
+            }
             self.turn += 1;
             self.process_climate();
             self.process_disasters();
@@ -57492,6 +57732,10 @@ impl Game {
         // report is the lane the board was being decided on when it fired.
         let verdict = if vtype == MERCY_VICTORY {
             format!("won by {}", mercy_label(&self.mercy_lanes))
+        } else if vtype == FLAG_VICTORY {
+            // The verdict names the deed: a flag battle is not "a flag
+            // victory", it is the flag captured.
+            "captured the flag".to_string()
         } else {
             format!("won a {vtype} victory")
         };
@@ -57511,7 +57755,10 @@ impl Game {
             && (self.victory_lane_open(vtype)
                 // Mercy answers to its own setup option, not the victory
                 // checkboxes: it is a concession rule, not a victory lane.
-                || (vtype == MERCY_VICTORY && self.mercy_rule.is_some()))
+                || (vtype == MERCY_VICTORY && self.mercy_rule.is_some())
+                // The flag answers to the arena objective it was planted by:
+                // only a battle set up around one can be won by taking it.
+                || (vtype == FLAG_VICTORY && self.arena_flag.is_some()))
         {
             // Require-N: short of the requirement, a victory type banks a
             // milestone instead of ending the world. The set dedupes, because
@@ -64075,6 +64322,49 @@ mod victory_conditions {
         );
     }
 
+    /// A live game's Spies are mirrored `UNIT_SPY` units, not `spies` entries,
+    /// so every "am I at capacity" test used to answer zero and the empire
+    /// re-ordered a Spy the host would refuse. `UNIT_SPY` was the second
+    /// most-requested production item in the fleet at 9.8% of all orders, 84%
+    /// of them refused.
+    #[test]
+    fn mirrored_spy_units_count_against_spy_capacity() {
+        let mut g = game_with_capitals(2, 404, 500);
+        let cid = g.player_city_ids(0)[0];
+        for civic in ["diplomatic_service", "nationalism", "ideology", "cold_war"] {
+            g.players[0].civics.insert(Name::new(civic));
+        }
+        let capacity = g.spy_capacity(0) as usize;
+        assert_eq!(capacity, 4);
+        let spy = Item::Unit { unit: crate::name!("spy") };
+        assert_eq!(g.spy_agents(0), 0);
+        assert!(g.can_produce(0, cid, &spy), "an empty roster may train one");
+
+        // The live shape: agents arrive as units and `spies` stays empty.
+        let home = g.cities[&cid].pos;
+        for _ in 0..capacity {
+            g.spawn_unit("spy", 0, home);
+        }
+        assert!(g.spies.is_empty(), "the mirror never fills the agent map");
+        assert_eq!(g.spy_agents(0), capacity, "the unit census is the live count");
+        assert!(
+            !g.can_produce(0, cid, &spy),
+            "a full roster of mirrored Spies must refuse another"
+        );
+
+        // Another player's Spies are not ours, and neither are other units.
+        let mut h = game_with_capitals(2, 405, 500);
+        let hcid = h.player_city_ids(0)[0];
+        for civic in ["diplomatic_service", "nationalism", "ideology", "cold_war"] {
+            h.players[0].civics.insert(Name::new(civic));
+        }
+        let hhome = h.cities[&hcid].pos;
+        h.spawn_unit("builder", 0, hhome);
+        h.spawn_unit("spy", 1, h.cities[&h.player_city_ids(1)[0]].pos);
+        assert_eq!(h.spy_agents(0), 0, "only our own Spies count");
+        assert_eq!(h.spy_agents(1), 1);
+    }
+
     #[test]
     fn late_tree_airlifts_and_repeatable_nodes_execute_from_rules_data() {
         let mut g = game_with_capitals(2, 404, 500);
@@ -68867,6 +69157,122 @@ mod district_mechanics {
             game.players[0].techs.len() > techs_before,
             "a side with no city still researches"
         );
+    }
+
+    fn flag_arena(seed: u64) -> Game {
+        Game::new_with(GameOptions {
+            map_script: MapScript::Battlefield,
+            // Cities asked for on purpose: the flag must replace them.
+            tactics: TacticsRules { flag: true, cities: 1, ..TacticsRules::default() },
+            ..GameOptions::new(2, 20, 20, seed, 250, 0)
+        })
+    }
+
+    /// A flag battle opens with exactly one objective on the field: a flag
+    /// both sides can reach evenly, no city anywhere, and nobody standing on
+    /// the prize.
+    #[test]
+    fn a_flag_arena_plants_one_even_handed_flag_and_no_cities() {
+        let game = flag_arena(90_412);
+        let flag = game.arena_flag.expect("a flag battle plants its flag");
+        assert!(game.cities.is_empty(), "the flag replaces the city objective outright");
+        assert!(game.units_at(flag).is_empty(), "a battle must never open already won");
+        let reach = |pid: usize| {
+            game.units
+                .values()
+                .filter(|unit| unit.owner == pid)
+                .map(|unit| game.wdist(unit.pos, flag))
+                .min()
+                .expect("both sides open with an army")
+        };
+        assert!(
+            (reach(0) - reach(1)).abs() <= 1,
+            "the flag favours a side: {} hexes against {}",
+            reach(0),
+            reach(1)
+        );
+
+        // Only the shape that asked for a flag gets one; the stock arena and
+        // the stock world both play without.
+        let plain = Game::new_with(GameOptions {
+            map_script: MapScript::Battlefield,
+            ..GameOptions::new(2, 20, 20, 90_412, 250, 0)
+        });
+        assert_eq!(plain.arena_flag, None);
+        let world = Game::new_full(2, 24, 16, 90_412, 100, 0, false);
+        assert_eq!(world.arena_flag, None);
+    }
+
+    /// A flag is planted on dry ground, on every arena that can carry one.
+    ///
+    /// The bounded arena cannot get this wrong — its generator paints every
+    /// tile as passable land — but the small-globe arena keeps ordinary
+    /// world terrain, and picking by `is_passable` alone put 13 of 40 of its
+    /// flags out on ocean, coast or lake: an objective no land column can
+    /// ever reach, so the battle could only end on the clock. Both shapes
+    /// are swept here because the rule is about the objective, not about one
+    /// map.
+    #[test]
+    fn a_flag_is_never_planted_on_water() {
+        for (label, script, width, height) in [
+            ("the bounded arena", MapScript::Battlefield, 20, 20),
+            ("the small-globe arena", MapScript::TacticsPlanet, 40, 24),
+        ] {
+            for seed in 0..12u64 {
+                let game = Game::new_with(GameOptions {
+                    map_script: script,
+                    tactics: TacticsRules { flag: true, ..TacticsRules::default() }.sanitized(),
+                    ..GameOptions::new(2, width, height, seed * 977 + 13, 200, 0)
+                });
+                let flag = game.arena_flag.expect("a flag battle plants its flag");
+                let tile = &game.map.tiles[&flag];
+                assert!(
+                    !game.rules.is_water(tile),
+                    "{label} planted its flag on {} at {flag:?}, which no army can hold",
+                    tile.terrain
+                );
+                assert!(game.rules.is_passable(tile), "{label} planted an unreachable flag");
+            }
+        }
+    }
+
+    /// Taking the flag tile is the whole victory condition: the moment a
+    /// unit stands on it, its side has won, under the flag's own victory
+    /// type rather than a lane no checkbox ever opened.
+    #[test]
+    fn taking_the_flag_tile_wins_the_battle() {
+        let mut game = flag_arena(90_413);
+        let flag = game.arena_flag.unwrap();
+        let uid = game
+            .units
+            .values()
+            .find(|unit| unit.owner == 1)
+            .expect("side two opens with an army")
+            .id;
+        game.relocate(uid, flag);
+        assert_eq!(game.winner, Some(1), "the side that took the tile has won");
+        assert_eq!(game.victory_type.as_deref(), Some(FLAG_VICTORY));
+        assert_eq!(game.victory_label().as_deref(), Some(FLAG_VICTORY));
+        assert!(game.is_finished());
+    }
+
+    /// The flag survives a save: a reloaded battle is still decided by the
+    /// same tile, and a save written before the shape existed still opens.
+    #[test]
+    fn the_flag_survives_a_save_and_older_saves_open_without_one() {
+        let game = flag_arena(90_414);
+        let encoded = serde_json::to_value(&game).unwrap();
+        let restored: Game = serde_json::from_value(encoded).unwrap();
+        assert_eq!(restored.arena_flag, game.arena_flag);
+
+        let mut older = serde_json::to_value(&game).unwrap();
+        older
+            .as_object_mut()
+            .unwrap()
+            .remove("arena_flag")
+            .expect("the field is written");
+        let old_save: Game = serde_json::from_value(older).unwrap();
+        assert_eq!(old_save.arena_flag, None);
     }
 
     /// A zero tech pace freezes the tree: both sides fight the whole battle

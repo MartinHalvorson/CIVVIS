@@ -794,6 +794,15 @@ struct Observations {
     foot_n: f64,
     foot_sum: f64,
     foot_sq: f64,
+    /// The share of the force standing in contact on the turn contact first
+    /// occurred, and how many engagements that was measured over. Recorded at
+    /// a single instant, upstream of the engagement, which is what makes it
+    /// usable as a *cause* rather than a description — see [`DoctrineProfile::vanguard`].
+    vanguard_sum: f64,
+    vanguard_n: f64,
+    /// Engagements whose first-contact instant had not yet seen a casualty,
+    /// so the share above is provably untouched by any outcome.
+    vanguard_clean: f64,
     /// Units deployed, and units that never reached the enemy at all. The
     /// strongest form of arriving late, and the one form of it that no
     /// difference in movement points can explain.
@@ -833,6 +842,9 @@ impl DoctrineLedger {
         mine.foot_sq += theirs.foot_sq;
         mine.deployed += theirs.deployed;
         mine.absent += theirs.absent;
+        mine.vanguard_sum += theirs.vanguard_sum;
+        mine.vanguard_n += theirs.vanguard_n;
+        mine.vanguard_clean += theirs.vanguard_clean;
     }
 
     /// Production cost destroyed less production cost lost.
@@ -856,6 +868,9 @@ impl DoctrineLedger {
             arrival: spread(obs.arrival_n, obs.arrival_sum, obs.arrival_sq),
             foot_arrival: spread(obs.foot_n, obs.foot_sum, obs.foot_sq),
             absent: (obs.deployed > 0.0).then(|| obs.absent / obs.deployed),
+            vanguard: (obs.vanguard_n > 0.0).then(|| obs.vanguard_sum / obs.vanguard_n),
+            vanguard_clean: (obs.vanguard_n > 0.0)
+                .then(|| obs.vanguard_clean / obs.vanguard_n),
         }
     }
 }
@@ -909,6 +924,24 @@ pub struct DoctrineProfile {
     /// form of arriving late, and the one form of it that no difference in
     /// movement points can explain away.
     pub absent: Option<f64>,
+    /// Share of the force standing in contact on the turn contact **first**
+    /// occurred. High is an army that met the enemy as a body; low is one
+    /// that sent a unit ahead of itself.
+    ///
+    /// Every other column here is a description of an engagement that has
+    /// already happened, and so cannot be used to argue that fighting one way
+    /// *causes* winning: an army that is being destroyed stops arriving,
+    /// which inflates its own arrival spread. This one is recorded at a
+    /// single instant that is upstream of the entire engagement — nothing has
+    /// been decided yet — so correlating it against the result is a claim
+    /// about cause and not a restatement of the outcome.
+    pub vanguard: Option<f64>,
+    /// Share of engagements whose first-contact instant had not yet seen a
+    /// casualty. Reported so the claim above can be checked rather than
+    /// trusted: a side that moves into contact may attack in the same turn,
+    /// so the instant is upstream of *almost* every engagement rather than
+    /// provably all of them.
+    pub vanguard_clean: Option<f64>,
 }
 
 /// Population standard deviation from running sums. `None` below two
@@ -1043,9 +1076,12 @@ fn play_position(
         .map(|(uid, unit)| (*uid, (unit.owner, unit.foot)))
         .collect();
     let mut step = 0u32;
+    // Recorded once, at the instant contact first exists on the board.
+    let mut vanguard_taken = false;
 
     observe(&previous, &game, &mut ledgers);
     note_arrivals(&previous, &game, step, &mut arrival);
+    note_vanguard(&previous, &game, &roster, 0, &mut vanguard_taken, &mut ledgers);
     while game.winner.is_none() && game.turn < deadline {
         let pid = game.current;
         if pid < 2 {
@@ -1060,6 +1096,8 @@ fn play_position(
         step += 1;
         observe(&previous, &game, &mut ledgers);
         note_arrivals(&previous, &game, step, &mut arrival);
+        let fallen = roster.len() - previous.len();
+        note_vanguard(&previous, &game, &roster, fallen, &mut vanguard_taken, &mut ledgers);
         // Nothing left to measure once a side has no unit standing.
         if [0usize, 1]
             .iter()
@@ -1086,6 +1124,53 @@ fn note_arrivals(now: &Snapshot, g: &Game, step: u32, arrival: &mut BTreeMap<u32
             .any(|other| other.owner != unit.owner && g.wdist(unit.pos, other.pos) <= 2);
         if engaged {
             arrival.insert(*uid, step);
+        }
+    }
+}
+
+/// Record, once per engagement, the share of each side's force standing in
+/// contact at the instant contact first exists.
+///
+/// The denominator is the force **deployed**, not the force still alive, so a
+/// casualty cannot inflate the share of the side that took it. `fallen` is
+/// carried in only to mark whether this instant is provably clean of any
+/// outcome; a side that moves into contact may attack in the same turn, so
+/// the instant is upstream of almost every engagement rather than all of them,
+/// and the share of clean ones is reported rather than assumed.
+fn note_vanguard(
+    now: &Snapshot,
+    g: &Game,
+    roster: &BTreeMap<u32, (usize, bool)>,
+    fallen: usize,
+    taken: &mut bool,
+    ledgers: &mut (DoctrineLedger, DoctrineLedger),
+) {
+    if *taken {
+        return;
+    }
+    let in_contact = |unit: &Seen| {
+        now.values()
+            .any(|other| other.owner != unit.owner && g.wdist(unit.pos, other.pos) <= 2)
+    };
+    if !now.values().any(in_contact) {
+        return;
+    }
+    *taken = true;
+    for side in [0usize, 1] {
+        let deployed = roster.values().filter(|(owner, _)| *owner == side).count();
+        if deployed == 0 {
+            continue;
+        }
+        let up = now
+            .values()
+            .filter(|unit| unit.owner == side && in_contact(unit))
+            .count();
+        let (ledger, _) = split(ledgers, side);
+        let obs = &mut ledger.observations;
+        obs.vanguard_sum += up as f64 / deployed as f64;
+        obs.vanguard_n += 1.0;
+        if fallen == 0 {
+            obs.vanguard_clean += 1.0;
         }
     }
 }
@@ -1346,6 +1431,10 @@ pub fn build(spec: &Position, seed: u64) -> Option<Game> {
             best_of: 1,
             unique_units: false,
             fog: false,
+            // No flag either: a position is a posed engagement, and a flag
+            // would let a walk to a tile end it before the engagement said
+            // anything.
+            flag: false,
             // The arena's own draw clock, set to the longest it offers so it
             // can never end a position before the ledger's deadline does. A
             // position is read at `spec.turns` and never asks who "won", so
@@ -1494,6 +1583,43 @@ pub mod paired {
         }
         let t = mean / stderr;
         (mean, stderr, t, erfc(t.abs() / 2f64.sqrt()).clamp(0.0, 1.0))
+    }
+
+    /// Pearson correlation between two paired series, with a two-sided p.
+    ///
+    /// Returns `None` below three pairs, or when either series has no spread
+    /// at all — a correlation with a constant is not zero, it is undefined,
+    /// and reporting 0.00 there would be the harness asserting independence
+    /// it never measured.
+    pub fn correlation(xs: &[f64], ys: &[f64]) -> Option<(f64, usize, f64)> {
+        let n = xs.len().min(ys.len());
+        if n < 3 {
+            return None;
+        }
+        let mean = |values: &[f64]| values[..n].iter().sum::<f64>() / n as f64;
+        let (mx, my) = (mean(xs), mean(ys));
+        let mut sxy = 0.0;
+        let mut sxx = 0.0;
+        let mut syy = 0.0;
+        for index in 0..n {
+            let (dx, dy) = (xs[index] - mx, ys[index] - my);
+            sxy += dx * dy;
+            sxx += dx * dx;
+            syy += dy * dy;
+        }
+        if sxx <= 0.0 || syy <= 0.0 {
+            return None;
+        }
+        let r = (sxy / (sxx * syy).sqrt()).clamp(-1.0, 1.0);
+        // t = r sqrt((n-2)/(1-r^2)), two-sided. A perfect correlation has an
+        // infinite t and a p of zero, which is the honest answer for it.
+        let p = if r.abs() >= 1.0 {
+            0.0
+        } else {
+            let t = r * ((n - 2) as f64 / (1.0 - r * r)).sqrt();
+            erfc(t.abs() / 2f64.sqrt()).clamp(0.0, 1.0)
+        };
+        Some((r, n, p))
     }
 
     /// Abramowitz & Stegun 7.1.26, good to ~1.5e-7.
@@ -1653,6 +1779,65 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A correlation with a constant series is undefined, not zero. Reporting
+    /// 0.00 there would be the harness asserting an independence it never
+    /// measured — which is the same class of error as the sign test's
+    /// confident null.
+    #[test]
+    fn a_correlation_with_no_spread_is_nothing_rather_than_zero() {
+        assert!(paired::correlation(&[1.0, 2.0], &[1.0, 2.0]).is_none(), "too few pairs");
+        assert!(
+            paired::correlation(&[1.0, 1.0, 1.0], &[1.0, 2.0, 3.0]).is_none(),
+            "a constant x has no correlation, not a zero one"
+        );
+        let (r, n, p) = paired::correlation(&[1.0, 2.0, 3.0, 4.0], &[2.0, 4.0, 6.0, 8.0])
+            .expect("a perfect line correlates");
+        assert!((r - 1.0).abs() < 1e-12, "r = {r}");
+        assert_eq!(n, 4);
+        assert_eq!(p, 0.0);
+        let (r, _, _) = paired::correlation(&[1.0, 2.0, 3.0, 4.0], &[8.0, 6.0, 4.0, 2.0])
+            .expect("a perfect inverse correlates");
+        assert!((r + 1.0).abs() < 1e-12, "r = {r}");
+    }
+
+    /// The vanguard is the one column meant to support a causal claim, so its
+    /// two guarantees have to hold: it is a share of the force deployed, and
+    /// the instant it is taken at is upstream of essentially every engagement.
+    /// If that second figure were low the column would be worthless for the
+    /// job it exists to do.
+    #[test]
+    fn the_vanguard_is_recorded_before_the_engagement_decides_anything() {
+        let mut clean = 0.0;
+        let mut total = 0.0;
+        for spec in POSITIONS {
+            let result = matched_position(spec, 91, "advanced", "basic", &builtin_ai);
+            if result.skipped {
+                continue;
+            }
+            for ledger in [&result.a, &result.b] {
+                let profile = ledger.profile();
+                let (Some(vanguard), Some(share)) = (profile.vanguard, profile.vanguard_clean)
+                else {
+                    panic!("{} produced no vanguard", spec.id);
+                };
+                assert!(
+                    (0.0..=1.0).contains(&vanguard),
+                    "{} reported a vanguard of {vanguard}",
+                    spec.id
+                );
+                clean += share;
+                total += 1.0;
+            }
+        }
+        let overall = clean / total;
+        assert!(
+            overall > 0.9,
+            "only {:.0}% of first-contact instants were clean of a casualty, so \
+             the vanguard cannot carry a causal claim",
+            overall * 100.0
+        );
     }
 
     /// The muster has to actually vary, or every seed replays one game and a

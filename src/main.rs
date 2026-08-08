@@ -758,8 +758,91 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the rated profile is identical by construction — the same shape as the
 /// flag re-pins above, with the map script as the flag. Compatibility
 /// re-pin, not an Elo-protocol change.
+/// The recon-replacement arm adds one disjunct to `pick_item`'s military-floor
+/// condition and one new chooser, behind `BasicAi::recon_replacement`. Both
+/// constructors leave the flag false and only `enable_live_bridge` sets it, so
+/// under the anchor `recon_is_the_missing_arm` returns on its first line, the
+/// added disjunct is a constant `false` that cannot change the `||`, and
+/// `best_recon` is never reached. The anchor's build order is byte-identical by
+/// construction. Compatibility re-pin, not an Elo-protocol change.
+/// #1401 discounts a motionless Settler from the expansion gate's in-flight
+/// test, so one stuck settler stops costing every future one. It sits behind
+/// `BasicAi::settler_strand_discount`, which `AdvancedAi::enable_live_bridge`
+/// sets and nothing else does — `BasicAi::new` and `with_weights` both leave
+/// it false, and both new tests assert the off path is unchanged, so the
+/// anchor's decision stream is identical by construction. Compatibility
+/// re-pin, not an Elo-protocol change.
+/// #1402 counts mirrored `UNIT_SPY` units as espionage agents in the spy
+/// capacity test. A native CIVVIS Spy is a `Game::spies` entry and never a
+/// unit — the production arm returns before `place_new_unit` — so the unit
+/// census contributes 0 to `spy_agents` in every native game and the anchor
+/// sees the same number it always did. Identical by construction, on a rated
+/// profile and off it. Compatibility re-pin, not an Elo-protocol change.
+/// #1404 adds the missing `disable_stranded_settler_discount` counterpart so
+/// the treatment can be held off for a controlled arm. It only writes `false`
+/// into a field the anchor already reads as `false`. Compatibility re-pin, not
+/// an Elo-protocol change.
+/// The siege-commitment term adds one summand to `campaign_city_value`, behind
+/// `AdvancedAi::siege_commitment`. Both constructors leave the flag false and
+/// only `enable_live_bridge` sets it, so under the anchor the `&&` chain
+/// short-circuits on its first test, the term is `0.0`, and the returned score
+/// is the shipped expression minus zero — the anchor's campaign ordering is
+/// byte-identical by construction. Compatibility re-pin, not an Elo-protocol
+/// change.
+/// The wonder-ring settle credit (#1378) adds one term to
+/// `settle_value_visible`, behind `BasicAi::wonder_ring_settle_value`. Both
+/// constructors leave the flag false and only `enable_live_bridge` sets it,
+/// so under the anchor `natural_wonder_ring_value` returns 0.0 on its first
+/// line and the added `value += 0.0` cannot move any site score — and the
+/// anchor reaches `settle_value_visible` only through constructors that keep
+/// `settlement_safety` true, which `legacy()` does not. The anchor's settle
+/// ordering is byte-identical by construction. Compatibility re-pin, not an
+/// Elo-protocol change.
+/// #1401 discounts a motionless Settler from the expansion gate's in-flight
+/// test, so one stuck settler stops costing every future one. It sits behind
+/// `BasicAi::settler_strand_discount`, which `AdvancedAi::enable_live_bridge`
+/// sets and nothing else does — `BasicAi::new` and `with_weights` both leave
+/// it false, and both new tests assert the off path is unchanged, so the
+/// anchor's decision stream is identical by construction. Compatibility
+/// re-pin, not an Elo-protocol change.
+/// #1402 counts mirrored `UNIT_SPY` units as espionage agents in the spy
+/// capacity test. A native CIVVIS Spy is a `Game::spies` entry and never a
+/// unit — the production arm returns before `place_new_unit` — so the unit
+/// census contributes 0 to `spy_agents` in every native game and the anchor
+/// sees the same number it always did. Identical by construction, on a rated
+/// profile and off it. Compatibility re-pin, not an Elo-protocol change.
+/// #1404 adds the missing `disable_stranded_settler_discount` counterpart so
+/// the treatment can be held off for a controlled arm. It only writes `false`
+/// into a field the anchor already reads as `false`. Compatibility re-pin, not
+/// an Elo-protocol change.
+/// #1405 gives the baseline governor's building sort a housing term, behind
+/// `BasicAi::housing_buildings`. The field is `false` in both `BasicAi`
+/// constructors and set only by `enable_live_bridge`, and `housing_lift`
+/// returns 0.0 whenever it is off, so the comparator is the identity it always
+/// was on the anchor. Compatibility re-pin, not an Elo-protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe74a_ee1a_6905_345b;
+/// Merging `origin/main` into this branch brings both sides' live-bridge
+/// treatments into one `BasicAi`/`AdvancedAi`. Every one of them is off in both
+/// constructors and set only by `enable_live_bridge`, so the anchor's decision
+/// stream is unchanged by the union. Compatibility re-pin, not an Elo-protocol
+/// change.
+/// The capture-the-flag objective gives both controllers one new march: land
+/// columns aim at `Game::arena_flag` when it is `Some`. The field is `Some`
+/// only on a battlefield whose match asked for the flag — a shape that did
+/// not exist before this pin — and `None` on every world and every arena any
+/// rated game has been played on, so both guards reduce to a `None` test and
+/// the anchor's decision stream is identical by construction. The same shape
+/// as the #1399 re-pin, with the objective as the flag. Pinned over the
+/// merge with main's own re-pins, every one off in both constructors as
+/// their entries above record. Compatibility re-pin, not an Elo-protocol
+/// change.
+/// The garrison-walls arm adds one guarded branch to `pick_item` and its
+/// chooser, behind `BasicAi::garrison_walls`. Both constructors leave the flag
+/// false and only `enable_live_bridge` sets it, so under the anchor
+/// `garrison_walls_item` returns `None` on its first line and the branch can
+/// never take the build. The anchor's build order is byte-identical by
+/// construction. Compatibility re-pin, not an Elo-protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x98a7_8a77_612f_9044;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -1014,6 +1097,7 @@ fn tactics_rules(args: &[String]) -> setup::TacticsRules {
         best_of: arg(args, "--tactics-best-of", i64::from(stock.best_of)).max(1) as u32,
         unique_units: flag_or(args, "--tactics-unique-units", stock.unique_units),
         fog: flag_or(args, "--tactics-fog", stock.fog),
+        flag: flag_or(args, "--tactics-flag", stock.flag),
     }
     .sanitized()
 }
@@ -2958,6 +3042,17 @@ mod tests {
         assert_eq!(rules.gold, 0);
         assert_eq!(rules.turns_per_tech, 0);
         assert_eq!(rules.turn_limit, 150);
+
+        // The flag objective travels the same shared reader, and drags the
+        // city out of the battle the way every other surface does.
+        let flagged = [
+            "--map".to_string(), "battlefield".to_string(),
+            "--tactics-flag".to_string(),
+            "--tactics-cities".to_string(), "1".to_string(),
+        ];
+        let rules = tactics_rules(&flagged);
+        assert!(rules.flag);
+        assert_eq!(rules.cities, 0, "the flag replaces the city objective");
 
         // Clamped, not trusted: these reach the same sanitiser the server uses.
         let silly = [

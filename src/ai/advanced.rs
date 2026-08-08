@@ -25,6 +25,29 @@ use std::sync::Arc;
 /// attack unsupported. Below it the group holds on its own account, whatever
 /// else is happening in the empire.
 const LOCAL_SUPERIORITY_FLOOR: f64 = 0.72;
+/// Full health of a city, and the ceiling `Game::end_turn` heals back toward at
+/// `+20` a turn. [`AdvancedAi::siege_commitment`] measures a siege against it.
+const CITY_MAX_HP: i32 = 200;
+/// What one point of health already stripped from a breached city is worth to
+/// [`AdvancedAi::campaign_city_value`], as a reason to finish that city rather
+/// than re-aim.
+///
+/// Sized against the terms it has to beat. A city at 25 hp with its walls down
+/// earns `175 * 1.5 = 262`, where the distance terms it competes with —
+/// `core_distance * 7.0` and `military_distance * 5.0` — swing about 60 over
+/// five tiles, and the largest ordinary pull in the function is a capital's
+/// `180` under Conquest. So a city one blow from falling outranks a better city
+/// that is still whole, which is the intended order, while a city merely
+/// scratched (`20` hp off, worth `30`) does not disturb the shipped ranking at
+/// all. It stays far below `unsupported_capture`'s `10_000` veto, so the
+/// keep/flip/recapture guard still overrules it.
+const SIEGE_COMMITMENT_PER_HP: f64 = 1.5;
+/// How close one of our military units must be to a breached city before its
+/// stripped health counts as *our* siege investment. Six tiles is the same
+/// horizon [`AdvancedAi::defensibility`] and the rival-proximity penalty use.
+/// Without it the campaign could be dragged across the map by damage another
+/// civilization dealt.
+const SIEGE_COMMITMENT_REACH: i32 = 6;
 /// Health above which [`AdvancedAi::promotion_heal_is_wasted`] holds a
 /// promotion back. `do_promote` heals `min(50, 100 - hp)`, so promoting at 100
 /// delivers nothing; 75 asks for at least 25 of the 50 to land before spending
@@ -194,6 +217,21 @@ const SETTLEMENT_FORECAST_POPULATION: usize = 4;
 const SETTLEMENT_FORECAST_HORIZON: u32 = 40;
 const SETTLEMENT_FORECAST_BEAM: usize = 12;
 const SETTLEMENT_SECOND_RING_DELAY: u32 = 5;
+
+/// Each point of a natural wonder's modeled `Features.Appeal`, priced into a
+/// founding site whose work radius holds the wonder. Appeal is what the
+/// unmodeled wonder economics hang from — pantheon faith, appeal districts
+/// and parks, late tourism — none of which the settle scorer can otherwise
+/// see. Three points per appeal puts an ordinary +2 wonder with a one-yield
+/// ring at about 13 points of credit, inside the 10-20 point band issue
+/// #1378 measured a wonder-ring site actually carrying, and lets the +4
+/// Cliffs of Dover and Uluru outbid them without a per-wonder table.
+const NATURAL_WONDER_APPEAL_WEIGHT: f64 = 3.0;
+
+/// A natural wonder projects its modeled `adjacent_yields` onto every
+/// neighbouring tile, and a city founded on the ring can expect to grow into
+/// roughly one full hex ring of them — six tiles.
+const NATURAL_WONDER_RING_TILES: f64 = 6.0;
 
 /// Before Shipbuilding a land Settler may widen its local eight-tile search,
 /// but may not turn a compact expansion problem into a march across the map.
@@ -1057,6 +1095,43 @@ pub struct AdvancedAi {
     /// outmatched (0.62) and Recovery triggers keep the war endable. **Off by
     /// default, live-bridge only.**
     pub war_patience: bool,
+    /// Finish a city the army has already broken open before re-aiming the
+    /// campaign at a fresh one.
+    ///
+    /// ★★★★★ THE ARMY WALKED AWAY FROM A CITY IT HAD ONE BLOW LEFT TO TAKE.
+    /// `campaign_city_value` is re-evaluated from scratch every turn, and the
+    /// only credit it gives a half-taken city is the `0.12`/hp and `0.16`/wall
+    /// discount inside `defenses` — about 37 points between a city at full
+    /// health behind its walls and one at 25 hp with the walls levelled.
+    /// `core_distance * 7.0` and `military_distance * 5.0` routinely swing more
+    /// than that, so a fresh city a few tiles nearer outranks the one the army
+    /// has spent fifteen turns breaking. Civ 6 then heals the abandoned city at
+    /// `+20` hp a turn (`Game::end_turn`), so the siege is not merely paused —
+    /// it is refunded to the defender.
+    ///
+    /// Measured on live run `civvis-20260808T142724Z`, Rome against Phoenicia:
+    ///
+    /// | turn | objective | Biruta |
+    /// |------|-----------|--------|
+    /// | t89  | Biruta    | 145 hp, walls 0 |
+    /// | t90  | Biruta    | **25 hp, walls 0** — one melee blow, force of 6 adjacent, 2.93 local strength |
+    /// | t91  | **Ziz**   | 45 hp |
+    /// | t92  | **Ziz**   | 65 hp |
+    /// | t93+ | Biruta    | 85 → 200 hp while the column walked back |
+    ///
+    /// Over t73-t105 that campaign dealt 338 hp of city damage and handed 200 of
+    /// it straight back, and took nothing. It is the whole live ledger in one
+    /// run: 25 games, **0 captures ever**, while carrying 7.7x the field's
+    /// military score.
+    ///
+    /// The term is the health already stripped from a **breached** city —
+    /// `SIEGE_COMMITMENT_PER_HP` per hp below `CITY_MAX_HP`, credited only while
+    /// one of our military units is within `SIEGE_COMMITMENT_REACH` of it, so
+    /// the campaign cannot be dragged across the map by damage someone else
+    /// dealt. Walls standing means capture is not close and the term is zero,
+    /// which keeps it inert in the ordinary case. **Off by default, live-bridge
+    /// only.**
+    pub siege_commitment: bool,
     /// Aim a relief force at what is actually hitting the city, not at whichever
     /// besieger happens to stand nearest the force.
     ///
@@ -1237,6 +1312,40 @@ pub struct AdvancedAi {
     /// Consecutive turns each settler has failed to make progress, when
     /// `settler_commit` is on. Reset whenever `settler_closest` improves.
     settler_stalls: BTreeMap<u32, u32>,
+    /// Per-settler (last distance-to-target, turns without closing) while a
+    /// LAND escort formation is trusted to carry it. See `escort_unstick`.
+    escort_march: BTreeMap<u32, (i32, u8)>,
+    /// Release a linked escort that is not actually walking its settler.
+    ///
+    /// ★★★★ THE LINKED BRANCH BELOW RETURNS `true` WITHOUT MOVING ANYTHING —
+    /// it trusts the military layer to march the formation, and the military
+    /// layer owes the settle target nothing. Measured on live Firaxis runs
+    /// 2026-08-07: "Settler advancing with its escort | 9 tiles remain"
+    /// repeated at the SAME distance turn after turn (run
+    /// civvis-20260807T202450Z), and across five completed games settlers
+    /// crossed 0.78 tiles/turn with 45% standstills — while every game's
+    /// score lost to city count. Under the treatment, two consecutive
+    /// no-closer turns release the link (which also clears
+    /// `formation_movement_locked_by_zoc`) and fall through to the ordinary
+    /// self-march. Native tournament controllers keep the frozen behaviour.
+    escort_unstick: bool,
+    /// A Religion strategy sues for peace instead of holding wars that starve
+    /// its own lane.
+    ///
+    /// ★★★★ MEASURED (run civvis-20260807T224914Z, Settler live): at t200 the
+    /// seat had met exactly two rivals and was AT WAR WITH BOTH, so the
+    /// offensive-spread filter's `!is_at_war` excluded every one of the ten
+    /// revealed foreign cities; four charged Buddhist units idled, faith
+    /// banked to 1032, and the game ended with all five rivals' religions
+    /// untouched — while the plan printed `strategy=religion` beside
+    /// `target_player=Some(..)`. The league's 48-of-60 religious wins at this
+    /// turn cap come from spreading to NEUTRAL rivals; a religion plan that
+    /// keeps its wars blockades itself. Under the treatment the Religion
+    /// strategy offers peace to every non-emergency at-war major, on top of
+    /// the existing outmatched/recovery/stalled reasons. Firaxis may refuse
+    /// the deal; offering costs nothing and unblocks the lane the moment it
+    /// lands. Frozen tournament controllers keep the recorded posture.
+    religion_sues_peace: bool,
     /// Total unresolved delay for each Settler. Unlike `settler_stalls`, this
     /// survives a target change so a stranded civilian stops monopolizing the
     /// empire-wide in-flight allowance and attracts an escort.
@@ -1461,6 +1570,28 @@ pub struct AdvancedAi {
     /// Production Advanced enables this. Historical evaluator controls retain
     /// the old flat-gene delegation.
     pub plan_city_target: bool,
+    /// Price the city ceiling off the land the board actually shows, densely.
+    ///
+    /// ★★★★ THE STOCK CEILING IS WHAT LOSES SETTLER GAMES, and three live
+    /// Firaxis games measured it on 2026-08-07. `assess` clamps
+    /// `map_capacity` to nine and prices land at one city per 55 passable
+    /// tiles — bred against CIVVIS rivals who contest ground. Against
+    /// Civilization VI's Settler AI nobody contests anything: all three runs
+    /// saturated at EIGHT cities by t110–t150 while rivals reached ten and
+    /// eleven, and the score sheet followed directly (639 vs 1317; 911 vs
+    /// 1049; techs 51 vs 72 in the first, because science is a city count).
+    /// The empire hit 8 of its own 9-ceiling — what limited it was the
+    /// ceiling, not its ability to reach one, which is the same shape #569
+    /// already established for the six-city planning cap.
+    ///
+    /// Under the treatment the ceiling prices land at one city per 45 tiles
+    /// and clamps at twelve. Self-adapting by construction: on a contested
+    /// league board rivals absorb the land and the computed capacity never
+    /// nears the new ceiling, so bred behaviour is preserved where breeding
+    /// happened; on an uncontested live board the free land IS the signal.
+    /// Native tournament games leave this off so recorded ladders stay
+    /// comparable.
+    pub wide_map_capacity: bool,
     pub city_strategy: bool,
     /// Ablation halves of `city_strategy`, so the loss above can be attributed
     /// rather than guessed at. Each is meaningless unless `city_strategy` is
@@ -2089,6 +2220,7 @@ impl AdvancedAi {
         self.base.forget_unit_memory();
         self.settler_targets.clear();
         self.settler_stalls.clear();
+        self.escort_march.clear();
         self.settler_blocked_turns.clear();
         self.settler_avoid.clear();
         self.settler_closest.clear();
@@ -2113,6 +2245,11 @@ impl AdvancedAi {
             .settler_stalls
             .iter()
             .filter_map(|(uid, stalls)| map.get(uid).map(|new| (*new, *stalls)))
+            .collect();
+        self.escort_march = self
+            .escort_march
+            .iter()
+            .filter_map(|(uid, held)| map.get(uid).map(|new| (*new, *held)))
             .collect();
         self.settler_blocked_turns = self
             .settler_blocked_turns
@@ -2190,6 +2327,7 @@ impl AdvancedAi {
             war_economy: false,
             war_reinforcement: false,
             war_patience: false,
+            siege_commitment: false,
             relief_targets_the_siege: false,
             blind_objective_units: false,
             settler_price: 1.0,
@@ -2199,6 +2337,9 @@ impl AdvancedAi {
             adjacency_site_planning: false,
             settler_commit: false,
             settler_stalls: BTreeMap::new(),
+            escort_march: BTreeMap::new(),
+            escort_unstick: false,
+            religion_sues_peace: false,
             settler_blocked_turns: BTreeMap::new(),
             settler_avoid: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
@@ -2213,6 +2354,7 @@ impl AdvancedAi {
             belief_pressure: false,
             city_target_floor: 3,
             plan_city_target: false,
+            wide_map_capacity: false,
             city_strategy: false,
             city_strategy_emphasis: true,
             city_strategy_roles: true,
@@ -2286,11 +2428,70 @@ impl AdvancedAi {
         self.base.home_defense = true;
     }
 
+    /// Stop a Settler that has stopped walking from holding the expansion gate
+    /// shut. Native tournament games leave this disabled so their recorded
+    /// ladders replay the historical controller move for move.
+    pub fn enable_stranded_settler_discount(&mut self) {
+        self.base.settler_strand_discount = true;
+    }
+
     /// Record tactical steps so a unit stepped twice in one turn cannot walk
     /// back onto the tile it just left. Native tournament games leave this
     /// disabled so their recorded ladders replay move-for-move.
     pub fn enable_recorded_tactical_step(&mut self) {
         self.base.recorded_tactical_step = true;
+    }
+
+    /// Price the city ceiling off uncontested land. Native tournament games
+    /// leave this off so recorded ladders stay comparable; see
+    /// `wide_map_capacity` for the live Settler measurement.
+    pub fn enable_wide_map_capacity(&mut self) {
+        self.wide_map_capacity = true;
+    }
+
+    pub fn disable_wide_map_capacity(&mut self) {
+        self.wide_map_capacity = false;
+    }
+
+    /// A city losing hitpoints is besieged, whatever the fog says. See
+    /// `BasicAi::garrison_under_fire` for the t115 measurement.
+    pub fn enable_garrison_under_fire(&mut self) {
+        self.base.garrison_under_fire = true;
+    }
+
+    pub fn disable_garrison_under_fire(&mut self) {
+        self.base.garrison_under_fire = false;
+    }
+
+    /// Order our own ancient walls in the capital and small frontier cities
+    /// once Masonry is in. Native tournament games leave this disabled so
+    /// their recorded ladders stay comparable; see
+    /// `BasicAi::garrison_walls_item` for the t115 measurement.
+    pub fn enable_garrison_walls(&mut self) {
+        self.base.garrison_walls = true;
+    }
+
+    pub fn disable_garrison_walls(&mut self) {
+        self.base.garrison_walls = false;
+    }
+
+    /// Release an escort that is not walking its settler. See `escort_unstick`.
+    pub fn enable_escort_unstick(&mut self) {
+        self.escort_unstick = true;
+    }
+
+    pub fn disable_escort_unstick(&mut self) {
+        self.escort_unstick = false;
+    }
+
+    /// A Religion strategy offers peace to unblock its spread lane. See
+    /// `religion_sues_peace` for the t200 measurement.
+    pub fn enable_religion_sues_peace(&mut self) {
+        self.religion_sues_peace = true;
+    }
+
+    pub fn disable_religion_sues_peace(&mut self) {
+        self.religion_sues_peace = false;
     }
 
     /// Enable explicit battlefield roles: the land-unit counter cycle, safe
@@ -2368,6 +2569,28 @@ impl AdvancedAi {
         self.base.siege_role = true;
     }
 
+    /// Rebuild the recon arm when it is gone and there is ground left to chart.
+    /// Native tournament games leave this disabled so their recorded ladders
+    /// stay comparable.
+    pub fn enable_recon_replacement(&mut self) {
+        self.base.recon_replacement = true;
+    }
+
+    pub fn disable_recon_replacement(&mut self) {
+        self.base.recon_replacement = false;
+    }
+
+    /// Price a revealed natural wonder's ring into the settle scorer. Native
+    /// tournament games leave this disabled so their recorded ladders stay
+    /// comparable.
+    pub fn enable_wonder_ring_settle_value(&mut self) {
+        self.base.wonder_ring_settle_value = true;
+    }
+
+    pub fn disable_wonder_ring_settle_value(&mut self) {
+        self.base.wonder_ring_settle_value = false;
+    }
+
     pub fn disable_siege_role(&mut self) {
         self.base.siege_role = false;
     }
@@ -2419,6 +2642,14 @@ impl AdvancedAi {
     /// their recorded ladders stay comparable.
     pub fn enable_war_patience(&mut self) {
         self.war_patience = true;
+    }
+
+    /// Keep the campaign pointed at a city the army has already breached and
+    /// beaten down, instead of re-picking a fresh objective and letting the
+    /// broken one heal. Native tournament games leave this disabled so their
+    /// recorded ladders stay comparable.
+    pub fn enable_siege_commitment(&mut self) {
+        self.siege_commitment = true;
     }
 
     /// Send a relief force at the units actually besieging the city rather than
@@ -2514,6 +2745,25 @@ impl AdvancedAi {
         // asking too late; this floor asks it of the strongest MET major in
         // peacetime, under its own far smaller ceiling.
         self.enable_peacetime_deterrence();
+        // Three straight Settler losses were an eight-city empire against
+        // ten- and eleven-city rivals; the stock nine-ceiling was the binding
+        // constant. See `wide_map_capacity`.
+        self.enable_wide_map_capacity();
+        // The other half of the same three-defeat measurement: the capital that
+        // fell bleeding with an empty hostile list. See garrison_under_fire.
+        self.enable_garrison_under_fire();
+        // The other half of that same capital's diagnosis: garrison_under_fire
+        // reacts to a city already bleeding, but the capital that fell had
+        // NEVER ORDERED WALLS — max_wall_damage 0 at t115 with production on
+        // the culture lane and the fog hiding every attacker until adjacency.
+        // See BasicAi::garrison_walls_item.
+        self.enable_garrison_walls();
+        // Settler conversion is the score frontier the first seven live games
+        // isolated; see escort_unstick.
+        self.enable_escort_unstick();
+        // The religion lane was structurally blocked by its own wars; see
+        // religion_sues_peace.
+        self.enable_religion_sues_peace();
         // Raj, Wisselbanken, Collective Activism and the International Space
         // Agency all scale off SUZERAIN city-states and pay nothing at zero.
         // Live run `civvis-20260803T220954Z` held Raj AND Wisselbanken slotted
@@ -2536,6 +2786,24 @@ impl AdvancedAi {
         // taken, zero siege units built in 251 turns with every siege tech in
         // hand. The tournament controller stays frozen.
         self.enable_siege_role();
+        // ⚠ The empire goes blind and the build order never notices. Recon is
+        // not among the counts `pick_item` receives, and `OPENING_MENU` is the
+        // only place a scout is named, so once the openers die nothing replaces
+        // them. Live run `civvis-20260808T142724Z`: zero recon units from turn
+        // ~100 to 251 while the army grew to 22, 77% of the map never seen, and
+        // the eventual winner first met on turn 215 already holding 927 points.
+        self.enable_recon_replacement();
+        // ⚠ A revealed natural wonder is priced into founding only through the
+        // worked tiles the growth forecast can see and a future Holy Site's
+        // adjacency — for the Matterhorn about 2-4 points — while everything
+        // else a wonder-ring city collects (pantheon faith, appeal districts
+        // and parks, late tourism) is invisible to settling, so a breadbasket
+        // outbids any wonder ring by construction. Live run
+        // `civvis-20260807T202450Z` t93 (issue #1378): the settler founded a
+        // 64.6-point site while `FEATURE_MATTERHORN` stood revealed inside the
+        // candidate radius. The tournament controller stays frozen so its
+        // recorded ladders remain comparable.
+        self.enable_wonder_ring_settle_value();
         // ⚠ `unit_can_traverse` says yes to open water for every land unit as
         // soon as embarkation unlocks, so the unexplored ocean becomes a legal
         // exploration goal for the whole army — and the only rule that brought
@@ -2582,6 +2850,19 @@ impl AdvancedAi {
         self.enable_muster_at_command_radius();
         self.enable_relief_targets_the_siege();
         self.enable_blind_objective_units();
+        // ⚠ THE EXPANSION GATE ASKS `settlers == 0`, so a settler that never
+        // founds anything answers "one is already in flight" for the rest of
+        // the game. Across the 25 live runs of 2026-08-07/08 that reason is
+        // 86% of every refusal to build a settler (1,548 of 1,767), the median
+        // game's longest-lived single settler survives 86 turns of 250 without
+        // founding, and nine runs carried one alive for 82-171 turns having
+        // moved five times or fewer. Those empires finished on a median of 5
+        // cities against a `city_target` of 7.8 with the window open to turn
+        // 198 — neither was binding, this was — and lost all 21 completed
+        // games at a median score 0.46x the leader's, with final score
+        // tracking city count at r = 0.81. The mod's fallback ladder already
+        // made this repair; under `--civvis-decides` it is not the decider.
+        self.enable_stranded_settler_discount();
         // ⚠ Faith buys the soldier; GOLD pays for it every turn forever, and
         // `military_faith_spending` never asks about gold — it gates on the faith
         // bank alone. Measured on run `civvis-20260803T014330Z`: faith military
@@ -2646,6 +2927,15 @@ impl AdvancedAi {
         // holds `OVERWHELMING_WAR_RATIO` over the defender: the measured live
         // pattern is one declaration per game and no second attempt.
         self.enable_war_patience();
+        // ⚠ And the war it keeps prosecuting still has to end on a captured
+        // city. The campaign re-picks its objective from scratch every turn and
+        // prices fifteen turns of siege at ~37 points, less than the distance
+        // terms swing; the army walks off a city at 25 hp with its walls down
+        // and Civ 6 heals it back at 20 hp a turn. Live run
+        // `civvis-20260808T142724Z` dealt 338 hp of city damage over t73-t105,
+        // handed 200 of it back, and took nothing — the shape behind 25 live
+        // games and 0 captures on 7.7x the field's military.
+        self.enable_siege_commitment();
         // ⚠⚠ AND THE POPULATION THE SCIENCE IS COMPUTED FROM IS CAPPED BY HOUSING.
         // The lane above decides which specialty district a city builds; none of
         // them raises the ceiling on the citizens who work them. Measured over
@@ -2660,6 +2950,13 @@ impl AdvancedAi {
         // as #999 and #1003: a repair the governor making most of the builds
         // could not reach.
         self.enable_housing_districts();
+        // ⚠ AND THE SAME REPAIR ON THE PRODUCTION PATH. `housing_districts`
+        // fixes the two DISTRICTS that raise the ceiling; the buildings that do
+        // it — Sewer, Water Mill, Granary — were ranked by price alone, because
+        // the baseline governor's building sort has no housing term at all.
+        // 44% of our cities end housing-STOPPED against a median food surplus of
+        // +6.5 a turn. See the sort in `BasicAi::pick_item`.
+        self.enable_housing_buildings();
         // ⚠⚠ AND THE EMPIRE STOPS BUILDING CAMPUSES AT HALF ITS CITIES.
         // `balanced_core` pays a Campus +130 only while `district_count * 2 <
         // city_count`, so the term switches off at half coverage — and measured
@@ -2760,8 +3057,29 @@ impl AdvancedAi {
         self.base.housing_districts = true;
     }
 
+    /// Let a housing-short city prefer a building that raises its ceiling.
+    pub fn enable_housing_buildings(&mut self) {
+        self.base.housing_buildings = true;
+    }
+
+    /// Hold the housing-building preference off, for the controlled arm.
+    pub fn disable_housing_buildings(&mut self) {
+        self.base.housing_buildings = false;
+    }
+
     pub fn disable_housing_districts(&mut self) {
         self.base.housing_districts = false;
+    }
+
+    /// Hold the stranded-Settler discount off, for the controlled arm.
+    ///
+    /// ⚠ Every `enable_*` in `enable_live_bridge` needs this counterpart or the
+    /// treatment cannot be ablated: `--without stranded-settler-discount` exits
+    /// 2 on an unknown name, so the one arm that would measure the repair
+    /// against the deployed configuration does not exist. It shipped without
+    /// one; this is that omission.
+    pub fn disable_stranded_settler_discount(&mut self) {
+        self.base.settler_strand_discount = false;
     }
 
     /// Keep asking for a Campus in every city that can still repay one. See
@@ -2844,6 +3162,10 @@ impl AdvancedAi {
 
     pub fn disable_war_patience(&mut self) {
         self.war_patience = false;
+    }
+
+    pub fn disable_siege_commitment(&mut self) {
+        self.siege_commitment = false;
     }
 
     pub fn disable_relief_targets_the_siege(&mut self) {
@@ -5324,7 +5646,14 @@ impl AdvancedAi {
             .values()
             .filter(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
             .count();
-        let map_capacity = (2 + land / 55).clamp(3, 9);
+        let map_capacity = if self.wide_map_capacity {
+            // Live-bridge pricing: one city per 45 passable tiles, ceiling
+            // twelve. See the `wide_map_capacity` field for the three-game
+            // Settler measurement this bounds.
+            (2 + land / 45).clamp(3, 12)
+        } else {
+            (2 + land / 55).clamp(3, 9)
+        };
         // Expansion must compound before it pays back. Add roughly one city
         // per era instead of continuously raising the target and starving a
         // young empire of districts, buildings, and population growth. Scale
@@ -9660,6 +9989,9 @@ impl AdvancedAi {
                 && (my_power < g.military_power(*other) * 0.62
                     || (plan.strategy == GrandStrategy::Recovery
                         && plan.target_player != Some(*other))
+                    || (self.religion_sues_peace
+                        && plan.strategy == GrandStrategy::Religion
+                        && !appointed_objective)
                     || (!appointed_objective
                         && fatigued
                         && g.player_city_ids(*other).len() > 1))
@@ -9671,6 +10003,10 @@ impl AdvancedAi {
                         "outmatched"
                     } else if plan.strategy == GrandStrategy::Recovery {
                         "this is not the war the recovery plan is fighting"
+                    } else if self.religion_sues_peace
+                        && plan.strategy == GrandStrategy::Religion
+                    {
+                        "the religion plan cannot spread into a war"
                     } else {
                         "the war has stalled"
                     };
@@ -13335,7 +13671,10 @@ impl AdvancedAi {
                 }
             }
             Item::Unit { unit } if unit == "spy" => {
-                let active = g.spies.values().filter(|spy| spy.owner == pid).count();
+                // `Game::spy_agents`, not the agent map: a live game's Spies
+                // are mirrored units and the map is empty, so this valuation
+                // used to re-price a Spy the host would refuse.
+                let active = g.spy_agents(pid);
                 let strategic = match plan.strategy {
                     GrandStrategy::Science | GrandStrategy::Culture => 850.0,
                     GrandStrategy::Diplomacy | GrandStrategy::Conquest => 1_050.0,
@@ -14636,6 +14975,7 @@ impl AdvancedAi {
             + growth_readiness
             + dependable_jobs * 0.75;
         value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
+        value += self.natural_wonder_ring_value(g, &positions);
 
         let enemy_distance = g
             .cities
@@ -14652,6 +14992,62 @@ impl AdvancedAi {
             value += self.defensibility(g, pid, pos);
         }
         value
+    }
+
+    /// Credit a founding site for the natural wonders its work radius holds.
+    ///
+    /// Without this term a revealed wonder reaches the settle scorer only
+    /// through the worked tiles the growth forecast can see — for the
+    /// Matterhorn one +1-culture ring tile, about 1.2 weighted points — plus a
+    /// future Holy Site's `natural_wonder` adjacency, about 0.4 more. All of
+    /// the economics that make a human take the wonder ring (pantheon faith of
+    /// the Earth Goddess class, appeal-fed districts and parks, late tourism)
+    /// are invisible at founding, so a breadbasket outbids any wonder ring by
+    /// construction: live run `civvis-20260807T202450Z` t93 founded a
+    /// 64.6-point site while `FEATURE_MATTERHORN` stood revealed inside the
+    /// candidate radius (issue #1378).
+    ///
+    /// The magnitude is read from the wonder's own modeled sheet
+    /// (`data/features.json`) rather than a flat per-wonder constant: each
+    /// point of modeled appeal at `NATURAL_WONDER_APPEAL_WEIGHT`, plus one
+    /// full hex ring of the yields the wonder projects onto its neighbours at
+    /// the same yield weights every other settlement term uses. A multi-tile
+    /// wonder counts once — the credit is for living beside the wonder, not
+    /// for each of its tiles. Gated behind the live-bridge treatment flag so
+    /// the frozen `advanced_v1` anchor's decision stream is unchanged.
+    fn natural_wonder_ring_value(&self, g: &Game, positions: &[Pos]) -> f64 {
+        if !self.base.wonder_ring_settle_value {
+            return 0.0;
+        }
+        let mut wonders: BTreeSet<&str> = BTreeSet::new();
+        for position in positions {
+            let Some(feature) = g.map.get(*position).and_then(|tile| tile.feature.as_deref())
+            else {
+                continue;
+            };
+            if g.rules
+                .features
+                .get(feature)
+                .is_some_and(|spec| spec.natural_wonder)
+            {
+                wonders.insert(feature);
+            }
+        }
+        wonders
+            .iter()
+            .map(|feature| {
+                let spec = &g.rules.features[*feature];
+                let ring = &spec.adjacent_yields;
+                spec.appeal * NATURAL_WONDER_APPEAL_WEIGHT
+                    + (ring.food * 2.0
+                        + ring.production * 2.2
+                        + ring.gold * 0.7
+                        + ring.science * 1.2
+                        + ring.culture * 1.2
+                        + ring.faith * 0.4)
+                        * NATURAL_WONDER_RING_TILES
+            })
+            .sum()
     }
 
     /// Penalize a site for threats the acting player can actually see. Hidden
@@ -15138,6 +15534,24 @@ impl AdvancedAi {
         let defenses = observed_strength * 1.8
             + observed_hp.max(0) as f64 * 0.12
             + observed_wall_hp.max(0) as f64 * 0.16;
+        // See [`AdvancedAi::siege_commitment`]. `defenses` above already prefers
+        // a weakened city, but only by ~37 points across the whole health bar —
+        // less than the distance terms swing over five tiles. That is why the
+        // campaign walks off a city at 25 hp with its walls down, and why Civ 6
+        // then heals it back to full at 20 hp a turn. Price the health already
+        // stripped from a *breached* city as the investment it is.
+        //
+        // `military_distance` is the reach test rather than `core_distance`
+        // because the question is whether the army that broke this city can
+        // still finish it, not whether the empire is nearby.
+        let siege_commitment = if self.siege_commitment
+            && observed_wall_hp <= 0
+            && military_distance <= SIEGE_COMMITMENT_REACH
+        {
+            (CITY_MAX_HP - observed_hp).clamp(0, CITY_MAX_HP) as f64 * SIEGE_COMMITMENT_PER_HP
+        } else {
+            0.0
+        };
         let local_balance = (hostile_local - friendly_local).clamp(-250.0, 250.0) * 0.45;
         let approach_cost = (6usize.saturating_sub(approaches)) as f64 * 11.0;
         let development = city.pop.max(1) as f64 * 7.0
@@ -15189,6 +15603,7 @@ impl AdvancedAi {
             - science_denial
             - recapture_value
             - liberation_value
+            - siege_commitment
     }
 
     /// Rank settleable ground the way this agent would, for a caller outside the
@@ -15668,15 +16083,36 @@ impl AdvancedAi {
                    self.plan.as_ref().map_or(0, |plan| plan.desired_cities); current);
             return g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
         }
-        if g.units[&uid].linked_to.is_some_and(|peer| {
-            g.units.get(&peer).is_some_and(|escort| {
+        if let Some(escort) = g.units[&uid].linked_to.filter(|peer| {
+            g.units.get(peer).is_some_and(|escort| {
                 g.rules.units[escort.kind].class == "military"
                     && g.rules.units[escort.kind].domain.as_deref() != Some("sea")
             })
         }) {
-            think!(self.journal(), Expansion, Detail, "Settler advancing with its escort";
-                   "{} tiles remain to {target:?}", g.wdist(current, target); target);
-            return true;
+            let distance = g.wdist(current, target);
+            let entry = self.escort_march.entry(uid).or_insert((distance, 0));
+            if distance < entry.0 {
+                *entry = (distance, 0);
+            } else {
+                entry.1 = entry.1.saturating_add(1);
+            }
+            if self.escort_unstick && entry.1 >= 2 {
+                self.escort_march.remove(&uid);
+                if g.apply(pid, &Action::UnlinkUnits { unit: escort }).is_ok() {
+                    think!(self.journal(), Expansion, Detail,
+                           "Escort released a stalled settler";
+                           "{distance} tiles to {target:?} unchanged for two turns \
+                            — the formation was not walking, so the settler will";
+                           target);
+                    // fall through to the ordinary self-march below
+                } else {
+                    return true;
+                }
+            } else {
+                think!(self.journal(), Expansion, Detail, "Settler advancing with its escort";
+                       "{} tiles remain to {target:?}", distance; target);
+                return true;
+            }
         }
         if let Some(escort) = g.units[&uid].linked_to.filter(|peer| {
             g.units.get(peer).is_some_and(|escort| {
@@ -16686,6 +17122,17 @@ impl AdvancedAi {
         anchor: Pos,
         enemies: &[usize],
     ) -> Pos {
+        // A capture-the-flag arena has exactly one thing worth marching on:
+        // the battle ends the moment either side's unit takes the flag tile,
+        // so every land column aims there — the army that arrives first wins
+        // outright, and the fight happens wherever the two marches meet.
+        // `arena_flag` is `Some` only on that arena shape, so every world
+        // and every other arena walks past this untouched.
+        if domain == ForceDomain::Land {
+            if let Some(flag) = g.arena_flag {
+                return flag;
+            }
+        }
         let visible = self.battlefront_visibility(g, pid);
         // An ancient rush keeps its objective. `threatened_city` outranks
         // `target_city` here and is an empire-wide fact, so the turn the
@@ -21221,6 +21668,217 @@ mod tests {
     use crate::ai::run_game;
     use crate::game::{GameOptions, GovernorState};
 
+    #[test]
+    fn a_religion_plan_offers_peace_to_unblock_its_spread_lane() {
+        // The t200 shape from run civvis-20260807T224914Z: strategy=religion,
+        // met two rivals, at war with both, every revealed foreign city
+        // excluded by the offensive-spread war filter.
+        let (mut game, _, _) = timed_war_fixture(5);
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Religion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        let mut treated = AdvancedAi::new();
+        treated.enable_religion_sues_peace();
+        treated.advanced_diplomacy(&mut game, 0, &plan);
+        assert!(
+            treated.peace_offers.contains(&1),
+            "a religion plan at war must offer peace"
+        );
+
+        let mut frozen = AdvancedAi::new();
+        frozen.advanced_diplomacy(&mut game, 0, &plan);
+        assert!(
+            !frozen.peace_offers.contains(&1),
+            "frozen controllers keep the recorded posture"
+        );
+
+        let mut bridged = AdvancedAi::new();
+        bridged.enable_live_bridge();
+        assert!(bridged.religion_sues_peace);
+        bridged.disable_religion_sues_peace();
+        assert!(!bridged.religion_sues_peace);
+    }
+
+    #[test]
+    fn a_stalled_escort_is_released_and_the_settler_walks_itself() {
+        // The measured shape: "Settler advancing with its escort | 9 tiles
+        // remain" at the SAME distance turn after turn (run
+        // civvis-20260807T202450Z) while the linked branch returned true
+        // without moving anything. The contract under test is the RELEASE:
+        // no-closer turns must break the link so the ordinary march can act;
+        // frozen controllers must keep trusting forever.
+        fn fixture() -> (Game, u32, Pos) {
+            let mut game = Game::new_full(2, 28, 18, 3, 1_000, 0, false);
+            // A founded capital first: a zero-city empire takes the
+            // first-city fast path and never reaches the escort march.
+            let first = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("seat starts with a settler");
+            let capital_pos = game.units[&first].pos;
+            game.found_city_for(0, capital_pos, None);
+            game.remove_unit(first);
+
+            let land_at = |game: &Game, want: &dyn Fn(Pos) -> bool| {
+                game.map
+                    .tiles
+                    .iter()
+                    .filter(|(pos, tile)| {
+                        game.rules.is_passable(tile)
+                            && !game.rules.is_water(tile)
+                            && game.units_at(**pos).is_empty()
+                            && want(**pos)
+                    })
+                    .map(|(pos, _)| *pos)
+                    .next()
+            };
+            let start = land_at(&game, &|pos| {
+                game.wdist(pos, capital_pos) >= 5 && game.wdist(pos, capital_pos) <= 7
+            })
+            .expect("fixture offers ground away from the capital");
+            let settler = game.spawn_test_unit("settler", 0, start);
+            let escort = game.spawn_test_unit("warrior", 0, start);
+            game.apply(0, &Action::LinkUnits { unit: settler, with: escort })
+                .expect("test pair must link");
+            let target = land_at(&game, &|pos| {
+                game.wdist(pos, start) >= 6
+                    && game.wdist(pos, start) <= 10
+                    && game.wdist(pos, capital_pos) >= 4
+            })
+            .expect("fixture offers a distant land target");
+            (game, settler, target)
+        }
+
+        let (mut game, settler, target) = fixture();
+        let mut ai = AdvancedAi::new();
+        ai.enable_escort_unstick();
+        for _ in 0..4 {
+            ai.settler_targets.insert(settler, target);
+            ai.advanced_settler_step(&mut game, 0, settler);
+            if game.units[&settler].linked_to.is_none() {
+                break;
+            }
+        }
+        assert!(
+            game.units[&settler].linked_to.is_none(),
+            "a formation that closes no distance must be released"
+        );
+
+        let (mut frozen, fsettler, ftarget) = fixture();
+        let mut stock = AdvancedAi::new();
+        for _ in 0..4 {
+            stock.settler_targets.insert(fsettler, ftarget);
+            stock.advanced_settler_step(&mut frozen, 0, fsettler);
+        }
+        assert!(
+            frozen.units[&fsettler].linked_to.is_some(),
+            "frozen controllers keep the recorded trust"
+        );
+    }
+
+    #[test]
+    fn a_bleeding_city_is_besieged_whatever_the_fog_says() {
+        // The t115 shape from run civvis-20260807T181839Z: city under fire,
+        // hostile list empty, production about to pick a culture building.
+        let mut game = Game::new_full(2, 28, 18, 7, 1_000, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("seat starts with a settler");
+        let position = game.units[&settler].pos;
+        let capital = game.found_city_for(0, position, None);
+        game.remove_unit(settler);
+        game.players[0].techs.insert(crate::name!("masonry"));
+        game.cities.get_mut(&capital).unwrap().hp = 165; // damage 35 of 200
+
+        let mut treated = AdvancedAi::new();
+        treated.enable_garrison_under_fire();
+        let item = treated.base.besieged_city_item(&game, 0, capital);
+        assert_eq!(
+            item,
+            Some(Item::Building { building: crate::name!("walls") }),
+            "a bleeding city must reach for walls with zero visible besiegers"
+        );
+
+        let stock = AdvancedAi::new();
+        assert_eq!(
+            stock.base.besieged_city_item(&game, 0, capital),
+            None,
+            "the frozen controllers keep the two-visible-besiegers gate"
+        );
+
+        let mut bridged = AdvancedAi::new();
+        bridged.enable_live_bridge();
+        assert!(bridged.base.garrison_under_fire);
+        bridged.disable_garrison_under_fire();
+        assert!(!bridged.base.garrison_under_fire);
+    }
+
+    #[test]
+    fn wide_map_capacity_prices_uncontested_land_and_stock_stays_capped() {
+        // The league profile's own board: 74x46, where passable land clears
+        // both ceilings — which is exactly the quantity under test.
+        let mut game = Game::new_full(2, 74, 46, 11, 1_000, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("each major starts with a settler");
+            let position = game.units[&settler].pos;
+            game.found_city_for(pid, position, None);
+            game.remove_unit(settler);
+        }
+        let land = game
+            .map
+            .tiles
+            .values()
+            .filter(|t| game.rules.is_passable(t) && !game.rules.is_water(t))
+            .count();
+        assert!(land > 45 * 10, "fixture must offer ceiling-clearing land");
+
+        let mut stock = AdvancedAi::new();
+        stock.plan_city_target = true;
+        stock.city_target_floor = 6;
+        let mut wide = AdvancedAi::new();
+        wide.plan_city_target = true;
+        wide.city_target_floor = 6;
+        wide.enable_wide_map_capacity();
+
+        let mut late = game;
+        late.turn = 2_000; // past every cadence step: the ceiling decides.
+        late.current = 0;
+        let stock_plan = stock.assess(&late, 0);
+        let wide_plan = wide.assess(&late, 0);
+        assert_eq!(
+            stock_plan.desired_cities, 9,
+            "the stock ceiling is the measured Settler saturation point"
+        );
+        assert_eq!(
+            wide_plan.desired_cities, 12,
+            "uncontested land must lift the treated ceiling past the rivals' ten and eleven"
+        );
+
+        // The live bridge carries the treatment, and the ablation arm removes it.
+        let mut bridged = AdvancedAi::new();
+        bridged.enable_live_bridge();
+        assert!(bridged.wide_map_capacity);
+        bridged.disable_wide_map_capacity();
+        assert!(!bridged.wide_map_capacity);
+    }
+
     fn timed_war_fixture(seed: u64) -> (Game, u32, u32) {
         let mut game = Game::new_full(2, 28, 18, seed, 1_000, 0, false);
         let mut capitals = Vec::new();
@@ -24640,6 +25298,204 @@ mod tests {
         );
     }
 
+    /// Off by default, set only by the live bridge, holdable off on its own —
+    /// the siege-commitment term follows the same contract as every other
+    /// bridge repair, so the frozen `advanced_v1` anchor keeps its ladder.
+    #[test]
+    fn only_the_live_bridge_finishes_a_siege() {
+        let fresh = AdvancedAi::new();
+        assert!(!fresh.siege_commitment);
+        assert!(!AdvancedAi::legacy().siege_commitment);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.siege_commitment);
+        live.disable_siege_commitment();
+        assert!(!live.siege_commitment);
+    }
+
+    /// What the shipped scorer pays for fifteen turns of siege, and what the
+    /// treatment pays.
+    ///
+    /// `defenses` credits a broken city `0.12` per point of health, so the
+    /// whole health bar is worth 21 — and `core_distance * 7.0` plus
+    /// `military_distance * 5.0` swing about 60 over five tiles. That is the
+    /// arithmetic behind live run `civvis-20260808T142724Z` leaving Biruta at
+    /// 25 hp with its walls down on t90 and re-aiming at Ziz on t91.
+    #[test]
+    fn siege_commitment_prices_the_health_already_stripped_from_a_breach() {
+        let mut game = Game::new_full(2, 30, 18, 7_111, 300, 0, false);
+        for pid in 0..2 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        let enemy = game.player_city_ids(1)[0];
+        let enemy_position = game.cities[&enemy].pos;
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        // A besieger of ours stands on the ring, so the city is both observed
+        // and inside `SIEGE_COMMITMENT_REACH`.
+        let besieger = game
+            .nbrs(enemy_position)
+            .into_iter()
+            .find(|position| {
+                game.map
+                    .get(*position)
+                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            })
+            .expect("the enemy capital has a land approach");
+        game.spawn_test_unit("warrior", 0, besieger);
+
+        let value = |ai: &AdvancedAi, game: &Game| {
+            ai.campaign_city_value(game, 0, &game.cities[&enemy], GrandStrategy::Conquest)
+        };
+        let breach_to = |game: &mut Game, hp: i32| {
+            let city = game.cities.get_mut(&enemy).unwrap();
+            city.hp = hp;
+            city.wall_hp = 0;
+            city.buildings.retain(|building| {
+                !matches!(
+                    building.as_str(),
+                    "walls" | "medieval_walls" | "renaissance_walls"
+                )
+            });
+        };
+
+        let mut shipped = AdvancedAi::targeting(VictoryTarget::Domination);
+        let mut live = AdvancedAi::targeting(VictoryTarget::Domination);
+        live.enable_siege_commitment();
+
+        breach_to(&mut game, CITY_MAX_HP);
+        shipped.belief.observe(&game, 0);
+        live.belief.observe(&game, 0);
+        let shipped_whole = value(&shipped, &game);
+        let live_whole = value(&live, &game);
+        assert_eq!(
+            shipped_whole, live_whole,
+            "a city at full health has had nothing stripped, so the treatment is inert"
+        );
+
+        breach_to(&mut game, 25);
+        shipped.belief.observe(&game, 0);
+        live.belief.observe(&game, 0);
+        let stripped = (CITY_MAX_HP - 25) as f64;
+        let shipped_broken = value(&shipped, &game);
+        let live_broken = value(&live, &game);
+        // The shipped credit for breaking a city almost open. `core_distance`
+        // alone swings 7.0 a tile, so this loses to a fresh objective three
+        // tiles nearer — which is exactly what the live run did.
+        assert!(
+            shipped_whole - shipped_broken < 40.0,
+            "the shipped scorer prices the whole health bar at under 40 points \
+             (measured {}), less than the distance terms swing",
+            shipped_whole - shipped_broken
+        );
+        // Differencing the two controllers over the identical board isolates
+        // the new term from everything else that moves with a city's health.
+        assert!(
+            ((shipped_broken - live_broken) - stripped * SIEGE_COMMITMENT_PER_HP).abs() < 1e-6,
+            "the treatment is worth exactly {SIEGE_COMMITMENT_PER_HP} per stripped point — {} \
+             here — and nothing else changes",
+            stripped * SIEGE_COMMITMENT_PER_HP
+        );
+    }
+
+    /// Walls standing means capture is not close, and damage nobody of ours is
+    /// near is not our investment. Both keep the term at zero, so it stays
+    /// inert outside the case it was measured on.
+    #[test]
+    fn siege_commitment_ignores_an_unbreached_city_and_a_siege_out_of_reach() {
+        let mut game = Game::new_full(2, 30, 18, 7_111, 300, 0, false);
+        for pid in 0..2 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        let enemy = game.player_city_ids(1)[0];
+        let enemy_position = game.cities[&enemy].pos;
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        let mut shipped = AdvancedAi::targeting(VictoryTarget::Domination);
+        let mut live = AdvancedAi::targeting(VictoryTarget::Domination);
+        live.enable_siege_commitment();
+
+        // Differencing the two controllers over one board isolates the term.
+        let gap = |shipped: &AdvancedAi, live: &AdvancedAi, game: &Game| {
+            shipped.campaign_city_value(game, 0, &game.cities[&enemy], GrandStrategy::Conquest)
+                - live.campaign_city_value(game, 0, &game.cities[&enemy], GrandStrategy::Conquest)
+        };
+        let set = |game: &mut Game, hp: i32, wall_hp: i32| {
+            let city = game.cities.get_mut(&enemy).unwrap();
+            city.hp = hp;
+            city.wall_hp = wall_hp;
+        };
+
+        // Beaten down to 25 hp but the walls still stand: capture is not close,
+        // so the term stays out of it.
+        let ring = game
+            .nbrs(enemy_position)
+            .into_iter()
+            .find(|position| {
+                game.map
+                    .get(*position)
+                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            })
+            .expect("the enemy capital has a land approach");
+        let besieger = game.spawn_test_unit("warrior", 0, ring);
+        set(&mut game, 25, 100);
+        shipped.belief.observe(&game, 0);
+        live.belief.observe(&game, 0);
+        assert_eq!(
+            gap(&shipped, &live, &game),
+            0.0,
+            "with the walls up there is no breach to finish"
+        );
+
+        // Breached and beaten down, with a besieger on the ring: full credit.
+        set(&mut game, 25, 0);
+        shipped.belief.observe(&game, 0);
+        live.belief.observe(&game, 0);
+        assert!(
+            (gap(&shipped, &live, &game) - 175.0 * SIEGE_COMMITMENT_PER_HP).abs() < 1e-6,
+            "a breach our army is standing on is worth the health already stripped"
+        );
+
+        // Same breach, but our nearest soldier is beyond the reach horizon.
+        game.remove_unit(besieger);
+        let far = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                game.map
+                    .get(*position)
+                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                    && game.wdist(enemy_position, *position) > SIEGE_COMMITMENT_REACH
+            })
+            .expect("the test map has ground beyond the reach horizon");
+        game.spawn_test_unit("warrior", 0, far);
+        shipped.belief.observe(&game, 0);
+        live.belief.observe(&game, 0);
+        assert_eq!(
+            gap(&shipped, &live, &game),
+            0.0,
+            "damage dealt where no soldier of ours can finish it is not our siege"
+        );
+    }
+
     #[test]
     fn campaign_city_ordering_prefers_a_breach_then_the_domination_capital() {
         let mut game = Game::new_full(2, 30, 18, 7_111, 300, 0, false);
@@ -25464,6 +26320,98 @@ mod tests {
         let mut fresh = game;
         assert!(fresh.map.set_river_edge(center, first[5], true));
         assert_eq!(AdvancedAi::settlement_base_housing(&fresh, center), 5.0);
+    }
+
+    /// The defect and the repair of issue #1378 in one shape: a plain
+    /// breadbasket against the same site with the Matterhorn on its first
+    /// ring. Live run `civvis-20260807T202450Z` t93 founded a 64.6-point
+    /// breadbasket while `FEATURE_MATTERHORN` stood revealed inside the
+    /// candidate radius, because the shipped scorer prices a wonder only
+    /// through the worked tiles it can forecast. With the treatment the
+    /// wonder's modeled sheet (appeal 2, +1 culture onto the ring) is credited
+    /// and the wonder ring outbids the breadbasket; held off, the shipped
+    /// score is reproduced exactly.
+    #[test]
+    fn a_wonder_ring_site_outbids_the_breadbasket_only_when_the_bridge_prices_it() {
+        let (mut breadbasket, center, first, second) = settlement_forecast_fixture(8_120);
+        for position in &first {
+            shape_forecast_tile(&mut breadbasket, *position, "grassland", false, None);
+        }
+        let mut wonder_ring = breadbasket.clone();
+        // The breadbasket adds a production hill on its second ring; the
+        // wonder site gives up a workable grassland for an impassable mountain
+        // carrying the Matterhorn — strictly worse ground until the wonder
+        // itself is priced.
+        shape_forecast_tile(&mut breadbasket, second[0], "grassland", true, None);
+        {
+            let tile = wonder_ring.map.tiles.get_mut(&first[0]).unwrap();
+            tile.terrain = Name::new("mountain");
+            tile.hills = false;
+            tile.feature = Some(Name::new("matterhorn"));
+            tile.resource = None;
+        }
+
+        let shipped = AdvancedAi::new();
+        let shipped_bread = shipped.settle_value(&breadbasket, 0, center);
+        let shipped_wonder = shipped.settle_value(&wonder_ring, 0, center);
+        assert!(
+            shipped_bread > shipped_wonder,
+            "the defect: without the treatment the breadbasket outbids the wonder \
+             ring (bread {shipped_bread:.1} vs wonder {shipped_wonder:.1})"
+        );
+
+        let mut bridged = AdvancedAi::new();
+        bridged.enable_wonder_ring_settle_value();
+        let priced_wonder = bridged.settle_value(&wonder_ring, 0, center);
+        let priced_bread = bridged.settle_value(&breadbasket, 0, center);
+        assert!(
+            priced_wonder > priced_bread,
+            "the repair: with the treatment the wonder ring outbids the \
+             breadbasket (wonder {priced_wonder:.1} vs bread {priced_bread:.1})"
+        );
+
+        // The credit is the Matterhorn's own modeled sheet — appeal 2 plus one
+        // hex ring of its +1 culture projection at the shared culture weight —
+        // not a flat constant.
+        let sheet = 2.0 * NATURAL_WONDER_APPEAL_WEIGHT + 1.2 * NATURAL_WONDER_RING_TILES;
+        assert!(
+            (priced_wonder - shipped_wonder - sheet).abs() < 1e-9,
+            "the wonder credit must equal the modeled sheet: got {:.3}, sheet {sheet:.3}",
+            priced_wonder - shipped_wonder
+        );
+        // A site with no wonder in its work radius gains nothing from the
+        // treatment, and holding it off reproduces the shipped score exactly.
+        assert_eq!(priced_bread, shipped_bread);
+        bridged.disable_wonder_ring_settle_value();
+        assert_eq!(bridged.settle_value(&wonder_ring, 0, center), shipped_wonder);
+    }
+
+    /// Pricing the ring must not price the summit. A PASSABLE wonder — the
+    /// Pantanal walks like ordinary grassland — is the sharp case: only
+    /// `tile_is_natural_wonder`, not impassability, keeps the candidate out,
+    /// however large the credit its own ring now carries.
+    #[test]
+    fn the_priced_wonder_ring_still_refuses_to_settle_on_the_wonder() {
+        let (mut game, center, first, _second) = settlement_forecast_fixture(8_121);
+        for position in &first {
+            shape_forecast_tile(&mut game, *position, "grassland", false, None);
+        }
+        {
+            let tile = game.map.tiles.get_mut(&first[0]).unwrap();
+            tile.terrain = Name::new("grassland");
+            tile.feature = Some(Name::new("pantanal"));
+        }
+        let mut bridged = AdvancedAi::new();
+        bridged.enable_wonder_ring_settle_value();
+        let sites = bridged.settle_sites(&game, 0, center, 4);
+        assert!(
+            sites.iter().all(|(pos, _)| *pos != first[0]),
+            "the wonder tile itself must never be offered as a founding site"
+        );
+        assert!(
+            sites.iter().any(|(pos, _)| *pos == center),
+            "while the site beside it stays on the menu"
+        );
     }
 
     #[test]
@@ -36202,6 +37150,36 @@ mod research_probe {
         live.disable_housing_districts();
         assert!(!live.base.housing_districts, "and the control arm holds it off");
     }
+    /// Off by default, set only by the live bridge, and holdable off on its own.
+    #[test]
+    fn only_the_live_bridge_lets_a_capped_city_buy_its_ceiling() {
+        assert!(
+            !AdvancedAi::new().base.housing_buildings,
+            "the frozen tournament controller must keep its recorded ladders"
+        );
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.base.housing_buildings, "the deployment turns it on");
+        live.disable_housing_buildings();
+        assert!(!live.base.housing_buildings, "and the control arm holds it off");
+    }
+
+    /// Off by default, set only by the live bridge, and holdable off on its own
+    /// so the arm is a controlled comparison — which is what makes the repair
+    /// measurable rather than merely deployed.
+    #[test]
+    fn only_the_live_bridge_discounts_a_stranded_settler() {
+        assert!(
+            !AdvancedAi::new().base.settler_strand_discount,
+            "the frozen tournament controller must keep its recorded ladders"
+        );
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.base.settler_strand_discount, "the deployment turns it on");
+        live.disable_stranded_settler_discount();
+        assert!(!live.base.settler_strand_discount, "and the control arm holds it off");
+    }
+
     /// Off by default, set only by the live bridge, and holdable off on its own
     /// so the arm is a controlled comparison.
     #[test]
@@ -36382,6 +37360,34 @@ mod research_probe {
         // And the whole path short-circuits for a frozen controller.
         let legacy = AdvancedAi::legacy();
         assert_eq!(legacy.unreachable_housing_tech(&game, 0), None);
+    }
+
+    /// Off by default, set only by the live bridge, holdable off on its own —
+    /// the recon-replacement arm follows the same contract as every other
+    /// bridge repair, so the frozen `advanced_v1` anchor keeps its ladder.
+    #[test]
+    fn only_the_live_bridge_replaces_the_recon_arm() {
+        assert!(!AdvancedAi::new().base.recon_replacement);
+        assert!(!AdvancedAi::legacy().base.recon_replacement);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.base.recon_replacement);
+        live.disable_recon_replacement();
+        assert!(!live.base.recon_replacement);
+    }
+
+    /// Off by default, set only by the live bridge, holdable off on its own —
+    /// the wonder-ring settle credit follows the same contract as every other
+    /// bridge repair, so the frozen `advanced_v1` anchor keeps its ladder.
+    #[test]
+    fn only_the_live_bridge_prices_the_wonder_ring_into_settling() {
+        assert!(!AdvancedAi::new().base.wonder_ring_settle_value);
+        assert!(!AdvancedAi::legacy().base.wonder_ring_settle_value);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.base.wonder_ring_settle_value);
+        live.disable_wonder_ring_settle_value();
+        assert!(!live.base.wonder_ring_settle_value);
     }
 
     /// Off by default, set only by the live bridge, each holdable off on its
