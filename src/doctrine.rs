@@ -976,6 +976,13 @@ pub fn build(spec: &Position, seed: u64) -> Option<Game> {
             best_of: 1,
             unique_units: false,
             fog: false,
+            // The same clock the world below already runs on, so a position
+            // that reaches its budget is a draw by the arena rule at the exact
+            // turn the game was going to end anyway. The stock 100 would never
+            // bind here — a doctrine position is 24-26 turns — and leaving the
+            // two clocks disagreeing invites a later edit to the world's length
+            // that silently does nothing.
+            turn_limit: spec.turns + 8,
         },
         ..crate::game::GameOptions::new(2, spec.width, spec.height, seed, spec.turns + 8, 0)
     });
