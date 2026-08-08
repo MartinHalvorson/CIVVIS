@@ -1217,7 +1217,13 @@ class MatchMachine:
             turn=row.get("turns") if row else status.get("turn"),
             winner=status.get("winner") if row is None else None,
             winner_placement=winner_placement(row),
-            victory=row.get("victory") if row else status.get("victory_type"),
+            # The rated row already carries the engine's own denotation, which
+            # for a Mercy Rule ending names the lane it ended on. An unrated
+            # game has no row, so fall back to the same label off `/status`
+            # rather than to the bare victory type.
+            victory=row.get("victory")
+            if row
+            else (status.get("victory_label") or status.get("victory_type")),
             match_row=row,
             elapsed_seconds=round(time.monotonic() - game.started_monotonic, 1),
             log=game.log,
