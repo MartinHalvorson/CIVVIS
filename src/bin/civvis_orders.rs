@@ -850,6 +850,9 @@ fn withhold_live_treatment(
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
         "muster-at-command-radius" => ai.disable_muster_at_command_radius(),
+        "war-economy" => ai.disable_war_economy(),
+        "war-reinforcement" => ai.disable_war_reinforcement(),
+        "war-patience" => ai.disable_war_patience(),
         other => {
             return Err(format!(
                 "unknown --without treatment {other:?}; this binary can withhold: \
@@ -858,7 +861,7 @@ fn withhold_live_treatment(
                  siege-tracks-wall, blind-objective-strength, blind-objective-units, \
                  siege-role, come-ashore, relief-targets-the-siege, suzerain-cards, \
                  housing-districts, housing-cards, housing-research, campus-every-city, \
-                 muster-at-command-radius"
+                 muster-at-command-radius, war-economy, war-reinforcement, war-patience"
             ))
         }
     }
