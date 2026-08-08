@@ -6737,15 +6737,16 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   if (newWorld && st.seed !== undefined) { lastSeed = st.seed; loadTacks(); }
   if (newWorld) {
     // The game mode belongs to this world too: a battlefield on screen reads
-    // back as Tactics, with the size control holding its arena rather than a
+    // back as Tactics, with the size control holding its Tactics map rather than a
     // seat count. The mode is in place before the size and map are read back
     // so both controls hold the roster those values live in.
-    const tactics = st.map.script === "battlefield";
+    const tactics = isBattlefieldMapScript(st.map.script);
     document.getElementById("gamemode").value = tactics ? "tactics" : "civ";
     syncSetupMode();
     const majors = st.players.filter(p => !p.is_minor && !p.is_barbarian).length;
     const playerSelect = document.getElementById("np");
     const arena = tactics ? battlefieldSizes().find(size =>
+      (!size.script || size.script === st.map.script) &&
       size.width === st.map.width && size.height === st.map.height) : null;
     if (arena) {
       playerSelect.value = arena.id;
@@ -6758,6 +6759,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     syncTeams();
     document.getElementById("teams").value = teamRuleFromArray(st.teams);
     document.getElementById("maptype").value = st.map.script || "tenins_ball";
+    if (tactics) syncBattlefieldSizes(true);
     document.getElementById("mapshape").value = st.map.shape || "planet";
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
@@ -27778,7 +27780,10 @@ document.getElementById("custom-leader-table").addEventListener("change", event 
   if (elo && selected)
     elo.innerHTML = customEloOptions(event.target.value, selected.dataset.leader || "", "");
 });
-document.getElementById("maptype").addEventListener("change", syncEarthShape);
+document.getElementById("maptype").addEventListener("change", () => {
+  syncEarthShape();
+  if (readSetting("gamemode") === "tactics") syncBattlefieldSizes(true);
+});
 // Bound on the select itself, so it has re-fitted the splits to the new size
 // before the panel's own delegated listener stages what is now selected.
 document.getElementById("np").addEventListener("change", () => {
@@ -27966,13 +27971,14 @@ function drawCiv6Status() {
 }
 function selectedSimulationSettings() {
   const humanPlayers = readSetting("humanplayers");
-  // In Tactics the size control holds a battlefield id rather than a seat
-  // count: the arena always seats two sides, and its dimensions travel
+  // In Tactics the size control holds a map-size id rather than a seat count:
+  // every Tactics map seats two sides, and its dimensions travel
   // explicitly because no seat count implies them.
-  const battlefield = humanPlayers === "civ6" ? null : battlefieldSize(readSetting("np"));
+  const tactics = humanPlayers !== "civ6" && readSetting("gamemode") === "tactics";
+  const battlefield = tactics ? battlefieldSize(readSetting("np")) : null;
   const np = battlefield ? 2 : +readSetting("np");
   const mapScript = readSetting("maptype");
-  const mapTopology = battlefield ? "flat" : readSetting("mapshape");
+  const mapTopology = battlefield ? (battlefield.topology || "flat") : readSetting("mapshape");
   const mapPoles = readSetting("mappoles");
   const gameSpeed = readSetting("gamespeed");
   const leaderPool = readSetting("leaderpool");
@@ -28054,7 +28060,7 @@ function selectedSimulationSummary(settings = null) {
     : document.getElementById("humanplayers").value === "ai_sim";
   const civ6 = settings ? settings.mode === "civ6"
     : document.getElementById("humanplayers").value === "civ6";
-  const tactics = settings ? settings.map_script === "battlefield"
+  const tactics = settings ? isBattlefieldMapScript(settings.map_script)
     : readSetting("gamemode") === "tactics";
   const mode = civ6 ? "Firaxis Civ 6"
     : spectate === true ? "AI simulation" : "Single player";
@@ -28105,11 +28111,12 @@ function applyQueuedSimulationSettings(settings) {
   // The staged map says which game mode the queue describes: a battlefield
   // is the Tactics mode's arena, and the size control reads back as the
   // battlefield whose dimensions the queue carries.
-  const tactics = settings.map === "battlefield";
+  const tactics = isBattlefieldMapScript(settings.map);
   document.getElementById("gamemode").value = tactics ? "tactics" : "civ";
   syncSetupMode();
   if (tactics) {
     const size = battlefieldSizes().find(size =>
+      (!size.script || size.script === settings.map) &&
       size.width === settings.width && size.height === settings.height);
     if (size) document.getElementById("np").value = size.id;
   } else {
@@ -28120,6 +28127,7 @@ function applyQueuedSimulationSettings(settings) {
   syncTeams();
   document.getElementById("teams").value = teamRuleFromArray(settings.teams);
   document.getElementById("maptype").value = settings.map;
+  if (tactics) syncBattlefieldSizes(true);
   if (settings.shape) document.getElementById("mapshape").value = settings.shape;
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
   syncEarthShape();
@@ -28276,8 +28284,14 @@ function battlefieldScripts() {
 function battlefieldSizes() {
   return (RULES && Array.isArray(RULES.battlefield_sizes)) ? RULES.battlefield_sizes : [];
 }
+function battlefieldSizesForScript(script) {
+  return battlefieldSizes().filter(size => !size.script || size.script === script);
+}
 function battlefieldSize(id) {
   return battlefieldSizes().find(size => size.id === id) || null;
+}
+function isBattlefieldMapScript(id) {
+  return id === "battlefield" || battlefieldScripts().some(script => script.id === id);
 }
 function syncMapRoster(civ6, tactics) {
   const select = document.getElementById("maptype");
@@ -28338,26 +28352,32 @@ function syncBattlefieldVictories(tactics) {
   }
   syncRequiredVictoriesCap();
 }
-// The world-size control is the battlefield-size control in Tactics: the same
-// select carrying a different roster, exactly as the map control does for
-// Civ 6 above. A battlefield seats exactly two sides, so the option says so
-// and the seat-dependent controls re-fit when the roster moves either way.
+// The world-size control is the Tactics-map-size control in Tactics: the same
+// select carries a different roster, exactly as the map control does for Civ 6
+// above. Every Tactics map seats exactly two sides, so the option says so and
+// the seat-dependent controls re-fit when the roster moves either way.
 function syncBattlefieldSizes(tactics) {
   const sizes = document.getElementById("np");
   if (!sizes) return;
   if (tactics && !battlefieldSizes().length) return;
   const roster = tactics ? "tactics" : "civvis";
+  const sameRoster = (sizes.dataset.roster || "civvis") === roster;
   if (sizes.dataset.roster !== "tactics") civvisSizeOptions = sizes.innerHTML;
-  if ((sizes.dataset.roster || "civvis") === roster) return;
-  const chosen = sizes.value;
   if (tactics) {
-    sizes.dataset.civvisChoice = chosen;
-    sizes.innerHTML = battlefieldSizes().map(size =>
+    if (!sameRoster) sizes.dataset.civvisChoice = sizes.value;
+    const script = document.getElementById("maptype")?.value;
+    const available = battlefieldSizesForScript(script);
+    if (!available.length) return;
+    const chosen = sameRoster ? sizes.value : sizes.dataset.tacticsChoice;
+    sizes.innerHTML = available.map(size =>
       `<option value="${escapeAttr(size.id)}">${size.name} · 2 civs</option>`).join("");
-    const carried = sizes.dataset.tacticsChoice;
-    if (carried && [...sizes.options].some(option => option.value === carried))
-      sizes.value = carried;
+    const carried = chosen && available.some(size => size.id === chosen)
+      ? chosen : available[0].id;
+    sizes.value = carried;
+    sizes.dataset.tacticsChoice = carried;
   } else {
+    if (sameRoster) return;
+    const chosen = sizes.value;
     sizes.dataset.tacticsChoice = chosen;
     sizes.innerHTML = civvisSizeOptions;
     const restored = sizes.dataset.civvisChoice;
