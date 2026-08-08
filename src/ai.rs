@@ -1605,6 +1605,11 @@ pub struct BasicAi {
     /// chart. Off for the frozen native controllers. See
     /// `recon_is_the_missing_arm`.
     recon_replacement: bool,
+    /// Price a revealed natural wonder's ring into the settle scorer, so a
+    /// founding site that would work the wonder's neighbours gets credit for
+    /// the wonder's modeled appeal and projected yields. Off for the frozen
+    /// native controllers. See `AdvancedAi::natural_wonder_ring_value`.
+    wonder_ring_settle_value: bool,
     /// Keep the land army out of the water: exclude water from a land unit's
     /// exploration goals, bring an already-embarked unit ashore whether or not
     /// it has an upgrade waiting, and let `peacetime_step` know when
@@ -2747,6 +2752,7 @@ impl BasicAi {
             siege_muster: false,
             siege_role: false,
             recon_replacement: false,
+            wonder_ring_settle_value: false,
             come_ashore: false,
             home_defense: false,
             loyalty_rate_alarm: false,
@@ -2785,6 +2791,7 @@ impl BasicAi {
             siege_muster: false,
             siege_role: false,
             recon_replacement: false,
+            wonder_ring_settle_value: false,
             come_ashore: false,
             home_defense: false,
             loyalty_rate_alarm: false,
@@ -9323,12 +9330,19 @@ impl BasicAi {
             if self.garrison_step(g, pid, uid, &enemy_ids) {
                 return true;
             }
-            // The homeland gets first claim on this unit. Without it the
-            // objective below is always the offensive, because it ranks by
-            // distance from the asking unit and a deployed army is by
-            // definition standing next to the enemy.
-            return match self
-                .home_defense_objective(g, pid, uid, &enemy_ids)
+            // On a capture-the-flag arena the flag outranks every march this
+            // unit could make: taking its tile wins the battle outright, so
+            // any unit not spending its turn on a worthwhile attack above is
+            // a unit racing the other side to the objective. `arena_flag` is
+            // `Some` only on that arena shape, so every world walks past.
+            //
+            // Otherwise the homeland gets first claim on this unit. Without
+            // it the objective below is always the offensive, because it
+            // ranks by distance from the asking unit and a deployed army is
+            // by definition standing next to the enemy.
+            return match g
+                .arena_flag
+                .or_else(|| self.home_defense_objective(g, pid, uid, &enemy_ids))
                 .or_else(|| self.capture_objective_target(g, pid, uid))
                 .or_else(|| self.nearest_enemy_for_unit(g, pid, uid, &enemy_ids))
             {
