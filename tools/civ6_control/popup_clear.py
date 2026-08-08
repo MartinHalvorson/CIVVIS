@@ -47,10 +47,26 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from civ6_control import macos_input  # noqa: E402
 
-try:
-    from PIL import Image
-except ImportError:
-    sys.exit("popup_clear needs Pillow: python3 -m pip install pillow")
+PILLOW_MISSING = "popup_clear needs Pillow: python3 -m pip install pillow"
+
+
+def _image_library():
+    """Pillow, demanded at the moment it is used rather than at import.
+
+    ⚠ THIS USED TO BE A MODULE-LEVEL `sys.exit`, AND IT TOOK THE LAUNCHER WITH
+    IT. `civ6_play` imports this module for one backstop it may never call, so
+    on a machine without Pillow the whole launcher became unimportable — and
+    `tools/test_civ6_play.py`, a suite about setup contracts that touch no
+    pixels at all, died at collection with a message about an image library.
+    Exactly one function here opens an image, so the requirement belongs to
+    that function. The command-line path still fails with the same sentence
+    the moment it captures anything.
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        raise SystemExit(PILLOW_MISSING)
+    return Image
 
 GAME_PROCESS = "Civ6_Exe_Child"
 DARK_LEVEL = 24          # luminance below this counts as "black"
@@ -119,6 +135,7 @@ def capture(box_points):
     factor to turn an image pixel back into a click point. Capturing the region
     we already know in points makes the ratio measurable: `image width / w`.
     """
+    Image = _image_library()
     x, y, w, h = box_points
     subprocess.run(["screencapture", "-x", "-t", "png", f"-R{x},{y},{w},{h}", SHOT],
                    check=True, timeout=30)

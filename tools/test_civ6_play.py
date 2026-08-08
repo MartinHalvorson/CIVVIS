@@ -15,6 +15,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import civ6_play  # noqa: E402
 
+try:
+    import PIL  # noqa: F401
+    HAS_PILLOW = True
+except ImportError:  # pragma: no cover - depends on the host, not the code
+    HAS_PILLOW = False
+
+# Three of the checks below read text off a screenshot, so they need an image
+# library and say so. The other thirty-six are setup contracts that touch no
+# pixels — and until `popup_clear` stopped demanding Pillow at import, all
+# thirty-nine of them died at collection on any host without it.
+needs_pillow = unittest.skipUnless(HAS_PILLOW, "Pillow is not installed on this host")
+
 
 def args(**changes):
     values = {
@@ -210,6 +222,7 @@ class Civ6PlayTest(unittest.TestCase):
     def test_roster_resolves_requested_leader_to_rendered_name(self) -> None:
         self.assertEqual(civ6_play.leader_display_name("LEADER_JADWIGA"), "Jadwiga")
 
+    @needs_pillow
     def test_leader_picker_scans_past_the_old_harald_cutoff(self) -> None:
         bounds = (756, 33, 756, 480)
         row = {"text": "Jadwiga", "x": 0.73, "y": 0.29,
@@ -274,6 +287,7 @@ class Civ6PlayTest(unittest.TestCase):
 
         self.assertEqual(current, ("Random Leader", (1134, 142)))
 
+    @needs_pillow
     def test_leader_ocr_maps_the_upscaled_crop_back_to_the_desktop(self) -> None:
         from PIL import Image
 
@@ -406,6 +420,7 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertEqual(speed[0], "GAMESPEED_STANDARD")
         self.assertEqual(size[0], "MAPSIZE_SMALL")
 
+    @needs_pillow
     def test_saved_game_bootstrap_uses_named_row_and_lower_action_button(self) -> None:
         bounds = (756, 33, 756, 480)
         observations = [
