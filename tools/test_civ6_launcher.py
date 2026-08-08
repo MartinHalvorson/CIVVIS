@@ -43,6 +43,27 @@ class GatekeeperRefusalTest(unittest.TestCase):
 
 
 class BundleSignatureTest(unittest.TestCase):
+    """⚠ THESE MOCK THE PATH AS WELL AS `codesign`, AND THAT IS THE POINT.
+
+    `bundle_signature_error` reads `game_binary()` before it runs anything, and
+    `env.install_dir()` raises `SystemExit` on a machine with no Civilization VI
+    — so on every host but a play host these three errored out before reaching
+    the subprocess mock they were written around. Nothing noticed, because this
+    file is not one of the suites the gate runs.
+
+    Skipping them on such a host would have been the wrong repair: what they
+    test is how `codesign`'s words are reported, not whether the game is
+    installed. Naming the bundle makes them run everywhere, which is where a
+    regression in that reporting would actually be caught.
+    """
+
+    def setUp(self) -> None:
+        patched = mock.patch.object(
+            launcher, "game_binary",
+            return_value=Path("/Games/Civ6.app/Contents/MacOS/Civ6_Exe_Child"))
+        patched.start()
+        self.addCleanup(patched.stop)
+
     def test_a_valid_bundle_reports_nothing(self) -> None:
         with mock.patch.object(
                 launcher.subprocess, "run",

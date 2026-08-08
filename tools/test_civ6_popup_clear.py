@@ -10,13 +10,21 @@ import time
 import unittest
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+try:
+    from PIL import Image, ImageDraw
+except ImportError:  # pragma: no cover - depends on the host, not the code
+    Image = ImageDraw = None
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from civ6_control import popup_clear  # noqa: E402
 
 
+# Unlike the module under test, these checks really do need Pillow: every one
+# of them paints a synthetic Civilization VI screen and asserts on what the
+# classifier makes of the pixels. A host without it skips them by name rather
+# than failing to collect the file, which is what used to happen.
+@unittest.skipUnless(Image is not None, "Pillow is not installed on this host")
 class PopupClearTest(unittest.TestCase):
     def test_advisor_card_uses_its_leftmost_continue_button(self) -> None:
         image = Image.new("RGB", (1000, 600), (99, 95, 62))
