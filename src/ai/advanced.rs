@@ -17592,7 +17592,17 @@ impl AdvancedAi {
                     }
                 }
             }
-            if group.local_strength_ratio < 1.0 {
+            // The posture selector's superiority gate is already arena-off
+            // (an army that declines every even fight loses the field to the
+            // clock), but this second gate — a per-tile brake on any closing
+            // move while locally weaker — was still on, and it is the
+            // standoff: approaching the enemy mass lowers the local ratio, so
+            // every advancing group brakes exactly at the edge of enemy
+            // reach, on both sides at once. Measured on a 20x20 no-city
+            // arena: armies parked three to six hexes apart with zero units
+            // in contact for 40-62% of the battle, grinding out the clock
+            // through accidental skirmishes.
+            if !arena && group.local_strength_ratio < 1.0 {
                 let advance = g.wdist(upos, target) - objective_distance;
                 value -= self.base.w.local_superiority
                     * (1.0 - group.local_strength_ratio)
@@ -17623,7 +17633,15 @@ impl AdvancedAi {
             }
         }
         if let Some((candidate, pos)) = best {
-            if self.base.unit_objective_memory {
+            // Not on an arena: the danger memory exists to walk a world
+            // army around a kill zone it can come back to with more force,
+            // and its retreat floor is `withdraw_hp` — but nothing heals on
+            // an arena and no more force is coming, so after the first
+            // exchange half of both armies sits near the floor and every
+            // approach reads as a reason to turn around. Measured: the
+            // armies touched, traded, separated, and spent 40-62% of the
+            // battle with zero units in contact.
+            if !arena && self.base.unit_objective_memory {
                 let advancing = g.wdist(pos, target) < g.wdist(upos, target);
                 let danger = self
                     .base

@@ -27,13 +27,13 @@ finding.** Read the `basic` column.
 
 | regime | advanced vs basic | advanced vs advanced_v1 |
 | --- | --- | --- |
-| 1 city per side | 97.5% | 15.0% (7.1–29.1) |
-| no cities | 0.0% | 40.0% (26.3–55.4) |
-| no cities, random era | 15.0% | 60.0% (44.6–73.7) |
+| 1 city per side | 97.5% | 40.0% (26.3–55.4) |
+| no cities | 30.0% | 77.5% (62.5–87.7) |
+| no cities, random era | 52.5% | 90.0% (76.9–96.0) |
 
 <!-- bench: {"regime": "capture", "left": "advanced", "right": "basic", "pct": 97.5} -->
-<!-- bench: {"regime": "capture", "left": "advanced", "right": "advanced_v1", "pct": 15.0} -->
-<!-- bench: {"regime": "attrition", "left": "advanced", "right": "basic", "pct": 0.0} -->
-<!-- bench: {"regime": "attrition", "left": "advanced", "right": "advanced_v1", "pct": 40.0} -->
-<!-- bench: {"regime": "attrition-eras", "left": "advanced", "right": "basic", "pct": 15.0} -->
-<!-- bench: {"regime": "attrition-eras", "left": "advanced", "right": "advanced_v1", "pct": 60.0} -->
+<!-- bench: {"regime": "capture", "left": "advanced", "right": "advanced_v1", "pct": 40.0} -->
+<!-- bench: {"regime": "attrition", "left": "advanced", "right": "basic", "pct": 30.0} -->
+<!-- bench: {"regime": "attrition", "left": "advanced", "right": "advanced_v1", "pct": 77.5} -->
+<!-- bench: {"regime": "attrition-eras", "left": "advanced", "right": "basic", "pct": 52.5} -->
+<!-- bench: {"regime": "attrition-eras", "left": "advanced", "right": "advanced_v1", "pct": 90.0} -->
