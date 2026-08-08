@@ -243,6 +243,22 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("OperationResultsTypes.NO_TARGETS", handler)
         self.assertIn("RequestOperation(prophet, foundOperation.Hash);", handler)
 
+        # ⚠ THE PLAYER OPERATION MUST PRECEDE THE UNIT OPERATION. Requesting the
+        # Prophet's spend first retires the founding unit before the founding it
+        # was needed for: across the 24 completed live runs of 2026-08-07/08 the
+        # Prophet was consumed on the order turn and a religion was founded in
+        # 0 of 24, every order reporting `applied` with no refusal.
+        self.assertLess(
+            handler.index("PlayerOperations.FOUND_RELIGION, found"),
+            handler.index("RequestOperation(prophet, foundOperation.Hash);"),
+            "found the religion before spending the Prophet on it",
+        )
+        # And the request cannot report success on its own say-so: a pcall
+        # verdict is "did not throw", so the next turn has to check.
+        self.assertIn("pendingReligionFounding", handler)
+        self.assertIn("religion_founding_failed", source)
+        self.assertIn("religion_founded", source)
+
     def test_religious_units_export_progress_and_actuate_promote_and_spread(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         progress = source.split("local function unitProgress", 1)[1].split(
