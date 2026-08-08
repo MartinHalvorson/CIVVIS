@@ -3785,7 +3785,7 @@ where
                 || "-".to_string(),
                 |winner| game.players[winner].civ.clone(),
             ),
-            game.victory_type.clone().unwrap_or_default(),
+            game.victory_label().unwrap_or_default(),
             game.reported_turn(),
         )
     });

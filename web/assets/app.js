@@ -4714,7 +4714,7 @@ function updateSimulationStatsDisplay(now) {
   const runs = simulationLedger.runs;
   const last = runs[runs.length - 1];
   lastValue.textContent = last
-    ? `${performanceDuration(last.ms)} · ${titleCase(last.victory || "score")} victory`
+    ? `${performanceDuration(last.ms)} · ${victoryVerdict(last.victory, last.victoryLabel)}`
     : "None finished yet";
   countValue.textContent = runs.length
     ? `${performanceInteger(runs.length)} this session · avg ${performanceDuration(performanceAverage(runs.map(run => run.ms)))}`
@@ -4809,6 +4809,9 @@ function trackSimulationRun(st, now) {
   simulationLedger.runs.push({
     ms: now - simulationLedger.startedAt,
     victory: typeof st?.victory_type === "string" ? st.victory_type : null,
+    // The Mercy Rule's notation is composed by the engine, so a finished run
+    // has to keep it to still say what it ended on once the world is gone.
+    victoryLabel: typeof st?.victory_label === "string" ? st.victory_label : null,
   });
   if (simulationLedger.runs.length > SIMULATION_RUN_LIMIT) simulationLedger.runs.shift();
 }
@@ -6846,7 +6849,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     // map visible until that request times out (or the page is refreshed).
     if (SPEC && st.supervised)
       waitForSupervisedSuccessor(st.server_instance, st.seed);
-    const verdict = titleCase(st.victory_type || "score") + " victory";
+    const verdict = victoryVerdict(st.victory_type, st.victory_label);
     const signature = `${st.seed}|${winnerIds.join(",")}|${verdict}|${st.turn}`;
     w.style.setProperty("--winner-color", pcol(st.winner));
     w.classList.add("visible");
@@ -20039,7 +20042,7 @@ function hudTurnPlate() {
   const turnCountClasses = ["turn-count", compactTurn && "turn-count-long",
     decided && "turn-count-playing-on"].filter(Boolean).join(" ");
   const playOnLabel = decided
-    ? `Playing on past ${decided.civ || "the winner"}'s ${titleCase(decided.victory_type || "score")} victory on turn ${decided.turn}` +
+    ? `Playing on past ${decided.civ || "the winner"}'s ${victoryVerdict(decided.victory_type, decided.victory_label)} on turn ${decided.turn}` +
       (decided.mode === "indefinite" ? " indefinitely" : " until the next victory")
     : "";
   const context = identityContext + (playOnLabel ? ` · ${playOnLabel}` : "");
@@ -22386,6 +22389,17 @@ function governorStatus(governor) {
   return "Established";
 }
 function titleCase(n) { return (n || "").replaceAll("_", " ").replace(/\b\w/g, c => c.toUpperCase()); }
+// How a finished game's result is denoted. An ordinary result is named by its
+// victory type — a "Science victory". A Mercy Rule ending is denoted by the
+// notation the engine composed for it, "Mercy Rule - Science", naming the lane
+// the board was still being decided on when the odds crossed; that notation is
+// the whole verdict, so it takes neither the title-casing nor the "victory"
+// suffix. Kept in one place because the finish screen, the play-on plate and
+// the session's run list all have to say the same thing about the same game.
+function victoryVerdict(type, label) {
+  if (type === "mercy") return label || "Mercy Rule";
+  return titleCase(type || "score") + " victory";
+}
 function researchCard(kind, name, progress, total, perTurn, boosted) {
   const eta = perTurn > 0 ? Math.max(1, Math.ceil((total - progress) / perTurn)) : "∞";
   const pct = Math.min(100, 100 * progress / Math.max(1, total));

@@ -17,7 +17,8 @@ the calibrated share the spectator ribbon shows, on flat 1500 priors — reach
 the chosen threshold. Setup ladder: **None, 99%, 97%, 95% (shipped default),
 90%**. Checked at every world-turn wrap after the real victory sweeps, so
 mercy never outranks a victory the rules just recognised; recorded as victory
-type `mercy`. Headless/eval constructors default to **off** (`GameOptions`),
+type `mercy` and denoted as `Mercy Rule - <victory type(s)>` (see The notation
+below). Headless/eval constructors default to **off** (`GameOptions`),
 so simulation baselines and rated batch evidence are unchanged; the 95%
 default enters through the setup surfaces (`stock_opening_params`, which the
 lobby stamp and the wasm opening world both follow, and `civvis play`).
@@ -27,6 +28,37 @@ crossed in 23/60 games and agreed with the played-out winner in 91.3% of
 crossings; 0.98 agreed in 100% of 11 crossings; 0.90 agreed in 93.5% of 31.
 A mercy game ending early may therefore occasionally crown a seat the full
 game would not have — that is the rule's nature, chosen deliberately.
+
+### The notation
+
+A mercy ending is written and shown as **`Mercy Rule - <victory type(s)>`**,
+naming the open victory lane the winner led when the odds crossed — `Mercy
+Rule - Science`, or both lanes joined as `Mercy Rule - Science + Domination`
+when a seat led two at exactly the same progress. The rule stops a game the
+victory conditions were still deciding, so the bare word says only that it
+ended early and never what it ended on.
+
+The lanes are `Game::leading_victory_lanes`: the maximum of the same race
+progress `victory_threat` takes, read through `victory_lane_open` so an arena
+can only ever be named for the battle it is actually deciding, and with Score
+left out for the reason `odds` leaves it out of the race term — it is the
+standing when the clock runs out, not a race. Every lane tied at the front is
+named. A seat that crossed on standing and tempo with no race under way keeps
+the bare `Mercy Rule`.
+
+`Game::mercy_lanes` is read at the crossing, because the board that produced
+it stops changing the moment the game does, and it travels into `Decided` when
+a world plays on past the result. The victory *type* is untouched — still
+`mercy`, which is what `set_winner`, `play_on_blocks` and the saves key off.
+Only the label changes, and it is composed in one place
+(`Game::victory_label`, `game::mercy_label`) so the finish screen, the play-on
+plate, `/state` (`victory_label`), the league's `matches.csv` and the Elo
+tournament log all denote a win the same way.
+
+Lanes are joined with ` + ` and never a comma: the label goes into the
+`victory` column of `matches.csv`, whose two readers — `backfill_win_profiles`
+and `rating::parse_matches_csv` — cut rows on commas, so one comma in the
+notation would shift every later column and take the recorded history with it.
 
 Determinism: the crossing ends games, so `odds.rs` computes its
 transcendentals (`pow`, `log`) through `libm` — the same soft-float rule as

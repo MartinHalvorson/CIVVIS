@@ -3021,7 +3021,7 @@ impl Session {
                 }
             })
             .collect();
-        let victory = self.game.victory_type.clone().unwrap_or_default();
+        let victory = self.game.victory_label().unwrap_or_default();
         let Some(updated) = crate::league::record_ranked_game(
             &dir,
             &seats,
