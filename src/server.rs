@@ -9672,6 +9672,45 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("hud.style.setProperty(\"--hud-table-min\", tableMin);"));
         assert!(EMBEDDED_INDEX.contains("min-width: var(--hud-table-min, 0px);"));
         assert!(EMBEDDED_INDEX.contains("function visiblePlayerHudColumns()"));
+        // NUK is the one column that does not exist for most of a game: no
+        // civilization can hold a device before the first Manhattan Project on
+        // the board is finished, so the shipped twelve value columns above stay
+        // twelve until one is. A column that does not exist is out of the table
+        // *and* off the Display Settings roster — it is not a column the viewer
+        // chose to hide, so a checkbox for it would promise something it cannot
+        // do — and it can never be the last column standing between the viewer
+        // and an empty table.
+        assert!(EMBEDDED_INDEX.contains("function nuclearStandingsInPlay()"));
+        assert!(EMBEDDED_INDEX.contains("return Boolean(state.nuclear_weapons_unlocked) ||"),
+            "the world finishing the research that unlocks devices reveals NUK");
+        assert!(EMBEDDED_INDEX.contains(
+            "player.science_projects?.includes?.(\"manhattan_project\") ||"
+        ), "a finished Manhattan Project is the same news from an older server");
+        assert!(EMBEDDED_INDEX.contains("playerNuclearStockpile(player) > 0));"),
+            "and so is a stockpile that outlived the empire that built it");
+        assert!(EMBEDDED_INDEX.contains(
+            "return Boolean(column) && (!column.exists || column.exists());"
+        ), "every other column exists from turn one and declares no test at all");
+        assert!(EMBEDDED_INDEX.contains(
+            ".filter(column => playerHudColumnExists(column) &&\n      \
+             !playerHudHiddenColumns.has(column.key));"
+        ), "the table shows the columns that exist and that the viewer keeps");
+        assert!(EMBEDDED_INDEX.contains("if (!playerHudColumnExists(column)) return \"\";"),
+            "the Display Settings roster offers no checkbox for a column that cannot appear");
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("PLAYER_HUD_COLUMNS.filter(playerHudColumnExists)")
+                .count(),
+            3,
+            "both all-hidden guards and the roster signature count existing columns only"
+        );
+        // A column can arrive between two frames, and the tracks its cells
+        // stand on are written from the same model — so the repaint that adds
+        // the head has to rewrite them, or the new cell lands in an implicit
+        // track outside the list.
+        assert!(EMBEDDED_INDEX.contains(
+            "  syncPlayerHudColumns();\n  syncHudColumnRoster();"
+        ), "a repaint restates the tracks and the roster the arriving column changed");
         assert!(EMBEDDED_INDEX.contains(
             "const HUD_COLUMN_LAYOUT_STORAGE_KEY = \"civvis-hud-column-layout-v1\";"
         ), "order, visibility and content-fitted floors persist beside the shares");
@@ -9722,7 +9761,7 @@ mod tests {
         fn assert_hud_stat_order(source: &str, section: &str) {
             let expected = [
                 "cities", "population", "food", "production", "science", "culture", "faith", "gold",
-                "military", "wonders", "suzerain", "score",
+                "military", "nukes", "wonders", "suzerain", "score",
             ];
             let mut cursor = 0;
             for key in expected {
@@ -9761,7 +9800,7 @@ mod tests {
             // walks `key:[` anchors rather than quoted keys.
             let expected = [
                 "cities", "population", "food", "production", "science", "culture", "faith",
-                "gold", "military", "wonders", "suzerain", "score",
+                "gold", "military", "nukes", "wonders", "suzerain", "score",
             ];
             let mut cursor = 0;
             for key in expected {
