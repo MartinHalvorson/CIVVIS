@@ -217,6 +217,21 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("UnitManager.CanStartCommand(unit, hash, params)", handler)
         self.assertIn("UnitManager.RequestCommand(unit, hash, params)", handler)
 
+    def test_resource_export_gates_on_the_database_reveal_rules(self) -> None:
+        """IsResourceVisible alone passed pre-Refining oil (7 plots, run
+        civvis-20260807T162004Z); the database PrereqTech/PrereqCivic columns
+        are the reveal truth and must be enforced in the same gate."""
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        gate = source.split("local function visibleResourceName", 1)[1].split(
+            "local function exportTiles", 1
+        )[0]
+        self.assertIn("IsResourceVisible(row.Hash)", gate,
+                      "the engine gate stays; it hides game-mode-disabled rows")
+        self.assertIn("row.PrereqTech", gate)
+        self.assertIn("techs:HasTech(tech.Index)", gate)
+        self.assertIn("row.PrereqCivic", gate)
+        self.assertIn("culture:HasCivic(civic.Index)", gate)
+
     def test_religion_bridge_uses_firaxis_player_operations_and_exports_its_gate(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         handler = source.split('if kind == "religion" then', 1)[1].split(
