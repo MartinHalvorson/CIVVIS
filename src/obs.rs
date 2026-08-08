@@ -468,6 +468,12 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             // whether it is drawing a rectangle or a globe. It is read off the
             // map rather than off the setup, so a loaded save answers too.
             "shape": if g.map.sphere().is_some() { "planet" } else { "flat" },
+            // Whether east and west are the same edge. A Tactics arena is the
+            // one shape where they are not, and the browser cannot infer that
+            // from `shape`: an arena is flat like every stock script and only
+            // its walls tell it apart. Without this the chart unrolls a walled
+            // field, and a unit at the east wall is drawn past the west one.
+            "wrap_x": g.map.wraps_east_west(),
             "poles": g.map_poles.id(),
             "width": g.map.width,
             "height": g.map.height,
@@ -1679,6 +1685,39 @@ fn merge(base: &mut Value, ext: Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The browser draws a flat chart by unrolling it about the camera, which
+    /// is right for a world and wrong for an arena: a Tactics battlefield is
+    /// walled on all four sides, so a unit at the east wall drawn again past
+    /// the west wall is a unit off the map. `shape` cannot answer it — an
+    /// arena is flat like every stock script — so the observation carries the
+    /// wrap itself, read off the built map so a loaded save answers too.
+    #[test]
+    fn the_observation_says_whether_east_and_west_are_the_same_edge() {
+        let arena = Game::new_with(crate::game::GameOptions {
+            map_script: crate::setup::MapScript::Battlefield,
+            ..crate::game::GameOptions::new(2, 12, 12, 4_402, 60, 0)
+        });
+        assert!(arena.is_arena());
+        assert_eq!(observation_spectator(&arena, 0)["map"]["shape"], "flat");
+        assert_eq!(
+            observation_spectator(&arena, 0)["map"]["wrap_x"],
+            json!(false),
+            "an arena has a wall where a world has a seam"
+        );
+
+        // Every other shape does come back on itself: a cylinder through its
+        // own east-west seam, a globe through its geometry.
+        let world = Game::new_full(2, 20, 14, 4_402, 60, 1, false);
+        assert_eq!(observation_spectator(&world, 0)["map"]["wrap_x"], json!(true));
+        let size = crate::setup::MapSize::for_players(2);
+        let (width, height) = size.dimensions(crate::setup::MapTopology::Planet);
+        let globe = Game::new_with(crate::game::GameOptions {
+            map_topology: crate::setup::MapTopology::Planet,
+            ..crate::game::GameOptions::new(2, width, height, 4_402, 60, 2)
+        });
+        assert_eq!(observation_spectator(&globe, 0)["map"]["wrap_x"], json!(true));
+    }
 
     #[test]
     fn tile_hover_identifies_the_owning_city_and_orders_each_gameplay_layer() {

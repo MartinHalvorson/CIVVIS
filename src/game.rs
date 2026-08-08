@@ -32032,7 +32032,8 @@ impl Game {
     }
 
     fn player_vision(&self, heights: &mut HeightField, pid: usize) -> TileBits {
-        // An arena is a field, and both commanders can see all of it.
+        // An arena is a field, and by default both commanders can see all of
+        // it.
         //
         // A Tactics battle is meant to be a test of what each side does with
         // what is in front of it, not of who finds the other first — and a
@@ -32042,9 +32043,14 @@ impl Game {
         // enemy it cannot see; measured, both sides simply stood in their own
         // deployment bands for five hundred turns and the clock decided it.
         // Lifting the fog is symmetric — it is the rule of the arena, not a
-        // handicap given to one side — and leaves concealment as something a
-        // later mode can put back deliberately.
-        if self.is_arena() {
+        // handicap given to one side.
+        //
+        // That is the default rather than the rule: `tactics.fog` is the
+        // deliberate mode the comment above used to leave for later, and it
+        // simply declines the shortcut so the field is scouted the way a world
+        // is. It is symmetric in the same way — both sides are fogged or
+        // neither is.
+        if self.is_arena() && !self.tactics.fog {
             return TileBits::all(self.map.tiles.len());
         }
         let mut visible = TileBits::with_capacity(self.map.tiles.len());
@@ -68993,6 +68999,67 @@ mod district_mechanics {
         assert!(game.map.tiles.values().all(|tile| tile.resource.is_none()));
         assert!(game.map.tiles.values().all(|tile| game.rules.is_passable(tile)));
         assert!(game.map.tiles.values().all(|tile| !game.rules.is_water(tile)));
+    }
+
+    /// The fog is a match setting. An arena lifts it by default — a battle is
+    /// a test of what each side does with what is in front of it, not of who
+    /// finds the other first — but the mode that puts it back is a real one,
+    /// and it has to be symmetric: both sides fogged or neither, never one.
+    #[test]
+    fn an_arena_is_fogged_only_when_the_match_asked_for_it() {
+        let arena = |fog: bool| {
+            Game::new_with(GameOptions {
+                map_script: MapScript::Battlefield,
+                tactics: TacticsRules { fog, ..TacticsRules::default() },
+                ..GameOptions::new(2, 16, 16, 7_704, 250, 0)
+            })
+        };
+
+        // The default is the field entire, for both commanders alike.
+        let open = arena(false);
+        assert!(open.is_arena());
+        for seat in 0..2 {
+            assert_eq!(
+                open.player_visibility(seat).len(),
+                open.map.tiles.len(),
+                "seat {seat} must see the whole unfogged field"
+            );
+        }
+
+        // Fogged, each side sees only what its own units can — which on an
+        // arena is a fraction of the field, because the two armies are set
+        // down out of each other's sight.
+        let fogged = arena(true);
+        for seat in 0..2 {
+            let seen = fogged.player_visibility(seat);
+            assert!(
+                !seen.is_empty(),
+                "seat {seat} must still see the ground it stands on"
+            );
+            assert!(
+                seen.len() < fogged.map.tiles.len(),
+                "seat {seat} must not see the whole fogged field"
+            );
+        }
+        // Symmetric: the rule is the arena's, not a handicap given to a side.
+        // Two armies do not see the same number of hexes — they stand on
+        // different ground, and sight carries differently over it — so what
+        // has to match is the rule, which is that each side opens out of the
+        // other's sight and has to go and find it.
+        for (viewer, hidden) in [(0, 1), (1, 0)] {
+            let seen = fogged.player_visibility(viewer);
+            assert!(
+                fogged
+                    .units
+                    .values()
+                    .filter(|unit| unit.owner == hidden)
+                    .all(|unit| !seen.contains(&unit.pos)),
+                "seat {viewer} must open with seat {hidden}'s army still to find"
+            );
+        }
+        // And it is the fog that hid the ground, not a different battlefield:
+        // the two arenas are the same field.
+        assert_eq!(open.map.tiles.len(), fogged.map.tiles.len());
     }
 
     /// Unique units are a match setting, and switching them off has to reach
