@@ -21532,6 +21532,38 @@ impl Game {
                 .sum::<f64>()
     }
 
+    /// How many espionage agents a player actually has.
+    ///
+    /// ⚠ TWO REPRESENTATIONS, AND THE LIVE BRIDGE ONLY EVER FILLS THE SECOND.
+    /// A native CIVVIS Spy is a `self.spies` entry and NOTHING ELSE — the
+    /// production arm inserts it and returns before `place_new_unit`, so
+    /// `self.units` never holds one. Civilization VI has no such split: a Spy
+    /// there is an ordinary `UNIT_SPY`, which is what the mirror imports, so
+    /// `self.spies` stays empty for the whole of a live game.
+    ///
+    /// Everything that asks "am I at spy capacity" read only `self.spies`, so
+    /// in a live game the answer was **always zero**. Measured across the 23
+    /// completed Civilization VI runs of 2026-08-07/08: `UNIT_SPY` is the
+    /// **second most-requested production item in the fleet**, 550 of 5,618
+    /// orders (**9.8% of every production decision**), and **458 of them
+    /// (84%) were refused as unplayable** — while the empire visibly held one
+    /// to four Spies at the time. Each refusal throws that city's production
+    /// back to the control mod's fallback ladder, which is the ladder that
+    /// builds warriors.
+    ///
+    /// Taking the maximum is correct in both worlds and cannot over-count: a
+    /// native game contributes 0 from the unit census, a live game
+    /// contributes 0 from the agent map.
+    pub fn spy_agents(&self, pid: usize) -> usize {
+        let agents = self.spies.values().filter(|spy| spy.owner == pid).count();
+        let units = self
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid && unit.kind == "spy")
+            .count();
+        agents.max(units)
+    }
+
     pub fn spy_capacity(&self, pid: usize) -> i64 {
         (self.tree_effect(pid, "spy_capacity")
             + self.empire_building_sum(pid, |building| {
@@ -39685,7 +39717,8 @@ impl Game {
             return false;
         }
         if unit == "spy" {
-            let existing = self.spies.values().filter(|spy| spy.owner == pid).count();
+            // Counts mirrored `UNIT_SPY` units too — see `spy_agents`.
+            let existing = self.spy_agents(pid);
             let queued = self
                 .cities
                 .values()
@@ -64073,6 +64106,49 @@ mod victory_conditions {
             g.world_era, 4,
             "late research advances the world without skipping Industrial"
         );
+    }
+
+    /// A live game's Spies are mirrored `UNIT_SPY` units, not `spies` entries,
+    /// so every "am I at capacity" test used to answer zero and the empire
+    /// re-ordered a Spy the host would refuse. `UNIT_SPY` was the second
+    /// most-requested production item in the fleet at 9.8% of all orders, 84%
+    /// of them refused.
+    #[test]
+    fn mirrored_spy_units_count_against_spy_capacity() {
+        let mut g = game_with_capitals(2, 404, 500);
+        let cid = g.player_city_ids(0)[0];
+        for civic in ["diplomatic_service", "nationalism", "ideology", "cold_war"] {
+            g.players[0].civics.insert(Name::new(civic));
+        }
+        let capacity = g.spy_capacity(0) as usize;
+        assert_eq!(capacity, 4);
+        let spy = Item::Unit { unit: crate::name!("spy") };
+        assert_eq!(g.spy_agents(0), 0);
+        assert!(g.can_produce(0, cid, &spy), "an empty roster may train one");
+
+        // The live shape: agents arrive as units and `spies` stays empty.
+        let home = g.cities[&cid].pos;
+        for _ in 0..capacity {
+            g.spawn_unit("spy", 0, home);
+        }
+        assert!(g.spies.is_empty(), "the mirror never fills the agent map");
+        assert_eq!(g.spy_agents(0), capacity, "the unit census is the live count");
+        assert!(
+            !g.can_produce(0, cid, &spy),
+            "a full roster of mirrored Spies must refuse another"
+        );
+
+        // Another player's Spies are not ours, and neither are other units.
+        let mut h = game_with_capitals(2, 405, 500);
+        let hcid = h.player_city_ids(0)[0];
+        for civic in ["diplomatic_service", "nationalism", "ideology", "cold_war"] {
+            h.players[0].civics.insert(Name::new(civic));
+        }
+        let hhome = h.cities[&hcid].pos;
+        h.spawn_unit("builder", 0, hhome);
+        h.spawn_unit("spy", 1, h.cities[&h.player_city_ids(1)[0]].pos);
+        assert_eq!(h.spy_agents(0), 0, "only our own Spies count");
+        assert_eq!(h.spy_agents(1), 1);
     }
 
     #[test]

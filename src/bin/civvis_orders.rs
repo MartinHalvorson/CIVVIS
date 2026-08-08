@@ -850,6 +850,7 @@ fn withhold_live_treatment(
         "garrison-under-fire" => ai.disable_garrison_under_fire(),
         "escort-unstick" => ai.disable_escort_unstick(),
         "religion-sues-peace" => ai.disable_religion_sues_peace(),
+        "stranded-settler-discount" => ai.disable_stranded_settler_discount(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -868,7 +869,9 @@ fn withhold_live_treatment(
                  siege-role, come-ashore, relief-targets-the-siege, suzerain-cards, \
                  housing-districts, housing-cards, housing-research, campus-every-city, \
                  muster-at-command-radius, war-economy, war-reinforcement, war-patience, \
-                 recon-replacement, wonder-ring-settle-value"
+                 recon-replacement, wide-map-capacity, garrison-under-fire, \
+                 escort-unstick, religion-sues-peace, stranded-settler-discount, \
+                 wonder-ring-settle-value"
             ))
         }
     }

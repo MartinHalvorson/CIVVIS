@@ -765,6 +765,23 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// added disjunct is a constant `false` that cannot change the `||`, and
 /// `best_recon` is never reached. The anchor's build order is byte-identical by
 /// construction. Compatibility re-pin, not an Elo-protocol change.
+/// #1401 discounts a motionless Settler from the expansion gate's in-flight
+/// test, so one stuck settler stops costing every future one. It sits behind
+/// `BasicAi::settler_strand_discount`, which `AdvancedAi::enable_live_bridge`
+/// sets and nothing else does — `BasicAi::new` and `with_weights` both leave
+/// it false, and both new tests assert the off path is unchanged, so the
+/// anchor's decision stream is identical by construction. Compatibility
+/// re-pin, not an Elo-protocol change.
+/// #1402 counts mirrored `UNIT_SPY` units as espionage agents in the spy
+/// capacity test. A native CIVVIS Spy is a `Game::spies` entry and never a
+/// unit — the production arm returns before `place_new_unit` — so the unit
+/// census contributes 0 to `spy_agents` in every native game and the anchor
+/// sees the same number it always did. Identical by construction, on a rated
+/// profile and off it. Compatibility re-pin, not an Elo-protocol change.
+/// #1404 adds the missing `disable_stranded_settler_discount` counterpart so
+/// the treatment can be held off for a controlled arm. It only writes `false`
+/// into a field the anchor already reads as `false`. Compatibility re-pin, not
+/// an Elo-protocol change.
 /// The wonder-ring settle credit (#1378) adds one term to
 /// `settle_value_visible`, behind `BasicAi::wonder_ring_settle_value`. Both
 /// constructors leave the flag false and only `enable_live_bridge` sets it,
@@ -780,7 +797,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// constructors and set only by `enable_live_bridge`, so the anchor's decision
 /// stream is unchanged by the union. Compatibility re-pin, not an Elo-protocol
 /// change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xec07_d517_b463_69c1;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0d32_443c_bb76_9fa5;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
