@@ -495,6 +495,243 @@ pub const POSITIONS: &[Position] = &[
             ],
         ],
     },
+    Position {
+        id: "lake_trasimene",
+        name: "The march column ambushed",
+        provenance: "Hannibal at Lake Trasimene, 217 BC",
+        problem: "An army strung out along a shore between water and hills, \
+                  with the enemy massed on the high ground above it. A column \
+                  is not a formation; it has to become one before it is \
+                  destroyed a section at a time.",
+        roles: [
+            "the column: six units strung along the shore, in march order",
+            "the ambush: five on the heights, above the length of it",
+        ],
+        width: 28,
+        height: 12,
+        turns: 24,
+        terrain: &[
+            // The lake, closing the southern flank for the whole length of the
+            // road, so the column has nowhere to deploy away from the hills.
+            (
+                Brush::Water,
+                &[
+                    (6, 10),
+                    (7, 10),
+                    (8, 10),
+                    (9, 10),
+                    (10, 10),
+                    (11, 10),
+                    (12, 10),
+                    (13, 10),
+                    (14, 10),
+                    (15, 10),
+                    (16, 10),
+                    (17, 10),
+                    (18, 10),
+                    (19, 10),
+                    (7, 11),
+                    (8, 11),
+                    (9, 11),
+                    (10, 11),
+                    (11, 11),
+                    (12, 11),
+                    (13, 11),
+                    (14, 11),
+                    (15, 11),
+                    (16, 11),
+                    (17, 11),
+                    (18, 11),
+                ],
+            ),
+            // The heights the ambush comes off, with woods to hold it out of
+            // the open until it moves.
+            (
+                Brush::Hills,
+                &[
+                    (8, 4),
+                    (10, 4),
+                    (12, 4),
+                    (14, 4),
+                    (16, 4),
+                    (18, 4),
+                    (9, 3),
+                    (13, 3),
+                    (17, 3),
+                ],
+            ),
+            (Brush::Forest, &[(11, 3), (15, 3), (19, 3), (7, 3)]),
+        ],
+        forces: [
+            &[
+                at("warrior", 6, 8),
+                at("archer", 8, 8),
+                at("spearman", 10, 8),
+                at("archer", 12, 8),
+                at("swordsman", 14, 8),
+                at("warrior", 16, 8),
+            ],
+            &[
+                at("swordsman", 9, 4),
+                at("swordsman", 13, 4),
+                at("spearman", 11, 4),
+                at("horseman", 17, 4),
+                at("archer", 15, 4),
+            ],
+        ],
+    },
+    Position {
+        id: "the_breakthrough",
+        name: "The point of rupture",
+        provenance: "Bonaparte's masse de rupture; Guderian at Sedan, 1940",
+        problem: "A thin line holding everywhere against a fist massed on one \
+                  point. Weight at the point of rupture decides it, and a \
+                  defence that spreads to cover everything covers nothing.",
+        roles: [
+            "the fist: six units on one narrow front",
+            "the line: six units holding the whole width",
+        ],
+        width: 26,
+        height: 18,
+        turns: 24,
+        terrain: &[
+            // Two woods narrowing the front to three usable approaches, so a
+            // line has to choose what it holds rather than standing everywhere.
+            (
+                Brush::Forest,
+                &[
+                    (13, 2),
+                    (13, 3),
+                    (13, 4),
+                    (13, 8),
+                    (13, 9),
+                    (13, 10),
+                    (13, 14),
+                    (13, 15),
+                ],
+            ),
+            (Brush::Hills, &[(16, 6), (16, 12), (16, 1)]),
+        ],
+        forces: [
+            &[
+                at("swordsman", 8, 5),
+                at("swordsman", 8, 6),
+                at("spearman", 7, 5),
+                at("warrior", 7, 6),
+                at("archer", 6, 5),
+                at("archer", 6, 6),
+            ],
+            &[
+                at("spearman", 18, 1),
+                at("warrior", 18, 5),
+                at("archer", 19, 6),
+                at("spearman", 18, 9),
+                at("warrior", 18, 13),
+                at("archer", 19, 16),
+            ],
+        ],
+    },
+    Position {
+        id: "hammer_and_anvil",
+        name: "Hammer and anvil",
+        provenance: "Alexander at Gaugamela, 331 BC",
+        problem: "Infantry fixes the enemy front while something fast goes \
+                  round it. The anvil is worth nothing without the hammer, \
+                  and the hammer is worth nothing if the anvil breaks first.",
+        roles: [
+            "the hammer: a holding line and two fast units on a wide flank",
+            "the phalanx: heavier infantry, nothing fast, one front",
+        ],
+        width: 26,
+        height: 16,
+        turns: 24,
+        terrain: &[
+            // Broken ground on one flank only, so the wide ride round is open
+            // and the short one is not.
+            (
+                Brush::Forest,
+                &[(12, 1), (13, 2), (12, 3), (13, 1), (14, 2)],
+            ),
+            (Brush::Hills, &[(13, 13), (14, 14), (12, 14)]),
+        ],
+        forces: [
+            &[
+                at("spearman", 8, 6),
+                at("spearman", 8, 8),
+                at("warrior", 7, 7),
+                at("archer", 6, 7),
+                at("horseman", 7, 12),
+                at("horseman", 6, 13),
+            ],
+            &[
+                at("swordsman", 17, 6),
+                at("swordsman", 17, 8),
+                at("swordsman", 17, 7),
+                at("spearman", 18, 6),
+                at("spearman", 18, 8),
+                at("archer", 19, 7),
+            ],
+        ],
+    },
+    Position {
+        id: "the_golden_bridge",
+        name: "The golden bridge",
+        provenance: "Sun Tzu: leave a surrounded enemy a way out",
+        problem: "A small force cornered against impassable ground, and a \
+                  much larger one that has to finish it. Troops with nowhere \
+                  to go fight at a price the arithmetic does not predict.",
+        roles: [
+            "the cornered: four units with a wall at their back",
+            "the encircling: seven units and the whole open field",
+        ],
+        width: 22,
+        height: 14,
+        turns: 22,
+        terrain: &[
+            // A pocket: mountains on three sides with one mouth, so the small
+            // force cannot be flanked and cannot leave.
+            (
+                Brush::Mountain,
+                &[
+                    (2, 3),
+                    (3, 3),
+                    (4, 3),
+                    (5, 3),
+                    (6, 3),
+                    (6, 4),
+                    (6, 5),
+                    (6, 8),
+                    (6, 9),
+                    (6, 10),
+                    (2, 10),
+                    (3, 10),
+                    (4, 10),
+                    (5, 10),
+                    (6, 10),
+                    (1, 3),
+                    (1, 10),
+                ],
+            ),
+            (Brush::Hills, &[(3, 6), (3, 7)]),
+        ],
+        forces: [
+            &[
+                at("spearman", 3, 6),
+                at("spearman", 3, 7),
+                at("archer", 2, 6),
+                at("archer", 2, 7),
+            ],
+            &[
+                at("swordsman", 9, 6),
+                at("swordsman", 9, 7),
+                at("warrior", 10, 5),
+                at("warrior", 10, 8),
+                at("archer", 11, 6),
+                at("archer", 11, 7),
+                at("horseman", 12, 6),
+            ],
+        ],
+    },
 ];
 
 /// Look a position up by its identifier.
@@ -544,6 +781,13 @@ struct Observations {
     ranged_alive: f64,
     /// Summed over turns: own units alive, the denominator for the rest.
     alive: f64,
+    /// Units whose arrival step was recorded, and the running sum and sum of
+    /// squares of those steps. Kept as sums rather than a computed spread
+    /// because a ledger is merged across seedings and runs, and a standard
+    /// deviation is not additive.
+    arrival_n: f64,
+    arrival_sum: f64,
+    arrival_sq: f64,
 }
 
 impl DoctrineLedger {
@@ -570,6 +814,9 @@ impl DoctrineLedger {
         mine.screened_ranged += theirs.screened_ranged;
         mine.ranged_alive += theirs.ranged_alive;
         mine.alive += theirs.alive;
+        mine.arrival_n += theirs.arrival_n;
+        mine.arrival_sum += theirs.arrival_sum;
+        mine.arrival_sq += theirs.arrival_sq;
     }
 
     /// Production cost destroyed less production cost lost.
@@ -590,6 +837,12 @@ impl DoctrineLedger {
             ground: (obs.alive > 0.0).then(|| obs.on_good_ground / obs.alive),
             screen: (obs.ranged_alive > 0.0).then(|| obs.screened_ranged / obs.ranged_alive),
             contact: per_turn(obs.contact_turns as f64),
+            arrival: (obs.arrival_n > 1.0).then(|| {
+                let mean = obs.arrival_sum / obs.arrival_n;
+                // Population spread, not a sample estimate: these are all the
+                // units there were, not a draw from a larger force.
+                (obs.arrival_sq / obs.arrival_n - mean * mean).max(0.0).sqrt()
+            }),
         }
     }
 }
@@ -624,6 +877,13 @@ pub struct DoctrineProfile {
     /// Share of turns on which contact existed at all. A low figure on a
     /// position that has to be attacked is an agent that declined to fight.
     pub contact: Option<f64>,
+    /// Spread, in turns, of the moment each unit first came within reach of
+    /// an enemy. Low is an army that arrived as a body; high is one that
+    /// arrived as a stream and was beaten in instalments. This is the
+    /// measurement behind "march divided, fight united" — the one thing every
+    /// general in this list agreed on. A unit that never reached the enemy
+    /// counts as arriving at the final turn.
+    pub arrival: Option<f64>,
 }
 
 /// One position, one seed, played twice with the roles swapped.
@@ -729,8 +989,14 @@ fn play_position(
     // only known once the target's fate is: hold it per victim and settle up
     // when the unit dies or the engagement ends.
     let mut pending: BTreeMap<u32, f64> = BTreeMap::new();
+    // "March divided, fight united." The step on which each unit first came
+    // within reach of an enemy, so the spread of those steps can say whether
+    // the army arrived as a body or as a stream.
+    let mut arrival: BTreeMap<u32, (usize, u32)> = BTreeMap::new();
+    let mut step = 0u32;
 
     observe(&previous, &game, &mut ledgers);
+    note_arrivals(&previous, &game, step, &mut arrival);
     while game.winner.is_none() && game.turn < deadline {
         let pid = game.current;
         if pid < 2 {
@@ -742,7 +1008,9 @@ fn play_position(
         let now = snapshot(&game);
         account(&previous, &now, &game, &mut ledgers, &mut pending);
         previous = now;
+        step += 1;
         observe(&previous, &game, &mut ledgers);
+        note_arrivals(&previous, &game, step, &mut arrival);
         // Nothing left to measure once a side has no unit standing.
         if [0usize, 1]
             .iter()
@@ -751,7 +1019,67 @@ fn play_position(
             break;
         }
     }
+    settle_arrivals(&arrival, step, spec, &mut ledgers);
     Some((ledgers, game.turn.saturating_sub(start)))
+}
+
+/// Record the first step on which each unit stood within two tiles of an
+/// enemy. Two tiles rather than one because that is the range at which a unit
+/// is part of the engagement rather than walking toward it — the same
+/// threshold the contact zone uses.
+fn note_arrivals(
+    now: &Snapshot,
+    g: &Game,
+    step: u32,
+    arrival: &mut BTreeMap<u32, (usize, u32)>,
+) {
+    for (uid, unit) in now {
+        if arrival.contains_key(uid) {
+            continue;
+        }
+        let engaged = now
+            .values()
+            .any(|other| other.owner != unit.owner && g.wdist(unit.pos, other.pos) <= 2);
+        if engaged {
+            arrival.insert(*uid, (unit.owner, step));
+        }
+    }
+}
+
+/// Fold the arrival steps into both sides as the running sums a standard
+/// deviation needs.
+///
+/// A unit that never reached the enemy is counted as arriving at the final
+/// step. That is deliberate: never arriving is the extreme case of arriving
+/// late, and dropping those units would let an army that left half its
+/// strength standing in the rear report a *tighter* arrival than one that
+/// brought everything up a turn apart.
+fn settle_arrivals(
+    arrival: &BTreeMap<u32, (usize, u32)>,
+    last: u32,
+    spec: &Position,
+    ledgers: &mut (DoctrineLedger, DoctrineLedger),
+) {
+    for side in [0usize, 1] {
+        let mut steps: Vec<f64> = arrival
+            .values()
+            .filter(|(owner, _)| *owner == side)
+            .map(|(_, step)| f64::from(*step))
+            .collect();
+        // Every unit the position deployed that never appears above never
+        // reached the enemy at all.
+        let deployed = spec.forces[side].len();
+        while steps.len() < deployed {
+            steps.push(f64::from(last));
+        }
+        let (ledger, _) = split(ledgers, side);
+        let obs = &mut ledger.observations;
+        for value in steps {
+            obs.arrival_n += 1.0;
+            obs.arrival_sum += value;
+            obs.arrival_sq += value * value;
+        }
+    }
 }
 
 fn snapshot(g: &Game) -> Snapshot {
@@ -976,6 +1304,11 @@ pub fn build(spec: &Position, seed: u64) -> Option<Game> {
             best_of: 1,
             unique_units: false,
             fog: false,
+            // The arena's own draw clock, set to the longest it offers so it
+            // can never end a position before the ledger's deadline does. A
+            // position is read at `spec.turns` and never asks who "won", so
+            // the two clocks must not be allowed to disagree.
+            turn_limit: crate::setup::TacticsRules::TURN_LIMITS[3],
         },
         ..crate::game::GameOptions::new(2, spec.width, spec.height, seed, spec.turns + 8, 0)
     });
@@ -1168,6 +1501,60 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The arena carries its own draw clock, and a position carries a
+    /// deadline. If the arena's fires first, the ledger is read on a game the
+    /// engine already stopped and every profile silently shortens. Assert the
+    /// two clocks cannot disagree.
+    #[test]
+    fn the_arenas_draw_clock_cannot_end_a_position_early() {
+        for spec in POSITIONS {
+            let game = build(spec, 61).expect("buildable");
+            assert!(
+                game.tactics.turn_limit > spec.turns,
+                "{} runs {} turns under an arena clock of {}",
+                spec.id,
+                spec.turns,
+                game.tactics.turn_limit
+            );
+        }
+    }
+
+    /// Arrival is the measurement behind "march divided, fight united", so it
+    /// has to be a real spread: zero when a force starts in contact together,
+    /// and larger for a position that deliberately holds half its army back.
+    /// It also must not silently drop units that never arrived — an army that
+    /// left half its strength in the rear would otherwise report the tightest
+    /// arrival on the board.
+    #[test]
+    fn arrival_measures_the_spread_of_a_force_reaching_the_enemy() {
+        let close = matched_position(
+            position("the_golden_bridge").expect("known"),
+            71,
+            "advanced",
+            "advanced",
+            &builtin_ai,
+        );
+        let staggered = matched_position(
+            position("the_reserve").expect("known"),
+            71,
+            "advanced",
+            "advanced",
+            &builtin_ai,
+        );
+        let (Some(pocket), Some(reserve)) = (
+            close.a_by_role[0].profile().arrival,
+            staggered.a_by_role[1].profile().arrival,
+        ) else {
+            panic!("both positions must produce an arrival spread");
+        };
+        assert!(pocket >= 0.0 && reserve >= 0.0);
+        assert!(
+            reserve > pocket,
+            "the far reserve ({reserve}) should arrive less together than a \
+             force cornered in a pocket ({pocket})"
+        );
     }
 
     /// The muster has to actually vary, or every seed replays one game and a
