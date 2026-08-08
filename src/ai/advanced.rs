@@ -195,6 +195,21 @@ const SETTLEMENT_FORECAST_HORIZON: u32 = 40;
 const SETTLEMENT_FORECAST_BEAM: usize = 12;
 const SETTLEMENT_SECOND_RING_DELAY: u32 = 5;
 
+/// Each point of a natural wonder's modeled `Features.Appeal`, priced into a
+/// founding site whose work radius holds the wonder. Appeal is what the
+/// unmodeled wonder economics hang from — pantheon faith, appeal districts
+/// and parks, late tourism — none of which the settle scorer can otherwise
+/// see. Three points per appeal puts an ordinary +2 wonder with a one-yield
+/// ring at about 13 points of credit, inside the 10-20 point band issue
+/// #1378 measured a wonder-ring site actually carrying, and lets the +4
+/// Cliffs of Dover and Uluru outbid them without a per-wonder table.
+const NATURAL_WONDER_APPEAL_WEIGHT: f64 = 3.0;
+
+/// A natural wonder projects its modeled `adjacent_yields` onto every
+/// neighbouring tile, and a city founded on the ring can expect to grow into
+/// roughly one full hex ring of them — six tiles.
+const NATURAL_WONDER_RING_TILES: f64 = 6.0;
+
 /// Before Shipbuilding a land Settler may widen its local eight-tile search,
 /// but may not turn a compact expansion problem into a march across the map.
 const SETTLER_LAND_FALLBACK_RADIUS: i32 = 12;
@@ -2485,6 +2500,17 @@ impl AdvancedAi {
         self.base.recon_replacement = false;
     }
 
+    /// Price a revealed natural wonder's ring into the settle scorer. Native
+    /// tournament games leave this disabled so their recorded ladders stay
+    /// comparable.
+    pub fn enable_wonder_ring_settle_value(&mut self) {
+        self.base.wonder_ring_settle_value = true;
+    }
+
+    pub fn disable_wonder_ring_settle_value(&mut self) {
+        self.base.wonder_ring_settle_value = false;
+    }
+
     pub fn disable_siege_role(&mut self) {
         self.base.siege_role = false;
     }
@@ -2673,6 +2699,17 @@ impl AdvancedAi {
         // ~100 to 251 while the army grew to 22, 77% of the map never seen, and
         // the eventual winner first met on turn 215 already holding 927 points.
         self.enable_recon_replacement();
+        // ⚠ A revealed natural wonder is priced into founding only through the
+        // worked tiles the growth forecast can see and a future Holy Site's
+        // adjacency — for the Matterhorn about 2-4 points — while everything
+        // else a wonder-ring city collects (pantheon faith, appeal districts
+        // and parks, late tourism) is invisible to settling, so a breadbasket
+        // outbids any wonder ring by construction. Live run
+        // `civvis-20260807T202450Z` t93 (issue #1378): the settler founded a
+        // 64.6-point site while `FEATURE_MATTERHORN` stood revealed inside the
+        // candidate radius. The tournament controller stays frozen so its
+        // recorded ladders remain comparable.
+        self.enable_wonder_ring_settle_value();
         // ⚠ `unit_can_traverse` says yes to open water for every land unit as
         // soon as embarkation unlocks, so the unexplored ocean becomes a legal
         // exploration goal for the whole army — and the only rule that brought
@@ -14787,6 +14824,7 @@ impl AdvancedAi {
             + growth_readiness
             + dependable_jobs * 0.75;
         value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
+        value += self.natural_wonder_ring_value(g, &positions);
 
         let enemy_distance = g
             .cities
@@ -14803,6 +14841,62 @@ impl AdvancedAi {
             value += self.defensibility(g, pid, pos);
         }
         value
+    }
+
+    /// Credit a founding site for the natural wonders its work radius holds.
+    ///
+    /// Without this term a revealed wonder reaches the settle scorer only
+    /// through the worked tiles the growth forecast can see — for the
+    /// Matterhorn one +1-culture ring tile, about 1.2 weighted points — plus a
+    /// future Holy Site's `natural_wonder` adjacency, about 0.4 more. All of
+    /// the economics that make a human take the wonder ring (pantheon faith of
+    /// the Earth Goddess class, appeal-fed districts and parks, late tourism)
+    /// are invisible at founding, so a breadbasket outbids any wonder ring by
+    /// construction: live run `civvis-20260807T202450Z` t93 founded a
+    /// 64.6-point site while `FEATURE_MATTERHORN` stood revealed inside the
+    /// candidate radius (issue #1378).
+    ///
+    /// The magnitude is read from the wonder's own modeled sheet
+    /// (`data/features.json`) rather than a flat per-wonder constant: each
+    /// point of modeled appeal at `NATURAL_WONDER_APPEAL_WEIGHT`, plus one
+    /// full hex ring of the yields the wonder projects onto its neighbours at
+    /// the same yield weights every other settlement term uses. A multi-tile
+    /// wonder counts once — the credit is for living beside the wonder, not
+    /// for each of its tiles. Gated behind the live-bridge treatment flag so
+    /// the frozen `advanced_v1` anchor's decision stream is unchanged.
+    fn natural_wonder_ring_value(&self, g: &Game, positions: &[Pos]) -> f64 {
+        if !self.base.wonder_ring_settle_value {
+            return 0.0;
+        }
+        let mut wonders: BTreeSet<&str> = BTreeSet::new();
+        for position in positions {
+            let Some(feature) = g.map.get(*position).and_then(|tile| tile.feature.as_deref())
+            else {
+                continue;
+            };
+            if g.rules
+                .features
+                .get(feature)
+                .is_some_and(|spec| spec.natural_wonder)
+            {
+                wonders.insert(feature);
+            }
+        }
+        wonders
+            .iter()
+            .map(|feature| {
+                let spec = &g.rules.features[*feature];
+                let ring = &spec.adjacent_yields;
+                spec.appeal * NATURAL_WONDER_APPEAL_WEIGHT
+                    + (ring.food * 2.0
+                        + ring.production * 2.2
+                        + ring.gold * 0.7
+                        + ring.science * 1.2
+                        + ring.culture * 1.2
+                        + ring.faith * 0.4)
+                        * NATURAL_WONDER_RING_TILES
+            })
+            .sum()
     }
 
     /// Penalize a site for threats the acting player can actually see. Hidden
@@ -25849,6 +25943,98 @@ mod tests {
         assert_eq!(AdvancedAi::settlement_base_housing(&fresh, center), 5.0);
     }
 
+    /// The defect and the repair of issue #1378 in one shape: a plain
+    /// breadbasket against the same site with the Matterhorn on its first
+    /// ring. Live run `civvis-20260807T202450Z` t93 founded a 64.6-point
+    /// breadbasket while `FEATURE_MATTERHORN` stood revealed inside the
+    /// candidate radius, because the shipped scorer prices a wonder only
+    /// through the worked tiles it can forecast. With the treatment the
+    /// wonder's modeled sheet (appeal 2, +1 culture onto the ring) is credited
+    /// and the wonder ring outbids the breadbasket; held off, the shipped
+    /// score is reproduced exactly.
+    #[test]
+    fn a_wonder_ring_site_outbids_the_breadbasket_only_when_the_bridge_prices_it() {
+        let (mut breadbasket, center, first, second) = settlement_forecast_fixture(8_120);
+        for position in &first {
+            shape_forecast_tile(&mut breadbasket, *position, "grassland", false, None);
+        }
+        let mut wonder_ring = breadbasket.clone();
+        // The breadbasket adds a production hill on its second ring; the
+        // wonder site gives up a workable grassland for an impassable mountain
+        // carrying the Matterhorn — strictly worse ground until the wonder
+        // itself is priced.
+        shape_forecast_tile(&mut breadbasket, second[0], "grassland", true, None);
+        {
+            let tile = wonder_ring.map.tiles.get_mut(&first[0]).unwrap();
+            tile.terrain = Name::new("mountain");
+            tile.hills = false;
+            tile.feature = Some(Name::new("matterhorn"));
+            tile.resource = None;
+        }
+
+        let shipped = AdvancedAi::new();
+        let shipped_bread = shipped.settle_value(&breadbasket, 0, center);
+        let shipped_wonder = shipped.settle_value(&wonder_ring, 0, center);
+        assert!(
+            shipped_bread > shipped_wonder,
+            "the defect: without the treatment the breadbasket outbids the wonder \
+             ring (bread {shipped_bread:.1} vs wonder {shipped_wonder:.1})"
+        );
+
+        let mut bridged = AdvancedAi::new();
+        bridged.enable_wonder_ring_settle_value();
+        let priced_wonder = bridged.settle_value(&wonder_ring, 0, center);
+        let priced_bread = bridged.settle_value(&breadbasket, 0, center);
+        assert!(
+            priced_wonder > priced_bread,
+            "the repair: with the treatment the wonder ring outbids the \
+             breadbasket (wonder {priced_wonder:.1} vs bread {priced_bread:.1})"
+        );
+
+        // The credit is the Matterhorn's own modeled sheet — appeal 2 plus one
+        // hex ring of its +1 culture projection at the shared culture weight —
+        // not a flat constant.
+        let sheet = 2.0 * NATURAL_WONDER_APPEAL_WEIGHT + 1.2 * NATURAL_WONDER_RING_TILES;
+        assert!(
+            (priced_wonder - shipped_wonder - sheet).abs() < 1e-9,
+            "the wonder credit must equal the modeled sheet: got {:.3}, sheet {sheet:.3}",
+            priced_wonder - shipped_wonder
+        );
+        // A site with no wonder in its work radius gains nothing from the
+        // treatment, and holding it off reproduces the shipped score exactly.
+        assert_eq!(priced_bread, shipped_bread);
+        bridged.disable_wonder_ring_settle_value();
+        assert_eq!(bridged.settle_value(&wonder_ring, 0, center), shipped_wonder);
+    }
+
+    /// Pricing the ring must not price the summit. A PASSABLE wonder — the
+    /// Pantanal walks like ordinary grassland — is the sharp case: only
+    /// `tile_is_natural_wonder`, not impassability, keeps the candidate out,
+    /// however large the credit its own ring now carries.
+    #[test]
+    fn the_priced_wonder_ring_still_refuses_to_settle_on_the_wonder() {
+        let (mut game, center, first, _second) = settlement_forecast_fixture(8_121);
+        for position in &first {
+            shape_forecast_tile(&mut game, *position, "grassland", false, None);
+        }
+        {
+            let tile = game.map.tiles.get_mut(&first[0]).unwrap();
+            tile.terrain = Name::new("grassland");
+            tile.feature = Some(Name::new("pantanal"));
+        }
+        let mut bridged = AdvancedAi::new();
+        bridged.enable_wonder_ring_settle_value();
+        let sites = bridged.settle_sites(&game, 0, center, 4);
+        assert!(
+            sites.iter().all(|(pos, _)| *pos != first[0]),
+            "the wonder tile itself must never be offered as a founding site"
+        );
+        assert!(
+            sites.iter().any(|(pos, _)| *pos == center),
+            "while the site beside it stays on the menu"
+        );
+    }
+
     #[test]
     fn a_retarget_does_not_resolve_a_settler_delay() {
         // ⚠ The existing release test sets `settler_blocked_turns` by hand, so it
@@ -36779,6 +36965,20 @@ mod research_probe {
         assert!(live.base.recon_replacement);
         live.disable_recon_replacement();
         assert!(!live.base.recon_replacement);
+    }
+
+    /// Off by default, set only by the live bridge, holdable off on its own —
+    /// the wonder-ring settle credit follows the same contract as every other
+    /// bridge repair, so the frozen `advanced_v1` anchor keeps its ladder.
+    #[test]
+    fn only_the_live_bridge_prices_the_wonder_ring_into_settling() {
+        assert!(!AdvancedAi::new().base.wonder_ring_settle_value);
+        assert!(!AdvancedAi::legacy().base.wonder_ring_settle_value);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.base.wonder_ring_settle_value);
+        live.disable_wonder_ring_settle_value();
+        assert!(!live.base.wonder_ring_settle_value);
     }
 
     /// Off by default, set only by the live bridge, each holdable off on its
