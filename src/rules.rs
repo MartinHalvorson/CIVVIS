@@ -2916,9 +2916,30 @@ mod tests {
         // seed, so this is not evidence of a strength regression. It IS a real
         // simulation change: ledgers recorded before this fingerprint are not
         // comparable with ledgers recorded after it.
+        // Moved again by giving all 182 city-states their real WGS84 site, so
+        // True Start Earth can seat them where they stood and the selector can
+        // spread a game's draw across the world.
+        //
+        // ⚠ THE CONVENTIONAL COMMAND CANNOT SEE THIS CHANGE, AND SAYING SO IS
+        // THE POINT. `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns
+        // 200 --seed 31337 --jobs 1 --deployment-comparison` came back
+        // byte-identical across the change — but `ai_eval` defaults
+        // `--city-states` to 0, so that run seats no city-states at all and
+        // its silence is structural, not evidence. Read as a compatibility
+        // re-pin it would have been a false green.
+        //
+        // Re-run as `... --city-states 6`, which does exercise them, it is a
+        // real simulation change: game-win share 60.0% -> 70.0% and the
+        // Elo-equivalent +70 -> +147. Both runs are INCONCLUSIVE by the sign
+        // test (p=0.6875 and p=0.1250) and their Wilson intervals overlap
+        // almost entirely (-137..+278 vs -73..+367), so this is not evidence
+        // of a strength change in either direction — but a different set of
+        // city-states carries a different set of Suzerain bonuses, so ledgers
+        // recorded before this fingerprint are not comparable with ledgers
+        // recorded after it.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:72bc36829b67f791"
+            "fnv1a64:d84eccb63bf01582"
         );
     }
 
