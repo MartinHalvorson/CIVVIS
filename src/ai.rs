@@ -157,6 +157,16 @@ const SIEGE_TARGET_REACH: i32 = 20;
 /// resumes, so it cannot become an endless appetite.
 const RECON_ARM_MAX: usize = 1;
 
+/// The population under which a FRONTIER city gets the garrison-walls
+/// doctrine (see [`BasicAi::garrison_walls_item`]); the capital gets it at any
+/// size. Derived from the measured loss that motivated the treatment: the
+/// capital that bled out unwalled on live run `civvis-20260807T181839Z` was
+/// pop 7 at t115 and fell at t158, so 7 is provably not a size that holds
+/// without walls. Any frontier city at or below that measured size walls up;
+/// a city past it has the defense strength, hitpoints, and production of a
+/// developed city and keeps the ordinary build order.
+const GARRISON_WALLS_POP_FLOOR: i32 = 8;
+
 /// Railroads are valuable infrastructure, but every tile consumes one Iron
 /// and one Coal. Keep enough of each material for an emergency unit upgrade
 /// instead of letting an idle Engineer pave the stockpile down to zero.
@@ -1583,6 +1593,27 @@ pub struct BasicAi {
     /// proof of siege that fog cannot suppress, and it self-clears because
     /// Civ 6 city health regenerates once the siege lifts.
     pub(crate) garrison_under_fire: bool,
+    /// Order our OWN ancient walls before the ordinary build order spends the
+    /// production somewhere else — `garrison_under_fire` above reacts to a
+    /// city already bleeding, but the city it reacted to had never been given
+    /// walls to bleed behind. Measured on live run `civvis-20260807T181839Z`
+    /// (conquest DEFEAT t158), whose t115 export is the whole diagnosis:
+    /// Rome — the capital of a TWO-CITY empire — at damage 35/200 with
+    /// `max_wall_damage: 0`, buildings `[MONUMENT, PALACE, GRANARY,
+    /// AMPHITHEATER]`, and an EMPTY fog-gated hostile list while it bled.
+    /// Production had gone to the culture lane; no walls were ever ordered in
+    /// the whole run, nor in the other conquest loss of the same day
+    /// (`civvis-20260807T172510Z`, t227). `siege_tracks_the_wall` models
+    /// ENEMY walls and nothing priced building our own, so threat-priced
+    /// defense read zero exactly when the threat was fog-hidden.
+    ///
+    /// Once Masonry is in, ancient walls outrank every non-granary building
+    /// in the capital and in any frontier city under
+    /// [`GARRISON_WALLS_POP_FLOOR`]. See [`BasicAi::garrison_walls_item`].
+    /// Off for the frozen native controllers, whose recorded ladders would
+    /// otherwise shift underneath them, and enabled explicitly by the
+    /// Civilization VI bridge.
+    pub(crate) garrison_walls: bool,
     /// Scale each district family by how much of the empire still lacks it.
     pub(crate) district_coverage: bool,
     /// Break a production COST TIE by which great-work slots can actually be filled.
@@ -2745,6 +2776,7 @@ impl BasicAi {
             amenity_districts: false,
             housing_districts: false,
             garrison_under_fire: false,
+            garrison_walls: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
@@ -2784,6 +2816,7 @@ impl BasicAi {
             amenity_districts: false,
             housing_districts: false,
             garrison_under_fire: false,
+            garrison_walls: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
@@ -6137,6 +6170,82 @@ impl BasicAi {
             })
     }
 
+    /// Whether any of this city's owned tiles borders territory outside the
+    /// empire — the same meaning of "frontier" the patrol-post scan uses ("a
+    /// frontier post borders land or water outside this empire"). An interior
+    /// city ringed entirely by its own empire's territory is somebody else's
+    /// walls problem; a city with wilderness or a rival at its border is where
+    /// conquest starts.
+    fn city_is_frontier(g: &Game, pid: usize, cid: u32) -> bool {
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        city.owned_tiles.iter().any(|pos| {
+            g.nbrs(*pos).into_iter().any(|neighbor| {
+                g.map.get(neighbor).is_some_and(|tile| {
+                    tile.owner_city
+                        .and_then(|other| g.cities.get(&other))
+                        .is_none_or(|other| other.owner != pid)
+                })
+            })
+        })
+    }
+
+    /// Ancient walls for a city that has none and is the kind conquest takes
+    /// first, ordered BEFORE the ordinary build order can spend the
+    /// production on another lane.
+    ///
+    /// ⚠ Every existing wall order is reactive and fog-gated:
+    /// `besieged_city_item` needs `SIEGE_PRESSURE_MIN` VISIBLE besiegers or a
+    /// city already losing hitpoints, and `siege_tracks_the_wall` models
+    /// ENEMY walls. Nothing priced building our own before the threat is
+    /// standing in vision — and an approaching army is invisible until
+    /// adjacency, so "before" is the only time walls can still be finished.
+    /// Measured on live run `civvis-20260807T181839Z` (conquest DEFEAT,
+    /// t158): the t115 export shows Rome, capital of a two-city empire, at
+    /// damage 35/200 with `max_wall_damage: 0`, an EMPTY hostile list, and a
+    /// culture-lane build history — no walls ordered in 115 turns, nor ever.
+    /// `civvis-20260807T172510Z` lost the same way at t227.
+    ///
+    /// The doctrine, from the issue that measured it: once Masonry is in,
+    /// ancient walls outrank every non-granary building in the capital (at
+    /// any size — losing it is losing the game) and in any frontier city
+    /// under [`GARRISON_WALLS_POP_FLOOR`]. The granary keeps its rank by the
+    /// same carve-out: it is the growth foundation and cheaper, and it is
+    /// ordered from here rather than left to the ordinary order because the
+    /// ordinary order reaches buildings only after every district lane —
+    /// exactly the production this branch exists to intercept. One tier only:
+    /// medieval and renaissance walls are a different, far more expensive
+    /// question that this measurement does not answer.
+    ///
+    /// `can_produce` is the Masonry gate and the already-walled release in
+    /// one test, so the branch prices nothing for a city that cannot order
+    /// walls or already has them.
+    fn garrison_walls_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        if !self.garrison_walls || self.minor || self.barb {
+            return None;
+        }
+        let city = g.cities.get(&cid)?;
+        let eligible = city.is_capital
+            || (city.pop < GARRISON_WALLS_POP_FLOOR && Self::city_is_frontier(g, pid, cid));
+        if !eligible {
+            return None;
+        }
+        let wall = Item::Building {
+            building: crate::name!("walls"),
+        };
+        if !g.can_produce(pid, cid, &wall) {
+            return None;
+        }
+        let granary = Item::Building {
+            building: crate::name!("granary"),
+        };
+        if g.can_produce(pid, cid, &granary) {
+            return Some(granary);
+        }
+        Some(wall)
+    }
+
     pub fn pick_item(
         &self,
         g: &Game,
@@ -6459,6 +6568,22 @@ impl BasicAi {
         }
         if let Some(monument) = Self::civ_building(g, pid, cid, "monument") {
             return Some(monument);
+        }
+        // ⚠ BEFORE the district lanes, because the district lanes are where
+        // the measured capital's production actually went while it stood
+        // unwalled — and after the Monument, which is the loyalty anchor and
+        // in practice sequenced first by the Masonry gate anyway. See
+        // `garrison_walls_item` for the measurement.
+        if let Some(defence) = self.garrison_walls_item(g, pid, cid) {
+            // ⚠ THE BRANCH THAT WINS MUST SAY SO — the run that measured the
+            // defect had to be diagnosed from a state export because no
+            // production decision named its chooser.
+            think!(self.journal, Cities, Detail,
+                   "Garrison doctrine takes the build";
+                   "{} is unwalled with Masonry in, and orders {:?} before the district lanes",
+                   if g.cities[&cid].is_capital { "the capital" } else { "a frontier city" },
+                   defence);
+            return Some(defence);
         }
         // Coastal infrastructure is part of the water strategy, not an
         // accidental fallback after every land district. A harbor also gives
@@ -12553,6 +12678,146 @@ mod tests {
         let mut shipped = ai.clone();
         shipped.recon_replacement = false;
         assert!(!shipped.recon_is_the_missing_arm(&g, 0));
+    }
+
+    /// The shape live run `civvis-20260807T181839Z` was in at t115 when its
+    /// capital bled behind no walls: Masonry in, monument and granary built,
+    /// the culture lane open, and nothing hostile in vision. See
+    /// `garrison_walls_item`.
+    fn unwalled_masonry_capital(seed: u64) -> (Game, u32, BasicAi) {
+        let mut g = Game::new_full(1, 24, 16, seed, 120, 0, false);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| g.units[uid].kind == "settler")
+            .unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = g.player_city_ids(0)[0];
+        g.players[0].techs.insert(crate::name!("pottery"));
+        g.players[0].techs.insert(crate::name!("masonry"));
+        g.players[0].civics.insert(crate::name!("drama_poetry"));
+        {
+            let city = g.cities.get_mut(&cid).unwrap();
+            city.pop = 7;
+            city.buildings.push(crate::name!("monument"));
+            city.buildings.push(crate::name!("granary"));
+        }
+        let mut ai = BasicAi::new();
+        ai.garrison_walls = true;
+        // The measured empire was two cities against a city target it had
+        // already met; hold the settler lane shut so the choice under test is
+        // the one the live run actually faced — walls against the culture
+        // lane.
+        ai.w.city_target = 1.0;
+        (g, cid, ai)
+    }
+
+    /// With the treatment on, the capital that previously spent this turn on
+    /// the culture lane orders ancient walls; with it off, behavior is
+    /// unchanged; without Masonry, nothing changes either.
+    #[test]
+    fn a_masonry_capital_orders_walls_before_the_culture_lane() {
+        let (g, cid, ai) = unwalled_masonry_capital(4_421);
+
+        let mut control = ai.clone();
+        control.garrison_walls = false;
+        let untreated = control
+            .pick_item(&g, 0, cid, 1, 0, 10, 0, 0, 6, 3, 3)
+            .expect("the control capital has something to build");
+        assert!(
+            matches!(untreated, Item::District { district, .. }
+                if g.district_family(district) == "theater_square"),
+            "the control must reproduce the measured failure — production to \
+             the culture lane while the capital stands unwalled — but chose \
+             {untreated:?}"
+        );
+
+        let treated = ai
+            .pick_item(&g, 0, cid, 1, 0, 10, 0, 0, 6, 3, 3)
+            .expect("the treated capital has something to build");
+        assert_eq!(
+            treated,
+            Item::Building {
+                building: crate::name!("walls")
+            },
+            "with Masonry in, the unwalled capital walls up before the \
+             culture lane"
+        );
+
+        // Without Masonry the doctrine prices nothing: the gate is the tech.
+        let mut early = g.clone();
+        early.players[0].techs.remove(&crate::name!("masonry"));
+        let pretech = ai.pick_item(&early, 0, cid, 1, 0, 10, 0, 0, 6, 3, 3);
+        assert!(
+            !matches!(pretech, Some(Item::Building { ref building })
+                if *building == crate::name!("walls")),
+            "before Masonry the ordinary build order stands"
+        );
+
+        // The issue's own carve-out: the granary outranks the walls.
+        let mut hungry = g.clone();
+        hungry
+            .cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .retain(|building| building.as_str() != "granary");
+        assert_eq!(
+            ai.garrison_walls_item(&hungry, 0, cid),
+            Some(Item::Building {
+                building: crate::name!("granary")
+            }),
+            "the growth foundation keeps its rank"
+        );
+    }
+
+    /// The frontier/population-floor boundary: a small frontier city walls
+    /// up, the same city at the floor does not, an interior city never does,
+    /// and the capital is eligible at any size.
+    #[test]
+    fn garrison_walls_hold_to_the_frontier_and_the_population_floor() {
+        let (mut g, cid, ai) = unwalled_masonry_capital(4_422);
+        g.cities.get_mut(&cid).unwrap().is_capital = false;
+
+        assert!(
+            BasicAi::city_is_frontier(&g, 0, cid),
+            "a lone city on a fresh map borders the wilderness"
+        );
+        assert_eq!(
+            ai.garrison_walls_item(&g, 0, cid),
+            Some(Item::Building {
+                building: crate::name!("walls")
+            }),
+            "a frontier city under the floor is the kind conquest takes first"
+        );
+
+        // At the floor, the ordinary build order stands; one below, it walls.
+        g.cities.get_mut(&cid).unwrap().pop = GARRISON_WALLS_POP_FLOOR;
+        assert_eq!(ai.garrison_walls_item(&g, 0, cid), None);
+        g.cities.get_mut(&cid).unwrap().pop = GARRISON_WALLS_POP_FLOOR - 1;
+        assert!(ai.garrison_walls_item(&g, 0, cid).is_some());
+
+        // An interior city ringed entirely by its own empire's territory is
+        // somebody else's walls problem.
+        let everything: Vec<Pos> = g.map.tiles.keys().copied().collect();
+        for pos in everything {
+            g.map.tiles.get_mut(&pos).unwrap().owner_city = Some(cid);
+        }
+        assert!(!BasicAi::city_is_frontier(&g, 0, cid));
+        assert_eq!(ai.garrison_walls_item(&g, 0, cid), None);
+
+        // The capital walls up at any size: losing it is losing the game.
+        {
+            let capital = g.cities.get_mut(&cid).unwrap();
+            capital.is_capital = true;
+            capital.pop = 20;
+        }
+        assert!(ai.garrison_walls_item(&g, 0, cid).is_some());
+
+        // And it is off unless the live bridge turns it on.
+        let mut shipped = ai.clone();
+        shipped.garrison_walls = false;
+        assert_eq!(shipped.garrison_walls_item(&g, 0, cid), None);
     }
 
     #[test]
