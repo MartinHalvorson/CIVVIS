@@ -17122,14 +17122,16 @@ impl AdvancedAi {
         anchor: Pos,
         enemies: &[usize],
     ) -> Pos {
-        // A capture-the-flag arena has exactly one thing worth marching on:
-        // the battle ends the moment either side's unit takes the flag tile,
-        // so every land column aims there — the army that arrives first wins
-        // outright, and the fight happens wherever the two marches meet.
-        // `arena_flag` is `Some` only on that arena shape, so every world
-        // and every other arena walks past this untouched.
+        // On a capture-the-flag arena the enemy's flag is the objective: the
+        // battle ends the moment a unit of ours stands on it, and it sits at
+        // the far end of the field with their army around it, so marching on
+        // it is also marching into the fight. Our own flag is not a target —
+        // capturing it is not a thing that can happen — so the aim is
+        // specifically theirs. `arena_enemy_flag` is `None` on every world
+        // and on every arena whose match did not ask for flags, so
+        // everything else walks past this untouched.
         if domain == ForceDomain::Land {
-            if let Some(flag) = g.arena_flag {
+            if let Some(flag) = g.arena_enemy_flag(pid, anchor) {
                 return flag;
             }
         }

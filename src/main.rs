@@ -827,22 +827,24 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// stream is unchanged by the union. Compatibility re-pin, not an Elo-protocol
 /// change.
 /// The capture-the-flag objective gives both controllers one new march: land
-/// columns aim at `Game::arena_flag` when it is `Some`. The field is `Some`
-/// only on a battlefield whose match asked for the flag — a shape that did
-/// not exist before this pin — and `None` on every world and every arena any
-/// rated game has been played on, so both guards reduce to a `None` test and
-/// the anchor's decision stream is identical by construction. The same shape
-/// as the #1399 re-pin, with the objective as the flag. Pinned over the
-/// merge with main's own re-pins, every one off in both constructors as
-/// their entries above record. Compatibility re-pin, not an Elo-protocol
-/// change.
+/// columns aim at the enemy's flag, via `Game::arena_enemy_flag`. It returns
+/// `None` unless the battle was set up with flags — a shape that exists only
+/// on a Tactics arena that asked for it, and on no world any rated game has
+/// ever been played on — so both guards reduce to a `None` test and the
+/// anchor's decision stream is identical by construction. The same shape as
+/// the #1399 re-pin, with the objective as the flag. Re-pinned when the
+/// objective became a flag per side taken from the enemy, rather than one
+/// neutral flag raced for; the guard's shape did not change, only what it
+/// returns on the arena that has flags at all. Pinned over the merge with
+/// main's own re-pins, every one off in both constructors as their entries
+/// above record. Compatibility re-pin, not an Elo-protocol change.
 /// The garrison-walls arm adds one guarded branch to `pick_item` and its
 /// chooser, behind `BasicAi::garrison_walls`. Both constructors leave the flag
 /// false and only `enable_live_bridge` sets it, so under the anchor
 /// `garrison_walls_item` returns `None` on its first line and the branch can
 /// never take the build. The anchor's build order is byte-identical by
 /// construction. Compatibility re-pin, not an Elo-protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x98a7_8a77_612f_9044;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe70f_ad16_56b1_2580;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

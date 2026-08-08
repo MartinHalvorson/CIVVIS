@@ -9502,18 +9502,19 @@ impl BasicAi {
             if self.garrison_step(g, pid, uid, &enemy_ids) {
                 return true;
             }
-            // On a capture-the-flag arena the flag outranks every march this
-            // unit could make: taking its tile wins the battle outright, so
-            // any unit not spending its turn on a worthwhile attack above is
-            // a unit racing the other side to the objective. `arena_flag` is
-            // `Some` only on that arena shape, so every world walks past.
+            // On a capture-the-flag arena the ENEMY's flag outranks every
+            // march this unit could make: standing on it wins the battle
+            // outright, so any unit not spending its turn on a worthwhile
+            // attack above is a unit going after it. Ours is not a target —
+            // a side cannot capture its own flag — so the aim is theirs.
+            // `arena_enemy_flag` is `None` on every world, so they walk past.
             //
             // Otherwise the homeland gets first claim on this unit. Without
             // it the objective below is always the offensive, because it
             // ranks by distance from the asking unit and a deployed army is
             // by definition standing next to the enemy.
             return match g
-                .arena_flag
+                .arena_enemy_flag(pid, upos)
                 .or_else(|| self.home_defense_objective(g, pid, uid, &enemy_ids))
                 .or_else(|| self.capture_objective_target(g, pid, uid))
                 .or_else(|| self.nearest_enemy_for_unit(g, pid, uid, &enemy_ids))
