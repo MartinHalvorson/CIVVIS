@@ -4,7 +4,8 @@
 `src/skirmish.rs` and `src/bin/battle_bench.rs`. §§1–8 are the original
 record, including the removal; §§9–10 record the operator-directed
 restoration, subsequent search improvements, and where they now run. §11
-records the arena deadline contract.
+records the arena deadline contract, and §12 the capture-the-flag
+objective.
 
 ## 1. What the published state of the art is for this problem
 
@@ -609,13 +610,70 @@ clock; 100 is the default. The command-line form is
 `--tactics-turn-limit <turns>`. A general explicit `--turns` value still
 overrides the Tactics choice for launchers that need a one-off cap.
 
-Domination is the arena's only victory lane: the last army standing wins. If
-both sides still have units after the selected final turn, the battle is a
-true draw. Material, health, score, and seat order may describe the position,
-but none breaks the deadline tie.
+Domination is the arena's only victory *lane*: the last army standing wins.
+(§12 adds a second way for a battle to end, the capture-the-flag objective,
+which answers to its own setup option rather than to a victory checkbox —
+the same shape the Mercy Rule uses.) If both sides still have units after the
+selected final turn, the battle is a true draw. Material, health, score, and
+seat order may describe the position, but none breaks the deadline tie.
 
 A draw is terminal even though it has no winner. Raw saves record
 `victory_type: "draw"` with `winner: null`; observation and status documents
 add `finished: true` and `draw: true`. Match series, league records, the
 browser finale, and the production spectator supervisor all use that terminal
 contract, so a drawn battle advances cleanly to the next scheduled game.
+
+## 12. Capture the flag (2026-08-08)
+
+An arena can be set up around a **flag** instead of around cities. One flag
+is planted on the field, neither side owns it, and the battle is won the
+moment either side moves a unit onto its tile. The setting is
+`Capture the flag` in the Tactics card, `tactics_flag` on `/new`, and
+`--tactics-flag` on the command line.
+
+The flag **replaces** the city objective rather than joining it:
+`TacticsRules::sanitized` forces `cities` to 0 whenever the flag is asked
+for, on every surface at once, so a flag battle is always city-less however
+the cities control was left.
+
+Placement is decided at setup by `Game::battlefield_flag_site` and is not
+random: among the passable tiles it takes the smallest spread in marching
+distance between the two seats, then the shortest march, then position
+order. That gives an even-handed and repeatable site — the same field always
+plants the same flag — and the deployment pass then refuses the flag tile
+itself, so a battle can never open already won.
+
+The win fires in `Game::relocate`, which is the single point every march,
+melee advance, airlift and retreat passes through, so there is no way to
+reach the tile that does not check it. The result is recorded under a
+victory type of its own, `FLAG_VICTORY` (`"flag"`). Like the Mercy Rule it
+is **not** one of `VictoryConditions::NAMES`: `set_winner` admits it exactly
+when `Game::arena_flag` is `Some`, which is true only on an arena whose
+match asked for a flag. Saves carry `arena_flag`, `/state` publishes it, and
+the viewer draws the flag on its tile through `drawFeatureEffects`, which is
+the one hook both the flat and the globe renderer call. The verdict reads
+"Captured the Flag" in the browser and "captured the flag" in the
+supervisor's record.
+
+Both controllers understand the objective — `AdvancedAi::domain_objective`
+returns the flag for land columns, and `BasicAi::military_step` ranks it
+above every other march. Both guards reduce to a `None` test on every world
+and on every arena that existed before the shape did, so the `advanced_v1`
+anchor's decision stream is unchanged by construction; the source-contract
+pin was re-computed as a compatibility re-pin, not an Elo-protocol change.
+Rating profiles append `,objective:flag` **only** when the flag is on, so
+every arena ledger written before this existed still matches its own
+profile.
+
+**Measured, and worth knowing before using this as a combat testbed.** With
+both sides on the same controller, a flag battle is decided at turn 3 to 5
+by whichever side owns the fastest unit, with no fighting at all: 6 of 6
+soak battles ended that way. First-touch on an even field is close to a coin
+flip between identical controllers, which is the honest consequence of the
+rule as specified rather than a defect in it. The mode still discriminates
+between *different* controllers — `advanced` took 4 of 4 seat-mirrored
+battles from `basic`, which pauses for worthwhile exchanges while `advanced`
+commits to the race — so it measures something real, just not attrition. A
+mode where the fighting decides the flag would need the objective held for
+some number of turns rather than merely touched; that variant slots into the
+same `set_winner` seam and is not built.
