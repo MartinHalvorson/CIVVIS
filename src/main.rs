@@ -836,7 +836,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// merge with main's own re-pins, every one off in both constructors as
 /// their entries above record. Compatibility re-pin, not an Elo-protocol
 /// change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4a28_1cdf_3582_d613;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x10b3_ec1b_15ef_67c6;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

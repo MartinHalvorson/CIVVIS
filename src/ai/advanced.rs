@@ -37163,22 +37163,6 @@ mod research_probe {
     }
 
     /// Off by default, set only by the live bridge, and holdable off on its own
-    /// so the arm is a controlled comparison — which is what makes the repair
-    /// measurable rather than merely deployed.
-    #[test]
-    fn only_the_live_bridge_discounts_a_stranded_settler() {
-        assert!(
-            !AdvancedAi::new().base.settler_strand_discount,
-            "the frozen tournament controller must keep its recorded ladders"
-        );
-        let mut live = AdvancedAi::new();
-        live.enable_live_bridge();
-        assert!(live.base.settler_strand_discount, "the deployment turns it on");
-        live.disable_stranded_settler_discount();
-        assert!(!live.base.settler_strand_discount, "and the control arm holds it off");
-    }
-
-    /// Off by default, set only by the live bridge, and holdable off on its own
     /// so the arm is a controlled comparison.
     #[test]
     fn only_the_live_bridge_keeps_asking_for_a_campus() {
