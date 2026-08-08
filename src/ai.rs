@@ -1683,6 +1683,11 @@ pub struct BasicAi {
     /// needs four. Without this floor the rush plans a war it never builds
     /// the army for, which is the failure the census caught.
     pub(crate) rush_military_floor: usize,
+    /// Discount motionless Settlers from the expansion gate's in-flight test.
+    /// The Civilization VI bridge turns this on; native tournament games leave
+    /// it off so their recorded ladders and the frozen `advanced_v1` rating
+    /// anchor keep replaying the historical controller.
+    pub(crate) settler_strand_discount: bool,
     /// Each owned Settler's last seen tile and how many consecutive turns it
     /// has stood on it. See [`BasicAi::stranded_settlers`] for why the
     /// expansion gate needs this and nothing else does.
@@ -2737,6 +2742,7 @@ impl BasicAi {
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
+            settler_strand_discount: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
             journal: Journal::default(),
@@ -2772,6 +2778,7 @@ impl BasicAi {
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
+            settler_strand_discount: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
             journal: Journal::default(),
@@ -4465,7 +4472,7 @@ impl BasicAi {
     /// oscillating between two — and in all three cases it is not going to
     /// found a city on its own.
     fn refresh_settler_idle(&mut self, g: &Game, pid: usize) {
-        if self.settler_idle_turn == Some(g.turn) {
+        if !self.settler_strand_discount || self.settler_idle_turn == Some(g.turn) {
             return;
         }
         self.settler_idle_turn = Some(g.turn);
@@ -4524,6 +4531,9 @@ impl BasicAi {
     /// decider; under `--civvis-decides` this function is the one that runs,
     /// and it never got the repair.
     fn stranded_settlers(&self, g: &Game, pid: usize) -> usize {
+        if !self.settler_strand_discount {
+            return 0;
+        }
         g.player_unit_ids(pid)
             .into_iter()
             .filter(|uid| {
@@ -10907,6 +10917,7 @@ mod tests {
         let settler = game.spawn_unit("settler", 0, parked);
 
         let mut ai = BasicAi::new();
+        ai.settler_strand_discount = true;
         // One motionless turn short of the threshold the settler is still
         // "in flight" and the empire must not order another one.
         // The first sighting only records where the settler is, so the streak
@@ -10959,6 +10970,42 @@ mod tests {
         ai.refresh_settler_idle(&game, 0);
         assert_eq!(ai.stranded_settlers(&game, 0), 0);
         assert!(ai.settler_idle.is_empty(), "dead settlers are pruned");
+    }
+
+    /// The frozen `advanced_v1` anchor and every native tournament game keep
+    /// the historical gate: without the treatment a parked settler is still
+    /// "in flight", so their recorded ladders stay comparable.
+    #[test]
+    fn without_the_treatment_a_parked_settler_still_blocks_expansion() {
+        let mut game = Game::new_full(
+            1, 24, 16, crate::rng::fixture_seed("STRANDED", 91_774), 250, 0, false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let capital = game.cities[&game.player_city_ids(0)[0]].pos;
+        let parked = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            .map(|(position, _)| *position)
+            .find(|position| game.wdist(capital, *position) == 3)
+            .unwrap();
+        game.spawn_unit("settler", 0, parked);
+
+        let mut ai = BasicAi::new();
+        assert!(!ai.settler_strand_discount, "off unless the bridge asks");
+        for turn in 1..=(BasicAi::STRANDED_SETTLER_TURNS * 3) {
+            game.turn = turn;
+            ai.refresh_settler_idle(&game, 0);
+            assert_eq!(ai.stranded_settlers(&game, 0), 0);
+            assert_eq!(ai.walking_settlers(&game, 0, 1), 1, "still in flight at turn {turn}");
+        }
+        assert!(ai.settler_idle.is_empty(), "no bookkeeping when the treatment is off");
     }
 
     #[test]

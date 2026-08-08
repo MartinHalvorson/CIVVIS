@@ -758,8 +758,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the rated profile is identical by construction — the same shape as the
 /// flag re-pins above, with the map script as the flag. Compatibility
 /// re-pin, not an Elo-protocol change.
+/// #1401 discounts a motionless Settler from the expansion gate's in-flight
+/// test, so one stuck settler stops costing every future one. It sits behind
+/// `BasicAi::settler_strand_discount`, which `AdvancedAi::enable_live_bridge`
+/// sets and nothing else does — `BasicAi::new` and `with_weights` both leave
+/// it false, and both new tests assert the off path is unchanged, so the
+/// anchor's decision stream is identical by construction. Compatibility
+/// re-pin, not an Elo-protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe74a_ee1a_6905_345b;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x61b8_2d7d_8678_05b4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

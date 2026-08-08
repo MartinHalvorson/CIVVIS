@@ -2286,6 +2286,13 @@ impl AdvancedAi {
         self.base.home_defense = true;
     }
 
+    /// Stop a Settler that has stopped walking from holding the expansion gate
+    /// shut. Native tournament games leave this disabled so their recorded
+    /// ladders replay the historical controller move for move.
+    pub fn enable_stranded_settler_discount(&mut self) {
+        self.base.settler_strand_discount = true;
+    }
+
     /// Record tactical steps so a unit stepped twice in one turn cannot walk
     /// back onto the tile it just left. Native tournament games leave this
     /// disabled so their recorded ladders replay move-for-move.
@@ -2582,6 +2589,19 @@ impl AdvancedAi {
         self.enable_muster_at_command_radius();
         self.enable_relief_targets_the_siege();
         self.enable_blind_objective_units();
+        // ⚠ THE EXPANSION GATE ASKS `settlers == 0`, so a settler that never
+        // founds anything answers "one is already in flight" for the rest of
+        // the game. Across the 25 live runs of 2026-08-07/08 that reason is
+        // 86% of every refusal to build a settler (1,548 of 1,767), the median
+        // game's longest-lived single settler survives 86 turns of 250 without
+        // founding, and nine runs carried one alive for 82-171 turns having
+        // moved five times or fewer. Those empires finished on a median of 5
+        // cities against a `city_target` of 7.8 with the window open to turn
+        // 198 — neither was binding, this was — and lost all 21 completed
+        // games at a median score 0.46x the leader's, with final score
+        // tracking city count at r = 0.81. The mod's fallback ladder already
+        // made this repair; under `--civvis-decides` it is not the decider.
+        self.enable_stranded_settler_discount();
         // ⚠ Faith buys the soldier; GOLD pays for it every turn forever, and
         // `military_faith_spending` never asks about gold — it gates on the faith
         // bank alone. Measured on run `civvis-20260803T014330Z`: faith military
