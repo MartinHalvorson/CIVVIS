@@ -9055,7 +9055,7 @@ const BUILT_WONDER_PAINTER = {
 
 // Draw one World Wonder at map or badge scale. Returns false only for an
 // unknown (for example, modded) id, so callers retain the generic fallback.
-const WORLD_WONDER_SIZE_SCALE = 1.6;
+const WORLD_WONDER_SIZE_SCALE = 1.92;
 const WORLD_WONDER_OUTLINE_COLOR = "#f4d34f";
 const WORLD_WONDER_OUTLINE_RADIUS = 1.05;
 // A dark keyline immediately outside the gold one. Gold at map scale sits on
@@ -9068,29 +9068,91 @@ const WORLD_WONDER_KEYLINE_COLOR = "#10151d";
 // Thinner than the gold: this is a separating line, not a second outline, and
 // at map scale the whole mark is only a few pixels wide.
 const WORLD_WONDER_KEYLINE_RADIUS = 0.62;
+// The sprite's own coordinate space. It is not a pixel count any more: the
+// raster behind it is this many *device* pixels multiplied by the supersample
+// below, and it is always drawn back at exactly this many user units.
 const WORLD_WONDER_SPRITE_SIZE = 192;
 const WORLD_WONDER_SPRITE_CENTER = WORLD_WONDER_SPRITE_SIZE / 2;
+// ⚠ The wonder art is code-native vector: `BUILT_WONDER_PAINTER` draws paths,
+// so it has no fixed resolution of its own and costs no asset bytes. The only
+// thing that was ever low-resolution here is this cache. The sprite used to be
+// rasterised at 192 px and then blitted with the two-argument `drawImage`,
+// which draws at natural size in *user* space — and the map's user space is
+// scaled by `DPR * cam.scale`. So on any Retina panel, or zoomed in at all, a
+// 192 px raster was magnified to fill more device pixels than it had, and the
+// wonder went soft exactly when it got big enough to look at.
+//
+// Rasterising at the scale the sprite is actually shown at costs nothing to
+// download and nothing to store on disk; it costs canvas memory, which is what
+// the budget below bounds.
+const WORLD_WONDER_MAX_SUPERSAMPLE = 4;
+// About 24 MB of RGBA once full. Sprites are evicted least-recently-used, so
+// this is a ceiling on the cache rather than a limit on how many wonders a map
+// may show.
+const WORLD_WONDER_SPRITE_PIXEL_BUDGET = 6e6;
 const WORLD_WONDER_SPRITE_CACHE = new Map();
+let worldWonderSpritePixels = 0;
+
+// Quantised, so that panning and zooming reuse rasters instead of minting one
+// per frame: half-steps are finer than the eye can follow at these sizes, and
+// rounding up never rasterises below the resolution actually needed.
+function worldWonderSupersample(deviceScale) {
+  if (!Number.isFinite(deviceScale) || deviceScale <= 1) return 1;
+  return Math.min(WORLD_WONDER_MAX_SUPERSAMPLE, Math.ceil(deviceScale * 2) / 2);
+}
+
+// Device pixels per user unit under the context's current transform. Both axes
+// are measured because the camera tilt foreshortens the vertical one, and the
+// sharpness that matters is the larger of the two.
+function contextDeviceScale(context) {
+  if (typeof context.getTransform !== "function") return DPR;
+  const t = context.getTransform();
+  return Math.max(Math.hypot(t.a, t.b), Math.hypot(t.c, t.d));
+}
+
+function cacheWorldWonderSprite(key, canvas) {
+  WORLD_WONDER_SPRITE_CACHE.set(key, canvas);
+  worldWonderSpritePixels += canvas.width * canvas.height;
+  while (worldWonderSpritePixels > WORLD_WONDER_SPRITE_PIXEL_BUDGET &&
+         WORLD_WONDER_SPRITE_CACHE.size > 1) {
+    // Map iterates in insertion order and a hit reinserts, so the front entry
+    // is the least recently used one.
+    const oldest = WORLD_WONDER_SPRITE_CACHE.keys().next().value;
+    const evicted = WORLD_WONDER_SPRITE_CACHE.get(oldest);
+    worldWonderSpritePixels -= evicted.width * evicted.height;
+    WORLD_WONDER_SPRITE_CACHE.delete(oldest);
+  }
+  return canvas;
+}
 
 // Paint the code-native silhouette once into a transparent sprite, expand its
 // alpha by a pixel or two in gold and by a little more in dark, and then put
 // the original art back on top. A canvas shadow would ring every pillar and
 // stair separately; this keeps the mark around the wonder as one small,
 // readable edge — a gold band with a dark keyline holding it off the ground.
-function worldWonderOutlinedSprite(wonder, painter, art, k) {
-  const cacheKey = `${wonder}:${k}`;
+function worldWonderOutlinedSprite(wonder, painter, art, k, supersample = 1) {
+  const cacheKey = `${wonder}:${k}:${supersample}`;
   const cached = WORLD_WONDER_SPRITE_CACHE.get(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    // Reinsert so the eviction order below stays least-recently-used.
+    WORLD_WONDER_SPRITE_CACHE.delete(cacheKey);
+    WORLD_WONDER_SPRITE_CACHE.set(cacheKey, cached);
+    return cached;
+  }
 
+  const raster = Math.max(1, Math.round(WORLD_WONDER_SPRITE_SIZE * supersample));
   const makeCanvas = () => {
     const surface = document.createElement("canvas");
-    surface.width = WORLD_WONDER_SPRITE_SIZE;
-    surface.height = WORLD_WONDER_SPRITE_SIZE;
+    surface.width = raster;
+    surface.height = raster;
     return surface;
   };
   const artCanvas = makeCanvas();
   const artContext = artCanvas.getContext("2d");
-  artContext.setTransform(1, 0, 0, 1, 0, 0);
+  // The painters address the sprite in its own 192-unit space; the supersample
+  // lives entirely in this transform, so no painter and none of the geometry
+  // below has to know the raster got bigger.
+  artContext.setTransform(supersample, 0, 0, supersample, 0, 0);
   artContext.clearRect(0, 0, WORLD_WONDER_SPRITE_SIZE, WORLD_WONDER_SPRITE_SIZE);
   artContext.globalAlpha = 1;
   artContext.globalCompositeOperation = "source-over";
@@ -9120,7 +9182,7 @@ function worldWonderOutlinedSprite(wonder, painter, art, k) {
     maskContext.drawImage(artCanvas, 0, 0);
     maskContext.globalCompositeOperation = "source-in";
     maskContext.fillStyle = color;
-    maskContext.fillRect(0, 0, WORLD_WONDER_SPRITE_SIZE, WORLD_WONDER_SPRITE_SIZE);
+    maskContext.fillRect(0, 0, raster, raster);
     maskContext.globalCompositeOperation = "source-over";
     return maskCanvas;
   };
@@ -9135,20 +9197,23 @@ function worldWonderOutlinedSprite(wonder, painter, art, k) {
   // the one before it and only its own width is left showing — dark, then
   // gold, then the art itself on top.
   const ring = (mask, distance) => {
+    // The masks are full-size rasters composited one-to-one, so the offsets are
+    // in device pixels: the ring has to widen with the supersample, or a sprite
+    // rasterised at 3x would wear an outline a third of its intended width.
+    const offset = distance * supersample;
     // Enough stamps that neighbouring offsets overlap rather than scallop the
     // edge; the wider ring needs more of them than the inner one.
-    const steps = Math.max(12, Math.ceil(distance * 8));
+    const steps = Math.max(12, Math.ceil(offset * 8));
     for (let i = 0; i < steps; i++) {
       const angle = i * Math.PI * 2 / steps;
-      outlinedContext.drawImage(mask, Math.cos(angle) * distance,
-                                Math.sin(angle) * distance);
+      outlinedContext.drawImage(mask, Math.cos(angle) * offset,
+                                Math.sin(angle) * offset);
     }
   };
   ring(silhouette(WORLD_WONDER_KEYLINE_COLOR), keyline);
   ring(silhouette(WORLD_WONDER_OUTLINE_COLOR), radius);
   outlinedContext.drawImage(artCanvas, 0, 0);
-  WORLD_WONDER_SPRITE_CACHE.set(cacheKey, outlinedCanvas);
-  return outlinedCanvas;
+  return cacheWorldWonderSprite(cacheKey, outlinedCanvas);
 }
 
 function drawWorldWonder(wonder, x, y, scale = 1) {
@@ -9178,10 +9243,16 @@ function drawWorldWonder(wonder, x, y, scale = 1) {
   mainContext.fill();
   mainContext.restore();
 
-  const sprite = worldWonderOutlinedSprite(wonder, painter, art, k);
+  const supersample = worldWonderSupersample(contextDeviceScale(mainContext));
+  const sprite = worldWonderOutlinedSprite(wonder, painter, art, k, supersample);
   mainContext.save();
+  // The destination size is stated, so the sprite keeps its footprint in user
+  // units no matter how many device pixels it was rasterised into. Omitting it
+  // is what made the sprite draw at its natural pixel size and go soft under a
+  // scaled transform.
   mainContext.drawImage(sprite, x - WORLD_WONDER_SPRITE_CENTER,
-                         y - WORLD_WONDER_SPRITE_CENTER);
+                         y - WORLD_WONDER_SPRITE_CENTER,
+                         WORLD_WONDER_SPRITE_SIZE, WORLD_WONDER_SPRITE_SIZE);
   mainContext.restore();
   return true;
 }

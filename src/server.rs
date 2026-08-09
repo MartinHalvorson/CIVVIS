@@ -11672,6 +11672,98 @@ mod tests {
         );
     }
 
+    /// The built-wonder art is code-native vector, so it has no resolution of
+    /// its own and costs no asset bytes; the only fixed thing is the sprite the
+    /// outline pass rasterises into. Two properties have to hold together, and
+    /// each breaks the other if changed alone: the raster must match the scale
+    /// the sprite is drawn at, and the art must still fit the box.
+    #[test]
+    fn a_world_wonder_is_rasterised_at_the_scale_it_is_shown_and_still_fits_its_box() {
+        let sprite = EMBEDDED_INDEX
+            .split("function worldWonderOutlinedSprite")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawWorldWonder").next())
+            .expect("world wonder sprite builder");
+        // Keyed by the supersample, so a sprite built for one zoom is never
+        // reused at another, and the raster grows with it.
+        assert!(sprite.contains("const cacheKey = `${wonder}:${k}:${supersample}`;"));
+        assert!(sprite
+            .contains("Math.max(1, Math.round(WORLD_WONDER_SPRITE_SIZE * supersample))"));
+        assert!(sprite.contains("artContext.setTransform(supersample, 0, 0, supersample, 0, 0);"));
+        // The rings are composited in device pixels, so the outline has to
+        // widen with the raster or it thins out as the sprite sharpens.
+        assert!(sprite.contains("const offset = distance * supersample;"));
+
+        let draw = EMBEDDED_INDEX
+            .split("function drawWorldWonder(")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawWonder(").next())
+            .expect("world wonder draw");
+        assert!(draw.contains("worldWonderSupersample(contextDeviceScale(mainContext))"));
+        // ⚠ Stating the destination size IS the repair. The two-argument
+        // `drawImage` draws at the bitmap's natural size in user space, and the
+        // map's user space is scaled by `DPR * cam.scale`, so the sprite was
+        // magnified past its own resolution on every Retina panel.
+        assert!(draw.contains(
+            "mainContext.drawImage(sprite, x - WORLD_WONDER_SPRITE_CENTER,\n\
+             \x20                        y - WORLD_WONDER_SPRITE_CENTER,\n\
+             \x20                        WORLD_WONDER_SPRITE_SIZE, WORLD_WONDER_SPRITE_SIZE);"
+        ));
+        // Rasterising bigger costs canvas memory, so the cache is bounded by
+        // total pixels rather than growing per wonder per zoom step.
+        assert!(EMBEDDED_INDEX
+            .contains("worldWonderSpritePixels > WORLD_WONDER_SPRITE_PIXEL_BUDGET"));
+        assert!(EMBEDDED_INDEX.contains("WORLD_WONDER_SPRITE_CACHE.delete(oldest);"));
+
+        // Enlarging the icons spends the margin between the painted art and the
+        // edge of that box, and art running over the edge is cropped in
+        // silence. Recompute the margin from the shipped constants and the
+        // widest reach any painter actually uses, so the next size increase
+        // fails here instead of clipping a wonder in the field.
+        let literal = |name: &str| -> f64 {
+            EMBEDDED_INDEX
+                .split(&format!("\nconst {name} = "))
+                .nth(1)
+                .and_then(|tail| tail.split(';').next())
+                .and_then(|value| value.trim().parse::<f64>().ok())
+                .unwrap_or_else(|| panic!("{name} is missing or no longer a plain literal"))
+        };
+        // `k` is built from the hex size, so this has to read the same one.
+        assert!(EMBEDDED_INDEX.contains("const S = 36, SQ3 = Math.sqrt(3);"));
+        let size_scale = literal("WORLD_WONDER_SIZE_SCALE");
+        let half_box = literal("WORLD_WONDER_SPRITE_SIZE") / 2.0;
+        let gold = (literal("WORLD_WONDER_OUTLINE_RADIUS") * size_scale).max(0.8);
+        let edge = gold + (literal("WORLD_WONDER_KEYLINE_RADIUS") * size_scale).max(0.5);
+
+        let painters = EMBEDDED_INDEX
+            .split("const BUILT_WONDER_PAINTER = {")
+            .nth(1)
+            .and_then(|tail| tail.split("\n};").next())
+            .expect("built wonder painter table");
+        let mut reach: f64 = 0.0;
+        for (at, _) in painters.match_indices(" * k") {
+            let digits: String = painters[..at]
+                .chars()
+                .rev()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            if let Ok(value) = digits.chars().rev().collect::<String>().parse::<f64>() {
+                reach = reach.max(value);
+            }
+        }
+        assert!(reach > 0.0, "no painter reach found; the scan needs updating");
+
+        // Map scale is the largest any caller asks for; the badges are smaller.
+        let k = (36.0 / 31.0) * 0.72 * size_scale;
+        // The painters are anchored six k below the sprite's centre.
+        let extent = (6.0 + reach) * k + edge;
+        assert!(
+            extent < half_box,
+            "world wonder art reaches {extent:.1} of the {half_box:.0} it has: raise \
+             WORLD_WONDER_SPRITE_SIZE before enlarging the icons again"
+        );
+    }
+
     /// A selected unit's movement is drawn as the engine's own affordances:
     /// the perimeter of everywhere it can end this turn, and a per-edge arrow
     /// wherever `reach_steps` says the remaining movement crosses. The client
