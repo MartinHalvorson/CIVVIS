@@ -11956,6 +11956,107 @@ mod tests {
         );
     }
 
+    /// A finished, undamaged building stands the middle three quarters of its
+    /// district token. It used to be a stub on the lower half — under a third
+    /// of the token — which read as a progress meter printed on a counter
+    /// rather than as a building standing on the ground.
+    ///
+    /// The span is arithmetic across three constants, so it is recomputed here
+    /// rather than eyeballed: a bar that grows past the token's rim collides
+    /// with the outline, and one that drifts off centre stops being "the
+    /// middle" of anything.
+    #[test]
+    fn a_finished_district_building_stands_the_middle_three_quarters_of_its_token() {
+        // Read from the same geometry the renderer uses, and pinned as the
+        // expressions rather than as numbers so the relationship between them
+        // cannot be quietly replaced by three independent literals.
+        assert!(EMBEDDED_INDEX.contains("const S = 36, SQ3 = Math.sqrt(3);"));
+        assert!(EMBEDDED_INDEX.contains("const DISTRICT_TOKEN_HALF = S * 0.48;"));
+        assert!(EMBEDDED_INDEX.contains("const DISTRICT_BAR_SPAN = 0.75;"));
+        assert!(EMBEDDED_INDEX
+            .contains("const DISTRICT_BAR_HEIGHT = DISTRICT_TOKEN_HALF * 2 * DISTRICT_BAR_SPAN;"));
+        assert!(EMBEDDED_INDEX.contains("const DISTRICT_BAR_BASELINE = DISTRICT_BAR_HEIGHT / 2;"));
+        assert!(EMBEDDED_INDEX.contains("const DISTRICT_BAR_SEATS = [-7.2, 0, 7.2];"));
+        assert!(EMBEDDED_INDEX.contains("const DISTRICT_BAR_WIDTH = 4.6;"));
+
+        let half: f64 = 36.0 * 0.48; // the token's half-height, 17.28
+        let span: f64 = 0.75;
+        let height = half * 2.0 * span;
+        let baseline = height / 2.0;
+        let (top, bottom) = (baseline - height, baseline);
+
+        // The middle three quarters: an eighth of the token clear at each end,
+        // and the same eighth at both, which is what makes it the middle.
+        let clear_above = top + half;
+        let clear_below = half - bottom;
+        assert!(
+            (clear_above - clear_below).abs() < 1e-9,
+            "the bar is off centre: {clear_above:.2} clear above, {clear_below:.2} below"
+        );
+        assert!(
+            (height / (half * 2.0) - span).abs() < 1e-9,
+            "a finished bar stands {:.1}% of the token, not {:.0}%",
+            100.0 * height / (half * 2.0),
+            100.0 * span
+        );
+        // It has to have actually grown. The stub it replaces was 11 tall.
+        assert!(height > 11.0 * 2.0, "the bar is {height:.2}, barely taller than the old stub");
+
+        // And it has to stay inside the counter it stands on, clear of both the
+        // 1.6px outline and the corner rounding, which begins at `half * .16`
+        // in from each corner.
+        let reach = 7.2 + 4.6 / 2.0;
+        let radius = half * 0.16;
+        assert!(bottom < half - 1.6 && -top < half - 1.6, "the bar crosses the token's outline");
+        assert!(
+            reach < half - radius && bottom < half - radius,
+            "the bar's corner at ({reach:.2}, {bottom:.2}) is inside the token's rounding"
+        );
+
+        // A pillaged building falls to a third. That was 3.67px — a difference
+        // nobody could see — and the whole point of the fall is that it reads
+        // as damage, so the taller bar has to make the stub legible too.
+        assert!(height / 3.0 > 8.0, "a pillaged stub is only {:.2} tall", height / 3.0);
+
+        // The two glyph families that can hold a building — the Dam and the
+        // Preserve — draw straight through the band the bars now occupy, in the
+        // same ink. At a third of the token the bars passed under a glyph; at
+        // three quarters a centre bar splits the Preserve's fir in two. So a
+        // glyph keeps the middle lane and the bars fill the outer seats first.
+        //
+        // The Preserve's fir, drawn about `gy = y - 7`: crown at gy - 9.6,
+        // trunk foot at gy + 8.9.
+        let (glyph_top, glyph_bottom) = (-7.0 - 9.6, -7.0 + 8.9);
+        assert!(
+            glyph_bottom > top && glyph_top < bottom,
+            "the glyph ({glyph_top:.2}..{glyph_bottom:.2}) no longer meets the bars \
+             ({top:.2}..{bottom:.2}); the seat order below is dead weight"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("const DISTRICT_BAR_SEATS_BESIDE_GLYPH = [-7.2, 7.2, 0];"),
+            "the bars no longer step aside for a glyph"
+        );
+        assert!(EMBEDDED_INDEX.contains("function districtDrawsGlyph(district)"));
+        assert!(EMBEDDED_INDEX
+            .contains("function drawDistrictBars(x, y, buildings, ink, besideGlyph = false)"));
+        assert!(
+            EMBEDDED_INDEX
+                .contains("drawDistrictBars(x, y, buildings, ink, districtDrawsGlyph(t.district));"),
+            "the bars are not told whether a glyph holds the middle"
+        );
+        // The centre seat comes last in that order, so it is only reached by a
+        // third building — which no glyph family has. Every glyph district's
+        // buildings therefore stand clear of it.
+        let beside = [-7.2, 7.2, 0.0];
+        assert_eq!(beside[2], 0.0, "the glyph's own lane must be the last seat filled");
+        for seats in [1usize, 2] {
+            assert!(
+                beside[..seats].iter().all(|seat: &f64| seat.abs() > 4.6 / 2.0),
+                "a building would stand in the glyph's lane at {seats} buildings"
+            );
+        }
+    }
+
     /// A selected unit's movement is drawn as the engine's own affordances:
     /// the perimeter of everywhere it can end this turn, and a per-edge arrow
     /// wherever `reach_steps` says the remaining movement crosses. The client
