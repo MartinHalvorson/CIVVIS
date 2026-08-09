@@ -48,6 +48,7 @@ pub mod simultaneous;
 pub mod skirmish;
 pub mod sphere;
 pub mod strategic;
+pub mod trafalgar;
 pub mod valuenet;
 pub mod mods;
 pub mod pedia;

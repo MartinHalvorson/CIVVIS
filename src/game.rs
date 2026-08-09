@@ -17917,8 +17917,10 @@ impl Game {
             required_victory_types,
             tactics,
         } = options;
-        // Only an arena is handed an economy, and only a sane one.
-        let tactics = tactics.sanitized();
+        // Only an arena is handed an economy, and only a sane one. A scenario
+        // is handed the one its battle was fought under, whatever was asked
+        // for — see `TacticsRules::for_script`.
+        let tactics = tactics.for_script(map_script);
         // An arena keeps a battle's clock, not a civilization's. Five hundred
         // turns is the length of a history; a battle on a ten-hex field should
         // end much sooner. The selected deadline is a backstop rather than the
@@ -17947,11 +17949,18 @@ impl Game {
                 .filter(|record| record.available)
                 .map(|record| Name::new(&record.civ)),
         );
-        let seated = if randomize_civs {
-            let mut roster_rng = Rng::new(seed ^ 0x4349_5656_4953_4349);
-            seat_civs_randomized(num_players, &civs, &known_civs, leader_pool, &mut roster_rng)
-        } else {
-            seat_civs(num_players, &civs, &known_civs, leader_pool)
+        // A scenario names both sides. Its seats are the two fleets rather
+        // than two civilizations picked from a pool, and seat 0 is the side
+        // that historically moved first, so neither the lobby's roster nor a
+        // randomizer gets a say — a Trafalgar fought by Nubia and Scythia
+        // would be a map with a misleading name on it.
+        let seated = match map_script.scenario_civs().filter(|_| num_players == 2) {
+            Some(sides) => sides.iter().map(|civ| (*civ).to_string()).collect(),
+            None if randomize_civs => {
+                let mut roster_rng = Rng::new(seed ^ 0x4349_5656_4953_4349);
+                seat_civs_randomized(num_players, &civs, &known_civs, leader_pool, &mut roster_rng)
+            }
+            None => seat_civs(num_players, &civs, &known_civs, leader_pool),
         };
         if seated
             .iter()
@@ -18115,9 +18124,11 @@ impl Game {
         // its shipped StartBias rows. Reorder the major sites to honour them
         // before any seat is handed one; True Start Earth is already ordered
         // by the selected roster’s exact coordinates and must not be moved by
-        // a generic bias afterward.
+        // a generic bias afterward. Neither is a scenario, for the same
+        // reason twice over: its seats are the two commanders' own, and a
+        // fleet has no terrain preference to bias toward anyway.
         let mut spawns = spawns;
-        if map_script != MapScript::TrueStartEarth {
+        if map_script != MapScript::TrueStartEarth && !map_script.is_scenario() {
             mapgen::assign_starts_by_bias(
                 &g.rules,
                 &g.map,
@@ -18153,7 +18164,13 @@ impl Game {
                 if tactics.flag {
                     g.arena_flags.insert(i, *pos);
                 }
-                g.deploy_battlefield_army(i, *pos);
+                // A scenario deals each side its own historical order of
+                // battle instead, on the ground that side actually held.
+                if map_script.is_scenario() {
+                    g.deploy_trafalgar_fleet(i);
+                } else {
+                    g.deploy_battlefield_army(i, *pos);
+                }
                 g.reveal(i, *pos, 3);
                 continue;
             }
@@ -18495,6 +18512,36 @@ impl Game {
             // rather than a substitution, and stays one here.
             let kind = self.player_unit_replacement(pid, Name::new(kind));
             self.spawn_unit(kind.as_str(), pid, pos);
+        }
+    }
+
+    /// Set out one side's fleet for the Trafalgar scenario.
+    ///
+    /// Nothing is searched for and nothing is scaled: every ship goes on the
+    /// tile [`crate::trafalgar`] records her on, because the position is the
+    /// thing the scenario is claiming and a deployment that drifted to the
+    /// nearest free water would quietly stop being Trafalgar. The tables are
+    /// held to that promise by their own tests — sixty distinct tiles, all of
+    /// them open water on the chart — so a tile that is somehow occupied here
+    /// is a bug in the caller rather than a case to place around, and the ship
+    /// is left off rather than moved somewhere she was not.
+    ///
+    /// No unique-unit substitution: `TacticsRules::for_script` switches uniques
+    /// off for every scenario, and a Sea Dog in Nelson's line would be a claim
+    /// about England that this battle is not making.
+    fn deploy_trafalgar_fleet(&mut self, pid: usize) {
+        for (offset, ship) in crate::trafalgar::fleet(pid) {
+            let pos = crate::hex::offset_to_axial(offset.0, offset.1);
+            debug_assert!(
+                self.map.get(pos).is_some_and(|tile| self.rules.is_water(tile)),
+                "{ship} was ordered onto ({}, {}), which is not water",
+                offset.0,
+                offset.1
+            );
+            if self.map.get(pos).is_none() || !self.units_at(pos).is_empty() {
+                continue;
+            }
+            self.spawn_unit(crate::trafalgar::SHIP_OF_THE_LINE, pid, pos);
         }
     }
 
