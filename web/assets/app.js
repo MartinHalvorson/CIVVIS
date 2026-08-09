@@ -8444,21 +8444,42 @@ function districtBuildingsByTile() {
   return byTile;
 }
 
-// A district's completed buildings are up to three bars standing on the lower
-// half of the token — a tiny bar chart of how far the district has grown.
-// Slots fill left to right in build order (cheapest first, matching the sort
-// in `districtBuildingsByTile`). A pillaged building's bar falls to a third
-// of its height, and the full bar's ghost outline stays standing over the
-// stub so the fall reads as damage rather than youth.
+// A district's completed buildings are up to three bars standing on the token
+// — a tiny bar chart of how far the district has grown. Slots fill left to
+// right in build order (cheapest first, matching the sort in
+// `districtBuildingsByTile`). A pillaged building's bar falls to a third of
+// its height, and the full bar's ghost outline stays standing over the stub so
+// the fall reads as damage rather than youth.
+//
+// A finished, undamaged building stands the **middle three quarters of the
+// token**, leaving an eighth clear above and below. They used to be stubs on
+// the lower half — under a third of the token's height — which read as a
+// progress meter printed on a counter rather than as anything standing on the
+// ground. At three quarters they are buildings: tall enough that the shape
+// carries at survey zoom, and tall enough that a pillaged bar's fall to a
+// third is a visible collapse rather than a two-pixel difference.
+//
+// The span is stated as a fraction of the token so the two ends cannot drift
+// apart: the baseline is half the bar's own height, which is what centres it.
 const DISTRICT_BAR_SEATS = [-7.2, 0, 7.2];
-const DISTRICT_BAR_WIDTH = 4.6, DISTRICT_BAR_HEIGHT = 11;
-const DISTRICT_BAR_BASELINE = 11.5;
+// A district that also draws a glyph fills the outer seats first, so the glyph
+// keeps the middle lane to itself. At a third of the token the bars passed
+// under a glyph; at three quarters a centre bar would stand straight through
+// the Preserve's fir and split it in two. Nothing is given up by moving over:
+// the only glyph families that can hold a building at all are the Dam (one)
+// and the Preserve (two), so the centre seat is never reached — and if a
+// ruleset ever adds a third, it lands there rather than nowhere.
+const DISTRICT_BAR_SEATS_BESIDE_GLYPH = [-7.2, 7.2, 0];
+const DISTRICT_BAR_SPAN = 0.75;
+const DISTRICT_BAR_WIDTH = 4.6;
+const DISTRICT_BAR_HEIGHT = DISTRICT_TOKEN_HALF * 2 * DISTRICT_BAR_SPAN;
+const DISTRICT_BAR_BASELINE = DISTRICT_BAR_HEIGHT / 2;
 
-function drawDistrictBars(x, y, buildings, ink) {
-  for (const [index, building] of
-       buildings.slice(0, DISTRICT_BAR_SEATS.length).entries()) {
+function drawDistrictBars(x, y, buildings, ink, besideGlyph = false) {
+  const seats = besideGlyph ? DISTRICT_BAR_SEATS_BESIDE_GLYPH : DISTRICT_BAR_SEATS;
+  for (const [index, building] of buildings.slice(0, seats.length).entries()) {
     const entry = typeof building === "string" ? {id:building} : building;
-    const left = x + DISTRICT_BAR_SEATS[index] - DISTRICT_BAR_WIDTH / 2;
+    const left = x + seats[index] - DISTRICT_BAR_WIDTH / 2;
     const base = y + DISTRICT_BAR_BASELINE;
     const height = entry.pillaged ? DISTRICT_BAR_HEIGHT / 3 : DISTRICT_BAR_HEIGHT;
     if (entry.pillaged) {
@@ -8479,9 +8500,17 @@ function drawDistrictBars(x, y, buildings, ink) {
 // water-blue token alone doesn't say aqueduct, canal, dam, or kept woodland
 // the way plain color says science or industry. The glyph sits on the upper
 // half of the token, in the same dark ink as the building bars.
+//
+// Which families draw one is asked in one place, because the bars have to know
+// the same answer: a glyph keeps the token's middle lane and the bars stand
+// beside it. See DISTRICT_BAR_SEATS_BESIDE_GLYPH.
+function districtDrawsGlyph(district) {
+  const fam = districtIconFamily(district);
+  return fam === "water" || fam === "preserve";
+}
 function drawDistrictGlyph(t, x, y, ink) {
+  if (!districtDrawsGlyph(t.district)) return;
   const fam = districtIconFamily(t.district);
-  if (fam !== "water" && fam !== "preserve") return;
   const gy = y - 7;
   cx.save();
   cx.strokeStyle = ink; cx.fillStyle = ink;
@@ -8550,7 +8579,7 @@ function drawDistrict(t, x, y, buildings = []) {
   districtTokenPath(x, y, hx); cx.fill();
   cx.strokeStyle = "rgba(13,18,24,.78)"; cx.lineWidth = 1.6; cx.stroke();
   drawDistrictGlyph(t, x, y, ink);
-  drawDistrictBars(x, y, buildings, ink);
+  drawDistrictBars(x, y, buildings, ink, districtDrawsGlyph(t.district));
   cx.restore();
   if (t.pillaged) {
     cx.strokeStyle = "#d8443a"; cx.lineWidth = 2.4; cx.lineCap = "round";
