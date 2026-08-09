@@ -1328,8 +1328,48 @@
     content: ""; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px;
     margin: -2px 0 0 -2px; border-radius: 50%; background: #ffffff38;
   }
+  /* Its neighbour is the same kind of thing: an instrument rather than a
+     label. The button is a small globe, and while the world is turning its
+     meridian sweeps at the world's own pace — one pass every twelve seconds,
+     the period the viewer is watching — so the control says what the map is
+     doing without being read. A held world holds its meridian still, and the
+     gold below says the same thing again for anyone who cannot see motion. */
+  #spin { position: relative; cursor: pointer; }
+  #spin-globe {
+    position: absolute; left: 50%; top: 50%; width: 19px; height: 19px;
+    margin: -9.5px 0 0 -9.5px; border-radius: 50%;
+    border: 1px solid currentColor; background: #04100c8c;
+  }
+  /* The equator is the world's own line and stays put. The meridian is what
+     the turn moves: edge-on twice a turn, full width twice a turn, which is
+     exactly what a great circle through the poles does as it comes round. */
+  #spin-globe::before {
+    content: ""; position: absolute; left: -1px; right: -1px; top: 50%;
+    margin-top: -.5px; border-top: 1px solid currentColor; opacity: .75;
+  }
+  /* At rest the meridian stands part way round, which is what makes the
+     button a globe rather than a circle with a line through it. */
+  #spin-globe::after {
+    content: ""; position: absolute; inset: -1px; border-radius: 50%;
+    border: 1px solid currentColor; opacity: .75; transform: scaleX(.45);
+  }
+  #spin[aria-pressed="true"]:not(:disabled) #spin-globe::after {
+    animation: spinMeridian 12s ease-in-out infinite;
+  }
+  @keyframes spinMeridian {
+    0%, 100% { transform: scaleX(1); }
+    25%, 75% { transform: scaleX(.04); }
+    50% { transform: scaleX(1); }
+  }
+  /* A world with no axis to turn about is not a world that has been stopped,
+     so a disabled control drops the lit state as well as the motion. */
+  #spin:disabled { cursor: default; opacity: .5; }
+  @media (prefers-reduced-motion: reduce) {
+    #spin #spin-globe::after { animation: none; }
+  }
   #paneltoggle, #collapsepause { background: transparent; }
-  #zoomctl #mapareaset[aria-pressed="true"] {
+  #zoomctl #mapareaset[aria-pressed="true"],
+  #zoomctl #spin[aria-pressed="true"]:not(:disabled) {
     color: var(--gold-bright); background: #4b422699;
   }
   /* Setting the map area: four edges over the world with the ground outside
@@ -3831,15 +3871,19 @@
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="dossier-windows" aria-label="Open player dossiers"></div>
   <div id="map-controls-dock">
-    <!-- Primary row: collapse the deck, set the map area, face north, zoom in,
-         zoom out, and dismiss. Planet navigation appears in the second row
-         below when the globe has a route to offer. -->
+    <!-- Primary row: collapse the deck, set the map area, face north, let the
+         world turn, zoom in, zoom out, and dismiss. The spin follows the
+         compass because the two are one pair: which way the world is facing,
+         and whether it is still facing that way a moment from now. Planet
+         navigation appears in the second row below when the globe has a route
+         to offer. -->
     <div id="zoomctl">
       <div id="zoomctl-main">
         <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
         <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
         <button id="mapareaset" type="button" aria-pressed="false" title="Set map area — drag the four edges" aria-label="Set map area">⛶</button>
         <button id="compass" type="button" title="Face north" aria-label="Face north"><span id="compass-needle"></span></button>
+        <button id="spin" type="button" aria-pressed="true" title="Stop the world turning" aria-label="Stop the world turning"><span id="spin-globe"></span></button>
         <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
         <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
         <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display Settings" title="Hide map controls · restore in Display Settings">✕</button>

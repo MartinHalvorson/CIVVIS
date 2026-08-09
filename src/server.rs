@@ -14878,8 +14878,11 @@ mod tests {
 
     /// The primary map controls read left to right in the order a viewer
     /// reaches for them: collapse the command deck, set the map area, face
-    /// north, zoom in, zoom out, and dismiss. When relevant, the sky route is
-    /// a second row beneath that primary row.
+    /// north, let the world turn, zoom in, zoom out, and dismiss. When
+    /// relevant, the sky route is a second row beneath that primary row.
+    /// The spin sits with the compass rather than with the zoom because the
+    /// two answer one question between them: which way the world is facing,
+    /// and whether it will still be facing that way in a moment.
     /// Dismissal is last in that primary row because it is the only one that
     /// removes the bar, and it hides itself while the deck is collapsed —
     /// Display Settings is the only way back and it lives inside the deck.
@@ -14898,6 +14901,7 @@ mod tests {
             "id=\"paneltoggle\"",
             "id=\"mapareaset\"",
             "id=\"compass\"",
+            "id=\"spin\"",
             "id=\"zin\"",
             "id=\"zout\"",
             "data-overlay-close=\"controls\"",
@@ -14919,6 +14923,71 @@ mod tests {
             ),
             "the dismiss control must go while the deck that restores it is collapsed"
         );
+    }
+
+    /// A world nobody is steering turns on its own, and it is doing so when the
+    /// page opens. Three things about that turn are the whole of it and none of
+    /// them may drift:
+    ///
+    /// It goes about the world's poles rather than about anything the camera
+    /// is doing, so a globe turns the way a planet does from wherever it is
+    /// being watched, and a flat chart — whose columns run round that same
+    /// axis — gets the identical turn as a pan along it. Both send the ground
+    /// west to east, which is left to right under a north-up camera, so both
+    /// carry the camera the other way: the globe by a negative angle about the
+    /// pole, the chart by subtracting from `cam.x`.
+    ///
+    /// A full turn takes twelve seconds, and the little globe on the button
+    /// keeps that same period, so the control is a reading of the map rather
+    /// than a label on it.
+    ///
+    /// A hand on the world stops it, for good rather than for the moment. All
+    /// three ways of taking hold — the pointer drag, the two-finger pinch and
+    /// the one-finger pan — stop it as they take the camera.
+    #[test]
+    fn the_world_turns_about_its_own_poles_until_a_hand_stops_it() {
+        let js = EMBEDDED_APP_JS;
+        assert!(js.contains("const WORLD_SPIN_PERIOD_MS = 12000;"));
+        // Default on: only an explicit "0" from a previous visit holds it.
+        assert!(js.contains(r#"let WORLD_SPIN = localStorage.getItem(WORLD_SPIN_STORAGE_KEY) !== "0";"#));
+        // The poles, not the camera's up and not the screen's sideways.
+        assert!(js.contains("const WORLD_POLE = [0, 0, 1];"));
+        assert!(js.contains(
+            "applyPlanetBasis(planetSpin(basis, WORLD_POLE, \
+             -2 * Math.PI * dt / WORLD_SPIN_PERIOD_MS));"
+        ));
+        assert!(js.contains("cam.x -= WW() * dt / WORLD_SPIN_PERIOD_MS;"));
+        // Nothing else may be holding the camera while it turns.
+        for guard in [
+            "!dragState && !touchGesture && !cameraFlight && !cameraZoom",
+            "!cameraFollowManual",
+        ] {
+            assert!(
+                js.split_once("function spinRunning()")
+                    .expect("the spin's own running test")
+                    .1
+                    .split_once('}')
+                    .expect("the end of spinRunning")
+                    .0
+                    .contains(guard),
+                "a turning world must yield to whatever else is aiming the camera: {guard}"
+            );
+        }
+        // The watched-empire reframe arrives ten times a second. Left to
+        // argue with the turn it would win every observation, so it waits.
+        assert!(js.contains("!dragState && !touchGesture && !spinRunning())"));
+        assert_eq!(
+            js.matches("takeCameraControl(); stopWorldSpin();").count(),
+            3,
+            "the pointer drag, the pinch and the one-finger pan each stop the \
+             turn as they take the camera"
+        );
+        // The button is the instrument: a globe whose meridian keeps the
+        // world's own period, lit only while there is a world turning.
+        assert!(EMBEDDED_INDEX.contains(r#"<button id="spin" type="button" aria-pressed="true""#));
+        assert!(EMBEDDED_INDEX.contains("animation: spinMeridian 12s ease-in-out infinite;"));
+        assert!(EMBEDDED_INDEX
+            .contains(r#"#zoomctl #spin[aria-pressed="true"]:not(:disabled) {"#));
     }
 
     /// Gearing the wheel made fourteen orders of magnitude *reachable*; it did
