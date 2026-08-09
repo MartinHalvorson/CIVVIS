@@ -1974,9 +1974,14 @@ fn battlefield_major_starts(wm: &WorldMap, pool: &BTreeSet<Pos>) -> Option<Vec<P
 ///
 /// A globe has no meaningful north-west corner or long axis, so the map's
 /// promise is expressed by its surface distance instead: choose the pair of
-/// usable plots that are farthest apart on the sphere. The land generator
-/// gives this script one main continent, and the caller narrows the pool to
-/// it before asking here, so a tiny offshore island cannot steal a capital.
+/// usable plots that are farthest apart on the sphere. On a world that is
+/// four-fifths ground that pair is as near antipodal as the candidate plots
+/// allow — one side opens wherever it stands and the other opens on the far
+/// face of the planet, half a world of marching away.
+///
+/// The pool this is handed is one connected landmass, narrowed by the caller,
+/// which is what keeps the far face reachable on foot and keeps a stray
+/// offshore rock from stealing a capital.
 fn tactics_planet_major_starts(wm: &WorldMap, pool: &BTreeSet<Pos>) -> Option<Vec<Pos>> {
     let mut best: Option<(i32, Pos, Pos)> = None;
     for (index, first) in pool.iter().enumerate() {
@@ -3995,20 +4000,34 @@ pub fn generate_with_script_and_leader_starts(
         .then(|| tennis_ball_major_starts(&wm, &major_pool))
         .flatten();
     // A two-seat Tactics planet's layout is its type's promise too: the sides
-    // open at the farthest usable plots on the main landmass.
-    let planet_pool = components
-        .first()
-        .map(|component| major_pool.intersection(component).copied().collect::<BTreeSet<_>>())
-        .filter(|pool| pool.len() >= 2);
-    let planet_ends = (script.is_planet_battlefield() && num_major_spawns == 2)
+    // open at the farthest usable plots on one landmass, on opposite faces of
+    // the world but joined by ground.
+    //
+    // Both ends come out of a *single* connected component, never out of the
+    // world-wide candidate pool, and that is the whole guarantee: two plots in
+    // one component of `passable` have a walkable line between them, so the
+    // side that opens on the far face can march to the other rather than
+    // needing a boat it has not got. `components` is ordered largest first, so
+    // the first one that can seat both sides is the main continent. Only if no
+    // landmass at all holds two candidate plots does this widen — and it
+    // widens to the largest component itself rather than to the pool, because
+    // a start on bare ground is a smaller compromise than a start the enemy
+    // cannot reach.
+    let planet_pool = (script.is_planet_battlefield() && num_major_spawns == 2)
         .then(|| {
-            planet_pool
-                .as_ref()
-                .map_or_else(|| tactics_planet_major_starts(&wm, &major_pool), |pool| {
-                    tactics_planet_major_starts(&wm, pool)
+            components
+                .iter()
+                .find_map(|component| {
+                    let pool: BTreeSet<Pos> =
+                        major_pool.intersection(component).copied().collect();
+                    (pool.len() >= 2).then_some(pool)
                 })
+                .or_else(|| components.iter().find(|component| component.len() >= 2).cloned())
         })
         .flatten();
+    let planet_ends = planet_pool
+        .as_ref()
+        .and_then(|pool| tactics_planet_major_starts(&wm, pool));
     // A two-seat bounded battlefield instead uses opposite corners or ends of
     // its rectangle. More seats than two fall back to the regional model.
     let arena_ends = (script == MapScript::Battlefield && num_major_spawns == 2)
@@ -9161,47 +9180,91 @@ mod river_tests {
         }
     }
 
+    /// The Tactics planet is a *land* world, and the two sides stand on
+    /// opposite faces of it with ground the whole way between them.
+    ///
+    /// Four-fifths dry is the floor the type advertises, so it is asserted as
+    /// a floor on every seed rather than as a band around a nominal share: a
+    /// roll that came out an ocean with continents in it would be a different
+    /// map type wearing this one's name. The other two halves of the promise
+    /// are about the starts — each one is dry, passable ground, and the two
+    /// are in a single walkable component, so a side that opens on the far
+    /// face marches to the fight instead of needing a fleet to reach it.
     #[test]
-    fn the_tactics_planet_is_a_small_land_globe_with_opposite_starts() {
+    fn the_tactics_planet_is_a_land_globe_whose_sides_can_march_to_each_other() {
         let rules = Rules::embedded();
         let size = crate::setup::BATTLEFIELD_SIZES
             .into_iter()
             .find(|size| size.script == MapScript::TacticsPlanet)
             .expect("the Tactics planet has a published size");
-        let mut rng = Rng::new(84_000);
-        let (world, spawns) = generate_with_script(
-            &rules,
-            size.width,
-            size.height,
-            2,
-            3,
-            2,
-            1,
-            MapScript::TacticsPlanet,
-            GLOBE,
-            POLED,
-            &mut rng,
-        );
-        assert_eq!(world.topology, crate::world::Topology::Globe(globe_frequency(40, 18)));
-        assert_eq!((world.width, world.height), (40, 18));
-        let land = world
-            .tiles
-            .values()
-            .filter(|tile| !rules.is_water(tile))
-            .count();
-        assert!(land > world.tiles.len() / 4, "too little land: {land}");
-        assert!(land < world.tiles.len() * 3 / 4, "too much land: {land}");
-        assert_eq!(spawns.len(), 2);
-        assert!(world.distance(spawns[0], spawns[1]) >= 8, "{spawns:?}");
-        let components = land_components(&world, &rules);
-        assert!(components.iter().any(|component| {
-            component.contains(&spawns[0]) && component.contains(&spawns[1])
-        }));
-        for spawn in spawns {
-            let tile = &world.tiles[&spawn];
-            assert!(rules.is_passable(tile));
-            assert!(tile.resource.is_none());
-            assert!(tile.improvement.is_none());
+        for seed in 0..12u64 {
+            let mut rng = Rng::new(84_000 + seed);
+            let (world, spawns) = generate_with_script(
+                &rules,
+                size.width,
+                size.height,
+                2,
+                3,
+                2,
+                1,
+                MapScript::TacticsPlanet,
+                GLOBE,
+                POLED,
+                &mut rng,
+            );
+            assert_eq!(world.topology, crate::world::Topology::Globe(globe_frequency(40, 18)));
+            assert_eq!((world.width, world.height), (40, 18));
+            let land = world
+                .tiles
+                .values()
+                .filter(|tile| !rules.is_water(tile))
+                .count();
+            assert!(
+                land * 100 >= world.tiles.len() * 80,
+                "seed {seed}: {land} of {} tiles is under four-fifths land",
+                world.tiles.len()
+            );
+            assert_eq!(spawns.len(), 2);
+
+            // Dry, walkable, undeveloped ground for both sides.
+            for spawn in &spawns {
+                let tile = &world.tiles[spawn];
+                assert!(!rules.is_water(tile), "seed {seed}: {spawn:?} opens in the water");
+                assert!(rules.is_passable(tile), "seed {seed}: {spawn:?} opens on impassable ground");
+                assert!(tile.resource.is_none());
+                assert!(tile.improvement.is_none());
+            }
+
+            // And a march between them: one connected body of *passable*
+            // land holds both, so neither side is looking at the other over
+            // water or across a mountain wall it cannot cross.
+            let walkable: BTreeSet<Pos> = world
+                .tiles
+                .iter()
+                .filter(|(_, tile)| !rules.is_water(tile) && rules.is_passable(tile))
+                .map(|(position, _)| *position)
+                .collect();
+            let reachable = largest_component(&world, &walkable);
+            assert!(
+                reachable.contains(&spawns[0]) && reachable.contains(&spawns[1]),
+                "seed {seed}: {spawns:?} are not joined by walkable ground"
+            );
+
+            // Opposite faces of the world: the partner is as far from the
+            // first seat as anything on the planet is, give or take the few
+            // tiles between the true antipode and the nearest plot fit to
+            // open on.
+            let farthest = world
+                .tiles
+                .keys()
+                .map(|position| world.distance(spawns[0], *position))
+                .max()
+                .unwrap();
+            let apart = world.distance(spawns[0], spawns[1]);
+            assert!(
+                apart * 10 >= farthest * 9,
+                "seed {seed}: the sides are {apart} apart on a world {farthest} across"
+            );
         }
     }
 

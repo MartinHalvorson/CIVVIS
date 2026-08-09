@@ -539,10 +539,16 @@ impl MapScript {
             // cylinder's east-west wrap into a bounded arena, plus a pond or
             // two so rivers have somewhere to reach the sea.
             Self::Battlefield => 88,
-            // A compact Pangaea-style landmass on a globe. The Tactics size
-            // is about half a Duel world, so this leaves a small land world
-            // with enough open coastline for two cities on opposite sides.
-            Self::TacticsPlanet => 42,
+            // Ground almost everywhere, because Tactics is a fight over
+            // ground: both sides open on the same continuous landmass and the
+            // sea is scenery between them rather than a wall across the
+            // battle. Cut like Land Only rather than laid like Pangaea — see
+            // `mapgen::globe_land`, which above half carves the seas out of a
+            // solid globe instead of growing a continent inside an ocean.
+            // The caps and the twelve pentagons stay wet on top of that, so
+            // the world lands a little under the share asked for here; 88
+            // leaves it comfortably past the 80% the type promises.
+            Self::TacticsPlanet => 88,
             // Open sea, less the strip of Andalusian shore along the eastern
             // edge and the headland of Cape Trafalgar itself. Read rather
             // than aimed for: the chart in `mapgen::TRAFALGAR_CHART` decides
@@ -825,7 +831,7 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 17] = [
     MapScriptSpec {
         id: "tactics_planet",
         name: "Planet",
-        description: "A small land planet for Tactics: one compact continent on a globe about half the size of Duel, with one city for each side on opposite shores.",
+        description: "A small land planet for Tactics: a globe about half the size of Duel that is more than four-fifths dry ground, with scattered seas rather than an ocean. One city for each side, planted on opposite faces of the world and joined by a march overland.",
         script: MapScript::TacticsPlanet,
     },
     MapScriptSpec {
