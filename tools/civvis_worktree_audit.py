@@ -399,7 +399,12 @@ def main() -> int:
             print(f"nothing exists only on this disk "
                   f"({len(worktrees(args.repo))} worktree(s) checked)")
         return 0
-    print(f"{len(unresolved)} item(s) need a person")
+    # Under --quiet every printed line is a finding: civvis_sync.sh step 4
+    # echoes and counts them, so a summary here would be double-reported and
+    # counted as an extra problem ("2 item(s)" followed by "3 item(s)" in the
+    # sweep log). The exit code already carries the verdict.
+    if not args.quiet:
+        print(f"{len(unresolved)} item(s) need a person")
     return 1
 
 
