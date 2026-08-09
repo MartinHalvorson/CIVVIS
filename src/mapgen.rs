@@ -366,6 +366,36 @@ fn earth_tile(wm: &WorldMap, pos: Pos) -> EarthTile {
 /// civilization begins on Britain, Japan, Java, Luzon, Sri Lanka, Madagascar
 /// and New Zealand, and the rest are the stepping stones that decide whether
 /// an ocean can be crossed at all.
+/// Ways through a range that a tile-wide vote loses, and that a map of Earth
+/// should not be without.
+///
+/// The mirror of [`EARTH_ISLANDS`] one rank up. An island is a piece of land
+/// the sea around it outvotes; these are the corridors the range around them
+/// outvotes. A Standard globe gives Asia a tile about four degrees across,
+/// and the gap between the Pamir and the Taklamakan is nowhere near four
+/// degrees wide — so Kashgar, whose own half-degree cell is desert at 1,460 m
+/// with 402 m of relief inside it, lands in a tile that is mostly Pamir and
+/// comes out as impassable rock. Measured before this list: Samarkand could
+/// not reach Kashgar at Standard or Large by any route, and Kashgar could not
+/// be stood on at all.
+///
+/// Every entry is a real corridor that carried real traffic, named for what
+/// it is. A pass only ever demotes a tile the vote made a mountain, to the
+/// climate underneath it plus hills — so on a map fine enough to resolve the
+/// corridor by itself, each of these is a no-op, and none of them can put a
+/// hole in a range the vote did not already misplace.
+///
+/// ⚠ This is a curated list and it is meant to stay short. It is not a place
+/// to soften mountains that are genuinely in the way: the Karakoram between
+/// Kashgar and Ladakh stays shut, and a test says so.
+const EARTH_PASSES: &[(f64, f64, &str)] = &[
+    (67.9, 40.1, "the Sanzar gorge, the Gates of Tamerlane"),
+    (71.8, 40.4, "the Ferghana valley"),
+    (73.5, 39.6, "the Alai valley and Irkeshtam"),
+    (76.0, 39.5, "Kashgar and the Terek pass"),
+    (79.9, 37.1, "Khotan, on the southern Tarim road"),
+];
+
 const EARTH_ISLANDS: &[(f64, f64, f64)] = &[
     (-4.0, 54.0, 209.3),      // Britain
     (-8.0, 53.3, 84.4),       // Ireland
@@ -537,11 +567,31 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 /// flat. The two pentagons stay a globe's problem, because a flat map has no
 /// pentagons to begin with.
 fn earth_tile_cache(wm: &WorldMap) -> BTreeMap<Pos, EarthTile> {
-    wm.tiles
+    let mut cache: BTreeMap<Pos, EarthTile> = wm
+        .tiles
         .keys()
         .copied()
         .map(|position| (position, earth_tile(wm, position)))
-        .collect()
+        .collect();
+    // The corridors the vote loses, opened after it. A pass is demoted to the
+    // climate that was already recorded underneath its peaks, so it is the
+    // ground the range stands on rather than an invented terrain, and it keeps
+    // its hills: a pass is high, it is simply not a wall.
+    for (longitude, latitude, _name) in EARTH_PASSES {
+        let Some(position) = nearest_tile(wm, *longitude, *latitude) else {
+            continue;
+        };
+        let Some(tile) = cache.get_mut(&position) else {
+            continue;
+        };
+        if tile.water || tile.terrain != "mountain" {
+            continue;
+        }
+        tile.terrain = tile.mountain_terrain.unwrap_or("plains");
+        tile.mountain_terrain = None;
+        tile.hills = true;
+    }
+    cache
 }
 
 fn earth_land(wm: &WorldMap) -> BTreeSet<Pos> {
@@ -9279,6 +9329,120 @@ mod river_tests {
         assert_eq!(spawns.len(), 15);
         for start in &spawns {
             assert!(!rules.is_water(&world.tiles[start]));
+        }
+    }
+
+    /// ⚠ THE SILK ROAD IS A ROAD.
+    ///
+    /// Every leg of it, at every size the engine plays. This is the check that
+    /// [`EARTH_PASSES`] exists for: a Standard globe gives Asia a tile about
+    /// four degrees across and the gap between the Pamir and the Taklamakan is
+    /// nothing like four degrees wide, so the vote put Kashgar, Khotan and the
+    /// Ferghana valley inside the range instead of beside it. Measured before
+    /// the list: Samarkand could not reach Kashgar at Standard or Large by any
+    /// route, and Kashgar, Khotan, Ferghana and Dunhuang could not be stood on
+    /// at all.
+    ///
+    /// A trans-Asian route did exist even then — north of the Tian Shan,
+    /// through the steppe — so this is not about the continent being cut in
+    /// two. It is about the road running through the oases that were the
+    /// reason for it.
+    #[test]
+    fn the_silk_road_is_passable_end_to_end() {
+        // West to east, as the places it actually ran through.
+        const ROAD: [(&str, f64, f64); 11] = [
+            ("Antioch", 36.20, 36.16),
+            ("Ctesiphon", 33.09, 44.58),
+            ("Ecbatana", 34.80, 48.52),
+            ("Merv", 37.66, 62.19),
+            ("Bukhara", 39.77, 64.42),
+            ("Samarkand", 39.65, 66.96),
+            ("Ferghana", 40.39, 71.79),
+            ("Kashgar", 39.47, 75.99),
+            ("Khotan", 37.11, 79.93),
+            ("Dunhuang", 40.14, 94.66),
+            ("Chang'an", 34.34, 108.94),
+        ];
+        let rules = Rules::embedded();
+        for size_id in ["standard", "large", "huge"] {
+            let size = CIV6_MAP_SIZES.iter().find(|size| size.id == size_id).unwrap();
+            let mut rng = Rng::new(31_337);
+            let (world, _) = generate_with_script(
+                &rules,
+                size.width,
+                size.height,
+                4,
+                0,
+                size.natural_wonders,
+                size.continents,
+                MapScript::TrueStartEarth,
+                GLOBE,
+                POLED,
+                &mut rng,
+            );
+            let nearest = |latitude: f64, longitude: f64| -> Pos {
+                let target = earth_direction(longitude, latitude);
+                world
+                    .tiles
+                    .iter()
+                    .map(|(pos, _)| *pos)
+                    .max_by(|a, b| {
+                        dot(world.direction(*a), target)
+                            .partial_cmp(&dot(world.direction(*b), target))
+                            .unwrap()
+                    })
+                    .unwrap()
+            };
+            let walkable = |pos: Pos| -> bool {
+                world.tiles.get(&pos).is_some_and(|tile| {
+                    !rules.is_water(tile) && tile.terrain.as_str() != "mountain"
+                })
+            };
+            let connects = |from: (f64, f64), to: (f64, f64)| -> bool {
+                let (start, goal) = (nearest(from.0, from.1), nearest(to.0, to.1));
+                if start == goal {
+                    return true;
+                }
+                let mut seen: BTreeSet<Pos> = [start].into_iter().collect();
+                let mut queue = std::collections::VecDeque::from([start]);
+                while let Some(pos) = queue.pop_front() {
+                    if pos == goal {
+                        return true;
+                    }
+                    for next in world.neighbors(pos) {
+                        let (longitude, latitude) = world.lon_lat(next);
+                        if seen.contains(&next)
+                            || !walkable(next)
+                            || !(15.0..55.0).contains(&latitude)
+                            || !(25.0..125.0).contains(&longitude)
+                        {
+                            continue;
+                        }
+                        seen.insert(next);
+                        queue.push_back(next);
+                    }
+                }
+                false
+            };
+            // Every stop is somewhere a caravan could stand.
+            for (name, latitude, longitude) in ROAD {
+                let tile = &world.tiles[&nearest(latitude, longitude)];
+                assert!(
+                    !rules.is_water(tile) && tile.terrain.as_str() != "mountain",
+                    "{size_id}: {name} sits on {}, so nothing can stop there",
+                    tile.terrain
+                );
+            }
+            // And every leg between them is walkable.
+            for pair in ROAD.windows(2) {
+                let (from, to) = (pair[0], pair[1]);
+                assert!(
+                    connects((from.1, from.2), (to.1, to.2)),
+                    "{size_id}: {} to {} is blocked",
+                    from.0,
+                    to.0
+                );
+            }
         }
     }
 
