@@ -818,6 +818,14 @@ let UNIT_TAIL_TURNS = (() => {
 // precedence, and a viewer can opt out here without changing system settings.
 const WORLD_PAN_INERTIA_STORAGE_KEY = "civvis-world-pan-inertia";
 let WORLD_PAN_INERTIA = localStorage.getItem(WORLD_PAN_INERTIA_STORAGE_KEY) !== "0";
+// A world nobody is steering turns on its own, one full turn every twelve
+// seconds, and it is doing so when the page opens: an exhibition is a thing
+// watched rather than driven, and a still planet is the one reading of it that
+// is certainly wrong. It is a preference and not a mood, so the button in the
+// map controls carries it and the answer is remembered.
+const WORLD_SPIN_STORAGE_KEY = "civvis-world-spin";
+const WORLD_SPIN_PERIOD_MS = 12000;
+let WORLD_SPIN = localStorage.getItem(WORLD_SPIN_STORAGE_KEY) !== "0";
 // Civ 6 binds G to the hex grid and Q to resource markers, so both have to
 // be things a player can actually turn off here. The grid is off by default
 // because a clean strategic map is easier to scan; resources are on because
@@ -3851,13 +3859,20 @@ const SUN = Math.PI * 1.25; // world azimuth of the light (upper-left)
 // sunlit side.
 let SHX = 0, SHY = 0;   // screen offset of a cast shadow: away from the sun
 function setRot(r, persist = true) {
+  // A bearing that has not changed is not news. Every frame of a globe's turn
+  // reconstructs the camera and hands the same roll back through here, so
+  // without this the resting spin would write to local storage sixty times a
+  // second for as long as the exhibition ran. The threshold is far below any
+  // turn the eye or the needle can tell apart and only ever swallows the
+  // arithmetic's own noise.
+  const moved = Math.abs(r - cam.rot) > 1e-9;
   cam.rot = r; COSR = Math.cos(r); SINR = Math.sin(r);
   LITF = Math.cos(SUN + r) <= 0 ? 1 : -1;
   SHX = -Math.cos(SUN + r); SHY = -Math.sin(SUN + r) * YS;
   // The needle answers to the same yaw the board does, so it stays honest
   // through drag inertia as well as Q and E.
   if (compassNeedle) compassNeedle.style.transform = `rotate(${r}rad)`;
-  if (persist) {
+  if (persist && moved) {
     // Stored against the world it belongs to. A remembered bearing is the one
     // you left this map at, not one inherited from the last map you watched.
     localStorage.setItem("civvis-rot", String(r));
@@ -3996,6 +4011,91 @@ function syncFoundNorth(st) {
   updateCompass();
 }
 if (compassButton) compassButton.onclick = () => resetMapFacing();
+
+// ------------------------------------------------------------ the world turns
+// The spin is the world's own motion and not a tour of it: it goes about the
+// poles the map already has, whichever way the camera happens to be facing and
+// wherever it happens to be standing. On a globe those are the poles the
+// latitudes are measured from; on a flat chart the same axis is the one the
+// columns run round, so the identical turn arrives as a pan along it. Either
+// way the ground travels west to east — left to right under a north-up
+// camera — because that is the way a planet turns and the way its terminator
+// has to cross it.
+//
+// It therefore needs a world that comes back on itself. A walled arena has no
+// axis to turn about, and neither has a chart a people have not been round
+// yet: theirs is an open sheet, and turning it would sail the camera off the
+// end of the paper rather than round the world.
+const WORLD_POLE = [0, 0, 1];
+const spinButton = document.getElementById("spin");
+// A reader who has asked their system for less motion is not asking for a
+// planet that never stops moving, so that setting takes the control away
+// rather than merely being a default. Before the first observation the world's
+// shape is unknown and the control stays live: there is simply nothing yet for
+// the turn to move.
+function spinAvailable() {
+  if (REDUCED_MOTION_QUERY.matches) return false;
+  return !state || mapWrapsX();
+}
+// Whether it is turning this instant. Anything that is deliberately pointing
+// the camera somewhere — a flight, a zoom, a followed unit, a hand on the
+// world — has the wheel, and the spin picks up again when that lets go.
+function spinRunning() {
+  return WORLD_SPIN && !!state && spinAvailable() &&
+    !dragState && !touchGesture && !cameraFlight && !cameraZoom &&
+    !cameraFollowManual;
+}
+function updateSpinButton() {
+  if (!spinButton) return;
+  const available = spinAvailable();
+  spinButton.disabled = !available;
+  spinButton.setAttribute("aria-pressed", WORLD_SPIN ? "true" : "false");
+  const title = REDUCED_MOTION_QUERY.matches
+    ? "Reduced motion is on, so the world holds still"
+    : !available
+    ? "This world does not come back on itself, so it has nothing to turn about"
+    : WORLD_SPIN ? "Stop the world turning" : "Let the world turn";
+  if (spinButton.title === title) return;
+  spinButton.title = title;
+  spinButton.setAttribute("aria-label", title);
+}
+function setWorldSpin(on) {
+  WORLD_SPIN = !!on;
+  localStorage.setItem(WORLD_SPIN_STORAGE_KEY, WORLD_SPIN ? "1" : "0");
+  updateSpinButton();
+}
+// Taking hold of the world is the plainest way of saying you would rather it
+// held still, so a drag stops it — and stops it for good rather than for the
+// moment, because a map that resumed drifting the instant a viewer let go of
+// it would have to be caught again every time they looked away. The button is
+// how it comes back.
+function stopWorldSpin() {
+  if (WORLD_SPIN) setWorldSpin(false);
+}
+// One tick of the turn. `dt` is milliseconds and a whole turn is the period,
+// so the pace holds however the frames fall — within the fifty-millisecond
+// clamp the caller puts on `dt`, which every motion out here already shares
+// and which keeps a backgrounded tab from returning half a world away.
+function advanceWorldSpin(dt) {
+  if (!spinRunning()) return false;
+  if (planetMap()) {
+    const basis = planetBasisNow();
+    if (!basis) return false;
+    // The camera goes west so the ground goes east: turning the basis about
+    // the pole is the same motion as dragging the globe eastward, without
+    // borrowing the screen's idea of which way that is.
+    applyPlanetBasis(planetSpin(basis, WORLD_POLE, -2 * Math.PI * dt / WORLD_SPIN_PERIOD_MS));
+    return true;
+  }
+  // A flat chart's copies are the same world over again, so the camera simply
+  // walks west and the seam never arrives. It is left where the walk puts it,
+  // exactly as a long drag would: the copy the camera stands on is the one
+  // every wrapped reading is taken about.
+  cam.x -= WW() * dt / WORLD_SPIN_PERIOD_MS;
+  return true;
+}
+if (spinButton) spinButton.onclick = () => setWorldSpin(!WORLD_SPIN);
+updateSpinButton();
 
 // ----------------------------------------------------- the shape of the world
 // Working out that the world is round changes nothing on the board and
@@ -6736,6 +6836,10 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   syncFlatMapWrapControls();
   syncFoundNorth(st);
   syncKnownWorld(st);
+  // Whether there is an axis to turn about is a property of the world, so the
+  // spin control is settled against each observation the same way the compass
+  // is: a walled arena and an unrolled chart both have nothing for it to do.
+  updateSpinButton();
   if (SPEC && st.paused !== undefined && st.paused !== specPaused) {
     specPaused = st.paused; // stay in sync with the server-side stepper
   }
@@ -6859,8 +6963,15 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   if (newWorld || viewChanged) {
     setObservedPlayersView(false);
   }
+  // A turning world and an empire kept in frame are two answers to where the
+  // camera should be, and this one arrives ten times a second: left to argue,
+  // the reframe would win every observation and the spin would show as a
+  // shiver rather than a turn. So the standing, stated preference outranks the
+  // automatic convenience, and the flag is only stepped over rather than
+  // cleared — stopping the spin hands the watched empire its framing straight
+  // back.
   else if (watchedEmpireAutoFrame && Number.isInteger(st.view_player) &&
-           !cameraFollowManual && !dragState && !touchGesture)
+           !cameraFollowManual && !dragState && !touchGesture && !spinRunning())
     setObservedPlayersView(true);
   const errEl = document.getElementById("err");
   if (st.error) { errEl.textContent = st.error; errEl.style.display = "block";
@@ -25868,6 +25979,10 @@ function advanceUserCameraMotion(now = performance.now()) {
     }
   }
   if (!dragState && !cameraFlight && !cameraZoom) {
+    // The world's own turn, under everything else here: it is what the camera
+    // does when nobody is doing anything with it, and a throw still landing
+    // rides on top of it rather than being replaced by it.
+    if (advanceWorldSpin(dt)) active = true;
     // A globe glides as a turn about a fixed axis rather than as a drift in
     // columns and rows, so it coasts over a pole the same way the drag did.
     const spin = cameraInertia.spin, skyPan = cameraInertia.skyPan;
@@ -26538,7 +26653,7 @@ window.addEventListener("pointermove", ev => {
     const dx = ev.clientX - dragState.x, dy = ev.clientY - dragState.y;
     if (Math.abs(dx) + Math.abs(dy) > 5) dragMoved = true;
     if (dragMoved && !dragState.controlled) {
-      takeCameraControl(); dragState.controlled = true;
+      takeCameraControl(); stopWorldSpin(); dragState.controlled = true;
     }
     if (dragMoved && dragState.rotate) {
       // Option/Alt-drag is the map's camera gesture: horizontal motion turns
@@ -26702,7 +26817,8 @@ cv.addEventListener("pointermove", ev => {
         (Math.abs(distance - touchGesture.distance) > 3 ||
          Math.abs(angle - touchGesture.angle) > .025 ||
          Math.abs(mx - touchGesture.mx) + Math.abs(my - touchGesture.my) > 4)) {
-      takeCameraControl(); touchGesture.controlled = true; dragMoved = true;
+      takeCameraControl(); stopWorldSpin();
+      touchGesture.controlled = true; dragMoved = true;
     }
     if (touchGesture.controlled) {
       const turn = Math.atan2(Math.sin(angle - touchGesture.angle), Math.cos(angle - touchGesture.angle));
@@ -26737,7 +26853,7 @@ cv.addEventListener("pointermove", ev => {
     const point = touchPair()[0];
     const dx = point.x - touchGesture.x, dy = point.y - touchGesture.y;
     if (!touchGesture.controlled && Math.abs(dx) + Math.abs(dy) > 5) {
-      takeCameraControl(); touchGesture.controlled = true;
+      takeCameraControl(); stopWorldSpin(); touchGesture.controlled = true;
       touchGesture.moved = true; dragMoved = true;
     }
     if (touchGesture.controlled && skyDragApply(touchGesture, dx, dy)) {
@@ -27816,6 +27932,9 @@ function setFlatMapWrap(axis, on) {
     localStorage.setItem("civvis-flat-map-wrap-y", enabled ? "1" : "0");
   }
   syncFlatMapWrapControls();
+  // Unrolling the chart takes the axis away and rolling it back hands one
+  // over, so the spin control answers to these two as well.
+  updateSpinButton();
   if (!state || planetMap() || worldIsWalled()) return;
   cameraFlight = null; cameraZoom = null; clearCameraInertia();
   // A camera can be several copies away after a long wrapped pan. When that
