@@ -8017,10 +8017,47 @@ const STRATEGIC_WOODLAND_UPPER_HALF_LIFT = -7;
 const STRATEGIC_WOODLAND_ICON_SCALE = 1.23;
 const STRATEGIC_WOODLAND_CONTENT_INSET = 1.5;
 
-function drawStrategicHillIcon(x, y) {
+// When a district, wonder or city is built on hills, the two want the same
+// middle of the tile and the building wins it: a district token is 34.6 px
+// across and swallows the hill's whole slot, which is why the token used to
+// crest a hill of its own above its rim just to say what it stood on. That put
+// the ground *above* the thing standing on it.
+//
+// So the tile splits instead. The built symbol takes the upper three quarters
+// and the hill keeps the quarter below it, where it stays visible under the
+// token rather than behind it. Both halves of the split are stated here so
+// they cannot drift apart.
+//
+// A strategic hex spans `S * YS` above and below its centre, so a quarter of
+// that half-height lifts the symbol into the middle of the space left above
+// the hill.
+const HILL_SEATED_SYMBOL_LIFT = S * YS / 4;
+// The hill's base drops from the lower outside corners into the quarter below
+// them. It shrinks on the way because the hex has already begun closing toward
+// its bottom vertex there — at full size the mound would run out through the
+// lower edges, which the flat map's hex clip would then cut square.
+const HILL_SEATED_BASE_DROP = S * YS * 0.28;
+const HILL_SEATED_SCALE = 0.66;
+
+// Whether this tile's hill gives up the centre. Cities are not a tile field —
+// they are their own list — so the caller passes the set of tiles holding one.
+function hillSeatsLow(t, tileKey, cityTiles) {
+  return Boolean(t.hills
+                 && (t.district || t.wonder || cityTiles?.has(tileKey)));
+}
+
+function drawStrategicHillIcon(x, y, seated = false) {
   const hillWidth = 1.2, hillHeight = 2.6 * 1.4 * 2;
   // The lower outside corners of a Strategic hex define the hill's fixed slot.
   const hillBaseY = y + S * YS / 2;
+  cx.save();
+  if (seated) {
+    // Scaled about the hill's own base and then dropped, so the mound keeps
+    // sitting on a line instead of floating in the lower quarter.
+    cx.translate(x, hillBaseY + HILL_SEATED_BASE_DROP);
+    cx.scale(HILL_SEATED_SCALE, HILL_SEATED_SCALE);
+    cx.translate(-x, -hillBaseY);
+  }
   cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
   cx.beginPath();
   cx.ellipse(x - 7 * hillWidth, hillBaseY,
@@ -8028,6 +8065,7 @@ function drawStrategicHillIcon(x, y) {
   cx.ellipse(x + 6 * hillWidth, hillBaseY,
              6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
   cx.stroke();
+  cx.restore();
 }
 
 function drawStrategicWoodlandIcon(t, x, y) {
@@ -8112,10 +8150,10 @@ function drawStrategicIceIcon(x, y) {
   cx.lineTo(x - 13, y + 6); cx.closePath(); cx.fill(); cx.stroke();
 }
 
-function drawStrategicTerrainMark(t, x, y) {
+function drawStrategicTerrainMark(t, x, y, hillSeated = false) {
   if (t.feature === "volcano") { drawStrategicMountainIcon(x, y, true); return; }
   if (t.terrain === "mountain") { drawStrategicMountainIcon(x, y, false); return; }
-  if (t.hills) drawStrategicHillIcon(x, y);
+  if (t.hills) drawStrategicHillIcon(x, y, hillSeated);
   if (["forest", "jungle", "burning_forest", "burnt_forest",
        "burning_jungle", "burnt_jungle"].includes(t.feature)) {
     drawStrategicWoodlandIcon(t, x, y);
@@ -8143,11 +8181,11 @@ function drawStrategicTerrainMark(t, x, y) {
   cx.restore();
 }
 
-function drawFlatStrategicTerrainMark(t, x, y) {
+function drawFlatStrategicTerrainMark(t, x, y, hillSeated = false) {
   cx.save();
   // Terrain may fill its tile, but it may never spill over a neighbour's edge.
   hexPath(x, y, S - .55); cx.clip();
-  drawStrategicTerrainMark(t, x, y);
+  drawStrategicTerrainMark(t, x, y, hillSeated);
   cx.restore();
 }
 
@@ -8501,15 +8539,11 @@ function drawDistrict(t, x, y, buildings = []) {
   cx.save();
   if (t.pillaged) cx.globalAlpha *= .6;
   cx.lineJoin = "round";
-  // The hill this district is built on, cresting past the rim in the same
-  // stroked-mound hand as the strategic hill mark.
-  if (t.hills) {
-    cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
-    cx.beginPath();
-    cx.ellipse(x - 8, y - hy + 3, 8, 7.5, 0, Math.PI, 0);
-    cx.ellipse(x + 7, y - hy + 4.5, 7.5, 6.5, 0, Math.PI, 0);
-    cx.stroke();
-  }
+  // The hill this district stands on is no longer drawn cresting above the
+  // token's rim. It is the terrain layer's mark, seated in the quarter of the
+  // tile below this token — ground under the building rather than over it.
+  // See HILL_SEATED_SYMBOL_LIFT.
+  //
   // The token itself: one solid color and a thin ink outline, nothing else —
   // a printed counter on the board rather than a lit game piece.
   cx.fillStyle = col;
@@ -16627,6 +16661,7 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
   drawPlanetFallout(cells, visible, spectator);
   const naturalWonders = buildPlanetNaturalWonderPlacements(cells);
   const campSet = new Set(state.camps.map(key));
+  const cityTiles = new Set(state.cities.map(c => key(c.pos)));
   const districtBuildings = districtBuildingsByTile();
 
   for (const entry of cells) {
@@ -16647,8 +16682,9 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
         drawStrategicMountainIcon(0, 0, false, .78);
         return;
       }
+      const hillSeated = hillSeatsLow(t, tileKey, cityTiles);
       if (t.hills || STRATEGIC_FEATURE_MARKS.has(t.feature))
-        drawStrategicTerrainMark(t, 0, 0);
+        drawStrategicTerrainMark(t, 0, 0, hillSeated);
       drawFeatureEffects(t, 0, 0);
       if (t.improvement === "barbarian_camp" || campSet.has(tileKey)) {
         drawBarbarianCamp(0, 0);
@@ -16656,8 +16692,9 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
         drawImprovement(t, 0, 0);
       }
       if (resourceMarkerVisible(t)) drawResourceBadge(t, 0, 0);
-      if (t.district) drawDistrict(t, 0, 0, districtBuildings.get(tileKey));
-      if (t.wonder) drawWorldWonderIcon(t.wonder, 0, 0);
+      const built = hillSeated ? HILL_SEATED_SYMBOL_LIFT : 0;
+      if (t.district) drawDistrict(t, 0, -built, districtBuildings.get(tileKey));
+      if (t.wonder) drawWorldWonderIcon(t.wonder, 0, -built);
     });
   }
 }
@@ -18273,6 +18310,9 @@ function drawScene() {
   const campSet = new Set(state.camps.map(key));
   const workedSet = new Set(state.cities.flatMap(c =>
     c.citizens ? c.citizens.worked_tiles.map(key) : []));
+  // A city is not a tile field, so the terrain layer needs telling which tiles
+  // hold one before it can seat their hills low.
+  const cityTiles = new Set(state.cities.map(c => key(c.pos)));
   const districtBuildings = districtBuildingsByTile();
   const unitOwnerByTile = new Map(state.units.map(u => [key(u.pos), u.owner]));
   const hl = {};
@@ -18571,8 +18611,9 @@ function drawScene() {
       drawFlatStrategicTerrainMark(t, x, y);
       continue;
     }
+    const hillSeated = hillSeatsLow(t, k, cityTiles);
     if (t.hills || STRATEGIC_FEATURE_MARKS.has(t.feature))
-      drawFlatStrategicTerrainMark(t, x, y);
+      drawFlatStrategicTerrainMark(t, x, y, hillSeated);
     if (["floodplains", "grassland_floodplains", "plains_floodplains"].includes(t.feature))
       drawFlatStrategicFloodplains(t, x, y);
     drawFeatureEffects(t, x, y);
@@ -18584,8 +18625,11 @@ function drawScene() {
     // Resources are terrain information. Their low tile seat is painted here
     // beneath districts, cities, and the resource-aware top-layer unit token.
     if (resourceMarkerVisible(t)) drawResourceBadge(t, x, y);
-    if (t.district) drawDistrict(t, x, y, districtBuildings.get(k));
-    if (t.wonder) drawWorldWonderIcon(t.wonder, x, y);
+    // Built ground takes the upper three quarters; its hill keeps the quarter
+    // below, seated by the terrain pass above.
+    const built = hillSeated ? HILL_SEATED_SYMBOL_LIFT : 0;
+    if (t.district) drawDistrict(t, x, y - built, districtBuildings.get(k));
+    if (t.wonder) drawWorldWonderIcon(t.wonder, x, y - built);
   }
   // Lens passes replace or grade the finished ground while leaving the map's
   // geometry and controls alone. Empire goes first because Settler's site
@@ -18755,7 +18799,11 @@ function drawScene() {
       hexXY(a.pos[0], a.pos[1])[1] - hexXY(b.pos[0], b.pos[1])[1])) {
     const ct = TMAP.get(key(c.pos));
     const [x, yy] = hexXY(c.pos[0], c.pos[1]);
-    const y = yy - (ct ? elev(ct) : 0);
+    // On hills the settlement rises into the upper three quarters, clear of the
+    // hill seated below it. Applied here rather than per-mark so the nameplate,
+    // production medallion, faith badge and keyhole all travel with it.
+    const y = yy - (ct ? elev(ct) : 0)
+              - (ct?.hills ? HILL_SEATED_SYMBOL_LIFT : 0);
     const cityState = ownerIsCityState(c.owner);
     if (cityState) {
       cx.save();

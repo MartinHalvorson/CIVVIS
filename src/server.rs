@@ -11764,6 +11764,90 @@ mod tests {
         );
     }
 
+    /// A district, wonder or city built on hills splits the tile with the
+    /// ground it stands on: the symbol takes the upper three quarters and the
+    /// hill is seated in the quarter below, where it stays visible under the
+    /// token instead of behind it. The split is arithmetic between constants
+    /// that live apart, so it is recomputed here rather than eyeballed — a hill
+    /// that drifts up disappears under the token again, and one that drifts
+    /// down runs out through the hex's closing lower edges.
+    #[test]
+    fn a_hill_under_a_built_tile_is_seated_in_the_quarter_below_the_symbol() {
+        let literal = |name: &str| -> f64 {
+            EMBEDDED_INDEX
+                .split(&format!("\nconst {name} = "))
+                .nth(1)
+                .and_then(|tail| tail.split(';').next())
+                .and_then(|value| value.trim().parse::<f64>().ok())
+                .unwrap_or_else(|| panic!("{name} is missing or no longer a plain literal"))
+        };
+        // The split is expressed against the hex, so it has to be read from the
+        // same geometry the renderer uses.
+        assert!(EMBEDDED_INDEX.contains("const S = 36, SQ3 = Math.sqrt(3);"));
+        assert!(EMBEDDED_INDEX.contains("const DEFAULT_YS = MAP_PROJECTION;"));
+        assert!(EMBEDDED_INDEX.contains("const YS = DEFAULT_YS;"));
+        assert!(EMBEDDED_INDEX.contains("const HILL_SEATED_SYMBOL_LIFT = S * YS / 4;"));
+        assert!(EMBEDDED_INDEX.contains("const HILL_SEATED_BASE_DROP = S * YS * 0.28;"));
+        assert!(EMBEDDED_INDEX.contains("const DISTRICT_TOKEN_HALF = S * 0.48;"));
+        let hex = 36.0;
+        let half = hex * literal("MAP_PROJECTION"); // the tile's half-height
+        let lift = half / 4.0;
+        let drop = half * 0.28;
+        let scale = literal("HILL_SEATED_SCALE");
+
+        // `drawStrategicHillIcon`'s own numbers: two stroked mounds sitting on
+        // the line through the hex's lower outside corners.
+        let (hill_width, hill_height) = (1.2, 2.6 * 1.4 * 2.0);
+        let unseated_base = half / 2.0;
+        let base = unseated_base + drop;
+        let top = base - hill_height * scale;
+
+        let lower_quarter = half / 2.0;
+        assert!(
+            top >= lower_quarter && base <= half,
+            "seated hill spans {top:.2}..{base:.2}, outside the lower quarter \
+             {lower_quarter:.2}..{half:.2}"
+        );
+
+        // The hex has begun closing toward its bottom vertex by the seated
+        // base, so the mound has to have shrunk enough to still fit between the
+        // lower edges — the flat map clips to the hex and would cut it square.
+        let stroke = 2.4 * scale / 2.0;
+        let reach = ((7.0 + 6.5) * hill_width * scale + stroke)
+            .max((6.0 + 6.5) * hill_width * scale + stroke);
+        let hex_half_width_at_base =
+            hex * (std::f64::consts::PI / 6.0).cos() * (1.0 - (base - unseated_base) / (half - unseated_base));
+        assert!(
+            reach < hex_half_width_at_base,
+            "seated hill reaches {reach:.2} where the hex allows \
+             {hex_half_width_at_base:.2}"
+        );
+
+        // And the symbol above it has to actually clear it, or the seating
+        // bought nothing. The district token is the lowest-reaching of the
+        // three; the wonder painters are measured by their own test.
+        let token_bottom = hex * 0.48 - lift;
+        assert!(
+            token_bottom < top,
+            "lifted district token reaches {token_bottom:.2}, over a hill \
+             topping out at {top:.2}"
+        );
+
+        // The wiring: the terrain layer is told which tiles are built on, the
+        // seating is a transform about the hill's own base, and the district no
+        // longer crests a hill of its own above its rim.
+        assert!(EMBEDDED_INDEX.contains("function hillSeatsLow(t, tileKey, cityTiles)"));
+        assert!(EMBEDDED_INDEX
+            .contains("&& (t.district || t.wonder || cityTiles?.has(tileKey))"));
+        assert!(EMBEDDED_INDEX.contains("const cityTiles = new Set(state.cities.map(c => key(c.pos)));"));
+        assert!(EMBEDDED_INDEX.contains("cx.translate(x, hillBaseY + HILL_SEATED_BASE_DROP);"));
+        assert!(EMBEDDED_INDEX.contains("cx.scale(HILL_SEATED_SCALE, HILL_SEATED_SCALE);"));
+        assert!(
+            !EMBEDDED_INDEX.contains("cx.ellipse(x - 8, y - hy + 3, 8, 7.5, 0, Math.PI, 0);"),
+            "the district still crests its own hill above the token's rim"
+        );
+    }
+
     /// A selected unit's movement is drawn as the engine's own affordances:
     /// the perimeter of everywhere it can end this turn, and a per-edge arrow
     /// wherever `reach_steps` says the remaining movement crosses. The client
