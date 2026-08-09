@@ -818,13 +818,18 @@ let UNIT_TAIL_TURNS = (() => {
 // precedence, and a viewer can opt out here without changing system settings.
 const WORLD_PAN_INERTIA_STORAGE_KEY = "civvis-world-pan-inertia";
 let WORLD_PAN_INERTIA = localStorage.getItem(WORLD_PAN_INERTIA_STORAGE_KEY) !== "0";
-// A world nobody is steering turns on its own, one full turn every twelve
+// A world nobody is steering turns on its own, one full turn every thirty-six
 // seconds, and it is doing so when the page opens: an exhibition is a thing
 // watched rather than driven, and a still planet is the one reading of it that
 // is certainly wrong. It is a preference and not a mood, so the button in the
 // map controls carries it and the answer is remembered.
+//
+// The period is the whole feel of the thing, and it is a viewing rate rather
+// than an astronomical one: the ground has to drift slowly enough that a
+// reader following a war can keep their place while it moves. Twelve seconds
+// read as a spin; thirty-six reads as a world going about its business.
 const WORLD_SPIN_STORAGE_KEY = "civvis-world-spin";
-const WORLD_SPIN_PERIOD_MS = 12000;
+const WORLD_SPIN_PERIOD_MS = 36000;
 let WORLD_SPIN = localStorage.getItem(WORLD_SPIN_STORAGE_KEY) !== "0";
 // Civ 6 binds G to the hex grid and Q to resource markers, so both have to
 // be things a player can actually turn off here. The grid is off by default

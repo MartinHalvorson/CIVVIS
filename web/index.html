@@ -1330,10 +1330,11 @@
   }
   /* Its neighbour is the same kind of thing: an instrument rather than a
      label. The button is a small globe, and while the world is turning its
-     meridian sweeps at the world's own pace — one pass every twelve seconds,
-     the period the viewer is watching — so the control says what the map is
-     doing without being read. A held world holds its meridian still, and the
-     gold below says the same thing again for anyone who cannot see motion. */
+     meridian sweeps at the world's own pace — one pass every thirty-six
+     seconds, the period the viewer is watching — so the control says what the
+     map is doing without being read. A held world holds its meridian still,
+     and the gold below says the same thing again for anyone who cannot see
+     motion. */
   #spin { position: relative; cursor: pointer; }
   #spin-globe {
     position: absolute; left: 50%; top: 50%; width: 19px; height: 19px;
@@ -1354,7 +1355,7 @@
     border: 1px solid currentColor; opacity: .75; transform: scaleX(.45);
   }
   #spin[aria-pressed="true"]:not(:disabled) #spin-globe::after {
-    animation: spinMeridian 12s ease-in-out infinite;
+    animation: spinMeridian 36s ease-in-out infinite;
   }
   @keyframes spinMeridian {
     0%, 100% { transform: scaleX(1); }
@@ -3871,10 +3872,11 @@
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="dossier-windows" aria-label="Open player dossiers"></div>
   <div id="map-controls-dock">
-    <!-- Primary row: collapse the deck, set the map area, face north, let the
-         world turn, zoom in, zoom out, and dismiss. The spin follows the
-         compass because the two are one pair: which way the world is facing,
-         and whether it is still facing that way a moment from now. Planet
+    <!-- Primary row: collapse the deck, set the map area, face north, zoom in,
+         zoom out, let the world turn, and dismiss. The spin sits past the zoom
+         rather than beside the compass: the three before it are things a
+         viewer does to the picture and reaches for repeatedly, while this one
+         is a standing choice about the world that is usually set once. Planet
          navigation appears in the second row below when the globe has a route
          to offer. -->
     <div id="zoomctl">
@@ -3883,9 +3885,9 @@
         <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
         <button id="mapareaset" type="button" aria-pressed="false" title="Set map area — drag the four edges" aria-label="Set map area">⛶</button>
         <button id="compass" type="button" title="Face north" aria-label="Face north"><span id="compass-needle"></span></button>
-        <button id="spin" type="button" aria-pressed="true" title="Stop the world turning" aria-label="Stop the world turning"><span id="spin-globe"></span></button>
         <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
         <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
+        <button id="spin" type="button" aria-pressed="true" title="Stop the world turning" aria-label="Stop the world turning"><span id="spin-globe"></span></button>
         <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display Settings" title="Hide map controls · restore in Display Settings">✕</button>
       </div>
       <div id="skynav" hidden role="group" aria-label="Sky controls">

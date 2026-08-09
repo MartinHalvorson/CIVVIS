@@ -14878,11 +14878,12 @@ mod tests {
 
     /// The primary map controls read left to right in the order a viewer
     /// reaches for them: collapse the command deck, set the map area, face
-    /// north, let the world turn, zoom in, zoom out, and dismiss. When
+    /// north, zoom in, zoom out, let the world turn, and dismiss. When
     /// relevant, the sky route is a second row beneath that primary row.
-    /// The spin sits with the compass rather than with the zoom because the
-    /// two answer one question between them: which way the world is facing,
-    /// and whether it will still be facing that way in a moment.
+    /// The spin sits past the zoom rather than beside the compass: the
+    /// controls before it are things a viewer does to the picture and reaches
+    /// for repeatedly, and this one is a standing choice about the world that
+    /// is usually set once.
     /// Dismissal is last in that primary row because it is the only one that
     /// removes the bar, and it hides itself while the deck is collapsed —
     /// Display Settings is the only way back and it lives inside the deck.
@@ -14901,9 +14902,9 @@ mod tests {
             "id=\"paneltoggle\"",
             "id=\"mapareaset\"",
             "id=\"compass\"",
-            "id=\"spin\"",
             "id=\"zin\"",
             "id=\"zout\"",
+            "id=\"spin\"",
             "data-overlay-close=\"controls\"",
             "id=\"skynav\"",
         ] {
@@ -14937,9 +14938,12 @@ mod tests {
     /// carry the camera the other way: the globe by a negative angle about the
     /// pole, the chart by subtracting from `cam.x`.
     ///
-    /// A full turn takes twelve seconds, and the little globe on the button
-    /// keeps that same period, so the control is a reading of the map rather
-    /// than a label on it.
+    /// A full turn takes thirty-six seconds — a viewing rate rather than an
+    /// astronomical one, slow enough that a reader following a war keeps their
+    /// place while the ground moves — and the little globe on the button keeps
+    /// that same period, so the control is a reading of the map rather than a
+    /// label on it. The two are read off each other below rather than pinned
+    /// twice, so retuning the world retunes the button or fails here.
     ///
     /// A hand on the world stops it, for good rather than for the moment. All
     /// three ways of taking hold — the pointer drag, the two-finger pinch and
@@ -14947,7 +14951,6 @@ mod tests {
     #[test]
     fn the_world_turns_about_its_own_poles_until_a_hand_stops_it() {
         let js = EMBEDDED_APP_JS;
-        assert!(js.contains("const WORLD_SPIN_PERIOD_MS = 12000;"));
         // Default on: only an explicit "0" from a previous visit holds it.
         assert!(js.contains(r#"let WORLD_SPIN = localStorage.getItem(WORLD_SPIN_STORAGE_KEY) !== "0";"#));
         // The poles, not the camera's up and not the screen's sideways.
@@ -14985,7 +14988,29 @@ mod tests {
         // The button is the instrument: a globe whose meridian keeps the
         // world's own period, lit only while there is a world turning.
         assert!(EMBEDDED_INDEX.contains(r#"<button id="spin" type="button" aria-pressed="true""#));
-        assert!(EMBEDDED_INDEX.contains("animation: spinMeridian 12s ease-in-out infinite;"));
+        let period_ms: u64 = js
+            .split_once("const WORLD_SPIN_PERIOD_MS = ")
+            .expect("the spin's period")
+            .1
+            .split_once(';')
+            .expect("the end of the period")
+            .0
+            .parse()
+            .expect("a plain number of milliseconds");
+        assert_eq!(period_ms, 36_000, "one full turn every thirty-six seconds");
+        let meridian = EMBEDDED_INDEX
+            .split_once("animation: spinMeridian ")
+            .expect("the button's own turn")
+            .1
+            .split_once("s ")
+            .expect("the end of the meridian's period")
+            .0;
+        assert_eq!(
+            meridian.parse::<u64>().expect("whole seconds"),
+            period_ms / 1000,
+            "the globe on the button keeps the world's period, or it is a label \
+             that lies about what the map is doing"
+        );
         assert!(EMBEDDED_INDEX
             .contains(r#"#zoomctl #spin[aria-pressed="true"]:not(:disabled) {"#));
     }
