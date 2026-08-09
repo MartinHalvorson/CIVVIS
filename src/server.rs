@@ -8079,13 +8079,120 @@ mod tests {
         for control in [
             "RULES.scenario_scripts",
             "function isScenarioMapScript(",
-            "SCENARIO_FIXED_SETTINGS",
             "syncScenarioSettings()",
         ] {
             assert!(
                 EMBEDDED_APP_JS.contains(control),
                 "the browser lost its scenario handling: {control}"
             );
+        }
+    }
+
+    /// Nothing the setup panel runs during page load may read a module
+    /// constant that has not been initialised yet.
+    ///
+    /// `syncSetupMode()` is called from a top-level statement partway down
+    /// `app.js`. A `function` declaration hoists, so it can call anything; a
+    /// top-level `const` or `let` further down the file does **not** — it sits
+    /// in its temporal dead zone until execution reaches it, and reading one
+    /// throws a `ReferenceError`. Thrown from a top-level statement, that
+    /// error takes the rest of the module with it: every listener, the render
+    /// loop and the state fetch below it never run, and the page comes up
+    /// blank with one line in the console. #1447 shipped exactly that.
+    ///
+    /// So this walks what load actually reaches and checks it against what is
+    /// not initialised yet. It is a coarse text scan rather than a parse, and
+    /// it is one-directional: it can miss a path, but what it reports is real.
+    #[test]
+    fn nothing_the_setup_panel_runs_at_load_reads_an_uninitialised_constant() {
+        let js = EMBEDDED_APP_JS;
+        let call = "\nsyncSetupMode();\n";
+        let load_at = js.find(call).expect("the load-time syncSetupMode() call") + 1;
+
+        // Top-level `const`/`let` names declared below that point — column
+        // zero, so a declaration inside any function body is skipped.
+        let mut unborn: Vec<&str> = Vec::new();
+        for line in js[load_at..].lines() {
+            let Some(rest) = line.strip_prefix("const ").or_else(|| line.strip_prefix("let ")) else {
+                continue;
+            };
+            // `let a = 1, b = 2;` declares both, and either can be read early.
+            for binding in rest.split(',') {
+                let name = binding
+                    .trim()
+                    .split(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '$'))
+                    .next()
+                    .unwrap_or_default();
+                if !name.is_empty() && name.chars().next().is_some_and(|ch| !ch.is_numeric()) {
+                    unborn.push(name);
+                }
+            }
+        }
+        // The load call sits near the end of the file, so only a tail of the
+        // module is still unborn at that moment. A named canary from that tail
+        // catches a scan that has quietly stopped finding anything, which
+        // would otherwise make this test pass by seeing nothing.
+        assert!(
+            unborn.contains(&"MAX_ANIMATION_PAINT_SHARE"),
+            "the scan no longer finds late top-level constants ({} found)",
+            unborn.len()
+        );
+
+        // A function's body: from its declaration to the next line that closes
+        // it at column zero. Every function in this file is written that way.
+        let body = |name: &str| -> Option<&str> {
+            let at = js.find(&format!("\nfunction {name}("))? + 1;
+            let end = js[at..].find("\n}\n").map_or(js.len(), |offset| at + offset);
+            Some(&js[at..end])
+        };
+        let mentions = |haystack: &str, word: &str| {
+            haystack.match_indices(word).any(|(at, _)| {
+                let before = haystack[..at].chars().next_back();
+                let after = haystack[at + word.len()..].chars().next();
+                let boundary = |ch: Option<char>| {
+                    ch.is_none_or(|ch| !(ch.is_alphanumeric() || ch == '_' || ch == '$'))
+                };
+                boundary(before) && boundary(after)
+            })
+        };
+
+        // Everything load reaches, transitively, by call.
+        let mut reached: std::collections::BTreeSet<String> = Default::default();
+        let mut pending = vec!["syncSetupMode".to_string()];
+        while let Some(name) = pending.pop() {
+            if !reached.insert(name.clone()) {
+                continue;
+            }
+            let Some(source) = body(&name) else { continue };
+            for (at, _) in source.match_indices('(') {
+                let called: String = source[..at]
+                    .chars()
+                    .rev()
+                    .take_while(|ch| ch.is_alphanumeric() || *ch == '_' || *ch == '$')
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                if !called.is_empty() && js.contains(&format!("\nfunction {called}(")) {
+                    pending.push(called);
+                }
+            }
+        }
+        assert!(
+            reached.contains("syncScenarioSettings"),
+            "the walk no longer reaches the function that broke; it proves nothing"
+        );
+
+        for name in &reached {
+            let Some(source) = body(name) else { continue };
+            for constant in &unborn {
+                assert!(
+                    !mentions(source, constant),
+                    "`{name}` runs during page load and reads `{constant}`, which is \
+                     declared below the load-time `syncSetupMode()` call and is still \
+                     in its temporal dead zone there — this blanks the whole page"
+                );
+            }
         }
     }
 
@@ -9896,7 +10003,7 @@ mod tests {
         // by trying one.
         assert!(EMBEDDED_INDEX.contains("Teams<select id=\"teams\""));
         assert!(EMBEDDED_INDEX.contains("<option value=\"ffa\" selected>Free-for-all</option>"));
-        assert!(EMBEDDED_INDEX.contains("const TEAM_RULES = [\"2\", \"3\", \"4\", \"pairs\"];"));
+        assert!(EMBEDDED_INDEX.contains("function teamRules() { return [\"2\", \"3\", \"4\", \"pairs\"]; }"));
         assert!(EMBEDDED_INDEX.contains("option.disabled = !split;"));
         // The world size decides which splits exist, so it re-fits them before
         // the panel's own delegated listener stages what is now selected.

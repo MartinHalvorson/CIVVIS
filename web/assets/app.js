@@ -28842,13 +28842,18 @@ function scenarioScripts() {
 function isScenarioMapScript(id) {
   return scenarioScripts().some(script => script.id === id);
 }
-// The arena settings a scenario decides for itself, by control id.
-const SCENARIO_FIXED_SETTINGS =
-  ["tacticsfog", "tacticsflag", "tacticscities", "tacticsproduction",
-   "tacticsgold", "tacticsturnspertech", "tacticsuniqueunits"];
 function syncScenarioSettings() {
+  // The arena settings a scenario decides for itself, by control id. Inside
+  // the function deliberately: `syncSetupMode` calls this during load, from a
+  // top-level statement that runs *above* where this file's later constants
+  // are initialised. A `const` list up there is in its temporal dead zone at
+  // that moment, and reading it threw a ReferenceError out of the load path —
+  // which took the rest of the module with it and left the whole page blank.
+  // A function declaration hoists; the array it closes over must not need to.
+  const fixed = ["tacticsfog", "tacticsflag", "tacticscities", "tacticsproduction",
+                 "tacticsgold", "tacticsturnspertech", "tacticsuniqueunits"];
   const scenario = isScenarioMapScript(document.getElementById("maptype")?.value);
-  for (const id of SCENARIO_FIXED_SETTINGS) {
+  for (const id of fixed) {
     const select = document.getElementById(id);
     if (!select) continue;
     select.disabled = scenario;
@@ -29134,7 +29139,14 @@ function syncCustomLeaderSelection() {
 // where they are chosen. The control carries the *rule* — two teams, pairs —
 // rather than the assignment it makes, because which assignment that is
 // depends on a world size chosen two rows further down.
-const TEAM_RULES = ["2", "3", "4", "pairs"];
+//
+// A function rather than a `const`, for the reason above: `syncTeams` is
+// reachable from the setup panel's load-time sync, and this is declared far
+// below the top-level statement that starts it. Only an early return keeps
+// today's load from getting here — the same latent trap that #1447 turned
+// into a live one two functions away. A declaration hoists; a `const` does
+// not, and reading one early blanks the page.
+function teamRules() { return ["2", "3", "4", "pairs"]; }
 // A team of one is not a team, so a split is only on offer while every team it
 // makes can seat at least two civilizations.
 function teamCount(players, rule) {
@@ -29186,7 +29198,7 @@ function teamRuleFromArray(teams) {
   const distinct = new Set(teams.filter(team => team !== null && team !== undefined));
   if (distinct.size < 2) return "ffa";
   const count = String(distinct.size);
-  return TEAM_RULES.includes(count) ? count : "pairs";
+  return teamRules().includes(count) ? count : "pairs";
 }
 // Which splits this world size can actually seat, said in the option itself:
 // "2 teams · 4v4" is the whole answer, and a split this size cannot seat is
@@ -29198,7 +29210,7 @@ function syncTeams() {
   // A battlefield id in the size control means two seats, not a seat count.
   const players = battlefieldSize(size.value) ? 2 : +size.value;
   for (const option of select.options) {
-    if (!TEAM_RULES.includes(option.value)) continue;
+    if (!teamRules().includes(option.value)) continue;
     const name = option.value === "pairs" ? "Pairs" : `${option.value} teams`;
     const split = teamSplit(players, option.value);
     option.disabled = !split;
