@@ -2270,6 +2270,12 @@
   .tactics-options h2 { grid-column: 1 / -1; margin-bottom: 0; }
   .tactics-options > label { min-width: 0; }
   .tactics-options select { width: 100%; }
+  /* A scenario is fought under the economy its battle had, so most of this
+     card is not a choice on one. The controls stay on screen and readable —
+     what they say is what will be played — but they read as reported rather
+     than offered. */
+  .tactics-options > label.setting-fixed { opacity: 0.55; }
+  .tactics-options > label.setting-fixed select { cursor: not-allowed; }
   /* The first setup pass stays short. Less common rules live behind one
      disclosure at the bottom of each panel, where they remain discoverable
      without making every new game begin with a wall of switches. */

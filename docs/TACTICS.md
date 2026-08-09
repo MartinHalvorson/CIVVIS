@@ -703,3 +703,81 @@ says the race and the fight are the same problem rather than two things
 happening in the same battle. Beware quoting a single figure from this: an
 earlier draft of this section cited one game's 74% engage as though it
 described the mode, and the honest range is 44–80%.
+
+## 13. Scenarios, and Trafalgar (2026-08-09)
+
+Everything above this section measures. A **scenario** does not, and the
+distinction is the whole reason it is a separate kind of Tactics map rather
+than another arena preset.
+
+An arena's claim is that the two sides are even: the same roster on both ends
+of the same field, played twice with the seats swapped, so what is left in the
+ledger is the play. That is what makes `battle_bench` and
+[`src/skirmish.rs`](../src/skirmish.rs) instruments. A scenario gives that up
+on purpose. It re-fights one particular engagement, with the forces that were
+actually there, which at Trafalgar means twenty-seven against thirty-three.
+**No number out of a scenario compares two agents**, and nothing in this
+section should be quoted as though it did.
+
+What a scenario is for instead: a position with a known right answer. Nelson's
+plan is famous precisely because the obvious move — form line and engage van
+to van — is the wrong one, and a controller that finds the same answer he did
+has demonstrated something an even fight cannot ask about.
+
+`MapScript::is_scenario` is the marker, and it changes four things:
+
+- **The chart is fixed.** [`src/trafalgar.rs`](../src/trafalgar.rs) holds a
+  30×24 chart of the Gulf of Cádiz — open sea, the Andalusian shore along the
+  east, Cape Trafalgar and its shoals — and the seed moves nothing on it. Two
+  launches are the same battle or it is not a scenario.
+- **The seats are history's, and are not dealt out.** Every other layout in
+  `mapgen` shuffles seat order so it cannot correlate with the order the ends
+  are listed. Here it must not: Britain is seat 0 because **Britain moves
+  first**, and seat 0 is also the seat a person plays.
+- **Each side gets its own order of battle**, from a table naming every ship,
+  rather than one roster mirrored onto both ends.
+- **The economy is the battle's.** `TacticsRules::for_script` strips the
+  cities, production, gold, research, uniques and flag whatever the Tactics
+  card asked for. What survives is the clock and the series length, because
+  neither is a claim about 1805. The browser greys the rest out rather than
+  offering controls the server is about to overrule.
+
+### The position
+
+Noon on 21 October 1805, as Collingwood came within range and twenty minutes
+before Nelson did. Two British columns in line ahead heading east — the
+weather column on row 10, the lee column five rows south and one hex further
+on, which is the head start the freshly-coppered `Royal Sovereign` had — with
+`Africa` alone in the north where she had been separated in the night. Facing
+them, thirty-three ships on the starboard tack heading north for Cádiz, in a
+crescent bowed to leeward, one deep in the van and two deep from the centre
+aft with Gravina's squadron of observation outboard of the rear. Behind them,
+close enough to see, the cape they could not fall back past.
+
+### What is abstracted, and what it costs
+
+Stated plainly, because a scenario that quietly flatters itself is worse than
+no scenario:
+
+- **Every ship of the line is a Frigate.** The ruleset has one sailing warship
+  of the age and the *Santísima Trinidad* and the little *Africa* are both it.
+  So rate is not modelled, and neither is the Royal Navy's rate of fire — the
+  thing that actually decided the exchange once the lines were locked. What is
+  left on the board is the part Nelson chose: where sixty ships were.
+- **The wind is not modelled**, and it decided a great deal. What survives of
+  it is geometry: the van starts far from the fighting and cannot easily get
+  back, which is what happened to Dumanoir for most of the afternoon.
+- **Distances are compressed** — one hex between ships in a column, and a
+  shore drawn a few hexes off a rear that was nine miles from it.
+- A Frigate is a *ranged* unit with two tiles of reach, which favours the
+  formed line over the fleet crossing open water toward it far more than
+  broadside gunnery did. The approach costs the attacker more here than it
+  cost the Royal Navy.
+
+That last point shows up immediately in play. Two `advanced` controllers on
+the stock clock spend the opening trading the approach badly — through the
+first forty turns Britain was down ten ships and the Combined Fleet none —
+and then dissolve into a general melee rather than either holding the line or
+cutting it. Neither side plays Trafalgar. That is a finding about the
+controllers and about the ranged abstraction above, not a result, and it is
+the reason this section makes no claim beyond it.

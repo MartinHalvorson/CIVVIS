@@ -399,6 +399,7 @@ pub enum MapScript {
     WaterWorld,
     Battlefield,
     TacticsPlanet,
+    Trafalgar,
 }
 
 impl MapScript {
@@ -420,6 +421,7 @@ impl MapScript {
             Self::WaterWorld => "water_world",
             Self::Battlefield => "battlefield",
             Self::TacticsPlanet => "tactics_planet",
+            Self::Trafalgar => "trafalgar",
         }
     }
 
@@ -428,7 +430,51 @@ impl MapScript {
     /// cities and armies, skip the development layer, and use the same combat
     /// rules.
     pub const fn is_battlefield(self) -> bool {
-        matches!(self, Self::Battlefield | Self::TacticsPlanet)
+        matches!(self, Self::Battlefield | Self::TacticsPlanet | Self::Trafalgar)
+    }
+
+    /// Whether this Tactics map is a scripted historical battle rather than a
+    /// rolled arena.
+    ///
+    /// A scenario owes the player something an arena does not: the same
+    /// ground, the same two fleets and the same opening every time it is
+    /// launched, because it is a claim about a real battle and not a fresh
+    /// roll of one. So it draws its own map from a fixed chart rather than
+    /// from the seed, seats each side where history put it rather than at
+    /// opposite ends, deals each its own order of battle rather than one
+    /// mirrored roster, and fixes the arena economy it is fought under —
+    /// see [`TacticsRules::for_script`]. The seed still moves nothing that is
+    /// left to move, which on a scenario is nothing at all.
+    ///
+    /// It also gives up the arena's central promise in exchange: the two
+    /// sides are **not** even. Twenty-seven British ships against thirty-three
+    /// is the fact the battle is about. A scenario result is therefore a
+    /// re-fight of a particular engagement and never a measurement of two
+    /// agents against each other — `battle_bench` and the matched skirmish
+    /// remain the instruments for that.
+    pub const fn is_scenario(self) -> bool {
+        matches!(self, Self::Trafalgar)
+    }
+
+    /// The civilizations a scenario seats, in seat order, or `None` where the
+    /// map does not care who fights on it.
+    ///
+    /// Trafalgar seats Britain first because Britain moved first: Nelson's two
+    /// columns were already bearing down when the Combined Fleet was still
+    /// dressing its line, and the whole battle is the story of that approach
+    /// being pressed home. Seat 0 is also the seat a person plays, so the
+    /// scenario hands them the side whose plan there is something to execute.
+    ///
+    /// Two seats for three navies. Tactics is a two-sided mode throughout —
+    /// its starts, its series and its ratings all assume two — and the
+    /// Combined Fleet fought as one command under Villeneuve, so France holds
+    /// the seat and the Spanish ships are in its line where they stood. The
+    /// Spanish flag is missing from the HUD; nothing else about them is.
+    pub const fn scenario_civs(self) -> Option<[&'static str; 2]> {
+        match self {
+            Self::Trafalgar => Some(["England", "France"]),
+            _ => None,
+        }
     }
 
     /// Whether this Tactics map is the small globe rather than the bounded
@@ -497,6 +543,11 @@ impl MapScript {
             // is about half a Duel world, so this leaves a small land world
             // with enough open coastline for two cities on opposite sides.
             Self::TacticsPlanet => 42,
+            // Open sea, less the strip of Andalusian shore along the eastern
+            // edge and the headland of Cape Trafalgar itself. Read rather
+            // than aimed for: the chart in `mapgen::TRAFALGAR_CHART` decides
+            // it, and this is what that chart comes out at.
+            Self::Trafalgar => 9,
         }
     }
 
@@ -680,7 +731,7 @@ pub struct MapScriptSpec {
 /// The world types in the order [`MapScript`] declares them. The Tactics maps
 /// sit last because they are not Civ worlds: the game mode offers them only
 /// when Tactics is chosen.
-pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 16] = [
+pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 17] = [
     MapScriptSpec {
         id: "land_only",
         name: "Land Only",
@@ -777,6 +828,12 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 16] = [
         description: "A small land planet for Tactics: one compact continent on a globe about half the size of Duel, with one city for each side on opposite shores.",
         script: MapScript::TacticsPlanet,
     },
+    MapScriptSpec {
+        id: "trafalgar",
+        name: "Trafalgar · 21 October 1805",
+        description: "The battle as it stood at noon: twenty-seven British ships of the line in Nelson's and Collingwood's two columns, bearing down from the west on the Combined Fleet's thirty-three, strung out in a crescent with Cape Trafalgar and its shoals under their lee. Fixed ground, fixed fleets, and Britain to move.",
+        script: MapScript::Trafalgar,
+    },
 ];
 
 /// The world types a lobby offers for the Civ game mode: every script but the
@@ -790,6 +847,14 @@ pub fn world_map_scripts() -> Vec<&'static MapScriptSpec> {
 /// so arenas and future tactical worlds can grow without a protocol change.
 pub fn battlefield_map_scripts() -> Vec<&'static MapScriptSpec> {
     CIV6_MAP_SCRIPTS.iter().filter(|spec| spec.script.is_battlefield()).collect()
+}
+
+/// The subset of those that are scripted historical battles. A setup surface
+/// needs this to know which of the arena's controls it may still offer: a
+/// scenario fixes its own economy, so most of that card is not the player's
+/// on one. See [`TacticsRules::for_script`].
+pub fn scenario_map_scripts() -> Vec<&'static MapScriptSpec> {
+    CIV6_MAP_SCRIPTS.iter().filter(|spec| spec.script.is_scenario()).collect()
 }
 
 /// Which game this is: the whole thing, or one half of it on its own.
@@ -875,9 +940,10 @@ pub struct BattlefieldSize {
 }
 
 /// The Tactics maps the setup menu offers, smallest first. The arena entries
-/// are bounded fields; the final entry is a small globe with a compact land
-/// world and opposite-side starts.
-pub const BATTLEFIELD_SIZES: [BattlefieldSize; 4] = [
+/// are bounded fields; then a small globe with a compact land world and
+/// opposite-side starts; then the scenarios, which carry their own chart and
+/// so have exactly one size each.
+pub const BATTLEFIELD_SIZES: [BattlefieldSize; 5] = [
     BattlefieldSize {
         id: "10x10", name: "Square · 10×10", width: 10, height: 10,
         script: MapScript::Battlefield, topology: MapTopology::Flat,
@@ -893,6 +959,12 @@ pub const BATTLEFIELD_SIZES: [BattlefieldSize; 4] = [
     BattlefieldSize {
         id: "planet", name: "Planet · small land world", width: 40, height: 18,
         script: MapScript::TacticsPlanet, topology: MapTopology::Planet,
+    },
+    // A scenario's dimensions are its chart's, not a size the player picks:
+    // moving them would move the two fleets off the ground they were on.
+    BattlefieldSize {
+        id: "trafalgar", name: "Trafalgar · 21 October 1805", width: 30, height: 24,
+        script: MapScript::Trafalgar, topology: MapTopology::Flat,
     },
 ];
 
@@ -1070,6 +1142,38 @@ impl TacticsRules {
             unique_units: self.unique_units,
             fog: self.fog,
             flag: self.flag,
+        }
+    }
+
+    /// The economy this map is actually fought under.
+    ///
+    /// An arena's grants are the player's to choose. A scenario's are not:
+    /// nobody launched a ship of the line into Trafalgar, nobody refitted a
+    /// three-decker into a Dreadnought at noon, and the two fleets that were
+    /// there are the two fleets that fight. So every yield is stripped, the
+    /// cities and the flag with them — the battle is decided by the sixty
+    /// ships on the water and by nothing else — and research is stopped so
+    /// the fleets stay 1805 fleets for the whole action. Unique units go too:
+    /// England's Sea Dog was not at Trafalgar either.
+    ///
+    /// What the player still owns: the battle clock and the length of the
+    /// series. Both are how long you want to play for rather than claims
+    /// about the battle. Fog is off, and deliberately — the Combined Fleet
+    /// could see the British columns coming for four hours and its problem
+    /// was never finding them.
+    pub fn for_script(self, script: MapScript) -> Self {
+        if !script.is_scenario() {
+            return self.sanitized();
+        }
+        Self {
+            cities: 0,
+            production: 0,
+            gold: 0,
+            turns_per_tech: 0,
+            unique_units: false,
+            fog: false,
+            flag: false,
+            ..self.sanitized()
         }
     }
 
@@ -1799,6 +1903,7 @@ mod tests {
                 MapScript::WaterWorld,
                 MapScript::Battlefield,
                 MapScript::TacticsPlanet,
+                MapScript::Trafalgar,
             ]
         );
         assert_eq!(MapScript::LandOnly.land_percent(), 95);
@@ -1825,22 +1930,36 @@ mod tests {
     }
 
     /// Tactics maps are a separate roster from Civ worlds. The Battlefield is
-    /// a bounded arena, while Planet keeps its globe and has a custom small
-    /// land-world size.
+    /// a bounded arena, Planet keeps its globe and has a custom small
+    /// land-world size, and Trafalgar is a scenario on a fixed chart.
     #[test]
     fn the_battlefield_is_an_arena_rather_than_a_world() {
         for spec in CIV6_MAP_SCRIPTS {
             assert_eq!(
                 spec.script.is_battlefield(),
-                matches!(spec.script, MapScript::Battlefield | MapScript::TacticsPlanet),
+                matches!(
+                    spec.script,
+                    MapScript::Battlefield | MapScript::TacticsPlanet | MapScript::Trafalgar
+                ),
                 "{}",
                 spec.id
             );
+            // Every scenario is a Tactics map; almost no Tactics map is a
+            // scenario. Getting that backwards would send an arena down the
+            // fixed-chart path and panic the generator.
+            assert!(!spec.script.is_scenario() || spec.script.is_battlefield(), "{}", spec.id);
         }
         assert_eq!(MapScript::from_id("battlefield"), Some(MapScript::Battlefield));
         assert_eq!(MapScript::from_id("tactics_planet"), Some(MapScript::TacticsPlanet));
+        assert_eq!(MapScript::from_id("trafalgar"), Some(MapScript::Trafalgar));
         for size in BATTLEFIELD_SIZES {
-            if size.script == MapScript::Battlefield {
+            if size.script.is_scenario() {
+                // A scenario's size is its chart's, so it is not written as
+                // WxH and is not the player's to choose.
+                assert_eq!(size.script, MapScript::Trafalgar, "{}", size.id);
+                assert_eq!((size.width, size.height), (30, 24), "{}", size.id);
+                assert_eq!(size.topology, MapTopology::Flat, "{}", size.id);
+            } else if size.script == MapScript::Battlefield {
                 let ground: Vec<i32> = size
                     .id
                     .split('x')
@@ -1863,7 +1982,53 @@ mod tests {
             // world is wider than the largest arena several times over.
             assert!(MapSize::from_dimensions(size.width, size.height).is_none(), "{}", size.id);
         }
-        assert_eq!(BATTLEFIELD_SIZES.len(), 4);
+        assert_eq!(BATTLEFIELD_SIZES.len(), 5);
+        // Exactly one entry per scenario script, because a scenario has one
+        // size and a menu offering it twice would be offering two battles.
+        assert_eq!(
+            BATTLEFIELD_SIZES.iter().filter(|size| size.script.is_scenario()).count(),
+            CIV6_MAP_SCRIPTS.iter().filter(|spec| spec.script.is_scenario()).count()
+        );
+    }
+
+    /// A scenario refuses the arena economy the Tactics card offers and keeps
+    /// only the two settings that are about how long you want to play.
+    #[test]
+    fn a_scenario_is_fought_under_its_own_economy() {
+        let generous = TacticsRules {
+            cities: 1,
+            production: 200,
+            gold: 200,
+            turns_per_tech: 4,
+            turn_limit: 150,
+            best_of: 3,
+            unique_units: true,
+            fog: true,
+            flag: true,
+        };
+        let fought = generous.for_script(MapScript::Trafalgar);
+        assert_eq!(
+            fought,
+            TacticsRules {
+                cities: 0,
+                production: 0,
+                gold: 0,
+                turns_per_tech: 0,
+                turn_limit: 150,
+                best_of: 3,
+                unique_units: false,
+                fog: false,
+                flag: false,
+            }
+        );
+        // An arena still gets exactly what it asked for, sanitized and no
+        // more: `for_script` must not become a second place economies change.
+        assert_eq!(
+            generous.for_script(MapScript::Battlefield),
+            generous.sanitized(),
+            "an arena's economy is still the player's"
+        );
+        assert_eq!(generous.for_script(MapScript::Pangaea), generous.sanitized());
     }
 
     /// The three games CIVVIS offers, and how a world says which one it is.

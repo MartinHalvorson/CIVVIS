@@ -1213,6 +1213,12 @@ fn flat_land(
             // have run; this only says that all of it is land.
             offset_region(wm, 0, width, 0, height)
         }
+        // The mirror image of the arena above, and read rather than rolled:
+        // the Trafalgar scenario is nearly all water, and the shore it does
+        // have is the Andalusian coast in a particular place. Both come off
+        // the chart in [`crate::trafalgar`]; this only says which of its
+        // cells are dry.
+        MapScript::Trafalgar => crate::trafalgar::chart_land(wm),
         // Answered before the shape was dispatched on, because Earth's
         // coastlines are read rather than rolled and are the same coastlines
         // on either shape. The two choices differ only when starts are seated.
@@ -2797,6 +2803,8 @@ fn large_lake_budget(script: MapScript, num_continents: usize) -> usize {
         // The battlefield carves its own ponds when its land is laid; a
         // spread lake on a ten-tile-wide arena would be most of the arena.
         MapScript::Battlefield => 0,
+        // And a scenario's water is its chart's, down to the tile.
+        MapScript::Trafalgar => 0,
     }
 }
 
@@ -3813,6 +3821,8 @@ pub fn generate_with_script_and_leader_starts(
     // seated on the field they will actually fight over.
     if script == MapScript::Battlefield {
         paint_battlefield_ground(&mut wm, rng);
+    } else if script == MapScript::Trafalgar {
+        crate::trafalgar::paint_chart(&mut wm);
     }
 
     // --- spawns. Civilization VI does not search for good plots and hope they
@@ -3954,7 +3964,16 @@ pub fn generate_with_script_and_leader_starts(
     let arena_ends = (script == MapScript::Battlefield && num_major_spawns == 2)
         .then(|| battlefield_major_starts(&wm, &major_pool))
         .flatten();
-    let mut spawns = if let Some(mut starts) = lobe_ends.or(planet_ends).or(arena_ends) {
+    // A scenario's seats are neither chosen nor dealt: each side opens where
+    // it actually was, and which of the two is seat 0 decides who moves first.
+    // So this is answered before the shuffle below and skips it — swapping
+    // Nelson and Villeneuve would be a different battle with the same name.
+    let scenario_seats = (script.is_scenario() && num_major_spawns == 2)
+        .then(|| crate::trafalgar::major_starts(&wm))
+        .flatten();
+    let mut spawns = if let Some(starts) = scenario_seats {
+        starts
+    } else if let Some(mut starts) = lobe_ends.or(planet_ends).or(arena_ends) {
         // Seat order should not correlate with the order the ends are listed.
         for index in (1..starts.len()).rev() {
             let other = rng.below(index + 1);
@@ -8968,6 +8987,9 @@ mod river_tests {
                 }
                 MapScript::TacticsPlanet => {
                     unreachable!("the Tactics planet is not a flat rolled-world fixture")
+                }
+                MapScript::Trafalgar => {
+                    unreachable!("a scenario is drawn from its chart, not rolled")
                 }
             }
 

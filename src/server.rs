@@ -28,7 +28,8 @@ use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::name::Name;
 use crate::rules::Rules;
 use crate::setup::{
-    battlefield_map_scripts, future_era_from_id, future_era_id, start_era_from_id, start_era_id,
+    battlefield_map_scripts, future_era_from_id, future_era_id, scenario_map_scripts,
+    start_era_from_id, start_era_id,
     turn_structure_id, world_map_scripts, BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript,
     MapSize, MapTopology, TacticsRules, TurnStructure, BASE_RULESETS, BATTLEFIELD_SIZES,
     CIV6_GAME_SPEEDS,
@@ -4036,6 +4037,23 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
             MapTopology::Flat
         };
         p.num_city_states = 0;
+        // A scenario is drawn at the size of its own chart, so unlike an
+        // arena its dimensions are not a setting: they land after any
+        // explicit `width`/`height` above and overrule them. The engine
+        // asserts the same thing when it reads the chart; this keeps the
+        // published settings honest rather than letting the lobby advertise
+        // a size the world will refuse.
+        if let Some(size) =
+            BATTLEFIELD_SIZES.iter().find(|size| size.script == p.map_script && size.script.is_scenario())
+        {
+            p.width = size.width;
+            p.height = size.height;
+        }
+        // And its economy is the battle's, not the Tactics card's. Applied
+        // here so `/setup` reports what will actually be played; `Game`
+        // applies it again from `TacticsRules::for_script` when the world is
+        // built, so a direct client cannot route around it.
+        p.tactics = p.tactics.for_script(p.map_script);
         // And it keeps the selected battle clock rather than a civilization's
         // five hundred turns. An explicit general `turn_limit` in the same
         // request still wins, for direct clients that deliberately override
@@ -4819,6 +4837,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "map_scripts": world_map_scripts(),
                     "battlefield_scripts": battlefield_map_scripts(),
                     "battlefield_sizes": BATTLEFIELD_SIZES,
+                    // Which of those Tactics maps are scripted battles rather
+                    // than arenas. The arena economy is the player's to set;
+                    // a scenario's is its battle's, so the lobby has to know
+                    // which controls it is still allowed to offer. Published
+                    // as its own list rather than a flag on every script row,
+                    // so the roster keeps the shape older clients read.
+                    "scenario_scripts": scenario_map_scripts(),
                     "map_topologies": MAP_TOPOLOGIES,
                     "map_poles": MAP_POLES,
                     "game_speeds": CIV6_GAME_SPEEDS,
@@ -5208,7 +5233,8 @@ mod tests {
         strategy_roster, tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot,
         ChronicleState, FrameDelivery, Params, Session, Shared, SpectatorFrame,
         BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, DEFAULT_BETWEEN_GAME_COUNTDOWN_MS,
-        EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX,
+        EMBEDDED_APP_JS, EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS,
+        EMBEDDED_INDEX,
         MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
     };
     use crate::game::{
@@ -5218,7 +5244,8 @@ mod tests {
         default_setup_json, generated_ai_name, simulation_settings, stock_opening_params,
     };
     use crate::setup::{
-        battlefield_map_scripts, future_era_from_id, start_era_from_id, world_map_scripts,
+        battlefield_map_scripts, future_era_from_id, scenario_map_scripts, start_era_from_id,
+        world_map_scripts,
         TacticsRules,
         BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology,
         TurnStructure, BATTLEFIELD_SIZES, MAP_POLES,
@@ -7979,6 +8006,87 @@ mod tests {
         assert_eq!(planet.map_topology, MapTopology::Planet);
         assert_eq!((planet.width, planet.height), (40, 18));
         assert_eq!(planet.num_city_states, 0);
+    }
+
+    /// A scenario request is the battle it names, whatever else it asks for.
+    /// Its chart's size overrules an explicit width and height — an arena's
+    /// does not, which is the case above — and its own economy overrules the
+    /// arena card, so the settings the lobby publishes are the ones that will
+    /// actually be played. Leaving the scenario hands every control back.
+    #[test]
+    fn a_scenario_request_carries_its_own_chart_and_economy() {
+        let trafalgar = new_game_params(
+            &current(),
+            &json!({
+                "num_players": 2, "map_script": "trafalgar",
+                "map_topology": "planet", "width": 11, "height": 10,
+                "tactics_cities": 1, "tactics_production": 90, "tactics_gold": 90,
+                "tactics_turns_per_tech": 3, "tactics_unique_units": true,
+                "tactics_fog": true, "tactics_flag": true,
+                "tactics_turn_limit": 150, "tactics_best_of": 3,
+            }),
+        );
+        assert_eq!(trafalgar.map_script, MapScript::Trafalgar);
+        assert_eq!(trafalgar.map_topology, MapTopology::Flat);
+        assert_eq!((trafalgar.width, trafalgar.height), (30, 24));
+        assert_eq!(trafalgar.num_city_states, 0);
+        assert_eq!(trafalgar.tactics.cities, 0);
+        assert_eq!(trafalgar.tactics.production, 0);
+        assert_eq!(trafalgar.tactics.gold, 0);
+        assert_eq!(trafalgar.tactics.turns_per_tech, 0);
+        assert!(!trafalgar.tactics.unique_units);
+        assert!(!trafalgar.tactics.fog);
+        assert!(!trafalgar.tactics.flag);
+        // How long you want to play for is still yours, and the clock the
+        // battle runs on follows the one you chose.
+        assert_eq!(trafalgar.tactics.turn_limit, 150);
+        assert_eq!(trafalgar.tactics.best_of, 3);
+        assert_eq!(trafalgar.max_turns, 150);
+
+        // An arena asked for the same economy keeps every bit of it, so the
+        // override above is the scenario's and not the mode's.
+        let arena = new_game_params(
+            &current(),
+            &json!({
+                "num_players": 2, "map_script": "battlefield", "arena": "20x20",
+                "width": 20, "height": 20,
+                "tactics_cities": 1, "tactics_production": 90, "tactics_gold": 90,
+                "tactics_turns_per_tech": 3, "tactics_unique_units": true,
+            }),
+        );
+        assert_eq!((arena.width, arena.height), (20, 20));
+        assert_eq!(arena.tactics.cities, 1);
+        assert_eq!(arena.tactics.production, 90);
+        assert_eq!(arena.tactics.gold, 90);
+        assert_eq!(arena.tactics.turns_per_tech, 3);
+        assert!(arena.tactics.unique_units);
+    }
+
+    /// The lobby is told which Tactics maps are scenarios, because it has to
+    /// know which of the arena's controls it may still offer. Published as
+    /// its own list rather than as a flag on every script row.
+    #[test]
+    fn the_setup_payload_names_the_scenario_maps() {
+        let scenarios = scenario_map_scripts();
+        assert_eq!(scenarios.len(), 1);
+        assert_eq!(scenarios[0].id, "trafalgar");
+        assert!(battlefield_map_scripts().iter().any(|spec| spec.id == "trafalgar"));
+        assert!(world_map_scripts().iter().all(|spec| spec.id != "trafalgar"));
+        // The browser reads the list by this key and greys the settings a
+        // scenario fixes; the ids it compares against are the script ids.
+        let payload = serde_json::to_value(&scenarios).expect("scenario scripts serialize");
+        assert_eq!(payload[0]["id"], "trafalgar");
+        for control in [
+            "RULES.scenario_scripts",
+            "function isScenarioMapScript(",
+            "SCENARIO_FIXED_SETTINGS",
+            "syncScenarioSettings()",
+        ] {
+            assert!(
+                EMBEDDED_APP_JS.contains(control),
+                "the browser lost its scenario handling: {control}"
+            );
+        }
     }
 
     /// The match settings reach the server from the lobby the same way the

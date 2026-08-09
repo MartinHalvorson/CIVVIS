@@ -28292,6 +28292,7 @@ document.getElementById("custom-leader-table").addEventListener("change", event 
 document.getElementById("maptype").addEventListener("change", () => {
   syncEarthShape();
   if (readSetting("gamemode") === "tactics") syncBattlefieldSizes(true);
+  syncScenarioSettings();
 });
 // Bound on the select itself, so it has re-fitted the splits to the new size
 // before the panel's own delegated listener stages what is now selected.
@@ -28776,6 +28777,10 @@ function syncSetupMode() {
   document.body.classList.toggle("playing-tactics", tactics);
   syncMapRoster(civ6, tactics);
   syncBattlefieldSizes(tactics);
+  // Again here rather than only inside the call above, which has several
+  // early returns: leaving the arena card greyed out after a switch back to
+  // a rolled map would be worse than never having greyed it.
+  syncScenarioSettings();
   syncBattlefieldVictories(tactics);
   // The control's label is not relabelled from here. This runs once during
   // load, before the settings state it would read has been initialised, and
@@ -28796,6 +28801,36 @@ function battlefieldScripts() {
 }
 function battlefieldSizes() {
   return (RULES && Array.isArray(RULES.battlefield_sizes)) ? RULES.battlefield_sizes : [];
+}
+// Which Tactics maps are scripted battles. A scenario is fought under the
+// economy its battle had rather than the one the arena card offers, so the
+// controls the server is about to overrule are shown as fixed instead of
+// live. The clock and the series length are still the player's: neither is a
+// claim about the battle, only about how long they want to play.
+function scenarioScripts() {
+  return (RULES && Array.isArray(RULES.scenario_scripts)) ? RULES.scenario_scripts : [];
+}
+function isScenarioMapScript(id) {
+  return scenarioScripts().some(script => script.id === id);
+}
+// The arena settings a scenario decides for itself, by control id.
+const SCENARIO_FIXED_SETTINGS =
+  ["tacticsfog", "tacticsflag", "tacticscities", "tacticsproduction",
+   "tacticsgold", "tacticsturnspertech", "tacticsuniqueunits"];
+function syncScenarioSettings() {
+  const scenario = isScenarioMapScript(document.getElementById("maptype")?.value);
+  for (const id of SCENARIO_FIXED_SETTINGS) {
+    const select = document.getElementById(id);
+    if (!select) continue;
+    select.disabled = scenario;
+    const label = select.closest("label");
+    if (label) label.classList.toggle("setting-fixed", scenario);
+    // Show what will actually be played rather than a stale choice sitting
+    // under a greyed control: every one of these is off or zero on a
+    // scenario, and "0" is the option value both spellings use.
+    if (scenario && [...select.options].some(option => option.value === "0"))
+      select.value = "0";
+  }
 }
 function battlefieldSizesForScript(script) {
   return battlefieldSizes().filter(size => !size.script || size.script === script);
@@ -28931,6 +28966,9 @@ function syncBattlefieldSizes(tactics) {
       sizes.value = restored;
   }
   sizes.dataset.roster = roster;
+  // Which Tactics map is selected decides how much of the arena card is still
+  // the player's, so this follows every change of it.
+  syncScenarioSettings();
   syncTeams();
   syncCustomLeaderSelection();
 }

@@ -1019,6 +1019,13 @@ fn auto_dimension(args: &[String], key: &str, players: i64, width: bool) -> i32 
             .find(|size| size.script == script)
             .copied()
             .unwrap_or(setup::BATTLEFIELD_SIZES[0]);
+        // A scenario is drawn at the size of its chart and no other: resizing
+        // it would read the chart through a window and lose the coastline the
+        // battle was fought against. So this one is not a default, and
+        // `--width`/`--height` are declined rather than obeyed.
+        if script.is_scenario() {
+            return if width { arena.width } else { arena.height };
+        }
         (arena.width, arena.height)
     } else {
         // A globe stores itself in a rectangle of its own shape, so the size's
@@ -2983,7 +2990,7 @@ fn main() {
                 "usage: civvis <simulate|soak|odds-audit|benchmark|tournament|league|league-init|rate-game|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais [identity=]controller,...] [--anchor identity|none] [--ratings path] [--standings] [--port N] [--no-open] \
-                      [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield|tactics_planet] \
+                      [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield|tactics_planet|trafalgar] \
                       [--shape flat|planet] [--poles poles|randomized] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \

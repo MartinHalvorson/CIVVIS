@@ -4,8 +4,29 @@ use civvis::game::{Game, GameOptions};
 use civvis::mapgen::generate_with_script;
 use civvis::rng::Rng;
 use civvis::rules::Rules;
-use civvis::setup::{MapPoles, MapTopology, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, MAP_POLES};
+use civvis::setup::{
+    MapPoles, MapScript, MapTopology, BATTLEFIELD_SIZES, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES,
+    MAP_POLES,
+};
 use civvis::world::Topology;
+
+/// The rectangle a script is generated into, and how many majors it seats.
+///
+/// Every world type takes whatever size and seat count the matrix hands it. A
+/// scenario cannot: it is drawn at the size of its own chart and fought by the
+/// two fleets that were there, and a Trafalgar generated at "tiny" with four
+/// seats would be a different map with the same name. So a scenario stays in
+/// the matrix — it is exercised on both shapes and both climates like
+/// everything else — at the one configuration it has.
+fn shape_of(script: MapScript, fallback: (i32, i32), majors: usize) -> ((i32, i32), usize) {
+    match BATTLEFIELD_SIZES
+        .iter()
+        .find(|size| size.script == script && script.is_scenario())
+    {
+        Some(size) => ((size.width, size.height), 2),
+        None => (fallback, majors),
+    }
+}
 
 /// Shape, climate and map script are independent setup choices. Keep every map
 /// type in the catalogue on both generation paths, including fixed-geography
@@ -24,10 +45,12 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
         // Tactics maps are in the matrix with their own promises: the bounded
         // Battlefield refuses the globe, while the Planet entry keeps it, and
         // both seat no city-states whatever the caller asked for.
+        let ((width, height), majors) =
+            shape_of(spec.script, (size.width, size.height), size.default_players);
         let seats = if spec.script.is_battlefield() {
-            size.default_players
+            majors
         } else {
-            size.default_players + size.default_city_states
+            majors + size.default_city_states
         };
         for (shape_index, shape) in [MapTopology::Flat, MapTopology::Planet]
             .into_iter()
@@ -45,9 +68,9 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
                 let mut rng = Rng::new(seed);
                 let (world, spawns) = generate_with_script(
                     &rules,
-                    size.width,
-                    size.height,
-                    size.default_players,
+                    width,
+                    height,
+                    majors,
                     size.default_city_states,
                     size.natural_wonders,
                     size.continents,
@@ -73,7 +96,7 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
                         // what stops a unit walking off the field.
                         assert_eq!(
                             world.topology,
-                            if spec.script == civvis::setup::MapScript::Battlefield {
+                            if spec.script.is_battlefield() {
                                 Topology::Rectangle
                             } else {
                                 Topology::Cylinder
@@ -82,12 +105,12 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
                         );
                         assert_eq!(
                             (world.width, world.height),
-                            (size.width, size.height),
+                            (width, height),
                             "{case} used planet-map storage dimensions"
                         );
                         assert_eq!(
                             world.tiles.len(),
-                            (size.width * size.height) as usize,
+                            (width * height) as usize,
                             "{case} did not cover the whole rectangle"
                         );
                     }
@@ -162,7 +185,14 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
                     let tile = world
                         .get(*start)
                         .unwrap_or_else(|| panic!("{case}: start {start:?} is outside the world"));
-                    assert!(!rules.is_water(tile), "{case}: start {start:?} is in water");
+                    // A start is where a Settler is put down, so on a world it
+                    // has to be dry. A naval scenario seats fleets instead,
+                    // and its two seats are the flagships' own water.
+                    assert_eq!(
+                        rules.is_water(tile),
+                        spec.script.is_scenario(),
+                        "{case}: start {start:?} is on the wrong element"
+                    );
                     assert!(
                         rules.is_passable(tile),
                         "{case}: start {start:?} is impassable"
@@ -209,14 +239,15 @@ fn every_world_type_starts_a_game_on_either_shape() {
 
     for (index, spec) in CIV6_MAP_SCRIPTS.iter().enumerate() {
         for shape in [MapTopology::Flat, MapTopology::Planet] {
-            let (width, height) = size.dimensions(shape);
+            let ((width, height), majors) =
+                shape_of(spec.script, size.dimensions(shape), size.default_players);
             let game = Game::new_with(GameOptions {
                 barbarians: false,
                 map_script: spec.script,
                 map_topology: shape,
                 map_poles: MapPoles::Poles,
                 ..GameOptions::new(
-                    size.default_players,
+                    majors,
                     width,
                     height,
                     81_000 + 2 * index as u64 + shape.is_globe() as u64,
@@ -248,7 +279,7 @@ fn every_world_type_starts_a_game_on_either_shape() {
                     .iter()
                     .filter(|player| !player.is_minor && !player.is_barbarian)
                     .count(),
-                size.default_players,
+                majors,
                 "{case} lost a major player during setup"
             );
             assert_eq!(
