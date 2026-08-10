@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 115] = [
+pub const EVAL_ONLY_AIS: [&str; 116] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -127,6 +127,7 @@ pub const EVAL_ONLY_AIS: [&str; 115] = [
     "advanced_roster_live_keep_districts",
     "advanced_diplomatic_opening",
     "advanced_without_bounded_recovery",
+    "advanced_without_city_target_floor",
     "advanced_league_top",
     "advanced_joint_tactics",
     "strategic_cheap",
@@ -331,6 +332,7 @@ define_arm_kinds! {
     AdvancedRosterLiveKeepDistricts => "advanced_roster_live_keep_districts",
     AdvancedDiplomaticOpening => "advanced_diplomatic_opening",
     AdvancedWithoutBoundedRecovery => "advanced_without_bounded_recovery",
+    AdvancedWithoutCityTargetFloor => "advanced_without_city_target_floor",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
@@ -380,6 +382,11 @@ define_arm_kinds! {
 /// `advanced_holy_v0` can still construct that agent. The live value is
 /// [`crate::ai::ADVANCED_D_HOLY`].
 pub const PRE_2026_08_10_D_HOLY: f64 = 2.0;
+
+/// The city-target floor the frozen and pre-promotion controllers use, so
+/// `advanced_without_city_target_floor` withholds to a value the repository
+/// already plays rather than a number invented for the arm.
+pub const PRE_PROMOTION_CITY_TARGET_FLOOR: usize = 3;
 
 /// Games-weighted `settle_food` of the top third of the shipped league roster
 /// by outright 8-player win rate, against the bottom third's 1.19 and the
@@ -2309,6 +2316,27 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // `disable_bounded_recovery`'s doc warns about. So this arm WITHHOLDS
         // it, which is the only way round that measures anything: an arm built
         // as "new() plus the flag" is byte-identical to the control.
+        // Withhold the production city-target floor, returning it to the 3 the
+        // frozen controller uses.
+        //
+        // The component with the weakest individual case in the whole
+        // production bundle. Its solo axis is a **recorded null** — the
+        // `city_target_floor` 3 -> 6 ramp measured 49.6%, Elo -3, sign
+        // p=0.9007 over 240 pairs on seed 510000, after a 53.3% first reading
+        // that did not reproduce, and the entrant was removed. `GENOME.md` puts
+        // city expansion "at a local optimum", and every expansion treatment
+        // since has been null: the target ramp, parallel settlers, and a
+        // settler priced at 100x that moved cities by 0.06.
+        //
+        // It nevertheless ships, inside the 2026-08-01 composite. A composite
+        // may pass while a component is null alone, so this is not an
+        // accusation — it is the missing measurement. If withholding it is
+        // positive, the bundle is carrying a part that costs.
+        "advanced_without_city_target_floor" => {
+            let mut ai = AdvancedAi::new();
+            ai.city_target_floor = PRE_PROMOTION_CITY_TARGET_FLOOR;
+            Box::new(ai)
+        }
         "advanced_without_bounded_recovery" => {
             let mut ai = AdvancedAi::new();
             ai.disable_bounded_recovery();
@@ -3365,6 +3393,7 @@ impl ArmKind {
             Self::AdvancedRosterLiveKeepDistricts => &["roster-winner-live-genes-except-districts"],
             Self::AdvancedDiplomaticOpening => &["diplomatic-lane-prospective"],
             Self::AdvancedWithoutBoundedRecovery => &["bounded-recovery-withheld"],
+            Self::AdvancedWithoutCityTargetFloor => &["city-target-floor-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -3878,6 +3907,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_roster_live_keep_districts" => (Vec::new(), "advanced_roster_live_keep_districts"),
         "advanced_diplomatic_opening" => (Vec::new(), "advanced_diplomatic_opening"),
         "advanced_without_bounded_recovery" => (Vec::new(), "advanced_without_bounded_recovery"),
+        "advanced_without_city_target_floor" => (Vec::new(), "advanced_without_city_target_floor"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -5085,7 +5115,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 84] = [
+            const SCRIPTED: [&str; 85] = [
                 "advanced_joint_tactics",
                 "live_without_joint_tactics",
                 "advanced",
@@ -5138,6 +5168,7 @@ mod tests {
                 "advanced_roster_live_keep_districts",
                 "advanced_diplomatic_opening",
                 "advanced_without_bounded_recovery",
+                "advanced_without_city_target_floor",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",
