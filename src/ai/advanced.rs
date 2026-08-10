@@ -3146,6 +3146,27 @@ impl AdvancedAi {
         self.base.siege_muster = false;
     }
 
+    /// The three production flags that had no withhold and therefore could not
+    /// be priced at all.
+    ///
+    /// `promoted_policy_envoy` turns on thirteen behaviours; only some of them
+    /// had a `disable_*`, which is the gap `disable_bounded_recovery` names
+    /// directly — *"Every flag in `enable_live_bridge` needs one of these or it
+    /// ships unmeasured."* Pricing the bundle found one component costing
+    /// **41 Elo** (`city_target_floor`, removed #1504), so an unpriceable flag
+    /// is not a theoretical problem.
+    pub fn disable_tactical_strategy(&mut self) {
+        self.base.tactical_strategy = false;
+    }
+
+    pub fn disable_unit_objective_memory(&mut self) {
+        self.base.unit_objective_memory = false;
+    }
+
+    pub fn disable_amenity_districts(&mut self) {
+        self.base.amenity_districts = false;
+    }
+
     /// Rank district families by how much of the empire still lacks them.
     ///
     /// ⚠ `d_theater` is the lowest of the four district weights in all 51 league
