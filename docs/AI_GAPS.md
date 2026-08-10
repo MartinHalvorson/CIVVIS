@@ -446,3 +446,135 @@ This closes the local site-selection and transit-safety gap. The larger
 **full expansion investment** gap remains: production, population cost, escort
 availability, travel, founding, and city payback still need a coupled
 long-horizon search before expansion can claim a complete economic solution.
+
+## 2026-08-10 the live-bridge repair bundle does not transfer to native play
+
+`AdvancedAi::enable_live_bridge` carries 41 measured repairs, and the doc
+comment on each one is unusually convincing: an army admitted as a clique at
+`command_radius` and then judged at half of it, clearing its own muster gate on
+5 of 85 turns; a siege that walks away from a city at 25 hp and hands the
+defender 200 hp of healing back; a relief column that marches at the besieger
+nearest *itself* rather than the one killing the city; an army target already
+reading satisfied on 94 of 188 war turns.
+
+Every one of them is gated "live-bridge only", and the stated reason is always
+versioning: the frozen `advanced_v1` anchor and the recorded ladders have to
+keep running the controller they were rated with. Nothing in the tree ever
+claimed the repairs were *wrong* natively — only that turning them on would
+move a rating anchor.
+
+**So the bundle had never been priced against `advanced`.** `live` has only ever
+been compared with its own `live_without_*` ablations, and each of those holds
+one flag off inside a bundle that still contains the other forty. That measures
+a link. It cannot measure the chain against no chain at all, and the repairs are
+serially coupled — readiness gates the march, the march gates the siege, the
+siege gates the capture, and the army target decides whether there is anything
+to march with.
+
+`advanced_synergy` is the 37 of those repairs that fix a CIVVIS defect rather
+than encode a rule of Firaxis' game, applied to the stock production
+controller. `live_trader_route_adapter`, `live_religious_purchase_guard` and
+`solvent_faith_army` are excluded as Firaxis semantics; `joint_tactics` is
+excluded on evidence (§7 above). The war (23) and economy (14) halves are
+separate arms so the composite's interaction is measured rather than assumed.
+
+| arm | compact-standard | deployment-online |
+|---|---:|---:|
+| `advanced_synergy_war` (23 repairs) | −47, sign p = 0.0007 | −85, sign p = 0.0000, RETAIN |
+| `advanced_synergy_war`, replication | −44, sign p = 0.0005 | −72, sign p = 0.0004, RETAIN |
+| `advanced_synergy_economy` (14 repairs) | −31, sign p = 0.0488 | −65, sign p = 0.0005 |
+| `advanced_synergy` (all 37), discovery | −60, sign p = 0.0000 | −129, RETAIN |
+| **`advanced_synergy`, CONFIRMED** | **−76** (95% CI −140..−13) | **−108** (95% CI −172..−43) |
+
+⚠ **Quote the confirmed row.** A promotion run is a decision, not an unbiased
+estimate: the discovery effect size is conditioned on having fired the gate and
+is biased away from parity. The confirmed row is `--confirm` on seed prefixes
+disjoint from discovery, and it is the one that is quotable — this is R3 in
+`EVAL_INTEGRITY.md` doing its job, and note that it moved the compact estimate
+*further* from parity (−60 to −76) and the deployment estimate *toward* it
+(−129 to −108). The direction of the bias is not knowable in advance, which is
+why the disjoint prefix is run rather than reasoned about.
+
+On the confirmation prefixes the multi-profile gate reads **0/2 profiles
+cleared**: both profiles now retain `advanced` outright rather than one
+retaining and one landing inconclusive.
+
+The war replication is a disjoint seed prefix (86000000 against 83000000) run
+after #1512 landed, which changed `remembered_objective_strength` — a repair
+this half carries. Giving a never-seen city the conservative floor instead of
+the `hostile <= 0` sentinel is worth something (−85 to −72) and is nowhere near
+parity. Two independent prefixes, same direction, both significant.
+
+⚠ Seed bookkeeping, recorded because this document has been wrong about a seed
+stream before: the war replication was launched at base 86000000 while the
+composite confirmation's *deployment* profile also derives 86000000 (base
+85000000 plus one `MATRIX_PROFILE_SEED_STRIDE`). The numeric ranges overlap.
+No games are shared — the war replication's 86000000 prefix is the four-player
+24×16 compact profile and the confirmation's is the six-player 74×46 online
+one, so the same integer seeds generate different maps under different rules —
+but the two runs should not be described as drawing from disjoint *streams*,
+only as measuring different arms on different profiles.
+
+```
+ai_eval advanced_synergy advanced --matrix --pairs 120 --seed 81000000
+  compact-standard    41.5% (95% Wilson 33.0..50.4)   direction 15 / 53 / 52
+  deployment-online   32.3% (95% Wilson 24.6..41.1)   direction 11 / 42 / 67
+  multi-profile promotion gate: RETAIN advanced — cleared 1/2 profiles
+
+ai_eval advanced_synergy advanced --matrix --pairs 120 --seed 85000000 --confirm 81000000
+  compact-standard    39.2% (95% Wilson 30.9..48.1)   direction  8 / 61 / 51
+  deployment-online   35.0% (95% Wilson 27.1..43.9)   direction 15 / 44 / 61
+  multi-profile promotion gate: RETAIN advanced — cleared 0/2 profiles
+```
+
+**Both halves lose independently and the damage is close to additive**
+(−85 and −65 against a composite −129 at deployment; −47 and −31 against −60 on
+compact — halves and composite compared at discovery, the only prefixes on
+which all three were run). There is no single villain to bisect out and no destructive
+interaction between them: the bundle is not one bad repair poisoning thirty-six
+good ones.
+
+### Where the loss actually shows up
+
+At deployment the arm is not out-expanded — cities land at 6.25 against 6.31,
+population 73.6 against 74.7. It is out-*developed*:
+
+| | `advanced_synergy` | `advanced` |
+|---|---:|---:|
+| districts | 27.0 | 24.1 |
+| buildings | 75.9 | 94.1 |
+| builders | 2.39 | 4.08 |
+| gold | 216.0 | 727.6 |
+| military | 749.7 | 1030.0 |
+| science victories | 47 | 127 |
+
+More districts, fewer buildings, 3.4x less gold, and a smaller army. The
+economy is being spent on district and housing infrastructure it cannot fund,
+and the military that infrastructure was supposed to pay for is smaller, not
+larger.
+
+### What this is evidence of
+
+This is §5 above — results overfitting their measurement profile — with an axis
+that matters more than map size: **regime**. Nearly every measurement quoted in
+those doc comments comes from a live Civilization VI bridge run
+(`civvis-2026…Z`), where CIVVIS issues orders into Firaxis' engine and reads
+Firaxis' economy. The native engine is a different decision problem, and a
+repair validated in one does not transfer to the other.
+
+`muster_at_command_radius` states the mechanism against itself: it trades an
+army that never advances for one that advances spread over six hexes and "can
+be defeated in detail". Natively that trade loses.
+
+⚠ This does **not** say the deployed Civilization VI agent is carrying harmful
+changes — it is playing a different engine, which is exactly the point, and no
+measurement here reaches it. What it does say is that the "live-bridge only"
+gating, adopted as versioning conservatism, turns out to be load-bearing on
+strength grounds as well, and that promoting any of these repairs into the
+native controller on the strength of its doc comment would have cost real Elo.
+
+The arms are eval-only and nothing in the shipped tree changes. Two guards keep
+the bundles from drifting apart:
+`engine_repairs_are_the_live_bridge_minus_the_firaxis_semantics` asserts the
+flag-level partition and `engine_repair_tags_partition_the_bridge` asserts it
+for the tag lists `differing_axes` reports.
