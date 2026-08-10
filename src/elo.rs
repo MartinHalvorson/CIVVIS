@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 111] = [
+pub const EVAL_ONLY_AIS: [&str; 113] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -123,6 +123,8 @@ pub const EVAL_ONLY_AIS: [&str; 111] = [
     "advanced_holy_v0",
     "advanced_settle_food",
     "advanced_holy_lane_v0",
+    "advanced_roster_live",
+    "advanced_roster_live_keep_districts",
     "advanced_league_top",
     "advanced_joint_tactics",
     "strategic_cheap",
@@ -323,6 +325,8 @@ define_arm_kinds! {
     AdvancedHolyV0 => "advanced_holy_v0",
     AdvancedSettleFood => "advanced_settle_food",
     AdvancedHolyLaneV0 => "advanced_holy_lane_v0",
+    AdvancedRosterLive => "advanced_roster_live",
+    AdvancedRosterLiveKeepDistricts => "advanced_roster_live_keep_districts",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
@@ -2168,6 +2172,99 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // weights, so measured against `advanced_holy_v0` it separates them: a
         // gain here means redundancy, another null means the path itself does
         // not bind.
+        // Everything the roster's winners agree on, restricted to coordinates
+        // that can actually reach a decision.
+        //
+        // Single-gene mining is close to exhausted: `d_holy` shipped at +20
+        // Elo, and after removing the genes `gene_census` proved inert every
+        // remaining separation is under a tenth of its gene's legal range. So
+        // this composes them, in the same spirit as `Grant::Compound` -- if no
+        // single subsystem clears the bar, ask whether several together do.
+        //
+        // Values are the games-weighted mean of the top four bred genomes by
+        // outright 8-player win rate (>=200 games each). Genes within 2% of the
+        // shipped value are left alone, the eight inert genes are skipped
+        // because by construction they cannot contribute, and `d_holy` is
+        // already at the winners' figure.
+        //
+        // ⚠ This is a SCREEN, not a proposal. 28 genes move at once, so a win
+        // says only that something in the set pays and a null says the whole
+        // set does not -- neither attributes anything to a gene. The roster's
+        // own false-positive rate is measured and high: four of its top
+        // fourteen signals, including the second-strongest (`settle_food`,
+        // r=-0.73), are genes that provably cannot change a game.
+        "advanced_roster_live" => {
+            let mut w = Weights::advanced();
+            w.city_target = 6.4714;
+            w.settler_stop_turn = 162.6394;
+            w.mil_per_city = 0.9332;
+            w.builder_per_city = 0.5816;
+            w.attack_floor = -2.6485;
+            w.kill_bonus = 27.8323;
+            w.trade_caution = 1.2266;
+            w.min_city_dist = 4.1185;
+            w.faith_builder = 260.3021;
+            w.d_campus = 4.6378;
+            w.d_commercial = 5.5494;
+            w.d_theater = 0.4972;
+            w.open0 = 0.5105;
+            w.open1 = 3.4783;
+            w.open2 = 1.7629;
+            w.open3 = 4.5988;
+            w.mv_support = 2.4320;
+            w.mv_threat = 0.4698;
+            w.command_radius = 3.2010;
+            w.muster_readiness = 0.6351;
+            w.cohesion = 6.8153;
+            w.focus_fire = 2.0175;
+            w.screen = 10.1270;
+            w.role_spacing = 0.7614;
+            w.objective_progress = 2.9090;
+            w.local_superiority = 5.7622;
+            w.withdraw_hp = 41.0983;
+            w.rejoin_hp = 78.3851;
+            Box::new(AdvancedAi::with_weights(w))
+        }
+        // `advanced_roster_live` minus its district lane, to test why the
+        // composite lost.
+        //
+        // The composite raises `d_commercial` 3.0 -> 5.55, which all but ties
+        // the `d_holy` 5.6 that shipped at +20 Elo, and its religious wins fell
+        // 470 -> 392 against the control. The reading is that the roster's own
+        // district preferences dilute the district priority already measured on
+        // this engine. This arm holds `d_campus`, `d_commercial` and
+        // `d_theater` at the shipped values and takes the roster's other
+        // twenty-five live genes unchanged, so recovery toward parity confirms
+        // the districts carried the loss and a second loss acquits them.
+        "advanced_roster_live_keep_districts" => {
+            let mut w = Weights::advanced();
+            w.city_target = 6.4714;
+            w.settler_stop_turn = 162.6394;
+            w.mil_per_city = 0.9332;
+            w.builder_per_city = 0.5816;
+            w.attack_floor = -2.6485;
+            w.kill_bonus = 27.8323;
+            w.trade_caution = 1.2266;
+            w.min_city_dist = 4.1185;
+            w.faith_builder = 260.3021;
+            w.open0 = 0.5105;
+            w.open1 = 3.4783;
+            w.open2 = 1.7629;
+            w.open3 = 4.5988;
+            w.mv_support = 2.4320;
+            w.mv_threat = 0.4698;
+            w.command_radius = 3.2010;
+            w.muster_readiness = 0.6351;
+            w.cohesion = 6.8153;
+            w.focus_fire = 2.0175;
+            w.screen = 10.1270;
+            w.role_spacing = 0.7614;
+            w.objective_progress = 2.9090;
+            w.local_superiority = 5.7622;
+            w.withdraw_hp = 41.0983;
+            w.rejoin_hp = 78.3851;
+            Box::new(AdvancedAi::with_weights(w))
+        }
         "advanced_holy_lane_v0" => {
             let mut w = Weights::advanced();
             w.d_holy = PRE_2026_08_10_D_HOLY;
@@ -3210,6 +3307,8 @@ impl ArmKind {
             Self::AdvancedHolyV0 => &["district-holy-pre-2026-08-10"],
             Self::AdvancedSettleFood => &["settle-site-food-weight"],
             Self::AdvancedHolyLaneV0 => &["lane-holy-parity", "district-holy-pre-2026-08-10"],
+            Self::AdvancedRosterLive => &["roster-winner-live-genes"],
+            Self::AdvancedRosterLiveKeepDistricts => &["roster-winner-live-genes-except-districts"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -3719,6 +3818,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_holy_v0" => (Vec::new(), "advanced_holy_v0"),
         "advanced_settle_food" => (Vec::new(), "advanced_settle_food"),
         "advanced_holy_lane_v0" => (Vec::new(), "advanced_holy_lane_v0"),
+        "advanced_roster_live" => (Vec::new(), "advanced_roster_live"),
+        "advanced_roster_live_keep_districts" => (Vec::new(), "advanced_roster_live_keep_districts"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -4926,7 +5027,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 80] = [
+            const SCRIPTED: [&str; 82] = [
                 "advanced_joint_tactics",
                 "live_without_joint_tactics",
                 "advanced",
@@ -4975,6 +5076,8 @@ mod tests {
                 "advanced_holy_v0",
                 "advanced_settle_food",
                 "advanced_holy_lane_v0",
+                "advanced_roster_live",
+                "advanced_roster_live_keep_districts",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",
