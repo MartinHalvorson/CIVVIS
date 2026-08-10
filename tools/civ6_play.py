@@ -102,6 +102,44 @@ def startup_event_proves_game_started(event: dict) -> bool:
     )
 
 
+def wait_for_agent_start(tail, on_event, seconds: float) -> bool:
+    """Wait for the in-game agent, staying patient while the game LOADS.
+
+    ⚠⚠⚠ THE FIXED DEADLINE KILLED FOUR CONSECUTIVE STARTS ON 2026-08-10.
+    #1481 made this gate require `agent` lifecycle telemetry rather than any
+    event at all, which is right -- an `autoclose_armed` from a setup screen is
+    not a live game. But the gate kept a FIXED budget, and on this machine map
+    generation after Begin Game can take longer than the 120 s default. Runs
+    civvis-20260810T171138Z, ...T171753Z, ...T172435Z and ...T173214Z each ended
+    with exactly 22 `autoclose_armed` events and ZERO `agent` events; the caller
+    then ran `return_to_main_menu`, which pressed ESC on a game that was still
+    loading and walked into "are you sure you wish to quit". The revision
+    immediately before #1481 played a 232-turn game on the same machine and
+    settings, because its gate accepted the first autoclose event and waited.
+
+    So: keep the strict proof, drop the fixed deadline. Any event arriving is
+    evidence the game is still coming up and EXTENDS the budget; this gives up
+    only after `seconds` of genuine SILENCE, or when the game process is gone.
+    A hard bound of six times the budget still stops a game that streams
+    autoclose events forever from hanging the harness.
+    """
+    quiet_deadline = time.monotonic() + seconds
+    hard_deadline = time.monotonic() + max(seconds, 0.0) * 6.0
+    while time.monotonic() < quiet_deadline and time.monotonic() < hard_deadline:
+        progressed = False
+        for event in tail.poll():
+            on_event(event)
+            progressed = True
+            if startup_event_proves_game_started(event):
+                return True
+        if not env.game_pids():
+            return False
+        if progressed:
+            quiet_deadline = time.monotonic() + seconds
+        time.sleep(2.0)
+    return False
+
+
 def hold_macos_awake() -> bool:
     """Keep an active live run awake even when the console is locked.
 
@@ -1471,16 +1509,7 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     anything at all is the proof that a game exists.
     """
     def started(seconds: float) -> bool:
-        deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
-            for event in tail.poll():
-                on_event(event)
-                if startup_event_proves_game_started(event):
-                    return True
-            if not env.game_pids():
-                return False
-            time.sleep(2.0)
-        return False
+        return wait_for_agent_start(tail, on_event, seconds)
 
     # The mod scan lands in Modding.log minutes before the menu can be clicked
     # -- the 2K and Firaxis logos play over the top of it -- so "main menu
@@ -1649,16 +1678,7 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
     select, so this never guesses which row happens to be first.
     """
     def started(seconds: float) -> bool:
-        deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
-            for event in tail.poll():
-                on_event(event)
-                if startup_event_proves_game_started(event):
-                    return True
-            if not env.game_pids():
-                return False
-            time.sleep(2.0)
-        return False
+        return wait_for_agent_start(tail, on_event, seconds)
 
     save_label = Path(args.load_save).stem
     for attempt in range(1, BOOTSTRAP_ATTEMPTS + 1):
