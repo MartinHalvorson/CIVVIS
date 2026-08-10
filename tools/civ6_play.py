@@ -127,11 +127,18 @@ def wait_for_agent_start(tail, on_event, seconds: float) -> bool:
     hard_deadline = time.monotonic() + max(seconds, 0.0) * 6.0
     while time.monotonic() < quiet_deadline and time.monotonic() < hard_deadline:
         progressed = False
+        started = False
         for event in tail.poll():
             on_event(event)
             progressed = True
             if startup_event_proves_game_started(event):
-                return True
+                # Drain the batch before returning.  The first poll can contain
+                # loaded, seat, and turn-1 state together; returning immediately
+                # after loaded would advance the tail past the latter two and
+                # leave the decision worker waiting on a state that was emitted.
+                started = True
+        if started:
+            return True
         if not env.game_pids():
             return False
         if progressed:
