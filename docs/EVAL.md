@@ -7511,7 +7511,7 @@ mechanism in the victory mix — against an opponent that is the old agent rathe
 than a re-labelled copy of the new one.
 
 
-## 2026-08-10 — ★★★★ nine of the forty genes cannot change a game, and they are two whole subsystems
+## 2026-08-10 — ★★★★ eight of the forty genes cannot change a game, and they are two whole subsystems
 
 Round 1 shipped `d_holy` at +20 Elo. This round took the roster's two next
 separations to the evaluator, got two hard nulls, noticed what the nulls had in
@@ -7563,15 +7563,23 @@ to the far end of that gene's own legal `bounds()`, the rest of the fleet is
 stock, the control is the same seed with the same seat unperturbed. 12 games,
 4p 60x38, 220 turns, treated seat rotating.
 
-**Nine genes never moved a single game — not one point of one score:**
+Nine genes never moved a game at n=12. Re-probed at **48 games on disjoint
+seeds** (880000, against the first pass's 990000), **eight of them held at
+0/48** and one did not:
 
-| block | genes |
-|---|---|
-| war declaration | `war_ratio`, `war_margin`, `peace_ratio`, `war_min_turn` |
-| settle-site scoring | `settle_food`, `settle_prod`, `settle_gold`, `settle_dist` |
-| — | `faith_builder` |
+| block | genes | 12 games | 48 fresh games |
+|---|---|---|---|
+| war declaration | `war_ratio`, `war_margin`, `peace_ratio`, `war_min_turn` | 0/12 moved | **0/48 moved** |
+| settle-site scoring | `settle_food`, `settle_prod`, `settle_gold`, `settle_dist` | 0/12 moved | **0/48 moved** |
+| false positive | `faith_builder` | 0/12 moved | **6/48 moved — live** |
 
-They are not scattered. They are **two complete subsystems**, and both have the
+⚠ **`faith_builder` is the tool's own error bar, kept in the table on purpose.**
+A 12-game cell bounds a gene's per-game effect rate at roughly 25% and no
+tighter, and `faith_builder` sits at 12%, which 12 games cannot see. Read a
+single 12-game INERT verdict as a *screen*, never as a result; the 48-game
+re-probe is what supports the claim, and it bounds the eight at about 6%.
+
+The eight that held are not scattered. They are **two complete subsystems**, and both have the
 same cause: `AdvancedAi` overrides the `BasicAi` decision those genes weight.
 All four war genes live in `BasicAi::diplomacy` (`src/ai.rs:4109`, uses at 4299,
 4425, 4437); `AdvancedAi` carries fifteen `DeclareWar` sites of its own and
@@ -7581,7 +7589,7 @@ the one settlement gene the planner *does* consult, is live at 42%.
 
 ### Why this matters more than any one gene
 
-`evolve` breeds this 40-vector and `league` rates the survivors. **22.5% of the
+`evolve` breeds this 40-vector and `league` rates the survivors. **20% of the
 search space cannot affect play.** Consequences that were previously puzzling
 fall out of it:
 
@@ -7594,8 +7602,7 @@ fall out of it:
 - It predicted the `settle_food` null before that arm was run, and the census
   reproduces it independently.
 
-⚠ **Read "inert" as "did not bind at this profile", not "unreachable".** These
-are 12-game cells; the deep probe below tightens the bound. A gene could bind on
+⚠ **Read "inert" as "did not bind at this profile", not "unreachable".** A gene could bind on
 a map shape or a game length this profile does not visit, and the war block in
 particular may bind for `basic`, which is city-states and barbarians and does
 run `BasicAi::diplomacy`. The claim is about the deployed scripted major.

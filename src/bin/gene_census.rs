@@ -18,6 +18,13 @@
 //! A gene reported at 100% identical is inert **at this profile**, which is a
 //! claim about the deployed decision path, not about the rule the gene names.
 //!
+//! ⚠ **A single low-`--games` pass is a screen, not a result.** Twelve games
+//! bound a gene's per-game effect rate at roughly 25% and no tighter, and the
+//! first pass duly called `faith_builder` inert when 48 games put it at 12%.
+//! Re-probe anything this reports INERT at a higher `--games` on disjoint
+//! seeds before believing it; the eight that survived that treatment are
+//! recorded in `docs/EVAL.md` 2026-08-10.
+//!
 //! Usage: gene_census [--games N] [--start-seed N] [--players N] [--turns N]
 //!                    [--width N] [--height N] [--city-states N] [--gene NAME] [--jobs N]
 use civvis::ai::{AdvancedAi, Ai, Weights};
