@@ -8523,12 +8523,15 @@ because it is the one that separates.
 
 ### What the audit produced
 
-One shipped strength change (**+41 Elo**, `city_target_floor` removed, promotion
-matrix PASS), one measured asset (`settler_commit`, +30), three nulls, three
+One shipped strength change — `city_target_floor` removed, promotion matrix
+PASS, deployment-online 55.9% (95% CI 51.0%..60.7%), **Elo +41 (CI +7..+76)**,
+125/65, p=0.0000, 400 pairs, seed 8600000, PR #1504 — one measured asset
+(`settler_commit`, 45.6% withheld, Elo +30 for keeping it, 60/95, p=0.0061,
+400 pairs, seed 9200000, PR #1510), three nulls, three
 evaluator arms that silently measured nothing and now fail closed, and three
 flags that had no withhold at all and now do.
 
 Before it, thirteen production behaviours carried one composite number between
-them. That is the condition that let a component costing forty-one Elo ship and
-sit unnoticed, and it is worth stating as the lesson rather than the anecdote:
+them. That is the condition that let a component costing forty-one Elo (interval and
+seed above) ship and sit unnoticed, and it is worth stating as the lesson rather than the anecdote:
 **a composite gate licenses the composite, never its parts.**
