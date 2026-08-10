@@ -3114,6 +3114,121 @@ impl AdvancedAi {
         self.enable_joint_tactics();
     }
 
+    /// Every `enable_live_bridge` repair that fixes a CIVVIS engine defect,
+    /// without the four that encode Firaxis' rules instead of ours.
+    ///
+    /// ★★★★★ THE WHOLE BUNDLE HAS NEVER BEEN PRICED NATIVELY. The bridge set
+    /// grew one measured repair at a time, and each was gated "live-bridge
+    /// only" so the frozen `advanced_v1` anchor and the recorded ladders kept
+    /// running the controller they were rated with. That is a versioning
+    /// decision, not a finding about strength — and the defects themselves are
+    /// properties of *this* engine's rules, every one of them measured on
+    /// native CIVVIS runs: an army admitted at `command_radius` and judged at
+    /// half of it, so it never clears its own muster gate (5/85 turns); a siege
+    /// that walks away from a city at 25 hp and is refunded 200 hp of healing;
+    /// a relief column that marches at the besieger nearest *itself* rather
+    /// than the one killing the city; an army target that never asks how strong
+    /// the rival is (94 of 188 war turns already "satisfied").
+    ///
+    /// `live` has only ever been compared with its own `live_without_*`
+    /// ablations, so what the bundle is worth against the production
+    /// `advanced` incumbent is simply unmeasured. Ablation cannot answer it
+    /// either, because these repairs are *serially coupled*: readiness gates
+    /// the march, the march gates the siege, the siege gates the capture, and
+    /// the army target decides whether there is anything to march with.
+    /// Removing one from a bundle that still contains the other forty prices a
+    /// link in a chain that is otherwise whole; it does not price the chain
+    /// against no chain at all.
+    ///
+    /// Four bridge flags are deliberately excluded:
+    ///
+    /// | excluded | why |
+    /// |---|---|
+    /// | `live_trader_route_adapter` | adapts a live Trader's zero walking movement to a distinct route-start action; no native game has that action |
+    /// | `live_religious_purchase_guard` | enforces Firaxis' city-majority purchase rule, which is not a CIVVIS rule |
+    /// | `solvent_faith_army` | prices a faith-bought soldier's GOLD upkeep under Firaxis' economy |
+    /// | `joint_tactics` | not a semantics adapter but an evidence exclusion: the whole-game gate is inconclusive, and the deployment-profile run split **every** map at +0 Elo (95% −148..+148) while evaluating 28 branches against the sequential policy's 11 (`docs/AI_GAPS.md` §7) |
+    ///
+    /// `enable_live_bridge` is therefore exactly this function plus those four.
+    /// `engine_repairs_match_live_bridge` in `src/elo.rs` fails the build if a
+    /// flag is ever added to one and not the other, so the bundles cannot
+    /// silently drift apart.
+    pub fn enable_engine_repairs(&mut self) {
+        self.enable_engine_repairs_war();
+        self.enable_engine_repairs_economy();
+    }
+
+    /// The military half of [`AdvancedAi::enable_engine_repairs`]: force
+    /// assembly, marching, siege, threat reading, and the war/peace decision.
+    ///
+    /// Split out so the composite's *interaction* is measurable rather than
+    /// assumed. If the whole bundle beats `advanced` by more than the war and
+    /// economy halves do separately, the repairs compound; if it does not, the
+    /// bundle is a sum and should be argued for one term at a time.
+    pub fn enable_engine_repairs_war(&mut self) {
+        // Force assembly and movement. `muster_at_command_radius` is the
+        // keystone: with the shipped radius a real army clears its readiness
+        // gate on 6% of turns, so every repair downstream of "the army
+        // actually advances" is dead code until it lands.
+        self.enable_muster_at_command_radius();
+        self.enable_war_reinforcement();
+        self.enable_come_ashore();
+        self.enable_recorded_tactical_step();
+        // Reading the enemy. The `3.0` "we dominate here" sentinel fires on
+        // 53.3% of force decisions, and two thirds of those are objectives
+        // that are not cities.
+        self.enable_blind_objective_strength();
+        self.enable_blind_objective_units();
+        self.enable_relief_targets_the_siege();
+        // Sizing the army against the rival rather than against our own city
+        // count, before as well as during the war.
+        self.enable_army_target_weighs_the_enemy();
+        self.enable_peacetime_deterrence();
+        self.enable_war_economy();
+        self.enable_bounded_recovery();
+        // Taking a city, and finishing the one already broken open.
+        self.enable_siege_muster();
+        self.enable_siege_role();
+        self.enable_siege_tracks_the_wall();
+        self.enable_siege_commitment();
+        self.enable_war_patience();
+        // Holding one. Barbarians take 7.0 major cities a game, 65% of
+        // everything a major loses.
+        self.enable_home_defense();
+        self.enable_garrison_under_fire();
+        self.enable_garrison_walls();
+        // Tactical quality on the tile the unit actually stands on.
+        self.enable_strike_opening();
+        self.enable_ranged_needs_line_of_sight();
+        self.enable_recon_replacement();
+        // A Religion plan that keeps its wars blockades its own lane.
+        self.enable_religion_sues_peace();
+    }
+
+    /// The economic half of [`AdvancedAi::enable_engine_repairs`]: settlement,
+    /// growth, districts, and the policy deck.
+    pub fn enable_engine_repairs_economy(&mut self) {
+        // Getting a settler to a site it can keep.
+        self.enable_escort_unstick();
+        self.enable_wonder_ring_settle_value();
+        self.enable_stranded_settler_discount();
+        self.enable_wide_map_capacity();
+        // Growing what was founded. Housing is gated by a tech the argmax
+        // never aims at, so the district, the buildings, the cards and the
+        // research order have to move together or none of them binds.
+        self.enable_housing_districts();
+        self.enable_housing_buildings();
+        self.enable_housing_cards();
+        self.enable_housing_research();
+        self.enable_campus_every_city();
+        self.enable_district_coverage();
+        self.enable_slot_kind_tiebreak();
+        // Keeping it loyal, and not slotting cards that multiply zero.
+        self.enable_loyalty_policy_defence();
+        self.enable_loyalty_rate_alarm();
+        self.enable_suzerain_cards_need_a_suzerainty();
+    }
+
     /// Plan each engagement's attacks as one joint problem instead of one
     /// unit at a time in a fixed class order. Measured on `battle_bench`
     /// (1000 paired fresh seeds a cell, seats swapped): combined arms +275,
