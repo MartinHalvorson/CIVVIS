@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 107] = [
+pub const EVAL_ONLY_AIS: [&str; 108] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -119,6 +119,7 @@ pub const EVAL_ONLY_AIS: [&str; 107] = [
     "advanced_garrison_loyalty",
     "advanced_settler_first",
     "advanced_holy_priority",
+    "advanced_holy_lane",
     "advanced_league_top",
     "advanced_joint_tactics",
     "strategic_cheap",
@@ -315,6 +316,7 @@ define_arm_kinds! {
     AdvancedSettlerCommit => "advanced_settler_commit",
     AdvancedSettlerFirst => "advanced_settler_first",
     AdvancedHolyPriority => "advanced_holy_priority",
+    AdvancedHolyLane => "advanced_holy_lane",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
@@ -2112,6 +2114,15 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             w.d_holy = LEAGUE_WINNER_D_HOLY;
             Box::new(AdvancedAi::with_weights(w))
         }
+        // Upper bound for the lane-district axis: a Religion empire prices its
+        // own Holy Site the way a Culture empire prices its own Theater Square.
+        // See `AdvancedAi::holy_lane_parity` for why this is a bound and not a
+        // proposal, and why the table it edits has never been measured.
+        "advanced_holy_lane" => {
+            let mut ai = AdvancedAi::new();
+            ai.holy_lane_parity = true;
+            Box::new(ai)
+        }
         // A high-rated league genome against the genome the repository evolved.
         // The exhibition now samples each civ's top three eligible entries, so
         // this is a reproducible diagnostic from the shipped roster rather than
@@ -3129,6 +3140,7 @@ impl ArmKind {
             Self::AdvancedPlanCityTarget => &["plan-city-target"],
             Self::AdvancedSettlerFirst => &["settler-oracle"],
             Self::AdvancedHolyPriority => &["district-holy-priority"],
+            Self::AdvancedHolyLane => &["lane-holy-parity"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -3634,6 +3646,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_measured_dedication" => (vec![genome], "advanced_measured_dedication"),
         "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
         "advanced_holy_priority" => (Vec::new(), "advanced_holy_priority"),
+        "advanced_holy_lane" => (Vec::new(), "advanced_holy_lane"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -4841,7 +4854,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 76] = [
+            const SCRIPTED: [&str; 77] = [
                 "advanced_joint_tactics",
                 "live_without_joint_tactics",
                 "advanced",
@@ -4886,6 +4899,7 @@ mod tests {
                 "advanced_league_top",
                 "advanced_settler_first",
                 "advanced_holy_priority",
+                "advanced_holy_lane",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",
