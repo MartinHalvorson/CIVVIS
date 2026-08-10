@@ -348,6 +348,12 @@ BOOTSTRAP_ATTEMPTS = 16
 # running game and hosting again either loses the mod, loses the turn limit, or
 # takes the application down.
 START_GAME = (0.500, 0.978)
+# The post-host leader introduction is a separate, verified screen.  Its
+# button is stable in the half-height game window used by the live harness,
+# but it must only be aimed at after the requested leader is read back from
+# the screenshot; otherwise this becomes the same blind click the setup gate
+# was written to prevent.
+LEADER_INTRO_BEGIN = (0.394, 0.801)
 # Measured in the required half-height window. 0.144 lands above the rendered
 # button there, so a failed setup stayed open and the next main-menu click hit
 # Choose Map Type instead.
@@ -1141,6 +1147,60 @@ def _leader_picker_open(path: Path, bounds: tuple[int, int, int, int]) -> bool:
     )
 
 
+def _leader_intro_visible(path: Path, bounds: tuple[int, int, int, int],
+                          leader: str | None) -> bool:
+    """Prove that the requested leader introduction is on screen.
+
+    Civ VI pauses at a leader card after the Create Game click.  The control
+    mod is already loaded there, so its auto-close records are not proof that
+    the map is ready.  OCR of the requested leader is the useful boundary:
+    it is constrained to the game window and the central leader-card band,
+    while the fixed button coordinate is used only after that proof.
+    """
+    if not leader:
+        return False
+    screen = desktop_size()
+    if screen is None:
+        return False
+    wanted = _normalized_label(leader_display_name(leader))
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    try:
+        observations = macos_ocr.recognize(path)
+        observations.extend(_leader_ocr(path, bounds, top=0.08, bottom=0.45))
+    except (OSError, ValueError):
+        return False
+    for observation in observations:
+        if _normalized_label(str(observation.get("text", ""))) != wanted:
+            continue
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = point[0] * screen_w, point[1] * screen_h
+        rx, ry = (px - x) / w, (py - y) / h
+        if 0.20 <= rx <= 0.80 and 0.05 <= ry <= 0.45:
+            return True
+    return False
+
+
+def advance_leader_intro(bounds: tuple[int, int, int, int],
+                         leader: str | None, run_dir: Path, attempt: int,
+                         *, retries: int = 4) -> bool:
+    """Click the leader card's Begin Game control after visual confirmation."""
+    x, y, w, h = bounds
+    for retry in range(retries):
+        shot = run_dir / f"leader-intro-attempt{attempt}-{retry}.png"
+        screenshot(shot)
+        if _leader_intro_visible(shot, bounds, leader):
+            click_at(int(x + w * LEADER_INTRO_BEGIN[0]),
+                     int(y + h * LEADER_INTRO_BEGIN[1]))
+            print(f"[setup] verified {leader_display_name(leader or '')} intro; "
+                  "clicked Begin Game", flush=True)
+            return True
+        time.sleep(1.0)
+    return False
+
+
 def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | None,
                             run_dir: Path) -> bool:
     """Select and visually verify a leader from Firaxis's DLC-dependent list."""
@@ -1489,6 +1549,12 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
                       "unsafe coordinate retries", file=sys.stderr)
                 return False
             continue
+        # Hosting a game opens a leader introduction before the map.  It is a
+        # real modal gate on this install, so waiting for agent telemetry here
+        # would leave a valid setup stranded behind its Begin Game button.
+        # Failure to recognize it remains safe: the lifecycle gate below still
+        # refuses to accept auto-close-only startup.
+        advance_leader_intro(bounds, args.leader, run_dir, attempt)
         if started(verify_s):
             return True
         if not env.game_pids():
