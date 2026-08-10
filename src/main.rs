@@ -893,7 +893,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// priced. They are evaluator entry points that no constructor calls;
 /// `AdvancedAi::legacy()` never had these flags on. Compatibility
 /// re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xfb6f_868c_b7f3_b215;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7ea0_32fa_2451_9b95;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
