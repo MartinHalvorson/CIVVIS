@@ -875,7 +875,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `diplomatic_opening` is a flag both constructors leave false and
 /// `diplomatic_opening_score` returns 0 without it, so the anchor never
 /// reaches the new lane term. Compatibility re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6f21_f4a9_b043_6972;
+/// `AdvancedAi::new()` is back on `Weights::default()`, which is the
+/// weights `AdvancedAi::legacy()` always used, so the anchor is where it
+/// has always been. Compatibility re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5eef_b73e_4b0d_b618;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

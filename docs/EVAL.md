@@ -8025,3 +8025,44 @@ The general statement, which is the part worth keeping: **a promotion gate that
 disables a victory condition cannot promote a treatment whose payoff is that
 victory.** Two of this repository's six are disabled, including the one that
 decides most of its games.
+
+### ⚠⚠⚠ The `d_holy` shipment is REVERTED — it does not hold where it runs
+
+The open question above is answered, and it goes against the change this
+session shipped. Same treatment, three profiles:
+
+| profile | victories | result |
+|---|---|---|
+| 4p 24x16, 0 city-states, Standard, 500t — **where it was gated** | all six | **+20 Elo**, gate PASS, 1200 pairs |
+| **6p 74x46, 9 city-states, Online, 250t — the deployment shape** | **all six** | **+2 Elo (CI −46..+50)**, 32/31, p=1.0000 |
+| 6p 74x46, 9 city-states, Online, 250t | science, culture, domination | **−44 Elo**, 28/58, **sign p=0.0016 against** |
+
+The third row is explained by the second: disabling religious victory removes
+the only thing the change buys, so it becomes pure economic loss — a Holy Site
+is worse economy than a Campus, which this document already measured (terminal
+score against the treatment, p=0.0204).
+
+**But the second row is the one that decides it.** At the shape the exhibition
+actually runs, with every victory enabled, the change is **parity**. The victory
+mix says exactly what it is doing there:
+
+| | religious | science |
+|---|---|---|
+| `advanced` (d_holy 5.6) | 90 | 88 |
+| `advanced_holy_v0` (2.0) | 52 | 127 |
+
+**It trades science victories for religious ones at roughly one for one.** On a
+24x16 board where science cannot finish, that trade is free and worth 20 Elo. At
+deployment it is a wash.
+
+`AdvancedAi::new()` is therefore back to `Weights::default()`. The weights
+survive as the `advanced_holy_priority` arm, `advanced_holy_v0` is now
+`advanced` under another name and is aliased to fail closed as self-play, and
+the arms rebased so each stays one axis from the shipped agent.
+
+This is the rule in `docs/EVAL.md` and in the fleet's own notes, paid for in
+full: **`ai_eval`'s defaults are not the deployment — not for strength, not for
+cost, and not even for the sign of an effect.** A 1200-pair gate is not enough
+resolution to rescue the wrong profile; it just measures the wrong thing
+precisely. **Gate on the deployment shape, or say plainly which profile the
+number belongs to.**
