@@ -3949,6 +3949,83 @@ mod tests {
     }
 
     #[test]
+    fn an_embarked_unit_keeps_dynamic_fresh_turn_movement() {
+        let mut plots = (3..=9)
+            .flat_map(|x| (3..=9).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+            .collect::<Vec<_>>();
+        plots
+            .iter_mut()
+            .find(|site| site.x == 6 && site.y == 5)
+            .expect("the embarked unit's plot is in the fixture")
+            .t = Some("TERRAIN_COAST".to_string());
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 20,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots,
+        }]);
+        let mut state = StateSnapshot {
+            turn: 20,
+            techs: vec![
+                "TECH_SAILING".to_string(),
+                "TECH_SHIPBUILDING".to_string(),
+                "TECH_CARTOGRAPHY".to_string(),
+                "TECH_SQUARE_RIGGING".to_string(),
+                "TECH_STEAM_POWER".to_string(),
+            ],
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Canberra".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            capital: true,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 42,
+            kind: "UNIT_SETTLER".to_string(),
+            x: 6,
+            y: 5,
+            moves: 0.0,
+            ..StateUnit::default()
+        });
+
+        let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let uid = *mirror.uid_of.get(&42).expect("the Settler is mirrored");
+        let unit = &mirror.game.units[&uid];
+        let static_moves = mirror.game.rules.units["settler"].moves;
+        let dynamic_moves = mirror.game.unit_max_moves(uid);
+        assert!(
+            dynamic_moves > static_moves,
+            "the test needs a real embarked movement bonus"
+        );
+        assert_eq!(
+            unit.moves_left, dynamic_moves,
+            "fresh-turn mirror movement must include dynamic embarked bonuses"
+        );
+        let land_step = mirror
+            .game
+            .nbrs(unit.pos)
+            .into_iter()
+            .find(|pos| {
+                mirror
+                    .game
+                    .map
+                    .get(*pos)
+                    .is_some_and(|tile| !mirror.game.rules.is_water(tile))
+            })
+            .expect("the coast has a revealed land neighbor");
+        assert!(
+            mirror.game.can_move(uid, land_step),
+            "the dynamic allowance must pay the first disembark step"
+        );
+    }
+
+    #[test]
     fn a_promotion_the_host_refused_is_not_offered_again() {
         let dir = std::env::temp_dir().join(format!("civvis_promo_{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("scratch dir");
@@ -10692,7 +10769,7 @@ pub struct LiveMirror {
     last_treasury: Option<(u32, f64)>,
 }
 
-/// A unit's full movement allowance from the ruleset.
+/// A unit's full movement allowance for a fresh mirrored turn.
 fn mirror_unit_moves(game: &crate::game::Game, uid: u32) -> f64 {
     let kind = match game.units.get(&uid) {
         Some(unit) => unit.kind,
@@ -10751,11 +10828,14 @@ fn mirror_unit_moves(game: &crate::game::Game, uid: u32) -> f64 {
     if kind == "spy" {
         return 0.0;
     }
-    game.rules
-        .units
-        .get(kind.as_str())
-        .map(|spec| spec.moves)
-        .unwrap_or(2.0)
+    // A static unit definition is not enough here. Embarked units, roads,
+    // technology, policy, wonder, formation, and support effects all change
+    // the allowance, and the first disembark step can cost four movement points
+    // while the static Settler definition still says two. Use the reconstructed
+    // board's same allowance calculation that `can_move` and route planning use;
+    // otherwise a live Settler can be given a valid inland target but never have
+    // enough mirrored movement to leave the coast.
+    game.unit_max_moves(uid)
 }
 
 impl LiveMirror {
