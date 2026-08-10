@@ -22994,6 +22994,31 @@ mod tests {
         );
     }
 
+    /// ⚠ **What the production constructor turns on, and what each part cost
+    /// to establish.** The assertions below pin the bundle; this ledger records
+    /// which parts of it have an individual outcome number, because the pin
+    /// alone cannot tell a measured component from an assumed one.
+    ///
+    /// | flag | individual evidence |
+    /// |---|---|
+    /// | `bounded_recovery` | **first priced 2026-08-10** — withholding it scores 52.0%, Elo +14 (CI −34..+62), p=0.1849, 200 maps at the deployment shape. Direction favours removal; not established. |
+    /// | `city_target_floor = 6` | the solo axis is a **recorded null** — 49.6%, Elo −3, p=0.9007, 240 pairs, seed 510000, and the entrant was removed. It ships inside this composite, not on that number. |
+    /// | `envoy_infrastructure` | screened 8–12 maps only; the combined economy re-measured 2026-08-10 against its deck control is **null at 800 games** (matrix RETAIN, 1/2 profiles). |
+    /// | `envoy_priority`, `adjacency_site_planning`, `settler_commit`, `research_economy`, `plan_city_target`, `amenity_districts`, `siege_muster`, `home_defense`, `tactical_strategy`, `unit_objective_memory` | no individual outcome number located in `docs/EVAL.md`. |
+    ///
+    /// A composite may legitimately pass a gate while a component is null on
+    /// its own, and the 2026-08-01 promotion was such a composite — so nothing
+    /// here says the bundle is wrong. What it says is that **most of it has
+    /// never been priced apart**, and `disable_bounded_recovery`'s own doc
+    /// already named that as the failure mode: *"Every flag in
+    /// `enable_live_bridge` needs one of these or it ships unmeasured — which
+    /// is how five repairs reached deployment without a single outcome
+    /// number."*
+    ///
+    /// ⚠ Adding a flag here without a withhold arm repeats it. And note the
+    /// trap that cost an evaluation on 2026-08-10: because this constructor
+    /// sets these, an arm built as `AdvancedAi::new()` **plus** one of them is a
+    /// byte-identical no-op. Withhold, do not add.
     #[test]
     fn production_advanced_scales_cities_development_and_home_defense_together() {
         let production = AdvancedAi::new();
