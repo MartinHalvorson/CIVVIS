@@ -18161,15 +18161,31 @@ impl Game {
                 // this side holds and the other side is coming for. Planted
                 // before the army is laid out so the deployment can gather
                 // around it.
+                //
+                // At sea it stands off the shore instead. A seat on the naval
+                // globe is an island, and no fleet can sail onto one, so a
+                // flag planted on the seat itself would be a flag the enemy
+                // could never take — a capture-the-flag battle that can only
+                // end on the clock. The anchorage is the honest equivalent:
+                // the nearest open water to the seat, which is exactly the
+                // tile an attacking fleet has to fight its way onto and the
+                // defending one has to hold.
                 if tactics.flag {
-                    g.arena_flags.insert(i, *pos);
+                    let site = if map_script.is_naval_battlefield() {
+                        g.nearest_open_water(*pos)
+                    } else {
+                        Some(*pos)
+                    };
+                    if let Some(site) = site {
+                        g.arena_flags.insert(i, site);
+                    }
                 }
                 // A scenario deals each side its own historical order of
                 // battle instead, on the ground that side actually held.
                 if map_script.is_scenario() {
                     g.deploy_trafalgar_fleet(i);
                 } else {
-                    g.deploy_battlefield_army(i, *pos);
+                    g.deploy_battlefield_army(i, *pos, map_script);
                 }
                 g.reveal(i, *pos, 3);
                 continue;
@@ -18457,7 +18473,7 @@ impl Game {
     /// Bigger fields take more companies, at a constant density of roughly
     /// one unit per twelve hexes of ground — the same battle on more room
     /// rather than the same army wandering a larger map looking for it.
-    pub fn battlefield_army(tiles: usize) -> Vec<&'static str> {
+    pub fn battlefield_army(tiles: usize, script: MapScript) -> Vec<&'static str> {
         const COMPANY: [&str; 8] = [
             "warrior",
             "warrior",
@@ -18468,8 +18484,55 @@ impl Game {
             "horseman",
             "heavy_chariot",
         ];
-        let companies = tiles.div_ceil(100).clamp(1, 3);
-        COMPANY.iter().cycle().take(COMPANY.len() * companies).copied().collect()
+        // A squadron is the Ancient naval cycle entire, which is a shorter
+        // cycle than the land one: the ruleset gives the age exactly two
+        // warships, and they answer each other. The galley closes and boards,
+        // which is what punishes a quadrireme for keeping its distance; the
+        // quadrireme shoots, which is what punishes a galley for crossing the
+        // open water between them. There is no third arm at sea in this era —
+        // no anti-cavalry to hold a line and no horse to turn a flank — so
+        // the squadron is an even split rather than the land company's spread
+        // across five roles.
+        const SQUADRON: [&str; 8] = [
+            "galley",
+            "quadrireme",
+            "galley",
+            "quadrireme",
+            "galley",
+            "quadrireme",
+            "galley",
+            "quadrireme",
+        ];
+        // Bigger fields take more companies, but only up to two. Density is
+        // not the point past that: a Tactics battle is decided by what a
+        // manageable force does with the room it has, and a diameter-20 globe
+        // filled to a constant one-unit-per-twelve-hexes would be a different
+        // mode — hundreds of units a side, and a turn spent issuing orders
+        // rather than a battle. The larger globes are deliberately the same
+        // battle given more room to be fought over.
+        let companies = tiles.div_ceil(100).clamp(1, 2);
+        let order = if script.is_naval_battlefield() { &SQUADRON } else { &COMPANY };
+        order.iter().cycle().take(order.len() * companies).copied().collect()
+    }
+
+    /// The closest water a ship could be on to `anchor`, or `None` if there is
+    /// none within reach of it.
+    ///
+    /// Ties break on position so the same world always answers the same tile:
+    /// a naval arena plants its flag with this, and a flag that moved between
+    /// two runs of the same seed would make the battle unreproducible.
+    fn nearest_open_water(&self, anchor: Pos) -> Option<Pos> {
+        // Four rings out. A seat on the naval globe is an islet a handful of
+        // tiles across with open sea around it, so the answer is normally one
+        // or two steps away; the radius is a bound on the search rather than a
+        // distance the water is expected to be at.
+        let mut candidates = self.wdisk(anchor, 4);
+        candidates.sort_by_key(|pos| (self.wdist(anchor, *pos), *pos));
+        candidates.into_iter().find(|pos| {
+            self.map
+                .get(*pos)
+                .is_some_and(|tile| self.rules.is_passable(tile) && self.rules.is_water(tile))
+        })
     }
 
     /// Set out one side's opening army on a Tactics battlefield.
@@ -18480,17 +18543,28 @@ impl Game {
     /// first turns of the battle would be spent unstacking it. Only one
     /// military unit stands on a hex, so "the next free ground outward" is
     /// the whole rule.
-    fn deploy_battlefield_army(&mut self, pid: usize, anchor: Pos) {
+    ///
+    /// Which tiles count as "outward" is the one thing the element changes. A
+    /// column forms on dry ground and a squadron forms on open water, so the
+    /// search is filtered to the element the roster can actually stand on —
+    /// `is_passable` alone would seat a galley on a hill, since a land tile is
+    /// passable to something. On the naval globe the anchor is the seat's
+    /// island, so the squadron rings the shore it sails from.
+    fn deploy_battlefield_army(&mut self, pid: usize, anchor: Pos, script: MapScript) {
+        let afloat = script.is_naval_battlefield();
         let mut ground: Vec<Pos> = self
             .map
             .tiles
             .keys()
             .copied()
-            .filter(|pos| self.rules.is_passable(&self.map.tiles[pos]))
+            .filter(|pos| {
+                let tile = &self.map.tiles[pos];
+                self.rules.is_passable(tile) && self.rules.is_water(tile) == afloat
+            })
             .collect();
         ground.sort_by_key(|pos| (self.wdist(anchor, *pos), *pos));
         let mut cursor = 0;
-        for kind in Self::battlefield_army(self.map.tiles.len()) {
+        for kind in Self::battlefield_army(self.map.tiles.len(), script) {
             while ground
                 .get(cursor)
                 .is_some_and(|pos| !self.units_at(*pos).is_empty())
@@ -18668,6 +18742,16 @@ impl Game {
                 // whatever separates the two sides is play rather than
                 // roster.
                 && (self.tactics.unique_units || spec.unique_to.is_none())
+                // At sea, only what can put to sea. A naval battlefield's
+                // city stands on an islet a few tiles across, and every enemy
+                // in the battle is afloat: a chariot built there has nowhere
+                // to march and nothing it can reach. Measured on a diameter-8
+                // ocean, an ungated side spent most of a sixty-turn battle's
+                // production on land units that never left their own island —
+                // which is not a handicap, since both sides do it, but it is
+                // half the arena's economy going nowhere.
+                && (!self.map_script.is_naval_battlefield()
+                    || spec.domain.as_deref() == Some("sea"))
         })
     }
 
@@ -69852,14 +69936,14 @@ mod district_mechanics {
         };
         assert_eq!(
             roster(0),
-            Game::battlefield_army(game.map.tiles.len())
+            Game::battlefield_army(game.map.tiles.len(), MapScript::Battlefield)
                 .into_iter()
                 .collect::<std::collections::BTreeSet<_>>()
                 .into_iter()
                 .flat_map(|kind| {
                     std::iter::repeat_n(
                         kind,
-                        Game::battlefield_army(game.map.tiles.len())
+                        Game::battlefield_army(game.map.tiles.len(), MapScript::Battlefield)
                             .iter()
                             .filter(|other| **other == kind)
                             .count(),
@@ -69924,10 +70008,155 @@ mod district_mechanics {
         assert!(game.is_at_war(0, 1));
     }
 
-    /// The fog is a match setting. An arena lifts it by default — a battle is
-    /// a test of what each side does with what is in front of it, not of who
-    /// finds the other first — but the mode that puts it back is a real one,
-    /// and it has to be symmetric: both sides fogged or neither, never one.
+    /// A naval battle opens with two fleets afloat, each based on its own
+    /// island, and nothing on land to fight with.
+    ///
+    /// The roster is the part that has to be checked by domain rather than by
+    /// name. `deploy_battlefield_army` searches for the first free tile
+    /// outward from the seat, and the seat is an island — so a squadron built
+    /// from the land company, or a water filter that let dry ground through,
+    /// would still deploy successfully and simply put galleys on hills. Every
+    /// unit being a sea unit standing on water is what says the mode is
+    /// actually naval.
+    #[test]
+    fn a_tactics_ocean_game_opens_with_two_fleets_afloat() {
+        let game = Game::new_with(GameOptions {
+            map_script: MapScript::TacticsOcean,
+            map_topology: MapTopology::Planet,
+            ..GameOptions::new(2, 40, 18, 90_412, 250, 3)
+        });
+        assert!(game.map.sphere().is_some(), "the Tactics ocean must be a globe");
+        assert!(game.is_arena());
+        assert!(game.is_at_war(0, 1));
+
+        let roster = |seat: usize| {
+            let mut kinds: Vec<&str> = game
+                .units
+                .values()
+                .filter(|unit| unit.owner == seat)
+                .map(|unit| unit.kind.as_str())
+                .collect();
+            kinds.sort_unstable();
+            kinds
+        };
+        assert!(!roster(0).is_empty(), "seat 0 opens with a fleet");
+        assert_eq!(roster(0), roster(1), "the two fleets must be even");
+
+        for unit in game.units.values() {
+            let domain = game.rules.units[unit.kind.as_str()].domain.as_deref();
+            assert_eq!(domain, Some("sea"), "{} is not a ship", unit.kind);
+            let tile = &game.map.tiles[&unit.pos];
+            assert!(game.rules.is_water(tile), "{} opens on dry ground", unit.kind);
+            assert!(game.rules.is_passable(tile), "{} opens on water it cannot enter", unit.kind);
+        }
+
+        // The cities are the one thing still ashore, one island each.
+        for owner in 0..2 {
+            let owned: Vec<Pos> = game
+                .cities
+                .values()
+                .filter(|city| city.owner == owner)
+                .map(|city| city.pos)
+                .collect();
+            assert_eq!(owned.len(), 1, "seat {owner} opens with one city");
+            assert!(!game.rules.is_water(&game.map.tiles[&owned[0]]), "a city needs ground");
+        }
+    }
+
+    /// A naval battle can actually be won: a galley takes the enemy port.
+    ///
+    /// This is the clause that makes the mode a battle rather than a timed
+    /// exhibition, and it is not obvious from either half on its own. A city
+    /// can only be occupied by a unit that can stand on its tile, and every
+    /// unit in a naval battle is a ship — so the mode reads like one whose
+    /// objective no side can reach. It is reachable because a naval melee
+    /// unit is Civ 6's exception: `passable_for` lets a sea class enter a
+    /// City Center, which is what lets a galley attack and capture a coastal
+    /// city. The port is on an islet, so it is coastal by construction.
+    ///
+    /// Pinned here on a real ocean arena rather than on a hand-built board,
+    /// because what is being claimed is about this map type: that the city
+    /// the mode seats is one the fleet it deals can take.
+    #[test]
+    fn a_galley_can_take_the_naval_arenas_port() {
+        let mut game = Game::new_with(GameOptions {
+            map_script: MapScript::TacticsOcean,
+            map_topology: MapTopology::Planet,
+            ..GameOptions::new(2, 40, 18, 90_412, 250, 3)
+        });
+        let (city, port) = game
+            .cities
+            .iter()
+            .find(|(_, city)| city.owner == 1)
+            .map(|(id, city)| (*id, city.pos))
+            .expect("seat 1 opens with a port");
+
+        // Water alongside it, which an islet always has — and which the
+        // defending squadron is sitting on, because it deployed outward from
+        // this very tile. That the port opens ringed by its own fleet is the
+        // mode working; it is not what this test is about, so one berth is
+        // cleared to stand the attacker in.
+        let berth = game
+            .nbrs(port)
+            .into_iter()
+            .find(|pos| {
+                game.map
+                    .get(*pos)
+                    .is_some_and(|tile| game.rules.is_water(tile) && game.rules.is_passable(tile))
+            })
+            .expect("a port has water alongside it");
+        for defender in game.units_at(berth) {
+            game.remove_unit(defender);
+        }
+        let galley = game.spawn_unit("galley", 0, berth);
+
+        // Taken down to its last point by the bombardment a fleet arrives
+        // with, so what is under test is the capture rather than the grind.
+        game.cities.get_mut(&city).unwrap().hp = 1;
+        assert!(
+            game.legal_actions(0).into_iter().any(|action| matches!(
+                action,
+                Action::Attack { unit, target } if unit == galley && target == port
+            )),
+            "a galley alongside an enemy port must be able to attack it"
+        );
+        game.apply(0, &Action::Attack { unit: galley, target: port }).expect("the assault resolves");
+        assert_eq!(game.cities[&city].owner, 0, "the port changes hands");
+    }
+
+    /// A naval flag stands on the water off its own shore, never on the island
+    /// itself.
+    ///
+    /// This is the dry-ground rule of #1456 seen from the other element, and
+    /// it fails the same way: a flag no enemy unit can ever reach turns
+    /// capture-the-flag into a mode that can only end on the clock. On land
+    /// that meant keeping the flag off the water; at sea it means keeping it
+    /// off the land, because the only units in the battle are ships.
+    #[test]
+    fn a_naval_flag_stands_on_water_a_fleet_can_reach() {
+        for seed in [90_412u64, 5_115, 61_020] {
+            let game = Game::new_with(GameOptions {
+                map_script: MapScript::TacticsOcean,
+                map_topology: MapTopology::Planet,
+                tactics: TacticsRules { flag: true, ..TacticsRules::default() },
+                ..GameOptions::new(2, 40, 18, seed, 250, 3)
+            });
+            assert_eq!(game.arena_flags.len(), 2, "seed {seed}: every side gets a flag");
+            for (seat, flag) in &game.arena_flags {
+                let tile = &game.map.tiles[flag];
+                assert!(
+                    game.rules.is_water(tile),
+                    "seed {seed}: seat {seat}'s flag is on land no fleet can take"
+                );
+                assert!(game.rules.is_passable(tile), "seed {seed}: seat {seat}'s flag is unsailable");
+            }
+        }
+    }
+
+    /// The fog is a match setting, and it has to be symmetric either way:
+    /// both sides fogged or neither, never one. Fogged is now the default, so
+    /// what this pins is that both settings are still real and that neither
+    /// deals one commander a view the other does not have.
     #[test]
     fn an_arena_is_fogged_only_when_the_match_asked_for_it() {
         let arena = |fog: bool| {
@@ -69938,7 +70167,7 @@ mod district_mechanics {
             })
         };
 
-        // The default is the field entire, for both commanders alike.
+        // Lifted, the field entire, for both commanders alike.
         let open = arena(false);
         assert!(open.is_arena());
         for seat in 0..2 {
