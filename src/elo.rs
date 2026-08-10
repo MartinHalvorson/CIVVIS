@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 108] = [
+pub const EVAL_ONLY_AIS: [&str; 109] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -120,6 +120,7 @@ pub const EVAL_ONLY_AIS: [&str; 108] = [
     "advanced_settler_first",
     "advanced_holy_priority",
     "advanced_holy_lane",
+    "advanced_holy_v0",
     "advanced_league_top",
     "advanced_joint_tactics",
     "strategic_cheap",
@@ -317,6 +318,7 @@ define_arm_kinds! {
     AdvancedSettlerFirst => "advanced_settler_first",
     AdvancedHolyPriority => "advanced_holy_priority",
     AdvancedHolyLane => "advanced_holy_lane",
+    AdvancedHolyV0 => "advanced_holy_v0",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
@@ -362,11 +364,10 @@ define_arm_kinds! {
 }
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
-/// Games-weighted `d_holy` of the top third of the shipped league roster,
-/// ranked by outright 8-player win rate. The bottom third sits at the shipped
-/// default of 2.0. Read by `advanced_holy_priority`; see that arm for the
-/// derivation, the drift control, and the caveats.
-pub const LEAGUE_WINNER_D_HOLY: f64 = 5.6;
+/// What the scripted major paid for a Holy Site before 2026-08-10, kept so
+/// `advanced_holy_v0` can still construct that agent. The live value is
+/// [`crate::ai::ADVANCED_D_HOLY`].
+pub const PRE_2026_08_10_D_HOLY: f64 = 2.0;
 
 pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// Version of the game/rating contract, independent of the JSON shape. Bump
@@ -1689,6 +1690,11 @@ fn artifact_effective_alias_from(
         // historical evaluator alias so old commands fail closed as self-play
         // instead of rebuilding a second implementation of `advanced`.
         ArmKind::AdvancedPolicyEnvoyPriority => ArmKind::Advanced,
+        // Same story on 2026-08-10: the Holy Site figure this arm carried
+        // cleared the 1200-pair gate and became what `advanced` plays, so the
+        // arm now builds the production controller. `advanced_holy_v0` is the
+        // agent it used to be measured against.
+        ArmKind::AdvancedHolyPriority => ArmKind::Advanced,
         ArmKind::AdvancedBankingDedication => advanced_fallback,
         _ => kind,
     }
@@ -2109,9 +2115,19 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // draw: `docs/EVAL.md` records that religious victory dominates
         // self-play in this engine, and the shipped default ranks the district
         // that lane runs through *below* two others.
-        "advanced_holy_priority" => {
-            let mut w = Weights::default();
-            w.d_holy = LEAGUE_WINNER_D_HOLY;
+        // ⚠ As of the 1200-pair gate PASS this constructs the SAME agent as
+        // `advanced`, because the measured value is now what `advanced` plays.
+        // Retained under its own name because `docs/EVAL.md` 2026-08-10 reports
+        // three runs against it; `builtin_provenance` declares it effectively
+        // `advanced` so the pair is rejected as self-play rather than quietly
+        // measuring nothing. The frozen pre-change agent is `advanced_holy_v0`.
+        "advanced_holy_priority" => Box::new(AdvancedAi::with_weights(Weights::advanced())),
+        // The scripted major exactly as it played before 2026-08-10, retained so
+        // the change stays measurable after it ships -- the same role
+        // `advanced_v1` fills for the controller as a whole.
+        "advanced_holy_v0" => {
+            let mut w = Weights::advanced();
+            w.d_holy = PRE_2026_08_10_D_HOLY;
             Box::new(AdvancedAi::with_weights(w))
         }
         // Upper bound for the lane-district axis: a Religion empire prices its
@@ -3141,6 +3157,7 @@ impl ArmKind {
             Self::AdvancedSettlerFirst => &["settler-oracle"],
             Self::AdvancedHolyPriority => &["district-holy-priority"],
             Self::AdvancedHolyLane => &["lane-holy-parity"],
+            Self::AdvancedHolyV0 => &["district-holy-pre-2026-08-10"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -3645,8 +3662,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced_measured_dedication" => (vec![genome], "advanced_measured_dedication"),
         "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
-        "advanced_holy_priority" => (Vec::new(), "advanced_holy_priority"),
+        "advanced_holy_priority" => (Vec::new(), "advanced"),
         "advanced_holy_lane" => (Vec::new(), "advanced_holy_lane"),
+        "advanced_holy_v0" => (Vec::new(), "advanced_holy_v0"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -4854,7 +4872,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 77] = [
+            const SCRIPTED: [&str; 78] = [
                 "advanced_joint_tactics",
                 "live_without_joint_tactics",
                 "advanced",
@@ -4900,6 +4918,7 @@ mod tests {
                 "advanced_settler_first",
                 "advanced_holy_priority",
                 "advanced_holy_lane",
+                "advanced_holy_v0",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",
@@ -4937,7 +4956,8 @@ mod tests {
                 "live_without_war_reinforcement",
                 "live_without_war_patience",
             ];
-            const SCRIPTED_ALIASES: [&str; 1] = ["advanced_policy_envoy_priority"];
+            const SCRIPTED_ALIASES: [&str; 2] =
+                ["advanced_policy_envoy_priority", "advanced_holy_priority"];
             assert!(
                 !resolved.artifacts.is_empty()
                     || SCRIPTED.contains(name)

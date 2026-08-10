@@ -7435,3 +7435,58 @@ actually clears. Two INCONCLUSIVE gates are not a promotion however well they
 agree, and "replicated twice" is not the standard this file holds. A 1200-pair
 run at 4p is the sample size at which a 3.8-point effect clears parity
 (half-width 2.8), and that is the run that decides it.
+
+
+## 2026-08-10 — ★★★★ the Holy Site figure clears the gate at 1200 pairs and becomes what `advanced` plays
+
+The entry above left `Weights::default()` alone and named the run that would
+decide it. This is that run.
+
+```
+ai_eval advanced_holy_priority advanced --players 4 --pairs 1200 --turns 500 --seed 4400000
+
+game-win share     1270/2400 (52.9%)  against  1130/2400 (47.1%)
+paired-map score   52.9%  (95% Wilson CI 50.1%..55.7%)   Elo-equivalent +20 (CI +1..+40)
+paired direction   119 for / 1032 neutral / 49 against   sign p = 0.0000
+anytime-valid      treatment e = 5.684e5, crossed at map 404; control never crossed
+terminal score     47.1% direction (472 for / 547 against), sign p = 0.0204
+promotion gate     PASS — effect interval and anytime-valid evidence both clear parity
+```
+
+The effect regressed from the 300-pair estimate of +27 to +20 and the interval
+came in from ±5.6 to ±2.8, which is what a real effect does when the sample
+grows. Three runs now agree in direction at 4p, 8p, and 4p-at-scale.
+
+**The terminal-score direction is now significant *against* the treatment**
+(p=0.0204, where the 300-pair runs read p=0.24 and p=0.53). That is the same
+trade the first entry described, resolved rather than reversed: a Holy Site is
+worse economy than a Campus, so the agent develops measurably less and converts
+enough more to win 20 Elo of games. The gate is on wins.
+
+### ⚠ What shipped is narrower than "change the default"
+
+`Weights::default()` is **unchanged at 2.0**, deliberately. That default also
+seeds `BasicAi::new()` — city-states, barbarians, the `basic` entrant, and
+`AdvancedAi::legacy()` behind the frozen `advanced_v1` anchor. Moving it there
+would have changed populations this gate never measured and would have silently
+redefined a frozen control.
+
+The measured arm was `AdvancedAi::with_weights(default with d_holy = 5.6)`,
+which is exactly `AdvancedAi::new()` with one gene moved. So the value lives on
+that constructor — `Weights::advanced()`, one gene apart from
+`Weights::default()` — and nothing else moves. `advanced_evolved` and every
+league genome carry explicit vectors and are untouched.
+
+**Two names changed meaning, both deliberately:**
+
+- `advanced_holy_priority` now constructs the production controller. Its
+  provenance declares it effectively `advanced`, so the old command fails closed
+  as self-play instead of quietly measuring nothing — the same treatment
+  `advanced_policy_envoy_priority` got on 2026-08-01.
+- `advanced_holy_v0` is new: the scripted major exactly as it played before
+  today, so the change stays measurable after it ships.
+
+⚠ Every `advanced_*` arm is built from `AdvancedAi::new()` and therefore moved
+with it. Numbers recorded for those arms above this line were produced by the
+2.0 agent and are not comparable to numbers taken after it. This is the ordinary
+cost of moving a baseline, and it is why `advanced_holy_v0` exists.

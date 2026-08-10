@@ -2181,8 +2181,13 @@ impl AdvancedAi {
     /// composite. Keep the three changes together here so every ordinary
     /// construction path (including weighted and explicitly targeted agents)
     /// has one auditable definition.
+    /// The deployed scripted major.
+    ///
+    /// One gene apart from `Weights::default()`: see [`crate::ai::ADVANCED_D_HOLY`]
+    /// for why the Holy Site figure lives here and not in the default that also
+    /// seeds minors and the frozen `advanced_v1` anchor.
     pub fn new() -> AdvancedAi {
-        Self::promoted_policy_envoy(Weights::default(), None)
+        Self::promoted_policy_envoy(Weights::advanced(), None)
     }
 
     /// Evaluator treatment for one unified midgame power-spike appointment.
