@@ -5863,6 +5863,36 @@ local function exportState(player, pid, turn)
 		policy_slots = policy_slots,
 		hostiles = hostiles,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
+		-- ★★★★★ NET INCOME, AND WHY THE EMPIRE GOES BANKRUPT WITHOUT NOTICING.
+		--
+		-- `gold_per_turn` is 0 in EVERY live decision. `mirror_net_income`
+		-- derives the rate from the treasury delta between CONSECUTIVE turns and
+		-- keeps `last_treasury` on the `LiveMirror`, but the bridge runs
+		-- `civvis_orders --serve --fresh-board`, which rebuilds that mirror every
+		-- turn -- so the predecessor is never there and the rate never lands.
+		-- Measured previously at 0.00 in 963 of 963 calls.
+		--
+		-- The cost is not academic. Live run `civvis-20260810T191050Z`
+		-- (Rome/Trajan, Settler): treasury peaked at 319 on turn 60, reached
+		-- **0 on turn 110 and stayed there for the remaining 75 turns**. With the
+		-- bankruptcy guard blind, the empire kept units it could not pay for,
+		-- Civilization VI disbanded them (`army` 12 -> 0), and the cities fell at
+		-- t173, t180 and t184: **six cities became two**, final score 403 against
+		-- Mongolia's 747. Tech and civics were COMPETITIVE all game (44 vs 46,
+		-- 35 vs 34) -- this is the whole gap.
+		--
+		-- So stop deriving it. `GetGoldYield() - GetTotalMaintenance()` is the
+		-- exact figure the shipped TopPanel prints beside the treasury
+		-- (Expansion2/UI/Replacements/TopPanel.lua:140), it needs no history, and
+		-- it survives a board rebuilt from scratch every turn.
+		--
+		-- ⚠ `nil` when the host does not answer, NOT 0: a real 0 is break-even
+		-- and a missing answer is not, and conflating them is exactly the failure
+		-- above.
+		gold_per_turn = try(function()
+			local treasury = player:GetTreasury();
+			return treasury:GetGoldYield() - treasury:GetTotalMaintenance();
+		end, nil),
 		faith = try(function() return math.floor(player:GetReligion():GetFaithBalance()); end, -1),
 		science = try(function() return player:GetTechs():GetScienceYield(); end, -1),
 		culture = try(function() return player:GetCulture():GetCultureYield(); end, -1),
