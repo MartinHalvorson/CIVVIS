@@ -1493,9 +1493,19 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
         print(f"map selection is disabled pending verification; refusing to claim "
               f"the default Continents map is {args.map}", file=sys.stderr)
         return False
-    screenshot(run_dir / "setup.png")
-    x, y, w, h = bounds
-    click_at(int(x + w * START_GAME[0]), int(y + h * START_GAME[1]))
+    setup_shot = run_dir / "setup.png"
+    screenshot(setup_shot)
+    start_point = _observed_label_point(setup_shot, "Start Game", bounds)
+    if start_point is None:
+        print("[setup] Start Game was NOT visible; refusing to launch",
+              file=sys.stderr)
+        return False
+    # OCR and the preceding setup clicks can leave another desktop window
+    # frontmost. Make the target application key immediately before sending
+    # the launch event; otherwise a correct screen coordinate can be consumed
+    # by the browser beside the game.
+    focus_game(GAME_SIDE, GAME_FRACTION)
+    click_at(*start_point)
     return True
 
 
