@@ -7369,9 +7369,11 @@ Two independent corroborations. The shipped GA champion
 (`data/evolved/best.json`) leaves `d_holy` at exactly 2.0, so the evolutionary
 search never explored the axis the league found. And the win-rate ordering used
 here independently places `g56-50` **last of the eight** — the same genome the
-2026-07-28 entry measured at −108 Elo against the champion while the roster's
-Glicko ranked it top. The two orderings disagree, and the one used here agrees
-with the gate-quality measurement.
+2026-07-28 entry measured at −108 Elo against the champion (paired-map score
+35.0%, 95% Wilson CI 29.8%..40.6%, over 300 maps at `--players 4 --turns 500
+--seed 4100000`; sign p=0.0000) while the roster's Glicko ranked it top. The two
+orderings disagree, and the one used here agrees with the gate-quality
+measurement.
 
 ⚠ This is a correlation over ~50 survivors related by descent. It is a
 hypothesis generator, not a result. What follows is the result.
