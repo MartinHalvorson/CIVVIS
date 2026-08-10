@@ -209,8 +209,10 @@ pub(crate) struct TacticalPlan {
     /// combat rolls.
     pub actions: Vec<Action>,
     /// Every unit the search reached a decision for, including the ones it
-    /// decided should not attack. The caller suppresses its own greedy attack
-    /// selection for these so a declined attack is not immediately re-taken.
+    /// decided should not attack. This also includes embarked land units that
+    /// were deliberately kept out of the portfolios when a joint plan ran:
+    /// the caller suppresses its own greedy attack selection for these so the
+    /// ordinary path can reach its disembark repair instead.
     pub resolved: Vec<u32>,
     /// Units whose winning line moved them without landing a blow — a
     /// withdrawal, or an approach whose attack the engine refused. The plan
@@ -341,6 +343,20 @@ impl JointTactics {
         if actions.is_empty() {
             return None;
         }
+        let mut resolved: BTreeSet<u32> = portfolios.iter().map(|p| p.unit).collect();
+        // `engagement_candidate` correctly excludes these units from the
+        // search, but the ordinary advanced attack scan runs before the
+        // coordinated mover's `come_ashore` repair. Once another pair of
+        // units has produced a real joint plan, reserve every embarked land
+        // combat unit from that fallback scan as well. Sea units are already
+        // legal attackers on water and must remain on their normal path.
+        resolved.extend(g.player_unit_ids(pid).into_iter().filter(|uid| {
+            let unit = &g.units[uid];
+            let spec = &g.rules.units[unit.kind];
+            spec.class == "military"
+                && spec.domain.as_deref() != Some("sea")
+                && g.is_embarked(unit)
+        }));
         let mut moved: BTreeSet<u32> = BTreeSet::new();
         let mut struck: BTreeSet<u32> = BTreeSet::new();
         for action in &actions {
@@ -357,7 +373,7 @@ impl JointTactics {
         Some(TacticalPlan {
             withdrawn: moved.difference(&struck).copied().collect(),
             actions,
-            resolved: portfolios.iter().map(|p| p.unit).collect(),
+            resolved: resolved.into_iter().collect(),
             score,
             greedy_score,
         })
@@ -1571,6 +1587,34 @@ mod tests {
                 .iter()
                 .all(|portfolio| portfolio.unit != embarked),
             "an embarked land unit leaked into the joint attack portfolio"
+        );
+    }
+
+    /// When a separate engagement produces a real joint plan, embarked land
+    /// units must also be marked resolved. Otherwise the advanced per-unit
+    /// attack scan sees their stale attack and tries it before `come_ashore`.
+    #[test]
+    fn joint_plan_resolves_embarked_land_units_for_ordinary_fallback() {
+        let (mut g, _, _) = firing_line(40, 40);
+        let water = g
+            .map
+            .tiles
+            .iter()
+            .find(|(pos, tile)| {
+                g.rules.is_water(tile)
+                    && g.rules.is_passable(tile)
+                    && g.unit_ids_at(**pos).is_empty()
+            })
+            .map(|(pos, _)| *pos)
+            .expect("the standard test map has an open water tile");
+        let embarked = g.spawn_unit("archer", 0, water);
+
+        let plan = JointTactics::default()
+            .plan(&g, 0, &BasicAi::new())
+            .expect("the two land archers should produce a joint plan");
+        assert!(
+            plan.resolved.contains(&embarked),
+            "a joint plan left an embarked land unit exposed to the ordinary attack fallback"
         );
     }
 
