@@ -7949,3 +7949,120 @@ be pushing harder on the same closed door.
 
 ⚠ Note for anyone re-reading older numbers in this file: every `ai_eval` result
 recorded above was measured at `--city-states 0` unless it says otherwise.
+
+
+## 2026-08-10 — ★★★ the envoy economy is null at power, and the promotion matrix cannot express two of the six victories
+
+`docs/EVAL.md` records the envoy work as four arms screened at **8–12 maps**,
+the best of them "combined vs stock, 6p deployment, 12 maps, 54.2% (+29)", with
+"none of the new envoy behavior enabled in `advanced`". Those screens were never
+resolved, and the prize behind them is the largest the oracle harness has found
+(`Grant::Suzerain`, 56.7% against 22.7%, p=0.0000, 400 maps, PR #602). This
+resolves them.
+
+### The result: null, on the repository's own gate
+
+`--matrix` is the right instrument and — unlike a hand-rolled `ai_eval` line —
+both its profiles do seat city-states (4 and 9). Against the correct control,
+which isolates the envoy economy from the Live-deck change:
+
+```
+ai_eval advanced_envoy_economy advanced_policy_live_control --matrix --pairs 200 --seed 5700000
+  arms differ on: envoy-influence, envoy-infrastructure-off
+
+  compact-standard    50.2% (CI 43.4..57.1)  Elo +2   direction 31/30, p=1.0000
+  deployment-online   50.9% (CI 44.0..57.7)  Elo +6   direction 38/34, p=0.7239  REJECT
+
+  multi-profile promotion gate: RETAIN advanced_policy_live_control — cleared 1/2 profiles
+```
+
+**The +29 did not reproduce at 800 games.** It is the fourth apparent gain in
+this file to evaporate on a seed it was not found on.
+
+The treatment is not inert — it does what it says, and that is what makes the
+null informative:
+
+| | treatment | control |
+|---|---|---|
+| envoys (compact) | 8.6 | 7.2 |
+| **suzerainties (compact)** | **0.27** | **0.20** |
+| suzerainties (deployment) | 0.65 | — |
+
+**It buys 0.07 of a suzerainty.** The oracle that measured +34 points of win
+rate grants suzerainty over *every met city-state*. The treatment delivers a
+low-single-digit percentage of that dose, and a null at that dose says nothing
+about the headroom — only that this is not the lever that reaches it.
+
+### ⚠⚠⚠ The promotion matrix runs three of six victory conditions
+
+Both matrix profiles hard-code `--victories science,culture,domination`
+(`ai_eval.rs`, from #658). **Religious, diplomatic and score victory are all
+disabled in the gate**, while `VictoryConditions::NAMES` — the default for an
+ordinary run — enables all six. No comment or document explains the choice; it
+is a convention shared with `ablate` and the oracle harnesses.
+
+There is a defensible reason to want it: this document records that religious
+victory dominates self-play, and a lane that ends most games early drowns the
+signal from every other lane. But the consequence has never been written down,
+and it is severe for exactly the work this session has been doing:
+
+- **Diplomatic victory is the terminal payoff of suzerainty.** The envoy
+  economy was just measured on a gate where the win it is buying cannot happen.
+  Its null is *partly by construction*.
+- **Religious victory is where this engine's wins actually come from** — 88% of
+  them on the default profile. Any treatment routing through that lane is
+  invisible to the gate.
+
+⚠ **That includes the `d_holy` change this session shipped (#1469).** Its entire
+measured effect was religious victories, 267 against 203, on the all-victories
+profile. Whether it survives a gate that disables religious victory is an open
+question and is being measured; **until that returns, read the +20 Elo as a
+result on the all-victories profile specifically, not as a matrix-gated
+promotion.** It was promoted on hand-rolled `ai_eval` runs, which is the same
+path that defaults `--city-states` to zero.
+
+The general statement, which is the part worth keeping: **a promotion gate that
+disables a victory condition cannot promote a treatment whose payoff is that
+victory.** Two of this repository's six are disabled, including the one that
+decides most of its games.
+
+### ⚠⚠⚠ The `d_holy` shipment is REVERTED — it does not hold where it runs
+
+The open question above is answered, and it goes against the change this
+session shipped. Same treatment, three profiles:
+
+| profile | victories | result |
+|---|---|---|
+| 4p 24x16, 0 city-states, Standard, 500t — **where it was gated** | all six | **+20 Elo**, gate PASS, 1200 pairs |
+| **6p 74x46, 9 city-states, Online, 250t — the deployment shape** | **all six** | **+2 Elo (CI −46..+50)**, 32/31, p=1.0000 |
+| 6p 74x46, 9 city-states, Online, 250t | science, culture, domination | **−44 Elo**, 28/58, **sign p=0.0016 against** |
+
+The third row is explained by the second: disabling religious victory removes
+the only thing the change buys, so it becomes pure economic loss — a Holy Site
+is worse economy than a Campus, which this document already measured (terminal
+score against the treatment, p=0.0204).
+
+**But the second row is the one that decides it.** At the shape the exhibition
+actually runs, with every victory enabled, the change is **parity**. The victory
+mix says exactly what it is doing there:
+
+| | religious | science |
+|---|---|---|
+| `advanced` (d_holy 5.6) | 90 | 88 |
+| `advanced_holy_v0` (2.0) | 52 | 127 |
+
+**It trades science victories for religious ones at roughly one for one.** On a
+24x16 board where science cannot finish, that trade is free and worth 20 Elo. At
+deployment it is a wash.
+
+`AdvancedAi::new()` is therefore back to `Weights::default()`. The weights
+survive as the `advanced_holy_priority` arm, `advanced_holy_v0` is now
+`advanced` under another name and is aliased to fail closed as self-play, and
+the arms rebased so each stays one axis from the shipped agent.
+
+This is the rule in `docs/EVAL.md` and in the fleet's own notes, paid for in
+full: **`ai_eval`'s defaults are not the deployment — not for strength, not for
+cost, and not even for the sign of an effect.** A 1200-pair gate is not enough
+resolution to rescue the wrong profile; it just measures the wrong thing
+precisely. **Gate on the deployment shape, or say plainly which profile the
+number belongs to.**

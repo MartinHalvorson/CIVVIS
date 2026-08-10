@@ -1590,6 +1590,11 @@ function syncMapViewport() {
   const backingHeight = Math.max(1, Math.round(viewHeight * DPR));
   if (cv.width !== backingWidth) { cv.width = backingWidth; changed = true; }
   if (cv.height !== backingHeight) { cv.height = backingHeight; changed = true; }
+  // Keep the accelerated surface on the exact same physical pixel grid as the
+  // interactive Canvas layer.  A resize is also the one time the browser may
+  // replace a backing store, so doing this beside `cv` prevents a blurry
+  // one-frame stretch on a 4K display.
+  syncPlanetGpuCanvas();
   syncMapAreaReadout();
   return changed;
 }
@@ -4780,7 +4785,10 @@ function performanceCanvasText() {
   const megapixels = width * height / 1_000_000;
   // A pixel dimension is a coordinate, not a quantity: grouping it reads as two
   // numbers and cost this row the line it has to fit on.
-  return `${Math.round(width)}×${Math.round(height)} @ ${dpr.toFixed(1)}× · ${megapixels.toFixed(megapixels >= 10 ? 0 : 1)}M px`;
+  const gpuActive = PLANET_GPU?.gl && !PLANET_GPU.lost &&
+    PLANET_GPU.canvas?.style.display !== "none";
+  return `${Math.round(width)}×${Math.round(height)} @ ${dpr.toFixed(1)}× · ${megapixels.toFixed(megapixels >= 10 ? 0 : 1)}M px` +
+    (gpuActive ? " · GPU globe" : "");
 }
 function performanceRecommendation(frameAverage, frameP95, renderP95, sampleCount) {
   if (sampleCount < 8) return "Measuring viewer performance…";
@@ -11799,6 +11807,360 @@ let PLANET = null;            // {frequency, corners, cells}
 let PLANET_WANTED = null;     // frequency currently being fetched
 let PLANET_HIT_CELLS = [];
 
+// The close strategic map needs Canvas 2D's very rich, per-tile vocabulary.
+// A small spinning world does not: by the time cities, units, and terrain
+// glyphs intentionally leave the picture, its only moving visual is the
+// coloured surface itself.  Sending that one mesh to WebGL lets the graphics
+// processor turn the whole sphere every display refresh while the main canvas
+// stays free to paint the next complete simulation boundary.
+//
+// This is deliberately a narrow fast path.  It never substitutes a different
+// renderer while a lens, selection, search, tactical marker, or animation is
+// asking the 2D map to carry information.  Unsupported GPUs and context loss
+// simply fall through to the existing Canvas renderer.
+const PLANET_GPU_SURFACE_MAX_SCALE = .30;
+// A second opaque 2D-sized surface is a clear win through 4K and the common
+// 5K desktop panels.  Past that it can consume more memory than it saves, so
+// keep the native Canvas renderer rather than risking a context eviction.
+const PLANET_GPU_MAX_PIXELS = 16_777_216;
+let PLANET_GPU = null;
+
+function planetGpuHide() {
+  if (PLANET_GPU?.canvas) PLANET_GPU.canvas.style.display = "none";
+}
+
+function planetGpuShader(gl, type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (gl.getShaderParameter(shader, gl.COMPILE_STATUS)) return shader;
+  gl.deleteShader(shader);
+  return null;
+}
+
+function planetGpuProgram(gl) {
+  const vertex = planetGpuShader(gl, gl.VERTEX_SHADER, `
+    precision mediump float;
+    attribute vec3 aPosition;
+    attribute vec3 aColor;
+    uniform vec3 uOut;
+    uniform vec3 uRight;
+    uniform vec3 uUp;
+    uniform vec2 uCenter;
+    uniform vec2 uViewport;
+    uniform float uRadius;
+    varying vec3 vPosition;
+    varying vec3 vColor;
+    void main() {
+      float x = dot(aPosition, uRight);
+      float y = dot(aPosition, uUp);
+      float z = dot(aPosition, uOut);
+      // uCenter and gl_FragCoord both use WebGL's bottom-left origin. Keep
+      // the vertex math in that same space: a positive screen-up vector moves
+      // toward a larger WebGL Y. This matters when the Earth is panned away
+      // from the centre of a wide sky view.
+      vec2 pixel = uCenter + vec2(x * uRadius, y * uRadius);
+      vec2 clip = vec2(pixel.x / uViewport.x * 2.0 - 1.0,
+                       pixel.y / uViewport.y * 2.0 - 1.0);
+      gl_Position = vec4(clip, -z, 1.0);
+      vPosition = aPosition;
+      vColor = aColor;
+    }
+  `);
+  const fragment = planetGpuShader(gl, gl.FRAGMENT_SHADER, `
+    precision mediump float;
+    uniform vec3 uOut;
+    uniform vec2 uCenter;
+    uniform float uRadius;
+    varying vec3 vPosition;
+    varying vec3 vColor;
+    void main() {
+      float facing = dot(normalize(vPosition), uOut);
+      if (facing < -0.002) discard;
+      float light = 0.70 + 0.34 * max(0.0, facing);
+      float edge = smoothstep(0.86, 1.0,
+        length((gl_FragCoord.xy - uCenter) / max(1.0, uRadius)));
+      vec3 colour = vColor * light;
+      // A faint, cool atmospheric edge keeps the GPU surface visually tied to
+      // the detailed Canvas globe without spending a second full-size pass.
+      colour = mix(colour, vec3(0.52, 0.84, 1.0), edge * 0.30);
+      gl_FragColor = vec4(colour, 1.0);
+    }
+  `);
+  if (!vertex || !fragment) return null;
+  const program = gl.createProgram();
+  gl.attachShader(program, vertex);
+  gl.attachShader(program, fragment);
+  gl.linkProgram(program);
+  gl.deleteShader(vertex);
+  gl.deleteShader(fragment);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    gl.deleteProgram(program);
+    return null;
+  }
+  return program;
+}
+
+function createPlanetGpu() {
+  if (PLANET_GPU?.failed) return null;
+  if (PLANET_GPU?.gl) return PLANET_GPU;
+  const canvas = document.createElement("canvas");
+  canvas.id = "planet-gpu-surface";
+  canvas.setAttribute("aria-hidden", "true");
+  canvas.style.cssText = [
+    "position:absolute", "z-index:0", "pointer-events:none",
+    "left:var(--map-area-left)", "top:var(--map-area-top)",
+    "width:var(--map-area-width)", "height:var(--map-area-height)",
+    "display:none",
+  ].join(";");
+  // The regular map stays above this canvas and owns all input.  Putting the
+  // accelerated surface directly beneath it means browser compositing can keep
+  // presenting it while the 2D canvas is waiting for the next full turn paint.
+  area.insertBefore(canvas, cv);
+  let gl = null;
+  try {
+    gl = canvas.getContext("webgl", {
+      alpha: false, antialias: true, depth: true, stencil: false,
+      preserveDrawingBuffer: false, desynchronized: true,
+      powerPreference: "high-performance",
+    });
+  } catch (_) {}
+  if (!gl) {
+    canvas.remove();
+    PLANET_GPU = {failed:true};
+    return null;
+  }
+  const program = planetGpuProgram(gl);
+  if (!program) {
+    canvas.remove();
+    PLANET_GPU = {failed:true};
+    return null;
+  }
+  const viewportLimit = gl.getParameter(gl.MAX_VIEWPORT_DIMS);
+  const finiteLimit = value => Number.isFinite(Number(value)) && Number(value) > 0
+    ? Number(value) : Infinity;
+  const maxWidth = Math.min(finiteLimit(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE)),
+                            finiteLimit(gl.getParameter(gl.MAX_TEXTURE_SIZE)),
+                            finiteLimit(viewportLimit?.[0]));
+  const maxHeight = Math.min(finiteLimit(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE)),
+                             finiteLimit(gl.getParameter(gl.MAX_TEXTURE_SIZE)),
+                             finiteLimit(viewportLimit?.[1]));
+  const gpu = {
+    canvas, gl, program, buffer:gl.createBuffer(),
+    position:gl.getAttribLocation(program, "aPosition"),
+    color:gl.getAttribLocation(program, "aColor"),
+    out:gl.getUniformLocation(program, "uOut"),
+    right:gl.getUniformLocation(program, "uRight"),
+    up:gl.getUniformLocation(program, "uUp"),
+    center:gl.getUniformLocation(program, "uCenter"),
+    viewport:gl.getUniformLocation(program, "uViewport"),
+    radiusUniform:gl.getUniformLocation(program, "uRadius"),
+    meshState:null, vertices:0, width:0, height:0, maxWidth, maxHeight,
+    needsFullClear:true, surfaceRect:null, lost:false,
+  };
+  canvas.addEventListener("webglcontextlost", event => {
+    event.preventDefault();
+    gpu.lost = true;
+    planetGpuHide();
+  });
+  canvas.addEventListener("webglcontextrestored", () => {
+    // A restored context starts empty.  Falling back for this session is safer
+    // than risking a blank world while a browser reclaims graphics memory.
+    gpu.lost = true;
+    planetGpuHide();
+  });
+  PLANET_GPU = gpu;
+  return gpu;
+}
+
+function syncPlanetGpuCanvas() {
+  const gpu = PLANET_GPU;
+  if (!gpu?.canvas || gpu.lost) return;
+  const width = cv.width, height = cv.height;
+  if (width * height > PLANET_GPU_MAX_PIXELS ||
+      width > gpu.maxWidth || height > gpu.maxHeight) {
+    planetGpuHide();
+    return;
+  }
+  let resized = false;
+  if (gpu.canvas.width !== width) { gpu.canvas.width = width; resized = true; }
+  if (gpu.canvas.height !== height) { gpu.canvas.height = height; resized = true; }
+  if (resized) {
+    // Resizing clears a WebGL drawing buffer. Make its first following paint a
+    // whole-black clear, then subsequent rotations only touch the globe box.
+    gpu.needsFullClear = true;
+    gpu.surfaceRect = null;
+  }
+  gpu.width = width;
+  gpu.height = height;
+}
+
+function clearPlanetGpuSurface(gpu, centerX, centerY, radius) {
+  const {gl} = gpu;
+  gl.clearColor(0, 0, 0, 1);
+  gl.clearDepth(1);
+  const center = [centerX * DPR, (MAPH - centerY) * DPR];
+  const padding = Math.max(2, 2 * DPR);
+  const current = {
+    left:center[0] - radius * DPR - padding,
+    right:center[0] + radius * DPR + padding,
+    bottom:center[1] - radius * DPR - padding,
+    top:center[1] + radius * DPR + padding,
+  };
+  if (gpu.needsFullClear) {
+    gl.disable(gl.SCISSOR_TEST);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gpu.needsFullClear = false;
+  } else {
+    const previous = gpu.surfaceRect || current;
+    const left = Math.max(0, Math.floor(Math.min(previous.left, current.left)));
+    const right = Math.min(gpu.width, Math.ceil(Math.max(previous.right, current.right)));
+    const bottom = Math.max(0, Math.floor(Math.min(previous.bottom, current.bottom)));
+    const top = Math.min(gpu.height, Math.ceil(Math.max(previous.top, current.top)));
+    // When a zoom or sky pan moves most of the stage, a single full clear is
+    // cheaper than maintaining a near-full scissor rectangle. Rotations keep
+    // this box tiny, which is what makes 4K high-refresh presentation viable.
+    if ((right - left) * (top - bottom) > gpu.width * gpu.height * .7) {
+      gl.disable(gl.SCISSOR_TEST);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    } else if (right > left && top > bottom) {
+      gl.enable(gl.SCISSOR_TEST);
+      gl.scissor(left, bottom, right - left, top - bottom);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.disable(gl.SCISSOR_TEST);
+    }
+  }
+  gpu.surfaceRect = current;
+}
+
+function planetGpuColor(tile, visible, spectator) {
+  const base = rgbOf(tileGroundColor(tile, "#4b5960"));
+  let color = spectator || visible.has(key(tile.pos))
+    ? base : base.map(channel => channel * .30);
+  if (tile.owner !== null && tile.owner !== undefined) {
+    const owner = rgbOf(pcol(tile.owner));
+    const alpha = TERRITORY_TINT_SCALE * (ownerIsCityState(tile.owner)
+      ? MAP_CIV_HIERARCHY.planetWashCityState
+      : MAP_CIV_HIERARCHY.planetWashMajorStrategic);
+    color = color.map((channel, index) => channel * (1 - alpha) + owner[index] * alpha);
+  }
+  return color.map(channel => channel / 255);
+}
+
+function buildPlanetGpuMesh(gpu) {
+  if (gpu.meshState === state) return;
+  const tiles = new Map(state.map.tiles.map(tile => [key(tile.pos), tile]));
+  const visible = new Set((state.turn_visible || state.visible).map(key));
+  const spectator = !Number.isInteger(state.view_player);
+  const data = [];
+  for (const cell of PLANET.cells.values()) {
+    const tile = tiles.get(key(cell.pos));
+    if (!tile) continue;
+    const color = planetGpuColor(tile, visible, spectator);
+    const center = cell.center;
+    for (let index = 0; index < cell.ids.length; index++) {
+      const a = cell.ids[index], b = cell.ids[(index + 1) % cell.ids.length];
+      const corners = [
+        center,
+        [PLANET.corners[3 * a], PLANET.corners[3 * a + 1], PLANET.corners[3 * a + 2]],
+        [PLANET.corners[3 * b], PLANET.corners[3 * b + 1], PLANET.corners[3 * b + 2]],
+      ];
+      for (const point of corners) data.push(point[0], point[1], point[2], color[0], color[1], color[2]);
+    }
+  }
+  gpu.gl.bindBuffer(gpu.gl.ARRAY_BUFFER, gpu.buffer);
+  gpu.gl.bufferData(gpu.gl.ARRAY_BUFFER, new Float32Array(data), gpu.gl.STATIC_DRAW);
+  gpu.vertices = data.length / 6;
+  gpu.meshState = state;
+}
+
+function planetGpuEligible(camera = planetCamera(), radius = planetEarthRadius()) {
+  if (!state || !PLANET || !planetReady() || !knowsGlobe() || camera.chart) return false;
+  // This is exactly the scale where the dense terrain vocabulary has left the
+  // globe. Sparse city and frontier ink can remain on the Canvas above it;
+  // keep every interactive/detail mode on the canonical painter so the
+  // accelerated layer is purely a visual upgrade.
+  if (cam.scale > PLANET_GPU_SURFACE_MAX_SCALE) return false;
+  if (mapLens || sel || selCity || tacks.length || mapSearchQuery || mapSearchCivId ||
+      SHOW_YIELDS || SHOW_GRID || state?.arena_flags?.length) return false;
+  if (anim.moves.size || anim.floats.length || anim.sparks.length || anim.deaths.length ||
+      anim.strike || anim.blasts.length || activeSkyLaunches().length) return false;
+  // Satellites and expeditions have their own clock.  Keep them on the full
+  // painter so the GPU surface never leaves a moving craft frozen in space.
+  if (planetSkyAnimating()) return false;
+  return true;
+}
+
+function drawPlanetGpuSurface(camera, radius, centerX, centerY) {
+  if (!planetGpuEligible(camera, radius)) return false;
+  const gpu = createPlanetGpu();
+  if (!gpu || gpu.lost) return false;
+  syncPlanetGpuCanvas();
+  if (!gpu.width || !gpu.height || gpu.width * gpu.height > PLANET_GPU_MAX_PIXELS ||
+      gpu.width > gpu.maxWidth || gpu.height > gpu.maxHeight) return false;
+  buildPlanetGpuMesh(gpu);
+  if (!gpu.vertices) return false;
+  const {gl} = gpu;
+  const basis = planetViewBasis(camera);
+  gl.viewport(0, 0, gpu.width, gpu.height);
+  clearPlanetGpuSurface(gpu, centerX, centerY, radius);
+  gl.useProgram(gpu.program);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gpu.buffer);
+  gl.enableVertexAttribArray(gpu.position);
+  gl.vertexAttribPointer(gpu.position, 3, gl.FLOAT, false, 24, 0);
+  gl.enableVertexAttribArray(gpu.color);
+  gl.vertexAttribPointer(gpu.color, 3, gl.FLOAT, false, 24, 12);
+  gl.uniform3fv(gpu.out, basis.out);
+  gl.uniform3fv(gpu.right, basis.right);
+  gl.uniform3fv(gpu.up, basis.up);
+  gl.uniform2f(gpu.center, centerX * DPR, (MAPH - centerY) * DPR);
+  gl.uniform2f(gpu.viewport, gpu.width, gpu.height);
+  gl.uniform1f(gpu.radiusUniform, radius * DPR);
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthFunc(gl.LEQUAL);
+  gl.disable(gl.BLEND);
+  gl.drawArrays(gl.TRIANGLES, 0, gpu.vertices);
+  if (gl.getError() !== gl.NO_ERROR) {
+    // A browser can accept context creation yet reject a later large buffer or
+    // framebuffer. Do not leave an opaque blank layer over the proven Canvas
+    // renderer; retire this optional path for the session instead.
+    gpu.lost = true;
+    planetGpuHide();
+    return false;
+  }
+  gpu.surfaceRadius = radius;
+  gpu.centerX = centerX;
+  gpu.centerY = centerY;
+  gpu.dpr = DPR;
+  gpu.canvas.style.display = "block";
+  return true;
+}
+
+// The direct path is for a rotation only.  A zoom or a pan changes the sky,
+// atmosphere, and screen-space overlay as well as the sphere, so it remains a
+// normal complete Canvas paint.  Spinning changes just the view basis, which
+// is precisely the transform already resident on the GPU.
+function planetGpuCanAnimate() {
+  const gpu = PLANET_GPU;
+  if (!gpu?.gl || gpu.lost || gpu.canvas.style.display === "none" ||
+      gpu.meshState !== state) return false;
+  const camera = planetCamera();
+  const radius = camera.radius * cam.scale;
+  const [centerX, centerY] = planetEarthCenter(radius);
+  if (!planetGpuEligible(camera, radius)) return false;
+  return Math.abs((gpu.surfaceRadius ?? NaN) - radius) < .01 &&
+    Math.abs((gpu.centerX ?? NaN) - centerX) < .01 &&
+    Math.abs((gpu.centerY ?? NaN) - centerY) < .01 && gpu.dpr === DPR;
+}
+
+function drawPlanetGpuAnimationFrame() {
+  if (!planetGpuCanAnimate()) return false;
+  const camera = planetCamera();
+  const radius = camera.radius * cam.scale;
+  const [centerX, centerY] = planetEarthCenter(radius);
+  return drawPlanetGpuSurface(camera, radius, centerX, centerY);
+}
+
 // The world says what shape it is, and that alone decides which renderer
 // draws it: any world type can be laid out flat or closed into a globe, so the
 // type it was filled with says nothing about the shape. Older servers sent no
@@ -18254,8 +18616,9 @@ function drawPlanetChartMarginalia() {
 }
 
 function drawPlanetMap() {
-  if (!planetMap()) return false;
+  if (!planetMap()) { planetGpuHide(); return false; }
   if (!planetReady()) {
+    planetGpuHide();
     ensurePlanetGeometry();
     cx.setTransform(DPR, 0, 0, DPR, 0, 0);
     cx.fillStyle = "#000";
@@ -18280,11 +18643,25 @@ function drawPlanetMap() {
   const empireLens = mapLens === "empire";
   PLANET_HIT_CELLS = [];
 
+  // At globe scale WebGL owns the opaque terrain surface while Canvas 2D keeps
+  // its established strategic ink above it.  The overlay remains available
+  // for normal detail paints; between them the GPU can rotate the expensive
+  // part at the display's own 120/144/240 Hz cadence.
+  const gpuSurface = drawPlanetGpuSurface(camera, radius, centerX, centerY);
+  if (!gpuSurface) planetGpuHide();
+
   cx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  // Space is a true black field. The globe, stars, and bodies are the only
-  // lights in it, rather than floating over a blue atmospheric wash.
-  cx.fillStyle = "#000";
-  cx.fillRect(0, 0, MAPW, MAPH);
+  // The GPU surface is an opaque black-backed layer under this canvas.  Clear
+  // only the overlay when it is active; otherwise Canvas retains its ordinary
+  // complete black field.
+  if (gpuSurface) {
+    cx.clearRect(0, 0, MAPW, MAPH);
+  } else {
+    // Space is a true black field. The globe, stars, and bodies are the only
+    // lights in it, rather than floating over a blue atmospheric wash.
+    cx.fillStyle = "#000";
+    cx.fillRect(0, 0, MAPW, MAPH);
+  }
   // Stars emerge as the globe draws back; the black field stays constant.
   const depth = skyDepth(radius);
   if (depth > 0) drawSkyStars(depth, radius);
@@ -18304,57 +18681,60 @@ function drawPlanetMap() {
   cx.save();
   applyPlanetGroundTilt(centerY);
 
-  // The ocean sphere under the tiles: it fills the limb no tile quite reaches
-  // and gives the globe its roundness. On a chart there is no limb and no ball
-  // to be round, so the same wash is spread to the corners of the sheet instead
-  // — an unknown sea running off the edge of the paper, which is what the blank
-  // parts of a chart have always been.
-  const sheet = camera.chart ? planetStageReach(centerX, centerY) : radius;
-  cx.save();
-  if (!camera.chart) {
-    // The drop shadow is the globe's own, so it has to shrink with it: a fixed
-    // eighteen-pixel blur around a five-pixel Earth is a smudge with a world in
-    // the middle of it. Nothing is casting one across a chart.
-    cx.shadowColor = "#000d";
-    cx.shadowBlur = Math.max(Math.min(18, radius * .4), radius * .12);
-    cx.shadowOffsetY = Math.max(Math.min(8, radius * .2), radius * .05);
-  }
-  const ocean = cx.createRadialGradient(centerX - sheet * .32, centerY - sheet * .36,
-                                        sheet * .05, centerX, centerY, sheet);
-  if (camera.chart && !spectator) {
-    ocean.addColorStop(0, PARCH_LIGHT); ocean.addColorStop(.52, PARCH);
-    ocean.addColorStop(.88, "#aa9364"); ocean.addColorStop(1, "#77623f");
-  } else if (spectator) {
-    ocean.addColorStop(0, "#46679f"); ocean.addColorStop(.52, "#14315e");
-    ocean.addColorStop(.88, "#091a3a"); ocean.addColorStop(1, "#020714");
-  } else {
-    // Under fog the bare sphere is everything this empire has never seen, so
-    // it reads as unknown rather than as an ocean nobody needs to explore.
-    ocean.addColorStop(0, "#39434c"); ocean.addColorStop(.52, "#222a32");
-    ocean.addColorStop(.88, "#141a20"); ocean.addColorStop(1, "#05090d");
-  }
-  cx.fillStyle = ocean;
-  if (camera.chart) cx.fillRect(0, 0, MAPW, MAPH);
-  else { cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.fill(); }
-  cx.restore();
-
-  if (camera.chart && !spectator) {
+  if (!gpuSurface) {
+    // The ocean sphere under the tiles: it fills the limb no tile quite reaches
+    // and gives the globe its roundness. On a chart there is no limb and no ball
+    // to be round, so the same wash is spread to the corners of the sheet instead
+    // — an unknown sea running off the edge of the paper, which is what the blank
+    // parts of a chart have always been.
+    const sheet = camera.chart ? planetStageReach(centerX, centerY) : radius;
     cx.save();
-    cx.strokeStyle = PARCH_INK; cx.globalAlpha = .065; cx.lineWidth = .65;
-    for (let i = 0; i < 15; i++) {
-      const y = MAPH * (i + .45) / 15;
-      cx.beginPath(); cx.moveTo(0, y);
-      cx.bezierCurveTo(MAPW * .32, y + (i % 2 ? 8 : -8),
-                       MAPW * .67, y + (i % 2 ? -7 : 7),
-                       MAPW, y);
-      cx.stroke();
+    if (!camera.chart) {
+      // The drop shadow is the globe's own, so it has to shrink with it: a fixed
+      // eighteen-pixel blur around a five-pixel Earth is a smudge with a world in
+      // the middle of it. Nothing is casting one across a chart.
+      cx.shadowColor = "#000d";
+      cx.shadowBlur = Math.max(Math.min(18, radius * .4), radius * .12);
+      cx.shadowOffsetY = Math.max(Math.min(8, radius * .2), radius * .05);
     }
+    const ocean = cx.createRadialGradient(centerX - sheet * .32, centerY - sheet * .36,
+                                          sheet * .05, centerX, centerY, sheet);
+    if (camera.chart && !spectator) {
+      ocean.addColorStop(0, PARCH_LIGHT); ocean.addColorStop(.52, PARCH);
+      ocean.addColorStop(.88, "#aa9364"); ocean.addColorStop(1, "#77623f");
+    } else if (spectator) {
+      ocean.addColorStop(0, "#46679f"); ocean.addColorStop(.52, "#14315e");
+      ocean.addColorStop(.88, "#091a3a"); ocean.addColorStop(1, "#020714");
+    } else {
+      // Under fog the bare sphere is everything this empire has never seen, so
+      // it reads as unknown rather than as an ocean nobody needs to explore.
+      ocean.addColorStop(0, "#39434c"); ocean.addColorStop(.52, "#222a32");
+      ocean.addColorStop(.88, "#141a20"); ocean.addColorStop(1, "#05090d");
+    }
+    cx.fillStyle = ocean;
+    if (camera.chart) cx.fillRect(0, 0, MAPW, MAPH);
+    else { cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.fill(); }
     cx.restore();
-    drawPlanetChartMarginalia();
+
+    if (camera.chart && !spectator) {
+      cx.save();
+      cx.strokeStyle = PARCH_INK; cx.globalAlpha = .065; cx.lineWidth = .65;
+      for (let i = 0; i < 15; i++) {
+        const y = MAPH * (i + .45) / 15;
+        cx.beginPath(); cx.moveTo(0, y);
+        cx.bezierCurveTo(MAPW * .32, y + (i % 2 ? 8 : -8),
+                         MAPW * .67, y + (i % 2 ? -7 : 7),
+                         MAPW, y);
+        cx.stroke();
+      }
+      cx.restore();
+      drawPlanetChartMarginalia();
+    }
   }
 
   const cells = earthInFrame ? planetCells(camera, scale, centerX, centerY) : [];
-  drawPlanetGround(cells, camera, scale, radius, centerX, centerY, turnVisible, spectator);
+  if (!gpuSurface)
+    drawPlanetGround(cells, camera, scale, radius, centerX, centerY, turnVisible, spectator);
   // A route is ground infrastructure on the globe too: draw it before the
   // frontier ribbon and before every terrain landmark that shares its tile.
   drawPlanetStrategicRoads(cells, turnVisible, spectator);
@@ -30247,13 +30627,38 @@ syncModeLink();
 boot();
 
 // --- animation ticker: human-smooth tweens without letting a Retina canvas
-// compete with the simulation for an entire core at Lightning pace. Human
-// turns retain 60fps; spectators need no more than 30fps between 10Hz states.
-let lastIdleDraw = 0, drawCost = 8;
+// compete with the simulation for an entire core at Lightning pace.  The old
+// spectator-only 30 FPS ceiling made a 120/144/240 Hz globe look needlessly
+// stepped even when the frame had plenty of time left.  Presentation now reads
+// the browser's actual refresh rhythm, capped at the requested 240 Hz rather
+// than assuming that every panel is a 60 Hz one.
+let lastIdleDraw = 0, lastMiniDraw = 0, drawCost = 8, gpuNeedsSettledPaint = false;
+const MAX_PRESENTATION_HZ = 240;
+let lastAnimationRefreshSample = 0, animationRefreshMs = 1000 / 60;
+function animationRefreshInterval(now = performance.now()) {
+  // Computing a percentile from the rolling telemetry on every one of 240
+  // presentation frames would itself become avoidable main-thread work. The
+  // display cadence is stable on this timescale, so refresh the estimate with
+  // the same quarter-second rhythm as the visible performance panel.
+  if (now - lastAnimationRefreshSample >= PERFORMANCE_UI_REFRESH_MS) {
+    const samples = viewerPerformance.frameSamples
+      .map(sample => sample.value)
+      // Ignore a foreground/background handoff and implausibly tiny timer
+      // readings. requestAnimationFrame is our presentation clock, so its
+      // median is a better target than a hard-coded monitor guess.
+      .filter(value => value >= 1000 / 300 && value <= 1000 / 20);
+    const observed = performancePercentile(samples, .5) || 1000 / 60;
+    animationRefreshMs = Math.max(1000 / MAX_PRESENTATION_HZ,
+      Math.min(1000 / 20, observed));
+    lastAnimationRefreshSample = now;
+  }
+  return animationRefreshMs;
+}
 // Leave the other half of the main thread to state delivery, UI work and the
 // simulation sharing this machine. This is a share, rather than a magic
 // multiplier, so the scheduling promise and the arithmetic cannot drift apart.
 const MAX_ANIMATION_PAINT_SHARE = .5;
+const MAX_GPU_OVERLAY_PAINT_SHARE = .6;
 function animTick(now) {
   requestAnimationFrame(animTick);
   recordPerformanceFrame(now);
@@ -30264,20 +30669,50 @@ function animTick(now) {
   const active = cameraMoving || anim.moves.size > 0 || anim.floats.length > 0 ||
     anim.sparks.length > 0 || anim.deaths.length > 0 || anim.strike ||
     anim.blasts.length > 0 || planetSkyAnimating() || flatSkyAnimating();
+  // The GPU owns the opaque terrain surface at globe scale. Submit one new
+  // orientation per browser presentation frame; a GPU that cannot keep up
+  // naturally presents at the refresh rate it can sustain. The richer Canvas
+  // ink above it is refreshed independently and only as often as its measured
+  // cost allows, so a city label never steals the surface's smooth rotation.
+  if (cameraMoving && planetGpuCanAnimate()) {
+    gpuNeedsSettledPaint = true;
+    const overlayCadence = Math.max(animationRefreshInterval(now),
+      drawCost / MAX_GPU_OVERLAY_PAINT_SHARE);
+    if (now - lastIdleDraw > overlayCadence) {
+      lastIdleDraw = now;
+      const t0 = performance.now();
+      // This complete overlay paint also submits the current GPU orientation,
+      // so it replaces rather than doubles the direct terrain draw below.
+      draw();
+      drawCost = drawCost * .85 + (performance.now() - t0) * .15;
+      if (now - lastMiniDraw > 1000 / 60) { drawMini(); lastMiniDraw = now; }
+    } else drawPlanetGpuAnimationFrame();
+    return;
+  }
+  if (!active && gpuNeedsSettledPaint) {
+    gpuNeedsSettledPaint = false;
+    lastIdleDraw = now;
+    const t0 = performance.now();
+    draw();
+    drawCost = drawCost * .85 + (performance.now() - t0) * .15;
+    drawMini(); lastMiniDraw = now;
+    return;
+  }
   // Never spend more than about half the wall clock rendering. Measured cost
-  // decides: a frame that takes 60ms gets asked for every 130ms rather than
-  // every 33, so the view degrades to a slower picture instead of stalling.
-  const floor = active ? (SPEC ? 32 : 16) : 0;
-  const cadence = Math.max(floor, drawCost / MAX_ANIMATION_PAINT_SHARE);
+  // decides: a 60ms Canvas frame is asked for every 120ms; a cheap frame on a
+  // high-refresh panel is allowed to use its actual 4.17/6.94/8.33ms slot.
+  const cadence = Math.max(animationRefreshInterval(now),
+                           drawCost / MAX_ANIMATION_PAINT_SHARE);
   if (active && now - lastIdleDraw > cadence) {
     lastIdleDraw = now;
     const t0 = performance.now();
     draw();
     drawCost = drawCost * 0.85 + (performance.now() - t0) * 0.15;
+    gpuNeedsSettledPaint = false;
     // A detonation animates on the minimap too, and unlike a camera move it can
     // happen while the camera sits perfectly still — so it has to ask for the
     // repaint itself or the world map would show nothing at all.
-    if (cameraMoving || anim.blasts.length > 0) drawMini();
+    if (cameraMoving || anim.blasts.length > 0) { drawMini(); lastMiniDraw = now; }
   }
 }
 requestAnimationFrame(animTick);
