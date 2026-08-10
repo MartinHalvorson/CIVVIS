@@ -59,9 +59,14 @@ class Civ6PlayTest(unittest.TestCase):
             "text": "TRAJAN", "x": 0.686, "y": 0.193,
             "width": 0.023, "height": 0.009,
         }]
+        button = [{
+            "text": "BEGIN GAME", "x": 0.70, "y": 0.41,
+            "width": 0.08, "height": 0.02,
+        }]
         with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
              patch.object(civ6_play.macos_ocr, "recognize", return_value=observations), \
-             patch.object(civ6_play, "_leader_ocr", return_value=[]):
+             patch.object(civ6_play, "_leader_ocr", return_value=[]), \
+             patch.object(civ6_play, "_leader_intro_button_ocr", return_value=button):
             self.assertTrue(
                 civ6_play._leader_intro_visible(
                     Path("leader-intro.png"), bounds, "LEADER_TRAJAN"
@@ -70,6 +75,26 @@ class Civ6PlayTest(unittest.TestCase):
             self.assertFalse(
                 civ6_play._leader_intro_visible(
                     Path("leader-intro.png"), bounds, "LEADER_JADWIGA"
+                )
+            )
+
+    def test_leader_intro_rejects_the_create_game_start_button(self) -> None:
+        bounds = (864, 33, 864, 542)
+        observations = [{
+            "text": "TRAJAN", "x": 0.824, "y": 0.144,
+            "width": 0.02, "height": 0.011,
+        }]
+        button = [{
+            "text": "START GAME", "x": 0.74, "y": 0.506,
+            "width": 0.03, "height": 0.01,
+        }]
+        with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
+             patch.object(civ6_play.macos_ocr, "recognize", return_value=observations), \
+             patch.object(civ6_play, "_leader_ocr", return_value=[]), \
+             patch.object(civ6_play, "_leader_intro_button_ocr", return_value=button):
+            self.assertFalse(
+                civ6_play._leader_intro_visible(
+                    Path("create-game.png"), bounds, "LEADER_TRAJAN"
                 )
             )
 

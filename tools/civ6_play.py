@@ -1153,9 +1153,9 @@ def _leader_intro_visible(path: Path, bounds: tuple[int, int, int, int],
 
     Civ VI pauses at a leader card after the Create Game click.  The control
     mod is already loaded there, so its auto-close records are not proof that
-    the map is ready.  OCR of the requested leader is the useful boundary:
-    it is constrained to the game window and the central leader-card band,
-    while the fixed button coordinate is used only after that proof.
+    the map is ready.  OCR of the requested leader alone is insufficient: the
+    Create Game page also displays that leader.  Require the intro's rendered
+    ``BEGIN GAME`` control in its lower card band before using the fixed click.
     """
     if not leader:
         return False
@@ -1168,7 +1168,22 @@ def _leader_intro_visible(path: Path, bounds: tuple[int, int, int, int],
     try:
         observations = macos_ocr.recognize(path)
         observations.extend(_leader_ocr(path, bounds, top=0.08, bottom=0.45))
+        button_observations = _leader_intro_button_ocr(path, bounds)
     except (OSError, ValueError):
+        return False
+    begin_game = False
+    for observation in button_observations:
+        if _normalized_label(str(observation.get("text", ""))) != "begingame":
+            continue
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = point[0] * screen_w, point[1] * screen_h
+        rx, ry = (px - x) / w, (py - y) / h
+        if 0.30 <= rx <= 0.70 and 0.65 <= ry <= 0.90:
+            begin_game = True
+            break
+    if not begin_game:
         return False
     for observation in observations:
         if _normalized_label(str(observation.get("text", ""))) != wanted:
@@ -1183,9 +1198,57 @@ def _leader_intro_visible(path: Path, bounds: tuple[int, int, int, int],
     return False
 
 
+def _leader_intro_button_ocr(path: Path,
+                             bounds: tuple[int, int, int, int]) -> list[dict]:
+    """Read the small Begin Game button from an enlarged lower-card crop.
+
+    Full-desktop Vision sees the leader card text but often drops this small
+    button.  The Create Game page's similarly placed ``Start Game`` control is
+    intentionally not accepted: the exact label is the page discriminator.
+    """
+    try:
+        from PIL import Image
+
+        screen = desktop_size()
+        if screen is None:
+            raise ValueError("desktop size unavailable")
+        image = Image.open(path)
+        screen_w, screen_h = screen
+        x, y, w, h = bounds
+        scale_x, scale_y = image.width / screen_w, image.height / screen_h
+        rect = (
+            int((x + w * 0.30) * scale_x),
+            int((y + h * 0.68) * scale_y),
+            int((x + w * 0.70) * scale_x),
+            int((y + h * 0.88) * scale_y),
+        )
+        crop = image.crop(rect)
+        crop = crop.resize((crop.width * 8, crop.height * 8))
+        crop_path = path.with_name(path.stem + "-begin-game-crop.png")
+        crop.save(crop_path)
+        observations = macos_ocr.recognize(crop_path)
+    except (OSError, ValueError):
+        return []
+
+    left, crop_top, right, crop_bottom = rect
+    crop_w, crop_h = right - left, crop_bottom - crop_top
+    mapped = []
+    for observation in observations:
+        item = dict(observation)
+        try:
+            item["x"] = (left + float(observation["x"]) * crop_w) / image.width
+            item["y"] = (crop_top + float(observation["y"]) * crop_h) / image.height
+            item["width"] = float(observation["width"]) * crop_w / image.width
+            item["height"] = float(observation["height"]) * crop_h / image.height
+        except (KeyError, TypeError, ValueError):
+            continue
+        mapped.append(item)
+    return mapped
+
+
 def advance_leader_intro(bounds: tuple[int, int, int, int],
                          leader: str | None, run_dir: Path, attempt: int,
-                         *, retries: int = 4) -> bool:
+                         *, retries: int = 4, poll_s: float = 1.0) -> bool:
     """Click the leader card's Begin Game control after visual confirmation."""
     x, y, w, h = bounds
     for retry in range(retries):
@@ -1197,7 +1260,7 @@ def advance_leader_intro(bounds: tuple[int, int, int, int],
             print(f"[setup] verified {leader_display_name(leader or '')} intro; "
                   "clicked Begin Game", flush=True)
             return True
-        time.sleep(1.0)
+        time.sleep(poll_s)
     return False
 
 
@@ -1554,7 +1617,13 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         # would leave a valid setup stranded behind its Begin Game button.
         # Failure to recognize it remains safe: the lifecycle gate below still
         # refuses to accept auto-close-only startup.
-        advance_leader_intro(bounds, args.leader, run_dir, attempt)
+        # The first screenshot can still be the Create Game page while Firaxis
+        # opens the post-host modal. Keep proving the exact page for the whole
+        # startup window rather than allowing a transient false negative to
+        # strand the run behind Begin Game.
+        intro_retries = max(4, min(60, int(verify_s / 2)))
+        advance_leader_intro(bounds, args.leader, run_dir, attempt,
+                             retries=intro_retries, poll_s=2.0)
         if started(verify_s):
             return True
         if not env.game_pids():
