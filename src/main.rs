@@ -869,7 +869,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `d_holy` 2.0 — the anchor keeps the exact weights it always had, and
 /// `holy_lane_parity` is a flag both constructors leave false. Compatibility
 /// re-pin, not an Elo-protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf85f_90f8_a58e_dd0b;
+/// The district-weight guard and the roster-composite notes are a test and
+/// doc comments in the hashed sources; no constructor moved and
+/// `AdvancedAi::legacy()` is untouched. Compatibility re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xed68_adb6_287f_86d5;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
