@@ -29,6 +29,13 @@ const LOCAL_SUPERIORITY_FLOOR: f64 = 0.72;
 /// Full health of a city, and the ceiling `Game::end_turn` heals back toward at
 /// `+20` a turn. [`AdvancedAi::siege_commitment`] measures a siege against it.
 const CITY_MAX_HP: i32 = 200;
+/// A city the controller knows exists but has never seen is not evidence of an
+/// unwalled outpost.  This is the fog-honest floor used until a City Center
+/// sighting supplies real wall and combat values.  One wall tier is enough to
+/// request a siege train; the separate strength floor keeps a lone field unit
+/// from reading the unseen objective as empty terrain.
+const UNKNOWN_OBJECTIVE_WALL_HP: i32 = 100;
+const UNKNOWN_OBJECTIVE_STRENGTH: f64 = 100.0;
 /// What one point of health already stripped from a breached city is worth to
 /// [`AdvancedAi::campaign_city_value`], as a reason to finish that city rather
 /// than re-aim.
@@ -15717,6 +15724,8 @@ impl AdvancedAi {
             .battlefront_observation
             .then(|| self.remembered_city(city.id))
             .flatten();
+        let conservative_unknown_city =
+            self.battlefront_observation && self.blind_objective_strength;
         let observed_hp = sighting.map(|report| report.hp).unwrap_or_else(|| {
             if self.battlefront_observation {
                 200
@@ -15725,14 +15734,18 @@ impl AdvancedAi {
             }
         });
         let observed_wall_hp = sighting.map(|report| report.wall_hp).unwrap_or_else(|| {
-            if self.battlefront_observation {
+            if conservative_unknown_city {
+                UNKNOWN_OBJECTIVE_WALL_HP
+            } else if self.battlefront_observation {
                 0
             } else {
                 city.wall_hp
             }
         });
         let observed_strength = sighting.map(|report| report.strength).unwrap_or_else(|| {
-            if self.battlefront_observation {
+            if conservative_unknown_city {
+                UNKNOWN_OBJECTIVE_STRENGTH
+            } else if self.battlefront_observation {
                 20.0
             } else {
                 g.city_strength(city.id)
@@ -17764,7 +17777,8 @@ impl AdvancedAi {
     /// capped at [`SIEGE_UNITS_MAX`]. A fogged target is read from this
     /// controller's last sighting, on the same footing as
     /// [`AdvancedAi::remembered_objective_strength`] — the wall a city had when
-    /// we last looked is the best estimate we are entitled to.
+    /// we last looked is the best estimate we are entitled to. A city never
+    /// seen gets the one-tier generic floor when the live fog repair is on.
     fn siege_units_wanted(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> usize {
         if !self.siege_tracks_the_wall {
             return usize::from(plan.target_city.is_some());
@@ -17781,6 +17795,7 @@ impl AdvancedAi {
         } else {
             match self.remembered_city(cid) {
                 Some(sighting) => sighting.wall_hp,
+                None if self.blind_objective_strength => UNKNOWN_OBJECTIVE_WALL_HP,
                 None => return 0,
             }
         };
@@ -17897,9 +17912,9 @@ impl AdvancedAi {
     ///
     /// A stale sighting stays stale on purpose: a city that walled up under fog
     /// still reads at its last-seen strength, which is exactly the mistake a
-    /// fog-honest agent should be allowed to make. Returning `None` when there
-    /// is no sighting at all preserves the shipped behaviour for a city this
-    /// controller has genuinely never seen.
+    /// fog-honest agent should be allowed to make. A city with no sighting gets
+    /// the conservative generic floor rather than the `hostile <= 0` sentinel:
+    /// not knowing a city's defenses is not knowing that it has none.
     fn remembered_objective_strength(&self, cid: u32) -> Option<f64> {
         if !self.blind_objective_strength {
             return None;
@@ -17907,6 +17922,7 @@ impl AdvancedAi {
         self.remembered_city(cid)
             .map(|sighting| sighting.strength.max(0.0))
             .filter(|strength| *strength > 0.0)
+            .or(Some(UNKNOWN_OBJECTIVE_STRENGTH))
     }
 
     fn rebuild_force_groups(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
@@ -29197,11 +29213,14 @@ mod tests {
             "the wall a city had when we last looked still sizes the train"
         );
 
-        // Memory is the only new input: with no sighting on file the campaign
-        // provisions nothing rather than guessing.
+        // The control still refuses to guess. The live fog repair instead
+        // requests the conservative one-tier floor for a city it has never
+        // seen, which is enough to put a siege unit in the production plan.
         let mut unseen = AdvancedAi::targeting(VictoryTarget::Domination);
         unseen.enable_siege_tracks_the_wall();
         assert_eq!(wanted(&unseen, &game, Some(target)), 0);
+        unseen.enable_blind_objective_strength();
+        assert_eq!(wanted(&unseen, &game, Some(target)), 1);
 
         // The shipped agent is unchanged: one unit for any target, zero
         // otherwise, whatever the wall is doing.
@@ -29627,14 +29646,14 @@ mod tests {
             "one warrior is not locally superior to a city it remembers: {ratio}"
         );
 
-        // Memory is the only new input: a city this controller has never seen
-        // still scores as absent, so the repair cannot become omniscience.
+        // Memory is still the preferred input, but a city this controller has
+        // never seen receives the generic floor rather than scoring as absent.
         let mut unseen = AdvancedAi::targeting(VictoryTarget::Domination);
         unseen.enable_blind_objective_strength();
-        assert_eq!(
-            unseen.local_strength_ratio(&game, 0, &[warrior], &[1], objective),
-            3.0,
-            "with no sighting on file the shipped behaviour is preserved"
+        let unseen_ratio = unseen.local_strength_ratio(&game, 0, &[warrior], &[1], objective);
+        assert!(
+            unseen_ratio < LOCAL_SUPERIORITY_FLOOR,
+            "one warrior must not read an unseen city as locally dominant: {unseen_ratio}"
         );
     }
 
