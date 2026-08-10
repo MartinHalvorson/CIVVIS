@@ -13817,6 +13817,40 @@ struct HeightField {
     wooded: Vec<i16>,
 }
 
+/// One immutable answer to the question "what can this seat see right now?".
+///
+/// The expensive part of a visibility refresh is the terrain-aware ray walk,
+/// not publishing the answer into fog memory.  The sight inputs are stamped
+/// independently of the world turn, so a seat whose units, cities, diplomacy,
+/// or host-provided sight did not change can reuse this compact bit frame even
+/// when the turn counter (and therefore remembered-tile stamps) advances.
+#[derive(Clone)]
+struct VisionFrame {
+    input_stamp: u64,
+    visible: Arc<TileBits>,
+}
+
+/// Runtime-only per-seat visibility frames.  A cloned game starts with no
+/// frames: a search branch is allowed to move its sources before its first
+/// read, and copying a parent's bitsets would retain work that belongs to the
+/// parent position.  The cache is deliberately separate from [`VisionCache`],
+/// whose entries are per-unit ray answers and are merged from worker worlds.
+#[derive(Default)]
+struct VisionFrameCache {
+    frames: std::cell::RefCell<Vec<Option<VisionFrame>>>,
+    /// Map writes also cover roads, improvements, and ownership, none of
+    /// which alter a sight ray.  Re-fold the small sight-relevant tile view
+    /// once per map epoch so those unrelated writes do not evict every seat's
+    /// frame.
+    map_geometry: std::cell::RefCell<Option<(u64, u64)>>,
+}
+
+impl Clone for VisionFrameCache {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
 impl HeightField {
     const UNKNOWN: i16 = i16::MIN;
 
@@ -17270,6 +17304,11 @@ pub struct Game {
     /// otherwise recompute.
     #[serde(skip)]
     vision: std::cell::RefCell<VisionCache>,
+    /// Compact per-seat current-sight frames, keyed by the inputs that can
+    /// change the answer.  Unlike the remembered-map cache this is only a
+    /// read shortcut, so it is never serialized.
+    #[serde(skip)]
+    vision_frames: VisionFrameCache,
     /// Derived connectivity regions, same contract as `vision`: never saved,
     /// rebuilt on demand whenever the world moves under it.
     #[serde(skip)]
@@ -18038,6 +18077,7 @@ impl From<GameSer> for Game {
         let mut g = Game {
             rules,
             vision: std::cell::RefCell::new(VisionCache::default()),
+            vision_frames: VisionFrameCache::default(),
             routing: std::cell::RefCell::new(RoutingCache::default()),
             route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
@@ -18598,6 +18638,7 @@ impl Game {
         let mut g = Game {
             rules,
             vision: std::cell::RefCell::new(VisionCache::default()),
+            vision_frames: VisionFrameCache::default(),
             routing: std::cell::RefCell::new(RoutingCache::default()),
             route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
@@ -32995,8 +33036,326 @@ impl Game {
                 city.districts.len() as u64,
                 city.wonders.len() as u64,
             ]);
+            for (district, position) in &city.districts {
+                stamp = vision_key(&[
+                    stamp,
+                    district.id() as u64,
+                    position.0 as i64 as u64,
+                    position.1 as i64 as u64,
+                ]);
+            }
         }
         stamp
+    }
+
+    /// Fold only map fields that a sight ray reads.  Roads, improvements,
+    /// resources, and ownership can all open the map for writing without
+    /// changing a ray; the tile epoch is therefore just the memo's invalidator
+    /// rather than part of the resulting geometry stamp.
+    fn map_vision_geometry_stamp(&self) -> u64 {
+        let epoch = self.map.tiles.epoch();
+        if let Some((cached_epoch, stamp)) = *self.vision_frames.map_geometry.borrow() {
+            if cached_epoch == epoch {
+                return stamp;
+            }
+        }
+        let mut stamp = vision_key(&[self.map.tiles.len() as u64]);
+        for tile in self.map.tiles.values() {
+            stamp = vision_key(&[
+                stamp,
+                tile.pos.0 as i64 as u64,
+                tile.pos.1 as i64 as u64,
+                tile.terrain.id() as u64,
+                tile.feature.map_or(u32::MAX, Name::id) as u64,
+                tile.hills as u64,
+                tile.district.map_or(u32::MAX, Name::id) as u64,
+                tile.owner_city.unwrap_or(u32::MAX) as u64,
+            ]);
+        }
+        *self.vision_frames.map_geometry.borrow_mut() = Some((epoch, stamp));
+        stamp
+    }
+
+    /// The part of [`Self::world_stamp`] that can alter a sight ray.  A turn
+    /// boundary changes remembered-tile timestamps, but it does not change a
+    /// unit's line of sight; keeping that clock out of this stamp is what lets
+    /// the compact frame survive a turn when all sight sources stand still.
+    fn vision_geometry_stamp(&self) -> u64 {
+        let topology = match self.map.topology {
+            crate::world::Topology::Cylinder => 0,
+            crate::world::Topology::Rectangle => 1,
+            crate::world::Topology::Globe(frequency) => {
+                2_u64.wrapping_add(frequency as i64 as u64)
+            }
+        };
+        let mut stamp = vision_key(&[
+            self.map_vision_geometry_stamp(),
+            self.map.width as i64 as u64,
+            self.map.height as i64 as u64,
+            topology,
+            self.is_arena() as u64,
+            self.tactics.fog as u64,
+        ]);
+        // `see_from_level` reads exactly these city facts in addition to the
+        // map.  Keep the geometry stamp in lockstep with the unit-ray cache's
+        // existing world stamp, but leave the turn counter out as explained
+        // above.
+        for city in self.cities.values() {
+            stamp = vision_key(&[
+                stamp,
+                city.id as u64,
+                city.pos.0 as i64 as u64,
+                city.pos.1 as i64 as u64,
+                city.encampment_pillaged as u64,
+                city.districts.len() as u64,
+                city.wonders.len() as u64,
+            ]);
+            for (district, position) in &city.districts {
+                stamp = vision_key(&[
+                    stamp,
+                    district.id() as u64,
+                    position.0 as i64 as u64,
+                    position.1 as i64 as u64,
+                ]);
+            }
+        }
+        stamp
+    }
+
+    /// Hash one viewer's sight sources into a compact, position-independent
+    /// input signature.  This deliberately hashes only fields read by
+    /// [`base_player_visibility`]: combat HP, movement points, and the rest of
+    /// a unit's mutable state cannot change its sight and therefore do not
+    /// evict the frame.
+    fn base_vision_input_stamp(
+        &self,
+        viewer: usize,
+        suzerains: &BTreeMap<usize, Option<usize>>,
+        unit_stamps: Option<&[u64]>,
+    ) -> u64 {
+        let mut stamp = unit_stamps
+            .and_then(|stamps| stamps.get(viewer).copied())
+            .unwrap_or_else(|| {
+                let mut stamp = vision_key(&[viewer as u64]);
+                for unit in self.units.values().filter(|unit| unit.owner == viewer) {
+                    stamp = vision_key(&[
+                        stamp,
+                        1,
+                        unit.id as u64,
+                        unit.kind.id() as u64,
+                        unit.pos.0 as i64 as u64,
+                        unit.pos.1 as i64 as u64,
+                        unit.air_patrol_pos.is_some() as u64,
+                        unit.air_patrol_pos
+                            .map(|pos| pos.0 as i64 as u64)
+                            .unwrap_or_default(),
+                        unit.air_patrol_pos
+                            .map(|pos| pos.1 as i64 as u64)
+                            .unwrap_or_default(),
+                    ]);
+                    for promotion in &unit.promotions {
+                        stamp = vision_key(&[stamp, 2, promotion.id() as u64]);
+                    }
+                }
+                stamp
+            });
+        for city in self.cities.values().filter(|city| city.owner == viewer) {
+            stamp = vision_key(&[
+                stamp,
+                3,
+                city.id as u64,
+                city.pos.0 as i64 as u64,
+                city.pos.1 as i64 as u64,
+                city.owned_tiles.len() as u64,
+            ]);
+            for position in &city.owned_tiles {
+                stamp = vision_key(&[
+                    stamp,
+                    position.0 as i64 as u64,
+                    position.1 as i64 as u64,
+                ]);
+            }
+        }
+        // A suzerain's city-state ring is a sight source.  Hash only the
+        // relationships that actually reveal ground; changes to envoys that
+        // leave the same city-state under the same suzerain do not force a
+        // ray walk.  The surrounding refresh installs the suzerain memo, so
+        // this poll is one cheap lookup per minor in the common path.
+        for minor in self.players.iter().filter(|minor| {
+            minor.alive
+                && minor.is_minor
+                && !minor.is_barbarian
+                && suzerains.get(&minor.id).copied().flatten() == Some(viewer)
+        }) {
+            stamp = vision_key(&[stamp, 4, minor.id as u64]);
+            for city in self.cities.values().filter(|city| city.owner == minor.id) {
+                stamp = vision_key(&[
+                    stamp,
+                    city.id as u64,
+                    city.pos.0 as i64 as u64,
+                    city.pos.1 as i64 as u64,
+                ]);
+            }
+        }
+        for spy in self.spies.values().filter(|spy| {
+            spy.owner == viewer && spy.captured_by.is_none() && spy.ready_turn <= self.turn
+        }) {
+            stamp = vision_key(&[
+                stamp,
+                5,
+                spy.id as u64,
+                spy.city.unwrap_or(u32::MAX) as u64,
+            ]);
+            if let Some(position) = spy
+                .city
+                .and_then(|city| self.cities.get(&city).map(|city| city.pos))
+            {
+                stamp = vision_key(&[
+                    stamp,
+                    position.0 as i64 as u64,
+                    position.1 as i64 as u64,
+                ]);
+            }
+        }
+        stamp
+    }
+
+    fn unit_vision_input_stamps(&self) -> Vec<u64> {
+        let mut stamps: Vec<u64> = (0..self.players.len())
+            .map(|viewer| vision_key(&[viewer as u64]))
+            .collect();
+        for unit in self.units.values() {
+            let Some(stamp) = stamps.get_mut(unit.owner) else {
+                continue;
+            };
+            *stamp = vision_key(&[
+                *stamp,
+                1,
+                unit.id as u64,
+                unit.kind.id() as u64,
+                unit.pos.0 as i64 as u64,
+                unit.pos.1 as i64 as u64,
+                unit.air_patrol_pos.is_some() as u64,
+                unit.air_patrol_pos
+                    .map(|pos| pos.0 as i64 as u64)
+                    .unwrap_or_default(),
+                unit.air_patrol_pos
+                    .map(|pos| pos.1 as i64 as u64)
+                    .unwrap_or_default(),
+            ]);
+            for promotion in &unit.promotions {
+                *stamp = vision_key(&[*stamp, 2, promotion.id() as u64]);
+            }
+        }
+        stamps
+    }
+
+    /// Stamp every input to one player's current sight.  The result is small
+    /// enough to carry beside a cached [`TileBits`] frame, while the fields it
+    /// folds are the exact source identities and positions the visibility
+    /// derivation reads.  The viewer set is included because shared vision is
+    /// itself a sight input (teams, alliances, and emergencies can add or
+    /// remove a live viewer without moving a unit).
+    fn suzerain_input_map(&self) -> BTreeMap<usize, Option<usize>> {
+        self.players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian)
+            .map(|minor| (minor.id, self.suzerain_of(minor.id)))
+            .collect()
+    }
+
+    fn vision_input_stamp_with_suzerains(
+        &self,
+        pid: usize,
+        suzerains: &BTreeMap<usize, Option<usize>>,
+        unit_stamps: Option<&[u64]>,
+    ) -> u64 {
+        let mut stamp = vision_key(&[
+            self.vision_geometry_stamp(),
+            pid as u64,
+            self.is_arena() as u64,
+            self.tactics.fog as u64,
+        ]);
+        if self.is_arena() && !self.tactics.fog {
+            return stamp;
+        }
+        let viewers = self.visibility_viewers(pid);
+        stamp = vision_key(&[stamp, viewers.len() as u64]);
+        for viewer in viewers {
+            stamp = vision_key(&[
+                stamp,
+                viewer as u64,
+                self.base_vision_input_stamp(viewer, suzerains, unit_stamps),
+            ]);
+        }
+        if pid == MIRRORED_SEAT {
+            for position in &self.host_observed {
+                stamp = vision_key(&[
+                    stamp,
+                    position.0 as i64 as u64,
+                    position.1 as i64 as u64,
+                ]);
+            }
+        }
+        stamp
+    }
+
+    #[cfg(test)]
+    fn vision_input_stamp(&self, pid: usize) -> u64 {
+        self.with_suzerain_read_memo(|| {
+            let suzerains = self.suzerain_input_map();
+            self.vision_input_stamp_with_suzerains(pid, &suzerains, None)
+        })
+    }
+
+    /// Return the current sight frame, reusing its dense bitset when the
+    /// stamped inputs still match.  The returned `Arc` keeps the hot callers
+    /// (action legality, AI perception, and refresh publication) from cloning
+    /// the map-sized bit vector merely to borrow it for a membership check.
+    fn vision_frame(&self, pid: usize, heights: &mut HeightField) -> Arc<TileBits> {
+        self.with_suzerain_read_memo(|| {
+            let suzerains = self.suzerain_input_map();
+            let input_stamp = self.vision_input_stamp_with_suzerains(pid, &suzerains, None);
+            {
+                let frames = self.vision_frames.frames.borrow();
+                if let Some(Some(frame)) = frames.get(pid) {
+                    if frame.input_stamp == input_stamp {
+                        return Arc::clone(&frame.visible);
+                    }
+                }
+            }
+            let visible = Arc::new(self.player_vision(heights, pid));
+            let mut frames = self.vision_frames.frames.borrow_mut();
+            if frames.len() <= pid {
+                frames.resize_with(pid + 1, || None);
+            }
+            frames[pid] = Some(VisionFrame {
+                input_stamp,
+                visible: Arc::clone(&visible),
+            });
+            visible
+        })
+    }
+
+    fn store_vision_frame(&self, pid: usize, input_stamp: u64, visible: Arc<TileBits>) {
+        let mut frames = self.vision_frames.frames.borrow_mut();
+        if frames.len() <= pid {
+            frames.resize_with(pid + 1, || None);
+        }
+        frames[pid] = Some(VisionFrame {
+            input_stamp,
+            visible,
+        });
+    }
+
+    fn matching_vision_frame(&self, pid: usize, input_stamp: u64) -> Option<Arc<TileBits>> {
+        self.vision_frames
+            .frames
+            .borrow()
+            .get(pid)
+            .and_then(|frame| frame.as_ref())
+            .filter(|frame| frame.input_stamp == input_stamp)
+            .map(|frame| Arc::clone(&frame.visible))
     }
 
     fn base_player_visibility(&self, heights: &mut HeightField, pid: usize) -> TileBits {
@@ -33082,8 +33441,12 @@ impl Game {
     /// Callers that only ask whether a tile is visible want this: building a
     /// sorted set of a few hundred positions to answer one membership
     /// question was, by some way, the most expensive thing visibility did.
+    pub(crate) fn player_vision_frame(&self, pid: usize) -> Arc<TileBits> {
+        self.vision_frame(pid, &mut self.height_field())
+    }
+
     pub(crate) fn player_vision_now(&self, pid: usize) -> TileBits {
-        self.player_vision(&mut self.height_field(), pid)
+        self.player_vision_frame(pid).as_ref().clone()
     }
 
     #[inline]
@@ -33096,7 +33459,7 @@ impl Game {
 
     /// Whether one tile is currently in a player's sight.
     pub fn player_can_see(&self, pid: usize, pos: Pos) -> bool {
-        self.sees(&self.player_vision_now(pid), pos)
+        self.sees(&self.player_vision_frame(pid), pos)
     }
 
     pub fn player_visibility(&self, pid: usize) -> BTreeSet<Pos> {
@@ -33104,7 +33467,8 @@ impl Game {
     }
 
     fn player_visibility_via(&self, heights: &mut HeightField, pid: usize) -> BTreeSet<Pos> {
-        self.tiles_of(&self.player_vision(heights, pid))
+        let visible = self.vision_frame(pid, heights);
+        self.tiles_of(&visible)
     }
 
     fn player_vision(&self, heights: &mut HeightField, pid: usize) -> TileBits {
@@ -33209,7 +33573,7 @@ impl Game {
         if self.visibility_suppressed || pid >= self.players.len() {
             return;
         }
-        let visible = self.player_vision(heights, pid);
+        let visible = self.vision_frame(pid, heights);
         // Ahead of the snapshot's early-out rather than inside it: that guard
         // is keyed on the seat's own memory and the world's cities, so a rival
         // unit walking into a standing scout's sight would not disturb it.
@@ -33872,6 +34236,21 @@ impl Game {
         result
     }
 
+    /// Read-only visibility consumers also walk the suzerain relation while
+    /// constructing an input stamp.  Keep that poll one-per-minor for the
+    /// duration of the frame lookup, without requiring a mutable `Game`.
+    fn with_suzerain_read_memo<R>(&self, pass: impl FnOnce() -> R) -> R {
+        let installed = self.query_memo.suzerain.borrow().is_none();
+        if installed {
+            *self.query_memo.suzerain.borrow_mut() = Some(BTreeMap::new());
+        }
+        let result = pass();
+        if installed {
+            *self.query_memo.suzerain.borrow_mut() = None;
+        }
+        result
+    }
+
     fn refresh_all_visibility(&mut self) {
         if self.visibility_suppressed {
             return;
@@ -33901,38 +34280,90 @@ impl Game {
         if self.visibility_suppressed || players.is_empty() {
             return;
         }
-        let count = players.len();
-        let active = pool.threads().min(count);
-        let states = (0..active).map(|_| self.clone()).collect::<Vec<_>>();
-        let players = Arc::new(players);
-        let worker_players = Arc::clone(&players);
-        let mut computed = pool.map_stateful(count, states, move |game, indices| {
-            // Worker clones start with an empty query cache; the same
-            // suzerain answers the serial pass memoizes would otherwise be
-            // re-derived from scratch for every seat this worker computes.
-            let memo = game.query_memo();
-            let mut results = indices
-                .map(|index| {
-                    let visible = game.player_vision_now(worker_players[index]);
-                    (index, (visible, None))
-                })
-                .collect::<Vec<_>>();
-            drop(memo);
-            if let Some((_, (_, cache))) = results.last_mut() {
-                *cache = Some(game.vision.into_inner());
+        // Do the cheap stamp pass on the authoritative world first.  A worker
+        // clone starts with no compact frames, so sending an unchanged seat to
+        // a worker would throw away exactly the reuse this cache is for.
+        let mut cached = Vec::<(usize, u64, Arc<TileBits>)>::new();
+        let mut pending = Vec::<(usize, u64)>::new();
+        self.with_suzerain_read_memo(|| {
+            let suzerains = self.suzerain_input_map();
+            let unit_stamps = self.unit_vision_input_stamps();
+            for pid in &players {
+                let input_stamp = self.vision_input_stamp_with_suzerains(
+                    *pid,
+                    &suzerains,
+                    Some(&unit_stamps),
+                );
+                match self.matching_vision_frame(*pid, input_stamp) {
+                    Some(visible) => cached.push((*pid, input_stamp, visible)),
+                    None => pending.push((*pid, input_stamp)),
+                }
             }
-            results
         });
 
-        let vision_stamp = self.world_stamp();
-        for (_, cache) in &mut computed {
-            if let Some(cache) = cache.take() {
-                self.vision
-                    .borrow_mut()
-                    .merge_current(cache, vision_stamp);
+        let count = pending.len();
+        let mut fresh = Vec::<(usize, u64, TileBits)>::with_capacity(count);
+        if count > 0 {
+            let active = pool.threads().min(count);
+            let states = (0..active).map(|_| self.clone()).collect::<Vec<_>>();
+            let worker_players = Arc::new(pending.iter().map(|(pid, _)| *pid).collect::<Vec<_>>());
+            let worker_players_for_pool = Arc::clone(&worker_players);
+            let mut computed = pool.map_stateful(count, states, move |game, indices| {
+                // Worker clones start with an empty query cache; the same
+                // suzerain answers the serial pass memoizes would otherwise
+                // be re-derived from scratch for every seat this worker computes.
+                let memo = game.query_memo();
+                let mut heights = game.height_field();
+                let mut results = indices
+                    .map(|index| {
+                        // The authoritative pre-pass already stamped which
+                        // seats need work.  Compute the ray answer directly
+                        // here; asking the worker to stamp it a second time
+                        // would spend the saved work before it reaches main.
+                        let visible = game.player_vision(
+                            &mut heights,
+                            worker_players_for_pool[index],
+                        );
+                        (index, (visible, None))
+                    })
+                    .collect::<Vec<_>>();
+                drop(memo);
+                if let Some((_, (_, cache))) = results.last_mut() {
+                    *cache = Some(game.vision.into_inner());
+                }
+                results
+            });
+
+            let vision_stamp = self.world_stamp();
+            for (_, cache) in &mut computed {
+                if let Some(cache) = cache.take() {
+                    self.vision
+                        .borrow_mut()
+                        .merge_current(cache, vision_stamp);
+                }
+            }
+            for ((pid, input_stamp), (visible, _)) in pending.into_iter().zip(computed) {
+                fresh.push((pid, input_stamp, visible));
             }
         }
-        for (pid, (visible, _)) in players.iter().copied().zip(computed) {
+
+        // Publish in the requested player order, exactly as the old all-worker
+        // path did.  Contacts and fog memory are observer-visible state, so a
+        // cached frame saves the ray work but not this serial publication.
+        for pid in players {
+            let (input_stamp, visible) = if let Some((_, stamp, visible)) =
+                cached.iter().find(|(cached_pid, _, _)| *cached_pid == pid)
+            {
+                (*stamp, Arc::clone(visible))
+            } else {
+                let index = fresh
+                    .iter()
+                    .position(|(fresh_pid, _, _)| *fresh_pid == pid)
+                    .expect("every pending visibility frame has a result");
+                let (_, stamp, visible) = fresh.swap_remove(index);
+                (stamp, Arc::new(visible))
+            };
+            self.store_vision_frame(pid, input_stamp, Arc::clone(&visible));
             self.record_contacts_in_sight(pid, &visible);
             self.refresh_visibility_snapshot_with_world(pid, &visible, memory_world);
         }
@@ -60174,6 +60605,65 @@ mod visibility_tests {
 
     fn along(game: &Game, origin: Pos, distance: i32) -> Pos {
         hex::canon((origin.0 + distance, origin.1), game.map.width)
+    }
+
+    #[test]
+    fn vision_frames_reuse_static_inputs_and_invalidate_on_sight_changes() {
+        let (mut game, center) = controlled_game(63_099);
+        let scout = game.spawn_unit("scout", 0, center);
+
+        let first = game.vision_frame(0, &mut game.height_field());
+        let first_stamp = game.vision_input_stamp(0);
+        let again = game.vision_frame(0, &mut game.height_field());
+        assert!(Arc::ptr_eq(&first, &again), "a static frame should be reused");
+
+        // A turn advances remembered-tile timestamps, not the sight ray.
+        game.turn += 1;
+        let next_turn = game.vision_frame(0, &mut game.height_field());
+        assert!(
+            Arc::ptr_eq(&first, &next_turn),
+            "turn-only changes should keep the compact sight frame"
+        );
+        assert_eq!(game.vision_input_stamp(0), first_stamp);
+
+        // Combat state is not a sight input, so changing HP does not evict the
+        // frame.  This is the high-frequency action that the input stamp must
+        // deliberately ignore.
+        game.units.get_mut(&scout).unwrap().hp -= 1;
+        let damaged = game.vision_frame(0, &mut game.height_field());
+        assert!(
+            Arc::ptr_eq(&first, &damaged),
+            "non-vision unit state should not rebuild sight"
+        );
+
+        // Tile writes that do not participate in a sight ray still advance
+        // the map's general mutation epoch.  The geometry fold must filter
+        // those writes so an improvement/road update does not evict every
+        // seat's frame.
+        let road_tile = along(&game, center, 3);
+        game.map.tiles.get_mut(&road_tile).unwrap().road = 1;
+        let road_changed = game.vision_frame(0, &mut game.height_field());
+        assert!(
+            Arc::ptr_eq(&first, &road_changed),
+            "unrelated tile writes should preserve the sight frame"
+        );
+
+        // Moving the source changes the compact signature and must produce a
+        // new frame with exactly the same answer as an uncached derivation.
+        let moved_to = along(&game, center, 1);
+        game.relocate(scout, moved_to);
+        let moved = game.vision_frame(0, &mut game.height_field());
+        assert!(!Arc::ptr_eq(&first, &moved));
+        let mut heights = game.height_field();
+        let uncached = game.player_vision(&mut heights, 0);
+        assert!(moved.as_ref() == &uncached, "cached and fresh sight differ");
+
+        // Geometry changes invalidate every source frame even when no unit
+        // moved; the epoch is the map's single mutation boundary.
+        let tile = along(&game, center, 2);
+        game.map.tiles.get_mut(&tile).unwrap().hills = true;
+        let changed_map = game.vision_frame(0, &mut game.height_field());
+        assert!(!Arc::ptr_eq(&moved, &changed_map));
     }
 
     fn observed_tile(observation: &serde_json::Value, position: Pos) -> &serde_json::Value {
