@@ -18,6 +18,7 @@ use crate::rules::Yields;
 use crate::think;
 use crate::world::TileBits;
 use crate::Pos;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 
@@ -894,6 +895,53 @@ const SETTLEMENT_EMERGENCY_SITE_MIN: f64 = 8.0;
 /// local searches still score every legal site exactly as before.
 const SETTLEMENT_GLOBAL_PREFILTER_LIMIT: usize = 512;
 
+/// Static settlement work is independent for each candidate tile. Keep the
+/// fan-out bounded because each active worker owns one `Game` snapshot, while
+/// still leaving the fleet pool available to the wider AI frontiers.
+const SETTLEMENT_SCORE_MAX_WORKERS: usize = 4;
+
+/// The part of a settlement score that does not depend on the settler's
+/// origin or on live unit positions. It is safe to reuse for every city and
+/// settler while the map and city layout remain unchanged. Threat, support,
+/// and defensibility terms stay outside this atlas because units can move
+/// during the acting seat's turn.
+#[derive(Default)]
+struct SettlementAtlas {
+    turn: Option<u32>,
+    map_epoch: u64,
+    pid: usize,
+    values: BTreeMap<Pos, f64>,
+}
+
+impl Clone for SettlementAtlas {
+    /// A controller clone is a speculative branch. Do not copy a potentially
+    /// large turn atlas into every worker; the branch will either rebuild the
+    /// values it needs or stay on its uncached path.
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl SettlementAtlas {
+    fn clear(&mut self) {
+        self.turn = None;
+        self.map_epoch = 0;
+        self.pid = 0;
+        self.values.clear();
+    }
+
+    fn matches(&self, g: &Game, pid: usize) -> bool {
+        self.turn == Some(g.turn) && self.map_epoch == g.map.tiles.epoch() && self.pid == pid
+    }
+
+    fn start(&mut self, g: &Game, pid: usize) {
+        self.turn = Some(g.turn);
+        self.map_epoch = g.map.tiles.epoch();
+        self.pid = pid;
+        self.values.clear();
+    }
+}
+
 #[derive(Clone)]
 pub struct AdvancedAi {
     base: BasicAi,
@@ -909,6 +957,11 @@ pub struct AdvancedAi {
     war_status: WarPackageStatus,
     census: StrategyCensus,
     settler_targets: BTreeMap<u32, Pos>,
+    /// Static settlement values are shared across every site search in one
+    /// acting turn. `RefCell` keeps read-only callers ergonomic while the
+    /// authoritative controller remains single-threaded; worker clones own
+    /// their own empty/copy-on-write atlas state.
+    settlement_atlas: RefCell<SettlementAtlas>,
     builder_targets: BTreeMap<u32, Pos>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
@@ -2308,6 +2361,7 @@ impl AdvancedAi {
             forced_target_player: None,
             force_groups: Vec::new(),
             force_groups_dirty: false,
+            settlement_atlas: RefCell::new(SettlementAtlas::default()),
             work_pool: None,
             belief: BeliefState::new(),
             battlefront_observation: true,
@@ -14957,15 +15011,10 @@ impl AdvancedAi {
         value
     }
 
-    fn settle_value(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
-        if !self.settlement_safety {
-            return self.legacy_settle_value(g, pid, pos);
-        }
-        let visible = self.battlefront_visibility(g, pid);
-        self.settle_value_visible(g, pid, pos, &visible)
-    }
-
-    fn settle_value_visible(&self, g: &Game, pid: usize, pos: Pos, visible: &TileBits) -> f64 {
+    /// Compute the portion of the live settlement score that is independent
+    /// of the settler's origin and of current unit positions. The caller adds
+    /// live safety/support terms after retrieving this value from the atlas.
+    fn settlement_static_value_uncached(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
         let positions = g.wdisk(pos, 2);
         let forecast = self.settlement_growth_forecast_from_positions(g, pid, pos, &positions);
         let housing = Self::settlement_base_housing(g, pos);
@@ -15001,6 +15050,114 @@ impl AdvancedAi {
         if enemy_distance < 6 {
             value -= (6 - enemy_distance) as f64 * 6.0;
         }
+        value
+    }
+
+    /// Evaluate static site values, using the persistent pool only for a
+    /// sufficiently large miss batch. Every result is returned in input order
+    /// and each candidate's arithmetic is independent, so worker scheduling
+    /// cannot affect tie-breaking or floating-point reduction order.
+    fn settlement_static_values_uncached(
+        &self,
+        g: &Game,
+        pid: usize,
+        positions: &[Pos],
+    ) -> Vec<(Pos, f64)> {
+        let pool = self
+            .work_pool
+            .as_ref()
+            .filter(|pool| pool.threads() > 1 && positions.len() >= 32);
+        if let Some(pool) = pool {
+            let active = pool
+                .threads()
+                .min(positions.len())
+                .min(SETTLEMENT_SCORE_MAX_WORKERS);
+            let states = (0..active)
+                .map(|_| (g.clone(), self.clone()))
+                .collect::<Vec<_>>();
+            let positions = Arc::new(positions.to_vec());
+            let worker_positions = Arc::clone(&positions);
+            let values = pool.map_stateful_limited(
+                positions.len(),
+                SETTLEMENT_SCORE_MAX_WORKERS,
+                states,
+                move |(game, ai), indices| {
+                    indices
+                        .map(|index| {
+                            let pos = worker_positions[index];
+                            (
+                                index,
+                                ai.settlement_static_value_uncached(&game, pid, pos),
+                            )
+                        })
+                        .collect()
+                },
+            );
+            return positions.iter().copied().zip(values).collect();
+        }
+
+        positions
+            .iter()
+            .copied()
+            .map(|pos| (pos, self.settlement_static_value_uncached(g, pid, pos)))
+            .collect()
+    }
+
+    /// Fill the turn-scoped atlas for the supplied positions. The atlas is
+    /// deliberately disabled outside an active controller turn: public
+    /// advice/evaluator calls can mutate a game between queries without
+    /// passing through this controller's lifecycle, and those callers retain
+    /// the original uncached semantics.
+    fn settlement_atlas_values(&self, g: &Game, pid: usize, positions: &[Pos]) {
+        if self.battlefront_frame.is_none() || positions.is_empty() {
+            return;
+        }
+        let misses = {
+            let mut atlas = self.settlement_atlas.borrow_mut();
+            if !atlas.matches(g, pid) {
+                atlas.start(g, pid);
+            }
+            positions
+                .iter()
+                .copied()
+                .filter(|pos| !atlas.values.contains_key(pos))
+                .collect::<Vec<_>>()
+        };
+        if misses.is_empty() {
+            return;
+        }
+        let values = self.settlement_static_values_uncached(g, pid, &misses);
+        let mut atlas = self.settlement_atlas.borrow_mut();
+        if !atlas.matches(g, pid) {
+            atlas.start(g, pid);
+        }
+        atlas.values.extend(values);
+    }
+
+    fn settlement_atlas_value(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
+        self.settlement_atlas_values(g, pid, &[pos]);
+        self.settlement_atlas
+            .borrow()
+            .values
+            .get(&pos)
+            .copied()
+            .unwrap_or_else(|| self.settlement_static_value_uncached(g, pid, pos))
+    }
+
+    fn settle_value(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
+        if !self.settlement_safety {
+            return self.legacy_settle_value(g, pid, pos);
+        }
+        let visible = self.battlefront_visibility(g, pid);
+        self.settle_value_visible(g, pid, pos, &visible)
+    }
+
+    fn settle_value_visible(&self, g: &Game, pid: usize, pos: Pos, visible: &TileBits) -> f64 {
+        let mut value = if self.battlefront_frame.is_some() {
+            self.settlement_atlas_value(g, pid, pos)
+        } else {
+            self.settlement_static_value_uncached(g, pid, pos)
+        };
         value -= self.settlement_safety_penalty(g, pid, pos, visible);
         if self.defensible_sites {
             value += self.defensibility(g, pid, pos);
@@ -15730,6 +15887,14 @@ impl AdvancedAi {
             if candidates.len() > limit {
                 overflow = candidates.split_off(limit);
             }
+        }
+        if self.settlement_safety && self.battlefront_frame.is_some() {
+            let atlas_positions = candidates
+                .iter()
+                .chain(overflow.iter())
+                .map(|(pos, _)| *pos)
+                .collect::<Vec<_>>();
+            self.settlement_atlas_values(g, pid, &atlas_positions);
         }
         let mut score_site = |pos| {
             // The local and global radius passes in `best_settler_target` can
@@ -21468,6 +21633,7 @@ impl Ai for AdvancedAi {
 impl AdvancedAi {
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         self.battlefront_frame = None;
+        self.settlement_atlas.borrow_mut().clear();
         // Before anything in this turn is priced. Every science term downstream
         // reads this one number, so the horizon cannot drift between the
         // production ordering, the citizen governor, and the search evaluator.
@@ -21569,6 +21735,12 @@ impl AdvancedAi {
         self.advanced_diplomacy(g, pid, &plan);
         self.advanced_spies(g, pid, &plan);
         self.byzantium_tagma_production(g, pid, &plan);
+
+        // Assessment can ask for a settle site before research, government,
+        // or policy changes land. Those changes affect adjacency and tile
+        // pricing, so the production pass starts a fresh static atlas from
+        // the final pre-production state.
+        self.settlement_atlas.borrow_mut().clear();
 
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
@@ -26219,6 +26391,65 @@ mod tests {
             "future campus adjacency should survive into the founding score: \
              with={with_mountain}, without={without_mountain}"
         );
+    }
+
+    #[test]
+    fn settlement_atlas_parallel_misses_match_uncached_values_and_invalidate_on_map_write() {
+        let mut game = Game::new_full(1, 60, 40, 8_123, 120, 0, false);
+        let positions = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| {
+                game.map
+                    .get(*position)
+                    .is_some_and(|tile| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+            })
+            .take(48)
+            .collect::<Vec<_>>();
+        assert_eq!(positions.len(), 48, "the fixture needs a wide score batch");
+
+        let visible = game.player_vision_now(0);
+        let units = game
+            .units
+            .values()
+            .filter(|unit| game.sees(&visible, unit.pos) && game.unit_visible_to(unit.id, 0))
+            .map(|unit| unit.id)
+            .collect();
+        let mut ai = AdvancedAi::new();
+        ai.battlefront_frame = Some(BattlefrontFrame { visible, units });
+        ai.work_pool = Some(Arc::new(WorkPool::new(4)));
+
+        let expected = positions
+            .iter()
+            .map(|position| ai.settlement_static_value_uncached(&game, 0, *position))
+            .collect::<Vec<_>>();
+        let cloned_game = game.clone();
+        let cloned = positions
+            .iter()
+            .map(|position| ai.settlement_static_value_uncached(&cloned_game, 0, *position))
+            .collect::<Vec<_>>();
+        assert_eq!(cloned, expected, "a worker game clone must preserve static site values");
+        let cloned_ai = ai.clone();
+        let cloned_controller = positions
+            .iter()
+            .map(|position| cloned_ai.settlement_static_value_uncached(&game, 0, *position))
+            .collect::<Vec<_>>();
+        assert_eq!(cloned_controller, expected, "a worker controller clone must preserve static site values");
+        ai.settlement_atlas_values(&game, 0, &positions);
+        let actual = positions
+            .iter()
+            .map(|position| ai.settlement_atlas_value(&game, 0, *position))
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected, "parallel atlas scoring must be bit-identical");
+        assert_eq!(ai.settlement_atlas.borrow().values.len(), positions.len());
+
+        let changed = positions[0];
+        game.map.tiles.get_mut(&changed).unwrap().terrain = Name::new("desert");
+        let uncached = ai.settlement_static_value_uncached(&game, 0, changed);
+        let refreshed = ai.settlement_atlas_value(&game, 0, changed);
+        assert_eq!(refreshed, uncached, "a map epoch change must refresh the atlas");
     }
 
     fn settlement_forecast_fixture(seed: u64) -> (Game, Pos, Vec<Pos>, Vec<Pos>) {
@@ -33506,6 +33737,23 @@ mod tests {
     #[test]
     fn parallel_worker_counts_replay_the_same_game_exactly() {
         let mut serial = Game::new(2, 20, 14, 73, 80, 1);
+        let mut parallel = serial.clone();
+        let mut serial_ais = AdvancedAi::fleet_parallel(&serial, 1);
+        let mut parallel_ais = AdvancedAi::fleet_parallel(&parallel, 4);
+
+        run_game(&mut serial, &mut serial_ais);
+        run_game(&mut parallel, &mut parallel_ais);
+
+        assert_eq!(serial.log, parallel.log);
+        assert_eq!(
+            serde_json::to_value(&serial).unwrap(),
+            serde_json::to_value(&parallel).unwrap()
+        );
+    }
+
+    #[test]
+    fn parallel_settlement_batches_replay_the_same_game_exactly() {
+        let mut serial = Game::new_full(4, 44, 28, 73_004, 80, 0, false);
         let mut parallel = serial.clone();
         let mut serial_ais = AdvancedAi::fleet_parallel(&serial, 1);
         let mut parallel_ais = AdvancedAi::fleet_parallel(&parallel, 4);
