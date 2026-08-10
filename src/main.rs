@@ -851,7 +851,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// does sell its cancellable promises before it declares, and its Gold, army,
 /// and the victim's treasury all move. `ELO_PROTOCOL_VERSION` is bumped to 7
 /// with this pin; see its own note for what stops comparing.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3e63_cc72_eee0_e7d9;
+/// The settlement atlas reuses static site terms only while an active
+/// battlefront frame and the live settlement-safety controller are present.
+/// `AdvancedAi::legacy()` disables both `battlefront_observation` and
+/// `settlement_safety`, so it stays on the historical uncached settlement
+/// path. The production `advanced` controller does use the atlas, but the
+/// frozen `advanced_v1` anchor cannot observe it. Compatibility re-pin, not
+/// an additional Elo-protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbb92_ff2f_f09d_e2cd;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
