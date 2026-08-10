@@ -2196,11 +2196,15 @@ impl AdvancedAi {
     /// has one auditable definition.
     /// The deployed scripted major.
     ///
-    /// One gene apart from `Weights::default()`: see [`crate::ai::ADVANCED_D_HOLY`]
-    /// for why the Holy Site figure lives here and not in the default that also
-    /// seeds minors and the frozen `advanced_v1` anchor.
+    /// ⚠ **Reverted to `Weights::default()` on 2026-08-10.** It briefly carried
+    /// `Weights::advanced()` (`d_holy` 5.6) on a +20 Elo gate taken at
+    /// `ai_eval`'s 4p 24x16 defaults. Re-measured at the shape the exhibition
+    /// actually runs — 6p 74x46, 9 city-states, Online, 250 turns, all six
+    /// victories — the same change is **parity, +2 Elo (CI -46..+50)**, and on
+    /// the promotion matrix's three-victory profile it is **-44 Elo,
+    /// sign p=0.0016 against**. See `docs/EVAL.md` 2026-08-10.
     pub fn new() -> AdvancedAi {
-        Self::promoted_policy_envoy(Weights::advanced(), None)
+        Self::promoted_policy_envoy(Weights::default(), None)
     }
 
     /// Evaluator treatment for one unified midgame power-spike appointment.

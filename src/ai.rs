@@ -1367,13 +1367,21 @@ mod gene_table_tests {
         assert_eq!(w.to_vec().len(), Weights::bounds().len());
     }
 
-    /// The shipped agent's four district weights are the exact configuration a
-    /// promotion gate passed on, and none of them may drift without a re-run.
+    /// The `advanced_holy_priority` treatment's district weights, pinned so the
+    /// arm keeps measuring the axis it is named for.
     ///
-    /// `d_holy` 5.6 against the other three at 4.0/3.0/1.0 measured **+20 Elo**
-    /// over 1200 paired maps (#1469). The roster-composite screen then measured
-    /// how that evaporates: `d_commercial` at 5.55 cost **19 of those 20
-    /// points** and dropped religious wins 470 to 392 (#1486).
+    /// ⚠ **This is no longer the shipped agent.** `d_holy` 5.6 measured +20 Elo
+    /// over 1200 paired maps at `ai_eval`'s 4p 24x16 defaults (#1469), shipped
+    /// onto `AdvancedAi::new()`, and was **reverted** the same day: at the
+    /// deployment shape with all six victories it is parity (+2, CI -46..+50),
+    /// and on the promotion matrix it is -44 with sign p=0.0016 against. The
+    /// weights survive as the treatment arm; see `docs/EVAL.md` 2026-08-10.
+    ///
+    /// The pin still earns its place, because the arm is only worth running if
+    /// it carries the configuration those numbers describe. The
+    /// roster-composite screen showed how easily that is lost: `d_commercial`
+    /// at 5.55 cost **19 of the 20 points** and dropped religious wins 470 to
+    /// 392 (#1486).
     ///
     /// ⚠ **Note what that rules out.** 5.55 is still *below* 5.6, so the harm
     /// arrived with the ordering intact — an ordering assertion passes straight
@@ -1382,21 +1390,18 @@ mod gene_table_tests {
     /// not) do not locate a safe threshold. So this pins the measured values
     /// themselves rather than inventing a bound the evidence cannot support.
     ///
-    /// The point is that a genome change is not a code change: if `evolve` or a
-    /// league round breeds these upward, a shipped result disappears and no gate
-    /// re-runs to notice. Scope is `Weights::advanced()` only — league and
-    /// evolved entrants carry their own vectors and are entitled to any values
-    /// they like.
+    /// Scope is `Weights::advanced()` only — league and evolved entrants carry
+    /// their own vectors and are entitled to any values they like.
     #[test]
-    fn the_shipped_district_weights_are_the_ones_the_gate_passed_on() {
+    fn the_holy_priority_arm_keeps_the_weights_its_numbers_describe() {
         let w = Weights::advanced();
         assert_eq!(
             [w.d_holy, w.d_campus, w.d_commercial, w.d_theater],
             [5.6, 4.0, 3.0, 1.0],
-            "the shipped district weights moved. #1469 measured +20 Elo at these \
-             four values and #1486 measured -19 of it back from a change to \
-             d_commercial alone that never even reversed the ordering. Re-run \
-             the paired gate before repinning."
+            "the advanced_holy_priority weights moved. Every number recorded \
+             for that arm was taken at these four values, and #1486 measured 19 \
+             Elo lost from a change to d_commercial alone that never even \
+             reversed the ordering. Re-measure before repinning."
         );
     }
 
