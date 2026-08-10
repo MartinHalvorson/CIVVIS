@@ -3276,6 +3276,7 @@ mod tests {
                     y: 6,
                     pillaged: false,
                     complete: true,
+                    ..StateDistrict::default()
                 }],
                 ..StateCity::default()
             }],
@@ -3411,6 +3412,7 @@ mod tests {
                     y: 6,
                     pillaged: true,
                     complete: true,
+                    ..StateDistrict::default()
                 }],
                 ..StateCity::default()
             }],
@@ -3913,6 +3915,7 @@ mod tests {
                     y: 8,
                     pillaged: false,
                     complete: true,
+                    ..StateDistrict::default()
                 }],
                 producing: Some("PROJECT_HOLY_SITE_PRAYERS".to_string()),
                 ..StateCity::default()

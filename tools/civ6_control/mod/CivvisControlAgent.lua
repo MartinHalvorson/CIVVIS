@@ -4739,14 +4739,34 @@ local function exportState(player, pid, turn)
 		-- the collection's authoritative completion bit keyed by plot so the
 		-- mirror does not grant yields early or erase an occupied foundation.
 		local districtComplete = {};
+		-- Hit points, keyed by plot exactly as completion is. The `placed` loop
+		-- below walks PLOTS and has no district handle, so anything the district
+		-- object knows has to be collected here. See the health block in `placed`
+		-- for why this is load-bearing.
+		local districtHealth = {};
 		local cityDistricts = try(function() return city:GetDistricts(); end);
 		if cityDistricts ~= nil then
 			for _, district in cityDistricts:Members() do
 				local dx = try(function() return district:GetX(); end, -1);
 				local dy = try(function() return district:GetY(); end, -1);
 				if dx ~= nil and dy ~= nil and dx >= 0 and dy >= 0 then
-					districtComplete[tostring(dx) .. "," .. tostring(dy)] =
+					local key = tostring(dx) .. "," .. tostring(dy);
+					districtComplete[key] =
 						try(function() return district:IsComplete(); end, nil);
+					districtHealth[key] = {
+						damage = try(function()
+							return district:GetDamage(DefenseTypes.DISTRICT_GARRISON);
+						end, -1),
+						max_damage = try(function()
+							return district:GetMaxDamage(DefenseTypes.DISTRICT_GARRISON);
+						end, -1),
+						wall_damage = try(function()
+							return district:GetDamage(DefenseTypes.DISTRICT_OUTER);
+						end, -1),
+						max_wall_damage = try(function()
+							return district:GetMaxDamage(DefenseTypes.DISTRICT_OUTER);
+						end, -1),
+					};
 				end
 			end
 		end
@@ -4802,6 +4822,48 @@ local function exportState(player, pid, turn)
 								complete = districtComplete[
 									tostring(try(function() return plot:GetX(); end, -1)) .. "," ..
 									tostring(try(function() return plot:GetY(); end, -1))],
+								-- ★★★★★ THE DISTRICT'S HEALTH, WHICH DECIDED 121 TURNS OF
+								-- PRODUCTION AND WAS NEVER EXPORTED.
+								--
+								-- `pillaged` is a boolean and a district can be DAMAGED
+								-- without being pillaged, so it cannot stand in for hit
+								-- points. Nothing carried them, `mirror.rs` never set
+								-- `City::encampment_hp`, and it defaults to **0**.
+								--
+								-- `Game::can_produce` gates `repair_encampment` on
+								-- `encampment_hp < 100`, so on every mirrored board that
+								-- test passed for any city holding an Encampment -- forever.
+								-- The AI queued the repair every turn, `civvis_orders`
+								-- correctly refuses to translate a project Civ 6 does not
+								-- have, the order was discarded, and NOTHING ELSE was
+								-- ordered for that city.
+								--
+								-- Measured on live run `civvis-20260810T040916Z`
+								-- (Rome/Trajan, Settler, Online): Ravenna and Lugdunum --
+								-- exactly the two cities holding an Encampment -- sat at
+								-- `producing_hash 0, cost -1, progress -1` from turn 67 to
+								-- turn 188, with production yields of 8 and 9 against
+								-- Rome's 28. 238 discarded orders, **10.4% of every order
+								-- CIVVIS issued all game**, and `ENDTURN_BLOCKING_PRODUCTION`
+								-- was the dominant blocker of the run because two queues
+								-- were permanently empty.
+								--
+								-- ⚠ AND THE RECORDED FIX WOULD HAVE MADE IT WORSE. The
+								-- standing plan was to map `repair_encampment` onto a
+								-- district BUILD. Both Encampments export as
+								-- `pillaged=false, complete=true` -- they are UNDAMAGED --
+								-- so that mapping would have rebuilt two healthy districts
+								-- from scratch. The missing translation was never the bug.
+								--
+								-- `GetDamage`/`GetMaxDamage` on the district, keyed by
+								-- `DefenseTypes`, are what the shipped CityBannerManager and
+								-- PlotToolTip read; the city-level pair beside them in this
+								-- same export already uses the identical shape.
+								damage = (districtHealth[px .. "," .. py] or {}).damage,
+								max_damage = (districtHealth[px .. "," .. py] or {}).max_damage,
+								wall_damage = (districtHealth[px .. "," .. py] or {}).wall_damage,
+								max_wall_damage =
+									(districtHealth[px .. "," .. py] or {}).max_wall_damage,
 							};
 						end
 					end
