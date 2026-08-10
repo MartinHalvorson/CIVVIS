@@ -858,7 +858,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// path. The production `advanced` controller does use the atlas, but the
 /// frozen `advanced_v1` anchor cannot observe it. Compatibility re-pin, not
 /// an additional Elo-protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbb92_ff2f_f09d_e2cd;
+/// The Holy Site figure moved onto `Weights::advanced()`, which only
+/// `AdvancedAi::new()` reads. `AdvancedAi::legacy()` builds from
+/// `BasicAi::new()` and therefore from `Weights::default()`, which still pays
+/// `d_holy` 2.0 — the anchor keeps the exact weights it always had, and
+/// `holy_lane_parity` is a flag both constructors leave false. Compatibility
+/// re-pin, not an Elo-protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7200_c583_6dd1_0f2d;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
