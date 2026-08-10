@@ -1185,6 +1185,50 @@ pub struct AdvancedAi {
     /// which keeps it inert in the ordinary case. **Off by default, live-bridge
     /// only.**
     pub siege_commitment: bool,
+    /// Require a threatened city to have been threatened on the previous
+    /// assessment before it re-plans the whole empire.
+    ///
+    /// ★★★★★ THE GRAND STRATEGY IS A PROXIMITY TEST, NOT A PLAN. `assess` tests
+    /// Recovery FIRST — `at_war && (threatened_city.is_some() || outpowered)` —
+    /// and `at_war => Conquest` sits far below it. In any war where our own
+    /// cities are in contact BOTH are true, so which plan the empire runs is
+    /// decided entirely by whether `threatened_city` happens to be set on that
+    /// turn. It is set by a proximity scan. **So every time a hostile unit steps
+    /// in or out of a city's threat radius, the empire changes grand strategy.**
+    ///
+    /// ⚠⚠⚠ Replicated across two independent 250-turn live runs — different code
+    /// revisions, maps and rivals:
+    ///
+    /// | run | `strategy == Recovery` agrees with the threat flag | flag flips | strategy switches |
+    /// |---|---|---|---|
+    /// | `civvis-20260810T050558Z` | **102/102 = 100%** | 14 | 17 |
+    /// | `civvis-20260810T040916Z` | **120/121 = 99%** | 25 | 26 |
+    ///
+    /// In both runs the conquest↔recovery two-cycle is 82% and 88% of ALL
+    /// strategy switches, and the switch count tracks the flip count.
+    ///
+    /// The cost is not military. Research, the policy portfolio and production
+    /// are all re-derived from the plan, so they turn over with it: *"Researching
+    /// military engineering — the cheapest step toward chemistry, which conquest
+    /// needs"* on one turn and *"Researching banking … which recovery needs"* on
+    /// the next.
+    ///
+    /// ⭐ Why one turn of persistence, and not more. Threat episode lengths over
+    /// the same two runs are `[1,1,1,1,2,5,6]` and
+    /// `[1,1,1,1,2,2,2,3,6,6,9,18,28]`: **8 of 20 episodes last exactly one
+    /// turn**. Requiring the threat to survive a single assessment removes 40% of
+    /// them and leaves every genuine siege — 28, 18, 9, 6, 6 turns — untouched.
+    /// A longer bound would start discarding the 2- and 3-turn episodes, which
+    /// are real.
+    ///
+    /// ⚠ This deliberately does NOT weaken the defence. `threatened_city` still
+    /// goes on the plan, so the relief force still aims at it and
+    /// `besieged_city_item` still builds its walls ahead of the ordinary build
+    /// order. Only the empire-wide re-plan waits a turn.
+    ///
+    /// **Off by default. Native/eval only — deliberately NOT in
+    /// `enable_live_bridge`** until a headless arm prices it.
+    pub threat_must_persist: bool,
     /// Aim a relief force at what is actually hitting the city, not at whichever
     /// besieger happens to stand nearest the force.
     ///
@@ -2414,6 +2458,7 @@ impl AdvancedAi {
             war_reinforcement: false,
             war_patience: false,
             siege_commitment: false,
+            threat_must_persist: false,
             relief_targets_the_siege: false,
             blind_objective_units: false,
             settler_price: 1.0,
@@ -2737,6 +2782,13 @@ impl AdvancedAi {
     /// recorded ladders stay comparable.
     pub fn enable_siege_commitment(&mut self) {
         self.siege_commitment = true;
+    }
+
+    /// Make a threat survive one assessment before it re-plans the empire.
+    /// Native tournament games leave this disabled so their recorded ladders
+    /// stay comparable.
+    pub fn enable_threat_must_persist(&mut self) {
+        self.threat_must_persist = true;
     }
 
     /// Send a relief force at the units actually besieging the city rather than
@@ -3253,6 +3305,10 @@ impl AdvancedAi {
 
     pub fn disable_siege_commitment(&mut self) {
         self.siege_commitment = false;
+    }
+
+    pub fn disable_threat_must_persist(&mut self) {
+        self.threat_must_persist = false;
     }
 
     pub fn disable_relief_targets_the_siege(&mut self) {
@@ -5835,8 +5891,21 @@ impl AdvancedAi {
                 g.turn.saturating_sub(started)
                     >= g.standard_duration(RECOVERY_POSTURE_LIMIT).max(1)
             });
+        // See [`AdvancedAi::threat_must_persist`]. A city that was not already
+        // threatened on the previous assessment does not re-plan the empire —
+        // it still goes on the plan below, so the relief force still aims at it
+        // and `besieged_city_item` still builds its walls. Only the grand
+        // strategy, and the research, policy and production that hang off it,
+        // decline to turn over for a threat that has existed for one turn.
+        let threat_re_plans = match threatened_city {
+            Some(city) if self.threat_must_persist => self
+                .plan
+                .as_ref()
+                .is_some_and(|previous| previous.threatened_city == Some(city)),
+            other => other.is_some(),
+        };
         let (strategy, because) = if at_war
-            && (threatened_city.is_some() || (my_power * 1.25 < strongest_rival && !recovery_is_stale))
+            && (threat_re_plans || (my_power * 1.25 < strongest_rival && !recovery_is_stale))
         {
             (
                 GrandStrategy::Recovery,
@@ -25634,6 +25703,120 @@ mod tests {
             "the treatment is worth exactly {SIEGE_COMMITMENT_PER_HP} per stripped point — {} \
              here — and nothing else changes",
             stripped * SIEGE_COMMITMENT_PER_HP
+        );
+    }
+
+    /// A threat the empire has not seen before does not turn the grand strategy
+    /// over on its own; the same threat one assessment later does. The city is
+    /// still named as threatened either way, so the defence is untouched.
+    #[test]
+    fn threat_must_persist_defers_only_the_first_turn_of_a_threat() {
+        let plan_for = |ai: &mut AdvancedAi, game: &Game, previous: Option<u32>| {
+            ai.plan = previous.map(|city| StrategicPlan {
+                strategy: GrandStrategy::Conquest,
+                target_player: Some(1),
+                target_city: None,
+                threatened_city: Some(city),
+                desired_cities: 6,
+                assessed_turn: game.turn.saturating_sub(1),
+                rush: false,
+            });
+            ai.assess(game, 0)
+        };
+
+        // A board where our city is under threat and we are at war, which is the
+        // only situation the branch fires in.
+        let mut game = Game::new_full(2, 30, 18, 4_242, 300, 0, false);
+        for pid in 0..2 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        game.turn = 90;
+        game.players[0].met.insert(1);
+        game.players[1].met.insert(0);
+        game.current = 0;
+        game.apply(0, &Action::DeclareWar { player: 1 })
+            .expect("the two majors can go to war on this board");
+        let ours = game.player_city_ids(0)[0];
+        let home = game.cities[&ours].pos;
+        // Park enough hostile strength next door that `threatened_city` fires.
+        for position in game.nbrs(home).into_iter().take(3) {
+            if game
+                .map
+                .get(position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            {
+                game.spawn_test_unit("swordsman", 1, position);
+            }
+        }
+        // ...and enough of ours far from home that the OTHER disjunct of the
+        // Recovery branch — being outpowered empire-wide — stays false. This
+        // flag gates the threat term only, so a board that is also losing on
+        // power would reach Recovery either way and prove nothing.
+        let away: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| {
+                game.map
+                    .get(*position)
+                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                    && game.wdist(*position, home) >= 8
+            })
+            .take(8)
+            .collect();
+        for position in away {
+            game.spawn_test_unit("swordsman", 0, position);
+        }
+
+        let mut shipped = AdvancedAi::targeting(VictoryTarget::Domination);
+        shipped.belief.observe(&game, 0);
+        let baseline = plan_for(&mut shipped, &game, None);
+        assert_eq!(
+            baseline.threatened_city,
+            Some(ours),
+            "the board must actually produce a threatened city, or this test \
+             proves nothing"
+        );
+        assert_eq!(
+            baseline.strategy,
+            GrandStrategy::Recovery,
+            "shipped: a brand-new threat re-plans the empire immediately"
+        );
+
+        let mut live = AdvancedAi::targeting(VictoryTarget::Domination);
+        live.enable_threat_must_persist();
+        live.belief.observe(&game, 0);
+
+        // First sighting: the empire keeps its plan...
+        let first = plan_for(&mut live, &game, None);
+        assert_ne!(
+            first.strategy,
+            GrandStrategy::Recovery,
+            "a threat seen for the first time does not turn the empire over"
+        );
+        // ...but the city is still named, so the defence is untouched.
+        assert_eq!(
+            first.threatened_city,
+            Some(ours),
+            "the threatened city is still on the plan, so the relief force and \
+             the besieged-city build order still see it"
+        );
+
+        // Same threat, one assessment later: now it re-plans.
+        let second = plan_for(&mut live, &game, Some(ours));
+        assert_eq!(
+            second.strategy,
+            GrandStrategy::Recovery,
+            "a threat that survived an assessment re-plans the empire exactly \
+             as the shipped controller would"
         );
     }
 
