@@ -19262,19 +19262,32 @@ impl Game {
     /// No unique-unit substitution: `TacticsRules::for_script` switches uniques
     /// off for every scenario, and a Sea Dog in Nelson's line would be a claim
     /// about England that this battle is not making.
+    ///
+    /// Each ship is granted the promotions her rate is worth — see
+    /// `trafalgar::rate_promotions`, which is where that ladder is argued.
+    /// Granted at setup rather than earned, which is the only difference
+    /// between this and a veteran unit; the engine reads a promotion off the
+    /// unit and never asks how it got there.
     fn deploy_trafalgar_fleet(&mut self, pid: usize) {
-        for (offset, ship) in crate::trafalgar::fleet(pid) {
-            let pos = crate::hex::offset_to_axial(offset.0, offset.1);
+        for ship in crate::trafalgar::fleet(pid) {
+            let pos = crate::hex::offset_to_axial(ship.at.0, ship.at.1);
             debug_assert!(
                 self.map.get(pos).is_some_and(|tile| self.rules.is_water(tile)),
-                "{ship} was ordered onto ({}, {}), which is not water",
-                offset.0,
-                offset.1
+                "{} was ordered onto ({}, {}), which is not water",
+                ship.name,
+                ship.at.0,
+                ship.at.1
             );
             if self.map.get(pos).is_none() || !self.units_at(pos).is_empty() {
                 continue;
             }
-            self.spawn_unit(crate::trafalgar::SHIP_OF_THE_LINE, pid, pos);
+            let uid = self.spawn_unit(crate::trafalgar::SHIP_OF_THE_LINE, pid, pos);
+            let promotions = crate::trafalgar::rate_promotions(ship.guns);
+            let unit = self.units.get_mut(&uid).unwrap();
+            unit.promotions.extend(promotions.iter().map(|name| Name::new(name)));
+            // A unit's level is what its promotion count has bought, so the
+            // two are set together rather than left to disagree on the HUD.
+            unit.level = 1 + promotions.len() as i32;
         }
     }
 
