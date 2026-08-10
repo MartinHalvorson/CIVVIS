@@ -51035,15 +51035,15 @@ impl Game {
         let rider_cap = (self.empire_gold_per_turn(viewer) - self.committed_gold_per_turn(viewer))
             .max(0.0)
             .min(self.players[viewer].gold.max(0.0));
-        let luxuries: Vec<Name> = self
-            .rules
-            .resources
-            .iter()
-            .filter(|(_, spec)| spec.class == "luxury")
-            .map(|(name, _)| *name)
-            .collect();
         let mut deals = Vec::new();
-        for resource in luxuries {
+        // `resource_access_count` walks every tile of every city, and sweeping
+        // the whole luxury table with it is the exact pattern
+        // `connected_resource_census` exists to avoid. `empire_luxury_names` is
+        // that one pass, memoized, and it is already the set of Luxuries this
+        // empire has of its own — including a Suzerain's and Amani's, and
+        // excluding copies it merely leases in, which price out as a last copy
+        // anyway.
+        for resource in self.empire_luxury_names(viewer) {
             if !self.resource_visible_to(viewer, &resource)
                 || !self.resource_visible_to(target, &resource)
             {
