@@ -4485,10 +4485,12 @@ requestAnimationFrame(scheduleSidebarGeometry);
 // The plate column is a fixed track the stylesheet sizes by density, and the
 // seam on its right edge is the command deck's affordance brought inside the
 // masthead: drag it and the plate keeps the width, the standings re-divide
-// what remains. Width is a small local preference like the deck's. Past
-// TURN_PLATE_SPLIT_WIDTH the plate has more width than one settings column
-// can spend, so it goes wide instead of tall: the era and the turn counter
-// share the first line and the settings below divide into two columns.
+// what remains. Width is a small local preference like the deck's. Without
+// one, a roomy masthead spends some of its spare width on the two-column plate;
+// narrower boxes keep the compact authored track. Past TURN_PLATE_SPLIT_WIDTH
+// the plate has more width than one settings column can spend, so it goes wide
+// instead of tall: the era and the turn counter share the first line and the
+// settings below divide into two columns.
 //
 // The seam is re-rendered with the masthead's markup every frame, so nothing
 // binds to the element itself: the press is caught on #playerhud, which is
@@ -4496,6 +4498,8 @@ requestAnimationFrame(scheduleSidebarGeometry);
 const TURN_PLATE_WIDTH_STORAGE_KEY = "civvis-turn-plate-width-v1";
 const TURN_PLATE_MIN_WIDTH = 148;
 const TURN_PLATE_SPLIT_WIDTH = 252;
+const TURN_PLATE_AUTO_WIDE_HUD_WIDTH = 1500;
+const TURN_PLATE_AUTO_WIDE_MAX_WIDTH = 304;
 let turnPlateWidth = (() => {
   const saved = Number(localStorage.getItem(TURN_PLATE_WIDTH_STORAGE_KEY));
   return Number.isFinite(saved) && saved >= TURN_PLATE_MIN_WIDTH
@@ -4511,26 +4515,49 @@ function turnPlateMaxWidth() {
   return Math.max(TURN_PLATE_MIN_WIDTH, (hud?.clientWidth || 0) - 240);
 }
 
-function applyTurnPlateWidth(width, persist = true) {
+// The automatic track follows the overlay's own live width rather than the
+// browser. That covers ultrawide displays, a hidden victory rail, and a
+// manually resized standings window with the same rule. The lower bound stays
+// comfortably beyond the split threshold; from there the plate grows gently
+// until each settings column has all the room it can use.
+function automaticTurnPlateWidth() {
+  const hud = document.getElementById("playerhud");
+  if (!hud || hud.clientWidth < TURN_PLATE_AUTO_WIDE_HUD_WIDTH) return null;
+  return Math.round(Math.min(TURN_PLATE_AUTO_WIDE_MAX_WIDTH,
+    Math.max(TURN_PLATE_SPLIT_WIDTH + 12, hud.clientWidth * .18)));
+}
+
+// Re-resolve a preferred or automatic width against the room available now.
+// Crucially this does not overwrite turnPlateWidth: a wide preference clamped
+// by a temporary split-screen window returns when that room returns.
+function syncTurnPlateWidth() {
   const hud = document.getElementById("playerhud");
   if (!hud) return;
+  const desired = turnPlateWidth ?? automaticTurnPlateWidth();
+  const effective = Number.isFinite(desired)
+    ? Math.round(Math.max(TURN_PLATE_MIN_WIDTH, Math.min(turnPlateMaxWidth(), desired)))
+    : null;
+  if (effective === null) hud.style.removeProperty("--turn-plate-width");
+  else hud.style.setProperty("--turn-plate-width", `${effective}px`);
+  hud.classList.toggle("turn-plate-wide",
+    effective !== null && effective >= TURN_PLATE_SPLIT_WIDTH);
+  const seam = hud.querySelector("[data-turn-plate-seam]");
+  if (seam) {
+    seam.setAttribute("aria-valuemin", `${TURN_PLATE_MIN_WIDTH}`);
+    seam.setAttribute("aria-valuemax", `${Math.round(turnPlateMaxWidth())}`);
+    seam.setAttribute("aria-valuenow",
+      `${effective ?? Math.round(hud.querySelector(".victory-turn")?.getBoundingClientRect().width || TURN_PLATE_MIN_WIDTH)}`);
+  }
+}
+
+function applyTurnPlateWidth(width, persist = true) {
   // `Number(null)` is 0, and a clamped 0 is the minimum width — so a reset
   // has to be told apart from a narrow drag before any arithmetic happens.
   const candidate = width === null || width === undefined ? NaN : Number(width);
   turnPlateWidth = Number.isFinite(candidate)
     ? Math.round(Math.max(TURN_PLATE_MIN_WIDTH, Math.min(turnPlateMaxWidth(), candidate)))
     : null;
-  if (turnPlateWidth === null) hud.style.removeProperty("--turn-plate-width");
-  else hud.style.setProperty("--turn-plate-width", `${turnPlateWidth}px`);
-  hud.classList.toggle("turn-plate-wide",
-    turnPlateWidth !== null && turnPlateWidth >= TURN_PLATE_SPLIT_WIDTH);
-  const seam = hud.querySelector("[data-turn-plate-seam]");
-  if (seam) {
-    seam.setAttribute("aria-valuemin", `${TURN_PLATE_MIN_WIDTH}`);
-    seam.setAttribute("aria-valuemax", `${Math.round(turnPlateMaxWidth())}`);
-    seam.setAttribute("aria-valuenow",
-      `${turnPlateWidth ?? Math.round(hud.querySelector(".victory-turn")?.getBoundingClientRect().width || TURN_PLATE_MIN_WIDTH)}`);
-  }
+  syncTurnPlateWidth();
   if (persist) {
     try {
       if (turnPlateWidth === null) localStorage.removeItem(TURN_PLATE_WIDTH_STORAGE_KEY);
@@ -4602,7 +4629,14 @@ function finishTurnPlateSeamGesture(event) {
   window.addEventListener("pointermove", moveTurnPlateSeamGesture, {passive:false});
   window.addEventListener("pointerup", finishTurnPlateSeamGesture);
   window.addEventListener("pointercancel", finishTurnPlateSeamGesture);
-  applyTurnPlateWidth(turnPlateWidth, false);
+  // Player HUD width can change without a window resize: hiding the victory
+  // rail or dragging any of this overlay's edges must refit the automatic
+  // plate immediately. Its inner track cannot resize the observed outer box,
+  // so this observer has no feedback loop.
+  const turnPlateSizeObserver = typeof ResizeObserver === "function"
+    ? new ResizeObserver(syncTurnPlateWidth) : null;
+  turnPlateSizeObserver?.observe(hud);
+  syncTurnPlateWidth();
 }
 
 function screenToWorld(sx, sy) {
@@ -21568,8 +21602,9 @@ function drawPlayerHud() {
   // This is a string comparison on every other frame.
   syncPlayerHudColumns();
   syncHudColumnRoster();
-  // innerHTML also replaced the plate seam; restamp its width and range.
-  applyTurnPlateWidth(turnPlateWidth, false);
+  // innerHTML also replaced the plate seam; restamp its live automatic or
+  // preferred width and accessibility range.
+  syncTurnPlateWidth();
   // The masthead is as tall as the table it holds, so a civilization met or
   // destroyed moves the map area's top edge as surely as dragging it does.
   refitMapAreaToChrome();
