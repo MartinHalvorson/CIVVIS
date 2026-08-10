@@ -7706,3 +7706,86 @@ everything else is negative. Future strength has to come from somewhere other
 than copying bred genomes — the live-gene list is the map of what a *fresh*
 search could still reach, and the eight inert genes say a fifth of any such
 search would be wasted until the Advanced planners are routed through them.
+
+
+## 2026-08-10 — ★★★★ the winner is made, not dealt: the map predicts nothing and the Holy Site predicts everything
+
+Three rounds of cross-game roster mining ended closed (#1486). This asks the
+question those rounds never did — the *within-game* one. Every seat runs the
+same `AdvancedAi`, so what separates the civ that wins from the three that do
+not, and at what turn does it become visible?
+
+`src/bin/leader_study.rs` reports **lead-conversion**: of the games where a civ
+outright led a metric at a turn, how often it finished first. Four majors, so
+chance is 25%. 60 games, 4p 60x38, 250 turns, seeds 770000+.
+
+| metric | t20 | t40 | t60 | t80 | t100 | t130 | t160 | t200 |
+|---|---|---|---|---|---|---|---|---|
+| `start_yield` *(control)* | 28% | 28% | 28% | 28% | 28% | 29% | 28% | 31% |
+| `start_room` *(control)* | 22% | 22% | 22% | 22% | 22% | 23% | 24% | 20% |
+| **cities** | – | **67%** | 50% | 42% | 47% | 57% | 48% | 50% |
+| **holy_sites** | – | – | 62% | **80%** | 53% | 72% | 62% | 41% |
+| pop | 33% | 40% | 56% | 49% | 55% | 65% | 62% | 60% |
+| techs | 30% | 31% | 44% | 38% | 48% | 57% | 62% | 66% |
+| civics | 30% | 30% | 37% | 45% | 52% | 56% | 58% | 59% |
+| districts | – | – | 52% | 52% | 59% | 62% | 67% | 54% |
+| faith | 25% | 30% | 29% | 38% | 23% | **14%** | 38% | 35% |
+| gold | 32% | 35% | 30% | 25% | 40% | 47% | 38% | 28% |
+| military | 31% | 27% | 28% | 38% | 37% | 33% | 42% | 51% |
+
+### ★★★★ Read the two control rows first
+
+**`start_yield` 28% and `start_room` 22%, against a 25% chance.** The food and
+production around a capital, and the unclaimed ground it has to expand into,
+are both worth essentially nothing as predictors of who wins.
+
+**The winner is made, not dealt.** Every row above the controls is behaviour the
+shared logic produced, not ground it was handed — which is the licence for
+treating any of them as a lever at all. It also kills the obvious objection to
+the `cities` row: the civ with more cities at turn 40 is *not* the civ that had
+more room, because room predicts below chance. It is the civ that got there
+sooner.
+
+### What the table says
+
+**`holy_sites` is the strongest signal in the study**, 62% by turn 60 and **80%
+by turn 80**. That is an independent instrument reaching the same place as
+`d_holy`, which measured +20 Elo causally (#1469) — a correlation and a
+controlled experiment agreeing, from opposite directions.
+
+**`faith` is not the same thing as a Holy Site, and the difference is sharp.**
+The faith *stock* is flat-to-anti-predictive, bottoming at **14% at turn 130**,
+while the *district* is at 72% on the same turn. Leading the treasury of a
+currency is a symptom of not having spent it. Any future work here should target
+the building, never the balance.
+
+**`cities` at turn 40 is the earliest strong signal at 67%**, and then decays —
+it is an opening statistic, not a standing one.
+
+### ⚠ How this squares with the recorded `city_target_floor` null
+
+Raising the plan's desired-cities ramp from 3 to 6 is a null on this engine
+(49.6%, Elo −3, 240 pairs, seed 510000, above in this document). That does not
+contradict the `cities` row, it locates the constraint: **wanting more cities
+does not produce them.** The null's own write-up names the reason — "six cities
+serialized through one settler at ~9 turns of production plus a walk each is a
+rate limit no valuation can beat." The study says early cities matter; the null
+says the target is not what stops them. Both point at **settler throughput**.
+
+That is the remaining untested cell, and this document already flags it as
+fires-checked and declined without an evaluation: a raised target *together with*
+parallel settlers, where the old objection (the cities-plus-settlers clause caps
+at `desired_cities`, so a seat wanting three never wants a second settler) no
+longer applies. It is the next experiment, and it is now motivated by a measured
+signal rather than by intuition.
+
+### ⚠ A bug this study caught on itself, worth repeating
+
+The first run reported the `start_yield` control at **exactly 0% at every
+turn** — impossible, and the only reason the defect surfaced. `g.players` is not
+the table: a 4-player game carries **twelve** players, four majors plus six
+city-states and two barbarian seats. City-states hold a founded city on turn 1
+when no major does, so they led every early metric and never won. Every number
+in that first table was polluted. **A control row exists so that it can be
+wrong in an obvious way**; had the control been omitted, the behavioural rows
+looked entirely plausible and would have been believed.
