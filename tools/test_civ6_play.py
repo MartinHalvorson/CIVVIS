@@ -53,6 +53,44 @@ class Civ6PlayTest(unittest.TestCase):
             "ctx": "agent", "kind": "seat"
         }))
 
+    def test_leader_intro_requires_the_requested_leader(self) -> None:
+        bounds = (864, 33, 864, 542)
+        observations = [{
+            "text": "TRAJAN", "x": 0.686, "y": 0.193,
+            "width": 0.023, "height": 0.009,
+        }]
+        with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
+             patch.object(civ6_play.macos_ocr, "recognize", return_value=observations), \
+             patch.object(civ6_play, "_leader_ocr", return_value=[]):
+            self.assertTrue(
+                civ6_play._leader_intro_visible(
+                    Path("leader-intro.png"), bounds, "LEADER_TRAJAN"
+                )
+            )
+            self.assertFalse(
+                civ6_play._leader_intro_visible(
+                    Path("leader-intro.png"), bounds, "LEADER_JADWIGA"
+                )
+            )
+
+    def test_leader_intro_click_uses_only_the_verified_card(self) -> None:
+        bounds = (864, 33, 864, 542)
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot") as screenshot, \
+             patch.object(civ6_play, "_leader_intro_visible", return_value=True), \
+             patch.object(civ6_play, "click_at") as click:
+            self.assertTrue(
+                civ6_play.advance_leader_intro(
+                    bounds, "LEADER_TRAJAN", Path(temporary), 2
+                )
+            )
+
+        screenshot.assert_called_once_with(Path(temporary) / "leader-intro-attempt2-0.png")
+        click.assert_called_once_with(
+            864 + int(864 * civ6_play.LEADER_INTRO_BEGIN[0]),
+            33 + int(542 * civ6_play.LEADER_INTRO_BEGIN[1]),
+        )
+
     def test_live_run_holds_macos_awake_for_its_process_lifetime(self) -> None:
         with patch.object(civ6_play.sys, "platform", "darwin"), \
              patch.object(civ6_play.os, "getpid", return_value=4321), \
