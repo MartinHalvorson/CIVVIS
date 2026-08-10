@@ -11554,11 +11554,11 @@ mod tests {
 
     /// The turn plate's width is the viewer's, through the same seam
     /// affordance as the command deck's edge: drag it, nudge it with arrow
-    /// keys, double-click it back to the stylesheet's density default. Past
-    /// the split width the plate spends the room sideways rather than
-    /// downward — era and turn counter on one line, the settings below in
-    /// two columns — so widening buys information density instead of
-    /// whitespace. The seam re-renders with the masthead every frame, so the
+    /// keys, double-click it back to the responsive default. A wide masthead
+    /// uses the two-column plate without requiring that gesture, and follows
+    /// the overlay's live width as the window, victory rail, or overlay edges
+    /// move. A saved preference stays authoritative and survives a temporary
+    /// narrow clamp. The seam re-renders with the masthead every frame, so the
     /// press must be caught on the permanent #playerhud element.
     #[test]
     fn browser_lets_the_turn_plate_widen_into_two_columns() {
@@ -11566,11 +11566,18 @@ mod tests {
             "const TURN_PLATE_WIDTH_STORAGE_KEY = \"civvis-turn-plate-width-v1\";",
             "const TURN_PLATE_MIN_WIDTH = 148;",
             "const TURN_PLATE_SPLIT_WIDTH = 252;",
+            "const TURN_PLATE_AUTO_WIDE_HUD_WIDTH = 1500;",
+            "const TURN_PLATE_AUTO_WIDE_MAX_WIDTH = 304;",
+            "function automaticTurnPlateWidth() {",
+            "function syncTurnPlateWidth() {",
+            "const desired = turnPlateWidth ?? automaticTurnPlateWidth();",
+            "const turnPlateSizeObserver = typeof ResizeObserver === \"function\"",
+            "turnPlateSizeObserver?.observe(hud);",
             "function applyTurnPlateWidth(width, persist = true) {",
             "function turnPlateMaxWidth() {",
             "data-turn-plate-seam role=\"separator\"",
             "beginTurnPlateSeamGesture(event);",
-            "applyTurnPlateWidth(turnPlateWidth, false);",
+            "syncTurnPlateWidth();",
             "grid-template-columns: var(--turn-plate-width, 164px) minmax(0, 1fr);",
             "var(--turn-plate-width, clamp(148px, 33%, 164px))",
             "var(--turn-plate-width, 168px)",
