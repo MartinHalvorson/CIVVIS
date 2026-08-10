@@ -8465,3 +8465,73 @@ a single arm. Nine deployment runs is the wrong shape for the question *is
 there anything left in here at all*; a null bounds the whole remainder and
 closes the queue, and a large effect pays for its own bisection. That run is in
 flight.
+
+
+## 2026-08-10 — ★★★ the production bundle is biased toward development, and the audit closes
+
+The #1499 ledger is finished as far as one run per question can take it. The
+eight flags that still had no number were withheld together, because nine
+deployment runs is the wrong shape for *is there anything left in here at all*.
+
+```
+ai_eval advanced_without_unpriced_bundle advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 9300000
+
+  withheld: envoy_priority, adjacency_site_planning, research_economy,
+            amenity_districts, siege_muster, home_defense, tactical_strategy,
+            unit_objective_memory
+
+  paired-map score 51.2% (95% Wilson CI 46.4%..56.1%)   Elo-equivalent +9 (CI -25..+43)
+  paired direction 94 for / 222 neutral / 84 against    sign p = 0.5001
+  terminal score   250 for / 150 against                sign p = 0.0000
+```
+
+**Null on wins, and a large significant gain in terminal score from removing all
+eight.**
+
+### ★★★ The pattern across the whole audit
+
+| flag | wins | terminal score |
+|---|---|---|
+| `city_target_floor = 6` | **−41 Elo** (removed) | strongly favours keeping (p=0.0000) |
+| the eight remaining, together | +9, null | strongly favours **removing** (p=0.0000) |
+| `plan_city_target` | null | null |
+| `bounded_recovery` | null (600 maps) | — |
+| `settler_commit` | **+30 Elo** | null (p=0.2937) |
+
+Read the two significant terminal-score rows together. The floor **bought**
+score and **cost** wins; the remaining eight **cost** score and buy no wins.
+Both are the same defect seen from opposite ends: **this bundle's components
+were selected on development, and development is not the objective.** The only
+component that measures positive on wins, `settler_commit`, is precisely the one
+whose terminal-score effect is flat — it does not trade in that currency at all.
+
+### What the composite does and does not establish
+
+It bounds the **net** of the eight at +9, interval −25..+43. There is no large
+win sitting in the remainder waiting to be found by grinding eight more
+deployment runs, and that is the practical answer the queue was asked for.
+
+⚠ **It does not bound the individual magnitudes**, and in this bundle that
+caveat has teeth rather than being a formality: `city_target_floor` at −41 and
+`settler_commit` at +30 are demonstrated, offsetting components *of the same
+constructor*. A net of +9 across eight flags is perfectly compatible with a
+−30 and a +40 inside it. **The queue is de-prioritised, not disproven.** Anyone
+resuming it should bisect the eight rather than start from one end, and should
+expect the terminal-score column to be the better signpost than the win column,
+because it is the one that separates.
+
+### What the audit produced
+
+One shipped strength change — `city_target_floor` removed, promotion matrix
+PASS, deployment-online 55.9% (95% CI 51.0%..60.7%), **Elo +41 (CI +7..+76)**,
+125/65, p=0.0000, 400 pairs, seed 8600000, PR #1504 — one measured asset
+(`settler_commit`, 45.6% withheld, Elo +30 for keeping it, 60/95, p=0.0061,
+400 pairs, seed 9200000, PR #1510), three nulls, three
+evaluator arms that silently measured nothing and now fail closed, and three
+flags that had no withhold at all and now do.
+
+Before it, thirteen production behaviours carried one composite number between
+them. That is the condition that let a component costing forty-one Elo (interval and
+seed above) ship and sit unnoticed, and it is worth stating as the lesson rather than the anecdote:
+**a composite gate licenses the composite, never its parts.**
