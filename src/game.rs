@@ -13925,6 +13925,7 @@ type GreatWorksByCity = BTreeMap<u32, BTreeMap<String, usize>>;
 type HousedWorksByPlayer = BTreeMap<usize, GreatWorksByCity>;
 type GreatWorkSlotsByPlayer = BTreeMap<usize, Vec<(u32, String)>>;
 type GreatWorkHousing = BTreeMap<(usize, String, usize), bool>;
+type WonderEffectsByPlayer = BTreeMap<usize, BTreeMap<String, f64>>;
 
 #[derive(Default)]
 pub struct QueryCache {
@@ -13967,6 +13968,12 @@ pub struct QueryCache {
     // yields and its Amenities are read through it, so a single valuation of
     // one city walks the whole empire's buildings twice.
     regional: std::cell::RefCell<Option<BTreeMap<u32, (Yields, f64)>>>,
+    // Wonders are an empire-wide source, but city yields and rule gates ask
+    // for one named effect at a time. Aggregate every effect for a player on
+    // the first lookup in a memo scope so the same wonder set is not walked
+    // once per effect key. The scope is what makes this safe: callers cannot
+    // mutate a city or transfer a wonder while the guard is alive.
+    wonder_effects: std::cell::RefCell<Option<WonderEffectsByPlayer>>,
     // `note_first_monopoly_moments` runs after successful actions. Its answer
     // is player-independent until a connected resource, city owner, world
     // resource, or suzerainty changes, so retain the expensive census across
@@ -13997,8 +14004,9 @@ impl Clone for QueryCache {
     }
 }
 
-/// Scope over which `Game::city_yields` and `Game::traversal_class` answer
-/// from a cache. Dropping the outermost guard clears it.
+/// Scope over which `Game::city_yields`, `Game::traversal_class`, and the
+/// empire-wide read aggregates answer from a cache. Dropping the outermost
+/// guard clears it.
 pub struct QueryMemo<'a> {
     game: &'a Game,
     outermost: bool,
@@ -14021,6 +14029,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.gw_slots.borrow_mut() = None;
             *self.game.query_memo.gw_housing.borrow_mut() = None;
             *self.game.query_memo.regional.borrow_mut() = None;
+            *self.game.query_memo.wonder_effects.borrow_mut() = None;
         }
     }
 }
@@ -28231,18 +28240,52 @@ impl Game {
         if !self.rules.effect_index.wonders(effect) {
             return 0.0;
         }
-        self.cities
-            .values()
-            .filter(|city| city.owner == pid)
-            .flat_map(|city| city.wonders.keys())
-            .map(|wonder| {
-                self.rules.wonders[wonder]
-                    .effects
-                    .get(effect)
-                    .copied()
-                    .unwrap_or(0.0)
-            })
-            .sum()
+        // The memo is deliberately guard-scoped. `QueryMemo` borrows the
+        // world immutably, so a cached aggregate cannot survive a wonder
+        // completion, capture, or raze and become stale. Outside a memo
+        // scope, retain the old scalar path: one-off callers should not pay
+        // to allocate a table for an answer they will read once.
+        if self.query_memo.wonder_effects.borrow().is_none() {
+            return self
+                .cities
+                .values()
+                .filter(|city| city.owner == pid)
+                .flat_map(|city| city.wonders.keys())
+                .map(|wonder| {
+                    self.rules.wonders[wonder]
+                        .effects
+                        .get(effect)
+                        .copied()
+                        .unwrap_or(0.0)
+                })
+                .sum();
+        }
+        if let Some(aggregate) = self
+            .query_memo
+            .wonder_effects
+            .borrow()
+            .as_ref()
+            .and_then(|all| all.get(&pid))
+        {
+            return aggregate.get(effect).copied().unwrap_or(0.0);
+        }
+
+        let mut aggregate = BTreeMap::<String, f64>::new();
+        for city in self.cities.values().filter(|city| city.owner == pid) {
+            for wonder in city.wonders.keys() {
+                for (name, value) in &self.rules.wonders[wonder].effects {
+                    *aggregate.entry(name.clone()).or_default() += *value;
+                }
+            }
+        }
+        let value = aggregate.get(effect).copied().unwrap_or(0.0);
+        self.query_memo
+            .wonder_effects
+            .borrow_mut()
+            .as_mut()
+            .expect("a wonder aggregate is built only inside a memo scope")
+            .insert(pid, aggregate);
+        value
     }
 
     #[cfg(test)]
@@ -38477,6 +38520,7 @@ impl Game {
             *self.query_memo.gw_slots.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.gw_housing.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.regional.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.wonder_effects.borrow_mut() = Some(BTreeMap::new());
         }
         QueryMemo {
             game: self,
@@ -73968,5 +74012,77 @@ mod world_lap_tests {
             game.players[0].went_around,
             "a way round at the equator is the real thing",
         );
+    }
+}
+
+#[cfg(test)]
+mod wonder_effect_cache_tests {
+    use super::{Action, Game};
+
+    #[test]
+    fn per_player_wonder_effect_aggregate_matches_the_scalar_path() {
+        let mut game = Game::new_full(1, 20, 14, 91_483, 120, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("the fixture has a starting Settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("the starting Settler can found the capital");
+        let city = game.player_city_ids(0)[0];
+        let position = game.cities[&city].pos;
+        game.cities.get_mut(&city).unwrap().wonders.extend([
+            (crate::name!("angkor_wat"), position),
+            (crate::name!("alhambra"), position),
+            (crate::name!("colossus"), position),
+            (crate::name!("forbidden_city"), position),
+            (crate::name!("kilwa_kisiwani"), position),
+            (crate::name!("taj_mahal"), position),
+        ]);
+        let effects = [
+            "empire_housing",
+            "historic_moment_bonus",
+            "military_policy_slots",
+            "suzerain_type_empire_bonus_pct",
+            "trade_route_capacity",
+        ];
+        let scalar: Vec<f64> = effects
+            .iter()
+            .map(|effect| game.empire_wonder_effect(0, effect))
+            .collect();
+
+        {
+            let _memo = game.query_memo();
+            let cached: Vec<f64> = effects
+                .iter()
+                .map(|effect| game.empire_wonder_effect(0, effect))
+                .collect();
+            assert_eq!(cached, scalar);
+            assert_eq!(
+                game.query_memo
+                    .wonder_effects
+                    .borrow()
+                    .as_ref()
+                    .expect("the guard opens the wonder aggregate")
+                    .len(),
+                1
+            );
+        }
+        assert!(game.query_memo.wonder_effects.borrow().is_none());
+
+        // A later world state gets a fresh aggregate rather than retaining a
+        // city's old wonder contribution across the memo boundary.
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .wonders
+            .remove(&crate::name!("taj_mahal"));
+        let without_taj = game.empire_wonder_effect(0, "historic_moment_bonus");
+        assert_eq!(without_taj, 0.0);
+        let with_new_memo = {
+            let _memo = game.query_memo();
+            game.empire_wonder_effect(0, "historic_moment_bonus")
+        };
+        assert_eq!(with_new_memo, without_taj);
     }
 }
