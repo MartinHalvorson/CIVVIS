@@ -707,7 +707,7 @@ impl StrategicAi {
 
         for action in &legal {
             if Self::religious_effect_unit(action).is_some() {
-                let mut after = g.clone();
+                let mut after = g.speculative_clone();
                 if after.apply(pid, action).is_ok() {
                     if let Some(value) = Self::conversion_value(&after, pid) {
                         if checkmate_only && value.won {
@@ -724,7 +724,7 @@ impl StrategicAi {
             let Some(unit) = Self::religious_move_unit(g, pid, action) else {
                 continue;
             };
-            let mut moved = g.clone();
+            let mut moved = g.speculative_clone();
             if moved.apply(pid, action).is_err() {
                 continue;
             }
@@ -732,7 +732,7 @@ impl StrategicAi {
                 if Self::religious_effect_unit(&followup) != Some(unit) {
                     continue;
                 }
-                let mut after = moved.clone();
+                let mut after = moved.speculative_clone();
                 if after.apply(pid, &followup).is_err() {
                     continue;
                 }
@@ -1194,6 +1194,11 @@ impl StrategicAi {
         weights: &Weights,
     ) -> (Game, Vec<Box<dyn Ai>>) {
         let mut sim = g.clone();
+        // This branch is projected for several turns, so exploration and
+        // contacts remain gameplay inputs for the branch agents. Only the
+        // observer-only ledgers are suppressed here.
+        sim.set_fog_memory(false);
+        sim.set_war_ledger(false);
         let mut ais: Vec<Box<dyn Ai>> = sim
             .players
             .iter()
@@ -1543,7 +1548,9 @@ impl StrategicAi {
         pid: usize,
         target: Option<VictoryTarget>,
     ) -> (Game, Vec<Box<dyn Ai>>) {
-        let sim = g.clone();
+        let mut sim = g.clone();
+        sim.set_fog_memory(false);
+        sim.set_war_ledger(false);
         let ais: Vec<Box<dyn Ai>> = sim
             .players
             .iter()

@@ -13868,10 +13868,10 @@ fn vision_key(parts: &[u64]) -> u64 {
 ///
 /// The whole cache is thrown away when the world moves under it, which is
 /// what `stamp` records; within one state of the world an entry stands until
-/// its unit moves. Entries are kept in unit order in flat vectors so that
-/// cloning a game — which the AI does once per branch it searches — copies
-/// three blocks of memory rather than walking a tree.
-#[derive(Clone, Default)]
+/// its unit moves. Entries are kept in unit order in flat vectors so that the
+/// authoritative world can merge worker answers without walking a tree;
+/// cloned search branches start with this cache empty.
+#[derive(Default)]
 pub struct VisionCache {
     stamp: u64,
     units: Vec<u32>,
@@ -13881,6 +13881,17 @@ pub struct VisionCache {
     /// start one asks this of every wonder in the ruleset, and answering it
     /// from scratch meant walking every city and every tile each time.
     built_wonders: Option<BTreeSet<Name>>,
+}
+
+impl Clone for VisionCache {
+    /// A visibility answer belongs to the exact position that asked for it.
+    /// Game clones are search branches and may move a unit or change a tile
+    /// before their first read, so copying the flat bitsets would only carry
+    /// disposable work into a branch that must validate its own stamp. Start
+    /// empty; the authoritative world repopulates its cache on demand.
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }
 
 /// The player-independent half of a monopoly answer.
@@ -14114,7 +14125,7 @@ pub struct TraversalClass {
 ///
 /// Region maps are shared (`Arc`) so the AI's per-branch game clones copy a
 /// pointer, not the world.
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct RoutingCache {
     stamp: u64,
     zones: Vec<(TraversalClass, std::sync::Arc<Vec<u32>>)>,
@@ -14125,7 +14136,22 @@ pub struct RoutingCache {
     city_owner_key: Option<u64>,
 }
 
-#[derive(Clone, Default)]
+impl Clone for RoutingCache {
+    /// Connected-region labels are map-only and can safely be shared across a
+    /// branch, while a planned path also depends on unit positions and
+    /// diplomacy that the branch is about to change. Keep the cheap `Arc`
+    /// labels but discard those path answers and their owner key.
+    fn clone(&self) -> Self {
+        Self {
+            stamp: self.stamp,
+            zones: self.zones.clone(),
+            paths: Vec::new(),
+            city_owner_key: None,
+        }
+    }
+}
+
+#[derive(Default)]
 struct RouteScratch {
     astar_frontier: BinaryHeap<Reverse<(i32, Reverse<i32>, Pos)>>,
     bfs_frontier: VecDeque<(Pos, usize)>,
@@ -14135,6 +14161,16 @@ struct RouteScratch {
     distance: Vec<i32>,
     astar_touched: Vec<usize>,
     bfs_touched: Vec<usize>,
+}
+
+impl Clone for RouteScratch {
+    /// A route search mutates every scratch vector. Reusing a parent's
+    /// frontier would copy the largest transient allocation in a branch for
+    /// no semantic benefit; a fresh scratch area grows only if the branch
+    /// actually asks for a route.
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }
 
 #[derive(Clone)]
@@ -14318,6 +14354,33 @@ struct VisibilityBatch {
     depth: usize,
     refresh_all: bool,
     refresh_teams: BTreeSet<usize>,
+}
+
+/// A runtime vector shared between a game and its disposable branches.
+/// Visibility snapshot coverage is derived state; branches that never publish
+/// an observation can keep the parent allocation without copying it, while a
+/// real refresh gets an owned vector through `Arc::make_mut`.
+#[derive(Default)]
+struct SharedVec<T>(Arc<Vec<T>>);
+
+impl<T> Clone for SharedVec<T> {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+impl<T> std::ops::Deref for SharedVec<T> {
+    type Target = Vec<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: Clone> std::ops::DerefMut for SharedVec<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        Arc::make_mut(&mut self.0)
+    }
 }
 
 /// Below this many total seats, cloning the final position for worker-local
@@ -17191,7 +17254,7 @@ pub struct Game {
     /// drawn from — and the tiles it was taken over. Empty means "assume
     /// nothing".
     #[serde(skip)]
-    remembered_under: Vec<(u64, u64, TileBits)>,
+    remembered_under: SharedVec<(u64, u64, TileBits)>,
     /// Whether to keep each player's remembered map of fogged tiles and
     /// cities up to date.
     ///
@@ -17226,6 +17289,12 @@ pub struct Game {
     /// refreshes and publish the same final observation once at the boundary.
     #[serde(skip)]
     visibility_batch: VisibilityBatch,
+    /// A disposable search branch never publishes a player observation. Its
+    /// actions still run the full rules, but skipping reveal/contact/snapshot
+    /// maintenance keeps those branches from copying fog memory and doing
+    /// visibility sweeps that no caller can read.
+    #[serde(skip)]
+    visibility_suppressed: bool,
     pub rng: Rng,
     pub seed: u64,
     /// Key into `rules.difficulties`. Prince is the unhandicapped reference.
@@ -17939,11 +18008,12 @@ impl From<GameSer> for Game {
             routing: std::cell::RefCell::new(RoutingCache::default()),
             route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
-            remembered_under: Vec::new(),
+            remembered_under: SharedVec::default(),
             track_fog_memory: true,
             track_war_ledger: true,
             planning_role: PlanningRole::Off,
             visibility_batch: VisibilityBatch::default(),
+            visibility_suppressed: false,
             rng: s.rng,
             seed: s.seed,
             difficulty: s.difficulty,
@@ -18498,11 +18568,12 @@ impl Game {
             routing: std::cell::RefCell::new(RoutingCache::default()),
             route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
-            remembered_under: Vec::new(),
+            remembered_under: SharedVec::default(),
             track_fog_memory: true,
             track_war_ledger: true,
             planning_role: PlanningRole::Off,
             visibility_batch: VisibilityBatch::default(),
+            visibility_suppressed: false,
             rng,
             seed,
             difficulty,
@@ -31992,7 +32063,10 @@ impl Game {
     }
 
     fn reveal(&mut self, pid: usize, pos: Pos, radius: i32) {
-        if pid >= self.players.len() || !self.map.tiles.contains_key(&pos) {
+        if self.visibility_suppressed
+            || pid >= self.players.len()
+            || !self.map.tiles.contains_key(&pos)
+        {
             return;
         }
         let mut heights = self.height_field();
@@ -33065,7 +33139,7 @@ impl Game {
         heights: &mut HeightField,
         memory_world: u64,
     ) {
-        if pid >= self.players.len() {
+        if self.visibility_suppressed || pid >= self.players.len() {
             return;
         }
         let visible = self.player_vision(heights, pid);
@@ -33200,6 +33274,24 @@ impl Game {
         self.track_fog_memory = track;
     }
 
+    /// Make a branch for a read-and-discard simulation.
+    ///
+    /// Search branches never publish an observation, and nobody reads their
+    /// explored ground, contacts, fog memory, or mid-turn war narration. The
+    /// branch therefore keeps the complete rule state but suppresses those
+    /// observer-only updates in addition to disabling their retained ledgers.
+    /// Its derived caches are reset or shared cheaply by `Game::clone`, so a
+    /// disposable branch starts paying only for work its hypothetical actions
+    /// actually ask for.
+    pub fn speculative_clone(&self) -> Self {
+        let mut branch = self.clone();
+        branch.track_fog_memory = false;
+        branch.track_war_ledger = false;
+        branch.visibility_suppressed = true;
+        branch.visibility_batch = VisibilityBatch::default();
+        branch
+    }
+
     /// Stop (or resume) re-syncing the narrated war ledger after every
     /// action. Declarations, peaces, and turn boundaries still sync it
     /// unconditionally, so the ledger every observer and report reads is
@@ -33302,6 +33394,9 @@ impl Game {
     }
 
     fn defer_or_refresh_visibility(&mut self, pid: usize, all: bool) {
+        if self.visibility_suppressed {
+            return;
+        }
         if self.visibility_batch.depth > 0 {
             if all {
                 self.visibility_batch.refresh_all = true;
@@ -33327,6 +33422,9 @@ impl Game {
         visible: &TileBits,
         memory_world: u64,
     ) {
+        if self.visibility_suppressed {
+            return;
+        }
         // This active-turn union is deliberately recorded before the
         // last-known snapshot's early-out. A unit can walk back across ground
         // whose tile memory is already current; the browser still needs to
@@ -33422,7 +33520,8 @@ impl Game {
     /// introduced pays one loop over the seats and nothing else — the common
     /// case, since this runs behind every action a player takes.
     fn record_contacts_in_sight(&mut self, pid: usize, visible: &TileBits) {
-        if self
+        if self.visibility_suppressed
+            || self
             .players
             .get(pid)
             .is_none_or(|seat| seat.is_barbarian || seat.is_free_city)
@@ -33707,6 +33806,9 @@ impl Game {
     }
 
     fn refresh_all_visibility(&mut self) {
+        if self.visibility_suppressed {
+            return;
+        }
         let memory_world = if self.track_fog_memory {
             self.memory_world_stamp()
         } else {
@@ -33721,7 +33823,7 @@ impl Game {
     }
 
     /// Compute current sight from one immutable final position, then publish
-    /// each result serially. Worker game clones retain their inherited vision
+    /// each result serially. Worker game clones start with disposable vision
     /// caches, and the newly filled entries are merged back before returning.
     fn refresh_visibility_parallel(
         &mut self,
@@ -33729,7 +33831,7 @@ impl Game {
         memory_world: u64,
         pool: &WorkPool,
     ) {
-        if players.is_empty() {
+        if self.visibility_suppressed || players.is_empty() {
             return;
         }
         let count = players.len();
@@ -33770,6 +33872,9 @@ impl Game {
     }
 
     fn refresh_all_visibility_parallel(&mut self, pool: &WorkPool) {
+        if self.visibility_suppressed {
+            return;
+        }
         let memory_world = if self.track_fog_memory {
             self.memory_world_stamp()
         } else {
@@ -33779,6 +33884,9 @@ impl Game {
     }
 
     fn refresh_team_visibility(&mut self, pid: usize) {
+        if self.visibility_suppressed {
+            return;
+        }
         let members = self.team_members(pid);
         let memory_world = if self.track_fog_memory {
             self.memory_world_stamp()
@@ -33796,6 +33904,9 @@ impl Game {
     }
 
     fn refresh_team_visibility_parallel(&mut self, pid: usize, pool: &WorkPool) {
+        if self.visibility_suppressed {
+            return;
+        }
         let members = self
             .team_members(pid)
             .into_iter()
@@ -33813,6 +33924,9 @@ impl Game {
     /// share explored-map knowledge. Current visibility is still calculated
     /// separately and units are deliberately never copied into memory.
     fn share_visibility_memories(&mut self, members: &[usize]) {
+        if self.visibility_suppressed {
+            return;
+        }
         let explored: BTreeSet<Pos> = members
             .iter()
             .flat_map(|member| self.players[*member].explored.iter().copied())
@@ -60718,6 +60832,42 @@ mod visibility_tests {
                 "parallel visibility must publish seat {pid}'s exact observation"
             );
         }
+    }
+
+    #[test]
+    fn speculative_clones_drop_observer_work_and_keep_rules_state() {
+        let (mut game, origin) = controlled_game(91_011);
+        let scout = game.spawn_unit("scout", 0, origin);
+        let _ = game.unit_visible_tiles(scout);
+        assert!(
+            !game.vision.borrow().seen.is_empty(),
+            "the control world should have a populated unit-vision cache"
+        );
+
+        let source_explored = game.players[0].explored.len();
+        let mut branch = game.speculative_clone();
+        assert!(
+            branch.vision.borrow().seen.is_empty(),
+            "a clone must not copy a parent's disposable sight bitsets"
+        );
+        assert!(!branch.track_fog_memory);
+        assert!(!branch.track_war_ledger);
+        assert!(branch.visibility_suppressed);
+        assert_eq!(branch.units.len(), game.units.len());
+        assert_eq!(branch.cities.len(), game.cities.len());
+
+        let explored = branch.players[0].explored.len();
+        branch.spawn_unit("warrior", 0, along(&branch, origin, 1));
+        assert_eq!(
+            branch.players[0].explored.len(),
+            explored,
+            "a disposable branch does not copy or grow fog exploration"
+        );
+        assert_eq!(
+            game.players[0].explored.len(),
+            source_explored,
+            "the branch's observer-only work must not leak to its source"
+        );
     }
 }
 
