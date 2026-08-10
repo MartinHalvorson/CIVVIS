@@ -6454,6 +6454,48 @@ pub struct StateSnapshot {
     pub score: i64,
     #[serde(default = "unknown_strength")]
     pub military: f64,
+    /// Era Score and the age it decides, from Firaxis's own `Game.GetEras()`.
+    ///
+    /// ★★★★★ CIVVIS MODELS THE WHOLE AGE SYSTEM AND THE BRIDGE CARRIED NONE OF IT.
+    /// [`crate::game::Player`] has `era_score`, `era_score_baseline`,
+    /// `normal_age_threshold`, `golden_age_threshold` and `dedications`, and
+    /// `docs/AGES.md` records a row-by-row audit of all 143 scoring Moments
+    /// behind them. On a reconstructed live board every one of those was left at
+    /// whatever `Player::default` happens to say — era score 0 against a golden
+    /// threshold of 26 — so the age CIVVIS reasoned about was not the age Rome
+    /// was in.
+    ///
+    /// Two decisions read exactly these fields, so both ran on fiction live:
+    /// `ai::choose_dedications` is gated on `dedication_choices` (0 live, so a
+    /// Dedication was never once chosen), and `ai/advanced.rs` filters
+    /// `rules.policies[card].dark_age`, so a real Dark Age's wildcard cards were
+    /// never slotted — the same shape as the housing and loyalty cards that are
+    /// never slotted.
+    ///
+    /// `normal_age_threshold` is this codebase's name for the score at or above
+    /// which the next age is Normal rather than Dark, which is exactly Civ 6's
+    /// **Dark Age threshold**: one boundary, named from opposite sides.
+    ///
+    /// `None`/negative means the host did not answer. A real 0 era score is
+    /// ordinary on turn 1 and must not read as "unknown".
+    #[serde(default)]
+    pub era_score: Option<i64>,
+    #[serde(default)]
+    pub era_score_baseline: Option<i64>,
+    #[serde(default)]
+    pub normal_age_threshold: Option<i64>,
+    #[serde(default)]
+    pub golden_age_threshold: Option<i64>,
+    /// Firaxis's world era index, which advances on the field rather than on
+    /// this empire alone.
+    #[serde(default)]
+    pub world_era: Option<i64>,
+    #[serde(default)]
+    pub dark_age: Option<bool>,
+    #[serde(default)]
+    pub golden_age: Option<bool>,
+    #[serde(default)]
+    pub heroic_golden_age: Option<bool>,
     /// Firaxis's own outgoing-route capacity. The model can differ because a
     /// mirrored empire does not reproduce every capacity modifier.
     #[serde(default)]
@@ -7226,6 +7268,11 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "policies", "policy_slots", "gold", "faith", "science", "culture", "score",
         "military", "trade_capacity", "great_person_points", "governor_points",
         "governor_points_spent",
+        // The age. `the_schema_allowlists_cover_every_declared_field` fails if a
+        // StateSnapshot field is missing here.
+        "era_score", "era_score_baseline", "normal_age_threshold",
+        "golden_age_threshold", "world_era", "dark_age", "golden_age",
+        "heroic_golden_age",
         "governors", "cities", "units", "trade_routes", "rivals", "minors", "hostiles",
         // Unspent envoys. `the_schema_allowlists_cover_every_declared_field` fails
         // if a new StateSnapshot field is missing here — this list is a second
@@ -8710,6 +8757,41 @@ fn civvis_belief_name(rules: &crate::rules::Rules, civ6: &str) -> Option<String>
     .then_some(name)
 }
 
+/// Put Firaxis's Era Score and age thresholds on the reconstructed board.
+///
+/// Without this the age CIVVIS reasons about is `Player::default`'s: era score
+/// 0 against a golden threshold of 26 and a normal threshold of 12, on turn 1
+/// and on turn 200 alike. Both age-reading decisions — `choose_dedications` and
+/// the Dark Age wildcard filter in `ai/advanced.rs` — then run against a
+/// standing fiction rather than against Rome's actual standing.
+///
+/// Every field is optional and a negative value means "the host did not
+/// answer", so a build whose `Game.GetEras()` is missing a getter leaves that
+/// field at whatever the board already held instead of writing a lie into it. A
+/// real era score of 0 is ordinary on turn 1 and is applied.
+fn apply_player_ages(game: &mut crate::game::Game, state: &StateSnapshot) {
+    let player = &mut game.players[0];
+    if let Some(score) = state.era_score.filter(|value| *value >= 0) {
+        player.era_score = score;
+    }
+    if let Some(baseline) = state.era_score_baseline.filter(|value| *value >= 0) {
+        player.era_score_baseline = baseline;
+    }
+    // Firaxis's Dark Age threshold IS this codebase's normal-age threshold: the
+    // score at or above which the next age is Normal rather than Dark.
+    if let Some(normal) = state.normal_age_threshold.filter(|value| *value >= 0) {
+        player.normal_age_threshold = normal;
+    }
+    if let Some(golden) = state.golden_age_threshold.filter(|value| *value >= 0) {
+        player.golden_age_threshold = golden;
+    }
+    if let Some(era) = state.world_era.filter(|value| *value >= 0) {
+        // `ERA_NAMES` bounds the model's era ladder; a build that reports an era
+        // past its end is clamped rather than allowed to index out of range.
+        game.world_era = (era as usize).min(crate::rules::ERA_NAMES.len() - 1);
+    }
+}
+
 fn apply_player_religion(
     game: &mut crate::game::Game,
     state: &StateSnapshot,
@@ -9562,6 +9644,7 @@ pub fn rebuild_from_state(
     if state.faith >= 0 {
         game.players[0].faith = state.faith as f64;
     }
+    apply_player_ages(&mut game, state);
     apply_player_religion(&mut game, state, &mut unmapped);
     // Cheap: `rules` is an Arc. Cloned so the city loop below can consult it while
     // holding a mutable borrow of `game`.
@@ -10819,6 +10902,7 @@ impl LiveMirror {
         if state.faith >= 0 {
             self.game.players[0].faith = state.faith as f64;
         }
+        apply_player_ages(&mut self.game, state);
         apply_player_religion(&mut self.game, state, &mut self.unmapped);
         if let Some(civ6) = &state.government {
             if let Some(name) = civvis_node_name(&self.game.rules.governments, civ6, "GOVERNMENT_") {
@@ -11869,6 +11953,135 @@ mod host_fact_tests {
                 | crate::game::Action::ReassignGovernor { .. }
                 | crate::game::Action::PromoteGovernor { .. }
         )));
+    }
+
+    #[test]
+    fn firaxis_era_score_and_age_thresholds_reach_the_board() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 92,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(3, 3)],
+        }]);
+        let state = StateSnapshot {
+            turn: 92,
+            era_score: Some(31),
+            era_score_baseline: Some(12),
+            normal_age_threshold: Some(20),
+            golden_age_threshold: Some(40),
+            world_era: Some(2),
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Roma".to_string(),
+                x: 3,
+                y: 3,
+                pop: 6,
+                capital: true,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        let player = &rebuilt.game.players[0];
+        assert_eq!(player.era_score, 31);
+        assert_eq!(player.era_score_baseline, 12);
+        assert_eq!(player.normal_age_threshold, 20);
+        assert_eq!(player.golden_age_threshold, 40);
+        assert_eq!(rebuilt.game.world_era, 2);
+        // The point of carrying them: 31 sits between Firaxis's two thresholds,
+        // so this is a Normal age. Against `Player::default` (12 and 26) the
+        // same empire read as GOLDEN, which is the fiction this closes.
+        assert!(player.era_score >= player.normal_age_threshold);
+        assert!(player.era_score < player.golden_age_threshold);
+    }
+
+    #[test]
+    fn an_unanswered_era_getter_leaves_the_board_alone() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(3, 3)],
+        }]);
+        // `try(...)` in the mod yields -1 when a getter is missing on the build.
+        // A -1 must not become an era score, and it must not zero a threshold —
+        // that would be a worse lie than the default it replaced.
+        let state = StateSnapshot {
+            turn: 40,
+            era_score: Some(-1),
+            normal_age_threshold: Some(-1),
+            golden_age_threshold: Some(-1),
+            world_era: Some(-1),
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Roma".to_string(),
+                x: 3,
+                y: 3,
+                pop: 4,
+                capital: true,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let silent = StateSnapshot {
+            era_score: None,
+            normal_age_threshold: None,
+            golden_age_threshold: None,
+            world_era: None,
+            ..state.clone()
+        };
+
+        let refused = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        let absent = rebuild_from_state(&snapshot, &silent, 4, 1, 250, 0);
+        assert_eq!(
+            refused.game.players[0].normal_age_threshold,
+            absent.game.players[0].normal_age_threshold,
+            "a -1 answer must leave the threshold exactly where no answer leaves it"
+        );
+        assert_eq!(
+            refused.game.players[0].golden_age_threshold,
+            absent.game.players[0].golden_age_threshold
+        );
+        assert_eq!(refused.game.world_era, absent.game.world_era);
+    }
+
+    #[test]
+    fn a_zero_era_score_is_a_reading_not_a_missing_answer() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 3,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(3, 3)],
+        }]);
+        let state = StateSnapshot {
+            turn: 3,
+            era_score: Some(0),
+            normal_age_threshold: Some(11),
+            golden_age_threshold: Some(25),
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Roma".to_string(),
+                x: 3,
+                y: 3,
+                pop: 1,
+                capital: true,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        let player = &rebuilt.game.players[0];
+        assert_eq!(player.era_score, 0);
+        assert_eq!(player.normal_age_threshold, 11);
+        // On turn 3 with nothing scored yet Rome is genuinely BELOW the normal
+        // threshold, which is the Dark Age warning the board could never show.
+        assert!(player.era_score < player.normal_age_threshold);
     }
 
     #[test]

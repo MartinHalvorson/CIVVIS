@@ -5774,6 +5774,51 @@ local function exportState(player, pid, turn)
 		score = try(function() return player:GetScore(); end, -1),
 		-- Ours, on the same scale as each rival's, so a comparison is possible at all.
 		military = try(function() return player:GetStats():GetMilitaryStrength(); end, -1),
+		-- ★★★★★ THE AGE, WHICH THE BRIDGE HAS NEVER CARRIED.
+		--
+		-- CIVVIS models Gathering Storm's age system in full (`docs/AGES.md`):
+		-- `Player::era_score`, `era_score_baseline`, `normal_age_threshold`,
+		-- `golden_age_threshold`, `dedications`. None of it crossed, so on every
+		-- reconstructed live board era score was 0 against the *defaults* left by
+		-- `Player::default` -- a civilization permanently reading as headed for a
+		-- Dark Age it might not be in, or out of one it is.
+		--
+		-- Two decisions run off exactly these fields and were therefore taken
+		-- against fiction in every live game:
+		--   * `ai::choose_dedications` picks a Dedication from
+		--     `available_dedications`, which is gated on `dedication_choices`;
+		--     live that is 0, so a Dedication was NEVER chosen.
+		--   * `advanced.rs` filters `rules.policies[card].dark_age`, so a real
+		--     Dark Age's wildcard cards were never slotted -- the same shape as
+		--     the housing and loyalty cards that are never slotted.
+		--
+		-- Every getter below appears in the shipped Expansion2 `EraProgressPanel`
+		-- on this install, so the names are read off the build rather than
+		-- guessed. All are SCALARS: no empty-table hazard (see the
+		-- `great_person_points` note above for why that matters).
+		--
+		-- `normal_age_threshold` is CIVVIS's name for the score at or above which
+		-- an age is Normal rather than Dark, which is precisely Civ 6's *Dark Age
+		-- threshold* -- the two names describe the same boundary from opposite
+		-- sides.
+		era_score = try(function()
+			return Game.GetEras():GetPlayerCurrentScore(pid);
+		end, -1),
+		era_score_baseline = try(function()
+			return Game.GetEras():GetPlayerThresholdBaseline(pid);
+		end, -1),
+		normal_age_threshold = try(function()
+			return Game.GetEras():GetPlayerDarkAgeThreshold(pid);
+		end, -1),
+		golden_age_threshold = try(function()
+			return Game.GetEras():GetPlayerGoldenAgeThreshold(pid);
+		end, -1),
+		world_era = try(function() return Game.GetEras():GetCurrentEra(); end, -1),
+		dark_age = try(function() return Game.GetEras():HasDarkAge(pid); end, nil),
+		golden_age = try(function() return Game.GetEras():HasGoldenAge(pid); end, nil),
+		heroic_golden_age = try(function()
+			return Game.GetEras():HasHeroicGoldenAge(pid);
+		end, nil),
 		-- Great Person POINTS, not the Great People already earned. The planner
 		-- prices every district project against the live race -- how close we
 		-- are to the next Scientist, and how close the leading rival is -- and
