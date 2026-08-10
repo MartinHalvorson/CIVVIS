@@ -44,6 +44,30 @@ class FollowTest(unittest.TestCase):
         sleep.assert_not_called()
         self.assertTrue(any("status 17" in message for message in messages))
 
+    def test_a_finished_game_is_taken_off_the_screen(self) -> None:
+        """The two windows must never show different games.
+
+        Measured 2026-08-10: the follower adopted a brand-new run while :8610
+        kept serving TURN 189 of the run before it, so the operator saw a
+        finished five-city empire beside a live game still choosing its leader.
+        """
+        killed = []
+        with mock.patch.object(follow.subprocess, "run") as run, \
+             mock.patch.object(follow.os, "kill",
+                               lambda pid, sig: killed.append(pid)), \
+             mock.patch.object(follow, "server_alive", lambda _p: False), \
+             mock.patch.object(follow, "log", lambda _m: None):
+            run.return_value = mock.Mock(stdout="4242 4243\n")
+            self.assertTrue(follow.stop_visible_server())
+        self.assertEqual(killed, [4242, 4243],
+                         "every mirror server holding the port must be stopped")
+
+    def test_takedown_reports_nothing_to_stop_when_no_server_runs(self) -> None:
+        with mock.patch.object(follow.subprocess, "run") as run, \
+             mock.patch.object(follow, "log", lambda _m: None):
+            run.return_value = mock.Mock(stdout="")
+            self.assertFalse(follow.stop_visible_server())
+
     def test_read_events_reports_whether_the_run_has_exported_a_map(self) -> None:
         """The precondition `civvis play --mirror` refuses on, read from the run.
 
