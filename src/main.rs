@@ -893,7 +893,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// priced. They are evaluator entry points that no constructor calls;
 /// `AdvancedAi::legacy()` never had these flags on. Compatibility
 /// re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7ea0_32fa_2451_9b95;
+/// `enable_engine_repairs` and its war/economy halves, so the live-bridge
+/// repair bundle can be priced natively. They are evaluator entry points
+/// reached only by the three `advanced_synergy*` arms in `builtin_ai`;
+/// no constructor calls them, `AdvancedAi::legacy()` builds through
+/// `configured` and never had one of these flags on, and the addition is
+/// purely additive — 115 lines, no deletions. Compatibility re-pin,
+/// asserted rather than asserted-by-comment in
+/// `the_repair_bundle_cannot_reach_the_frozen_anchor`.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x966e_c124_db7a_1e4a;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -3422,6 +3430,54 @@ mod tests {
             fingerprint, ADVANCED_V1_SOURCE_CONTRACT_FNV,
             "BasicAi/AdvancedAi changed under the advanced_v1 anchor: if the legacy path changed, bump ELO_PROTOCOL_VERSION and start a new ledger; otherwise review the gating and deliberately re-pin this source contract"
         );
+    }
+
+    /// The re-pin above claims the engine-repair bundle cannot reach the
+    /// frozen anchor. A comment claiming that is worth exactly as much as the
+    /// comment that claimed native games leave `bounded_recovery` disabled —
+    /// which was wrong, and is one of the re-pins listed above.
+    ///
+    /// So assert it on the constructors instead. `advanced_v1` is
+    /// `AdvancedAi::legacy()` and the production incumbent is
+    /// `AdvancedAi::new()`; neither may carry a repair. Only the three
+    /// `advanced_synergy*` evaluator arms turn these on, and if that ever
+    /// stops being true this fails before a rating anchor moves under a
+    /// ledger that cannot see it.
+    #[test]
+    fn the_repair_bundle_cannot_reach_the_frozen_anchor() {
+        for (name, ai) in [
+            ("advanced_v1", civvis::ai::AdvancedAi::legacy()),
+            ("advanced", civvis::ai::AdvancedAi::new()),
+        ] {
+            for (flag, on) in [
+                ("muster_at_command_radius", ai.muster_at_command_radius),
+                ("war_economy", ai.war_economy),
+                ("war_reinforcement", ai.war_reinforcement),
+                ("war_patience", ai.war_patience),
+                ("siege_commitment", ai.siege_commitment),
+                ("relief_targets_the_siege", ai.relief_targets_the_siege),
+                ("blind_objective_units", ai.blind_objective_units),
+                ("blind_objective_strength", ai.blind_objective_strength),
+                ("siege_tracks_the_wall", ai.siege_tracks_the_wall),
+                ("army_target_weighs_the_enemy", ai.army_target_weighs_the_enemy),
+                ("peacetime_deterrence", ai.peacetime_deterrence),
+                ("strike_opening", ai.strike_opening),
+                ("ranged_needs_line_of_sight", ai.ranged_needs_line_of_sight),
+                ("loyalty_policy_defence", ai.loyalty_policy_defence),
+                (
+                    "suzerain_cards_need_a_suzerainty",
+                    ai.suzerain_cards_need_a_suzerainty,
+                ),
+            ] {
+                assert!(
+                    !on,
+                    "{name} carries the engine repair {flag}: the bundle measured \
+                     -129 Elo at deployment, and the source-contract re-pin that \
+                     let it into the hashed sources was justified by this arm \
+                     being unreachable from the anchor"
+                );
+            }
+        }
     }
 
     #[test]
