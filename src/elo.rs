@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 113] = [
+pub const EVAL_ONLY_AIS: [&str; 114] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -125,6 +125,7 @@ pub const EVAL_ONLY_AIS: [&str; 113] = [
     "advanced_holy_lane_v0",
     "advanced_roster_live",
     "advanced_roster_live_keep_districts",
+    "advanced_diplomatic_opening",
     "advanced_league_top",
     "advanced_joint_tactics",
     "strategic_cheap",
@@ -327,6 +328,7 @@ define_arm_kinds! {
     AdvancedHolyLaneV0 => "advanced_holy_lane_v0",
     AdvancedRosterLive => "advanced_roster_live",
     AdvancedRosterLiveKeepDistricts => "advanced_roster_live_keep_districts",
+    AdvancedDiplomaticOpening => "advanced_diplomatic_opening",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
@@ -2265,6 +2267,23 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             w.rejoin_hp = 78.3851;
             Box::new(AdvancedAi::with_weights(w))
         }
+        // Let the Diplomacy lane be entered before it has already succeeded.
+        //
+        // An actuation treatment, not a valuation one: every other lane in
+        // `best_lane` is scored prospectively and Diplomacy alone is scored
+        // retrospectively, so its argmax input is a self-fulfilling zero and
+        // the lane takes 0.9% of observed player-turns. The prize behind it is
+        // the largest the oracle harness has found -- `Grant::Suzerain` at
+        // 56.7% against a 22.7% control, p=0.0000 over 400 maps (PR #602).
+        //
+        // The opening figure is Religion's own, so this loses every tie to
+        // Religion and can only win the argmax against Conquest and Expansion,
+        // which score zero. See `AdvancedAi::diplomatic_opening_score`.
+        "advanced_diplomatic_opening" => {
+            let mut ai = AdvancedAi::new();
+            ai.diplomatic_opening = true;
+            Box::new(ai)
+        }
         "advanced_holy_lane_v0" => {
             let mut w = Weights::advanced();
             w.d_holy = PRE_2026_08_10_D_HOLY;
@@ -3309,6 +3328,7 @@ impl ArmKind {
             Self::AdvancedHolyLaneV0 => &["lane-holy-parity", "district-holy-pre-2026-08-10"],
             Self::AdvancedRosterLive => &["roster-winner-live-genes"],
             Self::AdvancedRosterLiveKeepDistricts => &["roster-winner-live-genes-except-districts"],
+            Self::AdvancedDiplomaticOpening => &["diplomatic-lane-prospective"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -3820,6 +3840,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_holy_lane_v0" => (Vec::new(), "advanced_holy_lane_v0"),
         "advanced_roster_live" => (Vec::new(), "advanced_roster_live"),
         "advanced_roster_live_keep_districts" => (Vec::new(), "advanced_roster_live_keep_districts"),
+        "advanced_diplomatic_opening" => (Vec::new(), "advanced_diplomatic_opening"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -5027,7 +5048,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 82] = [
+            const SCRIPTED: [&str; 83] = [
                 "advanced_joint_tactics",
                 "live_without_joint_tactics",
                 "advanced",
@@ -5078,6 +5099,7 @@ mod tests {
                 "advanced_holy_lane_v0",
                 "advanced_roster_live",
                 "advanced_roster_live_keep_districts",
+                "advanced_diplomatic_opening",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",

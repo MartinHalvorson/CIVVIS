@@ -1948,6 +1948,12 @@ pub struct AdvancedAi {
     /// Off by default; evaluator arm `advanced_holy_lane`.
     pub holy_lane_parity: bool,
 
+    /// Let the Diplomacy lane be entered before it has already succeeded.
+    ///
+    /// Off by default; evaluator arm `advanced_diplomatic_opening`. See
+    /// `AdvancedAi::diplomatic_opening_score`.
+    pub diplomatic_opening: bool,
+
     /// Reserve one empty city's next build for reachable envoy infrastructure.
     ///
     /// `envoy_infrastructure` teaches `advanced_production` what the Diplomatic
@@ -2088,6 +2094,13 @@ pub struct AdvancedAi {
 /// Not tuned: it is `(Culture, theater_square)`'s own figure, the largest
 /// own-lane value in `strategic_family`. See `AdvancedAi::holy_lane_parity`.
 const HOLY_LANE_PARITY: f64 = 850.0;
+
+/// What an open Diplomacy lane is worth before it has produced anything.
+///
+/// Religion's own opening figure, copied rather than chosen: see
+/// `AdvancedAi::diplomatic_opening_score` for why a mirrored number is the
+/// point and a tuned one would not be.
+const DIPLOMATIC_OPENING: i64 = 46;
 
 const RESEARCH_FLOOR_EARLY: f64 = 3.0;
 const RESEARCH_FLOOR_LATE: f64 = 1.0;
@@ -2467,6 +2480,7 @@ impl AdvancedAi {
             congress_counter_votes: false,
             envoy_infrastructure: false,
             holy_lane_parity: false,
+            diplomatic_opening: false,
             envoy_priority: false,
             joint_tactics: false,
             tactics_resolved: BTreeSet::new(),
@@ -5113,6 +5127,56 @@ impl AdvancedAi {
         Some((commitment, best_site.unwrap_or(0.0), player.faith))
     }
 
+    /// What the Diplomacy lane is worth *before* it has produced anything.
+    ///
+    /// ⚠ **The asymmetry this repairs.** Every other lane in `best_lane` scores
+    /// prospectively — Religion is handed **46** for nothing more than
+    /// `religious_opening_viable`, and 55 once a rival has founded. Diplomacy
+    /// alone scored `dvp * 5 + suzerain * 6`, which is **purely
+    /// retrospective**: zero until the empire already holds diplomatic points
+    /// or a suzerainty. The lane is chosen by an argmax over those scores, so a
+    /// zero cannot be chosen, and a lane that is never chosen never emits the
+    /// influence that would raise the score. **A self-fulfilling zero**, and it
+    /// shows: the adaptive census puts Diplomacy at **0.9% of observed
+    /// player-turns** against Conquest's 26%, while diplomatic victories (19)
+    /// and domination victories (22) arrive at nearly the same rate.
+    ///
+    /// The prize is on record as the largest in the repository.
+    /// `Grant::Suzerain` — suzerain of every met city-state — measured
+    /// **56.7% against a 22.7% control**, p=0.0000 over 400 maps (PR #602),
+    /// larger than the expansion grant, and unlike expansion it is a decision
+    /// the agent makes. The envoy census then found the pool sits at **0.00
+    /// unspent**, which reads as a resource gap — but a lane that is never
+    /// entered is exactly why the resource is never produced.
+    ///
+    /// **The number is mirrored, not tuned.** It is Religion's own opening
+    /// figure, so Diplomacy loses every tie to Religion — deliberately, because
+    /// Religion is the lane that actually converts here (88% of wins). What
+    /// this can win is the argmax against **Conquest and Expansion, which score
+    /// 0**, in the games where the religious opening is closed. That is the
+    /// 26%-of-turns lane converting at 4%.
+    ///
+    /// Zero unless diplomatic victory is enabled and some met city-state is
+    /// still unclaimed, so a game without the condition or without a free minor
+    /// is untouched.
+    fn diplomatic_opening_score(&self, g: &Game, pid: usize) -> i64 {
+        if !self.diplomatic_opening || !g.victory_conditions.diplomatic {
+            return 0;
+        }
+        let claimable = g.players.iter().any(|minor| {
+            minor.alive
+                && minor.is_minor
+                && !minor.is_barbarian
+                && g.has_met(pid, minor.id)
+                && g.suzerain_of(minor.id) != Some(pid)
+        });
+        if claimable {
+            DIPLOMATIC_OPENING
+        } else {
+            0
+        }
+    }
+
     fn religious_opening_viable(&self, g: &Game, pid: usize) -> bool {
         let player = &g.players[pid];
         if player.religion.is_some() {
@@ -5317,7 +5381,10 @@ impl AdvancedAi {
                     && g.suzerain_of(minor.id) == Some(pid)
             })
             .count() as i64;
-        let diplomacy = (player.dvp * 5 + suzerain * 6).clamp(0, 100) as i32;
+        let diplomacy = (player.dvp * 5 + suzerain * 6)
+            .clamp(0, 100)
+            .max(self.diplomatic_opening_score(g, pid))
+            as i32;
 
         let candidates = [
             VictoryFocus {

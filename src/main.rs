@@ -872,7 +872,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The district-weight guard and the roster-composite notes are a test and
 /// doc comments in the hashed sources; no constructor moved and
 /// `AdvancedAi::legacy()` is untouched. Compatibility re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xed68_adb6_287f_86d5;
+/// `diplomatic_opening` is a flag both constructors leave false and
+/// `diplomatic_opening_score` returns 0 without it, so the anchor never
+/// reaches the new lane term. Compatibility re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6f21_f4a9_b043_6972;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
