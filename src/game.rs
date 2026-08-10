@@ -14139,6 +14139,12 @@ pub struct RoutingCache {
     stamp: u64,
     zones: Vec<(TraversalClass, std::sync::Arc<Vec<u32>>)>,
     paths: Vec<PlannedRoute>,
+    /// Reverse distance fields shared by units with the same traversal and
+    /// border access. A large goal set (unexplored tiles, landing sites, or a
+    /// staging ring) is otherwise flooded once from every unit that asks for
+    /// its nearest member. The field is derived state and is discarded on a
+    /// map/turn epoch change or when a game is cloned for a branch.
+    reverse_fields: Vec<ReverseFlowField>,
     /// Folded city ids and owners used by route access checks. City ownership
     /// changes invalidate routing paths, so compute this once per routing
     /// epoch instead of walking every city for every unit route query.
@@ -14155,10 +14161,28 @@ impl Clone for RoutingCache {
             stamp: self.stamp,
             zones: self.zones.clone(),
             paths: Vec::new(),
+            reverse_fields: Vec::new(),
             city_owner_key: None,
         }
     }
 }
+
+/// A multi-source reverse breadth-first field for one route-access context.
+///
+/// Future route segments intentionally have unit occupancy removed, and their
+/// legality depends only on the unit's traversal class, owner, and territory
+/// access. Those are exactly the values folded into `access_key`, so every
+/// unit sharing that context can read one field and only validate its own
+/// immediate step with `can_enter`.
+#[derive(Clone)]
+struct ReverseFlowField {
+    class: TraversalClass,
+    access_key: u64,
+    goals: Arc<Vec<Pos>>,
+    distance: Arc<Vec<i32>>,
+}
+
+const MAX_REVERSE_FLOW_FIELDS: usize = 8;
 
 #[derive(Default)]
 struct RouteScratch {
@@ -35050,6 +35074,7 @@ impl Game {
     fn invalidate_routing_paths(&self) {
         let mut routing = self.routing.borrow_mut();
         routing.paths.clear();
+        routing.reverse_fields.clear();
         routing.city_owner_key = None;
     }
 
@@ -35139,6 +35164,7 @@ impl Game {
             cache.stamp = stamp;
             cache.zones.clear();
             cache.paths.clear();
+            cache.reverse_fields.clear();
             cache.city_owner_key = None;
         }
         stamp
@@ -35212,9 +35238,14 @@ impl Game {
     /// useful for exploration, where the geometrically nearest hidden tile
     /// may be on the far side of an impassable ridge or pre-embarkation sea.
     pub fn route_step_to_any(&self, uid: u32, goals: &HashSet<Pos>) -> Option<Pos> {
+        if goals.is_empty() {
+            return None;
+        }
         let unit = self.units.get(&uid)?;
         let zones = self.routing_zones(self.traversal_class(uid));
-        let start_zone = self.map.tiles.index_of(unit.pos).map_or(0, |i| zones[i]);
+        let start = unit.pos;
+        let start_index = self.map.tiles.index_of(start)?;
+        let start_zone = zones[start_index];
         // Goals the labeling can disprove would each cost the breadth-first
         // search below a full flood of the unit's region to disprove again.
         if start_zone != 0
@@ -35224,7 +35255,159 @@ impl Game {
         {
             return None;
         }
-        self.first_route_step(uid, |p| goals.contains(&p))
+        // Keep the historical short-circuit: callers use a set that may also
+        // contain the unit's current tile to mean "already at a valid goal".
+        if goals.contains(&start) || self.formation_movement_locked_by_zoc(uid) {
+            return None;
+        }
+
+        // A singleton target is usually a one-off city/ring query. Flooding
+        // its whole region would cost more than the forward search that stops
+        // as soon as that one target is found; reserve fields for the
+        // multi-source queries that can amortize their construction across
+        // units and turns within this routing epoch.
+        if goals.len() < 2 {
+            return self.first_route_step(uid, |position| goals.contains(&position));
+        }
+
+        // A malformed scenario can place a unit on a tile outside its static
+        // traversal labeling. The reverse field deliberately labels only
+        // ordinary interior tiles, so retain the old proof-producing search
+        // for that exceptional starting state.
+        if start_zone == 0 {
+            return self.first_route_step(uid, |position| goals.contains(&position));
+        }
+
+        let _memo = self.query_memo();
+        let territory_access = self.unit_territory_access(unit);
+        let access_key = self.route_access_key(unit, territory_access.as_slice());
+        let class = self.traversal_class(uid);
+        let mut ordered_goals: Vec<Pos> = goals.iter().copied().collect();
+        ordered_goals.sort_unstable();
+        let goals = Arc::new(ordered_goals);
+        let stamp = self.refresh_routing_cache_stamp();
+
+        let cached = {
+            let routing = self.routing.borrow();
+            routing
+                .reverse_fields
+                .iter()
+                .find(|field| {
+                    field.class == class
+                        && field.access_key == access_key
+                        && field.goals.as_slice() == goals.as_slice()
+                })
+                .map(|field| field.distance.clone())
+        };
+        let distance = match cached {
+            Some(distance) => distance,
+            None => {
+                let distance = Arc::new(self.build_reverse_flow_field(
+                    uid,
+                    class,
+                    territory_access.as_slice(),
+                    goals.as_slice(),
+                    &zones,
+                ));
+                let mut routing = self.routing.borrow_mut();
+                if routing.stamp == stamp {
+                    routing.reverse_fields.retain(|field| {
+                        !(field.class == class
+                            && field.access_key == access_key
+                            && field.goals.as_slice() == goals.as_slice())
+                    });
+                    if routing.reverse_fields.len() >= MAX_REVERSE_FLOW_FIELDS {
+                        routing.reverse_fields.remove(0);
+                    }
+                    routing.reverse_fields.push(ReverseFlowField {
+                        class,
+                        access_key,
+                        goals,
+                        distance: distance.clone(),
+                    });
+                }
+                distance
+            }
+        };
+
+        // The reverse field gives the distance from every interior tile to
+        // its nearest goal. Read the first edge in the same neighbour order as
+        // the forward BFS; among equal distances this preserves its stable
+        // tie-break while avoiding a fresh flood for every unit.
+        let mut best_distance = i32::MAX;
+        let mut best = None;
+        for next in self.nbrs(start) {
+            let Some(index) = self.map.tiles.index_of(next) else {
+                continue;
+            };
+            if !self.can_enter(uid, start, next) {
+                continue;
+            }
+            let steps = distance[index];
+            if steps < best_distance {
+                best_distance = steps;
+                best = Some(next);
+            }
+        }
+        best
+    }
+
+    /// Build a multi-source distance field by walking route edges backwards
+    /// from every valid goal. Interior route edges are symmetric: after the
+    /// static traversal zone has accepted a tile, the future-segment gate is
+    /// only territory/city ownership on the destination. The live unit still
+    /// validates its selected first edge with `can_enter` below.
+    fn build_reverse_flow_field(
+        &self,
+        uid: u32,
+        class: TraversalClass,
+        territory_access: &[bool],
+        goals: &[Pos],
+        zones: &[u32],
+    ) -> Vec<i32> {
+        const UNREACHED: i32 = i32::MAX;
+        let mut distance = vec![UNREACHED; self.map.tiles.len()];
+        let mut queue = VecDeque::new();
+        for &goal in goals {
+            let Some(index) = self.map.tiles.index_of(goal) else {
+                continue;
+            };
+            if zones[index] == 0
+                || distance[index] != UNREACHED
+                || !self.can_path_through_known_traversable(uid, goal, territory_access)
+            {
+                continue;
+            }
+            distance[index] = 0;
+            queue.push_back((goal, index));
+        }
+
+        while let Some((current, current_index)) = queue.pop_front() {
+            let next_distance = distance[current_index].saturating_add(1);
+            for predecessor in self.nbrs(current) {
+                let Some(index) = self.map.tiles.index_of(predecessor) else {
+                    continue;
+                };
+                if distance[index] != UNREACHED || zones[index] == 0 {
+                    continue;
+                }
+                // `class` is passed explicitly so a field cannot silently use
+                // a changed unit traversal answer while its owning memo is
+                // still active. The zone already came from this class; the
+                // assertion documents that invariant for debug builds.
+                debug_assert!(self.class_can_traverse(class, &self.map.tiles[&predecessor]));
+                if !self.can_path_through_known_traversable(
+                    uid,
+                    predecessor,
+                    territory_access,
+                ) {
+                    continue;
+                }
+                distance[index] = next_distance;
+                queue.push_back((predecessor, index));
+            }
+        }
+        distance
     }
 
     fn first_route_step<F>(&self, uid: u32, is_goal: F) -> Option<Pos>
@@ -64797,6 +64980,44 @@ mod combat_scenarios {
             g.routing.borrow().paths.len(),
             1,
             "advancing along a cached route must not launch and store a second plan",
+        );
+    }
+
+    #[test]
+    fn reverse_flow_fields_match_forward_goal_search_and_reuse_the_field() {
+        let (mut g, start, _) = controlled_game(3_207);
+        let warrior = g.spawn_unit("warrior", 0, start);
+        let goals: HashSet<Pos> = g
+            .wdisk(start, 4)
+            .into_iter()
+            .filter(|position| g.wdist(start, *position) == 4)
+            .collect();
+        assert!(goals.len() > 1, "the fixture supplies a multi-source goal ring");
+
+        let expected = g.first_route_step(warrior, |position| goals.contains(&position));
+        assert!(expected.is_some(), "the goal ring is reachable on plains");
+        assert!(g.routing.borrow().reverse_fields.is_empty());
+
+        let first = g.route_step_to_any(warrior, &goals);
+        assert_eq!(first, expected, "reverse and forward fields choose the same step");
+        assert_eq!(g.routing.borrow().reverse_fields.len(), 1);
+
+        let second = g.route_step_to_any(warrior, &goals);
+        assert_eq!(second, first);
+        assert_eq!(
+            g.routing.borrow().reverse_fields.len(),
+            1,
+            "the same goal set reads the cached reverse field"
+        );
+
+        let mut reordered: Vec<Pos> = goals.iter().copied().collect();
+        reordered.reverse();
+        let reordered: HashSet<Pos> = reordered.into_iter().collect();
+        assert_eq!(g.route_step_to_any(warrior, &reordered), first);
+        assert_eq!(
+            g.routing.borrow().reverse_fields.len(),
+            1,
+            "HashSet iteration order does not make a duplicate field"
         );
     }
 
