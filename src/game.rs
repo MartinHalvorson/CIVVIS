@@ -10512,6 +10512,37 @@ mod maintenance_tests {
     }
 
     #[test]
+    fn city_turn_upkeep_reduction_matches_post_processing_scan() {
+        let (mut game, city) = one_city();
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .extend([crate::name!("monument"), crate::name!("granary")]);
+
+        // Run the same ordered city phase the turn reducer uses, retaining
+        // only the derived answers. The old aggregate is an independent
+        // post-phase scan and therefore catches a missing local completion,
+        // pillage, or flood-barrier contribution in the reducer ledger.
+        let mut reduced = game.clone();
+        let mut ledger = BTreeMap::new();
+        for cid in reduced.player_city_ids(0) {
+            let (_, upkeep, updates) = reduced.process_city_with_upkeep(0, cid);
+            ledger.insert(cid, upkeep);
+            for (changed_city, changed_upkeep) in updates {
+                if ledger.contains_key(&changed_city) {
+                    ledger.insert(changed_city, changed_upkeep);
+                }
+            }
+        }
+
+        assert_eq!(
+            ledger.values().copied().sum::<f64>(),
+            reduced.infrastructure_gold_maintenance(0)
+        );
+    }
+
+    #[test]
     fn nuclear_devices_charge_fourteen_and_sixteen_gold_before_policy_discount() {
         let (mut game, _) = one_city();
         game.players[0]
@@ -51101,37 +51132,49 @@ impl Game {
     /// Pillaged districts and buildings are disabled and stop charging upkeep.
     /// Flood Barriers use their base 1 Gold multiplied by exposed lowlands and
     /// the current whole-meter sea-level multiplier.
+    fn city_infrastructure_gold_maintenance(&self, city: &City) -> f64 {
+        let districts = city
+            .districts
+            .iter()
+            .filter(|(district, position)| self.district_is_active(city, district, **position))
+            .map(|(district, _)| self.rules.districts[district].maintenance)
+            .sum::<f64>();
+        let buildings = city
+            .buildings
+            .iter()
+            .filter(|building| !city.pillaged_buildings.contains(*building))
+            .filter(|building| self.building_district_is_active(city, building))
+            .map(|building| {
+                let base = self.rules.buildings[building].maintenance;
+                if building == "flood_barrier" {
+                    base * self.coastal_lowland_tiles(city).len() as f64
+                        * (1 + self.climate_phase / 2) as f64
+                } else {
+                    base
+                }
+            })
+            .sum::<f64>();
+        districts + buildings
+    }
+
     fn infrastructure_gold_maintenance(&self, pid: usize) -> f64 {
         self.cities
             .values()
             .filter(|city| city.owner == pid)
-            .map(|city| {
-                let districts = city
-                    .districts
-                    .iter()
-                    .filter(|(district, position)| {
-                        self.district_is_active(city, district, **position)
-                    })
-                    .map(|(district, _)| self.rules.districts[district].maintenance)
-                    .sum::<f64>();
-                let buildings = city
-                    .buildings
-                    .iter()
-                    .filter(|building| !city.pillaged_buildings.contains(*building))
-                    .filter(|building| self.building_district_is_active(city, building))
-                    .map(|building| {
-                        let base = self.rules.buildings[building].maintenance;
-                        if building == "flood_barrier" {
-                            base * self.coastal_lowland_tiles(city).len() as f64
-                                * (1 + self.climate_phase / 2) as f64
-                        } else {
-                            base
-                        }
-                    })
-                    .sum::<f64>();
-                districts + buildings
-            })
+            .map(|city| self.city_infrastructure_gold_maintenance(city))
             .sum()
+    }
+
+    /// Snapshot the per-city infrastructure answers before a completion that
+    /// may have empire-wide effects. Wonders are rare, so the defensive
+    /// snapshot is cheaper than making ordinary upkeep derivation carry a
+    /// global mutation ledger through every completion path.
+    fn city_upkeep_snapshot(&self, pid: usize) -> BTreeMap<u32, f64> {
+        self.cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .map(|city| (city.id, self.city_infrastructure_gold_maintenance(city)))
+            .collect()
     }
 
     fn nuclear_gold_maintenance(&self, pid: usize) -> f64 {
@@ -56472,13 +56515,29 @@ impl Game {
         let mut cul = 0.0;
         let mut gold = 0.0;
         let mut faith = 0.0;
+        // City processing already has the complete local state needed to
+        // price infrastructure. Keep the derived per-city answers in a
+        // stable ledger so upkeep is reduced once here rather than by a
+        // second empire-wide district/building scan. A later wonder can add a
+        // free building to a city that has already been processed; the
+        // returned correction below keeps that observable order exact.
+        let mut infrastructure_upkeep = BTreeMap::new();
         let turn_city_ids = self.player_city_ids(pid);
         for cid in turn_city_ids.iter().copied() {
-            let ys = self.process_city(pid, cid);
+            let (ys, city_upkeep, upkeep_updates) = self.process_city_with_upkeep(pid, cid);
             sci += ys.science;
             cul += ys.culture;
             gold += ys.gold;
             faith += ys.faith;
+            infrastructure_upkeep.insert(cid, city_upkeep);
+            for (changed_city, upkeep) in upkeep_updates {
+                // A city not reached yet will derive its post-wonder answer
+                // when its own turn runs. Only an earlier city needs a
+                // correction in the reduction ledger.
+                if infrastructure_upkeep.contains_key(&changed_city) {
+                    infrastructure_upkeep.insert(changed_city, upkeep);
+                }
+            }
         }
         let founder_yields = self.founder_belief_yields(pid);
         sci += founder_yields.science;
@@ -56548,7 +56607,7 @@ impl Game {
             gold += self.monopoly_bonuses(pid).0;
         }
         gold -= self.unit_gold_maintenance(pid);
-        gold -= self.infrastructure_gold_maintenance(pid);
+        gold -= infrastructure_upkeep.values().copied().sum::<f64>();
         gold -= self.nuclear_gold_maintenance(pid);
         self.settle_gold_budget(pid, gold);
         self.players[pid].faith += faith;
@@ -57379,7 +57438,22 @@ impl Game {
         }
     }
 
+    // Kept as the compact test-facing API; the authoritative turn path uses
+    // the richer result so it can reduce upkeep without a second scan.
+    #[allow(dead_code)]
     fn process_city(&mut self, pid: usize, cid: u32) -> Yields {
+        self.process_city_with_upkeep(pid, cid).0
+    }
+
+    /// Advance one city and derive the infrastructure upkeep that belongs to
+    /// its post-processing state. The third return value contains corrected
+    /// answers for cities a wonder changed while this city completed.
+    fn process_city_with_upkeep(
+        &mut self,
+        pid: usize,
+        cid: u32,
+    ) -> (Yields, f64, Vec<(u32, f64)>) {
+        let mut upkeep_updates = Vec::new();
         self.modernize_unit_queue(pid, cid);
         // Upgrade old saves lazily: legacy queued districts predate explicit
         // foundations, so establish and lock them before producing this turn.
@@ -57526,7 +57600,10 @@ impl Game {
                 let stalled = matches!(&item, Item::Unit { unit } if unit == "settler")
                     && self.cities[&cid].pop < 2;
                 if !stalled && self.cities[&cid].production >= cost {
-                    if self.complete_item(pid, cid, &item) {
+                    let (completed, changed_upkeep) =
+                        self.complete_item_and_collect_upkeep(pid, cid, &item);
+                    upkeep_updates.extend(changed_upkeep);
+                    if completed {
                         // Gathering Storm strips item-specific Production
                         // bonuses from overflow. Only unspent base Production
                         // and previously banked base progress carry forward.
@@ -57582,7 +57659,8 @@ impl Game {
         if encampment.is_some() && !city.encampment_pillaged && !encampment_besieged {
             city.encampment_hp = (city.encampment_hp + 20).min(100);
         }
-        ys
+        let city_upkeep = self.city_infrastructure_gold_maintenance(&self.cities[&cid]);
+        (ys, city_upkeep, upkeep_updates)
     }
 
     fn complete_random_nodes(&mut self, pid: usize, amount: usize, technologies: bool) {
@@ -57830,6 +57908,33 @@ impl Game {
         if self.players[pid].dvp >= DIPLOMATIC_VICTORY_POINTS {
             self.set_winner(pid, "diplomatic");
         }
+    }
+
+    /// Complete an item and report any already-processed cities whose
+    /// infrastructure upkeep changed as an empire-wide side effect. Ordinary
+    /// items are local; only a wonder needs the defensive before/after census.
+    fn complete_item_and_collect_upkeep(
+        &mut self,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+    ) -> (bool, Vec<(u32, f64)>) {
+        let before = matches!(item, Item::Wonder { .. }).then(|| self.city_upkeep_snapshot(pid));
+        let completed = self.complete_item(pid, cid, item);
+        let Some(before) = before else {
+            return (completed, Vec::new());
+        };
+        if !completed {
+            return (false, Vec::new());
+        }
+        let after = self.city_upkeep_snapshot(pid);
+        let changed = after
+            .into_iter()
+            .filter_map(|(city_id, upkeep)| {
+                (before.get(&city_id).copied() != Some(upkeep)).then_some((city_id, upkeep))
+            })
+            .collect();
+        (true, changed)
     }
 
     fn complete_item(&mut self, pid: usize, cid: u32, item: &Item) -> bool {
