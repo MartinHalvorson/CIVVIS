@@ -299,7 +299,9 @@ fn route(method: &str, target: &str, body: &str) -> Value {
                 // roster: worlds for the Civ mode, arenas for Tactics.
                 "map_scripts": world_map_scripts(),
                 "battlefield_scripts": battlefield_map_scripts(),
-                "battlefield_sizes": BATTLEFIELD_SIZES,
+                "battlefield_sizes": crate::setup::battlefield_sizes(),
+                "historical_scenarios": crate::historical_scenarios::all(),
+                "scenario_scripts": crate::setup::scenario_map_scripts(),
                 "map_topologies": MAP_TOPOLOGIES,
                 "map_poles": MAP_POLES,
                 "game_speeds": CIV6_GAME_SPEEDS,

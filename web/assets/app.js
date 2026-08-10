@@ -6901,7 +6901,10 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     syncTeams();
     document.getElementById("teams").value = teamRuleFromArray(st.teams);
     document.getElementById("maptype").value = st.map.script || "tenins_ball";
+    selectedScenarioId = tactics && isScenarioMapScript(st.map.script) ? st.map.script : "";
+    document.getElementById("tactics-scenario").value = selectedScenarioId;
     if (tactics) syncBattlefieldSizes(true);
+    renderScenarioBrowser();
     document.getElementById("mapshape").value = st.map.shape || "planet";
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
@@ -28686,6 +28689,8 @@ let civvisMapOptions = null;
 let civvisSizeOptions = null;
 let civVictoryChoices = null;
 let victoryRoster = "civvis";
+let scenarioBrowserView = "custom";
+let selectedScenarioId = "";
 document.getElementById("humanplayers").addEventListener("change", syncSetupMode);
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
@@ -28702,7 +28707,26 @@ document.getElementById("custom-leader-table").addEventListener("change", event 
 document.getElementById("maptype").addEventListener("change", () => {
   syncEarthShape();
   if (readSetting("gamemode") === "tactics") syncBattlefieldSizes(true);
+  const map = document.getElementById("maptype").value;
+  selectedScenarioId = isScenarioMapScript(map) ? map : "";
+  document.getElementById("tactics-scenario").value = selectedScenarioId;
+  const scenario = historicalScenario(selectedScenarioId);
+  if (scenario) {
+    scenarioStartEra(scenario);
+    scenarioTurnChoice(scenario.turns);
+  }
   syncScenarioSettings();
+  renderScenarioBrowser();
+});
+document.getElementById("tactics-scenario-lenses").addEventListener("click", event => {
+  const button = event.target.closest("[data-scenario-view]");
+  if (!button) return;
+  if (button.dataset.scenarioView === "custom" && selectedScenarioId) selectCustomScenario();
+  else setScenarioBrowserView(button.dataset.scenarioView);
+});
+document.getElementById("tactics-scenario-groups").addEventListener("click", event => {
+  const card = event.target.closest("[data-scenario-id]");
+  if (card) selectHistoricalScenario(card.dataset.scenarioId);
 });
 // Bound on the select itself, so it has re-fitted the splits to the new size
 // before the panel's own delegated listener stages what is now selected.
@@ -29051,7 +29075,10 @@ function applyQueuedSimulationSettings(settings) {
   syncTeams();
   document.getElementById("teams").value = teamRuleFromArray(settings.teams);
   document.getElementById("maptype").value = settings.map;
+  selectedScenarioId = tactics && isScenarioMapScript(settings.map) ? settings.map : "";
+  document.getElementById("tactics-scenario").value = selectedScenarioId;
   if (tactics) syncBattlefieldSizes(true);
+  renderScenarioBrowser();
   if (settings.shape) document.getElementById("mapshape").value = settings.shape;
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
   syncEarthShape();
@@ -29191,6 +29218,17 @@ function syncSetupMode() {
   // early returns: leaving the arena card greyed out after a switch back to
   // a rolled map would be worse than never having greyed it.
   syncScenarioSettings();
+  if (tactics) {
+    const map = document.getElementById("maptype")?.value || "";
+    selectedScenarioId = isScenarioMapScript(map) ? map : "";
+    const scenarioInput = document.getElementById("tactics-scenario");
+    if (scenarioInput) scenarioInput.value = selectedScenarioId;
+  } else {
+    selectedScenarioId = "";
+    const scenarioInput = document.getElementById("tactics-scenario");
+    if (scenarioInput) scenarioInput.value = "";
+  }
+  renderScenarioBrowser();
   syncBattlefieldVictories(tactics);
   // The control's label is not relabelled from here. This runs once during
   // load, before the settings state it would read has been initialised, and
@@ -29220,6 +29258,160 @@ function battlefieldSizes() {
 function scenarioScripts() {
   return (RULES && Array.isArray(RULES.scenario_scripts)) ? RULES.scenario_scripts : [];
 }
+function historicalScenarios() {
+  return (RULES && Array.isArray(RULES.historical_scenarios)) ? RULES.historical_scenarios : [];
+}
+function historicalScenario(id) {
+  return historicalScenarios().find(scenario => scenario.id === id) || null;
+}
+function scenarioTerrainName(terrain) {
+  return ({
+    land: "Land",
+    land_water: "Land & Water",
+    water: "Water",
+    water_air: "Water & Air",
+    land_air: "Land & Air",
+    land_water_air: "Land/Water/Air",
+  })[terrain] || titleCase(terrain);
+}
+function scenarioEraNames() {
+  return ["Ancient", "Classical", "Medieval", "Renaissance", "Industrial", "Modern", "Atomic", "Information", "Future"];
+}
+function scenarioGroupsForView(view) {
+  const scenarios = historicalScenarios();
+  if (view === "era") {
+    return scenarioEraNames().map(name => ({
+      name,
+      scenarios: scenarios.filter(scenario => scenario.era === name),
+    }));
+  }
+  if (view === "terrain") {
+    return [
+      ["land", "Land"], ["land_water", "Land & Water"], ["water", "Water"],
+      ["water_air", "Water & Air"], ["land_air", "Land & Air"],
+      ["land_water_air", "Land/Water/Air"],
+    ].map(([id, name]) => ({
+      name,
+      scenarios: scenarios.filter(scenario => scenario.terrain === id),
+    }));
+  }
+  if (view === "person") {
+    const commanders = [...new Set(scenarios.flatMap(scenario =>
+      scenario.forces.map(force => force.commander)))].sort((a, b) => a.localeCompare(b));
+    return commanders.map(name => ({
+      name,
+      scenarios: scenarios.filter(scenario =>
+        scenario.forces.some(force => force.commander === name)),
+    }));
+  }
+  return [];
+}
+function scenarioCardMarkup(scenario) {
+  const selected = scenario.id === selectedScenarioId;
+  return `<button class="scenario-card${selected ? " selected" : ""}" type="button"` +
+    ` data-scenario-id="${escapeAttr(scenario.id)}" aria-pressed="${selected}">` +
+    `<span class="scenario-card-name">${escapeAttr(scenario.name)}</span>` +
+    `<span class="scenario-card-meta">${escapeAttr(scenario.date)} · ${escapeAttr(scenario.location)}</span>` +
+    `<span class="scenario-card-detail">${escapeAttr(scenario.map)}</span>` +
+    `<span class="scenario-card-badges"><span class="scenario-badge">${escapeAttr(scenarioTerrainName(scenario.terrain))}</span>` +
+    `<span class="scenario-badge">${escapeAttr(scenario.turns)}-turn brief</span></span></button>`;
+}
+function scenarioGroupMarkup(group, index) {
+  const open = group.scenarios.length > 0 &&
+    (index === 0 || scenarioBrowserView === "person" && index < 2);
+  const count = group.scenarios.length
+    ? `${group.scenarios.length} battle${group.scenarios.length === 1 ? "" : "s"}`
+    : "No mapped battles yet";
+  return `<details class="scenario-browser-group"${open ? " open" : ""}>` +
+    `<summary><span>${escapeAttr(group.name)}</span><span class="scenario-browser-group-count">${escapeAttr(count)}</span></summary>` +
+    (group.scenarios.length
+      ? `<div class="scenario-browser-battles">${group.scenarios.map(scenarioCardMarkup).join("")}</div>`
+      : `<div class="scenario-browser-empty">This catalog branch is reserved for future historical maps.</div>`) +
+    `</details>`;
+}
+function scenarioBriefMarkup(scenario) {
+  if (!scenario) {
+    return `<h4>Custom engagement</h4>` +
+      `<p class="scenario-brief-lede">Choose Battlefield, a Tactics Planet, or any named battle from the map controls. Custom keeps the map, era, clock, and arena economy live for you to shape.</p>`;
+  }
+  const forces = scenario.forces.map((force, index) =>
+    `<div class="scenario-force"><strong>${escapeAttr(force.label)}</strong>` +
+    `<small>${escapeAttr(scenario.civs[index])} · ${escapeAttr(force.commander)}</small>` +
+    `<small>${force.units.map(titleCase).map(escapeAttr).join(" · ")}</small></div>`).join("");
+  return `<h4>${escapeAttr(scenario.name)} · ${escapeAttr(scenario.date)}</h4>` +
+    `<div class="scenario-brief-facts"><span>${escapeAttr(scenario.location)}</span><span>${escapeAttr(scenarioTerrainName(scenario.terrain))}</span>` +
+    `<span>${escapeAttr(scenario.turns)} recommended turns</span><span>${escapeAttr(scenario.width)}×${escapeAttr(scenario.height)} chart</span></div>` +
+    `<p class="scenario-brief-objective"><strong>Objective:</strong> ${escapeAttr(scenario.objective)}</p>` +
+    `<p class="scenario-brief-lede">${escapeAttr(scenario.summary)}</p>` +
+    `<div class="scenario-brief-forces">${forces}</div>`;
+}
+function renderScenarioBrowser() {
+  const groups = document.getElementById("tactics-scenario-groups");
+  const brief = document.getElementById("tactics-scenario-brief");
+  const count = document.getElementById("tactics-scenario-count");
+  if (!groups || !brief) return;
+  const scenarios = historicalScenarios();
+  if (count) count.textContent = `${scenarios.length} mapped battles`;
+  for (const button of document.querySelectorAll("#tactics-scenario-lenses [data-scenario-view]")) {
+    const active = button.dataset.scenarioView === scenarioBrowserView;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  }
+  if (scenarioBrowserView === "custom") {
+    groups.innerHTML = `<div class="scenario-browser-empty"><strong>Custom battlefield</strong><br>` +
+      `No historical force is loaded. Use the map and Tactics settings below to build your own engagement.</div>`;
+  } else {
+    groups.innerHTML = scenarioGroupsForView(scenarioBrowserView).map(scenarioGroupMarkup).join("");
+  }
+  brief.hidden = false;
+  brief.innerHTML = scenarioBriefMarkup(historicalScenario(selectedScenarioId));
+}
+function setScenarioBrowserView(view) {
+  scenarioBrowserView = ["custom", "era", "person", "terrain"].includes(view) ? view : "custom";
+  renderScenarioBrowser();
+}
+function scenarioTurnChoice(turns) {
+  const select = document.getElementById("tacticsturnlimit");
+  if (!select) return;
+  const choices = [...select.options].map(option => Number(option.value)).filter(Number.isFinite);
+  if (!choices.length) return;
+  select.value = String(choices.reduce((best, choice) =>
+    Math.abs(choice - turns) < Math.abs(best - turns) ? choice : best, choices[0]));
+}
+function scenarioStartEra(scenario) {
+  const eras = document.getElementById("startera");
+  if (!eras) return;
+  const match = (RULES?.start_eras || []).find(era =>
+    era.era === scenario.era_index && era.playable);
+  if (match && [...eras.options].some(option => option.value === match.id)) eras.value = match.id;
+}
+function selectHistoricalScenario(id) {
+  const scenario = historicalScenario(id);
+  const map = document.getElementById("maptype");
+  if (!scenario || !map || ![...map.options].some(option => option.value === id)) return;
+  selectedScenarioId = id;
+  document.getElementById("tactics-scenario").value = id;
+  document.getElementById("gamemode").value = "tactics";
+  map.value = id;
+  syncBattlefieldSizes(true);
+  scenarioStartEra(scenario);
+  scenarioTurnChoice(scenario.turns);
+  syncScenarioSettings();
+  renderScenarioBrowser();
+  updateRestartSimulationButton();
+  stageSelectedSimulationSettings();
+}
+function selectCustomScenario() {
+  selectedScenarioId = "";
+  document.getElementById("tactics-scenario").value = "";
+  const map = document.getElementById("maptype");
+  if (map && [...map.options].some(option => option.value === "battlefield")) map.value = "battlefield";
+  syncBattlefieldSizes(true);
+  syncScenarioSettings();
+  renderScenarioBrowser();
+  updateRestartSimulationButton();
+  stageSelectedSimulationSettings();
+}
 function isScenarioMapScript(id) {
   return scenarioScripts().some(script => script.id === id);
 }
@@ -29243,8 +29435,14 @@ function syncScenarioSettings() {
     // Show what will actually be played rather than a stale choice sitting
     // under a greyed control: every one of these is off or zero on a
     // scenario, and "0" is the option value both spellings use.
-    if (scenario && [...select.options].some(option => option.value === "0"))
+    if (scenario && [...select.options].some(option => option.value === "0")) {
+      if (select.dataset.scenarioSaved === undefined) select.dataset.scenarioSaved = select.value;
       select.value = "0";
+    } else if (!scenario && select.dataset.scenarioSaved !== undefined) {
+      const saved = select.dataset.scenarioSaved;
+      if ([...select.options].some(option => option.value === saved)) select.value = saved;
+      delete select.dataset.scenarioSaved;
+    }
   }
 }
 function battlefieldSizesForScript(script) {

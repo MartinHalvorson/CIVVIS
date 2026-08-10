@@ -2317,6 +2317,62 @@
      than offered. */
   .tactics-options > label.setting-fixed { opacity: 0.55; }
   .tactics-options > label.setting-fixed select { cursor: not-allowed; }
+  .tactics-scenario-browser {
+    display: none; grid-column: 1 / -1; gap: 9px; padding: 10px;
+    border: 1px solid var(--line-soft); border-radius: 9px;
+    background: linear-gradient(135deg, #0d1b1680, #091310a8);
+  }
+  body.playing-tactics .tactics-scenario-browser { display: grid; }
+  .scenario-browser-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .scenario-browser-heading h3 { margin: 0; color: var(--text); font-size: var(--type-body); }
+  .scenario-browser-count { color: var(--muted); font-size: var(--type-small); white-space: nowrap; }
+  .scenario-browser-help { margin: 0; color: var(--muted); font-size: var(--type-small); line-height: 1.4; }
+  .scenario-browser-lenses { display: flex; flex-wrap: wrap; gap: 6px; }
+  .scenario-browser-lens {
+    border: 1px solid var(--line-soft); border-radius: 999px; padding: 5px 10px;
+    color: var(--muted); background: #07100dcc; cursor: pointer; font: inherit;
+    font-size: var(--type-small); font-weight: 800;
+  }
+  .scenario-browser-lens:hover, .scenario-browser-lens.active {
+    border-color: var(--gold); color: var(--text); background: #332713;
+  }
+  .scenario-browser-groups { display: grid; gap: 7px; }
+  .scenario-browser-group {
+    overflow: hidden; border: 1px solid var(--line-soft); border-radius: 7px; background: #07100d80;
+  }
+  .scenario-browser-group > summary {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 8px 10px; color: var(--text); cursor: pointer; list-style: none;
+    font-size: var(--type-small); font-weight: 850;
+  }
+  .scenario-browser-group > summary::-webkit-details-marker { display: none; }
+  .scenario-browser-group > summary::after { content: "+"; color: var(--gold); font-size: var(--type-body); }
+  .scenario-browser-group[open] > summary { border-bottom: 1px solid var(--line-soft); }
+  .scenario-browser-group[open] > summary::after { content: "−"; }
+  .scenario-browser-group-count { color: var(--muted); font-weight: 600; }
+  .scenario-browser-battles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 7px; padding: 8px; }
+  .scenario-card {
+    min-width: 0; padding: 8px; text-align: left; border: 1px solid var(--line-soft);
+    border-radius: 7px; color: var(--text); background: #0b1712; cursor: pointer; font: inherit;
+  }
+  .scenario-card:hover, .scenario-card.selected { border-color: var(--gold); background: #2a2113; }
+  .scenario-card-name { display: block; font-weight: 850; }
+  .scenario-card-meta, .scenario-card-detail { display: block; color: var(--muted); font-size: var(--type-small); line-height: 1.35; }
+  .scenario-card-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .scenario-badge { display: inline-block; padding: 2px 5px; border: 1px solid var(--line-soft); border-radius: 999px; color: var(--gold); font-size: 10px; line-height: 1.2; }
+  .scenario-browser-empty { padding: 10px; color: var(--muted); font-size: var(--type-small); }
+  .scenario-brief { display: grid; gap: 8px; padding: 9px; border-top: 1px solid var(--line-soft); background: #050b0980; }
+  .scenario-brief h4 { margin: 0; color: var(--text); font-size: var(--type-body); }
+  .scenario-brief-lede, .scenario-brief-objective { margin: 0; color: var(--muted); font-size: var(--type-small); line-height: 1.45; }
+  .scenario-brief-facts { display: flex; flex-wrap: wrap; gap: 5px 10px; color: var(--gold); font-size: var(--type-small); }
+  .scenario-brief-forces { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .scenario-force { min-width: 0; padding: 7px; border: 1px solid var(--line-soft); border-radius: 6px; background: #0b1712; }
+  .scenario-force strong, .scenario-force small { display: block; }
+  .scenario-force small { margin-top: 2px; color: var(--muted); font-size: var(--type-small); line-height: 1.35; }
+  @media (max-width: 560px) {
+    .scenario-brief-forces { grid-template-columns: 1fr; }
+    .scenario-browser-battles { grid-template-columns: 1fr; }
+  }
   /* The first setup pass stays short. Less common rules live behind one
      disclosure at the bottom of each panel, where they remain discoverable
      without making every new game begin with a wall of switches. */
@@ -4398,6 +4454,22 @@
         </div>
         <div class="tactics-options tactics-only" id="tactics-options" role="group" aria-labelledby="tactics-options-title">
           <h2 id="tactics-options-title">Tactics settings</h2>
+          <section class="tactics-scenario-browser" id="tactics-scenario-browser" aria-labelledby="tactics-scenario-title">
+            <div class="scenario-browser-heading">
+              <h3 id="tactics-scenario-title">Scenario library</h3>
+              <span class="scenario-browser-count" id="tactics-scenario-count">Loading battles…</span>
+            </div>
+            <p class="scenario-browser-help">Custom is the default. Browse the same battles by era, commander, or terrain; selecting one loads its fixed map, opening force, and briefing.</p>
+            <div class="scenario-browser-lenses" id="tactics-scenario-lenses" role="tablist" aria-label="Scenario catalog view">
+              <button class="scenario-browser-lens active" type="button" data-scenario-view="custom" role="tab" aria-selected="true">Custom</button>
+              <button class="scenario-browser-lens" type="button" data-scenario-view="era" role="tab" aria-selected="false">Era-based</button>
+              <button class="scenario-browser-lens" type="button" data-scenario-view="person" role="tab" aria-selected="false">Person-based</button>
+              <button class="scenario-browser-lens" type="button" data-scenario-view="terrain" role="tab" aria-selected="false">Terrain-based</button>
+            </div>
+            <input id="tactics-scenario" type="hidden" value="" aria-hidden="true">
+            <div class="scenario-browser-groups" id="tactics-scenario-groups"></div>
+            <div class="scenario-brief" id="tactics-scenario-brief" hidden></div>
+          </section>
           <label class="small">Fog of war<span class="setup-info" style="cursor:help;opacity:.7"
             title="Off, both commanders see the whole field: an arena is meant to test what each side does with what is in front of it rather than who finds the other first, and both armies are set down out of each other's sight with no city to march on and no border to trespass. On, each side sees only what its own units can, and finding the enemy is part of the battle. Either way the rule is symmetric — it is never a handicap given to one side."> ⓘ</span><select id="tacticsfog" style="margin-top:4px">
             <option value="0" selected>Off · the whole field</option>
@@ -4405,6 +4477,10 @@
           </select></label>
           <label class="small">Turn limit<span class="setup-info" style="cursor:help;opacity:.7"
             title="The last turn either side may play. If both sides still have an army when it ends, the battle is a draw — remaining units and score never manufacture a winner."> ⓘ</span><select id="tacticsturnlimit" style="margin-top:4px">
+            <option value="10">10 turns</option>
+            <option value="20">20 turns</option>
+            <option value="30">30 turns</option>
+            <option value="40">40 turns</option>
             <option value="50">50 turns</option>
             <option value="100" selected>100 turns</option>
             <option value="150">150 turns</option>
