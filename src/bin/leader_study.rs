@@ -17,12 +17,28 @@
 //! "winner behaviour" that is really the deal. A behavioural metric only earns
 //! attention where it converts *above* the start.
 //!
+//! ⚠ **Defaults are the deployment shape** — 6 players, 74x46, 9 city-states,
+//! Online, 250 turns — and that is deliberate. The first run of this study used
+//! 4p 60x38 at Standard, and on 2026-08-10 a change gated at `ai_eval`'s small
+//! defaults measured **+20 Elo there and parity at deployment**, with the sign
+//! flipping outright once the profile moved. A correlate read on the wrong
+//! board is no safer than an effect measured on one.
+//!
 //! Usage: leader_study [--games N] [--start-seed N] [--players N] [--turns N]
-//!                     [--width N] [--height N] [--city-states N] [--jobs N]
+//!                     [--width N] [--height N] [--city-states N] [--speed ID]
+//!                     [--jobs N]
 use std::collections::BTreeMap;
 
 use civvis::ai::{AdvancedAi, Ai};
 use civvis::game::{Action, Game, GameOptions};
+
+fn text(args: &[String], flag: &str, default: &str) -> String {
+    args.iter()
+        .position(|arg| arg == flag)
+        .and_then(|index| args.get(index + 1))
+        .cloned()
+        .unwrap_or_else(|| default.to_string())
+}
 
 fn number(args: &[String], flag: &str, default: i64) -> i64 {
     args.iter()
@@ -180,22 +196,25 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let games = number(&args, "--games", 40).max(1) as u64;
     let start = number(&args, "--start-seed", 770_000) as u64;
-    let players = number(&args, "--players", 4).max(2) as usize;
+    let players = number(&args, "--players", 6).max(2) as usize;
     let turns = number(&args, "--turns", 250).max(1) as u32;
-    let width = number(&args, "--width", 60) as i32;
-    let height = number(&args, "--height", 38) as i32;
-    let city_states = number(&args, "--city-states", 6) as usize;
+    let width = number(&args, "--width", 74) as i32;
+    let height = number(&args, "--height", 46) as i32;
+    let city_states = number(&args, "--city-states", 9) as usize;
+    let speed = text(&args, "--speed", "online");
     let jobs = number(&args, "--jobs", civvis::parallel::default_jobs() as i64).max(1) as usize;
 
     let traces = civvis::parallel::map(games as usize, jobs, |offset| {
         let seed = start + offset as u64;
-        play(GameOptions::new(players, width, height, seed, turns, city_states))
+        let mut options = GameOptions::new(players, width, height, seed, turns, city_states);
+        options.speed = speed.clone();
+        play(options)
     });
 
     let chance = 100.0 / players as f64;
     println!(
-        "leader study: {games} games x {players}p {width}x{height}, {turns} turns, \
-         seeds {start}..{}",
+        "leader study: {games} games x {players}p {width}x{height}, {city_states} city-states, \
+         {speed}, {turns} turns, seeds {start}..{}",
         start + games - 1
     );
     println!(
