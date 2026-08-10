@@ -9225,7 +9225,35 @@ local function tick()
 			-- `{ REASON = "UserForced" }` request the shipped UI sends for
 			-- SHIFT+ENTER, which is the only end-turn form that is not refused
 			-- while a units blocker is up.
-			if SOFT_BLOCKERS[name] then
+			-- ⚠⚠⚠ `or answered == "civvis_complete"` REPAIRS A REGRESSION FROM #1465.
+			--
+			-- That change added `ENDTURN_BLOCKING_PANTHEON` and
+			-- `ENDTURN_BLOCKING_FILL_CIVIC_SLOT` to `CIVVIS_OWNED_BLOCKERS` --
+			-- correctly, because CIVVIS issues `pantheon` and `policy_deck`
+			-- orders and `choosePantheon`/`fillPolicies` were racing them. But
+			-- `civvis_complete` had until then been reachable ONLY from the
+			-- `SOFT_BLOCKERS` arm above, so this forfeit was gated on that table
+			-- and the two new names are not in it. `answerBlocker` returned
+			-- `civvis_complete`, nothing dismissed the notification, and the
+			-- prompt stood forever.
+			--
+			-- Measured. Run `civvis-20260810T040916Z` (before) saw
+			-- `FILL_CIVIC_SLOT` **once**, answered `policies+3` by the
+			-- heuristic. Run `civvis-20260810T050558Z` (after) saw it **ten
+			-- times**, every one `civvis_complete`, and **the attempt wedged on
+			-- it at turn 224** and was killed by the outside watchdog after
+			-- 900 s while scoring 524. The stall watchdogs did their job; the
+			-- turn loop should not have needed them.
+			--
+			-- Gating on the ANSWER rather than on a second table is what keeps
+			-- this from happening again: any blocker that is ever answered
+			-- "CIVVIS has already decided this" now has a forfeit, including one
+			-- added to `CIVVIS_OWNED_BLOCKERS` later by someone who does not know
+			-- this paragraph exists. `civvis_complete` is only ever produced
+			-- under `cfg.CivvisDecides`, so non-decider runs are untouched, and
+			-- `UNIT_BLOCKERS[name]` stays false for these two so they are
+			-- dismissed without the unit-parking pass or the forced end-turn.
+			if SOFT_BLOCKERS[name] or answered == "civvis_complete" then
 				local seen = softSeen[name] or { sightings = 0, forfeits = 0 };
 				softSeen[name] = seen;
 				seen.sightings = seen.sightings + 1;
