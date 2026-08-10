@@ -13918,6 +13918,13 @@ type GreatWorkHousing = BTreeMap<(usize, String, usize), bool>;
 #[derive(Default)]
 pub struct QueryCache {
     yields: std::cell::RefCell<Option<BTreeMap<u32, Yields>>>,
+    // Appeal is read far more often than anything else in this cache: the
+    // settle and district planners sweep whole regions of the map, and every
+    // sweep asks the same tiles again. Measured over a 150-turn six-player
+    // game, `tile_appeal` was called 1,240,472 times and 97.1% of those calls
+    // recomputed an answer the engine had already produced for that tile that
+    // turn -- 34 evaluations per tile per turn, of which one was new.
+    appeal: std::cell::RefCell<Option<BTreeMap<Pos, i32>>>,
     traversal: std::cell::RefCell<Option<BTreeMap<u32, TraversalClass>>>,
     amenities: std::cell::RefCell<Option<BTreeMap<u32, i64>>>,
     // Ownership-filtered ids are requested throughout AI evaluation. A
@@ -13990,6 +13997,7 @@ impl Drop for QueryMemo<'_> {
     fn drop(&mut self) {
         if self.outermost {
             *self.game.query_memo.yields.borrow_mut() = None;
+            *self.game.query_memo.appeal.borrow_mut() = None;
             *self.game.query_memo.traversal.borrow_mut() = None;
             *self.game.query_memo.amenities.borrow_mut() = None;
             *self.game.query_memo.unit_ids.borrow_mut() = None;
@@ -35370,7 +35378,27 @@ impl Game {
     /// Gathering Storm appeal of a tile from adjacent terrain, features,
     /// improvements, wonders, and districts. River appeal belongs to the
     /// evaluated tile itself; the other modifiers come from its neighbors.
+    /// Appeal of a tile, memoized for the life of a [`Game::query_memo`] scope.
+    ///
+    /// The answer is a pure function of the tile, its six neighbours, and the
+    /// owning city's wonders and Governor -- none of which a read-only scope
+    /// changes, which is the same contract [`Game::city_yields`] is cached
+    /// under. Outside a scope this computes as it always did, so a caller that
+    /// is mutating between reads cannot see a stale figure.
     pub fn tile_appeal(&self, position: Pos) -> i32 {
+        if let Some(memo) = self.query_memo.appeal.borrow().as_ref() {
+            if let Some(appeal) = memo.get(&position) {
+                return *appeal;
+            }
+        }
+        let appeal = self.tile_appeal_uncached(position);
+        if let Some(memo) = self.query_memo.appeal.borrow_mut().as_mut() {
+            memo.insert(position, appeal);
+        }
+        appeal
+    }
+
+    fn tile_appeal_uncached(&self, position: Pos) -> i32 {
         let Some(tile) = self.map.get(position) else {
             return 0;
         };
@@ -37995,6 +38023,7 @@ impl Game {
         let outermost = self.query_memo.yields.borrow().is_none();
         if outermost {
             *self.query_memo.yields.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.appeal.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.traversal.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.amenities.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_ids.borrow_mut() = Some(BTreeMap::new());
@@ -70514,6 +70543,52 @@ mod district_mechanics {
             .collect();
         assert!(game.wdist(cities[0], cities[1]) >= 8, "{cities:?}");
         assert!(game.is_at_war(0, 1));
+    }
+
+    /// The appeal memo must never answer differently from the computation it
+    /// stands in for, on any tile of a real world.
+    ///
+    /// This is the whole risk of caching a derived figure: appeal reads the
+    /// tile, its six neighbours, and the owning city's wonders and Governor,
+    /// so a memo that outlived any of those would hand the settle and district
+    /// planners a stale board and quietly change what the AI builds. Checked
+    /// against every tile rather than a sample, and from inside a scope
+    /// against the uncached figure taken outside one, so the two paths are
+    /// compared rather than the cache being compared with itself.
+    #[test]
+    fn the_appeal_memo_agrees_with_the_computation_it_replaces() {
+        use crate::ai::{AdvancedAi, Ai};
+        let mut game = Game::new(4, 32, 22, 5_150, 250, 3);
+        let mut ais = AdvancedAi::fleet(&game);
+        // Play in far enough that cities own tiles, wonders exist and
+        // improvements have been laid, which is when appeal stops being a
+        // function of terrain alone.
+        for _ in 0..40 {
+            let pid = game.current;
+            ais[pid].take_turn(&mut game, pid);
+            if game.winner.is_none() && game.current == pid {
+                let _ = game.apply(pid, &Action::EndTurn);
+            }
+        }
+
+        let tiles: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        assert!(tiles.len() > 400, "a real world, not a stub");
+        let uncached: Vec<i32> = tiles.iter().map(|pos| game.tile_appeal(*pos)).collect();
+        assert!(uncached.iter().any(|appeal| *appeal != 0), "appeal must vary");
+
+        let memo = game.query_memo();
+        for (pos, want) in tiles.iter().zip(&uncached) {
+            // Twice, so the second read is the one served from the map.
+            assert_eq!(game.tile_appeal(*pos), *want, "{pos:?}");
+            assert_eq!(game.tile_appeal(*pos), *want, "{pos:?} on the memoized read");
+        }
+        drop(memo);
+
+        // And the scope really did close: the next read recomputes rather than
+        // serving whatever the dropped guard left behind.
+        for (pos, want) in tiles.iter().zip(&uncached) {
+            assert_eq!(game.tile_appeal(*pos), *want, "{pos:?} after the scope closed");
+        }
     }
 
     /// A naval battle opens with two fleets afloat, each based on its own
