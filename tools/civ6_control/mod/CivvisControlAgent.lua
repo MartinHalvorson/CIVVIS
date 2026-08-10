@@ -1080,54 +1080,6 @@ local function plotDistance(x1, y1, x2, y2)
 	return try(function() return Map.GetPlotDistance(x1, y1, x2, y2); end, 99);
 end
 
--- A city that is already taking fire cannot wait for the strategic planner to
--- notice the same fact on its next board.  Return only engine-visible enemies;
--- the damage read is the fallback for the turn an attack has already landed.
--- This is an actuation guard, not a new target-selection policy.
-local function cityWarThreat(player, pid, city)
-	local cx = try(function() return city:GetX(); end, -1);
-	local cy = try(function() return city:GetY(); end, -1);
-	local _, damage, _, wallDamage, maxWallDamage = cityDefence(cx, cy);
-	-- The expensive enemy roster walk is only relevant to an unwalled city.
-	-- Unknown wall state stays unknown; do not invent a threat from a failed read.
-	if maxWallDamage == nil or maxWallDamage > 0 then
-		return false, nil, damage, wallDamage, maxWallDamage;
-	end
-	local diplomacy = try(function() return player:GetDiplomacy(); end);
-	local atWar = false;
-	local nearestEnemy = nil;
-	if diplomacy ~= nil then
-		for _, otherId in ipairs(try(function()
-			return PlayerManager.GetAliveMajorIDs();
-		end, {}) or {}) do
-			if otherId ~= pid and try(function()
-				return diplomacy:IsAtWarWith(otherId);
-			end, false) then
-				atWar = true;
-				local other = Players[otherId];
-				local visibility = PlayersVisibility[pid];
-				if other ~= nil and visibility ~= nil then
-					pcall(function()
-						for _, unit in other:GetUnits():Members() do
-							pcall(function()
-								local ux, uy = unit:GetX(), unit:GetY();
-								if visibility:IsVisible(ux, uy) then
-									local distance = plotDistance(cx, cy, ux, uy);
-									if distance >= 0 and (nearestEnemy == nil
-										or distance < nearestEnemy) then
-										nearestEnemy = distance;
-									end
-								end
-							end);
-						end
-					end);
-				end
-			end
-		end
-	end
-	return atWar, nearestEnemy, damage, wallDamage, maxWallDamage;
-end
-
 -- Whether this unit can actually walk there.
 --
 -- Ordering a move to a plot with no route does not fail: the engine accepts it
@@ -6849,6 +6801,58 @@ local function onGovernorAppointed(playerID, governorID)
 end
 
 local function applyOrder(player, pid, row, turn)
+	-- A city that is already taking fire cannot wait for the strategic planner to
+	-- notice the same fact on its next board. Return only engine-visible enemies;
+	-- the damage read is the fallback for the turn an attack has already landed.
+	-- This is an actuation guard, not a new target-selection policy.
+	--
+	-- Keep this helper inside the order handler. A file-scope local consumes one
+	-- of the main chunk's 200 Lua registers; crossing that ceiling makes Civ 6
+	-- silently discard the entire mod before Initialize can emit a lifecycle event.
+	local function cityWarThreat(cityPlayer, cityPid, city)
+		local cx = try(function() return city:GetX(); end, -1);
+		local cy = try(function() return city:GetY(); end, -1);
+		local _, damage, _, wallDamage, maxWallDamage = cityDefence(cx, cy);
+		-- The expensive enemy roster walk is only relevant to an unwalled city.
+		-- Unknown wall state stays unknown; do not invent a threat from a failed read.
+		if maxWallDamage == nil or maxWallDamage > 0 then
+			return false, nil, damage, wallDamage, maxWallDamage;
+		end
+		local diplomacy = try(function() return cityPlayer:GetDiplomacy(); end);
+		local atWar = false;
+		local nearestEnemy = nil;
+		if diplomacy ~= nil then
+			for _, otherId in ipairs(try(function()
+				return PlayerManager.GetAliveMajorIDs();
+			end, {}) or {}) do
+				if otherId ~= cityPid and try(function()
+					return diplomacy:IsAtWarWith(otherId);
+				end, false) then
+					atWar = true;
+					local other = Players[otherId];
+					local visibility = PlayersVisibility[cityPid];
+					if other ~= nil and visibility ~= nil then
+						pcall(function()
+							for _, unit in other:GetUnits():Members() do
+								pcall(function()
+									local ux, uy = unit:GetX(), unit:GetY();
+									if visibility:IsVisible(ux, uy) then
+										local distance = plotDistance(cx, cy, ux, uy);
+										if distance >= 0 and (nearestEnemy == nil
+											or distance < nearestEnemy) then
+											nearestEnemy = distance;
+										end
+									end
+								end);
+							end
+						end);
+					end
+				end
+			end
+		end
+		return atWar, nearestEnemy, damage, wallDamage, maxWallDamage;
+	end
+
 	local kind = tostring(row.kind or "");
 	local verb = tostring(row.verb or "");
 	local subject = tonumber(row.subject) or -1;
