@@ -844,7 +844,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `garrison_walls_item` returns `None` on its first line and the branch can
 /// never take the build. The anchor's build order is byte-identical by
 /// construction. Compatibility re-pin, not an Elo-protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe70f_ad16_56b1_2580;
+/// The settlement atlas reuses static site terms only while an active
+/// battlefront frame and the live settlement-safety controller are present.
+/// `AdvancedAi::legacy()` disables both `battlefront_observation` and
+/// `settlement_safety`, so it stays on the historical uncached settlement
+/// path. The production `advanced` controller does use the atlas, but the
+/// frozen `advanced_v1` anchor cannot observe it. Compatibility re-pin, not
+/// an Elo-protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1055_4e02_7ea2_9234;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
