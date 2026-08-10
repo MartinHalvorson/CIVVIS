@@ -2864,8 +2864,9 @@ fn main() {
                     game_speed,
                     max_turns: play_options.max_turns,
                     victory_conditions: victory_conditions(&args),
-                    // The shipped setup defaults: the lobby can change both.
-                    mercy_rule: Some(0.95),
+                    // The engine's stock setup leaves mercy off. The lobby
+                    // can still opt into any listed threshold after launch.
+                    mercy_rule: play_options.mercy_rule,
                     required_victory_types: 1,
                     // The lobby can still change these mid-session; this is
                     // what the launch itself asked for.
@@ -3216,6 +3217,10 @@ mod tests {
 
         let options = game_options(&[], 4, 71_005, TurnStructure::Sequential);
         assert_eq!(options.map_script, MapScript::TeninsBall);
+        assert_eq!(
+            options.mercy_rule, None,
+            "a command-line game starts without mercy"
+        );
 
         // An explicit choice still wins, under either accepted spelling.
         for (asked, chosen) in [

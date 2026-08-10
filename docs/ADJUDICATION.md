@@ -14,14 +14,14 @@ setup option shares this page because both change how a game ends.
 
 The game ends the moment one civilization's live win odds — `odds::table`,
 the calibrated share the spectator ribbon shows, on flat 1500 priors — reach
-the chosen threshold. Setup ladder: **None, 99%, 97%, 95% (shipped default),
-90%**. Checked at every world-turn wrap after the real victory sweeps, so
-mercy never outranks a victory the rules just recognised; recorded as victory
-type `mercy` and denoted as `Mercy Rule - <victory type(s)>` (see The notation
-below). Headless/eval constructors default to **off** (`GameOptions`),
-so simulation baselines and rated batch evidence are unchanged; the 95%
-default enters through the setup surfaces (`stock_opening_params`, which the
-lobby stamp and the wasm opening world both follow, and `civvis play`).
+the chosen threshold. Setup ladder: **None (default), 99%, 97%, 95%, 90%**.
+Checked at every world-turn wrap after the real victory sweeps, so mercy never
+outranks a victory the rules just recognised; recorded as victory type `mercy`
+and denoted as `Mercy Rule - <victory type(s)>` (see The notation below).
+Every setup surface defaults to **off** (`GameOptions`, the stock opening
+world and lobby, the wasm opening world, `civvis play`, and every historical
+scenario), so simulation baselines and rated batch evidence are unchanged.
+Select a threshold to opt in.
 
 What the measurement says each rung trades (six-player stock budget): 0.95
 crossed in 23/60 games and agreed with the played-out winner in 91.3% of
@@ -232,5 +232,5 @@ ticked.
 
 For rated play the tournament still runs `mercy_rule: None`; these tables are
 the pre-registered evidence for turning it on there, not the decision. The
-lobby's shipped 95% default now simply works on arenas, as the setup screen
-already claimed it did.
+lobby defaults to None in worlds, arenas, and every historical scenario;
+selecting a threshold applies the same rule to any of them.
