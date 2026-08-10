@@ -33,3 +33,9 @@ beta/__pycache__/
 /beta/verify-*.png
 # wrangler's local state, created by `beta/verify.py`'s password check.
 /.wrangler/
+
+# `tools/follow.py` writes the mirror follower's liveness here (CIVVIS_FOLLOW_STATUS
+# defaults to the rig root). An untracked file in the repo root makes the tree
+# dirty, and `civvis_collab.py start` refuses to open a task worktree from a
+# dirty main management worktree — so the mirror running blocked new work.
+/status.json

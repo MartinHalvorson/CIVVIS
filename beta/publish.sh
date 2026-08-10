@@ -80,6 +80,12 @@ echo "==> assembling the page"
 cp "$repo_root/beta/shim.js" "$repo_root/beta/worker.js" "$out/test/"
 cp -R "$source_tree/web/assets" "$out/test/assets"
 cp "$repo_root/beta/landing.html" "$out/index.html"
+# The workflow moves this landing document to `/home/index.html` when it
+# assembles the two engine lanes. Keep its photographs beside that final
+# address, and use `/home/assets/...` in the page so the standalone preview
+# shape and the deployed site resolve the same files.
+mkdir -p "$out/home"
+cp -R "$repo_root/beta/assets" "$out/home/assets"
 # `/download/` rather than `/download.html`: the page outlives any one release
 # and gets linked around, so it should have the tidier address.
 mkdir -p "$out/download"
