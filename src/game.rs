@@ -69998,10 +69998,94 @@ mod district_mechanics {
         assert!(game.is_at_war(0, 1));
     }
 
-    /// The fog is a match setting. An arena lifts it by default — a battle is
-    /// a test of what each side does with what is in front of it, not of who
-    /// finds the other first — but the mode that puts it back is a real one,
-    /// and it has to be symmetric: both sides fogged or neither, never one.
+    /// A naval battle opens with two fleets afloat, each based on its own
+    /// island, and nothing on land to fight with.
+    ///
+    /// The roster is the part that has to be checked by domain rather than by
+    /// name. `deploy_battlefield_army` searches for the first free tile
+    /// outward from the seat, and the seat is an island — so a squadron built
+    /// from the land company, or a water filter that let dry ground through,
+    /// would still deploy successfully and simply put galleys on hills. Every
+    /// unit being a sea unit standing on water is what says the mode is
+    /// actually naval.
+    #[test]
+    fn a_tactics_ocean_game_opens_with_two_fleets_afloat() {
+        let game = Game::new_with(GameOptions {
+            map_script: MapScript::TacticsOcean,
+            map_topology: MapTopology::Planet,
+            ..GameOptions::new(2, 40, 18, 90_412, 250, 3)
+        });
+        assert!(game.map.sphere().is_some(), "the Tactics ocean must be a globe");
+        assert!(game.is_arena());
+        assert!(game.is_at_war(0, 1));
+
+        let roster = |seat: usize| {
+            let mut kinds: Vec<&str> = game
+                .units
+                .values()
+                .filter(|unit| unit.owner == seat)
+                .map(|unit| unit.kind.as_str())
+                .collect();
+            kinds.sort_unstable();
+            kinds
+        };
+        assert!(!roster(0).is_empty(), "seat 0 opens with a fleet");
+        assert_eq!(roster(0), roster(1), "the two fleets must be even");
+
+        for unit in game.units.values() {
+            let domain = game.rules.units[unit.kind.as_str()].domain.as_deref();
+            assert_eq!(domain, Some("sea"), "{} is not a ship", unit.kind);
+            let tile = &game.map.tiles[&unit.pos];
+            assert!(game.rules.is_water(tile), "{} opens on dry ground", unit.kind);
+            assert!(game.rules.is_passable(tile), "{} opens on water it cannot enter", unit.kind);
+        }
+
+        // The cities are the one thing still ashore, one island each.
+        for owner in 0..2 {
+            let owned: Vec<Pos> = game
+                .cities
+                .values()
+                .filter(|city| city.owner == owner)
+                .map(|city| city.pos)
+                .collect();
+            assert_eq!(owned.len(), 1, "seat {owner} opens with one city");
+            assert!(!game.rules.is_water(&game.map.tiles[&owned[0]]), "a city needs ground");
+        }
+    }
+
+    /// A naval flag stands on the water off its own shore, never on the island
+    /// itself.
+    ///
+    /// This is the dry-ground rule of #1456 seen from the other element, and
+    /// it fails the same way: a flag no enemy unit can ever reach turns
+    /// capture-the-flag into a mode that can only end on the clock. On land
+    /// that meant keeping the flag off the water; at sea it means keeping it
+    /// off the land, because the only units in the battle are ships.
+    #[test]
+    fn a_naval_flag_stands_on_water_a_fleet_can_reach() {
+        for seed in [90_412u64, 5_115, 61_020] {
+            let game = Game::new_with(GameOptions {
+                map_script: MapScript::TacticsOcean,
+                map_topology: MapTopology::Planet,
+                tactics: TacticsRules { flag: true, ..TacticsRules::default() },
+                ..GameOptions::new(2, 40, 18, seed, 250, 3)
+            });
+            assert_eq!(game.arena_flags.len(), 2, "seed {seed}: every side gets a flag");
+            for (seat, flag) in &game.arena_flags {
+                let tile = &game.map.tiles[flag];
+                assert!(
+                    game.rules.is_water(tile),
+                    "seed {seed}: seat {seat}'s flag is on land no fleet can take"
+                );
+                assert!(game.rules.is_passable(tile), "seed {seed}: seat {seat}'s flag is unsailable");
+            }
+        }
+    }
+
+    /// The fog is a match setting, and it has to be symmetric either way:
+    /// both sides fogged or neither, never one. Fogged is now the default, so
+    /// what this pins is that both settings are still real and that neither
+    /// deals one commander a view the other does not have.
     #[test]
     fn an_arena_is_fogged_only_when_the_match_asked_for_it() {
         let arena = |fog: bool| {
@@ -70012,7 +70096,7 @@ mod district_mechanics {
             })
         };
 
-        // The default is the field entire, for both commanders alike.
+        // Lifted, the field entire, for both commanders alike.
         let open = arena(false);
         assert!(open.is_arena());
         for seat in 0..2 {
