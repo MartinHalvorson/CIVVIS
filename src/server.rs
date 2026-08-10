@@ -12101,12 +12101,14 @@ mod tests {
     /// A district, wonder or city built on hills splits the tile with the
     /// ground it stands on: the symbol takes the upper three quarters and the
     /// hill is seated in the quarter below, where it stays visible under the
-    /// token instead of behind it. The split is arithmetic between constants
-    /// that live apart, so it is recomputed here rather than eyeballed — a hill
-    /// that drifts up disappears under the token again, and one that drifts
-    /// down runs out through the hex's closing lower edges.
+    /// token instead of behind it. The seated hill is 30% larger than its
+    /// earlier form and lifted slightly to meet the raised built ground. The
+    /// split is arithmetic between constants that live apart, so it is
+    /// recomputed here rather than eyeballed — a hill that drifts up disappears
+    /// under the token again, and one that drifts down runs out through the
+    /// hex's closing lower edges.
     #[test]
-    fn a_hill_under_a_built_tile_is_seated_in_the_quarter_below_the_symbol() {
+    fn a_hill_under_a_built_tile_is_lifted_and_enlarged_in_the_lower_quarter() {
         let literal = |name: &str| -> f64 {
             EMBEDDED_INDEX
                 .split(&format!("\nconst {name} = "))
@@ -12121,13 +12123,18 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("const DEFAULT_YS = MAP_PROJECTION;"));
         assert!(EMBEDDED_INDEX.contains("const YS = DEFAULT_YS;"));
         assert!(EMBEDDED_INDEX.contains("const HILL_SEATED_SYMBOL_LIFT = S * YS / 4;"));
-        assert!(EMBEDDED_INDEX.contains("const HILL_SEATED_BASE_DROP = S * YS * 0.28;"));
+        assert!(EMBEDDED_INDEX.contains("const HILL_SEATED_BASE_DROP = S * YS * 0.24;"));
         assert!(EMBEDDED_INDEX.contains("const DISTRICT_TOKEN_HALF = S * 0.48;"));
         let hex = 36.0;
         let half = hex * literal("MAP_PROJECTION"); // the tile's half-height
         let lift = half / 4.0;
-        let drop = half * 0.28;
+        let drop = half * 0.24;
         let scale = literal("HILL_SEATED_SCALE");
+        let previous_scale = 0.66;
+        assert!(
+            (scale - previous_scale * 1.30).abs() < 1e-9,
+            "seated hill scale {scale:.3} is not 30% larger than {previous_scale:.2}"
+        );
 
         // `drawStrategicHillIcon`'s own numbers: two stroked mounds sitting on
         // the line through the hex's lower outside corners.
@@ -12135,6 +12142,15 @@ mod tests {
         let unseated_base = half / 2.0;
         let base = unseated_base + drop;
         let top = base - hill_height * scale;
+
+        // The smaller, older hill dropped farther and left a visible blank
+        // strip below its district. The larger mark should crest higher while
+        // remaining in the tile's lower quarter.
+        let previous_top = unseated_base + half * 0.28 - hill_height * previous_scale;
+        assert!(
+            top < previous_top,
+            "seated hill top {top:.2} did not rise above its old {previous_top:.2}"
+        );
 
         let lower_quarter = half / 2.0;
         assert!(
@@ -12182,37 +12198,40 @@ mod tests {
         );
     }
 
-    /// A finished, undamaged building stands the middle three quarters of its
-    /// district token. It used to be a stub on the lower half — under a third
-    /// of the token — which read as a progress meter printed on a counter
-    /// rather than as a building standing on the ground.
+    /// A finished, undamaged building stands the middle 70% of its district
+    /// token, with 15% clear above and below. It used to be a stub on the
+    /// lower half — under a third of the token — which read as a progress meter
+    /// printed on a counter rather than as a building standing on the ground.
     ///
     /// The span is arithmetic across three constants, so it is recomputed here
     /// rather than eyeballed: a bar that grows past the token's rim collides
     /// with the outline, and one that drifts off centre stops being "the
     /// middle" of anything.
     #[test]
-    fn a_finished_district_building_stands_the_middle_three_quarters_of_its_token() {
+    fn a_finished_district_building_stands_the_middle_seventy_percent_of_its_token() {
         // Read from the same geometry the renderer uses, and pinned as the
         // expressions rather than as numbers so the relationship between them
         // cannot be quietly replaced by three independent literals.
         assert!(EMBEDDED_INDEX.contains("const S = 36, SQ3 = Math.sqrt(3);"));
         assert!(EMBEDDED_INDEX.contains("const DISTRICT_TOKEN_HALF = S * 0.48;"));
-        assert!(EMBEDDED_INDEX.contains("const DISTRICT_BAR_SPAN = 0.75;"));
+        assert!(EMBEDDED_INDEX.contains("const DISTRICT_BAR_SPAN = 0.70;"));
         assert!(EMBEDDED_INDEX
             .contains("const DISTRICT_BAR_HEIGHT = DISTRICT_TOKEN_HALF * 2 * DISTRICT_BAR_SPAN;"));
         assert!(EMBEDDED_INDEX.contains("const DISTRICT_BAR_BASELINE = DISTRICT_BAR_HEIGHT / 2;"));
-        assert!(EMBEDDED_INDEX.contains("const DISTRICT_BAR_SEATS = [-7.2, 0, 7.2];"));
+        assert!(EMBEDDED_INDEX.contains("const DISTRICT_BAR_SEAT_SPACING = 8.4;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const DISTRICT_BAR_SEATS = [-DISTRICT_BAR_SEAT_SPACING, 0, DISTRICT_BAR_SEAT_SPACING];"
+        ));
         assert!(EMBEDDED_INDEX.contains("const DISTRICT_BAR_WIDTH = 4.6;"));
 
         let half: f64 = 36.0 * 0.48; // the token's half-height, 17.28
-        let span: f64 = 0.75;
+        let span: f64 = 0.70;
         let height = half * 2.0 * span;
         let baseline = height / 2.0;
         let (top, bottom) = (baseline - height, baseline);
 
-        // The middle three quarters: an eighth of the token clear at each end,
-        // and the same eighth at both, which is what makes it the middle.
+        // The middle 70%: 15% of the token clear at each end, and the same
+        // clearance at both, which is what makes it the middle.
         let clear_above = top + half;
         let clear_below = half - bottom;
         assert!(
@@ -12225,13 +12244,19 @@ mod tests {
             100.0 * height / (half * 2.0),
             100.0 * span
         );
+        assert!(
+            (clear_above / (half * 2.0) - 0.15).abs() < 1e-9,
+            "the top margin is {:.1}% rather than 15%",
+            100.0 * clear_above / (half * 2.0)
+        );
         // It has to have actually grown. The stub it replaces was 11 tall.
         assert!(height > 11.0 * 2.0, "the bar is {height:.2}, barely taller than the old stub");
 
         // And it has to stay inside the counter it stands on, clear of both the
         // 1.6px outline and the corner rounding, which begins at `half * .16`
         // in from each corner.
-        let reach = 7.2 + 4.6 / 2.0;
+        let seat_spacing = 8.4;
+        let reach = seat_spacing + 4.6 / 2.0;
         let radius = half * 0.16;
         assert!(bottom < half - 1.6 && -top < half - 1.6, "the bar crosses the token's outline");
         assert!(
@@ -12247,7 +12272,7 @@ mod tests {
         // The two glyph families that can hold a building — the Dam and the
         // Preserve — draw straight through the band the bars now occupy, in the
         // same ink. At a third of the token the bars passed under a glyph; at
-        // three quarters a centre bar splits the Preserve's fir in two. So a
+        // 70% a centre bar splits the Preserve's fir in two. So a
         // glyph keeps the middle lane and the bars fill the outer seats first.
         //
         // The Preserve's fir, drawn about `gy = y - 7`: crown at gy - 9.6,
@@ -12259,7 +12284,9 @@ mod tests {
              ({top:.2}..{bottom:.2}); the seat order below is dead weight"
         );
         assert!(
-            EMBEDDED_INDEX.contains("const DISTRICT_BAR_SEATS_BESIDE_GLYPH = [-7.2, 7.2, 0];"),
+            EMBEDDED_INDEX.contains(
+                "const DISTRICT_BAR_SEATS_BESIDE_GLYPH = [\n  -DISTRICT_BAR_SEAT_SPACING, DISTRICT_BAR_SEAT_SPACING, 0\n];"
+            ),
             "the bars no longer step aside for a glyph"
         );
         assert!(EMBEDDED_INDEX.contains("function districtDrawsGlyph(district)"));
@@ -12273,7 +12300,7 @@ mod tests {
         // The centre seat comes last in that order, so it is only reached by a
         // third building — which no glyph family has. Every glyph district's
         // buildings therefore stand clear of it.
-        let beside = [-7.2, 7.2, 0.0];
+        let beside = [-seat_spacing, seat_spacing, 0.0];
         assert_eq!(beside[2], 0.0, "the glyph's own lane must be the last seat filled");
         for seats in [1usize, 2] {
             assert!(
@@ -12511,12 +12538,19 @@ mod tests {
         assert!(mountain.contains("const silhouette = () =>"));
         assert!(mountain.contains("cx.fillStyle = \"#8c9991\""));
         assert!(mountain.contains("cx.strokeStyle = \"#263a36\""));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_MOUNTAIN_ICON_WIDTH_SCALE = 1.2;"));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_MOUNTAIN_ICON_HEIGHT_SCALE = 1.5;"));
+        assert!(mountain.contains("cx.scale(k * STRATEGIC_MOUNTAIN_ICON_WIDTH_SCALE,"));
+        assert!(mountain.contains("k * STRATEGIC_MOUNTAIN_ICON_HEIGHT_SCALE);"));
         let volcano = EMBEDDED_INDEX
             .split("function drawMinimalVolcanoCaldera")
             .nth(1)
             .and_then(|tail| tail.split("function drawStrategicMountainIcon").next())
             .expect("minimal volcano caldera renderer");
-        assert!(volcano.contains("cx.ellipse(0, 1, 9.5, 5.2"));
+        assert!(volcano.contains("const silhouette = () =>"));
+        assert!(volcano.contains("cx.ellipse(0, -6.2, 5.3, 1.8"));
+        assert!(volcano.contains("cx.strokeStyle = \"#e75e31\";"));
+        assert!(!volcano.contains("cx.ellipse(0, 1, 9.5, 5.2"));
         assert!(volcano.contains("if (!ice)"));
 
         let wonder = EMBEDDED_INDEX
