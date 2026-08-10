@@ -7949,3 +7949,79 @@ be pushing harder on the same closed door.
 
 ⚠ Note for anyone re-reading older numbers in this file: every `ai_eval` result
 recorded above was measured at `--city-states 0` unless it says otherwise.
+
+
+## 2026-08-10 — ★★★ the envoy economy is null at power, and the promotion matrix cannot express two of the six victories
+
+`docs/EVAL.md` records the envoy work as four arms screened at **8–12 maps**,
+the best of them "combined vs stock, 6p deployment, 12 maps, 54.2% (+29)", with
+"none of the new envoy behavior enabled in `advanced`". Those screens were never
+resolved, and the prize behind them is the largest the oracle harness has found
+(`Grant::Suzerain`, 56.7% against 22.7%, p=0.0000, 400 maps, PR #602). This
+resolves them.
+
+### The result: null, on the repository's own gate
+
+`--matrix` is the right instrument and — unlike a hand-rolled `ai_eval` line —
+both its profiles do seat city-states (4 and 9). Against the correct control,
+which isolates the envoy economy from the Live-deck change:
+
+```
+ai_eval advanced_envoy_economy advanced_policy_live_control --matrix --pairs 200 --seed 5700000
+  arms differ on: envoy-influence, envoy-infrastructure-off
+
+  compact-standard    50.2% (CI 43.4..57.1)  Elo +2   direction 31/30, p=1.0000
+  deployment-online   50.9% (CI 44.0..57.7)  Elo +6   direction 38/34, p=0.7239  REJECT
+
+  multi-profile promotion gate: RETAIN advanced_policy_live_control — cleared 1/2 profiles
+```
+
+**The +29 did not reproduce at 800 games.** It is the fourth apparent gain in
+this file to evaporate on a seed it was not found on.
+
+The treatment is not inert — it does what it says, and that is what makes the
+null informative:
+
+| | treatment | control |
+|---|---|---|
+| envoys (compact) | 8.6 | 7.2 |
+| **suzerainties (compact)** | **0.27** | **0.20** |
+| suzerainties (deployment) | 0.65 | — |
+
+**It buys 0.07 of a suzerainty.** The oracle that measured +34 points of win
+rate grants suzerainty over *every met city-state*. The treatment delivers a
+low-single-digit percentage of that dose, and a null at that dose says nothing
+about the headroom — only that this is not the lever that reaches it.
+
+### ⚠⚠⚠ The promotion matrix runs three of six victory conditions
+
+Both matrix profiles hard-code `--victories science,culture,domination`
+(`ai_eval.rs`, from #658). **Religious, diplomatic and score victory are all
+disabled in the gate**, while `VictoryConditions::NAMES` — the default for an
+ordinary run — enables all six. No comment or document explains the choice; it
+is a convention shared with `ablate` and the oracle harnesses.
+
+There is a defensible reason to want it: this document records that religious
+victory dominates self-play, and a lane that ends most games early drowns the
+signal from every other lane. But the consequence has never been written down,
+and it is severe for exactly the work this session has been doing:
+
+- **Diplomatic victory is the terminal payoff of suzerainty.** The envoy
+  economy was just measured on a gate where the win it is buying cannot happen.
+  Its null is *partly by construction*.
+- **Religious victory is where this engine's wins actually come from** — 88% of
+  them on the default profile. Any treatment routing through that lane is
+  invisible to the gate.
+
+⚠ **That includes the `d_holy` change this session shipped (#1469).** Its entire
+measured effect was religious victories, 267 against 203, on the all-victories
+profile. Whether it survives a gate that disables religious victory is an open
+question and is being measured; **until that returns, read the +20 Elo as a
+result on the all-victories profile specifically, not as a matrix-gated
+promotion.** It was promoted on hand-rolled `ai_eval` runs, which is the same
+path that defaults `--city-states` to zero.
+
+The general statement, which is the part worth keeping: **a promotion gate that
+disables a victory condition cannot promote a treatment whose payoff is that
+victory.** Two of this repository's six are disabled, including the one that
+decides most of its games.
