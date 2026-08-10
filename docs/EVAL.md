@@ -7608,3 +7608,100 @@ fall out of it:
 a map shape or a game length this profile does not visit, and the war block in
 particular may bind for `basic`, which is city-states and barbarians and does
 run `BasicAi::diplomacy`. The claim is about the deployed scripted major.
+
+
+## 2026-08-10 — ★★★ the roster's winners are not a genome worth copying, and one of their genes eats a shipped result
+
+Round 1 mined the league roster and got `d_holy` at +20 Elo (paired-map score
+52.9%, 95% CI 50.1%..55.7%, 1200 maps, seed 4400000, gate PASS; PR #1469).
+Round 2 proved eight of the forty genes cannot change a game at all (PR #1479).
+This round asks what is left in the roster, and answers it: **nothing, and one
+active liability.**
+
+### First, the roster's false-positive rate, now measured
+
+Re-ranking the roster's separations against the census verdict:
+
+| gene | r vs win rate | census |
+|---|---|---|
+| `local_superiority` | −0.85 | live (67% of games move) |
+| `d_holy` | +0.78 | live — shipped |
+| **`settle_food`** | **−0.73** | **INERT — 0/48 games move** |
+| `mv_threat` | −0.73 | live |
+| … | | |
+| **`war_margin`** | **+0.44** | **INERT** |
+| **`peace_ratio`** | **−0.36** | **INERT** |
+| **`settle_prod`** | **−0.35** | **INERT** |
+
+**Four of the roster's top fourteen signals — including the second-strongest —
+are genes that provably cannot change a game.** Roster mining has roughly a 29%
+false-positive rate at this depth, and correlation strength does not distinguish
+the real ones. The census is not an optional refinement; it is the filter that
+makes the method usable at all.
+
+### The composite screen
+
+After removing inert genes, every remaining single-gene separation is under a
+tenth of its legal range, so the question became whether they compose.
+`advanced_roster_live` takes the games-weighted mean of the top four bred
+genomes over all 28 live genes that move at all.
+
+```
+ai_eval advanced_roster_live advanced --players 4 --pairs 500 --turns 500 --seed 5000000
+  paired-map score 46.9% (95% Wilson CI 42.6%..51.3%)   Elo-equivalent -22 (CI -52..+9)
+  paired direction 64 for / 341 neutral / 95 against    sign p = 0.0171 (SIGNIFICANT for advanced)
+  religious wins   392 against the control's 470
+```
+
+**Copying the roster's winners makes the agent worse**, significantly in
+direction. This is the third independent result pointing the same way: the
+2026-07-28 entry measured the top-*rated* genome at −108 Elo, this measures the
+top-*winning* genomes' composite at −22, and the census explains part of why a
+league rating can be uninformative — a fifth of the coordinates separating two
+entrants cannot affect play.
+
+### ★★★ Which gene, and why it matters beyond this experiment
+
+The religious-win collapse pointed at the district lane. Holding
+`d_campus`/`d_commercial`/`d_theater` at the shipped values and taking the
+roster's other 25 live genes unchanged:
+
+```
+ai_eval advanced_roster_live_keep_districts advanced --players 4 --pairs 500 --turns 500 --seed 5100000
+  paired-map score 49.6% (95% Wilson CI 45.2%..54.0%)   Elo-equivalent -3 (CI -33..+28)
+  paired direction 70 for / 356 neutral / 74 against    sign p = 0.8027
+  religious wins   414 against the control's 450
+```
+
+| arm | Elo | direction | religious wins |
+|---|---|---|---|
+| roster composite, 28 genes | **−22** | 64/95, p=0.0171 | 392 |
+| same, districts held at shipped | **−3** | 70/74, p=0.8027 | 414 |
+
+**Three genes carried 19 of the 22 points.** The roster raises `d_commercial` to
+5.55 — which never even passes `d_holy` 5.6, it merely approaches it — and that
+is enough to undo most of a gate-passed result. The remaining 25 live genes are
+collectively worth nothing measurable.
+
+⚠ **The practical consequence is a regression hazard with no gate on it.** A
+genome change is not a code change: if `evolve` or a league round breeds
+`d_commercial` up toward `d_holy`, the +20 Elo disappears and no promotion gate
+re-runs to notice.
+
+**And note precisely what the harm was not.** 5.55 is still *below* 5.6, so the
+19 points went missing with the district ordering fully intact. The first guard
+written for this asserted the ordering, passed the regression unchanged, and was
+therefore worthless — the protective property is the **margin**, and two data
+points (margin 2.6 pays, margin 0.05 does not) do not locate a threshold worth
+asserting. `the_shipped_district_weights_are_the_ones_the_gate_passed_on`
+therefore pins the four measured values themselves, for `Weights::advanced()`
+only; league and evolved entrants carry their own vectors and are entitled to any
+values they like. It is verified to fail on `d_commercial = 5.55`.
+
+### Where this leaves roster mining
+
+**Closed.** It produced exactly one real improvement, and the composite of
+everything else is negative. Future strength has to come from somewhere other
+than copying bred genomes — the live-gene list is the map of what a *fresh*
+search could still reach, and the eight inert genes say a fifth of any such
+search would be wasted until the Advanced planners are routed through them.
