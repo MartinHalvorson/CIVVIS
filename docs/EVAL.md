@@ -8256,3 +8256,65 @@ would happen.
 ⚠ And the trap that cost an evaluation today is now recorded beside the pin:
 because this constructor sets these flags, an arm built as `AdvancedAi::new()`
 **plus** one of them is a byte-identical no-op. **Withhold, do not add.**
+
+
+## 2026-08-10 — ★★★★ the production city-target floor buys two cities and costs thirty Elo
+
+The ledger in the previous entry named ten production flags with no individual
+number. `city_target_floor = 6` had the weakest case of them: its **solo axis is
+a recorded null** — the 3 → 6 ramp measured 49.6%, Elo −3, sign p=0.9007 over
+240 pairs on seed 510000, after a 53.3% first reading that did not reproduce,
+and the entrant was removed. `GENOME.md` puts city expansion "at a local
+optimum". It ships anyway, inside the 2026-08-01 composite.
+
+`advanced_without_city_target_floor` returns the floor to the 3 the frozen and
+pre-promotion controllers use. One axis; nothing else moves.
+
+### The mechanism, from the fires-check
+
+| | score | **cities** | pop | districts | seat-win% |
+|---|---|---|---|---|---|
+| `advanced` (floor 6) | 682.9 | **8.06** | 89.2 | 28.8 | 16.7% |
+| withheld (floor 3) | 621.1 | **5.97** | 68.9 | 22.3 | 16.7% |
+
+The floor works exactly as designed: **+2.1 cities, +20 population, +6.5
+districts, +62 terminal score.** Every development proxy moves, and moves a lot.
+
+### The outcome, on four runs
+
+| run | profile | maps | paired score | Elo | direction | sign p |
+|---|---|---|---|---|---|---|
+| seed 7300000 | deployment, **all six victories** | 400 | **54.4%** | +30 | 74/39 | **0.0013** |
+| seed 8400000 | deployment, **all six victories** | 400 | **54.1%** | +29 | 83/50 | **0.0053** |
+| matrix `deployment-online` | three victories | 200 | **54.9%** | +34 | 54/28 | **0.0054** |
+| matrix `compact-standard` | small board | 200 | 49.0% | −7 | 30/37 | 0.4638 |
+
+**Withholding the floor wins more, on 1000 deployment maps across three
+independent runs, every one significant on direction and stable at +29 to +34.**
+Terminal score runs the other way just as hard — 93/307 and 90/310, both
+**p=0.0000 against the withhold**.
+
+★★★★ **So the floor buys two cities, twenty population and sixty terminal score,
+and pays about thirty Elo of wins for them.** This is the repository's own law
+made concrete on a single axis: *every cheap summary of a finished game is a
+correlate*. `leader_study` reports `cities` converting at 64% at turn 160,
+comfortably above a 17% chance — and causing more cities makes the agent
+**worse**. Correlation and causation on the same statistic, measured in the same
+week, pointing opposite ways.
+
+### ⚠ Not shipped yet, and why
+
+The promotion matrix at 200 pairs reads **RETAIN — cleared 1/2**. It rejected on
+`deployment-online`, but on **interval width, not on evidence against**: that
+profile's own direction is significant at p=0.0054 and its point estimate (+34)
+matches both 400-map runs. `compact-standard`, the no-regression profile,
+ACCEPTED.
+
+A REJECT is a REJECT. After reverting a change today for being promoted on the
+wrong profile, the answer is not to argue past this one — it is to run the gate
+at the resolution the effect needs. At 54.9% a 200-map interval is ±6.9 points
+and cannot clear parity; 400 maps gives ±4.9 and can. That matrix is running.
+
+**Nothing about the shipped agent changes in this entry.** What lands is the arm,
+the mechanism, and 1000 maps of deployment evidence, so the gate result — either
+way — is read against a record rather than a memory.
