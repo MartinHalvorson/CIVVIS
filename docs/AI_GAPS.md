@@ -480,20 +480,57 @@ separate arms so the composite's interaction is measured rather than assumed.
 
 | arm | compact-standard | deployment-online |
 |---|---:|---:|
-| `advanced_synergy_war` (23 repairs) | −47, sign p = 0.0007 | **−85**, sign p = 0.0000, RETAIN |
+| `advanced_synergy_war` (23 repairs) | −47, sign p = 0.0007 | −85, sign p = 0.0000, RETAIN |
+| `advanced_synergy_war`, replication | −44, sign p = 0.0005 | −72, sign p = 0.0004, RETAIN |
 | `advanced_synergy_economy` (14 repairs) | −31, sign p = 0.0488 | −65, sign p = 0.0005 |
-| **`advanced_synergy` (all 37)** | **−60**, sign p = 0.0000 | **−129** (95% CI −195..−63), RETAIN |
+| `advanced_synergy` (all 37), discovery | −60, sign p = 0.0000 | −129, RETAIN |
+| **`advanced_synergy`, CONFIRMED** | **−76** (95% CI −140..−13) | **−108** (95% CI −172..−43) |
+
+⚠ **Quote the confirmed row.** A promotion run is a decision, not an unbiased
+estimate: the discovery effect size is conditioned on having fired the gate and
+is biased away from parity. The confirmed row is `--confirm` on seed prefixes
+disjoint from discovery, and it is the one that is quotable — this is R3 in
+`EVAL_INTEGRITY.md` doing its job, and note that it moved the compact estimate
+*further* from parity (−60 to −76) and the deployment estimate *toward* it
+(−129 to −108). The direction of the bias is not knowable in advance, which is
+why the disjoint prefix is run rather than reasoned about.
+
+On the confirmation prefixes the multi-profile gate reads **0/2 profiles
+cleared**: both profiles now retain `advanced` outright rather than one
+retaining and one landing inconclusive.
+
+The war replication is a disjoint seed prefix (86000000 against 83000000) run
+after #1512 landed, which changed `remembered_objective_strength` — a repair
+this half carries. Giving a never-seen city the conservative floor instead of
+the `hostile <= 0` sentinel is worth something (−85 to −72) and is nowhere near
+parity. Two independent prefixes, same direction, both significant.
+
+⚠ Seed bookkeeping, recorded because this document has been wrong about a seed
+stream before: the war replication was launched at base 86000000 while the
+composite confirmation's *deployment* profile also derives 86000000 (base
+85000000 plus one `MATRIX_PROFILE_SEED_STRIDE`). The numeric ranges overlap.
+No games are shared — the war replication's 86000000 prefix is the four-player
+24×16 compact profile and the confirmation's is the six-player 74×46 online
+one, so the same integer seeds generate different maps under different rules —
+but the two runs should not be described as drawing from disjoint *streams*,
+only as measuring different arms on different profiles.
 
 ```
 ai_eval advanced_synergy advanced --matrix --pairs 120 --seed 81000000
   compact-standard    41.5% (95% Wilson 33.0..50.4)   direction 15 / 53 / 52
   deployment-online   32.3% (95% Wilson 24.6..41.1)   direction 11 / 42 / 67
   multi-profile promotion gate: RETAIN advanced — cleared 1/2 profiles
+
+ai_eval advanced_synergy advanced --matrix --pairs 120 --seed 85000000 --confirm 81000000
+  compact-standard    39.2% (95% Wilson 30.9..48.1)   direction  8 / 61 / 51
+  deployment-online   35.0% (95% Wilson 27.1..43.9)   direction 15 / 44 / 61
+  multi-profile promotion gate: RETAIN advanced — cleared 0/2 profiles
 ```
 
 **Both halves lose independently and the damage is close to additive**
 (−85 and −65 against a composite −129 at deployment; −47 and −31 against −60 on
-compact). There is no single villain to bisect out and no destructive
+compact — halves and composite compared at discovery, the only prefixes on
+which all three were run). There is no single villain to bisect out and no destructive
 interaction between them: the bundle is not one bad repair poisoning thirty-six
 good ones.
 

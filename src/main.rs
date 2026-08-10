@@ -3472,7 +3472,7 @@ mod tests {
                 assert!(
                     !on,
                     "{name} carries the engine repair {flag}: the bundle measured \
-                     -129 Elo at deployment, and the source-contract re-pin that \
+                     a confirmed -108 Elo at deployment, and the re-pin that \
                      let it into the hashed sources was justified by this arm \
                      being unreachable from the anchor"
                 );
