@@ -1827,6 +1827,14 @@ pub struct AdvancedAi {
     /// absorbing state. With this on, the power-gap half of the trigger stops
     /// re-firing after `RECOVERY_POSTURE_LIMIT` standard turns and the empire
     /// returns to its own best lane. The threatened-city half is untouched.
+    ///
+    /// ⚠ **ON in the shipped agent, despite the struct default below being
+    /// false.** `promoted_policy_envoy` sets it, and `AdvancedAi::new()` routes
+    /// through that constructor, so every `advanced` seat already carries it.
+    /// The comment that used to sit here said native tournament games leave it
+    /// disabled; that was false, and an arm built as "`AdvancedAi::new()` plus
+    /// this flag" is a byte-identical no-op — which is how it was caught.
+    /// Withhold it with `advanced_without_bounded_recovery` to price it.
     pub bounded_recovery: bool,
 
     /// Whether a Science or Expansion threat is simply not reacted to.
@@ -2196,11 +2204,15 @@ impl AdvancedAi {
     /// has one auditable definition.
     /// The deployed scripted major.
     ///
-    /// One gene apart from `Weights::default()`: see [`crate::ai::ADVANCED_D_HOLY`]
-    /// for why the Holy Site figure lives here and not in the default that also
-    /// seeds minors and the frozen `advanced_v1` anchor.
+    /// ⚠ **Reverted to `Weights::default()` on 2026-08-10.** It briefly carried
+    /// `Weights::advanced()` (`d_holy` 5.6) on a +20 Elo gate taken at
+    /// `ai_eval`'s 4p 24x16 defaults. Re-measured at the shape the exhibition
+    /// actually runs — 6p 74x46, 9 city-states, Online, 250 turns, all six
+    /// victories — the same change is **parity, +2 Elo (CI -46..+50)**, and on
+    /// the promotion matrix's three-victory profile it is **-44 Elo,
+    /// sign p=0.0016 against**. See `docs/EVAL.md` 2026-08-10.
     pub fn new() -> AdvancedAi {
-        Self::promoted_policy_envoy(Weights::advanced(), None)
+        Self::promoted_policy_envoy(Weights::default(), None)
     }
 
     /// Evaluator treatment for one unified midgame power-spike appointment.
@@ -2610,8 +2622,10 @@ impl AdvancedAi {
         self.base.unit_objective_memory = true;
     }
 
-    /// Stop the defensive-war posture from becoming permanent. Native
-    /// tournament games leave this disabled.
+    /// Stop the defensive-war posture from becoming permanent.
+    ///
+    /// ⚠ Already on for anything built by `AdvancedAi::new()`; this exists for
+    /// constructors that do not route through `promoted_policy_envoy`.
     pub fn enable_bounded_recovery(&mut self) {
         self.bounded_recovery = true;
     }
@@ -22980,6 +22994,31 @@ mod tests {
         );
     }
 
+    /// ⚠ **What the production constructor turns on, and what each part cost
+    /// to establish.** The assertions below pin the bundle; this ledger records
+    /// which parts of it have an individual outcome number, because the pin
+    /// alone cannot tell a measured component from an assumed one.
+    ///
+    /// | flag | individual evidence |
+    /// |---|---|
+    /// | `bounded_recovery` | **first priced 2026-08-10** — withholding it scores 52.0%, Elo +14 (CI −34..+62), p=0.1849, 200 maps at the deployment shape. Direction favours removal; not established. |
+    /// | `city_target_floor = 6` | the solo axis is a **recorded null** — 49.6%, Elo −3, p=0.9007, 240 pairs, seed 510000, and the entrant was removed. It ships inside this composite, not on that number. |
+    /// | `envoy_infrastructure` | screened 8–12 maps only; the combined economy re-measured 2026-08-10 against its deck control is **null at 800 games** (matrix RETAIN, 1/2 profiles). |
+    /// | `envoy_priority`, `adjacency_site_planning`, `settler_commit`, `research_economy`, `plan_city_target`, `amenity_districts`, `siege_muster`, `home_defense`, `tactical_strategy`, `unit_objective_memory` | no individual outcome number located in `docs/EVAL.md`. |
+    ///
+    /// A composite may legitimately pass a gate while a component is null on
+    /// its own, and the 2026-08-01 promotion was such a composite — so nothing
+    /// here says the bundle is wrong. What it says is that **most of it has
+    /// never been priced apart**, and `disable_bounded_recovery`'s own doc
+    /// already named that as the failure mode: *"Every flag in
+    /// `enable_live_bridge` needs one of these or it ships unmeasured — which
+    /// is how five repairs reached deployment without a single outcome
+    /// number."*
+    ///
+    /// ⚠ Adding a flag here without a withhold arm repeats it. And note the
+    /// trap that cost an evaluation on 2026-08-10: because this constructor
+    /// sets these, an arm built as `AdvancedAi::new()` **plus** one of them is a
+    /// byte-identical no-op. Withhold, do not add.
     #[test]
     fn production_advanced_scales_cities_development_and_home_defense_together() {
         let production = AdvancedAi::new();

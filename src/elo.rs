@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 114] = [
+pub const EVAL_ONLY_AIS: [&str; 116] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -126,6 +126,8 @@ pub const EVAL_ONLY_AIS: [&str; 114] = [
     "advanced_roster_live",
     "advanced_roster_live_keep_districts",
     "advanced_diplomatic_opening",
+    "advanced_without_bounded_recovery",
+    "advanced_without_city_target_floor",
     "advanced_league_top",
     "advanced_joint_tactics",
     "strategic_cheap",
@@ -329,6 +331,8 @@ define_arm_kinds! {
     AdvancedRosterLive => "advanced_roster_live",
     AdvancedRosterLiveKeepDistricts => "advanced_roster_live_keep_districts",
     AdvancedDiplomaticOpening => "advanced_diplomatic_opening",
+    AdvancedWithoutBoundedRecovery => "advanced_without_bounded_recovery",
+    AdvancedWithoutCityTargetFloor => "advanced_without_city_target_floor",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
@@ -378,6 +382,11 @@ define_arm_kinds! {
 /// `advanced_holy_v0` can still construct that agent. The live value is
 /// [`crate::ai::ADVANCED_D_HOLY`].
 pub const PRE_2026_08_10_D_HOLY: f64 = 2.0;
+
+/// The city-target floor the frozen and pre-promotion controllers use, so
+/// `advanced_without_city_target_floor` withholds to a value the repository
+/// already plays rather than a number invented for the arm.
+pub const PRE_PROMOTION_CITY_TARGET_FLOOR: usize = 3;
 
 /// Games-weighted `settle_food` of the top third of the shipped league roster
 /// by outright 8-player win rate, against the bottom third's 1.19 and the
@@ -1709,7 +1718,10 @@ fn artifact_effective_alias_from(
         // cleared the 1200-pair gate and became what `advanced` plays, so the
         // arm now builds the production controller. `advanced_holy_v0` is the
         // agent it used to be measured against.
-        ArmKind::AdvancedHolyPriority => ArmKind::Advanced,
+        // `advanced_holy_v0` was the pre-shipment agent; the shipment was
+        // reverted, so it is `advanced` under another name and its comparisons
+        // must fail closed as self-play.
+        ArmKind::AdvancedHolyV0 => ArmKind::Advanced,
         ArmKind::AdvancedBankingDedication => advanced_fallback,
         _ => kind,
     }
@@ -2130,12 +2142,11 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // draw: `docs/EVAL.md` records that religious victory dominates
         // self-play in this engine, and the shipped default ranks the district
         // that lane runs through *below* two others.
-        // ⚠ As of the 1200-pair gate PASS this constructs the SAME agent as
-        // `advanced`, because the measured value is now what `advanced` plays.
-        // Retained under its own name because `docs/EVAL.md` 2026-08-10 reports
-        // three runs against it; `builtin_provenance` declares it effectively
-        // `advanced` so the pair is rejected as self-play rather than quietly
-        // measuring nothing. The frozen pre-change agent is `advanced_holy_v0`.
+        // ⚠ A treatment again. It shipped into `advanced` on a +20 Elo gate
+        // taken at `ai_eval`'s 4p 24x16 defaults, and was reverted the same day
+        // when the deployment shape measured it at parity and the promotion
+        // matrix at -44. It stays registered because the axis is real and the
+        // profile dependence is the finding; see `docs/EVAL.md` 2026-08-10.
         "advanced_holy_priority" => Box::new(AdvancedAi::with_weights(Weights::advanced())),
         // The scripted major exactly as it played before 2026-08-10, retained so
         // the change stays measurable after it ships -- the same role
@@ -2160,7 +2171,7 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // test and does not explain the result. What this arm establishes is
         // whether the axis pays here, not why.
         "advanced_settle_food" => {
-            let mut w = Weights::advanced();
+            let mut w = Weights::default();
             w.settle_food = LEAGUE_WINNER_SETTLE_FOOD;
             Box::new(AdvancedAi::with_weights(w))
         }
@@ -2196,7 +2207,7 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // fourteen signals, including the second-strongest (`settle_food`,
         // r=-0.73), are genes that provably cannot change a game.
         "advanced_roster_live" => {
-            let mut w = Weights::advanced();
+            let mut w = Weights::default();
             w.city_target = 6.4714;
             w.settler_stop_turn = 162.6394;
             w.mil_per_city = 0.9332;
@@ -2239,7 +2250,7 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // twenty-five live genes unchanged, so recovery toward parity confirms
         // the districts carried the loss and a second loss acquits them.
         "advanced_roster_live_keep_districts" => {
-            let mut w = Weights::advanced();
+            let mut w = Weights::default();
             w.city_target = 6.4714;
             w.settler_stop_turn = 162.6394;
             w.mil_per_city = 0.9332;
@@ -2279,20 +2290,72 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // The opening figure is Religion's own, so this loses every tie to
         // Religion and can only win the argmax against Conquest and Expansion,
         // which score zero. See `AdvancedAi::diplomatic_opening_score`.
+        // Bound the Recovery posture in time.
+        //
+        // An actuation treatment on a documented **absorbing state**, not a
+        // valuation tune. `assess`'s first arm drops the empire into Recovery
+        // whenever it is at war and `my_power * 1.25 < strongest_rival`.
+        // Recovery does not build an army, so the test stays true *because of
+        // the choice it caused* and re-fires every assessment for the rest of
+        // the game. `bounded_recovery` stops only the power-gap half from
+        // re-firing after `RECOVERY_POSTURE_LIMIT` standard turns; the
+        // threatened-city half is untouched.
+        //
+        // The harm is already on record from a live run
+        // (`civvis-20260802T205959Z`): the journal names that arm 160 times,
+        // the posture held t65..t229 — **72% of the game** — and the empire
+        // finished with ONE warrior, military 34 against 1354, score 205
+        // against 1324. Recovery takes 11.7%-13.9% of observed player-turns at
+        // the deployment shape.
+        //
+        // ⚠ It is **already on** in `advanced` -- `promoted_policy_envoy` sets
+        // it and `AdvancedAi::new()` routes through there -- while the field's
+        // own doc claimed native games left it off and `docs/EVAL.md` has never
+        // mentioned it. It reached deployment inside the 2026-08-01 policy-envoy
+        // composite without ever being priced on its own, which is exactly what
+        // `disable_bounded_recovery`'s doc warns about. So this arm WITHHOLDS
+        // it, which is the only way round that measures anything: an arm built
+        // as "new() plus the flag" is byte-identical to the control.
+        // Withhold the production city-target floor, returning it to the 3 the
+        // frozen controller uses.
+        //
+        // The component with the weakest individual case in the whole
+        // production bundle. Its solo axis is a **recorded null** — the
+        // `city_target_floor` 3 -> 6 ramp measured 49.6%, Elo -3, sign
+        // p=0.9007 over 240 pairs on seed 510000, after a 53.3% first reading
+        // that did not reproduce, and the entrant was removed. `GENOME.md` puts
+        // city expansion "at a local optimum", and every expansion treatment
+        // since has been null: the target ramp, parallel settlers, and a
+        // settler priced at 100x that moved cities by 0.06.
+        //
+        // It nevertheless ships, inside the 2026-08-01 composite. A composite
+        // may pass while a component is null alone, so this is not an
+        // accusation — it is the missing measurement. If withholding it is
+        // positive, the bundle is carrying a part that costs.
+        "advanced_without_city_target_floor" => {
+            let mut ai = AdvancedAi::new();
+            ai.city_target_floor = PRE_PROMOTION_CITY_TARGET_FLOOR;
+            Box::new(ai)
+        }
+        "advanced_without_bounded_recovery" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_bounded_recovery();
+            Box::new(ai)
+        }
         "advanced_diplomatic_opening" => {
             let mut ai = AdvancedAi::new();
             ai.diplomatic_opening = true;
             Box::new(ai)
         }
         "advanced_holy_lane_v0" => {
-            let mut w = Weights::advanced();
+            let mut w = Weights::default();
             w.d_holy = PRE_2026_08_10_D_HOLY;
             let mut ai = AdvancedAi::with_weights(w);
             ai.holy_lane_parity = true;
             Box::new(ai)
         }
         "advanced_holy_v0" => {
-            let mut w = Weights::advanced();
+            let mut w = Weights::default();
             w.d_holy = PRE_2026_08_10_D_HOLY;
             Box::new(AdvancedAi::with_weights(w))
         }
@@ -3329,6 +3392,8 @@ impl ArmKind {
             Self::AdvancedRosterLive => &["roster-winner-live-genes"],
             Self::AdvancedRosterLiveKeepDistricts => &["roster-winner-live-genes-except-districts"],
             Self::AdvancedDiplomaticOpening => &["diplomatic-lane-prospective"],
+            Self::AdvancedWithoutBoundedRecovery => &["bounded-recovery-withheld"],
+            Self::AdvancedWithoutCityTargetFloor => &["city-target-floor-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -3833,14 +3898,16 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced_measured_dedication" => (vec![genome], "advanced_measured_dedication"),
         "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
-        "advanced_holy_priority" => (Vec::new(), "advanced"),
+        "advanced_holy_priority" => (Vec::new(), "advanced_holy_priority"),
         "advanced_holy_lane" => (Vec::new(), "advanced_holy_lane"),
-        "advanced_holy_v0" => (Vec::new(), "advanced_holy_v0"),
+        "advanced_holy_v0" => (Vec::new(), "advanced"),
         "advanced_settle_food" => (Vec::new(), "advanced_settle_food"),
         "advanced_holy_lane_v0" => (Vec::new(), "advanced_holy_lane_v0"),
         "advanced_roster_live" => (Vec::new(), "advanced_roster_live"),
         "advanced_roster_live_keep_districts" => (Vec::new(), "advanced_roster_live_keep_districts"),
         "advanced_diplomatic_opening" => (Vec::new(), "advanced_diplomatic_opening"),
+        "advanced_without_bounded_recovery" => (Vec::new(), "advanced_without_bounded_recovery"),
+        "advanced_without_city_target_floor" => (Vec::new(), "advanced_without_city_target_floor"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -5048,7 +5115,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 83] = [
+            const SCRIPTED: [&str; 85] = [
                 "advanced_joint_tactics",
                 "live_without_joint_tactics",
                 "advanced",
@@ -5100,6 +5167,8 @@ mod tests {
                 "advanced_roster_live",
                 "advanced_roster_live_keep_districts",
                 "advanced_diplomatic_opening",
+                "advanced_without_bounded_recovery",
+                "advanced_without_city_target_floor",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",
@@ -5138,7 +5207,7 @@ mod tests {
                 "live_without_war_patience",
             ];
             const SCRIPTED_ALIASES: [&str; 2] =
-                ["advanced_policy_envoy_priority", "advanced_holy_priority"];
+                ["advanced_policy_envoy_priority", "advanced_holy_v0"];
             assert!(
                 !resolved.artifacts.is_empty()
                     || SCRIPTED.contains(name)

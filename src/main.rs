@@ -875,7 +875,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `diplomatic_opening` is a flag both constructors leave false and
 /// `diplomatic_opening_score` returns 0 without it, so the anchor never
 /// reaches the new lane term. Compatibility re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6f21_f4a9_b043_6972;
+/// `AdvancedAi::new()` is back on `Weights::default()`, which is the
+/// weights `AdvancedAi::legacy()` always used, so the anchor is where it
+/// has always been. Compatibility re-pin.
+/// Doc comments only in the hashed sources: two of them claimed native
+/// games leave `bounded_recovery` disabled when `promoted_policy_envoy`
+/// enables it. No constructor moved and `legacy()` is untouched.
+/// Compatibility re-pin.
+/// A test doc comment only: the evidence ledger for what
+/// `promoted_policy_envoy` enables. No constructor moved and
+/// `legacy()` is untouched. Compatibility re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5d00_de77_23e4_6aa8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -7949,3 +7949,372 @@ be pushing harder on the same closed door.
 
 ⚠ Note for anyone re-reading older numbers in this file: every `ai_eval` result
 recorded above was measured at `--city-states 0` unless it says otherwise.
+
+
+## 2026-08-10 — ★★★ the envoy economy is null at power, and the promotion matrix cannot express two of the six victories
+
+`docs/EVAL.md` records the envoy work as four arms screened at **8–12 maps**,
+the best of them "combined vs stock, 6p deployment, 12 maps, 54.2% (+29)", with
+"none of the new envoy behavior enabled in `advanced`". Those screens were never
+resolved, and the prize behind them is the largest the oracle harness has found
+(`Grant::Suzerain`, 56.7% against 22.7%, p=0.0000, 400 maps, PR #602). This
+resolves them.
+
+### The result: null, on the repository's own gate
+
+`--matrix` is the right instrument and — unlike a hand-rolled `ai_eval` line —
+both its profiles do seat city-states (4 and 9). Against the correct control,
+which isolates the envoy economy from the Live-deck change:
+
+```
+ai_eval advanced_envoy_economy advanced_policy_live_control --matrix --pairs 200 --seed 5700000
+  arms differ on: envoy-influence, envoy-infrastructure-off
+
+  compact-standard    50.2% (CI 43.4..57.1)  Elo +2   direction 31/30, p=1.0000
+  deployment-online   50.9% (CI 44.0..57.7)  Elo +6   direction 38/34, p=0.7239  REJECT
+
+  multi-profile promotion gate: RETAIN advanced_policy_live_control — cleared 1/2 profiles
+```
+
+**The +29 did not reproduce at 800 games.** It is the fourth apparent gain in
+this file to evaporate on a seed it was not found on.
+
+The treatment is not inert — it does what it says, and that is what makes the
+null informative:
+
+| | treatment | control |
+|---|---|---|
+| envoys (compact) | 8.6 | 7.2 |
+| **suzerainties (compact)** | **0.27** | **0.20** |
+| suzerainties (deployment) | 0.65 | — |
+
+**It buys 0.07 of a suzerainty.** The oracle that measured +34 points of win
+rate grants suzerainty over *every met city-state*. The treatment delivers a
+low-single-digit percentage of that dose, and a null at that dose says nothing
+about the headroom — only that this is not the lever that reaches it.
+
+### ⚠⚠⚠ The promotion matrix runs three of six victory conditions
+
+Both matrix profiles hard-code `--victories science,culture,domination`
+(`ai_eval.rs`, from #658). **Religious, diplomatic and score victory are all
+disabled in the gate**, while `VictoryConditions::NAMES` — the default for an
+ordinary run — enables all six. No comment or document explains the choice; it
+is a convention shared with `ablate` and the oracle harnesses.
+
+There is a defensible reason to want it: this document records that religious
+victory dominates self-play, and a lane that ends most games early drowns the
+signal from every other lane. But the consequence has never been written down,
+and it is severe for exactly the work this session has been doing:
+
+- **Diplomatic victory is the terminal payoff of suzerainty.** The envoy
+  economy was just measured on a gate where the win it is buying cannot happen.
+  Its null is *partly by construction*.
+- **Religious victory is where this engine's wins actually come from** — 88% of
+  them on the default profile. Any treatment routing through that lane is
+  invisible to the gate.
+
+⚠ **That includes the `d_holy` change this session shipped (#1469).** Its entire
+measured effect was religious victories, 267 against 203, on the all-victories
+profile. Whether it survives a gate that disables religious victory is an open
+question and is being measured; **until that returns, read the +20 Elo as a
+result on the all-victories profile specifically, not as a matrix-gated
+promotion.** It was promoted on hand-rolled `ai_eval` runs, which is the same
+path that defaults `--city-states` to zero.
+
+The general statement, which is the part worth keeping: **a promotion gate that
+disables a victory condition cannot promote a treatment whose payoff is that
+victory.** Two of this repository's six are disabled, including the one that
+decides most of its games.
+
+### ⚠⚠⚠ The `d_holy` shipment is REVERTED — it does not hold where it runs
+
+The open question above is answered, and it goes against the change this
+session shipped. Same treatment, three profiles:
+
+| profile | victories | result |
+|---|---|---|
+| 4p 24x16, 0 city-states, Standard, 500t — **where it was gated** | all six | **+20 Elo**, gate PASS, 1200 pairs |
+| **6p 74x46, 9 city-states, Online, 250t — the deployment shape** | **all six** | **+2 Elo (CI −46..+50)**, 32/31, p=1.0000 |
+| 6p 74x46, 9 city-states, Online, 250t | science, culture, domination | **−44 Elo**, 28/58, **sign p=0.0016 against** |
+
+The third row is explained by the second: disabling religious victory removes
+the only thing the change buys, so it becomes pure economic loss — a Holy Site
+is worse economy than a Campus, which this document already measured (terminal
+score against the treatment, p=0.0204).
+
+**But the second row is the one that decides it.** At the shape the exhibition
+actually runs, with every victory enabled, the change is **parity**. The victory
+mix says exactly what it is doing there:
+
+| | religious | science |
+|---|---|---|
+| `advanced` (d_holy 5.6) | 90 | 88 |
+| `advanced_holy_v0` (2.0) | 52 | 127 |
+
+**It trades science victories for religious ones at roughly one for one.** On a
+24x16 board where science cannot finish, that trade is free and worth 20 Elo. At
+deployment it is a wash.
+
+`AdvancedAi::new()` is therefore back to `Weights::default()`. The weights
+survive as the `advanced_holy_priority` arm, `advanced_holy_v0` is now
+`advanced` under another name and is aliased to fail closed as self-play, and
+the arms rebased so each stays one axis from the shipped agent.
+
+This is the rule in `docs/EVAL.md` and in the fleet's own notes, paid for in
+full: **`ai_eval`'s defaults are not the deployment — not for strength, not for
+cost, and not even for the sign of an effect.** A 1200-pair gate is not enough
+resolution to rescue the wrong profile; it just measures the wrong thing
+precisely. **Gate on the deployment shape, or say plainly which profile the
+number belongs to.**
+
+
+## 2026-08-10 — ★★★★ the leader study re-run at deployment, and it overturns its own headline
+
+The `d_holy` revert established that a number taken at `ai_eval`'s small
+defaults can flip sign at the deployment shape. The leader study (#1488) was
+taken at **4p 60x46 Standard** and had never been checked the same way. It
+should have been, and its conclusions do not survive.
+
+`leader_study` now defaults to the deployment shape — 6 players, 74x46, **9
+city-states**, Online, 250 turns — and takes `--speed`. 60 games, seeds 770000+,
+chance is 17% at six seats.
+
+| metric | 4p 60x38 Standard | **6p 74x46 Online, 9 CS** |
+|---|---|---|
+| *chance* | *25%* | ***17%*** |
+| `start_yield` *(control)* | 28% | 28% |
+| `start_room` *(control)* | 22% | **7%** |
+| **holy_sites** @t80 | **80%** | **34%** (peak 51% @t200) |
+| **techs** @t200 | 66% | **72%** |
+| **civics** @t160 | 58% | **62%** |
+| **cities** | **67% @t40** | 38% @t40, **64% @t160** |
+| pop @t200 | 60% | 60% |
+| districts @t200 | 54% | 61% |
+| faith @t130 | 14% | **7%** |
+| military @t200 | 51% | 52% |
+
+### What changed, and what it costs the earlier entry
+
+**1. `holy_sites` was a small-board artifact.** The strongest signal in the
+first study — 80% at turn 80 — is **34%** at deployment, barely double a 17%
+chance and below several other rows. This is an *independent* arrival at the
+same place as the `d_holy` revert: the causal test found the Holy Site trade is
+free on 24x16 and a wash at deployment, and the correlate says the same thing
+from the observational side. Two instruments, same conclusion, opposite methods.
+
+**2. "The winner is made, not dealt" was overstated.** `start_yield` reads 28%
+against a 17% chance here — **1.6x**, where on the 4p board it was 28% against
+25%, barely anything. Start quality carries a real if modest edge at deployment.
+The earlier entry's headline should be read as a 4p-board statement.
+
+**3. `start_room` inverts hard: 7% against 17% chance.** At deployment, the civ
+with the most unclaimed ground in settling range is *less* likely to win. Room
+without position is a peripheral start, not an opportunity — and it means the
+`cities` row still is not a land-availability artifact, just for the opposite
+reason.
+
+**4. The lanes that predict at deployment are science and culture.** `techs`
+peaks at **72%** and `civics` at **62%**, both above every other row. `cities`
+becomes a *midgame* statistic (64% at t160) rather than the opening sprint it
+looked like at 4p (67% at t40).
+
+**5. `faith` is more strongly anti-predictive, not less** — 7% against a 17%
+chance at turn 130. The rule survives the profile change and hardens: **the
+stock of a currency is a symptom of not having spent it.** Target the building.
+
+### The standing instruction this leaves
+
+Every observational conclusion in this file taken on a 4p small board is now
+suspect, on the same evidence that reverted a shipped change. The default is
+fixed so the next reader does not repeat it, and the flag is there to move
+deliberately rather than by accident.
+
+
+## 2026-08-10 — ★★★ a shipped repair that was never priced, a false comment that hid it, and its first number
+
+Chasing the actuation prior at the deployment shape. `bounded_recovery` looked
+like the ideal candidate: a documented **absorbing state** with measured harm.
+`assess`'s first arm drops the empire into Recovery whenever it is at war and
+`my_power * 1.25 < strongest_rival`; Recovery does not build an army, so the
+test stays true *because of the choice it caused*. On live run
+`civvis-20260802T205959Z` the journal named that arm 160 times, the posture held
+t65..t229 — **72% of the game** — and the empire finished with **one warrior**,
+military 34 against 1354, score 205 against 1324.
+
+### The arm was a no-op, and the fires-check is the only reason that surfaced
+
+`advanced_bounded_recovery` = `AdvancedAi::new()` plus the flag returned lane
+occupancy **byte-identical** to the control across 40 deployment maps.
+
+**Because the flag is already on.** `promoted_policy_envoy` sets
+`bounded_recovery = true` and `AdvancedAi::new()` routes through it, so every
+`advanced` seat already carries it — while the field's own doc comment said
+*"Native tournament games leave this disabled"* and `enable_bounded_recovery`
+said the same. **Both were false**, and both are corrected in this change.
+
+It reached deployment inside the 2026-08-01 policy-envoy composite **without
+ever being priced on its own**, which is exactly the failure
+`disable_bounded_recovery`'s doc warns about: *"Every flag in
+`enable_live_bridge` needs one of these or it ships unmeasured — which is how
+five repairs reached deployment without a single outcome number."* There is a
+withhold method precisely for this, and nobody had used it.
+
+### The first number, by withholding it
+
+`advanced_without_bounded_recovery`, deployment shape with **all six victories**
+— 6p 74x46, 9 city-states, Online, 250 turns:
+
+```
+ai_eval advanced_without_bounded_recovery advanced --pairs 200 --seed 6300000
+  paired-map score 52.0% (95% Wilson CI 45.1%..58.8%)   Elo-equivalent +14 (CI -34..+62)
+  paired direction 18 for / 172 neutral / 10 against    sign p = 0.1849
+  anytime-valid    withheld peak e=6.99, p<=0.1430 (not crossed)
+  promotion gate   INCONCLUSIVE
+```
+
+Recovery occupancy confirms the mechanism works: **12.2% with the bound, 14.2%
+without.** It does what it says.
+
+⚠ **The point estimate favours removing it.** The arm that turns the shipped
+repair *off* scores 52.0%. That is **not established** — p=0.1849, and the
+interval spans parity — but it is the opposite of the direction a shipped repair
+is assumed to have, and it is the only number this flag has ever had.
+
+**Nothing is changed in the shipped agent on p=0.18.** Acting on an
+under-powered signal is the mistake that cost a revert earlier today. What
+changes here is that the flag is now (a) correctly documented, (b) withholdable
+by name, and (c) priced once. The next step is a confirmation on a disjoint
+seed; if it holds, the repair is costing rather than paying and should come out.
+
+### The pattern worth carrying
+
+Three fires-checks this session have caught an inert treatment before an
+expensive evaluation — `advanced_holy_lane`, `advanced_diplomatic_opening` at
+`--city-states 0`, and this one. Two of the three were inert for reasons a
+reader of the source would not have guessed: a profile that seats no minors, and
+a flag already enabled by a constructor two hops away from its own default.
+**Run the fires-check first. A clean null from a treatment that never executed
+is indistinguishable from a real one.**
+
+
+## 2026-08-10 — bounded_recovery confirmed null over 600 maps, and a ledger for the rest of the production bundle
+
+The previous entry priced `bounded_recovery` for the first time and found the
+withhold arm at 52.0% (Elo +14, p=0.1849, 200 maps), explicitly declining to act
+on p=0.18. This is the disjoint-seed confirmation that call required.
+
+```
+ai_eval advanced_without_bounded_recovery advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 7100000
+
+  paired-map score 50.9% (95% Wilson CI 46.0%..55.7%)   Elo-equivalent +6 (CI -28..+40)
+  paired direction 30 for / 347 neutral / 23 against    sign p = 0.4101
+  anytime-valid    withheld peak e=2.86, p<=0.3503 (not crossed)
+```
+
+| run | maps | score | Elo | direction | sign p |
+|---|---|---|---|---|---|
+| discovery, seed 6300000 | 200 | 52.0% | +14 | 18/10 | 0.1849 |
+| **confirmation, seed 7100000** | **400** | **50.9%** | **+6** | 30/23 | 0.4101 |
+| **pooled** | **600** | **51.3%** | — | **48/33** | ~0.12 |
+
+**The +14 did not reproduce.** `bounded_recovery` is a **null on outcomes**
+across 600 maps on two disjoint seeds. The mechanism is not in doubt — Recovery
+occupancy is 12.6% with the bound and 15.2% without, in both runs — it simply
+does not convert.
+
+**It stays on.** A null is not a reason to remove a repair that fixes a real
+pathology: on the Civilization VI mirror the same bound moved Recovery 86% → 81%
+in a regime where one live run spent 72% of the game in the posture and finished
+with a single warrior. Engine-null and bridge-useful are compatible, and this
+entry is the number that was missing, not a verdict against the flag.
+
+⚠ The discovery run's +14 is a reminder that a 200-map point estimate at
+p=0.18 is a coin with a story attached. Declining to act on it was correct, and
+the same restraint is owed to the next such number.
+
+### The rest of the bundle has no such number
+
+`promoted_policy_envoy` — which `AdvancedAi::new()` routes through — turns on
+**thirteen** behaviours. `production_advanced_scales_cities_development_and_home_defense_together`
+already pins the set; what it could not say is which parts were ever priced, so
+that ledger now sits on the test:
+
+| flag | individual evidence |
+|---|---|
+| `bounded_recovery` | **this entry** — null over 600 maps |
+| `city_target_floor = 6` | the solo axis is a **recorded null** (49.6%, Elo −3, p=0.9007, 240 pairs, seed 510000); ships inside the composite, not on that number |
+| `envoy_infrastructure` | 8–12 map screens; the combined economy re-measured null at 800 games |
+| `envoy_priority`, `adjacency_site_planning`, `settler_commit`, `research_economy`, `plan_city_target`, `amenity_districts`, `siege_muster`, `home_defense`, `tactical_strategy`, `unit_objective_memory` | **no individual outcome number located in this file** |
+
+A composite may pass a gate while a component is null alone, and the 2026-08-01
+promotion was such a composite — so this is not a claim that the bundle is
+wrong. It is a claim that **ten of its thirteen parts have never been priced
+apart**, which is precisely what `disable_bounded_recovery`'s own doc warned
+would happen.
+
+⚠ And the trap that cost an evaluation today is now recorded beside the pin:
+because this constructor sets these flags, an arm built as `AdvancedAi::new()`
+**plus** one of them is a byte-identical no-op. **Withhold, do not add.**
+
+
+## 2026-08-10 — ★★★★ the production city-target floor buys two cities and costs thirty Elo
+
+The ledger in the previous entry named ten production flags with no individual
+number. `city_target_floor = 6` had the weakest case of them: its **solo axis is
+a recorded null** — the 3 → 6 ramp measured 49.6%, Elo −3, sign p=0.9007 over
+240 pairs on seed 510000, after a 53.3% first reading that did not reproduce,
+and the entrant was removed. `GENOME.md` puts city expansion "at a local
+optimum". It ships anyway, inside the 2026-08-01 composite.
+
+`advanced_without_city_target_floor` returns the floor to the 3 the frozen and
+pre-promotion controllers use. One axis; nothing else moves.
+
+### The mechanism, from the fires-check
+
+| | score | **cities** | pop | districts | seat-win% |
+|---|---|---|---|---|---|
+| `advanced` (floor 6) | 682.9 | **8.06** | 89.2 | 28.8 | 16.7% |
+| withheld (floor 3) | 621.1 | **5.97** | 68.9 | 22.3 | 16.7% |
+
+The floor works exactly as designed: **+2.1 cities, +20 population, +6.5
+districts, +62 terminal score.** Every development proxy moves, and moves a lot.
+
+### The outcome, on four runs
+
+| run | profile | maps | paired score | Elo | direction | sign p |
+|---|---|---|---|---|---|---|
+| seed 7300000 | deployment, **all six victories** | 400 | **54.4%** | +30 | 74/39 | **0.0013** |
+| seed 8400000 | deployment, **all six victories** | 400 | **54.1%** | +29 | 83/50 | **0.0053** |
+| matrix `deployment-online` | three victories | 200 | **54.9%** | +34 | 54/28 | **0.0054** |
+| matrix `compact-standard` | small board | 200 | 49.0% | −7 | 30/37 | 0.4638 |
+
+**Withholding the floor wins more, on 1000 deployment maps across three
+independent runs, every one significant on direction and stable at +29 to +34.**
+Terminal score runs the other way just as hard — 93/307 and 90/310, both
+**p=0.0000 against the withhold**.
+
+★★★★ **So the floor buys two cities, twenty population and sixty terminal score,
+and pays about thirty Elo of wins for them.** This is the repository's own law
+made concrete on a single axis: *every cheap summary of a finished game is a
+correlate*. `leader_study` reports `cities` converting at 64% at turn 160,
+comfortably above a 17% chance — and causing more cities makes the agent
+**worse**. Correlation and causation on the same statistic, measured in the same
+week, pointing opposite ways.
+
+### ⚠ Not shipped yet, and why
+
+The promotion matrix at 200 pairs reads **RETAIN — cleared 1/2**. It rejected on
+`deployment-online`, but on **interval width, not on evidence against**: that
+profile's own direction is significant at p=0.0054 and its point estimate (+34)
+matches both 400-map runs. `compact-standard`, the no-regression profile,
+ACCEPTED.
+
+A REJECT is a REJECT. After reverting a change today for being promoted on the
+wrong profile, the answer is not to argue past this one — it is to run the gate
+at the resolution the effect needs. At 54.9% a 200-map interval is ±6.9 points
+and cannot clear parity; 400 maps gives ±4.9 and can. That matrix is running.
+
+**Nothing about the shipped agent changes in this entry.** What lands is the arm,
+the mechanism, and 1000 maps of deployment evidence, so the gate result — either
+way — is read against a record rather than a memory.

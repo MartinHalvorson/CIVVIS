@@ -761,9 +761,10 @@ no scenario:
 
 - **Every ship of the line is a Frigate.** The ruleset has one sailing warship
   of the age and the *Santísima Trinidad* and the little *Africa* are both it.
-  So rate is not modelled, and neither is the Royal Navy's rate of fire — the
-  thing that actually decided the exchange once the lines were locked. What is
-  left on the board is the part Nelson chose: where sixty ships were.
+  Rate is carried on top of that as a promotion — see below. What is still not
+  modelled is the Royal Navy's rate of fire, the thing that actually decided
+  the exchange once the lines were locked, so what is left on the board is the
+  part Nelson chose: where sixty ships were.
 - **The wind is not modelled**, and it decided a great deal. What survives of
   it is geometry: the van starts far from the fighting and cannot easily get
   back, which is what happened to Dumanoir for most of the afternoon.
@@ -781,3 +782,50 @@ and then dissolve into a general melee rather than either holding the line or
 cutting it. Neither side plays Trafalgar. That is a finding about the
 controllers and about the ranged abstraction above, not a result, and it is
 the reason this section makes no claim beyond it.
+
+### Rate, as promotions (2026-08-10)
+
+A scenario that draws every ship as the same unit says the *Santísima
+Trinidad* and the *Africa* are the same ship, which they are not. Promotions
+are the natural place to say the difference: they are the engine's own
+per-unit modifiers, combat already reads them, and granting one at setup is
+the same act as a unit having earned it.
+
+`trafalgar::rate_promotions` maps a gun figure to a promotion set, by **one
+rule applied to both fleets** — it never asks whose flag is up:
+
+| rate | promotion | ships |
+| --- | --- | --- |
+| 64 and under | none | 3 British, 1 Spanish |
+| 74 and over | `line_of_battle` (+7 Ranged Strength against naval units) | 24 British, 32 Combined |
+
+**Why two bands and not three.** The obvious third band is the seven
+three-deckers, and it was built and then measured out again. The Frigate's own
+promotion tree has exactly one promotion that adds broadside against ships —
+the one above. The rest of it is anti-land, anti-district, anti-air, or
+healing, which `Game::unit_heal_rate` switches off outright on every Tactics
+map. This battle has no land units, no districts, no aircraft and no healing,
+so the only remaining lever for a first rate was `coincidence_rangefinding`,
++1 attack range.
+
+Three seeds a configuration, stock controllers, 100-turn clock:
+
+| ladder | 1805 | 7 | 42 |
+| --- | --- | --- | --- |
+| no promotions | draw | draw | draw |
+| `line_of_battle` at 74+ | draw, 25 against 12 | draw | draw |
+| plus +1 range at 100+ | **France, turn 29** | **France, turn 28** | **France, turn 27** |
+
+A ship that outranges everything fires without reply, and the Combined Fleet
+had four such against Britain's three. That turned a hundred-turn action into
+a rout inside thirty — not because the Combined Fleet was heavier, which it
+was, but because the stand-in was far stronger than the thing it stood in for.
+A three-decker's guns did not shoot appreciably further; what she had was
+weight, and the board has no way to say "heavier still". So a first rate is a
+ship of the line and no more, and a test asserts it stays that way rather than
+leaving the next reader to rediscover the measurement.
+
+The broadside band itself is close to inert on the whole-battle result — three
+draws before and after — which is the expected shape: it separates four ships
+out of sixty. It is in because the scenario should describe the fleets
+correctly, not because it was expected to move a number.
