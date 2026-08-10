@@ -8009,8 +8009,17 @@ mod tests {
         );
     }
 
+    /// Naming a globe script and no dimensions gets the smallest of its
+    /// ladder, on either element.
+    ///
+    /// A browser always sends width and height, so this is the path a direct
+    /// client and a scripted sweep take. It resolves through the first row in
+    /// `BATTLEFIELD_SIZES` carrying that script, which is why the table is
+    /// ordered smallest-first and why this is pinned: reordering the rows
+    /// would silently move every such caller onto a different world, and a
+    /// diameter-8 sweep would quietly become a diameter-20 one.
     #[test]
-    fn a_tactics_planet_request_keeps_its_small_globe() {
+    fn a_tactics_globe_request_without_dimensions_gets_the_smallest_of_its_ladder() {
         let planet = new_game_params(
             &current(),
             &json!({"num_players": 2, "map_script": "tactics_planet"}),
@@ -8019,6 +8028,26 @@ mod tests {
         assert_eq!(planet.map_topology, MapTopology::Planet);
         assert_eq!((planet.width, planet.height), (40, 18));
         assert_eq!(planet.num_city_states, 0);
+
+        let ocean = new_game_params(
+            &current(),
+            &json!({"num_players": 2, "map_script": "tactics_ocean"}),
+        );
+        assert_eq!(ocean.map_script, MapScript::TacticsOcean);
+        assert_eq!(ocean.map_topology, MapTopology::Planet);
+        assert_eq!((ocean.width, ocean.height), (40, 18));
+        assert_eq!(ocean.num_city_states, 0);
+
+        // And a diameter the lobby did ask for is honoured rather than
+        // snapped back to the smallest.
+        let big = new_game_params(
+            &current(),
+            &json!({
+                "num_players": 2, "map_script": "tactics_ocean",
+                "map_topology": "planet", "width": 100, "height": 42,
+            }),
+        );
+        assert_eq!((big.width, big.height), (100, 42));
     }
 
     /// A scenario request is the battle it names, whatever else it asks for.
