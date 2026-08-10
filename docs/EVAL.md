@@ -8066,3 +8066,65 @@ cost, and not even for the sign of an effect.** A 1200-pair gate is not enough
 resolution to rescue the wrong profile; it just measures the wrong thing
 precisely. **Gate on the deployment shape, or say plainly which profile the
 number belongs to.**
+
+
+## 2026-08-10 — ★★★★ the leader study re-run at deployment, and it overturns its own headline
+
+The `d_holy` revert established that a number taken at `ai_eval`'s small
+defaults can flip sign at the deployment shape. The leader study (#1488) was
+taken at **4p 60x46 Standard** and had never been checked the same way. It
+should have been, and its conclusions do not survive.
+
+`leader_study` now defaults to the deployment shape — 6 players, 74x46, **9
+city-states**, Online, 250 turns — and takes `--speed`. 60 games, seeds 770000+,
+chance is 17% at six seats.
+
+| metric | 4p 60x38 Standard | **6p 74x46 Online, 9 CS** |
+|---|---|---|
+| *chance* | *25%* | ***17%*** |
+| `start_yield` *(control)* | 28% | 28% |
+| `start_room` *(control)* | 22% | **7%** |
+| **holy_sites** @t80 | **80%** | **34%** (peak 51% @t200) |
+| **techs** @t200 | 66% | **72%** |
+| **civics** @t160 | 58% | **62%** |
+| **cities** | **67% @t40** | 38% @t40, **64% @t160** |
+| pop @t200 | 60% | 60% |
+| districts @t200 | 54% | 61% |
+| faith @t130 | 14% | **7%** |
+| military @t200 | 51% | 52% |
+
+### What changed, and what it costs the earlier entry
+
+**1. `holy_sites` was a small-board artifact.** The strongest signal in the
+first study — 80% at turn 80 — is **34%** at deployment, barely double a 17%
+chance and below several other rows. This is an *independent* arrival at the
+same place as the `d_holy` revert: the causal test found the Holy Site trade is
+free on 24x16 and a wash at deployment, and the correlate says the same thing
+from the observational side. Two instruments, same conclusion, opposite methods.
+
+**2. "The winner is made, not dealt" was overstated.** `start_yield` reads 28%
+against a 17% chance here — **1.6x**, where on the 4p board it was 28% against
+25%, barely anything. Start quality carries a real if modest edge at deployment.
+The earlier entry's headline should be read as a 4p-board statement.
+
+**3. `start_room` inverts hard: 7% against 17% chance.** At deployment, the civ
+with the most unclaimed ground in settling range is *less* likely to win. Room
+without position is a peripheral start, not an opportunity — and it means the
+`cities` row still is not a land-availability artifact, just for the opposite
+reason.
+
+**4. The lanes that predict at deployment are science and culture.** `techs`
+peaks at **72%** and `civics` at **62%**, both above every other row. `cities`
+becomes a *midgame* statistic (64% at t160) rather than the opening sprint it
+looked like at 4p (67% at t40).
+
+**5. `faith` is more strongly anti-predictive, not less** — 7% against a 17%
+chance at turn 130. The rule survives the profile change and hardens: **the
+stock of a currency is a symptom of not having spent it.** Target the building.
+
+### The standing instruction this leaves
+
+Every observational conclusion in this file taken on a 4p small board is now
+suspect, on the same evidence that reverted a shipped change. The default is
+fixed so the next reader does not repeat it, and the flag is there to move
+deliberately rather than by accident.
