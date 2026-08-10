@@ -26425,6 +26425,18 @@ mod tests {
             .iter()
             .map(|position| ai.settlement_static_value_uncached(&game, 0, *position))
             .collect::<Vec<_>>();
+        let cloned_game = game.clone();
+        let cloned = positions
+            .iter()
+            .map(|position| ai.settlement_static_value_uncached(&cloned_game, 0, *position))
+            .collect::<Vec<_>>();
+        assert_eq!(cloned, expected, "a worker game clone must preserve static site values");
+        let cloned_ai = ai.clone();
+        let cloned_controller = positions
+            .iter()
+            .map(|position| cloned_ai.settlement_static_value_uncached(&game, 0, *position))
+            .collect::<Vec<_>>();
+        assert_eq!(cloned_controller, expected, "a worker controller clone must preserve static site values");
         ai.settlement_atlas_values(&game, 0, &positions);
         let actual = positions
             .iter()
