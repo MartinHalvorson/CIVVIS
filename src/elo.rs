@@ -38,7 +38,17 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 121] = [
+pub const EVAL_ONLY_AIS: [&str; 124] = [
+    // The native-safe half of the live-bridge bundle, applied to the stock
+    // production controller. `live` has only ever been measured against its
+    // own ablations, so these are what prices the whole repair set against
+    // the `advanced` incumbent it was never run against. War and economy
+    // halves exist so the composite's interaction is measurable rather than
+    // assumed: if the whole beats `advanced` by more than the halves do, the
+    // repairs compound.
+    "advanced_synergy",
+    "advanced_synergy_war",
+    "advanced_synergy_economy",
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -225,6 +235,106 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 41] = [
     "housing-buildings",
 ];
 
+/// The four bridge treatments that stay out of the native bundle, as tags.
+/// Three encode a rule of Firaxis' game rather than repairing one of ours; the
+/// fourth is excluded on evidence. See `AdvancedAi::enable_engine_repairs`.
+pub const FIRAXIS_ONLY_TREATMENTS: [&str; 4] = [
+    "joint-tactics",
+    "live-trader-route",
+    "live-religious-purchase",
+    "solvent-faith-army",
+];
+
+/// The military half of the native repair bundle: force assembly, marching,
+/// siege, threat reading, and the war/peace decision.
+pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 23] = [
+    "muster-at-command-radius",
+    "war-reinforcement",
+    "come-ashore",
+    "recorded-tactical-step",
+    "blind-objective-strength",
+    "blind-objective-units",
+    "relief-targets-the-siege",
+    "army-target-weighs-enemy",
+    "peacetime-deterrence",
+    "war-economy",
+    "bounded-recovery",
+    "siege-muster",
+    "siege-role",
+    "siege-tracks-wall",
+    "siege-commitment",
+    "war-patience",
+    "home-defense",
+    "garrison-under-fire",
+    "garrison-walls",
+    "strike-opening",
+    "ranged-line-of-sight",
+    "recon-replacement",
+    "religion-sues-peace",
+];
+
+/// The economic half: settlement, growth, districts, and the policy deck.
+pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 14] = [
+    "escort-unstick",
+    "wonder-ring-settle-value",
+    "stranded-settler-discount",
+    "wide-map-capacity",
+    "housing-districts",
+    "housing-buildings",
+    "housing-cards",
+    "housing-research",
+    "campus-every-city",
+    "district-coverage",
+    "slot-kind-tiebreak",
+    "loyalty-policy-defence",
+    "loyalty-rate-alarm",
+    "suzerain-cards",
+];
+
+/// Every live-bridge repair that fixes a CIVVIS engine defect, as evaluator
+/// tags — `LIVE_BRIDGE_TREATMENTS` minus `FIRAXIS_ONLY_TREATMENTS`, and the
+/// union of the two halves above. `engine_repair_tags_partition_the_bridge`
+/// fails if any of those three relationships stops holding.
+pub const ENGINE_REPAIR_TREATMENTS: [&str; 37] = [
+    "muster-at-command-radius",
+    "war-reinforcement",
+    "come-ashore",
+    "recorded-tactical-step",
+    "blind-objective-strength",
+    "blind-objective-units",
+    "relief-targets-the-siege",
+    "army-target-weighs-enemy",
+    "peacetime-deterrence",
+    "war-economy",
+    "bounded-recovery",
+    "siege-muster",
+    "siege-role",
+    "siege-tracks-wall",
+    "siege-commitment",
+    "war-patience",
+    "home-defense",
+    "garrison-under-fire",
+    "garrison-walls",
+    "strike-opening",
+    "ranged-line-of-sight",
+    "recon-replacement",
+    "religion-sues-peace",
+    "escort-unstick",
+    "wonder-ring-settle-value",
+    "stranded-settler-discount",
+    "wide-map-capacity",
+    "housing-districts",
+    "housing-buildings",
+    "housing-cards",
+    "housing-research",
+    "campus-every-city",
+    "district-coverage",
+    "slot-kind-tiebreak",
+    "loyalty-policy-defence",
+    "loyalty-rate-alarm",
+    "suzerain-cards",
+];
+
 /// Register a selectable arm once, under a typed identity.  The factory,
 /// artifact resolver, provenance report, and evaluator-collapse guard all use
 /// this identity rather than maintaining separate string matches.
@@ -285,6 +395,9 @@ define_arm_kinds! {
     LiveWithoutWarPatience => "live_without_war_patience",
     Advanced => "advanced",
     AdvancedBankingDedication => "advanced_banking_dedication",
+    AdvancedSynergy => "advanced_synergy",
+    AdvancedSynergyWar => "advanced_synergy_war",
+    AdvancedSynergyEconomy => "advanced_synergy_economy",
     AdvancedBeliefPressure => "advanced_belief_pressure",
     AdvancedBlindToLeaders => "advanced_blind_to_leaders",
     AdvancedCityStrategy => "advanced_city_strategy",
@@ -1787,6 +1900,25 @@ fn artifact_effective_alias(kind: ArmKind, dir: &str) -> ArmKind {
 fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
     match kind.name() {
         "advanced" => Box::new(AdvancedAi::new()),
+        // Stock production weights and stock policy, with every live-bridge
+        // repair that fixes a CIVVIS engine defect rather than a Firaxis one.
+        // See `AdvancedAi::enable_engine_repairs` for the four exclusions and
+        // for why ablating the bundle cannot answer what the bundle is worth.
+        "advanced_synergy" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_engine_repairs();
+            Box::new(ai)
+        }
+        "advanced_synergy_war" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_engine_repairs_war();
+            Box::new(ai)
+        }
+        "advanced_synergy_economy" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_engine_repairs_economy();
+            Box::new(ai)
+        }
         // The first bounded use of the fog-safe belief surface. It retains
         // only last-seen military strength for the already fog-filtered
         // city-pressure/recovery path; every other Advanced policy remains
@@ -3430,6 +3562,13 @@ impl ArmKind {
             Self::LiveWithoutWarEconomy => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings"],
             Self::LiveWithoutWarReinforcement => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings"],
             Self::LiveWithoutWarPatience => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings"],
+            // The native repair bundle is a COMPOSITE for the same reason
+            // `live` is, and is tagged the same way: against `advanced` the
+            // differing axes name all 37 repairs, and against `live` they name
+            // exactly the four Firaxis-semantics flags that separate them.
+            Self::AdvancedSynergy => &ENGINE_REPAIR_TREATMENTS,
+            Self::AdvancedSynergyWar => &ENGINE_REPAIR_WAR_TREATMENTS,
+            Self::AdvancedSynergyEconomy => &ENGINE_REPAIR_ECONOMY_TREATMENTS,
             Self::AdvancedBeliefPressure => &["belief-pressure"],
             // `advanced` now owns the confirmed Live + infrastructure +
             // priority composite. The retained arms below are therefore
@@ -3978,6 +4117,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live_without_war_reinforcement" => (Vec::new(), "live_without_war_reinforcement"),
         "live_without_war_patience" => (Vec::new(), "live_without_war_patience"),
         "advanced" => (Vec::new(), "advanced"),
+        "advanced_synergy" => (Vec::new(), "advanced_synergy"),
+        "advanced_synergy_war" => (Vec::new(), "advanced_synergy_war"),
+        "advanced_synergy_economy" => (Vec::new(), "advanced_synergy_economy"),
         "advanced_belief_pressure" => (Vec::new(), "advanced_belief_pressure"),
         "advanced_policy_live_control" => (Vec::new(), "advanced_policy_live_control"),
         "advanced_policy_envoy_priority" => (Vec::new(), "advanced"),
@@ -4708,6 +4850,8 @@ mod tests {
         ELO_BASE_RATING, ELO_PROTOCOL_VERSION, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS,
         HISTORICAL_V1_RATINGS_PATH,
         LIVE_BRIDGE_TREATMENTS,
+        ENGINE_REPAIR_TREATMENTS, ENGINE_REPAIR_WAR_TREATMENTS,
+        ENGINE_REPAIR_ECONOMY_TREATMENTS, FIRAXIS_ONLY_TREATMENTS,
         HISTORICAL_V2_RATINGS_PATH, HISTORICAL_V3_RATINGS_PATH,
         VALUENET_FILE,
     };
@@ -5231,7 +5375,10 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 90] = [
+            const SCRIPTED: [&str; 93] = [
+                "advanced_synergy",
+                "advanced_synergy_war",
+                "advanced_synergy_economy",
                 "advanced_joint_tactics",
                 "live_without_joint_tactics",
                 "advanced",
@@ -5383,6 +5530,142 @@ mod tests {
              add the missing tag (and give it a `live_without_*` arm) or the evaluator \
              arms claim a controlled comparison they are not running",
             LIVE_BRIDGE_TREATMENTS.len()
+        );
+    }
+
+    /// `AdvancedAi::enable_engine_repairs` claims to be `enable_live_bridge`
+    /// minus exactly four Firaxis-semantics flags. Nothing but this test holds
+    /// that claim up.
+    ///
+    /// It fails in the same silent way as the check above, from the other
+    /// side: a repair added to the bridge and not to the native bundle
+    /// compiles, passes every other test, and quietly makes `advanced_synergy`
+    /// a different treatment than the one its documentation — and whatever
+    /// eval record it has by then accumulated — describes.
+    #[test]
+    fn engine_repairs_are_the_live_bridge_minus_the_firaxis_semantics() {
+        /// Each of these encodes a rule of Firaxis' game rather than repairing
+        /// one of ours, except the last, which is excluded on evidence: the
+        /// deployment-profile run split every map at +0 Elo for 2.5x the
+        /// rollout branches.
+        const EXCLUDED: [&str; 4] = [
+            "live_trader_route_adapter",
+            "live_religious_purchase_guard",
+            "solvent_faith_army",
+            "joint_tactics",
+        ];
+        let source = include_str!("ai/advanced.rs");
+        let calls = |name: &str| -> BTreeSet<String> {
+            let body = source
+                .split(&format!("pub fn {name}(&mut self) {{"))
+                .nth(1)
+                .and_then(|tail| tail.split("\n    }\n").next())
+                .unwrap_or_else(|| panic!("no body found for {name}"));
+            body.match_indices("self.enable_")
+                .map(|(at, _)| {
+                    let rest = &body[at + "self.enable_".len()..];
+                    rest[..rest.find('(').expect("an enable call")].to_string()
+                })
+                .collect()
+        };
+
+        // The parent must actually delegate, or the halves could agree with
+        // the bridge while `advanced_synergy` carried neither of them.
+        let parent = calls("enable_engine_repairs");
+        assert_eq!(
+            parent,
+            BTreeSet::from([
+                "engine_repairs_economy".to_string(),
+                "engine_repairs_war".to_string(),
+            ]),
+            "enable_engine_repairs must be exactly its two halves"
+        );
+
+        let bridge = calls("enable_live_bridge");
+        let war = calls("enable_engine_repairs_war");
+        let economy = calls("enable_engine_repairs_economy");
+        let overlap: Vec<&String> = war.intersection(&economy).collect();
+        assert!(
+            overlap.is_empty(),
+            "a repair is in both halves, so the halves are not a partition \
+             and their separate measurements would double-count it: {overlap:?}"
+        );
+
+        let native: BTreeSet<String> = war.union(&economy).cloned().collect();
+        let excluded: BTreeSet<String> = EXCLUDED.iter().map(|tag| tag.to_string()).collect();
+        let smuggled: Vec<&String> = native.intersection(&excluded).collect();
+        assert!(
+            smuggled.is_empty(),
+            "the native bundle carries a Firaxis-semantics flag: {smuggled:?}"
+        );
+
+        let expected: BTreeSet<String> = bridge.difference(&excluded).cloned().collect();
+        assert_eq!(
+            native,
+            expected,
+            "enable_engine_repairs and enable_live_bridge have drifted. \
+             Missing from the native bundle: {:?}. Not in the bridge at all: {:?}. \
+             Every bridge repair is a native repair unless it encodes a Firaxis \
+             rule — if a new one does, add it to EXCLUDED here with its reason.",
+            expected.difference(&native).collect::<Vec<_>>(),
+            native.difference(&expected).collect::<Vec<_>>(),
+        );
+        assert_eq!(
+            bridge.len(),
+            native.len() + EXCLUDED.len(),
+            "the bridge must be the native bundle plus exactly the exclusions"
+        );
+    }
+
+    /// The flag-level check above proves the two *helpers* agree. This proves
+    /// the two *tag lists* do, which is what `differing_axes` actually reports.
+    ///
+    /// Both are needed: a repair could be correctly added to
+    /// `enable_engine_repairs_war` and its tag forgotten here, and then
+    /// `advanced_synergy` vs `advanced` would silently under-report its own
+    /// axes — the same defect #977 shipped, one level up.
+    #[test]
+    fn engine_repair_tags_partition_the_bridge() {
+        let war: BTreeSet<&str> = ENGINE_REPAIR_WAR_TREATMENTS.iter().copied().collect();
+        let economy: BTreeSet<&str> = ENGINE_REPAIR_ECONOMY_TREATMENTS.iter().copied().collect();
+        assert_eq!(
+            war.len(),
+            ENGINE_REPAIR_WAR_TREATMENTS.len(),
+            "a duplicate war tag would make the halves overlap silently"
+        );
+        assert_eq!(
+            economy.len(),
+            ENGINE_REPAIR_ECONOMY_TREATMENTS.len(),
+            "a duplicate economy tag would make the halves overlap silently"
+        );
+        let both: Vec<&&str> = war.intersection(&economy).collect();
+        assert!(
+            both.is_empty(),
+            "the halves must partition the bundle, or measuring them \
+             separately double-counts a repair: {both:?}"
+        );
+
+        let whole: BTreeSet<&str> = ENGINE_REPAIR_TREATMENTS.iter().copied().collect();
+        let halves: BTreeSet<&str> = war.union(&economy).copied().collect();
+        assert_eq!(
+            whole, halves,
+            "ENGINE_REPAIR_TREATMENTS must be exactly its two halves"
+        );
+
+        let bridge: BTreeSet<&str> = LIVE_BRIDGE_TREATMENTS.iter().copied().collect();
+        let firaxis: BTreeSet<&str> = FIRAXIS_ONLY_TREATMENTS.iter().copied().collect();
+        assert!(
+            firaxis.is_subset(&bridge),
+            "an exclusion names a treatment the bridge does not carry"
+        );
+        let expected: BTreeSet<&str> = bridge.difference(&firaxis).copied().collect();
+        assert_eq!(
+            whole,
+            expected,
+            "the native tag list has drifted from the bridge. Missing: {:?}. \
+             Unknown to the bridge: {:?}.",
+            expected.difference(&whole).collect::<Vec<_>>(),
+            whole.difference(&expected).collect::<Vec<_>>(),
         );
     }
 
