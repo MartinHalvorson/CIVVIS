@@ -9725,12 +9725,11 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("id=\"specchk\""));
         assert!(!EMBEDDED_INDEX.contains("RULES.map_sizes.filter"));
 
-        // The lobby's reading order. `#newgame-options` is a two-column grid
-        // filled row by row, so document order is the visible reading path:
-        // which game and who plays it, then size and geography, then era and
-        // clock sharing one row, then victories. The rules, roster, teams,
-        // climate, wraparound and seed stay in the advanced drawer; the era
-        // mods live in the mods drawer.
+        // The lobby's reading order is also its visible vertical path: which
+        // game and who plays it, then size, geography, map, era, clock, and
+        // finally victories. The rules, roster, teams, climate, wraparound
+        // and seed stay in the advanced drawer; the era mods live in the mods
+        // drawer.
         let order = [
             "gamemode",
             "humanplayers",
@@ -10037,7 +10036,7 @@ mod tests {
             "<option value=\"symbol\">Symbol</option>",
             ".resource-display-setting { grid-template-columns: minmax(0, 1fr); gap: 4px; }",
             ".resource-display-setting > select { width: 100%; }",
-            ".display-settings-group-body > .speed-row,",
+            ".display-settings-group-body > .speed-row { margin-top: 2px; }",
             "const RESOURCE_DISPLAY_STORAGE_KEY = \"civvis-resource-display\";",
             "let RESOURCE_DISPLAY = localStorage.getItem(RESOURCE_DISPLAY_STORAGE_KEY) === \"symbol\"",
             "function setResourceDisplay(mode) {",
@@ -10248,13 +10247,30 @@ mod tests {
             ),
             "map controls should not offer dismissal while their restore switch is hidden"
         );
+        // Every editable settings group uses one compact full-width column;
+        // labels and controls may share a row, but separate choices never do.
+        for single_column_settings_grid in [
+            "#newgame-options { display: grid; grid-template-columns: minmax(0, 1fr);",
+            ".victory-option-grid { display: grid; grid-template-columns: minmax(0, 1fr);",
+            ".victory-endgame {\n    display: grid; grid-template-columns: minmax(0, 1fr);",
+            ".tactics-options {\n    grid-template-columns: minmax(0, 1fr);",
+            ".scenario-browser-battles { display: grid; grid-template-columns: minmax(0, 1fr);",
+            ".era-mods-body {\n    display: grid; grid-template-columns: minmax(0, 1fr);",
+            ".display-settings-group-body {\n    display: grid; grid-template-columns: minmax(0, 1fr);",
+            ".advanced-settings-body {\n    display: grid; grid-template-columns: minmax(0, 1fr);",
+            ".mod-option-grid { display: grid; grid-template-columns: minmax(0, 1fr);",
+            ".overlay-option-grid { display: grid; grid-template-columns: minmax(0, 1fr);",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(single_column_settings_grid),
+                "settings layout should stay single-column: {single_column_settings_grid}"
+            );
+        }
         // Each overlay owns a menu with its visibility switch in the header,
         // and the order the menus are written in follows the map: the rail
         // read top to bottom — standings, victory tracker, world minimap —
         // and then the map controls and lenses docked together in the
         // opposite corner.
-        assert!(EMBEDDED_INDEX
-            .contains(".overlay-option-grid { display: grid; grid-template-columns: 1fr 1fr;"));
         let switches = EMBEDDED_INDEX
             .split_once(
                 "<div class=\"overlay-options overlay-menus\" role=\"group\" aria-labelledby=\"overlay-options-title\">",

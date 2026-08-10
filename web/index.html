@@ -1662,7 +1662,7 @@
      cannot run, so the refusal has somewhere to be read: a dead Steam client
      once cost eleven ladder attempts, each recorded as a loss rather than as
      an attempt that never happened. */
-  #civ6-status { display: none; grid-column: 1 / -1; margin: 1px 0 2px; }
+  #civ6-status { display: none; margin: 1px 0 2px; }
   body.playing-civ6 #civ6-status { display: block; }
   #civ6-status .civ6-line {
     display: flex; gap: 6px; align-items: baseline;
@@ -2256,7 +2256,8 @@
   /* A four-group legend needs its groups named, and a heading is the one row
      that spans both columns. */
   kbd { display: inline-grid; min-width: 19px; height: 18px; place-items: center; margin-right: 5px; padding: 0 4px; border-radius: 5px; color: #cbd5d0; background: #091310; border: 1px solid #354c44; box-shadow: inset 0 -1px #000; font: 700 var(--type-label)/1 var(--font-ui); }
-  #newgame-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
+  /* Setup is a compact vertical path: each decision gets the full deck width. */
+  #newgame-options { display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; align-items: end; }
   #newgame-options button { margin: 0; }
   #newgame-options input[type="number"] {
     box-sizing: border-box; max-width: 100%; width: 100%; padding: 8px 10px; border-radius: 8px;
@@ -2264,51 +2265,30 @@
   }
   #newgame-options input[type="number"]:focus { border-color: var(--gold); box-shadow: 0 0 0 3px #d7b66a1d; }
   #newgame-options .setup-number-hint { display: block; margin-top: 3px; color: var(--faint); font-size: var(--type-label); line-height: 1.3; }
-  #saves-group { grid-column: 1 / -1; }
-  .victory-options { grid-column: 1 / -1; padding: 9px 10px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080; }
+  .victory-options { padding: 9px 10px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080; }
   .victory-options h2 { margin-bottom: 8px; }
-  /* Three across when the sidebar can spell the longest condition out, fewer
-     when it cannot. "Domination" is a single unbreakable word about 83px wide,
-     so a fixed `repeat(3, 1fr)` handed it a 66px column at the default sidebar
-     and it ran under the Score checkbox beside it — a checkbox label cannot
-     shrink past its longest word, it can only spill. The `max()` floor stops a
-     track ever falling below the word; the `(100% - 18px) / 3` half caps the
-     row at three, so widening the sidebar never reflows six conditions into
-     four columns and a stray pair. That 18px is the two column gaps a
-     three-column row spends — keep it in step with the 9px gap below. */
-  .victory-option-grid {
-    display: grid; gap: 7px 9px;
-    grid-template-columns: repeat(auto-fit, minmax(max(92px, (100% - 18px) / 3), 1fr));
-  }
+  /* Victory conditions stay as one short checklist: every option gets a full
+     row, so scanning and changing them never means managing a second column. */
+  .victory-option-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; }
   .victory-option { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--muted); font-size: var(--type-small); cursor: pointer; }
   .victory-option input { margin: 0; }
-  /* Both endgame rules only mean something against the boxes ticked above —
-     the Mercy Rule ends a game those conditions are still deciding, and
-     Require N counts them — so they read as the card's second row rather than
-     a separate setting adrift in the two-column setup grid. "95% win odds"
-     needs about 150px to spell itself out, so the pair sits side by side only
-     in a sidebar wide enough for that and stacks rather than clipping below
-     it. Bottom alignment keeps the two selects on one line even though
-     "Require N Victory Types" wraps to a second line and "Mercy Rule" does
-     not. */
+  /* Both endgame rules qualify the checklist above, so they stay inside its
+     card and stack in the same single setting column. */
   .victory-endgame {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 8px 10px; align-items: end; margin-top: 9px; padding-top: 9px;
+    display: grid; grid-template-columns: minmax(0, 1fr);
+    gap: 7px; align-items: end; margin-top: 9px; padding-top: 9px;
     border-top: 1px solid var(--line-soft);
   }
   .victory-endgame > label { min-width: 0; }
   .victory-endgame select { width: 100%; }
-  /* The arena's economy, laid out like the endgame row above it and by the
-     same rule: side by side wherever the sidebar can spell a label out,
-     stacked below that, bottom-aligned so wrapped labels cannot knock their
-     controls off one another's line. */
+  /* The arena follows the same compact, one-control-per-row setup path. */
   body.playing-tactics .tactics-options { display: grid; }
   .tactics-options {
-    grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 8px 10px; align-items: end; padding: 9px 10px 10px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 7px; align-items: end; padding: 9px 10px 10px;
     border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080;
   }
-  .tactics-options h2 { grid-column: 1 / -1; margin-bottom: 0; }
+  .tactics-options h2 { margin-bottom: 0; }
   .tactics-options > label { min-width: 0; }
   .tactics-options select { width: 100%; }
   /* A scenario is fought under the economy its battle had, so most of this
@@ -2318,7 +2298,7 @@
   .tactics-options > label.setting-fixed { opacity: 0.55; }
   .tactics-options > label.setting-fixed select { cursor: not-allowed; }
   .tactics-scenario-browser {
-    display: none; grid-column: 1 / -1; gap: 9px; padding: 10px;
+    display: none; gap: 9px; padding: 10px;
     border: 1px solid var(--line-soft); border-radius: 9px;
     background: linear-gradient(135deg, #0d1b1680, #091310a8);
   }
@@ -2350,7 +2330,7 @@
   .scenario-browser-group[open] > summary { border-bottom: 1px solid var(--line-soft); }
   .scenario-browser-group[open] > summary::after { content: "−"; }
   .scenario-browser-group-count { color: var(--muted); font-weight: 600; }
-  .scenario-browser-battles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 7px; padding: 8px; }
+  .scenario-browser-battles { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 8px; }
   .scenario-card {
     min-width: 0; padding: 8px; text-align: left; border: 1px solid var(--line-soft);
     border-radius: 7px; color: var(--text); background: #0b1712; cursor: pointer; font: inherit;
@@ -2371,13 +2351,12 @@
   .scenario-force small { margin-top: 2px; color: var(--muted); font-size: var(--type-small); line-height: 1.35; }
   @media (max-width: 560px) {
     .scenario-brief-forces { grid-template-columns: 1fr; }
-    .scenario-browser-battles { grid-template-columns: 1fr; }
   }
   /* The first setup pass stays short. Less common rules live behind one
      disclosure at the bottom of each panel, where they remain discoverable
      without making every new game begin with a wall of switches. */
   .advanced-settings {
-    grid-column: 1 / -1; width: 100%; margin-top: 2px; overflow: hidden;
+    width: 100%; margin-top: 2px; overflow: hidden;
     border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080;
   }
   .advanced-settings > summary {
@@ -2398,13 +2377,13 @@
     letter-spacing: .02em; text-overflow: ellipsis; text-transform: none; white-space: nowrap;
   }
   .era-mods-body {
-    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px;
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px;
     align-items: end;
   }
   .era-mod-option { margin: 0; }
   .era-future-setting { min-width: 0; }
   .custom-leader-selection {
-    grid-column: 1 / -1; min-width: 0; padding: 9px 10px 10px;
+    min-width: 0; padding: 9px 10px 10px;
     border: 1px solid var(--line-soft); border-radius: 9px; background: #07100e99;
   }
   .custom-leader-help { margin: -1px 0 9px; color: var(--faint); line-height: 1.4; }
@@ -2443,14 +2422,9 @@
   .display-settings-group[open] > summary { border-bottom: 1px solid var(--line-soft); color: var(--text); }
   .display-settings-group[open] > summary::after { content: "−"; }
   .display-settings-group-body {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px;
     padding: 10px 10px 11px; align-items: end;
   }
-  .display-settings-group-body > .setting-row,
-  .display-settings-group-body > .speed-row,
-  .display-settings-group-body > .overlay-options,
-  .display-settings-group-body > .performance-stats,
-  .display-settings-group-body > .performance-host-telemetry { grid-column: 1 / -1; }
   .display-settings-group-body > .setting-row,
   .display-settings-group-body > .speed-row { margin-top: 2px; }
   .display-settings-group-body > .overlay-options { margin-top: 0; padding-top: 0; border-top: 0; }
@@ -2545,14 +2519,9 @@
   .performance-host-telemetry[open] > summary::after { content: "−"; }
   .performance-host-telemetry > .machine-loads { margin: 0; border: 0; border-radius: 0; background: transparent; }
   .advanced-settings-body {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px;
     padding: 10px 10px 11px; align-items: end;
   }
-  .advanced-settings-body > .mod-options,
-  .advanced-settings-body > .custom-leader-selection,
-  .advanced-settings-body > .overlay-options,
-  .advanced-settings-body > .setting-row,
-  .advanced-settings-body > .resource-display-setting { grid-column: 1 / -1; }
   .advanced-settings-body > .overlay-options { margin-top: 0; }
   .advanced-settings-body > .setting-row,
   .advanced-settings-body > .resource-display-setting { margin-top: 2px; }
@@ -2566,7 +2535,7 @@
     margin-bottom: 7px; color: var(--gold); font-size: var(--type-label);
     font-weight: 850; letter-spacing: .08em; text-transform: uppercase;
   }
-  .mod-option-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 8px; }
+  .mod-option-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .mod-option {
     min-width: 0; display: flex; align-items: flex-start; gap: 6px;
     color: var(--muted); font-size: var(--type-small); line-height: 1.25; cursor: pointer;
@@ -3259,7 +3228,7 @@
 
   .overlay-options { margin-top: 11px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
   .overlay-options h2 { margin-bottom: 8px; }
-  .overlay-option-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 8px; }
+  .overlay-option-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .overlay-option {
     min-width: 0; display: flex; align-items: center; gap: 6px; color: var(--muted);
     font-size: var(--type-small); line-height: 1.25; cursor: pointer;
