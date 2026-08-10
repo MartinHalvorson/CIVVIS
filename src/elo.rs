@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 116] = [
+pub const EVAL_ONLY_AIS: [&str; 117] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -130,6 +130,7 @@ pub const EVAL_ONLY_AIS: [&str; 116] = [
     "advanced_without_city_target_floor",
     "advanced_league_top",
     "advanced_joint_tactics",
+    "advanced_siege_objective_hysteresis",
     "strategic_cheap",
     "strategic_score",
     "strategic_doctrine",
@@ -309,6 +310,7 @@ define_arm_kinds! {
     AdvancedExpansionDispatch => "advanced_expansion_dispatch",
     AdvancedExpansionPayback => "advanced_expansion_payback",
     AdvancedJointTactics => "advanced_joint_tactics",
+    AdvancedSiegeObjectiveHysteresis => "advanced_siege_objective_hysteresis",
     AdvancedLateExpansion => "advanced_late_expansion",
     AdvancedLeagueTop => "advanced_league_top",
     AdvancedMeasuredDedication => "advanced_measured_dedication",
@@ -2418,6 +2420,11 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.joint_tactics = true;
             Box::new(ai)
         }
+        "advanced_siege_objective_hysteresis" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_siege_objective_hysteresis();
+            Box::new(ai)
+        }
         // The denial ablation on the weights the deployment actually plays.
         // Every other arm in `docs/COUNTERING_LEADERS.md` ran on
         // `Weights::default()`, and a genome moves `war_ratio`, `city_target`
@@ -3378,6 +3385,7 @@ impl ArmKind {
             Self::AdvancedCityStrategyPressureOnly => &["city-directives", "city-pressure-only"],
             Self::AdvancedExpansionPayback => &["expansion-payback"],
             Self::AdvancedJointTactics => &["joint-tactics"],
+            Self::AdvancedSiegeObjectiveHysteresis => &["siege-objective-hysteresis"],
             Self::AdvancedLateExpansion => &["late-expansion"],
             Self::AdvancedExpansionDispatch => &["expansion-dispatch"],
             Self::AdvancedExpansionComplete => &["late-expansion", "expansion-dispatch"],
@@ -3909,6 +3917,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_bounded_recovery" => (Vec::new(), "advanced_without_bounded_recovery"),
         "advanced_without_city_target_floor" => (Vec::new(), "advanced_without_city_target_floor"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
+        "advanced_siege_objective_hysteresis" => {
+            (Vec::new(), "advanced_siege_objective_hysteresis")
+        }
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
         "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
@@ -5115,8 +5126,9 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 85] = [
+            const SCRIPTED: [&str; 86] = [
                 "advanced_joint_tactics",
+                "advanced_siege_objective_hysteresis",
                 "live_without_joint_tactics",
                 "advanced",
                 "advanced_belief_pressure",

@@ -26,6 +26,9 @@ use std::sync::Arc;
 /// attack unsupported. Below it the group holds on its own account, whatever
 /// else is happening in the empire.
 const LOCAL_SUPERIORITY_FLOOR: f64 = 0.72;
+/// A fresh campaign city must beat the incumbent by this much before the
+/// objective changes. This is intentionally off by default until evaluated.
+const SIEGE_OBJECTIVE_HYSTERESIS: f64 = 45.0;
 /// Full health of a city, and the ceiling `Game::end_turn` heals back toward at
 /// `+20` a turn. [`AdvancedAi::siege_commitment`] measures a siege against it.
 const CITY_MAX_HP: i32 = 200;
@@ -1185,6 +1188,9 @@ pub struct AdvancedAi {
     /// which keeps it inert in the ordinary case. **Off by default, live-bridge
     /// only.**
     pub siege_commitment: bool,
+    /// Hold a campaign's incumbent city against small score fluctuations.
+    /// **Off by default; evaluation-only until it earns a live arm.**
+    pub siege_objective_hysteresis: bool,
     /// Aim a relief force at what is actually hitting the city, not at whichever
     /// besieger happens to stand nearest the force.
     ///
@@ -2439,6 +2445,7 @@ impl AdvancedAi {
             war_reinforcement: false,
             war_patience: false,
             siege_commitment: false,
+            siege_objective_hysteresis: false,
             relief_targets_the_siege: false,
             blind_objective_units: false,
             settler_price: 1.0,
@@ -2765,6 +2772,10 @@ impl AdvancedAi {
     /// recorded ladders stay comparable.
     pub fn enable_siege_commitment(&mut self) {
         self.siege_commitment = true;
+    }
+
+    pub fn enable_siege_objective_hysteresis(&mut self) {
+        self.siege_objective_hysteresis = true;
     }
 
     /// Send a relief force at the units actually besieging the city rather than
@@ -3281,6 +3292,10 @@ impl AdvancedAi {
 
     pub fn disable_siege_commitment(&mut self) {
         self.siege_commitment = false;
+    }
+
+    pub fn disable_siege_objective_hysteresis(&mut self) {
+        self.siege_objective_hysteresis = false;
     }
 
     pub fn disable_relief_targets_the_siege(&mut self) {
@@ -6123,7 +6138,8 @@ impl AdvancedAi {
             })
             .or_else(|| {
                 target_player.and_then(|target| {
-                    g.cities
+                    let best = g
+                        .cities
                         .values()
                         .filter(|c| c.owner == target)
                         .min_by(|left, right| {
@@ -6131,7 +6147,8 @@ impl AdvancedAi {
                                 .total_cmp(&self.campaign_city_value(g, pid, right, strategy))
                                 .then_with(|| left.id.cmp(&right.id))
                         })
-                        .map(|c| c.id)
+                        .map(|c| c.id)?;
+                    Some(self.held_campaign_objective(g, pid, strategy, target, best))
                 })
             });
 
@@ -15666,6 +15683,38 @@ impl AdvancedAi {
     /// occupation pressure, development, and victory-denial value. It is the
     /// campaign analogue of a chess engine's move ordering: forces search the
     /// most forcing and profitable front first rather than the first legal one.
+    fn held_campaign_objective(
+        &self,
+        g: &Game,
+        pid: usize,
+        strategy: GrandStrategy,
+        target: usize,
+        best: u32,
+    ) -> u32 {
+        if !self.siege_objective_hysteresis {
+            return best;
+        }
+        let Some(incumbent) = self.plan.as_ref().and_then(|plan| plan.target_city) else {
+            return best;
+        };
+        if incumbent == best {
+            return best;
+        }
+        let Some(held) = g.cities.get(&incumbent).filter(|city| city.owner == target) else {
+            return best;
+        };
+        let Some(challenger) = g.cities.get(&best) else {
+            return best;
+        };
+        let held_value = self.campaign_city_value(g, pid, held, strategy);
+        let challenger_value = self.campaign_city_value(g, pid, challenger, strategy);
+        if challenger_value + SIEGE_OBJECTIVE_HYSTERESIS < held_value {
+            best
+        } else {
+            incumbent
+        }
+    }
+
     fn campaign_city_value(
         &self,
         g: &Game,
@@ -25642,12 +25691,121 @@ mod tests {
     fn only_the_live_bridge_finishes_a_siege() {
         let fresh = AdvancedAi::new();
         assert!(!fresh.siege_commitment);
+        assert!(!fresh.siege_objective_hysteresis);
         assert!(!AdvancedAi::legacy().siege_commitment);
         let mut live = AdvancedAi::new();
         live.enable_live_bridge();
         assert!(live.siege_commitment);
+        assert!(!live.siege_objective_hysteresis);
         live.disable_siege_commitment();
         assert!(!live.siege_commitment);
+    }
+
+    #[test]
+    fn siege_objective_hysteresis_holds_incumbent_inside_margin() {
+        let mut game = Game::new_full(2, 30, 18, 7_111, 300, 0, false);
+        for pid in 0..2 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+
+        let first = game.player_city_ids(1)[0];
+        let far = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile)
+                        && !game.rules.is_water(tile)
+                        && game.wdist(*position, game.cities[&first].pos) >= 5
+                })
+            })
+            .min_by_key(|position| *position)
+            .expect("the board has a second land site");
+        let settler = game.spawn_test_unit("settler", 1, far);
+        game.current = 1;
+        game.apply(1, &Action::FoundCity { unit: settler })
+            .unwrap();
+        let second = *game
+            .player_city_ids(1)
+            .iter()
+            .find(|city| **city != first)
+            .expect("a second enemy city");
+
+        let value = |ai: &AdvancedAi, game: &Game, city| {
+            ai.campaign_city_value(game, 0, &game.cities[&city], GrandStrategy::Conquest)
+        };
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.belief.observe(&game, 0);
+        let (best, incumbent) = if value(&ai, &game, first) <= value(&ai, &game, second) {
+            (first, second)
+        } else {
+            (second, first)
+        };
+        let set_plan = |ai: &mut AdvancedAi, target_city, assessed_turn| {
+            ai.plan = Some(StrategicPlan {
+                strategy: GrandStrategy::Conquest,
+                target_player: Some(1),
+                target_city: Some(target_city),
+                threatened_city: None,
+                desired_cities: 6,
+                assessed_turn,
+                rush: false,
+            });
+        };
+
+        set_plan(&mut ai, incumbent, game.turn);
+        assert_eq!(
+            ai.held_campaign_objective(&game, 0, GrandStrategy::Conquest, 1, best),
+            best
+        );
+        ai.enable_siege_objective_hysteresis();
+
+        for _ in 0..200 {
+            if value(&ai, &game, incumbent) - value(&ai, &game, best)
+                < SIEGE_OBJECTIVE_HYSTERESIS
+            {
+                break;
+            }
+            game.cities.get_mut(&incumbent).unwrap().pop += 1;
+            ai.belief.observe(&game, 0);
+        }
+        assert!(
+            value(&ai, &game, incumbent) - value(&ai, &game, best)
+                < SIEGE_OBJECTIVE_HYSTERESIS
+        );
+        set_plan(&mut ai, incumbent, game.turn);
+        assert_eq!(
+            ai.held_campaign_objective(&game, 0, GrandStrategy::Conquest, 1, best),
+            incumbent
+        );
+
+        let grown = game.cities[&incumbent].pop + 30;
+        game.cities.get_mut(&best).unwrap().pop = grown;
+        ai.belief.observe(&game, 0);
+        assert!(
+            value(&ai, &game, incumbent) - value(&ai, &game, best)
+                > SIEGE_OBJECTIVE_HYSTERESIS
+        );
+        assert_eq!(
+            ai.held_campaign_objective(&game, 0, GrandStrategy::Conquest, 1, best),
+            best
+        );
+
+        game.cities.get_mut(&incumbent).unwrap().owner = 0;
+        set_plan(&mut ai, incumbent, game.turn);
+        assert_eq!(
+            ai.held_campaign_objective(&game, 0, GrandStrategy::Conquest, 1, best),
+            best
+        );
     }
 
     /// What the shipped scorer pays for fifteen turns of siege, and what the
