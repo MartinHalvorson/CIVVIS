@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 106] = [
+pub const EVAL_ONLY_AIS: [&str; 107] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -118,6 +118,7 @@ pub const EVAL_ONLY_AIS: [&str; 106] = [
     "advanced_measured_dedication",
     "advanced_garrison_loyalty",
     "advanced_settler_first",
+    "advanced_holy_priority",
     "advanced_league_top",
     "advanced_joint_tactics",
     "strategic_cheap",
@@ -313,6 +314,7 @@ define_arm_kinds! {
     AdvancedTimingAttackRapid => "advanced_timing_attack_rapid",
     AdvancedSettlerCommit => "advanced_settler_commit",
     AdvancedSettlerFirst => "advanced_settler_first",
+    AdvancedHolyPriority => "advanced_holy_priority",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
@@ -358,6 +360,12 @@ define_arm_kinds! {
 }
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
+/// Games-weighted `d_holy` of the top third of the shipped league roster,
+/// ranked by outright 8-player win rate. The bottom third sits at the shipped
+/// default of 2.0. Read by `advanced_holy_priority`; see that arm for the
+/// derivation, the drift control, and the caveats.
+pub const LEAGUE_WINNER_D_HOLY: f64 = 5.6;
+
 pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// Version of the game/rating contract, independent of the JSON shape. Bump
 /// this when rules, default setup, or scoring semantics change enough that an
@@ -2072,6 +2080,38 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.settler_price = 100.0;
             Box::new(ai)
         }
+        // Treatment for the district-lane axis: identical to `advanced` except
+        // that the Holy Site outranks the Campus instead of trailing both the
+        // Campus and the Commercial Hub.
+        //
+        // The value is not chosen, it is read off the shipped roster. Of the
+        // bred `Advanced` genomes in `data/league/league.json` carrying real
+        // 8-player evidence, the top third by *outright win rate* sit at a
+        // games-weighted `d_holy` of 5.6 while the bottom third sit at 2.0 --
+        // the shipped default, and the largest top-versus-bottom separation of
+        // any of the forty genes (0.41 of its legal range; weighted r = +0.62
+        // against win rate). The bottom-third contrast is the control that
+        // matters: a gene under no selection pressure drifts in both tails, and
+        // this one does not move in the losing tail at all.
+        //
+        // ⚠ That is a correlation over roughly fifty survivors related by
+        // descent, which is a hypothesis and not a result -- and the same
+        // roster's *Glicko* ordering is on record ranking two agents backwards
+        // by 230 Elo (see 2026-07-28 in `docs/EVAL.md`). This entrant exists so
+        // the axis can be put to the paired evaluator instead of argued from
+        // the roster. Note the win-rate ordering used here independently places
+        // `g56-50` -- the genome that measured -108 Elo against the champion --
+        // last of the eight, which is the ordering that result implies.
+        //
+        // Mechanistically it is a plausible miscalibration rather than a lucky
+        // draw: `docs/EVAL.md` records that religious victory dominates
+        // self-play in this engine, and the shipped default ranks the district
+        // that lane runs through *below* two others.
+        "advanced_holy_priority" => {
+            let mut w = Weights::default();
+            w.d_holy = LEAGUE_WINNER_D_HOLY;
+            Box::new(AdvancedAi::with_weights(w))
+        }
         // A high-rated league genome against the genome the repository evolved.
         // The exhibition now samples each civ's top three eligible entries, so
         // this is a reproducible diagnostic from the shipped roster rather than
@@ -3088,6 +3128,7 @@ impl ArmKind {
             Self::AdvancedWideOpening => &["city-target-floor"],
             Self::AdvancedPlanCityTarget => &["plan-city-target"],
             Self::AdvancedSettlerFirst => &["settler-oracle"],
+            Self::AdvancedHolyPriority => &["district-holy-priority"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -3592,6 +3633,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced_measured_dedication" => (vec![genome], "advanced_measured_dedication"),
         "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
+        "advanced_holy_priority" => (Vec::new(), "advanced_holy_priority"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -4799,7 +4841,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 75] = [
+            const SCRIPTED: [&str; 76] = [
                 "advanced_joint_tactics",
                 "live_without_joint_tactics",
                 "advanced",
@@ -4843,6 +4885,7 @@ mod tests {
                 "advanced_civ_blind",
                 "advanced_league_top",
                 "advanced_settler_first",
+                "advanced_holy_priority",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",
