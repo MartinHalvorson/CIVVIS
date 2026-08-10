@@ -8195,3 +8195,64 @@ reader of the source would not have guessed: a profile that seats no minors, and
 a flag already enabled by a constructor two hops away from its own default.
 **Run the fires-check first. A clean null from a treatment that never executed
 is indistinguishable from a real one.**
+
+
+## 2026-08-10 — bounded_recovery confirmed null over 600 maps, and a ledger for the rest of the production bundle
+
+The previous entry priced `bounded_recovery` for the first time and found the
+withhold arm at 52.0% (Elo +14, p=0.1849, 200 maps), explicitly declining to act
+on p=0.18. This is the disjoint-seed confirmation that call required.
+
+```
+ai_eval advanced_without_bounded_recovery advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 7100000
+
+  paired-map score 50.9% (95% Wilson CI 46.0%..55.7%)   Elo-equivalent +6 (CI -28..+40)
+  paired direction 30 for / 347 neutral / 23 against    sign p = 0.4101
+  anytime-valid    withheld peak e=2.86, p<=0.3503 (not crossed)
+```
+
+| run | maps | score | Elo | direction | sign p |
+|---|---|---|---|---|---|
+| discovery, seed 6300000 | 200 | 52.0% | +14 | 18/10 | 0.1849 |
+| **confirmation, seed 7100000** | **400** | **50.9%** | **+6** | 30/23 | 0.4101 |
+| **pooled** | **600** | **51.3%** | — | **48/33** | ~0.12 |
+
+**The +14 did not reproduce.** `bounded_recovery` is a **null on outcomes**
+across 600 maps on two disjoint seeds. The mechanism is not in doubt — Recovery
+occupancy is 12.6% with the bound and 15.2% without, in both runs — it simply
+does not convert.
+
+**It stays on.** A null is not a reason to remove a repair that fixes a real
+pathology: on the Civilization VI mirror the same bound moved Recovery 86% → 81%
+in a regime where one live run spent 72% of the game in the posture and finished
+with a single warrior. Engine-null and bridge-useful are compatible, and this
+entry is the number that was missing, not a verdict against the flag.
+
+⚠ The discovery run's +14 is a reminder that a 200-map point estimate at
+p=0.18 is a coin with a story attached. Declining to act on it was correct, and
+the same restraint is owed to the next such number.
+
+### The rest of the bundle has no such number
+
+`promoted_policy_envoy` — which `AdvancedAi::new()` routes through — turns on
+**thirteen** behaviours. `production_advanced_scales_cities_development_and_home_defense_together`
+already pins the set; what it could not say is which parts were ever priced, so
+that ledger now sits on the test:
+
+| flag | individual evidence |
+|---|---|
+| `bounded_recovery` | **this entry** — null over 600 maps |
+| `city_target_floor = 6` | the solo axis is a **recorded null** (49.6%, Elo −3, p=0.9007, 240 pairs, seed 510000); ships inside the composite, not on that number |
+| `envoy_infrastructure` | 8–12 map screens; the combined economy re-measured null at 800 games |
+| `envoy_priority`, `adjacency_site_planning`, `settler_commit`, `research_economy`, `plan_city_target`, `amenity_districts`, `siege_muster`, `home_defense`, `tactical_strategy`, `unit_objective_memory` | **no individual outcome number located in this file** |
+
+A composite may pass a gate while a component is null alone, and the 2026-08-01
+promotion was such a composite — so this is not a claim that the bundle is
+wrong. It is a claim that **ten of its thirteen parts have never been priced
+apart**, which is precisely what `disable_bounded_recovery`'s own doc warned
+would happen.
+
+⚠ And the trap that cost an evaluation today is now recorded beside the pin:
+because this constructor sets these flags, an arm built as `AdvancedAi::new()`
+**plus** one of them is a byte-identical no-op. **Withhold, do not add.**
