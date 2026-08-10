@@ -33654,6 +33654,19 @@ impl Game {
     }
 
     fn can_enter(&self, uid: u32, from: Pos, pos: Pos) -> bool {
+        self.can_enter_past(uid, from, pos, false)
+    }
+
+    /// `can_enter`, optionally with the stacking layer relaxed.
+    ///
+    /// `through_units` is never true for anything the rules decide — a move
+    /// that would share a tile is illegal and stays illegal. It exists for the
+    /// question somebody watching asks about a unit that is not theirs: how
+    /// far can that thing reach, given that whatever is parked in front of it
+    /// can walk away or die before it matters. Everything else a step has to
+    /// satisfy is still asked, zone of control included, because none of that
+    /// moves out of the way.
+    fn can_enter_past(&self, uid: u32, from: Pos, pos: Pos, through_units: bool) -> bool {
         let u = &self.units[&uid];
         if self.wdist(from, pos) != 1 {
             return false;
@@ -33712,6 +33725,9 @@ impl Game {
             }
         }
         for oid in self.units_at(pos) {
+            if through_units {
+                break;
+            }
             let o = &self.units[&oid];
             let ospec = &self.rules.units[o.kind];
             // Based aircraft occupy a slot, not the land/naval stacking layer.
@@ -33948,6 +33964,26 @@ impl Game {
             None => return vec![],
         };
         let best = self.flow(uid, start, moves);
+        best.into_keys().filter(|p| *p != start).collect()
+    }
+
+    /// Where a unit could end this turn if nothing were standing in its way:
+    /// [`Game::reachable`] with the stacking layer relaxed and every other
+    /// rule — terrain, cliffs, rivers, borders, hostile cities, and zone of
+    /// control, which still ends movement the moment it is entered — intact.
+    ///
+    /// This is a reading, never a permission. Nothing in the simulation may
+    /// move a unit here: a step onto an occupied tile is illegal and asking
+    /// this does not make it legal. It answers the question a watcher has
+    /// about somebody else's unit — how far does that thing threaten — for
+    /// which the friendly unit currently plugging the gap is noise, because it
+    /// can walk away or be killed long before the threat expires.
+    pub fn reachable_through_units(&self, uid: u32) -> Vec<Pos> {
+        let (start, moves) = match self.units.get(&uid) {
+            Some(u) => (u.pos, u.moves_left),
+            None => return vec![],
+        };
+        let best = self.flow_past(uid, start, moves, true);
         best.into_keys().filter(|p| *p != start).collect()
     }
 
@@ -34519,6 +34555,13 @@ impl Game {
     }
 
     fn flow(&self, uid: u32, start: Pos, moves: f64) -> BTreeMap<Pos, f64> {
+        self.flow_past(uid, start, moves, false)
+    }
+
+    /// `flow`, optionally reading the board as if the tiles in the way were
+    /// empty. See [`Game::can_enter_past`]: nothing the rules decide uses
+    /// this, only the range a watcher is shown for somebody else's unit.
+    fn flow_past(&self, uid: u32, start: Pos, moves: f64, through_units: bool) -> BTreeMap<Pos, f64> {
         let max_moves = self.unit_max_moves(uid);
         if self.formation_movement_locked_by_zoc(uid) {
             return BTreeMap::new();
@@ -34533,7 +34576,9 @@ impl Game {
                 continue;
             }
             for n in self.nbrs(cur) {
-                if !self.map.tiles.contains_key(&n) || !self.can_enter(uid, cur, n) {
+                if !self.map.tiles.contains_key(&n)
+                    || !self.can_enter_past(uid, cur, n, through_units)
+                {
                     continue;
                 }
                 let cost = self.unit_step_cost(uid, cur, n);
@@ -61401,6 +61446,70 @@ mod combat_scenarios {
         .unwrap();
         assert_eq!(g.units[&warrior].pos, escape);
         assert!(!g.units[&warrior].zoc_stopped);
+    }
+
+    /// The range a watcher is shown for somebody else's unit reads past the
+    /// unit standing in the way and never past zone of control. The two are
+    /// opposite kinds of obstacle: whatever is parked on a tile can walk off
+    /// it or die on it long before the threat expires, so for the question
+    /// "how far does that thing reach" it is noise — while zone of control is
+    /// a fact about the ground that will still be there, and the reading is
+    /// worthless if it quietly ignores it.
+    #[test]
+    fn a_read_range_passes_units_and_still_stops_at_zone_of_control() {
+        // Flat plains, no rivers, no borders, two seats already at war: the
+        // only things deciding this answer are the units placed below.
+        let (mut g, start, ring) = controlled_game(4471);
+        let mover = g.spawn_unit("warrior", 0, start);
+        let blocked = ring[0];
+        g.spawn_unit("warrior", 0, blocked);
+        g.begin_turn(0);
+
+        assert!(
+            !g.reachable(mover).contains(&blocked),
+            "a tile with a unit on it is not somewhere its owner may legally move"
+        );
+        assert!(
+            g.reachable_through_units(mover).contains(&blocked),
+            "the tile in the way is still inside the reach a watcher is shown"
+        );
+
+        // The far corner of the second ring beyond `blocked`, which the layout
+        // reaches only through `blocked` — derived rather than assumed, so a
+        // change of hex geometry fails here loudly instead of quietly
+        // asserting nothing.
+        let corner = g
+            .wdisk(start, 2)
+            .into_iter()
+            .find(|pos| {
+                g.wdist(*pos, start) == 2
+                    && g
+                        .nbrs(*pos)
+                        .into_iter()
+                        .filter(|step| g.wdist(*step, start) == 1)
+                        .eq(std::iter::once(blocked))
+            })
+            .expect("a second-ring tile entered only through the blocked one");
+        assert!(
+            g.reachable_through_units(mover).contains(&corner),
+            "two plains steps are two movement points; the corner is in reach"
+        );
+
+        // Now put a hostile unit where it exerts zone of control over the one
+        // tile that corner is entered from. Entering ZOC ends movement, so the
+        // corner goes out of reach — for the watcher's reading exactly as for
+        // the mover's own.
+        let watcher = g
+            .nbrs(blocked)
+            .into_iter()
+            .find(|pos| *pos != corner && *pos != start && g.wdist(*pos, start) == 2)
+            .expect("a tile adjacent to the blocked step");
+        g.spawn_unit("warrior", 1, watcher);
+        g.begin_turn(0);
+        assert!(
+            !g.reachable_through_units(mover).contains(&corner),
+            "zone of control does not move out of the way, so the reading keeps it"
+        );
     }
 
     #[test]

@@ -2804,6 +2804,18 @@ impl Session {
         }
     }
 
+    /// The seat any question about the board is answered on behalf of, or
+    /// `None` for the omniscient spectator. Read off the same two facts
+    /// `state` branches on, and by the same rule, so a side question can never
+    /// answer from a wider view than the observation the client is holding.
+    pub fn viewing_seat(&self) -> Option<usize> {
+        if self.params.spectate {
+            self.view_player
+        } else {
+            Some(0)
+        }
+    }
+
     pub fn state(&self) -> Value {
         if self.params.spectate {
             let g = &self.game;
@@ -4716,6 +4728,21 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     }
                 }
                 _ => json!({"error": "route needs a unit and a destination"}),
+            };
+            drop(session);
+            respond_json(stream, &answer);
+        }
+        // What one unit affords, asked one unit at a time because the
+        // observation cannot afford to carry it for all of them. The viewer
+        // points at somebody else's unit and gets the two things standing
+        // there decides: how far it could move this turn, and what it sees.
+        ("POST", "/intel") => {
+            let session = sh.session.lock().unwrap();
+            let answer = match parsed["unit"].as_u64() {
+                Some(unit) => {
+                    crate::obs::unit_intel(&session.game, session.viewing_seat(), unit as u32)
+                }
+                None => json!({"error": "intel needs a unit"}),
             };
             drop(session);
             respond_json(stream, &answer);
@@ -14924,6 +14951,78 @@ mod tests {
             ),
             "the dismiss control must go while the deck that restores it is collapsed"
         );
+    }
+
+    /// Pointing at somebody else's unit is answered by the engine, never by
+    /// the viewer: step costs, rivers, cliffs, borders, zone of control, sight
+    /// promotions and elevation are all rules, and a client that re-derived
+    /// any of them would draw a range the board does not honour. So the
+    /// browser asks `/intel` and paints the answer.
+    ///
+    /// Which means the route has to exist in *both* routers. `wasm.rs` is the
+    /// whole server on the published build and is `cfg`-gated away from every
+    /// native compile, so an endpoint added here and forgotten there works
+    /// perfectly in development and is dead on the site people watch. This
+    /// reads the browser router's source rather than calling it, for the same
+    /// reason its own module says its tests live here.
+    #[test]
+    fn reading_a_unit_is_asked_of_the_engine_by_both_routers() {
+        let js = EMBEDDED_APP_JS;
+        assert!(js.contains(r#"fetchJSON("/intel", {method:"POST","#));
+        // The two questions, one press each, and the second only where it is
+        // not already an order.
+        assert!(js.contains(r#"readUnitIntel(pos, "move")"#));
+        assert!(js.contains(r#"if (!sel) { if (pos) readUnitIntel(pos, "sight"); draw(); return; }"#));
+        // Both readings are drawn on the flat board and on the globe.
+        assert!(js.contains("function drawFlatUnitIntel()"));
+        assert!(js.contains("function drawPlanetUnitIntel(cells)"));
+        assert!(js.contains("drawFlatUnitIntel();"));
+        assert!(js.contains("drawPlanetUnitIntel(cells);"));
+        // A live world moves the subject; the reading follows it or goes away.
+        assert!(js.contains("function syncUnitIntel()"));
+        assert!(js.contains("syncUnitIntel();"));
+
+        for router in [include_str!("server.rs"), include_str!("wasm.rs")] {
+            assert!(
+                router.contains(r#"("POST", "/intel")"#),
+                "every router that serves this viewer must serve /intel; the \
+                 browser build is the one civvis.ai actually runs"
+            );
+        }
+
+        // And the page has to hand the question to that router at all. On the
+        // published build there is no socket: `beta/shim.js` intercepts
+        // `fetch` and passes exactly the paths it recognises to the engine in
+        // the worker, so a path missing from that list is quietly sent to the
+        // network and comes back a 404. Checked for every route the browser
+        // build answers rather than only the new one — the drift this catches
+        // is silent by construction, and it costs nothing to catch it all.
+        let shim = include_str!("../beta/shim.js");
+        let listed = shim
+            .split_once("const ENGINE_ROUTES = new Set([")
+            .expect("the shim's engine route list")
+            .1
+            .split_once("]);")
+            .expect("the end of the route list")
+            .0;
+        let mut checked = 0usize;
+        for opening in ["(\"GET\", \"", "(\"POST\", \""] {
+            for tail in include_str!("wasm.rs").split(opening).skip(1) {
+                let Some((path, _)) = tail.split_once("\")") else {
+                    continue;
+                };
+                if !path.starts_with('/') || path.contains(' ') {
+                    continue;
+                }
+                checked += 1;
+                assert!(
+                    listed.contains(&format!("\"{path}\"")),
+                    "the browser build answers {path} but its fetch shim never \
+                     hands it over, so the published page 404s on it"
+                );
+            }
+        }
+        assert!(checked > 10, "the route scan found almost nothing to check");
     }
 
     /// A world nobody is steering turns on its own, and it is doing so when the

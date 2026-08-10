@@ -515,6 +515,17 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             }
         }),
 
+        // The same one-unit question the native server answers, and it has to
+        // be answered here too: this router is the whole server on the
+        // published build, and a route missing from it is a feature that works
+        // everywhere except the site people actually watch.
+        ("POST", "/intel") => with_session(|session| match parsed["unit"].as_u64() {
+            Some(unit) => {
+                crate::obs::unit_intel(&session.game, session.viewing_seat(), unit as u32)
+            }
+            None => json!({"error": "intel needs a unit"}),
+        }),
+
         ("POST", "/view") => with_session(|session| {
             let result = match parsed.get("player") {
                 Some(Value::Null) => session.set_view_player(None),
