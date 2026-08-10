@@ -8360,3 +8360,49 @@ shipped on oracle headroom — "the point at which the expansion oracle first
 showed decisive headroom". Oracle headroom is what a subsystem is worth when
 granted for free. It is not what a treatment can reach, and the gap between
 those two quantities was thirty Elo pointing the wrong way.
+
+
+## 2026-08-10 — plan_city_target is a clean null, and a third no-op arm
+
+Continuing the #1499 ledger, which named ten production flags with no
+individual number. `city_target_floor = 6` was the first taken: **−41 Elo**,
+removed. `plan_city_target` is the other expansion lever
+`promoted_policy_envoy` sets, and it is measured now rather than earlier
+because the two interact — with the floor gone, the plan target is what remains
+driving expansion.
+
+```
+ai_eval advanced_without_plan_city_target advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 9100000
+
+  paired-map score 50.0% (95% Wilson CI 45.1%..54.9%)   Elo-equivalent +0 (CI -34..+34)
+  paired direction 64 for / 272 neutral / 64 against    sign p = 1.0000
+  terminal score   208 / 192                            sign p = 0.4533
+```
+
+**64 for and 64 against.** A clean null at 400 maps, on wins and on development
+alike — this is what a genuinely neutral component looks like, and it is worth
+having as the contrast case for the floor's 74/39 and 83/50.
+
+**It stays on.** A null is not grounds to change shipped behaviour in either
+direction, and the same restraint kept `bounded_recovery` in place two entries
+ago. What the number buys is that the next person reasoning about expansion
+knows this lever is inert rather than assuming it is load-bearing.
+
+So of the two expansion levers in the 2026-08-01 composite, **one was actively
+costing 41 Elo and the other does nothing.** Neither had a number before today.
+
+### A third arm that could not measure its own axis
+
+`advanced_plan_city_target` builds `AdvancedAi::new()` and sets
+`plan_city_target = true` — which production already sets. It is a
+**byte-identical no-op**, the third such arm found this session after
+`advanced_bounded_recovery` and the `AdvancedAi::new()`-plus-flag shape in
+general. It is now declared effectively `advanced`, so the comparison fails
+closed as self-play instead of reporting a confident null.
+
+⚠ That makes three arms in this file that silently measured nothing. The rule
+belongs next to every future arm: **`promoted_policy_envoy` sets thirteen
+flags — check before you add one, and withhold rather than add.**
+
+`advanced_without_settler_commit` is registered as the next in the queue.

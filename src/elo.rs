@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 116] = [
+pub const EVAL_ONLY_AIS: [&str; 118] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -128,6 +128,8 @@ pub const EVAL_ONLY_AIS: [&str; 116] = [
     "advanced_diplomatic_opening",
     "advanced_without_bounded_recovery",
     "advanced_without_city_target_floor",
+    "advanced_without_plan_city_target",
+    "advanced_without_settler_commit",
     "advanced_league_top",
     "advanced_joint_tactics",
     "strategic_cheap",
@@ -333,6 +335,8 @@ define_arm_kinds! {
     AdvancedDiplomaticOpening => "advanced_diplomatic_opening",
     AdvancedWithoutBoundedRecovery => "advanced_without_bounded_recovery",
     AdvancedWithoutCityTargetFloor => "advanced_without_city_target_floor",
+    AdvancedWithoutPlanCityTarget => "advanced_without_plan_city_target",
+    AdvancedWithoutSettlerCommit => "advanced_without_settler_commit",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
@@ -1733,6 +1737,9 @@ fn artifact_effective_alias_from(
         // `docs/EVAL.md` reports five runs against it; declared effectively
         // `advanced` so the pair fails closed as self-play.
         ArmKind::AdvancedWithoutCityTargetFloor => ArmKind::Advanced,
+        // Production sets `plan_city_target`, so this "add" arm builds the
+        // production controller and measures nothing. Fail it closed.
+        ArmKind::AdvancedPlanCityTarget => ArmKind::Advanced,
         ArmKind::AdvancedBankingDedication => advanced_fallback,
         _ => kind,
     }
@@ -2347,6 +2354,36 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // may pass while a component is null alone, so this is not an
         // accusation — it is the missing measurement. If withholding it is
         // positive, the bundle is carrying a part that costs.
+        // Withhold the plan-driven city target: the production governor goes
+        // back to the flat `city_target` gene instead of the empire's own
+        // `plan.desired_cities`.
+        //
+        // The second of the two expansion levers `promoted_policy_envoy` sets.
+        // The first, `city_target_floor = 6`, measured **-41 Elo** at the
+        // deployment shape and was removed on 2026-08-10 — it bought cities,
+        // population and terminal score, and paid wins for them. This is the
+        // one still standing, it has no individual number, and it is measured
+        // now rather than earlier because the two interact: with the floor gone
+        // the plan target is what remains driving expansion.
+        //
+        // ⚠ `advanced_plan_city_target` cannot measure this. Production already
+        // sets the flag, so "new() plus the flag" is byte-identical to the
+        // control — the third arm in this file to carry that defect. It is
+        // aliased to `advanced` below so the comparison fails closed instead of
+        // reporting a confident null.
+        // The third expansion-adjacent lever in the production bundle, and the
+        // next unpriced one in the #1499 ledger. Registered here so the queue
+        // stays visible; its number is pending.
+        "advanced_without_settler_commit" => {
+            let mut ai = AdvancedAi::new();
+            ai.settler_commit = false;
+            Box::new(ai)
+        }
+        "advanced_without_plan_city_target" => {
+            let mut ai = AdvancedAi::new();
+            ai.plan_city_target = false;
+            Box::new(ai)
+        }
         "advanced_without_city_target_floor" => {
             let mut ai = AdvancedAi::new();
             ai.city_target_floor = PRE_PROMOTION_CITY_TARGET_FLOOR;
@@ -3409,6 +3446,8 @@ impl ArmKind {
             Self::AdvancedDiplomaticOpening => &["diplomatic-lane-prospective"],
             Self::AdvancedWithoutBoundedRecovery => &["bounded-recovery-withheld"],
             Self::AdvancedWithoutCityTargetFloor => &["city-target-floor-withheld"],
+            Self::AdvancedWithoutPlanCityTarget => &["plan-city-target-withheld"],
+            Self::AdvancedWithoutSettlerCommit => &["settler-commit-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -3890,7 +3929,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_envoy_priority" => (Vec::new(), "advanced_envoy_priority"),
         "advanced_envoy_economy" => (Vec::new(), "advanced_envoy_economy"),
         "advanced_wide_opening" => (Vec::new(), "advanced_wide_opening"),
-        "advanced_plan_city_target" => (Vec::new(), "advanced_plan_city_target"),
+        "advanced_plan_city_target" => (Vec::new(), "advanced"),
         "advanced_expansion_payback" => (Vec::new(), "advanced_expansion_payback"),
         "advanced_late_expansion" => (Vec::new(), "advanced_late_expansion"),
         "advanced_expansion_dispatch" => (Vec::new(), "advanced_expansion_dispatch"),
@@ -3923,6 +3962,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_diplomatic_opening" => (Vec::new(), "advanced_diplomatic_opening"),
         "advanced_without_bounded_recovery" => (Vec::new(), "advanced_without_bounded_recovery"),
         "advanced_without_city_target_floor" => (Vec::new(), "advanced"),
+        "advanced_without_plan_city_target" => (Vec::new(), "advanced_without_plan_city_target"),
+        "advanced_without_settler_commit" => (Vec::new(), "advanced_without_settler_commit"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -5130,7 +5171,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 85] = [
+            const SCRIPTED: [&str; 87] = [
                 "advanced_joint_tactics",
                 "live_without_joint_tactics",
                 "advanced",
@@ -5184,6 +5225,8 @@ mod tests {
                 "advanced_diplomatic_opening",
                 "advanced_without_bounded_recovery",
                 "advanced_without_city_target_floor",
+                "advanced_without_plan_city_target",
+                "advanced_without_settler_commit",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",
@@ -5221,10 +5264,11 @@ mod tests {
                 "live_without_war_reinforcement",
                 "live_without_war_patience",
             ];
-            const SCRIPTED_ALIASES: [&str; 3] = [
+            const SCRIPTED_ALIASES: [&str; 4] = [
                 "advanced_policy_envoy_priority",
                 "advanced_holy_v0",
                 "advanced_without_city_target_floor",
+                "advanced_plan_city_target",
             ];
             assert!(
                 !resolved.artifacts.is_empty()
