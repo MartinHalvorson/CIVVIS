@@ -13868,10 +13868,10 @@ fn vision_key(parts: &[u64]) -> u64 {
 ///
 /// The whole cache is thrown away when the world moves under it, which is
 /// what `stamp` records; within one state of the world an entry stands until
-/// its unit moves. Entries are kept in unit order in flat vectors so that
-/// cloning a game — which the AI does once per branch it searches — copies
-/// three blocks of memory rather than walking a tree.
-#[derive(Clone, Default)]
+/// its unit moves. Entries are kept in unit order in flat vectors so that the
+/// authoritative world can merge worker answers without walking a tree;
+/// cloned search branches start with this cache empty.
+#[derive(Default)]
 pub struct VisionCache {
     stamp: u64,
     units: Vec<u32>,
@@ -13881,6 +13881,17 @@ pub struct VisionCache {
     /// start one asks this of every wonder in the ruleset, and answering it
     /// from scratch meant walking every city and every tile each time.
     built_wonders: Option<BTreeSet<Name>>,
+}
+
+impl Clone for VisionCache {
+    /// A visibility answer belongs to the exact position that asked for it.
+    /// Game clones are search branches and may move a unit or change a tile
+    /// before their first read, so copying the flat bitsets would only carry
+    /// disposable work into a branch that must validate its own stamp. Start
+    /// empty; the authoritative world repopulates its cache on demand.
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }
 
 /// The player-independent half of a monopoly answer.
@@ -14114,7 +14125,7 @@ pub struct TraversalClass {
 ///
 /// Region maps are shared (`Arc`) so the AI's per-branch game clones copy a
 /// pointer, not the world.
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct RoutingCache {
     stamp: u64,
     zones: Vec<(TraversalClass, std::sync::Arc<Vec<u32>>)>,
@@ -14125,7 +14136,22 @@ pub struct RoutingCache {
     city_owner_key: Option<u64>,
 }
 
-#[derive(Clone, Default)]
+impl Clone for RoutingCache {
+    /// Connected-region labels are map-only and can safely be shared across a
+    /// branch, while a planned path also depends on unit positions and
+    /// diplomacy that the branch is about to change. Keep the cheap `Arc`
+    /// labels but discard those path answers and their owner key.
+    fn clone(&self) -> Self {
+        Self {
+            stamp: self.stamp,
+            zones: self.zones.clone(),
+            paths: Vec::new(),
+            city_owner_key: None,
+        }
+    }
+}
+
+#[derive(Default)]
 struct RouteScratch {
     astar_frontier: BinaryHeap<Reverse<(i32, Reverse<i32>, Pos)>>,
     bfs_frontier: VecDeque<(Pos, usize)>,
@@ -14135,6 +14161,16 @@ struct RouteScratch {
     distance: Vec<i32>,
     astar_touched: Vec<usize>,
     bfs_touched: Vec<usize>,
+}
+
+impl Clone for RouteScratch {
+    /// A route search mutates every scratch vector. Reusing a parent's
+    /// frontier would copy the largest transient allocation in a branch for
+    /// no semantic benefit; a fresh scratch area grows only if the branch
+    /// actually asks for a route.
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }
 
 #[derive(Clone)]
@@ -14320,6 +14356,33 @@ struct VisibilityBatch {
     refresh_teams: BTreeSet<usize>,
 }
 
+/// A runtime vector shared between a game and its disposable branches.
+/// Visibility snapshot coverage is derived state; branches that never publish
+/// an observation can keep the parent allocation without copying it, while a
+/// real refresh gets an owned vector through `Arc::make_mut`.
+#[derive(Default)]
+struct SharedVec<T>(Arc<Vec<T>>);
+
+impl<T> Clone for SharedVec<T> {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+impl<T> std::ops::Deref for SharedVec<T> {
+    type Target = Vec<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: Clone> std::ops::DerefMut for SharedVec<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        Arc::make_mut(&mut self.0)
+    }
+}
+
 /// Below this many total seats, cloning the final position for worker-local
 /// visibility caches costs more than the ray sweeps it replaces. Paired
 /// release runs were neutral at 20 seats and positive at 50; keep ordinary
@@ -14474,6 +14537,333 @@ pub struct Unit {
     pub levied_from: Option<usize>,
     #[serde(default)]
     pub levied_until: u32,
+}
+
+/// The unit roster shared by game clones and search branches.
+///
+/// A branch normally reads many units and writes only the handful named by its
+/// action.  Keeping the roster as an immutable `Arc` snapshot means cloning a
+/// position copies neither the map nor any unit.  The first branch write makes
+/// a shallow map copy (its values are still `Arc`s), then `get_mut` clones only
+/// the unit being edited.  Insertions and removals are likewise local to the
+/// branch.  This is the unit equivalent of [`Players`]' copy-on-write seats,
+/// with the extra per-unit indirection making combat lookahead proportional to
+/// the units it actually touches rather than to the whole army.
+#[derive(Default)]
+pub struct Units(Arc<BTreeMap<u32, Arc<Unit>>>, BTreeSet<u32>);
+
+impl Clone for Units {
+    fn clone(&self) -> Self {
+        // A game clone starts a new branch. The immutable map is shared, but
+        // its write set belongs only to that branch and therefore starts empty.
+        Self(Arc::clone(&self.0), BTreeSet::new())
+    }
+}
+
+impl Units {
+    /// Borrow one unit from the immutable snapshot.
+    #[inline]
+    pub fn get(&self, id: &u32) -> Option<&Unit> {
+        self.0.get(id).map(Arc::as_ref)
+    }
+
+    /// Enter the branch delta for one unit.  The map is copied at most once,
+    /// and the unit value is copied only when this branch is the first writer
+    /// for that id.
+    #[inline]
+    pub fn get_mut(&mut self, id: &u32) -> Option<&mut Unit> {
+        if self.0.contains_key(id) {
+            self.1.insert(*id);
+        }
+        Arc::make_mut(&mut self.0)
+            .get_mut(id)
+            .map(Arc::make_mut)
+    }
+
+    #[inline]
+    pub fn contains_key(&self, id: &u32) -> bool {
+        self.0.contains_key(id)
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[inline]
+    pub fn keys(&self) -> std::collections::btree_map::Keys<'_, u32, Arc<Unit>> {
+        self.0.keys()
+    }
+
+    /// Iterate over units without exposing the internal `Arc` values.
+    pub fn values(&self) -> impl DoubleEndedIterator<Item = &Unit> + ExactSizeIterator {
+        self.0.values().map(Arc::as_ref)
+    }
+
+    /// Iterate over `(id, unit)` pairs without exposing the internal `Arc`
+    /// values.  The map remains ordered by id, as the old `BTreeMap` field was.
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = (&u32, &Unit)> + ExactSizeIterator {
+        self.0.iter().map(|(id, unit)| (id, unit.as_ref()))
+    }
+
+    /// Mutable iteration is a branch delta for every unit visited.  Callers
+    /// already asking for `iter_mut` intend to rewrite the roster, so this is
+    /// deliberately explicit rather than making ordinary reads pay for it.
+    pub fn values_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut Unit> + ExactSizeIterator {
+        self.1.extend(self.0.keys().copied());
+        Arc::make_mut(&mut self.0)
+            .values_mut()
+            .map(Arc::make_mut)
+    }
+
+    pub fn iter_mut(
+        &mut self,
+    ) -> impl DoubleEndedIterator<Item = (&u32, &mut Unit)> + ExactSizeIterator {
+        self.1.extend(self.0.keys().copied());
+        Arc::make_mut(&mut self.0)
+            .iter_mut()
+            .map(|(id, unit)| (id, Arc::make_mut(unit)))
+    }
+
+    /// Insert a unit, returning the previous value just like `BTreeMap`.
+    pub fn insert(&mut self, id: u32, unit: Unit) -> Option<Unit> {
+        self.1.insert(id);
+        Arc::make_mut(&mut self.0)
+            .insert(id, Arc::new(unit))
+            .map(arc_into_unit)
+    }
+
+    /// Remove a unit, returning the owned value just like `BTreeMap`.
+    pub fn remove(&mut self, id: &u32) -> Option<Unit> {
+        self.1.insert(*id);
+        Arc::make_mut(&mut self.0)
+            .remove(id)
+            .map(arc_into_unit)
+    }
+
+    pub fn clear(&mut self) {
+        self.1.extend(self.0.keys().copied());
+        Arc::make_mut(&mut self.0).clear();
+    }
+
+    /// Retain units by their immutable value.  No unit clone is needed for a
+    /// predicate, which keeps cleanup passes cheap even on a shared snapshot.
+    pub fn retain<F>(&mut self, mut keep: F)
+    where
+        F: FnMut(&u32, &Unit) -> bool,
+    {
+        self.1.extend(self.0.keys().copied());
+        Arc::make_mut(&mut self.0).retain(|id, unit| keep(id, unit));
+    }
+
+    /// Consume the roster in stable id order.  A unique snapshot unwraps all
+    /// arcs; a shared snapshot clones only the values the caller requested.
+    pub fn into_values(self) -> std::vec::IntoIter<Unit> {
+        let values = match Arc::try_unwrap(self.0) {
+            Ok(map) => map
+                .into_values()
+                .map(arc_into_unit)
+                .collect::<Vec<_>>(),
+            Err(map) => map.values().map(|unit| (**unit).clone()).collect::<Vec<_>>(),
+        };
+        values.into_iter()
+    }
+
+    /// Take a cheap immutable snapshot for a speculative branch.  The delta
+    /// returned by [`Self::delta_since`] later identifies only ids whose Arc
+    /// value changed, was inserted, or was removed.
+    pub fn snapshot(&self) -> UnitSnapshot {
+        UnitSnapshot(Arc::clone(&self.0))
+    }
+
+    /// Return the localized unit changes since `snapshot`.
+    pub fn delta_since(&self, snapshot: &UnitSnapshot) -> UnitDelta {
+        if Arc::ptr_eq(&self.0, &snapshot.0) {
+            return UnitDelta {
+                base: snapshot.clone(),
+                changed: BTreeMap::new(),
+            };
+        }
+        let mut changed = BTreeMap::new();
+        // Every mutating entry point records its id. Comparing this write set
+        // keeps extraction proportional to the branch's edits instead of
+        // walking the complete army after every AI turn.
+        for id in &self.1 {
+            let before = snapshot.0.get(id);
+            let after = self.0.get(id);
+            match (before, after) {
+                (Some(before), Some(after)) if same_unit_arc(before, after) => {}
+                (_, Some(after)) => {
+                    changed.insert(*id, Some(Arc::clone(after)));
+                }
+                (_, None) => {
+                    changed.insert(*id, None);
+                }
+            }
+        }
+        UnitDelta {
+            base: snapshot.clone(),
+            changed,
+        }
+    }
+}
+
+fn arc_into_unit(unit: Arc<Unit>) -> Unit {
+    Arc::try_unwrap(unit).unwrap_or_else(|unit| (*unit).clone())
+}
+
+fn same_unit_arc(left: &Arc<Unit>, right: &Arc<Unit>) -> bool {
+    Arc::ptr_eq(left, right) || left.as_ref() == right.as_ref()
+}
+
+impl std::ops::Index<&u32> for Units {
+    type Output = Unit;
+
+    fn index(&self, id: &u32) -> &Unit {
+        self.get(id).unwrap_or_else(|| panic!("unit {id} is not present"))
+    }
+}
+
+impl std::ops::IndexMut<&u32> for Units {
+    fn index_mut(&mut self, id: &u32) -> &mut Unit {
+        self.get_mut(id)
+            .unwrap_or_else(|| panic!("unit {id} is not present"))
+    }
+}
+
+impl<'a> IntoIterator for &'a Units {
+    type Item = (&'a u32, &'a Unit);
+    type IntoIter = std::iter::Map<
+        std::collections::btree_map::Iter<'a, u32, Arc<Unit>>,
+        fn((&'a u32, &'a Arc<Unit>)) -> (&'a u32, &'a Unit),
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter().map(|(id, unit)| (id, unit.as_ref()))
+    }
+}
+
+impl<'a> IntoIterator for &'a mut Units {
+    type Item = (&'a u32, &'a mut Unit);
+    type IntoIter = std::iter::Map<
+        std::collections::btree_map::IterMut<'a, u32, Arc<Unit>>,
+        fn((&'a u32, &'a mut Arc<Unit>)) -> (&'a u32, &'a mut Unit),
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.1.extend(self.0.keys().copied());
+        Arc::make_mut(&mut self.0)
+            .iter_mut()
+            .map(|(id, unit)| (id, Arc::make_mut(unit)))
+    }
+}
+
+impl IntoIterator for Units {
+    type Item = (u32, Unit);
+    type IntoIter = std::vec::IntoIter<(u32, Unit)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let values = match Arc::try_unwrap(self.0) {
+            Ok(map) => map
+                .into_iter()
+                .map(|(id, unit)| (id, arc_into_unit(unit)))
+                .collect::<Vec<_>>(),
+            Err(map) => map
+                .iter()
+                .map(|(id, unit)| (*id, (**unit).clone()))
+                .collect::<Vec<_>>(),
+        };
+        values.into_iter()
+    }
+}
+
+impl FromIterator<(u32, Unit)> for Units {
+    fn from_iter<I: IntoIterator<Item = (u32, Unit)>>(items: I) -> Self {
+        Self(Arc::new(
+            items
+                .into_iter()
+                .map(|(id, unit)| (id, Arc::new(unit)))
+                .collect(),
+        ), BTreeSet::new())
+    }
+}
+
+impl From<BTreeMap<u32, Unit>> for Units {
+    fn from(map: BTreeMap<u32, Unit>) -> Self {
+        map.into_iter().collect()
+    }
+}
+
+/// An immutable unit roster captured before a speculative branch runs.
+#[derive(Clone)]
+pub struct UnitSnapshot(Arc<BTreeMap<u32, Arc<Unit>>>);
+
+impl Default for UnitSnapshot {
+    fn default() -> Self {
+        Self(Arc::new(BTreeMap::new()))
+    }
+}
+
+impl UnitSnapshot {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn get(&self, id: &u32) -> Option<&Unit> {
+        self.0.get(id).map(Arc::as_ref)
+    }
+}
+
+/// Unit-only changes made by one speculative branch.  It is intentionally
+/// separate from the action log: the log is the authoritative replay, while
+/// this compact side channel tells the commit phase which unit ids can be in
+/// conflict without diffing the whole world.
+#[derive(Clone, Default)]
+pub struct UnitDelta {
+    base: UnitSnapshot,
+    changed: BTreeMap<u32, Option<Arc<Unit>>>,
+}
+
+impl UnitDelta {
+    pub fn is_empty(&self) -> bool {
+        self.changed.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.changed.len()
+    }
+
+    pub fn changed_ids(&self) -> impl Iterator<Item = &u32> {
+        self.changed.keys()
+    }
+
+    /// Unit ids whose planning snapshot no longer matches the live world.
+    /// Only the changed ids are visited, so a city-only or diplomacy-only
+    /// action never turns conflict detection into a full-army scan.
+    pub fn conflicts_with(&self, current: &Units) -> Vec<u32> {
+        self.changed
+            .keys()
+            .filter(|id| {
+                let before = self.base.0.get(id);
+                let now = current.0.get(id);
+                match (before, now) {
+                    (Some(before), Some(now)) => !same_unit_arc(before, now),
+                    (None, None) => false,
+                    _ => true,
+                }
+            })
+            .copied()
+            .collect()
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
@@ -16864,7 +17254,7 @@ pub struct Game {
     /// drawn from — and the tiles it was taken over. Empty means "assume
     /// nothing".
     #[serde(skip)]
-    remembered_under: Vec<(u64, u64, TileBits)>,
+    remembered_under: SharedVec<(u64, u64, TileBits)>,
     /// Whether to keep each player's remembered map of fogged tiles and
     /// cities up to date.
     ///
@@ -16899,6 +17289,12 @@ pub struct Game {
     /// refreshes and publish the same final observation once at the boundary.
     #[serde(skip)]
     visibility_batch: VisibilityBatch,
+    /// A disposable search branch never publishes a player observation. Its
+    /// actions still run the full rules, but skipping reveal/contact/snapshot
+    /// maintenance keeps those branches from copying fog memory and doing
+    /// visibility sweeps that no caller can read.
+    #[serde(skip)]
+    visibility_suppressed: bool,
     pub rng: Rng,
     pub seed: u64,
     /// Key into `rules.difficulties`. Prince is the unhandicapped reference.
@@ -17002,7 +17398,7 @@ pub struct Game {
     pub next_id: u32,
     pub map: WorldMap,
     pub players: Players,
-    pub units: BTreeMap<u32, Unit>,
+    pub units: Units,
     pub spies: BTreeMap<u32, Spy>,
     pub cities: BTreeMap<u32, City>,
     pub at_war: BTreeSet<(usize, usize)>,
@@ -17612,11 +18008,12 @@ impl From<GameSer> for Game {
             routing: std::cell::RefCell::new(RoutingCache::default()),
             route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
-            remembered_under: Vec::new(),
+            remembered_under: SharedVec::default(),
             track_fog_memory: true,
             track_war_ledger: true,
             planning_role: PlanningRole::Off,
             visibility_batch: VisibilityBatch::default(),
+            visibility_suppressed: false,
             rng: s.rng,
             seed: s.seed,
             difficulty: s.difficulty,
@@ -18171,11 +18568,12 @@ impl Game {
             routing: std::cell::RefCell::new(RoutingCache::default()),
             route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
-            remembered_under: Vec::new(),
+            remembered_under: SharedVec::default(),
             track_fog_memory: true,
             track_war_ledger: true,
             planning_role: PlanningRole::Off,
             visibility_batch: VisibilityBatch::default(),
+            visibility_suppressed: false,
             rng,
             seed,
             difficulty,
@@ -18207,7 +18605,7 @@ impl Game {
             next_id: 1,
             map,
             players: Players::default(),
-            units: BTreeMap::new(),
+            units: Units::default(),
             spies: BTreeMap::new(),
             cities: BTreeMap::new(),
             at_war: BTreeSet::new(),
@@ -31665,7 +32063,10 @@ impl Game {
     }
 
     fn reveal(&mut self, pid: usize, pos: Pos, radius: i32) {
-        if pid >= self.players.len() || !self.map.tiles.contains_key(&pos) {
+        if self.visibility_suppressed
+            || pid >= self.players.len()
+            || !self.map.tiles.contains_key(&pos)
+        {
             return;
         }
         let mut heights = self.height_field();
@@ -32738,7 +33139,7 @@ impl Game {
         heights: &mut HeightField,
         memory_world: u64,
     ) {
-        if pid >= self.players.len() {
+        if self.visibility_suppressed || pid >= self.players.len() {
             return;
         }
         let visible = self.player_vision(heights, pid);
@@ -32873,6 +33274,24 @@ impl Game {
         self.track_fog_memory = track;
     }
 
+    /// Make a branch for a read-and-discard simulation.
+    ///
+    /// Search branches never publish an observation, and nobody reads their
+    /// explored ground, contacts, fog memory, or mid-turn war narration. The
+    /// branch therefore keeps the complete rule state but suppresses those
+    /// observer-only updates in addition to disabling their retained ledgers.
+    /// Its derived caches are reset or shared cheaply by `Game::clone`, so a
+    /// disposable branch starts paying only for work its hypothetical actions
+    /// actually ask for.
+    pub fn speculative_clone(&self) -> Self {
+        let mut branch = self.clone();
+        branch.track_fog_memory = false;
+        branch.track_war_ledger = false;
+        branch.visibility_suppressed = true;
+        branch.visibility_batch = VisibilityBatch::default();
+        branch
+    }
+
     /// Stop (or resume) re-syncing the narrated war ledger after every
     /// action. Declarations, peaces, and turn boundaries still sync it
     /// unconditionally, so the ledger every observer and report reads is
@@ -32975,6 +33394,9 @@ impl Game {
     }
 
     fn defer_or_refresh_visibility(&mut self, pid: usize, all: bool) {
+        if self.visibility_suppressed {
+            return;
+        }
         if self.visibility_batch.depth > 0 {
             if all {
                 self.visibility_batch.refresh_all = true;
@@ -33000,6 +33422,9 @@ impl Game {
         visible: &TileBits,
         memory_world: u64,
     ) {
+        if self.visibility_suppressed {
+            return;
+        }
         // This active-turn union is deliberately recorded before the
         // last-known snapshot's early-out. A unit can walk back across ground
         // whose tile memory is already current; the browser still needs to
@@ -33095,7 +33520,8 @@ impl Game {
     /// introduced pays one loop over the seats and nothing else — the common
     /// case, since this runs behind every action a player takes.
     fn record_contacts_in_sight(&mut self, pid: usize, visible: &TileBits) {
-        if self
+        if self.visibility_suppressed
+            || self
             .players
             .get(pid)
             .is_none_or(|seat| seat.is_barbarian || seat.is_free_city)
@@ -33380,6 +33806,9 @@ impl Game {
     }
 
     fn refresh_all_visibility(&mut self) {
+        if self.visibility_suppressed {
+            return;
+        }
         let memory_world = if self.track_fog_memory {
             self.memory_world_stamp()
         } else {
@@ -33394,7 +33823,7 @@ impl Game {
     }
 
     /// Compute current sight from one immutable final position, then publish
-    /// each result serially. Worker game clones retain their inherited vision
+    /// each result serially. Worker game clones start with disposable vision
     /// caches, and the newly filled entries are merged back before returning.
     fn refresh_visibility_parallel(
         &mut self,
@@ -33402,7 +33831,7 @@ impl Game {
         memory_world: u64,
         pool: &WorkPool,
     ) {
-        if players.is_empty() {
+        if self.visibility_suppressed || players.is_empty() {
             return;
         }
         let count = players.len();
@@ -33443,6 +33872,9 @@ impl Game {
     }
 
     fn refresh_all_visibility_parallel(&mut self, pool: &WorkPool) {
+        if self.visibility_suppressed {
+            return;
+        }
         let memory_world = if self.track_fog_memory {
             self.memory_world_stamp()
         } else {
@@ -33452,6 +33884,9 @@ impl Game {
     }
 
     fn refresh_team_visibility(&mut self, pid: usize) {
+        if self.visibility_suppressed {
+            return;
+        }
         let members = self.team_members(pid);
         let memory_world = if self.track_fog_memory {
             self.memory_world_stamp()
@@ -33469,6 +33904,9 @@ impl Game {
     }
 
     fn refresh_team_visibility_parallel(&mut self, pid: usize, pool: &WorkPool) {
+        if self.visibility_suppressed {
+            return;
+        }
         let members = self
             .team_members(pid)
             .into_iter()
@@ -33486,6 +33924,9 @@ impl Game {
     /// share explored-map knowledge. Current visibility is still calculated
     /// separately and units are deliberately never copied into memory.
     fn share_visibility_memories(&mut self, members: &[usize]) {
+        if self.visibility_suppressed {
+            return;
+        }
         let explored: BTreeSet<Pos> = members
             .iter()
             .flat_map(|member| self.players[*member].explored.iter().copied())
@@ -60391,6 +60832,42 @@ mod visibility_tests {
                 "parallel visibility must publish seat {pid}'s exact observation"
             );
         }
+    }
+
+    #[test]
+    fn speculative_clones_drop_observer_work_and_keep_rules_state() {
+        let (mut game, origin) = controlled_game(91_011);
+        let scout = game.spawn_unit("scout", 0, origin);
+        let _ = game.unit_visible_tiles(scout);
+        assert!(
+            !game.vision.borrow().seen.is_empty(),
+            "the control world should have a populated unit-vision cache"
+        );
+
+        let source_explored = game.players[0].explored.len();
+        let mut branch = game.speculative_clone();
+        assert!(
+            branch.vision.borrow().seen.is_empty(),
+            "a clone must not copy a parent's disposable sight bitsets"
+        );
+        assert!(!branch.track_fog_memory);
+        assert!(!branch.track_war_ledger);
+        assert!(branch.visibility_suppressed);
+        assert_eq!(branch.units.len(), game.units.len());
+        assert_eq!(branch.cities.len(), game.cities.len());
+
+        let explored = branch.players[0].explored.len();
+        branch.spawn_unit("warrior", 0, along(&branch, origin, 1));
+        assert_eq!(
+            branch.players[0].explored.len(),
+            explored,
+            "a disposable branch does not copy or grow fog exploration"
+        );
+        assert_eq!(
+            game.players[0].explored.len(),
+            source_explored,
+            "the branch's observer-only work must not leak to its source"
+        );
     }
 }
 

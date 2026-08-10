@@ -1080,6 +1080,54 @@ local function plotDistance(x1, y1, x2, y2)
 	return try(function() return Map.GetPlotDistance(x1, y1, x2, y2); end, 99);
 end
 
+-- A city that is already taking fire cannot wait for the strategic planner to
+-- notice the same fact on its next board.  Return only engine-visible enemies;
+-- the damage read is the fallback for the turn an attack has already landed.
+-- This is an actuation guard, not a new target-selection policy.
+local function cityWarThreat(player, pid, city)
+	local cx = try(function() return city:GetX(); end, -1);
+	local cy = try(function() return city:GetY(); end, -1);
+	local _, damage, _, wallDamage, maxWallDamage = cityDefence(cx, cy);
+	-- The expensive enemy roster walk is only relevant to an unwalled city.
+	-- Unknown wall state stays unknown; do not invent a threat from a failed read.
+	if maxWallDamage == nil or maxWallDamage > 0 then
+		return false, nil, damage, wallDamage, maxWallDamage;
+	end
+	local diplomacy = try(function() return player:GetDiplomacy(); end);
+	local atWar = false;
+	local nearestEnemy = nil;
+	if diplomacy ~= nil then
+		for _, otherId in ipairs(try(function()
+			return PlayerManager.GetAliveMajorIDs();
+		end, {}) or {}) do
+			if otherId ~= pid and try(function()
+				return diplomacy:IsAtWarWith(otherId);
+			end, false) then
+				atWar = true;
+				local other = Players[otherId];
+				local visibility = PlayersVisibility[pid];
+				if other ~= nil and visibility ~= nil then
+					pcall(function()
+						for _, unit in other:GetUnits():Members() do
+							pcall(function()
+								local ux, uy = unit:GetX(), unit:GetY();
+								if visibility:IsVisible(ux, uy) then
+									local distance = plotDistance(cx, cy, ux, uy);
+									if distance >= 0 and (nearestEnemy == nil
+										or distance < nearestEnemy) then
+										nearestEnemy = distance;
+									end
+								end
+							end);
+						end
+					end);
+				end
+			end
+		end
+	end
+	return atWar, nearestEnemy, damage, wallDamage, maxWallDamage;
+end
+
 -- Whether this unit can actually walk there.
 --
 -- Ordering a move to a plot with no route does not fail: the engine accepts it
@@ -4739,14 +4787,34 @@ local function exportState(player, pid, turn)
 		-- the collection's authoritative completion bit keyed by plot so the
 		-- mirror does not grant yields early or erase an occupied foundation.
 		local districtComplete = {};
+		-- Hit points, keyed by plot exactly as completion is. The `placed` loop
+		-- below walks PLOTS and has no district handle, so anything the district
+		-- object knows has to be collected here. See the health block in `placed`
+		-- for why this is load-bearing.
+		local districtHealth = {};
 		local cityDistricts = try(function() return city:GetDistricts(); end);
 		if cityDistricts ~= nil then
 			for _, district in cityDistricts:Members() do
 				local dx = try(function() return district:GetX(); end, -1);
 				local dy = try(function() return district:GetY(); end, -1);
 				if dx ~= nil and dy ~= nil and dx >= 0 and dy >= 0 then
-					districtComplete[tostring(dx) .. "," .. tostring(dy)] =
+					local key = tostring(dx) .. "," .. tostring(dy);
+					districtComplete[key] =
 						try(function() return district:IsComplete(); end, nil);
+					districtHealth[key] = {
+						damage = try(function()
+							return district:GetDamage(DefenseTypes.DISTRICT_GARRISON);
+						end, -1),
+						max_damage = try(function()
+							return district:GetMaxDamage(DefenseTypes.DISTRICT_GARRISON);
+						end, -1),
+						wall_damage = try(function()
+							return district:GetDamage(DefenseTypes.DISTRICT_OUTER);
+						end, -1),
+						max_wall_damage = try(function()
+							return district:GetMaxDamage(DefenseTypes.DISTRICT_OUTER);
+						end, -1),
+					};
 				end
 			end
 		end
@@ -4802,6 +4870,48 @@ local function exportState(player, pid, turn)
 								complete = districtComplete[
 									tostring(try(function() return plot:GetX(); end, -1)) .. "," ..
 									tostring(try(function() return plot:GetY(); end, -1))],
+								-- ★★★★★ THE DISTRICT'S HEALTH, WHICH DECIDED 121 TURNS OF
+								-- PRODUCTION AND WAS NEVER EXPORTED.
+								--
+								-- `pillaged` is a boolean and a district can be DAMAGED
+								-- without being pillaged, so it cannot stand in for hit
+								-- points. Nothing carried them, `mirror.rs` never set
+								-- `City::encampment_hp`, and it defaults to **0**.
+								--
+								-- `Game::can_produce` gates `repair_encampment` on
+								-- `encampment_hp < 100`, so on every mirrored board that
+								-- test passed for any city holding an Encampment -- forever.
+								-- The AI queued the repair every turn, `civvis_orders`
+								-- correctly refuses to translate a project Civ 6 does not
+								-- have, the order was discarded, and NOTHING ELSE was
+								-- ordered for that city.
+								--
+								-- Measured on live run `civvis-20260810T040916Z`
+								-- (Rome/Trajan, Settler, Online): Ravenna and Lugdunum --
+								-- exactly the two cities holding an Encampment -- sat at
+								-- `producing_hash 0, cost -1, progress -1` from turn 67 to
+								-- turn 188, with production yields of 8 and 9 against
+								-- Rome's 28. 238 discarded orders, **10.4% of every order
+								-- CIVVIS issued all game**, and `ENDTURN_BLOCKING_PRODUCTION`
+								-- was the dominant blocker of the run because two queues
+								-- were permanently empty.
+								--
+								-- ⚠ AND THE RECORDED FIX WOULD HAVE MADE IT WORSE. The
+								-- standing plan was to map `repair_encampment` onto a
+								-- district BUILD. Both Encampments export as
+								-- `pillaged=false, complete=true` -- they are UNDAMAGED --
+								-- so that mapping would have rebuilt two healthy districts
+								-- from scratch. The missing translation was never the bug.
+								--
+								-- `GetDamage`/`GetMaxDamage` on the district, keyed by
+								-- `DefenseTypes`, are what the shipped CityBannerManager and
+								-- PlotToolTip read; the city-level pair beside them in this
+								-- same export already uses the identical shape.
+								damage = (districtHealth[px .. "," .. py] or {}).damage,
+								max_damage = (districtHealth[px .. "," .. py] or {}).max_damage,
+								wall_damage = (districtHealth[px .. "," .. py] or {}).wall_damage,
+								max_wall_damage =
+									(districtHealth[px .. "," .. py] or {}).max_wall_damage,
 							};
 						end
 					end
@@ -7370,7 +7480,38 @@ local function applyOrder(player, pid, row, turn)
 			return false, "unknown_" .. verb;
 		end
 		verb = resolved;
-		civvisBuild[tonumber(subject) or -1] = resolved;
+		local cityId = tonumber(subject) or -1;
+		civvisBuild[cityId] = resolved;
+		-- A live city can go from healthy to lost between two CIVVIS boards.  If
+		-- the engine says an unwalled city is already damaged or has a visible
+		-- enemy in the neighbourhood, spend this queue on the wall immediately.
+		-- Keep the original CIVVIS request in `civvisBuild`; the override is
+		-- observable and does not pretend the model chose the emergency action.
+		local atWar, nearestEnemy, damage, wallDamage, maxWallDamage =
+			cityWarThreat(player, pid, city);
+		local emergencyWall = false;
+		if resolved ~= "BUILDING_WALLS"
+				and maxWallDamage ~= nil and maxWallDamage <= 0
+				and ((damage ~= nil and damage > 0) or nearestEnemy ~= nil) then
+			local wall = GameInfo.Types["BUILDING_WALLS"];
+			local wallCanOk, wallCan = false, false;
+			if wall ~= nil then
+				wallCanOk, wallCan = pcall(function()
+					return city:GetBuildQueue():CanProduce(wall.Hash, false, true);
+				end);
+			end
+			if wallCanOk and wallCan == true then
+				row2 = wall;
+				verb = "BUILDING_WALLS";
+				emergencyWall = true;
+				emit("emergency_wall_override", {
+					turn = turn, city = cityId, requested = resolved,
+					item = "BUILDING_WALLS", at_war = atWar,
+					enemy_distance = nearestEnemy, damage = damage,
+					wall_damage = wallDamage, max_wall_damage = maxWallDamage,
+				});
+			end
+		end
 		local params = buildParams(row2, city, x, y);
 		-- ⚠ The verb goes in the reason. `refusals` is aggregated by reason string, so
 		-- a bare "no_params" collapses every distinct failure into one anonymous
@@ -7401,7 +7542,6 @@ local function applyOrder(player, pid, row, turn)
 			return city:GetBuildQueue():CanProduce(row2.Hash, false, true);
 		end);
 		if not canOk or canStart ~= true then
-			local cityId = tonumber(subject) or -1;
 			local refused = refusedByCity[cityId];
 			if refused == nil or refused.turn ~= turn then
 				refused = { turn = turn };
@@ -7419,7 +7559,7 @@ local function applyOrder(player, pid, row, turn)
 		local ok = pcall(function()
 			CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
 		end);
-		return ok, ok and verb or "throw";
+		return ok, ok and (emergencyWall and "BUILDING_WALLS" or verb) or "throw";
 	end
 
 	-- ★★★★ BUY. CIVVIS spends Gold or Faith and the seat sat on hundreds of it. The old
@@ -8134,8 +8274,9 @@ local function gpName(gp)
 end
 
 -- Drive one Great Person toward being used. Returns "activated" | "moving" |
--- "idle", or nil when the unit is not a Great Person this code should touch.
-local function orderGreatPerson(unit, id, turn)
+-- "retired" | "idle", or nil when the unit is not a Great Person this code
+-- should touch.
+local function orderGreatPerson(player, unit, id, turn)
 	local gp = greatPersonOf(unit);
 	if gp == nil then
 		-- ⚠ Distinguish "not a Great Person" from "the accessor is missing in
@@ -8155,6 +8296,22 @@ local function orderGreatPerson(unit, id, turn)
 	-- does not answer yet — a stalled run loses more than an unspent Prophet.
 	-- Deferred, visibly, until that screen has a handler.
 	if class == "GREAT_PERSON_CLASS_PROPHET" then
+		-- Founding consumes the Prophet's useful action, but this build can leave
+		-- the zero-charge unit on the map after the religion is created.  It can no
+		-- longer activate or spread; retire it only after the engine confirms both
+		-- facts and still gates deletion through CanStartCommand.
+		local religionCreated = try(function()
+			return player:GetReligion():GetReligionTypeCreated();
+		end, -1);
+		local charges = try(function() return gp:GetActionCharges(); end, -1);
+		if religionCreated ~= nil and religionCreated >= 0 and charges == 0
+				and commandUnit(unit, CMD["UNITCOMMAND_DELETE"]) then
+			gpPending[id] = nil;
+			gpIdleReported[id] = turn;
+			emit("gp", { turn = turn, unit = id, individual = individual,
+				class = class, action = "retired_founded_prophet" });
+			return "retired";
+		end
 		if gpIdleReported[id] == nil then
 			gpIdleReported[id] = turn;
 			emit("gp", { turn = turn, unit = id, individual = individual,
@@ -8368,17 +8525,18 @@ local function applyOrders(player, pid, turn, rows)
 	-- Great People go first, before the explore handoff: they cannot explore,
 	-- and CIVVIS cannot mention them — the mirror drops `UNIT_GREAT_*` by
 	-- design. See `orderGreatPerson` for what this is and is not.
-	local gpActivated, gpMoving, gpIdle = 0, 0, 0;
+	local gpActivated, gpMoving, gpRetired, gpIdle = 0, 0, 0, 0;
 	local gpHandled = {};
 	if cfg.GreatPeopleUse ~= false then
 		eachUnit(player, function(unit)
 			local id = try(function() return unit:GetID(); end, -1);
 			if id == -1 then return; end
-			local acted = orderGreatPerson(unit, id, turn);
+			local acted = orderGreatPerson(player, unit, id, turn);
 			if acted == nil then return; end
 			gpHandled[id] = true;
 			if acted == "activated" then gpActivated = gpActivated + 1;
 			elseif acted == "moving" then gpMoving = gpMoving + 1;
+			elseif acted == "retired" then gpRetired = gpRetired + 1;
 			else gpIdle = gpIdle + 1; end
 		end);
 	end
@@ -8432,6 +8590,7 @@ local function applyOrders(player, pid, turn, rows)
 		-- an actuation formality, not a CIVVIS decision. See `orderGreatPerson`.
 		gp_activated = gpActivated,
 		gp_moving = gpMoving,
+		gp_retired = gpRetired,
 		gp_idle = gpIdle,
 		-- Orders the engine ACCEPTED that left the unit farther from where it was
 		-- sent. Counted apart from `refused` on purpose: a refusal is the bridge

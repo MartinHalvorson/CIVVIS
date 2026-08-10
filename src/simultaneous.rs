@@ -56,7 +56,7 @@ use std::thread::{self, ScopedJoinHandle};
 
 use crate::action_space::kind_name;
 use crate::ai::{run_game, Ai};
-use crate::game::{Action, Game, PlanningRole};
+use crate::game::{Action, Game, PlanningRole, UnitDelta};
 use crate::rng::Rng;
 use crate::setup::TurnStructure;
 
@@ -74,6 +74,9 @@ pub struct SimultaneousCensus {
     pub dropped: u64,
     /// Refused actions by [`kind_name`], for reading *what* gets outrun.
     pub dropped_by_kind: BTreeMap<&'static str, u64>,
+    /// Unit ids whose speculative branch no longer matches the live world
+    /// when its plan reaches the commit cursor.
+    pub unit_conflicts: u64,
     /// Mandatory choices (a captured city's fate) the plan never made and
     /// the commit resolved with the first legal answer.
     pub forced: u64,
@@ -119,6 +122,9 @@ impl SimultaneousCensus {
         }
         if self.forced > 0 {
             line.push_str(&format!(", forced {}", self.forced));
+        }
+        if self.unit_conflicts > 0 {
+            line.push_str(&format!(", unit conflicts {}", self.unit_conflicts));
         }
         if self.unplanned_seats > 0 || self.lost_seats > 0 {
             line.push_str(&format!(
@@ -203,6 +209,14 @@ struct PlanningRequest {
     response: mpsc::Sender<CycleEvent>,
 }
 
+/// The action log is the authoritative replay.  The side-channel delta lets
+/// the commit phase identify the small set of unit ids that may have raced,
+/// without diffing another full planning world.
+struct PlannedSeat {
+    actions: Vec<Action>,
+    unit_delta: UnitDelta,
+}
+
 enum PlanningMessage {
     Plan(PlanningRequest),
     Shutdown,
@@ -224,6 +238,7 @@ enum CycleEvent {
         sequence: usize,
         seat: usize,
         actions: Vec<Action>,
+        unit_delta: UnitDelta,
     },
     Cancelled {
         sequence: usize,
@@ -306,22 +321,26 @@ impl<'scope> SeatPlannerPool<'scope> {
                                 let mut ai = ais[seat]
                                     .lock()
                                     .expect("a simultaneous planning AI was poisoned");
+                                let unit_snapshot = world.units.snapshot();
                                 let mark = world.log.len();
                                 ai.take_turn(&mut world, seat);
-                                world
+                                let actions = world
                                     .log
                                     .since(mark)
                                     .take_while(|(pid, _)| *pid == seat)
                                     .filter(|(_, action)| !matches!(action, Action::EndTurn))
                                     .map(|(_, action)| action.clone())
-                                    .collect::<Vec<_>>()
+                                    .collect::<Vec<_>>();
+                                let unit_delta = world.units.delta_since(&unit_snapshot);
+                                (actions, unit_delta)
                             }));
                             match planned {
-                                Ok(actions) => {
+                                Ok((actions, unit_delta)) => {
                                     let _ = response.send(CycleEvent::Planned {
                                         sequence,
                                         seat,
                                         actions,
+                                        unit_delta,
                                     });
                                 }
                                 Err(payload) => {
@@ -345,7 +364,7 @@ impl<'scope> SeatPlannerPool<'scope> {
     /// regardless of worker completion order. A worker panic is resumed on
     /// the simulation thread after every in-flight request has acknowledged
     /// cancellation, so the scoped fleet never leaks or deadlocks.
-    fn plan(&self, prepared: Vec<(usize, Game)>) -> Vec<(usize, Vec<Action>)> {
+    fn plan(&self, prepared: Vec<(usize, Game)>) -> Vec<(usize, Vec<Action>, UnitDelta)> {
         if prepared.is_empty() {
             return Vec::new();
         }
@@ -365,7 +384,7 @@ impl<'scope> SeatPlannerPool<'scope> {
         }
         drop(response);
 
-        let mut plans: Vec<Option<(usize, Vec<Action>)>> =
+        let mut plans: Vec<Option<(usize, Vec<Action>, UnitDelta)>> =
             (0..count).map(|_| None).collect();
         let mut first_panic = None;
         for _ in 0..count {
@@ -377,13 +396,14 @@ impl<'scope> SeatPlannerPool<'scope> {
                     sequence,
                     seat,
                     actions,
+                    unit_delta,
                 } => {
                     assert!(sequence < count, "planning worker returned an invalid sequence");
                     assert!(
                         plans[sequence].is_none(),
                         "planning worker returned sequence {sequence} twice"
                     );
-                    plans[sequence] = Some((seat, actions));
+                    plans[sequence] = Some((seat, actions, unit_delta));
                 }
                 CycleEvent::Cancelled { sequence } => {
                     assert!(sequence < count, "planning worker cancelled an invalid sequence");
@@ -539,10 +559,11 @@ pub fn step_cycle<A: Ai + Send>(
 fn plan_serially<A: Ai>(
     ais: &mut [A],
     prepared: Vec<(usize, Game)>,
-) -> Vec<(usize, Vec<Action>)> {
+) -> Vec<(usize, Vec<Action>, UnitDelta)> {
     prepared
         .into_iter()
         .map(|(seat, mut world)| {
+            let unit_snapshot = world.units.snapshot();
             let mark = world.log.len();
             ais[seat].take_turn(&mut world, seat);
             let actions = world
@@ -552,7 +573,8 @@ fn plan_serially<A: Ai>(
                 .filter(|(_, action)| !matches!(action, Action::EndTurn))
                 .map(|(_, action)| action.clone())
                 .collect();
-            (seat, actions)
+            let unit_delta = world.units.delta_since(&unit_snapshot);
+            (seat, actions, unit_delta)
         })
         .collect()
 }
@@ -629,7 +651,7 @@ fn prepare_loop(jobs: mpsc::Receiver<PrepareJob>, planners: mpsc::Sender<Plannin
 struct CycleInbox {
     announced: std::collections::BTreeSet<usize>,
     prepare_done: bool,
-    arrived: BTreeMap<usize, Vec<Action>>,
+    arrived: BTreeMap<usize, PlannedSeat>,
     submitted: usize,
     results_seen: usize,
     first_panic: Option<Box<dyn Any + Send + 'static>>,
@@ -649,11 +671,20 @@ impl CycleInbox {
                 }
             }
             CycleEvent::Planned {
-                seat, actions, ..
+                seat,
+                actions,
+                unit_delta,
+                ..
             } => {
                 census.planned += actions.len() as u64;
                 self.results_seen += 1;
-                self.arrived.insert(seat, actions);
+                self.arrived.insert(
+                    seat,
+                    PlannedSeat {
+                        actions,
+                        unit_delta,
+                    },
+                );
             }
             CycleEvent::Cancelled { .. } => self.results_seen += 1,
             CycleEvent::Panicked(payload) => {
@@ -742,9 +773,10 @@ fn step_cycle_pipelined(
             break;
         }
         match plan {
-            Some(actions) => {
+            Some(planned) => {
                 consumed.insert(seat);
-                for action in &actions {
+                census.unit_conflicts += planned.unit_delta.conflicts_with(&g.units).len() as u64;
+                for action in &planned.actions {
                     if g.winner.is_some() {
                         break;
                     }
@@ -799,7 +831,7 @@ fn step_cycle_with_planner<F>(
     plan: F,
 ) -> bool
 where
-    F: FnOnce(Vec<(usize, Game)>) -> Vec<(usize, Vec<Action>)>,
+    F: FnOnce(Vec<(usize, Game)>) -> Vec<(usize, Vec<Action>, UnitDelta)>,
 {
     let opened = (g.turn, g.current);
     let cycle_turn = g.turn;
@@ -850,10 +882,16 @@ where
     // but both return the prepared order. The authoritative world only sees
     // these results below, in turn-cursor order.
     let planned = plan(prepared);
-    let mut plans: BTreeMap<usize, Vec<Action>> = BTreeMap::new();
-    for (seat, actions) in planned {
+    let mut plans: BTreeMap<usize, PlannedSeat> = BTreeMap::new();
+    for (seat, actions, unit_delta) in planned {
         census.planned += actions.len() as u64;
-        plans.insert(seat, actions);
+        plans.insert(
+            seat,
+            PlannedSeat {
+                actions,
+                unit_delta,
+            },
+        );
     }
 
     // ---- Commit: the plans land on the one authoritative world in
@@ -866,8 +904,9 @@ where
         steps += 1;
         let seat = g.current;
         match plans.remove(&seat) {
-            Some(actions) => {
-                for action in &actions {
+            Some(planned) => {
+                census.unit_conflicts += planned.unit_delta.conflicts_with(&g.units).len() as u64;
+                for action in &planned.actions {
                     if g.winner.is_some() {
                         break;
                     }
@@ -945,6 +984,28 @@ mod tests {
         let mut g = Game::new(3, 24, 16, seed, turns, 1);
         g.turn_structure = TurnStructure::Simultaneous;
         g
+    }
+
+    /// Game clones share the immutable unit snapshot.  A branch that edits
+    /// one unit reports one localized delta, leaves the snapshot untouched,
+    /// and detects a live-world race only for that id.
+    #[test]
+    fn unit_snapshots_are_shared_and_deltas_are_local() {
+        let game = Game::new(2, 24, 16, 77, 20, 0);
+        let id = *game.units.keys().next().expect("the setup has a unit");
+        let before = game.units.snapshot();
+        let before_hp = before.get(&id).expect("snapshot unit").hp;
+        let mut branch = game.clone();
+        branch.units.get_mut(&id).expect("branch unit").hp -= 1;
+        let delta = branch.units.delta_since(&before);
+        assert_eq!(delta.len(), 1);
+        assert_eq!(delta.changed_ids().copied().collect::<Vec<_>>(), vec![id]);
+        assert_eq!(before.get(&id).expect("snapshot remains immutable").hp, before_hp);
+        assert!(delta.conflicts_with(&game.units).is_empty());
+
+        let mut live = game;
+        live.units.get_mut(&id).expect("live unit").hp -= 2;
+        assert_eq!(delta.conflicts_with(&live.units), vec![id]);
     }
 
     /// The *anchor* default. Since #1347 no command surface chooses
@@ -1041,6 +1102,7 @@ mod tests {
         assert_eq!(census_serial.planned, census_fanned.planned);
         assert_eq!(census_serial.applied, census_fanned.applied);
         assert_eq!(census_serial.dropped_by_kind, census_fanned.dropped_by_kind);
+        assert_eq!(census_serial.unit_conflicts, census_fanned.unit_conflicts);
     }
 
     /// The pipeline must stay an execution detail on boards where the rare
@@ -1071,6 +1133,10 @@ mod tests {
             assert_eq!(census_serial.applied, census_fanned.applied, "seed {seed}");
             assert_eq!(
                 census_serial.dropped_by_kind, census_fanned.dropped_by_kind,
+                "seed {seed}"
+            );
+            assert_eq!(
+                census_serial.unit_conflicts, census_fanned.unit_conflicts,
                 "seed {seed}"
             );
             assert_eq!(

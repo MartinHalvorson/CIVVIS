@@ -3,551 +3,579 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CIVVIS</title>
-<meta name="description" content="A Civilization VI-shaped strategy engine that plays itself — AI civilizations founding, expanding, warring and winning, watched turn by turn. Pick a world and watch it run.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%2307110f'/%3E%3Ccircle cx='16' cy='16' r='12.5' fill='%23d7b66a' stroke='%23f6e4ac'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-family='Georgia,serif' font-size='15' font-weight='700' fill='%2315221c'%3EV%3C/text%3E%3C/svg%3E">
+<meta name="theme-color" content="#09070f">
+<title>CIVVIS · Strategy, simulated</title>
+<meta name="description" content="CIVVIS is an open-source strategy engine: watch AI civilizations rise and fall, play a full single-player game, or command a focused battlefield.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2309070f'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%23d8b66b'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%23d8b66b' stroke-width='1.15'/%3E%3C/svg%3E">
 <style>
   :root {
     color-scheme: dark;
-    --ink: #07110f;
-    --panel: #0d1817;
-    --line: #24413a;
-    --text: #e8e2d2;
-    --muted: #a9b8ae;
-    --faint: #6f8279;
-    --gold: #d7b66a;
-    --gold-bright: #f6e4ac;
-    --sea: #0b1c22;
-    --sea-deep: #081418;
-    --land: #2e5842;
-    --land-2: #3c6a4e;
-    --blue: #76cde4;
-    --danger: #cf7a6b;
+    --void: #09070f;
+    --ink: #100c19;
+    --surface: #151021;
+    --surface-deep: #0d0a14;
+    --violet: #65409b;
+    --violet-bright: #a97bdd;
+    --violet-shadow: #2d174b;
+    --gold: #d8b66b;
+    --gold-bright: #f4dfac;
+    --ivory: #f3eddf;
+    --muted: #b8afc2;
+    --faint: #81778f;
+    --line: rgba(231, 211, 171, 0.18);
+    --line-strong: rgba(216, 182, 107, 0.54);
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
+
   * { box-sizing: border-box; }
+  html { max-width: 100%; background: var(--void); }
   body {
-    margin: 0;
+    min-width: 320px;
+    max-width: 100%;
     min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 44px;
-    padding: 56px 24px 48px;
+    margin: 0;
+    overflow-x: hidden;
+    color: var(--ivory);
     background:
-      radial-gradient(ellipse 120% 80% at 50% -10%, #143026 0%, transparent 60%),
-      radial-gradient(ellipse 90% 60% at 50% 110%, #101f2e 0%, transparent 55%),
-      var(--ink);
-    color: var(--text);
-    font-family: Georgia, "Times New Roman", serif;
-    text-align: center;
+      radial-gradient(900px 650px at 8% -8%, rgba(94, 49, 147, 0.56), transparent 68%),
+      radial-gradient(720px 560px at 94% 8%, rgba(176, 122, 54, 0.14), transparent 70%),
+      radial-gradient(900px 650px at 50% 110%, rgba(62, 33, 101, 0.36), transparent 72%),
+      var(--void);
+    font: 16px/1.55 var(--sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body::before {
+    content: "";
+    position: fixed;
+    z-index: -1;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.32;
+    background-image:
+      linear-gradient(30deg, transparent 49.7%, rgba(225, 198, 143, 0.055) 50%, transparent 50.3%),
+      linear-gradient(150deg, transparent 49.7%, rgba(225, 198, 143, 0.035) 50%, transparent 50.3%);
+    background-size: 104px 60px;
+    mask-image: linear-gradient(to bottom, black, transparent 78%);
   }
 
-  header { max-width: 640px; }
-
-  h1 {
-    margin: 0;
-    font-size: clamp(44px, 12vw, 92px);
-    font-weight: 400;
-    letter-spacing: 0.28em;
-    text-indent: 0.28em;
-    color: var(--gold);
-    text-shadow: 0 0 44px rgba(215, 182, 106, 0.24);
+  a { color: inherit; }
+  .shell {
+    width: min(1440px, 100%);
+    min-width: 0;
+    margin: 0 auto;
+    padding: 0 clamp(20px, 4vw, 64px);
   }
 
-  .rule {
-    width: 92px;
-    height: 1px;
-    margin: 26px auto;
-    background: linear-gradient(90deg, transparent, var(--gold), transparent);
-  }
-
-  .blurb {
-    margin: 0;
-    font-size: clamp(15px, 2.4vw, 18px);
-    line-height: 1.72;
-    color: var(--muted);
-  }
-
-  nav {
+  .site-header {
     display: flex;
-    flex-wrap: wrap;
-    gap: 14px;
-    justify-content: center;
+    align-items: center;
+    justify-content: space-between;
+    gap: 28px;
+    min-height: 112px;
+    border-bottom: 1px solid var(--line);
+    min-width: 0;
   }
-
-  a.button {
+  .wordmark {
     display: inline-flex;
     align-items: center;
+    gap: 13px;
+    margin: 0;
+    color: var(--gold-bright);
+    font: 500 clamp(24px, 3vw, 33px)/1 var(--serif);
+    letter-spacing: 0.22em;
+    text-indent: 0.22em;
+    text-decoration: none;
+  }
+  .wordmark::before {
+    content: "";
+    width: 23px;
+    height: 23px;
+    flex: 0 0 23px;
+    border: 1px solid var(--gold);
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 4px rgba(216, 182, 107, 0.12), 0 0 23px rgba(216, 182, 107, 0.18);
+  }
+  .wordmark .suffix {
+    margin-left: -9px;
+    color: var(--violet-bright);
+    font: 600 0.42em/1 var(--sans);
+    letter-spacing: 0.08em;
+    text-indent: 0;
+  }
+
+  .utility-nav {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+  }
+  .utility-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    min-height: 42px;
+    padding: 0 14px;
+    border: 1px solid rgba(232, 214, 176, 0.2);
+    border-radius: 999px;
+    color: var(--muted);
+    background: rgba(18, 12, 28, 0.48);
+    font-size: 11px;
+    font-weight: 760;
+    letter-spacing: 0.16em;
+    text-decoration: none;
+    text-transform: uppercase;
+    transition: border-color 180ms ease, color 180ms ease, background 180ms ease, transform 180ms ease;
+  }
+  .utility-link svg { width: 16px; height: 16px; flex: none; }
+  .utility-link:hover,
+  .utility-link:focus-visible {
+    border-color: var(--gold);
+    color: var(--gold-bright);
+    background: rgba(72, 43, 103, 0.42);
+    transform: translateY(-1px);
+  }
+  .utility-link:focus-visible,
+  .mode-card:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 4px; }
+
+  .hero {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: clamp(68px, 10vw, 136px) 0 clamp(48px, 7vw, 84px);
+    text-align: center;
+  }
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin: 0 0 20px;
+    color: var(--gold);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+  .eyebrow::before,
+  .eyebrow::after {
+    content: "";
+    width: clamp(26px, 4vw, 48px);
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold));
+  }
+  .eyebrow::after { background: linear-gradient(90deg, var(--gold), transparent); }
+  .hero h2 {
+    max-width: 850px;
+    margin: 0 auto;
+    color: var(--ivory);
+    font: 500 clamp(42px, 7.4vw, 86px)/0.98 var(--serif);
+    letter-spacing: -0.045em;
+    text-wrap: balance;
+  }
+  .hero h2 em { color: var(--gold-bright); font-style: italic; }
+  .hero-copy {
+    max-width: 700px;
+    margin: 30px auto 0;
+    color: var(--muted);
+    font-size: clamp(16px, 2vw, 19px);
+    line-height: 1.72;
+    text-wrap: pretty;
+  }
+  .hero-copy strong { color: var(--ivory); font-weight: 650; }
+  .hero-rule {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     gap: 10px;
-    padding: 14px 26px;
-    border-radius: 8px;
-    font-size: 13px;
+    margin-top: 38px;
+    color: var(--faint);
+    font-size: 10px;
+    font-weight: 740;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .hero-rule::before,
+  .hero-rule::after {
+    content: "";
+    width: min(84px, 13vw);
+    height: 1px;
+    background: var(--line-strong);
+  }
+  .hero-rule span {
+    width: 6px;
+    height: 6px;
+    transform: rotate(45deg);
+    background: var(--gold);
+    box-shadow: 0 0 14px rgba(216, 182, 107, 0.6);
+  }
+
+  main { padding-bottom: clamp(68px, 10vw, 128px); }
+  .modes {
+    display: grid;
+    gap: clamp(22px, 3vw, 40px);
+    min-width: 0;
+  }
+  .modes-heading {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 0 4px;
+  }
+  .modes-heading .eyebrow {
+    justify-content: flex-start;
+    margin: 0 0 12px;
+  }
+  .modes-heading .eyebrow::before { display: none; }
+  .modes-heading h2 {
+    margin: 0;
+    color: var(--ivory);
+    font: 500 clamp(28px, 4vw, 44px)/1.04 var(--serif);
+    letter-spacing: -0.03em;
+  }
+  .modes-heading p:last-child {
+    max-width: 360px;
+    margin: 0;
+    color: var(--faint);
+    font-size: 14px;
+    text-align: right;
+  }
+
+  .mode-card {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1.18fr) minmax(340px, 0.82fr);
+    min-height: 480px;
+    min-width: 0;
+    width: 100%;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    background:
+      radial-gradient(620px 450px at 82% 13%, rgba(103, 62, 159, 0.2), transparent 72%),
+      linear-gradient(135deg, #161021, #0d0a15);
+    text-decoration: none;
+    isolation: isolate;
+    transition: border-color 230ms ease, box-shadow 230ms ease, transform 230ms ease;
+  }
+  .mode-card::before {
+    content: "";
+    position: absolute;
+    z-index: 3;
+    inset: 11px;
+    border: 1px solid rgba(238, 220, 183, 0.09);
+    border-radius: 12px;
+    pointer-events: none;
+    transition: border-color 230ms ease;
+  }
+  .mode-card::after {
+    content: "";
+    position: absolute;
+    z-index: 0;
+    inset: auto 0 0 auto;
+    width: 42%;
+    height: 72%;
+    background: radial-gradient(circle at 80% 80%, rgba(125, 73, 193, 0.23), transparent 70%);
+    pointer-events: none;
+  }
+  .mode-card:hover,
+  .mode-card:focus-visible {
+    border-color: var(--line-strong);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(136, 86, 202, 0.08);
+    transform: translateY(-3px);
+  }
+  .mode-card:hover::before,
+  .mode-card:focus-visible::before { border-color: rgba(244, 223, 172, 0.22); }
+  .mode-card.tactics { grid-template-columns: minmax(340px, 0.82fr) minmax(0, 1.18fr); }
+  .mode-card.tactics .mode-media { grid-column: 2; }
+  .mode-card.tactics .mode-copy { grid-column: 1; grid-row: 1; }
+  .mode-card.tactics::after {
+    right: auto;
+    left: 0;
+    background: radial-gradient(circle at 10% 80%, rgba(125, 73, 193, 0.3), transparent 70%);
+  }
+
+  .mode-media {
+    position: relative;
+    min-height: 360px;
+    min-width: 0;
+    overflow: hidden;
+    background: #08080b;
+  }
+  .mode-media::before {
+    content: "";
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    background:
+      linear-gradient(90deg, rgba(8, 6, 14, 0.05) 25%, rgba(11, 7, 18, 0.62) 100%),
+      linear-gradient(0deg, rgba(8, 6, 14, 0.5), transparent 45%);
+    transition: opacity 230ms ease;
+  }
+  .tactics .mode-media::before {
+    background:
+      linear-gradient(270deg, rgba(8, 6, 14, 0.05) 25%, rgba(11, 7, 18, 0.7) 100%),
+      linear-gradient(0deg, rgba(8, 6, 14, 0.5), transparent 45%);
+  }
+  .mode-media img {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    min-height: 480px;
+    display: block;
+    object-fit: cover;
+    object-position: center;
+    filter: saturate(0.86) contrast(1.05) brightness(0.9);
+    transition: transform 600ms cubic-bezier(.2,.8,.2,1), filter 300ms ease;
+  }
+  .mode-card:hover .mode-media img,
+  .mode-card:focus-visible .mode-media img {
+    transform: scale(1.045);
+    filter: saturate(1) contrast(1.06) brightness(0.98);
+  }
+  .media-kicker,
+  .mode-index {
+    position: absolute;
+    z-index: 2;
+    color: var(--gold-bright);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+  .media-kicker { top: 30px; left: 32px; }
+  .mode-index { right: 32px; bottom: 27px; color: rgba(244, 223, 172, 0.78); font: 500 34px/1 var(--serif); letter-spacing: 0; }
+  .tactics .media-kicker { left: auto; right: 32px; text-align: right; }
+  .tactics .mode-index { right: auto; left: 32px; }
+
+  .mode-copy {
+    position: relative;
+    z-index: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    padding: clamp(48px, 5.5vw, 84px) clamp(34px, 5vw, 78px);
+  }
+  .mode-label {
+    margin: 0 0 17px;
+    color: var(--gold);
+    font-size: 10px;
+    font-weight: 820;
     letter-spacing: 0.2em;
     text-transform: uppercase;
-    text-decoration: none;
-    border: 1px solid var(--line);
-    color: var(--text);
-    background: rgba(13, 26, 23, 0.7);
-    transition: border-color 160ms ease, color 160ms ease, transform 160ms ease;
   }
-  a.button:hover { border-color: var(--gold); color: var(--gold-bright); transform: translateY(-1px); }
-
-  a.button.primary {
-    background: var(--gold);
-    border-color: var(--gold);
-    color: #15221c;
-  }
-  a.button.primary:hover { background: var(--gold-bright); border-color: var(--gold-bright); color: #15221c; }
-
-  a.button svg { width: 17px; height: 17px; flex: none; }
-
-  /* ------------------------------------------------------------ presets */
-
-  section {
-    width: 100%;
-    max-width: 1080px;
-    display: flex;
-    flex-direction: column;
-    gap: 22px;
-  }
-
-  h2 {
+  .mode-copy h3 {
     margin: 0;
-    font-size: 13px;
-    font-weight: 400;
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
-    color: var(--faint);
+    color: var(--ivory);
+    font: 500 clamp(43px, 5vw, 65px)/0.93 var(--serif);
+    letter-spacing: -0.055em;
   }
-  h2 strong { color: var(--gold); font-weight: 400; }
-
-  .lede {
-    margin: -10px auto 0;
-    max-width: 560px;
-    font-size: 14px;
-    line-height: 1.7;
-    color: var(--faint);
-  }
-
-  .presets {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 18px;
-    text-align: left;
-  }
-
-  /* The four games, one per quadrant: Civ upper-left, Tactics upper-right,
-     city settling lower-left, Sim City lower-right. A fixed two-column grid
-     rather than auto-fit, because the corners are the point. */
-  .quadrants {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 18px;
-    text-align: left;
-  }
-  @media (max-width: 700px) {
-    .quadrants { grid-template-columns: 1fr; }
-  }
-
-  a.card {
-    display: flex;
-    flex-direction: column;
-    text-decoration: none;
-    color: inherit;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    overflow: hidden;
-    transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
-  }
-  a.card:hover, a.card:focus-visible {
-    border-color: var(--gold);
-    transform: translateY(-2px);
-    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
-  }
-  a.card:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-
-  .card svg { display: block; width: 100%; height: auto; }
-
-  .card-body {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 16px 18px 18px;
-    border-top: 1px solid var(--line);
-  }
-  .card h3 {
-    margin: 0;
-    font-size: 17px;
-    font-weight: 400;
-    color: var(--gold);
-    letter-spacing: 0.04em;
-  }
-  .card p {
-    margin: 0;
-    font-size: 13.5px;
-    line-height: 1.6;
+  .mode-copy h3 em { color: var(--violet-bright); font-style: italic; }
+  .mode-copy > p:not(.mode-label) {
+    max-width: 440px;
+    margin: 24px 0 0;
     color: var(--muted);
+    font-size: 15px;
+    line-height: 1.72;
   }
-  .card .settings {
-    margin-top: 4px;
-    font-size: 11px;
-    letter-spacing: 0.14em;
+  .mode-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 26px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .mode-list li {
+    padding: 6px 9px;
+    border: 1px solid rgba(232, 214, 176, 0.17);
+    border-radius: 999px;
+    color: #c4b9cd;
+    font-size: 9px;
+    font-weight: 760;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: var(--faint);
+  }
+  .mode-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 31px;
+    color: var(--gold-bright);
+    font-size: 11px;
+    font-weight: 820;
+    letter-spacing: 0.17em;
+    text-transform: uppercase;
+  }
+  .mode-action::after {
+    content: "→";
+    display: grid;
+    width: 25px;
+    height: 25px;
+    place-items: center;
+    border: 1px solid rgba(216, 182, 107, 0.45);
+    border-radius: 50%;
+    font-size: 15px;
+    font-weight: 400;
+    letter-spacing: 0;
+    transition: transform 200ms ease, background 200ms ease;
+  }
+  .mode-card:hover .mode-action::after,
+  .mode-card:focus-visible .mode-action::after {
+    transform: translateX(4px);
+    background: rgba(216, 182, 107, 0.15);
   }
 
   footer {
-    font-size: 11px;
-    letter-spacing: 0.18em;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    min-height: 88px;
+    border-top: 1px solid var(--line);
+    color: var(--faint);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.13em;
     text-transform: uppercase;
-    color: #55665e;
   }
+  footer b { color: var(--gold); font-weight: 800; }
 
+  @media (max-width: 860px) {
+    .modes-heading { display: block; }
+    .modes-heading p:last-child { margin-top: 16px; text-align: left; }
+    .mode-card,
+    .mode-card.tactics { grid-template-columns: 1fr; }
+    .mode-card.tactics .mode-media,
+    .mode-card.tactics .mode-copy { grid-column: 1; grid-row: auto; }
+    .mode-card.tactics .mode-copy { grid-row: 2; }
+    .mode-card.tactics .mode-media::before {
+      background:
+        linear-gradient(90deg, rgba(8, 6, 14, 0.05) 25%, rgba(11, 7, 18, 0.62) 100%),
+        linear-gradient(0deg, rgba(8, 6, 14, 0.5), transparent 45%);
+    }
+    .tactics .media-kicker { right: auto; left: 32px; text-align: left; }
+    .tactics .mode-index { right: 32px; left: auto; }
+    .mode-media { min-height: 290px; }
+    .mode-media img { min-height: 340px; }
+    .mode-copy { min-height: 350px; }
+  }
+  @media (max-width: 600px) {
+    .shell { padding: 0 18px; }
+    .site-header {
+      min-height: 94px;
+      gap: 16px;
+    }
+    .wordmark { gap: 8px; font-size: 23px; }
+    .wordmark::before { width: 18px; height: 18px; flex-basis: 18px; }
+    .wordmark .suffix { display: none; }
+    .utility-link { gap: 6px; min-height: 38px; padding: 0 10px; font-size: 9px; letter-spacing: 0.12em; }
+    .utility-link svg { width: 14px; height: 14px; }
+    .hero { padding-top: 68px; padding-bottom: 46px; }
+    .hero h2 { font-size: clamp(39px, 13vw, 56px); }
+    .hero-copy { margin-top: 24px; font-size: 16px; }
+    .modes-heading h2 { font-size: 31px; }
+    .mode-card { min-height: 0; border-radius: 16px; }
+    .mode-card::before { inset: 8px; border-radius: 10px; }
+    .mode-media { min-height: 235px; }
+    .mode-media img { min-height: 255px; }
+    .mode-copy { min-height: 0; padding: 42px 30px 46px; }
+    .mode-copy h3 { font-size: 51px; }
+    .media-kicker { top: 23px; left: 25px; }
+    .mode-index { right: 25px; bottom: 22px; font-size: 28px; }
+    .tactics .media-kicker { left: 25px; }
+    .tactics .mode-index { right: 25px; }
+    footer { display: block; padding: 24px 0; line-height: 1.7; }
+    footer span { display: block; }
+  }
   @media (prefers-reduced-motion: reduce) {
-    a.button, a.card { transition: none; }
-    a.button:hover, a.card:hover { transform: none; }
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
   }
 </style>
 </head>
 <body>
+  <header class="shell site-header">
+    <div class="wordmark" aria-label="CIVVIS">CIVVIS<span class="suffix">.ai</span></div>
+    <nav class="utility-nav" aria-label="CIVVIS links">
+      <a class="utility-link" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
+        Watch
+      </a>
+      <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
+        Code
+      </a>
+    </nav>
+  </header>
 
-<header>
-  <h1>CIVVIS</h1>
-  <div class="rule"></div>
-  <p class="blurb">
-    A Civilization&nbsp;VI-shaped strategy engine that plays itself. Whole
-    civilizations are founded, expanded, fought over and won — every turn drawn
-    as a frame somebody can watch.
-  </p>
-</header>
+  <main class="shell">
+    <section class="hero" aria-labelledby="hero-title">
+      <p class="eyebrow">Open-source strategy simulation</p>
+      <h2 id="hero-title">History, rendered <em>one decision</em> at a time.</h2>
+      <p class="hero-copy">
+        <strong>Everything is built on the open-source CIVVIS.ai engine.</strong>
+        Watch AI simulations, or play in single-player mode. Preset historical
+        battles or build your own custom maps. Full Civ experience or isolated
+        battlefield tactics.
+      </p>
+      <div class="hero-rule" aria-hidden="true"><span></span></div>
+    </section>
 
-<nav>
-  <!-- The stable simulator is the site root; this page lives at /home. -->
-  <a class="button primary" href="/">Launch simulator</a>
-  <a class="button" href="https://www.youtube.com/@civvis">
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/>
-    </svg>
-    Watch on YouTube
-  </a>
-  <a class="button" href="https://github.com/MartinHalvorson/CIVVIS">
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/>
-    </svg>
-    Source
-  </a>
-  <a class="button" href="/rust">Rust build</a>
-  <a class="button" href="/wasm">WASM build</a>
-</nav>
-
-<!--
-  The four quadrants are the page's face: the games the engine plays, one per
-  corner — Civ, Tactics, city settling, Sim City — each a link into the
-  simulator with a preset tuned to that game. Like every card on this page,
-  the links carry lobby choices on the query string for beta/shim.js.
--->
-<section aria-label="The four games">
-  <h2>Four games, <strong>one engine</strong></h2>
-  <p class="lede">
-    Pick the game you want to watch. Each corner starts a simulation already
-    tuned to it — the engine plays, you watch.
-  </p>
-  <div class="quadrants">
-
-    <a class="card" href="/">
-      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
-        <rect width="320" height="180" fill="var(--sea)"/>
-        <path d="M30 60 Q60 30 120 40 Q170 48 160 84 Q150 116 92 122 Q40 118 30 60 Z" fill="var(--land)"/>
-        <path d="M190 96 Q230 78 276 92 Q298 104 288 130 Q268 152 220 146 Q188 134 190 96 Z" fill="var(--land-2)"/>
-        <circle cx="86" cy="76" r="4" fill="var(--gold)"/>
-        <circle cx="126" cy="62" r="3" fill="var(--gold)"/>
-        <circle cx="244" cy="118" r="4" fill="var(--danger)"/>
-        <path d="M126 62 Q186 74 244 118" stroke="var(--gold)" stroke-width="1" stroke-dasharray="3 4" fill="none" opacity="0.6"/>
-      </svg>
-      <div class="card-body">
-        <h3>Civ</h3>
-        <p>The complete game: whole civilizations founded, grown, allied and
-        fought until one of them wins the world.</p>
-        <div class="settings">Full game · A fresh world every visit</div>
+    <section class="modes" aria-labelledby="modes-title">
+      <div class="modes-heading">
+        <div>
+          <p class="eyebrow">Choose your command</p>
+          <h2 id="modes-title">One engine. Two scales of history.</h2>
+        </div>
+        <p>Begin with an empire—or isolate the battle that decides its fate.</p>
       </div>
-    </a>
 
-    <a class="card" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20">
-      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
-        <rect width="320" height="180" fill="var(--sea-deep)"/>
-        <rect x="70" y="20" width="180" height="140" rx="6" fill="var(--panel)" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.5"/>
-        <path d="M115 20 V160 M160 20 V160 M205 20 V160 M70 66 H250 M70 113 H250" stroke="var(--line)" stroke-width="1"/>
-        <rect x="86" y="52" width="14" height="14" fill="var(--blue)" opacity="0.9"/>
-        <rect x="86" y="88" width="14" height="14" fill="var(--blue)" opacity="0.9"/>
-        <rect x="108" y="70" width="14" height="14" fill="var(--blue)" opacity="0.6"/>
-        <rect x="220" y="52" width="14" height="14" fill="var(--danger)" opacity="0.9"/>
-        <rect x="220" y="88" width="14" height="14" fill="var(--danger)" opacity="0.9"/>
-        <rect x="198" y="70" width="14" height="14" fill="var(--danger)" opacity="0.6"/>
-      </svg>
-      <div class="card-body">
-        <h3>Tactics</h3>
-        <p>The fighting on its own: two even armies, one bounded field, no
-        economy to hide behind — decided by ground and formation.</p>
-        <div class="settings">Tactics · 20×20 field · Information era</div>
-      </div>
-    </a>
+      <a class="mode-card" href="/" aria-labelledby="civ-title">
+        <div class="mode-media">
+          <img src="/home/assets/civ-world.jpg?v=b09c9d1a799d298354c483c7507d7b23fb757568f601872a6463d009076de92b" alt="A CIVVIS world map showing two colorful continents of competing civilizations." fetchpriority="high">
+          <span class="media-kicker">Strategic world view</span>
+          <span class="mode-index">I</span>
+        </div>
+        <div class="mode-copy">
+          <p class="mode-label">The complete experience</p>
+          <h3 id="civ-title">Civ<em>.</em></h3>
+          <p>Guide a civilization across the full sweep of history. Pick a leader, shape a world, play a single seat—or watch autonomous empires expand, scheme, and compete for victory.</p>
+          <ul class="mode-list" aria-label="Civ features">
+            <li>Single player</li>
+            <li>AI simulations</li>
+            <li>Custom worlds</li>
+          </ul>
+          <span class="mode-action">Enter the world</span>
+        </div>
+      </a>
 
-    <a class="card" href="/?players=12&amp;map=land_only">
-      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
-        <rect width="320" height="180" fill="var(--land)"/>
-        <path d="M0 150 Q60 136 132 144 Q220 152 320 140 L320 180 L0 180 Z" fill="var(--sea)"/>
-        <circle cx="96" cy="72" r="6" fill="var(--gold)"/>
-        <circle cx="96" cy="72" r="12" fill="none" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.5"/>
-        <circle cx="96" cy="72" r="19" fill="none" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.25"/>
-        <circle cx="176" cy="52" r="3.5" fill="var(--gold-bright)"/>
-        <circle cx="222" cy="96" r="3.5" fill="var(--gold-bright)"/>
-        <circle cx="150" cy="112" r="3.5" fill="var(--gold-bright)"/>
-        <path d="M108 66 Q140 52 172 53" stroke="var(--gold-bright)" stroke-width="1" stroke-dasharray="2 5" fill="none" opacity="0.7"/>
-        <path d="M110 78 Q168 92 218 95" stroke="var(--gold-bright)" stroke-width="1" stroke-dasharray="2 5" fill="none" opacity="0.7"/>
-        <path d="M104 82 Q126 100 146 109" stroke="var(--gold-bright)" stroke-width="1" stroke-dasharray="2 5" fill="none" opacity="0.7"/>
-      </svg>
-      <div class="card-body">
-        <h3>City Settling</h3>
-        <p>The land rush: twelve civilizations on a continent of open ground,
-        and every turn another banner further out on the frontier.</p>
-        <div class="settings">12 civs · Land only · Ancient start</div>
-      </div>
-    </a>
+      <a class="mode-card tactics" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" aria-labelledby="tactics-title">
+        <div class="mode-media">
+          <img src="/home/assets/tactics-frontline.jpg?v=7dc299716a556b25bd345534b2112a96112eea725ea91a4105494904156bcb8a" alt="A CIVVIS battlefield crowded with opposing units, cities, and front lines in an active war." loading="lazy">
+          <span class="media-kicker">Battlefield command</span>
+          <span class="mode-index">II</span>
+        </div>
+        <div class="mode-copy">
+          <p class="mode-label">The decisive moment</p>
+          <h3 id="tactics-title">Tactics<em>.</em></h3>
+          <p>Strip strategy down to the ground beneath your units. Revisit preset historical battles, or build a custom battlefield with the map, era, formation, and objective you want to test.</p>
+          <ul class="mode-list" aria-label="Tactics features">
+            <li>Historical battles</li>
+            <li>Custom maps</li>
+            <li>Battlefield AI</li>
+          </ul>
+          <span class="mode-action">Enter the battlefield</span>
+        </div>
+      </a>
+    </section>
+  </main>
 
-    <a class="card" href="/?players=6&amp;map=islands&amp;victories=science">
-      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
-        <rect width="320" height="180" fill="var(--sea-deep)"/>
-        <path d="M0 150 Q80 140 160 146 Q240 150 320 144 L320 180 L0 180 Z" fill="var(--land)"/>
-        <rect x="92" y="96" width="16" height="52" fill="var(--panel)" stroke="var(--line)"/>
-        <rect x="116" y="76" width="18" height="72" fill="var(--panel)" stroke="var(--gold)" stroke-opacity="0.5"/>
-        <rect x="142" y="108" width="14" height="40" fill="var(--panel)" stroke="var(--line)"/>
-        <rect x="164" y="62" width="20" height="86" fill="var(--panel)" stroke="var(--gold)" stroke-opacity="0.5"/>
-        <rect x="192" y="92" width="16" height="56" fill="var(--panel)" stroke="var(--line)"/>
-        <path d="M120 84 h10 M120 94 h10 M168 70 h12 M168 80 h12 M168 90 h12 M195 100 h10 M195 110 h10" stroke="var(--gold)" stroke-width="2" stroke-opacity="0.8"/>
-        <circle cx="248" cy="40" r="3" fill="var(--gold)"/>
-        <path d="M244 52 L248 44 L252 52 Z" fill="var(--gold-bright)"/>
-      </svg>
-      <div class="card-body">
-        <h3>Sim City</h3>
-        <p>The building with no fighting to do. Its own mode is on the
-        roadmap; until it arrives, the nearest world: island builders left in
-        peace, racing for orbit.</p>
-        <div class="settings">6 civs · Islands · Science only</div>
-      </div>
-    </a>
-
-  </div>
-</section>
-
-<!--
-  Each card is a link into the simulator with lobby choices already made —
-  beta/shim.js reads them off the query string and posts the one /new request
-  the setup screen would have. The settings line under each description uses
-  the lobby's own vocabulary, so a card doubles as a worked example of the
-  parameters: players, map, shape, era, speed, victories, arena.
--->
-<section aria-label="Preset simulations">
-  <h2>Pick a world, <strong>watch it run</strong></h2>
-  <p class="lede">
-    Every card starts a simulation in your browser with its settings already
-    chosen. Nothing to install, nobody to sign in as — the engine plays, you
-    watch.
-  </p>
-  <div class="presets">
-
-    <a class="card" href="/">
-      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
-        <defs><clipPath id="tennis-ball"><circle cx="160" cy="90" r="66"/></clipPath></defs>
-        <rect width="320" height="180" fill="var(--sea-deep)"/>
-        <g clip-path="url(#tennis-ball)">
-          <rect x="94" y="24" width="132" height="132" fill="var(--land)"/>
-          <path d="M226 14 Q170 50 172 90 Q174 130 118 166 L94 166 Q150 130 148 90 Q146 50 202 14 Z" fill="var(--sea)"/>
-          <circle cx="128" cy="58" r="4" fill="var(--gold)"/>
-          <circle cx="196" cy="122" r="4" fill="var(--gold)"/>
-        </g>
-        <circle cx="160" cy="90" r="66" fill="none" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.6"/>
-      </svg>
-      <div class="card-body">
-        <h3>The Exhibition</h3>
-        <p>The front page's stock world: four civilizations on a Tennis Ball
-        globe — two land lobes split by an ocean seam that loops the whole
-        planet — from a seed nobody has watched before.</p>
-        <div class="settings">4 civs · Tennis Ball · Globe</div>
-      </div>
-    </a>
-
-    <a class="card" href="/?players=12&amp;map=pangaea&amp;victories=domination">
-      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
-        <rect width="320" height="180" fill="var(--sea)"/>
-        <path d="M40 96 Q36 48 96 36 Q160 24 226 40 Q288 54 280 100 Q272 140 200 150 Q116 158 68 136 Q42 122 40 96 Z" fill="var(--land)"/>
-        <path d="M96 90 L146 90 L138 78 L172 96 L138 114 L146 102 L96 102 Z" fill="var(--gold)"/>
-        <path d="M224 90 L174 90 L182 78 L148 96 L182 114 L174 102 L224 102 Z" fill="var(--danger)" opacity="0.9"/>
-        <path d="M160 82 L164 92 L160 110 L156 92 Z" fill="var(--gold-bright)" opacity="0.8"/>
-      </svg>
-      <div class="card-body">
-        <h3>World War</h3>
-        <p>Twelve civilizations share one landmass, and the only victory left
-        on the table is taking it from each other.</p>
-        <div class="settings">12 civs · Pangaea · Domination only</div>
-      </div>
-    </a>
-
-    <a class="card" href="/?players=8&amp;map=islands">
-      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
-        <rect width="320" height="180" fill="var(--sea)"/>
-        <ellipse cx="52" cy="52" rx="22" ry="13" fill="var(--land)"/>
-        <ellipse cx="128" cy="34" rx="15" ry="9" fill="var(--land-2)"/>
-        <ellipse cx="228" cy="48" rx="26" ry="14" fill="var(--land)"/>
-        <ellipse cx="296" cy="92" rx="17" ry="10" fill="var(--land-2)"/>
-        <ellipse cx="66" cy="126" rx="19" ry="11" fill="var(--land-2)"/>
-        <ellipse cx="160" cy="98" rx="13" ry="8" fill="var(--land)"/>
-        <ellipse cx="238" cy="140" rx="22" ry="12" fill="var(--land)"/>
-        <ellipse cx="140" cy="152" rx="12" ry="7" fill="var(--land-2)"/>
-        <path d="M104 72 l6 -12 l2 12 Z" fill="var(--gold)"/>
-        <path d="M104 73 h10" stroke="var(--gold)" stroke-width="2"/>
-        <path d="M196 116 l6 -12 l2 12 Z" fill="var(--gold)"/>
-        <path d="M196 117 h10" stroke="var(--gold)" stroke-width="2"/>
-      </svg>
-      <div class="card-body">
-        <h3>Island Empires</h3>
-        <p>An archipelago with no mainland to fall back on. Whoever rules the
-        water decides what happens on every shore.</p>
-        <div class="settings">8 civs · Island plates</div>
-      </div>
-    </a>
-
-    <a class="card" href="/?map=planet&amp;players=8">
-      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
-        <rect width="320" height="180" fill="var(--sea-deep)"/>
-        <circle cx="160" cy="90" r="66" fill="var(--sea)" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.6"/>
-        <path d="M120 58 Q142 42 168 52 Q186 60 176 76 Q160 88 136 82 Q116 74 120 58 Z" fill="var(--land)"/>
-        <path d="M168 108 Q192 100 206 114 Q212 128 192 136 Q170 142 160 128 Q156 114 168 108 Z" fill="var(--land-2)"/>
-        <ellipse cx="160" cy="90" rx="66" ry="22" fill="none" stroke="var(--gold)" stroke-width="0.7" stroke-opacity="0.35"/>
-        <ellipse cx="160" cy="90" rx="26" ry="66" fill="none" stroke="var(--gold)" stroke-width="0.7" stroke-opacity="0.35"/>
-        <circle cx="160" cy="90" r="66" fill="none" stroke="var(--gold)" stroke-width="0.7" stroke-opacity="0.35" stroke-dasharray="2 6"/>
-      </svg>
-      <div class="card-body">
-        <h3>The Whole Planet</h3>
-        <p>A closed geodesic globe — hexagons, twelve pentagons, and no map
-        edge anywhere. Navies sail all the way around.</p>
-        <div class="settings">8 civs · Small continents · Globe</div>
-      </div>
-    </a>
-
-    <a class="card" href="/?map=true_start_earth&amp;players=10">
-      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
-        <rect width="320" height="180" fill="var(--sea)"/>
-        <path d="M48 38 Q76 28 92 44 Q98 58 82 64 Q90 74 80 92 Q68 116 58 138 Q52 118 56 96 Q46 78 42 58 Q42 44 48 38 Z" fill="var(--land)"/>
-        <path d="M140 34 Q182 24 232 34 Q272 42 284 62 Q270 66 252 62 Q262 76 250 84 Q234 88 224 76 Q216 92 200 88 Q188 82 190 66 Q168 62 152 52 Q140 44 140 34 Z" fill="var(--land-2)"/>
-        <path d="M176 92 Q196 88 206 102 Q212 120 200 136 Q186 146 176 132 Q168 112 176 92 Z" fill="var(--land)"/>
-        <path d="M256 116 Q274 112 282 124 Q284 136 270 140 Q256 140 252 128 Z" fill="var(--land-2)"/>
-        <circle cx="186" cy="60" r="3" fill="var(--gold)"/>
-        <circle cx="196" cy="100" r="3" fill="var(--gold)"/>
-        <circle cx="248" cy="58" r="3" fill="var(--gold)"/>
-        <circle cx="66" cy="84" r="3" fill="var(--gold)"/>
-      </svg>
-      <div class="card-body">
-        <h3>True Start Earth</h3>
-        <p>Earth itself, with every civilization founded where history actually
-        put it — and free to do better this time.</p>
-        <div class="settings">10 civs · Earth · True start</div>
-      </div>
-    </a>
-
-    <a class="card" href="/?map=water_world&amp;players=6">
-      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
-        <rect width="320" height="180" fill="var(--sea)"/>
-        <path d="M0 40 Q40 34 80 40 T160 40 T240 40 T320 40" stroke="var(--blue)" stroke-width="1" fill="none" opacity="0.18"/>
-        <path d="M0 84 Q40 78 80 84 T160 84 T240 84 T320 84" stroke="var(--blue)" stroke-width="1" fill="none" opacity="0.14"/>
-        <path d="M0 128 Q40 122 80 128 T160 128 T240 128 T320 128" stroke="var(--blue)" stroke-width="1" fill="none" opacity="0.1"/>
-        <ellipse cx="84" cy="62" rx="11" ry="6" fill="var(--land)"/>
-        <ellipse cx="216" cy="104" rx="13" ry="7" fill="var(--land-2)"/>
-        <ellipse cx="160" cy="48" rx="7" ry="4" fill="var(--land-2)"/>
-        <ellipse cx="272" cy="60" rx="6" ry="4" fill="var(--land)"/>
-        <ellipse cx="58" cy="124" rx="8" ry="5" fill="var(--land-2)"/>
-        <circle cx="216" cy="100" r="3" fill="var(--gold)"/>
-      </svg>
-      <div class="card-body">
-        <h3>Water World</h3>
-        <p>Five percent land. Every scrap of it gets settled, contested and
-        fought over — the rest is a navy's game.</p>
-        <div class="settings">6 civs · Water world</div>
-      </div>
-    </a>
-
-    <a class="card" href="/?era=atomic&amp;players=8&amp;victories=science,domination">
-      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
-        <rect width="320" height="180" fill="var(--sea-deep)"/>
-        <path d="M0 150 Q80 138 160 146 Q240 152 320 142 L320 180 L0 180 Z" fill="var(--land)"/>
-        <ellipse cx="160" cy="70" rx="104" ry="40" fill="none" stroke="var(--gold)" stroke-width="0.8" stroke-opacity="0.4"/>
-        <circle cx="256" cy="46" r="3" fill="var(--gold)"/>
-        <path d="M156 128 L160 96 L164 128 Z" fill="var(--gold-bright)"/>
-        <rect x="156" y="60" width="8" height="42" rx="3" fill="var(--text)"/>
-        <path d="M160 44 L166 62 L154 62 Z" fill="var(--danger)"/>
-        <path d="M156 100 L148 112 L156 108 Z" fill="var(--text)" opacity="0.8"/>
-        <path d="M164 100 L172 112 L164 108 Z" fill="var(--text)" opacity="0.8"/>
-      </svg>
-      <div class="card-body">
-        <h3>The Atomic Age</h3>
-        <p>Skip five thousand years of build-up. Eight powers begin with the
-        bomb in reach, racing for orbit — or for each other.</p>
-        <div class="settings">8 civs · Atomic start · Science &amp; domination</div>
-      </div>
-    </a>
-
-    <a class="card" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20">
-      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
-        <rect width="320" height="180" fill="var(--sea-deep)"/>
-        <rect x="70" y="20" width="180" height="140" rx="6" fill="var(--panel)" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.5"/>
-        <path d="M115 20 V160 M160 20 V160 M205 20 V160 M70 66 H250 M70 113 H250" stroke="var(--line)" stroke-width="1"/>
-        <rect x="82" y="46" width="14" height="14" fill="var(--blue)" opacity="0.9"/>
-        <rect x="82" y="82" width="14" height="14" fill="var(--blue)" opacity="0.9"/>
-        <rect x="82" y="118" width="14" height="14" fill="var(--blue)" opacity="0.9"/>
-        <rect x="104" y="64" width="14" height="14" fill="var(--blue)" opacity="0.6"/>
-        <rect x="104" y="100" width="14" height="14" fill="var(--blue)" opacity="0.6"/>
-        <rect x="224" y="46" width="14" height="14" fill="var(--danger)" opacity="0.9"/>
-        <rect x="224" y="82" width="14" height="14" fill="var(--danger)" opacity="0.9"/>
-        <rect x="224" y="118" width="14" height="14" fill="var(--danger)" opacity="0.9"/>
-        <rect x="202" y="64" width="14" height="14" fill="var(--danger)" opacity="0.6"/>
-        <rect x="202" y="100" width="14" height="14" fill="var(--danger)" opacity="0.6"/>
-      </svg>
-      <div class="card-body">
-        <h3>Arena · Combined Arms</h3>
-        <p>The Tactics mode with everything unlocked: two modern armies, one
-        square field, and no economy to hide behind.</p>
-        <div class="settings">Tactics · 20×20 field · Information era</div>
-      </div>
-    </a>
-
-    <a class="card" href="/?map=battlefield&amp;players=2&amp;arena=10x20">
-      <svg viewBox="0 0 320 180" role="img" aria-hidden="true">
-        <rect width="320" height="180" fill="var(--sea-deep)"/>
-        <rect x="30" y="55" width="260" height="70" rx="6" fill="var(--panel)" stroke="var(--gold)" stroke-width="1" stroke-opacity="0.5"/>
-        <path d="M95 55 V125 M160 55 V125 M225 55 V125" stroke="var(--line)" stroke-width="1"/>
-        <circle cx="58" cy="74" r="6" fill="var(--gold)"/>
-        <circle cx="58" cy="90" r="6" fill="var(--gold)"/>
-        <circle cx="58" cy="106" r="6" fill="var(--gold)"/>
-        <circle cx="78" cy="82" r="6" fill="var(--gold)" opacity="0.6"/>
-        <circle cx="78" cy="98" r="6" fill="var(--gold)" opacity="0.6"/>
-        <circle cx="262" cy="74" r="6" fill="var(--danger)"/>
-        <circle cx="262" cy="90" r="6" fill="var(--danger)"/>
-        <circle cx="262" cy="106" r="6" fill="var(--danger)"/>
-        <circle cx="242" cy="82" r="6" fill="var(--danger)" opacity="0.6"/>
-        <circle cx="242" cy="98" r="6" fill="var(--danger)" opacity="0.6"/>
-      </svg>
-      <div class="card-body">
-        <h3>Arena · Spear and Shield</h3>
-        <p>The same duel with everything stripped away: ancient lines meeting
-        on a long march, decided by ground and formation.</p>
-        <div class="settings">Tactics · 10×20 march · Ancient era</div>
-      </div>
-    </a>
-
-  </div>
-</section>
-
-<footer>Martin Halvorson</footer>
-
+  <footer class="shell">
+    <span><b>CIVVIS</b> · Open-source strategy simulation</span>
+    <span>Built for the long game</span>
+  </footer>
 </body>
 </html>
