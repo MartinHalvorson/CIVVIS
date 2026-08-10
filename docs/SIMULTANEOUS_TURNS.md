@@ -296,6 +296,13 @@ sources stand still; moving a source or changing geometry does. The same
 frame is used by refresh publication and read-only visibility consumers, so
 sequential and simultaneous boundaries share the optimization.
 
+City infrastructure upkeep now follows the same derive/reduce/apply shape:
+each `process_city` derives its post-completion district/building charge, the
+turn reducer sums those stable per-city answers, and the existing unit and
+nuclear charges are applied afterward. A rare wonder that grants a building to
+an earlier city returns a correction to the ledger, so the optimization does
+not change the stock city-order semantics.
+
 ### The same change on 18 CPUs (2026-08-08, ci profile)
 
 Scaffold shedding was re-measured before merge on an Apple M5 Pro laptop
