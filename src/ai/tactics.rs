@@ -866,14 +866,13 @@ impl JointTactics {
         order: Vec<usize>,
         baseline_reply: f64,
     ) -> Genome {
-        let mut sim = g.clone();
-        sim.set_fog_memory(false);
+        let mut sim = g.speculative_clone();
         let mut choice = vec![0usize; portfolios.len()];
         for &index in &order {
             let portfolio = &portfolios[index];
             let mut best: Option<(f64, usize, Game)> = None;
             for (slot, line) in portfolio.lines.iter().enumerate() {
-                let mut branch = sim.clone();
+                let mut branch = sim.speculative_clone();
                 let mut struck = false;
                 for action in &line.actions {
                     if branch.apply(pid, action).is_err() {
@@ -960,9 +959,7 @@ impl JointTactics {
         portfolios: &[Portfolio],
         baseline_reply: f64,
     ) -> (f64, Vec<Action>) {
-        let mut sim = g.clone();
-        // Nothing in a search branch reads a remembered fogged map.
-        sim.set_fog_memory(false);
+        let mut sim = g.speculative_clone();
         let mut played = Vec::new();
         let mut tolls = 0.0;
         for &index in &genome.order {

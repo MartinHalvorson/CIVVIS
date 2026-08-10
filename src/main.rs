@@ -858,7 +858,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// path. The production `advanced` controller does use the atlas, but the
 /// frozen `advanced_v1` anchor cannot observe it. Compatibility re-pin, not
 /// an additional Elo-protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbb92_ff2f_f09d_e2cd;
+/// The disposable speculative branch likewise changes only hypothetical
+/// worlds: the fixed `advanced_v1`/`basic` prefix (`ai_eval advanced_v1 basic
+/// --pairs 10 --players 4 --turns 200 --seed 31337 --jobs 1
+/// --deployment-comparison`) remains byte-identical. Its source contract is
+/// re-pinned below; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5898_8e82_417e_98db;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -2126,6 +2131,12 @@ fn main() {
                 sink += g.clone().units.len();
             }
             let clone_us = clone_start.elapsed().as_secs_f64() / samples as f64 * 1e6;
+            let speculative_start = Instant::now();
+            for _ in 0..samples {
+                sink += g.speculative_clone().units.len();
+            }
+            let speculative_us =
+                speculative_start.elapsed().as_secs_f64() / samples as f64 * 1e6;
             // A searching agent mostly applies ordinary moves and only
             // occasionally ends a turn, and the two cost wildly different
             // amounts, so both are reported.
@@ -2146,8 +2157,7 @@ fn main() {
                 }
                 start.elapsed().as_secs_f64() / samples as f64 * 1e6
             });
-            let mut fast = g.clone();
-            fast.set_fog_memory(false);
+            let fast = g.speculative_clone();
             let end_start = Instant::now();
             for _ in 0..samples {
                 let mut branch = g.clone();
@@ -2157,7 +2167,7 @@ fn main() {
             let end_us = end_start.elapsed().as_secs_f64() / samples as f64 * 1e6;
             let fast_end_start = Instant::now();
             for _ in 0..samples {
-                let mut branch = fast.clone();
+                let mut branch = fast.speculative_clone();
                 let _ = branch.apply(seat, &civvis::game::Action::EndTurn);
                 sink += branch.units.len();
             }
@@ -2167,7 +2177,7 @@ fn main() {
             let fast_us = mover.as_ref().map(|action| {
                 let start = Instant::now();
                 for _ in 0..samples {
-                    let mut branch = fast.clone();
+                    let mut branch = fast.speculative_clone();
                     let _ = branch.apply(seat, action);
                     sink += branch.units.len();
                 }
@@ -2181,6 +2191,10 @@ fn main() {
                 g.units.len(),
             );
             println!("clone            {clone_us:8.1} us  = {:.0}/sec", 1e6 / clone_us);
+            println!(
+                "speculative clone {speculative_us:7.1} us  = {:.0}/sec",
+                1e6 / speculative_us
+            );
             match move_us {
                 Some(us) => println!("clone + move     {us:8.1} us  = {:.0} rollouts/sec", 1e6 / us),
                 None => println!("clone + move          n/a  (no legal move for this seat)"),
