@@ -401,6 +401,29 @@ pub enum MapScript {
     TacticsPlanet,
     TacticsOcean,
     Trafalgar,
+    Kadesh,
+    Marathon,
+    Thermopylae,
+    Gaugamela,
+    Cannae,
+    Actium,
+    Hastings,
+    Hattin,
+    Agincourt,
+    Constantinople1453,
+    Lepanto,
+    SpanishArmada,
+    Waterloo,
+    Gettysburg,
+    Stalingrad,
+    Normandy,
+    Midway,
+    Inchon,
+    DienBienPhu,
+    SixDayWar,
+    DesertStorm,
+    Fallujah,
+    Mosul,
 }
 
 impl MapScript {
@@ -424,6 +447,29 @@ impl MapScript {
             Self::TacticsPlanet => "tactics_planet",
             Self::TacticsOcean => "tactics_ocean",
             Self::Trafalgar => "trafalgar",
+            Self::Kadesh => "kadesh",
+            Self::Marathon => "marathon",
+            Self::Thermopylae => "thermopylae",
+            Self::Gaugamela => "gaugamela",
+            Self::Cannae => "cannae",
+            Self::Actium => "actium",
+            Self::Hastings => "hastings",
+            Self::Hattin => "hattin",
+            Self::Agincourt => "agincourt",
+            Self::Constantinople1453 => "constantinople_1453",
+            Self::Lepanto => "lepanto",
+            Self::SpanishArmada => "spanish_armada",
+            Self::Waterloo => "waterloo",
+            Self::Gettysburg => "gettysburg",
+            Self::Stalingrad => "stalingrad",
+            Self::Normandy => "normandy",
+            Self::Midway => "midway",
+            Self::Inchon => "inchon",
+            Self::DienBienPhu => "dien_bien_phu",
+            Self::SixDayWar => "six_day_war",
+            Self::DesertStorm => "desert_storm",
+            Self::Fallujah => "fallujah",
+            Self::Mosul => "mosul",
         }
     }
 
@@ -434,7 +480,33 @@ impl MapScript {
     pub const fn is_battlefield(self) -> bool {
         matches!(
             self,
-            Self::Battlefield | Self::TacticsPlanet | Self::TacticsOcean | Self::Trafalgar
+            Self::Battlefield
+                | Self::TacticsPlanet
+                | Self::TacticsOcean
+                | Self::Trafalgar
+                | Self::Kadesh
+                | Self::Marathon
+                | Self::Thermopylae
+                | Self::Gaugamela
+                | Self::Cannae
+                | Self::Actium
+                | Self::Hastings
+                | Self::Hattin
+                | Self::Agincourt
+                | Self::Constantinople1453
+                | Self::Lepanto
+                | Self::SpanishArmada
+                | Self::Waterloo
+                | Self::Gettysburg
+                | Self::Stalingrad
+                | Self::Normandy
+                | Self::Midway
+                | Self::Inchon
+                | Self::DienBienPhu
+                | Self::SixDayWar
+                | Self::DesertStorm
+                | Self::Fallujah
+                | Self::Mosul
         )
     }
 
@@ -458,7 +530,33 @@ impl MapScript {
     /// agents against each other — `battle_bench` and the matched skirmish
     /// remain the instruments for that.
     pub const fn is_scenario(self) -> bool {
-        matches!(self, Self::Trafalgar)
+        matches!(
+            self,
+            Self::Trafalgar
+                | Self::Kadesh
+                | Self::Marathon
+                | Self::Thermopylae
+                | Self::Gaugamela
+                | Self::Cannae
+                | Self::Actium
+                | Self::Hastings
+                | Self::Hattin
+                | Self::Agincourt
+                | Self::Constantinople1453
+                | Self::Lepanto
+                | Self::SpanishArmada
+                | Self::Waterloo
+                | Self::Gettysburg
+                | Self::Stalingrad
+                | Self::Normandy
+                | Self::Midway
+                | Self::Inchon
+                | Self::DienBienPhu
+                | Self::SixDayWar
+                | Self::DesertStorm
+                | Self::Fallujah
+                | Self::Mosul
+        )
     }
 
     /// The civilizations a scenario seats, in seat order, or `None` where the
@@ -475,11 +573,8 @@ impl MapScript {
     /// Combined Fleet fought as one command under Villeneuve, so France holds
     /// the seat and the Spanish ships are in its line where they stood. The
     /// Spanish flag is missing from the HUD; nothing else about them is.
-    pub const fn scenario_civs(self) -> Option<[&'static str; 2]> {
-        match self {
-            Self::Trafalgar => Some(["England", "France"]),
-            _ => None,
-        }
+    pub fn scenario_civs(self) -> Option<[&'static str; 2]> {
+        crate::historical_scenarios::by_script(self).map(|scenario| scenario.civs)
     }
 
     /// Whether this Tactics map is a globe rather than the bounded arena. Its
@@ -585,6 +680,11 @@ impl MapScript {
             // than aimed for: the chart in `mapgen::TRAFALGAR_CHART` decides
             // it, and this is what that chart comes out at.
             Self::Trafalgar => 9,
+            // Generic historical charts keep enough land for two deployment
+            // bands. Their exact water and relief mix is supplied by
+            // `historical_scenarios::paint_ground` below.
+            _ if self.is_scenario() => 50,
+            _ => 50,
         }
     }
 
@@ -601,6 +701,9 @@ impl MapScript {
             // retaining the legacy lobby identifier for this map type.
             "tennis_ball" => return Some(Self::TeninsBall),
             _ => {}
+        }
+        if let Some(script) = crate::historical_scenarios::script_from_id(id) {
+            return Some(script);
         }
         CIV6_MAP_SCRIPTS
             .iter()
@@ -888,16 +991,32 @@ pub fn world_map_scripts() -> Vec<&'static MapScriptSpec> {
 
 /// The Tactics mode's map menu, published separately from the Civ world list
 /// so arenas and future tactical worlds can grow without a protocol change.
-pub fn battlefield_map_scripts() -> Vec<&'static MapScriptSpec> {
-    CIV6_MAP_SCRIPTS.iter().filter(|spec| spec.script.is_battlefield()).collect()
+pub fn battlefield_map_scripts() -> Vec<MapScriptSpec> {
+    let mut maps: Vec<MapScriptSpec> = CIV6_MAP_SCRIPTS
+        .iter()
+        .filter(|spec| spec.script.is_battlefield())
+        .copied()
+        .collect();
+    maps.extend(crate::historical_scenarios::generic_scenarios().filter_map(|scenario| {
+        Some(MapScriptSpec {
+            id: scenario.id,
+            name: scenario.name,
+            description: scenario.summary,
+            script: crate::historical_scenarios::script_from_id(scenario.id)?,
+        })
+    }));
+    maps
 }
 
 /// The subset of those that are scripted historical battles. A setup surface
 /// needs this to know which of the arena's controls it may still offer: a
 /// scenario fixes its own economy, so most of that card is not the player's
 /// on one. See [`TacticsRules::for_script`].
-pub fn scenario_map_scripts() -> Vec<&'static MapScriptSpec> {
-    CIV6_MAP_SCRIPTS.iter().filter(|spec| spec.script.is_scenario()).collect()
+pub fn scenario_map_scripts() -> Vec<MapScriptSpec> {
+    battlefield_map_scripts()
+        .into_iter()
+        .filter(|spec| spec.script.is_scenario())
+        .collect()
 }
 
 /// Which game this is: the whole thing, or one half of it on its own.
@@ -1059,6 +1178,25 @@ pub const BATTLEFIELD_SIZES: [BattlefieldSize; 12] = [
         script: MapScript::Trafalgar, topology: MapTopology::Flat,
     },
 ];
+
+/// The complete Tactics size roster, including one fixed footprint for every
+/// named historical scenario. The five original arena sizes remain in the
+/// public constant for CLI/save compatibility; this is the browser and
+/// server contract that grows with the battle catalogue.
+pub fn battlefield_sizes() -> Vec<BattlefieldSize> {
+    let mut sizes = BATTLEFIELD_SIZES.to_vec();
+    sizes.extend(crate::historical_scenarios::generic_scenarios().filter_map(|scenario| {
+        Some(BattlefieldSize {
+            id: scenario.id,
+            name: scenario.name,
+            width: scenario.width,
+            height: scenario.height,
+            script: crate::historical_scenarios::script_from_id(scenario.id)?,
+            topology: MapTopology::Flat,
+        })
+    }));
+    sizes
+}
 
 /// The era a game opens in when a sweep asked for a random one.
 ///
@@ -1232,7 +1370,7 @@ impl TacticsRules {
     /// `civvis tournament` is the instrument for that.
     pub const MAX_BEST_OF: u32 = 21;
     /// Battle clocks offered by every Tactics setup surface, shortest first.
-    pub const TURN_LIMITS: [u32; 4] = [50, 100, 150, 200];
+    pub const TURN_LIMITS: [u32; 8] = [10, 20, 30, 40, 50, 100, 150, 200];
 
     /// Clamp a requested economy to what the mode can actually play.
     pub fn sanitized(self) -> Self {
@@ -2349,7 +2487,7 @@ mod tests {
     /// receives the same 100-turn default as a new lobby.
     #[test]
     fn tactics_turn_limits_use_the_published_ladder_and_survive_old_saves() {
-        assert_eq!(TacticsRules::TURN_LIMITS, [50, 100, 150, 200]);
+        assert_eq!(TacticsRules::TURN_LIMITS, [10, 20, 30, 40, 50, 100, 150, 200]);
         assert_eq!(TacticsRules::default().turn_limit, 100);
         for limit in TacticsRules::TURN_LIMITS {
             assert_eq!(
@@ -2363,7 +2501,7 @@ mod tests {
             TacticsRules { turn_limit: 0, ..TacticsRules::default() }
                 .sanitized()
                 .turn_limit,
-            50
+            10
         );
         assert_eq!(
             TacticsRules { turn_limit: 149, ..TacticsRules::default() }

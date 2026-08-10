@@ -28,10 +28,10 @@ use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::name::Name;
 use crate::rules::Rules;
 use crate::setup::{
-    battlefield_map_scripts, future_era_from_id, future_era_id, scenario_map_scripts,
+    battlefield_map_scripts, battlefield_sizes, future_era_from_id, future_era_id, scenario_map_scripts,
     start_era_from_id, start_era_id,
     turn_structure_id, world_map_scripts, BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript,
-    MapSize, MapTopology, TacticsRules, TurnStructure, BASE_RULESETS, BATTLEFIELD_SIZES,
+    MapSize, MapTopology, TacticsRules, TurnStructure, BASE_RULESETS,
     CIV6_GAME_SPEEDS,
     CIV6_MAP_SIZES, FUTURE_ERAS, MAP_POLES, MAP_TOPOLOGIES, START_ERAS,
 };
@@ -3834,6 +3834,14 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     // build), and the base params carry that through restarts below.
     if let Some(v) = request["map_script"].as_str().and_then(MapScript::from_id) {
         p.map_script = v;
+        // A named battle carries the era and recommended clock of its own
+        // briefing. Explicit lobby choices still win below, but a direct
+        // client naming only `kadesh` or `mosul` gets the same opening the
+        // browser gives it instead of inheriting the previous world.
+        if let Some(scenario) = crate::historical_scenarios::by_script(v) {
+            p.start_era = scenario.era_index;
+            p.tactics.turn_limit = scenario.turns;
+        }
         // `planet` used to name a world type; it now names a shape. A client
         // still asking for it by the old name means both halves of what it
         // used to mean, so the shape comes along with the type.
@@ -3848,7 +3856,7 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
             && request["width"].as_i64().is_none()
             && request["height"].as_i64().is_none()
         {
-            if let Some(size) = BATTLEFIELD_SIZES.iter().find(|size| size.script == v) {
+            if let Some(size) = battlefield_sizes().iter().find(|size| size.script == v) {
                 p.width = size.width;
                 p.height = size.height;
                 p.map_topology = size.topology;
@@ -4044,7 +4052,7 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         // published settings honest rather than letting the lobby advertise
         // a size the world will refuse.
         if let Some(size) =
-            BATTLEFIELD_SIZES.iter().find(|size| size.script == p.map_script && size.script.is_scenario())
+            battlefield_sizes().iter().find(|size| size.script == p.map_script && size.script.is_scenario())
         {
             p.width = size.width;
             p.height = size.height;
@@ -4836,7 +4844,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     // a battlefield is not a world a Civ game should offer.
                     "map_scripts": world_map_scripts(),
                     "battlefield_scripts": battlefield_map_scripts(),
-                    "battlefield_sizes": BATTLEFIELD_SIZES,
+                    "battlefield_sizes": battlefield_sizes(),
+                    // The same catalogue drives the folded browser picker,
+                    // the scenario map roster, and the opening order of
+                    // battle. Publishing it here keeps the client from
+                    // maintaining a second historical truth.
+                    "historical_scenarios": crate::historical_scenarios::all(),
                     // Which of those Tactics maps are scripted battles rather
                     // than arenas. The arena economy is the player's to set;
                     // a scenario's is its battle's, so the lobby has to know
@@ -5244,11 +5257,11 @@ mod tests {
         default_setup_json, generated_ai_name, simulation_settings, stock_opening_params,
     };
     use crate::setup::{
-        battlefield_map_scripts, future_era_from_id, scenario_map_scripts, start_era_from_id,
-        world_map_scripts,
+        battlefield_map_scripts, battlefield_sizes, future_era_from_id, scenario_map_scripts,
+        start_era_from_id, world_map_scripts,
         TacticsRules,
         BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology,
-        TurnStructure, BATTLEFIELD_SIZES, MAP_POLES,
+        TurnStructure, MAP_POLES,
     };
     use serde_json::{json, Value};
     use std::io::{Read, Write};
@@ -8089,6 +8102,19 @@ mod tests {
         assert_eq!(arena.tactics.gold, 90);
         assert_eq!(arena.tactics.turns_per_tech, 3);
         assert!(arena.tactics.unique_units);
+
+        // A later catalogue entry carries its own era and chart even when a
+        // direct client sends only the map id. Its recommended 48-turn clock
+        // lands on the nearest published Tactics choice, 50.
+        let mosul = new_game_params(&current(), &json!({
+            "num_players": 2, "map_script": "mosul",
+        }));
+        assert_eq!(mosul.map_script, MapScript::Mosul);
+        assert_eq!(mosul.start_era, 7);
+        assert_eq!((mosul.width, mosul.height), (26, 20));
+        assert_eq!(mosul.tactics.turn_limit, 50);
+        assert_eq!(mosul.max_turns, 50);
+        assert_eq!(mosul.tactics.cities, 0);
     }
 
     /// The lobby is told which Tactics maps are scenarios, because it has to
@@ -8097,7 +8123,7 @@ mod tests {
     #[test]
     fn the_setup_payload_names_the_scenario_maps() {
         let scenarios = scenario_map_scripts();
-        assert_eq!(scenarios.len(), 1);
+        assert_eq!(scenarios.len(), crate::historical_scenarios::SCENARIOS.len());
         assert_eq!(scenarios[0].id, "trafalgar");
         assert!(battlefield_map_scripts().iter().any(|spec| spec.id == "trafalgar"));
         assert!(world_map_scripts().iter().all(|spec| spec.id != "trafalgar"));
@@ -8105,14 +8131,26 @@ mod tests {
         // scenario fixes; the ids it compares against are the script ids.
         let payload = serde_json::to_value(&scenarios).expect("scenario scripts serialize");
         assert_eq!(payload[0]["id"], "trafalgar");
+        let payload_rows = payload.as_array().expect("scenario payload is an array");
+        assert!(payload_rows.iter().any(|row| row["id"] == json!("kadesh")));
+        assert!(payload_rows.iter().any(|row| row["id"] == json!("mosul")));
         for control in [
             "RULES.scenario_scripts",
             "function isScenarioMapScript(",
             "syncScenarioSettings()",
+            "RULES.historical_scenarios",
+            "scenarioBrowserView",
+            "setScenarioBrowserView",
         ] {
             assert!(
                 EMBEDDED_APP_JS.contains(control),
                 "the browser lost its scenario handling: {control}"
+            );
+        }
+        for view in ["era", "person", "terrain"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("data-scenario-view=\"{view}\"")),
+                "the browser lost its {view} scenario lens"
             );
         }
     }
@@ -8306,12 +8344,13 @@ mod tests {
         assert_eq!(
             world_map_scripts().len() + battlefield_map_scripts().len(),
             crate::setup::CIV6_MAP_SCRIPTS.len()
+                + crate::historical_scenarios::generic_scenarios().count()
         );
         assert!(battlefield_map_scripts()
             .iter()
             .all(|spec| spec.script.is_battlefield()));
         assert_eq!(battlefield_map_scripts()[0].id, "battlefield");
-        let sizes = serde_json::to_value(BATTLEFIELD_SIZES).expect("battlefield sizes serialize");
+        let sizes = serde_json::to_value(battlefield_sizes()).expect("battlefield sizes serialize");
         assert_eq!(sizes[0]["id"], json!("10x10"));
         assert_eq!(sizes[0]["width"], json!(10));
         assert_eq!(sizes[0]["height"], json!(10));
@@ -8320,6 +8359,12 @@ mod tests {
         assert_eq!(sizes[3]["topology"], json!("planet"));
         assert_eq!(sizes[3]["width"], json!(40));
         assert_eq!(sizes[3]["height"], json!(18));
+        assert_eq!(scenario_map_scripts().len(), crate::historical_scenarios::SCENARIOS.len());
+        assert_eq!(
+            battlefield_sizes().len(),
+            crate::setup::BATTLEFIELD_SIZES.len()
+                + crate::historical_scenarios::generic_scenarios().count()
+        );
         // The lobby builds its size menu by filtering this list on the chosen
         // script, so both globe families have to arrive carrying one — an
         // entry without a `script` is offered under every map. Each also has
