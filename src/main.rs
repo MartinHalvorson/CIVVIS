@@ -878,7 +878,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `AdvancedAi::new()` is back on `Weights::default()`, which is the
 /// weights `AdvancedAi::legacy()` always used, so the anchor is where it
 /// has always been. Compatibility re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5eef_b73e_4b0d_b618;
+/// Doc comments only in the hashed sources: two of them claimed native
+/// games leave `bounded_recovery` disabled when `promoted_policy_envoy`
+/// enables it. No constructor moved and `legacy()` is untouched.
+/// Compatibility re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x581f_3fa9_8108_383e;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

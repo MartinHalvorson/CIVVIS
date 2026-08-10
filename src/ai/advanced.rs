@@ -1827,6 +1827,14 @@ pub struct AdvancedAi {
     /// absorbing state. With this on, the power-gap half of the trigger stops
     /// re-firing after `RECOVERY_POSTURE_LIMIT` standard turns and the empire
     /// returns to its own best lane. The threatened-city half is untouched.
+    ///
+    /// ⚠ **ON in the shipped agent, despite the struct default below being
+    /// false.** `promoted_policy_envoy` sets it, and `AdvancedAi::new()` routes
+    /// through that constructor, so every `advanced` seat already carries it.
+    /// The comment that used to sit here said native tournament games leave it
+    /// disabled; that was false, and an arm built as "`AdvancedAi::new()` plus
+    /// this flag" is a byte-identical no-op — which is how it was caught.
+    /// Withhold it with `advanced_without_bounded_recovery` to price it.
     pub bounded_recovery: bool,
 
     /// Whether a Science or Expansion threat is simply not reacted to.
@@ -2614,8 +2622,10 @@ impl AdvancedAi {
         self.base.unit_objective_memory = true;
     }
 
-    /// Stop the defensive-war posture from becoming permanent. Native
-    /// tournament games leave this disabled.
+    /// Stop the defensive-war posture from becoming permanent.
+    ///
+    /// ⚠ Already on for anything built by `AdvancedAi::new()`; this exists for
+    /// constructors that do not route through `promoted_policy_envoy`.
     pub fn enable_bounded_recovery(&mut self) {
         self.bounded_recovery = true;
     }

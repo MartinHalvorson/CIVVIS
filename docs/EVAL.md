@@ -8128,3 +8128,70 @@ Every observational conclusion in this file taken on a 4p small board is now
 suspect, on the same evidence that reverted a shipped change. The default is
 fixed so the next reader does not repeat it, and the flag is there to move
 deliberately rather than by accident.
+
+
+## 2026-08-10 — ★★★ a shipped repair that was never priced, a false comment that hid it, and its first number
+
+Chasing the actuation prior at the deployment shape. `bounded_recovery` looked
+like the ideal candidate: a documented **absorbing state** with measured harm.
+`assess`'s first arm drops the empire into Recovery whenever it is at war and
+`my_power * 1.25 < strongest_rival`; Recovery does not build an army, so the
+test stays true *because of the choice it caused*. On live run
+`civvis-20260802T205959Z` the journal named that arm 160 times, the posture held
+t65..t229 — **72% of the game** — and the empire finished with **one warrior**,
+military 34 against 1354, score 205 against 1324.
+
+### The arm was a no-op, and the fires-check is the only reason that surfaced
+
+`advanced_bounded_recovery` = `AdvancedAi::new()` plus the flag returned lane
+occupancy **byte-identical** to the control across 40 deployment maps.
+
+**Because the flag is already on.** `promoted_policy_envoy` sets
+`bounded_recovery = true` and `AdvancedAi::new()` routes through it, so every
+`advanced` seat already carries it — while the field's own doc comment said
+*"Native tournament games leave this disabled"* and `enable_bounded_recovery`
+said the same. **Both were false**, and both are corrected in this change.
+
+It reached deployment inside the 2026-08-01 policy-envoy composite **without
+ever being priced on its own**, which is exactly the failure
+`disable_bounded_recovery`'s doc warns about: *"Every flag in
+`enable_live_bridge` needs one of these or it ships unmeasured — which is how
+five repairs reached deployment without a single outcome number."* There is a
+withhold method precisely for this, and nobody had used it.
+
+### The first number, by withholding it
+
+`advanced_without_bounded_recovery`, deployment shape with **all six victories**
+— 6p 74x46, 9 city-states, Online, 250 turns:
+
+```
+ai_eval advanced_without_bounded_recovery advanced --pairs 200 --seed 6300000
+  paired-map score 52.0% (95% Wilson CI 45.1%..58.8%)   Elo-equivalent +14 (CI -34..+62)
+  paired direction 18 for / 172 neutral / 10 against    sign p = 0.1849
+  anytime-valid    withheld peak e=6.99, p<=0.1430 (not crossed)
+  promotion gate   INCONCLUSIVE
+```
+
+Recovery occupancy confirms the mechanism works: **12.2% with the bound, 14.2%
+without.** It does what it says.
+
+⚠ **The point estimate favours removing it.** The arm that turns the shipped
+repair *off* scores 52.0%. That is **not established** — p=0.1849, and the
+interval spans parity — but it is the opposite of the direction a shipped repair
+is assumed to have, and it is the only number this flag has ever had.
+
+**Nothing is changed in the shipped agent on p=0.18.** Acting on an
+under-powered signal is the mistake that cost a revert earlier today. What
+changes here is that the flag is now (a) correctly documented, (b) withholdable
+by name, and (c) priced once. The next step is a confirmation on a disjoint
+seed; if it holds, the repair is costing rather than paying and should come out.
+
+### The pattern worth carrying
+
+Three fires-checks this session have caught an inert treatment before an
+expensive evaluation — `advanced_holy_lane`, `advanced_diplomatic_opening` at
+`--city-states 0`, and this one. Two of the three were inert for reasons a
+reader of the source would not have guessed: a profile that seats no minors, and
+a flag already enabled by a constructor two hops away from its own default.
+**Run the fires-check first. A clean null from a treatment that never executed
+is indistinguishable from a real one.**
