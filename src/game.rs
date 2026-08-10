@@ -14476,6 +14476,333 @@ pub struct Unit {
     pub levied_until: u32,
 }
 
+/// The unit roster shared by game clones and search branches.
+///
+/// A branch normally reads many units and writes only the handful named by its
+/// action.  Keeping the roster as an immutable `Arc` snapshot means cloning a
+/// position copies neither the map nor any unit.  The first branch write makes
+/// a shallow map copy (its values are still `Arc`s), then `get_mut` clones only
+/// the unit being edited.  Insertions and removals are likewise local to the
+/// branch.  This is the unit equivalent of [`Players`]' copy-on-write seats,
+/// with the extra per-unit indirection making combat lookahead proportional to
+/// the units it actually touches rather than to the whole army.
+#[derive(Default)]
+pub struct Units(Arc<BTreeMap<u32, Arc<Unit>>>, BTreeSet<u32>);
+
+impl Clone for Units {
+    fn clone(&self) -> Self {
+        // A game clone starts a new branch. The immutable map is shared, but
+        // its write set belongs only to that branch and therefore starts empty.
+        Self(Arc::clone(&self.0), BTreeSet::new())
+    }
+}
+
+impl Units {
+    /// Borrow one unit from the immutable snapshot.
+    #[inline]
+    pub fn get(&self, id: &u32) -> Option<&Unit> {
+        self.0.get(id).map(Arc::as_ref)
+    }
+
+    /// Enter the branch delta for one unit.  The map is copied at most once,
+    /// and the unit value is copied only when this branch is the first writer
+    /// for that id.
+    #[inline]
+    pub fn get_mut(&mut self, id: &u32) -> Option<&mut Unit> {
+        if self.0.contains_key(id) {
+            self.1.insert(*id);
+        }
+        Arc::make_mut(&mut self.0)
+            .get_mut(id)
+            .map(Arc::make_mut)
+    }
+
+    #[inline]
+    pub fn contains_key(&self, id: &u32) -> bool {
+        self.0.contains_key(id)
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[inline]
+    pub fn keys(&self) -> std::collections::btree_map::Keys<'_, u32, Arc<Unit>> {
+        self.0.keys()
+    }
+
+    /// Iterate over units without exposing the internal `Arc` values.
+    pub fn values(&self) -> impl DoubleEndedIterator<Item = &Unit> + ExactSizeIterator {
+        self.0.values().map(Arc::as_ref)
+    }
+
+    /// Iterate over `(id, unit)` pairs without exposing the internal `Arc`
+    /// values.  The map remains ordered by id, as the old `BTreeMap` field was.
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = (&u32, &Unit)> + ExactSizeIterator {
+        self.0.iter().map(|(id, unit)| (id, unit.as_ref()))
+    }
+
+    /// Mutable iteration is a branch delta for every unit visited.  Callers
+    /// already asking for `iter_mut` intend to rewrite the roster, so this is
+    /// deliberately explicit rather than making ordinary reads pay for it.
+    pub fn values_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut Unit> + ExactSizeIterator {
+        self.1.extend(self.0.keys().copied());
+        Arc::make_mut(&mut self.0)
+            .values_mut()
+            .map(Arc::make_mut)
+    }
+
+    pub fn iter_mut(
+        &mut self,
+    ) -> impl DoubleEndedIterator<Item = (&u32, &mut Unit)> + ExactSizeIterator {
+        self.1.extend(self.0.keys().copied());
+        Arc::make_mut(&mut self.0)
+            .iter_mut()
+            .map(|(id, unit)| (id, Arc::make_mut(unit)))
+    }
+
+    /// Insert a unit, returning the previous value just like `BTreeMap`.
+    pub fn insert(&mut self, id: u32, unit: Unit) -> Option<Unit> {
+        self.1.insert(id);
+        Arc::make_mut(&mut self.0)
+            .insert(id, Arc::new(unit))
+            .map(arc_into_unit)
+    }
+
+    /// Remove a unit, returning the owned value just like `BTreeMap`.
+    pub fn remove(&mut self, id: &u32) -> Option<Unit> {
+        self.1.insert(*id);
+        Arc::make_mut(&mut self.0)
+            .remove(id)
+            .map(arc_into_unit)
+    }
+
+    pub fn clear(&mut self) {
+        self.1.extend(self.0.keys().copied());
+        Arc::make_mut(&mut self.0).clear();
+    }
+
+    /// Retain units by their immutable value.  No unit clone is needed for a
+    /// predicate, which keeps cleanup passes cheap even on a shared snapshot.
+    pub fn retain<F>(&mut self, mut keep: F)
+    where
+        F: FnMut(&u32, &Unit) -> bool,
+    {
+        self.1.extend(self.0.keys().copied());
+        Arc::make_mut(&mut self.0).retain(|id, unit| keep(id, unit));
+    }
+
+    /// Consume the roster in stable id order.  A unique snapshot unwraps all
+    /// arcs; a shared snapshot clones only the values the caller requested.
+    pub fn into_values(self) -> std::vec::IntoIter<Unit> {
+        let values = match Arc::try_unwrap(self.0) {
+            Ok(map) => map
+                .into_values()
+                .map(arc_into_unit)
+                .collect::<Vec<_>>(),
+            Err(map) => map.values().map(|unit| (**unit).clone()).collect::<Vec<_>>(),
+        };
+        values.into_iter()
+    }
+
+    /// Take a cheap immutable snapshot for a speculative branch.  The delta
+    /// returned by [`Self::delta_since`] later identifies only ids whose Arc
+    /// value changed, was inserted, or was removed.
+    pub fn snapshot(&self) -> UnitSnapshot {
+        UnitSnapshot(Arc::clone(&self.0))
+    }
+
+    /// Return the localized unit changes since `snapshot`.
+    pub fn delta_since(&self, snapshot: &UnitSnapshot) -> UnitDelta {
+        if Arc::ptr_eq(&self.0, &snapshot.0) {
+            return UnitDelta {
+                base: snapshot.clone(),
+                changed: BTreeMap::new(),
+            };
+        }
+        let mut changed = BTreeMap::new();
+        // Every mutating entry point records its id. Comparing this write set
+        // keeps extraction proportional to the branch's edits instead of
+        // walking the complete army after every AI turn.
+        for id in &self.1 {
+            let before = snapshot.0.get(id);
+            let after = self.0.get(id);
+            match (before, after) {
+                (Some(before), Some(after)) if same_unit_arc(before, after) => {}
+                (_, Some(after)) => {
+                    changed.insert(*id, Some(Arc::clone(after)));
+                }
+                (_, None) => {
+                    changed.insert(*id, None);
+                }
+            }
+        }
+        UnitDelta {
+            base: snapshot.clone(),
+            changed,
+        }
+    }
+}
+
+fn arc_into_unit(unit: Arc<Unit>) -> Unit {
+    Arc::try_unwrap(unit).unwrap_or_else(|unit| (*unit).clone())
+}
+
+fn same_unit_arc(left: &Arc<Unit>, right: &Arc<Unit>) -> bool {
+    Arc::ptr_eq(left, right) || left.as_ref() == right.as_ref()
+}
+
+impl std::ops::Index<&u32> for Units {
+    type Output = Unit;
+
+    fn index(&self, id: &u32) -> &Unit {
+        self.get(id).unwrap_or_else(|| panic!("unit {id} is not present"))
+    }
+}
+
+impl std::ops::IndexMut<&u32> for Units {
+    fn index_mut(&mut self, id: &u32) -> &mut Unit {
+        self.get_mut(id)
+            .unwrap_or_else(|| panic!("unit {id} is not present"))
+    }
+}
+
+impl<'a> IntoIterator for &'a Units {
+    type Item = (&'a u32, &'a Unit);
+    type IntoIter = std::iter::Map<
+        std::collections::btree_map::Iter<'a, u32, Arc<Unit>>,
+        fn((&'a u32, &'a Arc<Unit>)) -> (&'a u32, &'a Unit),
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter().map(|(id, unit)| (id, unit.as_ref()))
+    }
+}
+
+impl<'a> IntoIterator for &'a mut Units {
+    type Item = (&'a u32, &'a mut Unit);
+    type IntoIter = std::iter::Map<
+        std::collections::btree_map::IterMut<'a, u32, Arc<Unit>>,
+        fn((&'a u32, &'a mut Arc<Unit>)) -> (&'a u32, &'a mut Unit),
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.1.extend(self.0.keys().copied());
+        Arc::make_mut(&mut self.0)
+            .iter_mut()
+            .map(|(id, unit)| (id, Arc::make_mut(unit)))
+    }
+}
+
+impl IntoIterator for Units {
+    type Item = (u32, Unit);
+    type IntoIter = std::vec::IntoIter<(u32, Unit)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let values = match Arc::try_unwrap(self.0) {
+            Ok(map) => map
+                .into_iter()
+                .map(|(id, unit)| (id, arc_into_unit(unit)))
+                .collect::<Vec<_>>(),
+            Err(map) => map
+                .iter()
+                .map(|(id, unit)| (*id, (**unit).clone()))
+                .collect::<Vec<_>>(),
+        };
+        values.into_iter()
+    }
+}
+
+impl FromIterator<(u32, Unit)> for Units {
+    fn from_iter<I: IntoIterator<Item = (u32, Unit)>>(items: I) -> Self {
+        Self(Arc::new(
+            items
+                .into_iter()
+                .map(|(id, unit)| (id, Arc::new(unit)))
+                .collect(),
+        ), BTreeSet::new())
+    }
+}
+
+impl From<BTreeMap<u32, Unit>> for Units {
+    fn from(map: BTreeMap<u32, Unit>) -> Self {
+        map.into_iter().collect()
+    }
+}
+
+/// An immutable unit roster captured before a speculative branch runs.
+#[derive(Clone)]
+pub struct UnitSnapshot(Arc<BTreeMap<u32, Arc<Unit>>>);
+
+impl Default for UnitSnapshot {
+    fn default() -> Self {
+        Self(Arc::new(BTreeMap::new()))
+    }
+}
+
+impl UnitSnapshot {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn get(&self, id: &u32) -> Option<&Unit> {
+        self.0.get(id).map(Arc::as_ref)
+    }
+}
+
+/// Unit-only changes made by one speculative branch.  It is intentionally
+/// separate from the action log: the log is the authoritative replay, while
+/// this compact side channel tells the commit phase which unit ids can be in
+/// conflict without diffing the whole world.
+#[derive(Clone, Default)]
+pub struct UnitDelta {
+    base: UnitSnapshot,
+    changed: BTreeMap<u32, Option<Arc<Unit>>>,
+}
+
+impl UnitDelta {
+    pub fn is_empty(&self) -> bool {
+        self.changed.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.changed.len()
+    }
+
+    pub fn changed_ids(&self) -> impl Iterator<Item = &u32> {
+        self.changed.keys()
+    }
+
+    /// Unit ids whose planning snapshot no longer matches the live world.
+    /// Only the changed ids are visited, so a city-only or diplomacy-only
+    /// action never turns conflict detection into a full-army scan.
+    pub fn conflicts_with(&self, current: &Units) -> Vec<u32> {
+        self.changed
+            .keys()
+            .filter(|id| {
+                let before = self.base.0.get(id);
+                let now = current.0.get(id);
+                match (before, now) {
+                    (Some(before), Some(now)) => !same_unit_arc(before, now),
+                    (None, None) => false,
+                    _ => true,
+                }
+            })
+            .copied()
+            .collect()
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub struct SpyMission {
     pub kind: String,
@@ -17002,7 +17329,7 @@ pub struct Game {
     pub next_id: u32,
     pub map: WorldMap,
     pub players: Players,
-    pub units: BTreeMap<u32, Unit>,
+    pub units: Units,
     pub spies: BTreeMap<u32, Spy>,
     pub cities: BTreeMap<u32, City>,
     pub at_war: BTreeSet<(usize, usize)>,
@@ -18207,7 +18534,7 @@ impl Game {
             next_id: 1,
             map,
             players: Players::default(),
-            units: BTreeMap::new(),
+            units: Units::default(),
             spies: BTreeMap::new(),
             cities: BTreeMap::new(),
             at_war: BTreeSet::new(),
