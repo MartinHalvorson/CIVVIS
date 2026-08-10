@@ -61506,6 +61506,24 @@ mod combat_scenarios {
             "two plains steps are two movement points; the corner is in reach"
         );
 
+        // The reading survives a unit having nothing left to spend. Outside
+        // its own turn every unit on the board is in exactly this state, and
+        // in spectate there is no acting seat at all — so a reach measured
+        // from `moves_left` would be empty for almost everything anybody ever
+        // points at, which is how this was found in the first place.
+        let spent = g.units[&mover].moves_left;
+        g.units.get_mut(&mover).expect("the mover").moves_left = 0.0;
+        assert!(
+            g.reachable(mover).is_empty(),
+            "a unit with nothing left may legally go nowhere"
+        );
+        assert!(
+            g.threat_reach(mover).contains(&corner),
+            "and still reaches exactly as far, because the threat is about a \
+             turn's movement rather than about this instant"
+        );
+        g.units.get_mut(&mover).expect("the mover").moves_left = spent;
+
         // Now put a hostile unit where it exerts zone of control over the one
         // tile that corner is entered from. Entering ZOC ends movement, so the
         // corner goes out of reach — for the watcher's reading exactly as for
