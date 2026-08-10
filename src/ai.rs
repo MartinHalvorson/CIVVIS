@@ -4405,6 +4405,9 @@ impl BasicAi {
                 } else {
                     return;
                 };
+                // Sell into the declaration before it lands. A denouncement is
+                // not a declaration and the pass knows the difference.
+                self.war_eve_liquidation(g, pid, &action);
                 let _ = g.apply(pid, &action);
             }
         }
@@ -4495,6 +4498,76 @@ impl BasicAi {
                 request: Box::new(deal.request),
             },
         );
+    }
+
+    /// The most contracts one declaration will sell into. Every accepted quote
+    /// takes its own asset off the next round — a sold luxury copy is worth
+    /// only a duplicate's price to a rival that now has one, and granted Open
+    /// Borders are worth nothing twice — so the pass drains rather than
+    /// repeats. This bound is the backstop, not the mechanism.
+    const WAR_EVE_CONTRACTS: usize = 8;
+
+    /// Turn the promises a declaration is about to cancel into Gold that is
+    /// already banked when it lands.
+    ///
+    /// Nothing here is a bluff the engine has to be talked into.
+    /// `Game::war_eve_deals` prices each cancellable commitment at the buyer's
+    /// own walk-away, so `validate_trade` still sees a rival profiting by its
+    /// own reckoning at the moment it signs; then
+    /// `end_bilateral_relations_for_war` hands the luxury copy back and stops
+    /// the instalments. A declaration that fails to apply leaves ordinary
+    /// mutually profitable trades behind, which is why this may run before the
+    /// war is certain.
+    ///
+    /// It re-quotes after every contract because each sale moves both the
+    /// rival's treasury and this empire's uncommitted income, and it takes
+    /// nothing whose lump payment does not clear the instalment paid at
+    /// signing. Passing the pending action rather than a player id keeps the
+    /// pass impossible to point at a civilization this turn is not about to
+    /// attack. Returns the net Gold raised.
+    pub(crate) fn war_eve_liquidation(&self, g: &mut Game, pid: usize, action: &Action) -> f64 {
+        let target = match action {
+            Action::DeclareWar { player }
+            | Action::DeclareWarWithCasusBelli { player, .. } => *player,
+            _ => return 0.0,
+        };
+        if self.minor || self.barb {
+            return 0.0;
+        }
+        let mut raised = 0.0;
+        let mut sold: Vec<String> = Vec::new();
+        for _ in 0..Self::WAR_EVE_CONTRACTS {
+            let Some(deal) = g.war_eve_deals(pid, target).into_iter().next() else {
+                break;
+            };
+            let net = Game::war_eve_net_gold(&deal);
+            if net <= 0.0 {
+                break;
+            }
+            let item = deal.item.clone();
+            if g.apply(
+                pid,
+                &Action::Trade {
+                    player: target,
+                    offer: Box::new(deal.offer),
+                    request: Box::new(deal.request),
+                },
+            )
+            .is_err()
+            {
+                break;
+            }
+            raised += net;
+            sold.push(plain(&item));
+        }
+        if raised > 0.0 {
+            think!(self.journal, Diplomacy, Decision,
+                   "Selling {} what the coming war will cancel", g.players[target].civ;
+                   "{raised:.0} Gold in hand now for {}, a thirty-turn contract that ends \
+                    with the declaration",
+                   sold.join(", "));
+        }
+        raised
     }
 
     /// Name a production item the way an observer's reasoning log says it.

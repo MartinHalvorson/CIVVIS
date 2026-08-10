@@ -8127,6 +8127,150 @@ mod trade_deal_tests {
     }
 
     #[test]
+    fn war_eve_quotes_offer_only_what_the_declaration_hands_back() {
+        let game = trade_game();
+        let deals = game.war_eve_deals(0, 1);
+        assert!(!deals.is_empty(), "a spare luxury copy is a cancellable promise");
+        for deal in &deals {
+            assert_eq!(deal.partner, 1);
+            assert_eq!(deal.direction, "sell");
+            // Everything offered is something the declaration takes back.
+            assert_eq!(deal.offer.gold, 0.0);
+            assert_eq!(deal.offer.diplomatic_favor, 0.0);
+            assert!(deal.offer.great_works.is_empty());
+            assert!(deal.offer.captured_spies.is_empty());
+            assert!(deal.offer.cities.is_empty());
+            for resource in deal.offer.resources.keys() {
+                assert_eq!(
+                    game.rules.resources[resource].class, "luxury",
+                    "a strategic stockpile transfers on signature and no war returns it"
+                );
+            }
+            // Everything asked for has already settled when the war lands.
+            assert!(deal.request.gold > 0.0);
+            assert_eq!(deal.request.gold_per_turn, 0.0);
+            assert!(deal.request.resources.is_empty());
+            assert!(!deal.request.open_borders);
+            assert!(deal.request.great_works.is_empty());
+            assert!(deal.request.cities.is_empty());
+            // And it is still an honest contract at the moment it is signed.
+            assert!(deal.my_value > 0.0 && deal.partner_value > 0.0);
+            assert!(Game::war_eve_net_gold(deal) > 0.0);
+        }
+        assert!(deals
+            .windows(2)
+            .all(|pair| Game::war_eve_net_gold(&pair[0]) >= Game::war_eve_net_gold(&pair[1])));
+        assert!(
+            game.war_eve_deals(1, 1).is_empty()
+                && game.war_eve_deals(0, 9).is_empty(),
+            "there is no war-eve market with yourself or with a player who does not exist"
+        );
+    }
+
+    #[test]
+    fn a_war_eve_sale_banks_the_gold_and_the_declaration_returns_the_luxury() {
+        let mut game = trade_game();
+        let deal = game
+            .war_eve_deals(0, 1)
+            .into_iter()
+            .find(|deal| deal.item == "silk")
+            .expect("the spare silk copy is sellable");
+        let net = Game::war_eve_net_gold(&deal);
+        let before = game.players[0].gold;
+        assert_eq!(game.resource_access_count(0, "silk"), 2);
+
+        game.do_trade(0, 1, &deal.offer, &deal.request).unwrap();
+        assert!((game.players[0].gold - before - net).abs() < 1e-9);
+        assert_eq!(game.resource_access_count(0, "silk"), 1);
+        assert_eq!(game.resource_access_count(1, "silk"), 1);
+
+        game.do_declare_war(0, 1).unwrap();
+        // The Gold raised is the Gold kept: only the instalment settled at
+        // signing ever left, and the war stopped the twenty-nine after it.
+        assert!(net > 0.0);
+        assert!((game.players[0].gold - before - net).abs() < 1e-9);
+        assert!(game.active_trade_deals.is_empty());
+        assert_eq!(game.resource_access_count(0, "silk"), 2);
+        assert_eq!(game.resource_access_count(1, "silk"), 0);
+    }
+
+    #[test]
+    fn the_war_eve_price_beats_the_market_and_takes_all_of_it_in_lump_gold() {
+        let game = trade_game();
+        let ordinary = game
+            .quick_deals(0)
+            .into_iter()
+            .find(|deal| deal.direction == "sell" && deal.item == "silk")
+            .unwrap();
+        let war_eve = game
+            .war_eve_deals(0, 1)
+            .into_iter()
+            .find(|deal| deal.item == "silk")
+            .unwrap();
+        assert!(
+            ordinary.request.gold_per_turn > 0.0,
+            "the ordinary quote settles part of its price in instalments a war would cancel"
+        );
+        assert_eq!(war_eve.request.gold_per_turn, 0.0);
+        assert!(war_eve.request.gold > ordinary.request.gold);
+        // The rival is not being cheated at the higher price; it is being read.
+        // It still profits by its own valuation, with almost nothing to spare.
+        assert!(war_eve.partner_value > 0.0);
+        assert!(war_eve.partner_value < ordinary.partner_value);
+    }
+
+    #[test]
+    fn war_eve_riders_never_promise_the_same_income_twice() {
+        let mut game = trade_game();
+        let mut promised = 0.0;
+        for _ in 0..4 {
+            let Some(deal) = game.war_eve_deals(0, 1).into_iter().next() else {
+                break;
+            };
+            promised += deal.offer.gold_per_turn;
+            game.do_trade(0, 1, &deal.offer, &deal.request).unwrap();
+        }
+        assert!(
+            promised > 0.0,
+            "a rider is what reaches a treasury larger than the asset is worth"
+        );
+        assert!((game.committed_gold_per_turn(0) - promised).abs() < 1e-9);
+        assert!(
+            promised <= game.empire_gold_per_turn(0) + 1e-9,
+            "{promised} Gold per turn promised against an income of {}",
+            game.empire_gold_per_turn(0)
+        );
+    }
+
+    #[test]
+    fn the_ai_sells_the_cancellable_promises_only_into_a_real_declaration() {
+        let mut game = trade_game();
+        let ai = BasicAi::new();
+        let before = game.players[0].gold;
+        assert_eq!(
+            ai.war_eve_liquidation(&mut game, 0, &Action::Denounce { player: 1 }),
+            0.0,
+            "a denouncement is not a declaration and cancels nothing"
+        );
+        assert_eq!(game.players[0].gold, before);
+        assert!(game.active_trade_deals.is_empty());
+
+        let raised = ai.war_eve_liquidation(&mut game, 0, &Action::DeclareWar { player: 1 });
+        assert!(raised > 0.0);
+        assert!((game.players[0].gold - before - raised).abs() < 1e-9);
+        assert!(
+            game.active_trade_deals.len() > 1,
+            "the pass re-quotes after every contract and keeps selling while the \
+             rival can still pay, rather than taking one quote and stopping"
+        );
+
+        game.do_declare_war(0, 1).unwrap();
+        assert!(game.active_trade_deals.is_empty());
+        assert!((game.players[0].gold - before - raised).abs() < 1e-9);
+        assert_eq!(game.resource_access_count(0, "silk"), 2);
+    }
+
+    #[test]
     fn war_cancels_foreign_routes_but_recalls_both_traders() {
         let mut game = trade_game();
         for player in 0..2 {
@@ -33770,6 +33914,19 @@ impl Game {
     }
 
     fn can_enter(&self, uid: u32, from: Pos, pos: Pos) -> bool {
+        self.can_enter_past(uid, from, pos, false)
+    }
+
+    /// `can_enter`, optionally with the stacking layer relaxed.
+    ///
+    /// `through_units` is never true for anything the rules decide — a move
+    /// that would share a tile is illegal and stays illegal. It exists for the
+    /// question somebody watching asks about a unit that is not theirs: how
+    /// far can that thing reach, given that whatever is parked in front of it
+    /// can walk away or die before it matters. Everything else a step has to
+    /// satisfy is still asked, zone of control included, because none of that
+    /// moves out of the way.
+    fn can_enter_past(&self, uid: u32, from: Pos, pos: Pos, through_units: bool) -> bool {
         let u = &self.units[&uid];
         if self.wdist(from, pos) != 1 {
             return false;
@@ -33828,6 +33985,9 @@ impl Game {
             }
         }
         for oid in self.units_at(pos) {
+            if through_units {
+                break;
+            }
             let o = &self.units[&oid];
             let ospec = &self.rules.units[o.kind];
             // Based aircraft occupy a slot, not the land/naval stacking layer.
@@ -34064,6 +34224,37 @@ impl Game {
             None => return vec![],
         };
         let best = self.flow(uid, start, moves);
+        best.into_keys().filter(|p| *p != start).collect()
+    }
+
+    /// How far a unit reaches: everywhere it could stand at the end of a whole
+    /// turn's movement, read as though nothing were parked in the way.
+    ///
+    /// Two deliberate differences from [`Game::reachable`], which answers what
+    /// a unit's owner may legally do right now.
+    ///
+    /// It spends a *full* allowance rather than what is left. Outside its own
+    /// turn a unit has no movement points at all, so the honest answer to
+    /// "what can it do this instant" is almost always nothing — which is not
+    /// the question anyone points at an enemy to ask. The threat a Knight
+    /// poses does not switch off between its turns, and a reading that went
+    /// blank for every unit except the one currently acting would be empty
+    /// nearly all the time in the only mode that has no acting seat at all.
+    ///
+    /// And it reads through units. Whatever is standing on a tile can walk off
+    /// it or die on it well before the threat expires, so for this question it
+    /// is noise — while zone of control, terrain, cliffs, rivers, borders and
+    /// hostile cities all stay exactly as binding as they are for a real move,
+    /// because none of those move out of the way.
+    ///
+    /// This is a reading and never a permission. Nothing in the simulation may
+    /// move a unit by it: a step onto an occupied tile is illegal and asking
+    /// this does not make it legal.
+    pub fn threat_reach(&self, uid: u32) -> Vec<Pos> {
+        let Some(start) = self.units.get(&uid).map(|u| u.pos) else {
+            return vec![];
+        };
+        let best = self.flow_past(uid, start, self.unit_max_moves(uid), true);
         best.into_keys().filter(|p| *p != start).collect()
     }
 
@@ -34635,6 +34826,13 @@ impl Game {
     }
 
     fn flow(&self, uid: u32, start: Pos, moves: f64) -> BTreeMap<Pos, f64> {
+        self.flow_past(uid, start, moves, false)
+    }
+
+    /// `flow`, optionally reading the board as if the tiles in the way were
+    /// empty. See [`Game::can_enter_past`]: nothing the rules decide uses
+    /// this, only the range a watcher is shown for somebody else's unit.
+    fn flow_past(&self, uid: u32, start: Pos, moves: f64, through_units: bool) -> BTreeMap<Pos, f64> {
         let max_moves = self.unit_max_moves(uid);
         if self.formation_movement_locked_by_zoc(uid) {
             return BTreeMap::new();
@@ -34649,7 +34847,9 @@ impl Game {
                 continue;
             }
             for n in self.nbrs(cur) {
-                if !self.map.tiles.contains_key(&n) || !self.can_enter(uid, cur, n) {
+                if !self.map.tiles.contains_key(&n)
+                    || !self.can_enter_past(uid, cur, n, through_units)
+                {
                     continue;
                 }
                 let cost = self.unit_step_cost(uid, cur, n);
@@ -50870,6 +51070,200 @@ impl Game {
         deals
     }
 
+    /// Gold per turn this empire has already promised away in live contracts.
+    /// `empire_gold_per_turn` is a deliberately cheap liquidity proxy that does
+    /// not know about them, so a quote that ignored this could sell the same
+    /// income twice over.
+    fn committed_gold_per_turn(&self, pid: usize) -> f64 {
+        self.active_trade_deals
+            .iter()
+            .filter(|deal| deal.ends > self.turn)
+            .map(|deal| {
+                if deal.from == pid {
+                    deal.offer.gold_per_turn
+                } else if deal.to == pid {
+                    deal.request.gold_per_turn
+                } else {
+                    0.0
+                }
+            })
+            .sum()
+    }
+
+    /// Price one cancellable asset at the buyer's own walk-away, settled
+    /// entirely in lump Gold.
+    ///
+    /// `quoted_payment` splits a price down the middle and pays part of it as
+    /// Gold per turn, which is the right shape for a contract both sides mean
+    /// to keep. Neither half is right on the eve of a declaration: the
+    /// instalments would be cancelled along with everything else, and the
+    /// seller is parting with something the war hands straight back. The only
+    /// question left is how much lump Gold the buyer will pay before its own
+    /// valuation says no.
+    ///
+    /// The Gold-per-turn rider covers a buyer richer than the asset is worth to
+    /// it. Twenty-five Gold of promised income lifts the buyer's ceiling by 25
+    /// and the seller's stated cost by the same 25, so it buys no free margin;
+    /// what it does is reach a treasury the asset alone could not, for the
+    /// price of the single instalment `do_trade` settles at signing.
+    fn war_eve_quote(
+        &self,
+        viewer: usize,
+        target: usize,
+        category: &str,
+        item: &str,
+        asset: DealItems,
+        rider_cap: f64,
+    ) -> Option<QuickDeal> {
+        let cost = self.give_items_cost(viewer, target, &asset);
+        let value = self.receive_items_value(target, viewer, &asset);
+        // Two Gold of headroom, not one: the price is floored to a whole Gold
+        // below the buyer's ceiling, and a margin thinner than the rounding
+        // cannot survive it.
+        if !cost.is_finite() || value <= cost + 2.0 {
+            return None;
+        }
+        let reserve = (self.players[target].gold * 0.30).min(40.0);
+        let spendable = (self.players[target].gold - reserve).max(0.0).floor();
+        if spendable <= cost + 2.0 {
+            return None;
+        }
+        // Round the rider *down* to the tenth `quoted_payment` already quotes
+        // in. Rounding up would ask for a ceiling above the buyer's treasury
+        // and cost more in stated value than the extra reach is worth; rounding
+        // down leaves at most 2.5 Gold on the table and can never eat a margin
+        // the checks above have already proved.
+        let reach = if spendable > value - 1.0 {
+            (spendable - value + 1.0) / 25.0
+        } else {
+            0.0
+        };
+        let rider = ((reach.min(rider_cap) * 10.0).floor() / 10.0).max(0.0);
+        let mut offer = asset;
+        offer.gold_per_turn = rider;
+        let price = spendable.min(value + 25.0 * rider - 1.0).floor();
+        if price <= cost + 25.0 * rider {
+            return None;
+        }
+        let request = DealItems {
+            gold: price,
+            ..DealItems::default()
+        };
+        let (my_value, partner_value) = self
+            .validate_trade(viewer, target, &offer, &request)
+            .ok()?;
+        Some(QuickDeal {
+            partner: target,
+            category: category.to_string(),
+            item: item.to_string(),
+            direction: "sell".to_string(),
+            offer,
+            request,
+            my_value,
+            partner_value,
+        })
+    }
+
+    /// Every quote that hands `target` only a commitment the coming
+    /// declaration voids, and takes back only value that has already settled
+    /// when it lands.
+    ///
+    /// A luxury copy, Open Borders, and Gold per turn all run for
+    /// `STANDARD_DEAL_TURNS`, and `end_bilateral_relations_for_war` cancels
+    /// every live contract between two civilizations that go to war — the
+    /// seller's resource access is restored on the spot and the remaining
+    /// instalments are never paid. Lump Gold, by contrast, `do_trade` pays into
+    /// the treasury immediately and the war cannot reach it. Selling the first
+    /// for the second on the turn a war opens is an ordinary Civ VI line, and
+    /// the part worth stating is that it is not a gamble: `validate_trade`
+    /// still requires both empires to profit at the price quoted here, so a
+    /// declaration that never comes leaves a plain good trade behind.
+    ///
+    /// Strategic resources, Great Works, captured Spies, cities, and Favor are
+    /// deliberately absent from the offer side. `do_trade` transfers all of
+    /// them the moment the contract closes, so a war would not bring them back.
+    ///
+    /// Quotes are independent of one another and every one of them assumes the
+    /// buyer's whole spendable treasury and this empire's whole uncommitted
+    /// income. Execute one, then ask again.
+    pub fn war_eve_deals(&self, viewer: usize, target: usize) -> Vec<QuickDeal> {
+        if viewer >= self.players.len()
+            || target >= self.players.len()
+            || viewer == target
+            || !self.players[viewer].alive
+            || !self.players[target].alive
+            || self.players[viewer].is_minor
+            || self.players[viewer].is_barbarian
+            || self.players[target].is_minor
+            || self.players[target].is_barbarian
+            || !self.has_met(viewer, target)
+            || self.is_at_war(viewer, target)
+        {
+            return Vec::new();
+        }
+        // A rider is only sellable income this empire both earns and has not
+        // already promised elsewhere, and `items_are_valid` also requires the
+        // treasury to cover the instalment paid at signing.
+        let rider_cap = (self.empire_gold_per_turn(viewer) - self.committed_gold_per_turn(viewer))
+            .max(0.0)
+            .min(self.players[viewer].gold.max(0.0));
+        let mut deals = Vec::new();
+        // `resource_access_count` walks every tile of every city, and sweeping
+        // the whole luxury table with it is the exact pattern
+        // `connected_resource_census` exists to avoid. `empire_luxury_names` is
+        // that one pass, memoized, and it is already the set of Luxuries this
+        // empire has of its own — including a Suzerain's and Amani's, and
+        // excluding copies it merely leases in, which price out as a last copy
+        // anyway.
+        for resource in self.empire_luxury_names(viewer) {
+            if !self.resource_visible_to(viewer, &resource)
+                || !self.resource_visible_to(target, &resource)
+            {
+                continue;
+            }
+            let mut asset = DealItems::default();
+            asset.resources.insert(resource.to_string(), 1);
+            if let Some(deal) =
+                self.war_eve_quote(viewer, target, "luxury", &resource, asset, rider_cap)
+            {
+                deals.push(deal);
+            }
+        }
+        if self.tree_effect(viewer, "open_borders") > 0.0
+            && self.tree_effect(target, "open_borders") > 0.0
+            && !self.has_open_borders(target, viewer)
+        {
+            let borders = DealItems {
+                open_borders: true,
+                ..DealItems::default()
+            };
+            if let Some(deal) = self.war_eve_quote(
+                viewer,
+                target,
+                "agreement",
+                "open_borders",
+                borders,
+                rider_cap,
+            ) {
+                deals.push(deal);
+            }
+        }
+        deals.sort_by(|left, right| {
+            Self::war_eve_net_gold(right)
+                .partial_cmp(&Self::war_eve_net_gold(left))
+                .unwrap()
+                .then_with(|| left.item.cmp(&right.item))
+        });
+        deals
+    }
+
+    /// What a war-eve quote is actually worth once the declaration lands: the
+    /// lump payment, less the one Gold-per-turn instalment `do_trade` settles
+    /// before the war cancels the rest.
+    pub fn war_eve_net_gold(deal: &QuickDeal) -> f64 {
+        deal.request.gold - deal.offer.gold_per_turn
+    }
+
     fn process_trade_deals(&mut self, pid: usize) {
         self.active_trade_deals.retain(|deal| deal.ends > self.turn);
         let payments: Vec<(usize, usize, f64)> = self
@@ -61517,6 +61911,88 @@ mod combat_scenarios {
         .unwrap();
         assert_eq!(g.units[&warrior].pos, escape);
         assert!(!g.units[&warrior].zoc_stopped);
+    }
+
+    /// The range a watcher is shown for somebody else's unit reads past the
+    /// unit standing in the way and never past zone of control. The two are
+    /// opposite kinds of obstacle: whatever is parked on a tile can walk off
+    /// it or die on it long before the threat expires, so for the question
+    /// "how far does that thing reach" it is noise — while zone of control is
+    /// a fact about the ground that will still be there, and the reading is
+    /// worthless if it quietly ignores it.
+    #[test]
+    fn a_read_range_passes_units_and_still_stops_at_zone_of_control() {
+        // Flat plains, no rivers, no borders, two seats already at war: the
+        // only things deciding this answer are the units placed below.
+        let (mut g, start, ring) = controlled_game(4471);
+        let mover = g.spawn_unit("warrior", 0, start);
+        let blocked = ring[0];
+        g.spawn_unit("warrior", 0, blocked);
+        g.begin_turn(0);
+
+        assert!(
+            !g.reachable(mover).contains(&blocked),
+            "a tile with a unit on it is not somewhere its owner may legally move"
+        );
+        assert!(
+            g.threat_reach(mover).contains(&blocked),
+            "the tile in the way is still inside the reach a watcher is shown"
+        );
+
+        // The far corner of the second ring beyond `blocked`, which the layout
+        // reaches only through `blocked` — derived rather than assumed, so a
+        // change of hex geometry fails here loudly instead of quietly
+        // asserting nothing.
+        let corner = g
+            .wdisk(start, 2)
+            .into_iter()
+            .find(|pos| {
+                g.wdist(*pos, start) == 2
+                    && g
+                        .nbrs(*pos)
+                        .into_iter()
+                        .filter(|step| g.wdist(*step, start) == 1)
+                        .eq(std::iter::once(blocked))
+            })
+            .expect("a second-ring tile entered only through the blocked one");
+        assert!(
+            g.threat_reach(mover).contains(&corner),
+            "two plains steps are two movement points; the corner is in reach"
+        );
+
+        // The reading survives a unit having nothing left to spend. Outside
+        // its own turn every unit on the board is in exactly this state, and
+        // in spectate there is no acting seat at all — so a reach measured
+        // from `moves_left` would be empty for almost everything anybody ever
+        // points at, which is how this was found in the first place.
+        let spent = g.units[&mover].moves_left;
+        g.units.get_mut(&mover).expect("the mover").moves_left = 0.0;
+        assert!(
+            g.reachable(mover).is_empty(),
+            "a unit with nothing left may legally go nowhere"
+        );
+        assert!(
+            g.threat_reach(mover).contains(&corner),
+            "and still reaches exactly as far, because the threat is about a \
+             turn's movement rather than about this instant"
+        );
+        g.units.get_mut(&mover).expect("the mover").moves_left = spent;
+
+        // Now put a hostile unit where it exerts zone of control over the one
+        // tile that corner is entered from. Entering ZOC ends movement, so the
+        // corner goes out of reach — for the watcher's reading exactly as for
+        // the mover's own.
+        let watcher = g
+            .nbrs(blocked)
+            .into_iter()
+            .find(|pos| *pos != corner && *pos != start && g.wdist(*pos, start) == 2)
+            .expect("a tile adjacent to the blocked step");
+        g.spawn_unit("warrior", 1, watcher);
+        g.begin_turn(0);
+        assert!(
+            !g.threat_reach(mover).contains(&corner),
+            "zone of control does not move out of the way, so the reading keeps it"
+        );
     }
 
     #[test]

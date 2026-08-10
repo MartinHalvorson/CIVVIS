@@ -6841,6 +6841,9 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   syncFlatMapWrapControls();
   syncFoundNorth(st);
   syncKnownWorld(st);
+  // A unit being read is a unit still moving. Follow it, or put the reading
+  // away once it is gone.
+  syncUnitIntel();
   // Whether there is an axis to turn about is a property of the world, so the
   // spin control is settled against each observation the same way the compass
   // is: a walled arena and an unrolled chart both have nothing for it to do.
@@ -17774,6 +17777,219 @@ function drawEdgeArrow(mx, my, dx, dy, out, back, k) {
     cx.stroke();
   }
 }
+// --------------------------------------------- reading somebody else's unit
+// Point at a unit that is not yours and be told the two things standing where
+// it stands decides: how far it could move this turn, and what it can see.
+// That is the reading a tactical map owes a viewer — a threat is not where a
+// unit is, it is everywhere it could be next — and it is the one thing a
+// spectator watching two AIs fight cannot work out from the picture.
+//
+// A press each. The left button asks how far it reaches on a turn's movement
+// — a whole allowance rather than whatever is left of one, because outside
+// its own turn a unit has none left and the threat it poses does not switch
+// off in between; through whatever is parked in the way, because that will
+// have moved or died by the time it matters; and stopped by zone of control,
+// because that will not. The right button asks what the unit sees, which is
+// as much a question about the tile as about the unit — a hill sees over
+// woods a valley cannot.
+//
+// Nothing here re-derives either answer. Step costs, rivers, cliffs, borders,
+// ZOC, sight promotions and elevation are engine rules; the client asks
+// `/intel` for one unit and draws what comes back, through the same fog the
+// observation itself was built with.
+const UNIT_INTEL_MOVE_INK = "#7ec8ff";   // the reach: light blue
+const UNIT_INTEL_SIGHT_INK = "#f2d16b";  // the sight: yellow
+let unitIntel = null;      // {id, at, kind, owner, move:Set, sight:Set, showMove, showSight}
+let unitIntelAsked = 0;    // generation guard, so a slow answer cannot land late
+// Diagonal hatching, cut once per colour and repeated: a wash would hide the
+// ground it is a statement about, and this is an annotation over a live map
+// rather than a layer of it. Eight pixels is the whole tile — the diagonals
+// meet across its edges, so the stripes run unbroken over the hexes.
+const stripePatterns = new Map();
+function stripeFill(color) {
+  if (stripePatterns.has(color)) return stripePatterns.get(color);
+  const tile = document.createElement("canvas");
+  tile.width = tile.height = 8;
+  const tx = tile.getContext("2d");
+  tx.strokeStyle = color;
+  tx.lineWidth = 2.2;
+  tx.beginPath();
+  for (const offset of [-8, 0, 8]) { tx.moveTo(offset, 8); tx.lineTo(offset + 8, 0); }
+  tx.stroke();
+  const pattern = cx.createPattern(tile, "repeat");
+  stripePatterns.set(color, pattern);
+  return pattern;
+}
+// The units standing on one tile, in a stable order, so a second press on a
+// stack reads the next one rather than the same one again.
+function unitsOnTile(k) {
+  return (state?.units || []).filter(unit => key(unit.pos) === k)
+    .sort((a, b) => a.id - b.id);
+}
+// Which unit a press on this tile is about: the next one along when the tile
+// is already the subject, so a stack can be read through.
+function intelSubjectAt(k) {
+  const here = unitsOnTile(k);
+  if (!here.length) return null;
+  const at = unitIntel ? here.findIndex(unit => unit.id === unitIntel.id) : -1;
+  return here[(at + 1) % here.length];
+}
+function clearUnitIntel() {
+  if (!unitIntel) return false;
+  unitIntel = null;
+  unitIntelAsked++;
+  return true;
+}
+// Ask the engine about one unit. The generation guard matters because the
+// subject can change while an answer is in flight — a viewer reading down a
+// stack presses faster than a round trip — and a late answer must not repaint
+// the tiles of a unit nobody is pointing at any more.
+async function askUnitIntel(unit, layer) {
+  const asked = ++unitIntelAsked;
+  // The two layers answer different questions and read together — where it
+  // can go, and what it can watch — so asking one keeps the other up while
+  // the subject is the same unit, and a new subject starts with only the
+  // question that was asked of it.
+  const same = unitIntel?.id === unit.id;
+  const showMove = layer === "move" || (same && !!unitIntel.showMove);
+  const showSight = layer === "sight" || (same && !!unitIntel.showSight);
+  // Where the unit stood when this was asked. Only that: the reach is a whole
+  // turn's allowance, so spending movement does not change either answer, and
+  // re-asking on every fraction of a point would be ten requests a second for
+  // an identical reply.
+  const standing = {at:key(unit.pos)};
+  // Stand the subject up before the answer arrives, so a second press toggles
+  // the layer it already asked for instead of asking again.
+  unitIntel = {id:unit.id, kind:unit.kind, owner:unit.owner, ...standing,
+               move:same ? unitIntel.move : new Set(),
+               sightTiles:same ? unitIntel.sightTiles : new Set(),
+               sightRange:same ? unitIntel.sightRange : null,
+               showMove, showSight};
+  let answer = null;
+  try {
+    answer = await fetchJSON("/intel", {method:"POST",
+      body:JSON.stringify({unit:unit.id})});
+  } catch (error) {
+    answer = null;
+  }
+  if (asked !== unitIntelAsked) return;
+  // An engine that will not answer for this unit — it died in the meantime, or
+  // this view was never entitled to it — takes the reading away rather than
+  // leaving the last one standing as though it were still true.
+  if (!answer || answer.error) { clearUnitIntel(); modeline(); draw(); return; }
+  unitIntel = {id:answer.unit, kind:answer.kind, owner:answer.owner, ...standing,
+               sightRange:answer.sight,
+               move:new Set((answer.reachable || []).map(key)),
+               sightTiles:new Set((answer.vision || []).map(key)),
+               showMove, showSight};
+  modeline();
+  draw();
+}
+// One press on a tile. `layer` is the button's question. Pressing the same
+// question on the same unit puts it away again, which is how a viewer gets
+// the map back without having to find empty ground to click on.
+function readUnitIntel(pos, layer, dismissOnMiss = true) {
+  if (!state) return false;
+  const subject = intelSubjectAt(key(pos));
+  // Landing on bare ground puts the reading away — that is how the map comes
+  // back — but only for the primary press, which is the selection gesture and
+  // means "this instead". A secondary press that misses does nothing at all:
+  // pressing a unit starts the camera following it, and following it moves and
+  // magnifies the board under the pointer, so the second question is routinely
+  // asked a hex to one side of where the first was answered. Dismissing there
+  // would make the pair of presses unusable exactly when they are wanted.
+  if (!subject) {
+    if (!dismissOnMiss) return false;
+    const had = clearUnitIntel();
+    if (had) modeline();
+    return had;
+  }
+  const shown = layer === "move" ? unitIntel?.showMove : unitIntel?.showSight;
+  if (unitIntel && unitIntel.id === subject.id && shown) {
+    clearUnitIntel(); modeline(); return true;
+  }
+  askUnitIntel(subject, layer);
+  return true;
+}
+// The subject is a unit in a world that keeps moving — at spectator pace it
+// has usually taken a step by the next observation. So the reading follows it:
+// re-asked where it has moved or spent movement, and put away when the unit
+// leaves the board or leaves this view.
+function syncUnitIntel() {
+  if (!unitIntel) return;
+  const unit = (state?.units || []).find(candidate => candidate.id === unitIntel.id);
+  if (!unit) { clearUnitIntel(); modeline(); return; }
+  if (key(unit.pos) === unitIntel.at) return;
+  // Re-asking with a layer it is already showing keeps both up: the argument
+  // is the question being *added*, and every layer already standing survives.
+  askUnitIntel(unit, unitIntel.showMove ? "move" : "sight");
+}
+function unitIntelLayers() {
+  if (!unitIntel) return [];
+  const layers = [];
+  if (unitIntel.showMove) layers.push([unitIntel.move, UNIT_INTEL_MOVE_INK]);
+  if (unitIntel.showSight) layers.push([unitIntel.sightTiles, UNIT_INTEL_SIGHT_INK]);
+  return layers.filter(([tiles]) => tiles && tiles.size);
+}
+// The flat board's hatching. Drawn where the selected unit's own range is
+// drawn — over the fog, under the units — because the answer is most wanted
+// exactly where the ground is not yours to see.
+function drawFlatUnitIntel() {
+  const layers = unitIntelLayers();
+  if (!layers.length) return;
+  cx.save();
+  for (const [tiles, ink] of layers) {
+    cx.fillStyle = stripeFill(ink);
+    cx.globalAlpha = .5;
+    for (const tileKey of tiles) {
+      const pos = tileKey.split(",").map(Number);
+      const tile = TMAP.get(tileKey);
+      const [x, yy] = hexXY(pos[0], pos[1]);
+      hexPath(x, yy - (tile ? elev(tile) : 0), S - 1);
+      cx.fill();
+    }
+    // A quiet edge around the whole statement, so the hatching reads as one
+    // region rather than as a scatter of decorated tiles.
+    cx.globalAlpha = .85;
+    cx.strokeStyle = ink;
+    cx.lineWidth = 1.4;
+    for (const tileKey of tiles) {
+      const pos = tileKey.split(",").map(Number);
+      const tile = TMAP.get(tileKey);
+      const [x, yy] = hexXY(pos[0], pos[1]);
+      const y = yy - (tile ? elev(tile) : 0);
+      for (let side = 0; side < DIRS.length; side++) {
+        const across = canonPos([pos[0] + DIRS[side][0], pos[1] + DIRS[side][1]]);
+        if (tiles.has(key(across))) continue;
+        const [a, b] = EDGE_CORNERS[side];
+        cx.beginPath();
+        cx.moveTo(...corner(x, y, S - 1, a));
+        cx.lineTo(...corner(x, y, S - 1, b));
+        cx.stroke();
+      }
+    }
+  }
+  cx.restore();
+}
+// The same reading on the globe, over the cells the frame actually carries.
+// A range that runs over the horizon is simply not drawn: there is no cell
+// there to hatch, and the perimeter the flat board can keep reading over fog
+// has no meaning on a sphere's far side.
+function drawPlanetUnitIntel(cells) {
+  const layers = unitIntelLayers();
+  if (!layers.length) return;
+  cx.save();
+  for (const [tiles, ink] of layers) {
+    cx.fillStyle = stripeFill(ink);
+    cx.globalAlpha = .5;
+    for (const cell of cells) {
+      if (!tiles.has(key(cell.tile.pos))) continue;
+      planetPath(cx, cell.points);
+      cx.fill();
+    }
+  }
+  cx.restore();
+}
 // The perimeter of everywhere the selected unit can end this turn. Drawn
 // after the fog and parchment layers on purpose: where the range runs into
 // unexplored ground the boundary keeps reading, which is exactly where a
@@ -18129,6 +18345,9 @@ function drawPlanetMap() {
   // stand a column on, so here the light is a beacon on the tile itself: the
   // same jersey glow and the same pennant, radiating outward.
   drawPlanetArenaFlags(cells, now, onSheet);
+  // Somebody else's unit, read on a press, in the same place on the globe as
+  // on the board.
+  if (radius >= SKY_MARKERS) drawPlanetUnitIntel(cells);
   // The selected unit's movement: range perimeter, then per-seam arrows.
   if (radius >= SKY_MARKERS)
     drawPlanetReachOverlay(cells, camera, scale, centerX, centerY);
@@ -18921,6 +19140,8 @@ function drawScene() {
   // thing you are capturing is a different game. Drawn before the units so a
   // garrison standing on a flag reads as standing on it.
   drawFlatArenaFlags();
+  // --- somebody else's unit, read on a press: its reach, its sight, or both
+  drawFlatUnitIntel();
   // --- selected unit's movement: range perimeter, then per-edge arrows
   drawFlatReachPerimeter();
   drawFlatReachArrows();
@@ -25497,11 +25718,25 @@ function setMapLens(next) {
 for (const button of document.querySelectorAll("[data-map-lens]"))
   button.onclick = () => setMapLens(button.dataset.mapLens);
 document.getElementById("map-lens-exit").onclick = () => setMapLens(null);
+// What the hatching over the board is saying. Worth a line because the
+// reading follows its unit as the unit moves, so a viewer who looked away
+// comes back to a live annotation and needs to know whose it is, which of the
+// two questions is on screen, and how to put it away.
+function unitIntelNote() {
+  if (!unitIntel) return "";
+  const said = [];
+  if (unitIntel.showMove) said.push("reach on a turn");
+  if (unitIntel.showSight)
+    said.push(unitIntel.sightRange ? `sight ${unitIntel.sightRange}` : "sight");
+  const who = state ? civName(unitIntel.owner) : `Player ${unitIntel.owner}`;
+  return `${who} ${titleCase(unitIntel.kind)} — ${said.join(" · ")} (Esc clears)`;
+}
 function modeline() {
   const m = [];
   const district = districtLensDistrict();
   if (district) m.push(districtLensInfo(district));
   else if (mapLens && MAP_LENS_INFO[mapLens]) m.push(MAP_LENS_INFO[mapLens]);
+  if (unitIntel) m.push(unitIntelNote());
   if (tackMode) m.push("TACK MODE — click to place/remove a 📍 (3 to exit)");
   if (interfaceMode && INTERFACE_MODE_NOTE[interfaceMode]) m.push(INTERFACE_MODE_NOTE[interfaceMode]);
   const el = document.getElementById("modeline");
@@ -26722,7 +26957,12 @@ function endMapPointer(ev) {
     rdrag = null; rdragTo = null;
     if (suppressControlClick)
       setTimeout(() => { suppressControlClick = false; }, 0);
-    if (!pos || !sel) { draw(); return; }
+    // With a unit of yours selected this press is an order, and stays one. A
+    // spectator has no unit to order and neither does a player who has not
+    // selected one, so there the secondary press is free to ask the other
+    // question about whatever is standing here: what does it see?
+    if (!sel) { if (pos) readUnitIntel(pos, "sight", false); draw(); return; }
+    if (!pos) { draw(); return; }
     issueSelectedUnitOrder(pos);
     return;
   }
@@ -26954,7 +27194,12 @@ cv.addEventListener("click", ev => {
   if (applyInterfaceMode(pos)) return;
   if (SPEC) {
     const unit = state.units.find(candidate => key(candidate.pos) === k);
-    if (unit) { startCameraFollow(unit.id); return; }
+    // A spectator's press on a unit already meant "that one" — the camera has
+    // followed it since long before this reading existed. It still does; the
+    // press now also says how far that unit can reach, which is the same
+    // question asked one step further on.
+    if (unit) { readUnitIntel(pos, "move"); startCameraFollow(unit.id); return; }
+    if (clearUnitIntel()) draw();
     if (cameraFollowManual) stopCameraFollow();
     const city = state.cities.find(c => c.pos[0] === pos[0] && c.pos[1] === pos[1]);
     selCity = city || null;
@@ -26977,9 +27222,17 @@ cv.addEventListener("click", ev => {
     const idx = sel ? (here.findIndex(u => u.id === sel.id) + 1) % here.length : 0;
     sel = here[idx];
     if (city && city.owner === 0) selCity = city;
+    clearUnitIntel();
   } else if (city && city.owner === 0) {
     selCity = city; sel = null;
-  } else { sel = null; selCity = null; }
+    clearUnitIntel();
+  } else {
+    sel = null; selCity = null;
+    // Nothing of yours here. If somebody else's unit is, this press is the
+    // question about it; your own selected unit already draws its own range,
+    // so the two readings never argue over the same tiles.
+    readUnitIntel(pos, "move");
+  }
   draw(); drawSide(); drawUbar();
 });
 
@@ -28236,6 +28489,10 @@ document.addEventListener("keydown", ev => {
       return;
     }
     if (clearInterfaceMode()) return;
+    // A reading of somebody else's unit is the lightest thing on the map, so
+    // it unwinds before the camera does: Escape puts the hatching away and
+    // leaves you watching the same unit you were watching.
+    if (clearUnitIntel()) { modeline(); draw(); return; }
     if (cameraFollowManual) { stopCameraFollow(); return; }
     if (fullscreenMapRestore) { toggleFullscreenMap(); return; }
     sel = null; selCity = null; mapLens = null; tackMode = false;

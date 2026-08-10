@@ -35,8 +35,9 @@
   const ENGINE_ROUTES = new Set([
     "/state", "/status", "/runtime", "/rules", "/pedia", "/save", "/saves",
     "/load", "/action", "/step", "/autoplay", "/play-on", "/route", "/view",
-    "/spectator-status", "/next-game-settings", "/new", "/supervisor-new",
-    "/pace", "/next-game", "/host-league", "/machine-metrics",
+    "/intel", "/spectator-status", "/next-game-settings", "/new",
+    "/supervisor-new", "/pace", "/next-game", "/host-league",
+    "/machine-metrics",
   ]);
   const LOCAL_DESKTOP_HOST = here.pathname.startsWith("/wasm/");
   const HOST_LEAGUE_URL = new URL("league.json", here);

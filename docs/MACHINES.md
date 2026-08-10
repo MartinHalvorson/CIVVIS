@@ -31,6 +31,7 @@ use the canonical ID.
 | `martbot-mbp-m4-max-128gb` | MacBook Pro M4 Max 128 GB | `mbp-m4-max-128-1` |
 | `mbp-m5-max-128` | MacBook Pro M5 Max 128 GB | `martbot-mbp-m5-max-128` |
 | `mbp-m5-pro-64` | MacBook Pro M5 Pro 64 GB | — |
+| `martins-m4-air` | MacBook Air M4 16 GB | — |
 
 ## Unresolved aliases — operator to consolidate
 

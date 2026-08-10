@@ -9792,6 +9792,10 @@ impl AdvancedAi {
             action,
             Action::DeclareWar { .. } | Action::DeclareWarWithCasusBelli { .. }
         );
+        // The appointment's Gold reserve is an upgrade bill, and this pass only
+        // ever adds to the treasury, so it runs even while elective bilateral
+        // spending is held.
+        self.base.war_eve_liquidation(g, pid, &action);
         if g.apply(pid, &action).is_err() || !declares {
             return true;
         }
@@ -9936,11 +9940,20 @@ impl AdvancedAi {
                 || g.is_at_war(pid, *target)
                 || self.rival_victory_pressure(g, *target).progress >= 78
         });
+        // A peace treaty is a hard block on `start_war`, so while one holds the
+        // campaign target cannot be attacked and withholding trade from it buys
+        // nothing — it only forfeits the value, and the chance to load the
+        // rival up with contracts that the next declaration cancels. The
+        // relationship denials below are deliberately left in place: an
+        // Alliance or a Friendship is the one thing that would make the war
+        // itself illegal when the treaty lapses.
+        let denied_trade_partner =
+            denied_partner.filter(|target| g.peace_treaty_until(pid, *target).is_none());
         // Quick deals can hide a Gold component inside a balanced quote. Hold
         // all elective bilateral spending while an exact upgrade bill is
         // reserved; trade resumes immediately when the appointment ends.
         if self.war_plan.is_none() {
-            self.strategic_bilateral_trade(g, pid, denied_partner, plan.strategy);
+            self.strategic_bilateral_trade(g, pid, denied_trade_partner, plan.strategy);
         }
         self.propose_strategic_alliance(g, pid, plan, denied_partner);
         // Relationship mechanics must be part of a strategic AI turn too.
@@ -10192,6 +10205,7 @@ impl AdvancedAi {
                                ""
                            });
                 }
+                self.base.war_eve_liquidation(g, pid, &action);
                 let _ = g.apply(pid, &action);
             }
         } else if self.journal().wants(crate::reasoning::Level::Detail) {

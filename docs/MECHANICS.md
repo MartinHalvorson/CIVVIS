@@ -98,6 +98,25 @@ custom economic exchange for which either side's modeled gain is not positive.
 AI civilizations periodically choose at most one of those same mutually
 favorable offers.
 
+Which half of that split an agreement falls on is the whole trade on the turn
+a war opens, and both scripted AIs now play it. Immediately before a
+declaration is applied — and never before a mere denouncement — the attacker
+offers its victim only the terms the declaration is about to cancel: spare
+Luxury copies, directional Open Borders, and Gold per turn. It asks lump Gold
+in return, priced just under what the rival's own valuation says the package
+is worth, up to the rival's spendable treasury; a Gold-per-turn rider reaches
+a treasury larger than the goods alone can. Each contract is then re-quoted,
+because every sale moves the rival's treasury and the attacker's uncommitted
+income, and the attacker never promises income it has already sold. Nothing
+here bends the market: `validate_trade` still requires the rival to profit at
+the price it pays, so a declaration that never lands leaves ordinary good
+trades behind — and one that does lands with the Gold already banked, the
+Luxury access restored, and the remaining twenty-nine instalments unpaid.
+Strategic stockpiles, Great Works, captured Spies, cities, and Favor are never
+offered into a war eve, because a war does not bring them back. A peace treaty
+is a hard block on declaring, so while one holds a campaign target trades on
+ordinary terms again rather than being frozen out.
+
 Borders remain open to everyone until their owner completes Early Empire.
 After enforcement begins, every ordinary unit step and every future segment of
 an AI route requires directional Open Borders, a current Alliance, or war.

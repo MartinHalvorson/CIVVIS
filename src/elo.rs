@@ -363,6 +363,20 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// this when rules, default setup, or scoring semantics change enough that an
 /// Elo point no longer measures the same experiment.
 ///
+/// **v7 (2026-08-10) — the AI sells what a declaration cancels.** Immediately
+/// before it declares, a civilization now offers its victim the terms the
+/// declaration is about to void — spare Luxury copies, Open Borders, Gold per
+/// turn — for lump Gold priced at the victim's own walk-away, and the war then
+/// returns the Luxury and stops the instalments. Unlike the compatibility
+/// re-pins listed beside `ADVANCED_V1_SOURCE_CONTRACT_FNV`, this one is behind
+/// no constructor flag: `BasicAi::war_eve_liquidation` runs from the shared
+/// `diplomacy` pass and from `AdvancedAi`'s ordinary declaration, so the
+/// `advanced_v1` anchor plays it too and its treasuries genuinely differ from
+/// v6. `game::trade_deal_tests::the_ai_sells_the_cancellable_promises_only_into_a_real_declaration`
+/// is the check on that claim, which is why this is a bump rather than a pin.
+/// A campaign target under a peace treaty also trades normally again, so the
+/// same seats hold different Gold and resources through a treaty.
+///
 /// **v6 (2026-08-04) — military unique improvements enter AI planning.** Charged
 /// Toa, Legions, and Nau now spend their unique improvement actions when a legal
 /// site exists, with the advanced controller valuing defensive frontier works and
@@ -381,7 +395,7 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// argument is ever wrong. Rows before and after v5 are not comparable at Online,
 /// Quick, Epic or Marathon, where the price genuinely moved (12.5 / 16.75 / 37.5 /
 /// 75 against a flat 25).
-pub const ELO_PROTOCOL_VERSION: u32 = 6;
+pub const ELO_PROTOCOL_VERSION: u32 = 7;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand

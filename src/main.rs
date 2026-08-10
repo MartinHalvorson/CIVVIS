@@ -844,14 +844,21 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `garrison_walls_item` returns `None` on its first line and the branch can
 /// never take the build. The anchor's build order is byte-identical by
 /// construction. Compatibility re-pin, not an Elo-protocol change.
+/// ⚠ **The war-eve liquidation is NOT a free re-pin.** Every entry above ends
+/// with a flag both constructors leave false; this one has no flag at all.
+/// `BasicAi::war_eve_liquidation` runs from the shared `diplomacy` pass and
+/// from `AdvancedAi`'s ordinary declaration, so the `advanced_v1` anchor really
+/// does sell its cancellable promises before it declares, and its Gold, army,
+/// and the victim's treasury all move. `ELO_PROTOCOL_VERSION` is bumped to 7
+/// with this pin; see its own note for what stops comparing.
 /// The settlement atlas reuses static site terms only while an active
 /// battlefront frame and the live settlement-safety controller are present.
 /// `AdvancedAi::legacy()` disables both `battlefront_observation` and
 /// `settlement_safety`, so it stays on the historical uncached settlement
 /// path. The production `advanced` controller does use the atlas, but the
 /// frozen `advanced_v1` anchor cannot observe it. Compatibility re-pin, not
-/// an Elo-protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1055_4e02_7ea2_9234;
+/// an additional Elo-protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb527_9f72_3c5c_3ff7;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
