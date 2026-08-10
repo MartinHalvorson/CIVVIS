@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 118] = [
+pub const EVAL_ONLY_AIS: [&str; 119] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -130,6 +130,7 @@ pub const EVAL_ONLY_AIS: [&str; 118] = [
     "advanced_without_city_target_floor",
     "advanced_without_plan_city_target",
     "advanced_without_settler_commit",
+    "advanced_without_unpriced_bundle",
     "advanced_league_top",
     "advanced_joint_tactics",
     "strategic_cheap",
@@ -337,6 +338,7 @@ define_arm_kinds! {
     AdvancedWithoutCityTargetFloor => "advanced_without_city_target_floor",
     AdvancedWithoutPlanCityTarget => "advanced_without_plan_city_target",
     AdvancedWithoutSettlerCommit => "advanced_without_settler_commit",
+    AdvancedWithoutUnpricedBundle => "advanced_without_unpriced_bundle",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
@@ -2374,6 +2376,38 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // The third expansion-adjacent lever in the production bundle, and the
         // next unpriced one in the #1499 ledger. Registered here so the queue
         // stays visible; its number is pending.
+        // Everything in the production bundle that still has no individual
+        // number, withheld at once.
+        //
+        // Pricing nine flags one at a time is nine deployment runs. This asks
+        // the prior question in one: **is there anything left in the
+        // remainder at all?** A null bounds the whole set and closes the queue;
+        // a large effect says keep bisecting, and the bisection is then paid
+        // for. The same screen-then-decompose shape found the district genes
+        // inside the roster composite (#1486).
+        //
+        // Priced already and therefore NOT withheld here: `city_target_floor`
+        // (-41 Elo, removed #1504), `plan_city_target` (null, #1507),
+        // `bounded_recovery` (null, #1499), `envoy_infrastructure` (null), and
+        // `settler_commit` — which measured **+30 Elo** (withholding it scores
+        // 45.6%, 60/95, sign p=0.0061), so it is a component the bundle should
+        // keep and including it here would drag the screen negative for the
+        // wrong reason.
+        //
+        // ⚠ A composite says nothing about any single flag. If this moves, the
+        // decomposition is the work, not the headline.
+        "advanced_without_unpriced_bundle" => {
+            let mut ai = AdvancedAi::new();
+            ai.envoy_priority = false;
+            ai.adjacency_site_planning = false;
+            ai.research_economy = false;
+            ai.disable_amenity_districts();
+            ai.disable_siege_muster();
+            ai.disable_home_defense();
+            ai.disable_tactical_strategy();
+            ai.disable_unit_objective_memory();
+            Box::new(ai)
+        }
         "advanced_without_settler_commit" => {
             let mut ai = AdvancedAi::new();
             ai.settler_commit = false;
@@ -3448,6 +3482,7 @@ impl ArmKind {
             Self::AdvancedWithoutCityTargetFloor => &["city-target-floor-withheld"],
             Self::AdvancedWithoutPlanCityTarget => &["plan-city-target-withheld"],
             Self::AdvancedWithoutSettlerCommit => &["settler-commit-withheld"],
+            Self::AdvancedWithoutUnpricedBundle => &["unpriced-production-bundle-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -3964,6 +3999,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_city_target_floor" => (Vec::new(), "advanced"),
         "advanced_without_plan_city_target" => (Vec::new(), "advanced_without_plan_city_target"),
         "advanced_without_settler_commit" => (Vec::new(), "advanced_without_settler_commit"),
+        "advanced_without_unpriced_bundle" => (Vec::new(), "advanced_without_unpriced_bundle"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -5171,7 +5207,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 87] = [
+            const SCRIPTED: [&str; 88] = [
                 "advanced_joint_tactics",
                 "live_without_joint_tactics",
                 "advanced",
@@ -5227,6 +5263,7 @@ mod tests {
                 "advanced_without_city_target_floor",
                 "advanced_without_plan_city_target",
                 "advanced_without_settler_commit",
+                "advanced_without_unpriced_bundle",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",

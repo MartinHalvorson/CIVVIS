@@ -889,7 +889,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `promoted_policy_envoy`. `AdvancedAi::legacy()` builds through
 /// `configured`, never that constructor, and its floor was and remains
 /// 3 — pinned by the same test that caught this. Compatibility re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc75f_852b_bf26_6bda;
+/// Three new `disable_*` withholds so every production flag can be
+/// priced. They are evaluator entry points that no constructor calls;
+/// `AdvancedAi::legacy()` never had these flags on. Compatibility
+/// re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xfb6f_868c_b7f3_b215;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

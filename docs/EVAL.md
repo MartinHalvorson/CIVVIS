@@ -8406,3 +8406,62 @@ belongs next to every future arm: **`promoted_policy_envoy` sets thirteen
 flags — check before you add one, and withhold rather than add.**
 
 `advanced_without_settler_commit` is registered as the next in the queue.
+
+
+## 2026-08-10 — ★★★ settler_commit is worth thirty Elo, and the expansion story inverts
+
+The #1499 ledger is producing numbers in both directions now, which is the
+point of pricing rather than assuming.
+
+```
+ai_eval advanced_without_settler_commit advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 9200000
+
+  paired-map score 45.6% (95% Wilson CI 40.8%..50.5%)   Elo-equivalent -30 (CI -65..+4)
+  paired direction 60 for / 245 neutral / 95 against    sign p = 0.0061 (SIGNIFICANT for advanced)
+  terminal score   189 / 211                            sign p = 0.2937
+```
+
+**Withholding `settler_commit` makes the agent worse by about thirty Elo.** It
+is a component the bundle should keep, and the first flag in this audit to
+measure positive.
+
+### ★★★ The expansion story inverts inside one bundle
+
+| flag | what it does | measured |
+|---|---|---|
+| `city_target_floor = 6` | **want** more cities | **−41 Elo** — removed (#1504) |
+| `plan_city_target` | want cities the land supports | null (#1507) |
+| **`settler_commit`** | **finish the settler already started** | **+30 Elo** |
+
+Both are expansion levers, set by the same constructor, on the same day.
+**Raising the ambition costs 41 Elo; following through on a settler already in
+flight is worth 30.** Expansion is not good or bad in this engine — *wanting*
+is bad and *executing* is good.
+
+That is the same shape this document reached from the other side when the
+`city_target_floor` null was first recorded: *"six cities serialized through one
+settler at ~9 turns of production plus a walk each is a rate limit no valuation
+can beat."* The target was never the constraint; the follow-through was. Two
+independent measurements, one taken by raising a target and one by removing a
+commitment, agree on where the binding constraint sits.
+
+⚠ Neither number is a promotion. `settler_commit` is already on and stays on;
+nothing changes. What changed is that a component assumed useful is now
+**measured** useful, which is a different thing and is the only reason the
+`city_target_floor` mistake was findable at all.
+
+### Three flags could not be priced, and now can
+
+`promoted_policy_envoy` sets thirteen behaviours and only some had a
+`disable_*`. `tactical_strategy`, `unit_objective_memory` and
+`amenity_districts` had **no withhold at all** and were therefore unmeasurable
+— exactly the gap `disable_bounded_recovery` names: *"Every flag in
+`enable_live_bridge` needs one of these or it ships unmeasured."* All three now
+have one.
+
+`advanced_without_unpriced_bundle` withholds the eight that remain unpriced in
+a single arm. Nine deployment runs is the wrong shape for the question *is
+there anything left in here at all*; a null bounds the whole remainder and
+closes the queue, and a large effect pays for its own bisection. That run is in
+flight.
