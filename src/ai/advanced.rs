@@ -3174,6 +3174,26 @@ impl AdvancedAi {
         self.base.amenity_districts = false;
     }
 
+    /// The two base-constructor flags that had no withhold.
+    ///
+    /// `configured` sets ten booleans true for every `AdvancedAi` that is not
+    /// `legacy()`. `deny_leaders` at least had `advanced_blind_to_leaders`;
+    /// these two had nothing, so no arm could price them. The
+    /// `promoted_policy_envoy` audit found a component costing **41 Elo**
+    /// (`city_target_floor`, removed #1504) among flags in exactly this
+    /// condition, so an unpriceable default is a real risk rather than a
+    /// tidiness complaint.
+    ///
+    /// ⚠ `AdvancedAi::legacy()` turns both of these off already, so the frozen
+    /// anchor is unaffected by anything measured through them.
+    pub fn disable_settlement_safety(&mut self) {
+        self.settlement_safety = false;
+    }
+
+    pub fn disable_battlefront_observation(&mut self) {
+        self.battlefront_observation = false;
+    }
+
     /// Rank district families by how much of the empire still lacks them.
     ///
     /// ⚠ `d_theater` is the lowest of the four district weights in all 51 league

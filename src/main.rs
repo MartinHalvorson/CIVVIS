@@ -893,7 +893,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// priced. They are evaluator entry points that no constructor calls;
 /// `AdvancedAi::legacy()` never had these flags on. Compatibility
 /// re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7ea0_32fa_2451_9b95;
+/// Two new `disable_*` withholds for base-constructor defaults. They are
+/// evaluator entry points no constructor calls, and `AdvancedAi::legacy()`
+/// already turns both flags off. Compatibility re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x37cf_c1e8_6b55_c3d5;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
