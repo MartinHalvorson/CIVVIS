@@ -7490,3 +7490,20 @@ league genome carry explicit vectors and are untouched.
 with it. Numbers recorded for those arms above this line were produced by the
 2.0 agent and are not comparable to numbers taken after it. This is the ordinary
 cost of moving a baseline, and it is why `advanced_holy_v0` exists.
+
+### Confirmation that what shipped is what was measured
+
+```
+ai_eval advanced advanced_holy_v0 --players 4 --pairs 400 --turns 500 --seed 4600000
+  arms differ on   district-holy-pre-2026-08-10
+  paired-map score 54.4% (95% Wilson CI 49.5%..59.2%)  Elo-equivalent +30 (CI -4..+65)
+  paired direction 42 for / 351 neutral / 7 against    sign p = 0.0000
+  religious wins   357 against 281
+  promotion gate   INCONCLUSIVE (400 maps, half-width 4.9)
+```
+
+Read this as a wiring check, not a second promotion: the promotion is the
+1200-pair run above, on an identical intervention. What it establishes is that
+the constructor change reproduces the arm — same direction, same magnitude, same
+mechanism in the victory mix — against an opponent that is the old agent rather
+than a re-labelled copy of the new one.
