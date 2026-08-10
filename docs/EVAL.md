@@ -7789,3 +7789,90 @@ when no major does, so they led every early metric and never won. Every number
 in that first table was polluted. **A control row exists so that it can be
 wrong in an obvious way**; had the control been omitted, the behavioural rows
 looked entirely plausible and would have been believed.
+
+
+## 2026-08-10 — ★★★ why one parameter tune paid when a thousand did not, and how big the last open gap really is
+
+`docs/GENOME.md` closes with "every measured attempt to make this agent stronger
+by **tuning parameters** has returned null: the policy appetites three ways, the
+opening book two ways, the war-declaration threshold, and about a thousand
+rounds of whole-genome evolution." Its scoreboard closes every optimization game
+but one.
+
+Four days of this session's work is a counterexample and three confirmations of
+that sentence, and the split between them is not random.
+
+### ★★★ The pattern: actuation repairs pay, valuation tunes do not
+
+| change | class | result |
+|---|---|---|
+| `d_holy` 2.0 → 5.6 (#1469) | **actuation** — the plan wanted religion 23% of turns and the district ranked below two others, so intent never reached the build queue | **+20 Elo, gate PASS** |
+| `strategic_family` Holy Site 210 → 850 (#1479) | valuation, on a path that does not bind | null, 399/400 maps unchanged |
+| `settle_food` → roster value (#1479) | valuation, on an inert gene | null, 398/400 unchanged |
+| roster winners' 28 live genes (#1486) | valuation, composed | **−22 Elo** |
+| opening book sweep (`GENOME.md`) | valuation over a scripted order | −0.003 |
+| policy appetites, tech order, civic order, war threshold | valuation | null |
+| `settler_price` 100× | valuation | "the multiplier does not reach the decision" |
+
+Every null above re-weights a decision the agent was already making
+competently. The one gain repaired a decision the agent intended and never
+executed. Stated as a rule for whoever reads this next:
+
+> **Ask whether the agent already does the thing badly, or does not do it at
+> all. Re-pricing the first is the null this repository keeps rediscovering;
+> the second is where the only gate-passing gain came from.**
+
+⚠ One counterexample does not make a law, and this is a post-hoc partition of
+results that were not collected to test it. It is a prior for choosing the next
+experiment, not a finding.
+
+### The last open item on the scoreboard, measured
+
+That scoreboard's one open cell is **war conversion — "67% of siege opens a city
+nobody can enter"**. Re-measured on the current build, 40 games, 6p 60x38, 300
+turns, seeds 6100+:
+
+| | count |
+|---|---|
+| siege blows | 2389 |
+| cities reduced | 165 |
+| of those, melee adjacent at all | 120 (72.7%) |
+| **left standing at zero garrison** | **26** |
+| **of those, a taker adjacent WITH movement** | **8 (30.8%)** |
+| **cities actually captured** | **85** |
+
+**The 67% replicates** — 18 of 26 openings had nobody able to walk in, 69.2%.
+
+⚠ **But the headline oversells it, and the last row is why.** `left_depleted`
+only counts Bombard-class shots, because an ordinary ranged attack restores the
+garrison to 1. Meanwhile **85 cities were captured** in the same 40 games:
+melee normally reduces and takes a city in one action and never enters this
+census at all. So the gap is **18 missed openings against 85 successful
+captures** — about 0.45 per game, bounding the prize at roughly **+21% captures
+even if every one converted.**
+
+That is a real defect and a much smaller one than "67% of siege is wasted"
+reads. Set against domination victories at **1 in 1513** headless games, a fifth
+more captures is unlikely to move a win rate at all, and the honest expectation
+for the repository's last open optimization cell is a null on wins.
+
+**Recommendation: do not open it expecting strength.** It is worth fixing as a
+correctness matter and worth measuring on captures, not on Elo. The
+actuation/valuation split above is the better guide to where a win is still
+available — and it points at subsystems where the agent does nothing, not at
+ones where it does something imperfectly.
+
+### ⚠ A duplication worth recording so it stops happening
+
+`src/bin/gene_census.rs` (#1479) re-created `src/bin/gene_probe.rs`, which
+`docs/GENOME.md` describes in detail and which no longer exists in the tree —
+one of the binaries removed by the 2026-08-06 cleanup. The findings survived in
+the document; the tool did not, so the next agent measured it again.
+
+`GENOME.md` also states the limit that census cannot see, and it should be read
+beside every "live" verdict that file produces: **"A gene can diverge 12/12 at
+turn 8 and still be worthless. Divergence is a necessary condition for a gene to
+matter, never a sufficient one."** The opening book is the most reachable block
+in the genome and deleting it costs nothing. The census's *inert* column is
+sound — a gene that cannot diverge certainly cannot pay — but its *live* column
+ranks reachability, not leverage.
