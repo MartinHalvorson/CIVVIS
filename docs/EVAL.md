@@ -7685,8 +7685,9 @@ collectively worth nothing measurable.
 
 ⚠ **The practical consequence is a regression hazard with no gate on it.** A
 genome change is not a code change: if `evolve` or a league round breeds
-`d_commercial` up toward `d_holy`, the +20 Elo disappears and no promotion gate
-re-runs to notice.
+`d_commercial` up toward `d_holy`, the +20 Elo of #1469 (52.9%, 95% CI
+50.1%..55.7%, 1200 maps, seed 4400000) disappears and no promotion gate re-runs
+to notice.
 
 **And note precisely what the harm was not.** 5.55 is still *below* 5.6, so the
 19 points went missing with the district ordering fully intact. The first guard
