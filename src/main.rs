@@ -882,7 +882,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// games leave `bounded_recovery` disabled when `promoted_policy_envoy`
 /// enables it. No constructor moved and `legacy()` is untouched.
 /// Compatibility re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x581f_3fa9_8108_383e;
+/// A test doc comment only: the evidence ledger for what
+/// `promoted_policy_envoy` enables. No constructor moved and
+/// `legacy()` is untouched. Compatibility re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5d00_de77_23e4_6aa8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
