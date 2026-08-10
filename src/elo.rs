@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 109] = [
+pub const EVAL_ONLY_AIS: [&str; 111] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -121,6 +121,8 @@ pub const EVAL_ONLY_AIS: [&str; 109] = [
     "advanced_holy_priority",
     "advanced_holy_lane",
     "advanced_holy_v0",
+    "advanced_settle_food",
+    "advanced_holy_lane_v0",
     "advanced_league_top",
     "advanced_joint_tactics",
     "strategic_cheap",
@@ -319,6 +321,8 @@ define_arm_kinds! {
     AdvancedHolyPriority => "advanced_holy_priority",
     AdvancedHolyLane => "advanced_holy_lane",
     AdvancedHolyV0 => "advanced_holy_v0",
+    AdvancedSettleFood => "advanced_settle_food",
+    AdvancedHolyLaneV0 => "advanced_holy_lane_v0",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
@@ -368,6 +372,11 @@ define_arm_kinds! {
 /// `advanced_holy_v0` can still construct that agent. The live value is
 /// [`crate::ai::ADVANCED_D_HOLY`].
 pub const PRE_2026_08_10_D_HOLY: f64 = 2.0;
+
+/// Games-weighted `settle_food` of the top third of the shipped league roster
+/// by outright 8-player win rate, against the bottom third's 1.19 and the
+/// shipped 1.2. Read by `advanced_settle_food`; see that arm.
+pub const LEAGUE_WINNER_SETTLE_FOOD: f64 = 0.78;
 
 pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// Version of the game/rating contract, independent of the JSON shape. Bump
@@ -2125,6 +2134,47 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // The scripted major exactly as it played before 2026-08-10, retained so
         // the change stays measurable after it ships -- the same role
         // `advanced_v1` fills for the controller as a whole.
+        // Treatment for the settle-site yield axis. `settle_site_value` scores
+        // a candidate city by its surrounding tiles at
+        // `food*settle_food + production*settle_prod + gold*settle_gold`, and
+        // the shipped weights are food-dominant: 1.2 against production's 1.0.
+        //
+        // The roster inverts that. Of the bred genomes carrying real 8-player
+        // evidence, the top third by outright win rate sit at a games-weighted
+        // `settle_food` of 0.77 against the bottom third's 1.19 -- the second
+        // largest top-versus-bottom separation of the forty genes after
+        // `d_holy`, and the losing tail again sits on the shipped default.
+        // Their `settle_prod` barely moves (0.89), so the winners are not
+        // pricing production up, they are pricing food DOWN past it.
+        //
+        // ⚠ The tempting mechanism is that food is only worth what a city can
+        // grow into, and growth is housing-capped -- but the 71.7% housing-cap
+        // figure in `AdvancedAi`'s deck notes is measured on **Civ 6
+        // host-exported** city-turns, not on this engine, so it motivates the
+        // test and does not explain the result. What this arm establishes is
+        // whether the axis pays here, not why.
+        "advanced_settle_food" => {
+            let mut w = Weights::advanced();
+            w.settle_food = LEAGUE_WINNER_SETTLE_FOOD;
+            Box::new(AdvancedAi::with_weights(w))
+        }
+        // The second cell of the 2x2 that reads the lane-table null.
+        //
+        // `advanced_holy_lane` against `advanced` left 399 of 400 maps
+        // untouched, but both arms already pay `d_holy` 5.6, so a ceiling
+        // ("BasicAi builds the Holy Site anyway, the lane term is redundant")
+        // and an inert path ("the lane term decides nothing") predict the same
+        // flat result. This arm carries the lane change on the PRE-shipment
+        // weights, so measured against `advanced_holy_v0` it separates them: a
+        // gain here means redundancy, another null means the path itself does
+        // not bind.
+        "advanced_holy_lane_v0" => {
+            let mut w = Weights::advanced();
+            w.d_holy = PRE_2026_08_10_D_HOLY;
+            let mut ai = AdvancedAi::with_weights(w);
+            ai.holy_lane_parity = true;
+            Box::new(ai)
+        }
         "advanced_holy_v0" => {
             let mut w = Weights::advanced();
             w.d_holy = PRE_2026_08_10_D_HOLY;
@@ -3158,6 +3208,8 @@ impl ArmKind {
             Self::AdvancedHolyPriority => &["district-holy-priority"],
             Self::AdvancedHolyLane => &["lane-holy-parity"],
             Self::AdvancedHolyV0 => &["district-holy-pre-2026-08-10"],
+            Self::AdvancedSettleFood => &["settle-site-food-weight"],
+            Self::AdvancedHolyLaneV0 => &["lane-holy-parity", "district-holy-pre-2026-08-10"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -3665,6 +3717,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_holy_priority" => (Vec::new(), "advanced"),
         "advanced_holy_lane" => (Vec::new(), "advanced_holy_lane"),
         "advanced_holy_v0" => (Vec::new(), "advanced_holy_v0"),
+        "advanced_settle_food" => (Vec::new(), "advanced_settle_food"),
+        "advanced_holy_lane_v0" => (Vec::new(), "advanced_holy_lane_v0"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -4872,7 +4926,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 78] = [
+            const SCRIPTED: [&str; 80] = [
                 "advanced_joint_tactics",
                 "live_without_joint_tactics",
                 "advanced",
@@ -4919,6 +4973,8 @@ mod tests {
                 "advanced_holy_priority",
                 "advanced_holy_lane",
                 "advanced_holy_v0",
+                "advanced_settle_food",
+                "advanced_holy_lane_v0",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",
