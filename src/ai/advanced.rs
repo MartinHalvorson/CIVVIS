@@ -6545,7 +6545,7 @@ impl AdvancedAi {
                 to,
                 product: Name::new(&product),
             };
-            let mut next = g.clone();
+            let mut next = g.speculative_clone();
             if next.apply(pid, &action).is_err() {
                 continue;
             }
@@ -10471,7 +10471,9 @@ impl AdvancedAi {
             .threads()
             .min(city_ids.len())
             .min(PURCHASE_MENU_MAX_WORKERS);
-        let states = (0..active).map(|_| g.clone()).collect::<Vec<_>>();
+        let states = (0..active)
+            .map(|_| g.speculative_clone())
+            .collect::<Vec<_>>();
         let per_city = pool.map_stateful_limited(
             city_ids.len(),
             PURCHASE_MENU_MAX_WORKERS,
@@ -10789,7 +10791,7 @@ impl AdvancedAi {
         if matches!(item, Item::Unit { .. }) && production_score < 120.0 {
             return None;
         }
-        let mut after = g.clone();
+        let mut after = g.speculative_clone();
         after.apply(pid, action).ok()?;
         let cost = (bank - after.players[pid].gold).max(0.0);
         if after.players[pid].gold + f64::EPSILON < reserve {
@@ -10830,7 +10832,7 @@ impl AdvancedAi {
         let Action::BuyPlot { city, pos, .. } = action else {
             unreachable!("plot shortlist contains only BuyPlot actions")
         };
-        let mut after = g.clone();
+        let mut after = g.speculative_clone();
         if after.apply(pid, action).is_err()
             || after.players[pid].gold + f64::EPSILON < reserve + 200.0
         {
@@ -11932,7 +11934,7 @@ impl AdvancedAi {
         else {
             unreachable!("faith military shortlist contains only Buy actions")
         };
-        let mut after = g.clone();
+        let mut after = g.speculative_clone();
         if after.apply(pid, action).is_err() || after.players[pid].faith < reserve {
             return None;
         }
@@ -15073,7 +15075,7 @@ impl AdvancedAi {
                 .min(positions.len())
                 .min(SETTLEMENT_SCORE_MAX_WORKERS);
             let states = (0..active)
-                .map(|_| (g.clone(), self.clone()))
+                .map(|_| (g.speculative_clone(), self.clone()))
                 .collect::<Vec<_>>();
             let positions = Arc::new(positions.to_vec());
             let worker_positions = Arc::clone(&positions);
@@ -18468,7 +18470,7 @@ impl AdvancedAi {
                 let followups =
                     Self::forcing_attacks_to(&moved, enemy, victim_pos, Some(attacker));
                 for followup in followups {
-                    let mut branch = moved.clone();
+                    let mut branch = moved.speculative_clone();
                     if branch.apply(enemy, &followup).is_err() {
                         continue;
                     }
@@ -18701,7 +18703,7 @@ impl AdvancedAi {
         action: &Action,
         plan: &StrategicPlan,
     ) -> f64 {
-        Self::tactical_attack_value_owned(g.clone(), pid, uid, action, plan)
+        Self::tactical_attack_value_owned(g.speculative_clone(), pid, uid, action, plan)
     }
 
     /// Bounded quiescence-style reply search for a proposed attack. The
@@ -18793,7 +18795,7 @@ impl AdvancedAi {
         let mut worst_reply = 0.0_f64;
 
         for enemy in enemies {
-            let mut reply_position = after.clone();
+            let mut reply_position = after.speculative_clone();
             reply_position.current = enemy;
             for unit in reply_position
                 .units
@@ -18832,7 +18834,7 @@ impl AdvancedAi {
     fn forcing_reply_penalty(&self, g: &Game, pid: usize, uid: u32, action: &Action) -> f64 {
         Self::forcing_reply_penalty_owned(
             self.work_pool.clone(),
-            g.clone(),
+            g.speculative_clone(),
             pid,
             uid,
             action,
@@ -18875,7 +18877,7 @@ impl AdvancedAi {
                 && g.is_at_war(pid, defender.owner)
                 && g.rules.units[defender.kind].class == "military"
         })?;
-        let mut after_first = g.clone();
+        let mut after_first = g.speculative_clone();
         if after_first.apply(pid, action).is_err()
             || !after_first.units.contains_key(&uid)
             || !after_first.units.contains_key(&victim)
@@ -18902,13 +18904,13 @@ impl AdvancedAi {
                 Action::Ranged { unit, .. } => (*unit, true),
                 _ => unreachable!("friendly volley only retains direct ground attacks"),
             };
-            let mut after_second = after_first.clone();
+            let mut after_second = after_first.speculative_clone();
             if after_second.apply(pid, &followup).is_err() || after_second.units.contains_key(&victim)
             {
                 continue;
             }
             let finish_score = Self::tactical_attack_value_owned(
-                after_first.clone(),
+                after_first.speculative_clone(),
                 pid,
                 finisher,
                 &followup,
@@ -18971,7 +18973,7 @@ impl AdvancedAi {
             })
             .flatten();
         let action = Action::AirStrike { unit: uid, target };
-        let mut after = g.clone();
+        let mut after = g.speculative_clone();
         if after.apply(pid, &action).is_err() {
             return f64::NEG_INFINITY;
         }
@@ -19049,7 +19051,7 @@ impl AdvancedAi {
             .map(|city| city.pillaged_buildings.clone())
             .unwrap_or_default();
         let action = Action::AirPillage { unit: uid, target };
-        let mut after = g.clone();
+        let mut after = g.speculative_clone();
         if after.apply(pid, &action).is_err() {
             return f64::NEG_INFINITY;
         }
@@ -19104,7 +19106,7 @@ impl AdvancedAi {
         let attacker_spec = &g.rules.units[attacker.kind];
         let defender = &g.units[&defender_id];
         let defender_spec = &g.rules.units[defender.kind];
-        let mut after = g.clone();
+        let mut after = g.speculative_clone();
         if after
             .apply(pid, &Action::PriorityTarget { unit: uid, target })
             .is_err()
@@ -19907,7 +19909,9 @@ impl AdvancedAi {
             Some(pool) if candidates.len() > 1 => {
                 let inputs = candidates
                     .iter()
-                    .map(|(_, action)| (g.clone(), g.clone(), action.clone()))
+                    .map(|(_, action)| {
+                        (g.speculative_clone(), g.speculative_clone(), action.clone())
+                    })
                     .collect();
                 let plan = plan.clone();
                 let nested_pool = Arc::clone(pool);
@@ -20563,7 +20567,7 @@ impl AdvancedAi {
                     ))
             })
             .collect();
-        let mut after = g.clone();
+        let mut after = g.speculative_clone();
         if after.apply(pid, action).is_err() {
             return f64::NEG_INFINITY;
         }
@@ -21093,12 +21097,12 @@ impl AdvancedAi {
             let plan_snapshot = plan.clone();
             let active = pool.threads().min(batch.len());
             let states = (0..active)
-                .map(|_| (g.clone(), self.clone()))
+                .map(|_| (g.speculative_clone(), self.clone()))
                 .collect::<Vec<_>>();
             let intents = pool.map_stateful(batch.len(), states, move |(game, ai), indices| {
                 indices
                     .map(|index| {
-                        let mut branch = game.clone();
+                        let mut branch = game.speculative_clone();
                         let mut planner = ai.clone();
                         let intent = planner.plan_general_unit_turn(
                             &mut branch,
@@ -21162,7 +21166,7 @@ impl AdvancedAi {
             }
             let mut best: Option<(f64, Action)> = None;
             for action in candidates {
-                let mut next = g.clone();
+                let mut next = g.speculative_clone();
                 if next.apply(pid, &action).is_err() {
                     continue;
                 }
