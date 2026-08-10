@@ -651,7 +651,10 @@ class AgentChunkLocalLimitTest(unittest.TestCase):
     value off an existing table, or reuse a neighbouring one.
     """
 
-    LIMIT = 200
+    # `luac -l` reports one more register than this source proxy counts (the
+    # current file is 198 locals / 199 slots). Keep the proxy below Lua's
+    # 200-slot ceiling so the next file-scope local fails in CI as well.
+    LIMIT = 199
 
     def test_main_chunk_locals_stay_under_the_limit(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
