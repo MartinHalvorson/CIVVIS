@@ -8318,3 +8318,45 @@ and cannot clear parity; 400 maps gives ±4.9 and can. That matrix is running.
 **Nothing about the shipped agent changes in this entry.** What lands is the arm,
 the mechanism, and 1000 maps of deployment evidence, so the gate result — either
 way — is read against a record rather than a memory.
+
+### ★★★★ Gate PASS, and the floor is removed
+
+The 200-pair matrix rejected on interval width. Re-run at the resolution the
+effect needs:
+
+```
+ai_eval advanced_without_city_target_floor advanced --matrix --pairs 400 --seed 8600000
+
+  compact-standard   (NoRegression)  49.8% (CI 44.9..54.7)  Elo  -1   57/55   p=0.9248  ACCEPT
+  deployment-online  (Strength)      55.9% (CI 51.0..60.7)  Elo +41  125/65  p=0.0000  ACCEPT
+
+  multi-profile promotion gate: PASS — cleared every required profile
+```
+
+Five runs now agree: +30, +29, +34, +41 on deployment shapes, flat on the
+compact board. **`promoted_policy_envoy` no longer sets
+`city_target_floor`.** `plan_city_target` stays — the land-aware plan is a
+different mechanism and is not what was measured.
+
+⚠ **One consequence is inside the measurement and worth naming.**
+`desired_cities` is `floor + turn / cadence`, so removing the floor lowers what
+the ramp *reaches*, not only where it starts: the endgame window now tops out
+at six cities where it reached nine.
+`expansion_window_reaches_its_nine_city_target_before_endgame` failed on exactly
+that and has been renamed and re-pinned rather than silently adjusted — the
+nine-city reach was part of what cost the thirty Elo, and the agent that passed
+the gate is the one that reaches six. The test still pins that the window opens,
+that the plan is Expansion, and that a settler is not vetoed, so a regression
+that stops the ramp climbing at all still fails.
+
+`advanced_without_city_target_floor` now builds the production controller and is
+declared effectively `advanced`, so the old command fails closed as self-play.
+`advanced_wide_opening` becomes a treatment again and reads its six from
+`PRODUCTION_CITY_TARGET_FLOOR`, which is retained for that purpose with its
+history attached.
+
+**What this cost to find, stated plainly for the next reader:** the floor
+shipped on oracle headroom — "the point at which the expansion oracle first
+showed decisive headroom". Oracle headroom is what a subsystem is worth when
+granted for free. It is not what a treatment can reach, and the gap between
+those two quantities was thirty Elo pointing the wrong way.

@@ -388,6 +388,12 @@ pub const PRE_2026_08_10_D_HOLY: f64 = 2.0;
 /// already plays rather than a number invented for the arm.
 pub const PRE_PROMOTION_CITY_TARGET_FLOOR: usize = 3;
 
+/// The floor `advanced_wide_opening` tests, read from the one place that
+/// defines it so the arm and the history cannot drift apart.
+fn civvis_production_city_target_floor() -> usize {
+    crate::ai::PRODUCTION_CITY_TARGET_FLOOR
+}
+
 /// Games-weighted `settle_food` of the top third of the shipped league roster
 /// by outright 8-player win rate, against the bottom third's 1.19 and the
 /// shipped 1.2. Read by `advanced_settle_food`; see that arm.
@@ -1722,6 +1728,11 @@ fn artifact_effective_alias_from(
         // reverted, so it is `advanced` under another name and its comparisons
         // must fail closed as self-play.
         ArmKind::AdvancedHolyV0 => ArmKind::Advanced,
+        // The production floor was removed on 2026-08-10, so withholding it now
+        // builds the production controller. Retained under its own name because
+        // `docs/EVAL.md` reports five runs against it; declared effectively
+        // `advanced` so the pair fails closed as self-play.
+        ArmKind::AdvancedWithoutCityTargetFloor => ArmKind::Advanced,
         ArmKind::AdvancedBankingDedication => advanced_fallback,
         _ => kind,
     }
@@ -2090,9 +2101,13 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // Treatment for the city-target axis: identical to `advanced` except
         // that the target ramp starts at six rather than three. See
         // `AdvancedAi::city_target_floor`, #554 and #569.
+        // ⚠ Since 2026-08-10 this is a treatment again rather than a
+        // re-labelling of production: `promoted_policy_envoy` no longer sets
+        // the floor, because withholding it passed the promotion matrix at
+        // +41 Elo on deployment-online.
         "advanced_wide_opening" => {
             let mut ai = AdvancedAi::new();
-            ai.city_target_floor = 6;
+            ai.city_target_floor = civvis_production_city_target_floor();
             Box::new(ai)
         }
         // Treatment for the city-target axis: identical to `advanced` except
@@ -3907,7 +3922,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_roster_live_keep_districts" => (Vec::new(), "advanced_roster_live_keep_districts"),
         "advanced_diplomatic_opening" => (Vec::new(), "advanced_diplomatic_opening"),
         "advanced_without_bounded_recovery" => (Vec::new(), "advanced_without_bounded_recovery"),
-        "advanced_without_city_target_floor" => (Vec::new(), "advanced_without_city_target_floor"),
+        "advanced_without_city_target_floor" => (Vec::new(), "advanced"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -5206,8 +5221,11 @@ mod tests {
                 "live_without_war_reinforcement",
                 "live_without_war_patience",
             ];
-            const SCRIPTED_ALIASES: [&str; 2] =
-                ["advanced_policy_envoy_priority", "advanced_holy_v0"];
+            const SCRIPTED_ALIASES: [&str; 3] = [
+                "advanced_policy_envoy_priority",
+                "advanced_holy_v0",
+                "advanced_without_city_target_floor",
+            ];
             assert!(
                 !resolved.artifacts.is_empty()
                     || SCRIPTED.contains(name)

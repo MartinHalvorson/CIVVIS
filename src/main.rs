@@ -885,7 +885,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// A test doc comment only: the evidence ledger for what
 /// `promoted_policy_envoy` enables. No constructor moved and
 /// `legacy()` is untouched. Compatibility re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5d00_de77_23e4_6aa8;
+/// The production city-target floor was removed from
+/// `promoted_policy_envoy`. `AdvancedAi::legacy()` builds through
+/// `configured`, never that constructor, and its floor was and remains
+/// 3 — pinned by the same test that caught this. Compatibility re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc75f_852b_bf26_6bda;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
