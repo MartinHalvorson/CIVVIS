@@ -18742,6 +18742,16 @@ impl Game {
                 // whatever separates the two sides is play rather than
                 // roster.
                 && (self.tactics.unique_units || spec.unique_to.is_none())
+                // At sea, only what can put to sea. A naval battlefield's
+                // city stands on an islet a few tiles across, and every enemy
+                // in the battle is afloat: a chariot built there has nowhere
+                // to march and nothing it can reach. Measured on a diameter-8
+                // ocean, an ungated side spent most of a sixty-turn battle's
+                // production on land units that never left their own island —
+                // which is not a handicap, since both sides do it, but it is
+                // half the arena's economy going nowhere.
+                && (!self.map_script.is_naval_battlefield()
+                    || spec.domain.as_deref() == Some("sea"))
         })
     }
 
@@ -70051,6 +70061,67 @@ mod district_mechanics {
             assert_eq!(owned.len(), 1, "seat {owner} opens with one city");
             assert!(!game.rules.is_water(&game.map.tiles[&owned[0]]), "a city needs ground");
         }
+    }
+
+    /// A naval battle can actually be won: a galley takes the enemy port.
+    ///
+    /// This is the clause that makes the mode a battle rather than a timed
+    /// exhibition, and it is not obvious from either half on its own. A city
+    /// can only be occupied by a unit that can stand on its tile, and every
+    /// unit in a naval battle is a ship — so the mode reads like one whose
+    /// objective no side can reach. It is reachable because a naval melee
+    /// unit is Civ 6's exception: `passable_for` lets a sea class enter a
+    /// City Center, which is what lets a galley attack and capture a coastal
+    /// city. The port is on an islet, so it is coastal by construction.
+    ///
+    /// Pinned here on a real ocean arena rather than on a hand-built board,
+    /// because what is being claimed is about this map type: that the city
+    /// the mode seats is one the fleet it deals can take.
+    #[test]
+    fn a_galley_can_take_the_naval_arenas_port() {
+        let mut game = Game::new_with(GameOptions {
+            map_script: MapScript::TacticsOcean,
+            map_topology: MapTopology::Planet,
+            ..GameOptions::new(2, 40, 18, 90_412, 250, 3)
+        });
+        let (city, port) = game
+            .cities
+            .iter()
+            .find(|(_, city)| city.owner == 1)
+            .map(|(id, city)| (*id, city.pos))
+            .expect("seat 1 opens with a port");
+
+        // Water alongside it, which an islet always has — and which the
+        // defending squadron is sitting on, because it deployed outward from
+        // this very tile. That the port opens ringed by its own fleet is the
+        // mode working; it is not what this test is about, so one berth is
+        // cleared to stand the attacker in.
+        let berth = game
+            .nbrs(port)
+            .into_iter()
+            .find(|pos| {
+                game.map
+                    .get(*pos)
+                    .is_some_and(|tile| game.rules.is_water(tile) && game.rules.is_passable(tile))
+            })
+            .expect("a port has water alongside it");
+        for defender in game.units_at(berth) {
+            game.remove_unit(defender);
+        }
+        let galley = game.spawn_unit("galley", 0, berth);
+
+        // Taken down to its last point by the bombardment a fleet arrives
+        // with, so what is under test is the capture rather than the grind.
+        game.cities.get_mut(&city).unwrap().hp = 1;
+        assert!(
+            game.legal_actions(0).into_iter().any(|action| matches!(
+                action,
+                Action::Attack { unit, target } if unit == galley && target == port
+            )),
+            "a galley alongside an enemy port must be able to attack it"
+        );
+        game.apply(0, &Action::Attack { unit: galley, target: port }).expect("the assault resolves");
+        assert_eq!(game.cities[&city].owner, 0, "the port changes hands");
     }
 
     /// A naval flag stands on the water off its own shore, never on the island

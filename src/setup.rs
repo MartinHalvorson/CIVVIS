@@ -1274,6 +1274,13 @@ impl TacticsRules {
     /// about the battle. Fog is off, and deliberately — the Combined Fleet
     /// could see the British columns coming for four hours and its problem
     /// was never finding them.
+    /// A naval battlefield keeps its city, and deliberately. A galley is a
+    /// naval *melee* unit and takes a coastal city exactly as a warrior takes
+    /// an inland one — the rule is Civ 6's and the engine already carries it
+    /// — so the port is a real objective at sea rather than an unreachable
+    /// one, and measured, it is the only thing that makes the two fleets sail
+    /// at each other at all: stripped of it, both squadrons sat in their own
+    /// anchorages for four hundred turns and lost one ship between them.
     pub fn for_script(self, script: MapScript) -> Self {
         if !script.is_scenario() {
             return self.sanitized();
