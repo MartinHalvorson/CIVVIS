@@ -4442,6 +4442,39 @@ local CIVVIS_OWNED_BLOCKERS = {
 	ENDTURN_BLOCKING_RESEARCH = true,
 	ENDTURN_BLOCKING_CIVIC = true,
 	ENDTURN_BLOCKING_PRODUCTION = true,
+	-- ★★★★★ THE TWO CIVVIS ALREADY DECIDES AND THE HEURISTICS ANSWERED OVER.
+	--
+	-- Measured on live run `civvis-20260810T040916Z` (Rome/Trajan, Settler,
+	-- Online), which reported `orders_source: civvis` on 114 of 114 turns:
+	--
+	--     t21  ENDTURN_BLOCKING_PANTHEON         answered "BELIEF_DANCE_OF_THE_AURORA"
+	--     t--  ENDTURN_BLOCKING_FILL_CIVIC_SLOT  answered "policies+3"
+	--
+	-- while the orders database for the same game held **1 `pantheon` order and
+	-- 26 `policy_deck` orders**. CIVVIS had an opinion on both and the
+	-- hand-written ladder answered first, because neither name was in this list
+	-- nor in `SOFT_BLOCKERS` -- the only two ways a blocker is kept off the
+	-- heuristics.
+	--
+	-- ⚠ AND CIVVIS ONLY WON THE PANTHEON BY LUCK. `choosePantheon` walks
+	-- `GameInfo.Beliefs()` and requests the FIRST untaken pantheon belief, which
+	-- is why the answer above is Dance of the Aurora -- database order, not a
+	-- choice. Both requests went to the engine and CIVVIS's Divine Spark is what
+	-- the t22 state shows, so the race was won rather than avoided. A race whose
+	-- outcome is right is not a mechanism that works.
+	--
+	-- The existing semantics are exactly what these need and nothing else
+	-- changes: decline while the reply is `pending`, report `civvis_complete`
+	-- once it has landed, and let the soft-blocker forfeit (bounded at the
+	-- SECOND sighting for a `civvis_complete` answer) clear a prompt CIVVIS
+	-- turns out to have no opinion on.
+	--
+	-- ⚠ Deliberately NOT `ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE`, though
+	-- CIVVIS issues `government` orders too: it did not appear in this run, so
+	-- adding it would be reasoning rather than measurement. The comment above
+	-- keeps this list explicit for exactly that reason.
+	ENDTURN_BLOCKING_PANTHEON = true,
+	ENDTURN_BLOCKING_FILL_CIVIC_SLOT = true,
 };
 
 -- Answer the decision the game says it is waiting on. Returning the name of
