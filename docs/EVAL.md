@@ -7513,9 +7513,11 @@ than a re-labelled copy of the new one.
 
 ## 2026-08-10 — ★★★★ eight of the forty genes cannot change a game, and they are two whole subsystems
 
-Round 1 shipped `d_holy` at +20 Elo. This round took the roster's two next
-separations to the evaluator, got two hard nulls, noticed what the nulls had in
-common, and went looking for the general case.
+Round 1 shipped `d_holy` at +20 Elo (paired-map score 52.9%, 95% Wilson CI
+50.1%..55.7%, 1200 maps at `--players 4 --turns 500 --seed 4400000`, gate PASS;
+PR #1469). This round took the roster's two next separations to the
+evaluator, got two hard nulls, noticed what the nulls had in common, and went
+looking for the general case.
 
 ### The two nulls
 
