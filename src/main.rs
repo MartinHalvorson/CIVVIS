@@ -1014,11 +1014,12 @@ fn auto_dimension(args: &[String], key: &str, players: i64, width: bool) -> i32 
     // `--height` still name any other.
     let (default_width, default_height) = if map_script(args).is_battlefield() {
         let script = map_script(args);
-        let arena = setup::BATTLEFIELD_SIZES
+        let sizes = setup::battlefield_sizes();
+        let arena = sizes
             .iter()
             .find(|size| size.script == script)
             .copied()
-            .unwrap_or(setup::BATTLEFIELD_SIZES[0]);
+            .unwrap_or(sizes[0]);
         // A scenario is drawn at the size of its chart and no other: resizing
         // it would read the chart through a window and lose the coastline the
         // battle was fought against. So this one is not a default, and

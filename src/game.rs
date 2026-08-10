@@ -18167,7 +18167,11 @@ impl Game {
                 // A scenario deals each side its own historical order of
                 // battle instead, on the ground that side actually held.
                 if map_script.is_scenario() {
-                    g.deploy_trafalgar_fleet(i);
+                    if map_script == MapScript::Trafalgar {
+                        g.deploy_trafalgar_fleet(i);
+                    } else {
+                        g.deploy_historical_scenario(i, *pos);
+                    }
                 } else {
                     g.deploy_battlefield_army(i, *pos);
                 }
@@ -18542,6 +18546,34 @@ impl Game {
                 continue;
             }
             self.spawn_unit(crate::trafalgar::SHIP_OF_THE_LINE, pid, pos);
+        }
+    }
+
+    /// Deploy a catalogue scenario's compact order of battle around its fixed
+    /// chart anchor.  The scenario data names real ruleset units, so the
+    /// briefing and the opening board agree even though the engine compresses
+    /// a regiment, squadron, or carrier group into one Civ-style unit.
+    fn deploy_historical_scenario(&mut self, pid: usize, anchor: Pos) {
+        let Some(units) = crate::historical_scenarios::force_units(self.map_script, pid) else {
+            return;
+        };
+        let mut ground: Vec<Pos> = self.map.tiles.keys().copied().collect();
+        ground.sort_by_key(|position| (self.wdist(anchor, *position), *position));
+        for kind in units {
+            let Some(spec) = self.rules.units.get(*kind) else {
+                continue;
+            };
+            let wants_water = spec.domain.as_deref() == Some("sea");
+            let position = ground.iter().copied().find(|position| {
+                self.map.get(*position).is_some_and(|tile| {
+                    self.rules.is_passable(tile)
+                        && self.rules.is_water(tile) == wants_water
+                        && self.units_at(*position).is_empty()
+                })
+            });
+            if let Some(position) = position {
+                self.spawn_unit(kind, pid, position);
+            }
         }
     }
 

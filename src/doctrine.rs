@@ -1439,7 +1439,7 @@ pub fn build(spec: &Position, seed: u64) -> Option<Game> {
             // can never end a position before the ledger's deadline does. A
             // position is read at `spec.turns` and never asks who "won", so
             // the two clocks must not be allowed to disagree.
-            turn_limit: crate::setup::TacticsRules::TURN_LIMITS[3],
+            turn_limit: *crate::setup::TacticsRules::TURN_LIMITS.last().expect("turn ladder"),
         },
         ..crate::game::GameOptions::new(2, spec.width, spec.height, seed, spec.turns + 8, 0)
     });

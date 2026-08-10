@@ -1269,6 +1269,33 @@ fn flat_land(
         // the chart in [`crate::trafalgar`]; this only says which of its
         // cells are dry.
         MapScript::Trafalgar => crate::trafalgar::chart_land(wm),
+        MapScript::Kadesh
+        | MapScript::Marathon
+        | MapScript::Thermopylae
+        | MapScript::Gaugamela
+        | MapScript::Cannae
+        | MapScript::Actium
+        | MapScript::Hastings
+        | MapScript::Hattin
+        | MapScript::Agincourt
+        | MapScript::Constantinople1453
+        | MapScript::Lepanto
+        | MapScript::SpanishArmada
+        | MapScript::Waterloo
+        | MapScript::Gettysburg
+        | MapScript::Stalingrad
+        | MapScript::Normandy
+        | MapScript::Midway
+        | MapScript::Inchon
+        | MapScript::DienBienPhu
+        | MapScript::SixDayWar
+        | MapScript::DesertStorm
+        | MapScript::Fallujah
+        | MapScript::Mosul => {
+            let scenario = crate::historical_scenarios::by_script(script)
+                .expect("every scenario map script has a catalogue row");
+            crate::historical_scenarios::land_tiles(wm, scenario)
+        }
         // Answered before the shape was dispatched on, because Earth's
         // coastlines are read rather than rolled and are the same coastlines
         // on either shape. The two choices differ only when starts are seated.
@@ -2860,6 +2887,29 @@ fn large_lake_budget(script: MapScript, num_continents: usize) -> usize {
         MapScript::Battlefield => 0,
         // And a scenario's water is its chart's, down to the tile.
         MapScript::Trafalgar => 0,
+        MapScript::Kadesh
+        | MapScript::Marathon
+        | MapScript::Thermopylae
+        | MapScript::Gaugamela
+        | MapScript::Cannae
+        | MapScript::Actium
+        | MapScript::Hastings
+        | MapScript::Hattin
+        | MapScript::Agincourt
+        | MapScript::Constantinople1453
+        | MapScript::Lepanto
+        | MapScript::SpanishArmada
+        | MapScript::Waterloo
+        | MapScript::Gettysburg
+        | MapScript::Stalingrad
+        | MapScript::Normandy
+        | MapScript::Midway
+        | MapScript::Inchon
+        | MapScript::DienBienPhu
+        | MapScript::SixDayWar
+        | MapScript::DesertStorm
+        | MapScript::Fallujah
+        | MapScript::Mosul => 0,
     }
 }
 
@@ -3878,6 +3928,10 @@ pub fn generate_with_script_and_leader_starts(
         paint_battlefield_ground(&mut wm, rng);
     } else if script == MapScript::Trafalgar {
         crate::trafalgar::paint_chart(&mut wm);
+    } else if script.is_scenario() {
+        let scenario = crate::historical_scenarios::by_script(script)
+            .expect("every scenario map script has a catalogue row");
+        crate::historical_scenarios::paint_ground(&mut wm, scenario);
     }
 
     // --- spawns. Civilization VI does not search for good plots and hope they
@@ -4037,9 +4091,17 @@ pub fn generate_with_script_and_leader_starts(
     // it actually was, and which of the two is seat 0 decides who moves first.
     // So this is answered before the shuffle below and skips it — swapping
     // Nelson and Villeneuve would be a different battle with the same name.
-    let scenario_seats = (script.is_scenario() && num_major_spawns == 2)
-        .then(|| crate::trafalgar::major_starts(&wm))
-        .flatten();
+    let scenario_seats = if script.is_scenario() && num_major_spawns == 2 {
+        if script == MapScript::Trafalgar {
+            crate::trafalgar::major_starts(&wm)
+        } else {
+            let scenario = crate::historical_scenarios::by_script(script)
+                .expect("every scenario map script has a catalogue row");
+            crate::historical_scenarios::major_starts(&wm, scenario)
+        }
+    } else {
+        None
+    };
     let mut spawns = if let Some(starts) = scenario_seats {
         starts
     } else if let Some(mut starts) = lobe_ends.or(planet_ends).or(arena_ends) {
@@ -9060,6 +9122,7 @@ mod river_tests {
                 MapScript::Trafalgar => {
                     unreachable!("a scenario is drawn from its chart, not rolled")
                 }
+                _ => unreachable!("a named historical scenario is not a rolled world type"),
             }
 
             let occupied_components = components
