@@ -9644,7 +9644,6 @@ pub fn rebuild_from_state(
     if state.faith >= 0 {
         game.players[0].faith = state.faith as f64;
     }
-    apply_player_ages(&mut game, state);
     apply_player_religion(&mut game, state, &mut unmapped);
     // Cheap: `rules` is an Arc. Cloned so the city loop below can consult it while
     // holding a mutable borrow of `game`.
@@ -10261,6 +10260,14 @@ pub fn rebuild_from_state(
     // there left the block set permanently empty and the gate measured no change.
     game.blocked_promotions =
         blocked_promotions_from(&state.refused_promotions, &unit_ids, &game.rules);
+
+    // ⚠ LAST, and deliberately so. Reconstruction founds this empire's cities on
+    // the board, and founding a city AWARDS ERA SCORE — a four-city Rome
+    // arrived at Firaxis's 31 plus five of CIVVIS's own. Firaxis's number is
+    // the reading; anything the rebuild scored along the way is an artefact of
+    // how the board was assembled, so the host's answer is written after it
+    // rather than before.
+    apply_player_ages(&mut game, state);
 
     record_host_observed(&mut game);
     Reconstruction {
@@ -10902,7 +10909,6 @@ impl LiveMirror {
         if state.faith >= 0 {
             self.game.players[0].faith = state.faith as f64;
         }
-        apply_player_ages(&mut self.game, state);
         apply_player_religion(&mut self.game, state, &mut self.unmapped);
         if let Some(civ6) = &state.government {
             if let Some(name) = civvis_node_name(&self.game.rules.governments, civ6, "GOVERNMENT_") {
@@ -11603,6 +11609,10 @@ impl LiveMirror {
         apply_governor_state(&mut self.game, state, &mut self.unmapped);
         apply_observed_host_metrics(&mut self.game, state, &mut self.unmapped);
         block_loyalty_doomed_settler_sites(&mut self.game);
+        // After the city passes, for the same reason as on the rebuild path:
+        // planting a city awards era score, and Firaxis's reading must be what
+        // survives rather than what the sync happened to add on its way there.
+        apply_player_ages(&mut self.game, state);
         // Last, because it reads the finished board: every rival, minor and
         // barbarian for this turn has been re-planted by now, and the previous
         // turn's sightings were removed with them.
