@@ -7876,3 +7876,76 @@ matter, never a sufficient one."** The opening book is the most reachable block
 in the genome and deleting it costs nothing. The census's *inert* column is
 sound — a gene that cannot diverge certainly cannot pay — but its *live* column
 ranks reachability, not leverage.
+
+
+## 2026-08-10 — ★★★ the standard evaluator profile seats no city-states, and the Diplomacy lane is scored so it can never be entered
+
+Acting on the actuation/valuation prior recorded above: look for something the
+agent does **not do at all**. The adaptive census names one immediately —
+Diplomacy takes **0.9% of observed player-turns** against Conquest's 26%, while
+diplomatic victories (19) and domination victories (22) arrive at nearly the
+same rate. Two findings came out of chasing it, and the second is worth more
+than the first.
+
+### The scoring asymmetry is real
+
+Every lane in `victory_focus` is scored prospectively except one. Religion is
+handed **46** for nothing more than `religious_opening_viable`, and 55 once a
+rival founds. Diplomacy alone scored `dvp * 5 + suzerain * 6` — **purely
+retrospective**, zero until the empire already holds diplomatic points or a
+suzerainty. The lane is picked by an argmax over those scores, and a lane that
+is never picked never emits the influence that would raise its own score.
+
+The reachability arithmetic is the point. Adoption is gated at
+`victory.progress >= 65`, so Diplomacy must reach 65 on `dvp * 5 + suzerain * 6`
+— roughly **eleven suzerainties**. The envoy census measures the agent holding
+**0.2**.
+
+`advanced_diplomatic_opening` gives the lane Religion's own opening figure when
+diplomatic victory is enabled and a met city-state is still unclaimed. The
+number is mirrored rather than tuned, so it loses every tie to Religion — which
+is deliberate, because Religion is the lane that converts here.
+
+### ⚠⚠⚠ `ai_eval --city-states` defaults to ZERO
+
+The first fires-check returned lane occupancy that was **byte-identical** between
+the arms. Instrumenting the treatment showed why: `minors=0`. **The stock
+evaluator profile seats no city-states at all**, so the treatment's own
+precondition — a met, unclaimed minor — is never true, and it returns 0 on every
+one of 973 calls.
+
+**Any arm whose treatment acts through city-states measures nothing on the
+default profile and reports a clean, meaningless null.** That covers envoys,
+influence, suzerainty and this lane — and the prize behind them is the largest
+the oracle harness has found: `Grant::Suzerain` at **56.7% against a 22.7%
+control**, p=0.0000 over 400 maps (PR #602).
+
+`ai_eval` now prints a warning when an arm on `MINOR_DEPENDENT_ARMS` is run at
+`--city-states 0`. Verified to fire on the stock profile and stay silent at
+`--city-states 4`.
+
+### The screen, once minors are seated
+
+With `--city-states 6 --players 6 --width 74 --height 46`, the mechanism fires:
+lane occupancy **1.4% → 2.9%**.
+
+```
+ai_eval advanced_diplomatic_opening advanced --players 6 --pairs 40 --turns 500
+  --city-states 6 --width 74 --height 46 --seed 5400000
+  paired-map score 42.5% (95% Wilson CI 28.5%..57.8%)  Elo-equivalent -53 (CI -160..+55)
+  paired direction 2 for / 30 neutral / 8 against      sign p = 0.1094
+```
+
+**Leaning negative and not resolved** — 40 maps is a screen, and the interval
+spans 215 points. Recorded as a screen, not a result. The arm stays off.
+
+What it establishes is that the mechanism is now *reachable*: the lane can be
+entered, at a dose that doubles its occupancy. Whether entering it more pays is
+open, and the honest reading of this screen is that a 46-point opening buys a
+dose too small to help and possibly large enough to hurt, by pulling seats out
+of Expansion into a lane whose resource — envoys — the census measures at
+**0.00 unspent**. Raising the dose without first fixing envoy *production* would
+be pushing harder on the same closed door.
+
+⚠ Note for anyone re-reading older numbers in this file: every `ai_eval` result
+recorded above was measured at `--city-states 0` unless it says otherwise.
