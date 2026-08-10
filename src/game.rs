@@ -33967,23 +33967,34 @@ impl Game {
         best.into_keys().filter(|p| *p != start).collect()
     }
 
-    /// Where a unit could end this turn if nothing were standing in its way:
-    /// [`Game::reachable`] with the stacking layer relaxed and every other
-    /// rule — terrain, cliffs, rivers, borders, hostile cities, and zone of
-    /// control, which still ends movement the moment it is entered — intact.
+    /// How far a unit reaches: everywhere it could stand at the end of a whole
+    /// turn's movement, read as though nothing were parked in the way.
     ///
-    /// This is a reading, never a permission. Nothing in the simulation may
-    /// move a unit here: a step onto an occupied tile is illegal and asking
-    /// this does not make it legal. It answers the question a watcher has
-    /// about somebody else's unit — how far does that thing threaten — for
-    /// which the friendly unit currently plugging the gap is noise, because it
-    /// can walk away or be killed long before the threat expires.
-    pub fn reachable_through_units(&self, uid: u32) -> Vec<Pos> {
-        let (start, moves) = match self.units.get(&uid) {
-            Some(u) => (u.pos, u.moves_left),
-            None => return vec![],
+    /// Two deliberate differences from [`Game::reachable`], which answers what
+    /// a unit's owner may legally do right now.
+    ///
+    /// It spends a *full* allowance rather than what is left. Outside its own
+    /// turn a unit has no movement points at all, so the honest answer to
+    /// "what can it do this instant" is almost always nothing — which is not
+    /// the question anyone points at an enemy to ask. The threat a Knight
+    /// poses does not switch off between its turns, and a reading that went
+    /// blank for every unit except the one currently acting would be empty
+    /// nearly all the time in the only mode that has no acting seat at all.
+    ///
+    /// And it reads through units. Whatever is standing on a tile can walk off
+    /// it or die on it well before the threat expires, so for this question it
+    /// is noise — while zone of control, terrain, cliffs, rivers, borders and
+    /// hostile cities all stay exactly as binding as they are for a real move,
+    /// because none of those move out of the way.
+    ///
+    /// This is a reading and never a permission. Nothing in the simulation may
+    /// move a unit by it: a step onto an occupied tile is illegal and asking
+    /// this does not make it legal.
+    pub fn threat_reach(&self, uid: u32) -> Vec<Pos> {
+        let Some(start) = self.units.get(&uid).map(|u| u.pos) else {
+            return vec![];
         };
-        let best = self.flow_past(uid, start, moves, true);
+        let best = self.flow_past(uid, start, self.unit_max_moves(uid), true);
         best.into_keys().filter(|p| *p != start).collect()
     }
 
@@ -61470,7 +61481,7 @@ mod combat_scenarios {
             "a tile with a unit on it is not somewhere its owner may legally move"
         );
         assert!(
-            g.reachable_through_units(mover).contains(&blocked),
+            g.threat_reach(mover).contains(&blocked),
             "the tile in the way is still inside the reach a watcher is shown"
         );
 
@@ -61491,7 +61502,7 @@ mod combat_scenarios {
             })
             .expect("a second-ring tile entered only through the blocked one");
         assert!(
-            g.reachable_through_units(mover).contains(&corner),
+            g.threat_reach(mover).contains(&corner),
             "two plains steps are two movement points; the corner is in reach"
         );
 
@@ -61507,7 +61518,7 @@ mod combat_scenarios {
         g.spawn_unit("warrior", 1, watcher);
         g.begin_turn(0);
         assert!(
-            !g.reachable_through_units(mover).contains(&corner),
+            !g.threat_reach(mover).contains(&corner),
             "zone of control does not move out of the way, so the reading keeps it"
         );
     }

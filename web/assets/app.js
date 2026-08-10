@@ -17781,11 +17781,14 @@ function drawEdgeArrow(mx, my, dx, dy, out, back, k) {
 // unit is, it is everywhere it could be next — and it is the one thing a
 // spectator watching two AIs fight cannot work out from the picture.
 //
-// A press each. The left button asks for the movement range: through whatever
-// is parked in the way, because that will have moved or died by the time it
-// matters, and stopped by zone of control, because that will not. The right
-// button asks what the unit sees, which is as much a question about the tile
-// as about the unit — a hill sees over woods a valley cannot.
+// A press each. The left button asks how far it reaches on a turn's movement
+// — a whole allowance rather than whatever is left of one, because outside
+// its own turn a unit has none left and the threat it poses does not switch
+// off in between; through whatever is parked in the way, because that will
+// have moved or died by the time it matters; and stopped by zone of control,
+// because that will not. The right button asks what the unit sees, which is
+// as much a question about the tile as about the unit — a hill sees over
+// woods a valley cannot.
 //
 // Nothing here re-derives either answer. Step costs, rivers, cliffs, borders,
 // ZOC, sight promotions and elevation are engine rules; the client asks
@@ -17847,11 +17850,11 @@ async function askUnitIntel(unit, layer) {
   const same = unitIntel?.id === unit.id;
   const showMove = layer === "move" || (same && !!unitIntel.showMove);
   const showSight = layer === "sight" || (same && !!unitIntel.showSight);
-  // Where the unit stood when this was asked. The re-ask below compares
-  // against the *state's* own numbers rather than the answer's, which are
-  // rounded for the wire: comparing the two would differ on almost every
-  // fraction of a movement point and re-ask ten times a second forever.
-  const standing = {at:key(unit.pos), moves:unit.moves_left};
+  // Where the unit stood when this was asked. Only that: the reach is a whole
+  // turn's allowance, so spending movement does not change either answer, and
+  // re-asking on every fraction of a point would be ten requests a second for
+  // an identical reply.
+  const standing = {at:key(unit.pos)};
   // Stand the subject up before the answer arrives, so a second press toggles
   // the layer it already asked for instead of asking again.
   unitIntel = {id:unit.id, kind:unit.kind, owner:unit.owner, ...standing,
@@ -17882,10 +17885,22 @@ async function askUnitIntel(unit, layer) {
 // One press on a tile. `layer` is the button's question. Pressing the same
 // question on the same unit puts it away again, which is how a viewer gets
 // the map back without having to find empty ground to click on.
-function readUnitIntel(pos, layer) {
+function readUnitIntel(pos, layer, dismissOnMiss = true) {
   if (!state) return false;
   const subject = intelSubjectAt(key(pos));
-  if (!subject) { const had = clearUnitIntel(); if (had) modeline(); return had; }
+  // Landing on bare ground puts the reading away — that is how the map comes
+  // back — but only for the primary press, which is the selection gesture and
+  // means "this instead". A secondary press that misses does nothing at all:
+  // pressing a unit starts the camera following it, and following it moves and
+  // magnifies the board under the pointer, so the second question is routinely
+  // asked a hex to one side of where the first was answered. Dismissing there
+  // would make the pair of presses unusable exactly when they are wanted.
+  if (!subject) {
+    if (!dismissOnMiss) return false;
+    const had = clearUnitIntel();
+    if (had) modeline();
+    return had;
+  }
   const shown = layer === "move" ? unitIntel?.showMove : unitIntel?.showSight;
   if (unitIntel && unitIntel.id === subject.id && shown) {
     clearUnitIntel(); modeline(); return true;
@@ -17901,7 +17916,7 @@ function syncUnitIntel() {
   if (!unitIntel) return;
   const unit = (state?.units || []).find(candidate => candidate.id === unitIntel.id);
   if (!unit) { clearUnitIntel(); modeline(); return; }
-  if (key(unit.pos) === unitIntel.at && unit.moves_left === unitIntel.moves) return;
+  if (key(unit.pos) === unitIntel.at) return;
   // Re-asking with a layer it is already showing keeps both up: the argument
   // is the question being *added*, and every layer already standing survives.
   askUnitIntel(unit, unitIntel.showMove ? "move" : "sight");
@@ -25707,7 +25722,7 @@ document.getElementById("map-lens-exit").onclick = () => setMapLens(null);
 function unitIntelNote() {
   if (!unitIntel) return "";
   const said = [];
-  if (unitIntel.showMove) said.push("reach");
+  if (unitIntel.showMove) said.push("reach on a turn");
   if (unitIntel.showSight)
     said.push(unitIntel.sightRange ? `sight ${unitIntel.sightRange}` : "sight");
   const who = state ? civName(unitIntel.owner) : `Player ${unitIntel.owner}`;
@@ -26943,7 +26958,7 @@ function endMapPointer(ev) {
     // spectator has no unit to order and neither does a player who has not
     // selected one, so there the secondary press is free to ask the other
     // question about whatever is standing here: what does it see?
-    if (!sel) { if (pos) readUnitIntel(pos, "sight"); draw(); return; }
+    if (!sel) { if (pos) readUnitIntel(pos, "sight", false); draw(); return; }
     if (!pos) { draw(); return; }
     issueSelectedUnitOrder(pos);
     return;

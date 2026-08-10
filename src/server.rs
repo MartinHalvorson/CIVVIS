@@ -14972,7 +14972,9 @@ mod tests {
         // The two questions, one press each, and the second only where it is
         // not already an order.
         assert!(js.contains(r#"readUnitIntel(pos, "move")"#));
-        assert!(js.contains(r#"if (!sel) { if (pos) readUnitIntel(pos, "sight"); draw(); return; }"#));
+        assert!(js.contains(
+            r#"if (!sel) { if (pos) readUnitIntel(pos, "sight", false); draw(); return; }"#
+        ));
         // Both readings are drawn on the flat board and on the globe.
         assert!(js.contains("function drawFlatUnitIntel()"));
         assert!(js.contains("function drawPlanetUnitIntel(cells)"));

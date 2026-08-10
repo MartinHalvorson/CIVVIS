@@ -160,8 +160,8 @@ pub fn visibility(g: &Game, pid: usize) -> (BTreeSet<Pos>, BTreeSet<Pos>) {
     (vis, explored)
 }
 
-/// What can be read off one unit by somebody looking at it: where it could
-/// move this turn, and what it can see from where it stands.
+/// What can be read off one unit by somebody looking at it: how far it
+/// reaches on a turn's movement, and what it can see from where it stands.
 ///
 /// The observation deliberately does not carry this for every unit — one
 /// flow per unit per frame dominated late-game spectator responses, which is
@@ -181,8 +181,8 @@ pub fn visibility(g: &Game, pid: usize) -> (BTreeSet<Pos>, BTreeSet<Pos>) {
 ///   perimeter of that reach would draw the coastline of a continent nobody
 ///   in this game has sailed to.
 ///
-/// The movement set reads through other units on purpose — see
-/// [`Game::reachable_through_units`]. The sight set is the unit's real one,
+/// The movement set spends a whole turn's allowance and reads through other
+/// units on purpose — see [`Game::threat_reach`]. The sight set is real,
 /// terrain and promotions included, which is what makes a hill worth pointing
 /// at.
 pub fn unit_intel(g: &Game, viewer: Option<usize>, uid: u32) -> Value {
@@ -220,7 +220,7 @@ pub fn unit_intel(g: &Game, viewer: Option<usize>, uid: u32) -> Value {
         "pos": [unit.pos.0, unit.pos.1],
         "moves_left": round1(unit.moves_left),
         "sight": g.unit_sight(uid),
-        "reachable": known(g.reachable_through_units(uid)),
+        "reachable": known(g.threat_reach(uid)),
         "vision": known(g.unit_visible_tiles(uid).into_iter().collect()),
     })
 }
