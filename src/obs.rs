@@ -160,6 +160,71 @@ pub fn visibility(g: &Game, pid: usize) -> (BTreeSet<Pos>, BTreeSet<Pos>) {
     (vis, explored)
 }
 
+/// What can be read off one unit by somebody looking at it: how far it
+/// reaches on a turn's movement, and what it can see from where it stands.
+///
+/// The observation deliberately does not carry this for every unit — one
+/// flow per unit per frame dominated late-game spectator responses, which is
+/// why `reachable` is built only for the seat that can actually act. So it is
+/// asked for one unit at a time, when a viewer points at one.
+///
+/// `viewer` is the seat the question is asked on behalf of, or `None` for the
+/// omniscient spectator, and it is the *same* seat the observation was built
+/// for — otherwise this hands back ground that view has never been shown. Two
+/// rules follow from that and neither is optional:
+///
+/// * A unit nobody in that view can see is not a unit to ask about. The answer
+///   is an error rather than an empty range, because "no range" is itself a
+///   claim about a unit the viewer is not entitled to have located.
+/// * Both sets are clipped to ground that view has explored. A Knight's reach
+///   runs over country its owner knows and the watcher may not, and the
+///   perimeter of that reach would draw the coastline of a continent nobody
+///   in this game has sailed to.
+///
+/// The movement set spends a whole turn's allowance and reads through other
+/// units on purpose — see [`Game::threat_reach`]. The sight set is real,
+/// terrain and promotions included, which is what makes a hill worth pointing
+/// at.
+pub fn unit_intel(g: &Game, viewer: Option<usize>, uid: u32) -> Value {
+    let Some(unit) = g.units.get(&uid) else {
+        return json!({"error": "no such unit"});
+    };
+    let seen: Option<BTreeSet<Pos>> = match viewer {
+        None => None,
+        Some(pid) => {
+            let (vis, explored) = visibility(g, pid);
+            let at = unit.air_patrol_pos.unwrap_or(unit.pos);
+            let watched = unit.owner == pid
+                || (vis.contains(&at)
+                    && g.visibility_viewers(pid)
+                        .into_iter()
+                        .any(|watcher| g.unit_visible_to(uid, watcher)));
+            if !watched {
+                return json!({"error": "that unit is not in view"});
+            }
+            Some(explored)
+        }
+    };
+    let known = |tiles: Vec<Pos>| -> Vec<Value> {
+        tiles
+            .into_iter()
+            .filter(|pos| seen.as_ref().is_none_or(|explored| explored.contains(pos)))
+            .map(|pos| json!([pos.0, pos.1]))
+            .collect()
+    };
+    json!({
+        "error": Value::Null,
+        "unit": uid,
+        "owner": unit.owner,
+        "kind": unit.kind,
+        "pos": [unit.pos.0, unit.pos.1],
+        "moves_left": round1(unit.moves_left),
+        "sight": g.unit_sight(uid),
+        "reachable": known(g.threat_reach(uid)),
+        "vision": known(g.unit_visible_tiles(uid).into_iter().collect()),
+    })
+}
+
 /// Read-only, fog-of-war view used when a spectator chooses a civilization's
 /// perspective. It intentionally omits expensive interactive affordances such
 /// as per-unit reachability because the AI remains in control of the seat.
@@ -1706,6 +1771,62 @@ fn merge(base: &mut Value, ext: Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Pointing at a unit is a question asked through the same fog the
+    /// observation was built with, and it has to answer with the same
+    /// discipline: the omniscient spectator is told everything, a seat is told
+    /// nothing at all about a unit it cannot see, and what a seat *is* told
+    /// stops at the edge of the ground it has explored. Without the last of
+    /// those, the perimeter of a Knight's reach draws the coastline of a
+    /// continent nobody in the game has sailed to.
+    #[test]
+    fn unit_intel_answers_the_spectator_and_keeps_a_seat_inside_its_own_fog() {
+        let game = Game::new(2, 24, 18, 91_143, 60, 0);
+        let (vis, explored) = visibility(&game, 0);
+        let hidden = game
+            .units
+            .values()
+            .find(|unit| unit.owner == 1 && !vis.contains(&unit.pos))
+            .expect("a rival unit out of sight on turn one")
+            .id;
+
+        let open = unit_intel(&game, None, hidden);
+        assert!(open["error"].is_null(), "the spectator sees the whole board");
+        assert_eq!(open["unit"], hidden);
+        assert!(
+            !open["vision"].as_array().expect("a vision set").is_empty(),
+            "a unit standing anywhere can see at least its own tile"
+        );
+
+        assert_eq!(
+            unit_intel(&game, Some(0), hidden)["error"],
+            "that unit is not in view",
+            "a seat may not ask about a unit it has not found"
+        );
+
+        // Its own unit is fair game, and every tile handed back is ground this
+        // seat has actually been to.
+        let mine = game
+            .units
+            .values()
+            .find(|unit| unit.owner == 0)
+            .expect("a starting unit")
+            .id;
+        let own = unit_intel(&game, Some(0), mine);
+        assert!(own["error"].is_null());
+        for field in ["reachable", "vision"] {
+            for tile in own[field].as_array().expect("a tile set") {
+                let pos = (
+                    tile[0].as_i64().expect("a column") as i32,
+                    tile[1].as_i64().expect("a row") as i32,
+                );
+                assert!(
+                    explored.contains(&pos),
+                    "{field} handed back {pos:?}, which this seat has never seen"
+                );
+            }
+        }
+    }
 
     /// The browser draws a flat chart by unrolling it about the camera, which
     /// is right for a world and wrong for an arena: a Tactics battlefield is
