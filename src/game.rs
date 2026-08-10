@@ -32895,7 +32895,12 @@ impl Game {
         }
     }
 
-    fn unit_max_moves(&self, uid: u32) -> f64 {
+    /// Full movement allowance for a fresh turn, including embarkation, tech,
+    /// policy, wonder, road, formation, and support effects. The live mirror
+    /// uses this after rebuilding a board because Civilization VI's exported
+    /// movement field is a remaining-movement observation, not a fresh-turn
+    /// allowance.
+    pub(crate) fn unit_max_moves(&self, uid: u32) -> f64 {
         self.unit_max_moves_at(uid, self.units[&uid].pos)
     }
 
