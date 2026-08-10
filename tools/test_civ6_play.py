@@ -91,6 +91,26 @@ class Civ6PlayTest(unittest.TestCase):
             "chatter while the game loads must extend the budget, not spend it",
         )
 
+    def test_startup_drains_events_after_the_loaded_marker(self) -> None:
+        """A single log read may contain the seat and first state as well."""
+        seen = []
+        polls = [[
+            {"ctx": "agent", "kind": "loaded"},
+            {"ctx": "agent", "kind": "seat"},
+            {"ctx": "agent", "kind": "state", "turn": 1},
+        ]]
+        now, monotonic, sleep = self._fake_clock()
+        script = iter(polls)
+        tail = SimpleNamespace(poll=lambda: next(script, []))
+        with mock.patch.object(civ6_play.time, "sleep", sleep), \
+             mock.patch.object(civ6_play.time, "monotonic", monotonic), \
+             mock.patch.object(civ6_play.env, "game_pids", return_value=[1]):
+            self.assertTrue(
+                civ6_play.wait_for_agent_start(tail, seen.append, seconds=6.0)
+            )
+        self.assertEqual([event["kind"] for event in seen],
+                         ["loaded", "seat", "state"])
+
     def test_a_silent_game_still_gives_up(self) -> None:
         """Patience must not become a hang: real silence still ends the wait."""
         self.assertFalse(self._run_wait([[]] * 50, 6.0))
