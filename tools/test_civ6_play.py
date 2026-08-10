@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 from unittest.mock import call, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -52,6 +53,55 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertTrue(civ6_play.startup_event_proves_game_started({
             "ctx": "agent", "kind": "seat"
         }))
+
+    @staticmethod
+    def _fake_clock():
+        """A clock that only moves when the code under test sleeps.
+
+        ⚠ Without this the tests are VACUOUS: with `time.sleep` stubbed to a
+        no-op, real elapsed time is microseconds, so no deadline ever expires
+        and a fixed-budget implementation passes every case identically.
+        """
+        now = {"t": 0.0}
+        return now, (lambda: now["t"]), (lambda s: now.__setitem__("t", now["t"] + s))
+
+    def _run_wait(self, polls, seconds, alive=True):
+        now, monotonic, sleep = self._fake_clock()
+        script = iter(polls)
+        tail = SimpleNamespace(poll=lambda: next(script, []))
+        with mock.patch.object(civ6_play.time, "sleep", sleep), \
+             mock.patch.object(civ6_play.time, "monotonic", monotonic), \
+             mock.patch.object(civ6_play.env, "game_pids",
+                               lambda: [1] if alive else []):
+            return civ6_play.wait_for_agent_start(tail, lambda _e: None, seconds)
+
+    def test_a_loading_game_keeps_its_budget_while_the_mod_is_still_talking(self) -> None:
+        """The regression from 2026-08-10: four starts died on a fixed deadline.
+
+        The agent arrives only after a long map generation, but `autoclose`
+        events keep arriving throughout it. A fixed budget expires mid-load and
+        the caller then quits a game that was coming up fine. The wait loop
+        sleeps 2 s a pass, so ten chattering passes is 20 s against a 6 s
+        budget — impossible unless progress extends it.
+        """
+        polls = [[{"ctx": "autoclose", "kind": "autoclose_armed"}] for _ in range(10)]
+        polls.append([{"ctx": "agent", "kind": "loaded"}])
+        self.assertTrue(
+            self._run_wait(polls, 6.0),
+            "chatter while the game loads must extend the budget, not spend it",
+        )
+
+    def test_a_silent_game_still_gives_up(self) -> None:
+        """Patience must not become a hang: real silence still ends the wait."""
+        self.assertFalse(self._run_wait([[]] * 50, 6.0))
+
+    def test_a_dead_game_is_not_waited_on(self) -> None:
+        self.assertFalse(self._run_wait([[]] * 50, 600.0, alive=False))
+
+    def test_endless_chatter_cannot_hang_the_harness(self) -> None:
+        """The hard bound: a game that never seats an agent must still end."""
+        polls = [[{"ctx": "autoclose", "kind": "autoclose_armed"}]] * 10000
+        self.assertFalse(self._run_wait(polls, 6.0))
 
     def test_leader_intro_requires_the_requested_leader(self) -> None:
         bounds = (864, 33, 864, 542)
