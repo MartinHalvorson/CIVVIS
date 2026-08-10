@@ -858,7 +858,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// path. The production `advanced` controller does use the atlas, but the
 /// frozen `advanced_v1` anchor cannot observe it. Compatibility re-pin, not
 /// an additional Elo-protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb527_9f72_3c5c_3ff7;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbb92_ff2f_f09d_e2cd;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
