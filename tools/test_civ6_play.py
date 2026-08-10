@@ -42,6 +42,17 @@ def args(**changes):
 
 
 class Civ6PlayTest(unittest.TestCase):
+    def test_startup_ignores_auto_close_events_until_the_agent_is_loaded(self) -> None:
+        self.assertFalse(civ6_play.startup_event_proves_game_started({
+            "ctx": "autoclose", "kind": "autoclose_armed"
+        }))
+        self.assertTrue(civ6_play.startup_event_proves_game_started({
+            "ctx": "agent", "kind": "loaded"
+        }))
+        self.assertTrue(civ6_play.startup_event_proves_game_started({
+            "ctx": "agent", "kind": "seat"
+        }))
+
     def test_live_run_holds_macos_awake_for_its_process_lifetime(self) -> None:
         with patch.object(civ6_play.sys, "platform", "darwin"), \
              patch.object(civ6_play.os, "getpid", return_value=4321), \
@@ -442,7 +453,7 @@ class Civ6PlayTest(unittest.TestCase):
 
         class Tail:
             def poll(self):
-                return [{"kind": "state", "turn": 89}]
+                return [{"ctx": "agent", "kind": "loaded"}]
 
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "focus_game"), \

@@ -88,6 +88,20 @@ def utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def startup_event_proves_game_started(event: dict) -> bool:
+    """Return whether an event proves the in-game agent has loaded.
+
+    Auto-close contexts are installed before the map is playable and emit
+    ``autoclose_armed`` during the setup/intro screens.  They prove only that
+    the mod package was discovered, not that the requested game is ready for
+    the agent.  The agent lifecycle events are the first reliable boundary.
+    """
+    return (
+        event.get("ctx") == "agent"
+        and event.get("kind") in {"loaded", "seat", "turn"}
+    )
+
+
 def hold_macos_awake() -> bool:
     """Keep an active live run awake even when the console is locked.
 
@@ -1336,12 +1350,10 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     def started(seconds: float) -> bool:
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
-            saw = False
             for event in tail.poll():
                 on_event(event)
-                saw = True
-            if saw:
-                return True
+                if startup_event_proves_game_started(event):
+                    return True
             if not env.game_pids():
                 return False
             time.sleep(2.0)
@@ -1504,12 +1516,10 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
     def started(seconds: float) -> bool:
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
-            saw = False
             for event in tail.poll():
                 on_event(event)
-                saw = True
-            if saw:
-                return True
+                if startup_event_proves_game_started(event):
+                    return True
             if not env.game_pids():
                 return False
             time.sleep(2.0)
