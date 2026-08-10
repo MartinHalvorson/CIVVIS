@@ -345,6 +345,72 @@ class DesktopAppsTests(unittest.TestCase):
             self.assertIn(desktop.DEFAULT_PRESET, note)
         self.assertIn("Engine: 8,000,000 bytes", wasm)
 
+    def test_native_build_is_stamped_only_after_cargo_finishes(self):
+        with tempfile.TemporaryDirectory() as held:
+            root = pathlib.Path(held)
+            repo = root / "repo"
+            state = root / "state"
+            repo.mkdir()
+            native_target = state / "cargo-cache/native-target"
+            wasm_target = state / "cargo-cache/wasm-target"
+            source = state / "build-aaaaaaa-20260803T170000Z/source"
+
+            def fake_run(command, *, cwd=None, env=None, capture=False):
+                if command[:3] == ("git", "worktree", "add"):
+                    (source / "beta").mkdir(parents=True)
+                    (source / "tools").mkdir()
+                    (source / "beta/serve.py").write_text("serve\n", encoding="utf-8")
+                    (source / "tools/spectator_supervisor.py").write_text(
+                        "supervise\n", encoding="utf-8"
+                    )
+                    (source / "Cargo.toml").write_text(
+                        '[package]\nversion = "0.6.0"\n', encoding="utf-8"
+                    )
+                elif command[0:2] == ("cargo", "build"):
+                    self.assertNotIn("CIVVIS_COMMIT", env)
+                    self.assertNotIn("CIVVIS_COMMIT_TIME", env)
+                    self.assertNotIn("CIVVIS_BUILT_AT", env)
+                    (native_target / "release").mkdir(parents=True)
+                    (native_target / "release/civvis").write_bytes(b"native")
+                elif command[0] == "./beta/publish.sh":
+                    lane = pathlib.Path(command[-1]) / desktop.VIEWER_LANE
+                    lane.mkdir(parents=True)
+                    (lane / "civvis.wasm").write_bytes(b"wasm")
+                    (lane / "build.json").write_text(
+                        '{"commit":"%s","built_at":"2026-08-03T17:09:00Z",'
+                        '"wasm_bytes":4,"bundle_bytes":8}\n' % self.revision.commit,
+                        encoding="utf-8",
+                    )
+                elif command[:3] == ("git", "worktree", "remove"):
+                    shutil.rmtree(source)
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            def completed_native_timestamp():
+                self.assertTrue((native_target / "release/civvis").is_file())
+                return "2026-08-03T17:08:00Z"
+
+            with mock.patch.object(
+                desktop, "reusable_cargo_targets", return_value=(native_target, wasm_target)
+            ), mock.patch.object(
+                desktop, "compact_stamp", return_value="20260803T170000Z"
+            ), mock.patch.object(
+                desktop, "verify_default_contract"
+            ), mock.patch.object(
+                desktop, "build_environment", return_value={"PATH": "/bin"}
+            ), mock.patch.object(
+                desktop, "runtime_source_snapshot", return_value="snapshot"
+            ), mock.patch.object(
+                desktop, "utc_now", side_effect=completed_native_timestamp
+            ), mock.patch.object(
+                desktop, "run", side_effect=fake_run
+            ):
+                artifacts = desktop.build_artifacts(
+                    repo, self.revision, state, self.template_path
+                )
+
+            self.assertEqual(artifacts.native_built_at, "2026-08-03T17:08:00Z")
+            self.assertEqual(artifacts.wasm_built_at, "2026-08-03T17:09:00Z")
+
     def test_listener_verification_waits_for_long_lived_owners(self):
         attached_rust = {"pid": 101, "ppid": 99, "command": "rust"}
         owned_rust = {
