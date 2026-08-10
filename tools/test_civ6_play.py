@@ -330,6 +330,9 @@ class Civ6PlayTest(unittest.TestCase):
              patch.object(civ6_play, "set_dropdown", return_value=True) as setter, \
              patch.object(civ6_play, "select_requested_leader", return_value=True) as leader, \
              patch.object(civ6_play, "screenshot") as screenshot, \
+             patch.object(civ6_play, "_observed_label_point",
+                          return_value=(321, 432)) as observed, \
+             patch.object(civ6_play, "focus_game") as focus, \
              patch.object(civ6_play, "click_at") as click:
             started = civ6_play.configure_and_start((100, 33, 756, 480), args(), Path(temporary))
 
@@ -346,8 +349,28 @@ class Civ6PlayTest(unittest.TestCase):
             (100, 33, 756, 480), "LEADER_TRAJAN", Path(temporary)
         )
         screenshot.assert_called_once_with(Path(temporary) / "setup.png")
-        click.assert_called_once_with(100 + int(756 * civ6_play.START_GAME[0]),
-                                      33 + int(480 * civ6_play.START_GAME[1]))
+        observed.assert_called_once_with(
+            Path(temporary) / "setup.png", "Start Game", (100, 33, 756, 480)
+        )
+        focus.assert_called_once_with(civ6_play.GAME_SIDE, civ6_play.GAME_FRACTION)
+        click.assert_called_once_with(321, 432)
+
+    def test_setup_refuses_to_start_without_a_visible_start_game_control(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "set_dropdown", return_value=True), \
+             patch.object(civ6_play, "select_requested_leader", return_value=True), \
+             patch.object(civ6_play, "screenshot") as screenshot, \
+             patch.object(civ6_play, "_observed_label_point", return_value=None), \
+             patch.object(civ6_play, "focus_game") as focus, \
+             patch.object(civ6_play, "click_at") as click:
+            started = civ6_play.configure_and_start(
+                (100, 33, 756, 480), args(), Path(temporary)
+            )
+
+        self.assertFalse(started)
+        screenshot.assert_called_once_with(Path(temporary) / "setup.png")
+        focus.assert_not_called()
+        click.assert_not_called()
 
     def test_setup_refuses_to_start_when_requested_leader_is_unverified(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
