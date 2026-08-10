@@ -7129,7 +7129,18 @@ local function applyOrder(player, pid, row, turn)
 				slots = have,
 				slot_count = slots,
 			});
-			return false, "policy_deck_does_not_fit";
+			-- A CIVVIS deck is a decision, but an impossible deck must not leave
+			-- the game on the same civic-slot blocker forever.  Fall back to the
+			-- same bounded, slot-aware filler used for a missing decision and name
+			-- that loss of authority in telemetry.  The next board export gives
+			-- CIVVIS a fresh chance to choose from the now-valid slate.
+			local fallback = fillPolicies(player);
+			emit("policy_deck_fallback", {
+				turn = turn,
+				card = card ~= nil and tostring(card.PolicyType or "?") or nil,
+				fallback = fallback,
+			});
+			return fallback ~= nil, fallback or "policy_deck_does_not_fit";
 		end
 		local slotNames = {};
 		for i = 0, slots - 1 do
