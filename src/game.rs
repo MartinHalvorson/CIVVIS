@@ -8127,6 +8127,150 @@ mod trade_deal_tests {
     }
 
     #[test]
+    fn war_eve_quotes_offer_only_what_the_declaration_hands_back() {
+        let game = trade_game();
+        let deals = game.war_eve_deals(0, 1);
+        assert!(!deals.is_empty(), "a spare luxury copy is a cancellable promise");
+        for deal in &deals {
+            assert_eq!(deal.partner, 1);
+            assert_eq!(deal.direction, "sell");
+            // Everything offered is something the declaration takes back.
+            assert_eq!(deal.offer.gold, 0.0);
+            assert_eq!(deal.offer.diplomatic_favor, 0.0);
+            assert!(deal.offer.great_works.is_empty());
+            assert!(deal.offer.captured_spies.is_empty());
+            assert!(deal.offer.cities.is_empty());
+            for resource in deal.offer.resources.keys() {
+                assert_eq!(
+                    game.rules.resources[resource].class, "luxury",
+                    "a strategic stockpile transfers on signature and no war returns it"
+                );
+            }
+            // Everything asked for has already settled when the war lands.
+            assert!(deal.request.gold > 0.0);
+            assert_eq!(deal.request.gold_per_turn, 0.0);
+            assert!(deal.request.resources.is_empty());
+            assert!(!deal.request.open_borders);
+            assert!(deal.request.great_works.is_empty());
+            assert!(deal.request.cities.is_empty());
+            // And it is still an honest contract at the moment it is signed.
+            assert!(deal.my_value > 0.0 && deal.partner_value > 0.0);
+            assert!(Game::war_eve_net_gold(deal) > 0.0);
+        }
+        assert!(deals
+            .windows(2)
+            .all(|pair| Game::war_eve_net_gold(&pair[0]) >= Game::war_eve_net_gold(&pair[1])));
+        assert!(
+            game.war_eve_deals(1, 1).is_empty()
+                && game.war_eve_deals(0, 9).is_empty(),
+            "there is no war-eve market with yourself or with a player who does not exist"
+        );
+    }
+
+    #[test]
+    fn a_war_eve_sale_banks_the_gold_and_the_declaration_returns_the_luxury() {
+        let mut game = trade_game();
+        let deal = game
+            .war_eve_deals(0, 1)
+            .into_iter()
+            .find(|deal| deal.item == "silk")
+            .expect("the spare silk copy is sellable");
+        let net = Game::war_eve_net_gold(&deal);
+        let before = game.players[0].gold;
+        assert_eq!(game.resource_access_count(0, "silk"), 2);
+
+        game.do_trade(0, 1, &deal.offer, &deal.request).unwrap();
+        assert!((game.players[0].gold - before - net).abs() < 1e-9);
+        assert_eq!(game.resource_access_count(0, "silk"), 1);
+        assert_eq!(game.resource_access_count(1, "silk"), 1);
+
+        game.do_declare_war(0, 1).unwrap();
+        // The Gold raised is the Gold kept: only the instalment settled at
+        // signing ever left, and the war stopped the twenty-nine after it.
+        assert!(net > 0.0);
+        assert!((game.players[0].gold - before - net).abs() < 1e-9);
+        assert!(game.active_trade_deals.is_empty());
+        assert_eq!(game.resource_access_count(0, "silk"), 2);
+        assert_eq!(game.resource_access_count(1, "silk"), 0);
+    }
+
+    #[test]
+    fn the_war_eve_price_beats_the_market_and_takes_all_of_it_in_lump_gold() {
+        let game = trade_game();
+        let ordinary = game
+            .quick_deals(0)
+            .into_iter()
+            .find(|deal| deal.direction == "sell" && deal.item == "silk")
+            .unwrap();
+        let war_eve = game
+            .war_eve_deals(0, 1)
+            .into_iter()
+            .find(|deal| deal.item == "silk")
+            .unwrap();
+        assert!(
+            ordinary.request.gold_per_turn > 0.0,
+            "the ordinary quote settles part of its price in instalments a war would cancel"
+        );
+        assert_eq!(war_eve.request.gold_per_turn, 0.0);
+        assert!(war_eve.request.gold > ordinary.request.gold);
+        // The rival is not being cheated at the higher price; it is being read.
+        // It still profits by its own valuation, with almost nothing to spare.
+        assert!(war_eve.partner_value > 0.0);
+        assert!(war_eve.partner_value < ordinary.partner_value);
+    }
+
+    #[test]
+    fn war_eve_riders_never_promise_the_same_income_twice() {
+        let mut game = trade_game();
+        let mut promised = 0.0;
+        for _ in 0..4 {
+            let Some(deal) = game.war_eve_deals(0, 1).into_iter().next() else {
+                break;
+            };
+            promised += deal.offer.gold_per_turn;
+            game.do_trade(0, 1, &deal.offer, &deal.request).unwrap();
+        }
+        assert!(
+            promised > 0.0,
+            "a rider is what reaches a treasury larger than the asset is worth"
+        );
+        assert!((game.committed_gold_per_turn(0) - promised).abs() < 1e-9);
+        assert!(
+            promised <= game.empire_gold_per_turn(0) + 1e-9,
+            "{promised} Gold per turn promised against an income of {}",
+            game.empire_gold_per_turn(0)
+        );
+    }
+
+    #[test]
+    fn the_ai_sells_the_cancellable_promises_only_into_a_real_declaration() {
+        let mut game = trade_game();
+        let ai = BasicAi::new();
+        let before = game.players[0].gold;
+        assert_eq!(
+            ai.war_eve_liquidation(&mut game, 0, &Action::Denounce { player: 1 }),
+            0.0,
+            "a denouncement is not a declaration and cancels nothing"
+        );
+        assert_eq!(game.players[0].gold, before);
+        assert!(game.active_trade_deals.is_empty());
+
+        let raised = ai.war_eve_liquidation(&mut game, 0, &Action::DeclareWar { player: 1 });
+        assert!(raised > 0.0);
+        assert!((game.players[0].gold - before - raised).abs() < 1e-9);
+        assert!(
+            game.active_trade_deals.len() > 1,
+            "the pass re-quotes after every contract and keeps selling while the \
+             rival can still pay, rather than taking one quote and stopping"
+        );
+
+        game.do_declare_war(0, 1).unwrap();
+        assert!(game.active_trade_deals.is_empty());
+        assert!((game.players[0].gold - before - raised).abs() < 1e-9);
+        assert_eq!(game.resource_access_count(0, "silk"), 2);
+    }
+
+    #[test]
     fn war_cancels_foreign_routes_but_recalls_both_traders() {
         let mut game = trade_game();
         for player in 0..2 {
@@ -50752,6 +50896,200 @@ impl Game {
                 .then_with(|| left.item.cmp(&right.item))
         });
         deals
+    }
+
+    /// Gold per turn this empire has already promised away in live contracts.
+    /// `empire_gold_per_turn` is a deliberately cheap liquidity proxy that does
+    /// not know about them, so a quote that ignored this could sell the same
+    /// income twice over.
+    fn committed_gold_per_turn(&self, pid: usize) -> f64 {
+        self.active_trade_deals
+            .iter()
+            .filter(|deal| deal.ends > self.turn)
+            .map(|deal| {
+                if deal.from == pid {
+                    deal.offer.gold_per_turn
+                } else if deal.to == pid {
+                    deal.request.gold_per_turn
+                } else {
+                    0.0
+                }
+            })
+            .sum()
+    }
+
+    /// Price one cancellable asset at the buyer's own walk-away, settled
+    /// entirely in lump Gold.
+    ///
+    /// `quoted_payment` splits a price down the middle and pays part of it as
+    /// Gold per turn, which is the right shape for a contract both sides mean
+    /// to keep. Neither half is right on the eve of a declaration: the
+    /// instalments would be cancelled along with everything else, and the
+    /// seller is parting with something the war hands straight back. The only
+    /// question left is how much lump Gold the buyer will pay before its own
+    /// valuation says no.
+    ///
+    /// The Gold-per-turn rider covers a buyer richer than the asset is worth to
+    /// it. Twenty-five Gold of promised income lifts the buyer's ceiling by 25
+    /// and the seller's stated cost by the same 25, so it buys no free margin;
+    /// what it does is reach a treasury the asset alone could not, for the
+    /// price of the single instalment `do_trade` settles at signing.
+    fn war_eve_quote(
+        &self,
+        viewer: usize,
+        target: usize,
+        category: &str,
+        item: &str,
+        asset: DealItems,
+        rider_cap: f64,
+    ) -> Option<QuickDeal> {
+        let cost = self.give_items_cost(viewer, target, &asset);
+        let value = self.receive_items_value(target, viewer, &asset);
+        // Two Gold of headroom, not one: the price is floored to a whole Gold
+        // below the buyer's ceiling, and a margin thinner than the rounding
+        // cannot survive it.
+        if !cost.is_finite() || value <= cost + 2.0 {
+            return None;
+        }
+        let reserve = (self.players[target].gold * 0.30).min(40.0);
+        let spendable = (self.players[target].gold - reserve).max(0.0).floor();
+        if spendable <= cost + 2.0 {
+            return None;
+        }
+        // Round the rider *down* to the tenth `quoted_payment` already quotes
+        // in. Rounding up would ask for a ceiling above the buyer's treasury
+        // and cost more in stated value than the extra reach is worth; rounding
+        // down leaves at most 2.5 Gold on the table and can never eat a margin
+        // the checks above have already proved.
+        let reach = if spendable > value - 1.0 {
+            (spendable - value + 1.0) / 25.0
+        } else {
+            0.0
+        };
+        let rider = ((reach.min(rider_cap) * 10.0).floor() / 10.0).max(0.0);
+        let mut offer = asset;
+        offer.gold_per_turn = rider;
+        let price = spendable.min(value + 25.0 * rider - 1.0).floor();
+        if price <= cost + 25.0 * rider {
+            return None;
+        }
+        let request = DealItems {
+            gold: price,
+            ..DealItems::default()
+        };
+        let (my_value, partner_value) = self
+            .validate_trade(viewer, target, &offer, &request)
+            .ok()?;
+        Some(QuickDeal {
+            partner: target,
+            category: category.to_string(),
+            item: item.to_string(),
+            direction: "sell".to_string(),
+            offer,
+            request,
+            my_value,
+            partner_value,
+        })
+    }
+
+    /// Every quote that hands `target` only a commitment the coming
+    /// declaration voids, and takes back only value that has already settled
+    /// when it lands.
+    ///
+    /// A luxury copy, Open Borders, and Gold per turn all run for
+    /// `STANDARD_DEAL_TURNS`, and `end_bilateral_relations_for_war` cancels
+    /// every live contract between two civilizations that go to war — the
+    /// seller's resource access is restored on the spot and the remaining
+    /// instalments are never paid. Lump Gold, by contrast, `do_trade` pays into
+    /// the treasury immediately and the war cannot reach it. Selling the first
+    /// for the second on the turn a war opens is an ordinary Civ VI line, and
+    /// the part worth stating is that it is not a gamble: `validate_trade`
+    /// still requires both empires to profit at the price quoted here, so a
+    /// declaration that never comes leaves a plain good trade behind.
+    ///
+    /// Strategic resources, Great Works, captured Spies, cities, and Favor are
+    /// deliberately absent from the offer side. `do_trade` transfers all of
+    /// them the moment the contract closes, so a war would not bring them back.
+    ///
+    /// Quotes are independent of one another and every one of them assumes the
+    /// buyer's whole spendable treasury and this empire's whole uncommitted
+    /// income. Execute one, then ask again.
+    pub fn war_eve_deals(&self, viewer: usize, target: usize) -> Vec<QuickDeal> {
+        if viewer >= self.players.len()
+            || target >= self.players.len()
+            || viewer == target
+            || !self.players[viewer].alive
+            || !self.players[target].alive
+            || self.players[viewer].is_minor
+            || self.players[viewer].is_barbarian
+            || self.players[target].is_minor
+            || self.players[target].is_barbarian
+            || !self.has_met(viewer, target)
+            || self.is_at_war(viewer, target)
+        {
+            return Vec::new();
+        }
+        // A rider is only sellable income this empire both earns and has not
+        // already promised elsewhere, and `items_are_valid` also requires the
+        // treasury to cover the instalment paid at signing.
+        let rider_cap = (self.empire_gold_per_turn(viewer) - self.committed_gold_per_turn(viewer))
+            .max(0.0)
+            .min(self.players[viewer].gold.max(0.0));
+        let luxuries: Vec<Name> = self
+            .rules
+            .resources
+            .iter()
+            .filter(|(_, spec)| spec.class == "luxury")
+            .map(|(name, _)| *name)
+            .collect();
+        let mut deals = Vec::new();
+        for resource in luxuries {
+            if !self.resource_visible_to(viewer, &resource)
+                || !self.resource_visible_to(target, &resource)
+            {
+                continue;
+            }
+            let mut asset = DealItems::default();
+            asset.resources.insert(resource.to_string(), 1);
+            if let Some(deal) =
+                self.war_eve_quote(viewer, target, "luxury", &resource, asset, rider_cap)
+            {
+                deals.push(deal);
+            }
+        }
+        if self.tree_effect(viewer, "open_borders") > 0.0
+            && self.tree_effect(target, "open_borders") > 0.0
+            && !self.has_open_borders(target, viewer)
+        {
+            let borders = DealItems {
+                open_borders: true,
+                ..DealItems::default()
+            };
+            if let Some(deal) = self.war_eve_quote(
+                viewer,
+                target,
+                "agreement",
+                "open_borders",
+                borders,
+                rider_cap,
+            ) {
+                deals.push(deal);
+            }
+        }
+        deals.sort_by(|left, right| {
+            Self::war_eve_net_gold(right)
+                .partial_cmp(&Self::war_eve_net_gold(left))
+                .unwrap()
+                .then_with(|| left.item.cmp(&right.item))
+        });
+        deals
+    }
+
+    /// What a war-eve quote is actually worth once the declaration lands: the
+    /// lump payment, less the one Gold-per-turn instalment `do_trade` settles
+    /// before the war cancels the rest.
+    pub fn war_eve_net_gold(deal: &QuickDeal) -> f64 {
+        deal.request.gold - deal.offer.gold_per_turn
     }
 
     fn process_trade_deals(&mut self, pid: usize) {
