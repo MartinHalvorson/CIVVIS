@@ -1471,14 +1471,42 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     anything at all is the proof that a game exists.
     """
     def started(seconds: float) -> bool:
-        deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
+        """Wait for the in-game agent, staying patient while the game LOADS.
+
+        ⚠⚠⚠ THE FIXED DEADLINE KILLED FOUR CONSECUTIVE STARTS ON 2026-08-10.
+        #1481 made this gate require `agent` lifecycle telemetry rather than any
+        event at all, which is right -- an `autoclose_armed` from a setup screen
+        is not a live game. But the gate kept a FIXED `seconds` budget, and on
+        this machine map generation after Begin Game can take longer than the
+        120 s default. Runs civvis-20260810T171138Z, ...T171753Z, ...T172435Z
+        and ...T173214Z each ended with exactly 22 `autoclose_armed` events and
+        ZERO `agent` events; the caller then ran `return_to_main_menu`, which
+        pressed ESC on a game that was still loading and walked into "are you
+        sure you wish to quit". The revision immediately before #1481 played a
+        232-turn game on the same machine and settings, because its gate
+        accepted the first autoclose event and then simply waited.
+
+        So: keep the strict proof, drop the fixed deadline. Any event arriving
+        is evidence the game is still coming up, so it EXTENDS the budget; the
+        run only gives up after `seconds` of genuine silence, or when the game
+        process is gone. `hard_deadline` still bounds the whole wait so a game
+        that streams autoclose events forever cannot hang the harness.
+        """
+        quiet_deadline = time.monotonic() + seconds
+        hard_deadline = time.monotonic() + max(seconds, 0.0) * 6.0
+        while time.monotonic() < quiet_deadline and time.monotonic() < hard_deadline:
+            progressed = False
             for event in tail.poll():
                 on_event(event)
+                progressed = True
                 if startup_event_proves_game_started(event):
                     return True
             if not env.game_pids():
                 return False
+            if progressed:
+                # Still loading: the mod is talking, the agent just is not up
+                # yet. Reset the silence budget rather than the hard bound.
+                quiet_deadline = time.monotonic() + seconds
             time.sleep(2.0)
         return False
 
@@ -1649,14 +1677,42 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
     select, so this never guesses which row happens to be first.
     """
     def started(seconds: float) -> bool:
-        deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
+        """Wait for the in-game agent, staying patient while the game LOADS.
+
+        ⚠⚠⚠ THE FIXED DEADLINE KILLED FOUR CONSECUTIVE STARTS ON 2026-08-10.
+        #1481 made this gate require `agent` lifecycle telemetry rather than any
+        event at all, which is right -- an `autoclose_armed` from a setup screen
+        is not a live game. But the gate kept a FIXED `seconds` budget, and on
+        this machine map generation after Begin Game can take longer than the
+        120 s default. Runs civvis-20260810T171138Z, ...T171753Z, ...T172435Z
+        and ...T173214Z each ended with exactly 22 `autoclose_armed` events and
+        ZERO `agent` events; the caller then ran `return_to_main_menu`, which
+        pressed ESC on a game that was still loading and walked into "are you
+        sure you wish to quit". The revision immediately before #1481 played a
+        232-turn game on the same machine and settings, because its gate
+        accepted the first autoclose event and then simply waited.
+
+        So: keep the strict proof, drop the fixed deadline. Any event arriving
+        is evidence the game is still coming up, so it EXTENDS the budget; the
+        run only gives up after `seconds` of genuine silence, or when the game
+        process is gone. `hard_deadline` still bounds the whole wait so a game
+        that streams autoclose events forever cannot hang the harness.
+        """
+        quiet_deadline = time.monotonic() + seconds
+        hard_deadline = time.monotonic() + max(seconds, 0.0) * 6.0
+        while time.monotonic() < quiet_deadline and time.monotonic() < hard_deadline:
+            progressed = False
             for event in tail.poll():
                 on_event(event)
+                progressed = True
                 if startup_event_proves_game_started(event):
                     return True
             if not env.game_pids():
                 return False
+            if progressed:
+                # Still loading: the mod is talking, the agent just is not up
+                # yet. Reset the silence budget rather than the hard bound.
+                quiet_deadline = time.monotonic() + seconds
             time.sleep(2.0)
         return False
 
