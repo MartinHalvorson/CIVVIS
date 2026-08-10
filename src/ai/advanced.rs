@@ -257,12 +257,16 @@ const SETTLER_ESCORT_SEARCH_RADIUS: i32 = 8;
 /// `settle_value` is scoring it against an objective the agent never held.
 const SETTLE_DISTANCE_PENALTY: f64 = 0.9;
 
-/// Production Advanced opens wide: six cities are the floor, not the finish.
-/// The land-aware plan may then climb to nine as the empire and era mature.
-/// Six is also the point at which the existing expansion oracle first showed
-/// decisive headroom; keeping it named prevents the production constructor,
-/// the plan, and the delegated governor from drifting apart again.
-const PRODUCTION_CITY_TARGET_FLOOR: usize = 6;
+/// The floor production Advanced used to open on, retained as the value
+/// `advanced_wide_opening` still tests.
+///
+/// ⚠ **No longer applied to the production controller.** It bought two cities
+/// and cost roughly thirty Elo; see `promoted_policy_envoy` and `docs/EVAL.md`
+/// 2026-08-10. The reasoning it shipped on — "the point at which the expansion
+/// oracle first showed decisive headroom" — was oracle headroom, which is what
+/// a subsystem is worth when granted for free, not what this treatment could
+/// reach. Those are different quantities and this is what the difference cost.
+pub const PRODUCTION_CITY_TARGET_FLOOR: usize = 6;
 
 /// A growing empire needs enough Builder charges to make new territory earn
 /// its keep. Three active Builders per four cities provide roughly two useful
@@ -2282,7 +2286,17 @@ impl AdvancedAi {
         // The baseline governor makes most of this agent's builds, and it
         // cannot repair an Amenity deficit without this.
         ai.base.amenity_districts = true;
-        ai.city_target_floor = PRODUCTION_CITY_TARGET_FLOOR;
+        // ⚠ The production floor of six was REMOVED on 2026-08-10. It did
+        // exactly what it promised — +2.1 cities, +20 population, +6.5
+        // districts, +62 terminal score — and paid about **thirty Elo of wins**
+        // for them. Withholding it measured 54.4% and 54.1% over two 400-map
+        // deployment runs with all six victories (sign p=0.0013 and p=0.0053),
+        // and the promotion matrix at 400 pairs returned **PASS**:
+        // deployment-online 55.9%, Elo +41 (CI +7..+76), 125/65, p=0.0000, with
+        // compact-standard flat at 49.8%. Its solo axis had already measured a
+        // null (49.6%, Elo -3, p=0.9007) before it shipped inside the
+        // 2026-08-01 composite. `plan_city_target` stays: the land-aware plan
+        // is a different mechanism and is not what was measured here.
         ai.plan_city_target = true;
         // Expansion is allowed only behind the existing production floors;
         // make sure the larger empire can actually hold what it founds.
@@ -23002,7 +23016,7 @@ mod tests {
     /// | flag | individual evidence |
     /// |---|---|
     /// | `bounded_recovery` | **first priced 2026-08-10** — withholding it scores 52.0%, Elo +14 (CI −34..+62), p=0.1849, 200 maps at the deployment shape. Direction favours removal; not established. |
-    /// | `city_target_floor = 6` | the solo axis is a **recorded null** — 49.6%, Elo −3, p=0.9007, 240 pairs, seed 510000, and the entrant was removed. It ships inside this composite, not on that number. |
+    /// | `city_target_floor = 6` | **REMOVED 2026-08-10.** Withholding it passed the promotion matrix — deployment-online 55.9%, Elo +41 (CI +7..+76), p=0.0000; compact-standard flat. Its solo axis had already measured null (49.6%, Elo −3, p=0.9007) before it shipped inside this composite. |
     /// | `envoy_infrastructure` | screened 8–12 maps only; the combined economy re-measured 2026-08-10 against its deck control is **null at 800 games** (matrix RETAIN, 1/2 profiles). |
     /// | `envoy_priority`, `adjacency_site_planning`, `settler_commit`, `research_economy`, `plan_city_target`, `amenity_districts`, `siege_muster`, `home_defense`, `tactical_strategy`, `unit_objective_memory` | no individual outcome number located in `docs/EVAL.md`. |
     ///
@@ -23022,10 +23036,13 @@ mod tests {
     #[test]
     fn production_advanced_scales_cities_development_and_home_defense_together() {
         let production = AdvancedAi::new();
-        assert_eq!(
-            production.city_target_floor,
-            PRODUCTION_CITY_TARGET_FLOOR
-        );
+        // ⚠ Three, not six. The production floor was removed on 2026-08-10
+        // after the promotion matrix returned PASS for withholding it:
+        // deployment-online 55.9%, Elo +41 (CI +7..+76), 125/65, p=0.0000.
+        // `advanced_wide_opening` still carries six, so the axis stays
+        // reachable.
+        assert_eq!(production.city_target_floor, 3);
+        assert_ne!(production.city_target_floor, PRODUCTION_CITY_TARGET_FLOOR);
         assert!(production.plan_city_target);
         assert_eq!(production.base.w.city_target, 4.0);
         assert_eq!(production.base.w.builder_per_city, 0.5);
@@ -25444,8 +25461,20 @@ mod tests {
         }
     }
 
+    /// ⚠ **Six, not nine, since 2026-08-10.** `desired_cities` is
+    /// `floor + turn / cadence`, so removing the production floor of six lowers
+    /// what the ramp reaches inside the window as well as where it starts. That
+    /// consequence is **inside the measurement**, not a side effect of it: the
+    /// arm that passed the promotion matrix at +41 Elo on deployment-online
+    /// (125/65, p=0.0000) is exactly this agent, reaching six here rather than
+    /// nine. The nine-city reach was part of what cost the thirty Elo.
+    ///
+    /// What the test still pins is the shape that matters — that the window is
+    /// open at turn 270, that the plan is Expansion, and that a settler is not
+    /// vetoed — so a regression that stops the ramp climbing at all still
+    /// fails here.
     #[test]
-    fn expansion_window_reaches_its_nine_city_target_before_endgame() {
+    fn expansion_window_still_climbs_and_wants_a_settler_before_endgame() {
         let mut game = Game::new_full(1, 30, 18, 7_113, 500, 0, false);
         let settler = game
             .player_unit_ids(0)
@@ -25463,7 +25492,11 @@ mod tests {
 
         let ai = AdvancedAi::new();
         let plan = ai.assess(&game, 0);
-        assert_eq!(plan.desired_cities, 9);
+        assert_eq!(plan.desired_cities, 6);
+        assert!(
+            plan.desired_cities > 3,
+            "the ramp must still climb above the base floor inside the window"
+        );
         assert_eq!(plan.strategy, GrandStrategy::Expansion);
         let item = Item::Unit {
             unit: crate::name!("settler"),

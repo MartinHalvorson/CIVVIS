@@ -179,6 +179,7 @@ type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 mod advanced;
 mod tactics;
 pub use advanced::{
+    PRODUCTION_CITY_TARGET_FLOOR,
     AdvancedAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan,
     ExpansionCensus, StrategyCensus, VictoryTarget,
 };
