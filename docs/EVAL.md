@@ -7338,3 +7338,174 @@ elimination test on the original `no entry found for key` panic in `relocate`.
 were produced by the pre-repair engine; a batch that aborted seeds may have
 done so for this reason, so re-run such a batch rather than reusing its
 partial result. Nothing in this entry supersedes an existing baseline.
+
+
+## 2026-08-10 — ★★★ the roster's winners all raise one district gene, and it measures
+
+### What was mined
+
+Nothing had ever asked the shipped league roster the *behavioural* question:
+across the bred `Advanced` genomes, which of the forty genes separates the
+winners from the losers? `data/league/league.json` carries 51 genomes; 47 have
+at least 20 recorded 8-player games and 8 have at least 200, together ~23 000
+games. Ranking them by **outright win rate** — not by the Glicko rating this
+document already measured ranking two agents backwards by 230 Elo on
+2026-07-28 — and contrasting the top third against the bottom third, weighted
+by games:
+
+| gene | shipped default | top third | bottom third | Δ / legal range | weighted r |
+|---|---|---|---|---|---|
+| **d_holy** | **2.0** | **5.6** | **2.0** | **+0.41** | **+0.62** |
+| settle_food | 1.2 | 0.77 | 1.19 | −0.15 | −0.59 |
+| local_superiority | 6.0 | 5.8 | 6.6 | −0.05 | −0.59 |
+| d_theater | 1.0 | 0.49 | 1.32 | −0.10 | −0.47 |
+
+`d_holy` is the largest separation of the forty on both axes. **The bottom-third
+column is the control that matters**: a gene under no selection pressure drifts
+in both tails, and this one does not move in the losing tail at all — it sits on
+the shipped default to three figures.
+
+Two independent corroborations. The shipped GA champion
+(`data/evolved/best.json`) leaves `d_holy` at exactly 2.0, so the evolutionary
+search never explored the axis the league found. And the win-rate ordering used
+here independently places `g56-50` **last of the eight** — the same genome the
+2026-07-28 entry measured at −108 Elo against the champion (paired-map score
+35.0%, 95% Wilson CI 29.8%..40.6%, over 300 maps at `--players 4 --turns 500
+--seed 4100000`; sign p=0.0000) while the roster's Glicko ranked it top. The two
+orderings disagree, and the one used here agrees with the gate-quality
+measurement.
+
+⚠ This is a correlation over ~50 survivors related by descent. It is a
+hypothesis generator, not a result. What follows is the result.
+
+### The measurement
+
+`advanced_holy_priority` is stock `advanced` with `d_holy = 5.6`, one gene, no
+other difference (`arms differ on: district-holy-priority`). Both tests were
+declared before either was read, so each is judged against a 0.025 two-sided
+budget.
+
+```
+ai_eval advanced_holy_priority advanced --players 4 --pairs 300 --turns 500 --seed 4200000
+  paired-map score   53.8%  (95% Wilson CI 48.2%..59.4%)   Elo-equivalent +27 (CI -13..+66)
+  paired direction   34 for / 255 neutral / 11 against   sign p = 0.0008
+  anytime-valid      treatment e = 2.559e2, p <= 0.0039, crossed at map 263
+  promotion gate     INCONCLUSIVE
+
+ai_eval advanced_holy_priority advanced --players 8 --pairs 300 --turns 500 --seed 4300000
+  paired-map score   53.8%  (95% Wilson CI 48.2%..59.4%)   Elo-equivalent +27 (CI -13..+66)
+  paired direction   32 for / 259 neutral /  9 against   sign p = 0.0004
+  anytime-valid      treatment e = 2.146e3, p <= 0.0005, crossed at map 158
+  promotion gate     INCONCLUSIVE
+```
+
+The two headline scores are identical because both direction splits happen to
+sum to the same 161.5 of 300; the runs are genuinely distinct (1200 against 2400
+seat-games, different seeds, different victory mixes). Both e-processes crossed
+for the treatment and neither crossed for the control. Each gate reads
+INCONCLUSIVE on effect size alone: at 300 pairs the Wilson half-width is 5.6
+points and the effect is 3.8.
+
+### ★★★ Why it works, which is the part worth keeping
+
+The treatment does **not** choose religion more often. The grand-strategy
+occupancy is the same to within noise — religion 23.3% of observed player-turns
+against the control's 23.9%, conquest 25.8% against 26.0%, expansion 32.2%
+against 32.1%. What changes is the victory mix:
+
+| victory | treatment 4p | control 4p | treatment 8p | control 8p |
+|---|---|---|---|---|
+| religious | **267** | 203 | **258** | 198 |
+| every other route | 56 | 74 | 65 | 79 |
+
+The entire win delta is religious victories. The strategy layer already wanted
+the religious lane a quarter of the time; the district priority table ranked the
+district that lane runs through **below both the Campus and the Commercial
+Hub**, so the intent never reached the build queue. This is the same shape as
+every other "decision that never actuates" in this repository — an agent whose
+plan and whose production disagree — and not a new appetite for religion.
+
+The paired terminal-score diagnostic leans the other way (49.9% at 4p, sign
+p=0.2386; p=0.5263 at 8p) and that is expected rather than contradictory: a Holy
+Site is worse economy than a Campus, so the treatment develops marginally less
+and converts materially more.
+
+### What this does NOT license
+
+`Weights::default()` is unchanged and should stay unchanged until a gate
+actually clears. Two INCONCLUSIVE gates are not a promotion however well they
+agree, and "replicated twice" is not the standard this file holds. A 1200-pair
+run at 4p is the sample size at which a 3.8-point effect clears parity
+(half-width 2.8), and that is the run that decides it.
+
+
+## 2026-08-10 — ★★★★ the Holy Site figure clears the gate at 1200 pairs and becomes what `advanced` plays
+
+The entry above left `Weights::default()` alone and named the run that would
+decide it. This is that run.
+
+```
+ai_eval advanced_holy_priority advanced --players 4 --pairs 1200 --turns 500 --seed 4400000
+
+game-win share     1270/2400 (52.9%)  against  1130/2400 (47.1%)
+paired-map score   52.9%  (95% Wilson CI 50.1%..55.7%)   Elo-equivalent +20 (CI +1..+40)
+paired direction   119 for / 1032 neutral / 49 against   sign p = 0.0000
+anytime-valid      treatment e = 5.684e5, crossed at map 404; control never crossed
+terminal score     47.1% direction (472 for / 547 against), sign p = 0.0204
+promotion gate     PASS — effect interval and anytime-valid evidence both clear parity
+```
+
+The effect regressed from the 300-pair estimate of +27 to +20 and the interval
+came in from ±5.6 to ±2.8, which is what a real effect does when the sample
+grows. Three runs now agree in direction at 4p, 8p, and 4p-at-scale.
+
+**The terminal-score direction is now significant *against* the treatment**
+(p=0.0204, where the 300-pair runs read p=0.24 and p=0.53). That is the same
+trade the first entry described, resolved rather than reversed: a Holy Site is
+worse economy than a Campus, so the agent develops measurably less and converts
+enough more to win 20 Elo of games. The gate is on wins.
+
+### ⚠ What shipped is narrower than "change the default"
+
+`Weights::default()` is **unchanged at 2.0**, deliberately. That default also
+seeds `BasicAi::new()` — city-states, barbarians, the `basic` entrant, and
+`AdvancedAi::legacy()` behind the frozen `advanced_v1` anchor. Moving it there
+would have changed populations this gate never measured and would have silently
+redefined a frozen control.
+
+The measured arm was `AdvancedAi::with_weights(default with d_holy = 5.6)`,
+which is exactly `AdvancedAi::new()` with one gene moved. So the value lives on
+that constructor — `Weights::advanced()`, one gene apart from
+`Weights::default()` — and nothing else moves. `advanced_evolved` and every
+league genome carry explicit vectors and are untouched.
+
+**Two names changed meaning, both deliberately:**
+
+- `advanced_holy_priority` now constructs the production controller. Its
+  provenance declares it effectively `advanced`, so the old command fails closed
+  as self-play instead of quietly measuring nothing — the same treatment
+  `advanced_policy_envoy_priority` got on 2026-08-01.
+- `advanced_holy_v0` is new: the scripted major exactly as it played before
+  today, so the change stays measurable after it ships.
+
+⚠ Every `advanced_*` arm is built from `AdvancedAi::new()` and therefore moved
+with it. Numbers recorded for those arms above this line were produced by the
+2.0 agent and are not comparable to numbers taken after it. This is the ordinary
+cost of moving a baseline, and it is why `advanced_holy_v0` exists.
+
+### Confirmation that what shipped is what was measured
+
+```
+ai_eval advanced advanced_holy_v0 --players 4 --pairs 400 --turns 500 --seed 4600000
+  arms differ on   district-holy-pre-2026-08-10
+  paired-map score 54.4% (95% Wilson CI 49.5%..59.2%)  Elo-equivalent +30 (CI -4..+65)
+  paired direction 42 for / 351 neutral / 7 against    sign p = 0.0000
+  religious wins   357 against 281
+  promotion gate   INCONCLUSIVE (400 maps, half-width 4.9)
+```
+
+Read this as a wiring check, not a second promotion: the promotion is the
+1200-pair run above, on an identical intervention. What it establishes is that
+the constructor change reproduces the arm — same direction, same magnitude, same
+mechanism in the victory mix — against an opponent that is the old agent rather
+than a re-labelled copy of the new one.

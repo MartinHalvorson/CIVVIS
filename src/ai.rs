@@ -1041,6 +1041,35 @@ pub const OPENING_MENU: [&str; 6] = [
     "scout", "warrior", "builder", "settler", "slinger", "monument",
 ];
 
+/// What the scripted major agent pays for a Holy Site, against the 2.0 every
+/// other holder of these weights keeps.
+///
+/// ⚠ **Deliberately NOT in `Weights::default()`.** That default also seeds
+/// `BasicAi::new()`, which is city-states, barbarians, the `basic` entrant, and
+/// `AdvancedAi::legacy()` behind the frozen `advanced_v1` anchor. Moving it
+/// there would change populations the gate never measured and would silently
+/// redefine a frozen control — so the value lives on the one constructor the
+/// evaluated arm actually used.
+///
+/// The number is read off the shipped league roster rather than tuned: of the
+/// bred genomes carrying real 8-player evidence, the top third by outright win
+/// rate sit at a games-weighted `d_holy` of 5.6 and the bottom third at exactly
+/// the 2.0 default. `advanced_holy_priority` measured it at **+20 Elo, gate
+/// PASS** over 1200 paired maps; see `docs/EVAL.md` 2026-08-10.
+pub const ADVANCED_D_HOLY: f64 = 5.6;
+
+impl Weights {
+    /// The weights the scripted major agent plays, as distinct from the weights
+    /// every other holder of this struct gets. One gene apart from
+    /// [`Weights::default`]; see [`ADVANCED_D_HOLY`].
+    pub fn advanced() -> Weights {
+        Weights {
+            d_holy: ADVANCED_D_HOLY,
+            ..Weights::default()
+        }
+    }
+}
+
 impl Default for Weights {
     fn default() -> Weights {
         Weights {

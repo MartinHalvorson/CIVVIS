@@ -1927,6 +1927,27 @@ pub struct AdvancedAi {
     /// cannot be misattributed to production.
     pub envoy_infrastructure: bool,
 
+    /// Price the Religion lane's own district on the same scale the Culture
+    /// lane prices its own.
+    ///
+    /// `strategic_family` pays `(Culture, theater_square)` **850** and
+    /// `(Religion, holy_site)` **210** — a quarter — even though religious
+    /// victory is the route this engine actually converts: in the 2026-08-10
+    /// district-priority batch the winning arm took 267 of its 323 wins by
+    /// religion and 15 by culture. Neither number has ever been measured.
+    /// `grep strategic_family docs/EVAL.md` is empty, and `210.0` entered in
+    /// `0f6bd85e`, a bulk progression-and-command commit, not an evaluation.
+    ///
+    /// This is an **upper bound, not a proposal**, in the same sense as
+    /// `settler_price` under `advanced_settler_first`: it takes the largest
+    /// own-lane figure in the table rather than a tuned one, so a null result
+    /// retires the axis instead of leaving "maybe a smaller number would have
+    /// worked". Everything else about the lane is untouched, so a gain here is
+    /// the Religion empire building its own district sooner and nothing else.
+    ///
+    /// Off by default; evaluator arm `advanced_holy_lane`.
+    pub holy_lane_parity: bool,
+
     /// Reserve one empty city's next build for reachable envoy infrastructure.
     ///
     /// `envoy_infrastructure` teaches `advanced_production` what the Diplomatic
@@ -2062,6 +2083,12 @@ pub struct AdvancedAi {
 /// 1.7 and deliberately *below* Science's own 4.2: a lane still outbids the
 /// floor for its own currency, and this only stops the other lanes pricing
 /// research below their least valuable ordinary yield.
+/// What `holy_lane_parity` pays a Religion empire for its own Holy Site.
+///
+/// Not tuned: it is `(Culture, theater_square)`'s own figure, the largest
+/// own-lane value in `strategic_family`. See `AdvancedAi::holy_lane_parity`.
+const HOLY_LANE_PARITY: f64 = 850.0;
+
 const RESEARCH_FLOOR_EARLY: f64 = 3.0;
 const RESEARCH_FLOOR_LATE: f64 = 1.0;
 
@@ -2154,8 +2181,13 @@ impl AdvancedAi {
     /// composite. Keep the three changes together here so every ordinary
     /// construction path (including weighted and explicitly targeted agents)
     /// has one auditable definition.
+    /// The deployed scripted major.
+    ///
+    /// One gene apart from `Weights::default()`: see [`crate::ai::ADVANCED_D_HOLY`]
+    /// for why the Holy Site figure lives here and not in the default that also
+    /// seeds minors and the frozen `advanced_v1` anchor.
     pub fn new() -> AdvancedAi {
-        Self::promoted_policy_envoy(Weights::default(), None)
+        Self::promoted_policy_envoy(Weights::advanced(), None)
     }
 
     /// Evaluator treatment for one unified midgame power-spike appointment.
@@ -2434,6 +2466,7 @@ impl AdvancedAi {
             congress_counter_leader: false,
             congress_counter_votes: false,
             envoy_infrastructure: false,
+            holy_lane_parity: false,
             envoy_priority: false,
             joint_tactics: false,
             tactics_resolved: BTreeSet::new(),
@@ -14314,7 +14347,13 @@ impl AdvancedAi {
                     (GrandStrategy::Science, "spaceport") => 250.0,
                     (GrandStrategy::Science, "campus") => 170.0,
                     (GrandStrategy::Science, "industrial_zone") => 150.0,
-                    (GrandStrategy::Religion, "holy_site") => 210.0,
+                    (GrandStrategy::Religion, "holy_site") => {
+                        if self.holy_lane_parity {
+                            HOLY_LANE_PARITY
+                        } else {
+                            210.0
+                        }
+                    }
                     (GrandStrategy::Culture, "theater_square") => 850.0,
                     (GrandStrategy::Culture, "preserve") => 210.0,
                     (GrandStrategy::Diplomacy, "diplomatic_quarter") => 360.0,

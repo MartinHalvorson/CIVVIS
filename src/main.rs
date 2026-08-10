@@ -863,7 +863,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// --pairs 10 --players 4 --turns 200 --seed 31337 --jobs 1
 /// --deployment-comparison`) remains byte-identical. Its source contract is
 /// re-pinned below; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x31b9_c4f4_7fb1_e4f5;
+/// The Holy Site figure moved onto `Weights::advanced()`, which only
+/// `AdvancedAi::new()` reads. `AdvancedAi::legacy()` builds from
+/// `BasicAi::new()` and therefore from `Weights::default()`, which still pays
+/// `d_holy` 2.0 — the anchor keeps the exact weights it always had, and
+/// `holy_lane_parity` is a flag both constructors leave false. Compatibility
+/// re-pin, not an Elo-protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf85f_90f8_a58e_dd0b;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
