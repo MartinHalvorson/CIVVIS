@@ -688,18 +688,29 @@ fn policy_card_score(
     pid: usize,
     w: &Weights,
     candidate: &(usize, String, Name),
+    current_reading: f64,
 ) -> (f64, usize, String, Name) {
     let (priority, slot, card) = candidate;
     let incumbent = g.players[pid].policies.contains(card);
-    if incumbent {
+    // Every candidate shares one side of the counterfactual: an available
+    // card is compared with the current slate, while an incumbent is compared
+    // with the current slate after removing that card.  The old scorer walked
+    // the whole empire for both sides on every card, repeating the unchanged
+    // side dozens of times during one review.  Carrying the current reading
+    // into the batch makes the score incremental: one whole-empire sweep for a
+    // challenger, and one removal sweep for an incumbent.  The authoritative
+    // candidate order and the exact `empire_reading` arithmetic are unchanged.
+    let (without, with) = if incumbent {
         g.players[pid].policies.remove(card);
-    }
-    let without = empire_reading(g, pid, w);
-    g.players[pid].policies.insert(*card);
-    let with = empire_reading(g, pid, w);
-    if !incumbent {
+        let without = empire_reading(g, pid, w);
+        g.players[pid].policies.insert(*card);
+        (without, current_reading)
+    } else {
+        g.players[pid].policies.insert(*card);
+        let with = empire_reading(g, pid, w);
         g.players[pid].policies.remove(card);
-    }
+        (current_reading, with)
+    };
     let gain = with - without;
     // A sitting card keeps its slot unless beaten by the margin. Without
     // this the deck reshuffles on arithmetic noise every review.
@@ -777,6 +788,10 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights, pool: Option<&WorkP
                 POLICY_SCORE_MAX_WORKERS,
                 states,
                 move |mut branch, indices| {
+                    // The branch is reused for all indices claimed by this
+                    // worker.  Compute the unchanged slate once, before the
+                    // candidate mutations begin, rather than once per card.
+                    let current_reading = empire_reading(&branch, pid, &weights);
                     indices
                         .map(|index| {
                             (
@@ -786,6 +801,7 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights, pool: Option<&WorkP
                                     pid,
                                     &weights,
                                     &candidates[index],
+                                    current_reading,
                                 ),
                             )
                         })
@@ -793,10 +809,13 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights, pool: Option<&WorkP
                 },
             )
         }
-        None => candidates
-            .iter()
-            .map(|candidate| policy_card_score(g, pid, w, candidate))
-            .collect(),
+        None => {
+            let current_reading = empire_reading(g, pid, w);
+            candidates
+                .iter()
+                .map(|candidate| policy_card_score(g, pid, w, candidate, current_reading))
+                .collect()
+        }
     };
 
     scored.sort_by(|a, b| {
@@ -9823,6 +9842,66 @@ mod tests {
                 "worker completion order must not change the authoritative game (threads={threads})"
             );
         }
+    }
+
+    #[test]
+    fn incremental_policy_score_matches_both_counterfactual_sides() {
+        let mut game = Game::new_full(1, 20, 14, 91_482, 120, 0, false);
+        game.players[0].civics.extend(
+            [
+                "code_of_laws",
+                "craftsmanship",
+                "foreign_trade",
+                "early_empire",
+                "state_workforce",
+                "military_tradition",
+                "political_philosophy",
+            ]
+            .into_iter()
+            .map(Name::new),
+        );
+        game.players[0].government = Some("classical_republic".to_string());
+        let card = game
+            .available_policies(0)
+            .into_iter()
+            .next()
+            .expect("the fixture has an available policy");
+        let spec = &game.rules.policies[&card];
+        let candidate = (POLICY_PRIORITY.len(), spec.slot.clone(), card);
+        let weights = Weights {
+            policy_deck: PolicyDeck::Live,
+            ..Weights::default()
+        };
+
+        // Challenger: the current slate is the exact `without` side, so the
+        // incremental scorer must agree with the old two-sweep reading.
+        let current = empire_reading(&game, 0, &weights);
+        let mut full = game.clone();
+        let without = empire_reading(&full, 0, &weights);
+        full.players[0].policies.insert(card);
+        let with = empire_reading(&full, 0, &weights);
+        let expected_gain = with - without;
+        let expected = (expected_gain, candidate.0, candidate.1.clone(), candidate.2);
+        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current);
+        assert_eq!(actual, expected);
+
+        // Incumbent: after putting the card on the slate, the current reading
+        // is the exact `with` side and only removal needs a fresh sweep.
+        game.players[0].policies.insert(card);
+        let current = empire_reading(&game, 0, &weights);
+        let mut full = game.clone();
+        full.players[0].policies.remove(&card);
+        let without = empire_reading(&full, 0, &weights);
+        let gain = current - without;
+        let expected = (
+            gain + weights.pol_swap_margin * gain.abs(),
+            candidate.0,
+            candidate.1.clone(),
+            candidate.2,
+        );
+        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current);
+        assert_eq!(actual, expected);
+        assert!(game.players[0].policies.contains(&card));
     }
 
     /// A quiet one-player world with a lone Scout, so nothing else on the map

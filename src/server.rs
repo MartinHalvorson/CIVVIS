@@ -3632,10 +3632,9 @@ fn stock_opening_params(seed: u64) -> Params {
             domination: true,
             score: true,
         },
-        // The shipped Mercy Rule default: a game ends the moment one seat's
-        // live win odds reach 95%. docs/ADJUDICATION.md holds the measured
-        // agreement ladder behind the setup options.
-        mercy_rule: Some(0.95),
+        // A new game plays to its natural end unless its owner explicitly
+        // selects a Mercy Rule threshold in the setup panel.
+        mercy_rule: None,
         required_victory_types: 1,
         // The stock world is not an arena, so this is carried rather than
         // read. It still ships the mode's own defaults, so that picking
@@ -3953,9 +3952,9 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         }
     }
     // A present key always wins, including an explicit null for "no mercy";
-    // an absent key keeps the stock default, so clients that predate the
-    // option still get the shipped 95% rule. The band rejects thresholds a
-    // typo could smuggle in: below 0.5 a "leader" is not even favoured.
+    // an absent key keeps the current setting, which starts off in every
+    // stock setup. The band rejects thresholds a typo could smuggle in:
+    // below 0.5 a "leader" is not even favoured.
     if let Some(value) = request.as_object().and_then(|o| o.get("mercy_rule")) {
         p.mercy_rule = value.as_f64().filter(|v| (0.5..1.0).contains(v));
     }
@@ -8084,6 +8083,28 @@ mod tests {
     /// actually be played. Leaving the scenario hands every control back.
     #[test]
     fn a_scenario_request_carries_its_own_chart_and_economy() {
+        // Every historical scenario begins from the same off-by-default
+        // setup. A player can still opt in explicitly, but merely choosing a
+        // scenario never enables a game-ending concession rule.
+        let stock = stock_opening_params(0);
+        for scenario in scenario_map_scripts() {
+            let params = new_game_params(
+                &stock,
+                &json!({"num_players": 2, "map_script": scenario.id}),
+            );
+            assert_eq!(
+                params.mercy_rule,
+                None,
+                "{} unexpectedly enables the Mercy Rule by default",
+                scenario.id
+            );
+        }
+        let opted_in = new_game_params(
+            &stock,
+            &json!({"num_players": 2, "map_script": "trafalgar", "mercy_rule": 0.95}),
+        );
+        assert_eq!(opted_in.mercy_rule, Some(0.95));
+
         let trafalgar = new_game_params(
             &current(),
             &json!({
@@ -9810,13 +9831,13 @@ mod tests {
             card < endgame_at && endgame_at < card_end,
             "the Mercy Rule and Require-N selects belong inside the victory-conditions card"
         );
-        // The Mercy Rule ships selected at 95% win odds — the engine-side
-        // default in `stock_opening_params` and this markup must tell the same
-        // story — and the Require-N cap tracks the enabled victory conditions
-        // live in the client.
+        // The Mercy Rule starts at None — the engine-side default in
+        // `stock_opening_params` and this markup must tell the same story —
+        // and the Require-N cap tracks the enabled victory conditions live in
+        // the client.
         for endgame in [
             "class=\"victory-endgame civ6-hidden\" id=\"victory-endgame\"",
-            "<option value=\"0.95\" selected>95% win odds</option>",
+            "<option value=\"\" selected>None</option>",
             "id=\"requiredvictories\"",
         ] {
             assert!(EMBEDDED_INDEX.contains(endgame), "missing endgame setting: {endgame}");
@@ -11389,6 +11410,7 @@ mod tests {
         assert_eq!(params.game_speed, GameSpeed::Online);
         assert!(params.spectate);
         assert_eq!(params.turn_structure, TurnStructure::Sequential);
+        assert_eq!(params.mercy_rule, None);
         assert_eq!(params.seed, 7);
     }
 
@@ -11427,6 +11449,10 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("else if (offered(stockSetup.map)) maps.value = stockSetup.map;"));
         assert!(EMBEDDED_INDEX
             .contains("if ([...speeds.options].some(option => option.value === stockSetup.speed))"));
+        assert_eq!(setup["mercy_rule"], Value::Null);
+        assert!(EMBEDDED_INDEX.contains(
+            "setMercySelect(document.getElementById(\"mercyrule\"), stockSetup.mercy_rule);"
+        ));
     }
 
     /// The markup's own `selected` attributes must describe the same world
@@ -11473,6 +11499,8 @@ mod tests {
                 "the {select_id} select's markup default drifted from the stock opening setup"
             );
         }
+        assert_eq!(setup["mercy_rule"], Value::Null);
+        assert_eq!(marked_default("mercyrule"), "");
     }
 
     #[test]
