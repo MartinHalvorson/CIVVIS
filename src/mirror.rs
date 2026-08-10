@@ -3230,6 +3230,7 @@ mod tests {
                     y: 5,
                     pillaged: false,
                     complete: true,
+                    ..StateDistrict::default()
                 },
                 StateDistrict {
                     kind: "DISTRICT_CAMPUS".to_string(),
@@ -3237,6 +3238,7 @@ mod tests {
                     y: 6,
                     pillaged: true,
                     complete: true,
+                    ..StateDistrict::default()
                 },
             ],
             ..StateCity::default()
@@ -3289,6 +3291,7 @@ mod tests {
             y: 6,
             pillaged: false,
             complete: false,
+            ..StateDistrict::default()
         });
         mirror.sync(&snapshot, &state, 0);
         let holy_site = crate::hex::offset_to_axial(6, 6);
@@ -3421,6 +3424,7 @@ mod tests {
             y: 3,
             pillaged: false,
             complete: true,
+            ..StateDistrict::default()
         });
         state.rivals.push(StateRival {
             player: 3, civ: "CIVILIZATION_ROME".to_string(),
@@ -3696,6 +3700,7 @@ mod tests {
                         y: 4,
                         pillaged: false,
                         complete: true,
+                        ..StateDistrict::default()
                     })
                     .collect(),
                 ..StateCity::default()
@@ -5682,6 +5687,49 @@ pub struct StateDistrict {
     /// Historical events lack this field and treated every placement as complete.
     #[serde(default = "district_complete_default")]
     pub complete: bool,
+    /// The district's hit points, as Firaxis reports them: DAMAGE taken against a
+    /// maximum, for the garrison and for the outer defenses separately.
+    ///
+    /// ★★★★★ THE FIELD THAT DECIDED 121 TURNS OF PRODUCTION. `pillaged` is a
+    /// boolean and a district can be damaged without being pillaged, so it never
+    /// stood in for health. Nothing carried hit points, nothing set
+    /// [`crate::game::City::encampment_hp`], and it defaults to **0**.
+    ///
+    /// `Game::can_produce` gates `repair_encampment` on `encampment_hp < 100`, so
+    /// on every mirrored board that test passed for any city holding an
+    /// Encampment, permanently. The AI queued the repair every turn,
+    /// `civvis_orders` correctly refuses to translate a project Civilization VI
+    /// does not have, the order was discarded — and nothing else was ordered for
+    /// that city, so its queue stayed empty.
+    ///
+    /// Measured on live run `civvis-20260810T040916Z` (Rome/Trajan, Settler,
+    /// Online): Ravenna and Lugdunum, exactly the two cities holding an
+    /// Encampment, sat at `producing_hash 0, cost -1, progress -1` from turn 67 to
+    /// turn 188 with production yields of 8 and 9 against Rome's 28. 238 discarded
+    /// orders — **10.4% of every order CIVVIS issued that game** — and
+    /// `ENDTURN_BLOCKING_PRODUCTION` was the run's dominant blocker because two
+    /// queues were permanently empty.
+    ///
+    /// ⚠ AND THE RECORDED FIX WOULD HAVE MADE IT WORSE. The standing plan was to
+    /// map `repair_encampment` onto a district BUILD. Both Encampments export as
+    /// `pillaged: false, complete: true` — undamaged — so that mapping would have
+    /// rebuilt two healthy districts from scratch. The missing translation was
+    /// never the bug.
+    ///
+    /// `-1` means the host did not answer, which must not read as "destroyed".
+    #[serde(default = "unknown_damage")]
+    pub damage: i32,
+    #[serde(default = "unknown_damage")]
+    pub max_damage: i32,
+    #[serde(default = "unknown_damage")]
+    pub wall_damage: i32,
+    #[serde(default = "unknown_damage")]
+    pub max_wall_damage: i32,
+}
+
+/// Firaxis did not answer. Distinct from a real 0, which means "no damage taken".
+fn unknown_damage() -> i32 {
+    -1
 }
 
 fn district_complete_default() -> bool {
@@ -5696,6 +5744,10 @@ impl Default for StateDistrict {
             y: 0,
             pillaged: false,
             complete: true,
+            damage: unknown_damage(),
+            max_damage: unknown_damage(),
+            wall_damage: unknown_damage(),
+            max_wall_damage: unknown_damage(),
         }
     }
 }
@@ -7280,7 +7332,12 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "envoys_free",
     ];
     const CITY: &[&str] = CITY_KEYS;
-    const DISTRICT: &[&str] = &["type", "x", "y", "pillaged", "complete"];
+    const DISTRICT: &[&str] = &[
+        "type", "x", "y", "pillaged", "complete",
+        // Hit points. `the_schema_allowlists_cover_every_declared_field` fails if
+        // a StateDistrict field is missing here.
+        "damage", "max_damage", "wall_damage", "max_wall_damage",
+    ];
     const WONDER: &[&str] = &["type", "x", "y"];
     const WORKED: &[&str] = &["x", "y"];
     const GREAT_WORK: &[&str] = &["type", "object", "era", "creator", "building", "slot"];
@@ -8876,6 +8933,60 @@ fn apply_city_religion(live: &mut crate::game::City, state: &StateCity) {
 
 /// Apply a city's districts and wonders to both representations CIVVIS uses.
 /// City collections drive yields; tile fields drive placement and Builder legality.
+/// Give a mirrored city's Encampment the health Firaxis reports for it.
+///
+/// ★★★★★ WITHOUT THIS THE CITY BUILDS NOTHING, FOREVER. `City::encampment_hp`
+/// defaults to 0 and nothing ever set it on a reconstructed board.
+/// `Game::can_produce` gates `repair_encampment` on `encampment_hp < 100`, so
+/// that test passed permanently for every city holding an Encampment: the AI
+/// queued the repair every turn, `civvis_orders` correctly declined to translate
+/// a project Civilization VI does not have, the order was discarded, and no
+/// other production was chosen for that city. Two of five cities in live run
+/// `civvis-20260810T040916Z` produced nothing from turn 67 to turn 188 this way.
+///
+/// The **default when the host does not answer is full health, not zero** — that
+/// asymmetry is the whole point. A wrong "healthy" costs one skipped repair; a
+/// wrong "destroyed" costs the city's entire production for the rest of the game.
+fn apply_encampment_health(
+    game: &mut crate::game::Game,
+    state: &StateCity,
+    cid: u32,
+) {
+    let encampment = state
+        .districts
+        .iter()
+        .find(|district| district.kind.eq_ignore_ascii_case("DISTRICT_ENCAMPMENT"));
+    // Read the wall maximum before taking the mutable borrow below.
+    let Some(max_wall) = game.cities.get(&cid).map(|city| game.city_max_wall_hp(city)) else {
+        return;
+    };
+    let Some(city) = game.cities.get_mut(&cid) else { return };
+    let Some(encampment) = encampment else {
+        // No Encampment: `can_produce` already refuses on the district test, so
+        // the value cannot be read. Keep it full so it can never be the reason.
+        city.encampment_hp = 100;
+        return;
+    };
+    // Firaxis reports DAMAGE against a maximum; this model holds REMAINING health
+    // on a 0..=100 scale. Rescale rather than subtract, because a district's
+    // maximum is not always 100 on this build and an unscaled remainder would
+    // read as full when it is not.
+    city.encampment_hp = if encampment.max_damage > 0 && encampment.damage >= 0 {
+        let remaining = (encampment.max_damage - encampment.damage).max(0);
+        ((100 * remaining) / encampment.max_damage).clamp(0, 100)
+    } else {
+        100
+    };
+    city.encampment_wall_hp =
+        if encampment.max_wall_damage > 0 && encampment.wall_damage >= 0 {
+            (encampment.max_wall_damage - encampment.wall_damage).max(0)
+        } else {
+            // Unanswered: match the city's own maximum so `encampment_wall_hp <
+            // max_wall` cannot fire on a number nobody measured.
+            max_wall
+        };
+}
+
 fn apply_observed_city_infrastructure(
     game: &mut crate::game::Game,
     cid: u32,
@@ -9015,6 +9126,8 @@ fn apply_observed_city_infrastructure(
             city.wonders.insert(*name, *pos);
         }
     }
+
+    apply_encampment_health(game, state, cid);
 
     for (name, pos, pillaged) in completed {
         let tile = game.map.tiles.get_mut(&pos).unwrap();
@@ -11694,6 +11807,7 @@ mod host_fact_tests {
                 y: 7,
                 pillaged: false,
                 complete: false,
+                ..StateDistrict::default()
             }],
         );
         match campus {
@@ -11715,6 +11829,7 @@ mod host_fact_tests {
                 y: 4,
                 pillaged: false,
                 complete: false,
+                ..StateDistrict::default()
             }],
         )
         .is_none());
@@ -12057,6 +12172,163 @@ mod host_fact_tests {
             absent.game.players[0].golden_age_threshold
         );
         assert_eq!(refused.game.world_era, absent.game.world_era);
+    }
+
+    #[test]
+    /// The defect this file's `apply_encampment_health` exists for: a city that
+    /// owns a HEALTHY Encampment must not be able to produce `repair_encampment`.
+    ///
+    /// Before the fix `encampment_hp` was 0 on every mirrored board, the gate
+    /// `encampment_hp < 100` passed forever, the AI queued the repair every turn,
+    /// the bridge discarded it as a project Civ 6 does not have, and the city
+    /// built nothing for the rest of the game.
+    #[test]
+    fn a_healthy_encampment_cannot_be_repaired_forever() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 67,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (2..8)
+                .flat_map(|x| (2..8).map(move |y| host_grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 67,
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Ravenna".to_string(),
+                x: 4,
+                y: 4,
+                pop: 10,
+                capital: true,
+                districts: vec![StateDistrict {
+                    kind: "DISTRICT_ENCAMPMENT".to_string(),
+                    x: 5,
+                    y: 4,
+                    pillaged: false,
+                    complete: true,
+                    // Firaxis's own reading for an undamaged Encampment.
+                    damage: 0,
+                    max_damage: 100,
+                    wall_damage: 0,
+                    max_wall_damage: 0,
+                }],
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        let cid = *rebuilt.city_ids.keys().next().expect("the city was placed");
+        // ⚠ Without this the `can_produce` assertion below passes VACUOUSLY: a
+        // board where the Encampment never landed also refuses the repair, for
+        // an entirely different reason.
+        assert!(
+            rebuilt.game.cities[&cid]
+                .districts
+                .contains_key(Name::new("encampment")),
+            "the fixture must actually place the Encampment, or the refusal below \
+             proves nothing"
+        );
+        assert_eq!(
+            rebuilt.game.cities[&cid].encampment_hp, 100,
+            "an undamaged Encampment is at full health, not the 0 the default left"
+        );
+        let repair = crate::game::Item::Project {
+            project: crate::name::Name::new("repair_encampment"),
+        };
+        assert!(
+            !rebuilt.game.can_produce(0, cid, &repair),
+            "a healthy Encampment must not offer a repair — this is the order that \
+             was discarded every turn while the city built nothing"
+        );
+    }
+
+    /// The other half: a genuinely damaged Encampment must still be repairable,
+    /// or the fix would have traded one silent failure for another.
+    #[test]
+    fn a_damaged_encampment_is_still_worth_repairing() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 67,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (2..8)
+                .flat_map(|x| (2..8).map(move |y| host_grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 67,
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Ravenna".to_string(),
+                x: 4,
+                y: 4,
+                pop: 10,
+                capital: true,
+                districts: vec![StateDistrict {
+                    kind: "DISTRICT_ENCAMPMENT".to_string(),
+                    x: 5,
+                    y: 4,
+                    pillaged: false,
+                    complete: true,
+                    damage: 60,
+                    max_damage: 100,
+                    wall_damage: 0,
+                    max_wall_damage: 0,
+                }],
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        let cid = *rebuilt.city_ids.keys().next().expect("the city was placed");
+        assert_eq!(rebuilt.game.cities[&cid].encampment_hp, 40);
+    }
+
+    /// A host that does not answer must leave the Encampment FULL, never 0.
+    /// The asymmetry is the point: a wrong "healthy" costs one skipped repair, a
+    /// wrong "destroyed" costs the city's whole production for the rest of the
+    /// game.
+    #[test]
+    fn an_unanswered_encampment_reads_healthy_not_destroyed() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 67,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (2..8)
+                .flat_map(|x| (2..8).map(move |y| host_grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 67,
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Ravenna".to_string(),
+                x: 4,
+                y: 4,
+                pop: 10,
+                capital: true,
+                districts: vec![StateDistrict {
+                    kind: "DISTRICT_ENCAMPMENT".to_string(),
+                    x: 5,
+                    y: 4,
+                    pillaged: false,
+                    complete: true,
+                    // Every getter unanswered, as an older mod build would send.
+                    ..StateDistrict::default()
+                }],
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        let cid = *rebuilt.city_ids.keys().next().expect("the city was placed");
+        assert_eq!(rebuilt.game.cities[&cid].encampment_hp, 100);
     }
 
     #[test]

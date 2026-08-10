@@ -10512,6 +10512,37 @@ mod maintenance_tests {
     }
 
     #[test]
+    fn city_turn_upkeep_reduction_matches_post_processing_scan() {
+        let (mut game, city) = one_city();
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .extend([crate::name!("monument"), crate::name!("granary")]);
+
+        // Run the same ordered city phase the turn reducer uses, retaining
+        // only the derived answers. The old aggregate is an independent
+        // post-phase scan and therefore catches a missing local completion,
+        // pillage, or flood-barrier contribution in the reducer ledger.
+        let mut reduced = game.clone();
+        let mut ledger = BTreeMap::new();
+        for cid in reduced.player_city_ids(0) {
+            let (_, upkeep, updates) = reduced.process_city_with_upkeep(0, cid);
+            ledger.insert(cid, upkeep);
+            for (changed_city, changed_upkeep) in updates {
+                if ledger.contains_key(&changed_city) {
+                    ledger.insert(changed_city, changed_upkeep);
+                }
+            }
+        }
+
+        assert_eq!(
+            ledger.values().copied().sum::<f64>(),
+            reduced.infrastructure_gold_maintenance(0)
+        );
+    }
+
+    #[test]
     fn nuclear_devices_charge_fourteen_and_sixteen_gold_before_policy_discount() {
         let (mut game, _) = one_city();
         game.players[0]
@@ -13817,6 +13848,40 @@ struct HeightField {
     wooded: Vec<i16>,
 }
 
+/// One immutable answer to the question "what can this seat see right now?".
+///
+/// The expensive part of a visibility refresh is the terrain-aware ray walk,
+/// not publishing the answer into fog memory.  The sight inputs are stamped
+/// independently of the world turn, so a seat whose units, cities, diplomacy,
+/// or host-provided sight did not change can reuse this compact bit frame even
+/// when the turn counter (and therefore remembered-tile stamps) advances.
+#[derive(Clone)]
+struct VisionFrame {
+    input_stamp: u64,
+    visible: Arc<TileBits>,
+}
+
+/// Runtime-only per-seat visibility frames.  A cloned game starts with no
+/// frames: a search branch is allowed to move its sources before its first
+/// read, and copying a parent's bitsets would retain work that belongs to the
+/// parent position.  The cache is deliberately separate from [`VisionCache`],
+/// whose entries are per-unit ray answers and are merged from worker worlds.
+#[derive(Default)]
+struct VisionFrameCache {
+    frames: std::cell::RefCell<Vec<Option<VisionFrame>>>,
+    /// Map writes also cover roads, improvements, and ownership, none of
+    /// which alter a sight ray.  Re-fold the small sight-relevant tile view
+    /// once per map epoch so those unrelated writes do not evict every seat's
+    /// frame.
+    map_geometry: std::cell::RefCell<Option<(u64, u64)>>,
+}
+
+impl Clone for VisionFrameCache {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
 impl HeightField {
     const UNKNOWN: i16 = i16::MIN;
 
@@ -13868,10 +13933,10 @@ fn vision_key(parts: &[u64]) -> u64 {
 ///
 /// The whole cache is thrown away when the world moves under it, which is
 /// what `stamp` records; within one state of the world an entry stands until
-/// its unit moves. Entries are kept in unit order in flat vectors so that
-/// cloning a game — which the AI does once per branch it searches — copies
-/// three blocks of memory rather than walking a tree.
-#[derive(Clone, Default)]
+/// its unit moves. Entries are kept in unit order in flat vectors so that the
+/// authoritative world can merge worker answers without walking a tree;
+/// cloned search branches start with this cache empty.
+#[derive(Default)]
 pub struct VisionCache {
     stamp: u64,
     units: Vec<u32>,
@@ -13881,6 +13946,17 @@ pub struct VisionCache {
     /// start one asks this of every wonder in the ruleset, and answering it
     /// from scratch meant walking every city and every tile each time.
     built_wonders: Option<BTreeSet<Name>>,
+}
+
+impl Clone for VisionCache {
+    /// A visibility answer belongs to the exact position that asked for it.
+    /// Game clones are search branches and may move a unit or change a tile
+    /// before their first read, so copying the flat bitsets would only carry
+    /// disposable work into a branch that must validate its own stamp. Start
+    /// empty; the authoritative world repopulates its cache on demand.
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }
 
 /// The player-independent half of a monopoly answer.
@@ -13914,6 +13990,7 @@ type GreatWorksByCity = BTreeMap<u32, BTreeMap<String, usize>>;
 type HousedWorksByPlayer = BTreeMap<usize, GreatWorksByCity>;
 type GreatWorkSlotsByPlayer = BTreeMap<usize, Vec<(u32, String)>>;
 type GreatWorkHousing = BTreeMap<(usize, String, usize), bool>;
+type WonderEffectsByPlayer = BTreeMap<usize, BTreeMap<String, f64>>;
 
 #[derive(Default)]
 pub struct QueryCache {
@@ -13956,6 +14033,12 @@ pub struct QueryCache {
     // yields and its Amenities are read through it, so a single valuation of
     // one city walks the whole empire's buildings twice.
     regional: std::cell::RefCell<Option<BTreeMap<u32, (Yields, f64)>>>,
+    // Wonders are an empire-wide source, but city yields and rule gates ask
+    // for one named effect at a time. Aggregate every effect for a player on
+    // the first lookup in a memo scope so the same wonder set is not walked
+    // once per effect key. The scope is what makes this safe: callers cannot
+    // mutate a city or transfer a wonder while the guard is alive.
+    wonder_effects: std::cell::RefCell<Option<WonderEffectsByPlayer>>,
     // `note_first_monopoly_moments` runs after successful actions. Its answer
     // is player-independent until a connected resource, city owner, world
     // resource, or suzerainty changes, so retain the expensive census across
@@ -13986,8 +14069,9 @@ impl Clone for QueryCache {
     }
 }
 
-/// Scope over which `Game::city_yields` and `Game::traversal_class` answer
-/// from a cache. Dropping the outermost guard clears it.
+/// Scope over which `Game::city_yields`, `Game::traversal_class`, and the
+/// empire-wide read aggregates answer from a cache. Dropping the outermost
+/// guard clears it.
 pub struct QueryMemo<'a> {
     game: &'a Game,
     outermost: bool,
@@ -14010,6 +14094,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.gw_slots.borrow_mut() = None;
             *self.game.query_memo.gw_housing.borrow_mut() = None;
             *self.game.query_memo.regional.borrow_mut() = None;
+            *self.game.query_memo.wonder_effects.borrow_mut() = None;
         }
     }
 }
@@ -14114,18 +14199,57 @@ pub struct TraversalClass {
 ///
 /// Region maps are shared (`Arc`) so the AI's per-branch game clones copy a
 /// pointer, not the world.
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct RoutingCache {
     stamp: u64,
     zones: Vec<(TraversalClass, std::sync::Arc<Vec<u32>>)>,
     paths: Vec<PlannedRoute>,
+    /// Reverse distance fields shared by units with the same traversal and
+    /// border access. A large goal set (unexplored tiles, landing sites, or a
+    /// staging ring) is otherwise flooded once from every unit that asks for
+    /// its nearest member. The field is derived state and is discarded on a
+    /// map/turn epoch change or when a game is cloned for a branch.
+    reverse_fields: Vec<ReverseFlowField>,
     /// Folded city ids and owners used by route access checks. City ownership
     /// changes invalidate routing paths, so compute this once per routing
     /// epoch instead of walking every city for every unit route query.
     city_owner_key: Option<u64>,
 }
 
-#[derive(Clone, Default)]
+impl Clone for RoutingCache {
+    /// Connected-region labels are map-only and can safely be shared across a
+    /// branch, while a planned path also depends on unit positions and
+    /// diplomacy that the branch is about to change. Keep the cheap `Arc`
+    /// labels but discard those path answers and their owner key.
+    fn clone(&self) -> Self {
+        Self {
+            stamp: self.stamp,
+            zones: self.zones.clone(),
+            paths: Vec::new(),
+            reverse_fields: Vec::new(),
+            city_owner_key: None,
+        }
+    }
+}
+
+/// A multi-source reverse breadth-first field for one route-access context.
+///
+/// Future route segments intentionally have unit occupancy removed, and their
+/// legality depends only on the unit's traversal class, owner, and territory
+/// access. Those are exactly the values folded into `access_key`, so every
+/// unit sharing that context can read one field and only validate its own
+/// immediate step with `can_enter`.
+#[derive(Clone)]
+struct ReverseFlowField {
+    class: TraversalClass,
+    access_key: u64,
+    goals: Arc<Vec<Pos>>,
+    distance: Arc<Vec<i32>>,
+}
+
+const MAX_REVERSE_FLOW_FIELDS: usize = 8;
+
+#[derive(Default)]
 struct RouteScratch {
     astar_frontier: BinaryHeap<Reverse<(i32, Reverse<i32>, Pos)>>,
     bfs_frontier: VecDeque<(Pos, usize)>,
@@ -14135,6 +14259,16 @@ struct RouteScratch {
     distance: Vec<i32>,
     astar_touched: Vec<usize>,
     bfs_touched: Vec<usize>,
+}
+
+impl Clone for RouteScratch {
+    /// A route search mutates every scratch vector. Reusing a parent's
+    /// frontier would copy the largest transient allocation in a branch for
+    /// no semantic benefit; a fresh scratch area grows only if the branch
+    /// actually asks for a route.
+    fn clone(&self) -> Self {
+        Self::default()
+    }
 }
 
 #[derive(Clone)]
@@ -14320,6 +14454,33 @@ struct VisibilityBatch {
     refresh_teams: BTreeSet<usize>,
 }
 
+/// A runtime vector shared between a game and its disposable branches.
+/// Visibility snapshot coverage is derived state; branches that never publish
+/// an observation can keep the parent allocation without copying it, while a
+/// real refresh gets an owned vector through `Arc::make_mut`.
+#[derive(Default)]
+struct SharedVec<T>(Arc<Vec<T>>);
+
+impl<T> Clone for SharedVec<T> {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
+
+impl<T> std::ops::Deref for SharedVec<T> {
+    type Target = Vec<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: Clone> std::ops::DerefMut for SharedVec<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        Arc::make_mut(&mut self.0)
+    }
+}
+
 /// Below this many total seats, cloning the final position for worker-local
 /// visibility caches costs more than the ray sweeps it replaces. Paired
 /// release runs were neutral at 20 seats and positive at 50; keep ordinary
@@ -14474,6 +14635,333 @@ pub struct Unit {
     pub levied_from: Option<usize>,
     #[serde(default)]
     pub levied_until: u32,
+}
+
+/// The unit roster shared by game clones and search branches.
+///
+/// A branch normally reads many units and writes only the handful named by its
+/// action.  Keeping the roster as an immutable `Arc` snapshot means cloning a
+/// position copies neither the map nor any unit.  The first branch write makes
+/// a shallow map copy (its values are still `Arc`s), then `get_mut` clones only
+/// the unit being edited.  Insertions and removals are likewise local to the
+/// branch.  This is the unit equivalent of [`Players`]' copy-on-write seats,
+/// with the extra per-unit indirection making combat lookahead proportional to
+/// the units it actually touches rather than to the whole army.
+#[derive(Default)]
+pub struct Units(Arc<BTreeMap<u32, Arc<Unit>>>, BTreeSet<u32>);
+
+impl Clone for Units {
+    fn clone(&self) -> Self {
+        // A game clone starts a new branch. The immutable map is shared, but
+        // its write set belongs only to that branch and therefore starts empty.
+        Self(Arc::clone(&self.0), BTreeSet::new())
+    }
+}
+
+impl Units {
+    /// Borrow one unit from the immutable snapshot.
+    #[inline]
+    pub fn get(&self, id: &u32) -> Option<&Unit> {
+        self.0.get(id).map(Arc::as_ref)
+    }
+
+    /// Enter the branch delta for one unit.  The map is copied at most once,
+    /// and the unit value is copied only when this branch is the first writer
+    /// for that id.
+    #[inline]
+    pub fn get_mut(&mut self, id: &u32) -> Option<&mut Unit> {
+        if self.0.contains_key(id) {
+            self.1.insert(*id);
+        }
+        Arc::make_mut(&mut self.0)
+            .get_mut(id)
+            .map(Arc::make_mut)
+    }
+
+    #[inline]
+    pub fn contains_key(&self, id: &u32) -> bool {
+        self.0.contains_key(id)
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[inline]
+    pub fn keys(&self) -> std::collections::btree_map::Keys<'_, u32, Arc<Unit>> {
+        self.0.keys()
+    }
+
+    /// Iterate over units without exposing the internal `Arc` values.
+    pub fn values(&self) -> impl DoubleEndedIterator<Item = &Unit> + ExactSizeIterator {
+        self.0.values().map(Arc::as_ref)
+    }
+
+    /// Iterate over `(id, unit)` pairs without exposing the internal `Arc`
+    /// values.  The map remains ordered by id, as the old `BTreeMap` field was.
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = (&u32, &Unit)> + ExactSizeIterator {
+        self.0.iter().map(|(id, unit)| (id, unit.as_ref()))
+    }
+
+    /// Mutable iteration is a branch delta for every unit visited.  Callers
+    /// already asking for `iter_mut` intend to rewrite the roster, so this is
+    /// deliberately explicit rather than making ordinary reads pay for it.
+    pub fn values_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut Unit> + ExactSizeIterator {
+        self.1.extend(self.0.keys().copied());
+        Arc::make_mut(&mut self.0)
+            .values_mut()
+            .map(Arc::make_mut)
+    }
+
+    pub fn iter_mut(
+        &mut self,
+    ) -> impl DoubleEndedIterator<Item = (&u32, &mut Unit)> + ExactSizeIterator {
+        self.1.extend(self.0.keys().copied());
+        Arc::make_mut(&mut self.0)
+            .iter_mut()
+            .map(|(id, unit)| (id, Arc::make_mut(unit)))
+    }
+
+    /// Insert a unit, returning the previous value just like `BTreeMap`.
+    pub fn insert(&mut self, id: u32, unit: Unit) -> Option<Unit> {
+        self.1.insert(id);
+        Arc::make_mut(&mut self.0)
+            .insert(id, Arc::new(unit))
+            .map(arc_into_unit)
+    }
+
+    /// Remove a unit, returning the owned value just like `BTreeMap`.
+    pub fn remove(&mut self, id: &u32) -> Option<Unit> {
+        self.1.insert(*id);
+        Arc::make_mut(&mut self.0)
+            .remove(id)
+            .map(arc_into_unit)
+    }
+
+    pub fn clear(&mut self) {
+        self.1.extend(self.0.keys().copied());
+        Arc::make_mut(&mut self.0).clear();
+    }
+
+    /// Retain units by their immutable value.  No unit clone is needed for a
+    /// predicate, which keeps cleanup passes cheap even on a shared snapshot.
+    pub fn retain<F>(&mut self, mut keep: F)
+    where
+        F: FnMut(&u32, &Unit) -> bool,
+    {
+        self.1.extend(self.0.keys().copied());
+        Arc::make_mut(&mut self.0).retain(|id, unit| keep(id, unit));
+    }
+
+    /// Consume the roster in stable id order.  A unique snapshot unwraps all
+    /// arcs; a shared snapshot clones only the values the caller requested.
+    pub fn into_values(self) -> std::vec::IntoIter<Unit> {
+        let values = match Arc::try_unwrap(self.0) {
+            Ok(map) => map
+                .into_values()
+                .map(arc_into_unit)
+                .collect::<Vec<_>>(),
+            Err(map) => map.values().map(|unit| (**unit).clone()).collect::<Vec<_>>(),
+        };
+        values.into_iter()
+    }
+
+    /// Take a cheap immutable snapshot for a speculative branch.  The delta
+    /// returned by [`Self::delta_since`] later identifies only ids whose Arc
+    /// value changed, was inserted, or was removed.
+    pub fn snapshot(&self) -> UnitSnapshot {
+        UnitSnapshot(Arc::clone(&self.0))
+    }
+
+    /// Return the localized unit changes since `snapshot`.
+    pub fn delta_since(&self, snapshot: &UnitSnapshot) -> UnitDelta {
+        if Arc::ptr_eq(&self.0, &snapshot.0) {
+            return UnitDelta {
+                base: snapshot.clone(),
+                changed: BTreeMap::new(),
+            };
+        }
+        let mut changed = BTreeMap::new();
+        // Every mutating entry point records its id. Comparing this write set
+        // keeps extraction proportional to the branch's edits instead of
+        // walking the complete army after every AI turn.
+        for id in &self.1 {
+            let before = snapshot.0.get(id);
+            let after = self.0.get(id);
+            match (before, after) {
+                (Some(before), Some(after)) if same_unit_arc(before, after) => {}
+                (_, Some(after)) => {
+                    changed.insert(*id, Some(Arc::clone(after)));
+                }
+                (_, None) => {
+                    changed.insert(*id, None);
+                }
+            }
+        }
+        UnitDelta {
+            base: snapshot.clone(),
+            changed,
+        }
+    }
+}
+
+fn arc_into_unit(unit: Arc<Unit>) -> Unit {
+    Arc::try_unwrap(unit).unwrap_or_else(|unit| (*unit).clone())
+}
+
+fn same_unit_arc(left: &Arc<Unit>, right: &Arc<Unit>) -> bool {
+    Arc::ptr_eq(left, right) || left.as_ref() == right.as_ref()
+}
+
+impl std::ops::Index<&u32> for Units {
+    type Output = Unit;
+
+    fn index(&self, id: &u32) -> &Unit {
+        self.get(id).unwrap_or_else(|| panic!("unit {id} is not present"))
+    }
+}
+
+impl std::ops::IndexMut<&u32> for Units {
+    fn index_mut(&mut self, id: &u32) -> &mut Unit {
+        self.get_mut(id)
+            .unwrap_or_else(|| panic!("unit {id} is not present"))
+    }
+}
+
+impl<'a> IntoIterator for &'a Units {
+    type Item = (&'a u32, &'a Unit);
+    type IntoIter = std::iter::Map<
+        std::collections::btree_map::Iter<'a, u32, Arc<Unit>>,
+        fn((&'a u32, &'a Arc<Unit>)) -> (&'a u32, &'a Unit),
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter().map(|(id, unit)| (id, unit.as_ref()))
+    }
+}
+
+impl<'a> IntoIterator for &'a mut Units {
+    type Item = (&'a u32, &'a mut Unit);
+    type IntoIter = std::iter::Map<
+        std::collections::btree_map::IterMut<'a, u32, Arc<Unit>>,
+        fn((&'a u32, &'a mut Arc<Unit>)) -> (&'a u32, &'a mut Unit),
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.1.extend(self.0.keys().copied());
+        Arc::make_mut(&mut self.0)
+            .iter_mut()
+            .map(|(id, unit)| (id, Arc::make_mut(unit)))
+    }
+}
+
+impl IntoIterator for Units {
+    type Item = (u32, Unit);
+    type IntoIter = std::vec::IntoIter<(u32, Unit)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let values = match Arc::try_unwrap(self.0) {
+            Ok(map) => map
+                .into_iter()
+                .map(|(id, unit)| (id, arc_into_unit(unit)))
+                .collect::<Vec<_>>(),
+            Err(map) => map
+                .iter()
+                .map(|(id, unit)| (*id, (**unit).clone()))
+                .collect::<Vec<_>>(),
+        };
+        values.into_iter()
+    }
+}
+
+impl FromIterator<(u32, Unit)> for Units {
+    fn from_iter<I: IntoIterator<Item = (u32, Unit)>>(items: I) -> Self {
+        Self(Arc::new(
+            items
+                .into_iter()
+                .map(|(id, unit)| (id, Arc::new(unit)))
+                .collect(),
+        ), BTreeSet::new())
+    }
+}
+
+impl From<BTreeMap<u32, Unit>> for Units {
+    fn from(map: BTreeMap<u32, Unit>) -> Self {
+        map.into_iter().collect()
+    }
+}
+
+/// An immutable unit roster captured before a speculative branch runs.
+#[derive(Clone)]
+pub struct UnitSnapshot(Arc<BTreeMap<u32, Arc<Unit>>>);
+
+impl Default for UnitSnapshot {
+    fn default() -> Self {
+        Self(Arc::new(BTreeMap::new()))
+    }
+}
+
+impl UnitSnapshot {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn get(&self, id: &u32) -> Option<&Unit> {
+        self.0.get(id).map(Arc::as_ref)
+    }
+}
+
+/// Unit-only changes made by one speculative branch.  It is intentionally
+/// separate from the action log: the log is the authoritative replay, while
+/// this compact side channel tells the commit phase which unit ids can be in
+/// conflict without diffing the whole world.
+#[derive(Clone, Default)]
+pub struct UnitDelta {
+    base: UnitSnapshot,
+    changed: BTreeMap<u32, Option<Arc<Unit>>>,
+}
+
+impl UnitDelta {
+    pub fn is_empty(&self) -> bool {
+        self.changed.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.changed.len()
+    }
+
+    pub fn changed_ids(&self) -> impl Iterator<Item = &u32> {
+        self.changed.keys()
+    }
+
+    /// Unit ids whose planning snapshot no longer matches the live world.
+    /// Only the changed ids are visited, so a city-only or diplomacy-only
+    /// action never turns conflict detection into a full-army scan.
+    pub fn conflicts_with(&self, current: &Units) -> Vec<u32> {
+        self.changed
+            .keys()
+            .filter(|id| {
+                let before = self.base.0.get(id);
+                let now = current.0.get(id);
+                match (before, now) {
+                    (Some(before), Some(now)) => !same_unit_arc(before, now),
+                    (None, None) => false,
+                    _ => true,
+                }
+            })
+            .copied()
+            .collect()
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
@@ -16847,6 +17335,11 @@ pub struct Game {
     /// otherwise recompute.
     #[serde(skip)]
     vision: std::cell::RefCell<VisionCache>,
+    /// Compact per-seat current-sight frames, keyed by the inputs that can
+    /// change the answer.  Unlike the remembered-map cache this is only a
+    /// read shortcut, so it is never serialized.
+    #[serde(skip)]
+    vision_frames: VisionFrameCache,
     /// Derived connectivity regions, same contract as `vision`: never saved,
     /// rebuilt on demand whenever the world moves under it.
     #[serde(skip)]
@@ -16864,7 +17357,7 @@ pub struct Game {
     /// drawn from — and the tiles it was taken over. Empty means "assume
     /// nothing".
     #[serde(skip)]
-    remembered_under: Vec<(u64, u64, TileBits)>,
+    remembered_under: SharedVec<(u64, u64, TileBits)>,
     /// Whether to keep each player's remembered map of fogged tiles and
     /// cities up to date.
     ///
@@ -16899,6 +17392,12 @@ pub struct Game {
     /// refreshes and publish the same final observation once at the boundary.
     #[serde(skip)]
     visibility_batch: VisibilityBatch,
+    /// A disposable search branch never publishes a player observation. Its
+    /// actions still run the full rules, but skipping reveal/contact/snapshot
+    /// maintenance keeps those branches from copying fog memory and doing
+    /// visibility sweeps that no caller can read.
+    #[serde(skip)]
+    visibility_suppressed: bool,
     pub rng: Rng,
     pub seed: u64,
     /// Key into `rules.difficulties`. Prince is the unhandicapped reference.
@@ -17002,7 +17501,7 @@ pub struct Game {
     pub next_id: u32,
     pub map: WorldMap,
     pub players: Players,
-    pub units: BTreeMap<u32, Unit>,
+    pub units: Units,
     pub spies: BTreeMap<u32, Spy>,
     pub cities: BTreeMap<u32, City>,
     pub at_war: BTreeSet<(usize, usize)>,
@@ -17609,14 +18108,16 @@ impl From<GameSer> for Game {
         let mut g = Game {
             rules,
             vision: std::cell::RefCell::new(VisionCache::default()),
+            vision_frames: VisionFrameCache::default(),
             routing: std::cell::RefCell::new(RoutingCache::default()),
             route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
-            remembered_under: Vec::new(),
+            remembered_under: SharedVec::default(),
             track_fog_memory: true,
             track_war_ledger: true,
             planning_role: PlanningRole::Off,
             visibility_batch: VisibilityBatch::default(),
+            visibility_suppressed: false,
             rng: s.rng,
             seed: s.seed,
             difficulty: s.difficulty,
@@ -18168,14 +18669,16 @@ impl Game {
         let mut g = Game {
             rules,
             vision: std::cell::RefCell::new(VisionCache::default()),
+            vision_frames: VisionFrameCache::default(),
             routing: std::cell::RefCell::new(RoutingCache::default()),
             route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
-            remembered_under: Vec::new(),
+            remembered_under: SharedVec::default(),
             track_fog_memory: true,
             track_war_ledger: true,
             planning_role: PlanningRole::Off,
             visibility_batch: VisibilityBatch::default(),
+            visibility_suppressed: false,
             rng,
             seed,
             difficulty,
@@ -18207,7 +18710,7 @@ impl Game {
             next_id: 1,
             map,
             players: Players::default(),
-            units: BTreeMap::new(),
+            units: Units::default(),
             spies: BTreeMap::new(),
             cities: BTreeMap::new(),
             at_war: BTreeSet::new(),
@@ -27833,18 +28336,52 @@ impl Game {
         if !self.rules.effect_index.wonders(effect) {
             return 0.0;
         }
-        self.cities
-            .values()
-            .filter(|city| city.owner == pid)
-            .flat_map(|city| city.wonders.keys())
-            .map(|wonder| {
-                self.rules.wonders[wonder]
-                    .effects
-                    .get(effect)
-                    .copied()
-                    .unwrap_or(0.0)
-            })
-            .sum()
+        // The memo is deliberately guard-scoped. `QueryMemo` borrows the
+        // world immutably, so a cached aggregate cannot survive a wonder
+        // completion, capture, or raze and become stale. Outside a memo
+        // scope, retain the old scalar path: one-off callers should not pay
+        // to allocate a table for an answer they will read once.
+        if self.query_memo.wonder_effects.borrow().is_none() {
+            return self
+                .cities
+                .values()
+                .filter(|city| city.owner == pid)
+                .flat_map(|city| city.wonders.keys())
+                .map(|wonder| {
+                    self.rules.wonders[wonder]
+                        .effects
+                        .get(effect)
+                        .copied()
+                        .unwrap_or(0.0)
+                })
+                .sum();
+        }
+        if let Some(aggregate) = self
+            .query_memo
+            .wonder_effects
+            .borrow()
+            .as_ref()
+            .and_then(|all| all.get(&pid))
+        {
+            return aggregate.get(effect).copied().unwrap_or(0.0);
+        }
+
+        let mut aggregate = BTreeMap::<String, f64>::new();
+        for city in self.cities.values().filter(|city| city.owner == pid) {
+            for wonder in city.wonders.keys() {
+                for (name, value) in &self.rules.wonders[wonder].effects {
+                    *aggregate.entry(name.clone()).or_default() += *value;
+                }
+            }
+        }
+        let value = aggregate.get(effect).copied().unwrap_or(0.0);
+        self.query_memo
+            .wonder_effects
+            .borrow_mut()
+            .as_mut()
+            .expect("a wonder aggregate is built only inside a memo scope")
+            .insert(pid, aggregate);
+        value
     }
 
     #[cfg(test)]
@@ -31665,7 +32202,10 @@ impl Game {
     }
 
     fn reveal(&mut self, pid: usize, pos: Pos, radius: i32) {
-        if pid >= self.players.len() || !self.map.tiles.contains_key(&pos) {
+        if self.visibility_suppressed
+            || pid >= self.players.len()
+            || !self.map.tiles.contains_key(&pos)
+        {
             return;
         }
         let mut heights = self.height_field();
@@ -32527,8 +33067,326 @@ impl Game {
                 city.districts.len() as u64,
                 city.wonders.len() as u64,
             ]);
+            for (district, position) in &city.districts {
+                stamp = vision_key(&[
+                    stamp,
+                    district.id() as u64,
+                    position.0 as i64 as u64,
+                    position.1 as i64 as u64,
+                ]);
+            }
         }
         stamp
+    }
+
+    /// Fold only map fields that a sight ray reads.  Roads, improvements,
+    /// resources, and ownership can all open the map for writing without
+    /// changing a ray; the tile epoch is therefore just the memo's invalidator
+    /// rather than part of the resulting geometry stamp.
+    fn map_vision_geometry_stamp(&self) -> u64 {
+        let epoch = self.map.tiles.epoch();
+        if let Some((cached_epoch, stamp)) = *self.vision_frames.map_geometry.borrow() {
+            if cached_epoch == epoch {
+                return stamp;
+            }
+        }
+        let mut stamp = vision_key(&[self.map.tiles.len() as u64]);
+        for tile in self.map.tiles.values() {
+            stamp = vision_key(&[
+                stamp,
+                tile.pos.0 as i64 as u64,
+                tile.pos.1 as i64 as u64,
+                tile.terrain.id() as u64,
+                tile.feature.map_or(u32::MAX, Name::id) as u64,
+                tile.hills as u64,
+                tile.district.map_or(u32::MAX, Name::id) as u64,
+                tile.owner_city.unwrap_or(u32::MAX) as u64,
+            ]);
+        }
+        *self.vision_frames.map_geometry.borrow_mut() = Some((epoch, stamp));
+        stamp
+    }
+
+    /// The part of [`Self::world_stamp`] that can alter a sight ray.  A turn
+    /// boundary changes remembered-tile timestamps, but it does not change a
+    /// unit's line of sight; keeping that clock out of this stamp is what lets
+    /// the compact frame survive a turn when all sight sources stand still.
+    fn vision_geometry_stamp(&self) -> u64 {
+        let topology = match self.map.topology {
+            crate::world::Topology::Cylinder => 0,
+            crate::world::Topology::Rectangle => 1,
+            crate::world::Topology::Globe(frequency) => {
+                2_u64.wrapping_add(frequency as i64 as u64)
+            }
+        };
+        let mut stamp = vision_key(&[
+            self.map_vision_geometry_stamp(),
+            self.map.width as i64 as u64,
+            self.map.height as i64 as u64,
+            topology,
+            self.is_arena() as u64,
+            self.tactics.fog as u64,
+        ]);
+        // `see_from_level` reads exactly these city facts in addition to the
+        // map.  Keep the geometry stamp in lockstep with the unit-ray cache's
+        // existing world stamp, but leave the turn counter out as explained
+        // above.
+        for city in self.cities.values() {
+            stamp = vision_key(&[
+                stamp,
+                city.id as u64,
+                city.pos.0 as i64 as u64,
+                city.pos.1 as i64 as u64,
+                city.encampment_pillaged as u64,
+                city.districts.len() as u64,
+                city.wonders.len() as u64,
+            ]);
+            for (district, position) in &city.districts {
+                stamp = vision_key(&[
+                    stamp,
+                    district.id() as u64,
+                    position.0 as i64 as u64,
+                    position.1 as i64 as u64,
+                ]);
+            }
+        }
+        stamp
+    }
+
+    /// Hash one viewer's sight sources into a compact, position-independent
+    /// input signature.  This deliberately hashes only fields read by
+    /// [`base_player_visibility`]: combat HP, movement points, and the rest of
+    /// a unit's mutable state cannot change its sight and therefore do not
+    /// evict the frame.
+    fn base_vision_input_stamp(
+        &self,
+        viewer: usize,
+        suzerains: &BTreeMap<usize, Option<usize>>,
+        unit_stamps: Option<&[u64]>,
+    ) -> u64 {
+        let mut stamp = unit_stamps
+            .and_then(|stamps| stamps.get(viewer).copied())
+            .unwrap_or_else(|| {
+                let mut stamp = vision_key(&[viewer as u64]);
+                for unit in self.units.values().filter(|unit| unit.owner == viewer) {
+                    stamp = vision_key(&[
+                        stamp,
+                        1,
+                        unit.id as u64,
+                        unit.kind.id() as u64,
+                        unit.pos.0 as i64 as u64,
+                        unit.pos.1 as i64 as u64,
+                        unit.air_patrol_pos.is_some() as u64,
+                        unit.air_patrol_pos
+                            .map(|pos| pos.0 as i64 as u64)
+                            .unwrap_or_default(),
+                        unit.air_patrol_pos
+                            .map(|pos| pos.1 as i64 as u64)
+                            .unwrap_or_default(),
+                    ]);
+                    for promotion in &unit.promotions {
+                        stamp = vision_key(&[stamp, 2, promotion.id() as u64]);
+                    }
+                }
+                stamp
+            });
+        for city in self.cities.values().filter(|city| city.owner == viewer) {
+            stamp = vision_key(&[
+                stamp,
+                3,
+                city.id as u64,
+                city.pos.0 as i64 as u64,
+                city.pos.1 as i64 as u64,
+                city.owned_tiles.len() as u64,
+            ]);
+            for position in &city.owned_tiles {
+                stamp = vision_key(&[
+                    stamp,
+                    position.0 as i64 as u64,
+                    position.1 as i64 as u64,
+                ]);
+            }
+        }
+        // A suzerain's city-state ring is a sight source.  Hash only the
+        // relationships that actually reveal ground; changes to envoys that
+        // leave the same city-state under the same suzerain do not force a
+        // ray walk.  The surrounding refresh installs the suzerain memo, so
+        // this poll is one cheap lookup per minor in the common path.
+        for minor in self.players.iter().filter(|minor| {
+            minor.alive
+                && minor.is_minor
+                && !minor.is_barbarian
+                && suzerains.get(&minor.id).copied().flatten() == Some(viewer)
+        }) {
+            stamp = vision_key(&[stamp, 4, minor.id as u64]);
+            for city in self.cities.values().filter(|city| city.owner == minor.id) {
+                stamp = vision_key(&[
+                    stamp,
+                    city.id as u64,
+                    city.pos.0 as i64 as u64,
+                    city.pos.1 as i64 as u64,
+                ]);
+            }
+        }
+        for spy in self.spies.values().filter(|spy| {
+            spy.owner == viewer && spy.captured_by.is_none() && spy.ready_turn <= self.turn
+        }) {
+            stamp = vision_key(&[
+                stamp,
+                5,
+                spy.id as u64,
+                spy.city.unwrap_or(u32::MAX) as u64,
+            ]);
+            if let Some(position) = spy
+                .city
+                .and_then(|city| self.cities.get(&city).map(|city| city.pos))
+            {
+                stamp = vision_key(&[
+                    stamp,
+                    position.0 as i64 as u64,
+                    position.1 as i64 as u64,
+                ]);
+            }
+        }
+        stamp
+    }
+
+    fn unit_vision_input_stamps(&self) -> Vec<u64> {
+        let mut stamps: Vec<u64> = (0..self.players.len())
+            .map(|viewer| vision_key(&[viewer as u64]))
+            .collect();
+        for unit in self.units.values() {
+            let Some(stamp) = stamps.get_mut(unit.owner) else {
+                continue;
+            };
+            *stamp = vision_key(&[
+                *stamp,
+                1,
+                unit.id as u64,
+                unit.kind.id() as u64,
+                unit.pos.0 as i64 as u64,
+                unit.pos.1 as i64 as u64,
+                unit.air_patrol_pos.is_some() as u64,
+                unit.air_patrol_pos
+                    .map(|pos| pos.0 as i64 as u64)
+                    .unwrap_or_default(),
+                unit.air_patrol_pos
+                    .map(|pos| pos.1 as i64 as u64)
+                    .unwrap_or_default(),
+            ]);
+            for promotion in &unit.promotions {
+                *stamp = vision_key(&[*stamp, 2, promotion.id() as u64]);
+            }
+        }
+        stamps
+    }
+
+    /// Stamp every input to one player's current sight.  The result is small
+    /// enough to carry beside a cached [`TileBits`] frame, while the fields it
+    /// folds are the exact source identities and positions the visibility
+    /// derivation reads.  The viewer set is included because shared vision is
+    /// itself a sight input (teams, alliances, and emergencies can add or
+    /// remove a live viewer without moving a unit).
+    fn suzerain_input_map(&self) -> BTreeMap<usize, Option<usize>> {
+        self.players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian)
+            .map(|minor| (minor.id, self.suzerain_of(minor.id)))
+            .collect()
+    }
+
+    fn vision_input_stamp_with_suzerains(
+        &self,
+        pid: usize,
+        suzerains: &BTreeMap<usize, Option<usize>>,
+        unit_stamps: Option<&[u64]>,
+    ) -> u64 {
+        let mut stamp = vision_key(&[
+            self.vision_geometry_stamp(),
+            pid as u64,
+            self.is_arena() as u64,
+            self.tactics.fog as u64,
+        ]);
+        if self.is_arena() && !self.tactics.fog {
+            return stamp;
+        }
+        let viewers = self.visibility_viewers(pid);
+        stamp = vision_key(&[stamp, viewers.len() as u64]);
+        for viewer in viewers {
+            stamp = vision_key(&[
+                stamp,
+                viewer as u64,
+                self.base_vision_input_stamp(viewer, suzerains, unit_stamps),
+            ]);
+        }
+        if pid == MIRRORED_SEAT {
+            for position in &self.host_observed {
+                stamp = vision_key(&[
+                    stamp,
+                    position.0 as i64 as u64,
+                    position.1 as i64 as u64,
+                ]);
+            }
+        }
+        stamp
+    }
+
+    #[cfg(test)]
+    fn vision_input_stamp(&self, pid: usize) -> u64 {
+        self.with_suzerain_read_memo(|| {
+            let suzerains = self.suzerain_input_map();
+            self.vision_input_stamp_with_suzerains(pid, &suzerains, None)
+        })
+    }
+
+    /// Return the current sight frame, reusing its dense bitset when the
+    /// stamped inputs still match.  The returned `Arc` keeps the hot callers
+    /// (action legality, AI perception, and refresh publication) from cloning
+    /// the map-sized bit vector merely to borrow it for a membership check.
+    fn vision_frame(&self, pid: usize, heights: &mut HeightField) -> Arc<TileBits> {
+        self.with_suzerain_read_memo(|| {
+            let suzerains = self.suzerain_input_map();
+            let input_stamp = self.vision_input_stamp_with_suzerains(pid, &suzerains, None);
+            {
+                let frames = self.vision_frames.frames.borrow();
+                if let Some(Some(frame)) = frames.get(pid) {
+                    if frame.input_stamp == input_stamp {
+                        return Arc::clone(&frame.visible);
+                    }
+                }
+            }
+            let visible = Arc::new(self.player_vision(heights, pid));
+            let mut frames = self.vision_frames.frames.borrow_mut();
+            if frames.len() <= pid {
+                frames.resize_with(pid + 1, || None);
+            }
+            frames[pid] = Some(VisionFrame {
+                input_stamp,
+                visible: Arc::clone(&visible),
+            });
+            visible
+        })
+    }
+
+    fn store_vision_frame(&self, pid: usize, input_stamp: u64, visible: Arc<TileBits>) {
+        let mut frames = self.vision_frames.frames.borrow_mut();
+        if frames.len() <= pid {
+            frames.resize_with(pid + 1, || None);
+        }
+        frames[pid] = Some(VisionFrame {
+            input_stamp,
+            visible,
+        });
+    }
+
+    fn matching_vision_frame(&self, pid: usize, input_stamp: u64) -> Option<Arc<TileBits>> {
+        self.vision_frames
+            .frames
+            .borrow()
+            .get(pid)
+            .and_then(|frame| frame.as_ref())
+            .filter(|frame| frame.input_stamp == input_stamp)
+            .map(|frame| Arc::clone(&frame.visible))
     }
 
     fn base_player_visibility(&self, heights: &mut HeightField, pid: usize) -> TileBits {
@@ -32614,8 +33472,12 @@ impl Game {
     /// Callers that only ask whether a tile is visible want this: building a
     /// sorted set of a few hundred positions to answer one membership
     /// question was, by some way, the most expensive thing visibility did.
+    pub(crate) fn player_vision_frame(&self, pid: usize) -> Arc<TileBits> {
+        self.vision_frame(pid, &mut self.height_field())
+    }
+
     pub(crate) fn player_vision_now(&self, pid: usize) -> TileBits {
-        self.player_vision(&mut self.height_field(), pid)
+        self.player_vision_frame(pid).as_ref().clone()
     }
 
     #[inline]
@@ -32628,7 +33490,7 @@ impl Game {
 
     /// Whether one tile is currently in a player's sight.
     pub fn player_can_see(&self, pid: usize, pos: Pos) -> bool {
-        self.sees(&self.player_vision_now(pid), pos)
+        self.sees(&self.player_vision_frame(pid), pos)
     }
 
     pub fn player_visibility(&self, pid: usize) -> BTreeSet<Pos> {
@@ -32636,7 +33498,8 @@ impl Game {
     }
 
     fn player_visibility_via(&self, heights: &mut HeightField, pid: usize) -> BTreeSet<Pos> {
-        self.tiles_of(&self.player_vision(heights, pid))
+        let visible = self.vision_frame(pid, heights);
+        self.tiles_of(&visible)
     }
 
     fn player_vision(&self, heights: &mut HeightField, pid: usize) -> TileBits {
@@ -32738,10 +33601,10 @@ impl Game {
         heights: &mut HeightField,
         memory_world: u64,
     ) {
-        if pid >= self.players.len() {
+        if self.visibility_suppressed || pid >= self.players.len() {
             return;
         }
-        let visible = self.player_vision(heights, pid);
+        let visible = self.vision_frame(pid, heights);
         // Ahead of the snapshot's early-out rather than inside it: that guard
         // is keyed on the seat's own memory and the world's cities, so a rival
         // unit walking into a standing scout's sight would not disturb it.
@@ -32873,6 +33736,24 @@ impl Game {
         self.track_fog_memory = track;
     }
 
+    /// Make a branch for a read-and-discard simulation.
+    ///
+    /// Search branches never publish an observation, and nobody reads their
+    /// explored ground, contacts, fog memory, or mid-turn war narration. The
+    /// branch therefore keeps the complete rule state but suppresses those
+    /// observer-only updates in addition to disabling their retained ledgers.
+    /// Its derived caches are reset or shared cheaply by `Game::clone`, so a
+    /// disposable branch starts paying only for work its hypothetical actions
+    /// actually ask for.
+    pub fn speculative_clone(&self) -> Self {
+        let mut branch = self.clone();
+        branch.track_fog_memory = false;
+        branch.track_war_ledger = false;
+        branch.visibility_suppressed = true;
+        branch.visibility_batch = VisibilityBatch::default();
+        branch
+    }
+
     /// Stop (or resume) re-syncing the narrated war ledger after every
     /// action. Declarations, peaces, and turn boundaries still sync it
     /// unconditionally, so the ledger every observer and report reads is
@@ -32975,6 +33856,9 @@ impl Game {
     }
 
     fn defer_or_refresh_visibility(&mut self, pid: usize, all: bool) {
+        if self.visibility_suppressed {
+            return;
+        }
         if self.visibility_batch.depth > 0 {
             if all {
                 self.visibility_batch.refresh_all = true;
@@ -33000,6 +33884,9 @@ impl Game {
         visible: &TileBits,
         memory_world: u64,
     ) {
+        if self.visibility_suppressed {
+            return;
+        }
         // This active-turn union is deliberately recorded before the
         // last-known snapshot's early-out. A unit can walk back across ground
         // whose tile memory is already current; the browser still needs to
@@ -33095,7 +33982,8 @@ impl Game {
     /// introduced pays one loop over the seats and nothing else — the common
     /// case, since this runs behind every action a player takes.
     fn record_contacts_in_sight(&mut self, pid: usize, visible: &TileBits) {
-        if self
+        if self.visibility_suppressed
+            || self
             .players
             .get(pid)
             .is_none_or(|seat| seat.is_barbarian || seat.is_free_city)
@@ -33379,7 +34267,25 @@ impl Game {
         result
     }
 
+    /// Read-only visibility consumers also walk the suzerain relation while
+    /// constructing an input stamp.  Keep that poll one-per-minor for the
+    /// duration of the frame lookup, without requiring a mutable `Game`.
+    fn with_suzerain_read_memo<R>(&self, pass: impl FnOnce() -> R) -> R {
+        let installed = self.query_memo.suzerain.borrow().is_none();
+        if installed {
+            *self.query_memo.suzerain.borrow_mut() = Some(BTreeMap::new());
+        }
+        let result = pass();
+        if installed {
+            *self.query_memo.suzerain.borrow_mut() = None;
+        }
+        result
+    }
+
     fn refresh_all_visibility(&mut self) {
+        if self.visibility_suppressed {
+            return;
+        }
         let memory_world = if self.track_fog_memory {
             self.memory_world_stamp()
         } else {
@@ -33394,7 +34300,7 @@ impl Game {
     }
 
     /// Compute current sight from one immutable final position, then publish
-    /// each result serially. Worker game clones retain their inherited vision
+    /// each result serially. Worker game clones start with disposable vision
     /// caches, and the newly filled entries are merged back before returning.
     fn refresh_visibility_parallel(
         &mut self,
@@ -33402,47 +34308,102 @@ impl Game {
         memory_world: u64,
         pool: &WorkPool,
     ) {
-        if players.is_empty() {
+        if self.visibility_suppressed || players.is_empty() {
             return;
         }
-        let count = players.len();
-        let active = pool.threads().min(count);
-        let states = (0..active).map(|_| self.clone()).collect::<Vec<_>>();
-        let players = Arc::new(players);
-        let worker_players = Arc::clone(&players);
-        let mut computed = pool.map_stateful(count, states, move |game, indices| {
-            // Worker clones start with an empty query cache; the same
-            // suzerain answers the serial pass memoizes would otherwise be
-            // re-derived from scratch for every seat this worker computes.
-            let memo = game.query_memo();
-            let mut results = indices
-                .map(|index| {
-                    let visible = game.player_vision_now(worker_players[index]);
-                    (index, (visible, None))
-                })
-                .collect::<Vec<_>>();
-            drop(memo);
-            if let Some((_, (_, cache))) = results.last_mut() {
-                *cache = Some(game.vision.into_inner());
+        // Do the cheap stamp pass on the authoritative world first.  A worker
+        // clone starts with no compact frames, so sending an unchanged seat to
+        // a worker would throw away exactly the reuse this cache is for.
+        let mut cached = Vec::<(usize, u64, Arc<TileBits>)>::new();
+        let mut pending = Vec::<(usize, u64)>::new();
+        self.with_suzerain_read_memo(|| {
+            let suzerains = self.suzerain_input_map();
+            let unit_stamps = self.unit_vision_input_stamps();
+            for pid in &players {
+                let input_stamp = self.vision_input_stamp_with_suzerains(
+                    *pid,
+                    &suzerains,
+                    Some(&unit_stamps),
+                );
+                match self.matching_vision_frame(*pid, input_stamp) {
+                    Some(visible) => cached.push((*pid, input_stamp, visible)),
+                    None => pending.push((*pid, input_stamp)),
+                }
             }
-            results
         });
 
-        let vision_stamp = self.world_stamp();
-        for (_, cache) in &mut computed {
-            if let Some(cache) = cache.take() {
-                self.vision
-                    .borrow_mut()
-                    .merge_current(cache, vision_stamp);
+        let count = pending.len();
+        let mut fresh = Vec::<(usize, u64, TileBits)>::with_capacity(count);
+        if count > 0 {
+            let active = pool.threads().min(count);
+            let states = (0..active).map(|_| self.clone()).collect::<Vec<_>>();
+            let worker_players = Arc::new(pending.iter().map(|(pid, _)| *pid).collect::<Vec<_>>());
+            let worker_players_for_pool = Arc::clone(&worker_players);
+            let mut computed = pool.map_stateful(count, states, move |game, indices| {
+                // Worker clones start with an empty query cache; the same
+                // suzerain answers the serial pass memoizes would otherwise
+                // be re-derived from scratch for every seat this worker computes.
+                let memo = game.query_memo();
+                let mut heights = game.height_field();
+                let mut results = indices
+                    .map(|index| {
+                        // The authoritative pre-pass already stamped which
+                        // seats need work.  Compute the ray answer directly
+                        // here; asking the worker to stamp it a second time
+                        // would spend the saved work before it reaches main.
+                        let visible = game.player_vision(
+                            &mut heights,
+                            worker_players_for_pool[index],
+                        );
+                        (index, (visible, None))
+                    })
+                    .collect::<Vec<_>>();
+                drop(memo);
+                if let Some((_, (_, cache))) = results.last_mut() {
+                    *cache = Some(game.vision.into_inner());
+                }
+                results
+            });
+
+            let vision_stamp = self.world_stamp();
+            for (_, cache) in &mut computed {
+                if let Some(cache) = cache.take() {
+                    self.vision
+                        .borrow_mut()
+                        .merge_current(cache, vision_stamp);
+                }
+            }
+            for ((pid, input_stamp), (visible, _)) in pending.into_iter().zip(computed) {
+                fresh.push((pid, input_stamp, visible));
             }
         }
-        for (pid, (visible, _)) in players.iter().copied().zip(computed) {
+
+        // Publish in the requested player order, exactly as the old all-worker
+        // path did.  Contacts and fog memory are observer-visible state, so a
+        // cached frame saves the ray work but not this serial publication.
+        for pid in players {
+            let (input_stamp, visible) = if let Some((_, stamp, visible)) =
+                cached.iter().find(|(cached_pid, _, _)| *cached_pid == pid)
+            {
+                (*stamp, Arc::clone(visible))
+            } else {
+                let index = fresh
+                    .iter()
+                    .position(|(fresh_pid, _, _)| *fresh_pid == pid)
+                    .expect("every pending visibility frame has a result");
+                let (_, stamp, visible) = fresh.swap_remove(index);
+                (stamp, Arc::new(visible))
+            };
+            self.store_vision_frame(pid, input_stamp, Arc::clone(&visible));
             self.record_contacts_in_sight(pid, &visible);
             self.refresh_visibility_snapshot_with_world(pid, &visible, memory_world);
         }
     }
 
     fn refresh_all_visibility_parallel(&mut self, pool: &WorkPool) {
+        if self.visibility_suppressed {
+            return;
+        }
         let memory_world = if self.track_fog_memory {
             self.memory_world_stamp()
         } else {
@@ -33452,6 +34413,9 @@ impl Game {
     }
 
     fn refresh_team_visibility(&mut self, pid: usize) {
+        if self.visibility_suppressed {
+            return;
+        }
         let members = self.team_members(pid);
         let memory_world = if self.track_fog_memory {
             self.memory_world_stamp()
@@ -33469,6 +34433,9 @@ impl Game {
     }
 
     fn refresh_team_visibility_parallel(&mut self, pid: usize, pool: &WorkPool) {
+        if self.visibility_suppressed {
+            return;
+        }
         let members = self
             .team_members(pid)
             .into_iter()
@@ -33486,6 +34453,9 @@ impl Game {
     /// share explored-map knowledge. Current visibility is still calculated
     /// separately and units are deliberately never copied into memory.
     fn share_visibility_memories(&mut self, members: &[usize]) {
+        if self.visibility_suppressed {
+            return;
+        }
         let explored: BTreeSet<Pos> = members
             .iter()
             .flat_map(|member| self.players[*member].explored.iter().copied())
@@ -34566,6 +35536,7 @@ impl Game {
     fn invalidate_routing_paths(&self) {
         let mut routing = self.routing.borrow_mut();
         routing.paths.clear();
+        routing.reverse_fields.clear();
         routing.city_owner_key = None;
     }
 
@@ -34655,6 +35626,7 @@ impl Game {
             cache.stamp = stamp;
             cache.zones.clear();
             cache.paths.clear();
+            cache.reverse_fields.clear();
             cache.city_owner_key = None;
         }
         stamp
@@ -34728,9 +35700,14 @@ impl Game {
     /// useful for exploration, where the geometrically nearest hidden tile
     /// may be on the far side of an impassable ridge or pre-embarkation sea.
     pub fn route_step_to_any(&self, uid: u32, goals: &HashSet<Pos>) -> Option<Pos> {
+        if goals.is_empty() {
+            return None;
+        }
         let unit = self.units.get(&uid)?;
         let zones = self.routing_zones(self.traversal_class(uid));
-        let start_zone = self.map.tiles.index_of(unit.pos).map_or(0, |i| zones[i]);
+        let start = unit.pos;
+        let start_index = self.map.tiles.index_of(start)?;
+        let start_zone = zones[start_index];
         // Goals the labeling can disprove would each cost the breadth-first
         // search below a full flood of the unit's region to disprove again.
         if start_zone != 0
@@ -34740,7 +35717,159 @@ impl Game {
         {
             return None;
         }
-        self.first_route_step(uid, |p| goals.contains(&p))
+        // Keep the historical short-circuit: callers use a set that may also
+        // contain the unit's current tile to mean "already at a valid goal".
+        if goals.contains(&start) || self.formation_movement_locked_by_zoc(uid) {
+            return None;
+        }
+
+        // A singleton target is usually a one-off city/ring query. Flooding
+        // its whole region would cost more than the forward search that stops
+        // as soon as that one target is found; reserve fields for the
+        // multi-source queries that can amortize their construction across
+        // units and turns within this routing epoch.
+        if goals.len() < 2 {
+            return self.first_route_step(uid, |position| goals.contains(&position));
+        }
+
+        // A malformed scenario can place a unit on a tile outside its static
+        // traversal labeling. The reverse field deliberately labels only
+        // ordinary interior tiles, so retain the old proof-producing search
+        // for that exceptional starting state.
+        if start_zone == 0 {
+            return self.first_route_step(uid, |position| goals.contains(&position));
+        }
+
+        let _memo = self.query_memo();
+        let territory_access = self.unit_territory_access(unit);
+        let access_key = self.route_access_key(unit, territory_access.as_slice());
+        let class = self.traversal_class(uid);
+        let mut ordered_goals: Vec<Pos> = goals.iter().copied().collect();
+        ordered_goals.sort_unstable();
+        let goals = Arc::new(ordered_goals);
+        let stamp = self.refresh_routing_cache_stamp();
+
+        let cached = {
+            let routing = self.routing.borrow();
+            routing
+                .reverse_fields
+                .iter()
+                .find(|field| {
+                    field.class == class
+                        && field.access_key == access_key
+                        && field.goals.as_slice() == goals.as_slice()
+                })
+                .map(|field| field.distance.clone())
+        };
+        let distance = match cached {
+            Some(distance) => distance,
+            None => {
+                let distance = Arc::new(self.build_reverse_flow_field(
+                    uid,
+                    class,
+                    territory_access.as_slice(),
+                    goals.as_slice(),
+                    &zones,
+                ));
+                let mut routing = self.routing.borrow_mut();
+                if routing.stamp == stamp {
+                    routing.reverse_fields.retain(|field| {
+                        !(field.class == class
+                            && field.access_key == access_key
+                            && field.goals.as_slice() == goals.as_slice())
+                    });
+                    if routing.reverse_fields.len() >= MAX_REVERSE_FLOW_FIELDS {
+                        routing.reverse_fields.remove(0);
+                    }
+                    routing.reverse_fields.push(ReverseFlowField {
+                        class,
+                        access_key,
+                        goals,
+                        distance: distance.clone(),
+                    });
+                }
+                distance
+            }
+        };
+
+        // The reverse field gives the distance from every interior tile to
+        // its nearest goal. Read the first edge in the same neighbour order as
+        // the forward BFS; among equal distances this preserves its stable
+        // tie-break while avoiding a fresh flood for every unit.
+        let mut best_distance = i32::MAX;
+        let mut best = None;
+        for next in self.nbrs(start) {
+            let Some(index) = self.map.tiles.index_of(next) else {
+                continue;
+            };
+            if !self.can_enter(uid, start, next) {
+                continue;
+            }
+            let steps = distance[index];
+            if steps < best_distance {
+                best_distance = steps;
+                best = Some(next);
+            }
+        }
+        best
+    }
+
+    /// Build a multi-source distance field by walking route edges backwards
+    /// from every valid goal. Interior route edges are symmetric: after the
+    /// static traversal zone has accepted a tile, the future-segment gate is
+    /// only territory/city ownership on the destination. The live unit still
+    /// validates its selected first edge with `can_enter` below.
+    fn build_reverse_flow_field(
+        &self,
+        uid: u32,
+        class: TraversalClass,
+        territory_access: &[bool],
+        goals: &[Pos],
+        zones: &[u32],
+    ) -> Vec<i32> {
+        const UNREACHED: i32 = i32::MAX;
+        let mut distance = vec![UNREACHED; self.map.tiles.len()];
+        let mut queue = VecDeque::new();
+        for &goal in goals {
+            let Some(index) = self.map.tiles.index_of(goal) else {
+                continue;
+            };
+            if zones[index] == 0
+                || distance[index] != UNREACHED
+                || !self.can_path_through_known_traversable(uid, goal, territory_access)
+            {
+                continue;
+            }
+            distance[index] = 0;
+            queue.push_back((goal, index));
+        }
+
+        while let Some((current, current_index)) = queue.pop_front() {
+            let next_distance = distance[current_index].saturating_add(1);
+            for predecessor in self.nbrs(current) {
+                let Some(index) = self.map.tiles.index_of(predecessor) else {
+                    continue;
+                };
+                if distance[index] != UNREACHED || zones[index] == 0 {
+                    continue;
+                }
+                // `class` is passed explicitly so a field cannot silently use
+                // a changed unit traversal answer while its owning memo is
+                // still active. The zone already came from this class; the
+                // assertion documents that invariant for debug builds.
+                debug_assert!(self.class_can_traverse(class, &self.map.tiles[&predecessor]));
+                if !self.can_path_through_known_traversable(
+                    uid,
+                    predecessor,
+                    territory_access,
+                ) {
+                    continue;
+                }
+                distance[index] = next_distance;
+                queue.push_back((predecessor, index));
+            }
+        }
+        distance
     }
 
     fn first_route_step<F>(&self, uid: u32, is_goal: F) -> Option<Pos>
@@ -38036,6 +39165,7 @@ impl Game {
             *self.query_memo.gw_slots.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.gw_housing.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.regional.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.wonder_effects.borrow_mut() = Some(BTreeMap::new());
         }
         QueryMemo {
             game: self,
@@ -50002,37 +51132,49 @@ impl Game {
     /// Pillaged districts and buildings are disabled and stop charging upkeep.
     /// Flood Barriers use their base 1 Gold multiplied by exposed lowlands and
     /// the current whole-meter sea-level multiplier.
+    fn city_infrastructure_gold_maintenance(&self, city: &City) -> f64 {
+        let districts = city
+            .districts
+            .iter()
+            .filter(|(district, position)| self.district_is_active(city, district, **position))
+            .map(|(district, _)| self.rules.districts[district].maintenance)
+            .sum::<f64>();
+        let buildings = city
+            .buildings
+            .iter()
+            .filter(|building| !city.pillaged_buildings.contains(*building))
+            .filter(|building| self.building_district_is_active(city, building))
+            .map(|building| {
+                let base = self.rules.buildings[building].maintenance;
+                if building == "flood_barrier" {
+                    base * self.coastal_lowland_tiles(city).len() as f64
+                        * (1 + self.climate_phase / 2) as f64
+                } else {
+                    base
+                }
+            })
+            .sum::<f64>();
+        districts + buildings
+    }
+
     fn infrastructure_gold_maintenance(&self, pid: usize) -> f64 {
         self.cities
             .values()
             .filter(|city| city.owner == pid)
-            .map(|city| {
-                let districts = city
-                    .districts
-                    .iter()
-                    .filter(|(district, position)| {
-                        self.district_is_active(city, district, **position)
-                    })
-                    .map(|(district, _)| self.rules.districts[district].maintenance)
-                    .sum::<f64>();
-                let buildings = city
-                    .buildings
-                    .iter()
-                    .filter(|building| !city.pillaged_buildings.contains(*building))
-                    .filter(|building| self.building_district_is_active(city, building))
-                    .map(|building| {
-                        let base = self.rules.buildings[building].maintenance;
-                        if building == "flood_barrier" {
-                            base * self.coastal_lowland_tiles(city).len() as f64
-                                * (1 + self.climate_phase / 2) as f64
-                        } else {
-                            base
-                        }
-                    })
-                    .sum::<f64>();
-                districts + buildings
-            })
+            .map(|city| self.city_infrastructure_gold_maintenance(city))
             .sum()
+    }
+
+    /// Snapshot the per-city infrastructure answers before a completion that
+    /// may have empire-wide effects. Wonders are rare, so the defensive
+    /// snapshot is cheaper than making ordinary upkeep derivation carry a
+    /// global mutation ledger through every completion path.
+    fn city_upkeep_snapshot(&self, pid: usize) -> BTreeMap<u32, f64> {
+        self.cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .map(|city| (city.id, self.city_infrastructure_gold_maintenance(city)))
+            .collect()
     }
 
     fn nuclear_gold_maintenance(&self, pid: usize) -> f64 {
@@ -55373,13 +56515,29 @@ impl Game {
         let mut cul = 0.0;
         let mut gold = 0.0;
         let mut faith = 0.0;
+        // City processing already has the complete local state needed to
+        // price infrastructure. Keep the derived per-city answers in a
+        // stable ledger so upkeep is reduced once here rather than by a
+        // second empire-wide district/building scan. A later wonder can add a
+        // free building to a city that has already been processed; the
+        // returned correction below keeps that observable order exact.
+        let mut infrastructure_upkeep = BTreeMap::new();
         let turn_city_ids = self.player_city_ids(pid);
         for cid in turn_city_ids.iter().copied() {
-            let ys = self.process_city(pid, cid);
+            let (ys, city_upkeep, upkeep_updates) = self.process_city_with_upkeep(pid, cid);
             sci += ys.science;
             cul += ys.culture;
             gold += ys.gold;
             faith += ys.faith;
+            infrastructure_upkeep.insert(cid, city_upkeep);
+            for (changed_city, upkeep) in upkeep_updates {
+                // A city not reached yet will derive its post-wonder answer
+                // when its own turn runs. Only an earlier city needs a
+                // correction in the reduction ledger.
+                if infrastructure_upkeep.contains_key(&changed_city) {
+                    infrastructure_upkeep.insert(changed_city, upkeep);
+                }
+            }
         }
         let founder_yields = self.founder_belief_yields(pid);
         sci += founder_yields.science;
@@ -55449,7 +56607,7 @@ impl Game {
             gold += self.monopoly_bonuses(pid).0;
         }
         gold -= self.unit_gold_maintenance(pid);
-        gold -= self.infrastructure_gold_maintenance(pid);
+        gold -= infrastructure_upkeep.values().copied().sum::<f64>();
         gold -= self.nuclear_gold_maintenance(pid);
         self.settle_gold_budget(pid, gold);
         self.players[pid].faith += faith;
@@ -56280,7 +57438,22 @@ impl Game {
         }
     }
 
+    // Kept as the compact test-facing API; the authoritative turn path uses
+    // the richer result so it can reduce upkeep without a second scan.
+    #[allow(dead_code)]
     fn process_city(&mut self, pid: usize, cid: u32) -> Yields {
+        self.process_city_with_upkeep(pid, cid).0
+    }
+
+    /// Advance one city and derive the infrastructure upkeep that belongs to
+    /// its post-processing state. The third return value contains corrected
+    /// answers for cities a wonder changed while this city completed.
+    fn process_city_with_upkeep(
+        &mut self,
+        pid: usize,
+        cid: u32,
+    ) -> (Yields, f64, Vec<(u32, f64)>) {
+        let mut upkeep_updates = Vec::new();
         self.modernize_unit_queue(pid, cid);
         // Upgrade old saves lazily: legacy queued districts predate explicit
         // foundations, so establish and lock them before producing this turn.
@@ -56427,7 +57600,10 @@ impl Game {
                 let stalled = matches!(&item, Item::Unit { unit } if unit == "settler")
                     && self.cities[&cid].pop < 2;
                 if !stalled && self.cities[&cid].production >= cost {
-                    if self.complete_item(pid, cid, &item) {
+                    let (completed, changed_upkeep) =
+                        self.complete_item_and_collect_upkeep(pid, cid, &item);
+                    upkeep_updates.extend(changed_upkeep);
+                    if completed {
                         // Gathering Storm strips item-specific Production
                         // bonuses from overflow. Only unspent base Production
                         // and previously banked base progress carry forward.
@@ -56483,7 +57659,8 @@ impl Game {
         if encampment.is_some() && !city.encampment_pillaged && !encampment_besieged {
             city.encampment_hp = (city.encampment_hp + 20).min(100);
         }
-        ys
+        let city_upkeep = self.city_infrastructure_gold_maintenance(&self.cities[&cid]);
+        (ys, city_upkeep, upkeep_updates)
     }
 
     fn complete_random_nodes(&mut self, pid: usize, amount: usize, technologies: bool) {
@@ -56731,6 +57908,33 @@ impl Game {
         if self.players[pid].dvp >= DIPLOMATIC_VICTORY_POINTS {
             self.set_winner(pid, "diplomatic");
         }
+    }
+
+    /// Complete an item and report any already-processed cities whose
+    /// infrastructure upkeep changed as an empire-wide side effect. Ordinary
+    /// items are local; only a wonder needs the defensive before/after census.
+    fn complete_item_and_collect_upkeep(
+        &mut self,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+    ) -> (bool, Vec<(u32, f64)>) {
+        let before = matches!(item, Item::Wonder { .. }).then(|| self.city_upkeep_snapshot(pid));
+        let completed = self.complete_item(pid, cid, item);
+        let Some(before) = before else {
+            return (completed, Vec::new());
+        };
+        if !completed {
+            return (false, Vec::new());
+        }
+        let after = self.city_upkeep_snapshot(pid);
+        let changed = after
+            .into_iter()
+            .filter_map(|(city_id, upkeep)| {
+                (before.get(&city_id).copied() != Some(upkeep)).then_some((city_id, upkeep))
+            })
+            .collect();
+        (true, changed)
     }
 
     fn complete_item(&mut self, pid: usize, cid: u32, item: &Item) -> bool {
@@ -59508,6 +60712,65 @@ mod visibility_tests {
         hex::canon((origin.0 + distance, origin.1), game.map.width)
     }
 
+    #[test]
+    fn vision_frames_reuse_static_inputs_and_invalidate_on_sight_changes() {
+        let (mut game, center) = controlled_game(63_099);
+        let scout = game.spawn_unit("scout", 0, center);
+
+        let first = game.vision_frame(0, &mut game.height_field());
+        let first_stamp = game.vision_input_stamp(0);
+        let again = game.vision_frame(0, &mut game.height_field());
+        assert!(Arc::ptr_eq(&first, &again), "a static frame should be reused");
+
+        // A turn advances remembered-tile timestamps, not the sight ray.
+        game.turn += 1;
+        let next_turn = game.vision_frame(0, &mut game.height_field());
+        assert!(
+            Arc::ptr_eq(&first, &next_turn),
+            "turn-only changes should keep the compact sight frame"
+        );
+        assert_eq!(game.vision_input_stamp(0), first_stamp);
+
+        // Combat state is not a sight input, so changing HP does not evict the
+        // frame.  This is the high-frequency action that the input stamp must
+        // deliberately ignore.
+        game.units.get_mut(&scout).unwrap().hp -= 1;
+        let damaged = game.vision_frame(0, &mut game.height_field());
+        assert!(
+            Arc::ptr_eq(&first, &damaged),
+            "non-vision unit state should not rebuild sight"
+        );
+
+        // Tile writes that do not participate in a sight ray still advance
+        // the map's general mutation epoch.  The geometry fold must filter
+        // those writes so an improvement/road update does not evict every
+        // seat's frame.
+        let road_tile = along(&game, center, 3);
+        game.map.tiles.get_mut(&road_tile).unwrap().road = 1;
+        let road_changed = game.vision_frame(0, &mut game.height_field());
+        assert!(
+            Arc::ptr_eq(&first, &road_changed),
+            "unrelated tile writes should preserve the sight frame"
+        );
+
+        // Moving the source changes the compact signature and must produce a
+        // new frame with exactly the same answer as an uncached derivation.
+        let moved_to = along(&game, center, 1);
+        game.relocate(scout, moved_to);
+        let moved = game.vision_frame(0, &mut game.height_field());
+        assert!(!Arc::ptr_eq(&first, &moved));
+        let mut heights = game.height_field();
+        let uncached = game.player_vision(&mut heights, 0);
+        assert!(moved.as_ref() == &uncached, "cached and fresh sight differ");
+
+        // Geometry changes invalidate every source frame even when no unit
+        // moved; the epoch is the map's single mutation boundary.
+        let tile = along(&game, center, 2);
+        game.map.tiles.get_mut(&tile).unwrap().hills = true;
+        let changed_map = game.vision_frame(0, &mut game.height_field());
+        assert!(!Arc::ptr_eq(&moved, &changed_map));
+    }
+
     fn observed_tile(observation: &serde_json::Value, position: Pos) -> &serde_json::Value {
         observation["map"]["tiles"]
             .as_array()
@@ -60391,6 +61654,42 @@ mod visibility_tests {
                 "parallel visibility must publish seat {pid}'s exact observation"
             );
         }
+    }
+
+    #[test]
+    fn speculative_clones_drop_observer_work_and_keep_rules_state() {
+        let (mut game, origin) = controlled_game(91_011);
+        let scout = game.spawn_unit("scout", 0, origin);
+        let _ = game.unit_visible_tiles(scout);
+        assert!(
+            !game.vision.borrow().seen.is_empty(),
+            "the control world should have a populated unit-vision cache"
+        );
+
+        let source_explored = game.players[0].explored.len();
+        let mut branch = game.speculative_clone();
+        assert!(
+            branch.vision.borrow().seen.is_empty(),
+            "a clone must not copy a parent's disposable sight bitsets"
+        );
+        assert!(!branch.track_fog_memory);
+        assert!(!branch.track_war_ledger);
+        assert!(branch.visibility_suppressed);
+        assert_eq!(branch.units.len(), game.units.len());
+        assert_eq!(branch.cities.len(), game.cities.len());
+
+        let explored = branch.players[0].explored.len();
+        branch.spawn_unit("warrior", 0, along(&branch, origin, 1));
+        assert_eq!(
+            branch.players[0].explored.len(),
+            explored,
+            "a disposable branch does not copy or grow fog exploration"
+        );
+        assert_eq!(
+            game.players[0].explored.len(),
+            source_explored,
+            "the branch's observer-only work must not leak to its source"
+        );
     }
 }
 
@@ -64276,6 +65575,44 @@ mod combat_scenarios {
             g.routing.borrow().paths.len(),
             1,
             "advancing along a cached route must not launch and store a second plan",
+        );
+    }
+
+    #[test]
+    fn reverse_flow_fields_match_forward_goal_search_and_reuse_the_field() {
+        let (mut g, start, _) = controlled_game(3_207);
+        let warrior = g.spawn_unit("warrior", 0, start);
+        let goals: HashSet<Pos> = g
+            .wdisk(start, 4)
+            .into_iter()
+            .filter(|position| g.wdist(start, *position) == 4)
+            .collect();
+        assert!(goals.len() > 1, "the fixture supplies a multi-source goal ring");
+
+        let expected = g.first_route_step(warrior, |position| goals.contains(&position));
+        assert!(expected.is_some(), "the goal ring is reachable on plains");
+        assert!(g.routing.borrow().reverse_fields.is_empty());
+
+        let first = g.route_step_to_any(warrior, &goals);
+        assert_eq!(first, expected, "reverse and forward fields choose the same step");
+        assert_eq!(g.routing.borrow().reverse_fields.len(), 1);
+
+        let second = g.route_step_to_any(warrior, &goals);
+        assert_eq!(second, first);
+        assert_eq!(
+            g.routing.borrow().reverse_fields.len(),
+            1,
+            "the same goal set reads the cached reverse field"
+        );
+
+        let mut reordered: Vec<Pos> = goals.iter().copied().collect();
+        reordered.reverse();
+        let reordered: HashSet<Pos> = reordered.into_iter().collect();
+        assert_eq!(g.route_step_to_any(warrior, &reordered), first);
+        assert_eq!(
+            g.routing.borrow().reverse_fields.len(),
+            1,
+            "HashSet iteration order does not make a duplicate field"
         );
     }
 
@@ -73491,5 +74828,77 @@ mod world_lap_tests {
             game.players[0].went_around,
             "a way round at the equator is the real thing",
         );
+    }
+}
+
+#[cfg(test)]
+mod wonder_effect_cache_tests {
+    use super::{Action, Game};
+
+    #[test]
+    fn per_player_wonder_effect_aggregate_matches_the_scalar_path() {
+        let mut game = Game::new_full(1, 20, 14, 91_483, 120, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("the fixture has a starting Settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("the starting Settler can found the capital");
+        let city = game.player_city_ids(0)[0];
+        let position = game.cities[&city].pos;
+        game.cities.get_mut(&city).unwrap().wonders.extend([
+            (crate::name!("angkor_wat"), position),
+            (crate::name!("alhambra"), position),
+            (crate::name!("colossus"), position),
+            (crate::name!("forbidden_city"), position),
+            (crate::name!("kilwa_kisiwani"), position),
+            (crate::name!("taj_mahal"), position),
+        ]);
+        let effects = [
+            "empire_housing",
+            "historic_moment_bonus",
+            "military_policy_slots",
+            "suzerain_type_empire_bonus_pct",
+            "trade_route_capacity",
+        ];
+        let scalar: Vec<f64> = effects
+            .iter()
+            .map(|effect| game.empire_wonder_effect(0, effect))
+            .collect();
+
+        {
+            let _memo = game.query_memo();
+            let cached: Vec<f64> = effects
+                .iter()
+                .map(|effect| game.empire_wonder_effect(0, effect))
+                .collect();
+            assert_eq!(cached, scalar);
+            assert_eq!(
+                game.query_memo
+                    .wonder_effects
+                    .borrow()
+                    .as_ref()
+                    .expect("the guard opens the wonder aggregate")
+                    .len(),
+                1
+            );
+        }
+        assert!(game.query_memo.wonder_effects.borrow().is_none());
+
+        // A later world state gets a fresh aggregate rather than retaining a
+        // city's old wonder contribution across the memo boundary.
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .wonders
+            .remove(&crate::name!("taj_mahal"));
+        let without_taj = game.empire_wonder_effect(0, "historic_moment_bonus");
+        assert_eq!(without_taj, 0.0);
+        let with_new_memo = {
+            let _memo = game.query_memo();
+            game.empire_wonder_effect(0, "historic_moment_bonus")
+        };
+        assert_eq!(with_new_memo, without_taj);
     }
 }

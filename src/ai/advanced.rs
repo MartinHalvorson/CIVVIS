@@ -1927,6 +1927,33 @@ pub struct AdvancedAi {
     /// cannot be misattributed to production.
     pub envoy_infrastructure: bool,
 
+    /// Price the Religion lane's own district on the same scale the Culture
+    /// lane prices its own.
+    ///
+    /// `strategic_family` pays `(Culture, theater_square)` **850** and
+    /// `(Religion, holy_site)` **210** — a quarter — even though religious
+    /// victory is the route this engine actually converts: in the 2026-08-10
+    /// district-priority batch the winning arm took 267 of its 323 wins by
+    /// religion and 15 by culture. Neither number has ever been measured.
+    /// `grep strategic_family docs/EVAL.md` is empty, and `210.0` entered in
+    /// `0f6bd85e`, a bulk progression-and-command commit, not an evaluation.
+    ///
+    /// This is an **upper bound, not a proposal**, in the same sense as
+    /// `settler_price` under `advanced_settler_first`: it takes the largest
+    /// own-lane figure in the table rather than a tuned one, so a null result
+    /// retires the axis instead of leaving "maybe a smaller number would have
+    /// worked". Everything else about the lane is untouched, so a gain here is
+    /// the Religion empire building its own district sooner and nothing else.
+    ///
+    /// Off by default; evaluator arm `advanced_holy_lane`.
+    pub holy_lane_parity: bool,
+
+    /// Let the Diplomacy lane be entered before it has already succeeded.
+    ///
+    /// Off by default; evaluator arm `advanced_diplomatic_opening`. See
+    /// `AdvancedAi::diplomatic_opening_score`.
+    pub diplomatic_opening: bool,
+
     /// Reserve one empty city's next build for reachable envoy infrastructure.
     ///
     /// `envoy_infrastructure` teaches `advanced_production` what the Diplomatic
@@ -2062,6 +2089,19 @@ pub struct AdvancedAi {
 /// 1.7 and deliberately *below* Science's own 4.2: a lane still outbids the
 /// floor for its own currency, and this only stops the other lanes pricing
 /// research below their least valuable ordinary yield.
+/// What `holy_lane_parity` pays a Religion empire for its own Holy Site.
+///
+/// Not tuned: it is `(Culture, theater_square)`'s own figure, the largest
+/// own-lane value in `strategic_family`. See `AdvancedAi::holy_lane_parity`.
+const HOLY_LANE_PARITY: f64 = 850.0;
+
+/// What an open Diplomacy lane is worth before it has produced anything.
+///
+/// Religion's own opening figure, copied rather than chosen: see
+/// `AdvancedAi::diplomatic_opening_score` for why a mirrored number is the
+/// point and a tuned one would not be.
+const DIPLOMATIC_OPENING: i64 = 46;
+
 const RESEARCH_FLOOR_EARLY: f64 = 3.0;
 const RESEARCH_FLOOR_LATE: f64 = 1.0;
 
@@ -2154,8 +2194,13 @@ impl AdvancedAi {
     /// composite. Keep the three changes together here so every ordinary
     /// construction path (including weighted and explicitly targeted agents)
     /// has one auditable definition.
+    /// The deployed scripted major.
+    ///
+    /// One gene apart from `Weights::default()`: see [`crate::ai::ADVANCED_D_HOLY`]
+    /// for why the Holy Site figure lives here and not in the default that also
+    /// seeds minors and the frozen `advanced_v1` anchor.
     pub fn new() -> AdvancedAi {
-        Self::promoted_policy_envoy(Weights::default(), None)
+        Self::promoted_policy_envoy(Weights::advanced(), None)
     }
 
     /// Evaluator treatment for one unified midgame power-spike appointment.
@@ -2434,6 +2479,8 @@ impl AdvancedAi {
             congress_counter_leader: false,
             congress_counter_votes: false,
             envoy_infrastructure: false,
+            holy_lane_parity: false,
+            diplomatic_opening: false,
             envoy_priority: false,
             joint_tactics: false,
             tactics_resolved: BTreeSet::new(),
@@ -5080,6 +5127,56 @@ impl AdvancedAi {
         Some((commitment, best_site.unwrap_or(0.0), player.faith))
     }
 
+    /// What the Diplomacy lane is worth *before* it has produced anything.
+    ///
+    /// ⚠ **The asymmetry this repairs.** Every other lane in `best_lane` scores
+    /// prospectively — Religion is handed **46** for nothing more than
+    /// `religious_opening_viable`, and 55 once a rival has founded. Diplomacy
+    /// alone scored `dvp * 5 + suzerain * 6`, which is **purely
+    /// retrospective**: zero until the empire already holds diplomatic points
+    /// or a suzerainty. The lane is chosen by an argmax over those scores, so a
+    /// zero cannot be chosen, and a lane that is never chosen never emits the
+    /// influence that would raise the score. **A self-fulfilling zero**, and it
+    /// shows: the adaptive census puts Diplomacy at **0.9% of observed
+    /// player-turns** against Conquest's 26%, while diplomatic victories (19)
+    /// and domination victories (22) arrive at nearly the same rate.
+    ///
+    /// The prize is on record as the largest in the repository.
+    /// `Grant::Suzerain` — suzerain of every met city-state — measured
+    /// **56.7% against a 22.7% control**, p=0.0000 over 400 maps (PR #602),
+    /// larger than the expansion grant, and unlike expansion it is a decision
+    /// the agent makes. The envoy census then found the pool sits at **0.00
+    /// unspent**, which reads as a resource gap — but a lane that is never
+    /// entered is exactly why the resource is never produced.
+    ///
+    /// **The number is mirrored, not tuned.** It is Religion's own opening
+    /// figure, so Diplomacy loses every tie to Religion — deliberately, because
+    /// Religion is the lane that actually converts here (88% of wins). What
+    /// this can win is the argmax against **Conquest and Expansion, which score
+    /// 0**, in the games where the religious opening is closed. That is the
+    /// 26%-of-turns lane converting at 4%.
+    ///
+    /// Zero unless diplomatic victory is enabled and some met city-state is
+    /// still unclaimed, so a game without the condition or without a free minor
+    /// is untouched.
+    fn diplomatic_opening_score(&self, g: &Game, pid: usize) -> i64 {
+        if !self.diplomatic_opening || !g.victory_conditions.diplomatic {
+            return 0;
+        }
+        let claimable = g.players.iter().any(|minor| {
+            minor.alive
+                && minor.is_minor
+                && !minor.is_barbarian
+                && g.has_met(pid, minor.id)
+                && g.suzerain_of(minor.id) != Some(pid)
+        });
+        if claimable {
+            DIPLOMATIC_OPENING
+        } else {
+            0
+        }
+    }
+
     fn religious_opening_viable(&self, g: &Game, pid: usize) -> bool {
         let player = &g.players[pid];
         if player.religion.is_some() {
@@ -5284,7 +5381,10 @@ impl AdvancedAi {
                     && g.suzerain_of(minor.id) == Some(pid)
             })
             .count() as i64;
-        let diplomacy = (player.dvp * 5 + suzerain * 6).clamp(0, 100) as i32;
+        let diplomacy = (player.dvp * 5 + suzerain * 6)
+            .clamp(0, 100)
+            .max(self.diplomatic_opening_score(g, pid))
+            as i32;
 
         let candidates = [
             VictoryFocus {
@@ -6545,7 +6645,7 @@ impl AdvancedAi {
                 to,
                 product: Name::new(&product),
             };
-            let mut next = g.clone();
+            let mut next = g.speculative_clone();
             if next.apply(pid, &action).is_err() {
                 continue;
             }
@@ -10471,7 +10571,9 @@ impl AdvancedAi {
             .threads()
             .min(city_ids.len())
             .min(PURCHASE_MENU_MAX_WORKERS);
-        let states = (0..active).map(|_| g.clone()).collect::<Vec<_>>();
+        let states = (0..active)
+            .map(|_| g.speculative_clone())
+            .collect::<Vec<_>>();
         let per_city = pool.map_stateful_limited(
             city_ids.len(),
             PURCHASE_MENU_MAX_WORKERS,
@@ -10789,7 +10891,7 @@ impl AdvancedAi {
         if matches!(item, Item::Unit { .. }) && production_score < 120.0 {
             return None;
         }
-        let mut after = g.clone();
+        let mut after = g.speculative_clone();
         after.apply(pid, action).ok()?;
         let cost = (bank - after.players[pid].gold).max(0.0);
         if after.players[pid].gold + f64::EPSILON < reserve {
@@ -10830,7 +10932,7 @@ impl AdvancedAi {
         let Action::BuyPlot { city, pos, .. } = action else {
             unreachable!("plot shortlist contains only BuyPlot actions")
         };
-        let mut after = g.clone();
+        let mut after = g.speculative_clone();
         if after.apply(pid, action).is_err()
             || after.players[pid].gold + f64::EPSILON < reserve + 200.0
         {
@@ -11932,7 +12034,7 @@ impl AdvancedAi {
         else {
             unreachable!("faith military shortlist contains only Buy actions")
         };
-        let mut after = g.clone();
+        let mut after = g.speculative_clone();
         if after.apply(pid, action).is_err() || after.players[pid].faith < reserve {
             return None;
         }
@@ -14312,7 +14414,13 @@ impl AdvancedAi {
                     (GrandStrategy::Science, "spaceport") => 250.0,
                     (GrandStrategy::Science, "campus") => 170.0,
                     (GrandStrategy::Science, "industrial_zone") => 150.0,
-                    (GrandStrategy::Religion, "holy_site") => 210.0,
+                    (GrandStrategy::Religion, "holy_site") => {
+                        if self.holy_lane_parity {
+                            HOLY_LANE_PARITY
+                        } else {
+                            210.0
+                        }
+                    }
                     (GrandStrategy::Culture, "theater_square") => 850.0,
                     (GrandStrategy::Culture, "preserve") => 210.0,
                     (GrandStrategy::Diplomacy, "diplomatic_quarter") => 360.0,
@@ -15073,7 +15181,7 @@ impl AdvancedAi {
                 .min(positions.len())
                 .min(SETTLEMENT_SCORE_MAX_WORKERS);
             let states = (0..active)
-                .map(|_| (g.clone(), self.clone()))
+                .map(|_| (g.speculative_clone(), self.clone()))
                 .collect::<Vec<_>>();
             let positions = Arc::new(positions.to_vec());
             let worker_positions = Arc::clone(&positions);
@@ -18468,7 +18576,7 @@ impl AdvancedAi {
                 let followups =
                     Self::forcing_attacks_to(&moved, enemy, victim_pos, Some(attacker));
                 for followup in followups {
-                    let mut branch = moved.clone();
+                    let mut branch = moved.speculative_clone();
                     if branch.apply(enemy, &followup).is_err() {
                         continue;
                     }
@@ -18701,7 +18809,7 @@ impl AdvancedAi {
         action: &Action,
         plan: &StrategicPlan,
     ) -> f64 {
-        Self::tactical_attack_value_owned(g.clone(), pid, uid, action, plan)
+        Self::tactical_attack_value_owned(g.speculative_clone(), pid, uid, action, plan)
     }
 
     /// Bounded quiescence-style reply search for a proposed attack. The
@@ -18793,7 +18901,7 @@ impl AdvancedAi {
         let mut worst_reply = 0.0_f64;
 
         for enemy in enemies {
-            let mut reply_position = after.clone();
+            let mut reply_position = after.speculative_clone();
             reply_position.current = enemy;
             for unit in reply_position
                 .units
@@ -18832,7 +18940,7 @@ impl AdvancedAi {
     fn forcing_reply_penalty(&self, g: &Game, pid: usize, uid: u32, action: &Action) -> f64 {
         Self::forcing_reply_penalty_owned(
             self.work_pool.clone(),
-            g.clone(),
+            g.speculative_clone(),
             pid,
             uid,
             action,
@@ -18875,7 +18983,7 @@ impl AdvancedAi {
                 && g.is_at_war(pid, defender.owner)
                 && g.rules.units[defender.kind].class == "military"
         })?;
-        let mut after_first = g.clone();
+        let mut after_first = g.speculative_clone();
         if after_first.apply(pid, action).is_err()
             || !after_first.units.contains_key(&uid)
             || !after_first.units.contains_key(&victim)
@@ -18902,13 +19010,13 @@ impl AdvancedAi {
                 Action::Ranged { unit, .. } => (*unit, true),
                 _ => unreachable!("friendly volley only retains direct ground attacks"),
             };
-            let mut after_second = after_first.clone();
+            let mut after_second = after_first.speculative_clone();
             if after_second.apply(pid, &followup).is_err() || after_second.units.contains_key(&victim)
             {
                 continue;
             }
             let finish_score = Self::tactical_attack_value_owned(
-                after_first.clone(),
+                after_first.speculative_clone(),
                 pid,
                 finisher,
                 &followup,
@@ -18971,7 +19079,7 @@ impl AdvancedAi {
             })
             .flatten();
         let action = Action::AirStrike { unit: uid, target };
-        let mut after = g.clone();
+        let mut after = g.speculative_clone();
         if after.apply(pid, &action).is_err() {
             return f64::NEG_INFINITY;
         }
@@ -19049,7 +19157,7 @@ impl AdvancedAi {
             .map(|city| city.pillaged_buildings.clone())
             .unwrap_or_default();
         let action = Action::AirPillage { unit: uid, target };
-        let mut after = g.clone();
+        let mut after = g.speculative_clone();
         if after.apply(pid, &action).is_err() {
             return f64::NEG_INFINITY;
         }
@@ -19104,7 +19212,7 @@ impl AdvancedAi {
         let attacker_spec = &g.rules.units[attacker.kind];
         let defender = &g.units[&defender_id];
         let defender_spec = &g.rules.units[defender.kind];
-        let mut after = g.clone();
+        let mut after = g.speculative_clone();
         if after
             .apply(pid, &Action::PriorityTarget { unit: uid, target })
             .is_err()
@@ -19907,7 +20015,9 @@ impl AdvancedAi {
             Some(pool) if candidates.len() > 1 => {
                 let inputs = candidates
                     .iter()
-                    .map(|(_, action)| (g.clone(), g.clone(), action.clone()))
+                    .map(|(_, action)| {
+                        (g.speculative_clone(), g.speculative_clone(), action.clone())
+                    })
                     .collect();
                 let plan = plan.clone();
                 let nested_pool = Arc::clone(pool);
@@ -20563,7 +20673,7 @@ impl AdvancedAi {
                     ))
             })
             .collect();
-        let mut after = g.clone();
+        let mut after = g.speculative_clone();
         if after.apply(pid, action).is_err() {
             return f64::NEG_INFINITY;
         }
@@ -21093,12 +21203,12 @@ impl AdvancedAi {
             let plan_snapshot = plan.clone();
             let active = pool.threads().min(batch.len());
             let states = (0..active)
-                .map(|_| (g.clone(), self.clone()))
+                .map(|_| (g.speculative_clone(), self.clone()))
                 .collect::<Vec<_>>();
             let intents = pool.map_stateful(batch.len(), states, move |(game, ai), indices| {
                 indices
                     .map(|index| {
-                        let mut branch = game.clone();
+                        let mut branch = game.speculative_clone();
                         let mut planner = ai.clone();
                         let intent = planner.plan_general_unit_turn(
                             &mut branch,
@@ -21162,7 +21272,7 @@ impl AdvancedAi {
             }
             let mut best: Option<(f64, Action)> = None;
             for action in candidates {
-                let mut next = g.clone();
+                let mut next = g.speculative_clone();
                 if next.apply(pid, &action).is_err() {
                     continue;
                 }

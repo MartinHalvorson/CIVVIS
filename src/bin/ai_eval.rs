@@ -12,6 +12,19 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::process::Command;
 
+/// Arms whose treatment can only act through city-states.
+///
+/// Listed so `--city-states 0`, which is the default, cannot silently turn one
+/// of them into a null. Add an arm here when its axis needs a minor to exist.
+const MINOR_DEPENDENT_ARMS: [&str; 6] = [
+    "advanced_diplomatic_opening",
+    "advanced_envoy_policy",
+    "advanced_envoy_infrastructure",
+    "advanced_envoy_priority",
+    "advanced_envoy_economy",
+    "advanced_policy_envoy_priority",
+];
+
 const PROMOTION_MIN_MAPS: usize = 20;
 const Z_95: f64 = 1.959_963_984_540_054;
 /// Split a 5% two-sided error budget equally between promotion and retention.
@@ -1336,6 +1349,28 @@ fn main() {
     let turns = number(&args, "--turns", 180).max(1) as u32;
     let players = number(&args, "--players", 2).max(2) as usize;
     let city_states = number(&args, "--city-states", 0).max(0) as usize;
+    // ⚠ `--city-states` defaults to ZERO, so the stock profile contains no
+    // minors at all. An arm whose treatment only exists because city-states do
+    // — envoys, influence, suzerainty, the Diplomacy lane — then measures a
+    // difference it cannot express, and reports a clean null that means nothing.
+    //
+    // This is not hypothetical. `advanced_diplomatic_opening` reads zero on the
+    // stock profile for exactly this reason, and its lane occupancy only moves
+    // once minors are seated: 1.4% -> 2.9% at `--city-states 6`. The prize
+    // behind that lane, `Grant::Suzerain`, is the largest the oracle harness has
+    // found (56.7% against a 22.7% control, p=0.0000, 400 maps, PR #602), so a
+    // silent null here is expensive.
+    if city_states == 0 {
+        for arm in [a, b] {
+            if MINOR_DEPENDENT_ARMS.contains(&arm) {
+                println!(
+                    "warning: {arm}'s treatment acts through city-states and this profile \
+seats none (--city-states 0, the default); it cannot express its difference \
+here and any null is uninformative"
+                );
+            }
+        }
+    }
     // Every result this evaluator has ever produced was measured at the default
     // game speed, while the exhibition and the live league both run **Online**
     // (`data/speeds.json`: 250 turns, cost_pct 50). A promoted gain is a gain on

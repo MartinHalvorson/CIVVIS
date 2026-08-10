@@ -145,6 +145,18 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('"UNITCOMMAND_ACTIVATE_GREAT_PERSON"', source)
         self.assertIn("GetActivationHighlightPlots()", source)
 
+    def test_controller_protects_damaged_unwalled_cities_and_retires_spent_prophets(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+        self.assertIn("local function cityWarThreat", source)
+        self.assertIn('GameInfo.Types["BUILDING_WALLS"]', source)
+        self.assertIn('maxWallDamage <= 0', source)
+        self.assertIn('emit("emergency_wall_override"', source)
+        self.assertIn("GetReligionTypeCreated()", source)
+        self.assertIn('CMD["UNITCOMMAND_DELETE"]', source)
+        self.assertIn('action = "retired_founded_prophet"', source)
+        self.assertIn("gp_retired = gpRetired", source)
+
     def test_controller_maps_every_civvis_project_to_its_firaxis_type(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         aliases = {

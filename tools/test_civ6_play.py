@@ -42,6 +42,80 @@ def args(**changes):
 
 
 class Civ6PlayTest(unittest.TestCase):
+    def test_startup_ignores_auto_close_events_until_the_agent_is_loaded(self) -> None:
+        self.assertFalse(civ6_play.startup_event_proves_game_started({
+            "ctx": "autoclose", "kind": "autoclose_armed"
+        }))
+        self.assertTrue(civ6_play.startup_event_proves_game_started({
+            "ctx": "agent", "kind": "loaded"
+        }))
+        self.assertTrue(civ6_play.startup_event_proves_game_started({
+            "ctx": "agent", "kind": "seat"
+        }))
+
+    def test_leader_intro_requires_the_requested_leader(self) -> None:
+        bounds = (864, 33, 864, 542)
+        observations = [{
+            "text": "TRAJAN", "x": 0.686, "y": 0.193,
+            "width": 0.023, "height": 0.009,
+        }]
+        button = [{
+            "text": "BEGIN GAME", "x": 0.70, "y": 0.41,
+            "width": 0.08, "height": 0.02,
+        }]
+        with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
+             patch.object(civ6_play.macos_ocr, "recognize", return_value=observations), \
+             patch.object(civ6_play, "_leader_ocr", return_value=[]), \
+             patch.object(civ6_play, "_leader_intro_button_ocr", return_value=button):
+            self.assertTrue(
+                civ6_play._leader_intro_visible(
+                    Path("leader-intro.png"), bounds, "LEADER_TRAJAN"
+                )
+            )
+            self.assertFalse(
+                civ6_play._leader_intro_visible(
+                    Path("leader-intro.png"), bounds, "LEADER_JADWIGA"
+                )
+            )
+
+    def test_leader_intro_rejects_the_create_game_start_button(self) -> None:
+        bounds = (864, 33, 864, 542)
+        observations = [{
+            "text": "TRAJAN", "x": 0.824, "y": 0.144,
+            "width": 0.02, "height": 0.011,
+        }]
+        button = [{
+            "text": "START GAME", "x": 0.74, "y": 0.506,
+            "width": 0.03, "height": 0.01,
+        }]
+        with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
+             patch.object(civ6_play.macos_ocr, "recognize", return_value=observations), \
+             patch.object(civ6_play, "_leader_ocr", return_value=[]), \
+             patch.object(civ6_play, "_leader_intro_button_ocr", return_value=button):
+            self.assertFalse(
+                civ6_play._leader_intro_visible(
+                    Path("create-game.png"), bounds, "LEADER_TRAJAN"
+                )
+            )
+
+    def test_leader_intro_click_uses_only_the_verified_card(self) -> None:
+        bounds = (864, 33, 864, 542)
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot") as screenshot, \
+             patch.object(civ6_play, "_leader_intro_visible", return_value=True), \
+             patch.object(civ6_play, "click_at") as click:
+            self.assertTrue(
+                civ6_play.advance_leader_intro(
+                    bounds, "LEADER_TRAJAN", Path(temporary), 2
+                )
+            )
+
+        screenshot.assert_called_once_with(Path(temporary) / "leader-intro-attempt2-0.png")
+        click.assert_called_once_with(
+            864 + int(864 * civ6_play.LEADER_INTRO_BEGIN[0]),
+            33 + int(542 * civ6_play.LEADER_INTRO_BEGIN[1]),
+        )
+
     def test_live_run_holds_macos_awake_for_its_process_lifetime(self) -> None:
         with patch.object(civ6_play.sys, "platform", "darwin"), \
              patch.object(civ6_play.os, "getpid", return_value=4321), \
@@ -442,7 +516,7 @@ class Civ6PlayTest(unittest.TestCase):
 
         class Tail:
             def poll(self):
-                return [{"kind": "state", "turn": 89}]
+                return [{"ctx": "agent", "kind": "loaded"}]
 
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "focus_game"), \

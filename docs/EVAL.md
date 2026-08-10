@@ -7338,3 +7338,614 @@ elimination test on the original `no entry found for key` panic in `relocate`.
 were produced by the pre-repair engine; a batch that aborted seeds may have
 done so for this reason, so re-run such a batch rather than reusing its
 partial result. Nothing in this entry supersedes an existing baseline.
+
+
+## 2026-08-10 — ★★★ the roster's winners all raise one district gene, and it measures
+
+### What was mined
+
+Nothing had ever asked the shipped league roster the *behavioural* question:
+across the bred `Advanced` genomes, which of the forty genes separates the
+winners from the losers? `data/league/league.json` carries 51 genomes; 47 have
+at least 20 recorded 8-player games and 8 have at least 200, together ~23 000
+games. Ranking them by **outright win rate** — not by the Glicko rating this
+document already measured ranking two agents backwards by 230 Elo on
+2026-07-28 — and contrasting the top third against the bottom third, weighted
+by games:
+
+| gene | shipped default | top third | bottom third | Δ / legal range | weighted r |
+|---|---|---|---|---|---|
+| **d_holy** | **2.0** | **5.6** | **2.0** | **+0.41** | **+0.62** |
+| settle_food | 1.2 | 0.77 | 1.19 | −0.15 | −0.59 |
+| local_superiority | 6.0 | 5.8 | 6.6 | −0.05 | −0.59 |
+| d_theater | 1.0 | 0.49 | 1.32 | −0.10 | −0.47 |
+
+`d_holy` is the largest separation of the forty on both axes. **The bottom-third
+column is the control that matters**: a gene under no selection pressure drifts
+in both tails, and this one does not move in the losing tail at all — it sits on
+the shipped default to three figures.
+
+Two independent corroborations. The shipped GA champion
+(`data/evolved/best.json`) leaves `d_holy` at exactly 2.0, so the evolutionary
+search never explored the axis the league found. And the win-rate ordering used
+here independently places `g56-50` **last of the eight** — the same genome the
+2026-07-28 entry measured at −108 Elo against the champion (paired-map score
+35.0%, 95% Wilson CI 29.8%..40.6%, over 300 maps at `--players 4 --turns 500
+--seed 4100000`; sign p=0.0000) while the roster's Glicko ranked it top. The two
+orderings disagree, and the one used here agrees with the gate-quality
+measurement.
+
+⚠ This is a correlation over ~50 survivors related by descent. It is a
+hypothesis generator, not a result. What follows is the result.
+
+### The measurement
+
+`advanced_holy_priority` is stock `advanced` with `d_holy = 5.6`, one gene, no
+other difference (`arms differ on: district-holy-priority`). Both tests were
+declared before either was read, so each is judged against a 0.025 two-sided
+budget.
+
+```
+ai_eval advanced_holy_priority advanced --players 4 --pairs 300 --turns 500 --seed 4200000
+  paired-map score   53.8%  (95% Wilson CI 48.2%..59.4%)   Elo-equivalent +27 (CI -13..+66)
+  paired direction   34 for / 255 neutral / 11 against   sign p = 0.0008
+  anytime-valid      treatment e = 2.559e2, p <= 0.0039, crossed at map 263
+  promotion gate     INCONCLUSIVE
+
+ai_eval advanced_holy_priority advanced --players 8 --pairs 300 --turns 500 --seed 4300000
+  paired-map score   53.8%  (95% Wilson CI 48.2%..59.4%)   Elo-equivalent +27 (CI -13..+66)
+  paired direction   32 for / 259 neutral /  9 against   sign p = 0.0004
+  anytime-valid      treatment e = 2.146e3, p <= 0.0005, crossed at map 158
+  promotion gate     INCONCLUSIVE
+```
+
+The two headline scores are identical because both direction splits happen to
+sum to the same 161.5 of 300; the runs are genuinely distinct (1200 against 2400
+seat-games, different seeds, different victory mixes). Both e-processes crossed
+for the treatment and neither crossed for the control. Each gate reads
+INCONCLUSIVE on effect size alone: at 300 pairs the Wilson half-width is 5.6
+points and the effect is 3.8.
+
+### ★★★ Why it works, which is the part worth keeping
+
+The treatment does **not** choose religion more often. The grand-strategy
+occupancy is the same to within noise — religion 23.3% of observed player-turns
+against the control's 23.9%, conquest 25.8% against 26.0%, expansion 32.2%
+against 32.1%. What changes is the victory mix:
+
+| victory | treatment 4p | control 4p | treatment 8p | control 8p |
+|---|---|---|---|---|
+| religious | **267** | 203 | **258** | 198 |
+| every other route | 56 | 74 | 65 | 79 |
+
+The entire win delta is religious victories. The strategy layer already wanted
+the religious lane a quarter of the time; the district priority table ranked the
+district that lane runs through **below both the Campus and the Commercial
+Hub**, so the intent never reached the build queue. This is the same shape as
+every other "decision that never actuates" in this repository — an agent whose
+plan and whose production disagree — and not a new appetite for religion.
+
+The paired terminal-score diagnostic leans the other way (49.9% at 4p, sign
+p=0.2386; p=0.5263 at 8p) and that is expected rather than contradictory: a Holy
+Site is worse economy than a Campus, so the treatment develops marginally less
+and converts materially more.
+
+### What this does NOT license
+
+`Weights::default()` is unchanged and should stay unchanged until a gate
+actually clears. Two INCONCLUSIVE gates are not a promotion however well they
+agree, and "replicated twice" is not the standard this file holds. A 1200-pair
+run at 4p is the sample size at which a 3.8-point effect clears parity
+(half-width 2.8), and that is the run that decides it.
+
+
+## 2026-08-10 — ★★★★ the Holy Site figure clears the gate at 1200 pairs and becomes what `advanced` plays
+
+The entry above left `Weights::default()` alone and named the run that would
+decide it. This is that run.
+
+```
+ai_eval advanced_holy_priority advanced --players 4 --pairs 1200 --turns 500 --seed 4400000
+
+game-win share     1270/2400 (52.9%)  against  1130/2400 (47.1%)
+paired-map score   52.9%  (95% Wilson CI 50.1%..55.7%)   Elo-equivalent +20 (CI +1..+40)
+paired direction   119 for / 1032 neutral / 49 against   sign p = 0.0000
+anytime-valid      treatment e = 5.684e5, crossed at map 404; control never crossed
+terminal score     47.1% direction (472 for / 547 against), sign p = 0.0204
+promotion gate     PASS — effect interval and anytime-valid evidence both clear parity
+```
+
+The effect regressed from the 300-pair estimate of +27 to +20 and the interval
+came in from ±5.6 to ±2.8, which is what a real effect does when the sample
+grows. Three runs now agree in direction at 4p, 8p, and 4p-at-scale.
+
+**The terminal-score direction is now significant *against* the treatment**
+(p=0.0204, where the 300-pair runs read p=0.24 and p=0.53). That is the same
+trade the first entry described, resolved rather than reversed: a Holy Site is
+worse economy than a Campus, so the agent develops measurably less and converts
+enough more to win 20 Elo of games. The gate is on wins.
+
+### ⚠ What shipped is narrower than "change the default"
+
+`Weights::default()` is **unchanged at 2.0**, deliberately. That default also
+seeds `BasicAi::new()` — city-states, barbarians, the `basic` entrant, and
+`AdvancedAi::legacy()` behind the frozen `advanced_v1` anchor. Moving it there
+would have changed populations this gate never measured and would have silently
+redefined a frozen control.
+
+The measured arm was `AdvancedAi::with_weights(default with d_holy = 5.6)`,
+which is exactly `AdvancedAi::new()` with one gene moved. So the value lives on
+that constructor — `Weights::advanced()`, one gene apart from
+`Weights::default()` — and nothing else moves. `advanced_evolved` and every
+league genome carry explicit vectors and are untouched.
+
+**Two names changed meaning, both deliberately:**
+
+- `advanced_holy_priority` now constructs the production controller. Its
+  provenance declares it effectively `advanced`, so the old command fails closed
+  as self-play instead of quietly measuring nothing — the same treatment
+  `advanced_policy_envoy_priority` got on 2026-08-01.
+- `advanced_holy_v0` is new: the scripted major exactly as it played before
+  today, so the change stays measurable after it ships.
+
+⚠ Every `advanced_*` arm is built from `AdvancedAi::new()` and therefore moved
+with it. Numbers recorded for those arms above this line were produced by the
+2.0 agent and are not comparable to numbers taken after it. This is the ordinary
+cost of moving a baseline, and it is why `advanced_holy_v0` exists.
+
+### Confirmation that what shipped is what was measured
+
+```
+ai_eval advanced advanced_holy_v0 --players 4 --pairs 400 --turns 500 --seed 4600000
+  arms differ on   district-holy-pre-2026-08-10
+  paired-map score 54.4% (95% Wilson CI 49.5%..59.2%)  Elo-equivalent +30 (CI -4..+65)
+  paired direction 42 for / 351 neutral / 7 against    sign p = 0.0000
+  religious wins   357 against 281
+  promotion gate   INCONCLUSIVE (400 maps, half-width 4.9)
+```
+
+Read this as a wiring check, not a second promotion: the promotion is the
+1200-pair run above, on an identical intervention. What it establishes is that
+the constructor change reproduces the arm — same direction, same magnitude, same
+mechanism in the victory mix — against an opponent that is the old agent rather
+than a re-labelled copy of the new one.
+
+
+## 2026-08-10 — ★★★★ eight of the forty genes cannot change a game, and they are two whole subsystems
+
+Round 1 shipped `d_holy` at +20 Elo (paired-map score 52.9%, 95% Wilson CI
+50.1%..55.7%, 1200 maps at `--players 4 --turns 500 --seed 4400000`, gate PASS;
+PR #1469). This round took the roster's two next separations to the
+evaluator, got two hard nulls, noticed what the nulls had in common, and went
+looking for the general case.
+
+### The two nulls
+
+Both arms sit on the shipped `advanced`, both declared before either was read.
+
+```
+ai_eval advanced_holy_lane advanced       --players 4 --pairs 400 --turns 500 --seed 4700000
+  paired-map score 50.1% (CI 45.2..55.0), Elo +1;  direction 1 for / 399 neutral / 0 against
+  religious wins 334 against 332
+
+ai_eval advanced_settle_food advanced     --players 4 --pairs 400 --turns 500 --seed 4800000
+  paired-map score 50.2% (CI 45.4..55.1), Elo +2;  direction 2 for / 398 neutral / 0 against
+  terminal score  5 for / 390 neutral / 5 against
+```
+
+`advanced_holy_lane` raises `(Religion, holy_site)` in `strategic_family` from
+210 to 850 — a 4x move to the largest own-lane figure in the table — and 399 of
+400 maps came out unchanged. `advanced_settle_food` moves the settle-site food
+weight 1.2 → 0.78 and leaves 390 of 400 *terminal scores* byte-equal.
+
+**A flat Elo is ambiguous; a flat Elo with 99% of maps outcome-identical is
+not.** Those arms are not losing a close argument, they are not being asked.
+
+### The 2x2 that separates redundant from inert
+
+Both `advanced_holy_lane` arms already pay `d_holy` 5.6, so "BasicAi builds the
+Holy Site anyway" and "the lane term decides nothing" predict the same flat
+result. The second cell distinguishes them:
+
+```
+ai_eval advanced_holy_lane_v0 advanced_holy_v0 --players 4 --pairs 400 --turns 500 --seed 4900000
+  paired-map score 50.1% (CI 45.2..55.0), Elo +1;  direction 1 / 399 / 0
+```
+
+Identical flatness on the *pre-shipment* weights, where nothing is saturating
+it. **The `strategic_family` lane-district table does not bind.** It reads like
+the agent's district policy — twenty tuned constants, one per lane — and the
+four-value `d_*` table in `BasicAi` is what actually decided the 20 Elo.
+
+### ★★★★ The census
+
+`src/bin/gene_census.rs` asks the prior question — *does this gene change
+anything at all* — for each of the forty. One seat carries the genome perturbed
+to the far end of that gene's own legal `bounds()`, the rest of the fleet is
+stock, the control is the same seed with the same seat unperturbed. 12 games,
+4p 60x38, 220 turns, treated seat rotating.
+
+Nine genes never moved a game at n=12. Re-probed at **48 games on disjoint
+seeds** (880000, against the first pass's 990000), **eight of them held at
+0/48** and one did not:
+
+| block | genes | 12 games | 48 fresh games |
+|---|---|---|---|
+| war declaration | `war_ratio`, `war_margin`, `peace_ratio`, `war_min_turn` | 0/12 moved | **0/48 moved** |
+| settle-site scoring | `settle_food`, `settle_prod`, `settle_gold`, `settle_dist` | 0/12 moved | **0/48 moved** |
+| false positive | `faith_builder` | 0/12 moved | **6/48 moved — live** |
+
+⚠ **`faith_builder` is the tool's own error bar, kept in the table on purpose.**
+A 12-game cell bounds a gene's per-game effect rate at roughly 25% and no
+tighter, and `faith_builder` sits at 12%, which 12 games cannot see. Read a
+single 12-game INERT verdict as a *screen*, never as a result; the 48-game
+re-probe is what supports the claim, and it bounds the eight at about 6%.
+
+The eight that held are not scattered. They are **two complete subsystems**, and both have the
+same cause: `AdvancedAi` overrides the `BasicAi` decision those genes weight.
+All four war genes live in `BasicAi::diplomacy` (`src/ai.rs:4109`, uses at 4299,
+4425, 4437); `AdvancedAi` carries fifteen `DeclareWar` sites of its own and
+never calls it. The settle weights are read by `BasicAi::settle_site_value`,
+which the Advanced settlement planner supersedes — note that `min_city_dist`,
+the one settlement gene the planner *does* consult, is live at 42%.
+
+### Why this matters more than any one gene
+
+`evolve` breeds this 40-vector and `league` rates the survivors. **20% of the
+search space cannot affect play.** Consequences that were previously puzzling
+fall out of it:
+
+- Two strategies can differ substantially in genome distance and be the *same
+  agent*. A rating pool fitted over such pairs is fitting noise in those
+  coordinates — which is a mechanism for the backwards Glicko ordering recorded
+  on 2026-07-28, not merely a stale snapshot.
+- Mutation and crossover spend a fifth of their budget on coordinates with no
+  gradient.
+- It predicted the `settle_food` null before that arm was run, and the census
+  reproduces it independently.
+
+⚠ **Read "inert" as "did not bind at this profile", not "unreachable".** A gene could bind on
+a map shape or a game length this profile does not visit, and the war block in
+particular may bind for `basic`, which is city-states and barbarians and does
+run `BasicAi::diplomacy`. The claim is about the deployed scripted major.
+
+
+## 2026-08-10 — ★★★ the roster's winners are not a genome worth copying, and one of their genes eats a shipped result
+
+Round 1 mined the league roster and got `d_holy` at +20 Elo (paired-map score
+52.9%, 95% CI 50.1%..55.7%, 1200 maps, seed 4400000, gate PASS; PR #1469).
+Round 2 proved eight of the forty genes cannot change a game at all (PR #1479).
+This round asks what is left in the roster, and answers it: **nothing, and one
+active liability.**
+
+### First, the roster's false-positive rate, now measured
+
+Re-ranking the roster's separations against the census verdict:
+
+| gene | r vs win rate | census |
+|---|---|---|
+| `local_superiority` | −0.85 | live (67% of games move) |
+| `d_holy` | +0.78 | live — shipped |
+| **`settle_food`** | **−0.73** | **INERT — 0/48 games move** |
+| `mv_threat` | −0.73 | live |
+| … | | |
+| **`war_margin`** | **+0.44** | **INERT** |
+| **`peace_ratio`** | **−0.36** | **INERT** |
+| **`settle_prod`** | **−0.35** | **INERT** |
+
+**Four of the roster's top fourteen signals — including the second-strongest —
+are genes that provably cannot change a game.** Roster mining has roughly a 29%
+false-positive rate at this depth, and correlation strength does not distinguish
+the real ones. The census is not an optional refinement; it is the filter that
+makes the method usable at all.
+
+### The composite screen
+
+After removing inert genes, every remaining single-gene separation is under a
+tenth of its legal range, so the question became whether they compose.
+`advanced_roster_live` takes the games-weighted mean of the top four bred
+genomes over all 28 live genes that move at all.
+
+```
+ai_eval advanced_roster_live advanced --players 4 --pairs 500 --turns 500 --seed 5000000
+  paired-map score 46.9% (95% Wilson CI 42.6%..51.3%)   Elo-equivalent -22 (CI -52..+9)
+  paired direction 64 for / 341 neutral / 95 against    sign p = 0.0171 (SIGNIFICANT for advanced)
+  religious wins   392 against the control's 470
+```
+
+**Copying the roster's winners makes the agent worse**, significantly in
+direction. This is the third independent result pointing the same way: the
+2026-07-28 entry measured the top-*rated* genome at −108 Elo, this measures the
+top-*winning* genomes' composite at −22, and the census explains part of why a
+league rating can be uninformative — a fifth of the coordinates separating two
+entrants cannot affect play.
+
+### ★★★ Which gene, and why it matters beyond this experiment
+
+The religious-win collapse pointed at the district lane. Holding
+`d_campus`/`d_commercial`/`d_theater` at the shipped values and taking the
+roster's other 25 live genes unchanged:
+
+```
+ai_eval advanced_roster_live_keep_districts advanced --players 4 --pairs 500 --turns 500 --seed 5100000
+  paired-map score 49.6% (95% Wilson CI 45.2%..54.0%)   Elo-equivalent -3 (CI -33..+28)
+  paired direction 70 for / 356 neutral / 74 against    sign p = 0.8027
+  religious wins   414 against the control's 450
+```
+
+| arm | Elo | direction | religious wins |
+|---|---|---|---|
+| roster composite, 28 genes | **−22** | 64/95, p=0.0171 | 392 |
+| same, districts held at shipped | **−3** | 70/74, p=0.8027 | 414 |
+
+**Three genes carried 19 of the 22 points.** The roster raises `d_commercial` to
+5.55 — which never even passes `d_holy` 5.6, it merely approaches it — and that
+is enough to undo most of a gate-passed result. The remaining 25 live genes are
+collectively worth nothing measurable.
+
+⚠ **The practical consequence is a regression hazard with no gate on it.** A
+genome change is not a code change: if `evolve` or a league round breeds
+`d_commercial` up toward `d_holy`, the +20 Elo of #1469 (52.9%, 95% CI
+50.1%..55.7%, 1200 maps, seed 4400000) disappears and no promotion gate re-runs
+to notice.
+
+**And note precisely what the harm was not.** 5.55 is still *below* 5.6, so the
+19 points went missing with the district ordering fully intact. The first guard
+written for this asserted the ordering, passed the regression unchanged, and was
+therefore worthless — the protective property is the **margin**, and two data
+points (margin 2.6 pays, margin 0.05 does not) do not locate a threshold worth
+asserting. `the_shipped_district_weights_are_the_ones_the_gate_passed_on`
+therefore pins the four measured values themselves, for `Weights::advanced()`
+only; league and evolved entrants carry their own vectors and are entitled to any
+values they like. It is verified to fail on `d_commercial = 5.55`.
+
+### Where this leaves roster mining
+
+**Closed.** It produced exactly one real improvement, and the composite of
+everything else is negative. Future strength has to come from somewhere other
+than copying bred genomes — the live-gene list is the map of what a *fresh*
+search could still reach, and the eight inert genes say a fifth of any such
+search would be wasted until the Advanced planners are routed through them.
+
+
+## 2026-08-10 — ★★★★ the winner is made, not dealt: the map predicts nothing and the Holy Site predicts everything
+
+Three rounds of cross-game roster mining ended closed (#1486). This asks the
+question those rounds never did — the *within-game* one. Every seat runs the
+same `AdvancedAi`, so what separates the civ that wins from the three that do
+not, and at what turn does it become visible?
+
+`src/bin/leader_study.rs` reports **lead-conversion**: of the games where a civ
+outright led a metric at a turn, how often it finished first. Four majors, so
+chance is 25%. 60 games, 4p 60x38, 250 turns, seeds 770000+.
+
+| metric | t20 | t40 | t60 | t80 | t100 | t130 | t160 | t200 |
+|---|---|---|---|---|---|---|---|---|
+| `start_yield` *(control)* | 28% | 28% | 28% | 28% | 28% | 29% | 28% | 31% |
+| `start_room` *(control)* | 22% | 22% | 22% | 22% | 22% | 23% | 24% | 20% |
+| **cities** | – | **67%** | 50% | 42% | 47% | 57% | 48% | 50% |
+| **holy_sites** | – | – | 62% | **80%** | 53% | 72% | 62% | 41% |
+| pop | 33% | 40% | 56% | 49% | 55% | 65% | 62% | 60% |
+| techs | 30% | 31% | 44% | 38% | 48% | 57% | 62% | 66% |
+| civics | 30% | 30% | 37% | 45% | 52% | 56% | 58% | 59% |
+| districts | – | – | 52% | 52% | 59% | 62% | 67% | 54% |
+| faith | 25% | 30% | 29% | 38% | 23% | **14%** | 38% | 35% |
+| gold | 32% | 35% | 30% | 25% | 40% | 47% | 38% | 28% |
+| military | 31% | 27% | 28% | 38% | 37% | 33% | 42% | 51% |
+
+### ★★★★ Read the two control rows first
+
+**`start_yield` 28% and `start_room` 22%, against a 25% chance.** The food and
+production around a capital, and the unclaimed ground it has to expand into,
+are both worth essentially nothing as predictors of who wins.
+
+**The winner is made, not dealt.** Every row above the controls is behaviour the
+shared logic produced, not ground it was handed — which is the licence for
+treating any of them as a lever at all. It also kills the obvious objection to
+the `cities` row: the civ with more cities at turn 40 is *not* the civ that had
+more room, because room predicts below chance. It is the civ that got there
+sooner.
+
+### What the table says
+
+**`holy_sites` is the strongest signal in the study**, 62% by turn 60 and **80%
+by turn 80**. That is an independent instrument reaching the same place as
+`d_holy`, which measured +20 Elo causally (#1469) — a correlation and a
+controlled experiment agreeing, from opposite directions.
+
+**`faith` is not the same thing as a Holy Site, and the difference is sharp.**
+The faith *stock* is flat-to-anti-predictive, bottoming at **14% at turn 130**,
+while the *district* is at 72% on the same turn. Leading the treasury of a
+currency is a symptom of not having spent it. Any future work here should target
+the building, never the balance.
+
+**`cities` at turn 40 is the earliest strong signal at 67%**, and then decays —
+it is an opening statistic, not a standing one.
+
+### ⚠ How this squares with the recorded `city_target_floor` null
+
+Raising the plan's desired-cities ramp from 3 to 6 is a null on this engine
+(49.6%, Elo −3, 240 pairs, seed 510000, above in this document). That does not
+contradict the `cities` row, it locates the constraint: **wanting more cities
+does not produce them.** The null's own write-up names the reason — "six cities
+serialized through one settler at ~9 turns of production plus a walk each is a
+rate limit no valuation can beat." The study says early cities matter; the null
+says the target is not what stops them. Both point at **settler throughput**.
+
+That is the remaining untested cell, and this document already flags it as
+fires-checked and declined without an evaluation: a raised target *together with*
+parallel settlers, where the old objection (the cities-plus-settlers clause caps
+at `desired_cities`, so a seat wanting three never wants a second settler) no
+longer applies. It is the next experiment, and it is now motivated by a measured
+signal rather than by intuition.
+
+### ⚠ A bug this study caught on itself, worth repeating
+
+The first run reported the `start_yield` control at **exactly 0% at every
+turn** — impossible, and the only reason the defect surfaced. `g.players` is not
+the table: a 4-player game carries **twelve** players, four majors plus six
+city-states and two barbarian seats. City-states hold a founded city on turn 1
+when no major does, so they led every early metric and never won. Every number
+in that first table was polluted. **A control row exists so that it can be
+wrong in an obvious way**; had the control been omitted, the behavioural rows
+looked entirely plausible and would have been believed.
+
+
+## 2026-08-10 — ★★★ why one parameter tune paid when a thousand did not, and how big the last open gap really is
+
+`docs/GENOME.md` closes with "every measured attempt to make this agent stronger
+by **tuning parameters** has returned null: the policy appetites three ways, the
+opening book two ways, the war-declaration threshold, and about a thousand
+rounds of whole-genome evolution." Its scoreboard closes every optimization game
+but one.
+
+Four days of this session's work is a counterexample and three confirmations of
+that sentence, and the split between them is not random.
+
+### ★★★ The pattern: actuation repairs pay, valuation tunes do not
+
+| change | class | result |
+|---|---|---|
+| `d_holy` 2.0 → 5.6 (#1469) | **actuation** — the plan wanted religion 23% of turns and the district ranked below two others, so intent never reached the build queue | **+20 Elo, gate PASS** |
+| `strategic_family` Holy Site 210 → 850 (#1479) | valuation, on a path that does not bind | null, 399/400 maps unchanged |
+| `settle_food` → roster value (#1479) | valuation, on an inert gene | null, 398/400 unchanged |
+| roster winners' 28 live genes (#1486) | valuation, composed | **−22 Elo** |
+| opening book sweep (`GENOME.md`) | valuation over a scripted order | −0.003 |
+| policy appetites, tech order, civic order, war threshold | valuation | null |
+| `settler_price` 100× | valuation | "the multiplier does not reach the decision" |
+
+Every null above re-weights a decision the agent was already making
+competently. The one gain repaired a decision the agent intended and never
+executed. Stated as a rule for whoever reads this next:
+
+> **Ask whether the agent already does the thing badly, or does not do it at
+> all. Re-pricing the first is the null this repository keeps rediscovering;
+> the second is where the only gate-passing gain came from.**
+
+⚠ One counterexample does not make a law, and this is a post-hoc partition of
+results that were not collected to test it. It is a prior for choosing the next
+experiment, not a finding.
+
+### The last open item on the scoreboard, measured
+
+That scoreboard's one open cell is **war conversion — "67% of siege opens a city
+nobody can enter"**. Re-measured on the current build, 40 games, 6p 60x38, 300
+turns, seeds 6100+:
+
+| | count |
+|---|---|
+| siege blows | 2389 |
+| cities reduced | 165 |
+| of those, melee adjacent at all | 120 (72.7%) |
+| **left standing at zero garrison** | **26** |
+| **of those, a taker adjacent WITH movement** | **8 (30.8%)** |
+| **cities actually captured** | **85** |
+
+**The 67% replicates** — 18 of 26 openings had nobody able to walk in, 69.2%.
+
+⚠ **But the headline oversells it, and the last row is why.** `left_depleted`
+only counts Bombard-class shots, because an ordinary ranged attack restores the
+garrison to 1. Meanwhile **85 cities were captured** in the same 40 games:
+melee normally reduces and takes a city in one action and never enters this
+census at all. So the gap is **18 missed openings against 85 successful
+captures** — about 0.45 per game, bounding the prize at roughly **+21% captures
+even if every one converted.**
+
+That is a real defect and a much smaller one than "67% of siege is wasted"
+reads. Set against domination victories at **1 in 1513** headless games, a fifth
+more captures is unlikely to move a win rate at all, and the honest expectation
+for the repository's last open optimization cell is a null on wins.
+
+**Recommendation: do not open it expecting strength.** It is worth fixing as a
+correctness matter and worth measuring on captures, not on Elo. The
+actuation/valuation split above is the better guide to where a win is still
+available — and it points at subsystems where the agent does nothing, not at
+ones where it does something imperfectly.
+
+### ⚠ A duplication worth recording so it stops happening
+
+`src/bin/gene_census.rs` (#1479) re-created `src/bin/gene_probe.rs`, which
+`docs/GENOME.md` describes in detail and which no longer exists in the tree —
+one of the binaries removed by the 2026-08-06 cleanup. The findings survived in
+the document; the tool did not, so the next agent measured it again.
+
+`GENOME.md` also states the limit that census cannot see, and it should be read
+beside every "live" verdict that file produces: **"A gene can diverge 12/12 at
+turn 8 and still be worthless. Divergence is a necessary condition for a gene to
+matter, never a sufficient one."** The opening book is the most reachable block
+in the genome and deleting it costs nothing. The census's *inert* column is
+sound — a gene that cannot diverge certainly cannot pay — but its *live* column
+ranks reachability, not leverage.
+
+
+## 2026-08-10 — ★★★ the standard evaluator profile seats no city-states, and the Diplomacy lane is scored so it can never be entered
+
+Acting on the actuation/valuation prior recorded above: look for something the
+agent does **not do at all**. The adaptive census names one immediately —
+Diplomacy takes **0.9% of observed player-turns** against Conquest's 26%, while
+diplomatic victories (19) and domination victories (22) arrive at nearly the
+same rate. Two findings came out of chasing it, and the second is worth more
+than the first.
+
+### The scoring asymmetry is real
+
+Every lane in `victory_focus` is scored prospectively except one. Religion is
+handed **46** for nothing more than `religious_opening_viable`, and 55 once a
+rival founds. Diplomacy alone scored `dvp * 5 + suzerain * 6` — **purely
+retrospective**, zero until the empire already holds diplomatic points or a
+suzerainty. The lane is picked by an argmax over those scores, and a lane that
+is never picked never emits the influence that would raise its own score.
+
+The reachability arithmetic is the point. Adoption is gated at
+`victory.progress >= 65`, so Diplomacy must reach 65 on `dvp * 5 + suzerain * 6`
+— roughly **eleven suzerainties**. The envoy census measures the agent holding
+**0.2**.
+
+`advanced_diplomatic_opening` gives the lane Religion's own opening figure when
+diplomatic victory is enabled and a met city-state is still unclaimed. The
+number is mirrored rather than tuned, so it loses every tie to Religion — which
+is deliberate, because Religion is the lane that converts here.
+
+### ⚠⚠⚠ `ai_eval --city-states` defaults to ZERO
+
+The first fires-check returned lane occupancy that was **byte-identical** between
+the arms. Instrumenting the treatment showed why: `minors=0`. **The stock
+evaluator profile seats no city-states at all**, so the treatment's own
+precondition — a met, unclaimed minor — is never true, and it returns 0 on every
+one of 973 calls.
+
+**Any arm whose treatment acts through city-states measures nothing on the
+default profile and reports a clean, meaningless null.** That covers envoys,
+influence, suzerainty and this lane — and the prize behind them is the largest
+the oracle harness has found: `Grant::Suzerain` at **56.7% against a 22.7%
+control**, p=0.0000 over 400 maps (PR #602).
+
+`ai_eval` now prints a warning when an arm on `MINOR_DEPENDENT_ARMS` is run at
+`--city-states 0`. Verified to fire on the stock profile and stay silent at
+`--city-states 4`.
+
+### The screen, once minors are seated
+
+With `--city-states 6 --players 6 --width 74 --height 46`, the mechanism fires:
+lane occupancy **1.4% → 2.9%**.
+
+```
+ai_eval advanced_diplomatic_opening advanced --players 6 --pairs 40 --turns 500
+  --city-states 6 --width 74 --height 46 --seed 5400000
+  paired-map score 42.5% (95% Wilson CI 28.5%..57.8%)  Elo-equivalent -53 (CI -160..+55)
+  paired direction 2 for / 30 neutral / 8 against      sign p = 0.1094
+```
+
+**Leaning negative and not resolved** — 40 maps is a screen, and the interval
+spans 215 points. Recorded as a screen, not a result. The arm stays off.
+
+What it establishes is that the mechanism is now *reachable*: the lane can be
+entered, at a dose that doubles its occupancy. Whether entering it more pays is
+open, and the honest reading of this screen is that a 46-point opening buys a
+dose too small to help and possibly large enough to hurt, by pulling seats out
+of Expansion into a lane whose resource — envoys — the census measures at
+**0.00 unspent**. Raising the dose without first fixing envoy *production* would
+be pushing harder on the same closed door.
+
+⚠ Note for anyone re-reading older numbers in this file: every `ai_eval` result
+recorded above was measured at `--city-states 0` unless it says otherwise.

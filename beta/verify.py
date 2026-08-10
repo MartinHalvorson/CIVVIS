@@ -172,6 +172,8 @@ def required(mount: str) -> list:
     lane = "" if mount == "root" else "test/"
     return [
         "home/index.html" if mount == "root" else "index.html",
+        "home/assets/civ-world.jpg",
+        "home/assets/tactics-frontline.jpg",
         "download/index.html",
         f"{lane}index.html",
         f"{lane}civvis.wasm",
@@ -435,7 +437,11 @@ def check_gate(dist: pathlib.Path) -> list[str]:
             problems.append("/ is not serving the stable viewer; is ROOT_REDIRECT set?")
 
         # The landing page moved to /home when the root became the product.
-        if b"Watch on YouTube" not in get("/home/").read():
+        # Its small, fixed utility nav is a more durable routing marker than
+        # the old watch-button label, which is a deliberate part of the page's
+        # editorial design rather than a route contract.
+        landing = get("/home/").read()
+        if b'aria-label="CIVVIS links"' not in landing:
             problems.append("the landing page is not being served at /home")
 
         # So is the downloads page.

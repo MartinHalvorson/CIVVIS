@@ -688,18 +688,29 @@ fn policy_card_score(
     pid: usize,
     w: &Weights,
     candidate: &(usize, String, Name),
+    current_reading: f64,
 ) -> (f64, usize, String, Name) {
     let (priority, slot, card) = candidate;
     let incumbent = g.players[pid].policies.contains(card);
-    if incumbent {
+    // Every candidate shares one side of the counterfactual: an available
+    // card is compared with the current slate, while an incumbent is compared
+    // with the current slate after removing that card.  The old scorer walked
+    // the whole empire for both sides on every card, repeating the unchanged
+    // side dozens of times during one review.  Carrying the current reading
+    // into the batch makes the score incremental: one whole-empire sweep for a
+    // challenger, and one removal sweep for an incumbent.  The authoritative
+    // candidate order and the exact `empire_reading` arithmetic are unchanged.
+    let (without, with) = if incumbent {
         g.players[pid].policies.remove(card);
-    }
-    let without = empire_reading(g, pid, w);
-    g.players[pid].policies.insert(*card);
-    let with = empire_reading(g, pid, w);
-    if !incumbent {
+        let without = empire_reading(g, pid, w);
+        g.players[pid].policies.insert(*card);
+        (without, current_reading)
+    } else {
+        g.players[pid].policies.insert(*card);
+        let with = empire_reading(g, pid, w);
         g.players[pid].policies.remove(card);
-    }
+        (current_reading, with)
+    };
     let gain = with - without;
     // A sitting card keeps its slot unless beaten by the margin. Without
     // this the deck reshuffles on arithmetic noise every review.
@@ -777,6 +788,10 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights, pool: Option<&WorkP
                 POLICY_SCORE_MAX_WORKERS,
                 states,
                 move |mut branch, indices| {
+                    // The branch is reused for all indices claimed by this
+                    // worker.  Compute the unchanged slate once, before the
+                    // candidate mutations begin, rather than once per card.
+                    let current_reading = empire_reading(&branch, pid, &weights);
                     indices
                         .map(|index| {
                             (
@@ -786,6 +801,7 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights, pool: Option<&WorkP
                                     pid,
                                     &weights,
                                     &candidates[index],
+                                    current_reading,
                                 ),
                             )
                         })
@@ -793,10 +809,13 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights, pool: Option<&WorkP
                 },
             )
         }
-        None => candidates
-            .iter()
-            .map(|candidate| policy_card_score(g, pid, w, candidate))
-            .collect(),
+        None => {
+            let current_reading = empire_reading(g, pid, w);
+            candidates
+                .iter()
+                .map(|candidate| policy_card_score(g, pid, w, candidate, current_reading))
+                .collect()
+        }
     };
 
     scored.sort_by(|a, b| {
@@ -1021,6 +1040,35 @@ pub enum PolicyDeck {
 pub const OPENING_MENU: [&str; 6] = [
     "scout", "warrior", "builder", "settler", "slinger", "monument",
 ];
+
+/// What the scripted major agent pays for a Holy Site, against the 2.0 every
+/// other holder of these weights keeps.
+///
+/// ⚠ **Deliberately NOT in `Weights::default()`.** That default also seeds
+/// `BasicAi::new()`, which is city-states, barbarians, the `basic` entrant, and
+/// `AdvancedAi::legacy()` behind the frozen `advanced_v1` anchor. Moving it
+/// there would change populations the gate never measured and would silently
+/// redefine a frozen control — so the value lives on the one constructor the
+/// evaluated arm actually used.
+///
+/// The number is read off the shipped league roster rather than tuned: of the
+/// bred genomes carrying real 8-player evidence, the top third by outright win
+/// rate sit at a games-weighted `d_holy` of 5.6 and the bottom third at exactly
+/// the 2.0 default. `advanced_holy_priority` measured it at **+20 Elo, gate
+/// PASS** over 1200 paired maps; see `docs/EVAL.md` 2026-08-10.
+pub const ADVANCED_D_HOLY: f64 = 5.6;
+
+impl Weights {
+    /// The weights the scripted major agent plays, as distinct from the weights
+    /// every other holder of this struct gets. One gene apart from
+    /// [`Weights::default`]; see [`ADVANCED_D_HOLY`].
+    pub fn advanced() -> Weights {
+        Weights {
+            d_holy: ADVANCED_D_HOLY,
+            ..Weights::default()
+        }
+    }
+}
 
 impl Default for Weights {
     fn default() -> Weights {
@@ -1317,6 +1365,39 @@ mod gene_table_tests {
         let w = Weights::default();
         assert_eq!(w.to_vec().len(), Weights::gene_names().len());
         assert_eq!(w.to_vec().len(), Weights::bounds().len());
+    }
+
+    /// The shipped agent's four district weights are the exact configuration a
+    /// promotion gate passed on, and none of them may drift without a re-run.
+    ///
+    /// `d_holy` 5.6 against the other three at 4.0/3.0/1.0 measured **+20 Elo**
+    /// over 1200 paired maps (#1469). The roster-composite screen then measured
+    /// how that evaporates: `d_commercial` at 5.55 cost **19 of those 20
+    /// points** and dropped religious wins 470 to 392 (#1486).
+    ///
+    /// ⚠ **Note what that rules out.** 5.55 is still *below* 5.6, so the harm
+    /// arrived with the ordering intact — an ordering assertion passes straight
+    /// through this regression and is worthless here. The protective property is
+    /// the **margin**, and two data points (margin 2.6 pays, margin 0.05 does
+    /// not) do not locate a safe threshold. So this pins the measured values
+    /// themselves rather than inventing a bound the evidence cannot support.
+    ///
+    /// The point is that a genome change is not a code change: if `evolve` or a
+    /// league round breeds these upward, a shipped result disappears and no gate
+    /// re-runs to notice. Scope is `Weights::advanced()` only — league and
+    /// evolved entrants carry their own vectors and are entitled to any values
+    /// they like.
+    #[test]
+    fn the_shipped_district_weights_are_the_ones_the_gate_passed_on() {
+        let w = Weights::advanced();
+        assert_eq!(
+            [w.d_holy, w.d_campus, w.d_commercial, w.d_theater],
+            [5.6, 4.0, 3.0, 1.0],
+            "the shipped district weights moved. #1469 measured +20 Elo at these \
+             four values and #1486 measured -19 of it back from a change to \
+             d_commercial alone that never even reversed the ordering. Re-run \
+             the paired gate before repinning."
+        );
     }
 
     #[test]
@@ -9823,6 +9904,66 @@ mod tests {
                 "worker completion order must not change the authoritative game (threads={threads})"
             );
         }
+    }
+
+    #[test]
+    fn incremental_policy_score_matches_both_counterfactual_sides() {
+        let mut game = Game::new_full(1, 20, 14, 91_482, 120, 0, false);
+        game.players[0].civics.extend(
+            [
+                "code_of_laws",
+                "craftsmanship",
+                "foreign_trade",
+                "early_empire",
+                "state_workforce",
+                "military_tradition",
+                "political_philosophy",
+            ]
+            .into_iter()
+            .map(Name::new),
+        );
+        game.players[0].government = Some("classical_republic".to_string());
+        let card = game
+            .available_policies(0)
+            .into_iter()
+            .next()
+            .expect("the fixture has an available policy");
+        let spec = &game.rules.policies[&card];
+        let candidate = (POLICY_PRIORITY.len(), spec.slot.clone(), card);
+        let weights = Weights {
+            policy_deck: PolicyDeck::Live,
+            ..Weights::default()
+        };
+
+        // Challenger: the current slate is the exact `without` side, so the
+        // incremental scorer must agree with the old two-sweep reading.
+        let current = empire_reading(&game, 0, &weights);
+        let mut full = game.clone();
+        let without = empire_reading(&full, 0, &weights);
+        full.players[0].policies.insert(card);
+        let with = empire_reading(&full, 0, &weights);
+        let expected_gain = with - without;
+        let expected = (expected_gain, candidate.0, candidate.1.clone(), candidate.2);
+        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current);
+        assert_eq!(actual, expected);
+
+        // Incumbent: after putting the card on the slate, the current reading
+        // is the exact `with` side and only removal needs a fresh sweep.
+        game.players[0].policies.insert(card);
+        let current = empire_reading(&game, 0, &weights);
+        let mut full = game.clone();
+        full.players[0].policies.remove(&card);
+        let without = empire_reading(&full, 0, &weights);
+        let gain = current - without;
+        let expected = (
+            gain + weights.pol_swap_margin * gain.abs(),
+            candidate.0,
+            candidate.1.clone(),
+            candidate.2,
+        );
+        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current);
+        assert_eq!(actual, expected);
+        assert!(game.players[0].policies.contains(&card));
     }
 
     /// A quiet one-player world with a lone Scout, so nothing else on the map

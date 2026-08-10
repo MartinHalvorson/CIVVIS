@@ -7903,12 +7903,18 @@ function drawStrategicVolcanicSoil(t, x, y) {
 
 // Terrain marks should survive the map's smallest useful zoom: one silhouette,
 // two quiet facets, and a single outline are enough to say "mountain" without
-// turning every pass into a miniature illustration. Volcanoes use the same
-// footprint, replacing the ridge with one clean caldera.
+// turning every pass into a miniature illustration. A mountain can be wider
+// and taller without losing that spare language; a volcano needs its crater at
+// the summit, with a lit lava seam that makes it read as a cone rather than a
+// round mark sitting on the ground.
 const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.04;
+const STRATEGIC_MOUNTAIN_ICON_WIDTH_SCALE = 1.2;
+const STRATEGIC_MOUNTAIN_ICON_HEIGHT_SCALE = 1.5;
 function drawMinimalMountainGlyph(x, y, k) {
   cx.save();
-  cx.translate(x, y); cx.scale(k, k);
+  cx.translate(x, y);
+  cx.scale(k * STRATEGIC_MOUNTAIN_ICON_WIDTH_SCALE,
+           k * STRATEGIC_MOUNTAIN_ICON_HEIGHT_SCALE);
   cx.lineJoin = "round";
   cx.fillStyle = "rgba(8,13,15,.24)";
   cx.beginPath(); cx.ellipse(1, 10, 17, 4.2, 0, 0, 7); cx.fill();
@@ -7938,24 +7944,47 @@ function drawMinimalMountainGlyph(x, y, k) {
 function drawMinimalVolcanoCaldera(x, y, k, ice = false, tint = null) {
   cx.save();
   cx.translate(x, y); cx.scale(k, k);
-  cx.lineJoin = "round";
+  cx.lineJoin = "round"; cx.lineCap = "round";
   cx.fillStyle = "rgba(8,10,11,.24)";
-  cx.beginPath(); cx.ellipse(1, 9, 17, 4.1, 0, 0, 7); cx.fill();
-  cx.fillStyle = tint ? shade(tint, .72) : "#4a3b35";
+  cx.beginPath(); cx.ellipse(1, 10.2, 18, 4.3, 0, 0, 7); cx.fill();
+
+  const silhouette = () => {
+    cx.beginPath();
+    cx.moveTo(-19, 8); cx.lineTo(-13, -1); cx.lineTo(-7, -7);
+    cx.quadraticCurveTo(-4, -9, -1, -7.4);
+    cx.quadraticCurveTo(2, -9, 5, -7); cx.lineTo(11, -2);
+    cx.lineTo(19, 8); cx.quadraticCurveTo(2, 12.5, -19, 8); cx.closePath();
+  };
+  silhouette(); cx.fillStyle = tint ? shade(tint, .82) : "#5a4439"; cx.fill();
+  // Two faces make the cone legible before the tiny crater resolves.
   cx.beginPath();
-  cx.moveTo(-18, 5); cx.lineTo(-11, -4); cx.lineTo(-3, -8);
-  cx.lineTo(5, -6); cx.lineTo(14, -3); cx.lineTo(19, 6);
-  cx.quadraticCurveTo(2, 12, -18, 5); cx.closePath(); cx.fill();
-  cx.strokeStyle = tint ? shade(tint, 1.22) : "#75574a";
-  cx.lineWidth = 1.35; cx.beginPath();
-  cx.ellipse(0, 1, 9.5, 5.2, -.08, 0, 7); cx.stroke();
-  cx.fillStyle = ice ? "#73848a" : "#211817";
-  cx.beginPath(); cx.ellipse(0, 1, 6.4, 3.25, -.08, 0, 7); cx.fill();
+  cx.moveTo(-19, 8); cx.lineTo(-7, -7); cx.quadraticCurveTo(-4, -9, -1, -7.4);
+  cx.lineTo(-1, 8); cx.quadraticCurveTo(-10, 10, -19, 8); cx.closePath();
+  cx.fillStyle = tint ? shade(tint, 1.02) : "#78594a"; cx.fill();
+  cx.beginPath();
+  cx.moveTo(-1, -7.4); cx.quadraticCurveTo(2, -9, 5, -7);
+  cx.lineTo(19, 8); cx.quadraticCurveTo(10, 10.5, -1, 8); cx.closePath();
+  cx.fillStyle = tint ? shade(tint, .57) : "#392d2a"; cx.fill();
+  silhouette(); cx.strokeStyle = "#241d1b"; cx.lineWidth = 1.2; cx.stroke();
+
+  // The old wide oval read as a detached target. Seat a narrow crater in the
+  // summit instead, then let its hot seam run a short way down the cone.
+  cx.fillStyle = ice ? "#73848a" : "#241817";
+  cx.beginPath(); cx.ellipse(0, -6.2, 5.3, 1.8, -.08, 0, 7); cx.fill();
+  cx.strokeStyle = tint ? shade(tint, 1.3) : "#a47761"; cx.lineWidth = 1;
+  cx.stroke();
   cx.fillStyle = ice ? "#d9e8e9" : "#ed6b35";
-  cx.beginPath(); cx.ellipse(0, 1, 3.4, 1.65, -.08, 0, 7); cx.fill();
+  cx.beginPath(); cx.ellipse(0, -6.25, 2.7, .72, -.08, 0, 7); cx.fill();
   if (!ice) {
     cx.fillStyle = "#ffc06a";
-    cx.beginPath(); cx.ellipse(-.8, .55, 1.4, .72, -.08, 0, 7); cx.fill();
+    cx.beginPath(); cx.ellipse(-.65, -6.4, 1.05, .3, -.08, 0, 7); cx.fill();
+    cx.strokeStyle = "#e75e31"; cx.lineWidth = 1.25;
+    cx.beginPath(); cx.moveTo(-.35, -5.35);
+    cx.quadraticCurveTo(.8, -2.2, -.55, .5);
+    cx.quadraticCurveTo(-1.25, 2.3, -.8, 4.7); cx.stroke();
+    cx.strokeStyle = "#ffc06a"; cx.lineWidth = .48;
+    cx.beginPath(); cx.moveTo(-.35, -5.1);
+    cx.quadraticCurveTo(.35, -2.25, -.35, -.15); cx.stroke();
   }
   cx.restore();
 }
@@ -8166,8 +8195,11 @@ const HILL_SEATED_SYMBOL_LIFT = S * YS / 4;
 // them. It shrinks on the way because the hex has already begun closing toward
 // its bottom vertex there — at full size the mound would run out through the
 // lower edges, which the flat map's hex clip would then cut square.
-const HILL_SEATED_BASE_DROP = S * YS * 0.28;
-const HILL_SEATED_SCALE = 0.66;
+// Lift the hill a touch in its lower seat, then grow its old 0.66 scale by
+// 30%. The larger crest now meets the raised built ground instead of leaving a
+// conspicuous empty strip between terrain and district.
+const HILL_SEATED_BASE_DROP = S * YS * 0.24;
+const HILL_SEATED_SCALE = 0.858;
 
 // Whether this tile's hill gives up the centre. Cities are not a tile field —
 // they are their own list — so the caller passes the set of tiles holding one.
@@ -8581,26 +8613,31 @@ function districtBuildingsByTile() {
 // its height, and the full bar's ghost outline stays standing over the stub so
 // the fall reads as damage rather than youth.
 //
-// A finished, undamaged building stands the **middle three quarters of the
-// token**, leaving an eighth clear above and below. They used to be stubs on
+// A finished, undamaged building stands the **middle 70% of the token**,
+// leaving 15% clear above and below. They used to be stubs on
 // the lower half — under a third of the token's height — which read as a
 // progress meter printed on a counter rather than as anything standing on the
-// ground. At three quarters they are buildings: tall enough that the shape
+// ground. At 70% they are buildings: tall enough that the shape
 // carries at survey zoom, and tall enough that a pillaged bar's fall to a
 // third is a visible collapse rather than a two-pixel difference.
 //
 // The span is stated as a fraction of the token so the two ends cannot drift
 // apart: the baseline is half the bar's own height, which is what centres it.
-const DISTRICT_BAR_SEATS = [-7.2, 0, 7.2];
+// The extra 1.2px between the bars keeps three completed buildings from
+// merging into one dark fence at survey zoom.
+const DISTRICT_BAR_SEAT_SPACING = 8.4;
+const DISTRICT_BAR_SEATS = [-DISTRICT_BAR_SEAT_SPACING, 0, DISTRICT_BAR_SEAT_SPACING];
 // A district that also draws a glyph fills the outer seats first, so the glyph
 // keeps the middle lane to itself. At a third of the token the bars passed
-// under a glyph; at three quarters a centre bar would stand straight through
+// under a glyph; at 70% a centre bar would stand straight through
 // the Preserve's fir and split it in two. Nothing is given up by moving over:
 // the only glyph families that can hold a building at all are the Dam (one)
 // and the Preserve (two), so the centre seat is never reached — and if a
 // ruleset ever adds a third, it lands there rather than nowhere.
-const DISTRICT_BAR_SEATS_BESIDE_GLYPH = [-7.2, 7.2, 0];
-const DISTRICT_BAR_SPAN = 0.75;
+const DISTRICT_BAR_SEATS_BESIDE_GLYPH = [
+  -DISTRICT_BAR_SEAT_SPACING, DISTRICT_BAR_SEAT_SPACING, 0
+];
+const DISTRICT_BAR_SPAN = 0.70;
 const DISTRICT_BAR_WIDTH = 4.6;
 const DISTRICT_BAR_HEIGHT = DISTRICT_TOKEN_HALF * 2 * DISTRICT_BAR_SPAN;
 const DISTRICT_BAR_BASELINE = DISTRICT_BAR_HEIGHT / 2;

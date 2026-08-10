@@ -88,6 +88,20 @@ def utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def startup_event_proves_game_started(event: dict) -> bool:
+    """Return whether an event proves the in-game agent has loaded.
+
+    Auto-close contexts are installed before the map is playable and emit
+    ``autoclose_armed`` during the setup/intro screens.  They prove only that
+    the mod package was discovered, not that the requested game is ready for
+    the agent.  The agent lifecycle events are the first reliable boundary.
+    """
+    return (
+        event.get("ctx") == "agent"
+        and event.get("kind") in {"loaded", "seat", "turn"}
+    )
+
+
 def hold_macos_awake() -> bool:
     """Keep an active live run awake even when the console is locked.
 
@@ -334,6 +348,12 @@ BOOTSTRAP_ATTEMPTS = 16
 # running game and hosting again either loses the mod, loses the turn limit, or
 # takes the application down.
 START_GAME = (0.500, 0.978)
+# The post-host leader introduction is a separate, verified screen.  Its
+# button is stable in the half-height game window used by the live harness,
+# but it must only be aimed at after the requested leader is read back from
+# the screenshot; otherwise this becomes the same blind click the setup gate
+# was written to prevent.
+LEADER_INTRO_BEGIN = (0.394, 0.801)
 # Measured in the required half-height window. 0.144 lands above the rendered
 # button there, so a failed setup stayed open and the next main-menu click hit
 # Choose Map Type instead.
@@ -1127,6 +1147,123 @@ def _leader_picker_open(path: Path, bounds: tuple[int, int, int, int]) -> bool:
     )
 
 
+def _leader_intro_visible(path: Path, bounds: tuple[int, int, int, int],
+                          leader: str | None) -> bool:
+    """Prove that the requested leader introduction is on screen.
+
+    Civ VI pauses at a leader card after the Create Game click.  The control
+    mod is already loaded there, so its auto-close records are not proof that
+    the map is ready.  OCR of the requested leader alone is insufficient: the
+    Create Game page also displays that leader.  Require the intro's rendered
+    ``BEGIN GAME`` control in its lower card band before using the fixed click.
+    """
+    if not leader:
+        return False
+    screen = desktop_size()
+    if screen is None:
+        return False
+    wanted = _normalized_label(leader_display_name(leader))
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    try:
+        observations = macos_ocr.recognize(path)
+        observations.extend(_leader_ocr(path, bounds, top=0.08, bottom=0.45))
+        button_observations = _leader_intro_button_ocr(path, bounds)
+    except (OSError, ValueError):
+        return False
+    begin_game = False
+    for observation in button_observations:
+        if _normalized_label(str(observation.get("text", ""))) != "begingame":
+            continue
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = point[0] * screen_w, point[1] * screen_h
+        rx, ry = (px - x) / w, (py - y) / h
+        if 0.30 <= rx <= 0.70 and 0.65 <= ry <= 0.90:
+            begin_game = True
+            break
+    if not begin_game:
+        return False
+    for observation in observations:
+        if _normalized_label(str(observation.get("text", ""))) != wanted:
+            continue
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = point[0] * screen_w, point[1] * screen_h
+        rx, ry = (px - x) / w, (py - y) / h
+        if 0.20 <= rx <= 0.80 and 0.05 <= ry <= 0.45:
+            return True
+    return False
+
+
+def _leader_intro_button_ocr(path: Path,
+                             bounds: tuple[int, int, int, int]) -> list[dict]:
+    """Read the small Begin Game button from an enlarged lower-card crop.
+
+    Full-desktop Vision sees the leader card text but often drops this small
+    button.  The Create Game page's similarly placed ``Start Game`` control is
+    intentionally not accepted: the exact label is the page discriminator.
+    """
+    try:
+        from PIL import Image
+
+        screen = desktop_size()
+        if screen is None:
+            raise ValueError("desktop size unavailable")
+        image = Image.open(path)
+        screen_w, screen_h = screen
+        x, y, w, h = bounds
+        scale_x, scale_y = image.width / screen_w, image.height / screen_h
+        rect = (
+            int((x + w * 0.30) * scale_x),
+            int((y + h * 0.68) * scale_y),
+            int((x + w * 0.70) * scale_x),
+            int((y + h * 0.88) * scale_y),
+        )
+        crop = image.crop(rect)
+        crop = crop.resize((crop.width * 8, crop.height * 8))
+        crop_path = path.with_name(path.stem + "-begin-game-crop.png")
+        crop.save(crop_path)
+        observations = macos_ocr.recognize(crop_path)
+    except (OSError, ValueError):
+        return []
+
+    left, crop_top, right, crop_bottom = rect
+    crop_w, crop_h = right - left, crop_bottom - crop_top
+    mapped = []
+    for observation in observations:
+        item = dict(observation)
+        try:
+            item["x"] = (left + float(observation["x"]) * crop_w) / image.width
+            item["y"] = (crop_top + float(observation["y"]) * crop_h) / image.height
+            item["width"] = float(observation["width"]) * crop_w / image.width
+            item["height"] = float(observation["height"]) * crop_h / image.height
+        except (KeyError, TypeError, ValueError):
+            continue
+        mapped.append(item)
+    return mapped
+
+
+def advance_leader_intro(bounds: tuple[int, int, int, int],
+                         leader: str | None, run_dir: Path, attempt: int,
+                         *, retries: int = 4, poll_s: float = 1.0) -> bool:
+    """Click the leader card's Begin Game control after visual confirmation."""
+    x, y, w, h = bounds
+    for retry in range(retries):
+        shot = run_dir / f"leader-intro-attempt{attempt}-{retry}.png"
+        screenshot(shot)
+        if _leader_intro_visible(shot, bounds, leader):
+            click_at(int(x + w * LEADER_INTRO_BEGIN[0]),
+                     int(y + h * LEADER_INTRO_BEGIN[1]))
+            print(f"[setup] verified {leader_display_name(leader or '')} intro; "
+                  "clicked Begin Game", flush=True)
+            return True
+        time.sleep(poll_s)
+    return False
+
+
 def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | None,
                             run_dir: Path) -> bool:
     """Select and visually verify a leader from Firaxis's DLC-dependent list."""
@@ -1336,12 +1473,10 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     def started(seconds: float) -> bool:
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
-            saw = False
             for event in tail.poll():
                 on_event(event)
-                saw = True
-            if saw:
-                return True
+                if startup_event_proves_game_started(event):
+                    return True
             if not env.game_pids():
                 return False
             time.sleep(2.0)
@@ -1477,6 +1612,18 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
                       "unsafe coordinate retries", file=sys.stderr)
                 return False
             continue
+        # Hosting a game opens a leader introduction before the map.  It is a
+        # real modal gate on this install, so waiting for agent telemetry here
+        # would leave a valid setup stranded behind its Begin Game button.
+        # Failure to recognize it remains safe: the lifecycle gate below still
+        # refuses to accept auto-close-only startup.
+        # The first screenshot can still be the Create Game page while Firaxis
+        # opens the post-host modal. Keep proving the exact page for the whole
+        # startup window rather than allowing a transient false negative to
+        # strand the run behind Begin Game.
+        intro_retries = max(4, min(60, int(verify_s / 2)))
+        advance_leader_intro(bounds, args.leader, run_dir, attempt,
+                             retries=intro_retries, poll_s=2.0)
         if started(verify_s):
             return True
         if not env.game_pids():
@@ -1504,12 +1651,10 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
     def started(seconds: float) -> bool:
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
-            saw = False
             for event in tail.poll():
                 on_event(event)
-                saw = True
-            if saw:
-                return True
+                if startup_event_proves_game_started(event):
+                    return True
             if not env.game_pids():
                 return False
             time.sleep(2.0)
