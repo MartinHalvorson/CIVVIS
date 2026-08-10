@@ -26,6 +26,17 @@ use std::sync::Arc;
 /// attack unsupported. Below it the group holds on its own account, whatever
 /// else is happening in the empire.
 const LOCAL_SUPERIORITY_FLOOR: f64 = 0.72;
+/// How much better a fresh city must score before a campaign already aimed at
+/// one abandons it. See [`AdvancedAi::siege_objective_hysteresis`].
+///
+/// `campaign_city_value` is minimized, so the incumbent keeps the campaign
+/// unless a challenger comes in this far BELOW it. The size is set by the term
+/// that does the oscillating: `military_distance * 5.0` moves by up to four
+/// tiles of army movement a turn, i.e. ±20, and `core_distance * 7.0` follows
+/// a captured or founded city. 45 clears both with margin while staying well
+/// under the ~180 a capital is worth, so a genuinely better objective — a
+/// capital coming into reach, a city whose garrison left — still wins.
+const SIEGE_OBJECTIVE_HYSTERESIS: f64 = 45.0;
 /// Full health of a city, and the ceiling `Game::end_turn` heals back toward at
 /// `+20` a turn. [`AdvancedAi::siege_commitment`] measures a siege against it.
 const CITY_MAX_HP: i32 = 200;
@@ -1185,6 +1196,53 @@ pub struct AdvancedAi {
     /// which keeps it inert in the ordinary case. **Off by default, live-bridge
     /// only.**
     pub siege_commitment: bool,
+    /// Keep a campaign pointed at the city it is already marching on unless a
+    /// challenger beats it by [`SIEGE_OBJECTIVE_HYSTERESIS`].
+    ///
+    /// ★★★★★ THE OBJECTIVE IS A FUNCTION OF WHERE THE ARMY IS, AND THE ARMY
+    /// GOES WHERE THE OBJECTIVE IS. `campaign_city_value` ranks candidates with
+    /// `core_distance * 7.0 + military_distance * 5.0 + …`, and
+    /// `military_distance` is measured from OUR army. It therefore moves every
+    /// turn the column moves — by up to ±20 — which is more than the value gap
+    /// between two comparable enemy cities. The ranking flips, the army
+    /// reverses, and the flip reverses with it. A closed loop.
+    ///
+    /// ⚠⚠⚠ [`AdvancedAi::siege_commitment`] is the brake built for exactly this
+    /// and it CANNOT ENGAGE, because both halves of its gate — walls already at
+    /// zero, and health already stripped — require the blow that the
+    /// oscillation is preventing. Commitment is priced as a reward for damage
+    /// dealt, so a campaign that has never landed a hit can never earn it.
+    /// `siege_commitment_ignores_an_unbreached_city_and_a_siege_out_of_reach`
+    /// asserts that deliberately. This flag is the half that works before the
+    /// first blow.
+    ///
+    /// Measured on live run `civvis-20260810T050558Z` (Trajan/Rome, Settler,
+    /// t112-t150), at war with Hungary since t87:
+    ///
+    /// | | |
+    /// |---|---|
+    /// | objective switches | **15 in 39 turns — 39% of turn transitions** |
+    /// | flipping between | Miskolc (pop 5) and Eger (pop 8), 4 tiles apart |
+    /// | worst excursion | axial (43,20) → (40,36) → back, **16 tiles, alternating turns** |
+    /// | army movement | **391 tiles walked, 24 tiles of net closure — 94% wasted** |
+    /// | units farther from the objective than they started | **7 of 14** |
+    /// | damage dealt to either Hungarian city in 112 turns of war | **0** |
+    ///
+    /// Over the same window Miskolc's defense went 26 → 65 and Eger grew from
+    /// nothing to pop 14, while the empire fielded 670 military — twice the
+    /// next largest in the world — and the score leader won on 118.
+    ///
+    /// ⚠ The known risk, stated because it is not free: hysteresis holds a
+    /// campaign on a target that has genuinely become the wrong one for up to
+    /// the margin's worth of value. The emergency and rush objectives are
+    /// chosen ahead of this branch and are untouched, so the case it can
+    /// mishandle is a *better* opportunity appearing mid-siege, not a defensive
+    /// emergency being ignored.
+    ///
+    /// **Off by default. Native/eval only — deliberately NOT in
+    /// `enable_live_bridge`** until a headless arm prices it, on the same
+    /// footing the war lane set for itself: a weak positive is not a result.
+    pub siege_objective_hysteresis: bool,
     /// Aim a relief force at what is actually hitting the city, not at whichever
     /// besieger happens to stand nearest the force.
     ///
@@ -2382,6 +2440,7 @@ impl AdvancedAi {
             war_reinforcement: false,
             war_patience: false,
             siege_commitment: false,
+            siege_objective_hysteresis: false,
             relief_targets_the_siege: false,
             blind_objective_units: false,
             settler_price: 1.0,
@@ -2704,6 +2763,12 @@ impl AdvancedAi {
     /// recorded ladders stay comparable.
     pub fn enable_siege_commitment(&mut self) {
         self.siege_commitment = true;
+    }
+
+    /// Hold a campaign on the city it is already marching on. Native tournament
+    /// games leave this disabled so their recorded ladders stay comparable.
+    pub fn enable_siege_objective_hysteresis(&mut self) {
+        self.siege_objective_hysteresis = true;
     }
 
     /// Send a relief force at the units actually besieging the city rather than
@@ -3220,6 +3285,10 @@ impl AdvancedAi {
 
     pub fn disable_siege_commitment(&mut self) {
         self.siege_commitment = false;
+    }
+
+    pub fn disable_siege_objective_hysteresis(&mut self) {
+        self.siege_objective_hysteresis = false;
     }
 
     pub fn disable_relief_targets_the_siege(&mut self) {
@@ -6009,7 +6078,8 @@ impl AdvancedAi {
             })
             .or_else(|| {
                 target_player.and_then(|target| {
-                    g.cities
+                    let best = g
+                        .cities
                         .values()
                         .filter(|c| c.owner == target)
                         .min_by(|left, right| {
@@ -6017,7 +6087,8 @@ impl AdvancedAi {
                                 .total_cmp(&self.campaign_city_value(g, pid, right, strategy))
                                 .then_with(|| left.id.cmp(&right.id))
                         })
-                        .map(|c| c.id)
+                        .map(|c| c.id)?;
+                    Some(self.held_campaign_objective(g, pid, strategy, target, best))
                 })
             });
 
@@ -15546,6 +15617,50 @@ impl AdvancedAi {
     /// occupation pressure, development, and victory-denial value. It is the
     /// campaign analogue of a chess engine's move ordering: forces search the
     /// most forcing and profitable front first rather than the first legal one.
+    /// Which city the campaign actually keeps, given the one it was already on.
+    ///
+    /// See [`AdvancedAi::siege_objective_hysteresis`]. With the flag off this
+    /// returns `best` unchanged and the ordering is the historical one, re-picked
+    /// from scratch every turn.
+    ///
+    /// The incumbent is only defended while it is still a city, still owned by
+    /// the campaign's target, and actually re-scored — a city that was captured,
+    /// traded away, or whose owner made peace releases the campaign immediately
+    /// rather than holding it against a target that no longer exists.
+    fn held_campaign_objective(
+        &self,
+        g: &Game,
+        pid: usize,
+        strategy: GrandStrategy,
+        target: usize,
+        best: u32,
+    ) -> u32 {
+        if !self.siege_objective_hysteresis {
+            return best;
+        }
+        let Some(incumbent) = self.plan.as_ref().and_then(|plan| plan.target_city) else {
+            return best;
+        };
+        if incumbent == best {
+            return best;
+        }
+        let Some(held) = g.cities.get(&incumbent).filter(|city| city.owner == target) else {
+            return best;
+        };
+        let Some(challenger) = g.cities.get(&best) else {
+            return best;
+        };
+        // `campaign_city_value` is minimized, so a challenger must come in this
+        // far BELOW the incumbent to take the campaign off it.
+        let held_value = self.campaign_city_value(g, pid, held, strategy);
+        let challenger_value = self.campaign_city_value(g, pid, challenger, strategy);
+        if challenger_value + SIEGE_OBJECTIVE_HYSTERESIS < held_value {
+            best
+        } else {
+            incumbent
+        }
+    }
+
     fn campaign_city_value(
         &self,
         g: &Game,
@@ -25595,6 +25710,133 @@ mod tests {
             "the treatment is worth exactly {SIEGE_COMMITMENT_PER_HP} per stripped point — {} \
              here — and nothing else changes",
             stripped * SIEGE_COMMITMENT_PER_HP
+        );
+    }
+
+    /// The campaign holds the city it is already on against a challenger inside
+    /// the margin, and releases it for one outside it — or for one that stopped
+    /// being a target at all.
+    #[test]
+    fn siege_objective_hysteresis_holds_the_incumbent_only_inside_the_margin() {
+        let mut game = Game::new_full(2, 30, 18, 7_111, 300, 0, false);
+        for pid in 0..2 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        // A second enemy city, so the campaign has something to flip to.
+        let first = game.player_city_ids(1)[0];
+        let far = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| {
+                game.map
+                    .get(*position)
+                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                    && game.wdist(*position, game.cities[&first].pos) >= 5
+            })
+            .min_by_key(|position| *position)
+            .expect("the board has a second land site");
+        let settler = game.spawn_test_unit("settler", 1, far);
+        game.current = 1;
+        game.apply(1, &Action::FoundCity { unit: settler }).unwrap();
+        let second = *game
+            .player_city_ids(1)
+            .iter()
+            .find(|city| **city != first)
+            .expect("a second enemy city");
+
+        let plan_on = |ai: &mut AdvancedAi, incumbent: u32| {
+            ai.plan = Some(StrategicPlan {
+                strategy: GrandStrategy::Conquest,
+                target_player: Some(1),
+                target_city: Some(incumbent),
+                threatened_city: None,
+                desired_cities: 6,
+                assessed_turn: game.turn,
+                rush: false,
+            });
+        };
+        let value = |ai: &AdvancedAi, game: &Game, city: u32| {
+            ai.campaign_city_value(game, 0, &game.cities[&city], GrandStrategy::Conquest)
+        };
+
+        // Which of the two the shipped controller would pick from scratch, and
+        // which it would therefore be abandoning.
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.belief.observe(&game, 0);
+        let (best, other) = if value(&ai, &game, first) <= value(&ai, &game, second) {
+            (first, second)
+        } else {
+            (second, first)
+        };
+
+        // Off: identity. The historical behaviour is re-picking from scratch.
+        plan_on(&mut ai, other);
+        assert_eq!(
+            ai.held_campaign_objective(&game, 0, GrandStrategy::Conquest, 1, best),
+            best,
+            "with the flag off the campaign re-picks from scratch"
+        );
+
+        ai.enable_siege_objective_hysteresis();
+
+        // On, and the challenger is inside the margin: the campaign holds.
+        // The two cities are not naturally comparable — one of them is the
+        // capital, worth 180 to a Conquest plan on its own — so close the gap
+        // by construction. `development` subtracts 7 a citizen, which makes
+        // population the cleanest single lever.
+        for _ in 0..200 {
+            if value(&ai, &game, other) - value(&ai, &game, best) < SIEGE_OBJECTIVE_HYSTERESIS {
+                break;
+            }
+            game.cities.get_mut(&other).unwrap().pop += 1;
+            ai.belief.observe(&game, 0);
+        }
+        let gap = value(&ai, &game, other) - value(&ai, &game, best);
+        assert!(
+            gap < SIEGE_OBJECTIVE_HYSTERESIS,
+            "the hold case must actually put the challenger inside the margin \
+             for the assertion below to mean anything — gap {gap}"
+        );
+        plan_on(&mut ai, other);
+        assert_eq!(
+            ai.held_campaign_objective(&game, 0, GrandStrategy::Conquest, 1, best),
+            other,
+            "a challenger inside the margin does not take the campaign off the \
+             city it is already marching on"
+        );
+
+        // On, and the challenger is far outside the margin: the campaign releases.
+        let grown = game.cities[&other].pop + 30;
+        game.cities.get_mut(&best).unwrap().pop = grown;
+        ai.belief.observe(&game, 0);
+        let gap = value(&ai, &game, other) - value(&ai, &game, best);
+        assert!(
+            gap > SIEGE_OBJECTIVE_HYSTERESIS,
+            "the forced-release case must actually clear the margin — gap {gap}"
+        );
+        assert_eq!(
+            ai.held_campaign_objective(&game, 0, GrandStrategy::Conquest, 1, best),
+            best,
+            "a genuinely better objective still wins"
+        );
+
+        // An incumbent that stopped belonging to the campaign's target releases
+        // it immediately, whatever the margin says.
+        game.cities.get_mut(&other).unwrap().owner = 0;
+        plan_on(&mut ai, other);
+        assert_eq!(
+            ai.held_campaign_objective(&game, 0, GrandStrategy::Conquest, 1, best),
+            best,
+            "a city the target no longer owns cannot hold the campaign"
         );
     }
 
