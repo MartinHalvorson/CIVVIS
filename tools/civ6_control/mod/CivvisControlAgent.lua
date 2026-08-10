@@ -4384,6 +4384,39 @@ local SOFT_BLOCKERS = {
 	ENDTURN_BLOCKING_UNIT_PROMOTION = true,
 	ENDTURN_BLOCKING_CONSIDER_RAZE_CITY = true,
 	ENDTURN_BLOCKING_CONSIDER_DISLOYAL_CITY = true,
+	-- ⚠⚠⚠ THESE TWO ARE HERE TO REPAIR A REGRESSION I SHIPPED IN #1465.
+	--
+	-- That change added `ENDTURN_BLOCKING_PANTHEON` and
+	-- `ENDTURN_BLOCKING_FILL_CIVIC_SLOT` to `CIVVIS_OWNED_BLOCKERS`, correctly:
+	-- CIVVIS issues `pantheon` and `policy_deck` orders and the hand-written
+	-- `choosePantheon`/`fillPolicies` were racing them (`choosePantheon` picks
+	-- the FIRST untaken belief in `GameInfo.Beliefs()` order, which is not a
+	-- choice). What it missed is that **the forfeit that clears a blocker
+	-- CIVVIS cannot answer is gated on `SOFT_BLOCKERS[name]`**, and neither
+	-- name was in this table. So `answerBlocker` returned `civvis_complete`,
+	-- nothing dismissed the notification, and the prompt stayed up.
+	--
+	-- Measured: live run `civvis-20260810T040916Z` (before) saw
+	-- `FILL_CIVIC_SLOT` **once**, answered `policies+3` by the heuristic. Run
+	-- `civvis-20260810T050558Z` (after) saw it **ten times**, every one
+	-- `civvis_complete`, and **the attempt wedged on it at turn 224** and was
+	-- killed by the outside watchdog after 900 s. The empire was scoring 524 at
+	-- the time — the run was going well and this ended it.
+	--
+	-- Listing them here is the right repair rather than reverting #1465,
+	-- because it keeps BOTH properties: the heuristics still never answer over
+	-- CIVVIS (the `SOFT_BLOCKERS` arm reports `civvis_complete` under
+	-- `CivvisDecides` without calling `answerBlocker` at all), and a prompt
+	-- CIVVIS's answer does not clear is now forfeited at the SECOND sighting
+	-- instead of standing forever.
+	--
+	-- Neither forfeit loses the decision. CIVVIS founds the pantheon through
+	-- its `pantheon` order (run 040916Z adopted CIVVIS's `BELIEF_DIVINE_SPARK`
+	-- at t22) and fills slots through `policy_deck`; the notification is only
+	-- the game asking, and Civ 6 re-raises it next turn while it is still
+	-- genuinely outstanding.
+	ENDTURN_BLOCKING_PANTHEON = true,
+	ENDTURN_BLOCKING_FILL_CIVIC_SLOT = true,
 	-- Prompts this controller has no answer for. Listing them is not giving
 	-- up: an unlisted blocker burns forty attempts and then forfeits its
 	-- notification, and each of those attempts re-runs a table scan while the
