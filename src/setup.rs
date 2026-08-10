@@ -399,6 +399,7 @@ pub enum MapScript {
     WaterWorld,
     Battlefield,
     TacticsPlanet,
+    TacticsOcean,
     Trafalgar,
     Kadesh,
     Marathon,
@@ -444,6 +445,7 @@ impl MapScript {
             Self::WaterWorld => "water_world",
             Self::Battlefield => "battlefield",
             Self::TacticsPlanet => "tactics_planet",
+            Self::TacticsOcean => "tactics_ocean",
             Self::Trafalgar => "trafalgar",
             Self::Kadesh => "kadesh",
             Self::Marathon => "marathon",
@@ -480,6 +482,7 @@ impl MapScript {
             self,
             Self::Battlefield
                 | Self::TacticsPlanet
+                | Self::TacticsOcean
                 | Self::Trafalgar
                 | Self::Kadesh
                 | Self::Marathon
@@ -574,12 +577,28 @@ impl MapScript {
         crate::historical_scenarios::by_script(self).map(|scenario| scenario.civs)
     }
 
-    /// Whether this Tactics map is the small globe rather than the bounded
-    /// arena. Its topology is allowed to remain Planet and its land generator
-    /// keeps the ordinary world terrain instead of painting arena ground over
-    /// it.
+    /// Whether this Tactics map is a globe rather than the bounded arena. Its
+    /// topology is allowed to remain Planet and its land generator keeps the
+    /// ordinary world terrain instead of painting arena ground over it.
+    ///
+    /// Both globes answer yes: the land planet an army marches over and the
+    /// ocean one a fleet sails. What separates them is which element carries
+    /// the battle, which is [`Self::is_naval_battlefield`].
     pub const fn is_planet_battlefield(self) -> bool {
-        matches!(self, Self::TacticsPlanet)
+        matches!(self, Self::TacticsPlanet | Self::TacticsOcean)
+    }
+
+    /// Whether this Tactics map is fought on water rather than on land.
+    ///
+    /// A naval battlefield inverts every element test the mode makes: the two
+    /// sides are seated on open water instead of on shore, their opening
+    /// order of battle is ships instead of a marching column, and a flag — if
+    /// the battle is fought for one — is planted on water, because a flag on
+    /// dry ground is one no fleet can ever reach. The islets it rolls are
+    /// cover and chokepoints, and the two cities stand on them; the sea
+    /// between is the field.
+    pub const fn is_naval_battlefield(self) -> bool {
+        matches!(self, Self::TacticsOcean)
     }
 
     /// Whether the script draws a fixed world instead of rolling a new one.
@@ -646,6 +665,16 @@ impl MapScript {
             // the world lands a little under the share asked for here; 88
             // leaves it comfortably past the 80% the type promises.
             Self::TacticsPlanet => 88,
+            // The mirror of the land planet: sea almost everywhere, because a
+            // naval Tactics battle is a fight over water and the ground is
+            // what interrupts it. What land there is has to earn its place —
+            // islets to work a flank around, channels between them to be held
+            // or forced, and a shore apiece for the two cities — so this is
+            // set a little above Water World's bare specks. Any higher and
+            // the islands start joining into coastline, which would give a
+            // fleet a wall to be pinned against rather than a chokepoint to
+            // fight over.
+            Self::TacticsOcean => 10,
             // Open sea, less the strip of Andalusian shore along the eastern
             // edge and the headland of Cape Trafalgar itself. Read rather
             // than aimed for: the chart in `mapgen::TRAFALGAR_CHART` decides
@@ -842,7 +871,7 @@ pub struct MapScriptSpec {
 /// The world types in the order [`MapScript`] declares them. The Tactics maps
 /// sit last because they are not Civ worlds: the game mode offers them only
 /// when Tactics is chosen.
-pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 17] = [
+pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 18] = [
     MapScriptSpec {
         id: "land_only",
         name: "Land Only",
@@ -936,8 +965,14 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 17] = [
     MapScriptSpec {
         id: "tactics_planet",
         name: "Planet",
-        description: "A small land planet for Tactics: a globe about half the size of Duel that is more than four-fifths dry ground, with scattered seas rather than an ocean. One city for each side, planted on opposite faces of the world and joined by a march overland.",
+        description: "A land planet for Tactics: a globe that is more than four-fifths dry ground, with scattered seas rather than an ocean. One city for each side, planted on opposite faces of the world and joined by a march overland. Offered at four diameters, from a world half the size of Duel up to one larger than it.",
         script: MapScript::TacticsPlanet,
+    },
+    MapScriptSpec {
+        id: "tactics_ocean",
+        name: "Ocean",
+        description: "A water planet for Tactics: open sea over the whole globe, broken by scattered islets and the channels between them. Each side opens with a fleet and a city on its own island, on opposite faces of the world, and every route between them is a sea lane. Offered at the same four diameters as Planet.",
+        script: MapScript::TacticsOcean,
     },
     MapScriptSpec {
         id: "trafalgar",
@@ -1066,11 +1101,28 @@ pub struct BattlefieldSize {
     pub topology: MapTopology,
 }
 
-/// The Tactics maps the setup menu offers, smallest first. The arena entries
-/// are bounded fields; then a small globe with a compact land world and
-/// opposite-side starts; then the scenarios, which carry their own chart and
-/// so have exactly one size each.
-pub const BATTLEFIELD_SIZES: [BattlefieldSize; 5] = [
+/// The Tactics maps the setup menu offers, smallest first within each family.
+/// The arena entries are bounded fields; then the globes, land and then ocean,
+/// each offered at four diameters; then the scenarios, which carry their own
+/// chart and so have exactly one size each.
+///
+/// A globe's size is named by its **diameter**, which is the subdivision
+/// frequency of the icosahedron it is built from — the same number
+/// [`crate::sphere`] is indexed by, and the one that decides everything else
+/// about the world: frequency `n` holds `10n² + 2` tiles and is stored in a
+/// `5n × 2n + 2` rectangle. Diameter 8 is the world Tactics has always
+/// shipped, at 642 tiles; 20 is 4002, larger than a Duel world. The four are
+/// a ladder rather than a spread of shapes, so a result at one diameter can be
+/// read against the same battle fought on more room.
+///
+/// The land and ocean ladders deliberately use the same four numbers. The two
+/// are the same experiment on opposite elements, and a diameter that meant one
+/// thing on land and another at sea would make them incomparable.
+pub const TACTICS_GLOBE_DIAMETERS: [i32; 4] = [8, 10, 15, 20];
+
+/// See [`TACTICS_GLOBE_DIAMETERS`] for what a diameter means and why the two
+/// globe families share one ladder.
+pub const BATTLEFIELD_SIZES: [BattlefieldSize; 12] = [
     BattlefieldSize {
         id: "10x10", name: "Square · 10×10", width: 10, height: 10,
         script: MapScript::Battlefield, topology: MapTopology::Flat,
@@ -1083,9 +1135,41 @@ pub const BATTLEFIELD_SIZES: [BattlefieldSize; 5] = [
         id: "20x20", name: "Field · 20×20", width: 20, height: 20,
         script: MapScript::Battlefield, topology: MapTopology::Flat,
     },
+    // Diameter 8 keeps the bare id `planet`: it is the globe Tactics shipped
+    // as its only one, and saved games, sweep scripts and lobby deep-links
+    // name it that. The rest are `planet_<diameter>` and the ladder reads
+    // consistently in the menu, where the name carries the number.
     BattlefieldSize {
-        id: "planet", name: "Planet · small land world", width: 40, height: 18,
+        id: "planet", name: "Planet · diameter 8", width: 40, height: 18,
         script: MapScript::TacticsPlanet, topology: MapTopology::Planet,
+    },
+    BattlefieldSize {
+        id: "planet_10", name: "Planet · diameter 10", width: 50, height: 22,
+        script: MapScript::TacticsPlanet, topology: MapTopology::Planet,
+    },
+    BattlefieldSize {
+        id: "planet_15", name: "Planet · diameter 15", width: 75, height: 32,
+        script: MapScript::TacticsPlanet, topology: MapTopology::Planet,
+    },
+    BattlefieldSize {
+        id: "planet_20", name: "Planet · diameter 20", width: 100, height: 42,
+        script: MapScript::TacticsPlanet, topology: MapTopology::Planet,
+    },
+    BattlefieldSize {
+        id: "ocean_8", name: "Ocean · diameter 8", width: 40, height: 18,
+        script: MapScript::TacticsOcean, topology: MapTopology::Planet,
+    },
+    BattlefieldSize {
+        id: "ocean_10", name: "Ocean · diameter 10", width: 50, height: 22,
+        script: MapScript::TacticsOcean, topology: MapTopology::Planet,
+    },
+    BattlefieldSize {
+        id: "ocean_15", name: "Ocean · diameter 15", width: 75, height: 32,
+        script: MapScript::TacticsOcean, topology: MapTopology::Planet,
+    },
+    BattlefieldSize {
+        id: "ocean_20", name: "Ocean · diameter 20", width: 100, height: 42,
+        script: MapScript::TacticsOcean, topology: MapTopology::Planet,
     },
     // A scenario's dimensions are its chart's, not a size the player picks:
     // moving them would move the two fleets off the ground they were on.
@@ -1222,16 +1306,25 @@ pub struct TacticsRules {
     pub unique_units: bool,
     /// Whether the field is fogged.
     ///
-    /// Off — the default, and what an arena has always done — both commanders
-    /// see all of it. A battle is meant to be a test of what each side does
-    /// with what is in front of it rather than of who finds the other first,
-    /// and the two armies are set down out of each other's sight with no city
-    /// to march on and no border to trespass: measured, a fogged arena had
+    /// On by default: each side sees only what its own units can, and finding
+    /// the enemy is part of the battle. Off, both commanders see all of it.
+    /// Either way the rule is symmetric, so it is a shape the match is given
+    /// rather than a handicap one side is dealt.
+    ///
+    /// The default used to be off, for a measured reason: a fogged arena had
     /// both sides stand in their own deployment bands until the clock decided
-    /// it. On, each side sees only what its own units can, and finding the
-    /// enemy is part of the battle. Either way the rule is symmetric, so it is
-    /// a shape the match is given rather than a handicap one side is dealt.
-    #[serde(default)]
+    /// it. That standoff was diagnosed and fixed — it came from two world
+    /// instincts that were never gated for the arena, the per-tile
+    /// local-superiority brake and the danger-retreat — rather than from the
+    /// fog, so the reason to keep the field lit no longer holds. Fog is also
+    /// what the globes need: a diameter-20 world is 4002 tiles, and a battle
+    /// on it with both commanders omniscient is a different game from one
+    /// where a fleet has to be found.
+    ///
+    /// A save written before fog existed loads unfogged, which is how it was
+    /// played. The default here governs a *new* battle, not the replay of an
+    /// old one — see [`legacy_unfogged`].
+    #[serde(default = "legacy_unfogged")]
     pub fog: bool,
     /// Whether the battle is decided by a flag instead of by cities.
     ///
@@ -1252,6 +1345,18 @@ fn one_battle() -> u32 {
 
 fn default_tactics_turn_limit() -> u32 {
     100
+}
+
+/// What `fog` is worth in a save that does not carry it.
+///
+/// Deliberately not [`TacticsRules::default`]'s answer. Every save without the
+/// field was written before Tactics had fog and was therefore played with the
+/// whole field lit; reading them as fogged would silently restate how those
+/// battles were fought, and a rated ladder replayed from them would no longer
+/// be the experiment it recorded. New battles get the current default; old
+/// ones keep the rules they were played under.
+fn legacy_unfogged() -> bool {
+    false
 }
 
 impl TacticsRules {
@@ -1307,6 +1412,13 @@ impl TacticsRules {
     /// about the battle. Fog is off, and deliberately — the Combined Fleet
     /// could see the British columns coming for four hours and its problem
     /// was never finding them.
+    /// A naval battlefield keeps its city, and deliberately. A galley is a
+    /// naval *melee* unit and takes a coastal city exactly as a warrior takes
+    /// an inland one — the rule is Civ 6's and the engine already carries it
+    /// — so the port is a real objective at sea rather than an unreachable
+    /// one, and measured, it is the only thing that makes the two fleets sail
+    /// at each other at all: stripped of it, both squadrons sat in their own
+    /// anchorages for four hundred turns and lost one ship between them.
     pub fn for_script(self, script: MapScript) -> Self {
         if !script.is_scenario() {
             return self.sanitized();
@@ -1333,7 +1445,8 @@ impl Default for TacticsRules {
     /// One city producing a unit every turn or two in the Ancient era, gold
     /// enough to upgrade a unit every ten turns or so, and a technology every
     /// five turns. Chosen so a battle keeps arriving at new units and new
-    /// matchups without the arena becoming a production race.
+    /// matchups without the arena becoming a production race. Fogged, so
+    /// finding the enemy is part of the battle rather than given.
     fn default() -> Self {
         Self {
             cities: 1,
@@ -1343,7 +1456,7 @@ impl Default for TacticsRules {
             turn_limit: default_tactics_turn_limit(),
             best_of: 1,
             unique_units: false,
-            fog: false,
+            fog: true,
             flag: false,
         }
     }
@@ -1817,7 +1930,7 @@ mod tests {
         MapTopology, MatchSeries, TacticsRules,
         BATTLEFIELD_SIZES,
         BASE_RULESETS, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, MAP_POLES,
-        MAP_TOPOLOGIES, START_ERAS,
+        MAP_TOPOLOGIES, START_ERAS, TACTICS_GLOBE_DIAMETERS,
     };
 
     /// One ruleset is offered, and the setting still has to behave like a
@@ -2049,6 +2162,7 @@ mod tests {
                 MapScript::WaterWorld,
                 MapScript::Battlefield,
                 MapScript::TacticsPlanet,
+                MapScript::TacticsOcean,
                 MapScript::Trafalgar,
             ]
         );
@@ -2076,8 +2190,9 @@ mod tests {
     }
 
     /// Tactics maps are a separate roster from Civ worlds. The Battlefield is
-    /// a bounded arena, Planet keeps its globe and has a custom small
-    /// land-world size, and Trafalgar is a scenario on a fixed chart.
+    /// a bounded arena; Planet and Ocean keep their globes and are each
+    /// offered at the same four diameters; and Trafalgar is a scenario on a
+    /// fixed chart.
     #[test]
     fn the_battlefield_is_an_arena_rather_than_a_world() {
         for spec in CIV6_MAP_SCRIPTS {
@@ -2085,11 +2200,20 @@ mod tests {
                 spec.script.is_battlefield(),
                 matches!(
                     spec.script,
-                    MapScript::Battlefield | MapScript::TacticsPlanet | MapScript::Trafalgar
+                    MapScript::Battlefield
+                        | MapScript::TacticsPlanet
+                        | MapScript::TacticsOcean
+                        | MapScript::Trafalgar
                 ),
                 "{}",
                 spec.id
             );
+            // A globe is a Tactics map that kept its sphere, and the naval
+            // one is the globe fought on water. Neither predicate may reach
+            // outside the mode: a Civ world routed down the arena's seating
+            // and deployment would open two capitals as armies.
+            assert!(!spec.script.is_planet_battlefield() || spec.script.is_battlefield());
+            assert!(!spec.script.is_naval_battlefield() || spec.script.is_planet_battlefield());
             // Every scenario is a Tactics map; almost no Tactics map is a
             // scenario. Getting that backwards would send an arena down the
             // fixed-chart path and panic the generator.
@@ -2119,16 +2243,61 @@ mod tests {
                 assert!(size.height >= size.width, "{} is not taller than it is wide", size.id);
                 assert_eq!(size.topology, MapTopology::Flat, "{}", size.id);
             } else {
-                assert_eq!(size.script, MapScript::TacticsPlanet, "{}", size.id);
-                assert_eq!(size.id, "planet");
+                // A globe entry is stored in the rectangle its own diameter
+                // implies, and nothing else: 5n by 2n+2. Read the diameter
+                // back out of the width and check the height against it, so a
+                // hand-edited row cannot advertise a size the sphere would
+                // then refuse to build.
+                assert!(size.script.is_planet_battlefield(), "{}", size.id);
                 assert_eq!(size.topology, MapTopology::Planet, "{}", size.id);
-                assert_eq!((size.width, size.height), (40, 18), "{}", size.id);
+                assert_eq!(size.width % 5, 0, "{} is not 5n wide", size.id);
+                let diameter = size.width / 5;
+                assert_eq!(size.height, 2 * diameter + 2, "{} is not 2n+2 tall", size.id);
+                assert!(TACTICS_GLOBE_DIAMETERS.contains(&diameter), "{}", size.id);
+                // The name carries the number, because a menu row reading
+                // "Planet" twice would be two indistinguishable choices.
+                assert!(size.name.ends_with(&format!("diameter {diameter}")), "{}", size.name);
             }
-            // No battlefield collides with a real map size: the smallest
-            // world is wider than the largest arena several times over.
-            assert!(MapSize::from_dimensions(size.width, size.height).is_none(), "{}", size.id);
+            // No *flat* battlefield collides with a real map size: the
+            // smallest world is wider than the largest arena several times
+            // over, so a bounded field can never be mistaken for a world.
+            //
+            // A globe is exempt, and has to be. Its rectangle is a pure
+            // function of its diameter — 5n by 2n+2 — so the diameter-15
+            // globe is 75x32 whether it is a Tactics battlefield or the globe
+            // the Civ Tiny size lays out, which also runs at frequency 15.
+            // That is arithmetic rather than a clash, and nothing reads a
+            // globe's size out of the flat table anyway: a globe is
+            // re-expressed through `mapgen::globe_frequency` on every setup
+            // that touches its size or its shape, and the flat lookup is only
+            // reached by maps that are not globes.
+            if size.topology.is_globe() {
+                assert!(MapSize::from_dimensions(size.width, size.height).is_none_or(|found| {
+                    (found.globe_width(), found.globe_height()) == (size.width, size.height)
+                }));
+            } else {
+                assert!(MapSize::from_dimensions(size.width, size.height).is_none(), "{}", size.id);
+            }
         }
-        assert_eq!(BATTLEFIELD_SIZES.len(), 5);
+        // Both globe families offer the same ladder, and only that ladder. The
+        // two are the same experiment on opposite elements, so a diameter
+        // present on one and missing from the other would leave a battle with
+        // nothing to be read against.
+        for script in [MapScript::TacticsPlanet, MapScript::TacticsOcean] {
+            let offered: Vec<i32> = BATTLEFIELD_SIZES
+                .iter()
+                .filter(|size| size.script == script)
+                .map(|size| size.width / 5)
+                .collect();
+            assert_eq!(offered, TACTICS_GLOBE_DIAMETERS, "{script:?}");
+        }
+        // Diameter 8 keeps the bare `planet` id it shipped with, so a saved
+        // game, a sweep script or a lobby deep-link that names it still lands
+        // on the world it named.
+        assert!(BATTLEFIELD_SIZES.iter().any(|size| size.id == "planet"
+            && size.script == MapScript::TacticsPlanet
+            && (size.width, size.height) == (40, 18)));
+        assert_eq!(BATTLEFIELD_SIZES.len(), 12);
         // Exactly one entry per scenario script, because a scenario has one
         // size and a menu offering it twice would be offering two battles.
         assert_eq!(
@@ -2236,6 +2405,38 @@ mod tests {
         let mut old = serde_json::to_value(TacticsRules::default()).unwrap();
         old.as_object_mut().unwrap().remove("flag");
         assert!(!serde_json::from_value::<TacticsRules>(old).unwrap().flag);
+    }
+
+    /// A new battle is fogged; a battle saved before fog existed is not.
+    ///
+    /// The two answers are deliberately different, which is the one thing
+    /// worth pinning here. Every save without the field was written when the
+    /// arena had no fog and was therefore played with the whole field lit, so
+    /// loading it as fogged would restate how it was fought — and a rated
+    /// ladder replayed off those saves would stop being the experiment it
+    /// recorded. `#[serde(default)]` would have taken `bool::default()` and
+    /// got the right answer for the wrong reason; the named function is what
+    /// keeps the two from drifting together the next time the default moves.
+    #[test]
+    fn a_new_battle_is_fogged_and_an_old_save_is_not() {
+        assert!(TacticsRules::default().fog, "a battle is fought through its own fog");
+        assert!(TacticsRules::default().sanitized().fog, "sanitizing must not lift the fog");
+        let mut old = serde_json::to_value(TacticsRules::default()).unwrap();
+        old.as_object_mut().unwrap().remove("fog");
+        assert!(
+            !serde_json::from_value::<TacticsRules>(old).unwrap().fog,
+            "a save from before fog existed was played unfogged and reloads that way"
+        );
+        // A save that does carry the field keeps what it was played under,
+        // both ways round.
+        for fog in [false, true] {
+            let written = serde_json::to_value(TacticsRules { fog, ..TacticsRules::default() });
+            let read: TacticsRules = serde_json::from_value(written.unwrap()).unwrap();
+            assert_eq!(read.fog, fog);
+        }
+        // A scenario still overrules it: the Combined Fleet could see the
+        // British columns coming for four hours.
+        assert!(!TacticsRules::default().for_script(MapScript::Trafalgar).fog);
     }
 
     /// exhaust it without a winner.

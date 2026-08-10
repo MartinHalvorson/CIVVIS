@@ -8331,7 +8331,29 @@ mod tests {
         assert_eq!(sizes[3]["width"], json!(40));
         assert_eq!(sizes[3]["height"], json!(18));
         assert_eq!(scenario_map_scripts().len(), crate::historical_scenarios::SCENARIOS.len());
-        assert_eq!(battlefield_sizes().len(), 5 + crate::historical_scenarios::generic_scenarios().count());
+        assert_eq!(
+            battlefield_sizes().len(),
+            crate::setup::BATTLEFIELD_SIZES.len()
+                + crate::historical_scenarios::generic_scenarios().count()
+        );
+        // The lobby builds its size menu by filtering this list on the chosen
+        // script, so both globe families have to arrive carrying one — an
+        // entry without a `script` is offered under every map. Each also has
+        // to carry `topology`, because that is the only thing telling the
+        // client the row is a globe rather than a rectangle of that width.
+        for family in ["tactics_planet", "tactics_ocean"] {
+            let rows: Vec<&serde_json::Value> = sizes
+                .as_array()
+                .expect("the size table is a list")
+                .iter()
+                .filter(|size| size["script"] == json!(family))
+                .collect();
+            assert_eq!(rows.len(), crate::setup::TACTICS_GLOBE_DIAMETERS.len(), "{family}");
+            for row in rows {
+                assert_eq!(row["topology"], json!("planet"), "{family}");
+                assert!(row["id"].is_string() && row["name"].is_string(), "{family}");
+            }
+        }
         // The lobby swaps its size and map rosters from these lists and
         // sends the arena's dimensions explicitly.
         assert!(EMBEDDED_INDEX.contains("RULES.battlefield_sizes"));

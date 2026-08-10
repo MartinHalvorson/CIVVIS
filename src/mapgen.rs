@@ -1229,7 +1229,13 @@ fn flat_land(
                 rng,
             )
         }
-        MapScript::WaterWorld => {
+        // The naval battlefield is always a globe — `is_planet_battlefield`
+        // holds its topology at Planet before the shape is dispatched on, and
+        // `globe_land` lays its two home islands and its islets. It is grouped
+        // here so a direct call that forces the flat shape anyway still gets
+        // an ocean with land enough to seat both sides, rather than falling
+        // through to a branch that would grow it a continent.
+        MapScript::WaterWorld | MapScript::TacticsOcean => {
             // The far end of the same dial as Land Only: specks of land in an
             // ocean. The floor is what keeps it playable — a world that cannot
             // seat every civilization and city-state on land is not a map, so
@@ -1237,7 +1243,7 @@ fn flat_land(
             // for rather than a broken world.
             let mut open = offset_region(wm, 0, width, 1, height - 1);
             let seats = num_major_spawns + num_minor_spawns;
-            let target = (area * MapScript::WaterWorld.land_percent() as usize / 100)
+            let target = (area * script.land_percent() as usize / 100)
                 .max(seats * WATER_WORLD_TILES_PER_SEAT);
             scatter_islands(
                 wm,
@@ -1704,6 +1710,52 @@ fn globe_land(
             },
             rng,
         ),
+        // The naval battlefield, laid in two passes because its land does two
+        // different jobs.
+        //
+        // First the home islands: one per seat, each grown to a size that can
+        // actually carry a city, because a fleet with no port is not the
+        // battle this mode is about and a capital squeezed onto a rock is the
+        // failure Water World's per-seat floor exists to prevent. They are cut
+        // with the full channel between them, so the two sides start as far
+        // apart as an archipelago ever seats anyone.
+        //
+        // Then the islets, from whatever share of the water is left: small,
+        // and deliberately packed at a one-tile channel rather than three.
+        // These are the only features on an otherwise empty sea — the thing a
+        // flank is worked around, the gap that can be held by a few ships
+        // against many — and a three-tile channel between every pair would
+        // make them scenery a fleet sails past instead of ground it fights
+        // over.
+        MapScript::TacticsOcean => {
+            let ports = seats.max(2);
+            let home = (ports * WATER_WORLD_TILES_PER_SEAT * 2).min(target);
+            let mut land = scatter_islands(
+                wm,
+                &mut field,
+                IslandScatterPlan {
+                    target: home,
+                    min_size: WATER_WORLD_TILES_PER_SEAT,
+                    max_size: WATER_WORLD_TILES_PER_SEAT * 2,
+                    channel: ISLAND_CHANNEL,
+                    min_bodies: ports,
+                },
+                rng,
+            );
+            land.extend(scatter_islands(
+                wm,
+                &mut field,
+                IslandScatterPlan {
+                    target: target.saturating_sub(home),
+                    min_size: 2,
+                    max_size: 7,
+                    channel: 1,
+                    min_bodies: 0,
+                },
+                rng,
+            ));
+            land
+        }
         _ => {
             let continents = match script {
                 MapScript::Pangaea | MapScript::TacticsPlanet => 1,
@@ -2885,6 +2937,10 @@ fn large_lake_budget(script: MapScript, num_continents: usize) -> usize {
         // The battlefield carves its own ponds when its land is laid; a
         // spread lake on a ten-tile-wide arena would be most of the arena.
         MapScript::Battlefield => 0,
+        // And the naval one is already almost all water. Its land arrives as
+        // islets a handful of tiles across, which is smaller than a spread
+        // lake — there is nothing on the map for one to be inside.
+        MapScript::TacticsOcean => 0,
         // And a scenario's water is its chart's, down to the tile.
         MapScript::Trafalgar => 0,
         MapScript::Kadesh
@@ -4067,8 +4123,34 @@ pub fn generate_with_script_and_leader_starts(
     // widens to the largest component itself rather than to the pool, because
     // a start on bare ground is a smaller compromise than a start the enemy
     // cannot reach.
+    //
+    // At sea the guarantee inverts, and so does the component it is taken
+    // from. The naval globe seats the two sides on *different* islands by
+    // design — that is what makes it a naval battle rather than a land one
+    // with water around it — so requiring one landmass would defeat the map
+    // type. What has to connect instead is the water between them: two fleets
+    // launched into seas that do not join could never meet, which is the same
+    // unwinnable battle the land rule exists to prevent, reached from the
+    // other element. So the pool is every candidate plot whose own shore
+    // touches the world ocean, meaning the largest connected body of passable
+    // water, and the two ends are the farthest apart of those.
     let planet_pool = (script.is_planet_battlefield() && num_major_spawns == 2)
         .then(|| {
+            if script.is_naval_battlefield() {
+                let sea: BTreeSet<Pos> = wm
+                    .tiles
+                    .iter()
+                    .filter(|(_, tile)| rules.is_water(tile) && rules.is_passable(tile))
+                    .map(|(pos, _)| *pos)
+                    .collect();
+                let ocean = connected_components(&wm, &sea).into_iter().next()?;
+                let pool: BTreeSet<Pos> = major_pool
+                    .iter()
+                    .copied()
+                    .filter(|pos| wm.neighbors(*pos).into_iter().any(|n| ocean.contains(&n)))
+                    .collect();
+                return (pool.len() >= 2).then_some(pool);
+            }
             components
                 .iter()
                 .find_map(|component| {
@@ -9116,8 +9198,8 @@ mod river_tests {
                 MapScript::Battlefield => {
                     unreachable!("the battlefield arena is not a rolled world type")
                 }
-                MapScript::TacticsPlanet => {
-                    unreachable!("the Tactics planet is not a flat rolled-world fixture")
+                MapScript::TacticsPlanet | MapScript::TacticsOcean => {
+                    unreachable!("the Tactics globes are not flat rolled-world fixtures")
                 }
                 MapScript::Trafalgar => {
                     unreachable!("a scenario is drawn from its chart, not rolled")
@@ -9328,6 +9410,167 @@ mod river_tests {
                 apart * 10 >= farthest * 9,
                 "seed {seed}: the sides are {apart} apart on a world {farthest} across"
             );
+        }
+    }
+
+    /// The Tactics ocean is the land planet's mirror: a *water* world whose
+    /// two sides stand on separate islands with one sea joining them.
+    ///
+    /// Every clause is the land test's clause inverted, and each one is a way
+    /// the map could be built and still be unplayable. Four-fifths wet, or it
+    /// is a land world with lakes. Both seats on dry passable ground, because
+    /// a city cannot be founded on water however naval the battle is. Both
+    /// seats on the *same* body of water, which is the naval equivalent of
+    /// the march the land globe guarantees — two fleets launched into seas
+    /// that do not join could never meet, and the battle could only end on
+    /// the clock. Separate islands, because two fleets sharing a shore is the
+    /// land map again. And opposite faces, which is the promise both globes
+    /// make.
+    #[test]
+    fn the_tactics_ocean_is_a_water_globe_whose_fleets_can_sail_to_each_other() {
+        let rules = Rules::embedded();
+        for size in crate::setup::BATTLEFIELD_SIZES
+            .into_iter()
+            .filter(|size| size.script == MapScript::TacticsOcean)
+        {
+            for seed in 0..16u64 {
+                let mut rng = Rng::new(51_000 + seed);
+                let (world, spawns) = generate_with_script(
+                    &rules,
+                    size.width,
+                    size.height,
+                    2,
+                    3,
+                    2,
+                    1,
+                    MapScript::TacticsOcean,
+                    GLOBE,
+                    POLED,
+                    &mut rng,
+                );
+                let where_ = format!("{} seed {seed}", size.id);
+                assert_eq!(
+                    world.topology,
+                    crate::world::Topology::Globe(globe_frequency(size.width, size.height)),
+                    "{where_}"
+                );
+                assert_eq!((world.width, world.height), (size.width, size.height), "{where_}");
+
+                let water = world.tiles.values().filter(|tile| rules.is_water(tile)).count();
+                assert!(
+                    water * 100 >= world.tiles.len() * 80,
+                    "{where_}: {water} of {} tiles is under four-fifths water",
+                    world.tiles.len()
+                );
+                assert_eq!(spawns.len(), 2, "{where_}");
+
+                // A city still needs ground under it.
+                for spawn in &spawns {
+                    let tile = &world.tiles[spawn];
+                    assert!(!rules.is_water(tile), "{where_}: {spawn:?} opens in the water");
+                    assert!(rules.is_passable(tile), "{where_}: {spawn:?} opens on impassable ground");
+                }
+
+                // One sea touches both shores, so either fleet can reach the
+                // other. Sailable water only: a tile a ship cannot enter is
+                // not a route between them.
+                let sailable: BTreeSet<Pos> = world
+                    .tiles
+                    .iter()
+                    .filter(|(_, tile)| rules.is_water(tile) && rules.is_passable(tile))
+                    .map(|(position, _)| *position)
+                    .collect();
+                let ocean = largest_component(&world, &sailable);
+                for spawn in &spawns {
+                    assert!(
+                        world.neighbors(*spawn).into_iter().any(|n| ocean.contains(&n)),
+                        "{where_}: {spawn:?} does not touch the world ocean"
+                    );
+                }
+
+                // And two islands rather than one shared shore.
+                let dry: BTreeSet<Pos> = world
+                    .tiles
+                    .iter()
+                    .filter(|(_, tile)| !rules.is_water(tile))
+                    .map(|(position, _)| *position)
+                    .collect();
+                let islands = connected_components(&world, &dry);
+                let home = |spawn: &Pos| islands.iter().position(|island| island.contains(spawn));
+                assert!(
+                    home(&spawns[0]).is_some() && home(&spawns[0]) != home(&spawns[1]),
+                    "{where_}: both fleets open on the same island"
+                );
+
+                // Opposite faces of the world, but held to a looser margin
+                // than the land globe's nine-tenths, and for a reason that is
+                // the map type rather than the picker. The seats have to be
+                // land, an ocean world has very little, and the picker
+                // already takes the farthest-apart pair there is — so how
+                // near the true antipode the sides can get is decided by
+                // where the islands fell, not by how they are chosen.
+                //
+                // Measured over 40 seeds at each diameter, the worst pair sat
+                // at 75% of the world's width and the median well above 95%.
+                // The small globes are the coarse ones: diameter 8 bottomed
+                // out at 75% and diameter 10 at 80%, while 15 and 20 never
+                // fell below 91%, because a bigger ocean rolls more islands
+                // to choose a far shore from. Seven-tenths is the floor that
+                // measurement supports, and it still means the far side of
+                // the world rather than the next island over.
+                let farthest = world
+                    .tiles
+                    .keys()
+                    .map(|position| world.distance(spawns[0], *position))
+                    .max()
+                    .unwrap();
+                let apart = world.distance(spawns[0], spawns[1]);
+                assert!(
+                    apart * 10 >= farthest * 7,
+                    "{where_}: the sides are {apart} apart on a world {farthest} across"
+                );
+            }
+        }
+    }
+
+    /// Every diameter the menu offers builds the globe it advertises.
+    ///
+    /// The size table is the only place the ladder is written down, and a row
+    /// whose rectangle did not match its diameter would build a world of some
+    /// other size while the lobby named this one. Checked on both families,
+    /// because they share the ladder and a divergence between them would make
+    /// a land result and a naval one at the "same" diameter incomparable.
+    #[test]
+    fn every_tactics_globe_diameter_builds_the_world_it_advertises() {
+        let rules = Rules::embedded();
+        for size in crate::setup::BATTLEFIELD_SIZES
+            .into_iter()
+            .filter(|size| size.script.is_planet_battlefield())
+        {
+            let diameter = size.width / 5;
+            assert!(crate::setup::TACTICS_GLOBE_DIAMETERS.contains(&diameter), "{}", size.id);
+            let mut rng = Rng::new(9_100 + diameter as u64);
+            let (world, spawns) = generate_with_script(
+                &rules,
+                size.width,
+                size.height,
+                2,
+                3,
+                2,
+                1,
+                size.script,
+                GLOBE,
+                POLED,
+                &mut rng,
+            );
+            assert_eq!(world.topology, crate::world::Topology::Globe(diameter), "{}", size.id);
+            assert_eq!(
+                world.tiles.len(),
+                crate::sphere::Sphere::tiles_for(diameter),
+                "{}",
+                size.id
+            );
+            assert_eq!(spawns.len(), 2, "{}", size.id);
         }
     }
 
