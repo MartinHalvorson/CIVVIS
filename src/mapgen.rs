@@ -1229,7 +1229,13 @@ fn flat_land(
                 rng,
             )
         }
-        MapScript::WaterWorld => {
+        // The naval battlefield is always a globe — `is_planet_battlefield`
+        // holds its topology at Planet before the shape is dispatched on, and
+        // `globe_land` lays its two home islands and its islets. It is grouped
+        // here so a direct call that forces the flat shape anyway still gets
+        // an ocean with land enough to seat both sides, rather than falling
+        // through to a branch that would grow it a continent.
+        MapScript::WaterWorld | MapScript::TacticsOcean => {
             // The far end of the same dial as Land Only: specks of land in an
             // ocean. The floor is what keeps it playable — a world that cannot
             // seat every civilization and city-state on land is not a map, so
@@ -1237,7 +1243,7 @@ fn flat_land(
             // for rather than a broken world.
             let mut open = offset_region(wm, 0, width, 1, height - 1);
             let seats = num_major_spawns + num_minor_spawns;
-            let target = (area * MapScript::WaterWorld.land_percent() as usize / 100)
+            let target = (area * script.land_percent() as usize / 100)
                 .max(seats * WATER_WORLD_TILES_PER_SEAT);
             scatter_islands(
                 wm,
@@ -1677,6 +1683,52 @@ fn globe_land(
             },
             rng,
         ),
+        // The naval battlefield, laid in two passes because its land does two
+        // different jobs.
+        //
+        // First the home islands: one per seat, each grown to a size that can
+        // actually carry a city, because a fleet with no port is not the
+        // battle this mode is about and a capital squeezed onto a rock is the
+        // failure Water World's per-seat floor exists to prevent. They are cut
+        // with the full channel between them, so the two sides start as far
+        // apart as an archipelago ever seats anyone.
+        //
+        // Then the islets, from whatever share of the water is left: small,
+        // and deliberately packed at a one-tile channel rather than three.
+        // These are the only features on an otherwise empty sea — the thing a
+        // flank is worked around, the gap that can be held by a few ships
+        // against many — and a three-tile channel between every pair would
+        // make them scenery a fleet sails past instead of ground it fights
+        // over.
+        MapScript::TacticsOcean => {
+            let ports = seats.max(2);
+            let home = (ports * WATER_WORLD_TILES_PER_SEAT * 2).min(target);
+            let mut land = scatter_islands(
+                wm,
+                &mut field,
+                IslandScatterPlan {
+                    target: home,
+                    min_size: WATER_WORLD_TILES_PER_SEAT,
+                    max_size: WATER_WORLD_TILES_PER_SEAT * 2,
+                    channel: ISLAND_CHANNEL,
+                    min_bodies: ports,
+                },
+                rng,
+            );
+            land.extend(scatter_islands(
+                wm,
+                &mut field,
+                IslandScatterPlan {
+                    target: target.saturating_sub(home),
+                    min_size: 2,
+                    max_size: 7,
+                    channel: 1,
+                    min_bodies: 0,
+                },
+                rng,
+            ));
+            land
+        }
         _ => {
             let continents = match script {
                 MapScript::Pangaea | MapScript::TacticsPlanet => 1,
@@ -2858,6 +2910,10 @@ fn large_lake_budget(script: MapScript, num_continents: usize) -> usize {
         // The battlefield carves its own ponds when its land is laid; a
         // spread lake on a ten-tile-wide arena would be most of the arena.
         MapScript::Battlefield => 0,
+        // And the naval one is already almost all water. Its land arrives as
+        // islets a handful of tiles across, which is smaller than a spread
+        // lake — there is nothing on the map for one to be inside.
+        MapScript::TacticsOcean => 0,
         // And a scenario's water is its chart's, down to the tile.
         MapScript::Trafalgar => 0,
     }
@@ -4013,8 +4069,34 @@ pub fn generate_with_script_and_leader_starts(
     // widens to the largest component itself rather than to the pool, because
     // a start on bare ground is a smaller compromise than a start the enemy
     // cannot reach.
+    //
+    // At sea the guarantee inverts, and so does the component it is taken
+    // from. The naval globe seats the two sides on *different* islands by
+    // design — that is what makes it a naval battle rather than a land one
+    // with water around it — so requiring one landmass would defeat the map
+    // type. What has to connect instead is the water between them: two fleets
+    // launched into seas that do not join could never meet, which is the same
+    // unwinnable battle the land rule exists to prevent, reached from the
+    // other element. So the pool is every candidate plot whose own shore
+    // touches the world ocean, meaning the largest connected body of passable
+    // water, and the two ends are the farthest apart of those.
     let planet_pool = (script.is_planet_battlefield() && num_major_spawns == 2)
         .then(|| {
+            if script.is_naval_battlefield() {
+                let sea: BTreeSet<Pos> = wm
+                    .tiles
+                    .iter()
+                    .filter(|(_, tile)| rules.is_water(tile) && rules.is_passable(tile))
+                    .map(|(pos, _)| *pos)
+                    .collect();
+                let ocean = connected_components(&wm, &sea).into_iter().next()?;
+                let pool: BTreeSet<Pos> = major_pool
+                    .iter()
+                    .copied()
+                    .filter(|pos| wm.neighbors(*pos).into_iter().any(|n| ocean.contains(&n)))
+                    .collect();
+                return (pool.len() >= 2).then_some(pool);
+            }
             components
                 .iter()
                 .find_map(|component| {
@@ -9054,8 +9136,8 @@ mod river_tests {
                 MapScript::Battlefield => {
                     unreachable!("the battlefield arena is not a rolled world type")
                 }
-                MapScript::TacticsPlanet => {
-                    unreachable!("the Tactics planet is not a flat rolled-world fixture")
+                MapScript::TacticsPlanet | MapScript::TacticsOcean => {
+                    unreachable!("the Tactics globes are not flat rolled-world fixtures")
                 }
                 MapScript::Trafalgar => {
                     unreachable!("a scenario is drawn from its chart, not rolled")

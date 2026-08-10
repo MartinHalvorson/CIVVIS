@@ -18161,15 +18161,31 @@ impl Game {
                 // this side holds and the other side is coming for. Planted
                 // before the army is laid out so the deployment can gather
                 // around it.
+                //
+                // At sea it stands off the shore instead. A seat on the naval
+                // globe is an island, and no fleet can sail onto one, so a
+                // flag planted on the seat itself would be a flag the enemy
+                // could never take — a capture-the-flag battle that can only
+                // end on the clock. The anchorage is the honest equivalent:
+                // the nearest open water to the seat, which is exactly the
+                // tile an attacking fleet has to fight its way onto and the
+                // defending one has to hold.
                 if tactics.flag {
-                    g.arena_flags.insert(i, *pos);
+                    let site = if map_script.is_naval_battlefield() {
+                        g.nearest_open_water(*pos)
+                    } else {
+                        Some(*pos)
+                    };
+                    if let Some(site) = site {
+                        g.arena_flags.insert(i, site);
+                    }
                 }
                 // A scenario deals each side its own historical order of
                 // battle instead, on the ground that side actually held.
                 if map_script.is_scenario() {
                     g.deploy_trafalgar_fleet(i);
                 } else {
-                    g.deploy_battlefield_army(i, *pos);
+                    g.deploy_battlefield_army(i, *pos, map_script);
                 }
                 g.reveal(i, *pos, 3);
                 continue;
@@ -18457,7 +18473,7 @@ impl Game {
     /// Bigger fields take more companies, at a constant density of roughly
     /// one unit per twelve hexes of ground — the same battle on more room
     /// rather than the same army wandering a larger map looking for it.
-    pub fn battlefield_army(tiles: usize) -> Vec<&'static str> {
+    pub fn battlefield_army(tiles: usize, script: MapScript) -> Vec<&'static str> {
         const COMPANY: [&str; 8] = [
             "warrior",
             "warrior",
@@ -18468,8 +18484,55 @@ impl Game {
             "horseman",
             "heavy_chariot",
         ];
-        let companies = tiles.div_ceil(100).clamp(1, 3);
-        COMPANY.iter().cycle().take(COMPANY.len() * companies).copied().collect()
+        // A squadron is the Ancient naval cycle entire, which is a shorter
+        // cycle than the land one: the ruleset gives the age exactly two
+        // warships, and they answer each other. The galley closes and boards,
+        // which is what punishes a quadrireme for keeping its distance; the
+        // quadrireme shoots, which is what punishes a galley for crossing the
+        // open water between them. There is no third arm at sea in this era —
+        // no anti-cavalry to hold a line and no horse to turn a flank — so
+        // the squadron is an even split rather than the land company's spread
+        // across five roles.
+        const SQUADRON: [&str; 8] = [
+            "galley",
+            "quadrireme",
+            "galley",
+            "quadrireme",
+            "galley",
+            "quadrireme",
+            "galley",
+            "quadrireme",
+        ];
+        // Bigger fields take more companies, but only up to two. Density is
+        // not the point past that: a Tactics battle is decided by what a
+        // manageable force does with the room it has, and a diameter-20 globe
+        // filled to a constant one-unit-per-twelve-hexes would be a different
+        // mode — hundreds of units a side, and a turn spent issuing orders
+        // rather than a battle. The larger globes are deliberately the same
+        // battle given more room to be fought over.
+        let companies = tiles.div_ceil(100).clamp(1, 2);
+        let order = if script.is_naval_battlefield() { &SQUADRON } else { &COMPANY };
+        order.iter().cycle().take(order.len() * companies).copied().collect()
+    }
+
+    /// The closest water a ship could be on to `anchor`, or `None` if there is
+    /// none within reach of it.
+    ///
+    /// Ties break on position so the same world always answers the same tile:
+    /// a naval arena plants its flag with this, and a flag that moved between
+    /// two runs of the same seed would make the battle unreproducible.
+    fn nearest_open_water(&self, anchor: Pos) -> Option<Pos> {
+        // Four rings out. A seat on the naval globe is an islet a handful of
+        // tiles across with open sea around it, so the answer is normally one
+        // or two steps away; the radius is a bound on the search rather than a
+        // distance the water is expected to be at.
+        let mut candidates = self.wdisk(anchor, 4);
+        candidates.sort_by_key(|pos| (self.wdist(anchor, *pos), *pos));
+        candidates.into_iter().find(|pos| {
+            self.map
+                .get(*pos)
+                .is_some_and(|tile| self.rules.is_passable(tile) && self.rules.is_water(tile))
+        })
     }
 
     /// Set out one side's opening army on a Tactics battlefield.
@@ -18480,17 +18543,28 @@ impl Game {
     /// first turns of the battle would be spent unstacking it. Only one
     /// military unit stands on a hex, so "the next free ground outward" is
     /// the whole rule.
-    fn deploy_battlefield_army(&mut self, pid: usize, anchor: Pos) {
+    ///
+    /// Which tiles count as "outward" is the one thing the element changes. A
+    /// column forms on dry ground and a squadron forms on open water, so the
+    /// search is filtered to the element the roster can actually stand on —
+    /// `is_passable` alone would seat a galley on a hill, since a land tile is
+    /// passable to something. On the naval globe the anchor is the seat's
+    /// island, so the squadron rings the shore it sails from.
+    fn deploy_battlefield_army(&mut self, pid: usize, anchor: Pos, script: MapScript) {
+        let afloat = script.is_naval_battlefield();
         let mut ground: Vec<Pos> = self
             .map
             .tiles
             .keys()
             .copied()
-            .filter(|pos| self.rules.is_passable(&self.map.tiles[pos]))
+            .filter(|pos| {
+                let tile = &self.map.tiles[pos];
+                self.rules.is_passable(tile) && self.rules.is_water(tile) == afloat
+            })
             .collect();
         ground.sort_by_key(|pos| (self.wdist(anchor, *pos), *pos));
         let mut cursor = 0;
-        for kind in Self::battlefield_army(self.map.tiles.len()) {
+        for kind in Self::battlefield_army(self.map.tiles.len(), script) {
             while ground
                 .get(cursor)
                 .is_some_and(|pos| !self.units_at(*pos).is_empty())
@@ -69852,14 +69926,14 @@ mod district_mechanics {
         };
         assert_eq!(
             roster(0),
-            Game::battlefield_army(game.map.tiles.len())
+            Game::battlefield_army(game.map.tiles.len(), MapScript::Battlefield)
                 .into_iter()
                 .collect::<std::collections::BTreeSet<_>>()
                 .into_iter()
                 .flat_map(|kind| {
                     std::iter::repeat_n(
                         kind,
-                        Game::battlefield_army(game.map.tiles.len())
+                        Game::battlefield_army(game.map.tiles.len(), MapScript::Battlefield)
                             .iter()
                             .filter(|other| **other == kind)
                             .count(),
