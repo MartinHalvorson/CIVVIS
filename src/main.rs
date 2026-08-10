@@ -863,7 +863,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// --pairs 10 --players 4 --turns 200 --seed 31337 --jobs 1
 /// --deployment-comparison`) remains byte-identical. Its source contract is
 /// re-pinned below; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5898_8e82_417e_98db;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x31b9_c4f4_7fb1_e4f5;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
