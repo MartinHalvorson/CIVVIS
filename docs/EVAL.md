@@ -7338,3 +7338,100 @@ elimination test on the original `no entry found for key` panic in `relocate`.
 were produced by the pre-repair engine; a batch that aborted seeds may have
 done so for this reason, so re-run such a batch rather than reusing its
 partial result. Nothing in this entry supersedes an existing baseline.
+
+
+## 2026-08-10 — ★★★ the roster's winners all raise one district gene, and it measures
+
+### What was mined
+
+Nothing had ever asked the shipped league roster the *behavioural* question:
+across the bred `Advanced` genomes, which of the forty genes separates the
+winners from the losers? `data/league/league.json` carries 51 genomes; 47 have
+at least 20 recorded 8-player games and 8 have at least 200, together ~23 000
+games. Ranking them by **outright win rate** — not by the Glicko rating this
+document already measured ranking two agents backwards by 230 Elo on
+2026-07-28 — and contrasting the top third against the bottom third, weighted
+by games:
+
+| gene | shipped default | top third | bottom third | Δ / legal range | weighted r |
+|---|---|---|---|---|---|
+| **d_holy** | **2.0** | **5.6** | **2.0** | **+0.41** | **+0.62** |
+| settle_food | 1.2 | 0.77 | 1.19 | −0.15 | −0.59 |
+| local_superiority | 6.0 | 5.8 | 6.6 | −0.05 | −0.59 |
+| d_theater | 1.0 | 0.49 | 1.32 | −0.10 | −0.47 |
+
+`d_holy` is the largest separation of the forty on both axes. **The bottom-third
+column is the control that matters**: a gene under no selection pressure drifts
+in both tails, and this one does not move in the losing tail at all — it sits on
+the shipped default to three figures.
+
+Two independent corroborations. The shipped GA champion
+(`data/evolved/best.json`) leaves `d_holy` at exactly 2.0, so the evolutionary
+search never explored the axis the league found. And the win-rate ordering used
+here independently places `g56-50` **last of the eight** — the same genome the
+2026-07-28 entry measured at −108 Elo against the champion while the roster's
+Glicko ranked it top. The two orderings disagree, and the one used here agrees
+with the gate-quality measurement.
+
+⚠ This is a correlation over ~50 survivors related by descent. It is a
+hypothesis generator, not a result. What follows is the result.
+
+### The measurement
+
+`advanced_holy_priority` is stock `advanced` with `d_holy = 5.6`, one gene, no
+other difference (`arms differ on: district-holy-priority`). Both tests were
+declared before either was read, so each is judged against a 0.025 two-sided
+budget.
+
+```
+ai_eval advanced_holy_priority advanced --players 4 --pairs 300 --turns 500 --seed 4200000
+  paired-map score   53.8%  (95% Wilson CI 48.2%..59.4%)   Elo-equivalent +27 (CI -13..+66)
+  paired direction   34 for / 255 neutral / 11 against   sign p = 0.0008
+  anytime-valid      treatment e = 2.559e2, p <= 0.0039, crossed at map 263
+  promotion gate     INCONCLUSIVE
+
+ai_eval advanced_holy_priority advanced --players 8 --pairs 300 --turns 500 --seed 4300000
+  paired-map score   53.8%  (95% Wilson CI 48.2%..59.4%)   Elo-equivalent +27 (CI -13..+66)
+  paired direction   32 for / 259 neutral /  9 against   sign p = 0.0004
+  anytime-valid      treatment e = 2.146e3, p <= 0.0005, crossed at map 158
+  promotion gate     INCONCLUSIVE
+```
+
+The two headline scores are identical because both direction splits happen to
+sum to the same 161.5 of 300; the runs are genuinely distinct (1200 against 2400
+seat-games, different seeds, different victory mixes). Both e-processes crossed
+for the treatment and neither crossed for the control. Each gate reads
+INCONCLUSIVE on effect size alone: at 300 pairs the Wilson half-width is 5.6
+points and the effect is 3.8.
+
+### ★★★ Why it works, which is the part worth keeping
+
+The treatment does **not** choose religion more often. The grand-strategy
+occupancy is the same to within noise — religion 23.3% of observed player-turns
+against the control's 23.9%, conquest 25.8% against 26.0%, expansion 32.2%
+against 32.1%. What changes is the victory mix:
+
+| victory | treatment 4p | control 4p | treatment 8p | control 8p |
+|---|---|---|---|---|
+| religious | **267** | 203 | **258** | 198 |
+| every other route | 56 | 74 | 65 | 79 |
+
+The entire win delta is religious victories. The strategy layer already wanted
+the religious lane a quarter of the time; the district priority table ranked the
+district that lane runs through **below both the Campus and the Commercial
+Hub**, so the intent never reached the build queue. This is the same shape as
+every other "decision that never actuates" in this repository — an agent whose
+plan and whose production disagree — and not a new appetite for religion.
+
+The paired terminal-score diagnostic leans the other way (49.9% at 4p, sign
+p=0.2386; p=0.5263 at 8p) and that is expected rather than contradictory: a Holy
+Site is worse economy than a Campus, so the treatment develops marginally less
+and converts materially more.
+
+### What this does NOT license
+
+`Weights::default()` is unchanged and should stay unchanged until a gate
+actually clears. Two INCONCLUSIVE gates are not a promotion however well they
+agree, and "replicated twice" is not the standard this file holds. A 1200-pair
+run at 4p is the sample size at which a 3.8-point effect clears parity
+(half-width 2.8), and that is the run that decides it.
