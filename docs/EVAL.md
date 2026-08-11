@@ -8539,8 +8539,11 @@ seed above) ship and sit unnoticed, and it is worth stating as the lesson rather
 
 ## 2026-08-10 — the base constructor's always-on flags: deny_leaders priced, two more made measurable
 
-The `promoted_policy_envoy` audit closed with one component removed at −41 Elo
-and one measured at +30. It covered thirteen flags. **`configured` sets ten
+The `promoted_policy_envoy` audit closed with one component removed
+(`city_target_floor`, Elo +41 for the withhold, CI +7..+76, 400 pairs, seed
+8600000, matrix PASS, PR #1504) and one measured positive (`settler_commit`,
+Elo +30 for keeping it, 60/95, p=0.0061, 400 pairs, seed 9200000, PR #1510).
+It covered thirteen flags. **`configured` sets ten
 more**, for every `AdvancedAi` that is not `legacy()`, and they were outside
 that audit entirely.
 
@@ -8580,7 +8583,8 @@ suggests.
 
 `settlement_safety` and `battlefront_observation` are set for every non-legacy
 agent and had **no withhold at all** — unmeasurable by construction, the same
-condition that hid a 41-Elo mistake in the other constructor.
+condition that hid the `city_target_floor` mistake in the other constructor
+(interval and seed above).
 `disable_settlement_safety` and `disable_battlefront_observation` now exist,
 with `advanced_without_settlement_safety` and
 `advanced_without_battlefront_observation` registered against them.
