@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 133] = [
+pub const EVAL_ONLY_AIS: [&str; 134] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -152,6 +152,7 @@ pub const EVAL_ONLY_AIS: [&str; 133] = [
     "advanced_without_unpriced_war",
     "advanced_without_city_defence",
     "advanced_legacy_policy_deck",
+    "advanced_without_builder_floor",
     "advanced_without_unit_tactics",
     "advanced_league_top",
     "advanced_joint_tactics",
@@ -474,6 +475,7 @@ define_arm_kinds! {
     AdvancedWithoutUnpricedWar => "advanced_without_unpriced_war",
     AdvancedWithoutCityDefence => "advanced_without_city_defence",
     AdvancedLegacyPolicyDeck => "advanced_legacy_policy_deck",
+    AdvancedWithoutBuilderFloor => "advanced_without_builder_floor",
     AdvancedWithoutUnitTactics => "advanced_without_unit_tactics",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
@@ -2699,6 +2701,23 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         //
         // 120 maps is well under what this file now treats as resolving
         // anything, so the null it rests on is not one either.
+        // The 25th production behaviour, and the second found outside the two
+        // constructors the audit swept: `delegated_cities` raises
+        // `builder_per_city` from the genome's 0.5 to 0.75 with a call-local
+        // `.max()`. Reachable from nowhere else, never mentioned in
+        // `docs/EVAL.md`, and justified by reasoning rather than a number —
+        // "three active Builders per four cities provide roughly two useful
+        // improvements per city".
+        //
+        // Same profile as `city_target_floor`, which was also a production-only
+        // floor justified by argument and measured at **-41 Elo**. That is the
+        // reason to look, not a prediction: the two other expansion-adjacent
+        // floors beside this one measured null and +30.
+        "advanced_without_builder_floor" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_production_builder_floor();
+            Box::new(ai)
+        }
         "advanced_legacy_policy_deck" => Box::new(AdvancedAi::with_legacy_policy_deck()),
         "advanced_without_city_defence" => {
             let mut ai = AdvancedAi::new();
@@ -3844,6 +3863,7 @@ impl ArmKind {
             Self::AdvancedWithoutUnpricedWar => &["unpriced-war-half-withheld"],
             Self::AdvancedWithoutCityDefence => &["city-defence-quarter-withheld"],
             Self::AdvancedLegacyPolicyDeck => &["live-policy-deck-withheld"],
+            Self::AdvancedWithoutBuilderFloor => &["production-builder-floor-withheld"],
             Self::AdvancedWithoutUnitTactics => &["unit-tactics-quarter-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
@@ -4375,6 +4395,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_unpriced_war" => (Vec::new(), "advanced_without_unpriced_war"),
         "advanced_without_city_defence" => (Vec::new(), "advanced_without_city_defence"),
         "advanced_legacy_policy_deck" => (Vec::new(), "advanced_legacy_policy_deck"),
+        "advanced_without_builder_floor" => (Vec::new(), "advanced_without_builder_floor"),
         "advanced_without_unit_tactics" => (Vec::new(), "advanced_without_unit_tactics"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
@@ -5585,7 +5606,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 102] = [
+            const SCRIPTED: [&str; 103] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5655,6 +5676,7 @@ mod tests {
                 "advanced_without_unpriced_war",
                 "advanced_without_city_defence",
                 "advanced_legacy_policy_deck",
+                "advanced_without_builder_floor",
                 "advanced_without_unit_tactics",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
