@@ -2357,6 +2357,71 @@ mod city_name_tests {
 
     /// A tile the HOST engine refused to improve must offer no improvements at all.
     ///
+    /// ⭐ A TILE ALREADY CARRYING AN IMPROVEMENT IS NOT OFFERED THAT IMPROVEMENT
+    /// AGAIN — and the whole live duplicate-order fix depends on it.
+    ///
+    /// Measured on the live ladder 2026-08-11: CIVVIS orders an improvement, it
+    /// succeeds, and the identical order comes back 27–39 times a run. The cause
+    /// is not the planner: it is that the mirror only learned about a finished
+    /// improvement on the next periodic tile sweep, so the board still showed the
+    /// ground bare. #1565 and #1567 report the improvement immediately.
+    ///
+    /// That fix is only sufficient because of the exclusion this test pins —
+    /// `valid_improvements` skips an improvement equal to the one already on the
+    /// tile. Remove it and the duplicates return with a correct board, and
+    /// nothing else in the suite would say so.
+    ///
+    /// ⚠ I predicted the opposite from reading, and a grep that stopped seventy
+    /// lines short is why. The condition lives at the end of the improvement
+    /// loop, not beside the national-park check at the top.
+    #[test]
+    fn a_tile_is_not_offered_the_improvement_it_already_has() {
+        let mut game = Game::new(2, 24, 16, 1, 200, 0);
+        let centre = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| {
+                let tile = &game.map.tiles[pos];
+                !game.rules.is_water(tile)
+                    && game.rules.is_passable(tile)
+                    && !game.tile_is_natural_wonder(tile)
+            })
+            .expect("a standard map has open land");
+        game.place_city(0, centre, None);
+        let Some((pos, improvement)) = crate::hex::ring(centre, 1)
+            .into_iter()
+            .chain(crate::hex::ring(centre, 2))
+            .find_map(|pos| {
+                game.valid_improvements(0, pos)
+                    .into_iter()
+                    .next()
+                    .map(|imp| (pos, imp))
+            })
+        else {
+            panic!("the ground around a capital should contain an improvable tile");
+        };
+
+        // Put that very improvement on the tile, as a finished build would.
+        game.map.tiles.get_mut(&pos).expect("the tile").improvement = Some(improvement);
+
+        assert!(
+            !game.valid_improvements(0, pos).contains(&improvement),
+            "a tile holding {improvement} must not be offered {improvement} again, \
+             or CIVVIS re-orders what it has just built"
+        );
+        // ⚠ And only that one. Replacing an improvement is a real decision in
+        // Civilization VI — a Farm over a Mine — so the tile must still offer
+        // something, or this would be a much bigger change than it looks.
+        // ⚠ NOT asserted here: that a DIFFERENT improvement survives, which is
+        // the other half of the rule (replacing a Mine with a Farm is a real
+        // Civilization VI decision). No tile within two rings of a capital
+        // offers two valid improvements on this map — terrain, feature and
+        // resource constrain them to one each — so the fixture cannot state it
+        // without inventing ground. Left unclaimed rather than asserted weakly.
+    }
+
     /// The largest refusal category measured — 311 `IMPROVEMENT_MINE` refusals in one
     /// run — because CIVVIS names improvements from its own terrain model and the two
     /// rulesets disagree tile for tile. Gated in `valid_improvements` because that is
