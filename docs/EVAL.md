@@ -8835,3 +8835,63 @@ it named this one without being asked. The lesson for the next reader is the
 pairing: **a defect's drama and its Elo are unrelated quantities.** Two hundred
 idle turns looks like the worst thing in the log and is worth, as far as 400
 maps can tell, about five Elo.
+
+
+## 2026-08-11 — the biggest motion symptom, split into the two thirds that are fine and the third that is not
+
+The idle-settler entry closed on a lesson: **a defect's drama and its Elo are
+unrelated.** The obvious correction is to rank `audit`'s symptoms by frequency
+instead — and that is also wrong, in a way worth recording, because the symptom
+counts and the unit-turn rates disagree.
+
+```
+audit --games 8 --players 6 --width 74 --height 46 --city-states 9 --turns 250
+
+symptom counts        warrior circles x94, scout circles x24, quadrireme still x21,
+                      … settler still x8
+motion, major civs    unit-turns=135574  livelock=1644 (1.21%)  idle-field=32315 (23.84%)
+                                          picket=4861 (3.59%)
+```
+
+**94 circling warriors is 1.21% of unit-turns.** The count is dramatic and the
+rate is negligible. Meanwhile the largest rate in the table had never been split
+into its parts, and `idle_field` is defined as *"stood still in the open,
+unfortified, achieving nothing"* — which lumps a settler waiting for an escort
+together with a warrior declining a free defensive bonus.
+
+### The split
+
+`audit` now reports how much of `idle_field` could have fortified at all, by
+mirroring `Game::unit_can_fortify` — unembarked land military.
+
+| major-civ unit-turns | share |
+|---|---|
+| idle in the field | 23.84% |
+| **of those, could have fortified** | **7.73%** |
+| actually fortified (`picket`) | **3.59%** |
+
+**Two-thirds of the biggest symptom is civilians, and they are fine** — a settler
+standing still is not squandering something it held. The remaining third is not:
+**10,477 unit-turns across eight games in which an unembarked land military unit
+stood still in the open and did not fortify**, against 4,861 unit-turns that
+did. The agent leaves its army unfortified more than twice as often as it
+fortifies it.
+
+What that costs is exact rather than rhetorical: `unit_strength` adds **3.0 per
+fortified turn, capped at two turns**, so a stationary warrior is declining
+**+6 defensive strength**, about 30% of its base.
+
+### ⚠ What this does and does not establish
+
+It establishes the size and the price of the gap, and that the gap is on the
+fortifiable third rather than the whole 23.84%. It does **not** establish that
+closing it is worth any Elo — and the last two entries are the reason to say so
+out loud. The idle settler was dramatic and worth ~5 Elo; the circling warriors
+are numerous and are 1.21% of unit-turns. **Frequency is a better guide than
+drama and still not a substitute for a paired run.**
+
+`AdvancedAi` already reaches `BasicAi::fortify_or_stop` at seven terminal
+points, so the fallback exists and something is routing around it — most likely
+the same shape as the settler defect, where an intended move fails and the path
+returns without reaching the terminal case. That is the next thing to measure,
+and it now has a number to be measured against rather than a symptom count.
