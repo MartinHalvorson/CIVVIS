@@ -9275,3 +9275,44 @@ chosen because the fourth was close is how a +14 becomes a +41 in the retelling.
 addition of maps moved it down, which is the signature of a real-but-small effect
 rather than a large one waiting for resolution. A treatment whose estimate climbs
 with sample size deserves another run; this one does not.
+
+
+## 2026-08-11 — the shipped floor removal still holds, 47 commits later
+
+`city_target_floor` was removed from `promoted_policy_envoy` on a matrix PASS
+(#1504). Since then **47 commits** have landed on `main` from several agents —
+engine-repair arms, production category genes, a synergy bundle. Nothing had
+checked that the only strength change this audit shipped still measures what it
+measured, and a gain that quietly evaporates under concurrent development is
+indistinguishable from one that was never there.
+
+`advanced_wide_opening` restores the floor to six, so `advanced` against it is
+exactly the shipped change, re-run on a **fresh seed** at the same gate:
+
+```
+ai_eval advanced advanced_wide_opening --matrix --pairs 400 --seed 12500000
+
+  compact-standard   (NoRegression)  50.1% (CI 45.2..54.9)  Elo  +0   64/60   p=0.7877  ACCEPT
+  deployment-online  (Strength)      55.6% (CI 50.7..60.4)  Elo +39  115/56  p=0.0000  ACCEPT
+
+  multi-profile promotion gate: PASS — advanced cleared every required profile
+```
+
+| | profile | score | Elo | direction |
+|---|---|---|---|---|
+| original, seed 8600000 | deployment-online | 55.9% | +41 (CI +7..+76) | 125/65, p=0.0000 |
+| **re-check, seed 12500000** | deployment-online | **55.6%** | **+39 (CI +5..+73)** | 115/56, p=0.0000 |
+
+**Unchanged within noise, on a seed it was not promoted on, after 47 commits of
+other people's work.** That is the fifth independent measurement of this effect
+(+30, +29, +34, +41, +39) and the second full matrix PASS.
+
+⚠ Worth stating plainly because it is the least glamorous run in this file and
+one of the more useful: **a promoted result is a claim about the tree at one
+commit.** Everything else in this session was about not fooling yourself when a
+number is new; this is about not assuming an old number is still true. The check
+cost one matrix run and would have caught an interaction that no test in the
+suite is shaped to notice — the tests assert behaviour, and this asserts that the
+behaviour is still worth what it was worth.
+
+Nothing changes. The result is confirmed and the agent keeps playing as it does.
