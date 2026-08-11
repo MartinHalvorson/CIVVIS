@@ -8275,8 +8275,36 @@ local function applyOrder(player, pid, row, turn)
 			-- the `x`/`y` note above exists to protect.
 			local why = refusalReason(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"],
 			                          params);
+			-- ⚠⚠⚠ THE TWO FORMS OF THE SAME CALL DISAGREE, AND ONLY ONE OF THEM
+			-- GATES THE WORK.
+			--
+			-- First live run on #1542, `civvis-20260811T094304Z`: every one of the
+			-- thirteen refusals reads `can_start=true,no_reasons [p4r]`. The engine
+			-- says the operation CAN start, at the exact moment we tell CIVVIS the
+			-- tile is dead — and that event blocks the tile in its planner, so a
+			-- wrong one poisons the map it plans from.
+			--
+			-- But the probe and the gate are not the same call:
+			--
+			--   canOperate     CanStartOperation(unit, hash, nil, params)
+			--   refusalReason  CanStartOperation(unit, hash, nil, params, ALL)
+			--
+			-- `operate` only reaches `RequestOperation` when `canOperate` returns
+			-- true, so reaching this line means the 4-arg form said FALSE while the
+			-- 5-arg form says TRUE. Either the results argument changes what the
+			-- engine tests, or the gate under-reports and this harness has been
+			-- refusing improvements Civilization VI would have allowed.
+			--
+			-- ⚠ I am not claiming which. This file has been wrong three times by
+			-- reasoning about an overload instead of measuring it, so record BOTH
+			-- answers side by side and let the next live run say. No behaviour
+			-- changes here: `can_operate` is read after every attempt has already
+			-- failed, and is only written down.
 			emit("improve_refused", { turn = turn, unit = subject,
 			                          want = wanted or "IMPROVE", why = why,
+			                          can_operate = canOperate(unit,
+			                              OP["UNITOPERATION_BUILD_IMPROVEMENT"],
+			                              params),
 			                          x = params[UnitOperationTypes.PARAM_X],
 			                          y = params[UnitOperationTypes.PARAM_Y] });
 			return false, wanted or "IMPROVE";
