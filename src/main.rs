@@ -919,7 +919,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// (`settlement_safety`, `battlefront_observation`). Evaluator entry points no
 /// constructor calls; `legacy()` already turns both off. Compatibility re-pin
 /// recomputed over the merged tree — neither side's value applies.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1bc0_d41d_7905_418d;
+/// A test only: `the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production`,
+/// which asserts the claim the re-pins above made in prose — that no
+/// withhold arm for a production default can reach `AdvancedAi::legacy()`.
+/// Compatibility re-pin, and the last one on this branch that needs the
+/// argument, because the assertion now carries it.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0fe2_02a9_09a6_413d;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

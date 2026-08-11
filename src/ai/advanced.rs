@@ -23262,6 +23262,64 @@ mod tests {
     /// trap that cost an evaluation on 2026-08-10: because this constructor
     /// sets these, an arm built as `AdvancedAi::new()` **plus** one of them is a
     /// byte-identical no-op. Withhold, do not add.
+    /// Every default this session made withholdable must be OFF on the frozen
+    /// anchor, and ON in production.
+    ///
+    /// The re-pins for those withholds were justified by comments reasoning
+    /// about call paths. A comment claiming a flag cannot reach the anchor is
+    /// worth exactly what the comment claiming native games leave
+    /// `bounded_recovery` disabled was worth — that one was false, and finding
+    /// out cost an evaluation. `the_repair_bundle_cannot_reach_the_frozen_anchor`
+    /// in `main.rs` makes the same argument by assertion for the engine-repair
+    /// bundle; this is its counterpart for the five defaults.
+    ///
+    /// Both halves matter. OFF on `legacy()` is what makes a withhold arm
+    /// unable to move a rating anchor. ON in `new()` is what makes a withhold
+    /// the *only* way to price them — an arm built as `new()` plus one of these
+    /// is a byte-identical no-op, which is how three arms in `elo.rs` came to
+    /// measure nothing.
+    #[test]
+    fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
+        let frozen = AdvancedAi::legacy();
+        let production = AdvancedAi::new();
+        for (flag, on_anchor, in_production) in [
+            (
+                "settlement_safety",
+                frozen.settlement_safety,
+                production.settlement_safety,
+            ),
+            (
+                "battlefront_observation",
+                frozen.battlefront_observation,
+                production.battlefront_observation,
+            ),
+            (
+                "tactical_strategy",
+                frozen.base.tactical_strategy,
+                production.base.tactical_strategy,
+            ),
+            (
+                "unit_objective_memory",
+                frozen.base.unit_objective_memory,
+                production.base.unit_objective_memory,
+            ),
+            (
+                "amenity_districts",
+                frozen.base.amenity_districts,
+                production.base.amenity_districts,
+            ),
+        ] {
+            assert!(
+                !on_anchor,
+                "{flag} is on for advanced_v1: a withhold arm for it can move                  the frozen rating anchor, and the source-contract re-pin that                  called itself free is not"
+            );
+            assert!(
+                in_production,
+                "{flag} is off in production, so `advanced_without_{flag}` is a                  byte-identical no-op and measures nothing"
+            );
+        }
+    }
+
     #[test]
     fn production_advanced_scales_cities_development_and_home_defense_together() {
         let production = AdvancedAi::new();
