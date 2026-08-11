@@ -8055,23 +8055,41 @@ fn refused_sites_of_kind_through(
         // the game. So whatever lands here is a permanent verdict on that
         // ground.
         //
-        // Most `improve_refused` events do not deserve one. Measured on run
-        // civvis-20260811T103914Z, across all 26 refusals: the builder stood on
-        // the ordered tile 26 of 26, held build charges every time, and had
-        // **`movesRemaining == 0` on 25 of 26**. A Civilization VI Builder needs
-        // movement left to place an improvement, so those tiles were refused for
-        // a condition that clears itself on the next turn — and each one was
-        // being blacklisted forever.
+        // ⚠⚠⚠ THE MEASUREMENT THAT MOTIVATED THIS GUARD WAS WRONG, AND THE GUARD
+        // IS THEREFORE INERT. Kept, corrected, and documented rather than
+        // silently deleted, because the mistake is the useful part.
         //
-        // Twenty-five permanently dead tiles per game, every one of them fine.
-        // That is the opposite of what this set is for: it exists so CIVVIS
-        // stops re-deriving ground the engine has genuinely rejected, not so a
-        // builder that ran out of moves costs the empire a farm site.
+        // The claim was: across run civvis-20260811T103914Z, builders had
+        // `movesRemaining == 0` on 25 of 26 refusals, so the tiles were being
+        // condemned for a condition that clears next turn. That number came from
+        // matching each refusal against the STATE EXPORT by turn — and the state
+        // snapshot is written at a different point in the turn than the refusal.
         //
-        // ⚠ `moves` is absent from events written before #1548, and an absent
-        // reading is not evidence of anything. Those keep the old behaviour;
-        // only an explicit zero is treated as transient, so replaying an older
-        // run is unchanged.
+        // Once #1548 put the reading in the event itself, taken by
+        // `GetMovesRemaining()` at the instant of the attempt, the two disagree
+        // flatly. Same turn, same unit, run civvis-20260811T134008Z:
+        //
+        //     turn 19  unit 327683   event moves 2   state moves 0
+        //     turn 42  unit 851975   event moves 2   state moves 0
+        //     turn 46  unit 983049   event moves 2   state moves 0
+        //     ...  all 25 refusals: event moves 2, 3 or 4. NEVER zero.
+        //
+        // The event is the authoritative reading. So builders were NOT out of
+        // moves, the refusals are genuine, and blocking those tiles was right all
+        // along. This branch has never fired and on current evidence never will.
+        //
+        // ⭐ THE TRAP, so nobody repeats it: a per-turn state snapshot and an
+        // event emitted during that turn are NOT the same instant. Matching them
+        // by turn number reads as a measurement and is not one. Ask for the
+        // reading at the point of the decision, or do not claim it.
+        //
+        // The guard stays because it is correct in principle — a unit with no
+        // movement genuinely cannot act, and that genuinely would be transient —
+        // and it costs one comparison. It is a safety net, not a repair.
+        //
+        // ⚠ An absent reading is still not evidence: events written before #1548
+        // carry no `moves` and keep the old behaviour, so replaying an older run
+        // is unchanged.
         if event.get("moves").and_then(|v| v.as_i64()) == Some(0) {
             continue;
         }
