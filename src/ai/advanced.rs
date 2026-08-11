@@ -2285,6 +2285,23 @@ impl AdvancedAi {
         // `policy_deck` is deliberately not a gene, so a generated or legacy
         // weight vector cannot silently withdraw the confirmed production
         // policy layer when it enters an Advanced controller.
+        //
+        // ⚠ **This is the line that makes the shipped agent play `Live`, and
+        // `Weights::default()`'s own comment on `policy_deck` says the
+        // opposite** — "the agent that plays is the one that always played",
+        // beside `PolicyDeck::Legacy`. That was true of the default and has not
+        // been true of production since this constructor existed. The same
+        // shape of stale comment hid `bounded_recovery` being on, which cost an
+        // evaluation to discover, so it is corrected in both places rather than
+        // only here.
+        //
+        // The default's comment also records `Live` as a **measured null** — 18
+        // map directions to 15, p=0.7283 over 120 mirrored maps — that "costs an
+        // empire valuation per candidate card per review". Production carries it
+        // anyway, `docs/EVAL.md` has never mentioned `policy_deck`, and until
+        // `advanced_legacy_policy_deck` there was no way to withhold it. 120
+        // maps is also well under what this repository now treats as resolving
+        // anything.
         weights.policy_deck = PolicyDeck::Live;
         // City and Builder floors are call-local policy in `delegated_cities`,
         // not mutations of an evolved genome. That keeps frozen evaluators and
@@ -2547,6 +2564,18 @@ impl AdvancedAi {
 
     pub fn with_weights(weights: Weights) -> AdvancedAi {
         Self::promoted_policy_envoy(weights, None)
+    }
+
+    /// Production, with the policy deck put back to the one
+    /// `Weights::default()` claims the playing agent uses.
+    ///
+    /// `production_weights` forces `PolicyDeck::Live` after the weights are
+    /// handed over, so no caller can reach this by passing a genome — which is
+    /// why the axis had no arm and no number. Evaluator-only.
+    pub fn with_legacy_policy_deck() -> AdvancedAi {
+        let mut ai = Self::new();
+        ai.base.w.policy_deck = PolicyDeck::Legacy;
+        ai
     }
 
     pub fn with_weights_and_target(weights: Weights, target: VictoryTarget) -> AdvancedAi {
@@ -23478,6 +23507,19 @@ mod tests {
     fn production_policy_envoy_default_is_distinct_from_evaluator_and_legacy_controls() {
         let production = AdvancedAi::new();
         assert_eq!(production.weights().policy_deck, PolicyDeck::Live);
+        // ⚠ Asserted, not argued: the withhold added on 2026-08-11 must not be
+        // able to move the frozen anchor, and the anchor must genuinely be on
+        // the deck `Weights::default()` describes even though production is not.
+        assert_eq!(
+            AdvancedAi::legacy().weights().policy_deck,
+            PolicyDeck::Legacy,
+            "advanced_v1 must stay on the deck it was rated with"
+        );
+        assert_eq!(
+            AdvancedAi::with_legacy_policy_deck().weights().policy_deck,
+            PolicyDeck::Legacy,
+            "the withhold must actually withhold, or its number measures nothing"
+        );
         assert!(production.envoy_infrastructure);
         assert!(production.envoy_priority);
 
