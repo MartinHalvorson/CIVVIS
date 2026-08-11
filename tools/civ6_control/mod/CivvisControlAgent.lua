@@ -8208,6 +8208,54 @@ local function applyOrder(player, pid, row, turn)
 			if row2 ~= nil then
 				params[UnitOperationTypes.PARAM_IMPROVEMENT_TYPE] = row2.Hash;
 			end
+			-- ★★★★★ ASKING FOR WHAT IS ALREADY THERE IS NOT A REFUSAL.
+			--
+			-- #1561 put the tile's own state in the refusal, and the first run
+			-- carrying it answered a question that had been open for six
+			-- iterations. Run civvis-20260811T163652Z, 23 of 23 refusals: the tile
+			-- OURS, the builder holding movement and charges, and the improvement
+			-- already on the ground —
+			--
+			--     t19 MINE   owner=0 existing=IMPROVEMENT_MINE
+			--     t30 QUARRY owner=0 existing=IMPROVEMENT_QUARRY
+			--
+			-- and the orders ledger names the mechanism exactly:
+			--
+			--     t18 IMPROVE:MINE ordered -> succeeded
+			--     t19 IMPROVE:MINE ordered again -> refused
+			--
+			-- CIVVIS builds it, then orders the identical improvement on the same
+			-- tile the next turn, because the tile sweep runs every four turns and
+			-- its board still shows the tile bare.
+			--
+			-- ⚠⚠ THE REAL DAMAGE IS THE LEDGER, NOT THE ORDER. One wasted call a
+			-- turn is cheap; 376 `improve_refused` in a day that are all benign
+			-- duplicates is not, because it buries the refusals that mean
+			-- something. It cost three PRs of mine chasing a gate that was right
+			-- (#1548/#1550/#1552, corrected in #1557), and `improve_refused` is
+			-- also what BLOCKS the tile in CIVVIS's planner — a duplicate must
+			-- never reach it, because the tile is not dead, it is done.
+			--
+			-- So name it for what it is, before spending the engine call.
+			-- ⚠ Only on an exact match: a Farm asked for where a Mine stands is a
+			-- real disagreement and must still go to the engine.
+			if row2 ~= nil then
+				local here = try(function()
+					local plot = Map.GetPlot(params[UnitOperationTypes.PARAM_X],
+					                         params[UnitOperationTypes.PARAM_Y]);
+					if plot == nil then return nil; end
+					return typeName("Improvements", "ImprovementType",
+					                plot:GetImprovementType());
+				end);
+				if here ~= nil and here == wanted then
+					emit("improve_already", {
+						turn = turn, unit = subject, want = wanted,
+						x = params[UnitOperationTypes.PARAM_X],
+						y = params[UnitOperationTypes.PARAM_Y],
+					});
+					return false, "already_" .. wanted;
+				end
+			end
 			if operate(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"], params) then
 				return true, wanted or "IMPROVE";
 			end
