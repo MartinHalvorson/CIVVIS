@@ -8048,6 +8048,33 @@ fn refused_sites_of_kind_through(
         }) {
             continue;
         }
+        // ★★★★★ A TRANSIENT REFUSAL IS NOT A DEAD TILE.
+        //
+        // These sets feed `blocked_improvement_sites`, which is extended and
+        // NEVER cleared, and `Game` skips any blocked position for the rest of
+        // the game. So whatever lands here is a permanent verdict on that
+        // ground.
+        //
+        // Most `improve_refused` events do not deserve one. Measured on run
+        // civvis-20260811T103914Z, across all 26 refusals: the builder stood on
+        // the ordered tile 26 of 26, held build charges every time, and had
+        // **`movesRemaining == 0` on 25 of 26**. A Civilization VI Builder needs
+        // movement left to place an improvement, so those tiles were refused for
+        // a condition that clears itself on the next turn — and each one was
+        // being blacklisted forever.
+        //
+        // Twenty-five permanently dead tiles per game, every one of them fine.
+        // That is the opposite of what this set is for: it exists so CIVVIS
+        // stops re-deriving ground the engine has genuinely rejected, not so a
+        // builder that ran out of moves costs the empire a farm site.
+        //
+        // ⚠ `moves` is absent from events written before #1548, and an absent
+        // reading is not evidence of anything. Those keep the old behaviour;
+        // only an explicit zero is treated as transient, so replaying an older
+        // run is unchanged.
+        if event.get("moves").and_then(|v| v.as_i64()) == Some(0) {
+            continue;
+        }
         let (Some(x), Some(y)) = (
             event.get("x").and_then(|v| v.as_i64()),
             event.get("y").and_then(|v| v.as_i64()),
@@ -11848,6 +11875,63 @@ impl LiveMirror {
         // barbarian for this turn has been re-planted by now, and the previous
         // turn's sightings were removed with them.
         record_host_observed(&mut self.game);
+    }
+}
+
+#[cfg(test)]
+mod transient_refusal_tests {
+    use super::*;
+
+    /// Same temp-dir convention as the rest of this file's tests: `tempfile` is
+    /// not a dependency of this crate.
+    fn events(name: &str, lines: &[&str]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir()
+            .join(format!("civvis-refusal-{}-{}", name, std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("events.jsonl");
+        std::fs::write(&path, lines.join("\n") + "\n").expect("write events");
+        path
+    }
+
+    /// ⚠⚠⚠ `blocked_improvement_sites` is extended and NEVER cleared, so
+    /// anything that reaches it is a permanent verdict on that ground.
+    ///
+    /// On run `civvis-20260811T103914Z` the builder had `movesRemaining == 0`
+    /// on 25 of 26 refusals — a condition that clears itself next turn — and
+    /// every one of those tiles was being blacklisted for the rest of the game.
+    #[test]
+    fn a_builder_out_of_moves_does_not_kill_the_tile_forever() {
+        let p = events("outofmoves", &[
+            r#"{"kind":"improve_refused","turn":5,"x":10,"y":12,"moves":0}"#,
+        ]);
+        let refused = refused_sites_of_kind_through(&p, "improve_refused", None);
+        assert!(
+            refused.is_empty(),
+            "a builder that merely ran out of movement must not cost the empire \
+             the tile: {refused:?}"
+        );
+    }
+
+    /// The set still has to do its job. A refusal with movement left is the
+    /// engine rejecting the GROUND, which is exactly what it exists to record.
+    #[test]
+    fn a_refusal_with_movement_left_still_blocks_the_tile() {
+        let p = events("hasmoves", &[
+            r#"{"kind":"improve_refused","turn":5,"x":10,"y":12,"moves":2}"#,
+        ]);
+        let refused = refused_sites_of_kind_through(&p, "improve_refused", None);
+        assert_eq!(refused.len(), 1, "a genuine refusal must still block");
+    }
+
+    /// ⚠ Events written before #1548 carry no `moves`, and an absent reading is
+    /// not evidence of anything. Replaying an older run must be unchanged.
+    #[test]
+    fn a_refusal_that_never_recorded_moves_keeps_the_old_behaviour() {
+        let p = events("nomovesfield", &[
+            r#"{"kind":"improve_refused","turn":5,"x":10,"y":12}"#,
+        ]);
+        let refused = refused_sites_of_kind_through(&p, "improve_refused", None);
+        assert_eq!(refused.len(), 1, "no reading is not a transient reading");
     }
 }
 
