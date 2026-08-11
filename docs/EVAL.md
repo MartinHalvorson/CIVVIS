@@ -8535,3 +8535,65 @@ Before it, thirteen production behaviours carried one composite number between
 them. That is the condition that let a component costing forty-one Elo (interval and
 seed above) ship and sit unnoticed, and it is worth stating as the lesson rather than the anecdote:
 **a composite gate licenses the composite, never its parts.**
+
+
+## 2026-08-10 — the base constructor's always-on flags: deny_leaders priced, two more made measurable
+
+The `promoted_policy_envoy` audit closed with one component removed
+(`city_target_floor`, Elo +41 for the withhold, CI +7..+76, 400 pairs, seed
+8600000, matrix PASS, PR #1504) and one measured positive (`settler_commit`,
+Elo +30 for keeping it, 60/95, p=0.0061, 400 pairs, seed 9200000, PR #1510).
+It covered thirteen flags. **`configured` sets ten
+more**, for every `AdvancedAi` that is not `legacy()`, and they were outside
+that audit entirely.
+
+Six are the `city_strategy_*` family. Those are **not** unpriced production
+behaviour: `stamp_city_directives` is their only consumer and it is called only
+under `if self.city_strategy`, which is `false` in production. They are the
+baseline the `advanced_city_strategy_*` ablation arms vary, which is what they
+should be. Checked before claiming otherwise.
+
+That leaves three genuinely always-on and unpriced: `deny_leaders`,
+`settlement_safety`, `battlefront_observation`.
+
+### `deny_leaders` — near-inert
+
+```
+ai_eval advanced_blind_to_leaders advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 9500000
+
+  paired-map score 51.2% (95% Wilson CI 46.4%..56.1%)   Elo-equivalent +9 (CI -25..+43)
+  paired direction 20 for / 370 neutral / 10 against    sign p = 0.0987
+  terminal score   175 / 214                            sign p = 0.0539
+```
+
+**370 of 400 maps came out unchanged.** Victory denial — the whole apparatus of
+noticing a rival's lane and reacting to it — alters the outcome of one game in
+thirteen. The direction of those thirty leans toward the *blind* arm and the
+terminal-score column leans the other way, both short of significance and both
+resting on too few discordant maps to act on.
+
+The arm existed and `docs/EVAL.md` had never mentioned it, so this is its first
+number. Nothing changes: a near-inert feature that leans marginally negative at
+p=0.0987 is not grounds to remove anything, and the honest summary is that the
+denial machinery is far smaller in effect than its footprint in the source
+suggests.
+
+### Two defaults that no arm could reach
+
+`settlement_safety` and `battlefront_observation` are set for every non-legacy
+agent and had **no withhold at all** — unmeasurable by construction, the same
+condition that hid the `city_target_floor` mistake in the other constructor
+(interval and seed above).
+`disable_settlement_safety` and `disable_battlefront_observation` now exist,
+with `advanced_without_settlement_safety` and
+`advanced_without_battlefront_observation` registered against them.
+
+⚠ `AdvancedAi::legacy()` already turns both off, so the frozen anchor is
+untouched by anything measured through them.
+
+**Running count of flags that were on, unpriced, and unmeasurable when this
+session started: five** — `tactical_strategy`, `unit_objective_memory`,
+`amenity_districts`, `settlement_safety`, `battlefront_observation`. All five
+now have a withhold. That is the precondition for pricing them; it is not the
+pricing.

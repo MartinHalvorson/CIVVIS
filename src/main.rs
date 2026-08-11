@@ -915,7 +915,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// outputs are byte-identical across 24 games and 5,712 bytes of diagnostics —
 /// including `advanced_v1`'s own per-seat cities, score, military and victory
 /// types. Compatibility re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc132_78cd_b48a_c379;
+/// Two further `disable_*` withholds for base-constructor defaults
+/// (`settlement_safety`, `battlefront_observation`). Evaluator entry points no
+/// constructor calls; `legacy()` already turns both off. Compatibility re-pin
+/// recomputed over the merged tree — neither side's value applies.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1bc0_d41d_7905_418d;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

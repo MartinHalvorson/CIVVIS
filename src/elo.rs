@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 122] = [
+pub const EVAL_ONLY_AIS: [&str; 124] = [
     // The native-safe half of the live-bridge bundle, applied to the stock
     // production controller. `live` has only ever been measured against its
     // own ablations, so these are what prices the whole repair set against
@@ -141,6 +141,8 @@ pub const EVAL_ONLY_AIS: [&str; 122] = [
     "advanced_without_plan_city_target",
     "advanced_without_settler_commit",
     "advanced_without_unpriced_bundle",
+    "advanced_without_settlement_safety",
+    "advanced_without_battlefront_observation",
     "advanced_league_top",
     "advanced_joint_tactics",
     "strategic_cheap",
@@ -452,6 +454,8 @@ define_arm_kinds! {
     AdvancedWithoutPlanCityTarget => "advanced_without_plan_city_target",
     AdvancedWithoutSettlerCommit => "advanced_without_settler_commit",
     AdvancedWithoutUnpricedBundle => "advanced_without_unpriced_bundle",
+    AdvancedWithoutSettlementSafety => "advanced_without_settlement_safety",
+    AdvancedWithoutBattlefrontObservation => "advanced_without_battlefront_observation",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
@@ -2528,6 +2532,22 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         //
         // ⚠ A composite says nothing about any single flag. If this moves, the
         // decomposition is the work, not the headline.
+        // The two base-constructor defaults that no arm could reach. `configured`
+        // sets ten booleans for every non-legacy `AdvancedAi`; `deny_leaders`
+        // had `advanced_blind_to_leaders` and these two had nothing at all.
+        // The `promoted_policy_envoy` audit found -41 Elo among flags in this
+        // exact condition, so "always on and unmeasurable" is where that
+        // mistake lived.
+        "advanced_without_settlement_safety" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_settlement_safety();
+            Box::new(ai)
+        }
+        "advanced_without_battlefront_observation" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_battlefront_observation();
+            Box::new(ai)
+        }
         "advanced_without_unpriced_bundle" => {
             let mut ai = AdvancedAi::new();
             ai.envoy_priority = false;
@@ -3622,6 +3642,8 @@ impl ArmKind {
             Self::AdvancedWithoutPlanCityTarget => &["plan-city-target-withheld"],
             Self::AdvancedWithoutSettlerCommit => &["settler-commit-withheld"],
             Self::AdvancedWithoutUnpricedBundle => &["unpriced-production-bundle-withheld"],
+            Self::AdvancedWithoutSettlementSafety => &["settlement-safety-withheld"],
+            Self::AdvancedWithoutBattlefrontObservation => &["battlefront-observation-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -4142,6 +4164,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_plan_city_target" => (Vec::new(), "advanced_without_plan_city_target"),
         "advanced_without_settler_commit" => (Vec::new(), "advanced_without_settler_commit"),
         "advanced_without_unpriced_bundle" => (Vec::new(), "advanced_without_unpriced_bundle"),
+        "advanced_without_settlement_safety" => (Vec::new(), "advanced_without_settlement_safety"),
+        "advanced_without_battlefront_observation" => (Vec::new(), "advanced_without_battlefront_observation"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -5351,7 +5375,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 91] = [
+            const SCRIPTED: [&str; 93] = [
                 "advanced_synergy",
                 "advanced_synergy_war",
                 "advanced_synergy_economy",
@@ -5411,6 +5435,8 @@ mod tests {
                 "advanced_without_plan_city_target",
                 "advanced_without_settler_commit",
                 "advanced_without_unpriced_bundle",
+                "advanced_without_settlement_safety",
+                "advanced_without_battlefront_observation",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",
