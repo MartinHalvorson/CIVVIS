@@ -68,12 +68,32 @@ class ProtectedInstallTest(unittest.TestCase):
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
 
         self.assertIn("local function refusalReason(unit, operation, params)", source)
-        self.assertIn(
-            "UnitManager.CanStartOperation(\n"
-            "\t\t\t\tunit, operation, params, false, OperationResultsTypes.ALL);",
+        self.assertIn("results[UnitOperationResults.FAILURE_REASONS]", source)
+
+        # ⚠ THE SIGNATURE HAS NOW BEEN GUESSED WRONG THREE TIMES. The third
+        # guess put `params` in the PLOTS slot and `false` in the PARAMS slot,
+        # which throws — and the first live run on that build read
+        # `why: "unknown"` six times out of six. `canOperate` proves the hash
+        # form takes params fourth; the shipped FOUND_CITY form takes a boolean
+        # there. So both are tried and each names itself, and the broken shape
+        # must never come back.
+        self.assertIn("unit, operation, nil, params or {},", source)
+        self.assertIn("unit, operation, nil, false, OperationResultsTypes.ALL);", source)
+        # Matched against the CALL, not the comment above it, which quotes the
+        # broken shape on purpose so the next reader knows what not to write.
+        self.assertNotIn(
+            "UnitManager.CanStartOperation(\n\t\t\t\t\tunit, operation, params, false,",
             source,
         )
-        self.assertIn("results[UnitOperationResults.FAILURE_REASONS]", source)
+        self.assertIn('{ form = "p4r", call = function()', source)
+        self.assertIn('{ form = "t5r", call = function()', source)
+
+        # A probe that cannot say which call answered is how this went wrong
+        # three times, so every outcome carries its provenance and a throw is
+        # reported rather than swallowed into a bare "unknown".
+        self.assertIn('.. " [" .. attempt.form .. "]"', source)
+        self.assertIn('"probe_threw[" .. attempt.form .. "]:"', source)
+        self.assertNotIn('local why = "unknown";', source)
 
         # Both unit refusals go through it, and neither keeps a private copy of
         # the call — a second copy is how the signature drifts.
@@ -84,9 +104,9 @@ class ProtectedInstallTest(unittest.TestCase):
             'refusalReason(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"],', source
         )
         self.assertEqual(
-            source.count("CanStartOperation(\n\t\t\t\tunit,"),
-            1,
-            "the refusal signature must live in exactly one place",
+            source.count("UnitManager.CanStartOperation(\n\t\t\t\t\tunit, operation"),
+            2,
+            "exactly the two shipped forms, both inside the one helper",
         )
 
         # `improve_refused` is the most numerous refusal in the ledger and named
