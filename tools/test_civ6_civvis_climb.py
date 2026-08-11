@@ -543,6 +543,45 @@ class WedgedAttempt(unittest.TestCase):
         self.assertIsNone(signalled)
 
 
+class OuterWatchdogOrdering(unittest.TestCase):
+    """⚠⚠⚠ The backstop must sit ABOVE the budget it backs, not underneath it.
+
+    `civ6_play --timeout` stopped being a hard stop in #1532: the budget now
+    extends while a run can still reach `--max-turns`, up to `--timeout-ceiling`
+    (1.5x by default). This watchdog stayed at `--timeout + 600`, which put a
+    6000 s kill underneath 8100 s of legitimate inner budget.
+
+    It fired on healthy games. Run `civvis-20260811T115348Z` was stopped at turn
+    194 of 250, score 490, still advancing — 100 min 41 s in, `timeout + 600` to
+    the second. The SIGTERM also costs the summary, so the ladder keeps a row
+    with `last_turn` and `last_score` and NO `reason`, which reads like a
+    finished game.
+    """
+
+    @staticmethod
+    def _args(timeout=5400.0, ceiling=None):
+        from types import SimpleNamespace
+        return SimpleNamespace(timeout=timeout, timeout_ceiling=ceiling)
+
+    def test_the_watchdog_outlives_the_childs_ceiling(self):
+        args = self._args()
+        ceiling = climb.attempt_ceiling(args)
+        self.assertGreater(
+            ceiling + 600, ceiling,
+            "the backstop must be strictly later than the budget it backs")
+        self.assertGreater(
+            ceiling + 600, args.timeout + 600,
+            "the old formula is exactly the bug: it sat below the ceiling")
+
+    def test_the_default_matches_civ6_plays_own(self):
+        """Both sides default to 1.5x, so an unset flag cannot invert them."""
+        self.assertEqual(climb.attempt_ceiling(self._args(5400.0)), 8100.0)
+
+    def test_an_explicit_ceiling_is_honoured_on_both_sides(self):
+        """Passing --timeout-ceiling equal to --timeout restores a hard stop."""
+        self.assertEqual(climb.attempt_ceiling(self._args(5400.0, 5400.0)), 5400.0)
+
+
 class SettingsDealt(unittest.TestCase):
     """★★★★★ A row dealt something other than what was asked must say so.
 
