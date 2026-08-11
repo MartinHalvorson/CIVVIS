@@ -959,7 +959,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// behind `if !self.plan_city_target`, which `AdvancedAi::legacy()`
 /// leaves false, and the flag defaults true so production is unchanged.
 /// Compatibility re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x96ec_8740_45c2_97d1;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc8d3_bb59_ae0c_daab;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

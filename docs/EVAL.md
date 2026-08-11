@@ -9537,3 +9537,72 @@ Two rows are worth recording even though neither is actionable on its own:
   with a champion mean rank of 3.97 — the worst cell in the table — before
   inverting completely to 60% and rank 1.65 by t200. The winner is not ahead in
   science early; it gets there. `military` behaves the same way (7% at t20).
+
+## Envoy placement was never perfect — it was never measured (2026-08-11, PR #1575)
+
+Making a seat suzerain of every city-state it has met scores **56.7% against a
+22.7% control** (p=0.0000, 400 maps, `Grant::Suzerain`, PR #602) — the largest
+subsystem headroom this repo has found. Since #608 the record has said the gap
+is *income*, not placement, on the evidence that the envoy pool reads **0.00
+unspent at every sample**. #637 pointed out that the inference does not follow —
+a policy that spreads one envoy each and one that concentrates three are
+indistinguishable when the hand is never larger than one — but nobody went back
+and measured the board those placements built.
+
+`envoy_allocation_census` now measures it (6 maps per cell, seeds 480000..,
+`deployed_agent()`, 200 turns):
+
+| | eval 4p 24×16 | deployment 6p 74×46 |
+|---|---|---|
+| envoys per met city-state: 0 / 1 / 2 / 3+ | 45% / **42%** / 7% / 7% | 27% / **36%** / 15% / 22% |
+| envoys parked below the floor of 3 | 1.74/seat-turn = **73% of all placed** | 2.90/seat-turn = **50%** |
+| city-states with no suzerain at all | 2.50, of which **1.35 within 2 envoys** | 2.77, of which **1.82 within 2 envoys** |
+| suzerain of | 0.1 (4% of met) | 0.3 (7%) |
+
+**The modal city-state holds exactly one of our envoys**, and between half and
+three-quarters of everything placed sits below the floor of three, buying a
+level-1 type bonus and no suzerainty — while roughly two unclaimed suzerainties
+sit permanently within two envoys of ours.
+
+### The scorer has a local minimum at one envoy
+
+`advanced_envoys` prices the next type bonus and amortises it over the envoys
+needed to reach it, across thresholds `[1, 3, 6]`:
+
+```rust
+let type_bonus_value = g.next_envoy_type_bonus(pid, minor.id)
+    .map(|(envoys, yields)| (self.yield_value(yields, strategy) * 14.0 / envoys as f64)...)
+```
+
+At 0 envoys a city-state sells its level-1 bonus for **one** envoy. At 1 envoy
+the next payout is at 3, so the per-envoy value **halves**. A fresh city-state
+therefore always offers the cheapest step, and the seat keeps opening
+city-states it never finishes. That is the 36%.
+
+And the suzerainty itself was priced at **zero**. The score saw only the
+standard type-bonus yields; the city-state's **resources**
+(`controlled_resource_count_via` counts suzerained minors), its unique bonus,
+diplomatic victory points, and the `science_pct_per_suzerain` /
+`culture_pct_per_suzerain` / `suzerain_all_yields` multipliers were all
+invisible to it.
+
+`SUZERAIN_PRIZE` adds that term, amortised the same way, so it **rises** as the
+seat closes on the floor (180 at three away, 90 at two, 180 at one) instead of
+falling.
+
+### Fires-check: the same income buys twice the suzerainties
+
+Both arms, same maps, seat 0 only so the reading is this seat's own placement
+policy rather than a board where every rival also concentrated:
+
+| | stock | suzerainty priced |
+|---|---|---|
+| deployment: suzerain of | 0.3 (7% held) | **0.7 (15% held)** |
+| deployment: 3+ envoys / stuck at 1 | 22% / 36% | **25% / 31%** |
+| deployment: envoys placed | 7.1 | 7.2 |
+| eval 4p: suzerain of | 0.1 (4%) | **0.3 (9%)** |
+| eval 4p: 3+ envoys / stuck at 2 | 7% / 7% | **13% / 4%** |
+
+**Envoy income is flat and suzerainties more than double at both scales.** So
+"allocation is already perfect" is false, and the reason it stood for so long is
+that every census measured the *pool* instead of the *placements*.
