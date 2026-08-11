@@ -23,9 +23,42 @@ import civ6_civvis_climb as climb
 
 
 class MirrorFreshnessTests(unittest.TestCase):
+    def test_follower_output_path_reads_lsof_file_field(self):
+        mirror_log = climb.MIRROR_FOLLOW_LOG
+        with mock.patch.object(
+            climb, "run", return_value=f"p101\nf1\nn{mirror_log}\n"
+        ) as run:
+            self.assertEqual(
+                climb.follower_output_path(101),
+                mirror_log,
+            )
+
+        run.assert_called_once_with(["lsof", "-a", "-p", "101", "-d", "1", "-Fn"])
+
+    def test_follower_owns_mirror_requires_the_dedicated_runtime_output(self):
+        with mock.patch.object(
+            climb, "follower_output_path", return_value=climb.MIRROR_FOLLOW_LOG
+        ):
+            self.assertTrue(climb.follower_owns_mirror(101))
+        with mock.patch.object(
+            climb, "follower_output_path", return_value=Path("/tmp/other-follow.log")
+        ):
+            self.assertFalse(climb.follower_owns_mirror(102))
+
+    def test_owned_mirror_pids_uses_runtime_output_and_visible_port(self):
+        """A different worktree's follower must survive this batch's refresh."""
+        with mock.patch.object(
+            climb, "matching_pids", side_effect=[[101, 102], [201, 202]]
+        ), mock.patch.object(
+            climb, "follower_owns_mirror", side_effect=[True, False]
+        ), mock.patch.object(
+            climb, "mirror_listener_pids", return_value={202}
+        ):
+            self.assertEqual(climb.owned_mirror_pids(), [101, 202])
+
     def test_retire_mirror_stops_the_follower_and_its_detached_server(self):
         """A new batch cannot inherit a mirror process from another build."""
-        with mock.patch.object(climb, "matching_pids", side_effect=[[101], [202]]), \
+        with mock.patch.object(climb, "owned_mirror_pids", return_value=[101, 202]), \
              mock.patch.object(climb, "process_running", return_value=False), \
              mock.patch.object(climb.os, "kill") as kill:
             self.assertEqual(climb.retire_mirror(), [101, 202])
@@ -44,7 +77,7 @@ class MirrorFreshnessTests(unittest.TestCase):
         retire.assert_called_once_with()
         detach.assert_called_once_with(
             [climb.sys.executable, "-u", str(climb.HERE / "follow.py")],
-            Path.home() / "civvis-civ6-mirror" / "follow.log",
+            climb.MIRROR_FOLLOW_LOG,
             "mirror",
         )
 
