@@ -930,7 +930,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// it — asserted, not argued, in
 /// `the_repair_bundle_cannot_reach_the_frozen_anchor`, which this
 /// change extends. Compatibility re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x014b_ebe9_4c32_f1fc;
+/// `fortify_idle_units` and the `hold_stood_down_unit` branch that reads
+/// it. Evaluator-only: the flag defaults false in the `BasicAi` init
+/// both `legacy()` and `new()` build from, and the branch keeps its
+/// original stand-down condition without it — asserted in
+/// `the_repair_bundle_cannot_reach_the_frozen_anchor`, which this
+/// change extends. Compatibility re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe7d5_f787_2bde_ce04;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -3500,6 +3506,7 @@ mod tests {
                     "settler_founds_when_stalled",
                     ai.settler_founds_when_stalled,
                 ),
+                ("fortify_idle_units", ai.fortify_idle_units()),
                 (
                     "suzerain_cards_need_a_suzerainty",
                     ai.suzerain_cards_need_a_suzerainty,
