@@ -9122,3 +9122,54 @@ null showing unit-level behaviour does not convert here (#1533). `siege_muster`
 and `home_defense` govern how much of the empire's production is diverted to
 garrisoning and mustering, which is a claim on the same budget that builds the
 lanes that win.
+
+### ⚠ The selection effect materialised, exactly as declared
+
+The previous entry flagged the city-defence quarter as **selected** — two
+quarters tested, the significant one carried forward — and said the answer was a
+fresh seed. It was:
+
+```
+ai_eval advanced_without_city_defence advanced --matrix --pairs 400 --seed 11700000
+
+  compact-standard   (NoRegression)  50.6%  Elo  +4   93/87   p=0.7095  ACCEPT
+  deployment-online  (Strength)      52.2%  Elo +15  109/89   p=0.1768  REJECT
+
+  multi-profile promotion gate: RETAIN advanced — cleared 1/2
+```
+
+| run on `deployment-online`'s configuration | maps | score | Elo | sign p |
+|---|---|---|---|---|
+| the selected screen, seed 11400000 | 400 | 53.1% | +21 | **0.0126** |
+| **the fresh seed, matrix 11700000** | **400** | **52.2%** | **+15** | **0.1768** |
+
+**p=0.0126 became p=0.1768 and +21 became +15 on a seed the treatment was not
+chosen on.** That is what a selected result does, it was predicted in writing
+before the run, and it is the reason a confirmation is not optional. **Nothing
+ships.**
+
+### What survives it, stated carefully
+
+Pooling the two runs on that profile — legitimate because the second was
+pre-declared as the confirmation of the first — gives **214 for / 160 against
+across 374 discordant maps, two-sided sign p = 0.0061**, at a paired score of
+about **52.7%**.
+
+So the direction evidence is real and the *effect size* is the blocker, not the
+existence of an effect: at 52.7% an 800-map interval is still roughly ±3.5
+points and cannot exclude parity. That is precisely where `city_target_floor`
+stood before its 400-pair matrix, and the answer there was resolution rather
+than argument — 200 maps could not clear it and 400 could.
+
+Here the arithmetic asks for more: clearing parity at 52.2% needs a half-width
+under 2.2 points, which is **roughly 1,200 maps** on that profile. That run is
+in flight on seed 12000000, against `deployment-online`'s exact configuration
+rather than the whole matrix, because `compact-standard` has already ACCEPTed
+twice and only the Strength profile is in question.
+
+⚠ Three tests of this family have now been run at that configuration. Each
+additional look inflates the chance of a false positive, and the honest reading
+of a fourth is that it must be *decisive* — a clear interval, not another
+borderline p. If 1,200 maps do not separate it, the correct conclusion is that
+withholding city defence is worth something around ten to fifteen Elo and this
+repository cannot afford to prove it, which is a legitimate place to stop.
