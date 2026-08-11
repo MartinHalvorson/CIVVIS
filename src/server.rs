@@ -3308,13 +3308,26 @@ impl Session {
     }
 }
 
+const APP_JS_TAG: &str = r#"<script src="/assets/app.js"></script>"#;
+
+/// Give each native server's application script a new URL.
+///
+/// A follower can replace the local HTTP process while the operator's Chrome
+/// tab remains open.  `Cache-Control: no-store` normally makes a document
+/// reload enough, but an instance-specific script URL means that even a tab
+/// with an older cache entry cannot keep executing the former server's UI.
+fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
+    let app_tag = format!(r#"<script src="/assets/app.js?instance={instance}"></script>"#);
+    page.replacen(APP_JS_TAG, &app_tag, 1).into_bytes()
+}
+
 fn index_html() -> Vec<u8> {
     for p in ["web/index.html"] {
-        if let Ok(b) = std::fs::read(p) {
-            return b;
+        if let Ok(page) = std::fs::read_to_string(p) {
+            return index_with_app_instance(&page, process_identity());
         }
     }
-    EMBEDDED_INDEX_HTML.as_bytes().to_vec()
+    index_with_app_instance(EMBEDDED_INDEX_HTML, process_identity())
 }
 
 fn app_js() -> Vec<u8> {
@@ -5266,7 +5279,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 mod tests {
     use super::{
         automatic_successor_seed, chronicle_world_events, final_countdown_ms, held_frame,
-        new_game_params, nine_tenths_of, publishes_player_turn_frames, query_value, request_path,
+        index_with_app_instance, new_game_params, nine_tenths_of, publishes_player_turn_frames,
+        query_value, request_path,
         save_path, simultaneous_jobs_for,
         seat_delay_ms, spectator_frame, spectator_step_completes_frame, staged_next_game_params,
         strategy_roster, tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot,
@@ -5295,6 +5309,16 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{mpsc, Arc, Condvar, Mutex};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn served_index_tags_the_app_script_with_its_server_instance() {
+        let page = r#"<html><script src="/assets/app.js"></script></html>"#;
+        let served = String::from_utf8(index_with_app_instance(page, 4242))
+            .expect("the HTML fixture is UTF-8");
+
+        assert!(served.contains(r#"<script src="/assets/app.js?instance=4242"></script>"#));
+        assert!(!served.contains(r#"<script src="/assets/app.js"></script>"#));
+    }
 
     #[test]
     fn machine_metric_values_are_bounded_and_only_expose_percentages() {

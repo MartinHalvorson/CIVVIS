@@ -15,10 +15,38 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import civ6_civvis_climb as climb
+
+
+class MirrorFreshnessTests(unittest.TestCase):
+    def test_retire_mirror_stops_the_follower_and_its_detached_server(self):
+        """A new batch cannot inherit a mirror process from another build."""
+        with mock.patch.object(climb, "matching_pids", side_effect=[[101], [202]]), \
+             mock.patch.object(climb, "process_running", return_value=False), \
+             mock.patch.object(climb.os, "kill") as kill:
+            self.assertEqual(climb.retire_mirror(), [101, 202])
+
+        self.assertEqual(
+            kill.call_args_list,
+            [mock.call(101, climb.signal.SIGTERM), mock.call(202, climb.signal.SIGTERM)],
+        )
+
+    def test_ensure_mirror_always_starts_a_follower_from_this_checkout(self):
+        """A live PID alone proves nothing about which revision it loaded."""
+        with mock.patch.object(climb, "retire_mirror", return_value=[101, 202]) as retire, \
+             mock.patch.object(climb, "_detach") as detach:
+            climb.ensure_mirror()
+
+        retire.assert_called_once_with()
+        detach.assert_called_once_with(
+            [climb.sys.executable, "-u", str(climb.HERE / "follow.py")],
+            Path.home() / "civvis-civ6-mirror" / "follow.log",
+            "mirror",
+        )
 
 
 class _NoWait:
