@@ -76,37 +76,28 @@ class ImproveRefusalTests(unittest.TestCase):
         self.assertIn("can_operate = canOperate(unit,", payload)
         self.assertIn('OP["UNITOPERATION_BUILD_IMPROVEMENT"],', payload)
 
-    def test_the_last_resort_proves_acceptance_from_a_spent_charge(self) -> None:
-        """The two `CanStartOperation` forms disagree 15 times out of 15.
+    def test_the_refusal_records_the_movement_that_actually_explains_it(self) -> None:
+        """The disagreement between the two gates was the builder's movement.
 
-        `canOperate` (4-arg) says false and gates the work; the 5-arg probe says
-        `can_start=true`. Only reading cannot settle which is right — this file
-        has been wrong three times doing exactly that — so the last resort issues
-        the operation UNGATED and reads the one observable that cannot lie: a
-        Builder spends a CHARGE when an improvement is placed.
+        On `civvis-20260811T103914Z`, across all 26 refusals: the builder stood
+        on the ordered tile 26 of 26, had build charges every time, and had
+        `movesRemaining == 0` on 25 of 26. A Civilization VI Builder needs
+        movement left to place an improvement, so `canOperate` was right and the
+        5-arg probe — `plots = nil` — answers a weaker question that ignores it.
 
-        `pcall` returning true only means nothing raised, which is the trap this
-        whole file is built around, so acceptance must come from the charge.
+        `why: can_start=true` therefore invites the reader to conclude the
+        harness refuses legal work, which is the opposite of the truth. A ledger
+        that misleads is worse than one that is silent, so the cause goes in.
         """
         handler = self.handler
-        self.assertIn("local before = try(function() return unit:GetBuildCharges(); end, -1);",
+        self.assertIn("local moves = try(function() return unit:GetMovesRemaining(); end, -1);",
                       handler)
-        self.assertIn("UnitManager.RequestOperation(unit,", handler)
-        self.assertIn("if before > 0 and after >= 0 and after < before then", handler)
-        self.assertIn('emit("improve_ungated"', handler)
+        self.assertIn("moves = moves, charges = charges,", handler)
 
-        # It must be reported under its own name. Counting a gate bypass as
-        # CIVVIS's own IMPROVE would hide it in the very ledger that exists to
-        # separate the model's work from the harness's.
-        self.assertIn('return true, (wanted or "IMPROVE") .. "_UNGATED";', handler)
-
-        # And it must sit BEFORE the refusal: the whole point is that the tile
-        # was about to be declared dead anyway, so trying costs nothing.
-        self.assertLess(
-            handler.index('emit("improve_ungated"'),
-            handler.index('emit("improve_refused"'),
-            "the ungated attempt must come before giving up, or it is not free",
-        )
+        # The ungated experiment from #1547 is removed, not left vestigial: the
+        # run data answered its question before it ever fired.
+        self.assertNotIn('emit("improve_ungated"', handler)
+        self.assertNotIn("UnitManager.RequestOperation(unit,", handler)
 
     def test_the_slice_covers_the_whole_emit(self) -> None:
         """Guards the fixture itself: a truncated window silently stops testing."""
