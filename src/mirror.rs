@@ -8478,12 +8478,41 @@ fn refused_no_plot_through(
         // those keep the old behaviour exactly, so replaying an older run is
         // unchanged — the same rule `moves` follows in
         // `refused_sites_of_kind_through`.
+        //
+        // ⚠⚠⚠ AND "NEVER BLOCK IT" WAS THE WRONG HALF OF THE ANSWER. #1555
+        // dropped these refusals entirely, which stopped good ground being
+        // condemned and immediately recreated the loop the block exists to
+        // prevent — exactly what `PRODUCTION_REFUSAL_TTL` warns about:
+        // *"forgetting it immediately recreates the live loop where Library was
+        // selected and rejected every turn"*.
+        //
+        // Measured on the very next full run, civvis-20260811T202458Z: 28
+        // `build_no_plot` events in 250 turns and **all 28 the same pair** —
+        // city 131073, `DISTRICT_COMMERCIAL_HUB`, `offered > 0` every time.
+        // One district asked for and refused twenty-eight times because nothing
+        // remembered the previous twenty-seven.
+        //
+        // So use the convention this codebase already has for a refusal that is
+        // true now and not forever. A placement disagreement blocks briefly,
+        // which ends the every-turn loop, and expires, which is what keeps the
+        // district from being foreclosed in a city that may make room for it.
+        //
+        // ⚠ `turn: None` means "replay the whole file", and there is no "now" to
+        // measure staleness against — a turn-5 disagreement is certainly stale by
+        // turn 250. Those keep #1555's behaviour and do not block, which is the
+        // honest reconstruction for a whole-game replay.
         if event
             .get("offered")
             .and_then(|v| v.as_i64())
             .is_some_and(|offered| offered > 0)
         {
-            continue;
+            let Some(now) = turn else {
+                continue;
+            };
+            let at = event.get("turn").and_then(|v| v.as_u64()).unwrap_or(0);
+            if at < u64::from(now.saturating_sub(PRODUCTION_REFUSAL_TTL)) {
+                continue;
+            }
         }
         let (Some(city), Some(named)) = (
             event.get("city").and_then(|v| v.as_i64()),
@@ -12167,6 +12196,50 @@ mod transient_refusal_tests {
             blocked.contains("DISTRICT_GOVERNMENT"),
             "zero offered plots is the engine saying nowhere, and must still block"
         );
+    }
+
+    /// ⚠⚠⚠ "Never block it" was the wrong half. #1555 dropped these refusals
+    /// entirely and the very next full run showed the loop it recreated:
+    /// `civvis-20260811T202458Z`, 28 `build_no_plot` events in 250 turns, **all
+    /// 28 the same pair** — one Commercial Hub asked for and refused twenty-eight
+    /// times because nothing remembered the previous twenty-seven.
+    ///
+    /// A fresh placement disagreement blocks, which ends the loop.
+    #[test]
+    fn a_fresh_placement_disagreement_blocks() {
+        let p = events("noplot_fresh", &[
+            r#"{"kind":"build_no_plot","turn":40,"city":7,"district":"DISTRICT_CAMPUS","offered":4}"#,
+        ]);
+        let refused = refused_no_plot_through(&p, Some(42), "district", "DISTRICT_");
+        assert!(refused[&7].contains("DISTRICT_CAMPUS"), "or it is asked every turn");
+    }
+
+    /// And expires, which is what keeps the district from being foreclosed in a
+    /// city that may yet make room for it — the reason #1555 existed at all.
+    #[test]
+    fn a_stale_placement_disagreement_stops_blocking() {
+        let p = events("noplot_stale", &[
+            r#"{"kind":"build_no_plot","turn":40,"city":7,"district":"DISTRICT_CAMPUS","offered":4}"#,
+        ]);
+        let refused = refused_no_plot_through(
+            &p, Some(40 + PRODUCTION_REFUSAL_TTL + 1), "district", "DISTRICT_");
+        assert!(
+            refused.get(&7).is_none_or(|d| !d.contains("DISTRICT_CAMPUS")),
+            "a placement disagreement must not condemn the city forever"
+        );
+    }
+
+    /// ⚠ Zero offered plots is a different statement — the engine has no target
+    /// ANYWHERE, a Government Plaza that already exists — and that does not go
+    /// stale. It must still block long after the TTL.
+    #[test]
+    fn no_plot_anywhere_still_blocks_forever() {
+        let p = events("noplot_never", &[
+            r#"{"kind":"build_no_plot","turn":40,"city":7,"district":"DISTRICT_GOVERNMENT","offered":0}"#,
+        ]);
+        let refused = refused_no_plot_through(
+            &p, Some(40 + PRODUCTION_REFUSAL_TTL * 10), "district", "DISTRICT_");
+        assert!(refused[&7].contains("DISTRICT_GOVERNMENT"));
     }
 
     /// An absent `offered` is not a reading — older exports sent none, and those
