@@ -9365,3 +9365,57 @@ treatment, same profile, opposite sign, and the small run looked more exciting.
 longer say the playing agent uses a deck it does not, the axis has a withhold and
 a number for the first time, and a "measured null" that was quietly justifying a
 production choice has been replaced by a measurement that actually supports it.
+
+
+## 2026-08-11 — the production Builder floor: null on wins, and its own justification is not borne out
+
+The audit swept two constructors and then found `production_weights` as a third
+site. `delegated_cities` is a fourth: it raises `builder_per_city` from the
+genome's 0.5 to **0.75** with a call-local `.max()`, reachable from nowhere
+else, never mentioned in `docs/EVAL.md`, and justified by reasoning rather than
+measurement — *"three active Builders per four cities provide roughly two useful
+improvements per city"*.
+
+That is the same profile as `city_target_floor`, also a production-only floor
+justified by argument, which measured **−41 Elo**. Reason to look, not a
+prediction.
+
+```
+ai_eval advanced_without_builder_floor advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories science,culture,domination
+  --map continents --shape planet --poles poles --randomize-civs --pairs 400 --seed 13200000
+
+  paired-map score 50.8% (95% Wilson CI 45.9%..55.7%)   Elo-equivalent +6 (CI -28..+40)
+  paired direction 88 for / 231 neutral / 81 against    sign p = 0.6445
+  terminal score   225 / 175                            sign p = 0.0142 FOR the withhold
+```
+
+**Null on wins, and significantly *negative* on development.** Withholding the
+floor — building fewer Builders — makes the empire's terminal score *better*.
+
+That is the interesting half. The floor's stated purpose is development: more
+Builders, more improvements, more yield. It does not deliver that. The extra
+charges cost production the empire would otherwise spend on something that
+scores, and the `has_builder_work` gate that was supposed to stop the overbuild
+evidently does not stop enough of it.
+
+**It stays on.** A null on wins is not grounds to change shipped behaviour in
+either direction, and removing something on a terminal-score result is the
+mistake this file has refused twice already — once when declining to ship the
+idle-settler repair on p=0.0050, and it would be no better inverted. The
+symmetry is the point: **terminal score is not a promotion input, and it is not a
+demotion input either.**
+
+### The audit's fourth site, and what the sweep is worth now
+
+| production-only override | site | measured |
+|---|---|---|
+| `city_target_floor = 6` | `promoted_policy_envoy` | **−41 Elo**, removed |
+| `policy_deck = Live` | `production_weights` | keeps its place (−10 to withhold, score p=0.0003 for it) |
+| `builder_per_city → 0.75` | `delegated_cities` | **null on wins**, −score |
+
+Three of the four sites that modify the production controller have now been
+swept, and the fourth — `configured` — was swept earlier. **Twenty-five
+behaviours, one liability, two assets, the rest nulls.** The remaining
+call-local overrides beside this one, `city_target.max(desired_cities)` and the
+speed-aware settler deadline, are the last unpriced pieces of that surface.

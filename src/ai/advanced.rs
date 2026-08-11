@@ -1392,6 +1392,12 @@ pub struct AdvancedAi {
     ///
     /// Off by default; evaluator arm `advanced_settler_founds_when_stalled`.
     pub settler_founds_when_stalled: bool,
+
+    /// Apply the call-local Builder floor in `delegated_cities`.
+    ///
+    /// **On in production**, which is why the arm withholds rather than adds.
+    /// Evaluator arm `advanced_without_builder_floor`.
+    pub production_builder_floor: bool,
     /// Per-settler (last distance-to-target, turns without closing) while a
     /// LAND escort formation is trusted to carry it. See `escort_unstick`.
     escort_march: BTreeMap<u32, (i32, u8)>,
@@ -2503,6 +2509,7 @@ impl AdvancedAi {
             settler_commit: false,
             settler_stalls: BTreeMap::new(),
             settler_founds_when_stalled: false,
+            production_builder_floor: true,
             escort_march: BTreeMap::new(),
             escort_unstick: false,
             religion_sues_peace: false,
@@ -3335,6 +3342,12 @@ impl AdvancedAi {
     /// `advanced_settler_founds_when_stalled`; off in production.
     pub fn enable_settler_founds_when_stalled(&mut self) {
         self.settler_founds_when_stalled = true;
+    }
+
+    /// Withhold the call-local Builder floor. Evaluator-only; production keeps
+    /// it until it has a number.
+    pub fn disable_production_builder_floor(&mut self) {
+        self.production_builder_floor = false;
     }
 
     /// Fortify units the planner gave nothing to do. Evaluator arm
@@ -6509,7 +6522,16 @@ impl AdvancedAi {
         self.base.w.city_target = restore_target.max(plan.desired_cities as f64);
         self.base.w.settler_stop_turn =
             restore_stop.max(Self::stock_expansion_deadline(g) as f64);
-        self.base.w.builder_per_city = restore_builders.max(PRODUCTION_BUILDERS_PER_CITY);
+        // ⚠ A call-local override with no arm until 2026-08-11. It raises the
+        // genome's 0.5 by half again, is reachable only from inside this
+        // function, and `docs/EVAL.md` had never mentioned it — the same
+        // profile as the four flags this audit found carrying stale comments
+        // and no number, one of which cost 41 Elo. Its justification is
+        // reasoning, not measurement: "three active Builders per four cities
+        // provide roughly two useful improvements per city".
+        if self.production_builder_floor {
+            self.base.w.builder_per_city = restore_builders.max(PRODUCTION_BUILDERS_PER_CITY);
+        }
         self.base.cities(g, pid);
         self.base.w.city_target = restore_target;
         self.base.w.settler_stop_turn = restore_stop;

@@ -949,7 +949,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// so its deck was and remains `Legacy` — pinned by
 /// `the_policy_deck_is_live_in_production_and_legacy_on_the_anchor`.
 /// Compatibility re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7b49_ff10_6f7f_f8c8;
+/// `production_builder_floor` and the `delegated_cities` branch reading
+/// it. The whole block is already behind `if !self.plan_city_target`,
+/// which `AdvancedAi::legacy()` leaves false, so the anchor never
+/// reaches it — and the flag defaults true so production is unchanged.
+/// Compatibility re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x356b_541e_676a_e1ca;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
