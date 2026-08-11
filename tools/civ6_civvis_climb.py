@@ -773,6 +773,20 @@ def screen_locked() -> bool:
     return 'CGSSessionScreenIsLocked"=Yes' in result.stdout
 
 
+def attempt_ceiling(args) -> float:
+    """The hard wall-clock bound the child will actually honour.
+
+    One number, derived once, so the child's ceiling and the outer watchdog
+    cannot drift apart. They did: `civ6_play --timeout` stopped being a hard stop
+    in #1532 and this watchdog stayed at `--timeout + 600`, which put a 6000 s
+    kill underneath 8100 s of legitimate budget. Mirrors `civ6_play`'s own
+    default so the two agree when neither is passed.
+    """
+    if args.timeout_ceiling is not None:
+        return float(args.timeout_ceiling)
+    return float(args.timeout) * 1.5
+
+
 def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
                            frozen_s: float, locked_probe=None) -> str:
     """Wait for the attempt, and kill it if its TURN stops advancing.
@@ -950,6 +964,33 @@ def main() -> int:
                     help="Firaxis leader type to select and verify on the picker; "
                          "empty string takes whatever the lobby deals")
     ap.add_argument("--timeout", type=float, default=5400.0)
+    # ⚠⚠⚠ THE OUTER WATCHDOG MUST SIT ABOVE THE INNER CEILING, NOT ABOVE
+    # `--timeout`, AND FOR TEN DAYS IT DID BOTH BECAUSE THEY WERE THE SAME
+    # NUMBER.
+    #
+    # `civ6_play --timeout` used to be a hard stop, so `timeout + 600` was
+    # comfortably the last resort. #1532 made that budget EXTEND while a run can
+    # still reach `--max-turns`, up to `--timeout-ceiling` (1.5x by default) --
+    # and left this watchdog where it was. 5400 * 1.5 = 8100 s of legitimate
+    # inner budget underneath a 6000 s outer kill.
+    #
+    # So the backstop started firing first, on healthy games. Run
+    # civvis-20260811T115348Z was stopped at **turn 194 of 250, score 490, still
+    # advancing**, exactly 100 min 41 s after it started -- `timeout + 600` to
+    # the second. And because the outer path SIGTERMs the child, the run never
+    # writes its summary: the ladder keeps a row carrying `last_turn` and
+    # `last_score` with NO `reason`, which reads like a finished game to anything
+    # that does not check for the missing field.
+    #
+    # The two budgets have to be derived from one number. This is passed to the
+    # child as `--timeout-ceiling` and the watchdog is set above it, so raising
+    # either one cannot silently invert them again.
+    ap.add_argument("--timeout-ceiling", type=float, default=None,
+                    help="hard wall-clock bound handed to civ6_play as "
+                         "--timeout-ceiling; the outer watchdog is set above it. "
+                         "Defaults to 1.5x --timeout, matching civ6_play's own "
+                         "default. Pass a value equal to --timeout to restore a "
+                         "non-extending budget.")
     # ⚠ The LAST resort, not the first. `civ6_play --frozen-seconds` (480s)
     # watches the same thing from inside its own loop and gets first refusal;
     # this one exists for when that loop is itself blocked and therefore cannot
@@ -1204,6 +1245,9 @@ def main() -> int:
             + [
              "--max-turns", str(args.max_turns),
              "--timeout", str(args.timeout),
+             # Derived from the same place as the outer watchdog, so the child's
+             # ceiling and the backstop above it stay ordered by construction.
+             "--timeout-ceiling", str(attempt_ceiling(args)),
              "--lock-wait", "30",
              "--report-every", "10",
              "--export-state"]
@@ -1292,7 +1336,10 @@ def main() -> int:
         # setting this script used to apply to its own copy is now passed through.
 
         try:
-            why = wait_watching_the_turn(play, tag, args.timeout + 600,
+            # Above the child's own ceiling, never above its base budget. See
+            # `--timeout-ceiling`: these two numbers inverted once and killed
+            # healthy games at turn 194.
+            why = wait_watching_the_turn(play, tag, attempt_ceiling(args) + 600,
                                          args.frozen_seconds)
             if why == "timeout":
                 print("attempt exceeded its own timeout; stopping it", flush=True)
