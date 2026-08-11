@@ -8296,30 +8296,31 @@ local function applyOrder(player, pid, row, turn)
 			-- export. `params` is the table the refused operation was given, so the
 			-- engine is asked about the tile the ORDER named — the same distinction
 			-- the `x`/`y` note above exists to protect.
-			-- ★★★★★ THE BUILDER HAD NO MOVEMENT LEFT. THAT IS THE WHOLE ANSWER.
+			-- ★★★★★ RECORD THE READINGS AT THE POINT OF THE DECISION.
 			--
-			-- #1545 recorded both gates and they disagreed on every refusal, so
-			-- #1547 set out to settle it by issuing the operation ungated and
-			-- watching for a spent charge. The run data settled it first, and the
-			-- ungated attempt was removed unfired: on civvis-20260811T103914Z,
-			-- across all 26 refusals,
+			-- ⚠⚠⚠ AND THE FIRST ANSWER THIS FIELD GAVE CONTRADICTED WHY IT WAS
+			-- ADDED. #1548 introduced `moves` on the strength of a claim that
+			-- builders were out of movement on 25 of 26 refusals. That number came
+			-- from matching refusals against the STATE EXPORT by turn, and a
+			-- per-turn snapshot is not the same instant as an event emitted during
+			-- that turn. Once the reading was taken HERE, by
+			-- `GetMovesRemaining()` at the moment of the attempt, the two
+			-- disagreed flatly — same turn, same unit, run
+			-- civvis-20260811T134008Z:
 			--
-			--   the builder STOOD on the ordered tile   26 of 26
-			--   build_charges remaining                 1 or 2, always > 0
-			--   movesRemaining                          ZERO on 25 of 26
+			--     turn 19  unit 327683   event moves 2   state moves 0
+			--     turn 46  unit 983049   event moves 2   state moves 0
+			--     ... all 25 refusals: 2, 3 or 4. NEVER zero.
 			--
-			-- A Civilization VI Builder needs movement left to place an
-			-- improvement. So `canOperate` was RIGHT the whole time, and the
-			-- five-argument probe is the misleading one — with `plots = nil` it
-			-- answers a weaker question that does not consider movement, which is
-			-- exactly why it says `can_start=true` where the gate says false.
+			-- So builders are NOT out of movement here, the refusals are genuine,
+			-- and `canOperate` is right. The five-argument probe remains the
+			-- misleading one — with `plots = nil` it answers "can this unit build
+			-- SOMEWHERE", not "here", which is why it reports `can_start=true`
+			-- against a gate that correctly reports false for this tile.
 			--
-			-- ⚠⚠ SO `why` WAS ACTIVELY MISLEADING, and a ledger that misleads is
-			-- worse than one that is silent: `can_start=true` invites the reader to
-			-- conclude the harness is refusing legal work. The cause goes in the
-			-- record instead. See `a-builder-with-no-movement-cannot-improve` —
-			-- this is that defect, recurring, and it is upstream in WHEN CIVVIS
-			-- orders the improvement, not in whether the harness allows it.
+			-- ⭐ Which is exactly why these two readings belong in the event and
+			-- not in a later join: a snapshot matched by turn number reads as a
+			-- measurement and is not one.
 			local moves = try(function() return unit:GetMovesRemaining(); end, -1);
 			local charges = try(function() return unit:GetBuildCharges(); end, -1);
 			local why = refusalReason(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"],
