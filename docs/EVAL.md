@@ -9173,3 +9173,58 @@ of a fourth is that it must be *decisive* — a clear interval, not another
 borderline p. If 1,200 maps do not separate it, the correct conclusion is that
 withholding city defence is worth something around ten to fifteen Elo and this
 repository cannot afford to prove it, which is a legitimate place to stop.
+
+
+## 2026-08-11 — the gate's three-victory set is justified, and I was wrong to imply otherwise
+
+Two entries raised the promotion matrix's `--victories science,culture,domination`
+as a problem: it cannot express the religious lane that decides most games on the
+default profile, and it rejected a war-flag withhold worth +34 where the
+exhibition plays. Both said the question deserved "its own evidence." Here it is,
+and it does not go the way those entries leaned.
+
+The restriction's unstated justification would be variance reduction — religion
+ends most games early, so removing it should make more games decisive. That is
+testable from runs already recorded, because the same treatments were measured on
+both victory sets at the same shape, 400 pairs each. A paired map that ends the
+same way under both arms carries no information; **discordant maps are the
+resolution.**
+
+| run | victories | discordant of 400 |
+|---|---|---|
+| war half, seed 10800000 | all six | 157 (39.2%) |
+| war half, seed 11000000 | all six | 151 (37.8%) |
+| war half, matrix | three | 189 (47.2%) |
+| city defence, seed 11400000 | three | 176 (44.0%) |
+| city defence, matrix | three | 198 (49.5%) |
+| unit tactics, seed 11500000 | three | 197 (49.2%) |
+| **mean, all six** | | **154 (38.5%)** |
+| **mean, three** | | **190 (47.5%)** |
+
+**The three-victory profile yields about 23% more decisive maps per run.** That
+is a real and substantial gain in statistical power for a fixed compute budget,
+it is exactly what the restriction would be chosen for, and nothing in the tree
+had ever stated it. The gate's configuration is defensible on its own terms.
+
+### What the cost actually is, stated without the insinuation
+
+The restriction is not free, and the two divergences are real: it would have
+rejected `d_holy`'s religion-routed gain and it did reject a war-flag withhold
+measured at +32 and +34 on the configuration the exhibition runs. But the
+correct description of that is **a known and priced trade**, not a defect —
+more resolution on a game that differs from deployment in exactly the dimension a
+victory-routed treatment lives in.
+
+So the practice that follows is not "change the gate". It is:
+
+> **A treatment that touches a victory route must report both profiles**, and a
+> divergence between them is a fact about the treatment's dependence on the
+> victory set, not evidence against the gate. A treatment that touches neither —
+> which is most of them — can be read off the gate alone.
+
+⚠ **This corrects the framing of two earlier entries in this file**, which
+presented the victory set as an open problem with the gate. It is an open
+*property* of the gate, now measured, with a justification those entries assumed
+was absent. The `d_holy` revert and the war-half REJECT both stand exactly as
+recorded — what changes is that neither is any longer an argument for altering
+the gate.
