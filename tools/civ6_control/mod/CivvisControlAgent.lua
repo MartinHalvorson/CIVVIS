@@ -8273,49 +8273,32 @@ local function applyOrder(player, pid, row, turn)
 			-- export. `params` is the table the refused operation was given, so the
 			-- engine is asked about the tile the ORDER named — the same distinction
 			-- the `x`/`y` note above exists to protect.
-			-- ★★★★★ THE TWO GATES DISAGREE, SO SETTLE IT BY DOING IT.
+			-- ★★★★★ THE BUILDER HAD NO MOVEMENT LEFT. THAT IS THE WHOLE ANSWER.
 			--
-			-- Measured on run civvis-20260811T103914Z, 15 refusals out of 15, same
-			-- unit and params and instant:
+			-- #1545 recorded both gates and they disagreed on every refusal, so
+			-- #1547 set out to settle it by issuing the operation ungated and
+			-- watching for a spent charge. The run data settled it first, and the
+			-- ungated attempt was removed unfired: on civvis-20260811T103914Z,
+			-- across all 26 refusals,
 			--
-			--   canOperate     (unit, hash, nil, params)        -> FALSE  [gates]
-			--   refusalReason  (unit, hash, nil, params, ALL)   -> can_start=TRUE
+			--   the builder STOOD on the ordered tile   26 of 26
+			--   build_charges remaining                 1 or 2, always > 0
+			--   movesRemaining                          ZERO on 25 of 26
 			--
-			-- Only `canOperate` decides whether the work is attempted, so if the
-			-- five-argument answer is the true one this harness has been refusing
-			-- improvements Civilization VI would have allowed, and then telling
-			-- CIVVIS the tile is DEAD — which blocks it in the planner, so the map
-			-- it plans from is being poisoned by a gate that is simply wrong.
+			-- A Civilization VI Builder needs movement left to place an
+			-- improvement. So `canOperate` was RIGHT the whole time, and the
+			-- five-argument probe is the misleading one — with `plots = nil` it
+			-- answers a weaker question that does not consider movement, which is
+			-- exactly why it says `can_start=true` where the gate says false.
 			--
-			-- No amount of reading settles which overload is right; this file has
-			-- been wrong three times doing exactly that. But the game will answer
-			-- if asked properly, and here it is free to ask: every fallback has
-			-- already failed and the next line declares the tile dead regardless.
-			-- So issue the operation UNGATED and read the only observable that
-			-- cannot lie about it — a Builder spends a CHARGE when an improvement
-			-- is placed. Charges down means it took.
-			--
-			-- ⚠ This does not weaken "never report an order as given unless the
-			-- engine accepted it". It strengthens it: `pcall` returning true only
-			-- means nothing raised, so acceptance is proven from the charge rather
-			-- than assumed. A refusal still costs nothing and still falls through.
-			local before = try(function() return unit:GetBuildCharges(); end, -1);
-			pcall(function()
-				UnitManager.RequestOperation(unit,
-					OP["UNITOPERATION_BUILD_IMPROVEMENT"], params);
-			end);
-			local after = try(function() return unit:GetBuildCharges(); end, -1);
-			if before > 0 and after >= 0 and after < before then
-				emit("improve_ungated", {
-					turn = turn, unit = subject, want = wanted or "IMPROVE",
-					charges_before = before, charges_after = after,
-					x = params[UnitOperationTypes.PARAM_X],
-					y = params[UnitOperationTypes.PARAM_Y],
-				});
-				-- Reported under its own name, never as CIVVIS's own IMPROVE: the
-				-- decision was CIVVIS's, the gate bypass was ours.
-				return true, (wanted or "IMPROVE") .. "_UNGATED";
-			end
+			-- ⚠⚠ SO `why` WAS ACTIVELY MISLEADING, and a ledger that misleads is
+			-- worse than one that is silent: `can_start=true` invites the reader to
+			-- conclude the harness is refusing legal work. The cause goes in the
+			-- record instead. See `a-builder-with-no-movement-cannot-improve` —
+			-- this is that defect, recurring, and it is upstream in WHEN CIVVIS
+			-- orders the improvement, not in whether the harness allows it.
+			local moves = try(function() return unit:GetMovesRemaining(); end, -1);
+			local charges = try(function() return unit:GetBuildCharges(); end, -1);
 			local why = refusalReason(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"],
 			                          params);
 			-- ⚠⚠⚠ THE TWO FORMS OF THE SAME CALL DISAGREE, AND ONLY ONE OF THEM
@@ -8345,6 +8328,9 @@ local function applyOrder(player, pid, row, turn)
 			-- failed, and is only written down.
 			emit("improve_refused", { turn = turn, unit = subject,
 			                          want = wanted or "IMPROVE", why = why,
+			                          -- The two answers that actually separate the
+			                          -- causes. `moves = 0` is 25 of 26 of them.
+			                          moves = moves, charges = charges,
 			                          can_operate = canOperate(unit,
 			                              OP["UNITOPERATION_BUILD_IMPROVEMENT"],
 			                              params),
