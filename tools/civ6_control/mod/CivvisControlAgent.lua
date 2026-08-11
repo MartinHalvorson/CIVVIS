@@ -3320,6 +3320,9 @@ local function buildParams(row, city, requestedX, requestedY)
 				emit("build_no_plot", {
 					city = try(function() return city:GetID(); end, -1),
 					building = row.Type or tostring(row.Hash),
+					-- Same reason as the district emit below: without a turn,
+					-- every filter downstream is a no-op.
+					turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
 					x = requestedX, y = requestedY,
 					offered = offered or 0,
 					reasons = reasons,
@@ -3375,6 +3378,20 @@ local function buildParams(row, city, requestedX, requestedY)
 			emit("build_no_plot", {
 				city = try(function() return city:GetID(); end, -1),
 				district = row.Type or tostring(row.Hash),
+			-- ⚠⚠⚠ THE TURN, WITHOUT WHICH EVERY FILTER ON THIS EVENT IS A NO-OP.
+			-- `buildParams` is a top-level function and takes no turn, so this
+			-- event has never carried one — and two readers silently depended on
+			-- it. `refused_no_plot_through`'s replay bound (`event.turn > limit`)
+			-- read the missing field as 0 and therefore never excluded anything,
+			-- and #1571's staleness window read it as 0 too, which made every
+			-- refusal look ancient and blocked NOTHING. Measured on run
+			-- civvis-20260811T230324Z, the first to carry #1571: 40 build_no_plot
+			-- events in 131 turns, `0` of them with a turn, and one Campus asked
+			-- for forty times — the exact loop the TTL was meant to bound.
+			-- Asked of the engine rather than threaded through the signature,
+			-- which is what four other emitters in this file already do.
+			turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+
 				offered = offered or 0,
 				-- ⚠ WHERE, not just how many. `offered` proves the district is
 				-- placeable in this city and can never say where, so CIVVIS goes
