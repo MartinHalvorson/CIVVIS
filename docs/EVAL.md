@@ -8943,3 +8943,60 @@ never as a reason to expect Elo.
 ⚠ It does not say the units should stay unfortified — it says doing so costs
 nothing measurable here. On a profile where combat decides games, the same
 repair could matter, and the arm exists to re-run it there.
+
+
+## 2026-08-11 — ★★★★ the net null was hiding thirty-two Elo, and it is the war half
+
+`advanced_without_unpriced_bundle` withheld the eight remaining production flags
+together and measured **+9 Elo, CI −25..+43, 94/84, p=0.5001** — null on the net.
+That entry said the net bounds nothing about the parts, and that in this bundle
+the caveat has teeth: `city_target_floor` at −41 and `settler_commit` at +30 are
+demonstrated offsetting components of the same constructor.
+
+It does. Split on the line the flags themselves draw — what the empire builds
+against how it fights:
+
+```
+ai_eval advanced_without_unpriced_economy advanced   … --pairs 400 --seed 10700000
+  envoy_priority, adjacency_site_planning, research_economy, amenity_districts
+  paired-map score 49.0% (CI 44.1%..53.9%)  Elo -7 (CI -41..+27)   79/87   p=0.5871
+  terminal score 194 / 206                                                 p=0.5824
+
+ai_eval advanced_without_unpriced_war advanced       … --pairs 400 --seed 10800000
+  siege_muster, home_defense, tactical_strategy, unit_objective_memory
+  paired-map score 54.6% (CI 49.7%..59.4%)  Elo +32 (CI -2..+66)  97/60  p=0.0039  ★
+  terminal score 224 / 176                                                 p=0.0187 ★
+```
+
+**Withholding the four war flags is worth about thirty-two Elo**, significant on
+direction and significant on development too — one of only two components in
+this whole audit that improves both. The economy half is a clean null, and −7
+against +32 is precisely the cancellation that produced a +9 net.
+
+### Why this is the expected answer, not a surprise
+
+Everything already recorded points here. Domination is **1 in 1513** headless
+games; every military arm in this file measures null; the motion-symptom family
+was just closed with a resolved null on giving the army free defensive strength.
+If combat does not decide games, then production spent on siege mustering, home
+defence, tactical strategy and unit-objective memory is production not spent on
+the lanes that do — and the terminal-score column agrees, which is unusual for
+this bundle and is what makes the reading solid rather than convenient.
+
+It is also the same shape as the session's other shipped result. The
+`city_target_floor` removal paid 41 Elo by *not doing* something the agent was
+doing enthusiastically. This is the second instance: **the largest measured
+gains in this agent have both come from removing work, not adding it.**
+
+### ⚠ Status: discovery, not promotion
+
+One seed, and the effect interval touches parity (−2..+66) exactly as the floor's
+did at this stage. The floor needed a disjoint-seed confirmation and then a
+400-pair promotion matrix before anything changed, and this gets the same
+treatment — the confirmation is running on seed 11000000. **Nothing about the
+shipped agent changes in this entry.**
+
+⚠ A caveat the floor did not have: this withholds **four** flags at once. Even a
+confirmed +32 would not say which of the four carries it, and the bundle has
+already shown that a group's number is not its members'. Bisecting the war half
+is the work after the confirmation, not before it.
