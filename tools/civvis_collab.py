@@ -31,6 +31,12 @@ import urllib.request
 REPOSITORY = "MartinHalvorson/CIVVIS"
 DEFAULT_BRANCH = "main"
 REQUIRED_CHECKS = ("cargo-test", "collaboration-policy")
+# How long `ship` waits for the production spectator to be LISTENING at all
+# before deciding it is not running. Distinct from `--live-timeout-seconds`,
+# which is how long a spectator that IS up may take to reach the merged
+# revision. `ship` runs when a spectator may be restarting onto that revision,
+# so this is a grace for it to reappear, not a single probe.
+LIVE_PRESENCE_GRACE_S = 30.0
 BRANCH_RE = re.compile(
     r"^agent/(?P<machine>[a-z0-9][a-z0-9-]{0,31})/"
     r"(?P<agent>[a-z0-9][a-z0-9-]{0,31})/"
@@ -910,6 +916,29 @@ def live_status_commit(url: str, timeout: float = 5.0) -> str:
     return str(payload.get("commit") or "") if isinstance(payload, dict) else ""
 
 
+def live_status_answers(url: str, timeout: float = 5.0) -> bool:
+    """Whether anything is LISTENING at ``url`` — a different question from what
+    revision it reports.
+
+    ``live_status_commit`` returns ``""`` for a refused connection and for a
+    server that answered without a commit, and the wait loop could not tell
+    those apart. They are opposite situations: a server that is up and stale is
+    still building and waiting is exactly right, while a port with nothing
+    behind it will never answer however long anyone waits.
+
+    An HTTP error status still counts as answering — something is there.
+    ``HTTPError`` is a subclass of both ``URLError`` and ``OSError``, so it has
+    to be caught first or a live server returning 503 reads as absent.
+    """
+    try:
+        with urllib.request.urlopen(url, timeout=timeout):
+            return True
+    except urllib.error.HTTPError:
+        return True
+    except (OSError, urllib.error.URLError):
+        return False
+
+
 def deployed_commit_covers(repo: Path, deployed: str, merged_sha: str) -> bool:
     if not deployed:
         return False
@@ -930,6 +959,34 @@ def wait_for_local_live_build(
     if local_deploy_root(repo) is None or timeout_seconds <= 0:
         print("no local production spectator detected; merge is complete")
         return False
+    # ⚠⚠ THE GUARD ABOVE READS A DIRECTORY, NOT A SERVER. `local_deploy_root`
+    # only says this clone is a production host, so on a host where the
+    # exhibition is deliberately stopped -- all CIVVIS automation was disabled
+    # at operator request on 2026-07-31 and the keeper LaunchAgent is not loaded
+    # -- every merge polled a port with nothing behind it for the full
+    # `--live-timeout-seconds`, ten minutes by default, and then printed a
+    # warning about a service that was switched off on purpose. A warning that
+    # fires on every merge is one nobody reads.
+    #
+    # Nothing listening and answering-but-stale are opposite situations: the
+    # second is a spectator still building, which is what the timeout is FOR.
+    # So probe reachability first, and only there give up early.
+    #
+    # ⚠ Not on a single probe. `ship` runs at exactly the moment a spectator may
+    # be restarting onto the new revision, so a refused connection in that
+    # instant is expected. Give it a short grace to appear before concluding it
+    # is not running at all -- ten minutes becomes half a minute, not zero.
+    grace = min(LIVE_PRESENCE_GRACE_S, timeout_seconds)
+    present_by = time.monotonic() + grace
+    while not live_status_answers(url):
+        if time.monotonic() >= present_by:
+            print(
+                f"nothing is listening at {url} after {grace:.0f}s; the "
+                "production spectator is not running, so there is no live "
+                "revision to confirm. Merge is complete."
+            )
+            return False
+        time.sleep(max(0.1, min(poll_seconds, 2.0)))
     print(f"waiting for the production spectator at {url} to run {merged_sha[:7]}")
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
