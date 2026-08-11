@@ -543,6 +543,46 @@ class WedgedAttempt(unittest.TestCase):
         self.assertIsNone(signalled)
 
 
+class KilledAttemptSaysSo(unittest.TestCase):
+    """⚠⚠⚠ A row with a turn count and a score and NO reason reads like a
+    finished game.
+
+    `outcome_of` reads what `civ6_play` wrote on its way out, and a run this loop
+    SIGTERMs never gets there. `civvis-20260811T115348Z` is in the ladder that
+    way: turn 194 of 250, score 490, stopped by the outer watchdog while still
+    advancing, `reason` absent. I included it in medians myself before noticing.
+
+    The loop knows why it killed the attempt. These pin that it says so, and that
+    it never overwrites a reason the harness did supply.
+    """
+
+    @staticmethod
+    def _stamp(record, why):
+        """The rule under test, applied exactly as the loop applies it."""
+        if record.get("reason") is None and why is not None:
+            record["reason"] = f"attempt {why}"
+        return record
+
+    def test_a_killed_attempt_is_not_mistaken_for_a_finished_one(self):
+        row = self._stamp({"last_turn": 194, "last_score": 490}, "timeout")
+        self.assertEqual(row["reason"], "attempt timeout")
+
+    def test_a_lock_is_named_as_a_lock(self):
+        """The log already refuses to blame a timeout for an unattended machine;
+        the ledger must not either."""
+        row = self._stamp({"last_turn": 82}, "locked")
+        self.assertEqual(row["reason"], "attempt locked")
+
+    def test_the_harnesss_own_reason_always_wins(self):
+        """`civ6_play` saw the ending from inside. That answer is better."""
+        row = self._stamp({"last_turn": 250, "reason": "stopped"}, "timeout")
+        self.assertEqual(row["reason"], "stopped")
+
+    def test_nothing_is_invented_when_the_loop_has_no_verdict(self):
+        row = self._stamp({"last_turn": 250}, None)
+        self.assertIsNone(row.get("reason"))
+
+
 class OuterWatchdogOrdering(unittest.TestCase):
     """⚠⚠⚠ The backstop must sit ABOVE the budget it backs, not underneath it.
 

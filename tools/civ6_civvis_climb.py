@@ -1335,6 +1335,10 @@ def main() -> int:
         # So: ONE decider, the one `civ6_play` owns, configured from here. Every
         # setting this script used to apply to its own copy is now passed through.
 
+        # Bound before the `try` so the ledger stamp below reads a variable that
+        # always exists, rather than relying on the exact control flow that
+        # happens to reach it today.
+        why = None
         try:
             # Above the child's own ceiling, never above its base budget. See
             # `--timeout-ceiling`: these two numbers inverted once and killed
@@ -1358,6 +1362,22 @@ def main() -> int:
             teardown()
 
         record = outcome_of(tag)
+        # ★★★★★ A KILLED ATTEMPT MUST SAY SO IN THE LEDGER.
+        #
+        # `outcome_of` reads what `civ6_play` wrote on its way out. A run this
+        # loop SIGTERMs never gets there, so the row carries `last_turn` and
+        # `last_score` from the event stream and NO `reason` — and a row with a
+        # turn count and a score reads like a finished game to anything that does
+        # not check for the missing field. One is in the ladder from 2026-08-11:
+        # `civvis-20260811T115348Z`, turn 194 of 250, score 490, stopped by the
+        # outer watchdog while still advancing. I included it in medians myself
+        # before noticing.
+        #
+        # This loop knows exactly why it killed the attempt and was throwing that
+        # away. Stamp it, and only when the harness supplied nothing — a reason
+        # `civ6_play` wrote is the better answer and must never be overwritten.
+        if record.get("reason") is None and why is not None:
+            record["reason"] = f"attempt {why}"
         record["utc"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         record["victory_target"] = args.victory
         record["difficulty_asked"] = args.difficulty
