@@ -95,6 +95,39 @@ class ProtectedInstallTest(unittest.TestCase):
         # stay indistinguishable.
         self.assertIn('want = wanted or "IMPROVE", why = why,', source)
 
+    def test_the_emergency_wall_override_needs_an_enemy_that_is_actually_near(self) -> None:
+        """The gate claimed a neighbourhood it never had.
+
+        `cityWarThreat` walks every visible unit of every player we are at war
+        with and bounds the distance by nothing, so `nearestEnemy ~= nil` was
+        true whenever any enemy was visible anywhere. Measured over eight live
+        runs on 2026-08-11: 160 overrides, 94% at zero damage, 70% with the
+        nearest enemy five or more tiles away, taking 46 Campus and 13 Library
+        builds away from CIVVIS to buy a wall.
+
+        Damage must still override at any distance — that is real evidence — so
+        pin both halves, and pin that the threshold reaches the event, because a
+        gate whose threshold is not recorded cannot be audited from the ledger.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+        self.assertIn("local wallRadius = cfg.EmergencyWallRadius or 3;", source)
+        self.assertIn(
+            "and ((damage ~= nil and damage > 0)\n"
+            "\t\t\t\t\tor (nearestEnemy ~= nil and nearestEnemy <= wallRadius)) then",
+            source,
+        )
+        self.assertNotIn(
+            "or nearestEnemy ~= nil) then",
+            source,
+            "the unbounded enemy test must not come back",
+        )
+        self.assertIn("radius = wallRadius,", source)
+
+        play = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('"EmergencyWallRadius": args.emergency_wall_radius,', play)
+        self.assertIn('"--emergency-wall-radius", type=int, default=3', play)
+
     def test_military_emergency_popup_uses_firaxis_pass_path(self) -> None:
         modinfo = (install.MOD_SOURCE / "CivvisControl.modinfo").read_text()
         closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()

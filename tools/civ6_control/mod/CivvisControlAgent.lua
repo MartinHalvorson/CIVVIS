@@ -7575,12 +7575,39 @@ local function applyOrder(player, pid, row, turn)
 		-- enemy in the neighbourhood, spend this queue on the wall immediately.
 		-- Keep the original CIVVIS request in `civvisBuild`; the override is
 		-- observable and does not pretend the model chose the emergency action.
+		--
+		-- ⚠⚠⚠ THERE WAS NO NEIGHBOURHOOD. The comment above says one thing and the
+		-- test said `nearestEnemy ~= nil`, which is true whenever we are at war and
+		-- can see ANY enemy unit anywhere on the map -- `cityWarThreat` walks every
+		-- visible unit of every player we are at war with and bounds the distance
+		-- by nothing at all.
+		--
+		-- Measured over the eight live runs of 2026-08-11, 160 overrides:
+		--
+		--     94%  fired with damage == 0
+		--     70%  fired with the nearest enemy 5+ tiles away (median 6, max 14)
+		--     66%  fired with BOTH -- no damage and no enemy within five tiles
+		--
+		-- and what they overrode was 46 Campus, 13 Library, 7 Enhance-Campus, 15
+		-- Builders and 9 Settlers: science and expansion, which this project has
+		-- measured to be its binding constraints, replaced by a wall it has also
+		-- measured does not predict holding a city
+		-- (`civ6-walls-do-not-predict-city-loss`).
+		--
+		-- So bound it to the claim the comment already makes. Damage is real
+		-- evidence and still fires at any distance; a visible enemy has to be close
+		-- enough to actually reach the city between two boards, which an enemy
+		-- fourteen tiles away is not. `EmergencyWallRadius` is a knob so this is
+		-- tunable and can be withheld -- set it very large to restore the old
+		-- unbounded behaviour exactly.
 		local atWar, nearestEnemy, damage, wallDamage, maxWallDamage =
 			cityWarThreat(player, pid, city);
+		local wallRadius = cfg.EmergencyWallRadius or 3;
 		local emergencyWall = false;
 		if resolved ~= "BUILDING_WALLS"
 				and maxWallDamage ~= nil and maxWallDamage <= 0
-				and ((damage ~= nil and damage > 0) or nearestEnemy ~= nil) then
+				and ((damage ~= nil and damage > 0)
+					or (nearestEnemy ~= nil and nearestEnemy <= wallRadius)) then
 			local wall = GameInfo.Types["BUILDING_WALLS"];
 			local wallCanOk, wallCan = false, false;
 			if wall ~= nil then
@@ -7592,11 +7619,15 @@ local function applyOrder(player, pid, row, turn)
 				row2 = wall;
 				verb = "BUILDING_WALLS";
 				emergencyWall = true;
+				-- The radius in force goes in the record. Reading the old ledger
+				-- meant knowing the gate was unbounded, which nothing stated;
+				-- a threshold that is not in the event cannot be audited later.
 				emit("emergency_wall_override", {
 					turn = turn, city = cityId, requested = resolved,
 					item = "BUILDING_WALLS", at_war = atWar,
 					enemy_distance = nearestEnemy, damage = damage,
 					wall_damage = wallDamage, max_wall_damage = maxWallDamage,
+					radius = wallRadius,
 				});
 			end
 		end

@@ -349,6 +349,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # Hand a builder to Civ 6's own automation when CIVVIS's improvement is
         # refused outright. A policy, counted as IMPROVE_AUTOMATED.
         "AutomateStuckBuilders": args.automate_stuck_builders,
+        # How close a visible enemy must be before the emergency wall override
+        # takes a city's queue away from CIVVIS. Damage still overrides at any
+        # distance; this bounds only the "an enemy is around" half, which was
+        # unbounded and fired on enemies up to fourteen tiles away.
+        "EmergencyWallRadius": args.emergency_wall_radius,
         # Walk earned Great People to a legal activation plot and press Activate.
         # An actuation formality (CIVVIS banks the effect at recruit and its
         # mirror drops the walking unit); counted separately as gp_* fields.
@@ -2665,6 +2670,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-automate-stuck-builders", dest="automate_stuck_builders",
                     action="store_false", default=True,
                     help="leave a builder idle when CIVVIS's improvement is refused")
+    ap.add_argument("--emergency-wall-radius", type=int, default=3,
+                    help="how close a VISIBLE enemy must be, in tiles, before the "
+                         "emergency wall override takes a city's queue away from "
+                         "CIVVIS. A city already taking damage overrides at any "
+                         "distance. This half of the gate used to be unbounded: "
+                         "160 overrides on 2026-08-11 ran at a median enemy "
+                         "distance of 6 and up to 14, 94%% of them with zero "
+                         "damage. Pass a large value to restore that behaviour "
+                         "and withhold the fix.")
     ap.add_argument("--stall-rescues", type=int, default=3,
                     help="times to try dismissing a blocking screen before giving up")
     # ⚠ A FALSE STALL IS NOT FREE. The rescue SWEEPS CLICKS across the game window,
