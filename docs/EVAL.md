@@ -9000,3 +9000,33 @@ shipped agent changes in this entry.**
 confirmed +32 would not say which of the four carries it, and the bundle has
 already shown that a group's number is not its members'. Bisecting the war half
 is the work after the confirmation, not before it.
+
+### Confirmed on a disjoint seed
+
+```
+ai_eval advanced_without_unpriced_war advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 11000000
+
+  paired-map score 54.9% (95% Wilson CI 50.0%..59.7%)   Elo-equivalent +34 (CI -0..+68)
+  paired direction 95 for / 249 neutral / 56 against    sign p = 0.0019
+  anytime-valid    withheld e = 4.469e2, p <= 0.0022, CROSSED at map 134
+  terminal score   226 / 174                            sign p = 0.0107
+```
+
+| run | maps | score | Elo | direction | sign p |
+|---|---|---|---|---|---|
+| discovery, seed 10800000 | 400 | 54.6% | +32 | 97/60 | 0.0039 |
+| **confirmation, seed 11000000** | **400** | **54.9%** | **+34** | 95/56 | **0.0019** |
+| **pooled** | **800** | **54.75%** | — | **192/116** | ~3e-5 |
+
+The estimate did not shrink between seeds, both directions are significant, both
+terminal-score columns are significant the same way, and the confirmation's
+**e-process crossed at map 134** — the first time one has crossed for this
+treatment. That is a stronger position than `city_target_floor` held at the same
+stage, and it took the same route: discovery, disjoint-seed confirmation, then
+the gate.
+
+The promotion matrix at 400 pairs is running on seed 11200000. **Nothing changes
+until it answers**, and the 200-pair lesson from the floor applies — if it
+rejects on interval width rather than on evidence, the answer is more maps, not
+an argument.
