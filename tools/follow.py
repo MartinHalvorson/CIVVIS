@@ -375,6 +375,55 @@ def server_alive(port):
         return False
 
 
+
+def stop_visible_server():
+    """Take the finished game OFF THE SCREEN.
+
+    ⚠⚠⚠ THE TWO WINDOWS MUST NEVER SHOW DIFFERENT GAMES. This follower used to
+    switch `current_run` to the new attempt and leave the previous game's board
+    served, because the new run has no map to publish until the mod's first tile
+    export -- which is minutes away while Civilization VI generates a map and
+    reaches turn 1. For that whole window the operator's screen showed a
+    FINISHED empire beside a live game's setup menu, which is exactly the thing
+    a mirror cannot do: it is not "stale", it is a different game, and it reads
+    as the mirror being wrong about the game in front of it.
+
+    Measured 2026-08-10: at 21:48:25 the follower logged `following run
+    civvis-20260810T214824Z` while :8610 kept serving TURN 189 of the run before
+    it -- five cities and twelve units against a brand-new game still choosing
+    its leader.
+
+    So the finished game comes down at the moment the run changes. The existing
+    "waiting for the run's first map export" path then brings the server back up
+    on the new run as soon as it has a map. A briefly empty port is honest; a
+    confidently wrong board is not.
+    """
+    stopped = False
+    for pattern in ("play --mirror",):
+        try:
+            found = subprocess.run(
+                ["pgrep", "-f", f"{os.path.basename(BIN)} {pattern}"],
+                capture_output=True, text=True,
+            ).stdout.split()
+        except Exception:
+            found = []
+        for pid in found:
+            try:
+                os.kill(int(pid), signal.SIGTERM)
+                stopped = True
+            except Exception:
+                pass
+    if stopped:
+        # Give it a moment to release the port so the next start is not refused.
+        for _ in range(20):
+            if not server_alive(PORT):
+                break
+            time.sleep(0.5)
+        log("took the finished game off the screen; the port is free for the "
+            "next one")
+    return stopped
+
+
 def rebuild(run_dir, players):
     """Rebuild the live board and hand back its serialized Game.
 
@@ -595,8 +644,25 @@ def main():
         if run_dir != current_run:
             log(f"following run {os.path.basename(run_dir)}"
                 + (" (idle; showing its last position)" if stale else ""))
+            # ⚠ Take the PREVIOUS game down before adopting this one. Leaving it
+            # served makes the two windows show different games for as long as
+            # the new attempt takes to export a map. See `stop_visible_server`.
+            if current_run is not None and server_alive(PORT):
+                stop_visible_server()
             current_run, published_turn, published_size = run_dir, None, None
             awaiting_export = False
+
+        # A game we have finished playing and finished studying should not go on
+        # occupying the screen. `stale` means this run has written nothing for
+        # RUN_FRESH_SECONDS -- it is over, and the supervisor is between games
+        # (pulling, building) rather than about to say more. Take it down and
+        # leave the port free until the next attempt has a map.
+        if stale and server_alive(PORT):
+            log(f"run {os.path.basename(run_dir)} has been idle for "
+                f"{int(RUN_FRESH_SECONDS)}s; taking its finished game down")
+            stop_visible_server()
+            time.sleep(POLL_SECONDS)
+            continue
 
         lines, turn, players, _, tiles = read_events(run_dir)
         if lines is None:
