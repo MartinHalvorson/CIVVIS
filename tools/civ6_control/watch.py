@@ -137,9 +137,32 @@ class EventLogBridge:
         return copied
 
 
+def turns_left_seconds(first_turn: int | None, first_turn_at: float,
+                       last_turn: int | None, last_turn_at: float,
+                       finish_turn: int | None) -> float | None:
+    """How long the rest of the game should take at the rate observed so far.
+
+    ``None`` when there is nothing to project from: no turns seen, only one
+    turn seen, no finish line asked for, or a run already past it. A caller that
+    cannot project must keep its original deadline rather than invent one.
+    """
+    if finish_turn is None or first_turn is None or last_turn is None:
+        return None
+    turns_done = last_turn - first_turn
+    elapsed = last_turn_at - first_turn_at
+    if turns_done <= 0 or elapsed <= 0:
+        return None
+    remaining = finish_turn - last_turn
+    if remaining <= 0:
+        return 0.0
+    return remaining * (elapsed / turns_done)
+
+
 def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
            stop_when=None, each_poll=None, stall_s: float | None = 600.0,
-           frozen_s: float | None = None, pause_when=None) -> str:
+           frozen_s: float | None = None, pause_when=None,
+           finish_turn: int | None = None,
+           ceiling_s: float | None = None) -> str:
     """Pump events to ``on_event`` until ``stop_when`` says so or time runs out.
 
     Returns a short reason string. The game exiting is reported as its own
@@ -162,6 +185,27 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
       harness happily polls it forever.
 
     The second is now the common one, and until it existed nothing could see it.
+
+    ``finish_turn`` is the turn this run is trying to reach, and it changes what
+    ``timeout_s`` means. Those two watchdogs already catch every way a run DIES,
+    so the wall clock only ever fires on a run that is alive and merely slow --
+    and killing one of those is pure loss. It happened three times in the day to
+    2026-08-11: runs cut at turns 209, 197 and 189 of 250 after two hours on a
+    host at load 53, each writing a partial score into the ladder as though it
+    were a result, which is worse than recording nothing.
+
+    So when the budget runs out, ask whether the run can still REACH its finish
+    line at the rate it has actually managed, and grant it that much more time if
+    it fits under ``ceiling_s``. A game at turn 209 needing fifteen more minutes
+    gets them; a game at turn 60 after two hours is never going to finish and is
+    stopped exactly as before. The projection is re-made at every expiry, so a
+    run that slows down until it no longer fits is dropped then -- no estimate
+    has to be right the first time, only honest about the rate so far.
+
+    ``ceiling_s`` is the hard bound on all of that and defaults to ``timeout_s``,
+    which reproduces the old behaviour exactly: with no ceiling above the budget
+    there is no room to extend into, so a caller that passes neither argument
+    cannot be changed by this. Both are needed to buy a run any extra time.
     """
     # ``monotonic`` is backed by mach_absolute_time on macOS, so closed-lid
     # sleep does not spend the run budget.  A locked-but-awake session does
@@ -169,10 +213,15 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
     # continuing to relay game events to the decision worker.
     now = time.monotonic()
     deadline = now + timeout_s
+    ceiling = now + (ceiling_s if ceiling_s is not None else timeout_s)
     last_event = now
     # Silence is not the only way a run dies. A wedged popup can keep emitting
     # state from one turn forever, so track actual turn progress separately.
     last_turn, last_turn_at = None, now
+    # The first turn SEEN, not turn 1: a resumed or reattached run starts
+    # wherever it starts, and a rate measured from a turn that never happened
+    # here would be nonsense.
+    first_turn, first_turn_at = None, now
     last_poll = now
     was_paused = False
     while True:
@@ -181,22 +230,34 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
         if paused or was_paused:
             paused_for = now - last_poll
             deadline += paused_for
+            ceiling += paused_for
             last_event += paused_for
             if last_turn is not None:
                 last_turn_at += paused_for
+            if first_turn is not None:
+                first_turn_at += paused_for
         last_poll = now
         was_paused = paused
         # Check only after refunding a paused interval.  Otherwise a session
         # locked longer than the remaining budget would fall out of the loop
         # before it got a chance to observe the unlock and restore that time.
         if not paused and now >= deadline:
-            return "timeout"
+            needed = turns_left_seconds(first_turn, first_turn_at,
+                                        last_turn, last_turn_at, finish_turn)
+            if needed is None or now + needed > ceiling:
+                return "timeout"
+            # A run already at its finish line has no turns left to project. It
+            # is in the endgame -- victory screens, the final score -- so give it
+            # what the ceiling allows and let the two watchdogs end it.
+            deadline = ceiling if needed <= 0 else min(now + needed, ceiling)
         for event in tail.poll():
             on_event(event)
             last_event = time.monotonic()
             turn = event.get("turn") if isinstance(event, dict) else None
             if isinstance(turn, int) and (last_turn is None or turn > last_turn):
                 last_turn, last_turn_at = turn, last_event
+                if first_turn is None:
+                    first_turn, first_turn_at = turn, last_event
             if stop_when is not None and stop_when(event):
                 return "stopped"
         if not env.game_pids():
