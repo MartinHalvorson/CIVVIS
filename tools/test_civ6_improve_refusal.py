@@ -124,6 +124,42 @@ class ImproveRefusalTests(unittest.TestCase):
         self.assertIn("tile_owner = tile_owner,", payload)
         self.assertIn("tile_improvement = tile_improvement,", payload)
 
+    def test_asking_for_what_is_already_there_is_not_a_refusal(self) -> None:
+        """23 of 23 refusals were CIVVIS re-ordering an improvement it just built.
+
+        Run `civvis-20260811T163652Z` with #1561's readings: tile ours, builder
+        holding movement and charges, and the improvement already on the ground.
+        The orders ledger names the mechanism — `IMPROVE:MINE` succeeds at t18 and
+        is ordered again at t19 — because the tile sweep runs every four turns and
+        CIVVIS's board still shows the tile bare.
+
+        The damage is the ledger, not the wasted call. 376 `improve_refused` in a
+        day that are all benign duplicates buries the ones that mean something,
+        and `improve_refused` is what BLOCKS the tile in the planner. A duplicate
+        must never reach it: the tile is not dead, it is done.
+        """
+        handler = self.handler
+        self.assertIn('emit("improve_already"', handler)
+        self.assertIn('return false, "already_" .. wanted;', handler)
+
+        # It must be decided BEFORE the engine call, or it is not saving one.
+        self.assertLess(
+            handler.index('emit("improve_already"'),
+            handler.index('if operate(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"], params) then'),
+            "the duplicate check must come before the operation is attempted",
+        )
+        # And it must be a DIFFERENT kind, or it still blocks the tile.
+        self.assertNotIn('emit("improve_refused", { turn = turn, unit = subject,\n\t\t\t\t\t\t  want = wanted, x =', handler)
+
+    def test_only_an_exact_match_short_circuits(self) -> None:
+        """A Farm asked for where a Mine stands is a real disagreement.
+
+        Short-circuiting on "some improvement is here" would hide exactly the
+        ruleset mismatch this path exists to surface.
+        """
+        handler = self.handler
+        self.assertIn("if here ~= nil and here == wanted then", handler)
+
     def test_the_slice_covers_the_whole_emit(self) -> None:
         """Guards the fixture itself: a truncated window silently stops testing."""
         self.assertTrue(self.handler.rstrip().endswith("});"))
