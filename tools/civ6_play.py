@@ -2388,11 +2388,21 @@ def _play(args: argparse.Namespace) -> int:
     # turn takes a few seconds, so silence for a couple of minutes already means wedged.
     # Shorter is only wrong if the machine is so loaded that turns take minutes — see
     # the contention note — so it is a flag, not a constant.
+    # ⚠ THE WALL CLOCK ONLY EVER KILLS A HEALTHY RUN. `stall_s` and `frozen_s`
+    # between them catch every way a run dies -- silence, and a turn that stops
+    # moving while events keep arriving -- so anything still alive at `--timeout`
+    # is alive and merely SLOW. Three such runs died in the day to 2026-08-11 at
+    # turns 209, 197 and 189 of 250, on a host at load 53, and each wrote its
+    # partial score into the ladder as if it were a result. `finish_turn` lets
+    # the budget ask "can this still get there?" instead of "is the clock up?".
+    ceiling_s = (args.timeout_ceiling if args.timeout_ceiling is not None
+                 else args.timeout * 1.5)
     reason = watch.follow(tail, args.timeout, record, stop_when=finished,
                           each_poll=keep_foreground, poll_s=poll_s,
                           stall_s=args.stall_seconds,
                           frozen_s=args.frozen_seconds,
-                          pause_when=console_locked)
+                          pause_when=console_locked,
+                          finish_turn=args.max_turns, ceiling_s=ceiling_s)
     # ★★★ PHOTOGRAPH A STALL BEFORE KILLING IT. Stalls are now the dominant way runs
     # end — t87, t95, t106, t184 — and the event stream goes silent by definition, so
     # it cannot say what is on screen. One screen (`DiplomacyDealView`) was already
@@ -2437,7 +2447,8 @@ def _play(args: argparse.Namespace) -> int:
                               each_poll=keep_foreground, poll_s=poll_s,
                               stall_s=args.stall_seconds,
                               frozen_s=args.frozen_seconds,
-                              pause_when=console_locked)
+                              pause_when=console_locked,
+                              finish_turn=args.max_turns, ceiling_s=ceiling_s)
         if not reason.startswith("stalled"):
             print(f"recovered from stall after {consecutive} attempt(s)", flush=True)
             consecutive = 0
@@ -2729,6 +2740,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--load-save", default=None,
                     help="load this visible single-player save instead of creating a game")
     ap.add_argument("--timeout", type=float, default=7200.0)
+    ap.add_argument("--timeout-ceiling", type=float, default=None,
+                    help="hard wall-clock bound, in seconds. Between --timeout "
+                         "and this, a run that is still advancing and can "
+                         "still REACH --max-turns at the rate it has managed "
+                         "keeps going; one that cannot is stopped at --timeout "
+                         "exactly as before. Defaults to 1.5x --timeout. Pass "
+                         "the same value as --timeout to disable extensions.")
     ap.add_argument("--report-every", type=int, default=5)
     ap.add_argument("--lock-wait", type=float, default=0.0,
                     help="seconds to wait for another run to finish")
