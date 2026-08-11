@@ -24,12 +24,13 @@ import civ6_civvis_climb as climb
 
 class MirrorFreshnessTests(unittest.TestCase):
     def test_follower_output_path_reads_lsof_file_field(self):
+        mirror_log = climb.MIRROR_FOLLOW_LOG
         with mock.patch.object(
-            climb, "run", return_value="p101\nf1\nn/Users/martin/civvis-civ6-mirror/follow.log\n"
+            climb, "run", return_value=f"p101\nf1\nn{mirror_log}\n"
         ) as run:
             self.assertEqual(
                 climb.follower_output_path(101),
-                Path.home() / "civvis-civ6-mirror" / "follow.log",
+                mirror_log,
             )
 
         run.assert_called_once_with(["lsof", "-a", "-p", "101", "-d", "1", "-Fn"])
