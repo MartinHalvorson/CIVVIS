@@ -157,6 +157,12 @@ const SIEGE_TARGET_REACH: i32 = 20;
 /// resumes, so it cannot become an endless appetite.
 const RECON_ARM_MAX: usize = 1;
 
+/// Once a scout reaches the nearest fog, inspect this many additional rings
+/// before choosing where to go.  A short horizon is enough to distinguish a
+/// dead-end nibble of fog from the edge of a broad unexplored region, without
+/// making every scout sweep the whole world every turn.
+const EXPLORATION_FRONTIER_LOOKAHEAD: i32 = 4;
+
 /// The population under which a FRONTIER city gets the garrison-walls
 /// doctrine (see [`BasicAi::garrison_walls_item`]); the capital gets it at any
 /// size. Derived from the measured loss that motivated the treatment: the
@@ -9166,6 +9172,82 @@ impl BasicAi {
             .map(|settler| settler.pos)
     }
 
+    /// How much still-unknown ground a unit could expose from `target`.
+    ///
+    /// This deliberately reads only the acting civilization's explored set and
+    /// the scout's own sight radius.  It does not inspect hidden cities,
+    /// units, resources, or city-state identities: a Scout learns about a
+    /// possible first contact by opening more of the frontier, rather than by
+    /// knowing where a contact sits under fog.
+    fn frontier_reveal_value(g: &Game, pid: usize, uid: u32, target: Pos) -> usize {
+        g.wdisk(target, g.unit_sight(uid))
+            .into_iter()
+            .filter(|pos| !g.players[pid].explored.contains(pos))
+            .count()
+    }
+
+    /// Choose an unexplored target for a reconnaissance unit.
+    ///
+    /// The frozen controllers keep the historical nearest-fog rule.  The
+    /// production controller looks a few rings beyond that first tile and
+    /// prefers the position that exposes the most unknown ground.  This makes
+    /// a Scout fan into a fresh region instead of spending turns shaving the
+    /// same local fringe, which is the practical route to earlier civ and
+    /// city-state contact.
+    fn exploration_goal(&self, g: &Game, pid: usize, uid: u32, dry_only: bool) -> Option<Pos> {
+        let origin = g.units[&uid].pos;
+        let mut candidates = Vec::new();
+        let mut first_candidate_ring = None;
+        let mut radius = 1;
+        let mut examined = 0;
+        let _memo = g.query_memo();
+        while examined < g.map.tiles.len() {
+            let ring: Vec<Pos> = g
+                .wring(origin, radius)
+                .into_iter()
+                .filter(|pos| g.wdist(origin, *pos) == radius)
+                .collect();
+            if ring.is_empty() {
+                break;
+            }
+            examined += ring.len();
+            let mut ring_candidates: Vec<Pos> = ring
+                .into_iter()
+                .filter(|pos| {
+                    !g.players[pid].explored.contains(pos)
+                        && g.unit_can_traverse(uid, *pos)
+                        && (!dry_only
+                            || g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile)))
+                })
+                .collect();
+            if !ring_candidates.is_empty() {
+                first_candidate_ring.get_or_insert(radius);
+                candidates.append(&mut ring_candidates);
+            }
+            let Some(first) = first_candidate_ring else {
+                radius += 1;
+                continue;
+            };
+            if !self.tactical_strategy || radius >= first + EXPLORATION_FRONTIER_LOOKAHEAD {
+                break;
+            }
+            radius += 1;
+        }
+        if self.tactical_strategy {
+            candidates.into_iter().max_by_key(|target| {
+                (
+                    Self::frontier_reveal_value(g, pid, uid, *target),
+                    std::cmp::Reverse(g.wdist(origin, *target)),
+                    std::cmp::Reverse(*target),
+                )
+            })
+        } else {
+            candidates
+                .into_iter()
+                .min_by_key(|target| (g.wdist(origin, *target), *target))
+        }
+    }
+
     fn explore_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let upos = g.units[&uid].pos;
         // A tribal village the scout can already reach this turn is a
@@ -9202,43 +9284,7 @@ impl BasicAi {
         // pacing between two sea hexes. A land unit explores land.
         let dry_only = self.come_ashore
             && g.rules.units[g.units[&uid].kind].domain.as_deref() != Some("sea");
-        // The nearest hidden tile is almost always a few hexes away, so walk
-        // outward in rings and stop at the first one that holds a candidate
-        // instead of testing all nine hundred tiles. The rings partition the
-        // map and each is examined in position order, so this picks exactly
-        // the tile a full `min_by_key` on `(distance, position)` would.
-        // The memo answers `unit_can_traverse` without re-deriving how this
-        // unit moves at every tile, and cannot go stale while it holds the
-        // game immutably.
-        let nearest = {
-            let _memo = g.query_memo();
-            let mut found = None;
-            let mut radius = 1;
-            let mut examined = 0;
-            while found.is_none() && examined < g.map.tiles.len() {
-                let ring: Vec<Pos> = g
-                    .wring(upos, radius)
-                    .into_iter()
-                    .filter(|pos| g.wdist(upos, *pos) == radius)
-                    .collect();
-                if ring.is_empty() {
-                    break;
-                }
-                examined += ring.len();
-                found = ring
-                    .into_iter()
-                    .filter(|pos| {
-                        !g.players[pid].explored.contains(pos)
-                            && g.unit_can_traverse(uid, *pos)
-                            && (!dry_only
-                                || g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile)))
-                    })
-                    .min();
-                radius += 1;
-            }
-            found
-        };
-        if let Some(target) = nearest {
+        if let Some(target) = self.exploration_goal(g, pid, uid, dry_only) {
             if self.step_toward(g, pid, uid, target) {
                 return true;
             }
@@ -9248,8 +9294,8 @@ impl BasicAi {
             return false;
         }
 
-        // If the geometrically nearest hidden tile was unreachable, search
-        // for the nearest hidden tile by actual traversable route instead.
+        // If the chosen frontier target was unreachable, search for the
+        // nearest hidden tile by an actual traversable route instead.
         let goals: HashSet<Pos> = {
             let _memo = g.query_memo();
             g.map
@@ -10306,6 +10352,9 @@ mod tests {
             game.players[player].met.clear();
         }
         game.record_contact(0, known);
+        // This fixture isolates the baseline's choice of destination from the
+        // first-discovery reward granted by contact itself.
+        game.players[0].envoys.clear();
         game.players[0].envoys_free = 1;
 
         // With equal influence, the baseline's stable tie-break would prefer
@@ -13699,6 +13748,78 @@ mod tests {
             ),
             "unexpected assault decision: {:?}",
             g.log.last()
+        );
+    }
+
+    #[test]
+    fn production_scout_prefers_a_high_reveal_frontier_to_the_nearest_fog() {
+        let mut g = Game::new_full(1, 32, 20, 38_002, 30, 0, false);
+        g.units.clear();
+        let (origin, nearest, distant) = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            .find_map(|(origin, _)| {
+                let nearest = g
+                    .nbrs(*origin)
+                    .into_iter()
+                    .find(|pos| {
+                        g.map
+                            .get(*pos)
+                            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                    })?;
+                let distant = g
+                    .wdisk(*origin, 5)
+                    .into_iter()
+                    .filter(|pos| g.wdist(*origin, *pos) == 5)
+                    .find(|pos| {
+                        g.map
+                            .get(*pos)
+                            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                            && g.wdist(nearest, *pos) > 3
+                    })?;
+                Some((*origin, nearest, distant))
+            })
+            .expect("fixture needs a land route with a distant frontier");
+        let scout = g.spawn_test_unit("scout", 0, origin);
+        g.players[0].explored.extend(g.map.tiles.keys().copied());
+        // One nearby fog tile reproduces the old greedy target.  The other
+        // opening is a broad, distant frontier: a Scout standing there will
+        // expose far more unknown ground and is therefore more likely to make
+        // a first contact instead of repeatedly tracing its local perimeter.
+        g.players[0].explored.remove(&nearest);
+        for pos in g.wdisk(distant, g.unit_sight(scout)) {
+            assert!(
+                g.wdist(origin, pos) > 1,
+                "the broad frontier must not create a second nearest target"
+            );
+            g.players[0].explored.remove(&pos);
+        }
+
+        let frozen = BasicAi::new();
+        assert_eq!(
+            frozen.exploration_goal(&g, 0, scout, true),
+            Some(nearest),
+            "the frozen controller retains the historical nearest-fog rule"
+        );
+
+        let mut production = BasicAi::new();
+        production.tactical_strategy = true;
+        let target = production
+            .exploration_goal(&g, 0, scout, true)
+            .expect("the broad frontier is a legal scouting goal");
+        assert!(
+            g.wdist(origin, target) > g.wdist(origin, nearest)
+                && BasicAi::frontier_reveal_value(&g, 0, scout, target)
+                    > BasicAi::frontier_reveal_value(&g, 0, scout, nearest),
+            "production should trade a one-hex detour for more unexplored ground"
+        );
+
+        assert!(production.military_step(&mut g, 0, scout));
+        assert!(
+            g.wdist(g.units[&scout].pos, target) < g.wdist(origin, target),
+            "the selected high-reveal frontier must drive the Scout's actual move"
         );
     }
 

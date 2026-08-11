@@ -25,7 +25,14 @@ fn add_city_state(game: &mut Game, name: &str) -> usize {
 }
 
 fn make_suzerain(game: &mut Game, leader: usize, minor: usize) {
-    game.players[leader].envoys.push((minor, 3));
+    match game.players[leader]
+        .envoys
+        .iter_mut()
+        .find(|(city_state, _)| *city_state == minor)
+    {
+        Some((_, count)) => *count = 3,
+        None => game.players[leader].envoys.push((minor, 3)),
+    }
 }
 
 fn install_alliance(game: &mut Game, first: usize, second: usize, kind: &str, level: i32) {
@@ -1141,6 +1148,9 @@ fn leading_sent_envoys_expand_borders_and_strengthen_the_city_state() {
     let initial_tiles = game.cities[&minor_city].owned_tiles.len();
     game.record_contact(0, minor);
     game.record_contact(1, minor);
+    // The border-growth scenario starts from deliberate sends only.
+    game.players[0].envoys.clear();
+    game.players[1].envoys.clear();
 
     game.players[0].envoys_free = 2;
     game.do_send_envoy(0, minor).unwrap();

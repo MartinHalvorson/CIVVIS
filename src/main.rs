@@ -936,7 +936,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// original stand-down condition without it — asserted in
 /// `the_repair_bundle_cannot_reach_the_frozen_anchor`, which this
 /// change extends. Compatibility re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe7d5_f787_2bde_ce04;
+/// ⚠ **First city-state discovery is NOT a free re-pin.** The production
+/// Scout's high-information frontier chooser is guarded by `tactical_strategy`,
+/// which `AdvancedAi::legacy()` leaves off, but the corresponding first-contact
+/// Envoy is a `Game` rule. Any controller can earn it by seeing a city-state,
+/// so its influence thresholds and downstream choices differ in a native game.
+/// `ELO_PROTOCOL_VERSION` is bumped to 8; the source contract is re-pinned for
+/// the separately reviewed, legacy-gated Scout source edit.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x287f_b10b_d240_7e31;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
