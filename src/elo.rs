@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 130] = [
+pub const EVAL_ONLY_AIS: [&str; 132] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -150,6 +150,8 @@ pub const EVAL_ONLY_AIS: [&str; 130] = [
     "advanced_fortify_idle_units",
     "advanced_without_unpriced_economy",
     "advanced_without_unpriced_war",
+    "advanced_without_city_defence",
+    "advanced_without_unit_tactics",
     "advanced_league_top",
     "advanced_joint_tactics",
     "strategic_cheap",
@@ -469,6 +471,8 @@ define_arm_kinds! {
     AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
     AdvancedWithoutUnpricedEconomy => "advanced_without_unpriced_economy",
     AdvancedWithoutUnpricedWar => "advanced_without_unpriced_war",
+    AdvancedWithoutCityDefence => "advanced_without_city_defence",
+    AdvancedWithoutUnitTactics => "advanced_without_unit_tactics",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
@@ -2656,6 +2660,30 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_amenity_districts();
             Box::new(ai)
         }
+        // The two quarters of the war half.
+        //
+        // Withholding all four measured **+32 and +34 Elo** on two disjoint
+        // seeds at the exhibition's configuration (e-process crossed at map
+        // 134), and **+13, p=0.4671** on the promotion matrix's three-victory
+        // `deployment-online`, which rejected it. A group's number is not its
+        // members' — `city_target_floor` (-41) and `settler_commit` (+30) sat
+        // in the same constructor — so one of these quarters may carry the
+        // effect on both profiles where the whole cannot.
+        //
+        // Split on what the flag governs: the city's own defence against the
+        // individual unit's behaviour.
+        "advanced_without_city_defence" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_siege_muster();
+            ai.disable_home_defense();
+            Box::new(ai)
+        }
+        "advanced_without_unit_tactics" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_tactical_strategy();
+            ai.disable_unit_objective_memory();
+            Box::new(ai)
+        }
         "advanced_without_unpriced_war" => {
             let mut ai = AdvancedAi::new();
             ai.disable_siege_muster();
@@ -3786,6 +3814,8 @@ impl ArmKind {
             Self::AdvancedFortifyIdleUnits => &["fortify-idle-units"],
             Self::AdvancedWithoutUnpricedEconomy => &["unpriced-economy-half-withheld"],
             Self::AdvancedWithoutUnpricedWar => &["unpriced-war-half-withheld"],
+            Self::AdvancedWithoutCityDefence => &["city-defence-quarter-withheld"],
+            Self::AdvancedWithoutUnitTactics => &["unit-tactics-quarter-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -4314,6 +4344,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
         "advanced_without_unpriced_economy" => (Vec::new(), "advanced_without_unpriced_economy"),
         "advanced_without_unpriced_war" => (Vec::new(), "advanced_without_unpriced_war"),
+        "advanced_without_city_defence" => (Vec::new(), "advanced_without_city_defence"),
+        "advanced_without_unit_tactics" => (Vec::new(), "advanced_without_unit_tactics"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -5523,7 +5555,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 99] = [
+            const SCRIPTED: [&str; 101] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5591,6 +5623,8 @@ mod tests {
                 "advanced_fortify_idle_units",
                 "advanced_without_unpriced_economy",
                 "advanced_without_unpriced_war",
+                "advanced_without_city_defence",
+                "advanced_without_unit_tactics",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",
