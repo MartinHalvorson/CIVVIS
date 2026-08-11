@@ -13870,6 +13870,53 @@ impl AdvancedAi {
         }
     }
 
+    /// Which of the eight production category genes scales this candidate.
+    ///
+    /// The four specialist civilians and the two housekeeping items return the
+    /// identity and are left exactly as the hand-written arms scored them.
+    /// Each of those is gated by its own precondition — a spy needs a target,
+    /// a missionary needs a religion, a Repair needs damage — rather than
+    /// ranked against the field, so a category appetite is the wrong knob for
+    /// them and would only add search dimensions that cannot pay.
+    fn production_category_gene(&self, item: &Item) -> f64 {
+        let w = &self.base.w;
+        match item {
+            // ★★★★ THE SETTLER'S PRICE IS NOT A LIVE CONTROL SURFACE, so it
+            // gets no gene. `gene_census --gene p_settler --games 96
+            // --start-seed 93500000` left **97% of games outcome-identical**
+            // with the settler scored at four times its shipped value, against
+            // 30% for `p_building` on the same seeds and the same probe. A
+            // gene that cannot change an outcome cannot be selected on, and
+            // breeding on it spends budget to measure nothing.
+            //
+            // That is `docs/EVAL.md` 2026-07-28 reached from the valuation
+            // side. Production preemption was a null there for the same
+            // reason: the settler is not blocked by losing a ranking, it is
+            // blocked before the ranking is consulted — "no city at pop 2" on
+            // 23.8% of seat-turns, a growth constraint no price can buy past.
+            // It is also why `settler_price` and the 920 literal it scales are
+            // an argument about a knob that barely connects; `settler_price`
+            // stays as the evaluator arm it always was.
+            Item::Unit { unit } if unit == "settler" => 1.0,
+            Item::Unit { unit } if unit == "builder" => w.p_builder,
+            Item::Unit { unit } if unit == "trader" => w.p_trader,
+            Item::Unit { unit }
+                if unit == "spy"
+                    || unit == "missionary"
+                    || unit == "archaeologist"
+                    || unit == "military_engineer" =>
+            {
+                1.0
+            }
+            Item::Unit { .. } | Item::Formation { .. } => w.p_military,
+            Item::Building { .. } => w.p_building,
+            Item::District { .. } => w.p_district,
+            Item::Wonder { .. } => w.p_wonder,
+            Item::Project { .. } => w.p_project,
+            _ => 1.0,
+        }
+    }
+
     fn production_value(
         &self,
         g: &Game,
@@ -14882,6 +14929,16 @@ impl AdvancedAi {
         if raw <= -9_999.0 {
             return raw;
         }
+        // The one line that puts the build order inside the search surface.
+        // Applied AFTER the refusal sentinel above, so a gene can tilt what
+        // the city wants and never argue with what it may not build; and only
+        // on a positive score, so scaling can never turn a penalty into an
+        // attraction by shrinking it.
+        let raw = if raw > 0.0 {
+            raw * self.production_category_gene(item)
+        } else {
+            raw
+        };
         if turns > remaining_turns + 1.0 {
             return -1_500.0;
         }

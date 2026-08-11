@@ -950,6 +950,52 @@ pub struct Weights {
     /// Fraction by which a challenger must beat the incumbent to take its
     /// slot. Zero re-shuffles the deck on noise; one never swaps at all.
     pub pol_swap_margin: f64,
+    /// ★★★★★ WHAT EVERY CITY BUILDS, EVERY TURN, WAS OUTSIDE THE SEARCH.
+    ///
+    /// `AdvancedAi::production_value` is 1,014 lines that rank every candidate
+    /// build. Measured on the body of that function: **291 numeric literals,
+    /// 93 of them distinct, and zero reads of this struct.** The genome is 40
+    /// genes wide and not one of them reached the production decision. So no
+    /// run of `evolve` has ever tuned a build priority, the macro search has
+    /// never perturbed one, and every change to that ranking has had to be a
+    /// hand-picked constant defended in prose.
+    ///
+    /// The tree already says this about one of the 93. `settler_price` exists
+    /// because the settler arm scores `920.0 + site_value * 4.0` and *"920 is
+    /// a hardcoded literal: not a gene, so no run of `evolve` has tuned it,
+    /// and not a doctrine lever, so the macro search has never perturbed it."*
+    /// That complaint is true of ninety-two more constants beside it, and
+    /// `docs/AI_GAPS.md` §6 names the general form: the search surface is
+    /// narrower than the policy.
+    ///
+    /// These eight are category multipliers on the final score of each
+    /// production arm, in the same currency the arm already returns. They are
+    /// deliberately coarse: the goal is to put the *shape* of the build order
+    /// inside the search surface, not to expose 93 free parameters to a GA
+    /// whose fitness estimate is already noisy.
+    ///
+    /// ⚠ **1.0 each by default, which is the shipped behaviour exactly.**
+    /// Multiplication by 1.0 is exact in IEEE-754 for every finite score, so a
+    /// default genome ranks builds bit-identically to before. That matters
+    /// more here than usual: `Weights::default()` also seeds `BasicAi::new()`,
+    /// which is city-states, barbarians, the `basic` entrant and
+    /// `AdvancedAi::legacy()` behind the frozen `advanced_v1` anchor.
+    ///
+    /// ⚠⚠ A gene that changes nothing is worse than no gene, because it
+    /// spends GA budget and reports a tuned parameter that never moved a game.
+    /// This repository has shipped silent genes before — §6 again: *"causal
+    /// probes have found multiple parameters that do not change the sampled
+    /// `AdvancedAi` games"*. Every one of these eight is therefore held to
+    /// `production_genes_are_not_silent`, which perturbs each in isolation and
+    /// fails if the build order does not move.
+    /// Combat units, including escorted `Formation` bodies.
+    pub p_military: f64,
+    pub p_builder: f64,
+    pub p_trader: f64,
+    pub p_building: f64,
+    pub p_district: f64,
+    pub p_wonder: f64,
+    pub p_project: f64,
     /// Which deck this strategy holds.
     ///
     /// **Not a gene.** Deliberately absent from `to_vec`/`from_vec`/`bounds`,
@@ -1123,6 +1169,19 @@ impl Default for Weights {
             pol_military: 0.05,
             pol_influence: 0.0,
             pol_swap_margin: 0.15,
+            // Identity. Every production arm is multiplied by its category
+            // gene, and multiplying a finite score by exactly 1.0 is exact, so
+            // a default genome ranks builds bit-identically to the tree before
+            // these existed. `BasicAi::new()` and `AdvancedAi::legacy()` read
+            // this default, so anything other than 1.0 here would move a
+            // frozen anchor and every minor civilization with it.
+            p_military: 1.0,
+            p_builder: 1.0,
+            p_trader: 1.0,
+            p_building: 1.0,
+            p_district: 1.0,
+            p_wonder: 1.0,
+            p_project: 1.0,
             // LEGACY, not Live. The counterfactual deck is a measured null:
             // 18 map directions to 15, p=0.7283 over 120 mirrored maps, with
             // terminal score also flat. It costs an empire valuation per
@@ -1180,6 +1239,13 @@ impl Weights {
             self.local_superiority,
             self.withdraw_hp,
             self.rejoin_hp,
+            self.p_military,
+            self.p_builder,
+            self.p_trader,
+            self.p_building,
+            self.p_district,
+            self.p_wonder,
+            self.p_project,
         ]
     }
 
@@ -1225,6 +1291,13 @@ impl Weights {
             local_superiority: v[37],
             withdraw_hp: v[38],
             rejoin_hp: v[39],
+            p_military: v[40],
+            p_builder: v[41],
+            p_trader: v[42],
+            p_building: v[43],
+            p_district: v[44],
+            p_wonder: v[45],
+            p_project: v[46],
             // The policy appetites are NOT genes. Measured on the statistic
             // that tracks winning, scrambling the whole policy block costs
             // +0.0006 +/- 0.0229 -- flat. Carrying eight worthless dimensions
@@ -1261,7 +1334,7 @@ impl Weights {
     }
 
     /// (lo, hi) clamp per gene, same order as to_vec.
-    pub fn bounds() -> [(f64, f64); 40] {
+    pub fn bounds() -> [(f64, f64); 47] {
         [
             (2.0, 12.0),
             (1.0, 5.0),
@@ -1303,6 +1376,19 @@ impl Weights {
             (0.0, 16.0),
             (20.0, 65.0),
             (60.0, 100.0),
+            // The eight production category multipliers. The band is
+            // deliberately narrow and centred on the identity: these scale a
+            // ranking whose arms already differ by thousands, so a wide band
+            // would let one category dominate the order outright rather than
+            // tilt it, and the shipped constants are a working build order
+            // rather than an arbitrary starting point.
+            (0.25, 4.0),
+            (0.25, 4.0),
+            (0.25, 4.0),
+            (0.25, 4.0),
+            (0.25, 4.0),
+            (0.25, 4.0),
+            (0.25, 4.0),
         ]
     }
 
@@ -1311,7 +1397,7 @@ impl Weights {
     /// A search that reports per-gene results has to name them, and deriving
     /// the name from the index by hand is how a table ends up mislabelled by
     /// one row. `gene_names_match_the_vector` pins the length.
-    pub fn gene_names() -> [&'static str; 40] {
+    pub fn gene_names() -> [&'static str; 47] {
         [
             "city_target",
             "settler_min_pop",
@@ -1353,6 +1439,13 @@ impl Weights {
             "local_superiority",
             "withdraw_hp",
             "rejoin_hp",
+            "p_military",
+            "p_builder",
+            "p_trader",
+            "p_building",
+            "p_district",
+            "p_wonder",
+            "p_project",
         ]
     }
 }
