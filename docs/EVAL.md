@@ -9085,3 +9085,40 @@ configuration the exhibition plays, a null on the gate's configuration, and
 **off**. Anyone re-opening it should either change the gate's victory set with
 its own justification, or accept that a conquest-adjacent treatment cannot pass a
 gate that over-weights conquest.
+
+
+## 2026-08-11 — ★★★ bisecting the war half on the profile that rejected it
+
+The war half is +32/+34 at the exhibition's configuration and **+13, p=0.4671**
+on the gate's `deployment-online`, which rejected it. A group's number is not
+its members', so the question is whether one of its four flags is significant
+**on the gate's own profile** rather than only on the one that flatters it.
+
+Both quarters run at exactly the matrix's `deployment-online` configuration —
+6p 74x46, 9 city-states, Online, 250 turns, continents/planet/poles,
+randomized civs, **victories science,culture,domination** — 400 pairs:
+
+| quarter | flags | score | Elo | direction | sign p |
+|---|---|---|---|---|---|
+| **city defence** | `siege_muster`, `home_defense` | **53.1%** | **+21** | **105/71** | **0.0126** |
+| unit tactics | `tactical_strategy`, `unit_objective_memory` | 51.6% | +11 | 106/91 | 0.3185 |
+
+**Withholding the two city-defence flags is significant on the very profile that
+rejected the whole half.** The unit-tactics pair is not, and its terminal-score
+column is flat too (193/207, p=0.5157). Splitting a treatment that failed the
+gate found the half of it that does not.
+
+⚠ **This is a selected result and must be treated as one.** Two quarters were
+tested and the significant one is being carried forward; at two comparisons a
+p=0.0126 is worth roughly p=0.025, still small but no longer what it looks like.
+The correct answer to a selection effect is a fresh seed, and the promotion
+matrix on seed 11700000 supplies exactly that — it is simultaneously the gate
+and the confirmation. **Nothing changes until it answers.**
+
+That the tactics half is the inert one is also the expected direction rather
+than a surprise: `tactical_strategy` and `unit_objective_memory` govern how
+individual units behave, and the motion-symptom family closed with a resolved
+null showing unit-level behaviour does not convert here (#1533). `siege_muster`
+and `home_defense` govern how much of the empire's production is diverted to
+garrisoning and mustering, which is a claim on the same budget that builds the
+lanes that win.
