@@ -8782,3 +8782,56 @@ At the correct layer the arm fires on **6 of 40** maps, which matches the audit'
 frequency: this is a real but low-rate event, so it needs sample size rather than
 enthusiasm. A 400-map run at the deployment shape is in flight; the number
 follows.
+
+### The number, and why it does not promote
+
+```
+ai_eval advanced_settler_founds_when_stalled advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 10200000
+
+  paired-map score 50.7% (95% Wilson CI 45.9%..55.6%)   Elo-equivalent +5 (CI -29..+39)
+  paired direction 10 for / 386 neutral / 4 against     sign p = 0.1796
+  terminal score   57 for / 313 neutral / 30 against    sign p = 0.0050 (SIGNIFICANT for the fix)
+```
+
+**Significant on development, unresolved on wins.** The repair does what it was
+built to do — a settler that would have idled to the end of the game plants a
+city, and the empire is measurably larger for it — and the win column cannot
+say whether that matters.
+
+The reason is in the neutral count. **386 of 400 maps are untouched**, because
+the defect is rare: eight idle settlers across eight games, and only some of
+those games hinge on the city. Fourteen discordant maps cannot resolve a small
+effect no matter how the arithmetic is arranged. Reaching a hundred discordant
+maps means roughly **2,800 maps**, seven times this run.
+
+### ⚠ It stays off, and the reason is this document's own lesson
+
+The temptation is to ship on p=0.0050. That is precisely the mistake the audit
+was built to find: `city_target_floor` bought **+2.1 cities, +20 population and
++62 terminal score** and cost **41 Elo of wins**, and the eight-flag composite
+buys development while being null on wins. **A component selected on development
+is how this agent acquired a forty-one-Elo liability**, and a second one would
+not be improved by being smaller.
+
+So the honest statement is narrow and worth having:
+
+> The idle-settler defect is real, visually dramatic — two hundred turns of a
+> unit standing on ground it could settle — and **too rare to move a win rate at
+> any sample size this repository can afford.** The repair is correct, it is
+> registered, and it is off.
+
+⚠ Nothing here says the defect should not be fixed. It says the fix cannot be
+*promoted on wins*, which is the only currency this file promotes in. If the
+event rate were raised — a shorter `SETTLER_STALL_LIMIT` fires more often — the
+win effect might resolve, but that is a different treatment with its own risk of
+settling too early, and it would need its own number rather than inheriting this
+one.
+
+### What the attempt establishes regardless
+
+`audit`'s soft-symptom output is a working generator of actuation defects, and
+it named this one without being asked. The lesson for the next reader is the
+pairing: **a defect's drama and its Elo are unrelated quantities.** Two hundred
+idle turns looks like the worst thing in the log and is worth, as far as 400
+maps can tell, about five Elo.
