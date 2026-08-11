@@ -1188,7 +1188,16 @@ impl Default for Weights {
             p_district: 1.0,
             p_wonder: 1.0,
             p_project: 1.0,
-            // LEGACY, not Live. The counterfactual deck is a measured null:
+            // LEGACY, not Live — **for this default only**. ⚠ The shipped
+            // agent does NOT play it: `AdvancedAi::production_weights`
+            // overwrites this with `PolicyDeck::Live` for everything
+            // `AdvancedAi::new()` builds. The sentence below about "the agent
+            // that plays" describes `basic`, `advanced_v1` and any holder of
+            // these raw weights, and stopped describing production when that
+            // constructor was written. Withhold it with
+            // `advanced_legacy_policy_deck` to price the difference.
+            //
+            // The counterfactual deck is a measured null:
             // 18 map directions to 15, p=0.7283 over 120 mirrored maps, with
             // terminal score also flat. It costs an empire valuation per
             // candidate card per review, so shipping it would buy a real
