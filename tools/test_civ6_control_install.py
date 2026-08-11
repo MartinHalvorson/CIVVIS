@@ -175,6 +175,31 @@ class ProtectedInstallTest(unittest.TestCase):
             "the blank refusal must not come back",
         )
 
+    def test_a_refused_district_names_the_plots_the_engine_offered(self) -> None:
+        """`offered` proves a district is placeable here and never says WHERE.
+
+        `productionPlot` asks the engine for every plot it would accept, reads x
+        and y off each, and kept only the count. So CIVVIS goes on naming the
+        plot the engine refuses: run `civvis-20260811T212652Z` recorded 56
+        `build_no_plot` events in 232 turns and **55 were one pair** — a single
+        Commercial Hub in one city, with plots offered every time.
+
+        #1571 bounds how often that repeats. Only the coordinates can end it.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+        self.assertIn("offeredPlots[#offeredPlots + 1] = { x = px, y = py };", source)
+        self.assertIn("offered_plots = offeredPlots,", source)
+
+        # ⚠ Capped: this rides in an event on every refusal and a large city can
+        # offer many plots.
+        self.assertIn("if #offeredPlots < (cfg.OfferedPlotsReported or 8) then", source)
+
+        # ⚠ The wonder call site destructures two values and must keep working;
+        # Lua discards extra returns, so it is left alone deliberately.
+        self.assertIn("local where, offered = productionPlot(city,", source)
+        self.assertIn("where, offered, offeredPlots = productionPlot(city,", source)
+
     def test_military_emergency_popup_uses_firaxis_pass_path(self) -> None:
         modinfo = (install.MOD_SOURCE / "CivvisControl.modinfo").read_text()
         closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
