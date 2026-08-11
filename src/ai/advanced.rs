@@ -32705,6 +32705,9 @@ mod tests {
         for city_state in minors.iter().copied() {
             game.record_contact(0, city_state);
         }
+        // Keep the score test's influence table explicit; contact itself may
+        // have awarded the first-discovery Envoy.
+        game.players[0].envoys.clear();
         game.players[minors[0]].civ = "Kandy".to_string();
         game.players[minors[1]].civ = "Yerevan".to_string();
         game.players[0].envoys_free = 1;
@@ -32748,6 +32751,8 @@ mod tests {
         game.players[hidden].civ = "Yerevan".to_string();
         game.players[known].civ = "Kandy".to_string();
         game.record_contact(0, known);
+        // This fixture checks identity gating, not the first-discovery award.
+        game.players[0].envoys.clear();
         game.players[0].envoys_free = 1;
 
         // Yerevan has the higher Religion score. Ranking it before contact

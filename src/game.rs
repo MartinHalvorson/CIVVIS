@@ -7869,6 +7869,9 @@ mod envoy_contact_tests {
             game.players[player].met.clear();
         }
         game.record_contact(0, known);
+        // Keep this legality fixture independent of the automatic Envoy for
+        // first discovering the known city-state.
+        game.players[0].envoys.clear();
         game.players[0].envoys_free = 1;
 
         assert!(!game.can_send_envoy(0, hidden));
@@ -20815,15 +20818,44 @@ impl Game {
         // Reaching for a seat mutably copies it, so ask before taking.
         // MOMENT_PLAYER_MET_MAJOR is +1 to each side, and completing the table
         // is MOMENT_PLAYER_MET_ALL_MAJORS at +3, or +5 first in the world.
-        let major = |pid: usize| {
-            self.players
-                .get(pid)
-                .is_some_and(|player| !player.is_minor && !player.is_barbarian)
+        let major = |player: &Player| !player.is_minor && !player.is_barbarian;
+        let living_major = |player: &Player| {
+            player.alive && !player.is_minor && !player.is_barbarian && !player.is_free_city
         };
-        let between_majors = major(first) && major(second);
+        let major_civilization =
+            |player: &Player| !player.is_minor && !player.is_barbarian && !player.is_free_city;
+        let city_state = |player: &Player| player.alive && player.is_minor && !player.is_barbarian;
+        let between_majors = self.players.get(first).is_some_and(major)
+            && self.players.get(second).is_some_and(major);
         for (observer, subject) in [(first, second), (second, first)] {
             if self.has_met(observer, subject) {
                 continue;
+            }
+            // Civilization VI grants the first major civilization to discover
+            // a city-state one Envoy *at that city-state*.  This is not an
+            // unallocated envoy stock: it is already the first point of
+            // influence, so the next deliberate send is no longer eligible
+            // for Diplomatic League's first-send bonus.
+            //
+            // Check only the durable contact ledger, not map positions or
+            // hidden state.  A city-state can be seen by several units in one
+            // action; the first insertion below wins deterministically and
+            // later sightings see that recorded contact.
+            let observer_is_major = self.players.get(observer).is_some_and(living_major);
+            let subject_is_city_state = self.players.get(subject).is_some_and(city_state);
+            if observer_is_major && subject_is_city_state {
+                let first_discovery = !self.players.iter().any(|other| {
+                    other.id != observer
+                        && major_civilization(other)
+                        && other.met.contains(&subject)
+                });
+                if first_discovery {
+                    let envoys = &mut self.players[observer].envoys;
+                    match envoys.iter_mut().find(|(minor, _)| *minor == subject) {
+                        Some((_, count)) => *count += 1,
+                        None => envoys.push((subject, 1)),
+                    }
+                }
             }
             self.players[observer].met.insert(subject);
             if between_majors {
@@ -61598,6 +61630,35 @@ mod visibility_tests {
             .unwrap()
             .iter()
             .any(|unit| unit["id"] == enemy));
+    }
+
+    #[test]
+    fn first_major_to_meet_a_city_state_receives_its_automatic_envoy() {
+        let mut game = Game::new_full(2, 28, 18, 91_031, 120, 1, false);
+        let city_state = game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .expect("the fixture seats one city-state");
+        let free_before = game.players[1].envoys_free;
+
+        game.record_contact(1, city_state);
+        assert_eq!(game.envoys_at(1, city_state), 1);
+        assert_eq!(
+            game.players[1].envoys_free, free_before,
+            "first discovery places the envoy at the city-state rather than adding a free stock"
+        );
+
+        // Discovery remains a world fact after the discoverer is eliminated;
+        // a later civilization does not become "first" retroactively.
+        game.players[1].alive = false;
+        game.record_contact(0, city_state);
+        assert_eq!(
+            game.envoys_at(0, city_state), 0,
+            "a later visitor must not receive the first-discovery envoy"
+        );
+        assert_eq!(game.envoys_at(1, city_state), 1);
     }
 
     #[test]

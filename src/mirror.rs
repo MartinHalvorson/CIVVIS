@@ -6162,7 +6162,27 @@ pub struct StateUnit {
     /// Present on the aggregate hostile export; ownership is implicit elsewhere.
     #[serde(default = "minus_one_i64")]
     pub player: i64,
-    /// Movement points left, as Civilization VI reports them this turn.
+    /// ⚠⚠⚠ NOT "movement available this turn", whatever it looks like. This is
+    /// `GetMovesRemaining` sampled at the instant the export is written, and that
+    /// instant is not the start of the seat's turn.
+    ///
+    /// It has now misled twice, in opposite directions, and both times the reader
+    /// believed the old one-line description of this field:
+    ///
+    /// - Feeding it into `moves_left` **silenced CIVVIS completely** — the export
+    ///   at the start of turn 31 of run `civvis-20260730T120107Z` had 7 of 8 units
+    ///   at `moves: 0`, so `advanced_units` broke on `moves_left <= 0.0` for
+    ///   almost every unit and logged 0 actions per turn. See the ★★★★★ note in
+    ///   the persistent-sync path, which takes the full allowance instead.
+    /// - **Joining it to refusal events by turn number produced a measurement that
+    ///   was simply false** and three merged PRs rested on it (#1548, #1550,
+    ///   #1552, corrected in #1557). It read `moves: 0` for builders that the mod
+    ///   recorded at 2–4 movement at the instant of the refusal.
+    ///
+    /// So: for "could this unit act *then*", read the value the mod puts in the
+    /// EVENT, taken at the point of the decision. For "what can it do *now*", use
+    /// [`mirror_unit_moves`]. This field is the raw export and answers neither
+    /// question on its own — keep it for fidelity checks and diagnostics.
     #[serde(default = "unknown_strength")]
     pub moves: f64,
     /// Exact host experience and promotion state. Option distinguishes an older
