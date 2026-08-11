@@ -153,6 +153,7 @@ local function try(fn, fallback)
 	return fallback;
 end
 
+
 -- --------------------------------------------------------------- action ids
 --
 -- Operations are looked up in GameInfo, not on the UnitOperationTypes table.
@@ -6836,6 +6837,48 @@ local function applyOrder(player, pid, row, turn)
 	-- the damage read is the fallback for the turn an attack has already landed.
 	-- This is an actuation guard, not a new target-selection policy.
 	--
+	-- ★★★★★ ASK THE ENGINE WHY A REFUSAL HAPPENED, DO NOT INFER IT.
+	--
+	-- Civilization VI will say, but only if asked exactly right: the fourth
+	-- argument is a BOOLEAN `bTestOnly`, the fifth is `OperationResultsTypes.ALL`
+	-- (not `true`), and the reasons live under
+	-- `UnitOperationResults.FAILURE_REASONS` rather than at the top level. Read
+	-- out of the shipped `UnitPanel.lua:630`.
+	--
+	-- ⚠⚠ THAT SIGNATURE WAS GUESSED WRONG TWICE and each guess cost a whole class
+	-- of diagnosis — every `found_refused` in the project's history read
+	-- `can_start=false` with no reasons, because the results table was never
+	-- populated. One copy now, so the next refusal that wants a cause inherits
+	-- the working call instead of guessing a third time.
+	--
+	-- `params` must be the SAME table the refused operation was given: a build
+	-- refused at a particular tile cannot be explained by asking about no tile.
+	-- The reasons are LOC keys and are localised, because an untranslated key
+	-- names the rule but not in words anyone reading the ledger would recognise.
+	-- Only ever called on a failure path, so a normal turn pays nothing.
+	--
+	-- Nested for the same reason `cityWarThreat` is: see below.
+	local function refusalReason(unit, operation, params)
+		local why = "unknown";
+		pcall(function()
+			local ok, results = UnitManager.CanStartOperation(
+				unit, operation, params, false, OperationResultsTypes.ALL);
+			if results ~= nil
+					and results[UnitOperationResults.FAILURE_REASONS] ~= nil then
+				local parts = {};
+				for _, key in ipairs(results[UnitOperationResults.FAILURE_REASONS]) do
+					parts[#parts + 1] =
+						try(function() return Locale.Lookup(key); end, tostring(key));
+				end
+				if #parts > 0 then why = table.concat(parts, " | "); end
+			end
+			if why == "unknown" and ok ~= nil then
+				why = "can_start=" .. tostring(ok) .. ",no_reasons";
+			end
+		end);
+		return why;
+	end
+
 	-- Keep this helper inside the order handler. A file-scope local consumes one
 	-- of the main chunk's 200 Lua registers; crossing that ceiling makes Civ 6
 	-- silently discard the entire mod before Initialize can emit a lifecycle event.
@@ -7924,24 +7967,7 @@ local function applyOrder(player, pid, row, turn)
 				-- ⚠ The reasons are LOC keys, so they are localised before emitting —
 				-- an untranslated key names the rule but not in words anyone reading
 				-- the ledger would recognise.
-				local why = "unknown";
-				pcall(function()
-					local ok, results = UnitManager.CanStartOperation(
-						unit, UnitOperationTypes.FOUND_CITY, nil, false,
-						OperationResultsTypes.ALL);
-					if results ~= nil
-							and results[UnitOperationResults.FAILURE_REASONS] ~= nil then
-						local parts = {};
-						for _, key in ipairs(results[UnitOperationResults.FAILURE_REASONS]) do
-							parts[#parts + 1] =
-								try(function() return Locale.Lookup(key); end, tostring(key));
-						end
-						if #parts > 0 then why = table.concat(parts, " | "); end
-					end
-					if why == "unknown" and ok ~= nil then
-						why = "can_start=" .. tostring(ok) .. ",no_reasons";
-					end
-				end);
+				local why = refusalReason(unit, UnitOperationTypes.FOUND_CITY, nil);
 				emit("found_refused", { turn = turn, unit = subject, why = why,
 				                        x = unit:GetX(), y = unit:GetY() });
 			else
@@ -8152,8 +8178,29 @@ local function applyOrder(player, pid, row, turn)
 			--
 			-- ⚠ The automation rung above can move the builder before this line runs,
 			-- so `unit:GetX()` is not even reliably where the refusal happened.
+			-- ★★★★★ AND SAY WHY, for the same reason `found_refused` does.
+			--
+			-- This is the most numerous refusal the ledger records — 72 across six
+			-- recent runs, 286 in one 250-turn game — and until now it named the
+			-- tile and nothing else. By the time it fires, three fallbacks have
+			-- already failed (the named improvement, then any improvement, then
+			-- automating the builder), so "this tile is dead" is established. What
+			-- was missing is the half that says WHOSE bug it is:
+			--
+			--   unowned tile          -> CIVVIS targeted ground it does not hold
+			--   already improved      -> the mirror is stale
+			--   no movement / charges -> an actuation defect, and one that has
+			--                            happened before, see
+			--                            `a-builder-with-no-movement-cannot-improve`
+			--
+			-- Those three demand different fixes and were indistinguishable in the
+			-- export. `params` is the table the refused operation was given, so the
+			-- engine is asked about the tile the ORDER named — the same distinction
+			-- the `x`/`y` note above exists to protect.
+			local why = refusalReason(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"],
+			                          params);
 			emit("improve_refused", { turn = turn, unit = subject,
-			                          want = wanted or "IMPROVE",
+			                          want = wanted or "IMPROVE", why = why,
 			                          x = params[UnitOperationTypes.PARAM_X],
 			                          y = params[UnitOperationTypes.PARAM_Y] });
 			return false, wanted or "IMPROVE";
