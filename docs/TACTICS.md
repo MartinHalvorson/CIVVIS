@@ -829,3 +829,63 @@ The broadside band itself is close to inert on the whole-battle result — three
 draws before and after — which is the expected shape: it separates four ships
 out of sixty. It is in because the scenario should describe the fleets
 correctly, not because it was expected to move a number.
+
+### Admirals, rated in stars (2026-08-11)
+
+Nine flag officers were present at Trafalgar and the scenario now carries all
+of them, on the ship each actually flew in, rated 2 to 5 stars.
+
+| admiral | ship | stars | on the board |
+| --- | --- | --- | --- |
+| Nelson, commander-in-chief | *Victory* | 5 | +1 movement, Fleet (+10 Strength) |
+| Collingwood, second in command | *Royal Sovereign* | 4 | +1 movement, Fleet |
+| Gravina, squadron of observation | *Príncipe de Asturias* | 4 | +1 movement, Fleet |
+| Northesk | *Britannia* | 3 | +1 movement |
+| Cisneros | *Santísima Trinidad* | 3 | +1 movement |
+| Álava | *Santa Ana* | 3 | +1 movement |
+| Magon | *Algésiras* | 3 | +1 movement |
+| Villeneuve, commander-in-chief | *Bucentaure* | 2 | +1 movement |
+| Dumanoir le Pelley, the van | *Formidable* | 2 | +1 movement |
+
+**Why a threshold rather than a bonus per star.** There were three British
+flags and six in the Combined Fleet, so anything paid out per flagship hands
+more of it to the larger, more admiral-heavy side — the opposite of what the
+feature exists to say. Paying only for admirals rated 4 or better gives
+Britain two and the Combined Fleet one, and the asymmetry then falls out of
+rating the men rather than out of a thumb on the scale.
+
+**The mechanism.** A Fleet (`formation` 1) is +10 Strength through
+`unit_formation_bonus`, which `unit_ranged_strength` includes — so it reaches a
+ship of the line's broadside. It costs a reinterpretation: a Fleet in the
+shipped rules is two ships merged, and `unit_production_cost` prices one at
+1.5x, so the three flagships weigh half again as much in a material ledger.
+
+**What was tried first.** The rating was originally spent on **flanking** —
+`flanking_bonus` pays +2 for every friendly ship adjacent to the target beyond
+the attacker, multiplied by the owner's naval flanking bonus, and the ruleset
+already ships Horatio Nelson as a Great Admiral at +50%. Cutting a line and
+doubling on what it isolates is Nelson's whole plan, so it looked like the
+right home. It cannot work here, for two independent reasons, both measured:
+
+1. `flanking_bonus` is only ever called from `do_attack`, the melee path.
+   Every ship here is a Frigate, which is `naval_ranged` and attacks through
+   `do_ranged` — which never consults it.
+2. The ships never close anyway. Over 120 turns played by the stock
+   controllers, **no ship was ever adjacent to two enemies**; the most any ship
+   ever had alongside was one. A unit that shoots from two tiles away has no
+   reason to come to contact, and does not.
+
+Worth keeping because it generalises: a mechanic that reads adjacency is
+unavailable to an all-ranged force, whatever the history says it should model.
+
+**Measured**, ten seeds a configuration, stock controllers, 100-turn clock:
+
+| | draws | Combined Fleet wins |
+| --- | --- | --- |
+| no admirals | 8 | 2 (turns 66, 98) |
+| admirals | **9** | **1** (turn 79) |
+
+Material on seed 1805: 25 against 12 without admirals, **20 against 12** with.
+Britain trades better and survives two seeds it previously lost, without the
+result swinging the other way — which is the size of effect wanted here after
+the rate experiment showed how easily a per-ship bonus overshoots.
