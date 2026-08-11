@@ -8659,3 +8659,66 @@ asserts both halves for all five defaults this session made withholdable.
 anchor. **On in `new()`** is what makes a withhold the only way to price them —
 an arm built as `new()` plus one of these is a byte-identical no-op, which is
 how three arms in `elo.rs` came to measure nothing.
+
+
+## 2026-08-11 — the always-on audit finishes, and a declared prediction fails
+
+### `battlefront_observation` — null
+
+```
+ai_eval advanced_without_battlefront_observation advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 9800000
+  paired-map score 49.1% (CI 44.3%..54.0%)  Elo -6 (CI -40..+28)  49/56  p=0.5584
+  terminal score 209 / 191  p=0.3954
+```
+
+That completes the base constructor. Of its three genuinely always-on and
+unpriced flags: `settlement_safety` **+31 Elo**, `deny_leaders` near-inert
+(370/400 maps unchanged), `battlefront_observation` null.
+
+### ★ The prediction, and its failure
+
+Three withholds had resolved the settling lane into *ambition costs, execution
+pays*. A story fitted to three results is worth little; a story that predicts a
+fourth is worth something. So the prediction was declared in the arm before the
+run: `city_target`, the flat gene the baseline governor caps on — the other
+"how many cities to want" knob, untouched by #1504 — **lowering it 4.0 → 3.0
+should be positive.**
+
+```
+ai_eval advanced_lower_city_target advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 9900000
+
+  paired-map score 47.6% (95% Wilson CI 42.8%..52.5%)   Elo-equivalent -17 (CI -51..+18)
+  paired direction 48 for / 285 neutral / 67 against    sign p = 0.0928
+  terminal score   164 / 236                            sign p = 0.0004 (SIGNIFICANT against)
+```
+
+**Wrong, and wrong in the predicted direction's opposite.** Not significant on
+wins at p=0.0928, significantly negative on development, and the point estimate
+is −17 where +something was declared.
+
+### What the three results actually support
+
+"Ambition costs" was too general and is withdrawn as stated. The four numbers
+together say something narrower and more useful:
+
+| knob | value | measured |
+|---|---|---|
+| `city_target_floor` | ramp starts at **6**, reaching 9 | **−41 Elo** |
+| `city_target` gene | flat cap at **4** | shipped value |
+| `city_target` gene | flat cap at **3** | **−17**, and −score at p=0.0004 |
+
+> **The empire has an executable city ceiling, the floor pushed the target well
+> above it, and the flat gene already sits at it.** Removing the excess paid 41
+> Elo. Cutting below the ceiling costs. Lower is not better; *matching what the
+> agent can actually execute* is better — which is the same statement as
+> `settler_commit` and `settlement_safety` paying about 30 each, since both
+> raise how much of an intended settlement actually completes.
+
+⚠ This is a post-hoc reading of four points and should be held loosely — but it
+is now a reading that survived one attempt to break it, which the previous
+version did not. **The value of the failed prediction is that it bounded the
+claim; had it come out positive it would only have flattered it.**
+
+`city_target` stays at 4.0. Nothing changes.
