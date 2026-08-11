@@ -9228,3 +9228,50 @@ presented the victory set as an open problem with the gate. It is an open
 was absent. The `d_holy` revert and the war-half REJECT both stand exactly as
 recorded — what changes is that neither is any longer an argument for altering
 the gate.
+
+### ★ The decisive run, and the stop
+
+The previous entry said 1,200 maps would be needed and that a fourth look must
+be decisive rather than another borderline p. It was decisive, in the direction
+that ends the lane rather than the one that ships it.
+
+```
+ai_eval advanced_without_city_defence advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories science,culture,domination
+  --map continents --shape planet --poles poles --randomize-civs --pairs 1200 --seed 12000000
+
+  paired-map score 52.1% (95% Wilson CI 49.2%..54.9%)   Elo-equivalent +14 (CI -5..+34)
+  paired direction 319 for / 629 neutral / 252 against  sign p = 0.0057
+  anytime-valid    e = 1.011e1, p <= 0.0989 — NOT crossed
+  terminal score   611 / 589                            sign p = 0.5444
+  promotion gate   INCONCLUSIVE after 1200 maps
+```
+
+**The effect is real and the effect size will not certify.** 571 discordant maps
+put the direction at p=0.0057, and the interval still spans parity because the
+estimate is small: **+14 Elo, and drifting down as the sample grows** — 53.1%
+selected, 52.2% on a fresh seed, 52.1% at 1,200 maps.
+
+Pooling everything on this profile, and excluding the selected screen so the
+selection bias does not carry: **428 for / 341 against over 1,600 maps, sign
+p = 0.0019.** Including it, 533/412 over 2,000, p = 9.3e-05. Either way the
+direction is not in doubt; either way the paired score sits at about 52.1%, whose
+interval needs roughly **2,200 maps** to exclude parity — another run half again
+as long as the one that took three hours here.
+
+### Stopping, as declared
+
+> Withholding `siege_muster` and `home_defense` is worth **about fourteen Elo**.
+> It is a real effect, it is too small for this repository's gate to certify at
+> a sample size worth spending, and it stays off.
+
+That is a different and better answer than "inconclusive". The lane has a
+number, an interval, a direction with p=0.0019 across disjoint seeds, and a
+stated price for certainty that nobody has to rediscover. Four looks at one
+family is already at the edge of what multiple comparisons tolerate, and a fifth
+chosen because the fourth was close is how a +14 becomes a +41 in the retelling.
+
+⚠ It is also worth naming what did **not** happen: the estimate never grew. Every
+addition of maps moved it down, which is the signature of a real-but-small effect
+rather than a large one waiting for resolution. A treatment whose estimate climbs
+with sample size deserves another run; this one does not.
