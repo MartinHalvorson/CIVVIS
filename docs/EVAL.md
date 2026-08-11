@@ -9030,3 +9030,58 @@ The promotion matrix at 400 pairs is running on seed 11200000. **Nothing changes
 until it answers**, and the 200-pair lesson from the floor applies — if it
 rejects on interval width rather than on evidence, the answer is more maps, not
 an argument.
+
+### ⚠⚠ Gate REJECT — and the isolation was already run
+
+```
+ai_eval advanced_without_unpriced_war advanced --matrix --pairs 400 --seed 11200000
+
+  compact-standard   (NoRegression)  53.6% (CI 48.7..58.4)  Elo +25  123/82  p=0.0051  ACCEPT
+  deployment-online  (Strength)      51.9% (CI 47.0..56.7)  Elo +13  100/89  p=0.4671  REJECT
+
+  multi-profile promotion gate: RETAIN advanced — cleared 1/2 required profiles
+```
+
+**Not shipped.** And unlike `city_target_floor`, this is **not** an
+interval-width artifact: `deployment-online`'s own *direction* is 100/89 at
+p=0.4671. More maps would not rescue it, because there is nothing there to
+resolve — the effect really is much smaller on that profile.
+
+### The isolation, which the earlier runs already performed
+
+The matrix's `deployment-online` is 6p 74x46, 9 city-states, Online, 250 turns —
+**identical to the two 400-map runs above except for one thing: it plays
+`science,culture,domination` where those played all six victories.**
+
+| profile | victories | maps | score | Elo | sign p |
+|---|---|---|---|---|---|
+| 6p 74x46, 9 CS, Online 250t | **all six** | 400 | 54.6% | +32 | **0.0039** |
+| 6p 74x46, 9 CS, Online 250t | **all six** | 400 | 54.9% | +34 | **0.0019** |
+| matrix `deployment-online` | **science, culture, domination** | 400 | 51.9% | +13 | 0.4671 |
+
+**Withholding the war flags is worth ~34 Elo when every victory is available and
+about 13 when only three are, one of which is domination.** That is coherent:
+strip out religion, diplomacy and score and domination goes from one route in
+six to one in three, so the military machinery this arm removes is worth
+correspondingly more. The treatment's value is a function of how much the
+profile rewards conquest, which is exactly the thing it touches.
+
+### ⚠ What I am not going to do
+
+Argue past the REJECT. #1504 shipped only after the matrix passed, and #1491
+reverted a change that had been promoted on a profile that flattered it — the
+mirror image of this situation, where the profile that flatters the treatment is
+the *deployment-faithful* one and the gate's is not.
+
+Both of those precedents point the same way here: **the gate is the gate.** The
+exhibition does run all six victories, which is a real argument that +34 is the
+deployment-relevant number, and it is not strong enough to override a REJECT on
+its own. What it justifies is raising the question about the gate's victory set
+as a *separate* matter, on its own evidence, rather than as an exception for one
+treatment that happens to want it.
+
+**Recorded state:** the war half is a replicated **+33 ± a few** on the
+configuration the exhibition plays, a null on the gate's configuration, and
+**off**. Anyone re-opening it should either change the gate's victory set with
+its own justification, or accept that a conquest-adjacent treatment cannot pass a
+gate that over-weights conquest.
