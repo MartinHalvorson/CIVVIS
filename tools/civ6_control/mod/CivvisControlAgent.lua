@@ -8273,10 +8273,81 @@ local function applyOrder(player, pid, row, turn)
 			-- export. `params` is the table the refused operation was given, so the
 			-- engine is asked about the tile the ORDER named — the same distinction
 			-- the `x`/`y` note above exists to protect.
+			-- ★★★★★ THE TWO GATES DISAGREE, SO SETTLE IT BY DOING IT.
+			--
+			-- Measured on run civvis-20260811T103914Z, 15 refusals out of 15, same
+			-- unit and params and instant:
+			--
+			--   canOperate     (unit, hash, nil, params)        -> FALSE  [gates]
+			--   refusalReason  (unit, hash, nil, params, ALL)   -> can_start=TRUE
+			--
+			-- Only `canOperate` decides whether the work is attempted, so if the
+			-- five-argument answer is the true one this harness has been refusing
+			-- improvements Civilization VI would have allowed, and then telling
+			-- CIVVIS the tile is DEAD — which blocks it in the planner, so the map
+			-- it plans from is being poisoned by a gate that is simply wrong.
+			--
+			-- No amount of reading settles which overload is right; this file has
+			-- been wrong three times doing exactly that. But the game will answer
+			-- if asked properly, and here it is free to ask: every fallback has
+			-- already failed and the next line declares the tile dead regardless.
+			-- So issue the operation UNGATED and read the only observable that
+			-- cannot lie about it — a Builder spends a CHARGE when an improvement
+			-- is placed. Charges down means it took.
+			--
+			-- ⚠ This does not weaken "never report an order as given unless the
+			-- engine accepted it". It strengthens it: `pcall` returning true only
+			-- means nothing raised, so acceptance is proven from the charge rather
+			-- than assumed. A refusal still costs nothing and still falls through.
+			local before = try(function() return unit:GetBuildCharges(); end, -1);
+			pcall(function()
+				UnitManager.RequestOperation(unit,
+					OP["UNITOPERATION_BUILD_IMPROVEMENT"], params);
+			end);
+			local after = try(function() return unit:GetBuildCharges(); end, -1);
+			if before > 0 and after >= 0 and after < before then
+				emit("improve_ungated", {
+					turn = turn, unit = subject, want = wanted or "IMPROVE",
+					charges_before = before, charges_after = after,
+					x = params[UnitOperationTypes.PARAM_X],
+					y = params[UnitOperationTypes.PARAM_Y],
+				});
+				-- Reported under its own name, never as CIVVIS's own IMPROVE: the
+				-- decision was CIVVIS's, the gate bypass was ours.
+				return true, (wanted or "IMPROVE") .. "_UNGATED";
+			end
 			local why = refusalReason(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"],
 			                          params);
+			-- ⚠⚠⚠ THE TWO FORMS OF THE SAME CALL DISAGREE, AND ONLY ONE OF THEM
+			-- GATES THE WORK.
+			--
+			-- First live run on #1542, `civvis-20260811T094304Z`: every one of the
+			-- thirteen refusals reads `can_start=true,no_reasons [p4r]`. The engine
+			-- says the operation CAN start, at the exact moment we tell CIVVIS the
+			-- tile is dead — and that event blocks the tile in its planner, so a
+			-- wrong one poisons the map it plans from.
+			--
+			-- But the probe and the gate are not the same call:
+			--
+			--   canOperate     CanStartOperation(unit, hash, nil, params)
+			--   refusalReason  CanStartOperation(unit, hash, nil, params, ALL)
+			--
+			-- `operate` only reaches `RequestOperation` when `canOperate` returns
+			-- true, so reaching this line means the 4-arg form said FALSE while the
+			-- 5-arg form says TRUE. Either the results argument changes what the
+			-- engine tests, or the gate under-reports and this harness has been
+			-- refusing improvements Civilization VI would have allowed.
+			--
+			-- ⚠ I am not claiming which. This file has been wrong three times by
+			-- reasoning about an overload instead of measuring it, so record BOTH
+			-- answers side by side and let the next live run say. No behaviour
+			-- changes here: `can_operate` is read after every attempt has already
+			-- failed, and is only written down.
 			emit("improve_refused", { turn = turn, unit = subject,
 			                          want = wanted or "IMPROVE", why = why,
+			                          can_operate = canOperate(unit,
+			                              OP["UNITOPERATION_BUILD_IMPROVEMENT"],
+			                              params),
 			                          x = params[UnitOperationTypes.PARAM_X],
 			                          y = params[UnitOperationTypes.PARAM_Y] });
 			return false, wanted or "IMPROVE";
