@@ -635,3 +635,80 @@ the bundles from drifting apart:
 `engine_repairs_are_the_live_bridge_minus_the_firaxis_semantics` asserts the
 flag-level partition and `engine_repair_tags_partition_the_bridge` asserts it
 for the tag lists `differing_axes` reports.
+
+
+## 2026-08-11 what the production controller is now known to be worth, flag by flag
+
+`AdvancedAi::new()` routes through `promoted_policy_envoy`, which turns on
+thirteen behaviours, and `configured` turns on ten more for every non-`legacy`
+agent. Before this audit, **all twenty-three shared one composite number**
+between them — the 2026-08-01 promotion. That is the condition that let a
+component costing forty-one Elo ship and sit unnoticed for ten days.
+
+Each was priced by **withholding** it and running the paired evaluator at the
+deployment shape. The table is the current state; `docs/EVAL.md` has the runs.
+
+| flag | measured | status |
+|---|---|---|
+| `city_target_floor = 6` | **−41 Elo** (matrix PASS, 400 pairs, seed 8600000) | **REMOVED** #1504 |
+| `settlement_safety` | **+31 Elo** (65/101, p=0.0064) | keep, now measured |
+| `settler_commit` | **+30 Elo** (60/95, p=0.0061) | keep, now measured |
+| the four war flags together | +32 / +34 at all-six victories; **+13, p=0.47 on the gate** | gate REJECT, off |
+| ├ `siege_muster` + `home_defense` | +21 selected → **+15, p=0.18 fresh** | gate REJECT, off |
+| └ `tactical_strategy` + `unit_objective_memory` | +11, p=0.32 | null |
+| `plan_city_target` | null (64/64, p=1.0000) | keep |
+| `bounded_recovery` | null over 600 maps, two seeds | keep |
+| `envoy_infrastructure` | null at 800 games | off |
+| `deny_leaders` | near-inert — **370 of 400 maps unchanged** | keep |
+| `battlefront_observation` | null (49/56, p=0.5584) | keep |
+| the four economy flags together | null (79/87, p=0.5871) | keep |
+
+**Two of twenty-three were worth measuring and one was actively harmful.** The
+rest are nulls or near-inert. That is the honest shape of this controller: it is
+not a stack of small wins, it is a stack of small nothings with one liability in
+it, and the liability was found only because every part was priced separately.
+
+### The four traps this audit walked into, so the next reader does not
+
+1. **`AdvancedAi::new()` plus a flag is usually a no-op.** The constructor
+   already sets most of them, so an "add" arm is byte-identical to the control
+   and reports a clean, meaningless null. **Withhold, never add.** Three arms in
+   `elo.rs` had this defect and now fail closed as self-play.
+2. **`ai_eval --city-states` defaults to zero.** Any arm acting through minors —
+   envoys, influence, suzerainty, the Diplomacy lane — measures nothing on the
+   stock profile. `ai_eval` now warns; the promotion matrix does seat them.
+3. **`ai_eval`'s defaults are not the deployment, and can flip an effect's
+   sign.** `d_holy` measured +20 Elo at 4p 24x16 and parity at the shape the
+   exhibition runs; it shipped and was reverted the same day. Gate on the
+   deployment shape from the first run, or name the profile in the claim.
+4. **A composite gate licenses the composite, never its parts.** The eight-flag
+   remainder read +9 net and contained a +32 war half offset by a −7 economy
+   half. Bisect before concluding a group is inert.
+
+### What the audit says about where strength is not
+
+Every motion symptom `audit` reports was chased and none converted: a settler
+idling two hundred turns on foundable ground (~5 Elo, unresolvable), ninety-four
+circling warriors (1.21% of unit-turns), and an army standing unfortified on
+7.73% of unit-turns declining a free +6 defensive strength (**−2 Elo, resolved
+null over 72 discordant maps**). **`audit` is an excellent defect detector and a
+poor value estimator** — a large symptom is a reason to look, never a reason to
+expect Elo.
+
+The same holds for the genome. Eight of its forty genes cannot change a game at
+all (`src/bin/gene_census.rs`), the roster's winners are worse than the
+incumbent when copied (−22 Elo), and `docs/GENOME.md`'s conclusion stands: no
+parameter tune has ever promoted. **The only gain in this audit came from
+deleting work, not adding or re-weighting it.**
+
+### ⚠ One open question the audit raised and cannot settle itself
+
+The promotion matrix runs **three of six victory conditions**
+(`science,culture,domination`, hard-coded since #658), so religious, diplomatic
+and score victories are invisible to it. That is defensible as variance
+reduction — religion ends most games early on the default profile — but it has
+now produced two divergences from the deployment configuration in opposite
+directions: it would have rejected `d_holy`'s religion-routed gain, and it did
+reject a war-flag withhold worth +34 where the exhibition plays. Whether the gate
+should carry an all-victories profile is a question for its own evidence, not
+for whichever treatment happens to want it.
