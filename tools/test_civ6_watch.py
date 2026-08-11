@@ -103,11 +103,24 @@ class FakeTail:
 def _follow(batches, **kw):
     # `env.game_pids()` is consulted every pass and must look alive, or the loop
     # returns "game exited" before either watchdog is reached.
+    #
+    # ⚠ THE CLOCK IS FAKE, AND THAT IS NOT A SHORTCUT — it is the only way these
+    # assertions mean anything. A test that waits out a real five-second budget
+    # is asserting on whatever the machine happened to manage in five seconds,
+    # so under load it can reach a different pass count than it did when it was
+    # written. Pinned to `poll_s`, "the budget expired on pass 500" is a fact.
+    #
+    # It is also 10 of the Python suite's 25 seconds, on every PR's CI gate and
+    # every local validation, spent asleep.
+    now = {"t": 0.0}
     original = watch.env.game_pids
     watch.env.game_pids = lambda: [1]
     try:
-        return watch.follow(FakeTail(batches), timeout_s=5.0, on_event=lambda e: None,
-                            poll_s=0.01, **kw)
+        with patch.object(watch.time, "monotonic", lambda: now["t"]), \
+             patch.object(watch.time, "sleep",
+                          lambda s: now.__setitem__("t", now["t"] + s)):
+            return watch.follow(FakeTail(batches), timeout_s=5.0,
+                                on_event=lambda e: None, poll_s=0.01, **kw)
     finally:
         watch.env.game_pids = original
 
@@ -138,11 +151,16 @@ class RisingTail:
 
 
 def test_a_run_whose_turn_is_advancing_is_never_called_frozen():
+    now = {"t": 0.0}
     original = watch.env.game_pids
     watch.env.game_pids = lambda: [1]
     try:
-        reason = watch.follow(RisingTail(), timeout_s=0.5, on_event=lambda e: None,
-                              poll_s=0.01, stall_s=None, frozen_s=0.05)
+        with patch.object(watch.time, "monotonic", lambda: now["t"]), \
+             patch.object(watch.time, "sleep",
+                          lambda s: now.__setitem__("t", now["t"] + s)):
+            reason = watch.follow(RisingTail(), timeout_s=0.5,
+                                  on_event=lambda e: None, poll_s=0.01,
+                                  stall_s=None, frozen_s=0.05)
     finally:
         watch.env.game_pids = original
     assert reason == "timeout", reason

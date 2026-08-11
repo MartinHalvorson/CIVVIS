@@ -8329,8 +8329,43 @@ local function applyOrder(player, pid, row, turn)
 				end
 			end
 			if not available then
+				-- ★★★★ NAME WHAT THE ENGINE OFFERED. The answer is already in hand
+				-- three lines above and was being thrown away: `can` and the
+				-- `PROMOTIONS` list are exactly what separates two refusals that
+				-- want opposite responses, and the event recorded neither.
+				--
+				--   nothing offered  -- this unit has no promotion available at
+				--     all: not enough experience, or already promoted this level.
+				--     CIVVIS should not have asked, and the fix is upstream in
+				--     when it asks.
+				--   others offered   -- the unit can promote, just not into the
+				--     tree CIVVIS named (a Recon promotion asked of a melee unit).
+				--     That is a targeting bug in the choice, and the offered list
+				--     names what it should have chosen from.
+				--
+				-- 56 of these across the eight live runs of 2026-08-11, every one
+				-- carrying only the name that failed. This is the same distinction
+				-- `build_no_plot` draws with `offered`, for the same reason.
+				--
+				-- Names, not indices: `-1743686858` in a ledger is a value no
+				-- reader can turn back into a promotion, which is the exact defect
+				-- the district refusal above had to be repaired for.
+				local offeredNames = nil;
+				if type(offered) == "table" then
+					offeredNames = {};
+					for _, index in ipairs(offered) do
+						local row = try(function()
+							return GameInfo.UnitPromotions[index];
+						end);
+						offeredNames[#offeredNames + 1] =
+							(row ~= nil and row.UnitPromotionType) or tostring(index);
+					end
+				end
 				emit("promotion_refused", {
 					turn = turn, unit = subject, promotion = promotionName,
+					can_promote = okCan and can or false,
+					offered = offeredNames ~= nil and #offeredNames or 0,
+					offered_promotions = offeredNames,
 				});
 				return false, "cannot_promote_" .. promotionName;
 			end

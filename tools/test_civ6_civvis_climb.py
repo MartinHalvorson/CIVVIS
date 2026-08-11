@@ -403,14 +403,33 @@ class WedgedAttempt(unittest.TestCase):
     the game is alive, not the harness. Only another process can see that.
     """
 
-    class _Play:
-        """A subprocess that never exits until it is signalled."""
+    # How much the fake clock advances per `play.wait()`. The real loop is paced
+    # by that call blocking for up to 20 s; here it stands in for "the harness
+    # waited a bit and the attempt is still running", and 0.1 against the 3 s
+    # budget below gives 30 passes — enough for the lock-credit logic to run
+    # more than once, and instant.
+    WAIT_STEP_S = 0.1
 
-        def __init__(self):
+    class _Play:
+        """A subprocess that never exits until it is signalled.
+
+        ⚠ `wait` ADVANCES THE CLOCK, and that is what makes these tests fast.
+        The real one blocks; this one used to return instantly, so the waiter
+        span a hot loop against real `time.time()` for the whole 3 s budget —
+        6 seconds of burned CPU across this class, on every PR's CI gate and
+        every local validation. Moving the clock here keeps the loop's pacing
+        faithful (one pass per wait) without spending any of it.
+        """
+
+        def __init__(self, clock=None, step=0.0):
             self.signalled = None
             self._dead = False
+            self._clock = clock
+            self._step = step
 
         def wait(self, timeout=None):
+            if self._clock is not None:
+                self._clock["t"] += self._step
             if self._dead:
                 return 0
             raise climb.subprocess.TimeoutExpired("play", timeout or 0)
@@ -431,11 +450,17 @@ class WedgedAttempt(unittest.TestCase):
                 json.dumps({"kind": "turn", "turn": t}) + "\n" for t in turns))
             original = climb.RUN_ROOT
             climb.RUN_ROOT = root
+            # ⚠ The waiter reads `time.time()`, not `monotonic`. Pinning it is
+            # also what makes the assertions mean anything: a budget waited out
+            # in real time asserts on whatever the machine managed in three
+            # seconds, which is not the same number twice under load.
+            clock = {"t": 0.0}
             try:
-                play = self._Play()
-                why = climb.wait_watching_the_turn(
-                    play, "run", 3.0, frozen_s,
-                    locked_probe=locked_probe or (lambda: False))
+                play = self._Play(clock, self.WAIT_STEP_S)
+                with mock.patch.object(climb.time, "time", lambda: clock["t"]):
+                    why = climb.wait_watching_the_turn(
+                        play, "run", 3.0, frozen_s,
+                        locked_probe=locked_probe or (lambda: False))
                 return why, play.signalled
             finally:
                 climb.RUN_ROOT = original
