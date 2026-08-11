@@ -678,12 +678,15 @@ it, and the liability was found only because every part was priced separately.
    envoys, influence, suzerainty, the Diplomacy lane — measures nothing on the
    stock profile. `ai_eval` now warns; the promotion matrix does seat them.
 3. **`ai_eval`'s defaults are not the deployment, and can flip an effect's
-   sign.** `d_holy` measured +20 Elo at 4p 24x16 and parity at the shape the
-   exhibition runs; it shipped and was reverted the same day. Gate on the
-   deployment shape from the first run, or name the profile in the claim.
+   sign.** `d_holy` measured +20 Elo at 4p 24x16 (52.9%, 95% CI 50.1%..55.7%,
+   1200 maps, seed 4400000, PR #1469) and parity at the shape the exhibition
+   runs (+2, CI −46..+50, 400 maps, seed 5900000); it shipped and was reverted
+   the same day, PR #1491. Gate on the deployment shape from the first run, or
+   name the profile in the claim.
 4. **A composite gate licenses the composite, never its parts.** The eight-flag
-   remainder read +9 net and contained a +32 war half offset by a −7 economy
-   half. Bisect before concluding a group is inert.
+   remainder read +9 net (CI −25..+43, 400 maps, seed 9300000) and contained a
+   war half at +32 (97/60, p=0.0039, seed 10800000) offset by an economy half at
+   −7 (79/87, p=0.5871, seed 10700000). Bisect before concluding a group is inert.
 
 ### What the audit says about where strength is not
 
@@ -697,7 +700,8 @@ expect Elo.
 
 The same holds for the genome. Eight of its forty genes cannot change a game at
 all (`src/bin/gene_census.rs`), the roster's winners are worse than the
-incumbent when copied (−22 Elo), and `docs/GENOME.md`'s conclusion stands: no
+incumbent when copied (46.9%, 95% CI 42.6%..51.3%, Elo −22, 500 maps, seed
+5000000, PR #1486), and `docs/GENOME.md`'s conclusion stands: no
 parameter tune has ever promoted. **The only gain in this audit came from
 deleting work, not adding or re-weighting it.**
 
