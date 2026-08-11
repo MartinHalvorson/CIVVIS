@@ -11923,6 +11923,30 @@ mod transient_refusal_tests {
         assert_eq!(refused.len(), 1, "a genuine refusal must still block");
     }
 
+    /// ⚠⚠ THE SAME FILTER HAS TO COVER `found_refused`, and that must be proven
+    /// rather than assumed from the fact that one function serves both.
+    ///
+    /// `found_refused` feeds `blocked_city_sites`, which is also extended and
+    /// never cleared. Across every live run of 2026-08-11, 9 found refusals: the
+    /// settler had `movesRemaining == 0` on EIGHT. A condemned city site is the
+    /// more expensive half of this defect — expansion is this project's measured
+    /// binding constraint, with 36% of games ending on one city.
+    #[test]
+    fn a_settler_out_of_moves_does_not_kill_the_city_site_forever() {
+        let p = events("settler", &[
+            r#"{"kind":"found_refused","turn":9,"x":4,"y":7,"moves":0}"#,
+            r#"{"kind":"found_refused","turn":9,"x":5,"y":8,"moves":2}"#,
+        ]);
+        let refused = refused_sites_of_kind_through(&p, "found_refused", None);
+        assert_eq!(
+            refused.len(),
+            1,
+            "the spent-move site must survive and the genuine refusal must \
+             still block: {refused:?}"
+        );
+        assert!(refused.contains(&crate::hex::offset_to_axial(5, 8)));
+    }
+
     /// ⚠ Events written before #1548 carry no `moves`, and an absent reading is
     /// not evidence of anything. Replaying an older run must be unchanged.
     #[test]

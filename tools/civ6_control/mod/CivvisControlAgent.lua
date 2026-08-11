@@ -8043,8 +8043,31 @@ local function applyOrder(player, pid, row, turn)
 				-- ⚠ The reasons are LOC keys, so they are localised before emitting —
 				-- an untranslated key names the rule but not in words anyone reading
 				-- the ledger would recognise.
+				-- ★★★★★ SAY WHETHER THE SETTLER COULD STILL MOVE, because this
+				-- event PERMANENTLY BLOCKS THE CITY SITE.
+				--
+				-- `found_refused` feeds `refused_sites` -> `blocked_city_sites`,
+				-- which is extended and never cleared, so every one of these is a
+				-- forever verdict on that ground. Measured across every live run of
+				-- 2026-08-11, 9 found refusals: the settler had `movesRemaining ==
+				-- 0` on EIGHT of them. A Civilization VI Settler needs movement
+				-- left to found, so those sites were condemned for a condition that
+				-- clears itself on the next turn.
+				--
+				-- Improvements had the identical defect and the identical cure
+				-- (#1548, #1550); a city site is the more expensive one to get
+				-- wrong. This project's own measurements have expansion as the
+				-- binding constraint -- 36% of games end on ONE city, and the
+				-- empire peaks at three -- so a legitimate site struck off the map
+				-- for a spent move is not a small loss.
+				--
+				-- `refused_sites_of_kind_through` already drops an explicit zero,
+				-- and it is shared by both refusals, so recording the reading here
+				-- is the whole fix.
+				local moves = try(function() return unit:GetMovesRemaining(); end, -1);
 				local why = refusalReason(unit, UnitOperationTypes.FOUND_CITY, nil);
 				emit("found_refused", { turn = turn, unit = subject, why = why,
+				                        moves = moves,
 				                        x = unit:GetX(), y = unit:GetY() });
 			else
 				-- ★★★★★ REPORT THE SUCCESS TOO, OR THE LEDGER ONLY KNOWS FAILURES.
