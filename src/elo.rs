@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 128] = [
+pub const EVAL_ONLY_AIS: [&str; 130] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -148,6 +148,8 @@ pub const EVAL_ONLY_AIS: [&str; 128] = [
     "advanced_lower_city_target",
     "advanced_settler_founds_when_stalled",
     "advanced_fortify_idle_units",
+    "advanced_without_unpriced_economy",
+    "advanced_without_unpriced_war",
     "advanced_league_top",
     "advanced_joint_tactics",
     "strategic_cheap",
@@ -465,6 +467,8 @@ define_arm_kinds! {
     AdvancedLowerCityTarget => "advanced_lower_city_target",
     AdvancedSettlerFoundsWhenStalled => "advanced_settler_founds_when_stalled",
     AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
+    AdvancedWithoutUnpricedEconomy => "advanced_without_unpriced_economy",
+    AdvancedWithoutUnpricedWar => "advanced_without_unpriced_war",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
@@ -2632,6 +2636,34 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // repair in this file fixed a settler idling two hundred turns and
         // measured ~5 Elo because it touched 14 maps in 400. Frequency is the
         // better guide, and still not a substitute for the paired run.
+        // The two halves of `advanced_without_unpriced_bundle`.
+        //
+        // That composite measured **+9 Elo, CI -25..+43, 94/84, p=0.50** — null
+        // on the NET. A net is not a bound on the parts, and in this bundle
+        // that is not a formality: `city_target_floor` at **-41** and
+        // `settler_commit` at **+30** are demonstrated offsetting components of
+        // the same constructor. A +9 across eight flags is perfectly compatible
+        // with a -30 and a +40 inside it.
+        //
+        // Split on the line the flags themselves draw — what the empire builds
+        // against how it fights — so a half that moves names a coherent
+        // subsystem rather than an arbitrary four.
+        "advanced_without_unpriced_economy" => {
+            let mut ai = AdvancedAi::new();
+            ai.envoy_priority = false;
+            ai.adjacency_site_planning = false;
+            ai.research_economy = false;
+            ai.disable_amenity_districts();
+            Box::new(ai)
+        }
+        "advanced_without_unpriced_war" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_siege_muster();
+            ai.disable_home_defense();
+            ai.disable_tactical_strategy();
+            ai.disable_unit_objective_memory();
+            Box::new(ai)
+        }
         "advanced_fortify_idle_units" => {
             let mut ai = AdvancedAi::new();
             ai.enable_fortify_idle_units();
@@ -3752,6 +3784,8 @@ impl ArmKind {
             Self::AdvancedLowerCityTarget => &["city-target-gene-lowered"],
             Self::AdvancedSettlerFoundsWhenStalled => &["settler-founds-when-stalled"],
             Self::AdvancedFortifyIdleUnits => &["fortify-idle-units"],
+            Self::AdvancedWithoutUnpricedEconomy => &["unpriced-economy-half-withheld"],
+            Self::AdvancedWithoutUnpricedWar => &["unpriced-war-half-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -4278,6 +4312,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_lower_city_target" => (Vec::new(), "advanced_lower_city_target"),
         "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
+        "advanced_without_unpriced_economy" => (Vec::new(), "advanced_without_unpriced_economy"),
+        "advanced_without_unpriced_war" => (Vec::new(), "advanced_without_unpriced_war"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -5487,7 +5523,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 97] = [
+            const SCRIPTED: [&str; 99] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5553,6 +5589,8 @@ mod tests {
                 "advanced_lower_city_target",
                 "advanced_settler_founds_when_stalled",
                 "advanced_fortify_idle_units",
+                "advanced_without_unpriced_economy",
+                "advanced_without_unpriced_war",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",
