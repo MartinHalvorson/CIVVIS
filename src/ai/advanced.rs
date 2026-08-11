@@ -1398,6 +1398,12 @@ pub struct AdvancedAi {
     /// **On in production**, which is why the arm withholds rather than adds.
     /// Evaluator arm `advanced_without_builder_floor`.
     pub production_builder_floor: bool,
+
+    /// Apply the call-local settler-deadline extension in `delegated_cities`.
+    ///
+    /// **On in production**; the arm withholds. Evaluator arm
+    /// `advanced_without_settler_deadline`.
+    pub production_settler_deadline: bool,
     /// Per-settler (last distance-to-target, turns without closing) while a
     /// LAND escort formation is trusted to carry it. See `escort_unstick`.
     escort_march: BTreeMap<u32, (i32, u8)>,
@@ -2510,6 +2516,7 @@ impl AdvancedAi {
             settler_stalls: BTreeMap::new(),
             settler_founds_when_stalled: false,
             production_builder_floor: true,
+            production_settler_deadline: true,
             escort_march: BTreeMap::new(),
             escort_unstick: false,
             religion_sues_peace: false,
@@ -3348,6 +3355,11 @@ impl AdvancedAi {
     /// it until it has a number.
     pub fn disable_production_builder_floor(&mut self) {
         self.production_builder_floor = false;
+    }
+
+    /// Withhold the call-local settler-deadline extension. Evaluator-only.
+    pub fn disable_production_settler_deadline(&mut self) {
+        self.production_settler_deadline = false;
     }
 
     /// Fortify units the planner gave nothing to do. Evaluator arm
@@ -6520,8 +6532,14 @@ impl AdvancedAi {
         let restore_stop = self.base.w.settler_stop_turn;
         let restore_builders = self.base.w.builder_per_city;
         self.base.w.city_target = restore_target.max(plan.desired_cities as f64);
-        self.base.w.settler_stop_turn =
-            restore_stop.max(Self::stock_expansion_deadline(g) as f64);
+        // The last production-only override this audit had not priced. Whether
+        // it binds at all depends on the speed: the gene is 150 and the
+        // deadline is `min(300 standard, max_turns - 50 standard)`, which at
+        // Online/250 may already be at or below it.
+        if self.production_settler_deadline {
+            self.base.w.settler_stop_turn =
+                restore_stop.max(Self::stock_expansion_deadline(g) as f64);
+        }
         // ⚠ A call-local override with no arm until 2026-08-11. It raises the
         // genome's 0.5 by half again, is reachable only from inside this
         // function, and `docs/EVAL.md` had never mentioned it — the same

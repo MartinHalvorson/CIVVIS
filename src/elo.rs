@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 134] = [
+pub const EVAL_ONLY_AIS: [&str; 135] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -153,6 +153,7 @@ pub const EVAL_ONLY_AIS: [&str; 134] = [
     "advanced_without_city_defence",
     "advanced_legacy_policy_deck",
     "advanced_without_builder_floor",
+    "advanced_without_settler_deadline",
     "advanced_without_unit_tactics",
     "advanced_league_top",
     "advanced_joint_tactics",
@@ -476,6 +477,7 @@ define_arm_kinds! {
     AdvancedWithoutCityDefence => "advanced_without_city_defence",
     AdvancedLegacyPolicyDeck => "advanced_legacy_policy_deck",
     AdvancedWithoutBuilderFloor => "advanced_without_builder_floor",
+    AdvancedWithoutSettlerDeadline => "advanced_without_settler_deadline",
     AdvancedWithoutUnitTactics => "advanced_without_unit_tactics",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
@@ -2713,6 +2715,16 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // floor justified by argument and measured at **-41 Elo**. That is the
         // reason to look, not a prediction: the two other expansion-adjacent
         // floors beside this one measured null and +30.
+        // The last production-only override with no number. `delegated_cities`
+        // extends `settler_stop_turn` from the genome's 150 to
+        // `min(300 standard, max_turns - 50 standard)`. With this the sweep of
+        // everything that separates the shipped controller from its genome is
+        // complete.
+        "advanced_without_settler_deadline" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_production_settler_deadline();
+            Box::new(ai)
+        }
         "advanced_without_builder_floor" => {
             let mut ai = AdvancedAi::new();
             ai.disable_production_builder_floor();
@@ -3864,6 +3876,7 @@ impl ArmKind {
             Self::AdvancedWithoutCityDefence => &["city-defence-quarter-withheld"],
             Self::AdvancedLegacyPolicyDeck => &["live-policy-deck-withheld"],
             Self::AdvancedWithoutBuilderFloor => &["production-builder-floor-withheld"],
+            Self::AdvancedWithoutSettlerDeadline => &["production-settler-deadline-withheld"],
             Self::AdvancedWithoutUnitTactics => &["unit-tactics-quarter-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
@@ -4396,6 +4409,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_city_defence" => (Vec::new(), "advanced_without_city_defence"),
         "advanced_legacy_policy_deck" => (Vec::new(), "advanced_legacy_policy_deck"),
         "advanced_without_builder_floor" => (Vec::new(), "advanced_without_builder_floor"),
+        "advanced_without_settler_deadline" => (Vec::new(), "advanced_without_settler_deadline"),
         "advanced_without_unit_tactics" => (Vec::new(), "advanced_without_unit_tactics"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
@@ -5606,7 +5620,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 103] = [
+            const SCRIPTED: [&str; 104] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5677,6 +5691,7 @@ mod tests {
                 "advanced_without_city_defence",
                 "advanced_legacy_policy_deck",
                 "advanced_without_builder_floor",
+                "advanced_without_settler_deadline",
                 "advanced_without_unit_tactics",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.

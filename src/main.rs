@@ -954,7 +954,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// which `AdvancedAi::legacy()` leaves false, so the anchor never
 /// reaches it — and the flag defaults true so production is unchanged.
 /// Compatibility re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x356b_541e_676a_e1ca;
+/// `production_settler_deadline` and its `delegated_cities` branch, the
+/// last production-only override to get a withhold. The whole block is
+/// behind `if !self.plan_city_target`, which `AdvancedAi::legacy()`
+/// leaves false, and the flag defaults true so production is unchanged.
+/// Compatibility re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x96ec_8740_45c2_97d1;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
