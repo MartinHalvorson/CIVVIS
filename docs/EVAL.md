@@ -9419,3 +9419,55 @@ swept, and the fourth — `configured` — was swept earlier. **Twenty-five
 behaviours, one liability, two assets, the rest nulls.** The remaining
 call-local overrides beside this one, `city_target.max(desired_cities)` and the
 speed-aware settler deadline, are the last unpriced pieces of that surface.
+
+
+## 2026-08-11 — the sweep completes: every production-only override now has a number
+
+```
+ai_eval advanced_without_settler_deadline advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories science,culture,domination
+  --map continents --shape planet --poles poles --randomize-civs --pairs 400 --seed 13600000
+
+  paired-map score 50.4% (95% Wilson CI 45.5%..55.2%)   Elo-equivalent +3 (CI -31..+37)
+  paired direction 26 for / 353 neutral / 21 against    sign p = 0.5601
+  terminal score   155 / 213                            sign p = 0.0029 FOR keeping it
+```
+
+**Null on wins**, and 353 of 400 maps untouched — the extension mostly does not
+bind at Online/250, where the gene's 150 already sits at or above
+`min(300 standard, max_turns - 50 standard)`. Unlike the Builder floor beside it,
+it does at least deliver the development it promises. It stays.
+
+### The complete map
+
+Four sites separate the shipped controller from its genome. All four are now
+swept, twenty-six behaviours in total:
+
+| site | behaviours | result |
+|---|---|---|
+| `promoted_policy_envoy` | 13 | `city_target_floor` **−41 Elo, removed**; `settler_commit` **+30**; the rest null or gate-rejected |
+| `configured` | 10 | `settlement_safety` **+31**; `deny_leaders` near-inert; the rest null |
+| `production_weights` | 1 | `policy_deck = Live` **earns its place** |
+| `delegated_cities` | 2 | Builder floor null on wins and −score; settler deadline null on wins, +score |
+
+**One liability, two assets, one vindicated choice, and twenty-two nulls.**
+
+Before this, all twenty-six shared a single composite number — the 2026-08-01
+promotion — and that is the condition that let a component costing forty-one Elo
+ship and sit unnoticed for ten days. The sweep's value is not the +41 by itself;
+it is that **no behaviour in the production controller is now believed rather
+than measured.**
+
+### What the sweep says about where to look next
+
+Nothing cheap remains on this surface. The pattern that produced every finding —
+a production-only override, justified by a comment, with no arm and no number —
+has been exhausted at four sites, and four of the comments turned out to
+describe a default the constructor does not use.
+
+The generalisable part, for whatever surface is swept next:
+
+> **Price by withholding, one behaviour at a time, at the deployment shape.** A
+> composite gate licenses the composite, never its parts; a stale comment is not
+> evidence; and an override that no arm can reach has, by construction, never
+> been measured.
