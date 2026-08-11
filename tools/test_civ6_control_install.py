@@ -54,6 +54,47 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("results[CityCommandResults.FAILURE_REASONS]", source)
         self.assertIn("reasons = reasons", source)
 
+    def test_every_unit_refusal_asks_the_engine_through_one_helper(self) -> None:
+        """The `CanStartOperation` signature has been guessed wrong twice.
+
+        Each time, the results table came back empty and every refusal the
+        project recorded said `can_start=false` with no reasons — the one thing
+        the event exists to report. The details that matter are the BOOLEAN
+        fourth argument, `OperationResultsTypes.ALL` as the fifth (not `true`),
+        and reasons under `UnitOperationResults.FAILURE_REASONS` rather than at
+        the top level. Pin all three, in one helper, so a third guess cannot
+        quietly reintroduce a silent refusal ledger.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+        self.assertIn("local function refusalReason(unit, operation, params)", source)
+        self.assertIn(
+            "UnitManager.CanStartOperation(\n"
+            "\t\t\t\tunit, operation, params, false, OperationResultsTypes.ALL);",
+            source,
+        )
+        self.assertIn("results[UnitOperationResults.FAILURE_REASONS]", source)
+
+        # Both unit refusals go through it, and neither keeps a private copy of
+        # the call — a second copy is how the signature drifts.
+        self.assertIn(
+            "refusalReason(unit, UnitOperationTypes.FOUND_CITY, nil)", source
+        )
+        self.assertIn(
+            'refusalReason(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"],', source
+        )
+        self.assertEqual(
+            source.count("CanStartOperation(\n\t\t\t\tunit,"),
+            1,
+            "the refusal signature must live in exactly one place",
+        )
+
+        # `improve_refused` is the most numerous refusal in the ledger and named
+        # only the tile; it has to carry the cause or the three failures it
+        # conflates (unowned ground, stale mirror, a builder that cannot act)
+        # stay indistinguishable.
+        self.assertIn('want = wanted or "IMPROVE", why = why,', source)
+
     def test_military_emergency_popup_uses_firaxis_pass_path(self) -> None:
         modinfo = (install.MOD_SOURCE / "CivvisControl.modinfo").read_text()
         closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
