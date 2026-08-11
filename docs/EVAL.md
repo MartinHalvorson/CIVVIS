@@ -8895,3 +8895,51 @@ points, so the fallback exists and something is routing around it — most likel
 the same shape as the settler defect, where an intended move fails and the path
 returns without reaching the terminal case. That is the next thing to measure,
 and it now has a number to be measured against rather than a symptom count.
+
+### The repair, and the third shape of null
+
+`hold_stood_down_unit` fortified only inside a stand-down window, so a unit that
+merely took no turn stood in the open. `advanced_fortify_idle_units` fortifies
+it instead.
+
+```
+ai_eval advanced_fortify_idle_units advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 10500000
+
+  paired-map score 49.8% (95% Wilson CI 44.9%..54.6%)   Elo-equivalent -2 (CI -36..+32)
+  paired direction 35 for / 328 neutral / 37 against    sign p = 0.9063
+  terminal score   176 / 178                            sign p = 0.9576
+```
+
+**35 for and 37 against on 72 discordant maps.** Unlike the settler repair, this
+is *resolved* rather than underpowered — the event is frequent enough that 400
+maps could have seen an effect, and there is none, on wins or on development.
+
+### ★★★ Three defect shapes, three nulls, and what they cost to learn
+
+| defect | how it looked | rate | measured |
+|---|---|---|---|
+| settler idles on foundable ground | **dramatic** — 200 turns, `can_found_here=true` | 14 of 400 maps | +5 Elo, unresolvable |
+| warriors circle without progress | **numerous** — x94 in 8 games | **1.21%** of unit-turns | not run; the rate retired it |
+| army stands unfortified | **frequent** — 7.73% of unit-turns, +6 strength each | 72 of 400 maps | **−2 Elo, resolved null** |
+
+Each was selected by a different and defensible criterion — drama, then count,
+then rate — and each is worth nothing. The last one is the most informative
+because it is the one with enough resolution to be sure:
+
+> **`audit`'s motion symptoms do not convert.** A unit standing in the open
+> declines +6 defensive strength on 7.73% of its turns, and buying that back
+> across 400 deployment maps moves the win rate by −2 ± 34. Defensive strength
+> only pays where combat happens, and this engine's games are not decided there
+> — `headless never wins by domination` puts it at 1 in 1513, and every military
+> arm in this file measures null.
+
+That is a claim about the whole family, not one repair, and it is the useful
+output of three iterations. **Motion telemetry is an excellent defect detector
+and a poor value estimator.** The repairs are correct, registered, and off; the
+next agent reading `audit` should treat a large symptom as a reason to look,
+never as a reason to expect Elo.
+
+⚠ It does not say the units should stay unfortified — it says doing so costs
+nothing measurable here. On a profile where combat decides games, the same
+repair could matter, and the arm exists to re-run it there.

@@ -3308,6 +3308,18 @@ impl AdvancedAi {
         self.settler_founds_when_stalled = true;
     }
 
+    /// Fortify units the planner gave nothing to do. Evaluator arm
+    /// `advanced_fortify_idle_units`; off in production.
+    pub fn enable_fortify_idle_units(&mut self) {
+        self.base.fortify_idle_units = true;
+    }
+
+    /// Readable so the anchor assertion can check it, since the flag lives on
+    /// the inner `BasicAi` and that field is private outside this module.
+    pub fn fortify_idle_units(&self) -> bool {
+        self.base.fortify_idle_units
+    }
+
     pub fn disable_amenity_districts(&mut self) {
         self.base.amenity_districts = false;
     }
