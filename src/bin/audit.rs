@@ -191,6 +191,15 @@ struct Motion {
     livelock: u64,
     /// Stood still in the open, unfortified, achieving nothing.
     idle_field: u64,
+    /// Of those, the ones that COULD have fortified: unembarked land military.
+    ///
+    /// ⚠ The split is the whole point. `idle_field` alone is the largest motion
+    /// symptom in the audit — 23.84% of major-civ unit-turns — but a settler or
+    /// a trader standing still is not squandering anything it had, while a
+    /// warrior standing still is giving up **+3 combat strength per fortified
+    /// turn, capped at +6** (`unit_strength`), about 30% of its base. Only this
+    /// half is a defect; reporting the total invites work on the other one.
+    idle_could_fortify: u64,
     /// Stood still in the open, fortified. A picket is legitimate; a
     /// stampede into this column is a livelock fix that only hid the problem.
     picket: u64,
@@ -201,6 +210,7 @@ impl Motion {
         self.unit_turns += other.unit_turns;
         self.livelock += other.livelock;
         self.idle_field += other.idle_field;
+        self.idle_could_fortify += other.idle_could_fortify;
         self.picket += other.picket;
     }
 
@@ -213,12 +223,15 @@ impl Motion {
             }
         };
         format!(
-            "unit-turns={} livelock={} ({:.2}%) idle-field={} ({:.2}%) picket={} ({:.2}%)",
+            "unit-turns={} livelock={} ({:.2}%) idle-field={} ({:.2}%) \
+             of-which-fortifiable={} ({:.2}%) picket={} ({:.2}%)",
             self.unit_turns,
             self.livelock,
             rate(self.livelock),
             self.idle_field,
             rate(self.idle_field),
+            self.idle_could_fortify,
+            rate(self.idle_could_fortify),
             self.picket,
             rate(self.picket),
         )
@@ -329,6 +342,15 @@ fn track_unit(g: &Game, history: &mut History, id: u32, motion: &mut Motion) -> 
         .is_none_or(|city| g.cities[&city].owner != unit.owner)
     {
         motion.idle_field += 1;
+        // `unit_can_fortify` is private to the engine, so mirror its three
+        // conditions rather than widen the API for a diagnostic.
+        let spec = &g.rules.units[unit.kind];
+        if spec.class == "military"
+            && spec.domain.as_deref() != Some("sea")
+            && !g.is_embarked(unit)
+        {
+            motion.idle_could_fortify += 1;
+        }
     }
 
     let elapsed = g.turn.saturating_sub(track.since);
