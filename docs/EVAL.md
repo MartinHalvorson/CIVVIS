@@ -9471,3 +9471,69 @@ The generalisable part, for whatever surface is swept next:
 > composite gate licenses the composite, never its parts; a stale comment is not
 > evidence; and an override that no arm can reach has, by construction, never
 > been measured.
+
+## The champion churns more, not less (2026-08-11, PR #1572)
+
+`ai_eval` prints that the production agent switches grand strategy 9.68 times a
+game and that 69.4% of its midgame switches are *unanchored* — they cross no
+war, no threatened city, no city deficit. That reads like a defect, and there is
+a mechanism ready to blame: `victory_denial` gates on `pressure.progress < 78 ||
+pressure.progress < own_progress + 15`, two hard cutoffs on a drifting quantity,
+and `plan_stale` treats denial engaging or releasing as a reason to rebuild the
+plan. A rival parked near the threshold rewrites this empire's grand strategy
+every fifth turn.
+
+Measured before treating it. `leader_study` now counts each seat's switches as
+the game runs and reports them negated, so leading the row means having switched
+the fewest times (72 games, 6p 74x46, 9 city-states, Online, 250 turns, seeds
+14200000..14200071):
+
+| turn | t20 | t40 | t60 | t80 | t100 | t130 | t160 | t200 |
+|---|---|---|---|---|---|---|---|---|
+| `steadiness` lead-conversion (chance 17%) | – | 6% | 5% | 13% | 9% | 4% | 11% | 21% |
+| `held_course` lead-conversion (chance 17%) | – | 6% | 7% | 6% | 5% | 7% | 5% | 15% |
+| `steadiness` champion mean rank (chance 3.50) | 3.75 | 3.86 | 3.64 | 3.69 | 3.68 | 3.50 | 3.47 | 3.15 |
+| `held_course` champion mean rank (chance 3.50) | 3.80 | 3.93 | 3.78 | 3.82 | 3.83 | 3.86 | 3.72 | 3.34 |
+
+**Both readings say the opposite of the hypothesis.** The civ holding its
+strategy most steadily wins 4–13% of the time against a 17% base rate, and the
+champion ranks *worse* than the median seat on steadiness at every sampled turn
+before t130. Restricting to the unanchored switches — the ones that supposedly
+answer to nothing — makes it stronger, not weaker.
+
+The reading that fits: **low churn marks a civ nothing is happening to.** A seat
+that is never threatened, never at war and never short of cities has no reason
+to re-plan, and it is also quietly losing. Stability is a symptom of
+disengagement here, not evidence of discipline.
+
+A hysteresis treatment for the denial threshold was written and built against
+this hypothesis and is **not being shipped**: the cheap screen came back
+negative, and the rule is that a correlate screen is allowed to stop a lane
+before it spends eval pairs. The mechanism is real — the chatter happens — but
+nothing in the evidence says it costs anything, and #1528's lesson stands that a
+defect's drama and its Elo are unrelated.
+
+⚠ The causal arrow is ambiguous in the usual direction and it does not rescue
+the hypothesis. A winning civ conquers, so it is at war more and re-plans more;
+that inflates the champion's switch count. But an inflated count in the
+*against* direction leaves no residual evidence that churn is harmful.
+
+⚠ `held_course` counts switches that crossed no boundary, which is not the same
+as "answered to nothing". A civ permanently at war never *crosses* the war
+boundary, so its switches all count as unanchored. The label in `ai_eval` shares
+this weakness and should be read as "no condition changed", not "no reason".
+
+### The rest of the table
+
+Two rows are worth recording even though neither is actionable on its own:
+
+- **`cities` converts at 40% by t20** — the strongest early signal in the study,
+  against a 17% base rate — while its map control `start_room` sits at exactly
+  17%. Leading in cities at turn 20 is behaviour, not room. It is also the exact
+  correlate that #1504 disproved as a *lever*: forcing city count via the
+  `city_target_floor` cost 41 Elo. Correlation this strong has already been
+  tested and failed once.
+- **Early tech leadership is mildly negative.** `techs` converts at 11% at t20
+  with a champion mean rank of 3.97 — the worst cell in the table — before
+  inverting completely to 60% and rank 1.65 by t200. The winner is not ahead in
+  science early; it gets there. `military` behaves the same way (7% at t20).
