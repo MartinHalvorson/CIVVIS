@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 126] = [
+pub const EVAL_ONLY_AIS: [&str; 127] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -146,6 +146,7 @@ pub const EVAL_ONLY_AIS: [&str; 126] = [
     "advanced_without_settlement_safety",
     "advanced_without_battlefront_observation",
     "advanced_lower_city_target",
+    "advanced_settler_founds_when_stalled",
     "advanced_league_top",
     "advanced_joint_tactics",
     "strategic_cheap",
@@ -461,6 +462,7 @@ define_arm_kinds! {
     AdvancedWithoutSettlementSafety => "advanced_without_settlement_safety",
     AdvancedWithoutBattlefrontObservation => "advanced_without_battlefront_observation",
     AdvancedLowerCityTarget => "advanced_lower_city_target",
+    AdvancedSettlerFoundsWhenStalled => "advanced_settler_founds_when_stalled",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
@@ -2597,6 +2599,26 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // local optimum", so a null says the principle does not extend past
         // the three flags that produced it, and it should stop being quoted as
         // though it does. Recorded either way.
+        // A settler that cannot reach a better site founds where it stands.
+        //
+        // An **actuation** repair, the class that produced the only shipped
+        // gain this session. Founding is gated on the settler's chosen target
+        // equalling its own tile, so one holding out for a site it never
+        // reaches never founds. `audit` at the deployment shape names it:
+        // "settler sits still 25+ turns … can_found_here=true, legal_sites=644"
+        // — a unit that cost a population point and 80-140 production, idle
+        // from turn 34 to the end of the game, standing on legal ground. Eight
+        // in eight games, plus eight more circling without progress.
+        //
+        // It is also the settling lane's own lesson applied to a unit rather
+        // than a gene: wanting a better site cost 41 Elo as
+        // `city_target_floor`; finishing the settlement already begun paid +30
+        // (`settler_commit`) and +31 (`settlement_safety`).
+        "advanced_settler_founds_when_stalled" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_settler_founds_when_stalled();
+            Box::new(ai)
+        }
         "advanced_lower_city_target" => {
             let mut w = Weights::default();
             w.city_target = LOWERED_CITY_TARGET;
@@ -3705,6 +3727,7 @@ impl ArmKind {
             Self::AdvancedWithoutSettlementSafety => &["settlement-safety-withheld"],
             Self::AdvancedWithoutBattlefrontObservation => &["battlefront-observation-withheld"],
             Self::AdvancedLowerCityTarget => &["city-target-gene-lowered"],
+            Self::AdvancedSettlerFoundsWhenStalled => &["settler-founds-when-stalled"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -4229,6 +4252,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_settlement_safety" => (Vec::new(), "advanced_without_settlement_safety"),
         "advanced_without_battlefront_observation" => (Vec::new(), "advanced_without_battlefront_observation"),
         "advanced_lower_city_target" => (Vec::new(), "advanced_lower_city_target"),
+        "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -5438,7 +5462,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 95] = [
+            const SCRIPTED: [&str; 96] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5502,6 +5526,7 @@ mod tests {
                 "advanced_without_settlement_safety",
                 "advanced_without_battlefront_observation",
                 "advanced_lower_city_target",
+                "advanced_settler_founds_when_stalled",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",

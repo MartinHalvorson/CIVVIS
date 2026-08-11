@@ -8722,3 +8722,63 @@ version did not. **The value of the failed prediction is that it bounded the
 claim; had it come out positive it would only have flattered it.**
 
 `city_target` stays at 4.0. Nothing changes.
+
+
+## 2026-08-11 — ★★★ a settler stands on foundable ground for two hundred turns
+
+The settling lane's three measurements say the target already sits at the
+empire's executable ceiling, so the remaining lever is raising the ceiling —
+and both mechanisms that pay (`settler_commit` +30, `settlement_safety` +31) do
+exactly that. So: where is settlement execution actually lost?
+
+`audit` answers it directly, at the deployment shape, and the diagnostic was
+already built:
+
+```
+audit --games 8 --players 6 --width 74 --height 46 --city-states 9 --turns 250
+
+symptom x8  major settler sits still 25+ turns — e.g. unit 131 (settler) of Aztec
+            unmoved since turn 34; at (36, 26), cities=1, can_found_here=true,
+            legal_sites=644, reachable=634, exhaustive_step=Some((37, 26))
+symptom x8  major settler circles without progress 10+ turns
+```
+
+**`can_found_here=true`.** A unit that cost a population point and 80–140
+production is standing on ground that would take a city, from turn 34 to the end
+of the game, and never founds. Eight of them in eight games, and eight more
+walking in circles.
+
+### Why, and where the gap is
+
+Founding is gated on the settler's chosen target equalling its own tile. The
+Advanced settler path has an elaborate stall apparatus around this —
+`settler_stalls`, `settler_blocked_turns`, `settler_closest`, `settler_avoid`,
+each with measured comments from earlier repairs — and when the stall counter
+expires it inserts an avoid, drops the target, and **picks a different one**.
+
+Nothing in that loop ever asks whether the ground under the settler would take a
+city. The unit is ambitious about site quality and never executes, which is the
+same failure the settling numbers already priced: wanting a better site cost 41
+Elo as `city_target_floor`; finishing the settlement already begun paid +30 and
++31.
+
+`advanced_settler_founds_when_stalled` adds one branch at both stall-expiry
+sites: if the counter has run its full length and `can_found_city` is true and
+`settlement_safety` does not refuse the tile, found here instead of re-targeting.
+It cannot fire early — the counter has already expired against a target the unit
+could not approach — and it cannot plant a city `settlement_safety` would veto,
+because it runs the same check the ordinary found path runs.
+
+### ⚠ The first attempt patched the wrong layer
+
+The fallback went into `BasicAi`'s settler step first and fires-checked at
+**40/40 maps neutral** — the fourth inert treatment this session. The gene
+census (#1479) had already recorded why: all four `settle_*` genes are inert for
+`AdvancedAi` because the Advanced settlement planner supersedes
+`BasicAi::settle_site_value`. The idling settlers in the audit are Advanced's,
+so the repair belongs in Advanced's path, and the BasicAi edit was reverted.
+
+At the correct layer the arm fires on **6 of 40** maps, which matches the audit's
+frequency: this is a real but low-rate event, so it needs sample size rather than
+enthusiasm. A 400-map run at the deployment shape is in flight; the number
+follows.

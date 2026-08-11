@@ -1376,6 +1376,22 @@ pub struct AdvancedAi {
     /// Consecutive turns each settler has failed to make progress, when
     /// `settler_commit` is on. Reset whenever `settler_closest` improves.
     settler_stalls: BTreeMap<u32, u32>,
+    /// When the stall counter expires, prefer a city here to no city at all.
+    ///
+    /// The expiry branch already gives up on the target — it inserts an avoid
+    /// and re-picks. What it never does is ask whether the ground the settler
+    /// is standing on would take a city. `audit` at the deployment shape shows
+    /// what that costs: "settler sits still 25+ turns … **can_found_here=true**,
+    /// legal_sites=644", a unit worth a population point and 80-140 production
+    /// idle from turn 34 to the end of the game. Eight in eight games.
+    ///
+    /// This is the settling lane's measured lesson applied to a unit instead of
+    /// a gene — wanting a better site cost 41 Elo as `city_target_floor`, while
+    /// finishing the settlement already begun paid +30 (`settler_commit`) and
+    /// +31 (`settlement_safety`).
+    ///
+    /// Off by default; evaluator arm `advanced_settler_founds_when_stalled`.
+    pub settler_founds_when_stalled: bool,
     /// Per-settler (last distance-to-target, turns without closing) while a
     /// LAND escort formation is trusted to carry it. See `escort_unstick`.
     escort_march: BTreeMap<u32, (i32, u8)>,
@@ -2469,6 +2485,7 @@ impl AdvancedAi {
             adjacency_site_planning: false,
             settler_commit: false,
             settler_stalls: BTreeMap::new(),
+            settler_founds_when_stalled: false,
             escort_march: BTreeMap::new(),
             escort_unstick: false,
             religion_sues_peace: false,
@@ -3283,6 +3300,12 @@ impl AdvancedAi {
 
     pub fn disable_unit_objective_memory(&mut self) {
         self.base.unit_objective_memory = false;
+    }
+
+    /// Let a stalled settler found where it stands. Evaluator arm
+    /// `advanced_settler_founds_when_stalled`; off in production.
+    pub fn enable_settler_founds_when_stalled(&mut self) {
+        self.settler_founds_when_stalled = true;
     }
 
     pub fn disable_amenity_districts(&mut self) {
@@ -16564,6 +16587,9 @@ impl AdvancedAi {
                     let stalls = self.settler_stalls.entry(uid).or_insert(0);
                     *stalls += 1;
                     if *stalls >= SETTLER_STALL_LIMIT {
+                        if self.founds_where_it_stands(g, pid, uid, current) {
+                            return true;
+                        }
                         self.settler_avoid
                             .insert(uid, (target, g.turn + g.standard_duration(8)));
                         self.settler_targets.remove(&uid);
@@ -16798,6 +16824,10 @@ impl AdvancedAi {
             let stalls = self.settler_stalls.entry(uid).or_insert(0);
             *stalls += 1;
             if *stalls >= SETTLER_STALL_LIMIT {
+                let here = g.units[&uid].pos;
+                if self.founds_where_it_stands(g, pid, uid, here) {
+                    return true;
+                }
                 self.settler_avoid
                     .insert(uid, (target, g.turn + g.standard_duration(8)));
                 self.settler_targets.remove(&uid);
@@ -16806,6 +16836,36 @@ impl AdvancedAi {
             }
         }
         moved
+    }
+
+    /// A city here beats no city, once the settler has given up on reaching a
+    /// better one.
+    ///
+    /// Only ever reached from the two stall-expiry branches, so it cannot make
+    /// a settler settle early — the counter has already run its full length
+    /// against a target the unit could not approach. The safety check is the
+    /// same one the ordinary found path applies, so this cannot plant a city
+    /// somewhere `settlement_safety` would refuse.
+    fn founds_where_it_stands(&mut self, g: &mut Game, pid: usize, uid: u32, here: Pos) -> bool {
+        if !self.settler_founds_when_stalled || !g.can_found_city(uid) {
+            return false;
+        }
+        let visible = self.battlefront_visibility(g, pid);
+        if self.settlement_safety
+            && self.settlement_tile_risk(g, pid, Some(uid), here, &visible)
+                > SETTLER_STEP_RISK_LIMIT
+        {
+            return false;
+        }
+        think!(self.journal(), Expansion, Decision,
+               "Founding where the settler stands at {here:?}";
+               "it stalled {SETTLER_STALL_LIMIT} turns short of a better site \
+                worth {:.1} against {:.1} here",
+               0.0, self.settle_value(g, pid, here); here);
+        self.settler_targets.remove(&uid);
+        self.settler_stalls.remove(&uid);
+        self.settler_closest.remove(&uid);
+        g.apply(pid, &Action::FoundCity { unit: uid }).is_ok()
     }
 
     fn improvement_value(

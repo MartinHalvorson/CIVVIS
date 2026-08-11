@@ -924,7 +924,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// withhold arm for a production default can reach `AdvancedAi::legacy()`.
 /// Compatibility re-pin, and the last one on this branch that needs the
 /// argument, because the assertion now carries it.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0fe2_02a9_09a6_413d;
+/// `settler_founds_when_stalled` and its `founds_where_it_stands`
+/// branch. The flag defaults false in the struct init both `legacy()`
+/// and `new()` build from, and the branch returns immediately without
+/// it — asserted, not argued, in
+/// `the_repair_bundle_cannot_reach_the_frozen_anchor`, which this
+/// change extends. Compatibility re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x014b_ebe9_4c32_f1fc;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -3487,6 +3493,13 @@ mod tests {
                 ("strike_opening", ai.strike_opening),
                 ("ranged_needs_line_of_sight", ai.ranged_needs_line_of_sight),
                 ("loyalty_policy_defence", ai.loyalty_policy_defence),
+                // Evaluator-only like the rest of this list: the stalled-settler
+                // fallback must reach neither the anchor nor production until it
+                // has a number.
+                (
+                    "settler_founds_when_stalled",
+                    ai.settler_founds_when_stalled,
+                ),
                 (
                     "suzerain_cards_need_a_suzerainty",
                     ai.suzerain_cards_need_a_suzerainty,
