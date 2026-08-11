@@ -8597,3 +8597,65 @@ session started: five** — `tactical_strategy`, `unit_objective_memory`,
 `amenity_districts`, `settlement_safety`, `battlefront_observation`. All five
 now have a withhold. That is the precondition for pricing them; it is not the
 pricing.
+
+
+## 2026-08-11 — ★★★ settlement_safety is worth thirty-one Elo, and the settling lane resolves
+
+The last two always-on defaults had no withhold until #1518 made them
+measurable. This is the first of them.
+
+```
+ai_eval advanced_without_settlement_safety advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 9700000
+
+  paired-map score 45.5% (95% Wilson CI 40.7%..50.4%)   Elo-equivalent -31 (CI -65..+3)
+  paired direction 65 for / 234 neutral / 101 against   sign p = 0.0064 (SIGNIFICANT for advanced)
+  terminal score   119 / 281                            sign p = 0.0000 (SIGNIFICANT for advanced)
+```
+
+**Withholding it costs about thirty-one Elo, and it is the first component in
+this audit that is significantly positive on *both* axes.** Every other flag
+that moved has traded one against the other. This one simply works.
+
+### ★★★ Three significant measurements, one lane, one conclusion
+
+| flag | what it governs | wins | terminal score |
+|---|---|---|---|
+| `city_target_floor = 6` | **how many cities to want** | **−41 Elo** (removed) | favours keeping, p=0.0000 |
+| `settler_commit` | **finishing a settler already started** | **+30 Elo** | flat |
+| `settlement_safety` | **where it is safe to put the city** | **+31 Elo** | favours keeping, p=0.0000 |
+
+All three live in the settling lane. All three were unpriced this morning. Every
+one is significant on direction, and they do not point the same way:
+
+> **Ambition costs; execution pays.** Wanting more cities is worth −41 Elo.
+> Committing to the settler you already built is worth +30. Putting the city
+> somewhere it survives is worth +31.
+
+That is not a slogan assembled after the fact — it is three independent
+withholds at the same profile, and it reproduces from the causal side what this
+document reached observationally when the `city_target_floor` null was first
+recorded: *"six cities serialized through one settler at ~9 turns of production
+plus a walk each is a rate limit no valuation can beat."* The target was never
+the constraint. Raising it made the agent measurably worse; the two mechanisms
+that improve the *execution* of a settlement each pay about as much as the
+target cost.
+
+⚠ Nothing changes here. `settlement_safety` is on and stays on; the number
+converts an assumption into a measurement, which is the entire purpose of the
+audit and the only reason the −41 next to it was findable.
+
+### The re-pin argument, upgraded from comment to assertion
+
+Every source-contract re-pin this session was justified by reasoning about call
+paths. A concurrent change on main made the better move — asserting the claim
+instead — and pointed out why: the comment claiming native games leave
+`bounded_recovery` disabled was **false**, and finding that out cost an
+evaluation.
+
+`the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production` now
+asserts both halves for all five defaults this session made withholdable.
+**Off on `legacy()`** is what makes a withhold arm unable to move a rating
+anchor. **On in `new()`** is what makes a withhold the only way to price them —
+an arm built as `new()` plus one of these is a byte-identical no-op, which is
+how three arms in `elo.rs` came to measure nothing.
