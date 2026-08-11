@@ -901,11 +901,25 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// purely additive — 115 lines, no deletions. Compatibility re-pin,
 /// asserted rather than asserted-by-comment in
 /// `the_repair_bundle_cannot_reach_the_frozen_anchor`.
+/// Seven production category genes, and `production_value` multiplied by the
+/// one that matches each candidate. Every gene defaults to 1.0 and the
+/// multiply is applied only to a positive score, so a default genome — which
+/// is what `AdvancedAi::legacy()` and `BasicAi::new()` both carry — ranks
+/// builds bit-identically.
+///
+/// ⚠ This re-pin is **measured, not argued**. The list above contains one
+/// justified by a comment that was wrong, so this one was checked against the
+/// tree it claims to preserve: `ai_eval advanced advanced_v1
+/// --deployment-comparison --players 4 --pairs 12 --turns 150 --seed
+/// 91000000` was run on a build of `a2c8c7f` and on this branch, and the two
+/// outputs are byte-identical across 24 games and 5,712 bytes of diagnostics —
+/// including `advanced_v1`'s own per-seat cities, score, military and victory
+/// types. Compatibility re-pin.
 /// Two further `disable_*` withholds for base-constructor defaults
-/// (`settlement_safety`, `battlefront_observation`). Also evaluator entry
-/// points no constructor calls, and `legacy()` already turns both off.
-/// Compatibility re-pin over the merged tree; neither side's value applies.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc043_2e15_14ad_e1be;
+/// (`settlement_safety`, `battlefront_observation`). Evaluator entry points no
+/// constructor calls; `legacy()` already turns both off. Compatibility re-pin
+/// recomputed over the merged tree — neither side's value applies.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1bc0_d41d_7905_418d;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
