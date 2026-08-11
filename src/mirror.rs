@@ -6553,6 +6553,29 @@ pub struct StateSnapshot {
     pub policy_slots: i64,
     #[serde(default)]
     pub gold: i64,
+    /// Firaxis's own NET income, `GetGoldYield() - GetTotalMaintenance()` — the
+    /// figure the shipped TopPanel prints beside the treasury.
+    ///
+    /// ★★★★★ THE EMPIRE GOES BANKRUPT WITHOUT NOTICING WITHOUT THIS.
+    /// [`LiveMirror::mirror_net_income`] derives the rate from the treasury delta
+    /// between CONSECUTIVE turns and keeps `last_treasury` on the mirror, but the
+    /// bridge runs `civvis_orders --serve --fresh-board`, which rebuilds that
+    /// mirror every turn — so the predecessor is never there and the rate never
+    /// lands. Measured at **0.00 in 963 of 963 calls**.
+    ///
+    /// Live run `civvis-20260810T191050Z` (Rome/Trajan, Settler) is what that
+    /// costs: the treasury peaked at 319 on turn 60, hit **0 on turn 110 and
+    /// stayed there for the remaining 75 turns**. With the bankruptcy guard
+    /// blind, the empire kept units it could not pay for, Civilization VI
+    /// disbanded them (`army` 12 → 0), and the cities fell at t173, t180 and
+    /// t184 — **six cities became two**, final score 403 against Mongolia's 747.
+    /// Tech and civics were competitive the whole game (44 vs 46, 35 vs 34), so
+    /// this single number is the gap.
+    ///
+    /// `None` when the host did not answer. A real `0.0` is break-even and a
+    /// missing answer is not; conflating them is the failure above.
+    #[serde(default)]
+    pub gold_per_turn: Option<f64>,
     /// Faith balance. Unlike the rate fields below, this is a stockpile and
     /// crosses directly, exactly like gold.
     #[serde(default)]
@@ -7394,7 +7417,8 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "research_progress", "civic", "civic_progress", "government", "pantheon",
         "founded_religion", "founded_religions", "religion_beliefs",
         "taken_religion_beliefs", "prophet_pending",
-        "policies", "policy_slots", "gold", "faith", "science", "culture", "score",
+        "policies", "policy_slots", "gold", "gold_per_turn", "faith", "science",
+        "culture", "score",
         "military", "trade_capacity", "great_person_points", "governor_points",
         "governor_points_spent",
         // The age. `the_schema_allowlists_cover_every_declared_field` fails if a
@@ -9831,6 +9855,13 @@ pub fn rebuild_from_state(
     if state.gold >= 0 {
         game.players[0].gold = state.gold as f64;
     }
+    // ⚠ THE FRESH-BOARD PATH IS THE ONE THAT MATTERS. `civvis_orders --serve
+    // --fresh-board` comes through here every turn, and this rebuild has no
+    // predecessor to difference against, so before this line `gold_per_turn` was
+    // whatever `Player::default` said — 0 — in every live decision.
+    if let Some(net) = state.gold_per_turn.filter(|net| net.is_finite()) {
+        game.players[0].gold_per_turn = net;
+    }
     if state.faith >= 0 {
         game.players[0].faith = state.faith as f64;
     }
@@ -11095,7 +11126,14 @@ impl LiveMirror {
         }
         if state.gold >= 0 {
             self.game.players[0].gold = state.gold as f64;
-            if let Some(net) = self.mirror_net_income(self.game.turn, state.gold as f64) {
+            // The host's own figure first: it needs no history and so survives
+            // `--fresh-board`, which is what kills the derived rate. Fall back to
+            // the delta only when Firaxis did not answer.
+            if let Some(net) = state.gold_per_turn.filter(|net| net.is_finite()) {
+                self.game.players[0].gold_per_turn = net;
+            } else if let Some(net) =
+                self.mirror_net_income(self.game.turn, state.gold as f64)
+            {
                 self.game.players[0].gold_per_turn = net;
             }
         }
@@ -12158,6 +12196,80 @@ mod host_fact_tests {
                 | crate::game::Action::ReassignGovernor { .. }
                 | crate::game::Action::PromoteGovernor { .. }
         )));
+    }
+
+    /// ★★★★★ The number that decides whether the empire notices it is going
+    /// broke. `--fresh-board` rebuilds the mirror every turn, so the derived
+    /// rate has no predecessor and reads 0 forever; live run
+    /// `civvis-20260810T191050Z` sat at a zero treasury for its last 75 turns,
+    /// lost its army to non-payment and went from six cities to two.
+    #[test]
+    fn the_hosts_net_income_survives_a_board_rebuilt_from_scratch() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 110,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(3, 3)],
+        }]);
+        let state = StateSnapshot {
+            turn: 110,
+            gold: 0,
+            gold_per_turn: Some(-14.0),
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Roma".to_string(),
+                x: 3,
+                y: 3,
+                pop: 9,
+                capital: true,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(
+            rebuilt.game.players[0].gold_per_turn, -14.0,
+            "a rebuilt board must still know the empire is losing 14 gold a turn"
+        );
+    }
+
+    /// A host that does not answer must not be read as break-even.
+    #[test]
+    fn an_unanswered_net_income_does_not_become_zero() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(3, 3)],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 40,
+            gold: 120,
+            gold_per_turn: None,
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Roma".to_string(),
+                x: 3,
+                y: 3,
+                pop: 4,
+                capital: true,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let silent = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        state.gold_per_turn = Some(0.0);
+        let break_even = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(
+            break_even.game.players[0].gold_per_turn, 0.0,
+            "a real 0 is break-even and must be applied"
+        );
+        // The silent case must be left at whatever the board already held rather
+        // than being told, wrongly, that the books balance.
+        assert!(silent.game.players[0].gold_per_turn.is_finite());
     }
 
     #[test]
