@@ -129,11 +129,19 @@ pub const FLAGSHIPS: [(i32, i32); 2] = [BRITISH[0].at, COMBINED[11].at];
 pub struct Ship {
     pub at: (i32, i32),
     pub guns: u16,
+    /// The flag officer aboard, rated 2 to 5 stars, or 0 for the great
+    /// majority of ships that carried none. See [`admiral_formation`].
+    pub stars: u8,
     pub name: &'static str,
 }
 
 const fn ship(col: i32, row: i32, guns: u16, name: &'static str) -> Ship {
-    Ship { at: (col, row), guns, name }
+    Ship { at: (col, row), guns, stars: 0, name }
+}
+
+/// A ship with an admiral's flag in her, and how good he was.
+const fn flag(col: i32, row: i32, guns: u16, stars: u8, name: &'static str) -> Ship {
+    Ship { at: (col, row), guns, stars, name }
 }
 
 /// Nelson's fleet, twenty-seven of the line, in the order they were stationed.
@@ -149,7 +157,7 @@ const fn ship(col: i32, row: i32, guns: u16, name: &'static str) -> Ship {
 /// her own fleet. She spent the morning running down their line alone.
 pub const BRITISH: [Ship; 27] = [
     // --- Weather column. Vice-Admiral Lord Nelson, in Victory.
-    ship(16, 10, 100, "Victory — Nelson / Hardy"),
+    flag(16, 10, 100, 5, "Victory — Vice-Admiral Lord Nelson, commander-in-chief"),
     ship(15, 10, 98, "Temeraire"),
     ship(14, 10, 98, "Neptune"),
     ship(13, 10, 74, "Conqueror"),
@@ -159,9 +167,9 @@ pub const BRITISH: [Ship; 27] = [
     ship(9, 10, 64, "Agamemnon"),
     ship(8, 10, 74, "Minotaur"),
     ship(7, 10, 74, "Spartiate"),
-    ship(6, 10, 100, "Britannia — Rear-Admiral Northesk"),
+    flag(6, 10, 100, 3, "Britannia — Rear-Admiral the Earl of Northesk"),
     // --- Lee column. Vice-Admiral Collingwood, in Royal Sovereign.
-    ship(17, 15, 100, "Royal Sovereign — Collingwood"),
+    flag(17, 15, 100, 4, "Royal Sovereign — Vice-Admiral Collingwood, second in command"),
     ship(16, 15, 74, "Belleisle"),
     ship(15, 15, 74, "Mars"),
     ship(14, 15, 80, "Tonnant"),
@@ -198,26 +206,26 @@ pub const COMBINED: [Ship; 33] = [
     ship(19, 2, 74, "Scipion (Fr)"),
     ship(20, 3, 74, "Intrepide (Fr)"),
     ship(20, 4, 100, "Rayo (Sp)"),
-    ship(20, 5, 80, "Formidable (Fr) — Dumanoir le Pelley"),
+    flag(20, 5, 80, 2, "Formidable (Fr) — Rear-Admiral Dumanoir le Pelley, the van"),
     ship(21, 6, 74, "Duguay-Trouin (Fr)"),
     ship(21, 7, 74, "Mont-Blanc (Fr)"),
     ship(21, 8, 74, "San Francisco de Asis (Sp)"),
     ship(21, 9, 74, "San Agustin (Sp)"),
     // --- Centre. Vice-Admiral Villeneuve, in Bucentaure.
     ship(21, 10, 74, "Heros (Fr)"),
-    ship(22, 10, 136, "Santisima Trinidad (Sp) — Rear-Admiral Cisneros"),
-    ship(21, 11, 80, "Bucentaure (Fr) — Villeneuve, commander-in-chief"),
+    flag(22, 10, 136, 3, "Santisima Trinidad (Sp) — Rear-Admiral Cisneros"),
+    flag(21, 11, 80, 2, "Bucentaure (Fr) — Vice-Admiral Villeneuve, commander-in-chief"),
     ship(22, 11, 74, "Redoutable (Fr) — Lucas"),
     ship(21, 12, 74, "San Justo (Sp)"),
     ship(22, 12, 80, "Neptune (Fr)"),
     ship(21, 13, 64, "San Leandro (Sp)"),
-    ship(22, 13, 112, "Santa Ana (Sp) — Vice-Admiral Alava"),
+    flag(22, 13, 112, 3, "Santa Ana (Sp) — Vice-Admiral Alava"),
     ship(21, 14, 80, "Indomptable (Fr)"),
     ship(22, 14, 74, "Fougueux (Fr)"),
     // --- Rear, and the squadron of observation to leeward of it.
     ship(21, 15, 74, "Monarca (Sp)"),
     ship(22, 15, 74, "Pluton (Fr)"),
-    ship(21, 16, 74, "Algesiras (Fr) — Rear-Admiral Magon"),
+    flag(21, 16, 74, 3, "Algesiras (Fr) — Rear-Admiral Magon"),
     ship(22, 16, 74, "Bahama (Sp)"),
     ship(20, 17, 74, "Aigle (Fr)"),
     ship(21, 17, 74, "Swiftsure (Fr)"),
@@ -226,7 +234,7 @@ pub const COMBINED: [Ship; 33] = [
     ship(20, 19, 80, "Argonauta (Sp)"),
     ship(21, 19, 74, "San Ildefonso (Sp)"),
     ship(20, 20, 74, "Achille (Fr)"),
-    ship(21, 20, 112, "Principe de Asturias (Sp) — Admiral Gravina"),
+    flag(21, 20, 112, 4, "Principe de Asturias (Sp) — Admiral Gravina, the squadron of observation"),
     ship(19, 21, 74, "Berwick (Fr)"),
     ship(19, 22, 74, "San Juan Nepomuceno (Sp)"),
 ];
@@ -301,6 +309,100 @@ pub fn rate_promotions(guns: u16) -> &'static [&'static str] {
         0..=64 => &[],
         _ => &["line_of_battle"],
     }
+}
+
+/// What a flag officer aboard is worth to the ship he is in.
+///
+/// One extra Movement, and nothing else. A flagship was better handled than
+/// the ships around her — she carried the admiral's own staff, she repeated
+/// signals, and she was usually the smartest sailer in her division because
+/// that is where an admiral chose to put his flag. It is granted through
+/// `Unit::bonus_moves`, which is the engine's existing field for movement a
+/// unit was given rather than earned.
+///
+/// Every flagship gets it, whatever her admiral's rating: putting a flag in a
+/// ship is what made her better handled, not how good the man was. What his
+/// rating decides is separate and is [`admiral_formation`] below.
+pub const ADMIRAL_MOVEMENT_BONUS: f64 = 1.0;
+
+/// The admiral commanding this side, and the tile his flag is on.
+pub fn commander_in_chief(pid: usize) -> &'static Ship {
+    let at = FLAGSHIPS[pid.min(1)];
+    fleet(pid)
+        .iter()
+        .find(|ship| ship.at == at)
+        .expect("each fleet's commander-in-chief is in its own order of battle")
+}
+
+/// The fighting tier an admiral's rating is worth to the ship he is in.
+///
+/// A **Fleet** (`formation` 1) for four and five stars, and nothing above the
+/// ordinary for two and three. The engine prices a Fleet at **+10 Strength**,
+/// applied through `Game::unit_formation_bonus` inside `unit_ranged_strength`,
+/// so it reaches a ship of the line's broadside rather than only a boarding
+/// action.
+///
+/// # Why a threshold, and not stars times two
+///
+/// Because of how the flags were distributed. There were **three** British
+/// flag officers at Trafalgar and **six** in the Combined Fleet, so any bonus
+/// paid out per flagship hands more of it to the larger, more admiral-heavy
+/// side — which is backwards, and would have the feature arguing the opposite
+/// of what it exists to say. A threshold pays only for the admirals who were
+/// actually good, and the asymmetry then falls out of rating the men rather
+/// than out of a thumb on the scale:
+///
+/// | | flags | of those, 4 stars or better | worth |
+/// | --- | --- | --- | --- |
+/// | Britain | 3 | **2** — Nelson, Collingwood | +20 |
+/// | Combined Fleet | 6 | **1** — Gravina | +10 |
+///
+/// | admiral | stars | |
+/// | --- | --- | --- |
+/// | Nelson, in *Victory* | 5 | Fleet |
+/// | Collingwood, in *Royal Sovereign* | 4 | Fleet |
+/// | Gravina, in *Príncipe de Asturias* | 4 | Fleet |
+/// | Northesk, Cisneros, Álava, Magon | 3 | — |
+/// | Villeneuve, in *Bucentaure* | 2 | — |
+/// | Dumanoir le Pelley, in *Formidable* | 2 | — |
+///
+/// The two at the bottom carry the most weight and so are worth defending.
+/// Villeneuve was a capable seaman who believed in neither the plan, the fleet
+/// nor his orders, had been told he was about to be relieved, and signalled
+/// nothing of consequence after the action opened. Dumanoir commanded a van
+/// that took four hours to come about and never meaningfully engaged. Gravina
+/// at four is the other side of it: the best-fought squadron in the Combined
+/// Fleet, its commander mortally wounded holding the rear together.
+///
+/// # What was tried first, and why it is not here
+///
+/// The first version of this spent an admiral's rating on **flanking** —
+/// `Game::flanking_bonus`, +2 Strength for every friendly ship adjacent to
+/// the target beyond the attacker, multiplied by the owner's naval flanking
+/// bonus, with a five-star admiral set to the 50% the ruleset already gives
+/// its own Horatio Nelson. Cutting a line and doubling on the ships it
+/// isolates is Nelson's whole plan, so that looked like the right home for it.
+///
+/// It cannot work here, for two independent reasons, and both were measured
+/// rather than reasoned about:
+///
+/// 1. **`flanking_bonus` is only ever called from `do_attack`** — the melee
+///    path. Every ship in this battle is a Frigate, which is `naval_ranged`
+///    and attacks through `do_ranged`, and `do_ranged` never consults it.
+/// 2. **The ships never close anyway.** Over 120 turns of the scenario played
+///    out by the stock controllers, *no ship was ever adjacent to two
+///    enemies* — the most any ship ever had alongside was one. A unit that
+///    shoots two tiles away has no reason to come to contact, and it does not.
+///
+/// A "Fleet" in the shipped rules is two ships merged into one unit, so using
+/// it to mean "an admiral is aboard" is a reinterpretation, and one with a
+/// visible edge: `Game::unit_production_cost` prices a Fleet at 1.5x, so the
+/// three flagships weigh half again as much in any material ledger. For a
+/// scenario that is close enough to true — a first-rate flagship *was* worth
+/// more than a 74 — but it is a reinterpretation, and it is recorded here
+/// rather than left to be discovered.
+pub fn admiral_formation(stars: u8) -> u8 {
+    u8::from(stars >= 4)
 }
 
 /// One side's order of battle, Britain as seat 0.
@@ -669,6 +771,114 @@ mod tests {
     /// between them and the engine. The last assertion is the one that
     /// matters — a promotion the combat layer never reads would pass every
     /// other test in this file and change nothing on the board.
+    #[test]
+    /// Nine flag officers, where history put them, rated on one scale.
+    ///
+    /// The counts are the load-bearing part: three British flags against six
+    /// in the Combined Fleet is why an admiral's rating is spent on his
+    /// fleet's flanking rather than on his own hull — see
+    /// `fleet_flanking_bonus_pct`. If a rating is ever edited, this says out
+    /// loud that the larger fleet still holds more flags.
+    #[test]
+    fn the_nine_flag_officers_are_aboard_the_ships_they_flew_in() {
+        let flags = |fleet: &'static [Ship]| -> Vec<&'static Ship> {
+            fleet.iter().filter(|ship| ship.stars > 0).collect()
+        };
+        let (british, combined) = (flags(&BRITISH), flags(&COMBINED));
+        assert_eq!(british.len(), 3, "Nelson, Collingwood and Northesk");
+        assert_eq!(combined.len(), 6, "Villeneuve, Gravina, Alava, Magon, Dumanoir, Cisneros");
+        assert!(
+            combined.len() > british.len(),
+            "the Combined Fleet held more flags, which is the whole reason a \
+             per-flagship bonus was rejected"
+        );
+        for ship in british.iter().chain(combined.iter()) {
+            assert!(
+                (2..=5).contains(&ship.stars),
+                "{} is rated {} stars, off the 2-to-5 scale",
+                ship.name,
+                ship.stars
+            );
+        }
+        let nelson = commander_in_chief(0);
+        let villeneuve = commander_in_chief(1);
+        assert!(nelson.name.contains("Nelson") && nelson.stars == 5);
+        assert!(villeneuve.name.contains("Villeneuve") && villeneuve.stars == 2);
+
+        // The threshold is what turns more Combined flags into less Combined
+        // advantage, so it is asserted as the counts rather than as a rule.
+        let worth = |fleet: &'static [Ship]| -> usize {
+            fleet.iter().filter(|ship| admiral_formation(ship.stars) > 0).count()
+        };
+        assert_eq!(worth(&BRITISH), 2, "Nelson and Collingwood");
+        assert_eq!(worth(&COMBINED), 1, "Gravina alone");
+        assert!(
+            worth(&BRITISH) > worth(&COMBINED),
+            "the side with fewer flags must still come out ahead on the ones that count"
+        );
+        assert_eq!(admiral_formation(3), 0, "three stars is not a fighting tier");
+        assert_eq!(admiral_formation(4), 1);
+        assert_eq!(admiral_formation(5), 1);
+    }
+
+    /// The admirals reach the board: every flagship sails a tile further, and
+    /// the ones worth a fighting tier fire ten heavier.
+    ///
+    /// The broadside is fired for real rather than read off a strength
+    /// function, for the same reason the rate test does it: this whole feature
+    /// once ran through `flanking_bonus`, which the ranged attack path never
+    /// consults, and every table-level assertion passed while the board did
+    /// not move at all.
+    #[test]
+    fn an_admirals_stars_reach_his_flagship() {
+        let game = battle(1_805);
+        let plain = game.rules.units[SHIP_OF_THE_LINE].moves;
+        for (pid, fleet) in [(0usize, &BRITISH[..]), (1, &COMBINED[..])] {
+            for ship in fleet {
+                let uid = game.units_at(hex::offset_to_axial(ship.at.0, ship.at.1))[0];
+                let flagship = ship.stars > 0;
+                let moves = game.unit_max_moves(uid);
+                let expected = plain + if flagship { ADMIRAL_MOVEMENT_BONUS } else { 0.0 };
+                assert!(
+                    (moves - expected).abs() < 1e-9,
+                    "{} (seat {pid}) has {moves} movement, not {expected}",
+                    ship.name
+                );
+                assert_eq!(
+                    game.units[&uid].formation,
+                    admiral_formation(ship.stars),
+                    "{} is in the wrong fighting tier",
+                    ship.name
+                );
+            }
+        }
+
+        // Two ships alike in every way but the flag aboard, in separate copies
+        // of the same battle, firing on the same enemy from the same water.
+        let one_broadside = |stars: u8| -> i32 {
+            let mut game = battle(1_805);
+            let (from, at) = (hex::offset_to_axial(4, 2), hex::offset_to_axial(5, 2));
+            let firing = game.spawn_unit(SHIP_OF_THE_LINE, 0, from);
+            let struck = game.spawn_unit(SHIP_OF_THE_LINE, 1, at);
+            let unit = game.units.get_mut(&firing).unwrap();
+            unit.promotions.extend(
+                rate_promotions(100).iter().map(|name| crate::name::Name::new(name)),
+            );
+            unit.formation = admiral_formation(stars);
+            game.apply(0, &crate::game::Action::Ranged { unit: firing, target: at })
+                .expect("a ship of the line can fire on an enemy alongside");
+            game.units[&struck].hp
+        };
+        let (nelson, villeneuve) = (one_broadside(5), one_broadside(2));
+        assert!(
+            nelson < villeneuve,
+            "a five-star admiral's ship left {nelson} hit points where a two-star's left \
+             {villeneuve}"
+        );
+        assert_eq!(one_broadside(4), nelson, "four and five stars are the same tier");
+        assert_eq!(one_broadside(3), villeneuve, "three stars is not a fighting tier");
+    }
+
     #[test]
     fn a_ship_of_the_line_fights_heavier_than_a_sixty_four() {
         let game = battle(1_805);

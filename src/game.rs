@@ -19288,6 +19288,13 @@ impl Game {
             // A unit's level is what its promotion count has bought, so the
             // two are set together rather than left to disagree on the HUD.
             unit.level = 1 + promotions.len() as i32;
+            // The flag officer aboard, if any: every flagship is better
+            // handled, and a good enough admiral is worth a fighting tier as
+            // well. `trafalgar::admiral_formation` argues where that line sits.
+            if ship.stars > 0 {
+                unit.bonus_moves += crate::trafalgar::ADMIRAL_MOVEMENT_BONUS;
+                unit.formation = crate::trafalgar::admiral_formation(ship.stars);
+            }
         }
     }
 

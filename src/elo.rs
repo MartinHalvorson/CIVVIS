@@ -38,7 +38,9 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 125] = [
+pub const EVAL_ONLY_AIS: [&str; 126] = [
+    // One pre-registered point on the production genes #1520 opened.
+    "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
     // production controller. `live` has only ever been measured against its
     // own ablations, so these are what prices the whole repair set against
@@ -396,6 +398,7 @@ define_arm_kinds! {
     LiveWithoutWarPatience => "live_without_war_patience",
     Advanced => "advanced",
     AdvancedBankingDedication => "advanced_banking_dedication",
+    AdvancedBuildFirst => "advanced_build_first",
     AdvancedSynergy => "advanced_synergy",
     AdvancedSynergyWar => "advanced_synergy_war",
     AdvancedSynergyEconomy => "advanced_synergy_economy",
@@ -1907,6 +1910,28 @@ fn artifact_effective_alias(kind: ArmKind, dir: &str) -> ArmKind {
 fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
     match kind.name() {
         "advanced" => Box::new(AdvancedAi::new()),
+        // ONE pre-registered point on the production category genes, chosen
+        // before the run and not swept. `advanced_synergy` lost 108 Elo at
+        // deployment while ending on MORE districts (27.0 vs 24.1), FEWER
+        // buildings (75.9 vs 94.1), 3.4x less gold (216 vs 728) and a smaller
+        // army. That is one arm's correlation and 37 confounded changes, so it
+        // is a hypothesis and not a finding: that this engine's build order
+        // over-buys districts against buildings. #1516 reached something
+        // adjacent from the audit side -- the production bundle's components
+        // were selected on development, and development is not the objective.
+        //
+        // `settler_price` states the procedure this follows: "Pick one,
+        // register it, run it once -- do not sweep several against the same
+        // maps, which is the selection bias that dissolved this repository's
+        // coordinate-descent result on resampling." Registered: p_building
+        // 1.5, p_district 0.7, matrix seed 95000000. Whatever it returns is
+        // the result.
+        "advanced_build_first" => {
+            let mut w = Weights::default();
+            w.p_building = 1.5;
+            w.p_district = 0.7;
+            Box::new(AdvancedAi::with_weights(w))
+        }
         // Stock production weights and stock policy, with every live-bridge
         // repair that fixes a CIVVIS engine defect rather than a Firaxis one.
         // See `AdvancedAi::enable_engine_repairs` for the four exclusions and
@@ -3600,6 +3625,7 @@ impl ArmKind {
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 37 repairs, and against `live` they name
             // exactly the four Firaxis-semantics flags that separate them.
+            Self::AdvancedBuildFirst => &["build-order-tilt"],
             Self::AdvancedSynergy => &ENGINE_REPAIR_TREATMENTS,
             Self::AdvancedSynergyWar => &ENGINE_REPAIR_WAR_TREATMENTS,
             Self::AdvancedSynergyEconomy => &ENGINE_REPAIR_ECONOMY_TREATMENTS,
@@ -4152,6 +4178,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live_without_war_reinforcement" => (Vec::new(), "live_without_war_reinforcement"),
         "live_without_war_patience" => (Vec::new(), "live_without_war_patience"),
         "advanced" => (Vec::new(), "advanced"),
+        "advanced_build_first" => (Vec::new(), "advanced_build_first"),
         "advanced_synergy" => (Vec::new(), "advanced_synergy"),
         "advanced_synergy_war" => (Vec::new(), "advanced_synergy_war"),
         "advanced_synergy_economy" => (Vec::new(), "advanced_synergy_economy"),
@@ -5411,7 +5438,8 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 94] = [
+            const SCRIPTED: [&str; 95] = [
+                "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
                 "advanced_synergy_economy",
