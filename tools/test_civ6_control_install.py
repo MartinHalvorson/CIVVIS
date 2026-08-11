@@ -128,6 +128,33 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('"EmergencyWallRadius": args.emergency_wall_radius,', play)
         self.assertIn('"--emergency-wall-radius", type=int, default=3', play)
 
+    def test_a_refused_promotion_names_what_the_engine_offered(self) -> None:
+        """The engine's answer was computed and then discarded.
+
+        `CanStartCommand` already returns `can` and the `PROMOTIONS` list three
+        lines above the refusal, and the event recorded neither — 56 refusals
+        across the eight live runs of 2026-08-11, each carrying only the name
+        that failed. Nothing offered means the unit cannot promote at all and
+        CIVVIS should not have asked; others offered means it can, just not into
+        the tree named, which is a targeting bug. Opposite fixes, one blank line.
+
+        Names rather than indices, because a bare index in the ledger is the
+        exact defect the district refusal had to be repaired for.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+        self.assertIn("can_promote = okCan and can or false,", source)
+        self.assertIn("offered_promotions = offeredNames,", source)
+        self.assertIn("return GameInfo.UnitPromotions[index];", source)
+        self.assertIn("(row ~= nil and row.UnitPromotionType) or tostring(index)", source)
+        self.assertNotIn(
+            'emit("promotion_refused", {\n'
+            "\t\t\t\t\tturn = turn, unit = subject, promotion = promotionName,\n"
+            "\t\t\t\t});",
+            source,
+            "the blank refusal must not come back",
+        )
+
     def test_military_emergency_popup_uses_firaxis_pass_path(self) -> None:
         modinfo = (install.MOD_SOURCE / "CivvisControl.modinfo").read_text()
         closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
