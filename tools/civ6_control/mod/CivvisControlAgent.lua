@@ -8270,24 +8270,38 @@ local function applyOrder(player, pid, row, turn)
 				--     t18 IMPROVE:MINE -> succeeded
 				--     t19 IMPROVE:MINE -> refused, existing=IMPROVEMENT_MINE
 				--
-				-- ⚠ The improvement is read back from the PLOT rather than taken
-				-- from `wanted`, because the fallback below deliberately drops the
-				-- name and lets the engine choose — reporting what we asked for
-				-- would put the wrong improvement on the board exactly when the
-				-- two rulesets disagreed, which is the case that matters.
-				local built = try(function()
-					local plot = Map.GetPlot(params[UnitOperationTypes.PARAM_X],
-					                         params[UnitOperationTypes.PARAM_Y]);
-					if plot == nil then return nil; end
-					return typeName("Improvements", "ImprovementType",
-					                plot:GetImprovementType());
-				end);
-				if built ~= nil then
+				-- ⚠⚠⚠ AND THE IMPROVEMENT IS NOT ON THE PLOT YET. #1565 read it back
+				-- with `plot:GetImprovementType()` right here, reasoning that the
+				-- engine's own answer beats the name we asked for. The engine had
+				-- no answer to give: `UNITOPERATION_BUILD_IMPROVEMENT` is
+				-- REQUESTED, not executed inline, so at this line the plot is still
+				-- bare, `typeName` returns nil, and the emit is skipped every time.
+				--
+				-- Measured on the first run carrying it, civvis-20260811T183513Z:
+				-- 120 turns, improve orders issued and succeeding, and `improved`
+				-- fired ZERO times while `improve_already` fired 8 — the duplicates
+				-- the event exists to prevent, which are themselves the proof the
+				-- improvement did land, one turn later.
+				--
+				-- So use the name that was ASKED FOR. It is correct precisely here:
+				-- this branch names the improvement, `operate` returns true only
+				-- when `canOperate` accepted that exact request, and the engine
+				-- builds what was named. #1565's reasoning was about the FALLBACK
+				-- below, which drops the name and lets the engine choose — and that
+				-- branch does not emit at all, so the concern was real and belonged
+				-- to a different line.
+				--
+				-- ⭐ Third time recently that a reading was taken at the wrong
+				-- INSTANT: a state snapshot joined by turn, a movement value
+				-- sampled outside the decision, and now a plot read before the
+				-- operation ran. Ask when a value becomes true, not only where it
+				-- lives.
+				if wanted ~= nil then
 					emit("improved", {
 						turn = turn,
 						x = params[UnitOperationTypes.PARAM_X],
 						y = params[UnitOperationTypes.PARAM_Y],
-						im = built,
+						im = wanted,
 					});
 				end
 				return true, wanted or "IMPROVE";

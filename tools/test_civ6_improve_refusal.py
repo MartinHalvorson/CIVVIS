@@ -160,6 +160,33 @@ class ImproveRefusalTests(unittest.TestCase):
         handler = self.handler
         self.assertIn("if here ~= nil and here == wanted then", handler)
 
+    def test_the_success_event_names_what_was_asked_for(self) -> None:
+        """⚠⚠⚠ The improvement is NOT on the plot when the request returns.
+
+        #1565 read it back with `plot:GetImprovementType()` at the point of the
+        request, reasoning the engine's own answer beats the name we asked for.
+        `UNITOPERATION_BUILD_IMPROVEMENT` is REQUESTED, not executed inline, so
+        the plot is still bare there and the emit was skipped every time.
+
+        Measured on the first run carrying it, `civvis-20260811T183513Z`: 120
+        turns, improve orders succeeding, `improved` fired ZERO times while
+        `improve_already` fired 8 — the duplicates the event exists to prevent,
+        which are themselves proof the improvement landed a turn later.
+
+        The asked-for name is correct on THIS branch: it names the improvement,
+        `operate` returns true only when `canOperate` accepted that exact
+        request, and the engine builds what was named.
+        """
+        handler = self.handler
+        emit_at = handler.index('emit("improved"')
+        payload = handler[emit_at:emit_at + 260]
+        self.assertIn("im = wanted,", payload)
+        self.assertNotIn("im = built,", payload)
+
+        # The read-back must be gone, not merely unused: leaving it would say
+        # the plot can be asked at this point, which is the false belief.
+        self.assertNotIn("plot:GetImprovementType());\n\t\t\t\t\tend);", handler)
+
     def test_the_slice_covers_the_whole_emit(self) -> None:
         """Guards the fixture itself: a truncated window silently stops testing."""
         self.assertTrue(self.handler.rstrip().endswith("});"))
