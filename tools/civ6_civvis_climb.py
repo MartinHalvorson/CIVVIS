@@ -245,8 +245,68 @@ def ensure_popup_clear() -> None:
     )
 
 
+MIRROR_PROCESS_PATTERNS = ("tools/follow.py", "civvis play --mirror")
+MIRROR_RETIRE_SECONDS = 8.0
+
+
+def matching_pids(pattern: str) -> list[int]:
+    """Return just the process ids that a narrow mirror pattern found."""
+    return [int(pid) for pid in run(["pgrep", "-f", pattern]).split() if pid.isdecimal()]
+
+
+def process_running(pid: int) -> bool:
+    """Whether a process we previously found has not exited yet."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # It is still there; the normal signal path will name the permission
+        # problem rather than treating a live stale mirror as gone.
+        return True
+    return True
+
+
+def retire_mirror() -> list[int]:
+    """Stop the old follower *and* its detached visible server.
+
+    ``follow.py`` and ``civvis play --mirror`` both load their code at process
+    start.  Keeping either one through a new verification batch can therefore
+    pair today's Civ VI controller with yesterday's JavaScript and mirror
+    protocol.  The server is in its own session, so stopping the follower alone
+    deliberately does not stop it.
+    """
+    pids = []
+    for pattern in MIRROR_PROCESS_PATTERNS:
+        for pid in matching_pids(pattern):
+            if pid not in pids:
+                pids.append(pid)
+    if not pids:
+        return []
+
+    print(f"[mirror] retiring {len(pids)} inherited mirror helper(s) so this "
+          "verification batch gets the current build", flush=True)
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        except PermissionError as exc:
+            print(f"[mirror] could not stop stale helper {pid}: {exc}", flush=True)
+
+    deadline = time.monotonic() + MIRROR_RETIRE_SECONDS
+    remaining = [pid for pid in pids if process_running(pid)]
+    while remaining and time.monotonic() < deadline:
+        time.sleep(0.25)
+        remaining = [pid for pid in remaining if process_running(pid)]
+    if remaining:
+        print("[mirror] stale helper(s) did not exit before the new follower "
+              f"starts: {', '.join(str(pid) for pid in remaining)}", flush=True)
+    return pids
+
+
 def ensure_mirror() -> None:
-    """Make sure something is FEEDING the mirror window, not just serving it.
+    """Start the current-build follower before every verification batch.
 
     ⚠⚠ THE SERVER BEING UP IS NOT THE MIRROR BEING LIVE, and the two failure modes
     look identical from `/status`. `civvis play --serve` on :8610 reads a staged
@@ -261,22 +321,23 @@ def ensure_mirror() -> None:
     frames_missed 0` — a fifteen-turn hole that no status field named. The operator
     saw a CIVVIS window that had simply stopped agreeing with the game.
 
-    The batch has always relied on someone having started follow.py by hand, which
-    is the whole defect: "both games visible" is a REQUIREMENT of every run here and
-    nothing enforced it. Starting the stager costs one process launch per batch.
+    The batch used to accept any already-running `follow.py`. That process can be
+    many revisions old: its Python code, its detached `civvis play --mirror`
+    process, and Chrome's loaded JavaScript all survive a new build. A fresh
+    verification game then visibly couples Firaxis to a blank or stale CIVVIS
+    window. Retire that pair before the game begins and start the follower from
+    this checkout, so the live mirror is always part of the same verified build.
 
     Deliberately not fatal. A batch that cannot raise the viewer is still a batch
     that measures play, and refusing to start one because a window is missing would
     trade the measurement for the picture.
     """
-    if run(["pgrep", "-f", "tools/follow.py"]).strip():
-        print("[mirror] stager already running", flush=True)
-        return
     follow = HERE / "follow.py"
     if not follow.exists():
         print(f"[mirror] no stager at {follow}; the window will not track the game",
               flush=True)
         return
+    retire_mirror()
     _detach([sys.executable, "-u", str(follow)],
             Path.home() / "civvis-civ6-mirror" / "follow.log", "mirror")
 
