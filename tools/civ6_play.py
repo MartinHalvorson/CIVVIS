@@ -102,7 +102,8 @@ def startup_event_proves_game_started(event: dict) -> bool:
     )
 
 
-def wait_for_agent_start(tail, on_event, seconds: float) -> bool:
+def wait_for_agent_start(tail, on_event, seconds: float,
+                         still_loading=None) -> bool:
     """Wait for the in-game agent, staying patient while the game LOADS.
 
     ⚠⚠⚠ THE FIXED DEADLINE KILLED FOUR CONSECUTIVE STARTS ON 2026-08-10.
@@ -117,15 +118,37 @@ def wait_for_agent_start(tail, on_event, seconds: float) -> bool:
     immediately before #1481 played a 232-turn game on the same machine and
     settings, because its gate accepted the first autoclose event and waited.
 
-    So: keep the strict proof, drop the fixed deadline. Any event arriving is
-    evidence the game is still coming up and EXTENDS the budget; this gives up
-    only after `seconds` of genuine SILENCE, or when the game process is gone.
-    A hard bound of six times the budget still stops a game that streams
-    autoclose events forever from hanging the harness.
+    #1505 answered that with "any event extends the budget", which is right for
+    a mod that keeps talking -- and cannot reach the case it was written for. A
+    game GENERATING A MAP emits NOTHING: its in-game context has not loaded, so
+    there is no one to talk. The only events available to extend the budget are
+    the setup-screen batch already buffered when the gate opens, and those all
+    arrive on the first poll at t=0, where `now + seconds` is the deadline the
+    gate already had. So the extension is a no-op on a dead click and
+    unreachable on a live load, and the gate still expires at exactly `seconds`
+    -- which is why runs civvis-20260810T194817Z and ...T195339Z died the same
+    way AFTER #1505 landed, with the same 22 `autoclose_armed` and zero `agent`.
+
+    So stop inferring "is it coming up?" from a stream that is silent exactly
+    when the answer matters, and ASK THE SCREEN. ``still_loading`` is consulted
+    only when the quiet budget expires, and answers one question: is the game
+    somewhere other than the main menu? If it is, the click worked and the
+    machine is merely slow -- extend. If the main menu is back, the click did
+    nothing and no amount of waiting will change that -- give up NOW and let the
+    caller retry, instead of spending the budget staring at a menu.
+
+    That makes the wait scale with the host rather than with a constant: on a
+    loaded machine map generation takes longer in wall-clock and the gate waits
+    longer, with no threshold to calibrate and nothing to re-tune when the fleet
+    changes. Silence still ends the wait when the screen cannot vouch for the
+    game, the process dying still ends it immediately, and a hard bound of six
+    times the budget still stops an endlessly chattering game from hanging the
+    harness.
     """
-    quiet_deadline = time.monotonic() + seconds
-    hard_deadline = time.monotonic() + max(seconds, 0.0) * 6.0
-    while time.monotonic() < quiet_deadline and time.monotonic() < hard_deadline:
+    start = time.monotonic()
+    quiet_deadline = start + seconds
+    hard_deadline = start + max(seconds, 0.0) * 6.0
+    while time.monotonic() < hard_deadline:
         progressed = False
         started = False
         for event in tail.poll():
@@ -142,6 +165,12 @@ def wait_for_agent_start(tail, on_event, seconds: float) -> bool:
         if not env.game_pids():
             return False
         if progressed:
+            quiet_deadline = time.monotonic() + seconds
+        elif time.monotonic() >= quiet_deadline:
+            # Budget spent in silence. One look at the screen decides whether
+            # that silence is a loading map or a click that missed.
+            if still_loading is None or not still_loading():
+                return False
             quiet_deadline = time.monotonic() + seconds
         time.sleep(2.0)
     return False
@@ -384,6 +413,11 @@ SUBMENU_X = 0.528
 # simply "the menu is not up yet" -- the logos play for minutes after the game
 # core writes its mod scan -- so this is generous.
 BOOTSTRAP_ATTEMPTS = 16
+# How many extra startup budgets the whole bootstrap may spend on a screen that
+# shows no main menu, i.e. a map that is genuinely still generating. Five at the
+# 120 s default is ten minutes of patience for the slowest observed load, shared
+# across every attempt rather than granted to each one.
+LOADING_PATIENCE = 5
 
 # The Create Game screen. Unlike the main menu this layout is fixed: the same
 # controls in the same order every time, so these are measured once and hold.
@@ -1445,6 +1479,53 @@ def return_to_main_menu(bounds: tuple[int, int, int, int], run_dir: Path,
     return _main_menu_visible(shot)
 
 
+def _loading_probe(run_dir: Path, attempt: int, patience: dict, grant: float):
+    """Answer "is the game still somewhere other than the main menu?".
+
+    The startup gate needs to tell a slow map generation from a click that did
+    nothing, and those look identical in the log -- both are silent. They do not
+    look identical on the SCREEN: a launched game is on a loading or in-game
+    view, and a missed click leaves Single Player sitting right where it was.
+
+    The same `_main_menu_visible` read that licenses a retry answers it, so this
+    adds no new way to be wrong: a false "menu" costs one early give-up that the
+    caller was about to make anyway, and a false "not menu" costs one more
+    budget. Each call keeps its screenshot, numbered by the wait it belongs to,
+    so a run that dies here can be looked at afterwards.
+
+    ``patience`` is spent from ONE pool shared by every attempt, because the
+    per-wait hard bound alone does not bound the bootstrap: 16 attempts each
+    allowed six budgets is over three hours of a screen that is neither a menu
+    nor a game. A shared pool keeps the worst case to a single extra bound no
+    matter how the attempts divide it, and a game that really is generating a
+    map only ever needs it once.
+    """
+    looks = {"n": 0}
+
+    def still_loading() -> bool:
+        looks["n"] += 1
+        shot = run_dir / f"startup-wait{attempt}-{looks['n']}.png"
+        screenshot(shot)
+        if _main_menu_visible(shot):
+            print(f"attempt {attempt}: the main menu is back after "
+                  f"{looks['n']} silent wait(s) -- the launch did not take",
+                  file=sys.stderr)
+            return False
+        if patience["left"] < grant:
+            print(f"attempt {attempt}: the main menu is gone but nothing has "
+                  f"loaded in {patience['spent']:.0f}s of waiting -- this is "
+                  "not a map still generating", file=sys.stderr)
+            return False
+        patience["left"] -= grant
+        patience["spent"] += grant
+        print(f"attempt {attempt}: silent, but the main menu is gone -- the "
+              f"game is still coming up (wait {looks['n']}, "
+              f"{patience['left']:.0f}s of patience left)")
+        return True
+
+    return still_loading
+
+
 def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namespace,
                         run_dir: Path) -> bool:
     """Set this run's game up on the Create Game screen and start it.
@@ -1525,8 +1606,13 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     to wait an hour for a game that was never started. The agent writing
     anything at all is the proof that a game exists.
     """
-    def started(seconds: float) -> bool:
-        return wait_for_agent_start(tail, on_event, seconds)
+    def started(seconds: float, still_loading=None) -> bool:
+        return wait_for_agent_start(tail, on_event, seconds,
+                                    still_loading=still_loading)
+
+    # One pool of extra waiting for the whole bootstrap, spent only against a
+    # screen that shows no main menu. See `_loading_probe`.
+    patience = {"left": verify_s * LOADING_PATIENCE, "spent": 0.0}
 
     # The mod scan lands in Modding.log minutes before the menu can be clicked
     # -- the 2K and Firaxis logos play over the top of it -- so "main menu
@@ -1670,7 +1756,8 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         intro_retries = max(4, min(60, int(verify_s / 2)))
         advance_leader_intro(bounds, args.leader, run_dir, attempt,
                              retries=intro_retries, poll_s=2.0)
-        if started(verify_s):
+        if started(verify_s, still_loading=_loading_probe(run_dir, attempt,
+                                                          patience, verify_s)):
             return True
         if not env.game_pids():
             print("the game exited while starting", file=sys.stderr)
@@ -1694,9 +1781,11 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
     Player save directory; the path supplies the exact rendered filename to
     select, so this never guesses which row happens to be first.
     """
-    def started(seconds: float) -> bool:
-        return wait_for_agent_start(tail, on_event, seconds)
+    def started(seconds: float, still_loading=None) -> bool:
+        return wait_for_agent_start(tail, on_event, seconds,
+                                    still_loading=still_loading)
 
+    patience = {"left": verify_s * LOADING_PATIENCE, "spent": 0.0}
     save_label = Path(args.load_save).stem
     for attempt in range(1, BOOTSTRAP_ATTEMPTS + 1):
         focus_game(GAME_SIDE, GAME_FRACTION)
@@ -1757,7 +1846,10 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
 
         # A save made with an older revision of the same mod can produce a
         # compatibility confirmation. Give a normal load a head start, then
-        # acknowledge only a visibly read YES button.
+        # acknowledge only a visibly read YES button. This first wait stays
+        # deliberately blind to the screen: a confirmation dialog also hides the
+        # main menu, so a loading probe here would extend the budget instead of
+        # letting the run get on with answering the dialog.
         if started(min(10.0, verify_s)):
             return True
         confirmation = run_dir / f"load-confirmation-attempt{attempt}.png"
@@ -1765,7 +1857,8 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
         yes = _observed_label_point(confirmation, "Yes", bounds)
         if yes is not None:
             click_at(*yes)
-        if started(verify_s):
+        if started(verify_s, still_loading=_loading_probe(run_dir, attempt,
+                                                          patience, verify_s)):
             return True
         if not env.game_pids():
             return False
