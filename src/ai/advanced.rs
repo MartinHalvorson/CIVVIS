@@ -3308,6 +3308,12 @@ impl AdvancedAi {
         self.settler_founds_when_stalled = true;
     }
 
+    /// Fortify units the planner gave nothing to do. Evaluator arm
+    /// `advanced_fortify_idle_units`; off in production.
+    pub fn enable_fortify_idle_units(&mut self) {
+        self.base.fortify_idle_units = true;
+    }
+
     pub fn disable_amenity_districts(&mut self) {
         self.base.amenity_districts = false;
     }

@@ -1674,6 +1674,12 @@ pub struct UnitMemory {
 pub struct BasicAi {
     minor: bool,
     barb: bool,
+    /// Fortify any unit whose planner gave it nothing to do, not only one
+    /// inside a stand-down window.
+    ///
+    /// Off by default; evaluator arm `advanced_fortify_idle_units`. See
+    /// `hold_stood_down_unit` for the measurement that motivates it.
+    pub fortify_idle_units: bool,
     /// Let the baseline governor build the district that repairs an Amenity
     /// deficit.
     ///
@@ -2981,6 +2987,7 @@ impl BasicAi {
             patrol_posts: HashMap::new(),
             patrol_posts_by_class: HashMap::new(),
             settler_targets: HashMap::new(),
+            fortify_idle_units: false,
             unit_memories: RefCell::new(BTreeMap::new()),
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
@@ -3022,6 +3029,7 @@ impl BasicAi {
             patrol_posts: HashMap::new(),
             patrol_posts_by_class: HashMap::new(),
             settler_targets: HashMap::new(),
+            fortify_idle_units: false,
             unit_memories: RefCell::new(BTreeMap::new()),
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
@@ -3517,12 +3525,30 @@ impl BasicAi {
     /// have wanted, which cost more productive turns than the loops it broke.
     /// A unit that acted needs nothing from this; one that did not is standing
     /// in the open regardless, and is better off fortified and healing.
+    /// A unit whose planner declined to give it anything to do.
+    ///
+    /// ⚠ Until 2026-08-11 this fortified **only inside a stand-down window**,
+    /// so a unit that simply took no turn stood in the open instead. `audit` at
+    /// the deployment shape measures what that is worth: of major-civ
+    /// unit-turns, **7.73% are an unembarked land military unit standing still,
+    /// unfortified, that could have fortified** — 10,477 unit-turns across
+    /// eight games — against **3.59%** that are actually fortified. The agent
+    /// leaves its army unfortified more than twice as often as it fortifies it.
+    ///
+    /// The price is exact rather than rhetorical: `Game::unit_strength` adds
+    /// **3.0 per fortified turn, capped at two**, so each of those unit-turns
+    /// declines **+6 defensive strength**, about 30% of a warrior's base.
+    ///
+    /// Nothing is given up by taking it. The planner has already declined to
+    /// use this unit's movement this turn, so the `moves_left = 0` that
+    /// `do_fortify` sets costs a move that was not going to be made, and the
+    /// stance clears the moment the unit moves again.
     pub(crate) fn hold_stood_down_unit(&self, g: &mut Game, pid: usize, uid: u32) {
         let standing_down = self
             .unit_motion
             .get(&uid)
             .is_some_and(|motion| g.turn < motion.resume_turn);
-        if standing_down && g.units.contains_key(&uid) {
+        if (standing_down || self.fortify_idle_units) && g.units.contains_key(&uid) {
             self.fortify_or_stop(g, pid, uid);
         }
     }

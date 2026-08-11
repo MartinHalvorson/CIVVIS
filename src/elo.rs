@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 127] = [
+pub const EVAL_ONLY_AIS: [&str; 128] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -147,6 +147,7 @@ pub const EVAL_ONLY_AIS: [&str; 127] = [
     "advanced_without_battlefront_observation",
     "advanced_lower_city_target",
     "advanced_settler_founds_when_stalled",
+    "advanced_fortify_idle_units",
     "advanced_league_top",
     "advanced_joint_tactics",
     "strategic_cheap",
@@ -463,6 +464,7 @@ define_arm_kinds! {
     AdvancedWithoutBattlefrontObservation => "advanced_without_battlefront_observation",
     AdvancedLowerCityTarget => "advanced_lower_city_target",
     AdvancedSettlerFoundsWhenStalled => "advanced_settler_founds_when_stalled",
+    AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
@@ -2614,6 +2616,27 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // than a gene: wanting a better site cost 41 Elo as
         // `city_target_floor`; finishing the settlement already begun paid +30
         // (`settler_commit`) and +31 (`settlement_safety`).
+        // A unit whose planner gave it nothing to do takes the free defensive
+        // stance instead of standing in the open.
+        //
+        // `hold_stood_down_unit` fortified only inside a stand-down window, so
+        // a unit that merely took no turn was left unfortified. `audit`
+        // measures the size: **7.73% of major-civ unit-turns** are an
+        // unembarked land military unit standing still that could have
+        // fortified — 10,477 across eight games — against **3.59%** that are
+        // fortified. `unit_strength` pays **+3 per fortified turn capped at
+        // two**, so each declines about 30% of a warrior's base strength.
+        //
+        // ⚠ Chosen by RATE, not by symptom count. The same audit reports 94
+        // circling warriors, which is 1.21% of unit-turns; and the previous
+        // repair in this file fixed a settler idling two hundred turns and
+        // measured ~5 Elo because it touched 14 maps in 400. Frequency is the
+        // better guide, and still not a substitute for the paired run.
+        "advanced_fortify_idle_units" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_fortify_idle_units();
+            Box::new(ai)
+        }
         "advanced_settler_founds_when_stalled" => {
             let mut ai = AdvancedAi::new();
             ai.enable_settler_founds_when_stalled();
@@ -3728,6 +3751,7 @@ impl ArmKind {
             Self::AdvancedWithoutBattlefrontObservation => &["battlefront-observation-withheld"],
             Self::AdvancedLowerCityTarget => &["city-target-gene-lowered"],
             Self::AdvancedSettlerFoundsWhenStalled => &["settler-founds-when-stalled"],
+            Self::AdvancedFortifyIdleUnits => &["fortify-idle-units"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -4253,6 +4277,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_battlefront_observation" => (Vec::new(), "advanced_without_battlefront_observation"),
         "advanced_lower_city_target" => (Vec::new(), "advanced_lower_city_target"),
         "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
+        "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -5462,7 +5487,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 96] = [
+            const SCRIPTED: [&str; 97] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5527,6 +5552,7 @@ mod tests {
                 "advanced_without_battlefront_observation",
                 "advanced_lower_city_target",
                 "advanced_settler_founds_when_stalled",
+                "advanced_fortify_idle_units",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",
