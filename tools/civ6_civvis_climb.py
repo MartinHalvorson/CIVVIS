@@ -245,13 +245,68 @@ def ensure_popup_clear() -> None:
     )
 
 
-MIRROR_PROCESS_PATTERNS = ("tools/follow.py", "civvis play --mirror")
+MIRROR_HOME = Path.home() / "civvis-civ6-mirror"
+MIRROR_FOLLOW_LOG = MIRROR_HOME / "follow.log"
+MIRROR_PORT = 8610
 MIRROR_RETIRE_SECONDS = 8.0
 
 
 def matching_pids(pattern: str) -> list[int]:
     """Return just the process ids that a narrow mirror pattern found."""
     return [int(pid) for pid in run(["pgrep", "-f", pattern]).split() if pid.isdecimal()]
+
+
+def follower_output_path(pid: int) -> Path | None:
+    """The file a follower owns as stdout, if `lsof` can prove one.
+
+    A process name is deliberately not an ownership boundary: many CIVVIS
+    worktrees run ``tools/follow.py``.  The live desktop follower is distinct
+    because it writes beneath the one shared ``civvis-civ6-mirror`` runtime.
+    """
+    out = run(["lsof", "-a", "-p", str(pid), "-d", "1", "-Fn"])
+    for line in out.splitlines():
+        if line.startswith("n"):
+            return Path(line[1:])
+    return None
+
+
+def follower_owns_mirror(pid: int) -> bool:
+    """Whether this follower is one of the shared desktop mirror owners."""
+    output = follower_output_path(pid)
+    if output is None:
+        return False
+    try:
+        output.relative_to(MIRROR_HOME)
+    except ValueError:
+        return False
+    return True
+
+
+def mirror_listener_pids() -> set[int]:
+    """The processes that actually own the dedicated visible mirror port."""
+    out = run(["lsof", f"-tiTCP:{MIRROR_PORT}", "-sTCP:LISTEN"])
+    return {int(pid) for pid in out.split() if pid.isdecimal()}
+
+
+def owned_mirror_pids() -> list[int]:
+    """Return only helpers that own this machine's shared desktop mirror.
+
+    A fresh batch must retire its old follower and detached server so they do
+    not pair a new game with an old protocol or JavaScript build.  The old
+    global name match also stopped unrelated worktrees' followers.  Followers
+    are scoped by their dedicated runtime output, while servers are scoped by
+    the dedicated port, which keeps the fresh-build invariant without crossing
+    worktree boundaries.
+    """
+    pids = [
+        pid for pid in matching_pids("tools/follow.py")
+        if follower_owns_mirror(pid)
+    ]
+    listeners = mirror_listener_pids()
+    for pid in matching_pids("civvis play --mirror"):
+        if pid in listeners and pid not in pids:
+            pids.append(pid)
+    return pids
 
 
 def process_running(pid: int) -> bool:
@@ -276,11 +331,7 @@ def retire_mirror() -> list[int]:
     protocol.  The server is in its own session, so stopping the follower alone
     deliberately does not stop it.
     """
-    pids = []
-    for pattern in MIRROR_PROCESS_PATTERNS:
-        for pid in matching_pids(pattern):
-            if pid not in pids:
-                pids.append(pid)
+    pids = owned_mirror_pids()
     if not pids:
         return []
 
@@ -339,7 +390,7 @@ def ensure_mirror() -> None:
         return
     retire_mirror()
     _detach([sys.executable, "-u", str(follow)],
-            Path.home() / "civvis-civ6-mirror" / "follow.log", "mirror")
+            MIRROR_FOLLOW_LOG, "mirror")
 
 
 def commits_behind_main() -> int | None:
