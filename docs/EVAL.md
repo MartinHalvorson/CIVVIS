@@ -9445,8 +9445,8 @@ swept, twenty-six behaviours in total:
 
 | site | behaviours | result |
 |---|---|---|
-| `promoted_policy_envoy` | 13 | `city_target_floor` **−41 Elo, removed**; `settler_commit` **+30**; the rest null or gate-rejected |
-| `configured` | 10 | `settlement_safety` **+31**; `deny_leaders` near-inert; the rest null |
+| `promoted_policy_envoy` | 13 | `city_target_floor` **−41 Elo** (CI +7..+76 for the withhold, 400 pairs, seed 8600000, matrix PASS, PR #1504) **removed**; `settler_commit` **+30** (60/95, p=0.0061, seed 9200000, PR #1510); the rest null or gate-rejected |
+| `configured` | 10 | `settlement_safety` **+31** (65/101, p=0.0064, 400 pairs, seed 9700000, PR #1521); `deny_leaders` near-inert; the rest null |
 | `production_weights` | 1 | `policy_deck = Live` **earns its place** |
 | `delegated_cities` | 2 | Builder floor null on wins and −score; settler deadline null on wins, +score |
 
@@ -9454,7 +9454,7 @@ swept, twenty-six behaviours in total:
 
 Before this, all twenty-six shared a single composite number — the 2026-08-01
 promotion — and that is the condition that let a component costing forty-one Elo
-ship and sit unnoticed for ten days. The sweep's value is not the +41 by itself;
+ship and sit unnoticed for ten days. The sweep's value is not that one figure by itself;
 it is that **no behaviour in the production controller is now believed rather
 than measured.**
 
