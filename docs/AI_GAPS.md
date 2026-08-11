@@ -38,8 +38,10 @@ The only searching roster entry, `strategic`, is marked `league_only` and is
 excluded from exhibition and auto-play choices. Without a seated league, every
 non-human major uses stock `AdvancedAi`; minors and barbarians use `BasicAi`.
 
-The repository ships and embeds the 40-gene champion in
-`data/evolved/best.json`. It ships no `valuenet.json`. That distinction matters:
+The repository ships and embeds the champion in `data/evolved/best.json`. It
+stores the 40 genes that existed when it was bred; the seven added by #1520
+fill from `#[serde(default)]` at their identity, so the artifact keeps loading
+unchanged. It ships no `valuenet.json`. That distinction matters:
 the genome changes a scripted policy, while a value net would be a learned
 model. `ai_eval` reports the artifact provenance and effective fallback for
 every named entrant.
@@ -210,13 +212,68 @@ agent” label even less defensible.
 
 ### 6. The search surface is narrower than the policy and often bypassed
 
-The active gene vector is 40 entries. The policy appetites and the policy-deck
-and dedication selectors stored beside it in `Weights` are not genes. Research
-order, city roles, strategic gates, and many tactical decisions are also outside
-the vector.
+The active gene vector is 47 entries, 40 of them until #1520. The policy
+appetites and the policy-deck and dedication selectors stored beside it in
+`Weights` are not genes. Research order, city roles, strategic gates, and many
+tactical decisions are also outside the vector.
+
+**Production valuation was the largest thing outside it, and is now partly
+inside.** `AdvancedAi::production_value` is 1,014 lines that rank every
+candidate build, every city, every turn. Measured on the body of that function:
+**291 numeric literals, 93 of them distinct, and zero reads of `Weights`.** Not
+one of the 40 genes reached a build priority, so no run of `evolve` had ever
+tuned one, the macro search had never perturbed one, and every change to that
+ranking had to be a hand-picked constant defended in prose. The tree already
+said so about a single one of the 93 — `settler_price` exists because *"920 is
+a hardcoded literal: not a gene, so no run of `evolve` has tuned it"* — without
+noticing the other ninety-two.
+
+#1520 adds seven category multipliers (`p_military`, `p_builder`, `p_trader`,
+`p_building`, `p_district`, `p_wonder`, `p_project`) applied to the matching
+arm's score, after the refusal sentinel so a gene tilts what a city wants and
+never argues with what it may not build. Each defaults to 1.0 and the multiply
+lands only on a positive score; the same `ai_eval advanced advanced_v1` run
+built before and after is byte-identical across 24 games, so the default
+genome — which `BasicAi::new()` and `AdvancedAi::legacy()` both carry — ranks
+builds exactly as it did.
+
+⚠ **This widens what can be searched. It is not a strength result and must not
+be cited as one.** Whether the surface contains anything worth finding is an
+open question, and answering it needs an `evolve` run against the win-based
+gate, with a control that separates the wider surface from simply more
+breeding.
+
+### ★★★ The settler's price is not a live control surface
+
+An eighth gene was implemented and then cut on its own evidence, which is worth
+recording because it independently confirms a conclusion this document reached
+from the other direction:
+
+```
+gene_census --games 96 --start-seed 93500000
+  p_settler   stock 1.000  probe 4.000   97% identical   nearly inert
+  p_building  stock 1.000  probe 4.000   30% identical   live
+```
+
+**Scoring the settler at four times its shipped value leaves 97% of games
+outcome-identical.** `docs/EVAL.md` 2026-07-28 found production preemption a
+null and diagnosed why: the settler is not blocked by losing a ranking, it is
+blocked *before* the ranking is consulted — "no city at pop 2" on 23.8% of
+seat-turns, a growth constraint no price can buy past. The census says the same
+thing from the valuation side, on a different mechanism and different seeds.
+
+It follows that `settler_price` and the 920 literal it scales are an argument
+about a knob that barely connects, which is the more useful form of the
+complaint that started this: the problem with the 93 literals was never only
+that they are untuned. Some of them cannot matter.
+
+The other seven probe live at 17–67% identical under the same treatment, so
+none of them ships silent — which is the standing complaint two paragraphs
+below.
 
 An older report said “11 of 48 genes” were silent, but the implementation's
-vector has 40 entries and that report's table names only ten. Treat the ratio as
+vector had 40 entries when that was written — 47 since #1520 — and that
+report's table names only ten. Treat the ratio as
 a historical bookkeeping error, not a current genome fact. The supported
 finding is narrower: causal probes have found multiple parameters that do not
 change the sampled `AdvancedAi` games, often because the live hierarchical path
