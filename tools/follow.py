@@ -525,6 +525,7 @@ def start_visible_server(run_dir, players):
     for _ in range(60):
         if server_alive(PORT):
             hold_the_frame()
+            refresh_mirror_page(process.pid)
             # Chrome reconnects after the server answers and may restore its
             # default all-players spectator view after this first pin. Reassert
             # once the page has completed that handoff; otherwise a fresh server
@@ -590,6 +591,31 @@ def mirror_on_screen():
     if not answer:
         return None
     return f":{PORT}" in answer
+
+
+def refresh_mirror_page(server_pid):
+    """Give an existing mirror tab the server that just replaced its old one.
+
+    The URL is unique to the fresh `civvis play --mirror` process, and the
+    index document uses that instance to give `app.js` its own fresh URL. This
+    prevents a tab that survived a verification batch from rendering the old
+    client's blank or stale map. Do not activate Chrome: Firaxis needs to keep
+    receiving its frame-tied events while this happens.
+    """
+    if mirror_on_screen() is not True:
+        return
+    target = f"{MIRROR_URL}?instance={server_pid}"
+    chrome(f'''tell application "Google Chrome"
+      set refreshed to false
+      repeat with thisWindow in every window
+        repeat with thisTab in every tab of thisWindow
+          if not refreshed and (URL of thisTab) contains ":{PORT}" then
+            set URL of thisTab to "{target}"
+            set refreshed to true
+          end if
+        end repeat
+      end repeat
+    end tell''')
 
 
 def ensure_on_screen(misses):
