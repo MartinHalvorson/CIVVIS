@@ -958,7 +958,12 @@ mod champion_snapshot_tests {
         let champion: super::Champion = serde_json::from_str(super::EMBEDDED_CHAMPION)
             .expect("the embedded champion must parse");
         let genes = champion.weights.to_vec();
-        assert_eq!(genes.len(), 40);
+        // Derived, not a literal: the committed artifact stores only the genes
+        // that existed when it was bred, and `#[serde(default)]` fills any
+        // added since at their identity. A hardcoded width would fail every
+        // time the search surface grows, which is the opposite of what this
+        // snapshot is guarding.
+        assert_eq!(genes.len(), crate::ai::Weights::bounds().len());
         assert!(genes.iter().all(|gene| gene.is_finite()));
         assert!(
             genes != crate::ai::Weights::default().to_vec(),
@@ -974,7 +979,7 @@ mod champion_snapshot_tests {
         let champion = load_champion("evolved")
             .expect("data/evolved/best.json must resolve without a local evolved/ dir");
         let genes = champion.to_vec();
-        assert_eq!(genes.len(), 40);
+        assert_eq!(genes.len(), crate::ai::Weights::bounds().len());
         assert!(
             genes.iter().all(|gene| gene.is_finite()),
             "a champion with a non-finite gene would poison every agent that loads it"
