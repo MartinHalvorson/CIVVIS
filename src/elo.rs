@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 124] = [
+pub const EVAL_ONLY_AIS: [&str; 125] = [
     // The native-safe half of the live-bridge bundle, applied to the stock
     // production controller. `live` has only ever been measured against its
     // own ablations, so these are what prices the whole repair set against
@@ -143,6 +143,7 @@ pub const EVAL_ONLY_AIS: [&str; 124] = [
     "advanced_without_unpriced_bundle",
     "advanced_without_settlement_safety",
     "advanced_without_battlefront_observation",
+    "advanced_lower_city_target",
     "advanced_league_top",
     "advanced_joint_tactics",
     "strategic_cheap",
@@ -456,6 +457,7 @@ define_arm_kinds! {
     AdvancedWithoutUnpricedBundle => "advanced_without_unpriced_bundle",
     AdvancedWithoutSettlementSafety => "advanced_without_settlement_safety",
     AdvancedWithoutBattlefrontObservation => "advanced_without_battlefront_observation",
+    AdvancedLowerCityTarget => "advanced_lower_city_target",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
@@ -510,6 +512,11 @@ pub const PRE_2026_08_10_D_HOLY: f64 = 2.0;
 /// `advanced_without_city_target_floor` withholds to a value the repository
 /// already plays rather than a number invented for the arm.
 pub const PRE_PROMOTION_CITY_TARGET_FLOOR: usize = 3;
+
+/// What `advanced_lower_city_target` asks the flat gene for: the same 3 the
+/// plan's ramp now starts at, so the two "how many cities" knobs agree instead
+/// of the gene sitting a city above the plan.
+pub const LOWERED_CITY_TARGET: f64 = 3.0;
 
 /// The floor `advanced_wide_opening` tests, read from the one place that
 /// defines it so the arm and the history cannot drift apart.
@@ -2543,6 +2550,33 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_settlement_safety();
             Box::new(ai)
         }
+        // ★ A PREDICTION, not a search. Declared before the run.
+        //
+        // Three withholds at the deployment shape resolved the settling lane
+        // into one statement: **ambition costs, execution pays.** Wanting more
+        // cities measured **-41 Elo** (`city_target_floor`, removed #1504);
+        // committing to a settler already built measured **+30**
+        // (`settler_commit`); putting the city somewhere it survives measured
+        // **+31** (`settlement_safety`). Two execution mechanisms pay about
+        // what the one ambition knob cost.
+        //
+        // If that is a property of the engine rather than a story fitted to
+        // three results, it should predict an axis it was not derived from.
+        // `city_target` is the other "how many cities to want" knob — the flat
+        // gene the baseline production governor caps on, distinct from the
+        // plan's floor and untouched by #1504. **Prediction: lowering it from
+        // 4.0 to the 3 the plan now starts at is POSITIVE.**
+        //
+        // ⚠ The prediction is what makes this worth running, and it is also
+        // what makes a null informative: `GENOME.md` puts city expansion "at a
+        // local optimum", so a null says the principle does not extend past
+        // the three flags that produced it, and it should stop being quoted as
+        // though it does. Recorded either way.
+        "advanced_lower_city_target" => {
+            let mut w = Weights::default();
+            w.city_target = LOWERED_CITY_TARGET;
+            Box::new(AdvancedAi::with_weights(w))
+        }
         "advanced_without_battlefront_observation" => {
             let mut ai = AdvancedAi::new();
             ai.disable_battlefront_observation();
@@ -3644,6 +3678,7 @@ impl ArmKind {
             Self::AdvancedWithoutUnpricedBundle => &["unpriced-production-bundle-withheld"],
             Self::AdvancedWithoutSettlementSafety => &["settlement-safety-withheld"],
             Self::AdvancedWithoutBattlefrontObservation => &["battlefront-observation-withheld"],
+            Self::AdvancedLowerCityTarget => &["city-target-gene-lowered"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -4166,6 +4201,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_unpriced_bundle" => (Vec::new(), "advanced_without_unpriced_bundle"),
         "advanced_without_settlement_safety" => (Vec::new(), "advanced_without_settlement_safety"),
         "advanced_without_battlefront_observation" => (Vec::new(), "advanced_without_battlefront_observation"),
+        "advanced_lower_city_target" => (Vec::new(), "advanced_lower_city_target"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -5375,7 +5411,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 93] = [
+            const SCRIPTED: [&str; 94] = [
                 "advanced_synergy",
                 "advanced_synergy_war",
                 "advanced_synergy_economy",
@@ -5437,6 +5473,7 @@ mod tests {
                 "advanced_without_unpriced_bundle",
                 "advanced_without_settlement_safety",
                 "advanced_without_battlefront_observation",
+                "advanced_lower_city_target",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",
