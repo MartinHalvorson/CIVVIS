@@ -549,6 +549,16 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// this when rules, default setup, or scoring semantics change enough that an
 /// Elo point no longer measures the same experiment.
 ///
+/// **v8 (2026-08-11) — first city-state discovery earns an Envoy.** The first
+/// living major civilization to make contact with a city-state now receives one
+/// Envoy already placed there; later discoverers do not. This is a world rule,
+/// not an opt-in controller treatment, so it changes the influence thresholds
+/// and available bonuses for Basic, `advanced_v1`, and production Advanced
+/// alike. The production Scout's higher-information frontier choice is gated
+/// away from `advanced_v1`, but the reward is deliberately not: the new rule
+/// changes the experiment whenever anyone reaches a city-state. Ratings from
+/// v7 and v8 must not be compared.
+///
 /// **v7 (2026-08-10) — the AI sells what a declaration cancels.** Immediately
 /// before it declares, a civilization now offers its victim the terms the
 /// declaration is about to void — spare Luxury copies, Open Borders, Gold per
@@ -581,7 +591,7 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// argument is ever wrong. Rows before and after v5 are not comparable at Online,
 /// Quick, Epic or Marathon, where the price genuinely moved (12.5 / 16.75 / 37.5 /
 /// 75 against a flat 25).
-pub const ELO_PROTOCOL_VERSION: u32 = 7;
+pub const ELO_PROTOCOL_VERSION: u32 = 8;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand
