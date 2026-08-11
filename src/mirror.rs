@@ -8355,6 +8355,41 @@ fn refused_no_plot_through(
         }) {
             continue;
         }
+        // ★★★★★ THE EVENT ALREADY DRAWS THIS DISTINCTION AND THE BLOCK IGNORED IT.
+        //
+        // `offered` is on `build_no_plot` precisely to separate two opposite
+        // refusals, and `Game::blocked_districts` says so in its own doc: zero
+        // means the engine has no target ANYWHERE — a Government Plaza that
+        // already exists, which is one per civilization and belongs blocked;
+        // above zero means "the engine has ground, just not ours", which that
+        // doc calls *a placement disagreement in one city that must not stop the
+        // empire*.
+        //
+        // Above zero the district IS placeable in this city. `productionPlot`
+        // returns nothing only because a direct CIVVIS order names a plot and
+        // that plot was not among the offered ones, and it deliberately refuses
+        // to substitute another — "substituting another legal plot would actuate
+        // a different decision". So the item is fine, the city is fine, and only
+        // the plot choice was wrong; blocking the district there forecloses
+        // ground CIVVIS could have used by simply asking for a different tile.
+        //
+        // Measured across every live run of 2026-08-11, 47 `build_no_plot`
+        // events: **41 of them had `offered > 0`** — 10 Theater, 7 Campus, 6
+        // Industrial Zone, 4 Commercial Hub, 4 Diplomatic Quarter — the science,
+        // production and culture backbone, struck out of those cities for the
+        // rest of the game over a tile choice.
+        //
+        // ⚠ An ABSENT `offered` is not a reading. Older exports sent none, and
+        // those keep the old behaviour exactly, so replaying an older run is
+        // unchanged — the same rule `moves` follows in
+        // `refused_sites_of_kind_through`.
+        if event
+            .get("offered")
+            .and_then(|v| v.as_i64())
+            .is_some_and(|offered| offered > 0)
+        {
+            continue;
+        }
         let (Some(city), Some(named)) = (
             event.get("city").and_then(|v| v.as_i64()),
             event.get(field).and_then(|v| v.as_str()),
@@ -11945,6 +11980,43 @@ mod transient_refusal_tests {
              still block: {refused:?}"
         );
         assert!(refused.contains(&crate::hex::offset_to_axial(5, 8)));
+    }
+
+    /// ⚠⚠ `build_no_plot` already carries the discriminator and the block ignored
+    /// it. `Game::blocked_districts` says zero offered plots means the district is
+    /// impossible ANYWHERE (a Government Plaza that already exists), while above
+    /// zero is "a placement disagreement in one city that must not stop the
+    /// empire" — the district IS placeable there, CIVVIS just named a plot the
+    /// engine would not take.
+    ///
+    /// Across every live run of 2026-08-11, 47 events: **41 had `offered > 0`**.
+    #[test]
+    fn a_wrong_plot_does_not_block_a_placeable_district() {
+        let p = events("noplot", &[
+            r#"{"kind":"build_no_plot","turn":40,"city":7,"district":"DISTRICT_CAMPUS","offered":4}"#,
+            r#"{"kind":"build_no_plot","turn":41,"city":7,"district":"DISTRICT_GOVERNMENT","offered":0}"#,
+        ]);
+        let refused = refused_no_plot_through(&p, None, "district", "DISTRICT_");
+        let blocked = refused.get(&7).expect("the impossible district still blocks");
+        assert!(
+            !blocked.contains("DISTRICT_CAMPUS"),
+            "a Campus with four offered plots is placeable; only the tile was wrong"
+        );
+        assert!(
+            blocked.contains("DISTRICT_GOVERNMENT"),
+            "zero offered plots is the engine saying nowhere, and must still block"
+        );
+    }
+
+    /// An absent `offered` is not a reading — older exports sent none, and those
+    /// must keep the old behaviour so a replayed run is unchanged.
+    #[test]
+    fn a_no_plot_event_without_offered_keeps_the_old_behaviour() {
+        let p = events("noplot_old", &[
+            r#"{"kind":"build_no_plot","turn":40,"city":7,"district":"DISTRICT_CAMPUS"}"#,
+        ]);
+        let refused = refused_no_plot_through(&p, None, "district", "DISTRICT_");
+        assert!(refused[&7].contains("DISTRICT_CAMPUS"));
     }
 
     /// ⚠ Events written before #1548 carry no `moves`, and an absent reading is
