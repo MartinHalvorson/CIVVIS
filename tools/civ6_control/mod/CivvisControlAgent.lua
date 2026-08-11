@@ -6857,26 +6857,71 @@ local function applyOrder(player, pid, row, turn)
 	-- names the rule but not in words anyone reading the ledger would recognise.
 	-- Only ever called on a failure path, so a normal turn pays nothing.
 	--
+	-- ⚠⚠⚠ AND I GUESSED THE SIGNATURE A THIRD TIME. #1536 applied the five
+	-- argument FOUND_CITY form to a hash operation carrying params:
+	--
+	--   CanStartOperation(unit, operation, params, false, ResultsTypes.ALL)
+	--
+	-- which puts `params` in the PLOTS slot and `false` in the PARAMS slot. It
+	-- throws, the pcall swallowed it, and every `improve_refused` in the first
+	-- live run on that build read `why: "unknown"` -- six for six, the same
+	-- silent ledger the event was added to end. `canOperate` a few hundred lines
+	-- above has the working hash form and it is a DIFFERENT arity:
+	--
+	--   CanStartOperation(unit, hash, nil, params)          -- 4-arg, hash ops
+	--   CanStartOperation(unit, TYPE, nil, false, ALL)      -- 5-arg, results
+	--
+	-- So stop guessing and do what this file already demands of itself: try each
+	-- shipped form and NAME THE ONE THAT ANSWERED, exactly as `plotRevealed`
+	-- does for `PlayersVisibility`. A probe that cannot say which call worked is
+	-- how this went wrong three times; `why` now always carries its provenance,
+	-- and a throw is reported rather than swallowed.
+	--
 	-- Nested for the same reason `cityWarThreat` is: see below.
 	local function refusalReason(unit, operation, params)
-		local why = "unknown";
-		pcall(function()
-			local ok, results = UnitManager.CanStartOperation(
-				unit, operation, params, false, OperationResultsTypes.ALL);
-			if results ~= nil
-					and results[UnitOperationResults.FAILURE_REASONS] ~= nil then
-				local parts = {};
-				for _, key in ipairs(results[UnitOperationResults.FAILURE_REASONS]) do
-					parts[#parts + 1] =
-						try(function() return Locale.Lookup(key); end, tostring(key));
+		local attempts = {
+			-- The hash form, with params where `canOperate` proves they go.
+			{ form = "p4r", call = function()
+				return UnitManager.CanStartOperation(
+					unit, operation, nil, params or {},
+					OperationResultsTypes.ALL);
+			end },
+			-- The shipped FOUND_CITY form, for parameterless operations.
+			{ form = "t5r", call = function()
+				return UnitManager.CanStartOperation(
+					unit, operation, nil, false, OperationResultsTypes.ALL);
+			end },
+		};
+		local fallback = nil;
+		for _, attempt in ipairs(attempts) do
+			local called, ok, results = pcall(attempt.call);
+			if called then
+				if results ~= nil
+						and results[UnitOperationResults.FAILURE_REASONS] ~= nil then
+					local parts = {};
+					for _, key in ipairs(results[UnitOperationResults.FAILURE_REASONS]) do
+						parts[#parts + 1] =
+							try(function() return Locale.Lookup(key); end, tostring(key));
+					end
+					if #parts > 0 then
+						return table.concat(parts, " | ") .. " [" .. attempt.form .. "]";
+					end
 				end
-				if #parts > 0 then why = table.concat(parts, " | "); end
+				-- Answered, but had no reasons to give. Keep it only if nothing
+				-- better turns up: the other form may still carry the words.
+				if fallback == nil then
+					fallback = "can_start=" .. tostring(ok) .. ",no_reasons ["
+						.. attempt.form .. "]";
+				end
+			elseif fallback == nil then
+				-- ⚠ The throw is the answer when nothing else works. Swallowing it
+				-- is what produced six "unknown"s and no way to tell which of the
+				-- two forms this ruleset wants.
+				fallback = "probe_threw[" .. attempt.form .. "]:"
+					.. string.sub(tostring(ok), 1, 80);
 			end
-			if why == "unknown" and ok ~= nil then
-				why = "can_start=" .. tostring(ok) .. ",no_reasons";
-			end
-		end);
-		return why;
+		end
+		return fallback or "no_probe_answered";
 	end
 
 	-- Keep this helper inside the order handler. A file-scope local consumes one
