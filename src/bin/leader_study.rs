@@ -17,6 +17,21 @@
 //! "winner behaviour" that is really the deal. A behavioural metric only earns
 //! attention where it converts *above* the start.
 //!
+//! Two of the rows are behaviour rather than stock. **`steadiness`** is the
+//! number of grand-strategy switches so far, negated, so that leading it means
+//! having switched the fewest times; **`held_course`** counts only the switches
+//! that crossed none of the three board conditions a switch can answer to (war,
+//! a threatened city, a city deficit). Reading them together separates two
+//! different claims: if `steadiness` converts above chance the planner is
+//! simply churning, and if only `held_course` does, the churn that costs games
+//! is specifically the kind nothing on the board asked for.
+//!
+//! ⚠ Both are **correlates, and the causal arrow is genuinely ambiguous** — a
+//! civ that is losing gets attacked, flips to Recovery, and churns, so late
+//! samples partly measure the outcome rather than predict it. This is why the
+//! early columns matter more than the late ones and why the two map controls
+//! sit at the top of the same table.
+//!
 //! ⚠ **Defaults are the deployment shape** — 6 players, 74x46, 9 city-states,
 //! Online, 250 turns — and that is deliberate. The first run of this study used
 //! 4p 60x38 at Standard, and on 2026-08-10 a change gated at `ai_eval`'s small
@@ -31,6 +46,40 @@ use std::collections::BTreeMap;
 
 use civvis::ai::{AdvancedAi, Ai};
 use civvis::game::{Action, Game, GameOptions};
+
+/// The three conditions a grand-strategy switch can legitimately answer to.
+///
+/// Taken verbatim from `ai_eval`'s boundary test so the two tools cannot drift
+/// into disagreeing about what "unanchored" means: a switch that crosses none
+/// of these did not answer to anything the board did.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Anchor {
+    at_major_war: bool,
+    threatened: bool,
+    city_deficit: bool,
+}
+
+/// This seat's strategy and the board conditions behind it, or `None` when the
+/// agent reports no plan at all.
+fn posture(g: &Game, pid: usize, ai: &dyn Ai) -> Option<(&'static str, Anchor)> {
+    let at_major_war = g.players.iter().any(|player| {
+        player.id != pid
+            && player.alive
+            && !player.is_minor
+            && !player.is_barbarian
+            && g.is_at_war(pid, player.id)
+    });
+    ai.plan_report().map(|plan| {
+        (
+            plan.strategy,
+            Anchor {
+                at_major_war,
+                threatened: plan.threatened_city.is_some(),
+                city_deficit: g.player_city_ids(pid).len() < plan.desired_cities,
+            },
+        )
+    })
+}
 
 fn text(args: &[String], flag: &str, default: &str) -> String {
     args.iter()
@@ -52,9 +101,11 @@ fn number(args: &[String], flag: &str, default: i64) -> i64 {
 /// lever would still have time to pay.
 const SAMPLES: [u32; 9] = [1, 20, 40, 60, 80, 100, 130, 160, 200];
 
-const METRICS: [&str; 11] = [
+const METRICS: [&str; 13] = [
     "start_yield",
     "start_room",
+    "steadiness",
+    "held_course",
     "cities",
     "pop",
     "techs",
@@ -73,7 +124,7 @@ const START_RADIUS: i32 = 3;
 /// question is where the second and third city go, not what the first works.
 const ROOM_RADIUS: i32 = 6;
 
-fn measure(g: &Game, pid: usize, start: (f64, f64)) -> Vec<f64> {
+fn measure(g: &Game, pid: usize, start: (f64, f64), churn: (f64, f64)) -> Vec<f64> {
     let cities = g.player_city_ids(pid);
     let pop: i64 = cities.iter().map(|cid| i64::from(g.cities[cid].pop)).sum();
     let districts: usize = cities
@@ -88,6 +139,11 @@ fn measure(g: &Game, pid: usize, start: (f64, f64)) -> Vec<f64> {
     vec![
         start.0,
         start.1,
+        // Negated, so that "leading" this metric means the FEWEST switches and
+        // the row reads the same way as every other: above chance means the
+        // trait predicts finishing first.
+        -churn.0,
+        -churn.1,
         cities.len() as f64,
         pop as f64,
         p.techs.len() as f64,
@@ -157,6 +213,11 @@ fn play(options: GameOptions) -> Trace {
     let mut ais = AdvancedAi::fleet(&g);
     let mut samples: Vec<Vec<Vec<f64>>> = Vec::new();
     let mut starts = vec![(0.0, 0.0); players];
+    // Per seat: switches so far, and the subset that crossed no board
+    // condition. Counted as the game runs, because a plan is a live object --
+    // nothing at the end of the game records how many times it changed.
+    let mut churn = vec![(0.0f64, 0.0f64); players];
+    let mut last: Vec<Option<(&'static str, Anchor)>> = vec![None; players];
     let mut next = 0usize;
     while g.winner.is_none() {
         while next < SAMPLES.len() && g.turn >= SAMPLES[next] {
@@ -168,11 +229,29 @@ fn play(options: GameOptions) -> Trace {
                     starts[*pid] = start_yield(&g, *pid);
                 }
             }
-            samples.push(seats.iter().map(|pid| measure(&g, *pid, starts[*pid])).collect());
+            samples.push(
+                seats
+                    .iter()
+                    .map(|pid| measure(&g, *pid, starts[*pid], churn[*pid]))
+                    .collect(),
+            );
             next += 1;
         }
         let pid = g.current;
         ais[pid].take_turn(&mut g, pid);
+        // Read the plan the seat just acted on, not the one it will hold next
+        // turn. A switch is counted once, on the turn the strategy changed.
+        if let Some(now) = posture(&g, pid, &ais[pid]) {
+            if let Some(before) = last[pid] {
+                if before.0 != now.0 {
+                    churn[pid].0 += 1.0;
+                    if before.1 == now.1 {
+                        churn[pid].1 += 1.0;
+                    }
+                }
+            }
+            last[pid] = Some(now);
+        }
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
         }
@@ -272,4 +351,57 @@ fn main() {
         "\n'-' means fewer than five games had an outright leader on that metric \
          at that turn."
     );
+
+    // A second reading, because the first one throws away too much on any
+    // metric that is a small integer. `steadiness` and `held_course` count
+    // switches, so two seats share the lead constantly and the outright-leader
+    // test skips the game entirely -- on a six-game trial `held_course` had no
+    // readable column at all. Mean rank uses every game: rank the champion
+    // among its rivals on the metric, averaging tied ranks, and average that
+    // over games. Chance is the middle rank; BELOW chance means the eventual
+    // champion was already ahead on this metric at that turn.
+    let middle = (players as f64 + 1.0) / 2.0;
+    println!(
+        "\nchampion's mean rank on each metric (1 = best of {players}). \
+         chance = {middle:.2}; lower is earlier separation."
+    );
+    print!("{:<13}", "metric");
+    for turn in SAMPLES {
+        print!("{:>7}", format!("t{turn}"));
+    }
+    println!();
+
+    let mut ranks: BTreeMap<(usize, usize), (f64, usize)> = BTreeMap::new();
+    for trace in traces.iter() {
+        let champion = trace.finish[0];
+        for (s, sample) in trace.samples.iter().enumerate() {
+            for m in 0..METRICS.len() {
+                let mine = sample[champion][m];
+                let better = sample.iter().filter(|civ| civ[m] > mine).count();
+                let tied = sample
+                    .iter()
+                    .filter(|civ| (civ[m] - mine).abs() < 1e-9)
+                    .count();
+                // Average the block of tied ranks rather than picking an end of
+                // it, so a metric on which everyone is equal scores exactly at
+                // chance instead of looking like a lead or a deficit.
+                let rank = better as f64 + (tied as f64 + 1.0) / 2.0;
+                let entry = ranks.entry((m, s)).or_insert((0.0, 0));
+                entry.0 += rank;
+                entry.1 += 1;
+            }
+        }
+    }
+    for (m, name) in METRICS.iter().enumerate() {
+        print!("{name:<13}");
+        for s in 0..SAMPLES.len() {
+            match ranks.get(&(m, s)) {
+                Some((total, seen)) if *seen >= 5 => {
+                    print!("{:>7}", format!("{:.2}", *total / *seen as f64))
+                }
+                _ => print!("{:>7}", "-"),
+            }
+        }
+        println!();
+    }
 }
