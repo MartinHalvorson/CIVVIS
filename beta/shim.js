@@ -71,6 +71,12 @@
     paints: 0,    // next-turn requests, each one an acknowledged repaint
     lastTurn: null,
     seenTurns: new Set(),
+    fullMapFrames: 0,
+    patchFrames: 0,
+    fullMapTiles: 0,
+    patchTiles: 0,
+    fullMapBytes: 0,
+    patchBytes: 0,
   });
 
   // ------------------------------------------------------------------ worker
@@ -84,8 +90,21 @@
     const waiting = pending.get(id);
     if (!waiting) return;
     pending.delete(id);
-    if (ok) waiting.resolve(JSON.parse(new TextDecoder().decode(answer)));
-    else waiting.reject(new Error(error));
+    if (!ok) { waiting.reject(new Error(error)); return; }
+    const parsed = JSON.parse(new TextDecoder().decode(answer));
+    if (waiting.path.startsWith("/state")) {
+      const bytes = answer.byteLength;
+      if (Array.isArray(parsed?.map?.tiles)) {
+        report.fullMapFrames++;
+        report.fullMapTiles += parsed.map.tiles.length;
+        report.fullMapBytes += bytes;
+      } else if (Array.isArray(parsed?.map?.tiles_changed)) {
+        report.patchFrames++;
+        report.patchTiles += parsed.map.tiles_changed.length;
+        report.patchBytes += bytes;
+      }
+    }
+    waiting.resolve(parsed);
   };
   worker.onerror = (event) => {
     for (const waiting of pending.values()) {
@@ -191,7 +210,7 @@
   function ask(method, path, body) {
     return new Promise((resolve, reject) => {
       const id = nextId++;
-      pending.set(id, { resolve, reject });
+      pending.set(id, { resolve, reject, path });
       worker.postMessage({
         id,
         method,

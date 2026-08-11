@@ -715,7 +715,10 @@ def main(argv: list[str] | None = None) -> int:
             report = dev.evaluate(
                 "(() => { const r = window.__civvisBeta; return r ? "
                 "{ready: r.ready, error: r.error, requests: r.requests, turns: r.turns, "
-                "paints: r.paints, lastTurn: r.lastTurn} : null; })()"
+                "paints: r.paints, lastTurn: r.lastTurn, fullMapFrames: r.fullMapFrames, "
+                "patchFrames: r.patchFrames, fullMapTiles: r.fullMapTiles, "
+                "patchTiles: r.patchTiles, fullMapBytes: r.fullMapBytes, "
+                "patchBytes: r.patchBytes} : null; })()"
             ) or {}
             if report.get("error"):
                 print(f"    the engine failed: {report['error']}", file=sys.stderr)
@@ -765,6 +768,24 @@ def main(argv: list[str] | None = None) -> int:
         if report.get("turns", 0) < args.min_turns:
             problems.append(
                 f"only {report.get('turns', 0)} turns played, wanted {args.min_turns}"
+            )
+        if report.get("fullMapFrames", 0) < 1:
+            problems.append("the browser never received its initial complete map")
+        if report.get("patchFrames", 0) < 1:
+            problems.append("the browser never received a map patch after its first frame")
+        full_frames = report.get("fullMapFrames", 0)
+        patch_frames = report.get("patchFrames", 0)
+        full_tiles = report.get("fullMapTiles", 0)
+        patch_tiles = report.get("patchTiles", 0)
+        full_bytes = report.get("fullMapBytes", 0)
+        patch_bytes = report.get("patchBytes", 0)
+        if patch_tiles * full_frames >= full_tiles * patch_frames:
+            problems.append(
+                "a map patch carried at least as many tiles per frame as the complete baseline"
+            )
+        if patch_bytes * full_frames >= full_bytes * patch_frames:
+            problems.append(
+                "a map patch transferred at least as many bytes per frame as the complete baseline"
             )
         if boot_failed:
             problems.append("the page reported 'CIVVIS boot failed'")
@@ -839,6 +860,13 @@ def main(argv: list[str] | None = None) -> int:
             print("    engine      size not recorded")
         print(f"    marker      {build_marker}")
         print(f"    turns       {report.get('turns', 0)} (reached turn {report.get('lastTurn')})")
+        full_frame_bytes = full_bytes / max(1, full_frames)
+        patch_frame_bytes = patch_bytes / max(1, patch_frames)
+        print(
+            f"    map delta   {patch_frames} patches / {patch_tiles:,} changed tiles / "
+            f"{patch_frame_bytes:,.0f} bytes per frame after {full_frames} complete map frame(s) / "
+            f"{full_frame_bytes:,.0f} bytes per frame"
+        )
         print(f"    repaints    {report.get('paints', 0)}")
         print(f"    canvas      {painted} distinct sampled colours")
         print(f"    screenshot  {args.screenshot}")
