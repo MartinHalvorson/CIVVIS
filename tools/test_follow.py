@@ -17,6 +17,52 @@ import follow  # noqa: E402
 
 
 class FollowTest(unittest.TestCase):
+    def test_visible_server_refreshes_an_existing_tab_after_starting(self) -> None:
+        class LiveProcess:
+            pid = 4242
+            returncode = None
+
+            @staticmethod
+            def poll() -> None:
+                return None
+
+        with tempfile.TemporaryDirectory() as temporary:
+            previous_rig = follow.RIG
+            follow.RIG = temporary
+            try:
+                with mock.patch.object(follow, "read_events", return_value=([], 1, 4, 9, True)), \
+                     mock.patch.object(follow, "stage_events", return_value=temporary), \
+                     mock.patch.object(follow, "server_alive", return_value=True), \
+                     mock.patch.object(follow.subprocess, "Popen", return_value=LiveProcess()), \
+                     mock.patch.object(follow, "hold_the_frame") as hold, \
+                     mock.patch.object(follow, "refresh_mirror_page") as refresh, \
+                     mock.patch.object(follow.time, "sleep"):
+                    self.assertTrue(follow.start_visible_server(temporary, 4))
+            finally:
+                follow.RIG = previous_rig
+
+        refresh.assert_called_once_with(4242)
+        self.assertEqual(hold.call_count, 2)
+
+    def test_refreshing_an_existing_tab_uses_a_new_url_without_activating_chrome(self) -> None:
+        with mock.patch.object(follow, "mirror_on_screen", return_value=True), \
+             mock.patch.object(follow, "chrome") as chrome:
+            follow.refresh_mirror_page(4242)
+
+        chrome.assert_called_once()
+        script = chrome.call_args.args[0]
+        self.assertIn(f'{follow.MIRROR_URL}?instance=4242', script)
+        self.assertIn("set URL of thisTab", script)
+        self.assertNotIn("activate", script)
+
+    def test_refresh_does_not_open_or_switch_to_chrome_when_mirror_is_absent(self) -> None:
+        for shown in (False, None):
+            with self.subTest(shown=shown), \
+                 mock.patch.object(follow, "mirror_on_screen", return_value=shown), \
+                 mock.patch.object(follow, "chrome") as chrome:
+                follow.refresh_mirror_page(4242)
+            chrome.assert_not_called()
+
     def test_visible_server_start_fails_fast_when_child_exits(self) -> None:
         class DeadProcess:
             returncode = 17
