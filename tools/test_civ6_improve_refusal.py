@@ -99,6 +99,31 @@ class ImproveRefusalTests(unittest.TestCase):
         self.assertNotIn('emit("improve_ungated"', handler)
         self.assertNotIn("UnitManager.RequestOperation(unit,", handler)
 
+    def test_the_refusal_reads_the_tile_at_the_moment_it_is_refused(self) -> None:
+        """⚠⚠⚠ READ AT THE DECISION POINT — a later join is not a measurement.
+
+        #1557 reopened this: the builder has movement, has charges, and stands on
+        the ordered tile, and `canOperate` still refuses. Two ordinary
+        explanations remain — the tile is not ours, or it is already improved —
+        and neither was in the record.
+
+        I tried to answer the ownership half from the periodic tile export and it
+        cannot be done: 23 of 25 refused tiles appear there as BOTH unowned and
+        ours at different points in the same run. That is the same mistake that
+        produced a false movement measurement and three PRs resting on it. So the
+        readings are taken here, and the test pins that they are taken from the
+        plot the ORDER named rather than wherever the builder ended up.
+        """
+        handler = self.handler
+        self.assertIn("Map.GetPlot(params[UnitOperationTypes.PARAM_X],", handler)
+        self.assertIn("params[UnitOperationTypes.PARAM_Y]);", handler)
+        self.assertIn("plot:GetOwner();", handler)
+        self.assertIn("plot:GetImprovementType();", handler)
+
+        payload = handler[handler.index('emit("improve_refused"'):]
+        self.assertIn("tile_owner = tile_owner,", payload)
+        self.assertIn("tile_improvement = tile_improvement,", payload)
+
     def test_the_slice_covers_the_whole_emit(self) -> None:
         """Guards the fixture itself: a truncated window silently stops testing."""
         self.assertTrue(self.handler.rstrip().endswith("});"))

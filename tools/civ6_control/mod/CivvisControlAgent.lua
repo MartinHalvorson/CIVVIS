@@ -8323,6 +8323,36 @@ local function applyOrder(player, pid, row, turn)
 			-- measurement and is not one.
 			local moves = try(function() return unit:GetMovesRemaining(); end, -1);
 			local charges = try(function() return unit:GetBuildCharges(); end, -1);
+			-- ★★★★★ AND THE TILE'S OWN STATE, READ HERE RATHER THAN JOINED LATER.
+			--
+			-- #1557 reopened the question this event exists to answer: the builder
+			-- has movement, has charges, and stands on the ordered tile, and
+			-- `canOperate` still refuses. Two ordinary explanations remain and
+			-- neither is in the record — the tile is not OURS (an unowned tile
+			-- cannot be improved), or it is ALREADY improved.
+			--
+			-- ⚠⚠⚠ AND THEY MUST BE READ AT THIS INSTANT, NOT LOOKED UP AFTERWARDS.
+			-- I tried to answer the ownership half by matching refusals against the
+			-- periodic tile export and it cannot be done: 23 of 25 refused tiles
+			-- appear in that export as BOTH unowned and ours at different points in
+			-- the same run, so the join has no defensible answer. That is the same
+			-- mistake that produced a false movement measurement and three PRs
+			-- resting on it (#1548/#1550/#1552, corrected in #1557) — a per-turn
+			-- snapshot is not the instant of the decision.
+			--
+			-- Two `try` calls on a path that has already failed three fallbacks.
+			-- `im` is the improvement ALREADY on the plot, named the same way the
+			-- tile export names it, so an already-improved tile is legible without
+			-- a second lookup.
+			local plot = try(function()
+				return Map.GetPlot(params[UnitOperationTypes.PARAM_X],
+				                   params[UnitOperationTypes.PARAM_Y]);
+			end);
+			local tile_owner = plot ~= nil
+				and try(function() return plot:GetOwner(); end, -1) or -1;
+			local tile_improvement = plot ~= nil and typeName("Improvements",
+				"ImprovementType",
+				try(function() return plot:GetImprovementType(); end, -1)) or nil;
 			local why = refusalReason(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"],
 			                          params);
 			-- ⚠⚠⚠ THE TWO FORMS OF THE SAME CALL DISAGREE, AND ONLY ONE OF THEM
@@ -8352,9 +8382,11 @@ local function applyOrder(player, pid, row, turn)
 			-- failed, and is only written down.
 			emit("improve_refused", { turn = turn, unit = subject,
 			                          want = wanted or "IMPROVE", why = why,
-			                          -- The two answers that actually separate the
-			                          -- causes. `moves = 0` is 25 of 26 of them.
+			                          -- Every reading taken at THIS instant, which
+			                          -- is the only place they mean anything.
 			                          moves = moves, charges = charges,
+			                          tile_owner = tile_owner,
+			                          tile_improvement = tile_improvement,
 			                          can_operate = canOperate(unit,
 			                              OP["UNITOPERATION_BUILD_IMPROVEMENT"],
 			                              params),
