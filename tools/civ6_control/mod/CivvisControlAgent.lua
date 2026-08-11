@@ -8257,6 +8257,39 @@ local function applyOrder(player, pid, row, turn)
 				end
 			end
 			if operate(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"], params) then
+				-- ★★★★★ REPORT THE SUCCESS, or the board learns four turns late.
+				--
+				-- The same rule `found` already follows: "REPORT THE SUCCESS TOO,
+				-- OR THE LEDGER ONLY KNOWS FAILURES". Improvements had no such
+				-- event, so a finished one reached CIVVIS only on the next
+				-- periodic tile sweep — every four turns — and in that window
+				-- CIVVIS re-ordered what it had just built. Measured on run
+				-- civvis-20260811T163652Z: 23 duplicate orders, every refusal 1-3
+				-- turns after a sweep, the ledger showing
+				--
+				--     t18 IMPROVE:MINE -> succeeded
+				--     t19 IMPROVE:MINE -> refused, existing=IMPROVEMENT_MINE
+				--
+				-- ⚠ The improvement is read back from the PLOT rather than taken
+				-- from `wanted`, because the fallback below deliberately drops the
+				-- name and lets the engine choose — reporting what we asked for
+				-- would put the wrong improvement on the board exactly when the
+				-- two rulesets disagreed, which is the case that matters.
+				local built = try(function()
+					local plot = Map.GetPlot(params[UnitOperationTypes.PARAM_X],
+					                         params[UnitOperationTypes.PARAM_Y]);
+					if plot == nil then return nil; end
+					return typeName("Improvements", "ImprovementType",
+					                plot:GetImprovementType());
+				end);
+				if built ~= nil then
+					emit("improved", {
+						turn = turn,
+						x = params[UnitOperationTypes.PARAM_X],
+						y = params[UnitOperationTypes.PARAM_Y],
+						im = built,
+					});
+				end
 				return true, wanted or "IMPROVE";
 			end
 			-- ★★★★ FALL BACK TO WHATEVER THIS TILE ALLOWS.

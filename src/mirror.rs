@@ -5106,7 +5106,64 @@ pub fn snapshot_from_events_at(
             }
         }
     }
-    Ok(Snapshot::from_chunks(&chunks))
+    let mut snapshot = Snapshot::from_chunks(&chunks);
+    apply_finished_improvements(&raw, turn, &mut snapshot);
+    Ok(snapshot)
+}
+
+/// Fold `improved` events onto the assembled map, so a finished improvement is
+/// on the board before the next sweep repeats it.
+///
+/// ★★★★★ The sweep runs every few turns and until it does, the mirror shows the
+/// ground bare — so CIVVIS re-orders what it has just built. Measured on run
+/// `civvis-20260811T163652Z`: 23 duplicate improvement orders, every refusal 1–3
+/// turns after a sweep, the ledger reading `IMPROVE:MINE` succeeded at t18 and
+/// refused at t19 against `existing=IMPROVEMENT_MINE`.
+///
+/// Three rules make this safe, and each one is load-bearing:
+///
+/// 1. **Only the `im` field is touched.** [`Snapshot::from_chunks`] REPLACES a
+///    plot (`revealed.insert(pos, plot.clone())`), so folding a partial plot in
+///    as a one-plot chunk — the obvious cheap version — would strip that tile's
+///    terrain, owner and resource. Mutating the one field cannot.
+/// 2. **Only a plot the seat has already revealed.** An improvement on ground
+///    never seen is not evidence the ground exists, and inventing a plot here
+///    would hand the simulator information the seat does not have.
+/// 3. **Only events at or after the newest chunk.** An older event cannot
+///    override a fresher sweep, which is what keeps a removed improvement from
+///    coming back.
+///
+/// ⚠ It does open a narrow window in the other direction: a tile improved and
+/// then PILLAGED before the next sweep reads as improved until that sweep
+/// corrects it. Pillaging is far rarer than building, the window is the same few
+/// turns, and the sweep is authoritative either way — so this trades a common
+/// error for a rare one rather than removing error altogether.
+fn apply_finished_improvements(raw: &str, turn: Option<u32>, snapshot: &mut Snapshot) {
+    for line in raw.lines() {
+        if !line.contains("\"improved\"") {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if event.get("kind").and_then(|k| k.as_str()) != Some("improved") {
+            continue;
+        }
+        let at = event.get("turn").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        if turn.is_some_and(|limit| at > limit) || at < snapshot.turn {
+            continue;
+        }
+        let (Some(x), Some(y), Some(im)) = (
+            event.get("x").and_then(|v| v.as_i64()),
+            event.get("y").and_then(|v| v.as_i64()),
+            event.get("im").and_then(|v| v.as_str()),
+        ) else {
+            continue;
+        };
+        if let Some(plot) = snapshot.revealed.get_mut(&(x as i32, y as i32)) {
+            plot.im = Some(im.to_string());
+        }
+    }
 }
 
 /// Rebuild a CIVVIS `Game` whose map is the ground this seat has actually seen.
@@ -12018,6 +12075,72 @@ mod transient_refusal_tests {
              still block: {refused:?}"
         );
         assert!(refused.contains(&crate::hex::offset_to_axial(5, 8)));
+    }
+
+    /// ⚠ EACH CASE NEEDS ITS OWN FILE. `events` builds a path from the name and
+    /// the process id, so four tests passing the same name share one events.jsonl
+    /// and overwrite each other under `cargo test`'s parallelism. Mine did: the
+    /// stale-improvement case failed in the full run and passed alone, which is
+    /// the signature of a shared fixture rather than a logic error.
+    fn improved_snapshot(name: &str, lines: &[&str]) -> Snapshot {
+        let p = events(name, lines);
+        snapshot_from_events_at(&p, None).expect("snapshot")
+    }
+
+    const SWEEP: &str = r#"{"kind":"tiles","turn":16,"width":4,"height":4,"chunk":1,"plots":[{"x":1,"y":1,"t":"TERRAIN_GRASS","o":0}]}"#;
+
+    /// ★ The point: a finished improvement is on the board before the next sweep
+    /// repeats it. 23 duplicate orders in one run came from this gap.
+    #[test]
+    fn a_finished_improvement_reaches_the_board_before_the_next_sweep() {
+        let snap = improved_snapshot("improved_reaches", &[
+            SWEEP,
+            r#"{"kind":"improved","turn":18,"x":1,"y":1,"im":"IMPROVEMENT_MINE"}"#,
+        ]);
+        assert_eq!(
+            snap.plot((1, 1)).and_then(|p| p.im.clone()),
+            Some("IMPROVEMENT_MINE".to_string())
+        );
+    }
+
+    /// ⚠ RULE 1: only `im` is touched. `from_chunks` REPLACES a plot, so the
+    /// cheap version — folding a partial plot in as a one-plot chunk — would
+    /// strip the tile's terrain and owner. This is why it is a field mutation.
+    #[test]
+    fn folding_an_improvement_keeps_the_rest_of_the_plot() {
+        let snap = improved_snapshot("improved_keeps", &[
+            SWEEP,
+            r#"{"kind":"improved","turn":18,"x":1,"y":1,"im":"IMPROVEMENT_MINE"}"#,
+        ]);
+        let plot = snap.plot((1, 1)).expect("the plot survives");
+        assert_eq!(plot.t.as_deref(), Some("TERRAIN_GRASS"), "terrain must survive");
+        assert_eq!(plot.o, 0, "owner must survive");
+    }
+
+    /// ⚠ RULE 2: never invent ground. An improvement on a plot the seat has not
+    /// revealed would hand the simulator information the seat does not have.
+    #[test]
+    fn an_improvement_on_unrevealed_ground_is_ignored() {
+        let snap = improved_snapshot("improved_unseen", &[
+            SWEEP,
+            r#"{"kind":"improved","turn":18,"x":3,"y":3,"im":"IMPROVEMENT_MINE"}"#,
+        ]);
+        assert!(snap.plot((3, 3)).is_none(), "unseen ground stays unseen");
+    }
+
+    /// ⚠ RULE 3: an older event cannot override a fresher sweep — which is what
+    /// keeps a removed improvement from coming back.
+    #[test]
+    fn a_stale_improvement_never_overrides_a_newer_sweep() {
+        let snap = improved_snapshot("improved_stale", &[
+            r#"{"kind":"improved","turn":5,"x":1,"y":1,"im":"IMPROVEMENT_MINE"}"#,
+            SWEEP,
+        ]);
+        assert_eq!(
+            snap.plot((1, 1)).and_then(|p| p.im.clone()),
+            None,
+            "the turn-16 sweep says bare and it is newer than the turn-5 event"
+        );
     }
 
     /// ⚠⚠ `build_no_plot` already carries the discriminator and the block ignored
