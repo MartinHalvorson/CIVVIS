@@ -943,7 +943,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// so its influence thresholds and downstream choices differ in a native game.
 /// `ELO_PROTOCOL_VERSION` is bumped to 8; the source contract is re-pinned for
 /// the separately reviewed, legacy-gated Scout source edit.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x287f_b10b_d240_7e31;
+/// `with_legacy_policy_deck` plus two comment corrections. The new
+/// constructor is an evaluator entry point no other constructor calls,
+/// and `AdvancedAi::legacy()` never routed through `production_weights`
+/// so its deck was and remains `Legacy` — pinned by
+/// `the_policy_deck_is_live_in_production_and_legacy_on_the_anchor`.
+/// Compatibility re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7b49_ff10_6f7f_f8c8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -9316,3 +9316,52 @@ suite is shaped to notice — the tests assert behaviour, and this asserts that 
 behaviour is still worth what it was worth.
 
 Nothing changes. The result is confirmed and the agent keeps playing as it does.
+
+
+## 2026-08-11 — the 24th production behaviour, its false comment, and a stale null retired
+
+The audit priced the thirteen flags `promoted_policy_envoy` sets and the ten
+`configured` sets. It missed a third site: **`production_weights` overwrites
+`policy_deck` with `PolicyDeck::Live`** after the weights are handed over, for
+everything `AdvancedAi::new()` builds.
+
+`Weights::default()`'s comment beside `PolicyDeck::Legacy` says the opposite —
+*"the agent that plays is the one that always played"* — and records `Live` as a
+**measured null**, 18 map directions to 15, p=0.7283 over 120 mirrored maps, that
+*"costs an empire valuation per candidate card per review"*. `docs/EVAL.md` had
+never mentioned `policy_deck`, and **no caller could withhold it**, because the
+override happens after construction. That is the fourth stale comment this audit
+has found describing a default the production constructor does not use, after
+`bounded_recovery` and two others.
+
+`AdvancedAi::with_legacy_policy_deck` supplies the missing withhold.
+
+### The number, and it goes the shipped agent's way
+
+```
+ai_eval advanced_legacy_policy_deck advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories science,culture,domination
+  --map continents --shape planet --poles poles --randomize-civs --pairs 400 --seed 12900000
+
+  paired-map score 48.5% (95% Wilson CI 43.6%..53.4%)   Elo-equivalent -10 (CI -44..+24)
+  paired direction 83 for Legacy / 209 neutral / 108 for Live   sign p = 0.0822
+  terminal score   163 / 237                                    sign p = 0.0003 for Live
+```
+
+**`Live` earns its place.** Withholding it is directionally worse on wins and
+**significantly worse on development**. So the deck stays, and the 120-map null
+its own comment rests on is retired: 120 mirrored maps is well under what this
+file now treats as resolving anything, and at 400 the sign is the other way on
+both columns.
+
+### ⚠ And the screen said the opposite
+
+The 40-map fires-check read **55.6%, direction 14/6** — *for* the Legacy deck,
+the reverse of the 400-map answer. Nothing was concluded from it because 40 maps
+concludes nothing, but it is the cleanest example in this file of why: same
+treatment, same profile, opposite sign, and the small run looked more exciting.
+
+**Nothing about the shipped agent changes.** What changes is that two comments no
+longer say the playing agent uses a deck it does not, the axis has a withhold and
+a number for the first time, and a "measured null" that was quietly justifying a
+production choice has been replaced by a measurement that actually supports it.

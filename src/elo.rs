@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 132] = [
+pub const EVAL_ONLY_AIS: [&str; 133] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -151,6 +151,7 @@ pub const EVAL_ONLY_AIS: [&str; 132] = [
     "advanced_without_unpriced_economy",
     "advanced_without_unpriced_war",
     "advanced_without_city_defence",
+    "advanced_legacy_policy_deck",
     "advanced_without_unit_tactics",
     "advanced_league_top",
     "advanced_joint_tactics",
@@ -472,6 +473,7 @@ define_arm_kinds! {
     AdvancedWithoutUnpricedEconomy => "advanced_without_unpriced_economy",
     AdvancedWithoutUnpricedWar => "advanced_without_unpriced_war",
     AdvancedWithoutCityDefence => "advanced_without_city_defence",
+    AdvancedLegacyPolicyDeck => "advanced_legacy_policy_deck",
     AdvancedWithoutUnitTactics => "advanced_without_unit_tactics",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
@@ -2682,6 +2684,22 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         //
         // Split on what the flag governs: the city's own defence against the
         // individual unit's behaviour.
+        // The 24th always-on production behaviour, and the one the audit of
+        // `promoted_policy_envoy` and `configured` missed: `production_weights`
+        // overwrites `policy_deck` with `Live` after the weights are handed
+        // over.
+        //
+        // `Weights::default()`'s comment beside `PolicyDeck::Legacy` says "the
+        // agent that plays is the one that always played" and records `Live` as
+        // a **measured null** — 18 map directions to 15, p=0.7283 over 120
+        // mirrored maps — that "costs an empire valuation per candidate card
+        // per review". Production plays `Live` regardless, `docs/EVAL.md` has
+        // never mentioned `policy_deck`, and no caller could withhold it
+        // because the override happens after construction.
+        //
+        // 120 maps is well under what this file now treats as resolving
+        // anything, so the null it rests on is not one either.
+        "advanced_legacy_policy_deck" => Box::new(AdvancedAi::with_legacy_policy_deck()),
         "advanced_without_city_defence" => {
             let mut ai = AdvancedAi::new();
             ai.disable_siege_muster();
@@ -3825,6 +3843,7 @@ impl ArmKind {
             Self::AdvancedWithoutUnpricedEconomy => &["unpriced-economy-half-withheld"],
             Self::AdvancedWithoutUnpricedWar => &["unpriced-war-half-withheld"],
             Self::AdvancedWithoutCityDefence => &["city-defence-quarter-withheld"],
+            Self::AdvancedLegacyPolicyDeck => &["live-policy-deck-withheld"],
             Self::AdvancedWithoutUnitTactics => &["unit-tactics-quarter-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
@@ -4355,6 +4374,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_unpriced_economy" => (Vec::new(), "advanced_without_unpriced_economy"),
         "advanced_without_unpriced_war" => (Vec::new(), "advanced_without_unpriced_war"),
         "advanced_without_city_defence" => (Vec::new(), "advanced_without_city_defence"),
+        "advanced_legacy_policy_deck" => (Vec::new(), "advanced_legacy_policy_deck"),
         "advanced_without_unit_tactics" => (Vec::new(), "advanced_without_unit_tactics"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
@@ -5565,7 +5585,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 101] = [
+            const SCRIPTED: [&str; 102] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5634,6 +5654,7 @@ mod tests {
                 "advanced_without_unpriced_economy",
                 "advanced_without_unpriced_war",
                 "advanced_without_city_defence",
+                "advanced_legacy_policy_deck",
                 "advanced_without_unit_tactics",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
