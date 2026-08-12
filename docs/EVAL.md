@@ -9702,3 +9702,58 @@ worth about +12 Elo with an interval through zero, so a larger constant buys a
 larger share of an effect that has not been shown to exist. If this axis is
 re-opened, the honest instrument is `Grant::Envoys` at a *generous* budget
 (#637), which asks whether the income is the binding constraint at all.
+
+## The gate profile measures a different empire (2026-08-12, PR #1578)
+
+`ai_eval`'s seat table reports mean end-of-game **faith 3174** against gold 769.
+That is an unspent balance (`self.faith += g.players[pid].faith`, divided by
+`games`, which `record` increments once per *seat*), and it looks like a hoard.
+Gold hoarding has had a detector since the audit gained
+`treasury_looks_hoarded`; faith had never been measured at all.
+
+`faith_spending_census` measures it. The hoard is not the agent — it is the
+**victory list**. Same 6 maps, same agent, same 6p 74x46 / 9 city-states / 250
+turns / Online; only `victory_conditions` differs:
+
+| | all six victories | gate's `science,culture,domination` |
+|---|---|---|
+| faith earned | 2474 | **6047** |
+| faith spent | 1838 (**74%**) | 2425 (**40%**) |
+| balance at the end | 635 | **3621** |
+| peak balance | 768 | 4018 |
+| turns the balance fell | 21.0 | 14.7 |
+| founded a religion | 2/6 | 3/6 |
+
+**The gate profile reproduces the seat table's number and the deployment shape
+does not.** Two things drive it. `victory_strategy_enabled` refuses the Religion
+grand strategy outright when Religious Victory is off, so the seat never adopts
+the plan that buys missionaries and apostles — the agent's main faith sink; the
+eval's own `religious# 1.12` says the same thing. And removing victory routes
+removes ways for a game to *end*, so games run long and accumulate: faith earned
+is **2.4x higher** on the gate profile, which is not a spending effect at all.
+
+⚠ **This is a fact about the instrument.** The promotion matrix hard-codes
+`--victories science,culture,domination` (#658) while the exhibition runs all
+six, so every arm priced on the gate is measured in an empire that earns 2.4x
+the faith, spends 40% of it rather than 74%, and cannot pursue two of the six
+victory routes. Same class as `ai_eval` seating **zero** city-states by default
+— an instrument default that silently changes what is being measured.
+
+⚠ This does **not** license re-reading a gate-rejected arm on a friendlier
+profile. #1543's war half replicated +32/+34 on the exhibition configuration and
++13 n.s. on the gate's and was not shipped; tonight's suzerainty arm is
+unshipped at ~+12 pooled over 800 pairs. The gate is still the gate. What
+changes is that a *diagnostic column* read off the gate profile — faith,
+religious units, envoys, diplomatic victory points — describes that profile and
+must not be quoted as a property of the deployed agent.
+
+### What is left for the agent, and what is not
+
+On the shape that actually ships the agent spends **74% of its faith** and ends
+on 635 with 21 purchases a game. That is not a hoard and there is no
+faith-spending defect to fix at deployment.
+
+⚠ Open, not measured: on the gate profile it still ends on 3621 with sinks
+available (Holy Site in 5 of 6 games), so 60% of the income goes unspent there.
+Whether that is refusals, exhausted sinks, or the reserve policy is unknown —
+distinguishing them needs a purchase-refusal census, not another balance census.
