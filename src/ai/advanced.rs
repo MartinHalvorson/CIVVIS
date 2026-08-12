@@ -37794,6 +37794,164 @@ mod tests {
     /// one envoy at many city-states is a very different problem from being
     /// outbid by ten at a few.
     ///
+    /// Census, not an assertion: the agent ends games sitting on a faith hoard.
+    ///
+    /// `ai_eval`'s seat table reports mean end-of-game **faith 3174** against
+    /// **gold 769** — `self.faith += g.players[pid].faith` is the unspent
+    /// balance, not a cumulative total. Gold hoarding has had a detector since
+    /// the audit gained `treasury_looks_hoarded`; faith has never been measured
+    /// at all.
+    ///
+    /// ⚠ A large balance is not by itself a defect, and the envoy lane already
+    /// taught this axis its lesson: **measure availability beside use**. Faith
+    /// without a religion or a Holy Site may have nothing worth buying, in
+    /// which case the hoard is structural and no decision rule reaches it.
+    ///
+    /// The discriminator needs no legality API. Track whether the balance ever
+    /// *falls*: income is strictly positive, so a monotonically rising balance
+    /// means nothing is ever bought, while a sawtooth means purchases happen
+    /// and income simply outpaces them. Those two readings call for opposite
+    /// work, and the second is not a bug.
+    ///
+    /// Run with `cargo test --release faith_spending_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn faith_spending_census() {
+        // ⚠ The profile is the eval's, not a convenient one. `ai_eval` reports
+        // the deployment row at **250 turns Online**; read at 200 turns and the
+        // default speed the same agent looks like a different one, because the
+        // balance grows with how far the game actually gets. A census meant to
+        // explain a number in the seat table has to be run where that number
+        // was produced.
+        // ⚠ The victory list is part of the profile and it is the whole
+        // question here. With Religious Victory switched off,
+        // `victory_strategy_enabled` refuses the Religion grand strategy
+        // outright, so the seat never adopts the plan that buys missionaries
+        // and apostles -- the agent's main faith sink. The gate profile
+        // (#658, fixed at `science,culture,domination`) therefore measures an
+        // empire that earns faith and has far less to do with it, while the
+        // exhibition runs all six victories.
+        for (shape, players, width, height, city_states, turns, speed, victories) in [
+            (
+                "deployment 250t online / ALL victories",
+                6usize,
+                74i32,
+                46i32,
+                9usize,
+                250u32,
+                "online",
+                "science,culture,religious,diplomatic,domination,score",
+            ),
+            (
+                "deployment 250t online / GATE victories",
+                6,
+                74,
+                46,
+                9,
+                250,
+                "online",
+                "science,culture,domination",
+            ),
+        ] {
+            let label = shape;
+            let maps = 6u64;
+            let mut end_balance: Vec<f64> = Vec::new();
+            let mut peak_balance: Vec<f64> = Vec::new();
+            let mut earned: Vec<f64> = Vec::new();
+            let mut spent: Vec<f64> = Vec::new();
+            let mut purchases: Vec<f64> = Vec::new();
+            let mut with_religion = 0u32;
+            let mut with_holy_site = 0u32;
+            let mut games = 0u32;
+
+            for map in 0..maps {
+                let mut options = crate::game::GameOptions::new(
+                    players,
+                    width,
+                    height,
+                    480_000 + map,
+                    turns,
+                    city_states,
+                );
+                options.speed = speed.to_string();
+                let mut game = Game::new_with(options);
+                game.victory_conditions =
+                    crate::game::VictoryConditions::parse(victories).unwrap();
+                let mut ais: Vec<AdvancedAi> =
+                    (0..game.players.len()).map(|_| deployed_agent()).collect();
+                game.set_fog_memory(false);
+                let mut last = game.players[0].faith;
+                let (mut up, mut down, mut buys, mut peak) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+                while game.winner.is_none() && game.turn <= game.max_turns {
+                    let pid = game.current;
+                    ais[pid].take_turn(&mut game, pid);
+                    if game.winner.is_none() && game.current == pid {
+                        let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                    }
+                    if pid != 0 {
+                        continue;
+                    }
+                    let now = game.players[0].faith;
+                    // A fall in the balance is a purchase; a rise is income.
+                    // Both are needed, because "never spends" and "spends but
+                    // out-earns it" produce the same end balance.
+                    if now > last {
+                        up += now - last;
+                    } else if now < last {
+                        down += last - now;
+                        buys += 1.0;
+                    }
+                    peak = peak.max(now);
+                    last = now;
+                }
+                games += 1;
+                end_balance.push(game.players[0].faith);
+                peak_balance.push(peak);
+                earned.push(up);
+                spent.push(down);
+                purchases.push(buys);
+                if game.players[0].religion.is_some() {
+                    with_religion += 1;
+                }
+                if game
+                    .player_city_ids(0)
+                    .iter()
+                    .any(|cid| {
+                        game.city_has_district_family(
+                            &game.cities[cid],
+                            crate::name!("holy_site"),
+                        )
+                    })
+                {
+                    with_holy_site += 1;
+                }
+            }
+
+            let mean = |v: &Vec<f64>| v.iter().sum::<f64>() / v.len().max(1) as f64;
+            println!("\n=== faith spending [{label}]: {games} games ===");
+            println!(
+                "  faith earned {:.0}, spent {:.0}  ({:.0}% of income spent)",
+                mean(&earned),
+                mean(&spent),
+                100.0 * mean(&spent) / mean(&earned).max(1e-9),
+            );
+            println!(
+                "  ★ balance at the end {:.0}, peak {:.0}",
+                mean(&end_balance),
+                mean(&peak_balance),
+            );
+            println!(
+                "  ★ turns the balance FELL (a purchase) {:.1} per game",
+                mean(&purchases),
+            );
+            println!(
+                "  -- availability -- founded a religion {}/{}, holds a Holy Site {}/{}",
+                with_religion, games, with_holy_site, games,
+            );
+        }
+        println!();
+    }
+
     /// Run with `cargo test --release envoy_allocation_census -- --ignored --nocapture`.
     #[test]
     #[ignore = "census, not an assertion; run explicitly with --nocapture"]
