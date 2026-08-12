@@ -48220,6 +48220,43 @@ impl Game {
             Some(city) if city.owner == pid => {}
             _ => return Err("not your city".into()),
         }
+        // ★★★★★ THE GATE BELONGS HERE, IN THE ONE FUNCTION EVERY BUYER REACHES.
+        //
+        // `purchase_is_blocked` already says this in its own doc — "the missionary
+        // buyer [and the gold buyers] all build an `Action::Buy*` themselves and
+        // call `apply` directly, so a gate that lives only in the enumeration
+        // never runs for them" — and the gate was still only in the enumeration
+        // (`purchases.retain`, `acts.retain`). So it never ran for them.
+        //
+        // Measured on live run civvis-20260811T230324Z: **181 refused
+        // `UNIT_MISSIONARY` faith purchases in one game**, in one city, on 177
+        // CONSECUTIVE turns — from turn 58 to the end, against a cooldown of
+        // eight. That single item was 60% of every refusal the run recorded, and
+        // the run's total refusal rate (119.6 per 100 turns) was five times the
+        // day's median because of it.
+        //
+        // ⚠ This is the identical repair `do_improve` carries a few thousand
+        // lines above, for the identical reason: `builder_step` computed its own
+        // options and called `apply` directly, so the rule added to
+        // `legal_actions_within` never fired.
+        //
+        // ⚠ Safe in an ordinary CIVVIS game: `blocked_purchases` is populated
+        // only by the live mirror and is empty otherwise, so simulated play is
+        // unchanged. And the block is a TTL cooldown, not a verdict — the worst
+        // a wrong entry costs is an eight-turn delay.
+        let item = if formation == 0 {
+            Item::Unit {
+                unit: Name::new(unit),
+            }
+        } else {
+            Item::Formation {
+                unit: Name::new(unit),
+                formation,
+            }
+        };
+        if self.purchase_is_blocked(cid, &item) {
+            return Err("the host refused this purchase recently".into());
+        }
         let Some(spec) = self.rules.units.get(unit) else {
             return Err("no such unit".into());
         };
@@ -74978,6 +75015,93 @@ mod world_lap_tests {
         assert!(
             game.players[0].went_around,
             "a way round at the equator is the real thing",
+        );
+    }
+}
+
+#[cfg(test)]
+mod purchase_gate_tests {
+    use super::*;
+
+    /// ⚠⚠⚠ THE BUYERS BYPASS THEIR OWN GATE.
+    ///
+    /// `purchase_is_blocked` says so in its own doc — the missionary buyer and
+    /// the gold buyers build an `Action::Buy*` and call `apply` DIRECTLY, so a
+    /// gate living only in the enumeration (`purchases.retain`, `acts.retain`)
+    /// never runs for them. It was still only in the enumeration.
+    ///
+    /// Live run `civvis-20260811T230324Z`: **181 refused `UNIT_MISSIONARY` faith
+    /// purchases in one game**, one city, 177 CONSECUTIVE turns from t58, against
+    /// an eight-turn cooldown. Sixty percent of every refusal that run recorded.
+    ///
+    /// This drives `apply` directly, exactly as the buyers do, so a gate that
+    /// only filters an enumeration cannot satisfy it.
+    #[test]
+    fn a_blocked_purchase_is_refused_even_when_apply_is_called_directly() {
+        let mut game = Game::new_full(1, 20, 14, 91_483, 120, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .expect("a starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("the capital is founded");
+        let cid = *game.player_city_ids(0).first().expect("a capital");
+
+        game.replace_blocked_purchases(std::collections::BTreeMap::from([(
+            cid,
+            std::collections::BTreeSet::from(["unit:warrior".to_string()]),
+        )]));
+
+        let refused = game.apply(
+            0,
+            &Action::Buy {
+                city: cid,
+                unit: crate::name!("warrior"),
+                formation: 0,
+                currency: "gold".to_string(),
+            },
+        );
+        assert!(
+            refused.is_err(),
+            "a purchase the host refused recently must not be re-attempted through \
+             a direct `apply`, which is how 181 missionary buys reached the host"
+        );
+    }
+
+    /// ⚠ And an unblocked item must still be reachable, or the gate is a wall.
+    #[test]
+    fn an_unblocked_purchase_is_untouched_by_the_gate() {
+        let mut game = Game::new_full(1, 20, 14, 91_483, 120, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .expect("a starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("the capital is founded");
+        let cid = *game.player_city_ids(0).first().expect("a capital");
+        game.replace_blocked_purchases(std::collections::BTreeMap::from([(
+            cid,
+            std::collections::BTreeSet::from(["unit:slinger".to_string()]),
+        )]));
+        // Not asserting the buy SUCCEEDS — gold, tech and rules all gate it too.
+        // Asserting only that it is not stopped by the block for a different unit.
+        let why = game
+            .apply(
+                0,
+                &Action::Buy {
+                    city: cid,
+                    unit: crate::name!("warrior"),
+                    formation: 0,
+                    currency: "gold".to_string(),
+                },
+            )
+            .err()
+            .unwrap_or_default();
+        assert!(
+            !why.contains("refused this purchase recently"),
+            "the gate must only stop the item that was actually refused, got: {why}"
         );
     }
 }
