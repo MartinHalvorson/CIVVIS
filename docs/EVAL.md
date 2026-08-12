@@ -9606,3 +9606,41 @@ policy rather than a board where every rival also concentrated:
 **Envoy income is flat and suzerainties more than double at both scales.** So
 "allocation is already perfect" is false, and the reason it stood for so long is
 that every census measured the *pool* instead of the *placements*.
+
+### Priced at the deployment shape: +22 Elo, gate INCONCLUSIVE
+
+```
+ai_eval advanced_price_suzerainty advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories science,culture,domination
+  --map continents --shape planet --poles poles --randomize-civs --pairs 400 --seed 14900000
+
+  paired-map score 53.1% (95% Wilson CI 48.2%..58.0%)   Elo-equivalent +22 (CI -12..+56)
+  paired direction 78 for / 270 neutral / 52 against    sign p = 0.0279 SIGNIFICANT
+  paired outcomes  45 sweeps for / 21 against
+  anytime-valid    peak e = 17.9, p <= 0.0558           not crossed
+  promotion gate   INCONCLUSIVE
+  terminal score   50.2%                                (not a promotion input)
+```
+
+Positive, directionally significant, **not certified**. The interval crosses
+parity and the e-process stopped short. The gate did not fire, so `+22` is *not*
+conditioned on being large — it is an unbiased estimate of a small real effect,
+which is the shape this treatment was predicted to have: the oracle that
+measured the 56.7% ceiling granted **100%** suzerainty, and this converts 7% to
+15%.
+
+⚠ **The gate's victory set excludes diplomacy** (`science,culture,domination`,
+fixed since #658), and a suzerainty pays partly in diplomatic victory points. So
+this profile understates the mechanism by construction. That is a reason the
+measured number is small — and explicitly **not** grounds to re-read the arm on
+a friendlier profile after the fact. The war-half arm replicated +32/+34 on the
+exhibition configuration and only +13 n.s. on the gate's, and was not shipped
+(#1543). The gate is the gate.
+
+⚠ An arm measured **+21 (CI -13..+55, p=0.0126, seed 11400000)** earlier the
+same day — nearly this exact shape — was estimated to need ~2,200 maps to
+certify and was stopped there. Applying a softer standard to a hypothesis with a
+mechanism story would be the same error in the other direction, so this one is
+recorded as **measured, uncertified**, with the cost written down: at 400 pairs
+the CI half-width is ~±34, 800 pairs gives ~±24 (still crossing at +22), and
+clearing parity needs roughly 1,600 pairs.
