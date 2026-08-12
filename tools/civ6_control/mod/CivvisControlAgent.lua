@@ -3135,6 +3135,22 @@ local function productionPlot(city, param, hash, requestedX, requestedY)
 	if plots == nil then return nil, 0; end
 	local offered = 0;
 	local first = nil;
+	-- ★★★★★ AND KEEP THE COORDINATES. This loop already asks the engine for every
+	-- plot it would accept, reads x and y off each one, and throws all of them
+	-- away but the count. That count was enough to prove the district is
+	-- placeable somewhere in this city; it can never say WHERE, so CIVVIS has no
+	-- way to stop naming a plot the engine will not take.
+	--
+	-- It does not stop. Measured on run civvis-20260811T212652Z: 56
+	-- `build_no_plot` events in 232 turns and **55 of them one pair** — a single
+	-- Commercial Hub in one city, refused fifty-five times, with the engine
+	-- offering plots every time. #1571 bounds how often that repeats; only the
+	-- coordinates can end it.
+	--
+	-- ⚠ Capped. A large city can offer many plots, this rides in an event on
+	-- every refusal, and the ledger is read far more often than it is written.
+	-- The first few are what a chooser needs.
+	local offeredPlots = {};
 	-- Taken by iteration, not `plots[1]`: the shipped UI counts these with
 	-- `table.count`, so the result is not promised to be a dense array.
 	for _, plotIndex in pairs(plots) do
@@ -3144,9 +3160,12 @@ local function productionPlot(city, param, hash, requestedX, requestedY)
 			local py = try(function() return plot:GetY(); end, -1);
 			if px >= 0 and py >= 0 then
 				offered = offered + 1;
+				if #offeredPlots < (cfg.OfferedPlotsReported or 8) then
+					offeredPlots[#offeredPlots + 1] = { x = px, y = py };
+				end
 				if requestedX ~= nil and requestedY ~= nil
 						and px == requestedX and py == requestedY then
-					return { x = px, y = py }, offered;
+					return { x = px, y = py }, offered, offeredPlots;
 				end
 				if first == nil then first = { x = px, y = py }; end
 			end
@@ -3154,8 +3173,8 @@ local function productionPlot(city, param, hash, requestedX, requestedY)
 	end
 	-- A direct CIVVIS order names a plot. Substituting another legal plot would
 	-- actuate a different decision; only the emergency ladder may take the first.
-	if requestedX ~= nil or requestedY ~= nil then return nil, offered; end
-	return first, offered;
+	if requestedX ~= nil or requestedY ~= nil then return nil, offered, offeredPlots; end
+	return first, offered, offeredPlots;
 end
 
 -- ★ A PROBE, NOT A MAPPING — the measurement that decides whether repair can ship.
@@ -3301,6 +3320,9 @@ local function buildParams(row, city, requestedX, requestedY)
 				emit("build_no_plot", {
 					city = try(function() return city:GetID(); end, -1),
 					building = row.Type or tostring(row.Hash),
+					-- Same reason as the district emit below: without a turn,
+					-- every filter downstream is a no-op.
+					turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
 					x = requestedX, y = requestedY,
 					offered = offered or 0,
 					reasons = reasons,
@@ -3321,9 +3343,9 @@ local function buildParams(row, city, requestedX, requestedY)
 		local alreadyPlaced = try(function()
 			return city:GetBuildQueue():HasBeenPlaced(row.Hash);
 		end, false);
-		local where, offered = nil, 0;
+		local where, offered, offeredPlots = nil, 0, nil;
 		if not alreadyPlaced then
-			where, offered = productionPlot(city,
+			where, offered, offeredPlots = productionPlot(city,
 				CityOperationTypes.PARAM_DISTRICT_TYPE, row.Hash,
 				requestedX, requestedY);
 		end
@@ -3356,7 +3378,26 @@ local function buildParams(row, city, requestedX, requestedY)
 			emit("build_no_plot", {
 				city = try(function() return city:GetID(); end, -1),
 				district = row.Type or tostring(row.Hash),
+			-- ⚠⚠⚠ THE TURN, WITHOUT WHICH EVERY FILTER ON THIS EVENT IS A NO-OP.
+			-- `buildParams` is a top-level function and takes no turn, so this
+			-- event has never carried one — and two readers silently depended on
+			-- it. `refused_no_plot_through`'s replay bound (`event.turn > limit`)
+			-- read the missing field as 0 and therefore never excluded anything,
+			-- and #1571's staleness window read it as 0 too, which made every
+			-- refusal look ancient and blocked NOTHING. Measured on run
+			-- civvis-20260811T230324Z, the first to carry #1571: 40 build_no_plot
+			-- events in 131 turns, `0` of them with a turn, and one Campus asked
+			-- for forty times — the exact loop the TTL was meant to bound.
+			-- Asked of the engine rather than threaded through the signature,
+			-- which is what four other emitters in this file already do.
+			turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+
 				offered = offered or 0,
+				-- ⚠ WHERE, not just how many. `offered` proves the district is
+				-- placeable in this city and can never say where, so CIVVIS goes
+				-- on naming the plot the engine refuses -- 55 times for one
+				-- Commercial Hub on run civvis-20260811T212652Z.
+				offered_plots = offeredPlots,
 				reasons = reasons,
 				x = requestedX, y = requestedY,
 			});

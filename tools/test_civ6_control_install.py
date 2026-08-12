@@ -175,6 +175,54 @@ class ProtectedInstallTest(unittest.TestCase):
             "the blank refusal must not come back",
         )
 
+    def test_a_refused_district_names_the_plots_the_engine_offered(self) -> None:
+        """`offered` proves a district is placeable here and never says WHERE.
+
+        `productionPlot` asks the engine for every plot it would accept, reads x
+        and y off each, and kept only the count. So CIVVIS goes on naming the
+        plot the engine refuses: run `civvis-20260811T212652Z` recorded 56
+        `build_no_plot` events in 232 turns and **55 were one pair** — a single
+        Commercial Hub in one city, with plots offered every time.
+
+        #1571 bounds how often that repeats. Only the coordinates can end it.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+        self.assertIn("offeredPlots[#offeredPlots + 1] = { x = px, y = py };", source)
+        self.assertIn("offered_plots = offeredPlots,", source)
+
+        # ⚠ Capped: this rides in an event on every refusal and a large city can
+        # offer many plots.
+        self.assertIn("if #offeredPlots < (cfg.OfferedPlotsReported or 8) then", source)
+
+        # ⚠ The wonder call site destructures two values and must keep working;
+        # Lua discards extra returns, so it is left alone deliberately.
+        self.assertIn("local where, offered = productionPlot(city,", source)
+        self.assertIn("where, offered, offeredPlots = productionPlot(city,", source)
+
+    def test_a_refused_build_records_the_turn_it_happened(self) -> None:
+        """⚠⚠⚠ Without a turn, every filter on this event is a no-op.
+
+        `buildParams` is a top-level function taking no turn, so `build_no_plot`
+        never carried one — and two readers silently depended on it.
+        `refused_no_plot_through`'s replay bound (`event.turn > limit`) read the
+        missing field as 0 and excluded nothing, and #1571's staleness window
+        read it as 0 too, making every refusal look ancient and blocking
+        NOTHING.
+
+        Measured on `civvis-20260811T230324Z`, the first run carrying #1571: 40
+        `build_no_plot` events in 131 turns, **zero** with a turn, and one Campus
+        asked for forty times — the exact loop the TTL was meant to bound.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+        # Both emits — a wonder and a district come through the same event under
+        # different keys, and only one of them having a turn is the same defect.
+        district = source[source.index('district = row.Type or tostring(row.Hash),'):][:1400]
+        self.assertIn("Game.GetCurrentGameTurn(); end, -1),", district)
+        wonder = source[source.index('building = row.Type or tostring(row.Hash),'):][:600]
+        self.assertIn("Game.GetCurrentGameTurn(); end, -1),", wonder)
+
     def test_military_emergency_popup_uses_firaxis_pass_path(self) -> None:
         modinfo = (install.MOD_SOURCE / "CivvisControl.modinfo").read_text()
         closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()

@@ -8479,23 +8479,34 @@ fn refused_no_plot_through(
         // unchanged — the same rule `moves` follows in
         // `refused_sites_of_kind_through`.
         //
-        // ⚠⚠⚠ AND "NEVER BLOCK IT" WAS THE WRONG HALF OF THE ANSWER. #1555
-        // dropped these refusals entirely, which stopped good ground being
-        // condemned and immediately recreated the loop the block exists to
-        // prevent — exactly what `PRODUCTION_REFUSAL_TTL` warns about:
-        // *"forgetting it immediately recreates the live loop where Library was
-        // selected and rejected every turn"*.
+        // ⚠⚠ "NEVER BLOCK IT" IS THE WRONG HALF OF THE ANSWER — but the evidence
+        // this comment first cited for that was overstated, and the correction
+        // matters more than the claim.
         //
-        // Measured on the very next full run, civvis-20260811T202458Z: 28
-        // `build_no_plot` events in 250 turns and **all 28 the same pair** —
-        // city 131073, `DISTRICT_COMMERCIAL_HUB`, `offered > 0` every time.
-        // One district asked for and refused twenty-eight times because nothing
-        // remembered the previous twenty-seven.
+        // #1555 dropped these refusals entirely, so nothing remembers a
+        // disagreement and the same district can be re-proposed every turn. Two
+        // runs show that happening at scale: civvis-20260811T202458Z with 28
+        // `build_no_plot` events in 250 turns, and …T212652Z with 57 in 250, and
+        // in BOTH cases essentially one pair — city 131073,
+        // `DISTRICT_COMMERCIAL_HUB`, `offered > 0` every time.
         //
-        // So use the convention this codebase already has for a refusal that is
-        // true now and not forever. A placement disagreement blocks briefly,
-        // which ends the every-turn loop, and expires, which is what keeps the
-        // district from being foreclosed in a city that may make room for it.
+        // ⚠⚠⚠ WHAT I WROTE HERE FIRST WAS "the very next full run", AND THAT IS
+        // FALSE. Across 21 runs of 2026-08-10/11, four consecutive runs carrying
+        // #1555 — …T150840Z (pinned to #1555 itself), …T163652Z, …T174134Z,
+        // …T191919Z — recorded ZERO. Eight of the twenty-one recorded zero and
+        // most of the rest recorded one to seven. The two spikes are outliers
+        // that arrived five runs later, and #1555 alone does not explain them.
+        //
+        // So this guard is justified by the SHAPE of the failure — an unbounded
+        // re-ask is a loop whenever it starts — and not by a causal story about
+        // #1555 that the run distribution does not support. The cause of the two
+        // spikes is unestablished; both also carried the improvement fold
+        // (#1565/#1567), which is a correlation across two runs and nothing more.
+        //
+        // The remedy stands on the convention this codebase already has for a
+        // refusal that is true now and not forever: block briefly, which bounds
+        // any loop, and expire, which keeps the district from being foreclosed in
+        // a city that may make room for it.
         //
         // ⚠ `turn: None` means "replay the whole file", and there is no "now" to
         // measure staleness against — a turn-5 disagreement is certainly stale by
