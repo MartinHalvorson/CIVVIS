@@ -9644,3 +9644,16 @@ mechanism story would be the same error in the other direction, so this one is
 recorded as **measured, uncertified**, with the cost written down: at 400 pairs
 the CI half-width is ~±34, 800 pairs gives ~±24 (still crossing at +22), and
 clearing parity needs roughly 1,600 pairs.
+
+### Open beside this: a suzerainty held by exactly one envoy is not defended
+
+`SUZERAIN_PRIZE` is deliberately zero once the seat *is* suzerain, which is
+right for avoiding over-investment — but `already_secure` requires
+`mine > rival + 1`, so a suzerainty held at exactly `rival + 1` earns neither
+the prize nor the penalty. It is invisible to the score in both directions, and
+a rival's single envoy takes it.
+
+Not measured, and deliberately not folded into this treatment: the census says
+the failure is **acquisition** (36% of city-states parked at one envoy, 1.8
+unclaimed suzerainties within reach), not defence, and widening a treatment
+mid-measurement makes the number unattributable. Recorded as its own question.
