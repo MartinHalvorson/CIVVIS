@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 135] = [
+pub const EVAL_ONLY_AIS: [&str; 136] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -154,6 +154,7 @@ pub const EVAL_ONLY_AIS: [&str; 135] = [
     "advanced_legacy_policy_deck",
     "advanced_without_builder_floor",
     "advanced_without_settler_deadline",
+    "advanced_price_suzerainty",
     "advanced_without_unit_tactics",
     "advanced_league_top",
     "advanced_joint_tactics",
@@ -478,6 +479,7 @@ define_arm_kinds! {
     AdvancedLegacyPolicyDeck => "advanced_legacy_policy_deck",
     AdvancedWithoutBuilderFloor => "advanced_without_builder_floor",
     AdvancedWithoutSettlerDeadline => "advanced_without_settler_deadline",
+    AdvancedPriceSuzerainty => "advanced_price_suzerainty",
     AdvancedWithoutUnitTactics => "advanced_without_unit_tactics",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
@@ -2725,6 +2727,11 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_production_settler_deadline();
             Box::new(ai)
         }
+        "advanced_price_suzerainty" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_price_the_suzerainty();
+            Box::new(ai)
+        }
         "advanced_without_builder_floor" => {
             let mut ai = AdvancedAi::new();
             ai.disable_production_builder_floor();
@@ -3877,6 +3884,7 @@ impl ArmKind {
             Self::AdvancedLegacyPolicyDeck => &["live-policy-deck-withheld"],
             Self::AdvancedWithoutBuilderFloor => &["production-builder-floor-withheld"],
             Self::AdvancedWithoutSettlerDeadline => &["production-settler-deadline-withheld"],
+            Self::AdvancedPriceSuzerainty => &["suzerainty-priced-into-envoy-placement"],
             Self::AdvancedWithoutUnitTactics => &["unit-tactics-quarter-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
@@ -4410,6 +4418,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_legacy_policy_deck" => (Vec::new(), "advanced_legacy_policy_deck"),
         "advanced_without_builder_floor" => (Vec::new(), "advanced_without_builder_floor"),
         "advanced_without_settler_deadline" => (Vec::new(), "advanced_without_settler_deadline"),
+        "advanced_price_suzerainty" => (Vec::new(), "advanced_price_suzerainty"),
         "advanced_without_unit_tactics" => (Vec::new(), "advanced_without_unit_tactics"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
@@ -5620,7 +5629,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 104] = [
+            const SCRIPTED: [&str; 105] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5692,6 +5701,7 @@ mod tests {
                 "advanced_legacy_policy_deck",
                 "advanced_without_builder_floor",
                 "advanced_without_settler_deadline",
+                "advanced_price_suzerainty",
                 "advanced_without_unit_tactics",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.

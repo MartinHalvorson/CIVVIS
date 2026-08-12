@@ -9537,3 +9537,168 @@ Two rows are worth recording even though neither is actionable on its own:
   with a champion mean rank of 3.97 — the worst cell in the table — before
   inverting completely to 60% and rank 1.65 by t200. The winner is not ahead in
   science early; it gets there. `military` behaves the same way (7% at t20).
+
+## Envoy placement was never perfect — it was never measured (2026-08-11, PR #1575)
+
+Making a seat suzerain of every city-state it has met scores **56.7% against a
+22.7% control** (p=0.0000, 400 maps, `Grant::Suzerain`, PR #602) — the largest
+subsystem headroom this repo has found. Since #608 the record has said the gap
+is *income*, not placement, on the evidence that the envoy pool reads **0.00
+unspent at every sample**. #637 pointed out that the inference does not follow —
+a policy that spreads one envoy each and one that concentrates three are
+indistinguishable when the hand is never larger than one — but nobody went back
+and measured the board those placements built.
+
+`envoy_allocation_census` now measures it (6 maps per cell, seeds 480000..,
+`deployed_agent()`, 200 turns):
+
+| | eval 4p 24×16 | deployment 6p 74×46 |
+|---|---|---|
+| envoys per met city-state: 0 / 1 / 2 / 3+ | 45% / **42%** / 7% / 7% | 27% / **36%** / 15% / 22% |
+| envoys parked below the floor of 3 | 1.74/seat-turn = **73% of all placed** | 2.90/seat-turn = **50%** |
+| city-states with no suzerain at all | 2.50, of which **1.35 within 2 envoys** | 2.77, of which **1.82 within 2 envoys** |
+| suzerain of | 0.1 (4% of met) | 0.3 (7%) |
+
+**The modal city-state holds exactly one of our envoys**, and between half and
+three-quarters of everything placed sits below the floor of three, buying a
+level-1 type bonus and no suzerainty — while roughly two unclaimed suzerainties
+sit permanently within two envoys of ours.
+
+### The scorer has a local minimum at one envoy
+
+`advanced_envoys` prices the next type bonus and amortises it over the envoys
+needed to reach it, across thresholds `[1, 3, 6]`:
+
+```rust
+let type_bonus_value = g.next_envoy_type_bonus(pid, minor.id)
+    .map(|(envoys, yields)| (self.yield_value(yields, strategy) * 14.0 / envoys as f64)...)
+```
+
+At 0 envoys a city-state sells its level-1 bonus for **one** envoy. At 1 envoy
+the next payout is at 3, so the per-envoy value **halves**. A fresh city-state
+therefore always offers the cheapest step, and the seat keeps opening
+city-states it never finishes. That is the 36%.
+
+And the suzerainty itself was priced at **zero**. The score saw only the
+standard type-bonus yields; the city-state's **resources**
+(`controlled_resource_count_via` counts suzerained minors), its unique bonus,
+diplomatic victory points, and the `science_pct_per_suzerain` /
+`culture_pct_per_suzerain` / `suzerain_all_yields` multipliers were all
+invisible to it.
+
+`SUZERAIN_PRIZE` adds that term, amortised the same way, so it **rises** as the
+seat closes on the floor (180 at three away, 90 at two, 180 at one) instead of
+falling.
+
+### Fires-check: the same income buys twice the suzerainties
+
+Both arms, same maps, seat 0 only so the reading is this seat's own placement
+policy rather than a board where every rival also concentrated:
+
+| | stock | suzerainty priced |
+|---|---|---|
+| deployment: suzerain of | 0.3 (7% held) | **0.7 (15% held)** |
+| deployment: 3+ envoys / stuck at 1 | 22% / 36% | **25% / 31%** |
+| deployment: envoys placed | 7.1 | 7.2 |
+| eval 4p: suzerain of | 0.1 (4%) | **0.3 (9%)** |
+| eval 4p: 3+ envoys / stuck at 2 | 7% / 7% | **13% / 4%** |
+
+**Envoy income is flat and suzerainties more than double at both scales.** So
+"allocation is already perfect" is false, and the reason it stood for so long is
+that every census measured the *pool* instead of the *placements*.
+
+### Priced at the deployment shape: +22 Elo, gate INCONCLUSIVE
+
+```
+ai_eval advanced_price_suzerainty advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories science,culture,domination
+  --map continents --shape planet --poles poles --randomize-civs --pairs 400 --seed 14900000
+
+  paired-map score 53.1% (95% Wilson CI 48.2%..58.0%)   Elo-equivalent +22 (CI -12..+56)
+  paired direction 78 for / 270 neutral / 52 against    sign p = 0.0279 SIGNIFICANT
+  paired outcomes  45 sweeps for / 21 against
+  anytime-valid    peak e = 17.9, p <= 0.0558           not crossed
+  promotion gate   INCONCLUSIVE
+  terminal score   50.2%                                (not a promotion input)
+```
+
+Positive, directionally significant, **not certified**. The interval crosses
+parity and the e-process stopped short. The gate did not fire, so `+22` is *not*
+conditioned on being large — it is an unbiased estimate of a small real effect,
+which is the shape this treatment was predicted to have: the oracle that
+measured the 56.7% ceiling granted **100%** suzerainty, and this converts 7% to
+15%.
+
+⚠ **The gate's victory set excludes diplomacy** (`science,culture,domination`,
+fixed since #658), and a suzerainty pays partly in diplomatic victory points. So
+this profile understates the mechanism by construction. That is a reason the
+measured number is small — and explicitly **not** grounds to re-read the arm on
+a friendlier profile after the fact. The war-half arm replicated +32/+34 on the
+exhibition configuration and only +13 n.s. on the gate's, and was not shipped
+(#1543). The gate is the gate.
+
+⚠ An arm measured **+21 (CI -13..+55, p=0.0126, seed 11400000)** earlier the
+same day — nearly this exact shape — was estimated to need ~2,200 maps to
+certify and was stopped there. Applying a softer standard to a hypothesis with a
+mechanism story would be the same error in the other direction, so this one is
+recorded as **measured, uncertified**, with the cost written down: at 400 pairs
+the CI half-width is ~±34, 800 pairs gives ~±24 (still crossing at +22), and
+clearing parity needs roughly 1,600 pairs.
+
+### Open beside this: a suzerainty held by exactly one envoy is not defended
+
+`SUZERAIN_PRIZE` is deliberately zero once the seat *is* suzerain, which is
+right for avoiding over-investment — but `already_secure` requires
+`mine > rival + 1`, so a suzerainty held at exactly `rival + 1` earns neither
+the prize nor the penalty. It is invisible to the score in both directions, and
+a rival's single envoy takes it.
+
+Not measured, and deliberately not folded into this treatment: the census says
+the failure is **acquisition** (36% of city-states parked at one envoy, 1.8
+unclaimed suzerainties within reach), not defence, and widening a treatment
+mid-measurement makes the number unattributable. Recorded as its own question.
+
+### It did not replicate — the flag stays off
+
+```
+ai_eval advanced_price_suzerainty advanced ... --pairs 400 --seed 15400000
+  paired-map score 50.5% (95% Wilson CI 45.6%..55.4%)   Elo-equivalent +3 (CI -31..+37)
+  paired direction 70 for / 264 neutral / 66 against    sign p = 0.7971 INCONCLUSIVE
+  paired outcomes  33 sweeps for / 29 against
+  promotion gate   INCONCLUSIVE
+```
+
+| run | seed | score | Elo | direction | sign p |
+|---|---|---|---|---|---|
+| 1 | 14900000 | 53.1% | +22 | 78 / 52 | **0.0279** |
+| 2 | 15400000 | 50.5% | +3 | 70 / 66 | 0.7971 |
+| **pooled** | 800 pairs | **51.8%** | **≈ +12** | **148 / 118** | **0.0752** |
+
+**`price_the_suzerainty` ships default-off.** Run 1's significance did not
+survive a disjoint seed; pooled over 800 pairs the sign test reads p=0.0752 and
+the point estimate halves. A single significant run is a hypothesis, not a
+result — and this one had every reason to look convincing: the largest measured
+headroom in the repo, a mechanism confirmed by reading, and a fires-check that
+doubled the intended metric.
+
+**What survives is the census, and it is not small.** Envoy placement is
+genuinely defective — 36% of met city-states parked at exactly one envoy, half
+of everything placed below the floor of three, ~1.8 unclaimed suzerainties
+permanently within two envoys — and the same income demonstrably buys twice the
+suzerainties under a better rule. #608's "allocation is already perfect" is
+retired. **What does not survive is the assumption that fixing it wins games.**
+
+That pairing is now the third instance of the same lesson on this axis, and the
+strongest: `cities` correlates at 64% and forcing it cost **41 Elo** (#1504);
+the holy-site lane looked good at `ai_eval` defaults and reverted at **-44**
+(#1491); suzerainty grants 56.7% against a 22.7% control and pricing it wins
+nothing measurable. **Oracle headroom is what a perfect outcome is worth, not
+what a decision rule can reach — and a fires-check proves a mechanism fires, not
+that the mechanism matters.**
+
+⚠ Do not re-open this by tuning `SUZERAIN_PRIZE`. The constant is not the
+question; two runs at 800 pairs say converting 7% -> 15% of city-states held is
+worth about +12 Elo with an interval through zero, so a larger constant buys a
+larger share of an effect that has not been shown to exist. If this axis is
+re-opened, the honest instrument is `Grant::Envoys` at a *generous* budget
+(#637), which asks whether the income is the binding constraint at all.

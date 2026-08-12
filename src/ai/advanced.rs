@@ -281,6 +281,22 @@ pub const PRODUCTION_CITY_TARGET_FLOOR: usize = 6;
 /// `has_builder_work` gate stops production once there is no yield to add.
 const PRODUCTION_BUILDERS_PER_CITY: f64 = 0.75;
 
+/// What crossing into a suzerainty is worth to the envoy scorer, before it is
+/// amortised over the envoys still needed to reach it.
+///
+/// `advanced_envoys` prices `next_envoy_type_bonus` and nothing else — the
+/// small standard yields an envoy count buys at 1, 3 and 6. A suzerainty
+/// additionally grants the city-state's **resources**
+/// (`controlled_resource_count_via` counts suzerained minors), its unique
+/// bonus, diplomatic victory points, and the multiplier policies
+/// (`science_pct_per_suzerain`, `culture_pct_per_suzerain`,
+/// `suzerain_all_yields`). None of that reached the score.
+///
+/// Sized against the alignment terms it competes with, which reach
+/// `(10 + 14) * 10 = 240`: a suzerainty one envoy away outranks a
+/// well-aligned fresh city-state, one three envoys away (180/3 = 60) does not.
+const SUZERAIN_PRIZE: i64 = 180;
+
 /// How far above its empire's per-city mean a yield must stand before it names
 /// the city's role. At 1.0 every city would be typed by a coin flip around the
 /// average; 1.15 asks for a real lead, so an empire of interchangeable cities
@@ -1889,6 +1905,10 @@ pub struct AdvancedAi {
     /// Reachable as `advanced_counter_stand_down`. The other four races are
     /// answered exactly as they are today.
     pub counter_stand_down: bool,
+    /// Let the envoy scorer see the suzerainty it is walking toward.
+    ///
+    /// Off by default; an addition, not a withheld production behaviour.
+    pub price_the_suzerainty: bool,
 
     /// Whether the score race is read as a margin over the field instead of as
     /// a clock.
@@ -2556,6 +2576,7 @@ impl AdvancedAi {
             counter_in_lane: false,
             bounded_recovery: false,
             counter_stand_down: false,
+            price_the_suzerainty: false,
             early_score_alarm: false,
             congress_counter_leader: false,
             congress_counter_votes: false,
@@ -2750,6 +2771,12 @@ impl AdvancedAi {
     /// leave this disabled so their recorded ladders stay comparable.
     pub fn enable_peacetime_deterrence(&mut self) {
         self.peacetime_deterrence = true;
+    }
+
+    /// See [`SUZERAIN_PRIZE`]. Off on the anchor, so a comparison against it
+    /// measures the term rather than a rename.
+    pub fn enable_price_the_suzerainty(&mut self) {
+        self.price_the_suzerainty = true;
     }
 
     pub fn enable_suzerain_cards_need_a_suzerainty(&mut self) {
@@ -10699,7 +10726,26 @@ impl AdvancedAi {
                         .is_some_and(|leader| g.suzerain_of(minor.id) == Some(leader))
                         as i64
                         * 140;
-                    let score = (alignment + unique_alignment) * 10 + type_bonus_value + denial
+                    // The amortised type bonus dips at exactly one envoy: a
+                    // fresh city-state buys its level-1 yields for a single
+                    // envoy, while one already opened needs two more before it
+                    // pays again. With the suzerainty itself priced at zero,
+                    // the cheapest step is always to open a city-state the seat
+                    // will never finish -- which is what a 20.5-envoy, 0.66-
+                    // suzerainty census looks like from the inside. This term
+                    // rises as the seat closes on the floor (180, then 90, then
+                    // 180 at one away) instead of falling.
+                    let suzerain_prize = if self.price_the_suzerainty
+                        && g.suzerain_of(minor.id) != Some(pid)
+                    {
+                        SUZERAIN_PRIZE / needed
+                    } else {
+                        0
+                    };
+                    let score = (alignment + unique_alignment) * 10
+                        + type_bonus_value
+                        + denial
+                        + suzerain_prize
                         - needed * 7
                         - already_secure as i64 * 80
                         - shared_from_partner as i64 * 300;
@@ -32712,6 +32758,66 @@ mod tests {
     }
 
     #[test]
+    /// The census this guards: at the deployment shape the seat parked 36% of
+    /// its envoys at exactly one per city-state and held 0.3 suzerainties,
+    /// because the scorer amortises the next type bonus over the envoys needed
+    /// to reach it -- a fresh city-state sells its level-1 bonus for one envoy
+    /// while an opened one needs two more before it pays again, so the cheapest
+    /// step is always to open another.
+    ///
+    /// Asserted in aggregate over many boards rather than on one. A single
+    /// board does not isolate the term: alignment reaches `(10 + 14) * 10 =
+    /// 240` for a unique-civ match, which outranks the whole prize, so any one
+    /// seed measures the draw as much as the rule. The first version of this
+    /// test asserted a single board and failed for exactly that reason.
+    #[test]
+    fn pricing_the_suzerainty_wins_more_city_states_with_the_same_envoys() {
+        let run = |priced: bool| {
+            let mut suzerainties = 0usize;
+            let mut spent = 0i64;
+            for seed in 1..40u64 {
+                let mut g = Game::new(2, 24, 16, seed, 80, 4);
+                let minors: Vec<usize> = g
+                    .players
+                    .iter()
+                    .filter(|player| player.is_minor && !player.is_barbarian)
+                    .map(|player| player.id)
+                    .collect();
+                for minor in &minors {
+                    g.record_contact(0, *minor);
+                }
+                // Six envoys against four city-states: enough to take two
+                // suzerainties outright, or to open every one of them and hold
+                // none. Which of those happens is the whole question.
+                g.players[0].envoys_free = 6;
+                let mut ai = AdvancedAi::new();
+                if priced {
+                    ai.enable_price_the_suzerainty();
+                }
+                ai.advanced_envoys(&mut g, 0, GrandStrategy::Science, None);
+                spent += 6 - g.players[0].envoys_free;
+                suzerainties += minors
+                    .iter()
+                    .filter(|minor| g.suzerain_of(**minor) == Some(0))
+                    .count();
+            }
+            (suzerainties, spent)
+        };
+
+        let (stock, stock_spent) = run(false);
+        let (priced, priced_spent) = run(true);
+        assert_eq!(
+            stock_spent, priced_spent,
+            "both arms must place the same envoys; this measures allocation, not income"
+        );
+        assert!(
+            priced > stock,
+            "pricing the suzerainty must convert the same envoys into more \
+             suzerainties: stock {stock}, priced {priced} over 39 boards"
+        );
+    }
+
+    #[test]
     fn diplomatic_strategy_concentrates_envoys_into_a_suzerainty() {
         let mut g = Game::new(2, 24, 16, 77, 80, 2);
         let city_states: Vec<usize> = g
@@ -37692,15 +37798,39 @@ mod tests {
     #[test]
     #[ignore = "census, not an assertion; run explicitly with --nocapture"]
     fn envoy_allocation_census() {
-        for (label, players, width, height, city_states) in [
+        // Both arms on the same maps, so the distribution can be read as a
+        // fires-check: does pricing the suzerainty actually change where the
+        // envoys go, before anyone spends eval pairs asking whether it wins?
+        for (arm, priced) in [("stock", false), ("suzerainty priced", true)] {
+        for (shape, players, width, height, city_states) in [
             ("eval 4p 24x16", 4usize, 24i32, 16i32, 4usize),
-            ("large 6p 74x46", 6, 74, 46, 12),
+            // 9 city-states, not 12: this is the shape the exhibition plays,
+            // and a census read on the wrong board is no safer than an effect
+            // measured on one.
+            ("deployment 6p 74x46", 6, 74, 46, 9),
         ] {
+            let label = format!("{shape} / {arm}");
             let mut free_samples: Vec<f64> = Vec::new();
             let mut placed_samples: Vec<f64> = Vec::new();
             let mut met_samples: Vec<f64> = Vec::new();
             let mut held_samples: Vec<f64> = Vec::new();
             let mut deficits: Vec<i64> = Vec::new();
+            // #608 concluded from an always-empty pool that allocation was
+            // already perfect. #637 showed that does not follow: a policy that
+            // spreads one envoy each and one that concentrates three are
+            // indistinguishable when the hand is never larger than one. So
+            // measure the BOARD the placements built, not the pool they came
+            // from.
+            //
+            // `below` counts envoys parked in a city-state where this seat
+            // holds one or two -- under the floor of three, so they buy the
+            // level-1 type bonus and no suzerainty. `free_within` counts
+            // city-states nobody is suzerain of that this seat could take with
+            // the envoys it has parked elsewhere.
+            let mut bucket = [0u64; 4];
+            let mut below_threshold: Vec<f64> = Vec::new();
+            let mut unclaimed: Vec<f64> = Vec::new();
+            let mut unclaimed_reachable: Vec<f64> = Vec::new();
             let maps = 6u64;
 
             for map in 0..maps {
@@ -37715,6 +37845,10 @@ mod tests {
                 );
                 let mut ais: Vec<AdvancedAi> =
                     (0..game.players.len()).map(|_| deployed_agent()).collect();
+                // Seat 0 only, so the measured distribution is this seat's own
+                // placement policy and not a board where every rival also
+                // concentrated and raised the bar it has to clear.
+                ais[0].price_the_suzerainty = priced;
                 game.set_fog_memory(false);
                 while game.winner.is_none() && game.turn <= game.max_turns {
                     let pid = game.current;
@@ -37744,6 +37878,35 @@ mod tests {
                         .filter(|m| game.suzerain_of(**m) == Some(0))
                         .count();
                     held_samples.push(held as f64);
+
+                    let mut stranded = 0.0;
+                    let mut open = 0.0;
+                    let mut open_cheap = 0.0;
+                    for minor in &minors {
+                        let mine = game.envoys_at(0, *minor);
+                        bucket[(mine.clamp(0, 3)) as usize] += 1;
+                        if mine >= 1 && mine <= 2 && game.suzerain_of(*minor) != Some(0) {
+                            stranded += mine as f64;
+                        }
+                        if game.suzerain_of(*minor).is_none() {
+                            open += 1.0;
+                            let best_rival = game
+                                .players
+                                .iter()
+                                .filter(|o| !o.is_minor && o.alive && o.id != 0)
+                                .map(|o| game.envoys_at(o.id, *minor))
+                                .max()
+                                .unwrap_or(0);
+                            // Nobody holds it, so the only bar is the floor of
+                            // three and a strict lead over the best rival.
+                            if (best_rival + 1).max(3) - mine <= 2 {
+                                open_cheap += 1.0;
+                            }
+                        }
+                    }
+                    below_threshold.push(stranded);
+                    unclaimed.push(open);
+                    unclaimed_reachable.push(open_cheap);
                     // For each city-state it does NOT hold, how many more
                     // envoys would it have taken? That is the size of the
                     // reallocation the oracle performed for free.
@@ -37779,6 +37942,32 @@ mod tests {
                 mean(&held_samples),
                 mean(&held_samples) / mean(&met_samples).max(1e-9) * 100.0
             );
+            let seats = free_samples.len().max(1) as f64;
+            let placed_total: f64 = bucket.iter().enumerate().skip(1).map(|(n, c)| {
+                // bucket[3] is "three or more", so it undercounts the tail; it
+                // is used only for the shape of the distribution.
+                (n as f64) * (*c as f64)
+            }).sum();
+            let seen: u64 = bucket.iter().sum();
+            println!(
+                "  envoys per met city-state: 0 -> {:.0}%, 1 -> {:.0}%, 2 -> {:.0}%, 3+ -> {:.0}%",
+                100.0 * bucket[0] as f64 / seen.max(1) as f64,
+                100.0 * bucket[1] as f64 / seen.max(1) as f64,
+                100.0 * bucket[2] as f64 / seen.max(1) as f64,
+                100.0 * bucket[3] as f64 / seen.max(1) as f64,
+            );
+            println!(
+                "  ★ envoys parked BELOW the floor of 3   mean {:.2} per seat-turn \
+                 ({:.0}% of everything placed)",
+                mean(&below_threshold),
+                100.0 * mean(&below_threshold) / (placed_total / seats).max(1e-9),
+            );
+            println!(
+                "  ★ city-states with NO suzerain at all  mean {:.2}, of which \
+                 within 2 envoys for us: {:.2}",
+                mean(&unclaimed),
+                mean(&unclaimed_reachable),
+            );
             if !deficits.is_empty() {
                 println!(
                     "  when NOT suzerain, envoys short: median {}  p90 {}  max {}",
@@ -37792,6 +37981,7 @@ mod tests {
                     mean(&free_samples)
                 );
             }
+        }
         }
         println!();
     }
