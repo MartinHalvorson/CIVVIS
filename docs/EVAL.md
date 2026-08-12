@@ -9657,3 +9657,48 @@ Not measured, and deliberately not folded into this treatment: the census says
 the failure is **acquisition** (36% of city-states parked at one envoy, 1.8
 unclaimed suzerainties within reach), not defence, and widening a treatment
 mid-measurement makes the number unattributable. Recorded as its own question.
+
+### It did not replicate — the flag stays off
+
+```
+ai_eval advanced_price_suzerainty advanced ... --pairs 400 --seed 15400000
+  paired-map score 50.5% (95% Wilson CI 45.6%..55.4%)   Elo-equivalent +3 (CI -31..+37)
+  paired direction 70 for / 264 neutral / 66 against    sign p = 0.7971 INCONCLUSIVE
+  paired outcomes  33 sweeps for / 29 against
+  promotion gate   INCONCLUSIVE
+```
+
+| run | seed | score | Elo | direction | sign p |
+|---|---|---|---|---|---|
+| 1 | 14900000 | 53.1% | +22 | 78 / 52 | **0.0279** |
+| 2 | 15400000 | 50.5% | +3 | 70 / 66 | 0.7971 |
+| **pooled** | 800 pairs | **51.8%** | **≈ +12** | **148 / 118** | **0.0752** |
+
+**`price_the_suzerainty` ships default-off.** Run 1's significance did not
+survive a disjoint seed; pooled over 800 pairs the sign test reads p=0.0752 and
+the point estimate halves. A single significant run is a hypothesis, not a
+result — and this one had every reason to look convincing: the largest measured
+headroom in the repo, a mechanism confirmed by reading, and a fires-check that
+doubled the intended metric.
+
+**What survives is the census, and it is not small.** Envoy placement is
+genuinely defective — 36% of met city-states parked at exactly one envoy, half
+of everything placed below the floor of three, ~1.8 unclaimed suzerainties
+permanently within two envoys — and the same income demonstrably buys twice the
+suzerainties under a better rule. #608's "allocation is already perfect" is
+retired. **What does not survive is the assumption that fixing it wins games.**
+
+That pairing is now the third instance of the same lesson on this axis, and the
+strongest: `cities` correlates at 64% and forcing it cost **41 Elo** (#1504);
+the holy-site lane looked good at `ai_eval` defaults and reverted at **-44**
+(#1491); suzerainty grants 56.7% against a 22.7% control and pricing it wins
+nothing measurable. **Oracle headroom is what a perfect outcome is worth, not
+what a decision rule can reach — and a fires-check proves a mechanism fires, not
+that the mechanism matters.**
+
+⚠ Do not re-open this by tuning `SUZERAIN_PRIZE`. The constant is not the
+question; two runs at 800 pairs say converting 7% -> 15% of city-states held is
+worth about +12 Elo with an interval through zero, so a larger constant buys a
+larger share of an effect that has not been shown to exist. If this axis is
+re-opened, the honest instrument is `Grant::Envoys` at a *generous* budget
+(#637), which asks whether the income is the binding constraint at all.
