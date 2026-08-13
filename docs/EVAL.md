@@ -9757,3 +9757,38 @@ faith-spending defect to fix at deployment.
 available (Holy Site in 5 of 6 games), so 60% of the income goes unspent there.
 Whether that is refusals, exhausted sinks, or the reserve policy is unknown —
 distinguishing them needs a purchase-refusal census, not another balance census.
+
+## The shipped controller beats the frozen anchor on all six victories (2026-08-13)
+
+The 120-map anchor prefix above — stock `advanced` versus `advanced_v1` at
+45.6% (−30) compact and 48.8% (−9) deployment — was the last open doubt about
+the deployed controller: an underpowered read that, taken at face value, said
+the anchor might be no worse than what we ship. A 400-pair rerun was in flight
+when the machine lost power on 2026-08-11 (180/400 pairs, results lost with the
+scratchpad); this is the completed rerun, same question, pre-declared reading
+rules unchanged (48–52% parity; nothing here licenses touching the promotion
+gate).
+
+Config: `ai_eval advanced advanced_v1 --deployment-comparison`, 6p 74x46,
+9 city-states, 250 turns, Online, continents/planet/poles, randomized civs,
+**all six victories**, 400 pairs, seed 16100000. Raw log:
+`civvis-civ6-runs/six-victory-deployment-20260813T0232Z.log` (machine-local).
+
+**Paired-map score for `advanced`: 81.8% (95% Wilson CI 77.7%..85.2%),
+Elo-equivalent +260 (CI +217..+304).** Paired direction 265 advanced-favored /
+124 neutral / 11 anchor-favored, exact two-sided sign p=0.0000. Seat outcomes:
+654/2400 wins (27.2%) for the shipped controller against 146/2400 (6.1%) for
+the anchor, where 1/6 ≈ 16.7% is the chance line. The terminal-score
+diagnostic reads 54.3% in the same direction (not a promotion input). The
+win-based reading rests on the 276 of 400 maps that broke; terminal score is
+read on all 400.
+
+Both arms ran identical plan targets (`{"adaptive": 2400}`) with zero
+ancient-rush and zero adaptive-expansion dispatcher exposure — no treatment
+leaked into either arm; this is the controller difference alone.
+
+The 120-map prefix figure is therefore a sampling artifact and should not be
+quoted as evidence the anchor holds parity at deployment. The direction at
+power is the opposite, by a margin no prefix of that size could see. This is
+the same lesson as the city-target floor: **re-run a doubtful read at higher
+resolution before believing it** — in both directions.
