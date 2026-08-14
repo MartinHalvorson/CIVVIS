@@ -4522,7 +4522,7 @@ local CIVVIS_OWNED_BLOCKERS = {
 -- Answer the decision the game says it is waiting on. Returning the name of
 -- what was answered (rather than a boolean) is what makes a stuck run
 -- diagnosable: the log says which blocker recurred, not merely that one did.
-local function answerBlocker(player, pid, blocker, turn)
+local function answerBlocker(player, pid, blocker, turn, residual_ok)
 	local name = blockerName(blocker);
 	-- A CIVVIS pass is a complete decision for the mirrored state it received.
 	-- Firaxis can finish production or research later in the same turn and raise
@@ -4530,7 +4530,20 @@ local function answerBlocker(player, pid, blocker, turn)
 	-- gives control to a second AI. That is how a completed wall repair silently
 	-- became a Builder in every city. End the turn and let the next fresh export
 	-- ask CIVVIS what belongs in the now-empty queue.
-	if cfg.CivvisDecides and CIVVIS_OWNED_BLOCKERS[name]
+	--
+	-- ⚠ Except that a HARD blocker cannot be ended past. `ENDTURN_BLOCKING_RESEARCH`
+	-- raised by a tech finishing mid-turn — after CIVVIS's reply landed, so about a
+	-- queue CIVVIS's board never saw — survives `civvis_complete` by construction,
+	-- and survives `dismissBlocker` because the engine re-raises what end-turn
+	-- still requires. Runs civvis-20260814T215409Z (t181) and ...T223051Z (t208)
+	-- both walked the whole forfeit ladder into a `wedged` report this way, every
+	-- time research or a civic completed mid-turn late in the game. The forfeit
+	-- arm therefore retries ONCE with `residual_ok`, which skips only this return:
+	-- by then the CIVVIS reply is landed and applied (source == civvis), so the
+	-- race this return exists to prevent cannot happen, and the ladder answer is
+	-- counted in `residualAnswers` below like every other residual decision.
+	-- CIVVIS re-decides from the next export and may override the pick.
+	if not residual_ok and cfg.CivvisDecides and CIVVIS_OWNED_BLOCKERS[name]
 			and (awaiting.source == "civvis" or awaiting.source == "civvis_stale") then
 		return "civvis_complete";
 	end
@@ -9710,7 +9723,24 @@ local function tick()
 				local cap = cfg.MaxSoftBlockerForfeits or 3;
 				if seen.sightings >= bound then
 					seen.sightings = 0;
-					if seen.forfeits < cap then
+					-- A `civvis_complete` that has now proven inert twice is not
+					-- an answer, and dismissing a HARD blocker's notification
+					-- does not satisfy the engine (see the paragraph on the
+					-- early return in `answerBlocker`). Ask the ladder for ONE
+					-- real answer first — bounded by its own per-name `spend`
+					-- budgets, counted in `residualAnswers`, overridable by
+					-- CIVVIS at the next export. Only a pass that produced
+					-- nothing falls through to the dismissal ladder below.
+					local residual_pick = nil;
+					if answered == "civvis_complete" then
+						residual_pick = answerBlocker(player, pid, blocker, turn, true);
+					end
+					if residual_pick ~= nil and residual_pick ~= "civvis_complete" then
+						emit("residual_unblock", { turn = turn, blocker = name,
+						                           answered = residual_pick,
+						                           forfeits = seen.forfeits });
+						attempts = 0;
+					elseif seen.forfeits < cap then
 						-- BOUNDED RETRY. Re-arming after `bound` more sightings
 						-- covers a forfeit that did not stick -- the engine can
 						-- raise a fresh units notification for the same units --
