@@ -37,9 +37,12 @@ agent. It checks GitHub every minute and rebuilds the pinned pair when
 a successful build inside the 20-minute freshness contract even while Cargo is
 working. The ten-minute rebuild trigger and 20-minute finished-artifact limit
 are independent, so a valid low-priority build is not rejected merely because
-it took more than ten minutes. The job installs both bundles transactionally without interrupting a
-live game. It swaps only the private bundle targets, avoiding background writes
-to macOS's protected Desktop folder; the stable Desktop links do not change.
+it took more than ten minutes. Native provenance is stamped after Cargo has
+successfully produced the binary, so compile time is not falsely counted as
+age the completed artifact already had. The job installs both bundles
+transactionally without interrupting a live game. It swaps only the private
+bundle targets, avoiding background writes to macOS's protected Desktop folder;
+the stable Desktop links do not change.
 Opening either icon performs the same locked freshness check in the background,
 so a laptop that just woke converges without waiting for the next scheduled
 check.

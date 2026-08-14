@@ -54,6 +54,175 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("results[CityCommandResults.FAILURE_REASONS]", source)
         self.assertIn("reasons = reasons", source)
 
+    def test_every_unit_refusal_asks_the_engine_through_one_helper(self) -> None:
+        """The `CanStartOperation` signature has been guessed wrong twice.
+
+        Each time, the results table came back empty and every refusal the
+        project recorded said `can_start=false` with no reasons — the one thing
+        the event exists to report. The details that matter are the BOOLEAN
+        fourth argument, `OperationResultsTypes.ALL` as the fifth (not `true`),
+        and reasons under `UnitOperationResults.FAILURE_REASONS` rather than at
+        the top level. Pin all three, in one helper, so a third guess cannot
+        quietly reintroduce a silent refusal ledger.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+        self.assertIn("local function refusalReason(unit, operation, params)", source)
+        self.assertIn("results[UnitOperationResults.FAILURE_REASONS]", source)
+
+        # ⚠ THE SIGNATURE HAS NOW BEEN GUESSED WRONG THREE TIMES. The third
+        # guess put `params` in the PLOTS slot and `false` in the PARAMS slot,
+        # which throws — and the first live run on that build read
+        # `why: "unknown"` six times out of six. `canOperate` proves the hash
+        # form takes params fourth; the shipped FOUND_CITY form takes a boolean
+        # there. So both are tried and each names itself, and the broken shape
+        # must never come back.
+        self.assertIn("unit, operation, nil, params or {},", source)
+        self.assertIn("unit, operation, nil, false, OperationResultsTypes.ALL);", source)
+        # Matched against the CALL, not the comment above it, which quotes the
+        # broken shape on purpose so the next reader knows what not to write.
+        self.assertNotIn(
+            "UnitManager.CanStartOperation(\n\t\t\t\t\tunit, operation, params, false,",
+            source,
+        )
+        self.assertIn('{ form = "p4r", call = function()', source)
+        self.assertIn('{ form = "t5r", call = function()', source)
+
+        # A probe that cannot say which call answered is how this went wrong
+        # three times, so every outcome carries its provenance and a throw is
+        # reported rather than swallowed into a bare "unknown".
+        self.assertIn('.. " [" .. attempt.form .. "]"', source)
+        self.assertIn('"probe_threw[" .. attempt.form .. "]:"', source)
+        self.assertNotIn('local why = "unknown";', source)
+
+        # Both unit refusals go through it, and neither keeps a private copy of
+        # the call — a second copy is how the signature drifts.
+        self.assertIn(
+            "refusalReason(unit, UnitOperationTypes.FOUND_CITY, nil)", source
+        )
+        self.assertIn(
+            'refusalReason(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"],', source
+        )
+        self.assertEqual(
+            source.count("UnitManager.CanStartOperation(\n\t\t\t\t\tunit, operation"),
+            2,
+            "exactly the two shipped forms, both inside the one helper",
+        )
+
+        # `improve_refused` is the most numerous refusal in the ledger and named
+        # only the tile; it has to carry the cause or the three failures it
+        # conflates (unowned ground, stale mirror, a builder that cannot act)
+        # stay indistinguishable.
+        self.assertIn('want = wanted or "IMPROVE", why = why,', source)
+
+    def test_the_emergency_wall_override_needs_an_enemy_that_is_actually_near(self) -> None:
+        """The gate claimed a neighbourhood it never had.
+
+        `cityWarThreat` walks every visible unit of every player we are at war
+        with and bounds the distance by nothing, so `nearestEnemy ~= nil` was
+        true whenever any enemy was visible anywhere. Measured over eight live
+        runs on 2026-08-11: 160 overrides, 94% at zero damage, 70% with the
+        nearest enemy five or more tiles away, taking 46 Campus and 13 Library
+        builds away from CIVVIS to buy a wall.
+
+        Damage must still override at any distance — that is real evidence — so
+        pin both halves, and pin that the threshold reaches the event, because a
+        gate whose threshold is not recorded cannot be audited from the ledger.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+        self.assertIn("local wallRadius = cfg.EmergencyWallRadius or 3;", source)
+        self.assertIn(
+            "and ((damage ~= nil and damage > 0)\n"
+            "\t\t\t\t\tor (nearestEnemy ~= nil and nearestEnemy <= wallRadius)) then",
+            source,
+        )
+        self.assertNotIn(
+            "or nearestEnemy ~= nil) then",
+            source,
+            "the unbounded enemy test must not come back",
+        )
+        self.assertIn("radius = wallRadius,", source)
+
+        play = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('"EmergencyWallRadius": args.emergency_wall_radius,', play)
+        self.assertIn('"--emergency-wall-radius", type=int, default=3', play)
+
+    def test_a_refused_promotion_names_what_the_engine_offered(self) -> None:
+        """The engine's answer was computed and then discarded.
+
+        `CanStartCommand` already returns `can` and the `PROMOTIONS` list three
+        lines above the refusal, and the event recorded neither — 56 refusals
+        across the eight live runs of 2026-08-11, each carrying only the name
+        that failed. Nothing offered means the unit cannot promote at all and
+        CIVVIS should not have asked; others offered means it can, just not into
+        the tree named, which is a targeting bug. Opposite fixes, one blank line.
+
+        Names rather than indices, because a bare index in the ledger is the
+        exact defect the district refusal had to be repaired for.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+        self.assertIn("can_promote = okCan and can or false,", source)
+        self.assertIn("offered_promotions = offeredNames,", source)
+        self.assertIn("return GameInfo.UnitPromotions[index];", source)
+        self.assertIn("(row ~= nil and row.UnitPromotionType) or tostring(index)", source)
+        self.assertNotIn(
+            'emit("promotion_refused", {\n'
+            "\t\t\t\t\tturn = turn, unit = subject, promotion = promotionName,\n"
+            "\t\t\t\t});",
+            source,
+            "the blank refusal must not come back",
+        )
+
+    def test_a_refused_district_names_the_plots_the_engine_offered(self) -> None:
+        """`offered` proves a district is placeable here and never says WHERE.
+
+        `productionPlot` asks the engine for every plot it would accept, reads x
+        and y off each, and kept only the count. So CIVVIS goes on naming the
+        plot the engine refuses: run `civvis-20260811T212652Z` recorded 56
+        `build_no_plot` events in 232 turns and **55 were one pair** — a single
+        Commercial Hub in one city, with plots offered every time.
+
+        #1571 bounds how often that repeats. Only the coordinates can end it.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+        self.assertIn("offeredPlots[#offeredPlots + 1] = { x = px, y = py };", source)
+        self.assertIn("offered_plots = offeredPlots,", source)
+
+        # ⚠ Capped: this rides in an event on every refusal and a large city can
+        # offer many plots.
+        self.assertIn("if #offeredPlots < (cfg.OfferedPlotsReported or 8) then", source)
+
+        # ⚠ The wonder call site destructures two values and must keep working;
+        # Lua discards extra returns, so it is left alone deliberately.
+        self.assertIn("local where, offered = productionPlot(city,", source)
+        self.assertIn("where, offered, offeredPlots = productionPlot(city,", source)
+
+    def test_a_refused_build_records_the_turn_it_happened(self) -> None:
+        """⚠⚠⚠ Without a turn, every filter on this event is a no-op.
+
+        `buildParams` is a top-level function taking no turn, so `build_no_plot`
+        never carried one — and two readers silently depended on it.
+        `refused_no_plot_through`'s replay bound (`event.turn > limit`) read the
+        missing field as 0 and excluded nothing, and #1571's staleness window
+        read it as 0 too, making every refusal look ancient and blocking
+        NOTHING.
+
+        Measured on `civvis-20260811T230324Z`, the first run carrying #1571: 40
+        `build_no_plot` events in 131 turns, **zero** with a turn, and one Campus
+        asked for forty times — the exact loop the TTL was meant to bound.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+        # Both emits — a wonder and a district come through the same event under
+        # different keys, and only one of them having a turn is the same defect.
+        district = source[source.index('district = row.Type or tostring(row.Hash),'):][:1400]
+        self.assertIn("Game.GetCurrentGameTurn(); end, -1),", district)
+        wonder = source[source.index('building = row.Type or tostring(row.Hash),'):][:600]
+        self.assertIn("Game.GetCurrentGameTurn(); end, -1),", wonder)
+
     def test_military_emergency_popup_uses_firaxis_pass_path(self) -> None:
         modinfo = (install.MOD_SOURCE / "CivvisControl.modinfo").read_text()
         closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
@@ -651,7 +820,10 @@ class AgentChunkLocalLimitTest(unittest.TestCase):
     value off an existing table, or reuse a neighbouring one.
     """
 
-    LIMIT = 200
+    # `luac -l` reports one more register than this source proxy counts (the
+    # current file is 198 locals / 199 slots). Keep the proxy below Lua's
+    # 200-slot ceiling so the next file-scope local fails in CI as well.
+    LIMIT = 199
 
     def test_main_chunk_locals_stay_under_the_limit(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()

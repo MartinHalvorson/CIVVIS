@@ -845,7 +845,9 @@
   .turn-plate-seam:hover::before, .turn-plate-seam:focus-visible::before { background: #d7b66a8c; }
   .turn-plate-seam:focus-visible { outline: 1px solid #d7b66a70; outline-offset: 1px; }
   /* A widened plate goes wide instead of tall: the era and the turn counter
-     share the first line, and the settings below divide into two columns. */
+     share the first line, and the settings below divide into two columns. The
+     live overlay-width fitter selects this shape by default when the masthead
+     has wide-monitor room, while a viewer's dragged width remains decisive. */
   #playerhud.turn-plate-wide .victory-turn {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-rows: auto minmax(0, 1fr);

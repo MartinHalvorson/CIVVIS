@@ -3949,6 +3949,83 @@ mod tests {
     }
 
     #[test]
+    fn an_embarked_unit_keeps_dynamic_fresh_turn_movement() {
+        let mut plots = (3..=9)
+            .flat_map(|x| (3..=9).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+            .collect::<Vec<_>>();
+        plots
+            .iter_mut()
+            .find(|site| site.x == 6 && site.y == 5)
+            .expect("the embarked unit's plot is in the fixture")
+            .t = Some("TERRAIN_COAST".to_string());
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 20,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots,
+        }]);
+        let mut state = StateSnapshot {
+            turn: 20,
+            techs: vec![
+                "TECH_SAILING".to_string(),
+                "TECH_SHIPBUILDING".to_string(),
+                "TECH_CARTOGRAPHY".to_string(),
+                "TECH_SQUARE_RIGGING".to_string(),
+                "TECH_STEAM_POWER".to_string(),
+            ],
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Canberra".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            capital: true,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 42,
+            kind: "UNIT_SETTLER".to_string(),
+            x: 6,
+            y: 5,
+            moves: 0.0,
+            ..StateUnit::default()
+        });
+
+        let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let uid = *mirror.uid_of.get(&42).expect("the Settler is mirrored");
+        let unit = &mirror.game.units[&uid];
+        let static_moves = mirror.game.rules.units["settler"].moves;
+        let dynamic_moves = mirror.game.unit_max_moves(uid);
+        assert!(
+            dynamic_moves > static_moves,
+            "the test needs a real embarked movement bonus"
+        );
+        assert_eq!(
+            unit.moves_left, dynamic_moves,
+            "fresh-turn mirror movement must include dynamic embarked bonuses"
+        );
+        let land_step = mirror
+            .game
+            .nbrs(unit.pos)
+            .into_iter()
+            .find(|pos| {
+                mirror
+                    .game
+                    .map
+                    .get(*pos)
+                    .is_some_and(|tile| !mirror.game.rules.is_water(tile))
+            })
+            .expect("the coast has a revealed land neighbor");
+        assert!(
+            mirror.game.can_move(uid, land_step),
+            "the dynamic allowance must pay the first disembark step"
+        );
+    }
+
+    #[test]
     fn a_promotion_the_host_refused_is_not_offered_again() {
         let dir = std::env::temp_dir().join(format!("civvis_promo_{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("scratch dir");
@@ -5029,7 +5106,64 @@ pub fn snapshot_from_events_at(
             }
         }
     }
-    Ok(Snapshot::from_chunks(&chunks))
+    let mut snapshot = Snapshot::from_chunks(&chunks);
+    apply_finished_improvements(&raw, turn, &mut snapshot);
+    Ok(snapshot)
+}
+
+/// Fold `improved` events onto the assembled map, so a finished improvement is
+/// on the board before the next sweep repeats it.
+///
+/// ★★★★★ The sweep runs every few turns and until it does, the mirror shows the
+/// ground bare — so CIVVIS re-orders what it has just built. Measured on run
+/// `civvis-20260811T163652Z`: 23 duplicate improvement orders, every refusal 1–3
+/// turns after a sweep, the ledger reading `IMPROVE:MINE` succeeded at t18 and
+/// refused at t19 against `existing=IMPROVEMENT_MINE`.
+///
+/// Three rules make this safe, and each one is load-bearing:
+///
+/// 1. **Only the `im` field is touched.** [`Snapshot::from_chunks`] REPLACES a
+///    plot (`revealed.insert(pos, plot.clone())`), so folding a partial plot in
+///    as a one-plot chunk — the obvious cheap version — would strip that tile's
+///    terrain, owner and resource. Mutating the one field cannot.
+/// 2. **Only a plot the seat has already revealed.** An improvement on ground
+///    never seen is not evidence the ground exists, and inventing a plot here
+///    would hand the simulator information the seat does not have.
+/// 3. **Only events at or after the newest chunk.** An older event cannot
+///    override a fresher sweep, which is what keeps a removed improvement from
+///    coming back.
+///
+/// ⚠ It does open a narrow window in the other direction: a tile improved and
+/// then PILLAGED before the next sweep reads as improved until that sweep
+/// corrects it. Pillaging is far rarer than building, the window is the same few
+/// turns, and the sweep is authoritative either way — so this trades a common
+/// error for a rare one rather than removing error altogether.
+fn apply_finished_improvements(raw: &str, turn: Option<u32>, snapshot: &mut Snapshot) {
+    for line in raw.lines() {
+        if !line.contains("\"improved\"") {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if event.get("kind").and_then(|k| k.as_str()) != Some("improved") {
+            continue;
+        }
+        let at = event.get("turn").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+        if turn.is_some_and(|limit| at > limit) || at < snapshot.turn {
+            continue;
+        }
+        let (Some(x), Some(y), Some(im)) = (
+            event.get("x").and_then(|v| v.as_i64()),
+            event.get("y").and_then(|v| v.as_i64()),
+            event.get("im").and_then(|v| v.as_str()),
+        ) else {
+            continue;
+        };
+        if let Some(plot) = snapshot.revealed.get_mut(&(x as i32, y as i32)) {
+            plot.im = Some(im.to_string());
+        }
+    }
 }
 
 /// Rebuild a CIVVIS `Game` whose map is the ground this seat has actually seen.
@@ -6085,7 +6219,27 @@ pub struct StateUnit {
     /// Present on the aggregate hostile export; ownership is implicit elsewhere.
     #[serde(default = "minus_one_i64")]
     pub player: i64,
-    /// Movement points left, as Civilization VI reports them this turn.
+    /// ⚠⚠⚠ NOT "movement available this turn", whatever it looks like. This is
+    /// `GetMovesRemaining` sampled at the instant the export is written, and that
+    /// instant is not the start of the seat's turn.
+    ///
+    /// It has now misled twice, in opposite directions, and both times the reader
+    /// believed the old one-line description of this field:
+    ///
+    /// - Feeding it into `moves_left` **silenced CIVVIS completely** — the export
+    ///   at the start of turn 31 of run `civvis-20260730T120107Z` had 7 of 8 units
+    ///   at `moves: 0`, so `advanced_units` broke on `moves_left <= 0.0` for
+    ///   almost every unit and logged 0 actions per turn. See the ★★★★★ note in
+    ///   the persistent-sync path, which takes the full allowance instead.
+    /// - **Joining it to refusal events by turn number produced a measurement that
+    ///   was simply false** and three merged PRs rested on it (#1548, #1550,
+    ///   #1552, corrected in #1557). It read `moves: 0` for builders that the mod
+    ///   recorded at 2–4 movement at the instant of the refusal.
+    ///
+    /// So: for "could this unit act *then*", read the value the mod puts in the
+    /// EVENT, taken at the point of the decision. For "what can it do *now*", use
+    /// [`mirror_unit_moves`]. This field is the raw export and answers neither
+    /// question on its own — keep it for fidelity checks and diagnostics.
     #[serde(default = "unknown_strength")]
     pub moves: f64,
     /// Exact host experience and promotion state. Option distinguishes an older
@@ -6476,6 +6630,29 @@ pub struct StateSnapshot {
     pub policy_slots: i64,
     #[serde(default)]
     pub gold: i64,
+    /// Firaxis's own NET income, `GetGoldYield() - GetTotalMaintenance()` — the
+    /// figure the shipped TopPanel prints beside the treasury.
+    ///
+    /// ★★★★★ THE EMPIRE GOES BANKRUPT WITHOUT NOTICING WITHOUT THIS.
+    /// [`LiveMirror::mirror_net_income`] derives the rate from the treasury delta
+    /// between CONSECUTIVE turns and keeps `last_treasury` on the mirror, but the
+    /// bridge runs `civvis_orders --serve --fresh-board`, which rebuilds that
+    /// mirror every turn — so the predecessor is never there and the rate never
+    /// lands. Measured at **0.00 in 963 of 963 calls**.
+    ///
+    /// Live run `civvis-20260810T191050Z` (Rome/Trajan, Settler) is what that
+    /// costs: the treasury peaked at 319 on turn 60, hit **0 on turn 110 and
+    /// stayed there for the remaining 75 turns**. With the bankruptcy guard
+    /// blind, the empire kept units it could not pay for, Civilization VI
+    /// disbanded them (`army` 12 → 0), and the cities fell at t173, t180 and
+    /// t184 — **six cities became two**, final score 403 against Mongolia's 747.
+    /// Tech and civics were competitive the whole game (44 vs 46, 35 vs 34), so
+    /// this single number is the gap.
+    ///
+    /// `None` when the host did not answer. A real `0.0` is break-even and a
+    /// missing answer is not; conflating them is the failure above.
+    #[serde(default)]
+    pub gold_per_turn: Option<f64>,
     /// Faith balance. Unlike the rate fields below, this is a stockpile and
     /// crosses directly, exactly like gold.
     #[serde(default)]
@@ -7317,7 +7494,8 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "research_progress", "civic", "civic_progress", "government", "pantheon",
         "founded_religion", "founded_religions", "religion_beliefs",
         "taken_religion_beliefs", "prophet_pending",
-        "policies", "policy_slots", "gold", "faith", "science", "culture", "score",
+        "policies", "policy_slots", "gold", "gold_per_turn", "faith", "science",
+        "culture", "score",
         "military", "trade_capacity", "great_person_points", "governor_points",
         "governor_points_spent",
         // The age. `the_schema_allowlists_cover_every_declared_field` fails if a
@@ -7947,6 +8125,51 @@ fn refused_sites_of_kind_through(
         }) {
             continue;
         }
+        // ★★★★★ A TRANSIENT REFUSAL IS NOT A DEAD TILE.
+        //
+        // These sets feed `blocked_improvement_sites`, which is extended and
+        // NEVER cleared, and `Game` skips any blocked position for the rest of
+        // the game. So whatever lands here is a permanent verdict on that
+        // ground.
+        //
+        // ⚠⚠⚠ THE MEASUREMENT THAT MOTIVATED THIS GUARD WAS WRONG, AND THE GUARD
+        // IS THEREFORE INERT. Kept, corrected, and documented rather than
+        // silently deleted, because the mistake is the useful part.
+        //
+        // The claim was: across run civvis-20260811T103914Z, builders had
+        // `movesRemaining == 0` on 25 of 26 refusals, so the tiles were being
+        // condemned for a condition that clears next turn. That number came from
+        // matching each refusal against the STATE EXPORT by turn — and the state
+        // snapshot is written at a different point in the turn than the refusal.
+        //
+        // Once #1548 put the reading in the event itself, taken by
+        // `GetMovesRemaining()` at the instant of the attempt, the two disagree
+        // flatly. Same turn, same unit, run civvis-20260811T134008Z:
+        //
+        //     turn 19  unit 327683   event moves 2   state moves 0
+        //     turn 42  unit 851975   event moves 2   state moves 0
+        //     turn 46  unit 983049   event moves 2   state moves 0
+        //     ...  all 25 refusals: event moves 2, 3 or 4. NEVER zero.
+        //
+        // The event is the authoritative reading. So builders were NOT out of
+        // moves, the refusals are genuine, and blocking those tiles was right all
+        // along. This branch has never fired and on current evidence never will.
+        //
+        // ⭐ THE TRAP, so nobody repeats it: a per-turn state snapshot and an
+        // event emitted during that turn are NOT the same instant. Matching them
+        // by turn number reads as a measurement and is not one. Ask for the
+        // reading at the point of the decision, or do not claim it.
+        //
+        // The guard stays because it is correct in principle — a unit with no
+        // movement genuinely cannot act, and that genuinely would be transient —
+        // and it costs one comparison. It is a safety net, not a repair.
+        //
+        // ⚠ An absent reading is still not evidence: events written before #1548
+        // carry no `moves` and keep the old behaviour, so replaying an older run
+        // is unchanged.
+        if event.get("moves").and_then(|v| v.as_i64()) == Some(0) {
+            continue;
+        }
         let (Some(x), Some(y)) = (
             event.get("x").and_then(|v| v.as_i64()),
             event.get("y").and_then(|v| v.as_i64()),
@@ -8226,6 +8449,81 @@ fn refused_no_plot_through(
             event.get("turn").and_then(|value| value.as_u64()).unwrap_or(0) > limit as u64
         }) {
             continue;
+        }
+        // ★★★★★ THE EVENT ALREADY DRAWS THIS DISTINCTION AND THE BLOCK IGNORED IT.
+        //
+        // `offered` is on `build_no_plot` precisely to separate two opposite
+        // refusals, and `Game::blocked_districts` says so in its own doc: zero
+        // means the engine has no target ANYWHERE — a Government Plaza that
+        // already exists, which is one per civilization and belongs blocked;
+        // above zero means "the engine has ground, just not ours", which that
+        // doc calls *a placement disagreement in one city that must not stop the
+        // empire*.
+        //
+        // Above zero the district IS placeable in this city. `productionPlot`
+        // returns nothing only because a direct CIVVIS order names a plot and
+        // that plot was not among the offered ones, and it deliberately refuses
+        // to substitute another — "substituting another legal plot would actuate
+        // a different decision". So the item is fine, the city is fine, and only
+        // the plot choice was wrong; blocking the district there forecloses
+        // ground CIVVIS could have used by simply asking for a different tile.
+        //
+        // Measured across every live run of 2026-08-11, 47 `build_no_plot`
+        // events: **41 of them had `offered > 0`** — 10 Theater, 7 Campus, 6
+        // Industrial Zone, 4 Commercial Hub, 4 Diplomatic Quarter — the science,
+        // production and culture backbone, struck out of those cities for the
+        // rest of the game over a tile choice.
+        //
+        // ⚠ An ABSENT `offered` is not a reading. Older exports sent none, and
+        // those keep the old behaviour exactly, so replaying an older run is
+        // unchanged — the same rule `moves` follows in
+        // `refused_sites_of_kind_through`.
+        //
+        // ⚠⚠ "NEVER BLOCK IT" IS THE WRONG HALF OF THE ANSWER — but the evidence
+        // this comment first cited for that was overstated, and the correction
+        // matters more than the claim.
+        //
+        // #1555 dropped these refusals entirely, so nothing remembers a
+        // disagreement and the same district can be re-proposed every turn. Two
+        // runs show that happening at scale: civvis-20260811T202458Z with 28
+        // `build_no_plot` events in 250 turns, and …T212652Z with 57 in 250, and
+        // in BOTH cases essentially one pair — city 131073,
+        // `DISTRICT_COMMERCIAL_HUB`, `offered > 0` every time.
+        //
+        // ⚠⚠⚠ WHAT I WROTE HERE FIRST WAS "the very next full run", AND THAT IS
+        // FALSE. Across 21 runs of 2026-08-10/11, four consecutive runs carrying
+        // #1555 — …T150840Z (pinned to #1555 itself), …T163652Z, …T174134Z,
+        // …T191919Z — recorded ZERO. Eight of the twenty-one recorded zero and
+        // most of the rest recorded one to seven. The two spikes are outliers
+        // that arrived five runs later, and #1555 alone does not explain them.
+        //
+        // So this guard is justified by the SHAPE of the failure — an unbounded
+        // re-ask is a loop whenever it starts — and not by a causal story about
+        // #1555 that the run distribution does not support. The cause of the two
+        // spikes is unestablished; both also carried the improvement fold
+        // (#1565/#1567), which is a correlation across two runs and nothing more.
+        //
+        // The remedy stands on the convention this codebase already has for a
+        // refusal that is true now and not forever: block briefly, which bounds
+        // any loop, and expire, which keeps the district from being foreclosed in
+        // a city that may make room for it.
+        //
+        // ⚠ `turn: None` means "replay the whole file", and there is no "now" to
+        // measure staleness against — a turn-5 disagreement is certainly stale by
+        // turn 250. Those keep #1555's behaviour and do not block, which is the
+        // honest reconstruction for a whole-game replay.
+        if event
+            .get("offered")
+            .and_then(|v| v.as_i64())
+            .is_some_and(|offered| offered > 0)
+        {
+            let Some(now) = turn else {
+                continue;
+            };
+            let at = event.get("turn").and_then(|v| v.as_u64()).unwrap_or(0);
+            if at < u64::from(now.saturating_sub(PRODUCTION_REFUSAL_TTL)) {
+                continue;
+            }
         }
         let (Some(city), Some(named)) = (
             event.get("city").and_then(|v| v.as_i64()),
@@ -9754,6 +10052,13 @@ pub fn rebuild_from_state(
     if state.gold >= 0 {
         game.players[0].gold = state.gold as f64;
     }
+    // ⚠ THE FRESH-BOARD PATH IS THE ONE THAT MATTERS. `civvis_orders --serve
+    // --fresh-board` comes through here every turn, and this rebuild has no
+    // predecessor to difference against, so before this line `gold_per_turn` was
+    // whatever `Player::default` said — 0 — in every live decision.
+    if let Some(net) = state.gold_per_turn.filter(|net| net.is_finite()) {
+        game.players[0].gold_per_turn = net;
+    }
     if state.faith >= 0 {
         game.players[0].faith = state.faith as f64;
     }
@@ -10692,7 +10997,7 @@ pub struct LiveMirror {
     last_treasury: Option<(u32, f64)>,
 }
 
-/// A unit's full movement allowance from the ruleset.
+/// A unit's full movement allowance for a fresh mirrored turn.
 fn mirror_unit_moves(game: &crate::game::Game, uid: u32) -> f64 {
     let kind = match game.units.get(&uid) {
         Some(unit) => unit.kind,
@@ -10751,11 +11056,14 @@ fn mirror_unit_moves(game: &crate::game::Game, uid: u32) -> f64 {
     if kind == "spy" {
         return 0.0;
     }
-    game.rules
-        .units
-        .get(kind.as_str())
-        .map(|spec| spec.moves)
-        .unwrap_or(2.0)
+    // A static unit definition is not enough here. Embarked units, roads,
+    // technology, policy, wonder, formation, and support effects all change
+    // the allowance, and the first disembark step can cost four movement points
+    // while the static Settler definition still says two. Use the reconstructed
+    // board's same allowance calculation that `can_move` and route planning use;
+    // otherwise a live Settler can be given a valid inland target but never have
+    // enough mirrored movement to leave the coast.
+    game.unit_max_moves(uid)
 }
 
 impl LiveMirror {
@@ -11015,7 +11323,14 @@ impl LiveMirror {
         }
         if state.gold >= 0 {
             self.game.players[0].gold = state.gold as f64;
-            if let Some(net) = self.mirror_net_income(self.game.turn, state.gold as f64) {
+            // The host's own figure first: it needs no history and so survives
+            // `--fresh-board`, which is what kills the derived rate. Fall back to
+            // the delta only when Firaxis did not answer.
+            if let Some(net) = state.gold_per_turn.filter(|net| net.is_finite()) {
+                self.game.players[0].gold_per_turn = net;
+            } else if let Some(net) =
+                self.mirror_net_income(self.game.turn, state.gold as f64)
+            {
                 self.game.players[0].gold_per_turn = net;
             }
         }
@@ -11734,6 +12049,234 @@ impl LiveMirror {
 }
 
 #[cfg(test)]
+mod transient_refusal_tests {
+    use super::*;
+
+    /// Same temp-dir convention as the rest of this file's tests: `tempfile` is
+    /// not a dependency of this crate.
+    fn events(name: &str, lines: &[&str]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir()
+            .join(format!("civvis-refusal-{}-{}", name, std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("events.jsonl");
+        std::fs::write(&path, lines.join("\n") + "\n").expect("write events");
+        path
+    }
+
+    /// ⚠⚠⚠ `blocked_improvement_sites` is extended and NEVER cleared, so
+    /// anything that reaches it is a permanent verdict on that ground.
+    ///
+    /// On run `civvis-20260811T103914Z` the builder had `movesRemaining == 0`
+    /// on 25 of 26 refusals — a condition that clears itself next turn — and
+    /// every one of those tiles was being blacklisted for the rest of the game.
+    #[test]
+    fn a_builder_out_of_moves_does_not_kill_the_tile_forever() {
+        let p = events("outofmoves", &[
+            r#"{"kind":"improve_refused","turn":5,"x":10,"y":12,"moves":0}"#,
+        ]);
+        let refused = refused_sites_of_kind_through(&p, "improve_refused", None);
+        assert!(
+            refused.is_empty(),
+            "a builder that merely ran out of movement must not cost the empire \
+             the tile: {refused:?}"
+        );
+    }
+
+    /// The set still has to do its job. A refusal with movement left is the
+    /// engine rejecting the GROUND, which is exactly what it exists to record.
+    #[test]
+    fn a_refusal_with_movement_left_still_blocks_the_tile() {
+        let p = events("hasmoves", &[
+            r#"{"kind":"improve_refused","turn":5,"x":10,"y":12,"moves":2}"#,
+        ]);
+        let refused = refused_sites_of_kind_through(&p, "improve_refused", None);
+        assert_eq!(refused.len(), 1, "a genuine refusal must still block");
+    }
+
+    /// ⚠⚠ THE SAME FILTER HAS TO COVER `found_refused`, and that must be proven
+    /// rather than assumed from the fact that one function serves both.
+    ///
+    /// `found_refused` feeds `blocked_city_sites`, which is also extended and
+    /// never cleared. Across every live run of 2026-08-11, 9 found refusals: the
+    /// settler had `movesRemaining == 0` on EIGHT. A condemned city site is the
+    /// more expensive half of this defect — expansion is this project's measured
+    /// binding constraint, with 36% of games ending on one city.
+    #[test]
+    fn a_settler_out_of_moves_does_not_kill_the_city_site_forever() {
+        let p = events("settler", &[
+            r#"{"kind":"found_refused","turn":9,"x":4,"y":7,"moves":0}"#,
+            r#"{"kind":"found_refused","turn":9,"x":5,"y":8,"moves":2}"#,
+        ]);
+        let refused = refused_sites_of_kind_through(&p, "found_refused", None);
+        assert_eq!(
+            refused.len(),
+            1,
+            "the spent-move site must survive and the genuine refusal must \
+             still block: {refused:?}"
+        );
+        assert!(refused.contains(&crate::hex::offset_to_axial(5, 8)));
+    }
+
+    /// ⚠ EACH CASE NEEDS ITS OWN FILE. `events` builds a path from the name and
+    /// the process id, so four tests passing the same name share one events.jsonl
+    /// and overwrite each other under `cargo test`'s parallelism. Mine did: the
+    /// stale-improvement case failed in the full run and passed alone, which is
+    /// the signature of a shared fixture rather than a logic error.
+    fn improved_snapshot(name: &str, lines: &[&str]) -> Snapshot {
+        let p = events(name, lines);
+        snapshot_from_events_at(&p, None).expect("snapshot")
+    }
+
+    const SWEEP: &str = r#"{"kind":"tiles","turn":16,"width":4,"height":4,"chunk":1,"plots":[{"x":1,"y":1,"t":"TERRAIN_GRASS","o":0}]}"#;
+
+    /// ★ The point: a finished improvement is on the board before the next sweep
+    /// repeats it. 23 duplicate orders in one run came from this gap.
+    #[test]
+    fn a_finished_improvement_reaches_the_board_before_the_next_sweep() {
+        let snap = improved_snapshot("improved_reaches", &[
+            SWEEP,
+            r#"{"kind":"improved","turn":18,"x":1,"y":1,"im":"IMPROVEMENT_MINE"}"#,
+        ]);
+        assert_eq!(
+            snap.plot((1, 1)).and_then(|p| p.im.clone()),
+            Some("IMPROVEMENT_MINE".to_string())
+        );
+    }
+
+    /// ⚠ RULE 1: only `im` is touched. `from_chunks` REPLACES a plot, so the
+    /// cheap version — folding a partial plot in as a one-plot chunk — would
+    /// strip the tile's terrain and owner. This is why it is a field mutation.
+    #[test]
+    fn folding_an_improvement_keeps_the_rest_of_the_plot() {
+        let snap = improved_snapshot("improved_keeps", &[
+            SWEEP,
+            r#"{"kind":"improved","turn":18,"x":1,"y":1,"im":"IMPROVEMENT_MINE"}"#,
+        ]);
+        let plot = snap.plot((1, 1)).expect("the plot survives");
+        assert_eq!(plot.t.as_deref(), Some("TERRAIN_GRASS"), "terrain must survive");
+        assert_eq!(plot.o, 0, "owner must survive");
+    }
+
+    /// ⚠ RULE 2: never invent ground. An improvement on a plot the seat has not
+    /// revealed would hand the simulator information the seat does not have.
+    #[test]
+    fn an_improvement_on_unrevealed_ground_is_ignored() {
+        let snap = improved_snapshot("improved_unseen", &[
+            SWEEP,
+            r#"{"kind":"improved","turn":18,"x":3,"y":3,"im":"IMPROVEMENT_MINE"}"#,
+        ]);
+        assert!(snap.plot((3, 3)).is_none(), "unseen ground stays unseen");
+    }
+
+    /// ⚠ RULE 3: an older event cannot override a fresher sweep — which is what
+    /// keeps a removed improvement from coming back.
+    #[test]
+    fn a_stale_improvement_never_overrides_a_newer_sweep() {
+        let snap = improved_snapshot("improved_stale", &[
+            r#"{"kind":"improved","turn":5,"x":1,"y":1,"im":"IMPROVEMENT_MINE"}"#,
+            SWEEP,
+        ]);
+        assert_eq!(
+            snap.plot((1, 1)).and_then(|p| p.im.clone()),
+            None,
+            "the turn-16 sweep says bare and it is newer than the turn-5 event"
+        );
+    }
+
+    /// ⚠⚠ `build_no_plot` already carries the discriminator and the block ignored
+    /// it. `Game::blocked_districts` says zero offered plots means the district is
+    /// impossible ANYWHERE (a Government Plaza that already exists), while above
+    /// zero is "a placement disagreement in one city that must not stop the
+    /// empire" — the district IS placeable there, CIVVIS just named a plot the
+    /// engine would not take.
+    ///
+    /// Across every live run of 2026-08-11, 47 events: **41 had `offered > 0`**.
+    #[test]
+    fn a_wrong_plot_does_not_block_a_placeable_district() {
+        let p = events("noplot", &[
+            r#"{"kind":"build_no_plot","turn":40,"city":7,"district":"DISTRICT_CAMPUS","offered":4}"#,
+            r#"{"kind":"build_no_plot","turn":41,"city":7,"district":"DISTRICT_GOVERNMENT","offered":0}"#,
+        ]);
+        let refused = refused_no_plot_through(&p, None, "district", "DISTRICT_");
+        let blocked = refused.get(&7).expect("the impossible district still blocks");
+        assert!(
+            !blocked.contains("DISTRICT_CAMPUS"),
+            "a Campus with four offered plots is placeable; only the tile was wrong"
+        );
+        assert!(
+            blocked.contains("DISTRICT_GOVERNMENT"),
+            "zero offered plots is the engine saying nowhere, and must still block"
+        );
+    }
+
+    /// ⚠⚠⚠ "Never block it" was the wrong half. #1555 dropped these refusals
+    /// entirely and the very next full run showed the loop it recreated:
+    /// `civvis-20260811T202458Z`, 28 `build_no_plot` events in 250 turns, **all
+    /// 28 the same pair** — one Commercial Hub asked for and refused twenty-eight
+    /// times because nothing remembered the previous twenty-seven.
+    ///
+    /// A fresh placement disagreement blocks, which ends the loop.
+    #[test]
+    fn a_fresh_placement_disagreement_blocks() {
+        let p = events("noplot_fresh", &[
+            r#"{"kind":"build_no_plot","turn":40,"city":7,"district":"DISTRICT_CAMPUS","offered":4}"#,
+        ]);
+        let refused = refused_no_plot_through(&p, Some(42), "district", "DISTRICT_");
+        assert!(refused[&7].contains("DISTRICT_CAMPUS"), "or it is asked every turn");
+    }
+
+    /// And expires, which is what keeps the district from being foreclosed in a
+    /// city that may yet make room for it — the reason #1555 existed at all.
+    #[test]
+    fn a_stale_placement_disagreement_stops_blocking() {
+        let p = events("noplot_stale", &[
+            r#"{"kind":"build_no_plot","turn":40,"city":7,"district":"DISTRICT_CAMPUS","offered":4}"#,
+        ]);
+        let refused = refused_no_plot_through(
+            &p, Some(40 + PRODUCTION_REFUSAL_TTL + 1), "district", "DISTRICT_");
+        assert!(
+            refused.get(&7).is_none_or(|d| !d.contains("DISTRICT_CAMPUS")),
+            "a placement disagreement must not condemn the city forever"
+        );
+    }
+
+    /// ⚠ Zero offered plots is a different statement — the engine has no target
+    /// ANYWHERE, a Government Plaza that already exists — and that does not go
+    /// stale. It must still block long after the TTL.
+    #[test]
+    fn no_plot_anywhere_still_blocks_forever() {
+        let p = events("noplot_never", &[
+            r#"{"kind":"build_no_plot","turn":40,"city":7,"district":"DISTRICT_GOVERNMENT","offered":0}"#,
+        ]);
+        let refused = refused_no_plot_through(
+            &p, Some(40 + PRODUCTION_REFUSAL_TTL * 10), "district", "DISTRICT_");
+        assert!(refused[&7].contains("DISTRICT_GOVERNMENT"));
+    }
+
+    /// An absent `offered` is not a reading — older exports sent none, and those
+    /// must keep the old behaviour so a replayed run is unchanged.
+    #[test]
+    fn a_no_plot_event_without_offered_keeps_the_old_behaviour() {
+        let p = events("noplot_old", &[
+            r#"{"kind":"build_no_plot","turn":40,"city":7,"district":"DISTRICT_CAMPUS"}"#,
+        ]);
+        let refused = refused_no_plot_through(&p, None, "district", "DISTRICT_");
+        assert!(refused[&7].contains("DISTRICT_CAMPUS"));
+    }
+
+    /// ⚠ Events written before #1548 carry no `moves`, and an absent reading is
+    /// not evidence of anything. Replaying an older run must be unchanged.
+    #[test]
+    fn a_refusal_that_never_recorded_moves_keeps_the_old_behaviour() {
+        let p = events("nomovesfield", &[
+            r#"{"kind":"improve_refused","turn":5,"x":10,"y":12}"#,
+        ]);
+        let refused = refused_sites_of_kind_through(&p, "improve_refused", None);
+        assert_eq!(refused.len(), 1, "no reading is not a transient reading");
+    }
+}
+
+#[cfg(test)]
 mod host_fact_tests {
     use super::*;
 
@@ -12078,6 +12621,80 @@ mod host_fact_tests {
                 | crate::game::Action::ReassignGovernor { .. }
                 | crate::game::Action::PromoteGovernor { .. }
         )));
+    }
+
+    /// ★★★★★ The number that decides whether the empire notices it is going
+    /// broke. `--fresh-board` rebuilds the mirror every turn, so the derived
+    /// rate has no predecessor and reads 0 forever; live run
+    /// `civvis-20260810T191050Z` sat at a zero treasury for its last 75 turns,
+    /// lost its army to non-payment and went from six cities to two.
+    #[test]
+    fn the_hosts_net_income_survives_a_board_rebuilt_from_scratch() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 110,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(3, 3)],
+        }]);
+        let state = StateSnapshot {
+            turn: 110,
+            gold: 0,
+            gold_per_turn: Some(-14.0),
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Roma".to_string(),
+                x: 3,
+                y: 3,
+                pop: 9,
+                capital: true,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(
+            rebuilt.game.players[0].gold_per_turn, -14.0,
+            "a rebuilt board must still know the empire is losing 14 gold a turn"
+        );
+    }
+
+    /// A host that does not answer must not be read as break-even.
+    #[test]
+    fn an_unanswered_net_income_does_not_become_zero() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(3, 3)],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 40,
+            gold: 120,
+            gold_per_turn: None,
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Roma".to_string(),
+                x: 3,
+                y: 3,
+                pop: 4,
+                capital: true,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let silent = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        state.gold_per_turn = Some(0.0);
+        let break_even = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(
+            break_even.game.players[0].gold_per_turn, 0.0,
+            "a real 0 is break-even and must be applied"
+        );
+        // The silent case must be left at whatever the board already held rather
+        // than being told, wrongly, that the books balance.
+        assert!(silent.game.players[0].gold_per_turn.is_finite());
     }
 
     #[test]

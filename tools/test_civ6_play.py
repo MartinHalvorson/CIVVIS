@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 from unittest.mock import call, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -52,6 +53,175 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertTrue(civ6_play.startup_event_proves_game_started({
             "ctx": "agent", "kind": "seat"
         }))
+
+    @staticmethod
+    def _fake_clock():
+        """A clock that only moves when the code under test sleeps.
+
+        ⚠ Without this the tests are VACUOUS: with `time.sleep` stubbed to a
+        no-op, real elapsed time is microseconds, so no deadline ever expires
+        and a fixed-budget implementation passes every case identically.
+        """
+        now = {"t": 0.0}
+        return now, (lambda: now["t"]), (lambda s: now.__setitem__("t", now["t"] + s))
+
+    def _run_wait(self, polls, seconds, alive=True, still_loading=None):
+        now, monotonic, sleep = self._fake_clock()
+        script = iter(polls)
+        tail = SimpleNamespace(poll=lambda: next(script, []))
+        with mock.patch.object(civ6_play.time, "sleep", sleep), \
+             mock.patch.object(civ6_play.time, "monotonic", monotonic), \
+             mock.patch.object(civ6_play.env, "game_pids",
+                               lambda: [1] if alive else []):
+            return civ6_play.wait_for_agent_start(tail, lambda _e: None, seconds,
+                                                  still_loading=still_loading)
+
+    def test_a_loading_game_keeps_its_budget_while_the_mod_is_still_talking(self) -> None:
+        """The regression from 2026-08-10: four starts died on a fixed deadline.
+
+        The agent arrives only after a long map generation, but `autoclose`
+        events keep arriving throughout it. A fixed budget expires mid-load and
+        the caller then quits a game that was coming up fine. The wait loop
+        sleeps 2 s a pass, so ten chattering passes is 20 s against a 6 s
+        budget — impossible unless progress extends it.
+        """
+        polls = [[{"ctx": "autoclose", "kind": "autoclose_armed"}] for _ in range(10)]
+        polls.append([{"ctx": "agent", "kind": "loaded"}])
+        self.assertTrue(
+            self._run_wait(polls, 6.0),
+            "chatter while the game loads must extend the budget, not spend it",
+        )
+
+    def test_startup_drains_events_after_the_loaded_marker(self) -> None:
+        """A single log read may contain the seat and first state as well."""
+        seen = []
+        polls = [[
+            {"ctx": "agent", "kind": "loaded"},
+            {"ctx": "agent", "kind": "seat"},
+            {"ctx": "agent", "kind": "state", "turn": 1},
+        ]]
+        now, monotonic, sleep = self._fake_clock()
+        script = iter(polls)
+        tail = SimpleNamespace(poll=lambda: next(script, []))
+        with mock.patch.object(civ6_play.time, "sleep", sleep), \
+             mock.patch.object(civ6_play.time, "monotonic", monotonic), \
+             mock.patch.object(civ6_play.env, "game_pids", return_value=[1]):
+            self.assertTrue(
+                civ6_play.wait_for_agent_start(tail, seen.append, seconds=6.0)
+            )
+        self.assertEqual([event["kind"] for event in seen],
+                         ["loaded", "seat", "state"])
+
+    def test_a_silent_game_still_gives_up(self) -> None:
+        """Patience must not become a hang: real silence still ends the wait."""
+        self.assertFalse(self._run_wait([[]] * 50, 6.0))
+
+    def test_a_dead_game_is_not_waited_on(self) -> None:
+        self.assertFalse(self._run_wait([[]] * 50, 600.0, alive=False))
+
+    def test_endless_chatter_cannot_hang_the_harness(self) -> None:
+        """The hard bound: a game that never seats an agent must still end."""
+        polls = [[{"ctx": "autoclose", "kind": "autoclose_armed"}]] * 10000
+        self.assertFalse(self._run_wait(polls, 6.0))
+
+    def test_a_silently_loading_game_is_waited_out(self) -> None:
+        """The case #1505 was written for and could never actually reach.
+
+        A map being generated emits NOTHING -- the mod's in-game context has not
+        loaded, so no event can extend the budget. Only the screen knows the
+        difference, and it says the main menu is gone. The agent arrives on the
+        16th pass, which is 30 s against a 6 s budget: unreachable unless the
+        silent wait is extended on what the screen says.
+        """
+        polls = [[] for _ in range(15)]
+        polls.append([{"ctx": "agent", "kind": "loaded"}])
+        self.assertTrue(
+            self._run_wait(polls, 6.0, still_loading=lambda: True),
+            "a silent but visibly loading game must not be given up on",
+        )
+
+    def test_a_launch_that_missed_is_given_up_on_at_once(self) -> None:
+        """The other half: silence plus a visible main menu is a dead click.
+
+        Waiting cannot fix it, and every second spent here is one the retry does
+        not get. The gate must return as soon as the first budget is spent, not
+        run to the hard bound.
+        """
+        looks = []
+        self.assertFalse(
+            self._run_wait([[]] * 500, 6.0,
+                           still_loading=lambda: looks.append(1) or False)
+        )
+        self.assertEqual(len(looks), 1,
+                         "a game back at the main menu is asked about once")
+
+    def test_the_screen_is_not_consulted_while_events_arrive(self) -> None:
+        """Chatter is already proof of life; a screenshot per poll is waste."""
+        looks = []
+        polls = [[{"ctx": "autoclose", "kind": "autoclose_armed"}] for _ in range(10)]
+        polls.append([{"ctx": "agent", "kind": "loaded"}])
+        self.assertTrue(
+            self._run_wait(polls, 6.0,
+                           still_loading=lambda: looks.append(1) or True)
+        )
+        self.assertEqual(looks, [], "a talking game needs no screenshot")
+
+    def test_a_loading_probe_cannot_defeat_the_hard_bound(self) -> None:
+        """A screen stuck on neither the menu nor a game still has to end."""
+        self.assertFalse(self._run_wait([[]] * 5000, 6.0,
+                                        still_loading=lambda: True))
+
+    def test_loading_patience_is_one_pool_for_the_whole_bootstrap(self) -> None:
+        """Per-wait bounds alone do not bound a 16-attempt bootstrap.
+
+        Six budgets per wait times sixteen attempts is over three hours in front
+        of a screen that is neither a menu nor a game. The pool is what keeps
+        the worst case to one extra bound however the attempts divide it, so a
+        later attempt inherits what the earlier ones did not need.
+        """
+        run_dir = Path(tempfile.mkdtemp())
+        patience = {"left": 3.0, "spent": 0.0}
+        with mock.patch.object(civ6_play, "screenshot", lambda _p: None), \
+             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p: False):
+            first = civ6_play._loading_probe(run_dir, 1, patience, 1.0)
+            self.assertEqual([first(), first(), first()], [True, True, True])
+            self.assertFalse(first(), "the pool is spent, so stop vouching")
+            # A later attempt shares the same exhausted pool.
+            second = civ6_play._loading_probe(run_dir, 2, patience, 1.0)
+            self.assertFalse(second(),
+                             "a fresh attempt must not refill the pool")
+
+    def test_a_visible_main_menu_ends_the_wait_without_spending_patience(self) -> None:
+        """A dead click is cheap to diagnose and must stay cheap."""
+        run_dir = Path(tempfile.mkdtemp())
+        patience = {"left": 600.0, "spent": 0.0}
+        with mock.patch.object(civ6_play, "screenshot", lambda _p: None), \
+             mock.patch.object(civ6_play, "_main_menu_visible", lambda _p: True):
+            probe = civ6_play._loading_probe(run_dir, 1, patience, 120.0)
+            self.assertFalse(probe())
+        self.assertEqual(patience["left"], 600.0,
+                         "seeing the menu costs nothing but the screenshot")
+
+    def test_the_buffered_setup_batch_cannot_stand_in_for_a_live_game(self) -> None:
+        """Exactly what the four dead starts looked like, and still look like.
+
+        The mod's setup-screen chatter is still buffered when the gate opens, so
+        its whole batch lands on the first poll -- at which point extending to
+        `now + seconds` is the deadline the gate already had. That is why #1505's
+        extension changed nothing for civvis-20260810T194817Z and ...T195339Z:
+        22 `autoclose_armed`, zero `agent`, dead on the original budget. Only
+        the screen can separate this from a map still generating.
+        """
+        batch = [{"ctx": "autoclose", "kind": "autoclose_armed"}] * 22
+        agent = [{"ctx": "agent", "kind": "loaded"}]
+
+        def script():
+            return [batch] + [[] for _ in range(10)] + [agent]
+
+        self.assertFalse(self._run_wait(script(), 6.0),
+                         "a buffered setup batch is not proof of a live game")
+        self.assertTrue(self._run_wait(script(), 6.0, still_loading=lambda: True),
+                        "the same batch plus a vanished main menu is a live load")
 
     def test_leader_intro_requires_the_requested_leader(self) -> None:
         bounds = (864, 33, 864, 542)
@@ -260,6 +430,9 @@ class Civ6PlayTest(unittest.TestCase):
              patch.object(civ6_play, "set_dropdown", return_value=True) as setter, \
              patch.object(civ6_play, "select_requested_leader", return_value=True) as leader, \
              patch.object(civ6_play, "screenshot") as screenshot, \
+             patch.object(civ6_play, "_observed_label_point",
+                          return_value=(321, 432)) as observed, \
+             patch.object(civ6_play, "focus_game") as focus, \
              patch.object(civ6_play, "click_at") as click:
             started = civ6_play.configure_and_start((100, 33, 756, 480), args(), Path(temporary))
 
@@ -276,8 +449,28 @@ class Civ6PlayTest(unittest.TestCase):
             (100, 33, 756, 480), "LEADER_TRAJAN", Path(temporary)
         )
         screenshot.assert_called_once_with(Path(temporary) / "setup.png")
-        click.assert_called_once_with(100 + int(756 * civ6_play.START_GAME[0]),
-                                      33 + int(480 * civ6_play.START_GAME[1]))
+        observed.assert_called_once_with(
+            Path(temporary) / "setup.png", "Start Game", (100, 33, 756, 480)
+        )
+        focus.assert_called_once_with(civ6_play.GAME_SIDE, civ6_play.GAME_FRACTION)
+        click.assert_called_once_with(321, 432)
+
+    def test_setup_refuses_to_start_without_a_visible_start_game_control(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "set_dropdown", return_value=True), \
+             patch.object(civ6_play, "select_requested_leader", return_value=True), \
+             patch.object(civ6_play, "screenshot") as screenshot, \
+             patch.object(civ6_play, "_observed_label_point", return_value=None), \
+             patch.object(civ6_play, "focus_game") as focus, \
+             patch.object(civ6_play, "click_at") as click:
+            started = civ6_play.configure_and_start(
+                (100, 33, 756, 480), args(), Path(temporary)
+            )
+
+        self.assertFalse(started)
+        screenshot.assert_called_once_with(Path(temporary) / "setup.png")
+        focus.assert_not_called()
+        click.assert_not_called()
 
     def test_setup_refuses_to_start_when_requested_leader_is_unverified(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \

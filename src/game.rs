@@ -2357,6 +2357,71 @@ mod city_name_tests {
 
     /// A tile the HOST engine refused to improve must offer no improvements at all.
     ///
+    /// ⭐ A TILE ALREADY CARRYING AN IMPROVEMENT IS NOT OFFERED THAT IMPROVEMENT
+    /// AGAIN — and the whole live duplicate-order fix depends on it.
+    ///
+    /// Measured on the live ladder 2026-08-11: CIVVIS orders an improvement, it
+    /// succeeds, and the identical order comes back 27–39 times a run. The cause
+    /// is not the planner: it is that the mirror only learned about a finished
+    /// improvement on the next periodic tile sweep, so the board still showed the
+    /// ground bare. #1565 and #1567 report the improvement immediately.
+    ///
+    /// That fix is only sufficient because of the exclusion this test pins —
+    /// `valid_improvements` skips an improvement equal to the one already on the
+    /// tile. Remove it and the duplicates return with a correct board, and
+    /// nothing else in the suite would say so.
+    ///
+    /// ⚠ I predicted the opposite from reading, and a grep that stopped seventy
+    /// lines short is why. The condition lives at the end of the improvement
+    /// loop, not beside the national-park check at the top.
+    #[test]
+    fn a_tile_is_not_offered_the_improvement_it_already_has() {
+        let mut game = Game::new(2, 24, 16, 1, 200, 0);
+        let centre = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| {
+                let tile = &game.map.tiles[pos];
+                !game.rules.is_water(tile)
+                    && game.rules.is_passable(tile)
+                    && !game.tile_is_natural_wonder(tile)
+            })
+            .expect("a standard map has open land");
+        game.place_city(0, centre, None);
+        let Some((pos, improvement)) = crate::hex::ring(centre, 1)
+            .into_iter()
+            .chain(crate::hex::ring(centre, 2))
+            .find_map(|pos| {
+                game.valid_improvements(0, pos)
+                    .into_iter()
+                    .next()
+                    .map(|imp| (pos, imp))
+            })
+        else {
+            panic!("the ground around a capital should contain an improvable tile");
+        };
+
+        // Put that very improvement on the tile, as a finished build would.
+        game.map.tiles.get_mut(&pos).expect("the tile").improvement = Some(improvement);
+
+        assert!(
+            !game.valid_improvements(0, pos).contains(&improvement),
+            "a tile holding {improvement} must not be offered {improvement} again, \
+             or CIVVIS re-orders what it has just built"
+        );
+        // ⚠ And only that one. Replacing an improvement is a real decision in
+        // Civilization VI — a Farm over a Mine — so the tile must still offer
+        // something, or this would be a much bigger change than it looks.
+        // ⚠ NOT asserted here: that a DIFFERENT improvement survives, which is
+        // the other half of the rule (replacing a Mine with a Farm is a real
+        // Civilization VI decision). No tile within two rings of a capital
+        // offers two valid improvements on this map — terrain, feature and
+        // resource constrain them to one each — so the fixture cannot state it
+        // without inventing ground. Left unclaimed rather than asserted weakly.
+    }
+
     /// The largest refusal category measured — 311 `IMPROVEMENT_MINE` refusals in one
     /// run — because CIVVIS names improvements from its own terrain model and the two
     /// rulesets disagree tile for tile. Gated in `valid_improvements` because that is
@@ -7869,6 +7934,9 @@ mod envoy_contact_tests {
             game.players[player].met.clear();
         }
         game.record_contact(0, known);
+        // Keep this legality fixture independent of the automatic Envoy for
+        // first discovering the known city-state.
+        game.players[0].envoys.clear();
         game.players[0].envoys_free = 1;
 
         assert!(!game.can_send_envoy(0, hidden));
@@ -19262,19 +19330,39 @@ impl Game {
     /// No unique-unit substitution: `TacticsRules::for_script` switches uniques
     /// off for every scenario, and a Sea Dog in Nelson's line would be a claim
     /// about England that this battle is not making.
+    ///
+    /// Each ship is granted the promotions her rate is worth — see
+    /// `trafalgar::rate_promotions`, which is where that ladder is argued.
+    /// Granted at setup rather than earned, which is the only difference
+    /// between this and a veteran unit; the engine reads a promotion off the
+    /// unit and never asks how it got there.
     fn deploy_trafalgar_fleet(&mut self, pid: usize) {
-        for (offset, ship) in crate::trafalgar::fleet(pid) {
-            let pos = crate::hex::offset_to_axial(offset.0, offset.1);
+        for ship in crate::trafalgar::fleet(pid) {
+            let pos = crate::hex::offset_to_axial(ship.at.0, ship.at.1);
             debug_assert!(
                 self.map.get(pos).is_some_and(|tile| self.rules.is_water(tile)),
-                "{ship} was ordered onto ({}, {}), which is not water",
-                offset.0,
-                offset.1
+                "{} was ordered onto ({}, {}), which is not water",
+                ship.name,
+                ship.at.0,
+                ship.at.1
             );
             if self.map.get(pos).is_none() || !self.units_at(pos).is_empty() {
                 continue;
             }
-            self.spawn_unit(crate::trafalgar::SHIP_OF_THE_LINE, pid, pos);
+            let uid = self.spawn_unit(crate::trafalgar::SHIP_OF_THE_LINE, pid, pos);
+            let promotions = crate::trafalgar::rate_promotions(ship.guns);
+            let unit = self.units.get_mut(&uid).unwrap();
+            unit.promotions.extend(promotions.iter().map(|name| Name::new(name)));
+            // A unit's level is what its promotion count has bought, so the
+            // two are set together rather than left to disagree on the HUD.
+            unit.level = 1 + promotions.len() as i32;
+            // The flag officer aboard, if any: every flagship is better
+            // handled, and a good enough admiral is worth a fighting tier as
+            // well. `trafalgar::admiral_formation` argues where that line sits.
+            if ship.stars > 0 {
+                unit.bonus_moves += crate::trafalgar::ADMIRAL_MOVEMENT_BONUS;
+                unit.formation = crate::trafalgar::admiral_formation(ship.stars);
+            }
         }
     }
 
@@ -20795,15 +20883,44 @@ impl Game {
         // Reaching for a seat mutably copies it, so ask before taking.
         // MOMENT_PLAYER_MET_MAJOR is +1 to each side, and completing the table
         // is MOMENT_PLAYER_MET_ALL_MAJORS at +3, or +5 first in the world.
-        let major = |pid: usize| {
-            self.players
-                .get(pid)
-                .is_some_and(|player| !player.is_minor && !player.is_barbarian)
+        let major = |player: &Player| !player.is_minor && !player.is_barbarian;
+        let living_major = |player: &Player| {
+            player.alive && !player.is_minor && !player.is_barbarian && !player.is_free_city
         };
-        let between_majors = major(first) && major(second);
+        let major_civilization =
+            |player: &Player| !player.is_minor && !player.is_barbarian && !player.is_free_city;
+        let city_state = |player: &Player| player.alive && player.is_minor && !player.is_barbarian;
+        let between_majors = self.players.get(first).is_some_and(major)
+            && self.players.get(second).is_some_and(major);
         for (observer, subject) in [(first, second), (second, first)] {
             if self.has_met(observer, subject) {
                 continue;
+            }
+            // Civilization VI grants the first major civilization to discover
+            // a city-state one Envoy *at that city-state*.  This is not an
+            // unallocated envoy stock: it is already the first point of
+            // influence, so the next deliberate send is no longer eligible
+            // for Diplomatic League's first-send bonus.
+            //
+            // Check only the durable contact ledger, not map positions or
+            // hidden state.  A city-state can be seen by several units in one
+            // action; the first insertion below wins deterministically and
+            // later sightings see that recorded contact.
+            let observer_is_major = self.players.get(observer).is_some_and(living_major);
+            let subject_is_city_state = self.players.get(subject).is_some_and(city_state);
+            if observer_is_major && subject_is_city_state {
+                let first_discovery = !self.players.iter().any(|other| {
+                    other.id != observer
+                        && major_civilization(other)
+                        && other.met.contains(&subject)
+                });
+                if first_discovery {
+                    let envoys = &mut self.players[observer].envoys;
+                    match envoys.iter_mut().find(|(minor, _)| *minor == subject) {
+                        Some((_, count)) => *count += 1,
+                        None => envoys.push((subject, 1)),
+                    }
+                }
             }
             self.players[observer].met.insert(subject);
             if between_majors {
@@ -32895,7 +33012,12 @@ impl Game {
         }
     }
 
-    fn unit_max_moves(&self, uid: u32) -> f64 {
+    /// Full movement allowance for a fresh turn, including embarkation, tech,
+    /// policy, wonder, road, formation, and support effects. The live mirror
+    /// uses this after rebuilding a board because Civilization VI's exported
+    /// movement field is a remaining-movement observation, not a fresh-turn
+    /// allowance.
+    pub(crate) fn unit_max_moves(&self, uid: u32) -> f64 {
         self.unit_max_moves_at(uid, self.units[&uid].pos)
     }
 
@@ -48098,6 +48220,43 @@ impl Game {
             Some(city) if city.owner == pid => {}
             _ => return Err("not your city".into()),
         }
+        // ★★★★★ THE GATE BELONGS HERE, IN THE ONE FUNCTION EVERY BUYER REACHES.
+        //
+        // `purchase_is_blocked` already says this in its own doc — "the missionary
+        // buyer [and the gold buyers] all build an `Action::Buy*` themselves and
+        // call `apply` directly, so a gate that lives only in the enumeration
+        // never runs for them" — and the gate was still only in the enumeration
+        // (`purchases.retain`, `acts.retain`). So it never ran for them.
+        //
+        // Measured on live run civvis-20260811T230324Z: **181 refused
+        // `UNIT_MISSIONARY` faith purchases in one game**, in one city, on 177
+        // CONSECUTIVE turns — from turn 58 to the end, against a cooldown of
+        // eight. That single item was 60% of every refusal the run recorded, and
+        // the run's total refusal rate (119.6 per 100 turns) was five times the
+        // day's median because of it.
+        //
+        // ⚠ This is the identical repair `do_improve` carries a few thousand
+        // lines above, for the identical reason: `builder_step` computed its own
+        // options and called `apply` directly, so the rule added to
+        // `legal_actions_within` never fired.
+        //
+        // ⚠ Safe in an ordinary CIVVIS game: `blocked_purchases` is populated
+        // only by the live mirror and is empty otherwise, so simulated play is
+        // unchanged. And the block is a TTL cooldown, not a verdict — the worst
+        // a wrong entry costs is an eight-turn delay.
+        let item = if formation == 0 {
+            Item::Unit {
+                unit: Name::new(unit),
+            }
+        } else {
+            Item::Formation {
+                unit: Name::new(unit),
+                formation,
+            }
+        };
+        if self.purchase_is_blocked(cid, &item) {
+            return Err("the host refused this purchase recently".into());
+        }
         let Some(spec) = self.rules.units.get(unit) else {
             return Err("no such unit".into());
         };
@@ -61576,6 +61735,35 @@ mod visibility_tests {
     }
 
     #[test]
+    fn first_major_to_meet_a_city_state_receives_its_automatic_envoy() {
+        let mut game = Game::new_full(2, 28, 18, 91_031, 120, 1, false);
+        let city_state = game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .expect("the fixture seats one city-state");
+        let free_before = game.players[1].envoys_free;
+
+        game.record_contact(1, city_state);
+        assert_eq!(game.envoys_at(1, city_state), 1);
+        assert_eq!(
+            game.players[1].envoys_free, free_before,
+            "first discovery places the envoy at the city-state rather than adding a free stock"
+        );
+
+        // Discovery remains a world fact after the discoverer is eliminated;
+        // a later civilization does not become "first" retroactively.
+        game.players[1].alive = false;
+        game.record_contact(0, city_state);
+        assert_eq!(
+            game.envoys_at(0, city_state), 0,
+            "a later visitor must not receive the first-discovery envoy"
+        );
+        assert_eq!(game.envoys_at(1, city_state), 1);
+    }
+
+    #[test]
     fn browser_lights_turn_memory_but_traces_only_exact_current_sight() {
         const INDEX: &str = include_str!("../web/assets/app.js");
         assert!(INDEX.contains("function drawFlatVisibilityPerimeter(tiles, visible)"));
@@ -74827,6 +75015,93 @@ mod world_lap_tests {
         assert!(
             game.players[0].went_around,
             "a way round at the equator is the real thing",
+        );
+    }
+}
+
+#[cfg(test)]
+mod purchase_gate_tests {
+    use super::*;
+
+    /// ⚠⚠⚠ THE BUYERS BYPASS THEIR OWN GATE.
+    ///
+    /// `purchase_is_blocked` says so in its own doc — the missionary buyer and
+    /// the gold buyers build an `Action::Buy*` and call `apply` DIRECTLY, so a
+    /// gate living only in the enumeration (`purchases.retain`, `acts.retain`)
+    /// never runs for them. It was still only in the enumeration.
+    ///
+    /// Live run `civvis-20260811T230324Z`: **181 refused `UNIT_MISSIONARY` faith
+    /// purchases in one game**, one city, 177 CONSECUTIVE turns from t58, against
+    /// an eight-turn cooldown. Sixty percent of every refusal that run recorded.
+    ///
+    /// This drives `apply` directly, exactly as the buyers do, so a gate that
+    /// only filters an enumeration cannot satisfy it.
+    #[test]
+    fn a_blocked_purchase_is_refused_even_when_apply_is_called_directly() {
+        let mut game = Game::new_full(1, 20, 14, 91_483, 120, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .expect("a starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("the capital is founded");
+        let cid = *game.player_city_ids(0).first().expect("a capital");
+
+        game.replace_blocked_purchases(std::collections::BTreeMap::from([(
+            cid,
+            std::collections::BTreeSet::from(["unit:warrior".to_string()]),
+        )]));
+
+        let refused = game.apply(
+            0,
+            &Action::Buy {
+                city: cid,
+                unit: crate::name!("warrior"),
+                formation: 0,
+                currency: "gold".to_string(),
+            },
+        );
+        assert!(
+            refused.is_err(),
+            "a purchase the host refused recently must not be re-attempted through \
+             a direct `apply`, which is how 181 missionary buys reached the host"
+        );
+    }
+
+    /// ⚠ And an unblocked item must still be reachable, or the gate is a wall.
+    #[test]
+    fn an_unblocked_purchase_is_untouched_by_the_gate() {
+        let mut game = Game::new_full(1, 20, 14, 91_483, 120, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .expect("a starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("the capital is founded");
+        let cid = *game.player_city_ids(0).first().expect("a capital");
+        game.replace_blocked_purchases(std::collections::BTreeMap::from([(
+            cid,
+            std::collections::BTreeSet::from(["unit:slinger".to_string()]),
+        )]));
+        // Not asserting the buy SUCCEEDS — gold, tech and rules all gate it too.
+        // Asserting only that it is not stopped by the block for a different unit.
+        let why = game
+            .apply(
+                0,
+                &Action::Buy {
+                    city: cid,
+                    unit: crate::name!("warrior"),
+                    formation: 0,
+                    currency: "gold".to_string(),
+                },
+            )
+            .err()
+            .unwrap_or_default();
+        assert!(
+            !why.contains("refused this purchase recently"),
+            "the gate must only stop the item that was actually refused, got: {why}"
         );
     }
 }

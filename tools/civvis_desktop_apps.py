@@ -377,21 +377,24 @@ def build_artifacts(
     try:
         verify_default_contract(source, template)
         env = build_environment(os.environ)
-        native_built_at = utc_now()
         native_env = dict(env)
         native_env.update(
             {
                 "CARGO_BUILD_JOBS": "2",
                 "CARGO_TARGET_DIR": str(native_target),
-                "CIVVIS_COMMIT": revision.commit,
-                "CIVVIS_COMMIT_TIME": revision.committed_at,
-                "CIVVIS_BUILT_AT": native_built_at,
             }
         )
         run(("cargo", "build", "--release", "--locked", "--bin", "civvis"), cwd=source, env=native_env)
         native_binary = native_target / "release/civvis"
         if not native_binary.is_file():
             raise DesktopAppError("native build did not produce civvis")
+        # Native provenance is supplied by spectator-build.json when the
+        # promoted binary launches; unlike WASM, it is not compiled into the
+        # artifact. Stamp the completed binary here, not before Cargo starts.
+        # A low-priority native compile can take most of the freshness window,
+        # and counting that work as artifact age made a fresh paired build
+        # reject itself after the subsequent WASM build.
+        native_built_at = utc_now()
 
         wasm_env = dict(env)
         wasm_env.update({"CARGO_BUILD_JOBS": "2", "CARGO_TARGET_DIR": str(wasm_target)})

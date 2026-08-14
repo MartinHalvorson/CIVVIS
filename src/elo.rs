@@ -38,7 +38,19 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 114] = [
+pub const EVAL_ONLY_AIS: [&str; 136] = [
+    // One pre-registered point on the production genes #1520 opened.
+    "advanced_build_first",
+    // The native-safe half of the live-bridge bundle, applied to the stock
+    // production controller. `live` has only ever been measured against its
+    // own ablations, so these are what prices the whole repair set against
+    // the `advanced` incumbent it was never run against. War and economy
+    // halves exist so the composite's interaction is measurable rather than
+    // assumed: if the whole beats `advanced` by more than the halves do, the
+    // repairs compound.
+    "advanced_synergy",
+    "advanced_synergy_war",
+    "advanced_synergy_economy",
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -126,6 +138,24 @@ pub const EVAL_ONLY_AIS: [&str; 114] = [
     "advanced_roster_live",
     "advanced_roster_live_keep_districts",
     "advanced_diplomatic_opening",
+    "advanced_without_bounded_recovery",
+    "advanced_without_city_target_floor",
+    "advanced_without_plan_city_target",
+    "advanced_without_settler_commit",
+    "advanced_without_unpriced_bundle",
+    "advanced_without_settlement_safety",
+    "advanced_without_battlefront_observation",
+    "advanced_lower_city_target",
+    "advanced_settler_founds_when_stalled",
+    "advanced_fortify_idle_units",
+    "advanced_without_unpriced_economy",
+    "advanced_without_unpriced_war",
+    "advanced_without_city_defence",
+    "advanced_legacy_policy_deck",
+    "advanced_without_builder_floor",
+    "advanced_without_settler_deadline",
+    "advanced_price_suzerainty",
+    "advanced_without_unit_tactics",
     "advanced_league_top",
     "advanced_joint_tactics",
     "strategic_cheap",
@@ -218,6 +248,106 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 41] = [
     "housing-buildings",
 ];
 
+/// The four bridge treatments that stay out of the native bundle, as tags.
+/// Three encode a rule of Firaxis' game rather than repairing one of ours; the
+/// fourth is excluded on evidence. See `AdvancedAi::enable_engine_repairs`.
+pub const FIRAXIS_ONLY_TREATMENTS: [&str; 4] = [
+    "joint-tactics",
+    "live-trader-route",
+    "live-religious-purchase",
+    "solvent-faith-army",
+];
+
+/// The military half of the native repair bundle: force assembly, marching,
+/// siege, threat reading, and the war/peace decision.
+pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 23] = [
+    "muster-at-command-radius",
+    "war-reinforcement",
+    "come-ashore",
+    "recorded-tactical-step",
+    "blind-objective-strength",
+    "blind-objective-units",
+    "relief-targets-the-siege",
+    "army-target-weighs-enemy",
+    "peacetime-deterrence",
+    "war-economy",
+    "bounded-recovery",
+    "siege-muster",
+    "siege-role",
+    "siege-tracks-wall",
+    "siege-commitment",
+    "war-patience",
+    "home-defense",
+    "garrison-under-fire",
+    "garrison-walls",
+    "strike-opening",
+    "ranged-line-of-sight",
+    "recon-replacement",
+    "religion-sues-peace",
+];
+
+/// The economic half: settlement, growth, districts, and the policy deck.
+pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 14] = [
+    "escort-unstick",
+    "wonder-ring-settle-value",
+    "stranded-settler-discount",
+    "wide-map-capacity",
+    "housing-districts",
+    "housing-buildings",
+    "housing-cards",
+    "housing-research",
+    "campus-every-city",
+    "district-coverage",
+    "slot-kind-tiebreak",
+    "loyalty-policy-defence",
+    "loyalty-rate-alarm",
+    "suzerain-cards",
+];
+
+/// Every live-bridge repair that fixes a CIVVIS engine defect, as evaluator
+/// tags — `LIVE_BRIDGE_TREATMENTS` minus `FIRAXIS_ONLY_TREATMENTS`, and the
+/// union of the two halves above. `engine_repair_tags_partition_the_bridge`
+/// fails if any of those three relationships stops holding.
+pub const ENGINE_REPAIR_TREATMENTS: [&str; 37] = [
+    "muster-at-command-radius",
+    "war-reinforcement",
+    "come-ashore",
+    "recorded-tactical-step",
+    "blind-objective-strength",
+    "blind-objective-units",
+    "relief-targets-the-siege",
+    "army-target-weighs-enemy",
+    "peacetime-deterrence",
+    "war-economy",
+    "bounded-recovery",
+    "siege-muster",
+    "siege-role",
+    "siege-tracks-wall",
+    "siege-commitment",
+    "war-patience",
+    "home-defense",
+    "garrison-under-fire",
+    "garrison-walls",
+    "strike-opening",
+    "ranged-line-of-sight",
+    "recon-replacement",
+    "religion-sues-peace",
+    "escort-unstick",
+    "wonder-ring-settle-value",
+    "stranded-settler-discount",
+    "wide-map-capacity",
+    "housing-districts",
+    "housing-buildings",
+    "housing-cards",
+    "housing-research",
+    "campus-every-city",
+    "district-coverage",
+    "slot-kind-tiebreak",
+    "loyalty-policy-defence",
+    "loyalty-rate-alarm",
+    "suzerain-cards",
+];
+
 /// Register a selectable arm once, under a typed identity.  The factory,
 /// artifact resolver, provenance report, and evaluator-collapse guard all use
 /// this identity rather than maintaining separate string matches.
@@ -278,6 +408,10 @@ define_arm_kinds! {
     LiveWithoutWarPatience => "live_without_war_patience",
     Advanced => "advanced",
     AdvancedBankingDedication => "advanced_banking_dedication",
+    AdvancedBuildFirst => "advanced_build_first",
+    AdvancedSynergy => "advanced_synergy",
+    AdvancedSynergyWar => "advanced_synergy_war",
+    AdvancedSynergyEconomy => "advanced_synergy_economy",
     AdvancedBeliefPressure => "advanced_belief_pressure",
     AdvancedBlindToLeaders => "advanced_blind_to_leaders",
     AdvancedCityStrategy => "advanced_city_strategy",
@@ -329,6 +463,24 @@ define_arm_kinds! {
     AdvancedRosterLive => "advanced_roster_live",
     AdvancedRosterLiveKeepDistricts => "advanced_roster_live_keep_districts",
     AdvancedDiplomaticOpening => "advanced_diplomatic_opening",
+    AdvancedWithoutBoundedRecovery => "advanced_without_bounded_recovery",
+    AdvancedWithoutCityTargetFloor => "advanced_without_city_target_floor",
+    AdvancedWithoutPlanCityTarget => "advanced_without_plan_city_target",
+    AdvancedWithoutSettlerCommit => "advanced_without_settler_commit",
+    AdvancedWithoutUnpricedBundle => "advanced_without_unpriced_bundle",
+    AdvancedWithoutSettlementSafety => "advanced_without_settlement_safety",
+    AdvancedWithoutBattlefrontObservation => "advanced_without_battlefront_observation",
+    AdvancedLowerCityTarget => "advanced_lower_city_target",
+    AdvancedSettlerFoundsWhenStalled => "advanced_settler_founds_when_stalled",
+    AdvancedFortifyIdleUnits => "advanced_fortify_idle_units",
+    AdvancedWithoutUnpricedEconomy => "advanced_without_unpriced_economy",
+    AdvancedWithoutUnpricedWar => "advanced_without_unpriced_war",
+    AdvancedWithoutCityDefence => "advanced_without_city_defence",
+    AdvancedLegacyPolicyDeck => "advanced_legacy_policy_deck",
+    AdvancedWithoutBuilderFloor => "advanced_without_builder_floor",
+    AdvancedWithoutSettlerDeadline => "advanced_without_settler_deadline",
+    AdvancedPriceSuzerainty => "advanced_price_suzerainty",
+    AdvancedWithoutUnitTactics => "advanced_without_unit_tactics",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
@@ -379,6 +531,22 @@ define_arm_kinds! {
 /// [`crate::ai::ADVANCED_D_HOLY`].
 pub const PRE_2026_08_10_D_HOLY: f64 = 2.0;
 
+/// The city-target floor the frozen and pre-promotion controllers use, so
+/// `advanced_without_city_target_floor` withholds to a value the repository
+/// already plays rather than a number invented for the arm.
+pub const PRE_PROMOTION_CITY_TARGET_FLOOR: usize = 3;
+
+/// What `advanced_lower_city_target` asks the flat gene for: the same 3 the
+/// plan's ramp now starts at, so the two "how many cities" knobs agree instead
+/// of the gene sitting a city above the plan.
+pub const LOWERED_CITY_TARGET: f64 = 3.0;
+
+/// The floor `advanced_wide_opening` tests, read from the one place that
+/// defines it so the arm and the history cannot drift apart.
+fn civvis_production_city_target_floor() -> usize {
+    crate::ai::PRODUCTION_CITY_TARGET_FLOOR
+}
+
 /// Games-weighted `settle_food` of the top third of the shipped league roster
 /// by outright 8-player win rate, against the bottom third's 1.19 and the
 /// shipped 1.2. Read by `advanced_settle_food`; see that arm.
@@ -388,6 +556,16 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// Version of the game/rating contract, independent of the JSON shape. Bump
 /// this when rules, default setup, or scoring semantics change enough that an
 /// Elo point no longer measures the same experiment.
+///
+/// **v8 (2026-08-11) — first city-state discovery earns an Envoy.** The first
+/// living major civilization to make contact with a city-state now receives one
+/// Envoy already placed there; later discoverers do not. This is a world rule,
+/// not an opt-in controller treatment, so it changes the influence thresholds
+/// and available bonuses for Basic, `advanced_v1`, and production Advanced
+/// alike. The production Scout's higher-information frontier choice is gated
+/// away from `advanced_v1`, but the reward is deliberately not: the new rule
+/// changes the experiment whenever anyone reaches a city-state. Ratings from
+/// v7 and v8 must not be compared.
 ///
 /// **v7 (2026-08-10) — the AI sells what a declaration cancels.** Immediately
 /// before it declares, a civilization now offers its victim the terms the
@@ -421,7 +599,7 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// argument is ever wrong. Rows before and after v5 are not comparable at Online,
 /// Quick, Epic or Marathon, where the price genuinely moved (12.5 / 16.75 / 37.5 /
 /// 75 against a flat 25).
-pub const ELO_PROTOCOL_VERSION: u32 = 7;
+pub const ELO_PROTOCOL_VERSION: u32 = 8;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand
@@ -1709,7 +1887,18 @@ fn artifact_effective_alias_from(
         // cleared the 1200-pair gate and became what `advanced` plays, so the
         // arm now builds the production controller. `advanced_holy_v0` is the
         // agent it used to be measured against.
-        ArmKind::AdvancedHolyPriority => ArmKind::Advanced,
+        // `advanced_holy_v0` was the pre-shipment agent; the shipment was
+        // reverted, so it is `advanced` under another name and its comparisons
+        // must fail closed as self-play.
+        ArmKind::AdvancedHolyV0 => ArmKind::Advanced,
+        // The production floor was removed on 2026-08-10, so withholding it now
+        // builds the production controller. Retained under its own name because
+        // `docs/EVAL.md` reports five runs against it; declared effectively
+        // `advanced` so the pair fails closed as self-play.
+        ArmKind::AdvancedWithoutCityTargetFloor => ArmKind::Advanced,
+        // Production sets `plan_city_target`, so this "add" arm builds the
+        // production controller and measures nothing. Fail it closed.
+        ArmKind::AdvancedPlanCityTarget => ArmKind::Advanced,
         ArmKind::AdvancedBankingDedication => advanced_fallback,
         _ => kind,
     }
@@ -1751,6 +1940,47 @@ fn artifact_effective_alias(kind: ArmKind, dir: &str) -> ArmKind {
 fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
     match kind.name() {
         "advanced" => Box::new(AdvancedAi::new()),
+        // ONE pre-registered point on the production category genes, chosen
+        // before the run and not swept. `advanced_synergy` lost 108 Elo at
+        // deployment while ending on MORE districts (27.0 vs 24.1), FEWER
+        // buildings (75.9 vs 94.1), 3.4x less gold (216 vs 728) and a smaller
+        // army. That is one arm's correlation and 37 confounded changes, so it
+        // is a hypothesis and not a finding: that this engine's build order
+        // over-buys districts against buildings. #1516 reached something
+        // adjacent from the audit side -- the production bundle's components
+        // were selected on development, and development is not the objective.
+        //
+        // `settler_price` states the procedure this follows: "Pick one,
+        // register it, run it once -- do not sweep several against the same
+        // maps, which is the selection bias that dissolved this repository's
+        // coordinate-descent result on resampling." Registered: p_building
+        // 1.5, p_district 0.7, matrix seed 95000000. Whatever it returns is
+        // the result.
+        "advanced_build_first" => {
+            let mut w = Weights::default();
+            w.p_building = 1.5;
+            w.p_district = 0.7;
+            Box::new(AdvancedAi::with_weights(w))
+        }
+        // Stock production weights and stock policy, with every live-bridge
+        // repair that fixes a CIVVIS engine defect rather than a Firaxis one.
+        // See `AdvancedAi::enable_engine_repairs` for the four exclusions and
+        // for why ablating the bundle cannot answer what the bundle is worth.
+        "advanced_synergy" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_engine_repairs();
+            Box::new(ai)
+        }
+        "advanced_synergy_war" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_engine_repairs_war();
+            Box::new(ai)
+        }
+        "advanced_synergy_economy" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_engine_repairs_economy();
+            Box::new(ai)
+        }
         // The first bounded use of the fog-safe belief surface. It retains
         // only last-seen military strength for the already fog-filtered
         // city-pressure/recovery path; every other Advanced policy remains
@@ -2078,9 +2308,13 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // Treatment for the city-target axis: identical to `advanced` except
         // that the target ramp starts at six rather than three. See
         // `AdvancedAi::city_target_floor`, #554 and #569.
+        // ⚠ Since 2026-08-10 this is a treatment again rather than a
+        // re-labelling of production: `promoted_policy_envoy` no longer sets
+        // the floor, because withholding it passed the promotion matrix at
+        // +41 Elo on deployment-online.
         "advanced_wide_opening" => {
             let mut ai = AdvancedAi::new();
-            ai.city_target_floor = 6;
+            ai.city_target_floor = civvis_production_city_target_floor();
             Box::new(ai)
         }
         // Treatment for the city-target axis: identical to `advanced` except
@@ -2130,12 +2364,11 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // draw: `docs/EVAL.md` records that religious victory dominates
         // self-play in this engine, and the shipped default ranks the district
         // that lane runs through *below* two others.
-        // ⚠ As of the 1200-pair gate PASS this constructs the SAME agent as
-        // `advanced`, because the measured value is now what `advanced` plays.
-        // Retained under its own name because `docs/EVAL.md` 2026-08-10 reports
-        // three runs against it; `builtin_provenance` declares it effectively
-        // `advanced` so the pair is rejected as self-play rather than quietly
-        // measuring nothing. The frozen pre-change agent is `advanced_holy_v0`.
+        // ⚠ A treatment again. It shipped into `advanced` on a +20 Elo gate
+        // taken at `ai_eval`'s 4p 24x16 defaults, and was reverted the same day
+        // when the deployment shape measured it at parity and the promotion
+        // matrix at -44. It stays registered because the axis is real and the
+        // profile dependence is the finding; see `docs/EVAL.md` 2026-08-10.
         "advanced_holy_priority" => Box::new(AdvancedAi::with_weights(Weights::advanced())),
         // The scripted major exactly as it played before 2026-08-10, retained so
         // the change stays measurable after it ships -- the same role
@@ -2160,7 +2393,7 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // test and does not explain the result. What this arm establishes is
         // whether the axis pays here, not why.
         "advanced_settle_food" => {
-            let mut w = Weights::advanced();
+            let mut w = Weights::default();
             w.settle_food = LEAGUE_WINNER_SETTLE_FOOD;
             Box::new(AdvancedAi::with_weights(w))
         }
@@ -2196,7 +2429,7 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // fourteen signals, including the second-strongest (`settle_food`,
         // r=-0.73), are genes that provably cannot change a game.
         "advanced_roster_live" => {
-            let mut w = Weights::advanced();
+            let mut w = Weights::default();
             w.city_target = 6.4714;
             w.settler_stop_turn = 162.6394;
             w.mil_per_city = 0.9332;
@@ -2239,7 +2472,7 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // twenty-five live genes unchanged, so recovery toward parity confirms
         // the districts carried the loss and a second loss acquits them.
         "advanced_roster_live_keep_districts" => {
-            let mut w = Weights::advanced();
+            let mut w = Weights::default();
             w.city_target = 6.4714;
             w.settler_stop_turn = 162.6394;
             w.mil_per_city = 0.9332;
@@ -2279,20 +2512,318 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // The opening figure is Religion's own, so this loses every tie to
         // Religion and can only win the argmax against Conquest and Expansion,
         // which score zero. See `AdvancedAi::diplomatic_opening_score`.
+        // Bound the Recovery posture in time.
+        //
+        // An actuation treatment on a documented **absorbing state**, not a
+        // valuation tune. `assess`'s first arm drops the empire into Recovery
+        // whenever it is at war and `my_power * 1.25 < strongest_rival`.
+        // Recovery does not build an army, so the test stays true *because of
+        // the choice it caused* and re-fires every assessment for the rest of
+        // the game. `bounded_recovery` stops only the power-gap half from
+        // re-firing after `RECOVERY_POSTURE_LIMIT` standard turns; the
+        // threatened-city half is untouched.
+        //
+        // The harm is already on record from a live run
+        // (`civvis-20260802T205959Z`): the journal names that arm 160 times,
+        // the posture held t65..t229 — **72% of the game** — and the empire
+        // finished with ONE warrior, military 34 against 1354, score 205
+        // against 1324. Recovery takes 11.7%-13.9% of observed player-turns at
+        // the deployment shape.
+        //
+        // ⚠ It is **already on** in `advanced` -- `promoted_policy_envoy` sets
+        // it and `AdvancedAi::new()` routes through there -- while the field's
+        // own doc claimed native games left it off and `docs/EVAL.md` has never
+        // mentioned it. It reached deployment inside the 2026-08-01 policy-envoy
+        // composite without ever being priced on its own, which is exactly what
+        // `disable_bounded_recovery`'s doc warns about. So this arm WITHHOLDS
+        // it, which is the only way round that measures anything: an arm built
+        // as "new() plus the flag" is byte-identical to the control.
+        // Withhold the production city-target floor, returning it to the 3 the
+        // frozen controller uses.
+        //
+        // The component with the weakest individual case in the whole
+        // production bundle. Its solo axis is a **recorded null** — the
+        // `city_target_floor` 3 -> 6 ramp measured 49.6%, Elo -3, sign
+        // p=0.9007 over 240 pairs on seed 510000, after a 53.3% first reading
+        // that did not reproduce, and the entrant was removed. `GENOME.md` puts
+        // city expansion "at a local optimum", and every expansion treatment
+        // since has been null: the target ramp, parallel settlers, and a
+        // settler priced at 100x that moved cities by 0.06.
+        //
+        // It nevertheless ships, inside the 2026-08-01 composite. A composite
+        // may pass while a component is null alone, so this is not an
+        // accusation — it is the missing measurement. If withholding it is
+        // positive, the bundle is carrying a part that costs.
+        // Withhold the plan-driven city target: the production governor goes
+        // back to the flat `city_target` gene instead of the empire's own
+        // `plan.desired_cities`.
+        //
+        // The second of the two expansion levers `promoted_policy_envoy` sets.
+        // The first, `city_target_floor = 6`, measured **-41 Elo** at the
+        // deployment shape and was removed on 2026-08-10 — it bought cities,
+        // population and terminal score, and paid wins for them. This is the
+        // one still standing, it has no individual number, and it is measured
+        // now rather than earlier because the two interact: with the floor gone
+        // the plan target is what remains driving expansion.
+        //
+        // ⚠ `advanced_plan_city_target` cannot measure this. Production already
+        // sets the flag, so "new() plus the flag" is byte-identical to the
+        // control — the third arm in this file to carry that defect. It is
+        // aliased to `advanced` below so the comparison fails closed instead of
+        // reporting a confident null.
+        // The third expansion-adjacent lever in the production bundle, and the
+        // next unpriced one in the #1499 ledger. Registered here so the queue
+        // stays visible; its number is pending.
+        // Everything in the production bundle that still has no individual
+        // number, withheld at once.
+        //
+        // Pricing nine flags one at a time is nine deployment runs. This asks
+        // the prior question in one: **is there anything left in the
+        // remainder at all?** A null bounds the whole set and closes the queue;
+        // a large effect says keep bisecting, and the bisection is then paid
+        // for. The same screen-then-decompose shape found the district genes
+        // inside the roster composite (#1486).
+        //
+        // Priced already and therefore NOT withheld here: `city_target_floor`
+        // (-41 Elo, removed #1504), `plan_city_target` (null, #1507),
+        // `bounded_recovery` (null, #1499), `envoy_infrastructure` (null), and
+        // `settler_commit` — which measured **+30 Elo** (withholding it scores
+        // 45.6%, 60/95, sign p=0.0061), so it is a component the bundle should
+        // keep and including it here would drag the screen negative for the
+        // wrong reason.
+        //
+        // ⚠ A composite says nothing about any single flag. If this moves, the
+        // decomposition is the work, not the headline.
+        // The two base-constructor defaults that no arm could reach. `configured`
+        // sets ten booleans for every non-legacy `AdvancedAi`; `deny_leaders`
+        // had `advanced_blind_to_leaders` and these two had nothing at all.
+        // The `promoted_policy_envoy` audit found -41 Elo among flags in this
+        // exact condition, so "always on and unmeasurable" is where that
+        // mistake lived.
+        "advanced_without_settlement_safety" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_settlement_safety();
+            Box::new(ai)
+        }
+        // ★ A PREDICTION, not a search. Declared before the run.
+        //
+        // Three withholds at the deployment shape resolved the settling lane
+        // into one statement: **ambition costs, execution pays.** Wanting more
+        // cities measured **-41 Elo** (`city_target_floor`, removed #1504);
+        // committing to a settler already built measured **+30**
+        // (`settler_commit`); putting the city somewhere it survives measured
+        // **+31** (`settlement_safety`). Two execution mechanisms pay about
+        // what the one ambition knob cost.
+        //
+        // If that is a property of the engine rather than a story fitted to
+        // three results, it should predict an axis it was not derived from.
+        // `city_target` is the other "how many cities to want" knob — the flat
+        // gene the baseline production governor caps on, distinct from the
+        // plan's floor and untouched by #1504. **Prediction: lowering it from
+        // 4.0 to the 3 the plan now starts at is POSITIVE.**
+        //
+        // ⚠ The prediction is what makes this worth running, and it is also
+        // what makes a null informative: `GENOME.md` puts city expansion "at a
+        // local optimum", so a null says the principle does not extend past
+        // the three flags that produced it, and it should stop being quoted as
+        // though it does. Recorded either way.
+        // A settler that cannot reach a better site founds where it stands.
+        //
+        // An **actuation** repair, the class that produced the only shipped
+        // gain this session. Founding is gated on the settler's chosen target
+        // equalling its own tile, so one holding out for a site it never
+        // reaches never founds. `audit` at the deployment shape names it:
+        // "settler sits still 25+ turns … can_found_here=true, legal_sites=644"
+        // — a unit that cost a population point and 80-140 production, idle
+        // from turn 34 to the end of the game, standing on legal ground. Eight
+        // in eight games, plus eight more circling without progress.
+        //
+        // It is also the settling lane's own lesson applied to a unit rather
+        // than a gene: wanting a better site cost 41 Elo as
+        // `city_target_floor`; finishing the settlement already begun paid +30
+        // (`settler_commit`) and +31 (`settlement_safety`).
+        // A unit whose planner gave it nothing to do takes the free defensive
+        // stance instead of standing in the open.
+        //
+        // `hold_stood_down_unit` fortified only inside a stand-down window, so
+        // a unit that merely took no turn was left unfortified. `audit`
+        // measures the size: **7.73% of major-civ unit-turns** are an
+        // unembarked land military unit standing still that could have
+        // fortified — 10,477 across eight games — against **3.59%** that are
+        // fortified. `unit_strength` pays **+3 per fortified turn capped at
+        // two**, so each declines about 30% of a warrior's base strength.
+        //
+        // ⚠ Chosen by RATE, not by symptom count. The same audit reports 94
+        // circling warriors, which is 1.21% of unit-turns; and the previous
+        // repair in this file fixed a settler idling two hundred turns and
+        // measured ~5 Elo because it touched 14 maps in 400. Frequency is the
+        // better guide, and still not a substitute for the paired run.
+        // The two halves of `advanced_without_unpriced_bundle`.
+        //
+        // That composite measured **+9 Elo, CI -25..+43, 94/84, p=0.50** — null
+        // on the NET. A net is not a bound on the parts, and in this bundle
+        // that is not a formality: `city_target_floor` at **-41** and
+        // `settler_commit` at **+30** are demonstrated offsetting components of
+        // the same constructor. A +9 across eight flags is perfectly compatible
+        // with a -30 and a +40 inside it.
+        //
+        // Split on the line the flags themselves draw — what the empire builds
+        // against how it fights — so a half that moves names a coherent
+        // subsystem rather than an arbitrary four.
+        "advanced_without_unpriced_economy" => {
+            let mut ai = AdvancedAi::new();
+            ai.envoy_priority = false;
+            ai.adjacency_site_planning = false;
+            ai.research_economy = false;
+            ai.disable_amenity_districts();
+            Box::new(ai)
+        }
+        // The two quarters of the war half.
+        //
+        // Withholding all four measured **+32 and +34 Elo** on two disjoint
+        // seeds at the exhibition's configuration (e-process crossed at map
+        // 134), and **+13, p=0.4671** on the promotion matrix's three-victory
+        // `deployment-online`, which rejected it. A group's number is not its
+        // members' — `city_target_floor` (-41) and `settler_commit` (+30) sat
+        // in the same constructor — so one of these quarters may carry the
+        // effect on both profiles where the whole cannot.
+        //
+        // Split on what the flag governs: the city's own defence against the
+        // individual unit's behaviour.
+        // The 24th always-on production behaviour, and the one the audit of
+        // `promoted_policy_envoy` and `configured` missed: `production_weights`
+        // overwrites `policy_deck` with `Live` after the weights are handed
+        // over.
+        //
+        // `Weights::default()`'s comment beside `PolicyDeck::Legacy` says "the
+        // agent that plays is the one that always played" and records `Live` as
+        // a **measured null** — 18 map directions to 15, p=0.7283 over 120
+        // mirrored maps — that "costs an empire valuation per candidate card
+        // per review". Production plays `Live` regardless, `docs/EVAL.md` has
+        // never mentioned `policy_deck`, and no caller could withhold it
+        // because the override happens after construction.
+        //
+        // 120 maps is well under what this file now treats as resolving
+        // anything, so the null it rests on is not one either.
+        // The 25th production behaviour, and the second found outside the two
+        // constructors the audit swept: `delegated_cities` raises
+        // `builder_per_city` from the genome's 0.5 to 0.75 with a call-local
+        // `.max()`. Reachable from nowhere else, never mentioned in
+        // `docs/EVAL.md`, and justified by reasoning rather than a number —
+        // "three active Builders per four cities provide roughly two useful
+        // improvements per city".
+        //
+        // Same profile as `city_target_floor`, which was also a production-only
+        // floor justified by argument and measured at **-41 Elo**. That is the
+        // reason to look, not a prediction: the two other expansion-adjacent
+        // floors beside this one measured null and +30.
+        // The last production-only override with no number. `delegated_cities`
+        // extends `settler_stop_turn` from the genome's 150 to
+        // `min(300 standard, max_turns - 50 standard)`. With this the sweep of
+        // everything that separates the shipped controller from its genome is
+        // complete.
+        "advanced_without_settler_deadline" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_production_settler_deadline();
+            Box::new(ai)
+        }
+        "advanced_price_suzerainty" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_price_the_suzerainty();
+            Box::new(ai)
+        }
+        "advanced_without_builder_floor" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_production_builder_floor();
+            Box::new(ai)
+        }
+        "advanced_legacy_policy_deck" => Box::new(AdvancedAi::with_legacy_policy_deck()),
+        "advanced_without_city_defence" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_siege_muster();
+            ai.disable_home_defense();
+            Box::new(ai)
+        }
+        "advanced_without_unit_tactics" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_tactical_strategy();
+            ai.disable_unit_objective_memory();
+            Box::new(ai)
+        }
+        "advanced_without_unpriced_war" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_siege_muster();
+            ai.disable_home_defense();
+            ai.disable_tactical_strategy();
+            ai.disable_unit_objective_memory();
+            Box::new(ai)
+        }
+        "advanced_fortify_idle_units" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_fortify_idle_units();
+            Box::new(ai)
+        }
+        "advanced_settler_founds_when_stalled" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_settler_founds_when_stalled();
+            Box::new(ai)
+        }
+        "advanced_lower_city_target" => {
+            let mut w = Weights::default();
+            w.city_target = LOWERED_CITY_TARGET;
+            Box::new(AdvancedAi::with_weights(w))
+        }
+        "advanced_without_battlefront_observation" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_battlefront_observation();
+            Box::new(ai)
+        }
+        "advanced_without_unpriced_bundle" => {
+            let mut ai = AdvancedAi::new();
+            ai.envoy_priority = false;
+            ai.adjacency_site_planning = false;
+            ai.research_economy = false;
+            ai.disable_amenity_districts();
+            ai.disable_siege_muster();
+            ai.disable_home_defense();
+            ai.disable_tactical_strategy();
+            ai.disable_unit_objective_memory();
+            Box::new(ai)
+        }
+        "advanced_without_settler_commit" => {
+            let mut ai = AdvancedAi::new();
+            ai.settler_commit = false;
+            Box::new(ai)
+        }
+        "advanced_without_plan_city_target" => {
+            let mut ai = AdvancedAi::new();
+            ai.plan_city_target = false;
+            Box::new(ai)
+        }
+        "advanced_without_city_target_floor" => {
+            let mut ai = AdvancedAi::new();
+            ai.city_target_floor = PRE_PROMOTION_CITY_TARGET_FLOOR;
+            Box::new(ai)
+        }
+        "advanced_without_bounded_recovery" => {
+            let mut ai = AdvancedAi::new();
+            ai.disable_bounded_recovery();
+            Box::new(ai)
+        }
         "advanced_diplomatic_opening" => {
             let mut ai = AdvancedAi::new();
             ai.diplomatic_opening = true;
             Box::new(ai)
         }
         "advanced_holy_lane_v0" => {
-            let mut w = Weights::advanced();
+            let mut w = Weights::default();
             w.d_holy = PRE_2026_08_10_D_HOLY;
             let mut ai = AdvancedAi::with_weights(w);
             ai.holy_lane_parity = true;
             Box::new(ai)
         }
         "advanced_holy_v0" => {
-            let mut w = Weights::advanced();
+            let mut w = Weights::default();
             w.d_holy = PRE_2026_08_10_D_HOLY;
             Box::new(AdvancedAi::with_weights(w))
         }
@@ -3261,6 +3792,14 @@ impl ArmKind {
             Self::LiveWithoutWarEconomy => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings"],
             Self::LiveWithoutWarReinforcement => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings"],
             Self::LiveWithoutWarPatience => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings"],
+            // The native repair bundle is a COMPOSITE for the same reason
+            // `live` is, and is tagged the same way: against `advanced` the
+            // differing axes name all 37 repairs, and against `live` they name
+            // exactly the four Firaxis-semantics flags that separate them.
+            Self::AdvancedBuildFirst => &["build-order-tilt"],
+            Self::AdvancedSynergy => &ENGINE_REPAIR_TREATMENTS,
+            Self::AdvancedSynergyWar => &ENGINE_REPAIR_WAR_TREATMENTS,
+            Self::AdvancedSynergyEconomy => &ENGINE_REPAIR_ECONOMY_TREATMENTS,
             Self::AdvancedBeliefPressure => &["belief-pressure"],
             // `advanced` now owns the confirmed Live + infrastructure +
             // priority composite. The retained arms below are therefore
@@ -3329,6 +3868,24 @@ impl ArmKind {
             Self::AdvancedRosterLive => &["roster-winner-live-genes"],
             Self::AdvancedRosterLiveKeepDistricts => &["roster-winner-live-genes-except-districts"],
             Self::AdvancedDiplomaticOpening => &["diplomatic-lane-prospective"],
+            Self::AdvancedWithoutBoundedRecovery => &["bounded-recovery-withheld"],
+            Self::AdvancedWithoutCityTargetFloor => &["city-target-floor-withheld"],
+            Self::AdvancedWithoutPlanCityTarget => &["plan-city-target-withheld"],
+            Self::AdvancedWithoutSettlerCommit => &["settler-commit-withheld"],
+            Self::AdvancedWithoutUnpricedBundle => &["unpriced-production-bundle-withheld"],
+            Self::AdvancedWithoutSettlementSafety => &["settlement-safety-withheld"],
+            Self::AdvancedWithoutBattlefrontObservation => &["battlefront-observation-withheld"],
+            Self::AdvancedLowerCityTarget => &["city-target-gene-lowered"],
+            Self::AdvancedSettlerFoundsWhenStalled => &["settler-founds-when-stalled"],
+            Self::AdvancedFortifyIdleUnits => &["fortify-idle-units"],
+            Self::AdvancedWithoutUnpricedEconomy => &["unpriced-economy-half-withheld"],
+            Self::AdvancedWithoutUnpricedWar => &["unpriced-war-half-withheld"],
+            Self::AdvancedWithoutCityDefence => &["city-defence-quarter-withheld"],
+            Self::AdvancedLegacyPolicyDeck => &["live-policy-deck-withheld"],
+            Self::AdvancedWithoutBuilderFloor => &["production-builder-floor-withheld"],
+            Self::AdvancedWithoutSettlerDeadline => &["production-settler-deadline-withheld"],
+            Self::AdvancedPriceSuzerainty => &["suzerainty-priced-into-envoy-placement"],
+            Self::AdvancedWithoutUnitTactics => &["unit-tactics-quarter-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -3802,6 +4359,10 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live_without_war_reinforcement" => (Vec::new(), "live_without_war_reinforcement"),
         "live_without_war_patience" => (Vec::new(), "live_without_war_patience"),
         "advanced" => (Vec::new(), "advanced"),
+        "advanced_build_first" => (Vec::new(), "advanced_build_first"),
+        "advanced_synergy" => (Vec::new(), "advanced_synergy"),
+        "advanced_synergy_war" => (Vec::new(), "advanced_synergy_war"),
+        "advanced_synergy_economy" => (Vec::new(), "advanced_synergy_economy"),
         "advanced_belief_pressure" => (Vec::new(), "advanced_belief_pressure"),
         "advanced_policy_live_control" => (Vec::new(), "advanced_policy_live_control"),
         "advanced_policy_envoy_priority" => (Vec::new(), "advanced"),
@@ -3810,7 +4371,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_envoy_priority" => (Vec::new(), "advanced_envoy_priority"),
         "advanced_envoy_economy" => (Vec::new(), "advanced_envoy_economy"),
         "advanced_wide_opening" => (Vec::new(), "advanced_wide_opening"),
-        "advanced_plan_city_target" => (Vec::new(), "advanced_plan_city_target"),
+        "advanced_plan_city_target" => (Vec::new(), "advanced"),
         "advanced_expansion_payback" => (Vec::new(), "advanced_expansion_payback"),
         "advanced_late_expansion" => (Vec::new(), "advanced_late_expansion"),
         "advanced_expansion_dispatch" => (Vec::new(), "advanced_expansion_dispatch"),
@@ -3833,14 +4394,32 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced_measured_dedication" => (vec![genome], "advanced_measured_dedication"),
         "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
-        "advanced_holy_priority" => (Vec::new(), "advanced"),
+        "advanced_holy_priority" => (Vec::new(), "advanced_holy_priority"),
         "advanced_holy_lane" => (Vec::new(), "advanced_holy_lane"),
-        "advanced_holy_v0" => (Vec::new(), "advanced_holy_v0"),
+        "advanced_holy_v0" => (Vec::new(), "advanced"),
         "advanced_settle_food" => (Vec::new(), "advanced_settle_food"),
         "advanced_holy_lane_v0" => (Vec::new(), "advanced_holy_lane_v0"),
         "advanced_roster_live" => (Vec::new(), "advanced_roster_live"),
         "advanced_roster_live_keep_districts" => (Vec::new(), "advanced_roster_live_keep_districts"),
         "advanced_diplomatic_opening" => (Vec::new(), "advanced_diplomatic_opening"),
+        "advanced_without_bounded_recovery" => (Vec::new(), "advanced_without_bounded_recovery"),
+        "advanced_without_city_target_floor" => (Vec::new(), "advanced"),
+        "advanced_without_plan_city_target" => (Vec::new(), "advanced_without_plan_city_target"),
+        "advanced_without_settler_commit" => (Vec::new(), "advanced_without_settler_commit"),
+        "advanced_without_unpriced_bundle" => (Vec::new(), "advanced_without_unpriced_bundle"),
+        "advanced_without_settlement_safety" => (Vec::new(), "advanced_without_settlement_safety"),
+        "advanced_without_battlefront_observation" => (Vec::new(), "advanced_without_battlefront_observation"),
+        "advanced_lower_city_target" => (Vec::new(), "advanced_lower_city_target"),
+        "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
+        "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
+        "advanced_without_unpriced_economy" => (Vec::new(), "advanced_without_unpriced_economy"),
+        "advanced_without_unpriced_war" => (Vec::new(), "advanced_without_unpriced_war"),
+        "advanced_without_city_defence" => (Vec::new(), "advanced_without_city_defence"),
+        "advanced_legacy_policy_deck" => (Vec::new(), "advanced_legacy_policy_deck"),
+        "advanced_without_builder_floor" => (Vec::new(), "advanced_without_builder_floor"),
+        "advanced_without_settler_deadline" => (Vec::new(), "advanced_without_settler_deadline"),
+        "advanced_price_suzerainty" => (Vec::new(), "advanced_price_suzerainty"),
+        "advanced_without_unit_tactics" => (Vec::new(), "advanced_without_unit_tactics"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -4525,6 +5104,8 @@ mod tests {
         ELO_BASE_RATING, ELO_PROTOCOL_VERSION, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS,
         HISTORICAL_V1_RATINGS_PATH,
         LIVE_BRIDGE_TREATMENTS,
+        ENGINE_REPAIR_TREATMENTS, ENGINE_REPAIR_WAR_TREATMENTS,
+        ENGINE_REPAIR_ECONOMY_TREATMENTS, FIRAXIS_ONLY_TREATMENTS,
         HISTORICAL_V2_RATINGS_PATH, HISTORICAL_V3_RATINGS_PATH,
         VALUENET_FILE,
     };
@@ -5048,7 +5629,11 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 83] = [
+            const SCRIPTED: [&str; 105] = [
+                "advanced_build_first",
+                "advanced_synergy",
+                "advanced_synergy_war",
+                "advanced_synergy_economy",
                 "advanced_joint_tactics",
                 "live_without_joint_tactics",
                 "advanced",
@@ -5100,6 +5685,24 @@ mod tests {
                 "advanced_roster_live",
                 "advanced_roster_live_keep_districts",
                 "advanced_diplomatic_opening",
+                "advanced_without_bounded_recovery",
+                "advanced_without_city_target_floor",
+                "advanced_without_plan_city_target",
+                "advanced_without_settler_commit",
+                "advanced_without_unpriced_bundle",
+                "advanced_without_settlement_safety",
+                "advanced_without_battlefront_observation",
+                "advanced_lower_city_target",
+                "advanced_settler_founds_when_stalled",
+                "advanced_fortify_idle_units",
+                "advanced_without_unpriced_economy",
+                "advanced_without_unpriced_war",
+                "advanced_without_city_defence",
+                "advanced_legacy_policy_deck",
+                "advanced_without_builder_floor",
+                "advanced_without_settler_deadline",
+                "advanced_price_suzerainty",
+                "advanced_without_unit_tactics",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
                 "advanced_target_domination",
@@ -5137,8 +5740,12 @@ mod tests {
                 "live_without_war_reinforcement",
                 "live_without_war_patience",
             ];
-            const SCRIPTED_ALIASES: [&str; 2] =
-                ["advanced_policy_envoy_priority", "advanced_holy_priority"];
+            const SCRIPTED_ALIASES: [&str; 4] = [
+                "advanced_policy_envoy_priority",
+                "advanced_holy_v0",
+                "advanced_without_city_target_floor",
+                "advanced_plan_city_target",
+            ];
             assert!(
                 !resolved.artifacts.is_empty()
                     || SCRIPTED.contains(name)
@@ -5189,6 +5796,142 @@ mod tests {
              add the missing tag (and give it a `live_without_*` arm) or the evaluator \
              arms claim a controlled comparison they are not running",
             LIVE_BRIDGE_TREATMENTS.len()
+        );
+    }
+
+    /// `AdvancedAi::enable_engine_repairs` claims to be `enable_live_bridge`
+    /// minus exactly four Firaxis-semantics flags. Nothing but this test holds
+    /// that claim up.
+    ///
+    /// It fails in the same silent way as the check above, from the other
+    /// side: a repair added to the bridge and not to the native bundle
+    /// compiles, passes every other test, and quietly makes `advanced_synergy`
+    /// a different treatment than the one its documentation — and whatever
+    /// eval record it has by then accumulated — describes.
+    #[test]
+    fn engine_repairs_are_the_live_bridge_minus_the_firaxis_semantics() {
+        /// Each of these encodes a rule of Firaxis' game rather than repairing
+        /// one of ours, except the last, which is excluded on evidence: the
+        /// deployment-profile run split every map at +0 Elo for 2.5x the
+        /// rollout branches.
+        const EXCLUDED: [&str; 4] = [
+            "live_trader_route_adapter",
+            "live_religious_purchase_guard",
+            "solvent_faith_army",
+            "joint_tactics",
+        ];
+        let source = include_str!("ai/advanced.rs");
+        let calls = |name: &str| -> BTreeSet<String> {
+            let body = source
+                .split(&format!("pub fn {name}(&mut self) {{"))
+                .nth(1)
+                .and_then(|tail| tail.split("\n    }\n").next())
+                .unwrap_or_else(|| panic!("no body found for {name}"));
+            body.match_indices("self.enable_")
+                .map(|(at, _)| {
+                    let rest = &body[at + "self.enable_".len()..];
+                    rest[..rest.find('(').expect("an enable call")].to_string()
+                })
+                .collect()
+        };
+
+        // The parent must actually delegate, or the halves could agree with
+        // the bridge while `advanced_synergy` carried neither of them.
+        let parent = calls("enable_engine_repairs");
+        assert_eq!(
+            parent,
+            BTreeSet::from([
+                "engine_repairs_economy".to_string(),
+                "engine_repairs_war".to_string(),
+            ]),
+            "enable_engine_repairs must be exactly its two halves"
+        );
+
+        let bridge = calls("enable_live_bridge");
+        let war = calls("enable_engine_repairs_war");
+        let economy = calls("enable_engine_repairs_economy");
+        let overlap: Vec<&String> = war.intersection(&economy).collect();
+        assert!(
+            overlap.is_empty(),
+            "a repair is in both halves, so the halves are not a partition \
+             and their separate measurements would double-count it: {overlap:?}"
+        );
+
+        let native: BTreeSet<String> = war.union(&economy).cloned().collect();
+        let excluded: BTreeSet<String> = EXCLUDED.iter().map(|tag| tag.to_string()).collect();
+        let smuggled: Vec<&String> = native.intersection(&excluded).collect();
+        assert!(
+            smuggled.is_empty(),
+            "the native bundle carries a Firaxis-semantics flag: {smuggled:?}"
+        );
+
+        let expected: BTreeSet<String> = bridge.difference(&excluded).cloned().collect();
+        assert_eq!(
+            native,
+            expected,
+            "enable_engine_repairs and enable_live_bridge have drifted. \
+             Missing from the native bundle: {:?}. Not in the bridge at all: {:?}. \
+             Every bridge repair is a native repair unless it encodes a Firaxis \
+             rule — if a new one does, add it to EXCLUDED here with its reason.",
+            expected.difference(&native).collect::<Vec<_>>(),
+            native.difference(&expected).collect::<Vec<_>>(),
+        );
+        assert_eq!(
+            bridge.len(),
+            native.len() + EXCLUDED.len(),
+            "the bridge must be the native bundle plus exactly the exclusions"
+        );
+    }
+
+    /// The flag-level check above proves the two *helpers* agree. This proves
+    /// the two *tag lists* do, which is what `differing_axes` actually reports.
+    ///
+    /// Both are needed: a repair could be correctly added to
+    /// `enable_engine_repairs_war` and its tag forgotten here, and then
+    /// `advanced_synergy` vs `advanced` would silently under-report its own
+    /// axes — the same defect #977 shipped, one level up.
+    #[test]
+    fn engine_repair_tags_partition_the_bridge() {
+        let war: BTreeSet<&str> = ENGINE_REPAIR_WAR_TREATMENTS.iter().copied().collect();
+        let economy: BTreeSet<&str> = ENGINE_REPAIR_ECONOMY_TREATMENTS.iter().copied().collect();
+        assert_eq!(
+            war.len(),
+            ENGINE_REPAIR_WAR_TREATMENTS.len(),
+            "a duplicate war tag would make the halves overlap silently"
+        );
+        assert_eq!(
+            economy.len(),
+            ENGINE_REPAIR_ECONOMY_TREATMENTS.len(),
+            "a duplicate economy tag would make the halves overlap silently"
+        );
+        let both: Vec<&&str> = war.intersection(&economy).collect();
+        assert!(
+            both.is_empty(),
+            "the halves must partition the bundle, or measuring them \
+             separately double-counts a repair: {both:?}"
+        );
+
+        let whole: BTreeSet<&str> = ENGINE_REPAIR_TREATMENTS.iter().copied().collect();
+        let halves: BTreeSet<&str> = war.union(&economy).copied().collect();
+        assert_eq!(
+            whole, halves,
+            "ENGINE_REPAIR_TREATMENTS must be exactly its two halves"
+        );
+
+        let bridge: BTreeSet<&str> = LIVE_BRIDGE_TREATMENTS.iter().copied().collect();
+        let firaxis: BTreeSet<&str> = FIRAXIS_ONLY_TREATMENTS.iter().copied().collect();
+        assert!(
+            firaxis.is_subset(&bridge),
+            "an exclusion names a treatment the bridge does not carry"
+        );
+        let expected: BTreeSet<&str> = bridge.difference(&firaxis).copied().collect();
+        assert_eq!(
+            whole,
+            expected,
+            "the native tag list has drifted from the bridge. Missing: {:?}. \
+             Unknown to the bridge: {:?}.",
+            expected.difference(&whole).collect::<Vec<_>>(),
+            whole.difference(&expected).collect::<Vec<_>>(),
         );
     }
 

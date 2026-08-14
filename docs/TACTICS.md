@@ -761,9 +761,10 @@ no scenario:
 
 - **Every ship of the line is a Frigate.** The ruleset has one sailing warship
   of the age and the *Santísima Trinidad* and the little *Africa* are both it.
-  So rate is not modelled, and neither is the Royal Navy's rate of fire — the
-  thing that actually decided the exchange once the lines were locked. What is
-  left on the board is the part Nelson chose: where sixty ships were.
+  Rate is carried on top of that as a promotion — see below. What is still not
+  modelled is the Royal Navy's rate of fire, the thing that actually decided
+  the exchange once the lines were locked, so what is left on the board is the
+  part Nelson chose: where sixty ships were.
 - **The wind is not modelled**, and it decided a great deal. What survives of
   it is geometry: the van starts far from the fighting and cannot easily get
   back, which is what happened to Dumanoir for most of the afternoon.
@@ -781,3 +782,110 @@ and then dissolve into a general melee rather than either holding the line or
 cutting it. Neither side plays Trafalgar. That is a finding about the
 controllers and about the ranged abstraction above, not a result, and it is
 the reason this section makes no claim beyond it.
+
+### Rate, as promotions (2026-08-10)
+
+A scenario that draws every ship as the same unit says the *Santísima
+Trinidad* and the *Africa* are the same ship, which they are not. Promotions
+are the natural place to say the difference: they are the engine's own
+per-unit modifiers, combat already reads them, and granting one at setup is
+the same act as a unit having earned it.
+
+`trafalgar::rate_promotions` maps a gun figure to a promotion set, by **one
+rule applied to both fleets** — it never asks whose flag is up:
+
+| rate | promotion | ships |
+| --- | --- | --- |
+| 64 and under | none | 3 British, 1 Spanish |
+| 74 and over | `line_of_battle` (+7 Ranged Strength against naval units) | 24 British, 32 Combined |
+
+**Why two bands and not three.** The obvious third band is the seven
+three-deckers, and it was built and then measured out again. The Frigate's own
+promotion tree has exactly one promotion that adds broadside against ships —
+the one above. The rest of it is anti-land, anti-district, anti-air, or
+healing, which `Game::unit_heal_rate` switches off outright on every Tactics
+map. This battle has no land units, no districts, no aircraft and no healing,
+so the only remaining lever for a first rate was `coincidence_rangefinding`,
++1 attack range.
+
+Three seeds a configuration, stock controllers, 100-turn clock:
+
+| ladder | 1805 | 7 | 42 |
+| --- | --- | --- | --- |
+| no promotions | draw | draw | draw |
+| `line_of_battle` at 74+ | draw, 25 against 12 | draw | draw |
+| plus +1 range at 100+ | **France, turn 29** | **France, turn 28** | **France, turn 27** |
+
+A ship that outranges everything fires without reply, and the Combined Fleet
+had four such against Britain's three. That turned a hundred-turn action into
+a rout inside thirty — not because the Combined Fleet was heavier, which it
+was, but because the stand-in was far stronger than the thing it stood in for.
+A three-decker's guns did not shoot appreciably further; what she had was
+weight, and the board has no way to say "heavier still". So a first rate is a
+ship of the line and no more, and a test asserts it stays that way rather than
+leaving the next reader to rediscover the measurement.
+
+The broadside band itself is close to inert on the whole-battle result — three
+draws before and after — which is the expected shape: it separates four ships
+out of sixty. It is in because the scenario should describe the fleets
+correctly, not because it was expected to move a number.
+
+### Admirals, rated in stars (2026-08-11)
+
+Nine flag officers were present at Trafalgar and the scenario now carries all
+of them, on the ship each actually flew in, rated 2 to 5 stars.
+
+| admiral | ship | stars | on the board |
+| --- | --- | --- | --- |
+| Nelson, commander-in-chief | *Victory* | 5 | +1 movement, Fleet (+10 Strength) |
+| Collingwood, second in command | *Royal Sovereign* | 4 | +1 movement, Fleet |
+| Gravina, squadron of observation | *Príncipe de Asturias* | 4 | +1 movement, Fleet |
+| Northesk | *Britannia* | 3 | +1 movement |
+| Cisneros | *Santísima Trinidad* | 3 | +1 movement |
+| Álava | *Santa Ana* | 3 | +1 movement |
+| Magon | *Algésiras* | 3 | +1 movement |
+| Villeneuve, commander-in-chief | *Bucentaure* | 2 | +1 movement |
+| Dumanoir le Pelley, the van | *Formidable* | 2 | +1 movement |
+
+**Why a threshold rather than a bonus per star.** There were three British
+flags and six in the Combined Fleet, so anything paid out per flagship hands
+more of it to the larger, more admiral-heavy side — the opposite of what the
+feature exists to say. Paying only for admirals rated 4 or better gives
+Britain two and the Combined Fleet one, and the asymmetry then falls out of
+rating the men rather than out of a thumb on the scale.
+
+**The mechanism.** A Fleet (`formation` 1) is +10 Strength through
+`unit_formation_bonus`, which `unit_ranged_strength` includes — so it reaches a
+ship of the line's broadside. It costs a reinterpretation: a Fleet in the
+shipped rules is two ships merged, and `unit_production_cost` prices one at
+1.5x, so the three flagships weigh half again as much in a material ledger.
+
+**What was tried first.** The rating was originally spent on **flanking** —
+`flanking_bonus` pays +2 for every friendly ship adjacent to the target beyond
+the attacker, multiplied by the owner's naval flanking bonus, and the ruleset
+already ships Horatio Nelson as a Great Admiral at +50%. Cutting a line and
+doubling on what it isolates is Nelson's whole plan, so it looked like the
+right home. It cannot work here, for two independent reasons, both measured:
+
+1. `flanking_bonus` is only ever called from `do_attack`, the melee path.
+   Every ship here is a Frigate, which is `naval_ranged` and attacks through
+   `do_ranged` — which never consults it.
+2. The ships never close anyway. Over 120 turns played by the stock
+   controllers, **no ship was ever adjacent to two enemies**; the most any ship
+   ever had alongside was one. A unit that shoots from two tiles away has no
+   reason to come to contact, and does not.
+
+Worth keeping because it generalises: a mechanic that reads adjacency is
+unavailable to an all-ranged force, whatever the history says it should model.
+
+**Measured**, ten seeds a configuration, stock controllers, 100-turn clock:
+
+| | draws | Combined Fleet wins |
+| --- | --- | --- |
+| no admirals | 8 | 2 (turns 66, 98) |
+| admirals | **9** | **1** (turn 79) |
+
+Material on seed 1805: 25 against 12 without admirals, **20 against 12** with.
+Britain trades better and survives two seeds it previously lost, without the
+result swinging the other way — which is the size of effect wanted here after
+the rate experiment showed how easily a per-ship bonus overshoots.

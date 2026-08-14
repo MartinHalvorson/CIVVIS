@@ -157,6 +157,12 @@ const SIEGE_TARGET_REACH: i32 = 20;
 /// resumes, so it cannot become an endless appetite.
 const RECON_ARM_MAX: usize = 1;
 
+/// Once a scout reaches the nearest fog, inspect this many additional rings
+/// before choosing where to go.  A short horizon is enough to distinguish a
+/// dead-end nibble of fog from the edge of a broad unexplored region, without
+/// making every scout sweep the whole world every turn.
+const EXPLORATION_FRONTIER_LOOKAHEAD: i32 = 4;
+
 /// The population under which a FRONTIER city gets the garrison-walls
 /// doctrine (see [`BasicAi::garrison_walls_item`]); the capital gets it at any
 /// size. Derived from the measured loss that motivated the treatment: the
@@ -179,6 +185,7 @@ type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 mod advanced;
 mod tactics;
 pub use advanced::{
+    PRODUCTION_CITY_TARGET_FLOOR,
     AdvancedAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan,
     ExpansionCensus, StrategyCensus, VictoryTarget,
 };
@@ -949,6 +956,52 @@ pub struct Weights {
     /// Fraction by which a challenger must beat the incumbent to take its
     /// slot. Zero re-shuffles the deck on noise; one never swaps at all.
     pub pol_swap_margin: f64,
+    /// ★★★★★ WHAT EVERY CITY BUILDS, EVERY TURN, WAS OUTSIDE THE SEARCH.
+    ///
+    /// `AdvancedAi::production_value` is 1,014 lines that rank every candidate
+    /// build. Measured on the body of that function: **291 numeric literals,
+    /// 93 of them distinct, and zero reads of this struct.** The genome is 40
+    /// genes wide and not one of them reached the production decision. So no
+    /// run of `evolve` has ever tuned a build priority, the macro search has
+    /// never perturbed one, and every change to that ranking has had to be a
+    /// hand-picked constant defended in prose.
+    ///
+    /// The tree already says this about one of the 93. `settler_price` exists
+    /// because the settler arm scores `920.0 + site_value * 4.0` and *"920 is
+    /// a hardcoded literal: not a gene, so no run of `evolve` has tuned it,
+    /// and not a doctrine lever, so the macro search has never perturbed it."*
+    /// That complaint is true of ninety-two more constants beside it, and
+    /// `docs/AI_GAPS.md` §6 names the general form: the search surface is
+    /// narrower than the policy.
+    ///
+    /// These eight are category multipliers on the final score of each
+    /// production arm, in the same currency the arm already returns. They are
+    /// deliberately coarse: the goal is to put the *shape* of the build order
+    /// inside the search surface, not to expose 93 free parameters to a GA
+    /// whose fitness estimate is already noisy.
+    ///
+    /// ⚠ **1.0 each by default, which is the shipped behaviour exactly.**
+    /// Multiplication by 1.0 is exact in IEEE-754 for every finite score, so a
+    /// default genome ranks builds bit-identically to before. That matters
+    /// more here than usual: `Weights::default()` also seeds `BasicAi::new()`,
+    /// which is city-states, barbarians, the `basic` entrant and
+    /// `AdvancedAi::legacy()` behind the frozen `advanced_v1` anchor.
+    ///
+    /// ⚠⚠ A gene that changes nothing is worse than no gene, because it
+    /// spends GA budget and reports a tuned parameter that never moved a game.
+    /// This repository has shipped silent genes before — §6 again: *"causal
+    /// probes have found multiple parameters that do not change the sampled
+    /// `AdvancedAi` games"*. Every one of these eight is therefore held to
+    /// `production_genes_are_not_silent`, which perturbs each in isolation and
+    /// fails if the build order does not move.
+    /// Combat units, including escorted `Formation` bodies.
+    pub p_military: f64,
+    pub p_builder: f64,
+    pub p_trader: f64,
+    pub p_building: f64,
+    pub p_district: f64,
+    pub p_wonder: f64,
+    pub p_project: f64,
     /// Which deck this strategy holds.
     ///
     /// **Not a gene.** Deliberately absent from `to_vec`/`from_vec`/`bounds`,
@@ -1122,7 +1175,29 @@ impl Default for Weights {
             pol_military: 0.05,
             pol_influence: 0.0,
             pol_swap_margin: 0.15,
-            // LEGACY, not Live. The counterfactual deck is a measured null:
+            // Identity. Every production arm is multiplied by its category
+            // gene, and multiplying a finite score by exactly 1.0 is exact, so
+            // a default genome ranks builds bit-identically to the tree before
+            // these existed. `BasicAi::new()` and `AdvancedAi::legacy()` read
+            // this default, so anything other than 1.0 here would move a
+            // frozen anchor and every minor civilization with it.
+            p_military: 1.0,
+            p_builder: 1.0,
+            p_trader: 1.0,
+            p_building: 1.0,
+            p_district: 1.0,
+            p_wonder: 1.0,
+            p_project: 1.0,
+            // LEGACY, not Live — **for this default only**. ⚠ The shipped
+            // agent does NOT play it: `AdvancedAi::production_weights`
+            // overwrites this with `PolicyDeck::Live` for everything
+            // `AdvancedAi::new()` builds. The sentence below about "the agent
+            // that plays" describes `basic`, `advanced_v1` and any holder of
+            // these raw weights, and stopped describing production when that
+            // constructor was written. Withhold it with
+            // `advanced_legacy_policy_deck` to price the difference.
+            //
+            // The counterfactual deck is a measured null:
             // 18 map directions to 15, p=0.7283 over 120 mirrored maps, with
             // terminal score also flat. It costs an empire valuation per
             // candidate card per review, so shipping it would buy a real
@@ -1179,6 +1254,13 @@ impl Weights {
             self.local_superiority,
             self.withdraw_hp,
             self.rejoin_hp,
+            self.p_military,
+            self.p_builder,
+            self.p_trader,
+            self.p_building,
+            self.p_district,
+            self.p_wonder,
+            self.p_project,
         ]
     }
 
@@ -1224,6 +1306,13 @@ impl Weights {
             local_superiority: v[37],
             withdraw_hp: v[38],
             rejoin_hp: v[39],
+            p_military: v[40],
+            p_builder: v[41],
+            p_trader: v[42],
+            p_building: v[43],
+            p_district: v[44],
+            p_wonder: v[45],
+            p_project: v[46],
             // The policy appetites are NOT genes. Measured on the statistic
             // that tracks winning, scrambling the whole policy block costs
             // +0.0006 +/- 0.0229 -- flat. Carrying eight worthless dimensions
@@ -1260,7 +1349,7 @@ impl Weights {
     }
 
     /// (lo, hi) clamp per gene, same order as to_vec.
-    pub fn bounds() -> [(f64, f64); 40] {
+    pub fn bounds() -> [(f64, f64); 47] {
         [
             (2.0, 12.0),
             (1.0, 5.0),
@@ -1302,6 +1391,19 @@ impl Weights {
             (0.0, 16.0),
             (20.0, 65.0),
             (60.0, 100.0),
+            // The eight production category multipliers. The band is
+            // deliberately narrow and centred on the identity: these scale a
+            // ranking whose arms already differ by thousands, so a wide band
+            // would let one category dominate the order outright rather than
+            // tilt it, and the shipped constants are a working build order
+            // rather than an arbitrary starting point.
+            (0.25, 4.0),
+            (0.25, 4.0),
+            (0.25, 4.0),
+            (0.25, 4.0),
+            (0.25, 4.0),
+            (0.25, 4.0),
+            (0.25, 4.0),
         ]
     }
 
@@ -1310,7 +1412,7 @@ impl Weights {
     /// A search that reports per-gene results has to name them, and deriving
     /// the name from the index by hand is how a table ends up mislabelled by
     /// one row. `gene_names_match_the_vector` pins the length.
-    pub fn gene_names() -> [&'static str; 40] {
+    pub fn gene_names() -> [&'static str; 47] {
         [
             "city_target",
             "settler_min_pop",
@@ -1352,6 +1454,13 @@ impl Weights {
             "local_superiority",
             "withdraw_hp",
             "rejoin_hp",
+            "p_military",
+            "p_builder",
+            "p_trader",
+            "p_building",
+            "p_district",
+            "p_wonder",
+            "p_project",
         ]
     }
 }
@@ -1367,13 +1476,21 @@ mod gene_table_tests {
         assert_eq!(w.to_vec().len(), Weights::bounds().len());
     }
 
-    /// The shipped agent's four district weights are the exact configuration a
-    /// promotion gate passed on, and none of them may drift without a re-run.
+    /// The `advanced_holy_priority` treatment's district weights, pinned so the
+    /// arm keeps measuring the axis it is named for.
     ///
-    /// `d_holy` 5.6 against the other three at 4.0/3.0/1.0 measured **+20 Elo**
-    /// over 1200 paired maps (#1469). The roster-composite screen then measured
-    /// how that evaporates: `d_commercial` at 5.55 cost **19 of those 20
-    /// points** and dropped religious wins 470 to 392 (#1486).
+    /// ⚠ **This is no longer the shipped agent.** `d_holy` 5.6 measured +20 Elo
+    /// over 1200 paired maps at `ai_eval`'s 4p 24x16 defaults (#1469), shipped
+    /// onto `AdvancedAi::new()`, and was **reverted** the same day: at the
+    /// deployment shape with all six victories it is parity (+2, CI -46..+50),
+    /// and on the promotion matrix it is -44 with sign p=0.0016 against. The
+    /// weights survive as the treatment arm; see `docs/EVAL.md` 2026-08-10.
+    ///
+    /// The pin still earns its place, because the arm is only worth running if
+    /// it carries the configuration those numbers describe. The
+    /// roster-composite screen showed how easily that is lost: `d_commercial`
+    /// at 5.55 cost **19 of the 20 points** and dropped religious wins 470 to
+    /// 392 (#1486).
     ///
     /// ⚠ **Note what that rules out.** 5.55 is still *below* 5.6, so the harm
     /// arrived with the ordering intact — an ordering assertion passes straight
@@ -1382,21 +1499,18 @@ mod gene_table_tests {
     /// not) do not locate a safe threshold. So this pins the measured values
     /// themselves rather than inventing a bound the evidence cannot support.
     ///
-    /// The point is that a genome change is not a code change: if `evolve` or a
-    /// league round breeds these upward, a shipped result disappears and no gate
-    /// re-runs to notice. Scope is `Weights::advanced()` only — league and
-    /// evolved entrants carry their own vectors and are entitled to any values
-    /// they like.
+    /// Scope is `Weights::advanced()` only — league and evolved entrants carry
+    /// their own vectors and are entitled to any values they like.
     #[test]
-    fn the_shipped_district_weights_are_the_ones_the_gate_passed_on() {
+    fn the_holy_priority_arm_keeps_the_weights_its_numbers_describe() {
         let w = Weights::advanced();
         assert_eq!(
             [w.d_holy, w.d_campus, w.d_commercial, w.d_theater],
             [5.6, 4.0, 3.0, 1.0],
-            "the shipped district weights moved. #1469 measured +20 Elo at these \
-             four values and #1486 measured -19 of it back from a change to \
-             d_commercial alone that never even reversed the ordering. Re-run \
-             the paired gate before repinning."
+            "the advanced_holy_priority weights moved. Every number recorded \
+             for that arm was taken at these four values, and #1486 measured 19 \
+             Elo lost from a change to d_commercial alone that never even \
+             reversed the ordering. Re-measure before repinning."
         );
     }
 
@@ -1575,6 +1689,12 @@ pub struct UnitMemory {
 pub struct BasicAi {
     minor: bool,
     barb: bool,
+    /// Fortify any unit whose planner gave it nothing to do, not only one
+    /// inside a stand-down window.
+    ///
+    /// Off by default; evaluator arm `advanced_fortify_idle_units`. See
+    /// `hold_stood_down_unit` for the measurement that motivates it.
+    pub fortify_idle_units: bool,
     /// Let the baseline governor build the district that repairs an Amenity
     /// deficit.
     ///
@@ -2882,6 +3002,7 @@ impl BasicAi {
             patrol_posts: HashMap::new(),
             patrol_posts_by_class: HashMap::new(),
             settler_targets: HashMap::new(),
+            fortify_idle_units: false,
             unit_memories: RefCell::new(BTreeMap::new()),
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
@@ -2923,6 +3044,7 @@ impl BasicAi {
             patrol_posts: HashMap::new(),
             patrol_posts_by_class: HashMap::new(),
             settler_targets: HashMap::new(),
+            fortify_idle_units: false,
             unit_memories: RefCell::new(BTreeMap::new()),
             last_path_step_from: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
@@ -3418,12 +3540,30 @@ impl BasicAi {
     /// have wanted, which cost more productive turns than the loops it broke.
     /// A unit that acted needs nothing from this; one that did not is standing
     /// in the open regardless, and is better off fortified and healing.
+    /// A unit whose planner declined to give it anything to do.
+    ///
+    /// ⚠ Until 2026-08-11 this fortified **only inside a stand-down window**,
+    /// so a unit that simply took no turn stood in the open instead. `audit` at
+    /// the deployment shape measures what that is worth: of major-civ
+    /// unit-turns, **7.73% are an unembarked land military unit standing still,
+    /// unfortified, that could have fortified** — 10,477 unit-turns across
+    /// eight games — against **3.59%** that are actually fortified. The agent
+    /// leaves its army unfortified more than twice as often as it fortifies it.
+    ///
+    /// The price is exact rather than rhetorical: `Game::unit_strength` adds
+    /// **3.0 per fortified turn, capped at two**, so each of those unit-turns
+    /// declines **+6 defensive strength**, about 30% of a warrior's base.
+    ///
+    /// Nothing is given up by taking it. The planner has already declined to
+    /// use this unit's movement this turn, so the `moves_left = 0` that
+    /// `do_fortify` sets costs a move that was not going to be made, and the
+    /// stance clears the moment the unit moves again.
     pub(crate) fn hold_stood_down_unit(&self, g: &mut Game, pid: usize, uid: u32) {
         let standing_down = self
             .unit_motion
             .get(&uid)
             .is_some_and(|motion| g.turn < motion.resume_turn);
-        if standing_down && g.units.contains_key(&uid) {
+        if (standing_down || self.fortify_idle_units) && g.units.contains_key(&uid) {
             self.fortify_or_stop(g, pid, uid);
         }
     }
@@ -9041,6 +9181,82 @@ impl BasicAi {
             .map(|settler| settler.pos)
     }
 
+    /// How much still-unknown ground a unit could expose from `target`.
+    ///
+    /// This deliberately reads only the acting civilization's explored set and
+    /// the scout's own sight radius.  It does not inspect hidden cities,
+    /// units, resources, or city-state identities: a Scout learns about a
+    /// possible first contact by opening more of the frontier, rather than by
+    /// knowing where a contact sits under fog.
+    fn frontier_reveal_value(g: &Game, pid: usize, uid: u32, target: Pos) -> usize {
+        g.wdisk(target, g.unit_sight(uid))
+            .into_iter()
+            .filter(|pos| !g.players[pid].explored.contains(pos))
+            .count()
+    }
+
+    /// Choose an unexplored target for a reconnaissance unit.
+    ///
+    /// The frozen controllers keep the historical nearest-fog rule.  The
+    /// production controller looks a few rings beyond that first tile and
+    /// prefers the position that exposes the most unknown ground.  This makes
+    /// a Scout fan into a fresh region instead of spending turns shaving the
+    /// same local fringe, which is the practical route to earlier civ and
+    /// city-state contact.
+    fn exploration_goal(&self, g: &Game, pid: usize, uid: u32, dry_only: bool) -> Option<Pos> {
+        let origin = g.units[&uid].pos;
+        let mut candidates = Vec::new();
+        let mut first_candidate_ring = None;
+        let mut radius = 1;
+        let mut examined = 0;
+        let _memo = g.query_memo();
+        while examined < g.map.tiles.len() {
+            let ring: Vec<Pos> = g
+                .wring(origin, radius)
+                .into_iter()
+                .filter(|pos| g.wdist(origin, *pos) == radius)
+                .collect();
+            if ring.is_empty() {
+                break;
+            }
+            examined += ring.len();
+            let mut ring_candidates: Vec<Pos> = ring
+                .into_iter()
+                .filter(|pos| {
+                    !g.players[pid].explored.contains(pos)
+                        && g.unit_can_traverse(uid, *pos)
+                        && (!dry_only
+                            || g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile)))
+                })
+                .collect();
+            if !ring_candidates.is_empty() {
+                first_candidate_ring.get_or_insert(radius);
+                candidates.append(&mut ring_candidates);
+            }
+            let Some(first) = first_candidate_ring else {
+                radius += 1;
+                continue;
+            };
+            if !self.tactical_strategy || radius >= first + EXPLORATION_FRONTIER_LOOKAHEAD {
+                break;
+            }
+            radius += 1;
+        }
+        if self.tactical_strategy {
+            candidates.into_iter().max_by_key(|target| {
+                (
+                    Self::frontier_reveal_value(g, pid, uid, *target),
+                    std::cmp::Reverse(g.wdist(origin, *target)),
+                    std::cmp::Reverse(*target),
+                )
+            })
+        } else {
+            candidates
+                .into_iter()
+                .min_by_key(|target| (g.wdist(origin, *target), *target))
+        }
+    }
+
     fn explore_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let upos = g.units[&uid].pos;
         // A tribal village the scout can already reach this turn is a
@@ -9077,43 +9293,7 @@ impl BasicAi {
         // pacing between two sea hexes. A land unit explores land.
         let dry_only = self.come_ashore
             && g.rules.units[g.units[&uid].kind].domain.as_deref() != Some("sea");
-        // The nearest hidden tile is almost always a few hexes away, so walk
-        // outward in rings and stop at the first one that holds a candidate
-        // instead of testing all nine hundred tiles. The rings partition the
-        // map and each is examined in position order, so this picks exactly
-        // the tile a full `min_by_key` on `(distance, position)` would.
-        // The memo answers `unit_can_traverse` without re-deriving how this
-        // unit moves at every tile, and cannot go stale while it holds the
-        // game immutably.
-        let nearest = {
-            let _memo = g.query_memo();
-            let mut found = None;
-            let mut radius = 1;
-            let mut examined = 0;
-            while found.is_none() && examined < g.map.tiles.len() {
-                let ring: Vec<Pos> = g
-                    .wring(upos, radius)
-                    .into_iter()
-                    .filter(|pos| g.wdist(upos, *pos) == radius)
-                    .collect();
-                if ring.is_empty() {
-                    break;
-                }
-                examined += ring.len();
-                found = ring
-                    .into_iter()
-                    .filter(|pos| {
-                        !g.players[pid].explored.contains(pos)
-                            && g.unit_can_traverse(uid, *pos)
-                            && (!dry_only
-                                || g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile)))
-                    })
-                    .min();
-                radius += 1;
-            }
-            found
-        };
-        if let Some(target) = nearest {
+        if let Some(target) = self.exploration_goal(g, pid, uid, dry_only) {
             if self.step_toward(g, pid, uid, target) {
                 return true;
             }
@@ -9123,8 +9303,8 @@ impl BasicAi {
             return false;
         }
 
-        // If the geometrically nearest hidden tile was unreachable, search
-        // for the nearest hidden tile by actual traversable route instead.
+        // If the chosen frontier target was unreachable, search for the
+        // nearest hidden tile by an actual traversable route instead.
         let goals: HashSet<Pos> = {
             let _memo = g.query_memo();
             g.map
@@ -10181,6 +10361,9 @@ mod tests {
             game.players[player].met.clear();
         }
         game.record_contact(0, known);
+        // This fixture isolates the baseline's choice of destination from the
+        // first-discovery reward granted by contact itself.
+        game.players[0].envoys.clear();
         game.players[0].envoys_free = 1;
 
         // With equal influence, the baseline's stable tie-break would prefer
@@ -13574,6 +13757,78 @@ mod tests {
             ),
             "unexpected assault decision: {:?}",
             g.log.last()
+        );
+    }
+
+    #[test]
+    fn production_scout_prefers_a_high_reveal_frontier_to_the_nearest_fog() {
+        let mut g = Game::new_full(1, 32, 20, 38_002, 30, 0, false);
+        g.units.clear();
+        let (origin, nearest, distant) = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            .find_map(|(origin, _)| {
+                let nearest = g
+                    .nbrs(*origin)
+                    .into_iter()
+                    .find(|pos| {
+                        g.map
+                            .get(*pos)
+                            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                    })?;
+                let distant = g
+                    .wdisk(*origin, 5)
+                    .into_iter()
+                    .filter(|pos| g.wdist(*origin, *pos) == 5)
+                    .find(|pos| {
+                        g.map
+                            .get(*pos)
+                            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                            && g.wdist(nearest, *pos) > 3
+                    })?;
+                Some((*origin, nearest, distant))
+            })
+            .expect("fixture needs a land route with a distant frontier");
+        let scout = g.spawn_test_unit("scout", 0, origin);
+        g.players[0].explored.extend(g.map.tiles.keys().copied());
+        // One nearby fog tile reproduces the old greedy target.  The other
+        // opening is a broad, distant frontier: a Scout standing there will
+        // expose far more unknown ground and is therefore more likely to make
+        // a first contact instead of repeatedly tracing its local perimeter.
+        g.players[0].explored.remove(&nearest);
+        for pos in g.wdisk(distant, g.unit_sight(scout)) {
+            assert!(
+                g.wdist(origin, pos) > 1,
+                "the broad frontier must not create a second nearest target"
+            );
+            g.players[0].explored.remove(&pos);
+        }
+
+        let frozen = BasicAi::new();
+        assert_eq!(
+            frozen.exploration_goal(&g, 0, scout, true),
+            Some(nearest),
+            "the frozen controller retains the historical nearest-fog rule"
+        );
+
+        let mut production = BasicAi::new();
+        production.tactical_strategy = true;
+        let target = production
+            .exploration_goal(&g, 0, scout, true)
+            .expect("the broad frontier is a legal scouting goal");
+        assert!(
+            g.wdist(origin, target) > g.wdist(origin, nearest)
+                && BasicAi::frontier_reveal_value(&g, 0, scout, target)
+                    > BasicAi::frontier_reveal_value(&g, 0, scout, nearest),
+            "production should trade a one-hex detour for more unexplored ground"
+        );
+
+        assert!(production.military_step(&mut g, 0, scout));
+        assert!(
+            g.wdist(g.units[&scout].pos, target) < g.wdist(origin, target),
+            "the selected high-reveal frontier must drive the Scout's actual move"
         );
     }
 

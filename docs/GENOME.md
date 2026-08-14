@@ -1,8 +1,11 @@
 # The genome, and why breeding it has not worked
 
 `docs/SUPERHUMAN.md` is about the macro search. This is about the other half:
-the 40-gene vector returned by `Weights::to_vec` and searched by `civvis
-evolve` and `civvis league`. `Weights` also stores nine policy appetites plus
+the 47-gene vector returned by `Weights::to_vec` and searched by `civvis
+evolve` and `civvis league`. It was 40 wide until #1520 brought seven
+production category multipliers into it; the historical passages below that
+count forty are describing the surface as it stood when they were measured, and
+are left as written. `Weights` also stores nine policy appetites plus
 policy-deck and dedication selectors, but those fields are deliberately absent
 from `to_vec`, `from_vec`, `bounds`, and `gene_names`; they are policy state,
 not genes.

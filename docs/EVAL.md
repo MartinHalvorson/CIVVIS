@@ -7949,3 +7949,1846 @@ be pushing harder on the same closed door.
 
 ⚠ Note for anyone re-reading older numbers in this file: every `ai_eval` result
 recorded above was measured at `--city-states 0` unless it says otherwise.
+
+
+## 2026-08-10 — ★★★ the envoy economy is null at power, and the promotion matrix cannot express two of the six victories
+
+`docs/EVAL.md` records the envoy work as four arms screened at **8–12 maps**,
+the best of them "combined vs stock, 6p deployment, 12 maps, 54.2% (+29)", with
+"none of the new envoy behavior enabled in `advanced`". Those screens were never
+resolved, and the prize behind them is the largest the oracle harness has found
+(`Grant::Suzerain`, 56.7% against 22.7%, p=0.0000, 400 maps, PR #602). This
+resolves them.
+
+### The result: null, on the repository's own gate
+
+`--matrix` is the right instrument and — unlike a hand-rolled `ai_eval` line —
+both its profiles do seat city-states (4 and 9). Against the correct control,
+which isolates the envoy economy from the Live-deck change:
+
+```
+ai_eval advanced_envoy_economy advanced_policy_live_control --matrix --pairs 200 --seed 5700000
+  arms differ on: envoy-influence, envoy-infrastructure-off
+
+  compact-standard    50.2% (CI 43.4..57.1)  Elo +2   direction 31/30, p=1.0000
+  deployment-online   50.9% (CI 44.0..57.7)  Elo +6   direction 38/34, p=0.7239  REJECT
+
+  multi-profile promotion gate: RETAIN advanced_policy_live_control — cleared 1/2 profiles
+```
+
+**The +29 did not reproduce at 800 games.** It is the fourth apparent gain in
+this file to evaporate on a seed it was not found on.
+
+The treatment is not inert — it does what it says, and that is what makes the
+null informative:
+
+| | treatment | control |
+|---|---|---|
+| envoys (compact) | 8.6 | 7.2 |
+| **suzerainties (compact)** | **0.27** | **0.20** |
+| suzerainties (deployment) | 0.65 | — |
+
+**It buys 0.07 of a suzerainty.** The oracle that measured +34 points of win
+rate grants suzerainty over *every met city-state*. The treatment delivers a
+low-single-digit percentage of that dose, and a null at that dose says nothing
+about the headroom — only that this is not the lever that reaches it.
+
+### ⚠⚠⚠ The promotion matrix runs three of six victory conditions
+
+Both matrix profiles hard-code `--victories science,culture,domination`
+(`ai_eval.rs`, from #658). **Religious, diplomatic and score victory are all
+disabled in the gate**, while `VictoryConditions::NAMES` — the default for an
+ordinary run — enables all six. No comment or document explains the choice; it
+is a convention shared with `ablate` and the oracle harnesses.
+
+There is a defensible reason to want it: this document records that religious
+victory dominates self-play, and a lane that ends most games early drowns the
+signal from every other lane. But the consequence has never been written down,
+and it is severe for exactly the work this session has been doing:
+
+- **Diplomatic victory is the terminal payoff of suzerainty.** The envoy
+  economy was just measured on a gate where the win it is buying cannot happen.
+  Its null is *partly by construction*.
+- **Religious victory is where this engine's wins actually come from** — 88% of
+  them on the default profile. Any treatment routing through that lane is
+  invisible to the gate.
+
+⚠ **That includes the `d_holy` change this session shipped (#1469).** Its entire
+measured effect was religious victories, 267 against 203, on the all-victories
+profile. Whether it survives a gate that disables religious victory is an open
+question and is being measured; **until that returns, read the +20 Elo as a
+result on the all-victories profile specifically, not as a matrix-gated
+promotion.** It was promoted on hand-rolled `ai_eval` runs, which is the same
+path that defaults `--city-states` to zero.
+
+The general statement, which is the part worth keeping: **a promotion gate that
+disables a victory condition cannot promote a treatment whose payoff is that
+victory.** Two of this repository's six are disabled, including the one that
+decides most of its games.
+
+### ⚠⚠⚠ The `d_holy` shipment is REVERTED — it does not hold where it runs
+
+The open question above is answered, and it goes against the change this
+session shipped. Same treatment, three profiles:
+
+| profile | victories | result |
+|---|---|---|
+| 4p 24x16, 0 city-states, Standard, 500t — **where it was gated** | all six | **+20 Elo**, gate PASS, 1200 pairs |
+| **6p 74x46, 9 city-states, Online, 250t — the deployment shape** | **all six** | **+2 Elo (CI −46..+50)**, 32/31, p=1.0000 |
+| 6p 74x46, 9 city-states, Online, 250t | science, culture, domination | **−44 Elo**, 28/58, **sign p=0.0016 against** |
+
+The third row is explained by the second: disabling religious victory removes
+the only thing the change buys, so it becomes pure economic loss — a Holy Site
+is worse economy than a Campus, which this document already measured (terminal
+score against the treatment, p=0.0204).
+
+**But the second row is the one that decides it.** At the shape the exhibition
+actually runs, with every victory enabled, the change is **parity**. The victory
+mix says exactly what it is doing there:
+
+| | religious | science |
+|---|---|---|
+| `advanced` (d_holy 5.6) | 90 | 88 |
+| `advanced_holy_v0` (2.0) | 52 | 127 |
+
+**It trades science victories for religious ones at roughly one for one.** On a
+24x16 board where science cannot finish, that trade is free and worth 20 Elo. At
+deployment it is a wash.
+
+`AdvancedAi::new()` is therefore back to `Weights::default()`. The weights
+survive as the `advanced_holy_priority` arm, `advanced_holy_v0` is now
+`advanced` under another name and is aliased to fail closed as self-play, and
+the arms rebased so each stays one axis from the shipped agent.
+
+This is the rule in `docs/EVAL.md` and in the fleet's own notes, paid for in
+full: **`ai_eval`'s defaults are not the deployment — not for strength, not for
+cost, and not even for the sign of an effect.** A 1200-pair gate is not enough
+resolution to rescue the wrong profile; it just measures the wrong thing
+precisely. **Gate on the deployment shape, or say plainly which profile the
+number belongs to.**
+
+
+## 2026-08-10 — ★★★★ the leader study re-run at deployment, and it overturns its own headline
+
+The `d_holy` revert established that a number taken at `ai_eval`'s small
+defaults can flip sign at the deployment shape. The leader study (#1488) was
+taken at **4p 60x46 Standard** and had never been checked the same way. It
+should have been, and its conclusions do not survive.
+
+`leader_study` now defaults to the deployment shape — 6 players, 74x46, **9
+city-states**, Online, 250 turns — and takes `--speed`. 60 games, seeds 770000+,
+chance is 17% at six seats.
+
+| metric | 4p 60x38 Standard | **6p 74x46 Online, 9 CS** |
+|---|---|---|
+| *chance* | *25%* | ***17%*** |
+| `start_yield` *(control)* | 28% | 28% |
+| `start_room` *(control)* | 22% | **7%** |
+| **holy_sites** @t80 | **80%** | **34%** (peak 51% @t200) |
+| **techs** @t200 | 66% | **72%** |
+| **civics** @t160 | 58% | **62%** |
+| **cities** | **67% @t40** | 38% @t40, **64% @t160** |
+| pop @t200 | 60% | 60% |
+| districts @t200 | 54% | 61% |
+| faith @t130 | 14% | **7%** |
+| military @t200 | 51% | 52% |
+
+### What changed, and what it costs the earlier entry
+
+**1. `holy_sites` was a small-board artifact.** The strongest signal in the
+first study — 80% at turn 80 — is **34%** at deployment, barely double a 17%
+chance and below several other rows. This is an *independent* arrival at the
+same place as the `d_holy` revert: the causal test found the Holy Site trade is
+free on 24x16 and a wash at deployment, and the correlate says the same thing
+from the observational side. Two instruments, same conclusion, opposite methods.
+
+**2. "The winner is made, not dealt" was overstated.** `start_yield` reads 28%
+against a 17% chance here — **1.6x**, where on the 4p board it was 28% against
+25%, barely anything. Start quality carries a real if modest edge at deployment.
+The earlier entry's headline should be read as a 4p-board statement.
+
+**3. `start_room` inverts hard: 7% against 17% chance.** At deployment, the civ
+with the most unclaimed ground in settling range is *less* likely to win. Room
+without position is a peripheral start, not an opportunity — and it means the
+`cities` row still is not a land-availability artifact, just for the opposite
+reason.
+
+**4. The lanes that predict at deployment are science and culture.** `techs`
+peaks at **72%** and `civics` at **62%**, both above every other row. `cities`
+becomes a *midgame* statistic (64% at t160) rather than the opening sprint it
+looked like at 4p (67% at t40).
+
+**5. `faith` is more strongly anti-predictive, not less** — 7% against a 17%
+chance at turn 130. The rule survives the profile change and hardens: **the
+stock of a currency is a symptom of not having spent it.** Target the building.
+
+### The standing instruction this leaves
+
+Every observational conclusion in this file taken on a 4p small board is now
+suspect, on the same evidence that reverted a shipped change. The default is
+fixed so the next reader does not repeat it, and the flag is there to move
+deliberately rather than by accident.
+
+
+## 2026-08-10 — ★★★ a shipped repair that was never priced, a false comment that hid it, and its first number
+
+Chasing the actuation prior at the deployment shape. `bounded_recovery` looked
+like the ideal candidate: a documented **absorbing state** with measured harm.
+`assess`'s first arm drops the empire into Recovery whenever it is at war and
+`my_power * 1.25 < strongest_rival`; Recovery does not build an army, so the
+test stays true *because of the choice it caused*. On live run
+`civvis-20260802T205959Z` the journal named that arm 160 times, the posture held
+t65..t229 — **72% of the game** — and the empire finished with **one warrior**,
+military 34 against 1354, score 205 against 1324.
+
+### The arm was a no-op, and the fires-check is the only reason that surfaced
+
+`advanced_bounded_recovery` = `AdvancedAi::new()` plus the flag returned lane
+occupancy **byte-identical** to the control across 40 deployment maps.
+
+**Because the flag is already on.** `promoted_policy_envoy` sets
+`bounded_recovery = true` and `AdvancedAi::new()` routes through it, so every
+`advanced` seat already carries it — while the field's own doc comment said
+*"Native tournament games leave this disabled"* and `enable_bounded_recovery`
+said the same. **Both were false**, and both are corrected in this change.
+
+It reached deployment inside the 2026-08-01 policy-envoy composite **without
+ever being priced on its own**, which is exactly the failure
+`disable_bounded_recovery`'s doc warns about: *"Every flag in
+`enable_live_bridge` needs one of these or it ships unmeasured — which is how
+five repairs reached deployment without a single outcome number."* There is a
+withhold method precisely for this, and nobody had used it.
+
+### The first number, by withholding it
+
+`advanced_without_bounded_recovery`, deployment shape with **all six victories**
+— 6p 74x46, 9 city-states, Online, 250 turns:
+
+```
+ai_eval advanced_without_bounded_recovery advanced --pairs 200 --seed 6300000
+  paired-map score 52.0% (95% Wilson CI 45.1%..58.8%)   Elo-equivalent +14 (CI -34..+62)
+  paired direction 18 for / 172 neutral / 10 against    sign p = 0.1849
+  anytime-valid    withheld peak e=6.99, p<=0.1430 (not crossed)
+  promotion gate   INCONCLUSIVE
+```
+
+Recovery occupancy confirms the mechanism works: **12.2% with the bound, 14.2%
+without.** It does what it says.
+
+⚠ **The point estimate favours removing it.** The arm that turns the shipped
+repair *off* scores 52.0%. That is **not established** — p=0.1849, and the
+interval spans parity — but it is the opposite of the direction a shipped repair
+is assumed to have, and it is the only number this flag has ever had.
+
+**Nothing is changed in the shipped agent on p=0.18.** Acting on an
+under-powered signal is the mistake that cost a revert earlier today. What
+changes here is that the flag is now (a) correctly documented, (b) withholdable
+by name, and (c) priced once. The next step is a confirmation on a disjoint
+seed; if it holds, the repair is costing rather than paying and should come out.
+
+### The pattern worth carrying
+
+Three fires-checks this session have caught an inert treatment before an
+expensive evaluation — `advanced_holy_lane`, `advanced_diplomatic_opening` at
+`--city-states 0`, and this one. Two of the three were inert for reasons a
+reader of the source would not have guessed: a profile that seats no minors, and
+a flag already enabled by a constructor two hops away from its own default.
+**Run the fires-check first. A clean null from a treatment that never executed
+is indistinguishable from a real one.**
+
+
+## 2026-08-10 — bounded_recovery confirmed null over 600 maps, and a ledger for the rest of the production bundle
+
+The previous entry priced `bounded_recovery` for the first time and found the
+withhold arm at 52.0% (Elo +14, p=0.1849, 200 maps), explicitly declining to act
+on p=0.18. This is the disjoint-seed confirmation that call required.
+
+```
+ai_eval advanced_without_bounded_recovery advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 7100000
+
+  paired-map score 50.9% (95% Wilson CI 46.0%..55.7%)   Elo-equivalent +6 (CI -28..+40)
+  paired direction 30 for / 347 neutral / 23 against    sign p = 0.4101
+  anytime-valid    withheld peak e=2.86, p<=0.3503 (not crossed)
+```
+
+| run | maps | score | Elo | direction | sign p |
+|---|---|---|---|---|---|
+| discovery, seed 6300000 | 200 | 52.0% | +14 | 18/10 | 0.1849 |
+| **confirmation, seed 7100000** | **400** | **50.9%** | **+6** | 30/23 | 0.4101 |
+| **pooled** | **600** | **51.3%** | — | **48/33** | ~0.12 |
+
+**The +14 did not reproduce.** `bounded_recovery` is a **null on outcomes**
+across 600 maps on two disjoint seeds. The mechanism is not in doubt — Recovery
+occupancy is 12.6% with the bound and 15.2% without, in both runs — it simply
+does not convert.
+
+**It stays on.** A null is not a reason to remove a repair that fixes a real
+pathology: on the Civilization VI mirror the same bound moved Recovery 86% → 81%
+in a regime where one live run spent 72% of the game in the posture and finished
+with a single warrior. Engine-null and bridge-useful are compatible, and this
+entry is the number that was missing, not a verdict against the flag.
+
+⚠ The discovery run's +14 is a reminder that a 200-map point estimate at
+p=0.18 is a coin with a story attached. Declining to act on it was correct, and
+the same restraint is owed to the next such number.
+
+### The rest of the bundle has no such number
+
+`promoted_policy_envoy` — which `AdvancedAi::new()` routes through — turns on
+**thirteen** behaviours. `production_advanced_scales_cities_development_and_home_defense_together`
+already pins the set; what it could not say is which parts were ever priced, so
+that ledger now sits on the test:
+
+| flag | individual evidence |
+|---|---|
+| `bounded_recovery` | **this entry** — null over 600 maps |
+| `city_target_floor = 6` | the solo axis is a **recorded null** (49.6%, Elo −3, p=0.9007, 240 pairs, seed 510000); ships inside the composite, not on that number |
+| `envoy_infrastructure` | 8–12 map screens; the combined economy re-measured null at 800 games |
+| `envoy_priority`, `adjacency_site_planning`, `settler_commit`, `research_economy`, `plan_city_target`, `amenity_districts`, `siege_muster`, `home_defense`, `tactical_strategy`, `unit_objective_memory` | **no individual outcome number located in this file** |
+
+A composite may pass a gate while a component is null alone, and the 2026-08-01
+promotion was such a composite — so this is not a claim that the bundle is
+wrong. It is a claim that **ten of its thirteen parts have never been priced
+apart**, which is precisely what `disable_bounded_recovery`'s own doc warned
+would happen.
+
+⚠ And the trap that cost an evaluation today is now recorded beside the pin:
+because this constructor sets these flags, an arm built as `AdvancedAi::new()`
+**plus** one of them is a byte-identical no-op. **Withhold, do not add.**
+
+
+## 2026-08-10 — ★★★★ the production city-target floor buys two cities and costs thirty Elo
+
+The ledger in the previous entry named ten production flags with no individual
+number. `city_target_floor = 6` had the weakest case of them: its **solo axis is
+a recorded null** — the 3 → 6 ramp measured 49.6%, Elo −3, sign p=0.9007 over
+240 pairs on seed 510000, after a 53.3% first reading that did not reproduce,
+and the entrant was removed. `GENOME.md` puts city expansion "at a local
+optimum". It ships anyway, inside the 2026-08-01 composite.
+
+`advanced_without_city_target_floor` returns the floor to the 3 the frozen and
+pre-promotion controllers use. One axis; nothing else moves.
+
+### The mechanism, from the fires-check
+
+| | score | **cities** | pop | districts | seat-win% |
+|---|---|---|---|---|---|
+| `advanced` (floor 6) | 682.9 | **8.06** | 89.2 | 28.8 | 16.7% |
+| withheld (floor 3) | 621.1 | **5.97** | 68.9 | 22.3 | 16.7% |
+
+The floor works exactly as designed: **+2.1 cities, +20 population, +6.5
+districts, +62 terminal score.** Every development proxy moves, and moves a lot.
+
+### The outcome, on four runs
+
+| run | profile | maps | paired score | Elo | direction | sign p |
+|---|---|---|---|---|---|---|
+| seed 7300000 | deployment, **all six victories** | 400 | **54.4%** | +30 | 74/39 | **0.0013** |
+| seed 8400000 | deployment, **all six victories** | 400 | **54.1%** | +29 | 83/50 | **0.0053** |
+| matrix `deployment-online` | three victories | 200 | **54.9%** | +34 | 54/28 | **0.0054** |
+| matrix `compact-standard` | small board | 200 | 49.0% | −7 | 30/37 | 0.4638 |
+
+**Withholding the floor wins more, on 1000 deployment maps across three
+independent runs, every one significant on direction and stable at +29 to +34.**
+Terminal score runs the other way just as hard — 93/307 and 90/310, both
+**p=0.0000 against the withhold**.
+
+★★★★ **So the floor buys two cities, twenty population and sixty terminal score,
+and pays about thirty Elo of wins for them.** This is the repository's own law
+made concrete on a single axis: *every cheap summary of a finished game is a
+correlate*. `leader_study` reports `cities` converting at 64% at turn 160,
+comfortably above a 17% chance — and causing more cities makes the agent
+**worse**. Correlation and causation on the same statistic, measured in the same
+week, pointing opposite ways.
+
+### ⚠ Not shipped yet, and why
+
+The promotion matrix at 200 pairs reads **RETAIN — cleared 1/2**. It rejected on
+`deployment-online`, but on **interval width, not on evidence against**: that
+profile's own direction is significant at p=0.0054 and its point estimate (+34)
+matches both 400-map runs. `compact-standard`, the no-regression profile,
+ACCEPTED.
+
+A REJECT is a REJECT. After reverting a change today for being promoted on the
+wrong profile, the answer is not to argue past this one — it is to run the gate
+at the resolution the effect needs. At 54.9% a 200-map interval is ±6.9 points
+and cannot clear parity; 400 maps gives ±4.9 and can. That matrix is running.
+
+**Nothing about the shipped agent changes in this entry.** What lands is the arm,
+the mechanism, and 1000 maps of deployment evidence, so the gate result — either
+way — is read against a record rather than a memory.
+
+### ★★★★ Gate PASS, and the floor is removed
+
+The 200-pair matrix rejected on interval width. Re-run at the resolution the
+effect needs:
+
+```
+ai_eval advanced_without_city_target_floor advanced --matrix --pairs 400 --seed 8600000
+
+  compact-standard   (NoRegression)  49.8% (CI 44.9..54.7)  Elo  -1   57/55   p=0.9248  ACCEPT
+  deployment-online  (Strength)      55.9% (CI 51.0..60.7)  Elo +41  125/65  p=0.0000  ACCEPT
+
+  multi-profile promotion gate: PASS — cleared every required profile
+```
+
+Five runs now agree: +30, +29, +34, +41 on deployment shapes, flat on the
+compact board. **`promoted_policy_envoy` no longer sets
+`city_target_floor`.** `plan_city_target` stays — the land-aware plan is a
+different mechanism and is not what was measured.
+
+⚠ **One consequence is inside the measurement and worth naming.**
+`desired_cities` is `floor + turn / cadence`, so removing the floor lowers what
+the ramp *reaches*, not only where it starts: the endgame window now tops out
+at six cities where it reached nine.
+`expansion_window_reaches_its_nine_city_target_before_endgame` failed on exactly
+that and has been renamed and re-pinned rather than silently adjusted — the
+nine-city reach was part of what cost the thirty Elo, and the agent that passed
+the gate is the one that reaches six. The test still pins that the window opens,
+that the plan is Expansion, and that a settler is not vetoed, so a regression
+that stops the ramp climbing at all still fails.
+
+`advanced_without_city_target_floor` now builds the production controller and is
+declared effectively `advanced`, so the old command fails closed as self-play.
+`advanced_wide_opening` becomes a treatment again and reads its six from
+`PRODUCTION_CITY_TARGET_FLOOR`, which is retained for that purpose with its
+history attached.
+
+**What this cost to find, stated plainly for the next reader:** the floor
+shipped on oracle headroom — "the point at which the expansion oracle first
+showed decisive headroom". Oracle headroom is what a subsystem is worth when
+granted for free. It is not what a treatment can reach, and the gap between
+those two quantities was thirty Elo pointing the wrong way.
+
+
+## 2026-08-10 — plan_city_target is a clean null, and a third no-op arm
+
+Continuing the #1499 ledger, which named ten production flags with no
+individual number. `city_target_floor = 6` was the first taken: **−41 Elo**,
+removed. `plan_city_target` is the other expansion lever
+`promoted_policy_envoy` sets, and it is measured now rather than earlier
+because the two interact — with the floor gone, the plan target is what remains
+driving expansion.
+
+```
+ai_eval advanced_without_plan_city_target advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 9100000
+
+  paired-map score 50.0% (95% Wilson CI 45.1%..54.9%)   Elo-equivalent +0 (CI -34..+34)
+  paired direction 64 for / 272 neutral / 64 against    sign p = 1.0000
+  terminal score   208 / 192                            sign p = 0.4533
+```
+
+**64 for and 64 against.** A clean null at 400 maps, on wins and on development
+alike — this is what a genuinely neutral component looks like, and it is worth
+having as the contrast case for the floor's 74/39 and 83/50.
+
+**It stays on.** A null is not grounds to change shipped behaviour in either
+direction, and the same restraint kept `bounded_recovery` in place two entries
+ago. What the number buys is that the next person reasoning about expansion
+knows this lever is inert rather than assuming it is load-bearing.
+
+So of the two expansion levers in the 2026-08-01 composite, **one was actively
+costing 41 Elo and the other does nothing.** Neither had a number before today.
+
+### A third arm that could not measure its own axis
+
+`advanced_plan_city_target` builds `AdvancedAi::new()` and sets
+`plan_city_target = true` — which production already sets. It is a
+**byte-identical no-op**, the third such arm found this session after
+`advanced_bounded_recovery` and the `AdvancedAi::new()`-plus-flag shape in
+general. It is now declared effectively `advanced`, so the comparison fails
+closed as self-play instead of reporting a confident null.
+
+⚠ That makes three arms in this file that silently measured nothing. The rule
+belongs next to every future arm: **`promoted_policy_envoy` sets thirteen
+flags — check before you add one, and withhold rather than add.**
+
+`advanced_without_settler_commit` is registered as the next in the queue.
+
+
+## 2026-08-10 — ★★★ settler_commit is worth thirty Elo, and the expansion story inverts
+
+The #1499 ledger is producing numbers in both directions now, which is the
+point of pricing rather than assuming.
+
+```
+ai_eval advanced_without_settler_commit advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 9200000
+
+  paired-map score 45.6% (95% Wilson CI 40.8%..50.5%)   Elo-equivalent -30 (CI -65..+4)
+  paired direction 60 for / 245 neutral / 95 against    sign p = 0.0061 (SIGNIFICANT for advanced)
+  terminal score   189 / 211                            sign p = 0.2937
+```
+
+**Withholding `settler_commit` makes the agent worse by about thirty Elo.** It
+is a component the bundle should keep, and the first flag in this audit to
+measure positive.
+
+### ★★★ The expansion story inverts inside one bundle
+
+| flag | what it does | measured |
+|---|---|---|
+| `city_target_floor = 6` | **want** more cities | **−41 Elo** — removed (#1504) |
+| `plan_city_target` | want cities the land supports | null (#1507) |
+| **`settler_commit`** | **finish the settler already started** | **+30 Elo** |
+
+Both are expansion levers, set by the same constructor, on the same day.
+**Raising the ambition costs 41 Elo; following through on a settler already in
+flight is worth 30.** Expansion is not good or bad in this engine — *wanting*
+is bad and *executing* is good.
+
+That is the same shape this document reached from the other side when the
+`city_target_floor` null was first recorded: *"six cities serialized through one
+settler at ~9 turns of production plus a walk each is a rate limit no valuation
+can beat."* The target was never the constraint; the follow-through was. Two
+independent measurements, one taken by raising a target and one by removing a
+commitment, agree on where the binding constraint sits.
+
+⚠ Neither number is a promotion. `settler_commit` is already on and stays on;
+nothing changes. What changed is that a component assumed useful is now
+**measured** useful, which is a different thing and is the only reason the
+`city_target_floor` mistake was findable at all.
+
+### Three flags could not be priced, and now can
+
+`promoted_policy_envoy` sets thirteen behaviours and only some had a
+`disable_*`. `tactical_strategy`, `unit_objective_memory` and
+`amenity_districts` had **no withhold at all** and were therefore unmeasurable
+— exactly the gap `disable_bounded_recovery` names: *"Every flag in
+`enable_live_bridge` needs one of these or it ships unmeasured."* All three now
+have one.
+
+`advanced_without_unpriced_bundle` withholds the eight that remain unpriced in
+a single arm. Nine deployment runs is the wrong shape for the question *is
+there anything left in here at all*; a null bounds the whole remainder and
+closes the queue, and a large effect pays for its own bisection. That run is in
+flight.
+
+
+## 2026-08-10 — ★★★ the production bundle is biased toward development, and the audit closes
+
+The #1499 ledger is finished as far as one run per question can take it. The
+eight flags that still had no number were withheld together, because nine
+deployment runs is the wrong shape for *is there anything left in here at all*.
+
+```
+ai_eval advanced_without_unpriced_bundle advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 9300000
+
+  withheld: envoy_priority, adjacency_site_planning, research_economy,
+            amenity_districts, siege_muster, home_defense, tactical_strategy,
+            unit_objective_memory
+
+  paired-map score 51.2% (95% Wilson CI 46.4%..56.1%)   Elo-equivalent +9 (CI -25..+43)
+  paired direction 94 for / 222 neutral / 84 against    sign p = 0.5001
+  terminal score   250 for / 150 against                sign p = 0.0000
+```
+
+**Null on wins, and a large significant gain in terminal score from removing all
+eight.**
+
+### ★★★ The pattern across the whole audit
+
+| flag | wins | terminal score |
+|---|---|---|
+| `city_target_floor = 6` | **−41 Elo** (removed) | strongly favours keeping (p=0.0000) |
+| the eight remaining, together | +9, null | strongly favours **removing** (p=0.0000) |
+| `plan_city_target` | null | null |
+| `bounded_recovery` | null (600 maps) | — |
+| `settler_commit` | **+30 Elo** | null (p=0.2937) |
+
+Read the two significant terminal-score rows together. The floor **bought**
+score and **cost** wins; the remaining eight **cost** score and buy no wins.
+Both are the same defect seen from opposite ends: **this bundle's components
+were selected on development, and development is not the objective.** The only
+component that measures positive on wins, `settler_commit`, is precisely the one
+whose terminal-score effect is flat — it does not trade in that currency at all.
+
+### What the composite does and does not establish
+
+It bounds the **net** of the eight at +9, interval −25..+43. There is no large
+win sitting in the remainder waiting to be found by grinding eight more
+deployment runs, and that is the practical answer the queue was asked for.
+
+⚠ **It does not bound the individual magnitudes**, and in this bundle that
+caveat has teeth rather than being a formality: `city_target_floor` at −41 and
+`settler_commit` at +30 are demonstrated, offsetting components *of the same
+constructor*. A net of +9 across eight flags is perfectly compatible with a
+−30 and a +40 inside it. **The queue is de-prioritised, not disproven.** Anyone
+resuming it should bisect the eight rather than start from one end, and should
+expect the terminal-score column to be the better signpost than the win column,
+because it is the one that separates.
+
+### What the audit produced
+
+One shipped strength change — `city_target_floor` removed, promotion matrix
+PASS, deployment-online 55.9% (95% CI 51.0%..60.7%), **Elo +41 (CI +7..+76)**,
+125/65, p=0.0000, 400 pairs, seed 8600000, PR #1504 — one measured asset
+(`settler_commit`, 45.6% withheld, Elo +30 for keeping it, 60/95, p=0.0061,
+400 pairs, seed 9200000, PR #1510), three nulls, three
+evaluator arms that silently measured nothing and now fail closed, and three
+flags that had no withhold at all and now do.
+
+Before it, thirteen production behaviours carried one composite number between
+them. That is the condition that let a component costing forty-one Elo (interval and
+seed above) ship and sit unnoticed, and it is worth stating as the lesson rather than the anecdote:
+**a composite gate licenses the composite, never its parts.**
+
+
+## 2026-08-10 — the base constructor's always-on flags: deny_leaders priced, two more made measurable
+
+The `promoted_policy_envoy` audit closed with one component removed
+(`city_target_floor`, Elo +41 for the withhold, CI +7..+76, 400 pairs, seed
+8600000, matrix PASS, PR #1504) and one measured positive (`settler_commit`,
+Elo +30 for keeping it, 60/95, p=0.0061, 400 pairs, seed 9200000, PR #1510).
+It covered thirteen flags. **`configured` sets ten
+more**, for every `AdvancedAi` that is not `legacy()`, and they were outside
+that audit entirely.
+
+Six are the `city_strategy_*` family. Those are **not** unpriced production
+behaviour: `stamp_city_directives` is their only consumer and it is called only
+under `if self.city_strategy`, which is `false` in production. They are the
+baseline the `advanced_city_strategy_*` ablation arms vary, which is what they
+should be. Checked before claiming otherwise.
+
+That leaves three genuinely always-on and unpriced: `deny_leaders`,
+`settlement_safety`, `battlefront_observation`.
+
+### `deny_leaders` — near-inert
+
+```
+ai_eval advanced_blind_to_leaders advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 9500000
+
+  paired-map score 51.2% (95% Wilson CI 46.4%..56.1%)   Elo-equivalent +9 (CI -25..+43)
+  paired direction 20 for / 370 neutral / 10 against    sign p = 0.0987
+  terminal score   175 / 214                            sign p = 0.0539
+```
+
+**370 of 400 maps came out unchanged.** Victory denial — the whole apparatus of
+noticing a rival's lane and reacting to it — alters the outcome of one game in
+thirteen. The direction of those thirty leans toward the *blind* arm and the
+terminal-score column leans the other way, both short of significance and both
+resting on too few discordant maps to act on.
+
+The arm existed and `docs/EVAL.md` had never mentioned it, so this is its first
+number. Nothing changes: a near-inert feature that leans marginally negative at
+p=0.0987 is not grounds to remove anything, and the honest summary is that the
+denial machinery is far smaller in effect than its footprint in the source
+suggests.
+
+### Two defaults that no arm could reach
+
+`settlement_safety` and `battlefront_observation` are set for every non-legacy
+agent and had **no withhold at all** — unmeasurable by construction, the same
+condition that hid the `city_target_floor` mistake in the other constructor
+(interval and seed above).
+`disable_settlement_safety` and `disable_battlefront_observation` now exist,
+with `advanced_without_settlement_safety` and
+`advanced_without_battlefront_observation` registered against them.
+
+⚠ `AdvancedAi::legacy()` already turns both off, so the frozen anchor is
+untouched by anything measured through them.
+
+**Running count of flags that were on, unpriced, and unmeasurable when this
+session started: five** — `tactical_strategy`, `unit_objective_memory`,
+`amenity_districts`, `settlement_safety`, `battlefront_observation`. All five
+now have a withhold. That is the precondition for pricing them; it is not the
+pricing.
+
+
+## 2026-08-11 — ★★★ settlement_safety is worth thirty-one Elo, and the settling lane resolves
+
+The last two always-on defaults had no withhold until #1518 made them
+measurable. This is the first of them.
+
+```
+ai_eval advanced_without_settlement_safety advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 9700000
+
+  paired-map score 45.5% (95% Wilson CI 40.7%..50.4%)   Elo-equivalent -31 (CI -65..+3)
+  paired direction 65 for / 234 neutral / 101 against   sign p = 0.0064 (SIGNIFICANT for advanced)
+  terminal score   119 / 281                            sign p = 0.0000 (SIGNIFICANT for advanced)
+```
+
+**Withholding it costs about thirty-one Elo, and it is the first component in
+this audit that is significantly positive on *both* axes.** Every other flag
+that moved has traded one against the other. This one simply works.
+
+### ★★★ Three significant measurements, one lane, one conclusion
+
+| flag | what it governs | wins | terminal score |
+|---|---|---|---|
+| `city_target_floor = 6` | **how many cities to want** | **−41 Elo** (removed) | favours keeping, p=0.0000 |
+| `settler_commit` | **finishing a settler already started** | **+30 Elo** | flat |
+| `settlement_safety` | **where it is safe to put the city** | **+31 Elo** | favours keeping, p=0.0000 |
+
+All three live in the settling lane. All three were unpriced this morning. Every
+one is significant on direction, and they do not point the same way:
+
+> **Ambition costs; execution pays.** Wanting more cities is worth −41 Elo.
+> Committing to the settler you already built is worth +30. Putting the city
+> somewhere it survives is worth +31.
+
+That is not a slogan assembled after the fact — it is three independent
+withholds at the same profile, and it reproduces from the causal side what this
+document reached observationally when the `city_target_floor` null was first
+recorded: *"six cities serialized through one settler at ~9 turns of production
+plus a walk each is a rate limit no valuation can beat."* The target was never
+the constraint. Raising it made the agent measurably worse; the two mechanisms
+that improve the *execution* of a settlement each pay about as much as the
+target cost.
+
+⚠ Nothing changes here. `settlement_safety` is on and stays on; the number
+converts an assumption into a measurement, which is the entire purpose of the
+audit and the only reason the −41 next to it was findable.
+
+### The re-pin argument, upgraded from comment to assertion
+
+Every source-contract re-pin this session was justified by reasoning about call
+paths. A concurrent change on main made the better move — asserting the claim
+instead — and pointed out why: the comment claiming native games leave
+`bounded_recovery` disabled was **false**, and finding that out cost an
+evaluation.
+
+`the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production` now
+asserts both halves for all five defaults this session made withholdable.
+**Off on `legacy()`** is what makes a withhold arm unable to move a rating
+anchor. **On in `new()`** is what makes a withhold the only way to price them —
+an arm built as `new()` plus one of these is a byte-identical no-op, which is
+how three arms in `elo.rs` came to measure nothing.
+
+
+## 2026-08-11 — the always-on audit finishes, and a declared prediction fails
+
+### `battlefront_observation` — null
+
+```
+ai_eval advanced_without_battlefront_observation advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 9800000
+  paired-map score 49.1% (CI 44.3%..54.0%)  Elo -6 (CI -40..+28)  49/56  p=0.5584
+  terminal score 209 / 191  p=0.3954
+```
+
+That completes the base constructor. Of its three genuinely always-on and
+unpriced flags: `settlement_safety` **+31 Elo**, `deny_leaders` near-inert
+(370/400 maps unchanged), `battlefront_observation` null.
+
+### ★ The prediction, and its failure
+
+Three withholds had resolved the settling lane into *ambition costs, execution
+pays*. A story fitted to three results is worth little; a story that predicts a
+fourth is worth something. So the prediction was declared in the arm before the
+run: `city_target`, the flat gene the baseline governor caps on — the other
+"how many cities to want" knob, untouched by #1504 — **lowering it 4.0 → 3.0
+should be positive.**
+
+```
+ai_eval advanced_lower_city_target advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 9900000
+
+  paired-map score 47.6% (95% Wilson CI 42.8%..52.5%)   Elo-equivalent -17 (CI -51..+18)
+  paired direction 48 for / 285 neutral / 67 against    sign p = 0.0928
+  terminal score   164 / 236                            sign p = 0.0004 (SIGNIFICANT against)
+```
+
+**Wrong, and wrong in the predicted direction's opposite.** Not significant on
+wins at p=0.0928, significantly negative on development, and the point estimate
+is −17 where +something was declared.
+
+### What the three results actually support
+
+"Ambition costs" was too general and is withdrawn as stated. The four numbers
+together say something narrower and more useful:
+
+| knob | value | measured |
+|---|---|---|
+| `city_target_floor` | ramp starts at **6**, reaching 9 | **−41 Elo** |
+| `city_target` gene | flat cap at **4** | shipped value |
+| `city_target` gene | flat cap at **3** | **−17**, and −score at p=0.0004 |
+
+> **The empire has an executable city ceiling, the floor pushed the target well
+> above it, and the flat gene already sits at it.** Removing the excess paid 41
+> Elo. Cutting below the ceiling costs. Lower is not better; *matching what the
+> agent can actually execute* is better — which is the same statement as
+> `settler_commit` and `settlement_safety` paying about 30 each, since both
+> raise how much of an intended settlement actually completes.
+
+⚠ This is a post-hoc reading of four points and should be held loosely — but it
+is now a reading that survived one attempt to break it, which the previous
+version did not. **The value of the failed prediction is that it bounded the
+claim; had it come out positive it would only have flattered it.**
+
+`city_target` stays at 4.0. Nothing changes.
+
+
+## 2026-08-11 — ★★★ a settler stands on foundable ground for two hundred turns
+
+The settling lane's three measurements say the target already sits at the
+empire's executable ceiling, so the remaining lever is raising the ceiling —
+and both mechanisms that pay (`settler_commit` +30, `settlement_safety` +31) do
+exactly that. So: where is settlement execution actually lost?
+
+`audit` answers it directly, at the deployment shape, and the diagnostic was
+already built:
+
+```
+audit --games 8 --players 6 --width 74 --height 46 --city-states 9 --turns 250
+
+symptom x8  major settler sits still 25+ turns — e.g. unit 131 (settler) of Aztec
+            unmoved since turn 34; at (36, 26), cities=1, can_found_here=true,
+            legal_sites=644, reachable=634, exhaustive_step=Some((37, 26))
+symptom x8  major settler circles without progress 10+ turns
+```
+
+**`can_found_here=true`.** A unit that cost a population point and 80–140
+production is standing on ground that would take a city, from turn 34 to the end
+of the game, and never founds. Eight of them in eight games, and eight more
+walking in circles.
+
+### Why, and where the gap is
+
+Founding is gated on the settler's chosen target equalling its own tile. The
+Advanced settler path has an elaborate stall apparatus around this —
+`settler_stalls`, `settler_blocked_turns`, `settler_closest`, `settler_avoid`,
+each with measured comments from earlier repairs — and when the stall counter
+expires it inserts an avoid, drops the target, and **picks a different one**.
+
+Nothing in that loop ever asks whether the ground under the settler would take a
+city. The unit is ambitious about site quality and never executes, which is the
+same failure the settling numbers already priced: wanting a better site cost 41
+Elo as `city_target_floor`; finishing the settlement already begun paid +30 and
++31.
+
+`advanced_settler_founds_when_stalled` adds one branch at both stall-expiry
+sites: if the counter has run its full length and `can_found_city` is true and
+`settlement_safety` does not refuse the tile, found here instead of re-targeting.
+It cannot fire early — the counter has already expired against a target the unit
+could not approach — and it cannot plant a city `settlement_safety` would veto,
+because it runs the same check the ordinary found path runs.
+
+### ⚠ The first attempt patched the wrong layer
+
+The fallback went into `BasicAi`'s settler step first and fires-checked at
+**40/40 maps neutral** — the fourth inert treatment this session. The gene
+census (#1479) had already recorded why: all four `settle_*` genes are inert for
+`AdvancedAi` because the Advanced settlement planner supersedes
+`BasicAi::settle_site_value`. The idling settlers in the audit are Advanced's,
+so the repair belongs in Advanced's path, and the BasicAi edit was reverted.
+
+At the correct layer the arm fires on **6 of 40** maps, which matches the audit's
+frequency: this is a real but low-rate event, so it needs sample size rather than
+enthusiasm. A 400-map run at the deployment shape is in flight; the number
+follows.
+
+### The number, and why it does not promote
+
+```
+ai_eval advanced_settler_founds_when_stalled advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 10200000
+
+  paired-map score 50.7% (95% Wilson CI 45.9%..55.6%)   Elo-equivalent +5 (CI -29..+39)
+  paired direction 10 for / 386 neutral / 4 against     sign p = 0.1796
+  terminal score   57 for / 313 neutral / 30 against    sign p = 0.0050 (SIGNIFICANT for the fix)
+```
+
+**Significant on development, unresolved on wins.** The repair does what it was
+built to do — a settler that would have idled to the end of the game plants a
+city, and the empire is measurably larger for it — and the win column cannot
+say whether that matters.
+
+The reason is in the neutral count. **386 of 400 maps are untouched**, because
+the defect is rare: eight idle settlers across eight games, and only some of
+those games hinge on the city. Fourteen discordant maps cannot resolve a small
+effect no matter how the arithmetic is arranged. Reaching a hundred discordant
+maps means roughly **2,800 maps**, seven times this run.
+
+### ⚠ It stays off, and the reason is this document's own lesson
+
+The temptation is to ship on p=0.0050. That is precisely the mistake the audit
+was built to find: `city_target_floor` bought **+2.1 cities, +20 population and
++62 terminal score** and cost **41 Elo of wins**, and the eight-flag composite
+buys development while being null on wins. **A component selected on development
+is how this agent acquired a forty-one-Elo liability**, and a second one would
+not be improved by being smaller.
+
+So the honest statement is narrow and worth having:
+
+> The idle-settler defect is real, visually dramatic — two hundred turns of a
+> unit standing on ground it could settle — and **too rare to move a win rate at
+> any sample size this repository can afford.** The repair is correct, it is
+> registered, and it is off.
+
+⚠ Nothing here says the defect should not be fixed. It says the fix cannot be
+*promoted on wins*, which is the only currency this file promotes in. If the
+event rate were raised — a shorter `SETTLER_STALL_LIMIT` fires more often — the
+win effect might resolve, but that is a different treatment with its own risk of
+settling too early, and it would need its own number rather than inheriting this
+one.
+
+### What the attempt establishes regardless
+
+`audit`'s soft-symptom output is a working generator of actuation defects, and
+it named this one without being asked. The lesson for the next reader is the
+pairing: **a defect's drama and its Elo are unrelated quantities.** Two hundred
+idle turns looks like the worst thing in the log and is worth, as far as 400
+maps can tell, about five Elo.
+
+
+## 2026-08-11 — the biggest motion symptom, split into the two thirds that are fine and the third that is not
+
+The idle-settler entry closed on a lesson: **a defect's drama and its Elo are
+unrelated.** The obvious correction is to rank `audit`'s symptoms by frequency
+instead — and that is also wrong, in a way worth recording, because the symptom
+counts and the unit-turn rates disagree.
+
+```
+audit --games 8 --players 6 --width 74 --height 46 --city-states 9 --turns 250
+
+symptom counts        warrior circles x94, scout circles x24, quadrireme still x21,
+                      … settler still x8
+motion, major civs    unit-turns=135574  livelock=1644 (1.21%)  idle-field=32315 (23.84%)
+                                          picket=4861 (3.59%)
+```
+
+**94 circling warriors is 1.21% of unit-turns.** The count is dramatic and the
+rate is negligible. Meanwhile the largest rate in the table had never been split
+into its parts, and `idle_field` is defined as *"stood still in the open,
+unfortified, achieving nothing"* — which lumps a settler waiting for an escort
+together with a warrior declining a free defensive bonus.
+
+### The split
+
+`audit` now reports how much of `idle_field` could have fortified at all, by
+mirroring `Game::unit_can_fortify` — unembarked land military.
+
+| major-civ unit-turns | share |
+|---|---|
+| idle in the field | 23.84% |
+| **of those, could have fortified** | **7.73%** |
+| actually fortified (`picket`) | **3.59%** |
+
+**Two-thirds of the biggest symptom is civilians, and they are fine** — a settler
+standing still is not squandering something it held. The remaining third is not:
+**10,477 unit-turns across eight games in which an unembarked land military unit
+stood still in the open and did not fortify**, against 4,861 unit-turns that
+did. The agent leaves its army unfortified more than twice as often as it
+fortifies it.
+
+What that costs is exact rather than rhetorical: `unit_strength` adds **3.0 per
+fortified turn, capped at two turns**, so a stationary warrior is declining
+**+6 defensive strength**, about 30% of its base.
+
+### ⚠ What this does and does not establish
+
+It establishes the size and the price of the gap, and that the gap is on the
+fortifiable third rather than the whole 23.84%. It does **not** establish that
+closing it is worth any Elo — and the last two entries are the reason to say so
+out loud. The idle settler was dramatic and worth ~5 Elo; the circling warriors
+are numerous and are 1.21% of unit-turns. **Frequency is a better guide than
+drama and still not a substitute for a paired run.**
+
+`AdvancedAi` already reaches `BasicAi::fortify_or_stop` at seven terminal
+points, so the fallback exists and something is routing around it — most likely
+the same shape as the settler defect, where an intended move fails and the path
+returns without reaching the terminal case. That is the next thing to measure,
+and it now has a number to be measured against rather than a symptom count.
+
+### The repair, and the third shape of null
+
+`hold_stood_down_unit` fortified only inside a stand-down window, so a unit that
+merely took no turn stood in the open. `advanced_fortify_idle_units` fortifies
+it instead.
+
+```
+ai_eval advanced_fortify_idle_units advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 10500000
+
+  paired-map score 49.8% (95% Wilson CI 44.9%..54.6%)   Elo-equivalent -2 (CI -36..+32)
+  paired direction 35 for / 328 neutral / 37 against    sign p = 0.9063
+  terminal score   176 / 178                            sign p = 0.9576
+```
+
+**35 for and 37 against on 72 discordant maps.** Unlike the settler repair, this
+is *resolved* rather than underpowered — the event is frequent enough that 400
+maps could have seen an effect, and there is none, on wins or on development.
+
+### ★★★ Three defect shapes, three nulls, and what they cost to learn
+
+| defect | how it looked | rate | measured |
+|---|---|---|---|
+| settler idles on foundable ground | **dramatic** — 200 turns, `can_found_here=true` | 14 of 400 maps | +5 Elo, unresolvable |
+| warriors circle without progress | **numerous** — x94 in 8 games | **1.21%** of unit-turns | not run; the rate retired it |
+| army stands unfortified | **frequent** — 7.73% of unit-turns, +6 strength each | 72 of 400 maps | **−2 Elo, resolved null** |
+
+Each was selected by a different and defensible criterion — drama, then count,
+then rate — and each is worth nothing. The last one is the most informative
+because it is the one with enough resolution to be sure:
+
+> **`audit`'s motion symptoms do not convert.** A unit standing in the open
+> declines +6 defensive strength on 7.73% of its turns, and buying that back
+> across 400 deployment maps moves the win rate by −2 ± 34. Defensive strength
+> only pays where combat happens, and this engine's games are not decided there
+> — `headless never wins by domination` puts it at 1 in 1513, and every military
+> arm in this file measures null.
+
+That is a claim about the whole family, not one repair, and it is the useful
+output of three iterations. **Motion telemetry is an excellent defect detector
+and a poor value estimator.** The repairs are correct, registered, and off; the
+next agent reading `audit` should treat a large symptom as a reason to look,
+never as a reason to expect Elo.
+
+⚠ It does not say the units should stay unfortified — it says doing so costs
+nothing measurable here. On a profile where combat decides games, the same
+repair could matter, and the arm exists to re-run it there.
+
+
+## 2026-08-11 — ★★★★ the net null was hiding thirty-two Elo, and it is the war half
+
+`advanced_without_unpriced_bundle` withheld the eight remaining production flags
+together and measured **+9 Elo, CI −25..+43, 94/84, p=0.5001** — null on the net.
+That entry said the net bounds nothing about the parts, and that in this bundle
+the caveat has teeth: `city_target_floor` at −41 and `settler_commit` at +30 are
+demonstrated offsetting components of the same constructor.
+
+It does. Split on the line the flags themselves draw — what the empire builds
+against how it fights:
+
+```
+ai_eval advanced_without_unpriced_economy advanced   … --pairs 400 --seed 10700000
+  envoy_priority, adjacency_site_planning, research_economy, amenity_districts
+  paired-map score 49.0% (CI 44.1%..53.9%)  Elo -7 (CI -41..+27)   79/87   p=0.5871
+  terminal score 194 / 206                                                 p=0.5824
+
+ai_eval advanced_without_unpriced_war advanced       … --pairs 400 --seed 10800000
+  siege_muster, home_defense, tactical_strategy, unit_objective_memory
+  paired-map score 54.6% (CI 49.7%..59.4%)  Elo +32 (CI -2..+66)  97/60  p=0.0039  ★
+  terminal score 224 / 176                                                 p=0.0187 ★
+```
+
+**Withholding the four war flags is worth about thirty-two Elo**, significant on
+direction and significant on development too — one of only two components in
+this whole audit that improves both. The economy half is a clean null, and −7
+against +32 is precisely the cancellation that produced a +9 net.
+
+### Why this is the expected answer, not a surprise
+
+Everything already recorded points here. Domination is **1 in 1513** headless
+games; every military arm in this file measures null; the motion-symptom family
+was just closed with a resolved null on giving the army free defensive strength.
+If combat does not decide games, then production spent on siege mustering, home
+defence, tactical strategy and unit-objective memory is production not spent on
+the lanes that do — and the terminal-score column agrees, which is unusual for
+this bundle and is what makes the reading solid rather than convenient.
+
+It is also the same shape as the session's other shipped result. The
+`city_target_floor` removal paid 41 Elo by *not doing* something the agent was
+doing enthusiastically. This is the second instance: **the largest measured
+gains in this agent have both come from removing work, not adding it.**
+
+### ⚠ Status: discovery, not promotion
+
+One seed, and the effect interval touches parity (−2..+66) exactly as the floor's
+did at this stage. The floor needed a disjoint-seed confirmation and then a
+400-pair promotion matrix before anything changed, and this gets the same
+treatment — the confirmation is running on seed 11000000. **Nothing about the
+shipped agent changes in this entry.**
+
+⚠ A caveat the floor did not have: this withholds **four** flags at once. Even a
+confirmed +32 would not say which of the four carries it, and the bundle has
+already shown that a group's number is not its members'. Bisecting the war half
+is the work after the confirmation, not before it.
+
+### Confirmed on a disjoint seed
+
+```
+ai_eval advanced_without_unpriced_war advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories <all six> --pairs 400 --seed 11000000
+
+  paired-map score 54.9% (95% Wilson CI 50.0%..59.7%)   Elo-equivalent +34 (CI -0..+68)
+  paired direction 95 for / 249 neutral / 56 against    sign p = 0.0019
+  anytime-valid    withheld e = 4.469e2, p <= 0.0022, CROSSED at map 134
+  terminal score   226 / 174                            sign p = 0.0107
+```
+
+| run | maps | score | Elo | direction | sign p |
+|---|---|---|---|---|---|
+| discovery, seed 10800000 | 400 | 54.6% | +32 | 97/60 | 0.0039 |
+| **confirmation, seed 11000000** | **400** | **54.9%** | **+34** | 95/56 | **0.0019** |
+| **pooled** | **800** | **54.75%** | — | **192/116** | ~3e-5 |
+
+The estimate did not shrink between seeds, both directions are significant, both
+terminal-score columns are significant the same way, and the confirmation's
+**e-process crossed at map 134** — the first time one has crossed for this
+treatment. That is a stronger position than `city_target_floor` held at the same
+stage, and it took the same route: discovery, disjoint-seed confirmation, then
+the gate.
+
+The promotion matrix at 400 pairs is running on seed 11200000. **Nothing changes
+until it answers**, and the 200-pair lesson from the floor applies — if it
+rejects on interval width rather than on evidence, the answer is more maps, not
+an argument.
+
+### ⚠⚠ Gate REJECT — and the isolation was already run
+
+```
+ai_eval advanced_without_unpriced_war advanced --matrix --pairs 400 --seed 11200000
+
+  compact-standard   (NoRegression)  53.6% (CI 48.7..58.4)  Elo +25  123/82  p=0.0051  ACCEPT
+  deployment-online  (Strength)      51.9% (CI 47.0..56.7)  Elo +13  100/89  p=0.4671  REJECT
+
+  multi-profile promotion gate: RETAIN advanced — cleared 1/2 required profiles
+```
+
+**Not shipped.** And unlike `city_target_floor`, this is **not** an
+interval-width artifact: `deployment-online`'s own *direction* is 100/89 at
+p=0.4671. More maps would not rescue it, because there is nothing there to
+resolve — the effect really is much smaller on that profile.
+
+### The isolation, which the earlier runs already performed
+
+The matrix's `deployment-online` is 6p 74x46, 9 city-states, Online, 250 turns —
+**identical to the two 400-map runs above except for one thing: it plays
+`science,culture,domination` where those played all six victories.**
+
+| profile | victories | maps | score | Elo | sign p |
+|---|---|---|---|---|---|
+| 6p 74x46, 9 CS, Online 250t | **all six** | 400 | 54.6% | +32 | **0.0039** |
+| 6p 74x46, 9 CS, Online 250t | **all six** | 400 | 54.9% | +34 | **0.0019** |
+| matrix `deployment-online` | **science, culture, domination** | 400 | 51.9% | +13 | 0.4671 |
+
+**Withholding the war flags is worth ~34 Elo when every victory is available and
+about 13 when only three are, one of which is domination.** That is coherent:
+strip out religion, diplomacy and score and domination goes from one route in
+six to one in three, so the military machinery this arm removes is worth
+correspondingly more. The treatment's value is a function of how much the
+profile rewards conquest, which is exactly the thing it touches.
+
+### ⚠ What I am not going to do
+
+Argue past the REJECT. #1504 shipped only after the matrix passed, and #1491
+reverted a change that had been promoted on a profile that flattered it — the
+mirror image of this situation, where the profile that flatters the treatment is
+the *deployment-faithful* one and the gate's is not.
+
+Both of those precedents point the same way here: **the gate is the gate.** The
+exhibition does run all six victories, which is a real argument that +34 is the
+deployment-relevant number, and it is not strong enough to override a REJECT on
+its own. What it justifies is raising the question about the gate's victory set
+as a *separate* matter, on its own evidence, rather than as an exception for one
+treatment that happens to want it.
+
+**Recorded state:** the war half is a replicated **+33 ± a few** on the
+configuration the exhibition plays, a null on the gate's configuration, and
+**off**. Anyone re-opening it should either change the gate's victory set with
+its own justification, or accept that a conquest-adjacent treatment cannot pass a
+gate that over-weights conquest.
+
+
+## 2026-08-11 — ★★★ bisecting the war half on the profile that rejected it
+
+The war half is +32/+34 at the exhibition's configuration and **+13, p=0.4671**
+on the gate's `deployment-online`, which rejected it. A group's number is not
+its members', so the question is whether one of its four flags is significant
+**on the gate's own profile** rather than only on the one that flatters it.
+
+Both quarters run at exactly the matrix's `deployment-online` configuration —
+6p 74x46, 9 city-states, Online, 250 turns, continents/planet/poles,
+randomized civs, **victories science,culture,domination** — 400 pairs:
+
+| quarter | flags | score | Elo | direction | sign p |
+|---|---|---|---|---|---|
+| **city defence** | `siege_muster`, `home_defense` | **53.1%** | **+21** | **105/71** | **0.0126** |
+| unit tactics | `tactical_strategy`, `unit_objective_memory` | 51.6% | +11 | 106/91 | 0.3185 |
+
+**Withholding the two city-defence flags is significant on the very profile that
+rejected the whole half.** The unit-tactics pair is not, and its terminal-score
+column is flat too (193/207, p=0.5157). Splitting a treatment that failed the
+gate found the half of it that does not.
+
+⚠ **This is a selected result and must be treated as one.** Two quarters were
+tested and the significant one is being carried forward; at two comparisons a
+p=0.0126 is worth roughly p=0.025, still small but no longer what it looks like.
+The correct answer to a selection effect is a fresh seed, and the promotion
+matrix on seed 11700000 supplies exactly that — it is simultaneously the gate
+and the confirmation. **Nothing changes until it answers.**
+
+That the tactics half is the inert one is also the expected direction rather
+than a surprise: `tactical_strategy` and `unit_objective_memory` govern how
+individual units behave, and the motion-symptom family closed with a resolved
+null showing unit-level behaviour does not convert here (#1533). `siege_muster`
+and `home_defense` govern how much of the empire's production is diverted to
+garrisoning and mustering, which is a claim on the same budget that builds the
+lanes that win.
+
+### ⚠ The selection effect materialised, exactly as declared
+
+The previous entry flagged the city-defence quarter as **selected** — two
+quarters tested, the significant one carried forward — and said the answer was a
+fresh seed. It was:
+
+```
+ai_eval advanced_without_city_defence advanced --matrix --pairs 400 --seed 11700000
+
+  compact-standard   (NoRegression)  50.6%  Elo  +4   93/87   p=0.7095  ACCEPT
+  deployment-online  (Strength)      52.2%  Elo +15  109/89   p=0.1768  REJECT
+
+  multi-profile promotion gate: RETAIN advanced — cleared 1/2
+```
+
+| run on `deployment-online`'s configuration | maps | score | Elo | sign p |
+|---|---|---|---|---|
+| the selected screen, seed 11400000 | 400 | 53.1% | +21 | **0.0126** |
+| **the fresh seed, matrix 11700000** | **400** | **52.2%** | **+15** | **0.1768** |
+
+**p=0.0126 became p=0.1768 and +21 became +15 on a seed the treatment was not
+chosen on.** That is what a selected result does, it was predicted in writing
+before the run, and it is the reason a confirmation is not optional. **Nothing
+ships.**
+
+### What survives it, stated carefully
+
+Pooling the two runs on that profile — legitimate because the second was
+pre-declared as the confirmation of the first — gives **214 for / 160 against
+across 374 discordant maps, two-sided sign p = 0.0061**, at a paired score of
+about **52.7%**.
+
+So the direction evidence is real and the *effect size* is the blocker, not the
+existence of an effect: at 52.7% an 800-map interval is still roughly ±3.5
+points and cannot exclude parity. That is precisely where `city_target_floor`
+stood before its 400-pair matrix, and the answer there was resolution rather
+than argument — 200 maps could not clear it and 400 could.
+
+Here the arithmetic asks for more: clearing parity at 52.2% needs a half-width
+under 2.2 points, which is **roughly 1,200 maps** on that profile. That run is
+in flight on seed 12000000, against `deployment-online`'s exact configuration
+rather than the whole matrix, because `compact-standard` has already ACCEPTed
+twice and only the Strength profile is in question.
+
+⚠ Three tests of this family have now been run at that configuration. Each
+additional look inflates the chance of a false positive, and the honest reading
+of a fourth is that it must be *decisive* — a clear interval, not another
+borderline p. If 1,200 maps do not separate it, the correct conclusion is that
+withholding city defence is worth something around ten to fifteen Elo and this
+repository cannot afford to prove it, which is a legitimate place to stop.
+
+
+## 2026-08-11 — the gate's three-victory set is justified, and I was wrong to imply otherwise
+
+Two entries raised the promotion matrix's `--victories science,culture,domination`
+as a problem: it cannot express the religious lane that decides most games on the
+default profile, and it rejected a war-flag withhold worth +34 where the
+exhibition plays. Both said the question deserved "its own evidence." Here it is,
+and it does not go the way those entries leaned.
+
+The restriction's unstated justification would be variance reduction — religion
+ends most games early, so removing it should make more games decisive. That is
+testable from runs already recorded, because the same treatments were measured on
+both victory sets at the same shape, 400 pairs each. A paired map that ends the
+same way under both arms carries no information; **discordant maps are the
+resolution.**
+
+| run | victories | discordant of 400 |
+|---|---|---|
+| war half, seed 10800000 | all six | 157 (39.2%) |
+| war half, seed 11000000 | all six | 151 (37.8%) |
+| war half, matrix | three | 189 (47.2%) |
+| city defence, seed 11400000 | three | 176 (44.0%) |
+| city defence, matrix | three | 198 (49.5%) |
+| unit tactics, seed 11500000 | three | 197 (49.2%) |
+| **mean, all six** | | **154 (38.5%)** |
+| **mean, three** | | **190 (47.5%)** |
+
+**The three-victory profile yields about 23% more decisive maps per run.** That
+is a real and substantial gain in statistical power for a fixed compute budget,
+it is exactly what the restriction would be chosen for, and nothing in the tree
+had ever stated it. The gate's configuration is defensible on its own terms.
+
+### What the cost actually is, stated without the insinuation
+
+The restriction is not free, and the two divergences are real: it would have
+rejected `d_holy`'s religion-routed gain and it did reject a war-flag withhold
+measured at +32 and +34 on the configuration the exhibition runs. But the
+correct description of that is **a known and priced trade**, not a defect —
+more resolution on a game that differs from deployment in exactly the dimension a
+victory-routed treatment lives in.
+
+So the practice that follows is not "change the gate". It is:
+
+> **A treatment that touches a victory route must report both profiles**, and a
+> divergence between them is a fact about the treatment's dependence on the
+> victory set, not evidence against the gate. A treatment that touches neither —
+> which is most of them — can be read off the gate alone.
+
+⚠ **This corrects the framing of two earlier entries in this file**, which
+presented the victory set as an open problem with the gate. It is an open
+*property* of the gate, now measured, with a justification those entries assumed
+was absent. The `d_holy` revert and the war-half REJECT both stand exactly as
+recorded — what changes is that neither is any longer an argument for altering
+the gate.
+
+### ★ The decisive run, and the stop
+
+The previous entry said 1,200 maps would be needed and that a fourth look must
+be decisive rather than another borderline p. It was decisive, in the direction
+that ends the lane rather than the one that ships it.
+
+```
+ai_eval advanced_without_city_defence advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories science,culture,domination
+  --map continents --shape planet --poles poles --randomize-civs --pairs 1200 --seed 12000000
+
+  paired-map score 52.1% (95% Wilson CI 49.2%..54.9%)   Elo-equivalent +14 (CI -5..+34)
+  paired direction 319 for / 629 neutral / 252 against  sign p = 0.0057
+  anytime-valid    e = 1.011e1, p <= 0.0989 — NOT crossed
+  terminal score   611 / 589                            sign p = 0.5444
+  promotion gate   INCONCLUSIVE after 1200 maps
+```
+
+**The effect is real and the effect size will not certify.** 571 discordant maps
+put the direction at p=0.0057, and the interval still spans parity because the
+estimate is small: **+14 Elo, and drifting down as the sample grows** — 53.1%
+selected, 52.2% on a fresh seed, 52.1% at 1,200 maps.
+
+Pooling everything on this profile, and excluding the selected screen so the
+selection bias does not carry: **428 for / 341 against over 1,600 maps, sign
+p = 0.0019.** Including it, 533/412 over 2,000, p = 9.3e-05. Either way the
+direction is not in doubt; either way the paired score sits at about 52.1%, whose
+interval needs roughly **2,200 maps** to exclude parity — another run half again
+as long as the one that took three hours here.
+
+### Stopping, as declared
+
+> Withholding `siege_muster` and `home_defense` is worth **about fourteen Elo**.
+> It is a real effect, it is too small for this repository's gate to certify at
+> a sample size worth spending, and it stays off.
+
+That is a different and better answer than "inconclusive". The lane has a
+number, an interval, a direction with p=0.0019 across disjoint seeds, and a
+stated price for certainty that nobody has to rediscover. Four looks at one
+family is already at the edge of what multiple comparisons tolerate, and a fifth
+chosen because the fourth was close is how a +14 becomes a +41 in the retelling.
+
+⚠ It is also worth naming what did **not** happen: the estimate never grew. Every
+addition of maps moved it down, which is the signature of a real-but-small effect
+rather than a large one waiting for resolution. A treatment whose estimate climbs
+with sample size deserves another run; this one does not.
+
+
+## 2026-08-11 — the shipped floor removal still holds, 47 commits later
+
+`city_target_floor` was removed from `promoted_policy_envoy` on a matrix PASS
+(#1504). Since then **47 commits** have landed on `main` from several agents —
+engine-repair arms, production category genes, a synergy bundle. Nothing had
+checked that the only strength change this audit shipped still measures what it
+measured, and a gain that quietly evaporates under concurrent development is
+indistinguishable from one that was never there.
+
+`advanced_wide_opening` restores the floor to six, so `advanced` against it is
+exactly the shipped change, re-run on a **fresh seed** at the same gate:
+
+```
+ai_eval advanced advanced_wide_opening --matrix --pairs 400 --seed 12500000
+
+  compact-standard   (NoRegression)  50.1% (CI 45.2..54.9)  Elo  +0   64/60   p=0.7877  ACCEPT
+  deployment-online  (Strength)      55.6% (CI 50.7..60.4)  Elo +39  115/56  p=0.0000  ACCEPT
+
+  multi-profile promotion gate: PASS — advanced cleared every required profile
+```
+
+| | profile | score | Elo | direction |
+|---|---|---|---|---|
+| original, seed 8600000 | deployment-online | 55.9% | +41 (CI +7..+76) | 125/65, p=0.0000 |
+| **re-check, seed 12500000** | deployment-online | **55.6%** | **+39 (CI +5..+73)** | 115/56, p=0.0000 |
+
+**Unchanged within noise, on a seed it was not promoted on, after 47 commits of
+other people's work.** That is the fifth independent measurement of this effect
+(+30, +29, +34, +41, +39) and the second full matrix PASS.
+
+⚠ Worth stating plainly because it is the least glamorous run in this file and
+one of the more useful: **a promoted result is a claim about the tree at one
+commit.** Everything else in this session was about not fooling yourself when a
+number is new; this is about not assuming an old number is still true. The check
+cost one matrix run and would have caught an interaction that no test in the
+suite is shaped to notice — the tests assert behaviour, and this asserts that the
+behaviour is still worth what it was worth.
+
+Nothing changes. The result is confirmed and the agent keeps playing as it does.
+
+
+## 2026-08-11 — the 24th production behaviour, its false comment, and a stale null retired
+
+The audit priced the thirteen flags `promoted_policy_envoy` sets and the ten
+`configured` sets. It missed a third site: **`production_weights` overwrites
+`policy_deck` with `PolicyDeck::Live`** after the weights are handed over, for
+everything `AdvancedAi::new()` builds.
+
+`Weights::default()`'s comment beside `PolicyDeck::Legacy` says the opposite —
+*"the agent that plays is the one that always played"* — and records `Live` as a
+**measured null**, 18 map directions to 15, p=0.7283 over 120 mirrored maps, that
+*"costs an empire valuation per candidate card per review"*. `docs/EVAL.md` had
+never mentioned `policy_deck`, and **no caller could withhold it**, because the
+override happens after construction. That is the fourth stale comment this audit
+has found describing a default the production constructor does not use, after
+`bounded_recovery` and two others.
+
+`AdvancedAi::with_legacy_policy_deck` supplies the missing withhold.
+
+### The number, and it goes the shipped agent's way
+
+```
+ai_eval advanced_legacy_policy_deck advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories science,culture,domination
+  --map continents --shape planet --poles poles --randomize-civs --pairs 400 --seed 12900000
+
+  paired-map score 48.5% (95% Wilson CI 43.6%..53.4%)   Elo-equivalent -10 (CI -44..+24)
+  paired direction 83 for Legacy / 209 neutral / 108 for Live   sign p = 0.0822
+  terminal score   163 / 237                                    sign p = 0.0003 for Live
+```
+
+**`Live` earns its place.** Withholding it is directionally worse on wins and
+**significantly worse on development**. So the deck stays, and the 120-map null
+its own comment rests on is retired: 120 mirrored maps is well under what this
+file now treats as resolving anything, and at 400 the sign is the other way on
+both columns.
+
+### ⚠ And the screen said the opposite
+
+The 40-map fires-check read **55.6%, direction 14/6** — *for* the Legacy deck,
+the reverse of the 400-map answer. Nothing was concluded from it because 40 maps
+concludes nothing, but it is the cleanest example in this file of why: same
+treatment, same profile, opposite sign, and the small run looked more exciting.
+
+**Nothing about the shipped agent changes.** What changes is that two comments no
+longer say the playing agent uses a deck it does not, the axis has a withhold and
+a number for the first time, and a "measured null" that was quietly justifying a
+production choice has been replaced by a measurement that actually supports it.
+
+
+## 2026-08-11 — the production Builder floor: null on wins, and its own justification is not borne out
+
+The audit swept two constructors and then found `production_weights` as a third
+site. `delegated_cities` is a fourth: it raises `builder_per_city` from the
+genome's 0.5 to **0.75** with a call-local `.max()`, reachable from nowhere
+else, never mentioned in `docs/EVAL.md`, and justified by reasoning rather than
+measurement — *"three active Builders per four cities provide roughly two useful
+improvements per city"*.
+
+That is the same profile as `city_target_floor`, also a production-only floor
+justified by argument, which measured **−41 Elo**. Reason to look, not a
+prediction.
+
+```
+ai_eval advanced_without_builder_floor advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories science,culture,domination
+  --map continents --shape planet --poles poles --randomize-civs --pairs 400 --seed 13200000
+
+  paired-map score 50.8% (95% Wilson CI 45.9%..55.7%)   Elo-equivalent +6 (CI -28..+40)
+  paired direction 88 for / 231 neutral / 81 against    sign p = 0.6445
+  terminal score   225 / 175                            sign p = 0.0142 FOR the withhold
+```
+
+**Null on wins, and significantly *negative* on development.** Withholding the
+floor — building fewer Builders — makes the empire's terminal score *better*.
+
+That is the interesting half. The floor's stated purpose is development: more
+Builders, more improvements, more yield. It does not deliver that. The extra
+charges cost production the empire would otherwise spend on something that
+scores, and the `has_builder_work` gate that was supposed to stop the overbuild
+evidently does not stop enough of it.
+
+**It stays on.** A null on wins is not grounds to change shipped behaviour in
+either direction, and removing something on a terminal-score result is the
+mistake this file has refused twice already — once when declining to ship the
+idle-settler repair on p=0.0050, and it would be no better inverted. The
+symmetry is the point: **terminal score is not a promotion input, and it is not a
+demotion input either.**
+
+### The audit's fourth site, and what the sweep is worth now
+
+| production-only override | site | measured |
+|---|---|---|
+| `city_target_floor = 6` | `promoted_policy_envoy` | **−41 Elo**, removed |
+| `policy_deck = Live` | `production_weights` | keeps its place (−10 to withhold, score p=0.0003 for it) |
+| `builder_per_city → 0.75` | `delegated_cities` | **null on wins**, −score |
+
+Three of the four sites that modify the production controller have now been
+swept, and the fourth — `configured` — was swept earlier. **Twenty-five
+behaviours, one liability, two assets, the rest nulls.** The remaining
+call-local overrides beside this one, `city_target.max(desired_cities)` and the
+speed-aware settler deadline, are the last unpriced pieces of that surface.
+
+
+## 2026-08-11 — the sweep completes: every production-only override now has a number
+
+```
+ai_eval advanced_without_settler_deadline advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories science,culture,domination
+  --map continents --shape planet --poles poles --randomize-civs --pairs 400 --seed 13600000
+
+  paired-map score 50.4% (95% Wilson CI 45.5%..55.2%)   Elo-equivalent +3 (CI -31..+37)
+  paired direction 26 for / 353 neutral / 21 against    sign p = 0.5601
+  terminal score   155 / 213                            sign p = 0.0029 FOR keeping it
+```
+
+**Null on wins**, and 353 of 400 maps untouched — the extension mostly does not
+bind at Online/250, where the gene's 150 already sits at or above
+`min(300 standard, max_turns - 50 standard)`. Unlike the Builder floor beside it,
+it does at least deliver the development it promises. It stays.
+
+### The complete map
+
+Four sites separate the shipped controller from its genome. All four are now
+swept, twenty-six behaviours in total:
+
+| site | behaviours | result |
+|---|---|---|
+| `promoted_policy_envoy` | 13 | `city_target_floor` **−41 Elo** (CI +7..+76 for the withhold, 400 pairs, seed 8600000, matrix PASS, PR #1504) **removed**; `settler_commit` **+30** (60/95, p=0.0061, seed 9200000, PR #1510); the rest null or gate-rejected |
+| `configured` | 10 | `settlement_safety` **+31** (65/101, p=0.0064, 400 pairs, seed 9700000, PR #1521); `deny_leaders` near-inert; the rest null |
+| `production_weights` | 1 | `policy_deck = Live` **earns its place** |
+| `delegated_cities` | 2 | Builder floor null on wins and −score; settler deadline null on wins, +score |
+
+**One liability, two assets, one vindicated choice, and twenty-two nulls.**
+
+Before this, all twenty-six shared a single composite number — the 2026-08-01
+promotion — and that is the condition that let a component costing forty-one Elo
+ship and sit unnoticed for ten days. The sweep's value is not that one figure by itself;
+it is that **no behaviour in the production controller is now believed rather
+than measured.**
+
+### What the sweep says about where to look next
+
+Nothing cheap remains on this surface. The pattern that produced every finding —
+a production-only override, justified by a comment, with no arm and no number —
+has been exhausted at four sites, and four of the comments turned out to
+describe a default the constructor does not use.
+
+The generalisable part, for whatever surface is swept next:
+
+> **Price by withholding, one behaviour at a time, at the deployment shape.** A
+> composite gate licenses the composite, never its parts; a stale comment is not
+> evidence; and an override that no arm can reach has, by construction, never
+> been measured.
+
+## The champion churns more, not less (2026-08-11, PR #1572)
+
+`ai_eval` prints that the production agent switches grand strategy 9.68 times a
+game and that 69.4% of its midgame switches are *unanchored* — they cross no
+war, no threatened city, no city deficit. That reads like a defect, and there is
+a mechanism ready to blame: `victory_denial` gates on `pressure.progress < 78 ||
+pressure.progress < own_progress + 15`, two hard cutoffs on a drifting quantity,
+and `plan_stale` treats denial engaging or releasing as a reason to rebuild the
+plan. A rival parked near the threshold rewrites this empire's grand strategy
+every fifth turn.
+
+Measured before treating it. `leader_study` now counts each seat's switches as
+the game runs and reports them negated, so leading the row means having switched
+the fewest times (72 games, 6p 74x46, 9 city-states, Online, 250 turns, seeds
+14200000..14200071):
+
+| turn | t20 | t40 | t60 | t80 | t100 | t130 | t160 | t200 |
+|---|---|---|---|---|---|---|---|---|
+| `steadiness` lead-conversion (chance 17%) | – | 6% | 5% | 13% | 9% | 4% | 11% | 21% |
+| `held_course` lead-conversion (chance 17%) | – | 6% | 7% | 6% | 5% | 7% | 5% | 15% |
+| `steadiness` champion mean rank (chance 3.50) | 3.75 | 3.86 | 3.64 | 3.69 | 3.68 | 3.50 | 3.47 | 3.15 |
+| `held_course` champion mean rank (chance 3.50) | 3.80 | 3.93 | 3.78 | 3.82 | 3.83 | 3.86 | 3.72 | 3.34 |
+
+**Both readings say the opposite of the hypothesis.** The civ holding its
+strategy most steadily wins 4–13% of the time against a 17% base rate, and the
+champion ranks *worse* than the median seat on steadiness at every sampled turn
+before t130. Restricting to the unanchored switches — the ones that supposedly
+answer to nothing — makes it stronger, not weaker.
+
+The reading that fits: **low churn marks a civ nothing is happening to.** A seat
+that is never threatened, never at war and never short of cities has no reason
+to re-plan, and it is also quietly losing. Stability is a symptom of
+disengagement here, not evidence of discipline.
+
+A hysteresis treatment for the denial threshold was written and built against
+this hypothesis and is **not being shipped**: the cheap screen came back
+negative, and the rule is that a correlate screen is allowed to stop a lane
+before it spends eval pairs. The mechanism is real — the chatter happens — but
+nothing in the evidence says it costs anything, and #1528's lesson stands that a
+defect's drama and its Elo are unrelated.
+
+⚠ The causal arrow is ambiguous in the usual direction and it does not rescue
+the hypothesis. A winning civ conquers, so it is at war more and re-plans more;
+that inflates the champion's switch count. But an inflated count in the
+*against* direction leaves no residual evidence that churn is harmful.
+
+⚠ `held_course` counts switches that crossed no boundary, which is not the same
+as "answered to nothing". A civ permanently at war never *crosses* the war
+boundary, so its switches all count as unanchored. The label in `ai_eval` shares
+this weakness and should be read as "no condition changed", not "no reason".
+
+### The rest of the table
+
+Two rows are worth recording even though neither is actionable on its own:
+
+- **`cities` converts at 40% by t20** — the strongest early signal in the study,
+  against a 17% base rate — while its map control `start_room` sits at exactly
+  17%. Leading in cities at turn 20 is behaviour, not room. It is also the exact
+  correlate that #1504 disproved as a *lever*: forcing city count via the
+  `city_target_floor` cost 41 Elo. Correlation this strong has already been
+  tested and failed once.
+- **Early tech leadership is mildly negative.** `techs` converts at 11% at t20
+  with a champion mean rank of 3.97 — the worst cell in the table — before
+  inverting completely to 60% and rank 1.65 by t200. The winner is not ahead in
+  science early; it gets there. `military` behaves the same way (7% at t20).
+
+## Envoy placement was never perfect — it was never measured (2026-08-11, PR #1575)
+
+Making a seat suzerain of every city-state it has met scores **56.7% against a
+22.7% control** (p=0.0000, 400 maps, `Grant::Suzerain`, PR #602) — the largest
+subsystem headroom this repo has found. Since #608 the record has said the gap
+is *income*, not placement, on the evidence that the envoy pool reads **0.00
+unspent at every sample**. #637 pointed out that the inference does not follow —
+a policy that spreads one envoy each and one that concentrates three are
+indistinguishable when the hand is never larger than one — but nobody went back
+and measured the board those placements built.
+
+`envoy_allocation_census` now measures it (6 maps per cell, seeds 480000..,
+`deployed_agent()`, 200 turns):
+
+| | eval 4p 24×16 | deployment 6p 74×46 |
+|---|---|---|
+| envoys per met city-state: 0 / 1 / 2 / 3+ | 45% / **42%** / 7% / 7% | 27% / **36%** / 15% / 22% |
+| envoys parked below the floor of 3 | 1.74/seat-turn = **73% of all placed** | 2.90/seat-turn = **50%** |
+| city-states with no suzerain at all | 2.50, of which **1.35 within 2 envoys** | 2.77, of which **1.82 within 2 envoys** |
+| suzerain of | 0.1 (4% of met) | 0.3 (7%) |
+
+**The modal city-state holds exactly one of our envoys**, and between half and
+three-quarters of everything placed sits below the floor of three, buying a
+level-1 type bonus and no suzerainty — while roughly two unclaimed suzerainties
+sit permanently within two envoys of ours.
+
+### The scorer has a local minimum at one envoy
+
+`advanced_envoys` prices the next type bonus and amortises it over the envoys
+needed to reach it, across thresholds `[1, 3, 6]`:
+
+```rust
+let type_bonus_value = g.next_envoy_type_bonus(pid, minor.id)
+    .map(|(envoys, yields)| (self.yield_value(yields, strategy) * 14.0 / envoys as f64)...)
+```
+
+At 0 envoys a city-state sells its level-1 bonus for **one** envoy. At 1 envoy
+the next payout is at 3, so the per-envoy value **halves**. A fresh city-state
+therefore always offers the cheapest step, and the seat keeps opening
+city-states it never finishes. That is the 36%.
+
+And the suzerainty itself was priced at **zero**. The score saw only the
+standard type-bonus yields; the city-state's **resources**
+(`controlled_resource_count_via` counts suzerained minors), its unique bonus,
+diplomatic victory points, and the `science_pct_per_suzerain` /
+`culture_pct_per_suzerain` / `suzerain_all_yields` multipliers were all
+invisible to it.
+
+`SUZERAIN_PRIZE` adds that term, amortised the same way, so it **rises** as the
+seat closes on the floor (180 at three away, 90 at two, 180 at one) instead of
+falling.
+
+### Fires-check: the same income buys twice the suzerainties
+
+Both arms, same maps, seat 0 only so the reading is this seat's own placement
+policy rather than a board where every rival also concentrated:
+
+| | stock | suzerainty priced |
+|---|---|---|
+| deployment: suzerain of | 0.3 (7% held) | **0.7 (15% held)** |
+| deployment: 3+ envoys / stuck at 1 | 22% / 36% | **25% / 31%** |
+| deployment: envoys placed | 7.1 | 7.2 |
+| eval 4p: suzerain of | 0.1 (4%) | **0.3 (9%)** |
+| eval 4p: 3+ envoys / stuck at 2 | 7% / 7% | **13% / 4%** |
+
+**Envoy income is flat and suzerainties more than double at both scales.** So
+"allocation is already perfect" is false, and the reason it stood for so long is
+that every census measured the *pool* instead of the *placements*.
+
+### Priced at the deployment shape: +22 Elo, gate INCONCLUSIVE
+
+```
+ai_eval advanced_price_suzerainty advanced --players 6 --width 74 --height 46
+  --city-states 9 --turns 250 --speed online --victories science,culture,domination
+  --map continents --shape planet --poles poles --randomize-civs --pairs 400 --seed 14900000
+
+  paired-map score 53.1% (95% Wilson CI 48.2%..58.0%)   Elo-equivalent +22 (CI -12..+56)
+  paired direction 78 for / 270 neutral / 52 against    sign p = 0.0279 SIGNIFICANT
+  paired outcomes  45 sweeps for / 21 against
+  anytime-valid    peak e = 17.9, p <= 0.0558           not crossed
+  promotion gate   INCONCLUSIVE
+  terminal score   50.2%                                (not a promotion input)
+```
+
+Positive, directionally significant, **not certified**. The interval crosses
+parity and the e-process stopped short. The gate did not fire, so `+22` is *not*
+conditioned on being large — it is an unbiased estimate of a small real effect,
+which is the shape this treatment was predicted to have: the oracle that
+measured the 56.7% ceiling granted **100%** suzerainty, and this converts 7% to
+15%.
+
+⚠ **The gate's victory set excludes diplomacy** (`science,culture,domination`,
+fixed since #658), and a suzerainty pays partly in diplomatic victory points. So
+this profile understates the mechanism by construction. That is a reason the
+measured number is small — and explicitly **not** grounds to re-read the arm on
+a friendlier profile after the fact. The war-half arm replicated +32/+34 on the
+exhibition configuration and only +13 n.s. on the gate's, and was not shipped
+(#1543). The gate is the gate.
+
+⚠ An arm measured **+21 (CI -13..+55, p=0.0126, seed 11400000)** earlier the
+same day — nearly this exact shape — was estimated to need ~2,200 maps to
+certify and was stopped there. Applying a softer standard to a hypothesis with a
+mechanism story would be the same error in the other direction, so this one is
+recorded as **measured, uncertified**, with the cost written down: at 400 pairs
+the CI half-width is ~±34, 800 pairs gives ~±24 (still crossing at +22), and
+clearing parity needs roughly 1,600 pairs.
+
+### Open beside this: a suzerainty held by exactly one envoy is not defended
+
+`SUZERAIN_PRIZE` is deliberately zero once the seat *is* suzerain, which is
+right for avoiding over-investment — but `already_secure` requires
+`mine > rival + 1`, so a suzerainty held at exactly `rival + 1` earns neither
+the prize nor the penalty. It is invisible to the score in both directions, and
+a rival's single envoy takes it.
+
+Not measured, and deliberately not folded into this treatment: the census says
+the failure is **acquisition** (36% of city-states parked at one envoy, 1.8
+unclaimed suzerainties within reach), not defence, and widening a treatment
+mid-measurement makes the number unattributable. Recorded as its own question.
+
+### It did not replicate — the flag stays off
+
+```
+ai_eval advanced_price_suzerainty advanced ... --pairs 400 --seed 15400000
+  paired-map score 50.5% (95% Wilson CI 45.6%..55.4%)   Elo-equivalent +3 (CI -31..+37)
+  paired direction 70 for / 264 neutral / 66 against    sign p = 0.7971 INCONCLUSIVE
+  paired outcomes  33 sweeps for / 29 against
+  promotion gate   INCONCLUSIVE
+```
+
+| run | seed | score | Elo | direction | sign p |
+|---|---|---|---|---|---|
+| 1 | 14900000 | 53.1% | +22 | 78 / 52 | **0.0279** |
+| 2 | 15400000 | 50.5% | +3 | 70 / 66 | 0.7971 |
+| **pooled** | 800 pairs | **51.8%** | **≈ +12** | **148 / 118** | **0.0752** |
+
+**`price_the_suzerainty` ships default-off.** Run 1's significance did not
+survive a disjoint seed; pooled over 800 pairs the sign test reads p=0.0752 and
+the point estimate halves. A single significant run is a hypothesis, not a
+result — and this one had every reason to look convincing: the largest measured
+headroom in the repo, a mechanism confirmed by reading, and a fires-check that
+doubled the intended metric.
+
+**What survives is the census, and it is not small.** Envoy placement is
+genuinely defective — 36% of met city-states parked at exactly one envoy, half
+of everything placed below the floor of three, ~1.8 unclaimed suzerainties
+permanently within two envoys — and the same income demonstrably buys twice the
+suzerainties under a better rule. #608's "allocation is already perfect" is
+retired. **What does not survive is the assumption that fixing it wins games.**
+
+That pairing is now the third instance of the same lesson on this axis, and the
+strongest: `cities` correlates at 64% and forcing it cost **41 Elo** (#1504);
+the holy-site lane looked good at `ai_eval` defaults and reverted at **-44**
+(#1491); suzerainty grants 56.7% against a 22.7% control and pricing it wins
+nothing measurable. **Oracle headroom is what a perfect outcome is worth, not
+what a decision rule can reach — and a fires-check proves a mechanism fires, not
+that the mechanism matters.**
+
+⚠ Do not re-open this by tuning `SUZERAIN_PRIZE`. The constant is not the
+question; two runs at 800 pairs say converting 7% -> 15% of city-states held is
+worth about +12 Elo with an interval through zero, so a larger constant buys a
+larger share of an effect that has not been shown to exist. If this axis is
+re-opened, the honest instrument is `Grant::Envoys` at a *generous* budget
+(#637), which asks whether the income is the binding constraint at all.
+
+## The gate profile measures a different empire (2026-08-12, PR #1578)
+
+`ai_eval`'s seat table reports mean end-of-game **faith 3174** against gold 769.
+That is an unspent balance (`self.faith += g.players[pid].faith`, divided by
+`games`, which `record` increments once per *seat*), and it looks like a hoard.
+Gold hoarding has had a detector since the audit gained
+`treasury_looks_hoarded`; faith had never been measured at all.
+
+`faith_spending_census` measures it. The hoard is not the agent — it is the
+**victory list**. Same 6 maps, same agent, same 6p 74x46 / 9 city-states / 250
+turns / Online; only `victory_conditions` differs:
+
+| | all six victories | gate's `science,culture,domination` |
+|---|---|---|
+| faith earned | 2474 | **6047** |
+| faith spent | 1838 (**74%**) | 2425 (**40%**) |
+| balance at the end | 635 | **3621** |
+| peak balance | 768 | 4018 |
+| turns the balance fell | 21.0 | 14.7 |
+| founded a religion | 2/6 | 3/6 |
+
+**The gate profile reproduces the seat table's number and the deployment shape
+does not.** Two things drive it. `victory_strategy_enabled` refuses the Religion
+grand strategy outright when Religious Victory is off, so the seat never adopts
+the plan that buys missionaries and apostles — the agent's main faith sink; the
+eval's own `religious# 1.12` says the same thing. And removing victory routes
+removes ways for a game to *end*, so games run long and accumulate: faith earned
+is **2.4x higher** on the gate profile, which is not a spending effect at all.
+
+⚠ **This is a fact about the instrument.** The promotion matrix hard-codes
+`--victories science,culture,domination` (#658) while the exhibition runs all
+six, so every arm priced on the gate is measured in an empire that earns 2.4x
+the faith, spends 40% of it rather than 74%, and cannot pursue two of the six
+victory routes. Same class as `ai_eval` seating **zero** city-states by default
+— an instrument default that silently changes what is being measured.
+
+⚠ This does **not** license re-reading a gate-rejected arm on a friendlier
+profile. #1543's war half replicated +32/+34 on the exhibition configuration and
++13 n.s. on the gate's and was not shipped; tonight's suzerainty arm is
+unshipped at ~+12 pooled over 800 pairs. The gate is still the gate. What
+changes is that a *diagnostic column* read off the gate profile — faith,
+religious units, envoys, diplomatic victory points — describes that profile and
+must not be quoted as a property of the deployed agent.
+
+### What is left for the agent, and what is not
+
+On the shape that actually ships the agent spends **74% of its faith** and ends
+on 635 with 21 purchases a game. That is not a hoard and there is no
+faith-spending defect to fix at deployment.
+
+⚠ Open, not measured: on the gate profile it still ends on 3621 with sinks
+available (Holy Site in 5 of 6 games), so 60% of the income goes unspent there.
+Whether that is refusals, exhausted sinks, or the reserve policy is unknown —
+distinguishing them needs a purchase-refusal census, not another balance census.
+
+## The shipped controller beats the frozen anchor on all six victories (2026-08-13)
+
+The 120-map anchor prefix above — stock `advanced` versus `advanced_v1` at
+45.6% (−30) compact and 48.8% (−9) deployment — was the last open doubt about
+the deployed controller: an underpowered read that, taken at face value, said
+the anchor might be no worse than what we ship. A 400-pair rerun was in flight
+when the machine lost power on 2026-08-11 (180/400 pairs, results lost with the
+scratchpad); this is the completed rerun, same question, pre-declared reading
+rules unchanged (48–52% parity; nothing here licenses touching the promotion
+gate).
+
+Config: `ai_eval advanced advanced_v1 --deployment-comparison`, 6p 74x46,
+9 city-states, 250 turns, Online, continents/planet/poles, randomized civs,
+**all six victories**, 400 pairs, seed 16100000. Raw log:
+`civvis-civ6-runs/six-victory-deployment-20260813T0232Z.log` (machine-local).
+
+**Paired-map score for `advanced`: 81.8% (95% Wilson CI 77.7%..85.2%),
+Elo-equivalent +260 (CI +217..+304).** Paired direction 265 advanced-favored /
+124 neutral / 11 anchor-favored, exact two-sided sign p=0.0000. Seat outcomes:
+654/2400 wins (27.2%) for the shipped controller against 146/2400 (6.1%) for
+the anchor, where 1/6 ≈ 16.7% is the chance line. The terminal-score
+diagnostic reads 54.3% in the same direction (not a promotion input). The
+win-based reading rests on the 276 of 400 maps that broke; terminal score is
+read on all 400.
+
+Both arms ran identical plan targets (`{"adaptive": 2400}`) with zero
+ancient-rush and zero adaptive-expansion dispatcher exposure — no treatment
+leaked into either arm; this is the controller difference alone.
+
+The 120-map prefix figure is therefore a sampling artifact and should not be
+quoted as evidence the anchor holds parity at deployment. The direction at
+power is the opposite, by a margin no prefix of that size could see. This is
+the same lesson as the city-target floor: **re-run a doubtful read at higher
+resolution before believing it** — in both directions.

@@ -3308,13 +3308,26 @@ impl Session {
     }
 }
 
+const APP_JS_TAG: &str = r#"<script src="/assets/app.js"></script>"#;
+
+/// Give each native server's application script a new URL.
+///
+/// A follower can replace the local HTTP process while the operator's Chrome
+/// tab remains open.  `Cache-Control: no-store` normally makes a document
+/// reload enough, but an instance-specific script URL means that even a tab
+/// with an older cache entry cannot keep executing the former server's UI.
+fn index_with_app_instance(page: &str, instance: u32) -> Vec<u8> {
+    let app_tag = format!(r#"<script src="/assets/app.js?instance={instance}"></script>"#);
+    page.replacen(APP_JS_TAG, &app_tag, 1).into_bytes()
+}
+
 fn index_html() -> Vec<u8> {
     for p in ["web/index.html"] {
-        if let Ok(b) = std::fs::read(p) {
-            return b;
+        if let Ok(page) = std::fs::read_to_string(p) {
+            return index_with_app_instance(&page, process_identity());
         }
     }
-    EMBEDDED_INDEX_HTML.as_bytes().to_vec()
+    index_with_app_instance(EMBEDDED_INDEX_HTML, process_identity())
 }
 
 fn app_js() -> Vec<u8> {
@@ -5266,7 +5279,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 mod tests {
     use super::{
         automatic_successor_seed, chronicle_world_events, final_countdown_ms, held_frame,
-        new_game_params, nine_tenths_of, publishes_player_turn_frames, query_value, request_path,
+        index_with_app_instance, new_game_params, nine_tenths_of, publishes_player_turn_frames,
+        query_value, request_path,
         save_path, simultaneous_jobs_for,
         seat_delay_ms, spectator_frame, spectator_step_completes_frame, staged_next_game_params,
         strategy_roster, tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot,
@@ -5295,6 +5309,16 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{mpsc, Arc, Condvar, Mutex};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn served_index_tags_the_app_script_with_its_server_instance() {
+        let page = r#"<html><script src="/assets/app.js"></script></html>"#;
+        let served = String::from_utf8(index_with_app_instance(page, 4242))
+            .expect("the HTML fixture is UTF-8");
+
+        assert!(served.contains(r#"<script src="/assets/app.js?instance=4242"></script>"#));
+        assert!(!served.contains(r#"<script src="/assets/app.js"></script>"#));
+    }
 
     #[test]
     fn machine_metric_values_are_bounded_and_only_expose_percentages() {
@@ -10943,11 +10967,27 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("e.important && now - e.at < 6000"));
         assert!(EMBEDDED_INDEX.contains("const CAP = 60, FRESH = 12"));
         assert!(EMBEDDED_INDEX.contains("SERVER_EVENT_VALUES"));
-        assert!(EMBEDDED_INDEX.contains("const floor = active ? (SPEC ? 32 : 16) : 0"));
-        // The repaint rate answers to what a frame actually costs.
+        // The presentation rate follows the display rather than assuming a
+        // 60 Hz panel or capping spectator motion at 30 FPS. Canvas repaint
+        // still answers to measured cost, while the marker-light globe can
+        // submit its terrain mesh on every supported refresh.
+        assert!(EMBEDDED_INDEX.contains("const MAX_PRESENTATION_HZ = 240;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "function animationRefreshInterval(now = performance.now())"
+        ));
+        assert!(!EMBEDDED_INDEX.contains("const floor = active ? (SPEC ? 32 : 16) : 0"));
         assert!(EMBEDDED_INDEX.contains("const MAX_ANIMATION_PAINT_SHARE = .5"));
         assert!(EMBEDDED_INDEX
-            .contains("Math.max(floor, drawCost / MAX_ANIMATION_PAINT_SHARE)"));
+            .contains("Math.max(animationRefreshInterval(now),"));
+        assert!(EMBEDDED_INDEX.contains("function drawPlanetGpuSurface("));
+        assert!(EMBEDDED_INDEX.contains("powerPreference: \"high-performance\""));
+        assert!(EMBEDDED_INDEX.contains("precision mediump float;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "radiusUniform:gl.getUniformLocation(program, \"uRadius\")"
+        ));
+        assert!(EMBEDDED_INDEX.contains("gpu.surfaceRadius = radius;"));
+        assert!(EMBEDDED_INDEX.contains("function clearPlanetGpuSurface("));
+        assert!(EMBEDDED_INDEX.contains("function drawPlanetGpuAnimationFrame()"));
         // The command map is the only presentation surface. There is no style
         // selector, persisted mode, cinematic module, or painted atlas path.
         assert!(EMBEDDED_INDEX.contains("const MAP_PROJECTION = 0.92"));
@@ -11538,11 +11578,11 @@ mod tests {
 
     /// The turn plate's width is the viewer's, through the same seam
     /// affordance as the command deck's edge: drag it, nudge it with arrow
-    /// keys, double-click it back to the stylesheet's density default. Past
-    /// the split width the plate spends the room sideways rather than
-    /// downward — era and turn counter on one line, the settings below in
-    /// two columns — so widening buys information density instead of
-    /// whitespace. The seam re-renders with the masthead every frame, so the
+    /// keys, double-click it back to the responsive default. A wide masthead
+    /// uses the two-column plate without requiring that gesture, and follows
+    /// the overlay's live width as the window, victory rail, or overlay edges
+    /// move. A saved preference stays authoritative and survives a temporary
+    /// narrow clamp. The seam re-renders with the masthead every frame, so the
     /// press must be caught on the permanent #playerhud element.
     #[test]
     fn browser_lets_the_turn_plate_widen_into_two_columns() {
@@ -11550,11 +11590,18 @@ mod tests {
             "const TURN_PLATE_WIDTH_STORAGE_KEY = \"civvis-turn-plate-width-v1\";",
             "const TURN_PLATE_MIN_WIDTH = 148;",
             "const TURN_PLATE_SPLIT_WIDTH = 252;",
+            "const TURN_PLATE_AUTO_WIDE_HUD_WIDTH = 1500;",
+            "const TURN_PLATE_AUTO_WIDE_MAX_WIDTH = 304;",
+            "function automaticTurnPlateWidth() {",
+            "function syncTurnPlateWidth() {",
+            "const desired = turnPlateWidth ?? automaticTurnPlateWidth();",
+            "const turnPlateSizeObserver = typeof ResizeObserver === \"function\"",
+            "turnPlateSizeObserver?.observe(hud);",
             "function applyTurnPlateWidth(width, persist = true) {",
             "function turnPlateMaxWidth() {",
             "data-turn-plate-seam role=\"separator\"",
             "beginTurnPlateSeamGesture(event);",
-            "applyTurnPlateWidth(turnPlateWidth, false);",
+            "syncTurnPlateWidth();",
             "grid-template-columns: var(--turn-plate-width, 164px) minmax(0, 1fr);",
             "var(--turn-plate-width, clamp(148px, 33%, 164px))",
             "var(--turn-plate-width, 168px)",
