@@ -15,10 +15,71 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import civ6_civvis_climb as climb
+
+
+class MirrorFreshnessTests(unittest.TestCase):
+    def test_follower_output_path_reads_lsof_file_field(self):
+        mirror_log = climb.MIRROR_FOLLOW_LOG
+        with mock.patch.object(
+            climb, "run", return_value=f"p101\nf1\nn{mirror_log}\n"
+        ) as run:
+            self.assertEqual(
+                climb.follower_output_path(101),
+                mirror_log,
+            )
+
+        run.assert_called_once_with(["lsof", "-a", "-p", "101", "-d", "1", "-Fn"])
+
+    def test_follower_owns_mirror_requires_the_dedicated_runtime_output(self):
+        with mock.patch.object(
+            climb, "follower_output_path", return_value=climb.MIRROR_FOLLOW_LOG
+        ):
+            self.assertTrue(climb.follower_owns_mirror(101))
+        with mock.patch.object(
+            climb, "follower_output_path", return_value=Path("/tmp/other-follow.log")
+        ):
+            self.assertFalse(climb.follower_owns_mirror(102))
+
+    def test_owned_mirror_pids_uses_runtime_output_and_visible_port(self):
+        """A different worktree's follower must survive this batch's refresh."""
+        with mock.patch.object(
+            climb, "matching_pids", side_effect=[[101, 102], [201, 202]]
+        ), mock.patch.object(
+            climb, "follower_owns_mirror", side_effect=[True, False]
+        ), mock.patch.object(
+            climb, "mirror_listener_pids", return_value={202}
+        ):
+            self.assertEqual(climb.owned_mirror_pids(), [101, 202])
+
+    def test_retire_mirror_stops_the_follower_and_its_detached_server(self):
+        """A new batch cannot inherit a mirror process from another build."""
+        with mock.patch.object(climb, "owned_mirror_pids", return_value=[101, 202]), \
+             mock.patch.object(climb, "process_running", return_value=False), \
+             mock.patch.object(climb.os, "kill") as kill:
+            self.assertEqual(climb.retire_mirror(), [101, 202])
+
+        self.assertEqual(
+            kill.call_args_list,
+            [mock.call(101, climb.signal.SIGTERM), mock.call(202, climb.signal.SIGTERM)],
+        )
+
+    def test_ensure_mirror_always_starts_a_follower_from_this_checkout(self):
+        """A live PID alone proves nothing about which revision it loaded."""
+        with mock.patch.object(climb, "retire_mirror", return_value=[101, 202]) as retire, \
+             mock.patch.object(climb, "_detach") as detach:
+            climb.ensure_mirror()
+
+        retire.assert_called_once_with()
+        detach.assert_called_once_with(
+            [climb.sys.executable, "-u", str(climb.HERE / "follow.py")],
+            climb.MIRROR_FOLLOW_LOG,
+            "mirror",
+        )
 
 
 class _NoWait:
@@ -342,14 +403,33 @@ class WedgedAttempt(unittest.TestCase):
     the game is alive, not the harness. Only another process can see that.
     """
 
-    class _Play:
-        """A subprocess that never exits until it is signalled."""
+    # How much the fake clock advances per `play.wait()`. The real loop is paced
+    # by that call blocking for up to 20 s; here it stands in for "the harness
+    # waited a bit and the attempt is still running", and 0.1 against the 3 s
+    # budget below gives 30 passes — enough for the lock-credit logic to run
+    # more than once, and instant.
+    WAIT_STEP_S = 0.1
 
-        def __init__(self):
+    class _Play:
+        """A subprocess that never exits until it is signalled.
+
+        ⚠ `wait` ADVANCES THE CLOCK, and that is what makes these tests fast.
+        The real one blocks; this one used to return instantly, so the waiter
+        span a hot loop against real `time.time()` for the whole 3 s budget —
+        6 seconds of burned CPU across this class, on every PR's CI gate and
+        every local validation. Moving the clock here keeps the loop's pacing
+        faithful (one pass per wait) without spending any of it.
+        """
+
+        def __init__(self, clock=None, step=0.0):
             self.signalled = None
             self._dead = False
+            self._clock = clock
+            self._step = step
 
         def wait(self, timeout=None):
+            if self._clock is not None:
+                self._clock["t"] += self._step
             if self._dead:
                 return 0
             raise climb.subprocess.TimeoutExpired("play", timeout or 0)
@@ -370,11 +450,17 @@ class WedgedAttempt(unittest.TestCase):
                 json.dumps({"kind": "turn", "turn": t}) + "\n" for t in turns))
             original = climb.RUN_ROOT
             climb.RUN_ROOT = root
+            # ⚠ The waiter reads `time.time()`, not `monotonic`. Pinning it is
+            # also what makes the assertions mean anything: a budget waited out
+            # in real time asserts on whatever the machine managed in three
+            # seconds, which is not the same number twice under load.
+            clock = {"t": 0.0}
             try:
-                play = self._Play()
-                why = climb.wait_watching_the_turn(
-                    play, "run", 3.0, frozen_s,
-                    locked_probe=locked_probe or (lambda: False))
+                play = self._Play(clock, self.WAIT_STEP_S)
+                with mock.patch.object(climb.time, "time", lambda: clock["t"]):
+                    why = climb.wait_watching_the_turn(
+                        play, "run", 3.0, frozen_s,
+                        locked_probe=locked_probe or (lambda: False))
                 return why, play.signalled
             finally:
                 climb.RUN_ROOT = original
@@ -455,6 +541,85 @@ class WedgedAttempt(unittest.TestCase):
         why, signalled = self._run([1, 2, 3], frozen_s=600.0)
         self.assertNotEqual(why, "frozen")
         self.assertIsNone(signalled)
+
+
+class KilledAttemptSaysSo(unittest.TestCase):
+    """⚠⚠⚠ A row with a turn count and a score and NO reason reads like a
+    finished game.
+
+    `outcome_of` reads what `civ6_play` wrote on its way out, and a run this loop
+    SIGTERMs never gets there. `civvis-20260811T115348Z` is in the ladder that
+    way: turn 194 of 250, score 490, stopped by the outer watchdog while still
+    advancing, `reason` absent. I included it in medians myself before noticing.
+
+    The loop knows why it killed the attempt. These pin that it says so, and that
+    it never overwrites a reason the harness did supply.
+    """
+
+    @staticmethod
+    def _stamp(record, why):
+        """The rule under test, applied exactly as the loop applies it."""
+        if record.get("reason") is None and why is not None:
+            record["reason"] = f"attempt {why}"
+        return record
+
+    def test_a_killed_attempt_is_not_mistaken_for_a_finished_one(self):
+        row = self._stamp({"last_turn": 194, "last_score": 490}, "timeout")
+        self.assertEqual(row["reason"], "attempt timeout")
+
+    def test_a_lock_is_named_as_a_lock(self):
+        """The log already refuses to blame a timeout for an unattended machine;
+        the ledger must not either."""
+        row = self._stamp({"last_turn": 82}, "locked")
+        self.assertEqual(row["reason"], "attempt locked")
+
+    def test_the_harnesss_own_reason_always_wins(self):
+        """`civ6_play` saw the ending from inside. That answer is better."""
+        row = self._stamp({"last_turn": 250, "reason": "stopped"}, "timeout")
+        self.assertEqual(row["reason"], "stopped")
+
+    def test_nothing_is_invented_when_the_loop_has_no_verdict(self):
+        row = self._stamp({"last_turn": 250}, None)
+        self.assertIsNone(row.get("reason"))
+
+
+class OuterWatchdogOrdering(unittest.TestCase):
+    """⚠⚠⚠ The backstop must sit ABOVE the budget it backs, not underneath it.
+
+    `civ6_play --timeout` stopped being a hard stop in #1532: the budget now
+    extends while a run can still reach `--max-turns`, up to `--timeout-ceiling`
+    (1.5x by default). This watchdog stayed at `--timeout + 600`, which put a
+    6000 s kill underneath 8100 s of legitimate inner budget.
+
+    It fired on healthy games. Run `civvis-20260811T115348Z` was stopped at turn
+    194 of 250, score 490, still advancing — 100 min 41 s in, `timeout + 600` to
+    the second. The SIGTERM also costs the summary, so the ladder keeps a row
+    with `last_turn` and `last_score` and NO `reason`, which reads like a
+    finished game.
+    """
+
+    @staticmethod
+    def _args(timeout=5400.0, ceiling=None):
+        from types import SimpleNamespace
+        return SimpleNamespace(timeout=timeout, timeout_ceiling=ceiling)
+
+    def test_the_watchdog_outlives_the_childs_ceiling(self):
+        args = self._args()
+        ceiling = climb.attempt_ceiling(args)
+        self.assertGreater(
+            ceiling + 600, ceiling,
+            "the backstop must be strictly later than the budget it backs")
+        self.assertGreater(
+            ceiling + 600, args.timeout + 600,
+            "the old formula is exactly the bug: it sat below the ceiling")
+
+    def test_the_default_matches_civ6_plays_own(self):
+        """Both sides default to 1.5x, so an unset flag cannot invert them."""
+        self.assertEqual(climb.attempt_ceiling(self._args(5400.0)), 8100.0)
+
+    def test_an_explicit_ceiling_is_honoured_on_both_sides(self):
+        """Passing --timeout-ceiling equal to --timeout restores a hard stop."""
+        self.assertEqual(climb.attempt_ceiling(self._args(5400.0, 5400.0)), 5400.0)
 
 
 class SettingsDealt(unittest.TestCase):

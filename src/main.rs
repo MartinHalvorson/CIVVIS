@@ -919,7 +919,47 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// (`settlement_safety`, `battlefront_observation`). Evaluator entry points no
 /// constructor calls; `legacy()` already turns both off. Compatibility re-pin
 /// recomputed over the merged tree — neither side's value applies.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1bc0_d41d_7905_418d;
+/// A test only: `the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production`,
+/// which asserts the claim the re-pins above made in prose — that no
+/// withhold arm for a production default can reach `AdvancedAi::legacy()`.
+/// Compatibility re-pin, and the last one on this branch that needs the
+/// argument, because the assertion now carries it.
+/// `settler_founds_when_stalled` and its `founds_where_it_stands`
+/// branch. The flag defaults false in the struct init both `legacy()`
+/// and `new()` build from, and the branch returns immediately without
+/// it — asserted, not argued, in
+/// `the_repair_bundle_cannot_reach_the_frozen_anchor`, which this
+/// change extends. Compatibility re-pin.
+/// `fortify_idle_units` and the `hold_stood_down_unit` branch that reads
+/// it. Evaluator-only: the flag defaults false in the `BasicAi` init
+/// both `legacy()` and `new()` build from, and the branch keeps its
+/// original stand-down condition without it — asserted in
+/// `the_repair_bundle_cannot_reach_the_frozen_anchor`, which this
+/// change extends. Compatibility re-pin.
+/// ⚠ **First city-state discovery is NOT a free re-pin.** The production
+/// Scout's high-information frontier chooser is guarded by `tactical_strategy`,
+/// which `AdvancedAi::legacy()` leaves off, but the corresponding first-contact
+/// Envoy is a `Game` rule. Any controller can earn it by seeing a city-state,
+/// so its influence thresholds and downstream choices differ in a native game.
+/// `ELO_PROTOCOL_VERSION` is bumped to 8; the source contract is re-pinned for
+/// the separately reviewed, legacy-gated Scout source edit.
+/// `with_legacy_policy_deck` plus two comment corrections. The new
+/// constructor is an evaluator entry point no other constructor calls,
+/// and `AdvancedAi::legacy()` never routed through `production_weights`
+/// so its deck was and remains `Legacy` — pinned by
+/// `the_policy_deck_is_live_in_production_and_legacy_on_the_anchor`.
+/// Compatibility re-pin.
+/// `production_builder_floor` and the `delegated_cities` branch reading
+/// it. The whole block is already behind `if !self.plan_city_target`,
+/// which `AdvancedAi::legacy()` leaves false, so the anchor never
+/// reaches it — and the flag defaults true so production is unchanged.
+/// Compatibility re-pin.
+/// `production_settler_deadline` and its `delegated_cities` branch, the
+/// last production-only override to get a withhold. The whole block is
+/// behind `if !self.plan_city_target`, which `AdvancedAi::legacy()`
+/// leaves false, and the flag defaults true so production is unchanged.
+/// Compatibility re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6588_a3f3_fd9d_72aa;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -3482,6 +3522,14 @@ mod tests {
                 ("strike_opening", ai.strike_opening),
                 ("ranged_needs_line_of_sight", ai.ranged_needs_line_of_sight),
                 ("loyalty_policy_defence", ai.loyalty_policy_defence),
+                // Evaluator-only like the rest of this list: the stalled-settler
+                // fallback must reach neither the anchor nor production until it
+                // has a number.
+                (
+                    "settler_founds_when_stalled",
+                    ai.settler_founds_when_stalled,
+                ),
+                ("fortify_idle_units", ai.fortify_idle_units()),
                 (
                     "suzerain_cards_need_a_suzerainty",
                     ai.suzerain_cards_need_a_suzerainty,

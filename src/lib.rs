@@ -1750,6 +1750,9 @@ mod tests {
             _ => {}
         }
         g.record_contact(0, minor);
+        // The yield assertion below is for the first Envoy sent in this
+        // fixture, independent of the first-discovery Envoy granted on meet.
+        g.players[0].envoys.clear();
         g.players[0].envoys_free = 1;
         let before = g.city_yields(cap);
         g.apply(0, &Action::SendEnvoy { player: minor }).unwrap();

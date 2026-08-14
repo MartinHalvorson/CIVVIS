@@ -1884,6 +1884,17 @@ here and any null is uninformative"
         );
     }
     println!("\nAdaptive grand strategy by observed player-turn:");
+    // ⚠ A high switch count is NOT by itself a defect, and this line has been
+    // misread as one. `leader_study` at the deployment shape (72 games, seeds
+    // 14200000.., PR #1572) finds the eventual champion switches MORE than the
+    // field, not less: leading on fewest-switches converts at 4-13% against a
+    // 17% chance rate, and the champion's mean rank on it is 3.86 of 6 where
+    // chance is 3.50. Low churn marks a civ nothing is happening to. Read a
+    // difference between the arms here, never the level.
+    println!(
+        "  (churn LEVEL is not a defect — the champion switches more; \
+         compare the arms, not the number)"
+    );
     for name in [a, b] {
         let metrics = &totals[name];
         let games = metrics.games.max(1);

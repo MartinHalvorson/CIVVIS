@@ -281,6 +281,22 @@ pub const PRODUCTION_CITY_TARGET_FLOOR: usize = 6;
 /// `has_builder_work` gate stops production once there is no yield to add.
 const PRODUCTION_BUILDERS_PER_CITY: f64 = 0.75;
 
+/// What crossing into a suzerainty is worth to the envoy scorer, before it is
+/// amortised over the envoys still needed to reach it.
+///
+/// `advanced_envoys` prices `next_envoy_type_bonus` and nothing else — the
+/// small standard yields an envoy count buys at 1, 3 and 6. A suzerainty
+/// additionally grants the city-state's **resources**
+/// (`controlled_resource_count_via` counts suzerained minors), its unique
+/// bonus, diplomatic victory points, and the multiplier policies
+/// (`science_pct_per_suzerain`, `culture_pct_per_suzerain`,
+/// `suzerain_all_yields`). None of that reached the score.
+///
+/// Sized against the alignment terms it competes with, which reach
+/// `(10 + 14) * 10 = 240`: a suzerainty one envoy away outranks a
+/// well-aligned fresh city-state, one three envoys away (180/3 = 60) does not.
+const SUZERAIN_PRIZE: i64 = 180;
+
 /// How far above its empire's per-city mean a yield must stand before it names
 /// the city's role. At 1.0 every city would be typed by a coin flip around the
 /// average; 1.15 asks for a real lead, so an empire of interchangeable cities
@@ -1376,6 +1392,34 @@ pub struct AdvancedAi {
     /// Consecutive turns each settler has failed to make progress, when
     /// `settler_commit` is on. Reset whenever `settler_closest` improves.
     settler_stalls: BTreeMap<u32, u32>,
+    /// When the stall counter expires, prefer a city here to no city at all.
+    ///
+    /// The expiry branch already gives up on the target — it inserts an avoid
+    /// and re-picks. What it never does is ask whether the ground the settler
+    /// is standing on would take a city. `audit` at the deployment shape shows
+    /// what that costs: "settler sits still 25+ turns … **can_found_here=true**,
+    /// legal_sites=644", a unit worth a population point and 80-140 production
+    /// idle from turn 34 to the end of the game. Eight in eight games.
+    ///
+    /// This is the settling lane's measured lesson applied to a unit instead of
+    /// a gene — wanting a better site cost 41 Elo as `city_target_floor`, while
+    /// finishing the settlement already begun paid +30 (`settler_commit`) and
+    /// +31 (`settlement_safety`).
+    ///
+    /// Off by default; evaluator arm `advanced_settler_founds_when_stalled`.
+    pub settler_founds_when_stalled: bool,
+
+    /// Apply the call-local Builder floor in `delegated_cities`.
+    ///
+    /// **On in production**, which is why the arm withholds rather than adds.
+    /// Evaluator arm `advanced_without_builder_floor`.
+    pub production_builder_floor: bool,
+
+    /// Apply the call-local settler-deadline extension in `delegated_cities`.
+    ///
+    /// **On in production**; the arm withholds. Evaluator arm
+    /// `advanced_without_settler_deadline`.
+    pub production_settler_deadline: bool,
     /// Per-settler (last distance-to-target, turns without closing) while a
     /// LAND escort formation is trusted to carry it. See `escort_unstick`.
     escort_march: BTreeMap<u32, (i32, u8)>,
@@ -1861,6 +1905,10 @@ pub struct AdvancedAi {
     /// Reachable as `advanced_counter_stand_down`. The other four races are
     /// answered exactly as they are today.
     pub counter_stand_down: bool,
+    /// Let the envoy scorer see the suzerainty it is walking toward.
+    ///
+    /// Off by default; an addition, not a withheld production behaviour.
+    pub price_the_suzerainty: bool,
 
     /// Whether the score race is read as a margin over the field instead of as
     /// a clock.
@@ -2269,6 +2317,23 @@ impl AdvancedAi {
         // `policy_deck` is deliberately not a gene, so a generated or legacy
         // weight vector cannot silently withdraw the confirmed production
         // policy layer when it enters an Advanced controller.
+        //
+        // ⚠ **This is the line that makes the shipped agent play `Live`, and
+        // `Weights::default()`'s own comment on `policy_deck` says the
+        // opposite** — "the agent that plays is the one that always played",
+        // beside `PolicyDeck::Legacy`. That was true of the default and has not
+        // been true of production since this constructor existed. The same
+        // shape of stale comment hid `bounded_recovery` being on, which cost an
+        // evaluation to discover, so it is corrected in both places rather than
+        // only here.
+        //
+        // The default's comment also records `Live` as a **measured null** — 18
+        // map directions to 15, p=0.7283 over 120 mirrored maps — that "costs an
+        // empire valuation per candidate card per review". Production carries it
+        // anyway, `docs/EVAL.md` has never mentioned `policy_deck`, and until
+        // `advanced_legacy_policy_deck` there was no way to withhold it. 120
+        // maps is also well under what this repository now treats as resolving
+        // anything.
         weights.policy_deck = PolicyDeck::Live;
         // City and Builder floors are call-local policy in `delegated_cities`,
         // not mutations of an evolved genome. That keeps frozen evaluators and
@@ -2469,6 +2534,9 @@ impl AdvancedAi {
             adjacency_site_planning: false,
             settler_commit: false,
             settler_stalls: BTreeMap::new(),
+            settler_founds_when_stalled: false,
+            production_builder_floor: true,
+            production_settler_deadline: true,
             escort_march: BTreeMap::new(),
             escort_unstick: false,
             religion_sues_peace: false,
@@ -2508,6 +2576,7 @@ impl AdvancedAi {
             counter_in_lane: false,
             bounded_recovery: false,
             counter_stand_down: false,
+            price_the_suzerainty: false,
             early_score_alarm: false,
             congress_counter_leader: false,
             congress_counter_votes: false,
@@ -2530,6 +2599,18 @@ impl AdvancedAi {
 
     pub fn with_weights(weights: Weights) -> AdvancedAi {
         Self::promoted_policy_envoy(weights, None)
+    }
+
+    /// Production, with the policy deck put back to the one
+    /// `Weights::default()` claims the playing agent uses.
+    ///
+    /// `production_weights` forces `PolicyDeck::Live` after the weights are
+    /// handed over, so no caller can reach this by passing a genome — which is
+    /// why the axis had no arm and no number. Evaluator-only.
+    pub fn with_legacy_policy_deck() -> AdvancedAi {
+        let mut ai = Self::new();
+        ai.base.w.policy_deck = PolicyDeck::Legacy;
+        ai
     }
 
     pub fn with_weights_and_target(weights: Weights, target: VictoryTarget) -> AdvancedAi {
@@ -2690,6 +2771,12 @@ impl AdvancedAi {
     /// leave this disabled so their recorded ladders stay comparable.
     pub fn enable_peacetime_deterrence(&mut self) {
         self.peacetime_deterrence = true;
+    }
+
+    /// See [`SUZERAIN_PRIZE`]. Off on the anchor, so a comparison against it
+    /// measures the term rather than a rename.
+    pub fn enable_price_the_suzerainty(&mut self) {
+        self.price_the_suzerainty = true;
     }
 
     pub fn enable_suzerain_cards_need_a_suzerainty(&mut self) {
@@ -3283,6 +3370,35 @@ impl AdvancedAi {
 
     pub fn disable_unit_objective_memory(&mut self) {
         self.base.unit_objective_memory = false;
+    }
+
+    /// Let a stalled settler found where it stands. Evaluator arm
+    /// `advanced_settler_founds_when_stalled`; off in production.
+    pub fn enable_settler_founds_when_stalled(&mut self) {
+        self.settler_founds_when_stalled = true;
+    }
+
+    /// Withhold the call-local Builder floor. Evaluator-only; production keeps
+    /// it until it has a number.
+    pub fn disable_production_builder_floor(&mut self) {
+        self.production_builder_floor = false;
+    }
+
+    /// Withhold the call-local settler-deadline extension. Evaluator-only.
+    pub fn disable_production_settler_deadline(&mut self) {
+        self.production_settler_deadline = false;
+    }
+
+    /// Fortify units the planner gave nothing to do. Evaluator arm
+    /// `advanced_fortify_idle_units`; off in production.
+    pub fn enable_fortify_idle_units(&mut self) {
+        self.base.fortify_idle_units = true;
+    }
+
+    /// Readable so the anchor assertion can check it, since the flag lives on
+    /// the inner `BasicAi` and that field is private outside this module.
+    pub fn fortify_idle_units(&self) -> bool {
+        self.base.fortify_idle_units
     }
 
     pub fn disable_amenity_districts(&mut self) {
@@ -6443,9 +6559,24 @@ impl AdvancedAi {
         let restore_stop = self.base.w.settler_stop_turn;
         let restore_builders = self.base.w.builder_per_city;
         self.base.w.city_target = restore_target.max(plan.desired_cities as f64);
-        self.base.w.settler_stop_turn =
-            restore_stop.max(Self::stock_expansion_deadline(g) as f64);
-        self.base.w.builder_per_city = restore_builders.max(PRODUCTION_BUILDERS_PER_CITY);
+        // The last production-only override this audit had not priced. Whether
+        // it binds at all depends on the speed: the gene is 150 and the
+        // deadline is `min(300 standard, max_turns - 50 standard)`, which at
+        // Online/250 may already be at or below it.
+        if self.production_settler_deadline {
+            self.base.w.settler_stop_turn =
+                restore_stop.max(Self::stock_expansion_deadline(g) as f64);
+        }
+        // ⚠ A call-local override with no arm until 2026-08-11. It raises the
+        // genome's 0.5 by half again, is reachable only from inside this
+        // function, and `docs/EVAL.md` had never mentioned it — the same
+        // profile as the four flags this audit found carrying stale comments
+        // and no number, one of which cost 41 Elo. Its justification is
+        // reasoning, not measurement: "three active Builders per four cities
+        // provide roughly two useful improvements per city".
+        if self.production_builder_floor {
+            self.base.w.builder_per_city = restore_builders.max(PRODUCTION_BUILDERS_PER_CITY);
+        }
         self.base.cities(g, pid);
         self.base.w.city_target = restore_target;
         self.base.w.settler_stop_turn = restore_stop;
@@ -10595,7 +10726,26 @@ impl AdvancedAi {
                         .is_some_and(|leader| g.suzerain_of(minor.id) == Some(leader))
                         as i64
                         * 140;
-                    let score = (alignment + unique_alignment) * 10 + type_bonus_value + denial
+                    // The amortised type bonus dips at exactly one envoy: a
+                    // fresh city-state buys its level-1 yields for a single
+                    // envoy, while one already opened needs two more before it
+                    // pays again. With the suzerainty itself priced at zero,
+                    // the cheapest step is always to open a city-state the seat
+                    // will never finish -- which is what a 20.5-envoy, 0.66-
+                    // suzerainty census looks like from the inside. This term
+                    // rises as the seat closes on the floor (180, then 90, then
+                    // 180 at one away) instead of falling.
+                    let suzerain_prize = if self.price_the_suzerainty
+                        && g.suzerain_of(minor.id) != Some(pid)
+                    {
+                        SUZERAIN_PRIZE / needed
+                    } else {
+                        0
+                    };
+                    let score = (alignment + unique_alignment) * 10
+                        + type_bonus_value
+                        + denial
+                        + suzerain_prize
                         - needed * 7
                         - already_secure as i64 * 80
                         - shared_from_partner as i64 * 300;
@@ -16595,6 +16745,9 @@ impl AdvancedAi {
                     let stalls = self.settler_stalls.entry(uid).or_insert(0);
                     *stalls += 1;
                     if *stalls >= SETTLER_STALL_LIMIT {
+                        if self.founds_where_it_stands(g, pid, uid, current) {
+                            return true;
+                        }
                         self.settler_avoid
                             .insert(uid, (target, g.turn + g.standard_duration(8)));
                         self.settler_targets.remove(&uid);
@@ -16829,6 +16982,10 @@ impl AdvancedAi {
             let stalls = self.settler_stalls.entry(uid).or_insert(0);
             *stalls += 1;
             if *stalls >= SETTLER_STALL_LIMIT {
+                let here = g.units[&uid].pos;
+                if self.founds_where_it_stands(g, pid, uid, here) {
+                    return true;
+                }
                 self.settler_avoid
                     .insert(uid, (target, g.turn + g.standard_duration(8)));
                 self.settler_targets.remove(&uid);
@@ -16837,6 +16994,36 @@ impl AdvancedAi {
             }
         }
         moved
+    }
+
+    /// A city here beats no city, once the settler has given up on reaching a
+    /// better one.
+    ///
+    /// Only ever reached from the two stall-expiry branches, so it cannot make
+    /// a settler settle early — the counter has already run its full length
+    /// against a target the unit could not approach. The safety check is the
+    /// same one the ordinary found path applies, so this cannot plant a city
+    /// somewhere `settlement_safety` would refuse.
+    fn founds_where_it_stands(&mut self, g: &mut Game, pid: usize, uid: u32, here: Pos) -> bool {
+        if !self.settler_founds_when_stalled || !g.can_found_city(uid) {
+            return false;
+        }
+        let visible = self.battlefront_visibility(g, pid);
+        if self.settlement_safety
+            && self.settlement_tile_risk(g, pid, Some(uid), here, &visible)
+                > SETTLER_STEP_RISK_LIMIT
+        {
+            return false;
+        }
+        think!(self.journal(), Expansion, Decision,
+               "Founding where the settler stands at {here:?}";
+               "it stalled {SETTLER_STALL_LIMIT} turns short of a better site \
+                worth {:.1} against {:.1} here",
+               0.0, self.settle_value(g, pid, here); here);
+        self.settler_targets.remove(&uid);
+        self.settler_stalls.remove(&uid);
+        self.settler_closest.remove(&uid);
+        g.apply(pid, &Action::FoundCity { unit: uid }).is_ok()
     }
 
     fn improvement_value(
@@ -23293,6 +23480,64 @@ mod tests {
     /// trap that cost an evaluation on 2026-08-10: because this constructor
     /// sets these, an arm built as `AdvancedAi::new()` **plus** one of them is a
     /// byte-identical no-op. Withhold, do not add.
+    /// Every default this session made withholdable must be OFF on the frozen
+    /// anchor, and ON in production.
+    ///
+    /// The re-pins for those withholds were justified by comments reasoning
+    /// about call paths. A comment claiming a flag cannot reach the anchor is
+    /// worth exactly what the comment claiming native games leave
+    /// `bounded_recovery` disabled was worth — that one was false, and finding
+    /// out cost an evaluation. `the_repair_bundle_cannot_reach_the_frozen_anchor`
+    /// in `main.rs` makes the same argument by assertion for the engine-repair
+    /// bundle; this is its counterpart for the five defaults.
+    ///
+    /// Both halves matter. OFF on `legacy()` is what makes a withhold arm
+    /// unable to move a rating anchor. ON in `new()` is what makes a withhold
+    /// the *only* way to price them — an arm built as `new()` plus one of these
+    /// is a byte-identical no-op, which is how three arms in `elo.rs` came to
+    /// measure nothing.
+    #[test]
+    fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
+        let frozen = AdvancedAi::legacy();
+        let production = AdvancedAi::new();
+        for (flag, on_anchor, in_production) in [
+            (
+                "settlement_safety",
+                frozen.settlement_safety,
+                production.settlement_safety,
+            ),
+            (
+                "battlefront_observation",
+                frozen.battlefront_observation,
+                production.battlefront_observation,
+            ),
+            (
+                "tactical_strategy",
+                frozen.base.tactical_strategy,
+                production.base.tactical_strategy,
+            ),
+            (
+                "unit_objective_memory",
+                frozen.base.unit_objective_memory,
+                production.base.unit_objective_memory,
+            ),
+            (
+                "amenity_districts",
+                frozen.base.amenity_districts,
+                production.base.amenity_districts,
+            ),
+        ] {
+            assert!(
+                !on_anchor,
+                "{flag} is on for advanced_v1: a withhold arm for it can move                  the frozen rating anchor, and the source-contract re-pin that                  called itself free is not"
+            );
+            assert!(
+                in_production,
+                "{flag} is off in production, so `advanced_without_{flag}` is a                  byte-identical no-op and measures nothing"
+            );
+        }
+    }
+
     #[test]
     fn production_advanced_scales_cities_development_and_home_defense_together() {
         let production = AdvancedAi::new();
@@ -23379,6 +23624,19 @@ mod tests {
     fn production_policy_envoy_default_is_distinct_from_evaluator_and_legacy_controls() {
         let production = AdvancedAi::new();
         assert_eq!(production.weights().policy_deck, PolicyDeck::Live);
+        // ⚠ Asserted, not argued: the withhold added on 2026-08-11 must not be
+        // able to move the frozen anchor, and the anchor must genuinely be on
+        // the deck `Weights::default()` describes even though production is not.
+        assert_eq!(
+            AdvancedAi::legacy().weights().policy_deck,
+            PolicyDeck::Legacy,
+            "advanced_v1 must stay on the deck it was rated with"
+        );
+        assert_eq!(
+            AdvancedAi::with_legacy_policy_deck().weights().policy_deck,
+            PolicyDeck::Legacy,
+            "the withhold must actually withhold, or its number measures nothing"
+        );
         assert!(production.envoy_infrastructure);
         assert!(production.envoy_priority);
 
@@ -32588,6 +32846,66 @@ mod tests {
     }
 
     #[test]
+    /// The census this guards: at the deployment shape the seat parked 36% of
+    /// its envoys at exactly one per city-state and held 0.3 suzerainties,
+    /// because the scorer amortises the next type bonus over the envoys needed
+    /// to reach it -- a fresh city-state sells its level-1 bonus for one envoy
+    /// while an opened one needs two more before it pays again, so the cheapest
+    /// step is always to open another.
+    ///
+    /// Asserted in aggregate over many boards rather than on one. A single
+    /// board does not isolate the term: alignment reaches `(10 + 14) * 10 =
+    /// 240` for a unique-civ match, which outranks the whole prize, so any one
+    /// seed measures the draw as much as the rule. The first version of this
+    /// test asserted a single board and failed for exactly that reason.
+    #[test]
+    fn pricing_the_suzerainty_wins_more_city_states_with_the_same_envoys() {
+        let run = |priced: bool| {
+            let mut suzerainties = 0usize;
+            let mut spent = 0i64;
+            for seed in 1..40u64 {
+                let mut g = Game::new(2, 24, 16, seed, 80, 4);
+                let minors: Vec<usize> = g
+                    .players
+                    .iter()
+                    .filter(|player| player.is_minor && !player.is_barbarian)
+                    .map(|player| player.id)
+                    .collect();
+                for minor in &minors {
+                    g.record_contact(0, *minor);
+                }
+                // Six envoys against four city-states: enough to take two
+                // suzerainties outright, or to open every one of them and hold
+                // none. Which of those happens is the whole question.
+                g.players[0].envoys_free = 6;
+                let mut ai = AdvancedAi::new();
+                if priced {
+                    ai.enable_price_the_suzerainty();
+                }
+                ai.advanced_envoys(&mut g, 0, GrandStrategy::Science, None);
+                spent += 6 - g.players[0].envoys_free;
+                suzerainties += minors
+                    .iter()
+                    .filter(|minor| g.suzerain_of(**minor) == Some(0))
+                    .count();
+            }
+            (suzerainties, spent)
+        };
+
+        let (stock, stock_spent) = run(false);
+        let (priced, priced_spent) = run(true);
+        assert_eq!(
+            stock_spent, priced_spent,
+            "both arms must place the same envoys; this measures allocation, not income"
+        );
+        assert!(
+            priced > stock,
+            "pricing the suzerainty must convert the same envoys into more \
+             suzerainties: stock {stock}, priced {priced} over 39 boards"
+        );
+    }
+
+    #[test]
     fn diplomatic_strategy_concentrates_envoys_into_a_suzerainty() {
         let mut g = Game::new(2, 24, 16, 77, 80, 2);
         let city_states: Vec<usize> = g
@@ -32663,6 +32981,9 @@ mod tests {
         for city_state in minors.iter().copied() {
             game.record_contact(0, city_state);
         }
+        // Keep the score test's influence table explicit; contact itself may
+        // have awarded the first-discovery Envoy.
+        game.players[0].envoys.clear();
         game.players[minors[0]].civ = "Kandy".to_string();
         game.players[minors[1]].civ = "Yerevan".to_string();
         game.players[0].envoys_free = 1;
@@ -32706,6 +33027,8 @@ mod tests {
         game.players[hidden].civ = "Yerevan".to_string();
         game.players[known].civ = "Kandy".to_string();
         game.record_contact(0, known);
+        // This fixture checks identity gating, not the first-discovery award.
+        game.players[0].envoys.clear();
         game.players[0].envoys_free = 1;
 
         // Yerevan has the higher Religion score. Ranking it before contact
@@ -37559,19 +37882,201 @@ mod tests {
     /// one envoy at many city-states is a very different problem from being
     /// outbid by ten at a few.
     ///
+    /// Census, not an assertion: the agent ends games sitting on a faith hoard.
+    ///
+    /// `ai_eval`'s seat table reports mean end-of-game **faith 3174** against
+    /// **gold 769** — `self.faith += g.players[pid].faith` is the unspent
+    /// balance, not a cumulative total. Gold hoarding has had a detector since
+    /// the audit gained `treasury_looks_hoarded`; faith has never been measured
+    /// at all.
+    ///
+    /// ⚠ A large balance is not by itself a defect, and the envoy lane already
+    /// taught this axis its lesson: **measure availability beside use**. Faith
+    /// without a religion or a Holy Site may have nothing worth buying, in
+    /// which case the hoard is structural and no decision rule reaches it.
+    ///
+    /// The discriminator needs no legality API. Track whether the balance ever
+    /// *falls*: income is strictly positive, so a monotonically rising balance
+    /// means nothing is ever bought, while a sawtooth means purchases happen
+    /// and income simply outpaces them. Those two readings call for opposite
+    /// work, and the second is not a bug.
+    ///
+    /// Run with `cargo test --release faith_spending_census -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn faith_spending_census() {
+        // ⚠ The profile is the eval's, not a convenient one. `ai_eval` reports
+        // the deployment row at **250 turns Online**; read at 200 turns and the
+        // default speed the same agent looks like a different one, because the
+        // balance grows with how far the game actually gets. A census meant to
+        // explain a number in the seat table has to be run where that number
+        // was produced.
+        // ⚠ The victory list is part of the profile and it is the whole
+        // question here. With Religious Victory switched off,
+        // `victory_strategy_enabled` refuses the Religion grand strategy
+        // outright, so the seat never adopts the plan that buys missionaries
+        // and apostles -- the agent's main faith sink. The gate profile
+        // (#658, fixed at `science,culture,domination`) therefore measures an
+        // empire that earns faith and has far less to do with it, while the
+        // exhibition runs all six victories.
+        for (shape, players, width, height, city_states, turns, speed, victories) in [
+            (
+                "deployment 250t online / ALL victories",
+                6usize,
+                74i32,
+                46i32,
+                9usize,
+                250u32,
+                "online",
+                "science,culture,religious,diplomatic,domination,score",
+            ),
+            (
+                "deployment 250t online / GATE victories",
+                6,
+                74,
+                46,
+                9,
+                250,
+                "online",
+                "science,culture,domination",
+            ),
+        ] {
+            let label = shape;
+            let maps = 6u64;
+            let mut end_balance: Vec<f64> = Vec::new();
+            let mut peak_balance: Vec<f64> = Vec::new();
+            let mut earned: Vec<f64> = Vec::new();
+            let mut spent: Vec<f64> = Vec::new();
+            let mut purchases: Vec<f64> = Vec::new();
+            let mut with_religion = 0u32;
+            let mut with_holy_site = 0u32;
+            let mut games = 0u32;
+
+            for map in 0..maps {
+                let mut options = crate::game::GameOptions::new(
+                    players,
+                    width,
+                    height,
+                    480_000 + map,
+                    turns,
+                    city_states,
+                );
+                options.speed = speed.to_string();
+                let mut game = Game::new_with(options);
+                game.victory_conditions =
+                    crate::game::VictoryConditions::parse(victories).unwrap();
+                let mut ais: Vec<AdvancedAi> =
+                    (0..game.players.len()).map(|_| deployed_agent()).collect();
+                game.set_fog_memory(false);
+                let mut last = game.players[0].faith;
+                let (mut up, mut down, mut buys, mut peak) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
+                while game.winner.is_none() && game.turn <= game.max_turns {
+                    let pid = game.current;
+                    ais[pid].take_turn(&mut game, pid);
+                    if game.winner.is_none() && game.current == pid {
+                        let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                    }
+                    if pid != 0 {
+                        continue;
+                    }
+                    let now = game.players[0].faith;
+                    // A fall in the balance is a purchase; a rise is income.
+                    // Both are needed, because "never spends" and "spends but
+                    // out-earns it" produce the same end balance.
+                    if now > last {
+                        up += now - last;
+                    } else if now < last {
+                        down += last - now;
+                        buys += 1.0;
+                    }
+                    peak = peak.max(now);
+                    last = now;
+                }
+                games += 1;
+                end_balance.push(game.players[0].faith);
+                peak_balance.push(peak);
+                earned.push(up);
+                spent.push(down);
+                purchases.push(buys);
+                if game.players[0].religion.is_some() {
+                    with_religion += 1;
+                }
+                if game
+                    .player_city_ids(0)
+                    .iter()
+                    .any(|cid| {
+                        game.city_has_district_family(
+                            &game.cities[cid],
+                            crate::name!("holy_site"),
+                        )
+                    })
+                {
+                    with_holy_site += 1;
+                }
+            }
+
+            let mean = |v: &Vec<f64>| v.iter().sum::<f64>() / v.len().max(1) as f64;
+            println!("\n=== faith spending [{label}]: {games} games ===");
+            println!(
+                "  faith earned {:.0}, spent {:.0}  ({:.0}% of income spent)",
+                mean(&earned),
+                mean(&spent),
+                100.0 * mean(&spent) / mean(&earned).max(1e-9),
+            );
+            println!(
+                "  ★ balance at the end {:.0}, peak {:.0}",
+                mean(&end_balance),
+                mean(&peak_balance),
+            );
+            println!(
+                "  ★ turns the balance FELL (a purchase) {:.1} per game",
+                mean(&purchases),
+            );
+            println!(
+                "  -- availability -- founded a religion {}/{}, holds a Holy Site {}/{}",
+                with_religion, games, with_holy_site, games,
+            );
+        }
+        println!();
+    }
+
     /// Run with `cargo test --release envoy_allocation_census -- --ignored --nocapture`.
     #[test]
     #[ignore = "census, not an assertion; run explicitly with --nocapture"]
     fn envoy_allocation_census() {
-        for (label, players, width, height, city_states) in [
+        // Both arms on the same maps, so the distribution can be read as a
+        // fires-check: does pricing the suzerainty actually change where the
+        // envoys go, before anyone spends eval pairs asking whether it wins?
+        for (arm, priced) in [("stock", false), ("suzerainty priced", true)] {
+        for (shape, players, width, height, city_states) in [
             ("eval 4p 24x16", 4usize, 24i32, 16i32, 4usize),
-            ("large 6p 74x46", 6, 74, 46, 12),
+            // 9 city-states, not 12: this is the shape the exhibition plays,
+            // and a census read on the wrong board is no safer than an effect
+            // measured on one.
+            ("deployment 6p 74x46", 6, 74, 46, 9),
         ] {
+            let label = format!("{shape} / {arm}");
             let mut free_samples: Vec<f64> = Vec::new();
             let mut placed_samples: Vec<f64> = Vec::new();
             let mut met_samples: Vec<f64> = Vec::new();
             let mut held_samples: Vec<f64> = Vec::new();
             let mut deficits: Vec<i64> = Vec::new();
+            // #608 concluded from an always-empty pool that allocation was
+            // already perfect. #637 showed that does not follow: a policy that
+            // spreads one envoy each and one that concentrates three are
+            // indistinguishable when the hand is never larger than one. So
+            // measure the BOARD the placements built, not the pool they came
+            // from.
+            //
+            // `below` counts envoys parked in a city-state where this seat
+            // holds one or two -- under the floor of three, so they buy the
+            // level-1 type bonus and no suzerainty. `free_within` counts
+            // city-states nobody is suzerain of that this seat could take with
+            // the envoys it has parked elsewhere.
+            let mut bucket = [0u64; 4];
+            let mut below_threshold: Vec<f64> = Vec::new();
+            let mut unclaimed: Vec<f64> = Vec::new();
+            let mut unclaimed_reachable: Vec<f64> = Vec::new();
             let maps = 6u64;
 
             for map in 0..maps {
@@ -37586,6 +38091,10 @@ mod tests {
                 );
                 let mut ais: Vec<AdvancedAi> =
                     (0..game.players.len()).map(|_| deployed_agent()).collect();
+                // Seat 0 only, so the measured distribution is this seat's own
+                // placement policy and not a board where every rival also
+                // concentrated and raised the bar it has to clear.
+                ais[0].price_the_suzerainty = priced;
                 game.set_fog_memory(false);
                 while game.winner.is_none() && game.turn <= game.max_turns {
                     let pid = game.current;
@@ -37615,6 +38124,35 @@ mod tests {
                         .filter(|m| game.suzerain_of(**m) == Some(0))
                         .count();
                     held_samples.push(held as f64);
+
+                    let mut stranded = 0.0;
+                    let mut open = 0.0;
+                    let mut open_cheap = 0.0;
+                    for minor in &minors {
+                        let mine = game.envoys_at(0, *minor);
+                        bucket[(mine.clamp(0, 3)) as usize] += 1;
+                        if mine >= 1 && mine <= 2 && game.suzerain_of(*minor) != Some(0) {
+                            stranded += mine as f64;
+                        }
+                        if game.suzerain_of(*minor).is_none() {
+                            open += 1.0;
+                            let best_rival = game
+                                .players
+                                .iter()
+                                .filter(|o| !o.is_minor && o.alive && o.id != 0)
+                                .map(|o| game.envoys_at(o.id, *minor))
+                                .max()
+                                .unwrap_or(0);
+                            // Nobody holds it, so the only bar is the floor of
+                            // three and a strict lead over the best rival.
+                            if (best_rival + 1).max(3) - mine <= 2 {
+                                open_cheap += 1.0;
+                            }
+                        }
+                    }
+                    below_threshold.push(stranded);
+                    unclaimed.push(open);
+                    unclaimed_reachable.push(open_cheap);
                     // For each city-state it does NOT hold, how many more
                     // envoys would it have taken? That is the size of the
                     // reallocation the oracle performed for free.
@@ -37650,6 +38188,32 @@ mod tests {
                 mean(&held_samples),
                 mean(&held_samples) / mean(&met_samples).max(1e-9) * 100.0
             );
+            let seats = free_samples.len().max(1) as f64;
+            let placed_total: f64 = bucket.iter().enumerate().skip(1).map(|(n, c)| {
+                // bucket[3] is "three or more", so it undercounts the tail; it
+                // is used only for the shape of the distribution.
+                (n as f64) * (*c as f64)
+            }).sum();
+            let seen: u64 = bucket.iter().sum();
+            println!(
+                "  envoys per met city-state: 0 -> {:.0}%, 1 -> {:.0}%, 2 -> {:.0}%, 3+ -> {:.0}%",
+                100.0 * bucket[0] as f64 / seen.max(1) as f64,
+                100.0 * bucket[1] as f64 / seen.max(1) as f64,
+                100.0 * bucket[2] as f64 / seen.max(1) as f64,
+                100.0 * bucket[3] as f64 / seen.max(1) as f64,
+            );
+            println!(
+                "  ★ envoys parked BELOW the floor of 3   mean {:.2} per seat-turn \
+                 ({:.0}% of everything placed)",
+                mean(&below_threshold),
+                100.0 * mean(&below_threshold) / (placed_total / seats).max(1e-9),
+            );
+            println!(
+                "  ★ city-states with NO suzerain at all  mean {:.2}, of which \
+                 within 2 envoys for us: {:.2}",
+                mean(&unclaimed),
+                mean(&unclaimed_reachable),
+            );
             if !deficits.is_empty() {
                 println!(
                     "  when NOT suzerain, envoys short: median {}  p90 {}  max {}",
@@ -37663,6 +38227,7 @@ mod tests {
                     mean(&free_samples)
                 );
             }
+        }
         }
         println!();
     }

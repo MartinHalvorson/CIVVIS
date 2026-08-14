@@ -38,8 +38,10 @@ The only searching roster entry, `strategic`, is marked `league_only` and is
 excluded from exhibition and auto-play choices. Without a seated league, every
 non-human major uses stock `AdvancedAi`; minors and barbarians use `BasicAi`.
 
-The repository ships and embeds the 40-gene champion in
-`data/evolved/best.json`. It ships no `valuenet.json`. That distinction matters:
+The repository ships and embeds the champion in `data/evolved/best.json`. It
+stores the 40 genes that existed when it was bred; the seven added by #1520
+fill from `#[serde(default)]` at their identity, so the artifact keeps loading
+unchanged. It ships no `valuenet.json`. That distinction matters:
 the genome changes a scripted policy, while a value net would be a learned
 model. `ai_eval` reports the artifact provenance and effective fallback for
 every named entrant.
@@ -210,13 +212,68 @@ agent” label even less defensible.
 
 ### 6. The search surface is narrower than the policy and often bypassed
 
-The active gene vector is 40 entries. The policy appetites and the policy-deck
-and dedication selectors stored beside it in `Weights` are not genes. Research
-order, city roles, strategic gates, and many tactical decisions are also outside
-the vector.
+The active gene vector is 47 entries, 40 of them until #1520. The policy
+appetites and the policy-deck and dedication selectors stored beside it in
+`Weights` are not genes. Research order, city roles, strategic gates, and many
+tactical decisions are also outside the vector.
+
+**Production valuation was the largest thing outside it, and is now partly
+inside.** `AdvancedAi::production_value` is 1,014 lines that rank every
+candidate build, every city, every turn. Measured on the body of that function:
+**291 numeric literals, 93 of them distinct, and zero reads of `Weights`.** Not
+one of the 40 genes reached a build priority, so no run of `evolve` had ever
+tuned one, the macro search had never perturbed one, and every change to that
+ranking had to be a hand-picked constant defended in prose. The tree already
+said so about a single one of the 93 — `settler_price` exists because *"920 is
+a hardcoded literal: not a gene, so no run of `evolve` has tuned it"* — without
+noticing the other ninety-two.
+
+#1520 adds seven category multipliers (`p_military`, `p_builder`, `p_trader`,
+`p_building`, `p_district`, `p_wonder`, `p_project`) applied to the matching
+arm's score, after the refusal sentinel so a gene tilts what a city wants and
+never argues with what it may not build. Each defaults to 1.0 and the multiply
+lands only on a positive score; the same `ai_eval advanced advanced_v1` run
+built before and after is byte-identical across 24 games, so the default
+genome — which `BasicAi::new()` and `AdvancedAi::legacy()` both carry — ranks
+builds exactly as it did.
+
+⚠ **This widens what can be searched. It is not a strength result and must not
+be cited as one.** Whether the surface contains anything worth finding is an
+open question, and answering it needs an `evolve` run against the win-based
+gate, with a control that separates the wider surface from simply more
+breeding.
+
+### ★★★ The settler's price is not a live control surface
+
+An eighth gene was implemented and then cut on its own evidence, which is worth
+recording because it independently confirms a conclusion this document reached
+from the other direction:
+
+```
+gene_census --games 96 --start-seed 93500000
+  p_settler   stock 1.000  probe 4.000   97% identical   nearly inert
+  p_building  stock 1.000  probe 4.000   30% identical   live
+```
+
+**Scoring the settler at four times its shipped value leaves 97% of games
+outcome-identical.** `docs/EVAL.md` 2026-07-28 found production preemption a
+null and diagnosed why: the settler is not blocked by losing a ranking, it is
+blocked *before* the ranking is consulted — "no city at pop 2" on 23.8% of
+seat-turns, a growth constraint no price can buy past. The census says the same
+thing from the valuation side, on a different mechanism and different seeds.
+
+It follows that `settler_price` and the 920 literal it scales are an argument
+about a knob that barely connects, which is the more useful form of the
+complaint that started this: the problem with the 93 literals was never only
+that they are untuned. Some of them cannot matter.
+
+The other seven probe live at 17–67% identical under the same treatment, so
+none of them ships silent — which is the standing complaint two paragraphs
+below.
 
 An older report said “11 of 48 genes” were silent, but the implementation's
-vector has 40 entries and that report's table names only ten. Treat the ratio as
+vector had 40 entries when that was written — 47 since #1520 — and that
+report's table names only ten. Treat the ratio as
 a historical bookkeeping error, not a current genome fact. The supported
 finding is narrower: causal probes have found multiple parameters that do not
 change the sampled `AdvancedAi` games, often because the live hierarchical path
@@ -578,3 +635,84 @@ the bundles from drifting apart:
 `engine_repairs_are_the_live_bridge_minus_the_firaxis_semantics` asserts the
 flag-level partition and `engine_repair_tags_partition_the_bridge` asserts it
 for the tag lists `differing_axes` reports.
+
+
+## 2026-08-11 what the production controller is now known to be worth, flag by flag
+
+`AdvancedAi::new()` routes through `promoted_policy_envoy`, which turns on
+thirteen behaviours, and `configured` turns on ten more for every non-`legacy`
+agent. Before this audit, **all twenty-three shared one composite number**
+between them — the 2026-08-01 promotion. That is the condition that let a
+component costing forty-one Elo ship and sit unnoticed for ten days.
+
+Each was priced by **withholding** it and running the paired evaluator at the
+deployment shape. The table is the current state; `docs/EVAL.md` has the runs.
+
+| flag | measured | status |
+|---|---|---|
+| `city_target_floor = 6` | **−41 Elo** (matrix PASS, 400 pairs, seed 8600000) | **REMOVED** #1504 |
+| `settlement_safety` | **+31 Elo** (65/101, p=0.0064) | keep, now measured |
+| `settler_commit` | **+30 Elo** (60/95, p=0.0061) | keep, now measured |
+| the four war flags together | +32 / +34 at all-six victories; **+13, p=0.47 on the gate** | gate REJECT, off |
+| ├ `siege_muster` + `home_defense` | +21 selected → **+15, p=0.18 fresh** | gate REJECT, off |
+| └ `tactical_strategy` + `unit_objective_memory` | +11, p=0.32 | null |
+| `plan_city_target` | null (64/64, p=1.0000) | keep |
+| `bounded_recovery` | null over 600 maps, two seeds | keep |
+| `envoy_infrastructure` | null at 800 games | off |
+| `deny_leaders` | near-inert — **370 of 400 maps unchanged** | keep |
+| `battlefront_observation` | null (49/56, p=0.5584) | keep |
+| the four economy flags together | null (79/87, p=0.5871) | keep |
+
+**Two of twenty-three were worth measuring and one was actively harmful.** The
+rest are nulls or near-inert. That is the honest shape of this controller: it is
+not a stack of small wins, it is a stack of small nothings with one liability in
+it, and the liability was found only because every part was priced separately.
+
+### The four traps this audit walked into, so the next reader does not
+
+1. **`AdvancedAi::new()` plus a flag is usually a no-op.** The constructor
+   already sets most of them, so an "add" arm is byte-identical to the control
+   and reports a clean, meaningless null. **Withhold, never add.** Three arms in
+   `elo.rs` had this defect and now fail closed as self-play.
+2. **`ai_eval --city-states` defaults to zero.** Any arm acting through minors —
+   envoys, influence, suzerainty, the Diplomacy lane — measures nothing on the
+   stock profile. `ai_eval` now warns; the promotion matrix does seat them.
+3. **`ai_eval`'s defaults are not the deployment, and can flip an effect's
+   sign.** `d_holy` measured +20 Elo at 4p 24x16 (52.9%, 95% CI 50.1%..55.7%,
+   1200 maps, seed 4400000, PR #1469) and parity at the shape the exhibition
+   runs (+2, CI −46..+50, 400 maps, seed 5900000); it shipped and was reverted
+   the same day, PR #1491. Gate on the deployment shape from the first run, or
+   name the profile in the claim.
+4. **A composite gate licenses the composite, never its parts.** The eight-flag
+   remainder read +9 net (CI −25..+43, 400 maps, seed 9300000) and contained a
+   war half at +32 (97/60, p=0.0039, seed 10800000) offset by an economy half at
+   −7 (79/87, p=0.5871, seed 10700000). Bisect before concluding a group is inert.
+
+### What the audit says about where strength is not
+
+Every motion symptom `audit` reports was chased and none converted: a settler
+idling two hundred turns on foundable ground (~5 Elo, unresolvable), ninety-four
+circling warriors (1.21% of unit-turns), and an army standing unfortified on
+7.73% of unit-turns declining a free +6 defensive strength (**−2 Elo, resolved
+null over 72 discordant maps**). **`audit` is an excellent defect detector and a
+poor value estimator** — a large symptom is a reason to look, never a reason to
+expect Elo.
+
+The same holds for the genome. Eight of its forty genes cannot change a game at
+all (`src/bin/gene_census.rs`), the roster's winners are worse than the
+incumbent when copied (46.9%, 95% CI 42.6%..51.3%, Elo −22, 500 maps, seed
+5000000, PR #1486), and `docs/GENOME.md`'s conclusion stands: no
+parameter tune has ever promoted. **The only gain in this audit came from
+deleting work, not adding or re-weighting it.**
+
+### ⚠ One open question the audit raised and cannot settle itself
+
+The promotion matrix runs **three of six victory conditions**
+(`science,culture,domination`, hard-coded since #658), so religious, diplomatic
+and score victories are invisible to it. That is defensible as variance
+reduction — religion ends most games early on the default profile — but it has
+now produced two divergences from the deployment configuration in opposite
+directions: it would have rejected `d_holy`'s religion-routed gain, and it did
+reject a war-flag withhold worth +34 where the exhibition plays. Whether the gate
+should carry an all-victories profile is a question for its own evidence, not
+for whichever treatment happens to want it.
