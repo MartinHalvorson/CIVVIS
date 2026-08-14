@@ -260,3 +260,26 @@ class FollowTest(unittest.TestCase):
 
         self.assertEqual(staged["plots"][0]["rv"], 8)
         self.assertTrue(staged["plots"][0]["ri"])
+
+    def test_a_pending_chrome_consent_does_not_kill_the_follower(self) -> None:
+        # 2026-08-14: on a first-boot host, the queued osascript call behind the
+        # unanswered Automation dialog raised TimeoutExpired out of chrome() and
+        # took the whole follower down. The contract is mirror_on_screen's: an
+        # answer that cannot be obtained is "cannot enumerate", never a crash.
+        with mock.patch.object(
+            follow.subprocess, "run",
+            side_effect=follow.subprocess.TimeoutExpired(cmd="osascript", timeout=30),
+        ), mock.patch.object(follow, "log") as log:
+            self.assertEqual(follow.chrome("tell application \"Google Chrome\" to beep"), "")
+        log.assert_called_once()
+        self.assertIn("consent", log.call_args.args[0])
+
+    def test_chrome_enumeration_timeout_reads_as_cannot_enumerate(self) -> None:
+        with mock.patch.object(
+            follow.subprocess, "run",
+        ) as run, mock.patch.object(follow, "log"):
+            run.side_effect = [
+                mock.Mock(returncode=0),  # pgrep: Chrome is running
+                follow.subprocess.TimeoutExpired(cmd="osascript", timeout=30),
+            ]
+            self.assertIsNone(follow.mirror_on_screen())
