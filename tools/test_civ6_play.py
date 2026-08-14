@@ -450,7 +450,8 @@ class Civ6PlayTest(unittest.TestCase):
         )
         screenshot.assert_called_once_with(Path(temporary) / "setup.png")
         observed.assert_called_once_with(
-            Path(temporary) / "setup.png", "Start Game", (100, 33, 756, 480)
+            Path(temporary) / "setup.png", "Start Game", (100, 33, 756, 480),
+            strip=civ6_play.START_GAME_STRIP,
         )
         focus.assert_called_once_with(civ6_play.GAME_SIDE, civ6_play.GAME_FRACTION)
         click.assert_called_once_with(321, 432)

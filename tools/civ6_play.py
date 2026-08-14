@@ -443,6 +443,16 @@ LEADER_INTRO_BEGIN = (0.394, 0.801)
 # Choose Map Type instead.
 BACK = (0.730, 0.174)
 SETUP_X = 0.500
+# The Start Game button sits at the very bottom of the Create Game panel,
+# around 0.99 of window height — BELOW the general menu crop band (0.22..0.72),
+# so the enlarged-crop recovery pass never covered it. Its label is also too
+# small for a full-desktop read to hold: on 2026-08-13 Vision returned it on
+# one attempt in the morning and then missed it on ~50 consecutive attempts
+# all afternoon, on screenshots a human cannot tell apart, and every game
+# refused to launch. The same screenshots read "Start Game" at confidence 1
+# once this strip is cropped and enlarged. Left/top/right/bottom, as fractions
+# of the game window.
+START_GAME_STRIP = (0.25, 0.86, 0.80, 1.0)
 
 # The civilization control is one fixed Firaxis setup row above difficulty.
 # Expressing that relationship keeps it aligned when a different window height
@@ -1092,7 +1102,9 @@ def _observation_point(observation: dict) -> tuple[float, float] | None:
         return None
 
 
-def _menu_crop_ocr(path: Path, bounds: tuple[int, int, int, int]) -> list[dict]:
+def _menu_crop_ocr(path: Path, bounds: tuple[int, int, int, int],
+                   strip: tuple[float, float, float, float] = (0.18, 0.22, 0.82, 0.72),
+                   tag: str = "menu") -> list[dict]:
     """Read the small main-menu columns from an enlarged crop.
 
     At 756x480 Vision can read the main row inconsistently and omit every
@@ -1100,6 +1112,10 @@ def _menu_crop_ocr(path: Path, bounds: tuple[int, int, int, int]) -> list[dict]:
     present: cropping the two menu columns and enlarging them is the same
     recovery already required by the DLC-dependent leader picker below.
     Returned boxes are mapped back to full-desktop normalized coordinates.
+
+    ``strip`` is the window region to crop (left/top/right/bottom fractions);
+    the default is the band the main-menu columns occupy. ``tag`` keeps each
+    caller's debug crop distinguishable on disk.
     """
     try:
         from PIL import Image
@@ -1111,15 +1127,18 @@ def _menu_crop_ocr(path: Path, bounds: tuple[int, int, int, int]) -> list[dict]:
         screen_w, screen_h = screen
         x, y, w, h = bounds
         scale_x, scale_y = image.width / screen_w, image.height / screen_h
+        left_f, top_f, right_f, bottom_f = strip
         rect = (
-            int((x + w * 0.18) * scale_x),
-            int((y + h * 0.22) * scale_y),
-            int((x + w * 0.82) * scale_x),
-            int((y + h * 0.72) * scale_y),
+            max(0, int((x + w * left_f) * scale_x)),
+            max(0, int((y + h * top_f) * scale_y)),
+            min(image.width, int((x + w * right_f) * scale_x)),
+            min(image.height, int((y + h * bottom_f) * scale_y)),
         )
+        if rect[2] <= rect[0] or rect[3] <= rect[1]:
+            return []
         crop = image.crop(rect)
         crop = crop.resize((crop.width * 4, crop.height * 4))
-        crop_path = path.with_name(path.stem + "-menu-crop.png")
+        crop_path = path.with_name(f"{path.stem}-{tag}-crop.png")
         crop.save(crop_path)
         observations = macos_ocr.recognize(crop_path)
     except (OSError, ValueError):
@@ -1424,15 +1443,25 @@ def _main_menu_visible(path: Path) -> bool:
 
 
 def _observed_label_point(path: Path, label: str,
-                          bounds: tuple[int, int, int, int]) -> tuple[int, int] | None:
+                          bounds: tuple[int, int, int, int],
+                          strip: tuple[float, float, float, float] | None = None,
+                          ) -> tuple[int, int] | None:
     """Read a visible menu label center inside the game window."""
-    points = _observed_label_points(path, label, bounds)
+    points = _observed_label_points(path, label, bounds, strip=strip)
     return points[0] if points else None
 
 
 def _observed_label_points(path: Path, label: str,
-                           bounds: tuple[int, int, int, int]) -> list[tuple[int, int]]:
-    """Read every matching visible label center inside the game window."""
+                           bounds: tuple[int, int, int, int],
+                           strip: tuple[float, float, float, float] | None = None,
+                           ) -> list[tuple[int, int]]:
+    """Read every matching visible label center inside the game window.
+
+    ``strip`` names one more window region (left/top/right/bottom fractions) to
+    crop and enlarge when both standard passes miss — for labels that live
+    outside the general menu band, like the Start Game button at the panel's
+    bottom edge.
+    """
     screen = desktop_size()
     if screen is None:
         return []
@@ -1454,6 +1483,8 @@ def _observed_label_points(path: Path, label: str,
     points = collect(macos_ocr.recognize(path))
     if not points:
         points = collect(_menu_crop_ocr(path, bounds))
+    if not points and strip is not None:
+        points = collect(_menu_crop_ocr(path, bounds, strip=strip, tag="strip"))
     return points
 
 
@@ -1581,7 +1612,8 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
         return False
     setup_shot = run_dir / "setup.png"
     screenshot(setup_shot)
-    start_point = _observed_label_point(setup_shot, "Start Game", bounds)
+    start_point = _observed_label_point(setup_shot, "Start Game", bounds,
+                                        strip=START_GAME_STRIP)
     if start_point is None:
         print("[setup] Start Game was NOT visible; refusing to launch",
               file=sys.stderr)
