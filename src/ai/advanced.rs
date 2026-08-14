@@ -14103,7 +14103,24 @@ impl AdvancedAi {
         let remaining_turns = g.max_turns.saturating_sub(g.turn).max(1) as f64;
         let threatened = plan.threatened_city == Some(cid)
             || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
+        // A Conquest label is also used while the planner is merely strong
+        // enough to contemplate a neighbour. Until a concrete city exists in
+        // the plan, that label must not buy an offensive army: the live
+        // bridge spent the treasury on units while repeatedly reporting “no
+        // city objective yet”. A real war or a defended city keeps the
+        // wartime target; otherwise the ordinary per-city garrison is enough
+        // to hold the line while exploration finds a routeable objective.
+        let active_major_war = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+                && g.is_at_war(pid, player.id)
+        });
+        let offensive_conquest = plan.strategy == GrandStrategy::Conquest
+            && (plan.target_city.is_some() || plan.threatened_city.is_some() || active_major_war);
         let desired_military = match plan.strategy {
+            GrandStrategy::Conquest if !offensive_conquest => city_count,
             GrandStrategy::Conquest => 2 * city_count,
             GrandStrategy::Recovery => 2 * city_count,
             _ => city_count,
@@ -14303,8 +14320,15 @@ impl AdvancedAi {
                 } else {
                     land_military
                 };
+                let ceiling_buffer = if naval || offensive_conquest {
+                    2
+                } else if plan.strategy == GrandStrategy::Conquest {
+                    0
+                } else {
+                    2
+                };
                 if self.victory_planning
-                    && current >= desired.saturating_add(2)
+                    && current >= desired.saturating_add(ceiling_buffer)
                     && !threatened
                 {
                     return -2_000.0;
@@ -14318,7 +14342,7 @@ impl AdvancedAi {
                         0.75
                     }
                     + if threatened { 240.0 } else { 0.0 }
-                    + if plan.strategy == GrandStrategy::Conquest {
+                    + if offensive_conquest {
                         160.0
                     } else {
                         0.0
@@ -14351,12 +14375,19 @@ impl AdvancedAi {
                     // keep every unit weakly positive forever, so a rejected Library
                     // could expose another Warrior on every turn. Threatened cities
                     // bypass the ceiling, and naval/air have independent targets.
+                    let ceiling_buffer = if plan.strategy == GrandStrategy::Conquest
+                        && !offensive_conquest
+                    {
+                        0
+                    } else {
+                        2
+                    };
                     let domain_ceiling = if naval {
                         desired_naval.saturating_add(2)
                     } else if aircraft {
                         desired_aircraft.saturating_add(2)
                     } else {
-                        desired_military.saturating_add(2)
+                        desired_military.saturating_add(ceiling_buffer)
                     };
                     let domain_count = if naval {
                         counts.naval
@@ -14442,7 +14473,7 @@ impl AdvancedAi {
                         + role_gap
                         + force_gap * 58.0
                         + if threatened { 210.0 } else { 0.0 }
-                        + if plan.strategy == GrandStrategy::Conquest
+                        + if offensive_conquest
                             && counts.military < desired_military + 2
                         {
                             120.0
@@ -24461,6 +24492,63 @@ mod tests {
         assert!(
             game.players[0].policies.contains(&crate::name!("grand_opera")),
             "a saturated army should use the other economic slot for Theater buildings"
+        );
+    }
+
+    #[test]
+    fn conquest_without_city_objective_holds_a_garrison_until_the_target_exists() {
+        let mut game = Game::new_full(2, 24, 16, 73_102, 250, 0, false);
+        for pid in 0..2 {
+            game.current = pid;
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("starting settler");
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .expect("found city");
+        }
+        game.current = 0;
+        let home = game.player_city_ids(0)[0];
+        let target = game.player_city_ids(1)[0];
+        for unit in game.player_unit_ids(0) {
+            if game.rules.units[game.units[&unit].kind].class == "military" {
+                game.remove_unit(unit);
+            }
+        }
+        let position = game.cities[&home].pos;
+        game.spawn_test_unit("warrior", 0, position);
+        game.spawn_test_unit("warrior", 0, position);
+        game.players[0].gold = 0.0;
+        game.players[0].gold_per_turn = -8.0;
+
+        let no_objective = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let appointed = StrategicPlan {
+            target_city: Some(target),
+            ..no_objective.clone()
+        };
+        let ai = AdvancedAi::new();
+        let warrior = Item::Unit {
+            unit: crate::name!("warrior"),
+        };
+        let counts = ai.counts(&game, 0);
+
+        assert_eq!(counts.military, 2);
+        assert!(
+            ai.production_value(&game, 0, home, &warrior, &no_objective, &counts) < -1_000.0,
+            "a conquest label without a city objective must not keep buying units"
+        );
+        assert!(
+            ai.production_value(&game, 0, home, &warrior, &appointed, &counts) > 0.0,
+            "appointing a real city must reopen the offensive force package"
         );
     }
 

@@ -1882,6 +1882,13 @@ fn main() {
     if let Some(chosen) = &rated {
         ai.reweight(chosen.weights.clone());
     }
+    // The old parallel-settler fires-check was near-inert with the lower target:
+    // the governor never wanted a second Settler while the first city target was
+    // still three. This live seat already raises the target to six, and its fresh
+    // baseline shows the remaining rate limit: one Settler is walking while the
+    // empire is still short of its city plan. Measure the previously untested
+    // target-plus-throughput cell as one explicit live treatment.
+    ai.parallel_settlers = true;
     // ★★★ SAY WHICH GENOME IS PLAYING, ALWAYS — INCLUDING "the stock one".
     //
     // An axis nothing reports does not exist, and this project has already shipped a
@@ -1914,6 +1921,7 @@ fn main() {
         "per_civ": rated.as_ref().map(|c| c.per_civ),
         "lane": rated.as_ref().and_then(|c| c.lane.clone()),
         "victory": victory.clone(),
+        "parallel_settlers": ai.parallel_settlers,
         // ⚠⚠ SAY WHAT THIS BINARY ACTUALLY CARRIES, EVERY RUN.
         //
         // A stale binary is invisible: `summary.json` records no revision, and
@@ -1965,10 +1973,6 @@ fn main() {
     // did not persist, the next mirrored turn must retry the posting without
     // waiting for another Governor Title that may be dozens of turns away.
     ai.live_governor_assignment_adapter = true;
-    // ⚠ NOT `parallel_settlers`. That widens the RATE at which settlers are produced
-    // and it carries a measured null; this seat's constraint is settlers that never
-    // arrive, not settlers that are never built. Turning both on at once would make
-    // the next ledger unreadable.
 
     let events = Path::new(&dir).join("events.jsonl");
     let serve = args.iter().any(|a| a == "--serve");

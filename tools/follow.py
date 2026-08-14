@@ -574,7 +574,33 @@ MIRROR_BOUNDS = os.environ.get("CIVVIS_MIRROR_BOUNDS", "{0, 33, 864, 1117}")
 
 def chrome(script):
     done = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=30)
+    if done.returncode != 0:
+        # A silent AppleScript failure reads exactly like a healthy no-op — the
+        # tab simply never changes — and an Automation (TCC) denial persists
+        # for this process's whole life. One line makes it observable.
+        log(f"chrome scripting failed (status {done.returncode}): "
+            f"{(done.stderr or done.stdout).strip()[:200]}")
     return (done.stdout or done.stderr).strip()
+
+
+def mirror_target_url():
+    """The address a mirror tab must actually open on.
+
+    A bare mirror URL boots the LOBBY: Game Setup sidebar over a black map,
+    and a lobby page never polls `/state` — restored that way, the pane reads
+    "loading" forever while every server-side check stays green (2026-08-14).
+    Only a URL naming the live server's instance boots the page as a spectator
+    joining the running world. `/runtime` is lock-free, so asking is cheap; a
+    server that cannot answer gets the bare URL, which is no worse than before.
+    """
+    try:
+        runtime = json.loads(http_get(PORT, "/runtime", timeout=5))
+        instance = runtime.get("server_instance")
+        if instance:
+            return f"{MIRROR_URL}?instance={instance}"
+    except Exception:
+        pass
+    return MIRROR_URL
 
 
 def mirror_on_screen():
@@ -638,9 +664,100 @@ def ensure_on_screen(misses):
     log("mirror window is not on screen; restoring it")
     chrome(f'''tell application "Google Chrome"
       make new window
-      set URL of active tab of window 1 to "{MIRROR_URL}"
+      set URL of active tab of window 1 to "{mirror_target_url()}"
     end tell''')
     return 0
+
+
+# A visible healthy tab re-attaches within a couple of seconds of any of this
+# module's navigations, so three quarters of a minute of silence is a wedge,
+# not a slow boot. An occluded or backgrounded tab also legitimately reads
+# zero viewers, which is why revival acts rarely and logs every action.
+REVIVE_DEAD_SECONDS = 45.0
+REVIVE_HOLDOFF_SECONDS = 300.0
+
+
+def mirror_viewers():
+    """Pages that fetched `/state` within the server's six-second window.
+
+    `/status` `viewers` is the one honest signal that the pane is painting:
+    tab presence, port health, and the turn counter all stay green around a
+    wedged client. None when the server cannot answer.
+    """
+    try:
+        return json.loads(http_get(PORT, "/status", timeout=5)).get("viewers", 0)
+    except Exception:
+        return None
+
+
+def ensure_watching(watch):
+    """Revive a mirror tab that is present but not painting.
+
+    A page can wedge while every other check reads green — a boot crash (the
+    saved-HUD-layout dead zone held this pane on its veil for four days,
+    2026-08-14), a poisoned sessionStorage handoff, a veil no fetch path can
+    lift. No `/load` publish can reach the screen through a wedged client, so
+    the follower owns liveness the way it owns presence. First re-point the
+    tab — a full navigation reboots the client; after two revivals without a
+    cure, replace the tab entirely, which also abandons its sessionStorage.
+    """
+    if not server_alive(PORT):
+        watch["dead_since"] = None
+        return
+    viewers = mirror_viewers()
+    if viewers is None:
+        return
+    if viewers > 0:
+        watch["dead_since"] = None
+        watch["revivals"] = 0
+        return
+    if mirror_on_screen() is not True:
+        # No tab, or Chrome could not be enumerated: presence is
+        # ensure_on_screen's job, and an unreadable browser is not evidence.
+        watch["dead_since"] = None
+        return
+    now = time.time()
+    if watch["dead_since"] is None:
+        watch["dead_since"] = now
+        return
+    if now - watch["dead_since"] < REVIVE_DEAD_SECONDS:
+        return
+    if now - watch["last_revival"] < REVIVE_HOLDOFF_SECONDS:
+        return
+    watch["last_revival"] = now
+    watch["dead_since"] = now
+    target = mirror_target_url()
+    if watch["revivals"] >= 2:
+        watch["revivals"] = 0
+        log("mirror tab still not painting after re-pointing; replacing the tab")
+        chrome(f'''tell application "Google Chrome"
+          set doomed to {{}}
+          repeat with thisWindow in every window
+            repeat with thisTab in every tab of thisWindow
+              if (URL of thisTab) contains ":{PORT}" then set end of doomed to thisTab
+            end repeat
+          end repeat
+          repeat with thisTab in doomed
+            close thisTab
+          end repeat
+          make new window
+          set URL of active tab of window 1 to "{target}"
+        end tell''')
+        return
+    watch["revivals"] += 1
+    log(f"mirror tab is on screen but not painting (viewers 0 for at least "
+        f"{int(REVIVE_DEAD_SECONDS)}s); re-pointing it at {target}")
+    chrome(f'''tell application "Google Chrome"
+      set refreshed to false
+      repeat with thisWindow in every window
+        repeat with thisTab in every tab of thisWindow
+          if not refreshed and (URL of thisTab) contains ":{PORT}" then
+            set URL of thisTab to "{target}"
+            set refreshed to true
+          end if
+        end repeat
+      end repeat
+    end tell''')
 
 
 def write_status(**fields):
@@ -657,9 +774,11 @@ def main():
     current_run, published_turn, published_size, published_at = None, None, None, 0.0
     published_count, misses = 0, 0
     awaiting_export = False
+    watch = {"dead_since": None, "last_revival": 0.0, "revivals": 0}
 
     while True:
         misses = ensure_on_screen(misses)
+        ensure_watching(watch)
         run_dir, mtime = newest_run()
         if run_dir is None:
             log("no run directory yet")
