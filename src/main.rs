@@ -930,7 +930,36 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// it — asserted, not argued, in
 /// `the_repair_bundle_cannot_reach_the_frozen_anchor`, which this
 /// change extends. Compatibility re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x014b_ebe9_4c32_f1fc;
+/// `fortify_idle_units` and the `hold_stood_down_unit` branch that reads
+/// it. Evaluator-only: the flag defaults false in the `BasicAi` init
+/// both `legacy()` and `new()` build from, and the branch keeps its
+/// original stand-down condition without it — asserted in
+/// `the_repair_bundle_cannot_reach_the_frozen_anchor`, which this
+/// change extends. Compatibility re-pin.
+/// ⚠ **First city-state discovery is NOT a free re-pin.** The production
+/// Scout's high-information frontier chooser is guarded by `tactical_strategy`,
+/// which `AdvancedAi::legacy()` leaves off, but the corresponding first-contact
+/// Envoy is a `Game` rule. Any controller can earn it by seeing a city-state,
+/// so its influence thresholds and downstream choices differ in a native game.
+/// `ELO_PROTOCOL_VERSION` is bumped to 8; the source contract is re-pinned for
+/// the separately reviewed, legacy-gated Scout source edit.
+/// `with_legacy_policy_deck` plus two comment corrections. The new
+/// constructor is an evaluator entry point no other constructor calls,
+/// and `AdvancedAi::legacy()` never routed through `production_weights`
+/// so its deck was and remains `Legacy` — pinned by
+/// `the_policy_deck_is_live_in_production_and_legacy_on_the_anchor`.
+/// Compatibility re-pin.
+/// `production_builder_floor` and the `delegated_cities` branch reading
+/// it. The whole block is already behind `if !self.plan_city_target`,
+/// which `AdvancedAi::legacy()` leaves false, so the anchor never
+/// reaches it — and the flag defaults true so production is unchanged.
+/// Compatibility re-pin.
+/// `production_settler_deadline` and its `delegated_cities` branch, the
+/// last production-only override to get a withhold. The whole block is
+/// behind `if !self.plan_city_target`, which `AdvancedAi::legacy()`
+/// leaves false, and the flag defaults true so production is unchanged.
+/// Compatibility re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6588_a3f3_fd9d_72aa;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -3500,6 +3529,7 @@ mod tests {
                     "settler_founds_when_stalled",
                     ai.settler_founds_when_stalled,
                 ),
+                ("fortify_idle_units", ai.fortify_idle_units()),
                 (
                     "suzerain_cards_need_a_suzerainty",
                     ai.suzerain_cards_need_a_suzerainty,

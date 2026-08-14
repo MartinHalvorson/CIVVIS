@@ -939,6 +939,80 @@ class PolicyTests(unittest.TestCase):
         )
 
 
+class LiveBuildWaitTests(unittest.TestCase):
+    """`ship` must not spend ten minutes polling a port with nothing behind it.
+
+    The guard it had reads `local_deploy_root`, which only says this clone is a
+    production host. All CIVVIS automation was deliberately stopped on
+    2026-07-31 and the keeper LaunchAgent is not loaded, so on this machine
+    every merge waited out the full `--live-timeout-seconds` and then warned
+    about a service that was switched off on purpose.
+    """
+
+    @staticmethod
+    def _clock():
+        now = {"t": 0.0}
+        return (lambda: now["t"]),\
+               (lambda s: now.__setitem__("t", now["t"] + s)), now
+
+    def _wait(self, *, answers, commits, timeout=600.0):
+        monotonic, sleep, now = self._clock()
+        with (
+            patch.object(collab, "local_deploy_root", return_value=Path("/x")),
+            patch.object(collab, "live_status_answers", side_effect=answers),
+            patch.object(collab, "live_status_commit", side_effect=commits),
+            patch.object(collab, "deployed_commit_covers",
+                         side_effect=lambda _r, d, m: bool(d) and d == m),
+            patch.object(collab, "fetch_main", return_value=None),
+            patch.object(collab.time, "monotonic", monotonic),
+            patch.object(collab.time, "sleep", sleep),
+        ):
+            got = collab.wait_for_local_live_build(
+                Path("/repo"), "abc1234",
+                url="http://127.0.0.1:8766/status",
+                timeout_seconds=timeout, poll_seconds=10.0)
+        return got, now["t"]
+
+    def test_a_dead_port_gives_up_after_the_grace_not_the_whole_timeout(self):
+        got, elapsed = self._wait(answers=[False] * 500, commits=[])
+        self.assertFalse(got)
+        self.assertLessEqual(
+            elapsed, collab.LIVE_PRESENCE_GRACE_S + 2.0,
+            "nothing listening must cost the grace, not --live-timeout-seconds")
+
+    def test_a_spectator_that_is_merely_restarting_is_still_waited_for(self):
+        """⚠ `ship` runs exactly when a spectator may be restarting.
+
+        A refused connection in that instant is expected, so the early exit must
+        not fire on the first probe — it comes back and then confirms.
+        """
+        answers = [False, False, True] + [True] * 50
+        got, _ = self._wait(answers=answers, commits=["abc1234"])
+        self.assertTrue(got)
+
+    def test_a_live_but_stale_spectator_still_gets_the_full_timeout(self):
+        """The case the timeout exists for must be untouched."""
+        got, elapsed = self._wait(
+            answers=[True] * 500, commits=["oldsha"] * 500, timeout=600.0)
+        self.assertFalse(got)
+        self.assertGreaterEqual(
+            elapsed, 600.0,
+            "a spectator that answers is still building; that wait is the point")
+
+    def test_an_http_error_still_counts_as_something_being_there(self):
+        """HTTPError subclasses URLError and OSError, so order matters.
+
+        Caught in the wrong order, a live spectator returning 503 mid-restart
+        reads as absent and the merge stops verifying.
+        """
+        err = collab.urllib.error.HTTPError("u", 503, "busy", None, None)
+        with patch.object(collab.urllib.request, "urlopen", side_effect=err):
+            self.assertTrue(collab.live_status_answers("http://x/status"))
+        with patch.object(collab.urllib.request, "urlopen",
+                          side_effect=ConnectionRefusedError()):
+            self.assertFalse(collab.live_status_answers("http://x/status"))
+
+
 class ShipTests(unittest.TestCase):
     def test_current_pr_names_the_branch_for_repo_scoped_gh(self):
         branch = "agent/m/a/task-20260723T210500Z-a31f"

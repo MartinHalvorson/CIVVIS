@@ -153,6 +153,7 @@ local function try(fn, fallback)
 	return fallback;
 end
 
+
 -- --------------------------------------------------------------- action ids
 --
 -- Operations are looked up in GameInfo, not on the UnitOperationTypes table.
@@ -3134,6 +3135,22 @@ local function productionPlot(city, param, hash, requestedX, requestedY)
 	if plots == nil then return nil, 0; end
 	local offered = 0;
 	local first = nil;
+	-- ★★★★★ AND KEEP THE COORDINATES. This loop already asks the engine for every
+	-- plot it would accept, reads x and y off each one, and throws all of them
+	-- away but the count. That count was enough to prove the district is
+	-- placeable somewhere in this city; it can never say WHERE, so CIVVIS has no
+	-- way to stop naming a plot the engine will not take.
+	--
+	-- It does not stop. Measured on run civvis-20260811T212652Z: 56
+	-- `build_no_plot` events in 232 turns and **55 of them one pair** — a single
+	-- Commercial Hub in one city, refused fifty-five times, with the engine
+	-- offering plots every time. #1571 bounds how often that repeats; only the
+	-- coordinates can end it.
+	--
+	-- ⚠ Capped. A large city can offer many plots, this rides in an event on
+	-- every refusal, and the ledger is read far more often than it is written.
+	-- The first few are what a chooser needs.
+	local offeredPlots = {};
 	-- Taken by iteration, not `plots[1]`: the shipped UI counts these with
 	-- `table.count`, so the result is not promised to be a dense array.
 	for _, plotIndex in pairs(plots) do
@@ -3143,9 +3160,12 @@ local function productionPlot(city, param, hash, requestedX, requestedY)
 			local py = try(function() return plot:GetY(); end, -1);
 			if px >= 0 and py >= 0 then
 				offered = offered + 1;
+				if #offeredPlots < (cfg.OfferedPlotsReported or 8) then
+					offeredPlots[#offeredPlots + 1] = { x = px, y = py };
+				end
 				if requestedX ~= nil and requestedY ~= nil
 						and px == requestedX and py == requestedY then
-					return { x = px, y = py }, offered;
+					return { x = px, y = py }, offered, offeredPlots;
 				end
 				if first == nil then first = { x = px, y = py }; end
 			end
@@ -3153,8 +3173,8 @@ local function productionPlot(city, param, hash, requestedX, requestedY)
 	end
 	-- A direct CIVVIS order names a plot. Substituting another legal plot would
 	-- actuate a different decision; only the emergency ladder may take the first.
-	if requestedX ~= nil or requestedY ~= nil then return nil, offered; end
-	return first, offered;
+	if requestedX ~= nil or requestedY ~= nil then return nil, offered, offeredPlots; end
+	return first, offered, offeredPlots;
 end
 
 -- ★ A PROBE, NOT A MAPPING — the measurement that decides whether repair can ship.
@@ -3300,6 +3320,9 @@ local function buildParams(row, city, requestedX, requestedY)
 				emit("build_no_plot", {
 					city = try(function() return city:GetID(); end, -1),
 					building = row.Type or tostring(row.Hash),
+					-- Same reason as the district emit below: without a turn,
+					-- every filter downstream is a no-op.
+					turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
 					x = requestedX, y = requestedY,
 					offered = offered or 0,
 					reasons = reasons,
@@ -3320,9 +3343,9 @@ local function buildParams(row, city, requestedX, requestedY)
 		local alreadyPlaced = try(function()
 			return city:GetBuildQueue():HasBeenPlaced(row.Hash);
 		end, false);
-		local where, offered = nil, 0;
+		local where, offered, offeredPlots = nil, 0, nil;
 		if not alreadyPlaced then
-			where, offered = productionPlot(city,
+			where, offered, offeredPlots = productionPlot(city,
 				CityOperationTypes.PARAM_DISTRICT_TYPE, row.Hash,
 				requestedX, requestedY);
 		end
@@ -3355,7 +3378,26 @@ local function buildParams(row, city, requestedX, requestedY)
 			emit("build_no_plot", {
 				city = try(function() return city:GetID(); end, -1),
 				district = row.Type or tostring(row.Hash),
+			-- ⚠⚠⚠ THE TURN, WITHOUT WHICH EVERY FILTER ON THIS EVENT IS A NO-OP.
+			-- `buildParams` is a top-level function and takes no turn, so this
+			-- event has never carried one — and two readers silently depended on
+			-- it. `refused_no_plot_through`'s replay bound (`event.turn > limit`)
+			-- read the missing field as 0 and therefore never excluded anything,
+			-- and #1571's staleness window read it as 0 too, which made every
+			-- refusal look ancient and blocked NOTHING. Measured on run
+			-- civvis-20260811T230324Z, the first to carry #1571: 40 build_no_plot
+			-- events in 131 turns, `0` of them with a turn, and one Campus asked
+			-- for forty times — the exact loop the TTL was meant to bound.
+			-- Asked of the engine rather than threaded through the signature,
+			-- which is what four other emitters in this file already do.
+			turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+
 				offered = offered or 0,
+				-- ⚠ WHERE, not just how many. `offered` proves the district is
+				-- placeable in this city and can never say where, so CIVVIS goes
+				-- on naming the plot the engine refuses -- 55 times for one
+				-- Commercial Hub on run civvis-20260811T212652Z.
+				offered_plots = offeredPlots,
 				reasons = reasons,
 				x = requestedX, y = requestedY,
 			});
@@ -6836,6 +6878,93 @@ local function applyOrder(player, pid, row, turn)
 	-- the damage read is the fallback for the turn an attack has already landed.
 	-- This is an actuation guard, not a new target-selection policy.
 	--
+	-- ★★★★★ ASK THE ENGINE WHY A REFUSAL HAPPENED, DO NOT INFER IT.
+	--
+	-- Civilization VI will say, but only if asked exactly right: the fourth
+	-- argument is a BOOLEAN `bTestOnly`, the fifth is `OperationResultsTypes.ALL`
+	-- (not `true`), and the reasons live under
+	-- `UnitOperationResults.FAILURE_REASONS` rather than at the top level. Read
+	-- out of the shipped `UnitPanel.lua:630`.
+	--
+	-- ⚠⚠ THAT SIGNATURE WAS GUESSED WRONG TWICE and each guess cost a whole class
+	-- of diagnosis — every `found_refused` in the project's history read
+	-- `can_start=false` with no reasons, because the results table was never
+	-- populated. One copy now, so the next refusal that wants a cause inherits
+	-- the working call instead of guessing a third time.
+	--
+	-- `params` must be the SAME table the refused operation was given: a build
+	-- refused at a particular tile cannot be explained by asking about no tile.
+	-- The reasons are LOC keys and are localised, because an untranslated key
+	-- names the rule but not in words anyone reading the ledger would recognise.
+	-- Only ever called on a failure path, so a normal turn pays nothing.
+	--
+	-- ⚠⚠⚠ AND I GUESSED THE SIGNATURE A THIRD TIME. #1536 applied the five
+	-- argument FOUND_CITY form to a hash operation carrying params:
+	--
+	--   CanStartOperation(unit, operation, params, false, ResultsTypes.ALL)
+	--
+	-- which puts `params` in the PLOTS slot and `false` in the PARAMS slot. It
+	-- throws, the pcall swallowed it, and every `improve_refused` in the first
+	-- live run on that build read `why: "unknown"` -- six for six, the same
+	-- silent ledger the event was added to end. `canOperate` a few hundred lines
+	-- above has the working hash form and it is a DIFFERENT arity:
+	--
+	--   CanStartOperation(unit, hash, nil, params)          -- 4-arg, hash ops
+	--   CanStartOperation(unit, TYPE, nil, false, ALL)      -- 5-arg, results
+	--
+	-- So stop guessing and do what this file already demands of itself: try each
+	-- shipped form and NAME THE ONE THAT ANSWERED, exactly as `plotRevealed`
+	-- does for `PlayersVisibility`. A probe that cannot say which call worked is
+	-- how this went wrong three times; `why` now always carries its provenance,
+	-- and a throw is reported rather than swallowed.
+	--
+	-- Nested for the same reason `cityWarThreat` is: see below.
+	local function refusalReason(unit, operation, params)
+		local attempts = {
+			-- The hash form, with params where `canOperate` proves they go.
+			{ form = "p4r", call = function()
+				return UnitManager.CanStartOperation(
+					unit, operation, nil, params or {},
+					OperationResultsTypes.ALL);
+			end },
+			-- The shipped FOUND_CITY form, for parameterless operations.
+			{ form = "t5r", call = function()
+				return UnitManager.CanStartOperation(
+					unit, operation, nil, false, OperationResultsTypes.ALL);
+			end },
+		};
+		local fallback = nil;
+		for _, attempt in ipairs(attempts) do
+			local called, ok, results = pcall(attempt.call);
+			if called then
+				if results ~= nil
+						and results[UnitOperationResults.FAILURE_REASONS] ~= nil then
+					local parts = {};
+					for _, key in ipairs(results[UnitOperationResults.FAILURE_REASONS]) do
+						parts[#parts + 1] =
+							try(function() return Locale.Lookup(key); end, tostring(key));
+					end
+					if #parts > 0 then
+						return table.concat(parts, " | ") .. " [" .. attempt.form .. "]";
+					end
+				end
+				-- Answered, but had no reasons to give. Keep it only if nothing
+				-- better turns up: the other form may still carry the words.
+				if fallback == nil then
+					fallback = "can_start=" .. tostring(ok) .. ",no_reasons ["
+						.. attempt.form .. "]";
+				end
+			elseif fallback == nil then
+				-- ⚠ The throw is the answer when nothing else works. Swallowing it
+				-- is what produced six "unknown"s and no way to tell which of the
+				-- two forms this ruleset wants.
+				fallback = "probe_threw[" .. attempt.form .. "]:"
+					.. string.sub(tostring(ok), 1, 80);
+			end
+		end
+		return fallback or "no_probe_answered";
+	end
+
 	-- Keep this helper inside the order handler. A file-scope local consumes one
 	-- of the main chunk's 200 Lua registers; crossing that ceiling makes Civ 6
 	-- silently discard the entire mod before Initialize can emit a lifecycle event.
@@ -7532,12 +7661,39 @@ local function applyOrder(player, pid, row, turn)
 		-- enemy in the neighbourhood, spend this queue on the wall immediately.
 		-- Keep the original CIVVIS request in `civvisBuild`; the override is
 		-- observable and does not pretend the model chose the emergency action.
+		--
+		-- ⚠⚠⚠ THERE WAS NO NEIGHBOURHOOD. The comment above says one thing and the
+		-- test said `nearestEnemy ~= nil`, which is true whenever we are at war and
+		-- can see ANY enemy unit anywhere on the map -- `cityWarThreat` walks every
+		-- visible unit of every player we are at war with and bounds the distance
+		-- by nothing at all.
+		--
+		-- Measured over the eight live runs of 2026-08-11, 160 overrides:
+		--
+		--     94%  fired with damage == 0
+		--     70%  fired with the nearest enemy 5+ tiles away (median 6, max 14)
+		--     66%  fired with BOTH -- no damage and no enemy within five tiles
+		--
+		-- and what they overrode was 46 Campus, 13 Library, 7 Enhance-Campus, 15
+		-- Builders and 9 Settlers: science and expansion, which this project has
+		-- measured to be its binding constraints, replaced by a wall it has also
+		-- measured does not predict holding a city
+		-- (`civ6-walls-do-not-predict-city-loss`).
+		--
+		-- So bound it to the claim the comment already makes. Damage is real
+		-- evidence and still fires at any distance; a visible enemy has to be close
+		-- enough to actually reach the city between two boards, which an enemy
+		-- fourteen tiles away is not. `EmergencyWallRadius` is a knob so this is
+		-- tunable and can be withheld -- set it very large to restore the old
+		-- unbounded behaviour exactly.
 		local atWar, nearestEnemy, damage, wallDamage, maxWallDamage =
 			cityWarThreat(player, pid, city);
+		local wallRadius = cfg.EmergencyWallRadius or 3;
 		local emergencyWall = false;
 		if resolved ~= "BUILDING_WALLS"
 				and maxWallDamage ~= nil and maxWallDamage <= 0
-				and ((damage ~= nil and damage > 0) or nearestEnemy ~= nil) then
+				and ((damage ~= nil and damage > 0)
+					or (nearestEnemy ~= nil and nearestEnemy <= wallRadius)) then
 			local wall = GameInfo.Types["BUILDING_WALLS"];
 			local wallCanOk, wallCan = false, false;
 			if wall ~= nil then
@@ -7549,11 +7705,15 @@ local function applyOrder(player, pid, row, turn)
 				row2 = wall;
 				verb = "BUILDING_WALLS";
 				emergencyWall = true;
+				-- The radius in force goes in the record. Reading the old ledger
+				-- meant knowing the gate was unbounded, which nothing stated;
+				-- a threshold that is not in the event cannot be audited later.
 				emit("emergency_wall_override", {
 					turn = turn, city = cityId, requested = resolved,
 					item = "BUILDING_WALLS", at_war = atWar,
 					enemy_distance = nearestEnemy, damage = damage,
 					wall_damage = wallDamage, max_wall_damage = maxWallDamage,
+					radius = wallRadius,
 				});
 			end
 		end
@@ -7924,25 +8084,31 @@ local function applyOrder(player, pid, row, turn)
 				-- ⚠ The reasons are LOC keys, so they are localised before emitting —
 				-- an untranslated key names the rule but not in words anyone reading
 				-- the ledger would recognise.
-				local why = "unknown";
-				pcall(function()
-					local ok, results = UnitManager.CanStartOperation(
-						unit, UnitOperationTypes.FOUND_CITY, nil, false,
-						OperationResultsTypes.ALL);
-					if results ~= nil
-							and results[UnitOperationResults.FAILURE_REASONS] ~= nil then
-						local parts = {};
-						for _, key in ipairs(results[UnitOperationResults.FAILURE_REASONS]) do
-							parts[#parts + 1] =
-								try(function() return Locale.Lookup(key); end, tostring(key));
-						end
-						if #parts > 0 then why = table.concat(parts, " | "); end
-					end
-					if why == "unknown" and ok ~= nil then
-						why = "can_start=" .. tostring(ok) .. ",no_reasons";
-					end
-				end);
+				-- ★★★★★ SAY WHETHER THE SETTLER COULD STILL MOVE, because this
+				-- event PERMANENTLY BLOCKS THE CITY SITE.
+				--
+				-- `found_refused` feeds `refused_sites` -> `blocked_city_sites`,
+				-- which is extended and never cleared, so every one of these is a
+				-- forever verdict on that ground. Measured across every live run of
+				-- 2026-08-11, 9 found refusals: the settler had `movesRemaining ==
+				-- 0` on EIGHT of them. A Civilization VI Settler needs movement
+				-- left to found, so those sites were condemned for a condition that
+				-- clears itself on the next turn.
+				--
+				-- Improvements had the identical defect and the identical cure
+				-- (#1548, #1550); a city site is the more expensive one to get
+				-- wrong. This project's own measurements have expansion as the
+				-- binding constraint -- 36% of games end on ONE city, and the
+				-- empire peaks at three -- so a legitimate site struck off the map
+				-- for a spent move is not a small loss.
+				--
+				-- `refused_sites_of_kind_through` already drops an explicit zero,
+				-- and it is shared by both refusals, so recording the reading here
+				-- is the whole fix.
+				local moves = try(function() return unit:GetMovesRemaining(); end, -1);
+				local why = refusalReason(unit, UnitOperationTypes.FOUND_CITY, nil);
 				emit("found_refused", { turn = turn, unit = subject, why = why,
+				                        moves = moves,
 				                        x = unit:GetX(), y = unit:GetY() });
 			else
 				-- ★★★★★ REPORT THE SUCCESS TOO, OR THE LEDGER ONLY KNOWS FAILURES.
@@ -8083,7 +8249,102 @@ local function applyOrder(player, pid, row, turn)
 			if row2 ~= nil then
 				params[UnitOperationTypes.PARAM_IMPROVEMENT_TYPE] = row2.Hash;
 			end
+			-- ★★★★★ ASKING FOR WHAT IS ALREADY THERE IS NOT A REFUSAL.
+			--
+			-- #1561 put the tile's own state in the refusal, and the first run
+			-- carrying it answered a question that had been open for six
+			-- iterations. Run civvis-20260811T163652Z, 23 of 23 refusals: the tile
+			-- OURS, the builder holding movement and charges, and the improvement
+			-- already on the ground —
+			--
+			--     t19 MINE   owner=0 existing=IMPROVEMENT_MINE
+			--     t30 QUARRY owner=0 existing=IMPROVEMENT_QUARRY
+			--
+			-- and the orders ledger names the mechanism exactly:
+			--
+			--     t18 IMPROVE:MINE ordered -> succeeded
+			--     t19 IMPROVE:MINE ordered again -> refused
+			--
+			-- CIVVIS builds it, then orders the identical improvement on the same
+			-- tile the next turn, because the tile sweep runs every four turns and
+			-- its board still shows the tile bare.
+			--
+			-- ⚠⚠ THE REAL DAMAGE IS THE LEDGER, NOT THE ORDER. One wasted call a
+			-- turn is cheap; 376 `improve_refused` in a day that are all benign
+			-- duplicates is not, because it buries the refusals that mean
+			-- something. It cost three PRs of mine chasing a gate that was right
+			-- (#1548/#1550/#1552, corrected in #1557), and `improve_refused` is
+			-- also what BLOCKS the tile in CIVVIS's planner — a duplicate must
+			-- never reach it, because the tile is not dead, it is done.
+			--
+			-- So name it for what it is, before spending the engine call.
+			-- ⚠ Only on an exact match: a Farm asked for where a Mine stands is a
+			-- real disagreement and must still go to the engine.
+			if row2 ~= nil then
+				local here = try(function()
+					local plot = Map.GetPlot(params[UnitOperationTypes.PARAM_X],
+					                         params[UnitOperationTypes.PARAM_Y]);
+					if plot == nil then return nil; end
+					return typeName("Improvements", "ImprovementType",
+					                plot:GetImprovementType());
+				end);
+				if here ~= nil and here == wanted then
+					emit("improve_already", {
+						turn = turn, unit = subject, want = wanted,
+						x = params[UnitOperationTypes.PARAM_X],
+						y = params[UnitOperationTypes.PARAM_Y],
+					});
+					return false, "already_" .. wanted;
+				end
+			end
 			if operate(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"], params) then
+				-- ★★★★★ REPORT THE SUCCESS, or the board learns four turns late.
+				--
+				-- The same rule `found` already follows: "REPORT THE SUCCESS TOO,
+				-- OR THE LEDGER ONLY KNOWS FAILURES". Improvements had no such
+				-- event, so a finished one reached CIVVIS only on the next
+				-- periodic tile sweep — every four turns — and in that window
+				-- CIVVIS re-ordered what it had just built. Measured on run
+				-- civvis-20260811T163652Z: 23 duplicate orders, every refusal 1-3
+				-- turns after a sweep, the ledger showing
+				--
+				--     t18 IMPROVE:MINE -> succeeded
+				--     t19 IMPROVE:MINE -> refused, existing=IMPROVEMENT_MINE
+				--
+				-- ⚠⚠⚠ AND THE IMPROVEMENT IS NOT ON THE PLOT YET. #1565 read it back
+				-- with `plot:GetImprovementType()` right here, reasoning that the
+				-- engine's own answer beats the name we asked for. The engine had
+				-- no answer to give: `UNITOPERATION_BUILD_IMPROVEMENT` is
+				-- REQUESTED, not executed inline, so at this line the plot is still
+				-- bare, `typeName` returns nil, and the emit is skipped every time.
+				--
+				-- Measured on the first run carrying it, civvis-20260811T183513Z:
+				-- 120 turns, improve orders issued and succeeding, and `improved`
+				-- fired ZERO times while `improve_already` fired 8 — the duplicates
+				-- the event exists to prevent, which are themselves the proof the
+				-- improvement did land, one turn later.
+				--
+				-- So use the name that was ASKED FOR. It is correct precisely here:
+				-- this branch names the improvement, `operate` returns true only
+				-- when `canOperate` accepted that exact request, and the engine
+				-- builds what was named. #1565's reasoning was about the FALLBACK
+				-- below, which drops the name and lets the engine choose — and that
+				-- branch does not emit at all, so the concern was real and belonged
+				-- to a different line.
+				--
+				-- ⭐ Third time recently that a reading was taken at the wrong
+				-- INSTANT: a state snapshot joined by turn, a movement value
+				-- sampled outside the decision, and now a plot read before the
+				-- operation ran. Ask when a value becomes true, not only where it
+				-- lives.
+				if wanted ~= nil then
+					emit("improved", {
+						turn = turn,
+						x = params[UnitOperationTypes.PARAM_X],
+						y = params[UnitOperationTypes.PARAM_Y],
+						im = wanted,
+					});
+				end
 				return true, wanted or "IMPROVE";
 			end
 			-- ★★★★ FALL BACK TO WHATEVER THIS TILE ALLOWS.
@@ -8152,8 +8413,119 @@ local function applyOrder(player, pid, row, turn)
 			--
 			-- ⚠ The automation rung above can move the builder before this line runs,
 			-- so `unit:GetX()` is not even reliably where the refusal happened.
+			-- ★★★★★ AND SAY WHY, for the same reason `found_refused` does.
+			--
+			-- This is the most numerous refusal the ledger records — 72 across six
+			-- recent runs, 286 in one 250-turn game — and until now it named the
+			-- tile and nothing else. By the time it fires, three fallbacks have
+			-- already failed (the named improvement, then any improvement, then
+			-- automating the builder), so "this tile is dead" is established. What
+			-- was missing is the half that says WHOSE bug it is:
+			--
+			--   unowned tile          -> CIVVIS targeted ground it does not hold
+			--   already improved      -> the mirror is stale
+			--   no movement / charges -> an actuation defect, and one that has
+			--                            happened before, see
+			--                            `a-builder-with-no-movement-cannot-improve`
+			--
+			-- Those three demand different fixes and were indistinguishable in the
+			-- export. `params` is the table the refused operation was given, so the
+			-- engine is asked about the tile the ORDER named — the same distinction
+			-- the `x`/`y` note above exists to protect.
+			-- ★★★★★ RECORD THE READINGS AT THE POINT OF THE DECISION.
+			--
+			-- ⚠⚠⚠ AND THE FIRST ANSWER THIS FIELD GAVE CONTRADICTED WHY IT WAS
+			-- ADDED. #1548 introduced `moves` on the strength of a claim that
+			-- builders were out of movement on 25 of 26 refusals. That number came
+			-- from matching refusals against the STATE EXPORT by turn, and a
+			-- per-turn snapshot is not the same instant as an event emitted during
+			-- that turn. Once the reading was taken HERE, by
+			-- `GetMovesRemaining()` at the moment of the attempt, the two
+			-- disagreed flatly — same turn, same unit, run
+			-- civvis-20260811T134008Z:
+			--
+			--     turn 19  unit 327683   event moves 2   state moves 0
+			--     turn 46  unit 983049   event moves 2   state moves 0
+			--     ... all 25 refusals: 2, 3 or 4. NEVER zero.
+			--
+			-- So builders are NOT out of movement here, the refusals are genuine,
+			-- and `canOperate` is right. The five-argument probe remains the
+			-- misleading one — with `plots = nil` it answers "can this unit build
+			-- SOMEWHERE", not "here", which is why it reports `can_start=true`
+			-- against a gate that correctly reports false for this tile.
+			--
+			-- ⭐ Which is exactly why these two readings belong in the event and
+			-- not in a later join: a snapshot matched by turn number reads as a
+			-- measurement and is not one.
+			local moves = try(function() return unit:GetMovesRemaining(); end, -1);
+			local charges = try(function() return unit:GetBuildCharges(); end, -1);
+			-- ★★★★★ AND THE TILE'S OWN STATE, READ HERE RATHER THAN JOINED LATER.
+			--
+			-- #1557 reopened the question this event exists to answer: the builder
+			-- has movement, has charges, and stands on the ordered tile, and
+			-- `canOperate` still refuses. Two ordinary explanations remain and
+			-- neither is in the record — the tile is not OURS (an unowned tile
+			-- cannot be improved), or it is ALREADY improved.
+			--
+			-- ⚠⚠⚠ AND THEY MUST BE READ AT THIS INSTANT, NOT LOOKED UP AFTERWARDS.
+			-- I tried to answer the ownership half by matching refusals against the
+			-- periodic tile export and it cannot be done: 23 of 25 refused tiles
+			-- appear in that export as BOTH unowned and ours at different points in
+			-- the same run, so the join has no defensible answer. That is the same
+			-- mistake that produced a false movement measurement and three PRs
+			-- resting on it (#1548/#1550/#1552, corrected in #1557) — a per-turn
+			-- snapshot is not the instant of the decision.
+			--
+			-- Two `try` calls on a path that has already failed three fallbacks.
+			-- `im` is the improvement ALREADY on the plot, named the same way the
+			-- tile export names it, so an already-improved tile is legible without
+			-- a second lookup.
+			local plot = try(function()
+				return Map.GetPlot(params[UnitOperationTypes.PARAM_X],
+				                   params[UnitOperationTypes.PARAM_Y]);
+			end);
+			local tile_owner = plot ~= nil
+				and try(function() return plot:GetOwner(); end, -1) or -1;
+			local tile_improvement = plot ~= nil and typeName("Improvements",
+				"ImprovementType",
+				try(function() return plot:GetImprovementType(); end, -1)) or nil;
+			local why = refusalReason(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"],
+			                          params);
+			-- ⚠⚠⚠ THE TWO FORMS OF THE SAME CALL DISAGREE, AND ONLY ONE OF THEM
+			-- GATES THE WORK.
+			--
+			-- First live run on #1542, `civvis-20260811T094304Z`: every one of the
+			-- thirteen refusals reads `can_start=true,no_reasons [p4r]`. The engine
+			-- says the operation CAN start, at the exact moment we tell CIVVIS the
+			-- tile is dead — and that event blocks the tile in its planner, so a
+			-- wrong one poisons the map it plans from.
+			--
+			-- But the probe and the gate are not the same call:
+			--
+			--   canOperate     CanStartOperation(unit, hash, nil, params)
+			--   refusalReason  CanStartOperation(unit, hash, nil, params, ALL)
+			--
+			-- `operate` only reaches `RequestOperation` when `canOperate` returns
+			-- true, so reaching this line means the 4-arg form said FALSE while the
+			-- 5-arg form says TRUE. Either the results argument changes what the
+			-- engine tests, or the gate under-reports and this harness has been
+			-- refusing improvements Civilization VI would have allowed.
+			--
+			-- ⚠ I am not claiming which. This file has been wrong three times by
+			-- reasoning about an overload instead of measuring it, so record BOTH
+			-- answers side by side and let the next live run say. No behaviour
+			-- changes here: `can_operate` is read after every attempt has already
+			-- failed, and is only written down.
 			emit("improve_refused", { turn = turn, unit = subject,
-			                          want = wanted or "IMPROVE",
+			                          want = wanted or "IMPROVE", why = why,
+			                          -- Every reading taken at THIS instant, which
+			                          -- is the only place they mean anything.
+			                          moves = moves, charges = charges,
+			                          tile_owner = tile_owner,
+			                          tile_improvement = tile_improvement,
+			                          can_operate = canOperate(unit,
+			                              OP["UNITOPERATION_BUILD_IMPROVEMENT"],
+			                              params),
 			                          x = params[UnitOperationTypes.PARAM_X],
 			                          y = params[UnitOperationTypes.PARAM_Y] });
 			return false, wanted or "IMPROVE";
@@ -8251,8 +8623,43 @@ local function applyOrder(player, pid, row, turn)
 				end
 			end
 			if not available then
+				-- ★★★★ NAME WHAT THE ENGINE OFFERED. The answer is already in hand
+				-- three lines above and was being thrown away: `can` and the
+				-- `PROMOTIONS` list are exactly what separates two refusals that
+				-- want opposite responses, and the event recorded neither.
+				--
+				--   nothing offered  -- this unit has no promotion available at
+				--     all: not enough experience, or already promoted this level.
+				--     CIVVIS should not have asked, and the fix is upstream in
+				--     when it asks.
+				--   others offered   -- the unit can promote, just not into the
+				--     tree CIVVIS named (a Recon promotion asked of a melee unit).
+				--     That is a targeting bug in the choice, and the offered list
+				--     names what it should have chosen from.
+				--
+				-- 56 of these across the eight live runs of 2026-08-11, every one
+				-- carrying only the name that failed. This is the same distinction
+				-- `build_no_plot` draws with `offered`, for the same reason.
+				--
+				-- Names, not indices: `-1743686858` in a ledger is a value no
+				-- reader can turn back into a promotion, which is the exact defect
+				-- the district refusal above had to be repaired for.
+				local offeredNames = nil;
+				if type(offered) == "table" then
+					offeredNames = {};
+					for _, index in ipairs(offered) do
+						local row = try(function()
+							return GameInfo.UnitPromotions[index];
+						end);
+						offeredNames[#offeredNames + 1] =
+							(row ~= nil and row.UnitPromotionType) or tostring(index);
+					end
+				end
 				emit("promotion_refused", {
 					turn = turn, unit = subject, promotion = promotionName,
+					can_promote = okCan and can or false,
+					offered = offeredNames ~= nil and #offeredNames or 0,
+					offered_promotions = offeredNames,
 				});
 				return false, "cannot_promote_" .. promotionName;
 			end

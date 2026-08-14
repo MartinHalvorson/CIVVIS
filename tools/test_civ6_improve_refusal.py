@@ -31,7 +31,13 @@ class ImproveRefusalTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         source = AGENT.read_text(encoding="utf-8")
         start = source.index('if verb == "IMPROVE" or string.sub(verb, 1, 8) == "IMPROVE:"')
-        cls.handler = source[start : source.index('emit("improve_refused"', start) + 400]
+        # ⚠ Slice to the END OF THE EMIT, not to a fixed number of characters
+        # after its start. The window used to be `+ 400`, so the first field
+        # added to the payload pushed `PARAM_Y` outside it and this test failed
+        # on a change it was not testing. A magic length is a tripwire for
+        # whoever edits next, not a bound on what is being asserted.
+        emit_at = source.index('emit("improve_refused"', start)
+        cls.handler = source[start : source.index("});", emit_at) + 3]
 
     def test_the_refusal_names_the_ordered_tile_not_the_builders_own(self) -> None:
         emit = self.handler.index('emit("improve_refused"')
@@ -45,6 +51,147 @@ class ImproveRefusalTests(unittest.TestCase):
             "tile is the capital centre whenever the builder is stuck, which is "
             "precisely when this feedback is needed",
         )
+
+    def test_the_refusal_records_both_answers_the_engine_gave(self) -> None:
+        """Two forms of `CanStartOperation` disagree, and only one gates the work.
+
+        `civvis-20260811T094304Z`, the first live run on #1542, recorded
+        `can_start=true,no_reasons [p4r]` on all thirteen refusals — the engine
+        saying the operation CAN start at the moment we tell CIVVIS the tile is
+        dead. But the probe passes a results argument and `canOperate` does not,
+        and only `canOperate` decides whether the work is attempted:
+
+            canOperate     CanStartOperation(unit, hash, nil, params)
+            refusalReason  CanStartOperation(unit, hash, nil, params, ALL)
+
+        Reaching this emit means the 4-arg form said false. Either the results
+        argument changes what is tested, or the gate under-reports and this
+        harness has been refusing improvements the game would have allowed.
+        Recording both is what lets a live run answer that instead of another
+        argument about an overload.
+        """
+        emit = self.handler.index('emit("improve_refused"')
+        payload = self.handler[emit:]
+        self.assertIn("why = why,", payload)
+        self.assertIn("can_operate = canOperate(unit,", payload)
+        self.assertIn('OP["UNITOPERATION_BUILD_IMPROVEMENT"],', payload)
+
+    def test_the_refusal_records_the_movement_that_actually_explains_it(self) -> None:
+        """The disagreement between the two gates was the builder's movement.
+
+        On `civvis-20260811T103914Z`, across all 26 refusals: the builder stood
+        on the ordered tile 26 of 26, had build charges every time, and had
+        `movesRemaining == 0` on 25 of 26. A Civilization VI Builder needs
+        movement left to place an improvement, so `canOperate` was right and the
+        5-arg probe — `plots = nil` — answers a weaker question that ignores it.
+
+        `why: can_start=true` therefore invites the reader to conclude the
+        harness refuses legal work, which is the opposite of the truth. A ledger
+        that misleads is worse than one that is silent, so the cause goes in.
+        """
+        handler = self.handler
+        self.assertIn("local moves = try(function() return unit:GetMovesRemaining(); end, -1);",
+                      handler)
+        self.assertIn("moves = moves, charges = charges,", handler)
+
+        # The ungated experiment from #1547 is removed, not left vestigial: the
+        # run data answered its question before it ever fired.
+        self.assertNotIn('emit("improve_ungated"', handler)
+        self.assertNotIn("UnitManager.RequestOperation(unit,", handler)
+
+    def test_the_refusal_reads_the_tile_at_the_moment_it_is_refused(self) -> None:
+        """⚠⚠⚠ READ AT THE DECISION POINT — a later join is not a measurement.
+
+        #1557 reopened this: the builder has movement, has charges, and stands on
+        the ordered tile, and `canOperate` still refuses. Two ordinary
+        explanations remain — the tile is not ours, or it is already improved —
+        and neither was in the record.
+
+        I tried to answer the ownership half from the periodic tile export and it
+        cannot be done: 23 of 25 refused tiles appear there as BOTH unowned and
+        ours at different points in the same run. That is the same mistake that
+        produced a false movement measurement and three PRs resting on it. So the
+        readings are taken here, and the test pins that they are taken from the
+        plot the ORDER named rather than wherever the builder ended up.
+        """
+        handler = self.handler
+        self.assertIn("Map.GetPlot(params[UnitOperationTypes.PARAM_X],", handler)
+        self.assertIn("params[UnitOperationTypes.PARAM_Y]);", handler)
+        self.assertIn("plot:GetOwner();", handler)
+        self.assertIn("plot:GetImprovementType();", handler)
+
+        payload = handler[handler.index('emit("improve_refused"'):]
+        self.assertIn("tile_owner = tile_owner,", payload)
+        self.assertIn("tile_improvement = tile_improvement,", payload)
+
+    def test_asking_for_what_is_already_there_is_not_a_refusal(self) -> None:
+        """23 of 23 refusals were CIVVIS re-ordering an improvement it just built.
+
+        Run `civvis-20260811T163652Z` with #1561's readings: tile ours, builder
+        holding movement and charges, and the improvement already on the ground.
+        The orders ledger names the mechanism — `IMPROVE:MINE` succeeds at t18 and
+        is ordered again at t19 — because the tile sweep runs every four turns and
+        CIVVIS's board still shows the tile bare.
+
+        The damage is the ledger, not the wasted call. 376 `improve_refused` in a
+        day that are all benign duplicates buries the ones that mean something,
+        and `improve_refused` is what BLOCKS the tile in the planner. A duplicate
+        must never reach it: the tile is not dead, it is done.
+        """
+        handler = self.handler
+        self.assertIn('emit("improve_already"', handler)
+        self.assertIn('return false, "already_" .. wanted;', handler)
+
+        # It must be decided BEFORE the engine call, or it is not saving one.
+        self.assertLess(
+            handler.index('emit("improve_already"'),
+            handler.index('if operate(unit, OP["UNITOPERATION_BUILD_IMPROVEMENT"], params) then'),
+            "the duplicate check must come before the operation is attempted",
+        )
+        # And it must be a DIFFERENT kind, or it still blocks the tile.
+        self.assertNotIn('emit("improve_refused", { turn = turn, unit = subject,\n\t\t\t\t\t\t  want = wanted, x =', handler)
+
+    def test_only_an_exact_match_short_circuits(self) -> None:
+        """A Farm asked for where a Mine stands is a real disagreement.
+
+        Short-circuiting on "some improvement is here" would hide exactly the
+        ruleset mismatch this path exists to surface.
+        """
+        handler = self.handler
+        self.assertIn("if here ~= nil and here == wanted then", handler)
+
+    def test_the_success_event_names_what_was_asked_for(self) -> None:
+        """⚠⚠⚠ The improvement is NOT on the plot when the request returns.
+
+        #1565 read it back with `plot:GetImprovementType()` at the point of the
+        request, reasoning the engine's own answer beats the name we asked for.
+        `UNITOPERATION_BUILD_IMPROVEMENT` is REQUESTED, not executed inline, so
+        the plot is still bare there and the emit was skipped every time.
+
+        Measured on the first run carrying it, `civvis-20260811T183513Z`: 120
+        turns, improve orders succeeding, `improved` fired ZERO times while
+        `improve_already` fired 8 — the duplicates the event exists to prevent,
+        which are themselves proof the improvement landed a turn later.
+
+        The asked-for name is correct on THIS branch: it names the improvement,
+        `operate` returns true only when `canOperate` accepted that exact
+        request, and the engine builds what was named.
+        """
+        handler = self.handler
+        emit_at = handler.index('emit("improved"')
+        payload = handler[emit_at:emit_at + 260]
+        self.assertIn("im = wanted,", payload)
+        self.assertNotIn("im = built,", payload)
+
+        # The read-back must be gone, not merely unused: leaving it would say
+        # the plot can be asked at this point, which is the false belief.
+        self.assertNotIn("plot:GetImprovementType());\n\t\t\t\t\tend);", handler)
+
+    def test_the_slice_covers_the_whole_emit(self) -> None:
+        """Guards the fixture itself: a truncated window silently stops testing."""
+        self.assertTrue(self.handler.rstrip().endswith("});"))
+        for field in ("turn =", "unit =", "want =", "why =", "x =", "y ="):
+            self.assertIn(field, self.handler[self.handler.index('emit("improve_refused"'):])
 
     def test_the_operation_target_still_defaults_to_where_the_builder_stands(self) -> None:
         # The payload is only correct because PARAM_X/PARAM_Y are already the

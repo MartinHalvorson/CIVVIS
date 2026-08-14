@@ -245,13 +245,68 @@ def ensure_popup_clear() -> None:
     )
 
 
-MIRROR_PROCESS_PATTERNS = ("tools/follow.py", "civvis play --mirror")
+MIRROR_HOME = Path.home() / "civvis-civ6-mirror"
+MIRROR_FOLLOW_LOG = MIRROR_HOME / "follow.log"
+MIRROR_PORT = 8610
 MIRROR_RETIRE_SECONDS = 8.0
 
 
 def matching_pids(pattern: str) -> list[int]:
     """Return just the process ids that a narrow mirror pattern found."""
     return [int(pid) for pid in run(["pgrep", "-f", pattern]).split() if pid.isdecimal()]
+
+
+def follower_output_path(pid: int) -> Path | None:
+    """The file a follower owns as stdout, if `lsof` can prove one.
+
+    A process name is deliberately not an ownership boundary: many CIVVIS
+    worktrees run ``tools/follow.py``.  The live desktop follower is distinct
+    because it writes beneath the one shared ``civvis-civ6-mirror`` runtime.
+    """
+    out = run(["lsof", "-a", "-p", str(pid), "-d", "1", "-Fn"])
+    for line in out.splitlines():
+        if line.startswith("n"):
+            return Path(line[1:])
+    return None
+
+
+def follower_owns_mirror(pid: int) -> bool:
+    """Whether this follower is one of the shared desktop mirror owners."""
+    output = follower_output_path(pid)
+    if output is None:
+        return False
+    try:
+        output.relative_to(MIRROR_HOME)
+    except ValueError:
+        return False
+    return True
+
+
+def mirror_listener_pids() -> set[int]:
+    """The processes that actually own the dedicated visible mirror port."""
+    out = run(["lsof", f"-tiTCP:{MIRROR_PORT}", "-sTCP:LISTEN"])
+    return {int(pid) for pid in out.split() if pid.isdecimal()}
+
+
+def owned_mirror_pids() -> list[int]:
+    """Return only helpers that own this machine's shared desktop mirror.
+
+    A fresh batch must retire its old follower and detached server so they do
+    not pair a new game with an old protocol or JavaScript build.  The old
+    global name match also stopped unrelated worktrees' followers.  Followers
+    are scoped by their dedicated runtime output, while servers are scoped by
+    the dedicated port, which keeps the fresh-build invariant without crossing
+    worktree boundaries.
+    """
+    pids = [
+        pid for pid in matching_pids("tools/follow.py")
+        if follower_owns_mirror(pid)
+    ]
+    listeners = mirror_listener_pids()
+    for pid in matching_pids("civvis play --mirror"):
+        if pid in listeners and pid not in pids:
+            pids.append(pid)
+    return pids
 
 
 def process_running(pid: int) -> bool:
@@ -276,11 +331,7 @@ def retire_mirror() -> list[int]:
     protocol.  The server is in its own session, so stopping the follower alone
     deliberately does not stop it.
     """
-    pids = []
-    for pattern in MIRROR_PROCESS_PATTERNS:
-        for pid in matching_pids(pattern):
-            if pid not in pids:
-                pids.append(pid)
+    pids = owned_mirror_pids()
     if not pids:
         return []
 
@@ -339,7 +390,7 @@ def ensure_mirror() -> None:
         return
     retire_mirror()
     _detach([sys.executable, "-u", str(follow)],
-            Path.home() / "civvis-civ6-mirror" / "follow.log", "mirror")
+            MIRROR_FOLLOW_LOG, "mirror")
 
 
 def commits_behind_main() -> int | None:
@@ -722,6 +773,20 @@ def screen_locked() -> bool:
     return 'CGSSessionScreenIsLocked"=Yes' in result.stdout
 
 
+def attempt_ceiling(args) -> float:
+    """The hard wall-clock bound the child will actually honour.
+
+    One number, derived once, so the child's ceiling and the outer watchdog
+    cannot drift apart. They did: `civ6_play --timeout` stopped being a hard stop
+    in #1532 and this watchdog stayed at `--timeout + 600`, which put a 6000 s
+    kill underneath 8100 s of legitimate budget. Mirrors `civ6_play`'s own
+    default so the two agree when neither is passed.
+    """
+    if args.timeout_ceiling is not None:
+        return float(args.timeout_ceiling)
+    return float(args.timeout) * 1.5
+
+
 def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
                            frozen_s: float, locked_probe=None) -> str:
     """Wait for the attempt, and kill it if its TURN stops advancing.
@@ -899,6 +964,33 @@ def main() -> int:
                     help="Firaxis leader type to select and verify on the picker; "
                          "empty string takes whatever the lobby deals")
     ap.add_argument("--timeout", type=float, default=5400.0)
+    # ⚠⚠⚠ THE OUTER WATCHDOG MUST SIT ABOVE THE INNER CEILING, NOT ABOVE
+    # `--timeout`, AND FOR TEN DAYS IT DID BOTH BECAUSE THEY WERE THE SAME
+    # NUMBER.
+    #
+    # `civ6_play --timeout` used to be a hard stop, so `timeout + 600` was
+    # comfortably the last resort. #1532 made that budget EXTEND while a run can
+    # still reach `--max-turns`, up to `--timeout-ceiling` (1.5x by default) --
+    # and left this watchdog where it was. 5400 * 1.5 = 8100 s of legitimate
+    # inner budget underneath a 6000 s outer kill.
+    #
+    # So the backstop started firing first, on healthy games. Run
+    # civvis-20260811T115348Z was stopped at **turn 194 of 250, score 490, still
+    # advancing**, exactly 100 min 41 s after it started -- `timeout + 600` to
+    # the second. And because the outer path SIGTERMs the child, the run never
+    # writes its summary: the ladder keeps a row carrying `last_turn` and
+    # `last_score` with NO `reason`, which reads like a finished game to anything
+    # that does not check for the missing field.
+    #
+    # The two budgets have to be derived from one number. This is passed to the
+    # child as `--timeout-ceiling` and the watchdog is set above it, so raising
+    # either one cannot silently invert them again.
+    ap.add_argument("--timeout-ceiling", type=float, default=None,
+                    help="hard wall-clock bound handed to civ6_play as "
+                         "--timeout-ceiling; the outer watchdog is set above it. "
+                         "Defaults to 1.5x --timeout, matching civ6_play's own "
+                         "default. Pass a value equal to --timeout to restore a "
+                         "non-extending budget.")
     # ⚠ The LAST resort, not the first. `civ6_play --frozen-seconds` (480s)
     # watches the same thing from inside its own loop and gets first refusal;
     # this one exists for when that loop is itself blocked and therefore cannot
@@ -1153,6 +1245,9 @@ def main() -> int:
             + [
              "--max-turns", str(args.max_turns),
              "--timeout", str(args.timeout),
+             # Derived from the same place as the outer watchdog, so the child's
+             # ceiling and the backstop above it stay ordered by construction.
+             "--timeout-ceiling", str(attempt_ceiling(args)),
              "--lock-wait", "30",
              "--report-every", "10",
              "--export-state"]
@@ -1240,8 +1335,15 @@ def main() -> int:
         # So: ONE decider, the one `civ6_play` owns, configured from here. Every
         # setting this script used to apply to its own copy is now passed through.
 
+        # Bound before the `try` so the ledger stamp below reads a variable that
+        # always exists, rather than relying on the exact control flow that
+        # happens to reach it today.
+        why = None
         try:
-            why = wait_watching_the_turn(play, tag, args.timeout + 600,
+            # Above the child's own ceiling, never above its base budget. See
+            # `--timeout-ceiling`: these two numbers inverted once and killed
+            # healthy games at turn 194.
+            why = wait_watching_the_turn(play, tag, attempt_ceiling(args) + 600,
                                          args.frozen_seconds)
             if why == "timeout":
                 print("attempt exceeded its own timeout; stopping it", flush=True)
@@ -1260,6 +1362,22 @@ def main() -> int:
             teardown()
 
         record = outcome_of(tag)
+        # ★★★★★ A KILLED ATTEMPT MUST SAY SO IN THE LEDGER.
+        #
+        # `outcome_of` reads what `civ6_play` wrote on its way out. A run this
+        # loop SIGTERMs never gets there, so the row carries `last_turn` and
+        # `last_score` from the event stream and NO `reason` — and a row with a
+        # turn count and a score reads like a finished game to anything that does
+        # not check for the missing field. One is in the ladder from 2026-08-11:
+        # `civvis-20260811T115348Z`, turn 194 of 250, score 490, stopped by the
+        # outer watchdog while still advancing. I included it in medians myself
+        # before noticing.
+        #
+        # This loop knows exactly why it killed the attempt and was throwing that
+        # away. Stamp it, and only when the harness supplied nothing — a reason
+        # `civ6_play` wrote is the better answer and must never be overwritten.
+        if record.get("reason") is None and why is not None:
+            record["reason"] = f"attempt {why}"
         record["utc"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         record["victory_target"] = args.victory
         record["difficulty_asked"] = args.difficulty
