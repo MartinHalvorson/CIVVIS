@@ -959,7 +959,21 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// behind `if !self.plan_city_target`, which `AdvancedAi::legacy()`
 /// leaves false, and the flag defaults true so production is unchanged.
 /// Compatibility re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6588_a3f3_fd9d_72aa;
+/// #1522 gates the Conquest wartime economy on a concrete objective:
+/// `offensive_conquest` (a target city, a threatened city, or an active
+/// major war) now decides the 2x-cities military target, the production
+/// ceiling buffer, and the +160/+120 Conquest production bonuses; an
+/// objective-less Conquest plan keeps the ordinary garrison. Measured on
+/// the fixed prefix — `ai_eval advanced_v1 basic --pairs 10 --jobs 1
+/// --seed 31337 --players 4 --turns 200 --deployment-comparison`, ci
+/// profile, this branch against `main` at `5df102c4` — the two reports
+/// are **byte-identical**: 85.0% paired-map score, 7 sweeps / 3 neutral,
+/// 17/40 vs 3/40 seat wins, every metric equal across 20 games averaging
+/// 131.9 turns, with conquest plans live on 14.1% of anchored all-game
+/// seat-turns — so wherever the anchor's planner went Conquest, the gate
+/// resolved the same wartime package as before. Compatibility re-pin;
+/// the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0cfd_388b_d12e_abfd;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
