@@ -1,0 +1,277 @@
+#!/bin/zsh
+# Keep Civ 6 games playing, one per fresh build of CIVVIS head.
+#
+# The climb pins a revision per batch and ENDS the batch when main moves
+# ("THE BUILD CHANGED MID-BATCH"). That is correct for measurement and it is
+# also the operator's requirement -- each game starts from a fresh build of
+# head -- but nothing restarted it, so every merged PR silently stopped the
+# games. This supervises that cycle: pull, build, play ONE game, repeat.
+#
+# ⚠⚠⚠ NEVER `pkill -9` CIVILIZATION VI HERE. Repeated hard kills wedge the game
+# core: it relaunches, renders the menu, loads a map -- and the InGame gameplay
+# context never starts, so the agent emits NOTHING. The harness then reads "no
+# game started", runs `return_to_main_menu`, and that walks into "are you sure
+# you wish to quit". Measured 2026-08-10: runs civvis-20260810T125137Z and
+# ...T153127Z both ended with exactly 22 `autoclose_armed` events and ZERO
+# `agent` events, after this script's own teardown had -9'd the game.
+# `civ6_launch.py --stop/--restart` is the documented clean path and it cleared
+# it in ten seconds. See civvis-civ6-the-game-core-wedges-after-hard-kills.
+set -u
+export PATH="$HOME/.cargo/bin:$PATH"
+# ⚠ PINNED to a known-good revision while `main`'s mod is broken. HEAD reaches
+# the in-game map and the agent context NEVER loads (22 autoclose events, zero
+# agent events), so no turn is ever played. 597157c3 seats the agent and plays.
+# Bisected 2026-08-10; the break is in bcb75f97 (#1474) or 8c9de1bf (#1478).
+# Set CIVVIS_PIN=head to go back to tracking main once that is fixed.
+# Re-read EVERY cycle from a one-line file, so the tree can be switched without
+# killing a game in progress. Contents: an absolute path to the tree to play
+# from, or "head" to track origin/main in /Users/martin/CIVVIS.
+PINFILE=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
+LOGS=$HOME/civvis-climb-logs
+STRATEGY=${CIVVIS_STRATEGY:-WildCard9}
+SUP=$LOGS/supervisor.log
+MIRROR_HOME=$HOME/civvis-civ6-mirror
+FOLLOW_LOG=$MIRROR_HOME/follow-nohup.log
+MIRROR_PORT=${CIVVIS_MIRROR_PORT:-8610}
+FOLLOW_REVISION_FILE=$MIRROR_HOME/follower-runtime-revision
+
+say() { print -r -- "[$(date -u +%FT%TZ)] $*" >> "$SUP" }
+
+mkdir -p "$LOGS"
+say "supervisor up (strategy=$STRATEGY, pinfile=$PINFILE)"
+
+# This runner can be started manually or by an interactive host wrapper. Two copies
+# are not harmless: each believes it owns the one Civ VI installation and may
+# tear down the other's attempt between turns.  Keep the ownership boundary
+# outside the game lock (which belongs to the active harness), so a supervisor
+# crash cannot leave the next launch unable to recover a stale game lock.
+SUPERVISOR_LOCK=${CIVVIS_SUPERVISOR_LOCK:-$HOME/.civvis-game-supervisor.lock}
+SUPERVISOR_PID_FILE=$SUPERVISOR_LOCK/pid
+
+release_supervisor_lock() {
+  local holder=""
+  [[ -f "$SUPERVISOR_PID_FILE" ]] && holder=$(<"$SUPERVISOR_PID_FILE")
+  if [[ "$holder" == "$$" ]]; then
+    rm -rf -- "$SUPERVISOR_LOCK"
+  fi
+}
+
+acquire_supervisor_lock() {
+  if mkdir "$SUPERVISOR_LOCK" 2>/dev/null; then
+    print -r -- "$$" > "$SUPERVISOR_PID_FILE"
+    return 0
+  fi
+
+  local holder=""
+  [[ -f "$SUPERVISOR_PID_FILE" ]] && holder=$(<"$SUPERVISOR_PID_FILE")
+  if [[ -n "$holder" ]] && kill -0 "$holder" 2>/dev/null; then
+    say "another game supervisor is already alive (pid $holder); exiting"
+    return 1
+  fi
+
+  # A killed shell cannot run its EXIT trap.  The stale directory is ours alone
+  # and its PID no longer exists, so reclaiming this exact path is safe.
+  say "reclaiming stale supervisor lock (holder=${holder:-unknown})"
+  rm -rf -- "$SUPERVISOR_LOCK"
+  if ! mkdir "$SUPERVISOR_LOCK" 2>/dev/null; then
+    say "could not acquire supervisor lock; retry through launchd"
+    return 2
+  fi
+  print -r -- "$$" > "$SUPERVISOR_PID_FILE"
+}
+
+acquire_supervisor_lock
+lock_status=$?
+if (( lock_status != 0 )); then
+  case $lock_status in
+    1) exit 0 ;; # an intentional second invocation should not churn launchd
+    *) exit 70 ;;
+  esac
+fi
+trap release_supervisor_lock EXIT
+trap 'exit 0' HUP INT TERM
+
+consecutive_failures=0
+
+# The harness publishes its exact PID before it starts interacting with Civ VI.
+# Never infer ownership from a global `pgrep`: other CIVVIS worktrees (or an
+# operator's separate run) can legitimately contain a civ6_play.py process.
+# An invalid or stale holder is deliberately *not* a reason to signal another
+# process; the outer loop waits for an unowned run to finish instead.
+owned_harness_pid() {
+  local holder="$HOME/.civvis-civ6-game.lock/holder.json"
+  local pid="" command=""
+  [[ -r "$holder" ]] || return 1
+
+  pid=$(sed -nE 's/^[[:space:]]*"pid"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' "$holder" | head -n 1)
+  case "$pid" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  kill -0 "$pid" 2>/dev/null || return 1
+  command=$(ps -p "$pid" -o command= 2>/dev/null)
+  [[ "$command" == *"civ6_play.py"* ]] || return 1
+  print -r -- "$pid"
+}
+
+# The live display is a shared machine-level resource, so its owner must be
+# identified by the log it has open rather than by every `tools/follow.py` on
+# the machine.  This keeps one supervisor from tearing down an unrelated
+# worktree's follower during a batch handoff.
+display_follower_pid() {
+  local pid="" stderr_path=""
+  for pid in ${(f)"$(pgrep -f '[t]ools/follow.py' 2>/dev/null)"}; do
+    stderr_path=$(lsof -a -p "$pid" -d 1 -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1)
+    if [[ "$stderr_path" == "$FOLLOW_LOG" ]]; then
+      print -r -- "$pid"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# A server can outlive its follower because follow.py deliberately gives the
+# mirror a new session.  Port 8610 and the command shape together identify the
+# visible CIVVIS server without sweeping up other civvis processes.
+display_mirror_server_pid() {
+  local pid="" command=""
+  for pid in ${(f)"$(lsof -tiTCP:"$MIRROR_PORT" -sTCP:LISTEN 2>/dev/null)"}; do
+    command=$(ps -p "$pid" -o command= 2>/dev/null)
+    if [[ "$command" == *"civvis play --mirror"* ]]; then
+      print -r -- "$pid"
+      return 0
+    fi
+  done
+  return 1
+}
+
+while true; do
+  # ⚠ NEVER kill a HEALTHY game here. A global `pkill -f civ6_play.py` used to
+  # terminate unrelated live runs. Wait for this supervisor's lock holder to
+  # go quiet for two minutes, then ask only that exact harness to stop cleanly.
+  while true; do
+    OWNED_PID=$(owned_harness_pid || true)
+    if [[ -z "$OWNED_PID" ]]; then
+      if pgrep -f '[c]iv6_play.py' >/dev/null 2>&1; then
+        say "an unowned civ6_play.py is present; leaving it alone and retrying in 60s"
+        sleep 60
+        continue
+      fi
+      break
+    fi
+    NEWEST=$(ls -t "$LOGS"/civvis-*-play.log 2>/dev/null | head -1)
+    if [[ -n "$NEWEST" ]]; then
+      AGE=$(( $(date +%s) - $(stat -f %m "$NEWEST") ))
+    else
+      AGE=999
+    fi
+    if (( AGE < 120 )); then
+      say "a live game is still playing (log touched ${AGE}s ago); waiting for it"
+      sleep 60
+    else
+      say "owned harness pid $OWNED_PID is orphaned (log silent ${AGE}s); requesting clean stop"
+      kill -TERM "$OWNED_PID" 2>/dev/null || true
+      for _ in {1..15}; do
+        kill -0 "$OWNED_PID" 2>/dev/null || break
+        sleep 1
+      done
+      if kill -0 "$OWNED_PID" 2>/dev/null; then
+        say "owned harness pid $OWNED_PID is still alive after TERM; leaving it alone and retrying in 60s"
+        sleep 60
+        continue
+      fi
+      break
+    fi
+  done
+  rm -rf "$HOME/.civvis-civ6-game.lock"
+
+  if ! pgrep -x steam_osx >/dev/null; then
+    say "steam is down; starting it"
+    open -a Steam
+    sleep 45
+  fi
+
+  # A wedged core is invisible until a game fails to start, so recycle the game
+  # cleanly whenever the previous attempt did not play a turn.
+  if (( consecutive_failures > 0 )); then
+    say "previous attempt started no game; clean-restarting Civ 6"
+    python3 tools/civ6_launch.py --restart >>"$SUP" 2>&1
+  fi
+
+  PIN=$(cat "$PINFILE" 2>/dev/null || print -r -- head)
+  if [[ "$PIN" == "head" ]]; then
+    REPO=/Users/martin/CIVVIS
+  else
+    REPO=$PIN
+  fi
+  cd "$REPO" || { say "no tree at $REPO"; sleep 60; continue }
+  rm -f status.json                     # tools/follow.py dirties the tree
+  if [[ "$PIN" == "head" ]]; then
+    git pull -q --ff-only origin main 2>/dev/null
+  fi
+  HEAD_SHA=$(git rev-parse --short HEAD)
+  if ! cargo build --release --bin civvis_orders --bin civvis >>"$SUP" 2>&1; then
+    say "build FAILED at $HEAD_SHA; retrying in 120s"
+    sleep 120
+    continue
+  fi
+
+  # ⚠⚠⚠ THE MIRROR SERVER SERVES `/assets/app.js` FROM ITS CWD, while the page's
+  # `index.html` is EMBEDDED IN THE BINARY. Run it from a tree whose app.js does
+  # not match that binary and one bad top-level lookup blanks the whole map --
+  # the sidebar, buttons and title still paint, so it reads as "CIVVIS is up but
+  # the game is not showing". Cost most of an afternoon on 2026-08-10.
+  # So: whenever the tree *or its built revision* changes, restart the follower
+  # FROM $REPO so binary and assets are the same revision by construction.  A
+  # cwd check alone is insufficient: `git pull` changes the same checkout path
+  # in place, while a long-lived mirror server still has the previous binary.
+  FOLLOW_PID=$(display_follower_pid || true)
+  FOLLOW_CWD=""
+  if [[ -n "$FOLLOW_PID" ]]; then
+    FOLLOW_CWD=$(lsof -a -d cwd -p "$FOLLOW_PID" -Fn 2>/dev/null \
+        | sed -n 's/^n//p' | head -1)
+  fi
+  FOLLOW_REVISION=""
+  [[ -f "$FOLLOW_REVISION_FILE" ]] && FOLLOW_REVISION=$(<"$FOLLOW_REVISION_FILE")
+  if [[ "$FOLLOW_CWD" != "$REPO" || "$FOLLOW_REVISION" != "$HEAD_SHA" ]]; then
+    say "display mirror is cwd='${FOLLOW_CWD:-absent}' revision='${FOLLOW_REVISION:-unknown}', want cwd='$REPO' revision='$HEAD_SHA'; refreshing exact mirror owners"
+    if [[ -n "$FOLLOW_PID" ]] && kill -0 "$FOLLOW_PID" 2>/dev/null; then
+      kill -TERM "$FOLLOW_PID" 2>/dev/null || true
+      sleep 2
+    fi
+    MIRROR_PID=$(display_mirror_server_pid || true)
+    if [[ -n "$MIRROR_PID" ]] && kill -0 "$MIRROR_PID" 2>/dev/null; then
+      kill -TERM "$MIRROR_PID" 2>/dev/null || true
+      sleep 2
+    fi
+    mkdir -p "$MIRROR_HOME"
+    ( cd "$REPO" && nohup python3 -u tools/follow.py \
+        > "$FOLLOW_LOG" 2>&1 & )
+    print -r -- "$HEAD_SHA" > "$FOLLOW_REVISION_FILE.$$.tmp"
+    mv -f "$FOLLOW_REVISION_FILE.$$.tmp" "$FOLLOW_REVISION_FILE"
+    sleep 5
+  fi
+
+  TAG=$(date -u +%Y%m%dT%H%M%SZ)
+  say "starting a game on $HEAD_SHA (log climb-$TAG.log)"
+  python3 -u tools/civ6_civvis_climb.py --attempts 1 --strategy "$STRATEGY" \
+      --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
+
+  # "Played a turn" is the only honest success test: a run can reach the map,
+  # emit autoclose events and still never seat the agent.
+  PLAY=$(ls -t "$LOGS"/civvis-*-play.log 2>/dev/null | head -1)
+  if [[ -n "$PLAY" ]] && grep -qE "^\[turn [0-9]+\]" "$PLAY" 2>/dev/null; then
+    consecutive_failures=0
+    say "game on $HEAD_SHA played turns: $(grep -cE '^\[turn [0-9]+\]' "$PLAY") turn lines"
+  else
+    consecutive_failures=$((consecutive_failures + 1))
+    say "game on $HEAD_SHA PLAYED NO TURNS (failure $consecutive_failures)"
+  fi
+
+  if (( consecutive_failures >= 4 )); then
+    say "four starts in a row played nothing; sleeping 10m before trying again"
+    sleep 600
+    consecutive_failures=1
+  fi
+
+  sleep 10
+done
