@@ -8991,6 +8991,31 @@ mod tests {
         }
     }
 
+    /// The saved-HUD-layout replay (`applySavedHudLayouts()`) runs at script
+    /// load, and with a layout in localStorage it reaches
+    /// `syncPlanetGpuCanvas`. A `let PLANET_GPU` that executes later in the
+    /// file is a temporal-dead-zone ReferenceError that kills the whole client
+    /// at load — chrome painted, map black, no `/state` poll — for exactly the
+    /// profiles that ever moved a HUD panel, while a fresh profile boots
+    /// cleanly. That shipped in #1463 and wedged the operator's mirror tab on
+    /// its veil for four days (2026-08-14). The binding must execute before
+    /// the replay; `node --check` cannot see this class, only ordering can.
+    #[test]
+    fn the_planet_gpu_binding_precedes_the_saved_hud_layout_replay() {
+        let declaration = EMBEDDED_APP_JS
+            .find("\nlet PLANET_GPU")
+            .expect("the PLANET_GPU binding");
+        let replay = EMBEDDED_APP_JS
+            .find("\napplySavedHudLayouts();")
+            .expect("the top-level saved-layout replay call");
+        assert!(
+            declaration < replay,
+            "`let PLANET_GPU` executes after the top-level `applySavedHudLayouts()` \
+             call — a saved HUD layout crashes the whole client in the temporal \
+             dead zone"
+        );
+    }
+
     /// Map search is deliberately a client-side read of the observation the
     /// browser already owns. It must use exact sight rather than remembered
     /// tiles, understand the named things that can occupy a tile, and paint
