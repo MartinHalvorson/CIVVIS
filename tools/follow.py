@@ -573,7 +573,22 @@ MIRROR_BOUNDS = os.environ.get("CIVVIS_MIRROR_BOUNDS", "{0, 33, 864, 1117}")
 
 
 def chrome(script):
-    done = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=30)
+    # ⚠ A PENDING AUTOMATION CONSENT KILLED THE WHOLE FOLLOWER (2026-08-14).
+    # On a host whose Terminal has never been granted control of Chrome, macOS
+    # queues the osascript call behind its consent dialog. Nobody was at the
+    # screen, the 30 s timeout fired, and the uncaught TimeoutExpired took the
+    # follower down — so a first-boot machine lost its mirror to a dialog box.
+    # `mirror_on_screen` already defines the contract for this state: an empty
+    # answer means "Chrome cannot be enumerated", NOT "the tab is gone".
+    try:
+        done = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        log("chrome scripting timed out; likely an unanswered Automation "
+            "consent dialog — the mirror keeps serving without tab management")
+        return ""
+    except OSError as exc:
+        log(f"chrome scripting could not run: {exc}")
+        return ""
     if done.returncode != 0:
         # A silent AppleScript failure reads exactly like a healthy no-op — the
         # tab simply never changes — and an Automation (TCC) denial persists
