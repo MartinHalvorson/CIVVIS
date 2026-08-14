@@ -492,6 +492,41 @@ def check_gate(dist: pathlib.Path) -> list[str]:
 # ------------------------------------------------------------------- checks
 
 
+def map_delivery_problems(
+    report: dict, *, allow_legacy_full_map: bool = False
+) -> list[str]:
+    """Validate the browser's map-transfer contract.
+
+    The current engine must send one complete baseline followed by smaller
+    patches.  A promoted stable lane can legitimately predate that protocol,
+    so its caller may accept repeated complete frames; a lane that does send
+    patches must still prove that they are smaller than the baseline.
+    """
+    problems = []
+    full_frames = report.get("fullMapFrames", 0)
+    patch_frames = report.get("patchFrames", 0)
+    full_tiles = report.get("fullMapTiles", 0)
+    patch_tiles = report.get("patchTiles", 0)
+    full_bytes = report.get("fullMapBytes", 0)
+    patch_bytes = report.get("patchBytes", 0)
+
+    if full_frames < 1:
+        problems.append("the browser never received its initial complete map")
+    if patch_frames < 1:
+        if not allow_legacy_full_map:
+            problems.append("the browser never received a map patch after its first frame")
+        return problems
+    if patch_tiles * full_frames >= full_tiles * patch_frames:
+        problems.append(
+            "a map patch carried at least as many tiles per frame as the complete baseline"
+        )
+    if patch_bytes * full_frames >= full_bytes * patch_frames:
+        problems.append(
+            "a map patch transferred at least as many bytes per frame as the complete baseline"
+        )
+    return problems
+
+
 def main(argv: list[str] | None = None) -> int:
     here = pathlib.Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(description=__doc__)
@@ -517,6 +552,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="skip the routing check (it needs npx wrangler, and takes half a minute; "
              "beta/worker_test.py covers the same ground with only Chrome)",
+    )
+    parser.add_argument(
+        "--allow-legacy-full-map",
+        action="store_true",
+        help="accept an engine that predates compact map patches; reserved for the "
+             "pinned stable lane, while the current test lane remains strict",
     )
     args = parser.parse_args(argv)
     lane = "" if args.mount == "root" else "test/"
@@ -769,24 +810,17 @@ def main(argv: list[str] | None = None) -> int:
             problems.append(
                 f"only {report.get('turns', 0)} turns played, wanted {args.min_turns}"
             )
-        if report.get("fullMapFrames", 0) < 1:
-            problems.append("the browser never received its initial complete map")
-        if report.get("patchFrames", 0) < 1:
-            problems.append("the browser never received a map patch after its first frame")
+        problems.extend(
+            map_delivery_problems(
+                report, allow_legacy_full_map=args.allow_legacy_full_map
+            )
+        )
         full_frames = report.get("fullMapFrames", 0)
         patch_frames = report.get("patchFrames", 0)
         full_tiles = report.get("fullMapTiles", 0)
         patch_tiles = report.get("patchTiles", 0)
         full_bytes = report.get("fullMapBytes", 0)
         patch_bytes = report.get("patchBytes", 0)
-        if patch_tiles * full_frames >= full_tiles * patch_frames:
-            problems.append(
-                "a map patch carried at least as many tiles per frame as the complete baseline"
-            )
-        if patch_bytes * full_frames >= full_bytes * patch_frames:
-            problems.append(
-                "a map patch transferred at least as many bytes per frame as the complete baseline"
-            )
         if boot_failed:
             problems.append("the page reported 'CIVVIS boot failed'")
         if isinstance(painted, int) and painted < 8:

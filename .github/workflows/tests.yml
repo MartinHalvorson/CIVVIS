@@ -146,7 +146,7 @@ jobs:
       # The publish pipeline's own tests. #1289 moved the viewer's script to
       # assets/app.js and broke both the stable-lane build and these tests
       # without any gate noticing — the deploy failed days later instead.
-      - run: cd beta && python3 test_cache_bust.py && python3 test_serve.py && python3 shim_test.py && python3 worker_test.py
+      - run: cd beta && python3 test_cache_bust.py && python3 test_serve.py && python3 test_verify.py && python3 shim_test.py && python3 worker_test.py
 
   # The control mod is ~7k lines of Lua that no gate has ever compiled. It runs
   # inside Civ 6, so a syntax error does not fail a build — it fails a GAME, on
