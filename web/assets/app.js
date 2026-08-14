@@ -4,6 +4,15 @@ const SIDEBAR_COLLAPSED_STATE_KEY = "civvis-sidebar-collapsed-v1";
 const SIDEBAR_WIDTH_STORAGE_KEY = "civvis-sidebar-width-v1";
 const ADVANCED_SETTINGS_STATE_KEY = "civvis-advanced-settings-v1";
 const GAME_MOD_STATE_KEY = "civvis-game-mods-v1";
+// The planet renderer's GPU surface lives with the rest of that fast path far
+// below, but its binding must execute before ANY top-level call above it can
+// reach `syncPlanetGpuCanvas` — `applySavedHudLayouts()` gets there via
+// `refitMapAreaToChrome` whenever localStorage holds a saved HUD layout, and a
+// `let` still in its temporal dead zone is a ReferenceError that kills the
+// whole client at load: chrome painted, map black, no /state poll, for exactly
+// the profiles that ever moved a HUD panel. Declared here, at the top, where
+// no load-time path can run first.
+let PLANET_GPU = null;
 function initSidebarSections() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(SIDEBAR_SECTION_STATE_KEY) || "{}"); }
@@ -5826,6 +5835,12 @@ async function boot() {
   } catch (e) {
     console.error("CIVVIS boot failed", e);
     showBootRetrying(++bootAttempts);
+    // A page that arrived veiled ("Joining the live world") has no other
+    // visible surface: a boot that keeps failing behind it reads as
+    // "Reconnecting" forever — that hid a four-day client crash on the
+    // operator's mirror. Say what is actually happening where the eye is.
+    if (worldTransitionPending())
+      setWorldTransitionStage(`Boot failed · retry ${bootAttempts}`);
     clearTimeout(bootTimer);
     bootTimer = setTimeout(boot, 2000);
   } finally {
@@ -11823,7 +11838,10 @@ const PLANET_GPU_SURFACE_MAX_SCALE = .30;
 // 5K desktop panels.  Past that it can consume more memory than it saves, so
 // keep the native Canvas renderer rather than risking a context eviction.
 const PLANET_GPU_MAX_PIXELS = 16_777_216;
-let PLANET_GPU = null;
+// ⚠ `PLANET_GPU` itself is declared at the very top of this file: load-time
+// callers (the saved-HUD-layout replay) reach `syncPlanetGpuCanvas` long
+// before this section executes, and a binding here would be a temporal-dead-
+// zone crash that takes the whole client with it.
 
 function planetGpuHide() {
   if (PLANET_GPU?.canvas) PLANET_GPU.canvas.style.display = "none";
