@@ -12,12 +12,13 @@
 //! compiles a line of it.
 //!
 //! What it deliberately does *not* carry is everything the socket server does
-//! for readers other than the one page: turn pacing, the frame-delivery gate,
-//! per-viewer tile deltas, and the supervisor handoff. One page driving one
-//! game on one thread has nobody to synchronise with, so `/state` answers
-//! immediately with the whole world and the *page* owns the clock — the
-//! JavaScript shim turns its poll into a step. `pace` and `paused` are kept
-//! here only because `/state` is expected to carry them back.
+//! for readers other than the one page: turn pacing, a multi-viewer
+//! frame-delivery gate, and the supervisor handoff. One page driving one game
+//! on one thread has nobody to synchronise with, so the *page* owns the clock
+//! and the JavaScript shim turns its poll into a step. It does retain one
+//! acknowledged tile baseline: avoiding a megabyte transfer for terrain that
+//! did not change is worthwhile even with exactly one viewer. `pace` and
+//! `paused` are kept here because `/state` is expected to carry them back.
 
 use super::*;
 use std::cell::{Cell, RefCell};
@@ -56,6 +57,11 @@ thread_local! {
     /// Multiple player turns share one game turn at Blitz and slower, so
     /// `(seed, turn, finished)` no longer identifies every paint boundary.
     static FRAME_SEQUENCE: Cell<u64> = const { Cell::new(0) };
+    /// The browser has one viewer and one map baseline. Keep just the compact
+    /// per-tile marks here rather than sending its immutable terrain back over
+    /// the worker boundary on every rendered turn.
+    static BROWSER_TILE_MARKS: RefCell<Option<(SpectatorFrame, Vec<u64>)>> =
+        const { RefCell::new(None) };
     /// The seed the opening world is rolled from.
     ///
     /// A module has no clock and no entropy of its own, and this one imports
@@ -178,6 +184,54 @@ fn decorate_browser(o: &mut Value) {
     o["supervisor_request"] = Value::Null;
 }
 
+/// Replace a browser state map with the tile delta from the exact frame the
+/// page says it holds.
+///
+/// The browser route is single-viewer, but it still needs the same baseline
+/// discipline as the socket server: a reply that was cancelled, a page that
+/// changed worlds, or a stale `have=` token must receive a complete map rather
+/// than a patch it would apply to the wrong terrain. The viewer's
+/// `adoptTiles()` already applies this wire shape.
+fn deliver_browser_tiles(
+    frame: SpectatorFrame,
+    have: Option<SpectatorFrame>,
+    state: &mut Value,
+) {
+    // Lift the array out only while considering a patch. A full response keeps
+    // the original values in place; the cache itself is just one u64 per tile.
+    let Some(Value::Object(map)) = state.get_mut("map") else {
+        return;
+    };
+    let Some(Value::Array(tiles)) = map.remove("tiles") else {
+        return;
+    };
+    let marks = tiles.iter().map(tile_mark).collect::<Vec<_>>();
+    let changed = BROWSER_TILE_MARKS.with(|cached| {
+        cached
+            .borrow()
+            .as_ref()
+            .filter(|(held, prior)| {
+                held.seed == frame.seed && Some(*held) == have && prior.len() == marks.len()
+            })
+            .map(|(_, prior)| {
+                tiles
+                    .iter()
+                    .enumerate()
+                    .filter(|(at, _)| prior[*at] != marks[*at])
+                    .map(|(at, tile)| json!([at, tile]))
+                    .collect::<Vec<_>>()
+            })
+    });
+
+    if let Some(changed) = changed {
+        map.insert("tiles_from".to_string(), json!(have.map(|held| held.turn)));
+        map.insert("tiles_changed".to_string(), Value::Array(changed));
+    } else {
+        map.insert("tiles".to_string(), Value::Array(tiles));
+    }
+    BROWSER_TILE_MARKS.with(|cached| *cached.borrow_mut() = Some((frame, marks)));
+}
+
 /// Answer one request, exactly as the socket handler's `match` arm would.
 ///
 /// `target` is the raw request target, query string included, because several
@@ -217,9 +271,6 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             }),
         }),
 
-        // No per-viewer tile delta: the page is told the whole world every
-        // time, which is the full-resync path it already has.
-        //
         // The long poll, though, is the whole clock of a spectated game and
         // has to survive the move into the page. On a socket the watching loop
         // names the frame it holds and the response is *withheld* until a
@@ -232,6 +283,7 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             if let Some(held) = held {
                 advance_one_frame(session, held);
             }
+            let frame = current_frame(session);
             let mut o = session.state();
             if query_value(target, "planet") == Some("1") {
                 if let Some(geometry) = crate::obs::planet_geometry(&session.game) {
@@ -239,6 +291,7 @@ fn route(method: &str, target: &str, body: &str) -> Value {
                 }
             }
             decorate_browser(&mut o);
+            deliver_browser_tiles(frame, held, &mut o);
             o
         }),
 
