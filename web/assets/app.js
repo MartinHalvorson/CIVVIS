@@ -799,6 +799,9 @@ function toggleSeatLock(id) {
 // natural hex proportions while leaving enough vertical room for labels.
 const MAP_PROJECTION = 0.92;
 const REDUCED_MOTION_QUERY = window.matchMedia("(prefers-reduced-motion: reduce)");
+const MAP_PROJECTION_SWAP_STORAGE_KEY = "civvis-map-projection-swap-v1";
+let MAP_PROJECTIONS_SWAPPED =
+  localStorage.getItem(MAP_PROJECTION_SWAP_STORAGE_KEY) === "1";
 let SHOW_YIELDS = localStorage.getItem("civvis-show-yields") === "1";
 let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") === "1";
 // Space-race flights and satellites are on unless a viewer explicitly turns
@@ -1436,6 +1439,7 @@ function syncResponsivePanelGeometry() {
   const shape = typeof planetMap === "function" && planetMap() ? "planet" : "flat";
   const reference = WORLD_MINIMAP_REFERENCE[shape];
   HUD_WIDGETS?.minimap?.element?.classList.toggle("minimap-world-planet", shape === "planet");
+  syncMapProjectionSwapControl();
   const compactMinimapWidth = Math.round(clampPanelDimension(width * .22, 130, 190));
   const compactMinimapHeight = Math.round(clampPanelDimension(height * .19, 80, 148));
   const planetMinimapSide = Math.round(clampPanelDimension(
@@ -4145,13 +4149,16 @@ function syncKnownWorld(st) {
 function updateZoomOut() {
   const button = document.getElementById("zout");
   if (!button) return;
-  const chart = planetMap() && !knowsGlobe();
-  const title = chart
+  const unknownChart = planetMap() && !knowsGlobe();
+  const swappedChart = mapProjectionsSwapped();
+  const title = unknownChart
     ? `Zoom out · no chart holds more of the world — ${globeDiscoveryLabel()} proves it round`
-    : "Zoom out";
+    : swappedChart ? "Zoom out · at the azimuthal chart limit" : "Zoom out";
   if (button.title === title) return;
   button.title = title;
-  button.setAttribute("aria-label", chart ? "Zoom out; limited by what is charted" : "Zoom out");
+  button.setAttribute("aria-label", unknownChart
+    ? "Zoom out; limited by what is charted"
+    : swappedChart ? "Zoom out; at the azimuthal chart limit" : "Zoom out");
 }
 // Cylindrical scripts use one copy — nearest the camera once the world is
 // known to come back on itself, nearest the chart's anchor before that;
@@ -12189,6 +12196,57 @@ function planetMap() {
   if (typeof state.map.shape === "string") return state.map.shape === "planet";
   return LEGACY_GLOBE_SCRIPTS.has(state.map.script);
 }
+// The two planet surfaces carry complementary projections. Swapping them is
+// available only after the globe is known, so the minimap can never reveal a
+// spherical world before the game does. Flat worlds keep their established
+// main-map and overview renderers; there is no second planet projection to
+// exchange on them.
+function mapProjectionsCanSwap() {
+  return planetMap() && knowsGlobe();
+}
+function mapProjectionsSwapped() {
+  return mapProjectionsCanSwap() && MAP_PROJECTIONS_SWAPPED;
+}
+function planetMainUsesChart() {
+  return !knowsGlobe() || mapProjectionsSwapped();
+}
+function planetMiniUsesGlobe() {
+  return mapProjectionsSwapped();
+}
+function syncMapProjectionSwapControl() {
+  const button = document.getElementById("swapmaps");
+  if (!button) return;
+  const available = mapProjectionsCanSwap();
+  const swapped = available && mapProjectionsSwapped();
+  button.closest(".minimap-frame")?.classList.toggle("minimap-can-swap", available);
+  button.hidden = !available;
+  button.disabled = !available;
+  button.setAttribute("aria-pressed", String(swapped));
+  const direction = swapped
+    ? "show the globe on the main map and the azimuthal chart in the minimap"
+    : "show the azimuthal chart on the main map and the globe in the minimap";
+  button.setAttribute("aria-label", `Swap maps — ${direction}`);
+  button.title = `Swap maps — ${direction}`;
+}
+function setMapProjectionsSwapped(swapped) {
+  if (!mapProjectionsCanSwap()) return;
+  const next = Boolean(swapped);
+  if (MAP_PROJECTIONS_SWAPPED === next) return;
+  takeCameraControl(true);
+  cameraFlight = null; cameraZoom = null; clearCameraInertia();
+  skyReturnHome();
+  MAP_PROJECTIONS_SWAPPED = next;
+  try {
+    localStorage.setItem(MAP_PROJECTION_SWAP_STORAGE_KEY, next ? "1" : "0");
+  } catch (_) {}
+  // The chart has its own honest zoom-out floor. Clamp immediately instead of
+  // letting a former space-scale globe become a postage stamp on the sheet.
+  cam.scale = planetScaleClamp(cam.scale);
+  syncMapProjectionSwapControl();
+  updateZoomOut();
+  updateSpinButton();
+  draw(); drawMini();
+}
 // A globe's rectangle is five columns per subdivision, so the world says which
 // globe it is without being asked.
 function planetFrequency() {
@@ -12277,7 +12335,7 @@ function planetCameraBase() {
     // Whether this world is still being drawn the way its own people draw it.
     // Carried on the camera rather than read per corner: it is one fact about
     // the frame, and the projection below is the hottest loop on the map.
-    chart:!knowsGlobe(),
+    chart:planetMainUsesChart(),
   };
 }
 // A ground plane can be foreshortened by squeezing one screen axis.  A sphere
@@ -12287,12 +12345,14 @@ function planetCameraBase() {
 // while the ball, its atmosphere, and every hit cell retain one circular limb.
 // Before that discovery, this is still the old chart and its planar pitch stays
 // appropriate (and deliberately does not reveal a globe through its shape).
+// A chart deliberately selected by Swap maps is overhead, matching the
+// azimuthal instrument it replaces rather than inheriting the globe's pitch.
 function planetTiltBasis(basis, tilt = cam.tilt) {
-  const angle = knowsGlobe() ? clampCameraTilt(tilt) : 0;
+  const angle = planetMainUsesChart() ? 0 : clampCameraTilt(tilt);
   return angle > 1e-9 ? planetSpin(basis, basis.right, angle) : basis;
 }
 function planetUntiltBasis(basis, tilt = cam.tilt) {
-  const angle = knowsGlobe() ? clampCameraTilt(tilt) : 0;
+  const angle = planetMainUsesChart() ? 0 : clampCameraTilt(tilt);
   return angle > 1e-9 ? planetSpin(basis, basis.right, -angle) : basis;
 }
 function planetCamera() {
@@ -14470,11 +14530,12 @@ function planetChartFloor(centerX, centerY) {
   return planetStageReach(centerX, centerY) / CHART_LIMIT;
 }
 // Zooming out stops where that picture is complete. Before the world is known
-// to be round there is no system to complete and no body to hold, so the
+// to be round there is no system to complete and no body to hold; after Swap
+// maps the viewer has deliberately chosen that same chart. In either case the
 // chart's own limit is the stop instead.
 function planetMinScale() {
   const unit = Math.max(1, WW() / (2 * Math.PI));
-  if (!visibleSkyBodies().length) {
+  if (planetMainUsesChart() || !visibleSkyBodies().length) {
     const [centerX, centerY] = planetStageCenter();
     return planetChartFloor(centerX, centerY) / unit;
   }
@@ -20475,8 +20536,9 @@ function drawPlanetStrategicBlast(b, x, y, reach, e, inradius) {
 
 // ---------------------------------------------------------------- minimap
 // A planet's corner chart is global, even when the main view is a close-up.
-// The chart is drawn in the azimuthal equidistant projection: the point facing
-// the viewer sits at the centre, and every other point lies at its true
+// Swap maps exchanges it with an orthographic globe while the main view takes
+// this chart projection. The chart is drawn azimuthal equidistant: the point
+// facing the viewer sits at the centre, and every other point lies at its true
 // angular distance from that centre, so the world unrolls in rings and only
 // closes at the antipode. The full disc is not shown. The chart is cropped to
 // the minimap's square, whose half-side is sized so the crop holds
@@ -20519,10 +20581,23 @@ const AZIMUTHAL_MINI_SQUARE_HALF = (() => {
 function azimuthalMiniProjection(width, height, camera = planetCamera()) {
   const side = Math.max(1, Math.min(width, height));
   return {
-    width, height, side, half:side / 2,
+    kind:"azimuthal", width, height, side, half:side / 2,
     centerX:width / 2, centerY:height / 2,
     basis:planetViewBasis(camera),
   };
+}
+function orthographicMiniProjection(width, height, camera = planetCamera()) {
+  const side = Math.max(1, Math.min(width, height));
+  return {
+    kind:"globe", width, height, side, half:side / 2,
+    centerX:width / 2, centerY:height / 2,
+    basis:planetViewBasis(camera),
+  };
+}
+function planetMiniProjection(width, height, camera = planetCamera()) {
+  return planetMiniUsesGlobe()
+    ? orthographicMiniProjection(width, height, camera)
+    : azimuthalMiniProjection(width, height, camera);
 }
 // A chart point in radians back to a unit vector in the local frame: out
 // toward the viewer, then right, then up.
@@ -20558,6 +20633,41 @@ function azimuthalMiniScreenPoint(point, projection) {
   return [projection.centerX + local[1] * stretch / AZIMUTHAL_MINI_SQUARE_HALF * projection.half,
           projection.centerY - local[2] * stretch / AZIMUTHAL_MINI_SQUARE_HALF * projection.half];
 }
+function orthographicMiniSphereAt(x, y, projection) {
+  const right = (x - projection.centerX) / projection.half;
+  const up = (projection.centerY - y) / projection.half;
+  const radius2 = right * right + up * up;
+  if (radius2 > 1) return null;
+  const out = Math.sqrt(Math.max(0, 1 - radius2));
+  return [
+    projection.basis.out[0] * out + projection.basis.right[0] * right + projection.basis.up[0] * up,
+    projection.basis.out[1] * out + projection.basis.right[1] * right + projection.basis.up[1] * up,
+    projection.basis.out[2] * out + projection.basis.right[2] * right + projection.basis.up[2] * up,
+  ];
+}
+function orthographicMiniScreenPoint(point, projection, clampToLimb = false) {
+  const toward = dot3(point, projection.basis.out);
+  let right = dot3(point, projection.basis.right);
+  let up = dot3(point, projection.basis.up);
+  if (toward < 0) {
+    if (!clampToLimb) return null;
+    const length = Math.hypot(right, up);
+    if (!(length > 1e-9)) return null;
+    right /= length; up /= length;
+  }
+  return [projection.centerX + right * projection.half,
+          projection.centerY - up * projection.half];
+}
+function planetMiniSphereAt(x, y, projection) {
+  return projection.kind === "globe"
+    ? orthographicMiniSphereAt(x, y, projection)
+    : azimuthalMiniSphereAt(x, y, projection);
+}
+function planetMiniScreenPoint(point, projection, clampToLimb = false) {
+  return projection.kind === "globe"
+    ? orthographicMiniScreenPoint(point, projection, clampToLimb)
+    : azimuthalMiniScreenPoint(point, projection);
+}
 // The square the chart is cropped to, as one path: the raster fills it, the
 // overlays clip to it, and the frame is stroked around it.
 function azimuthalMiniSquarePath(projection) {
@@ -20568,6 +20678,44 @@ function azimuthalMiniSquarePath(projection) {
 function azimuthalMiniInsideSquare(point, projection, slack = 0) {
   return Math.abs(point[0] - projection.centerX) <= projection.half + slack &&
          Math.abs(point[1] - projection.centerY) <= projection.half + slack;
+}
+function planetMiniClipPath(projection) {
+  if (projection.kind === "globe") {
+    mx2.beginPath(); mx2.arc(projection.centerX, projection.centerY,
+                             projection.half, 0, Math.PI * 2);
+  } else azimuthalMiniSquarePath(projection);
+}
+function planetMiniOutlinePath(projection) {
+  mx2.beginPath();
+  if (projection.kind === "globe")
+    mx2.arc(projection.centerX, projection.centerY,
+            Math.max(0, projection.half - .5), 0, Math.PI * 2);
+  else mx2.rect(projection.centerX - projection.half + .5,
+                projection.centerY - projection.half + .5,
+                Math.max(0, projection.side - 1), Math.max(0, projection.side - 1));
+}
+function planetMiniContains(point, projection, slack = 0) {
+  return projection.kind === "globe"
+    ? Math.hypot(point[0] - projection.centerX,
+                 point[1] - projection.centerY) <= projection.half + slack
+    : azimuthalMiniInsideSquare(point, projection, slack);
+}
+function planetMiniCellScreenPoints(entry, projection) {
+  if (projection.kind !== "globe") {
+    const points = [];
+    for (const vertex of entry.vertices) {
+      const point = azimuthalMiniScreenPoint(vertex, projection);
+      if (!point) return [];
+      points.push(point);
+    }
+    return points;
+  }
+  const reachesFront = entry.vertices.some(vertex =>
+    dot3(vertex, projection.basis.out) >= 0);
+  if (!reachesFront && dot3(entry.cell.center, projection.basis.out) < 0) return [];
+  const points = entry.vertices.map(vertex =>
+    orthographicMiniScreenPoint(vertex, projection, true)).filter(Boolean);
+  return points.length >= 3 ? points : [];
 }
 
 let PLANET_MINI_INDEX = null;
@@ -20682,6 +20830,10 @@ function paintMiniViewportFootprint(points, clip = null) {
 // clamped to the limb, so a zoomed-out view reads as the visible hemisphere
 // instead of losing its corners.
 function drawPlanetMiniViewportFootprint(projection) {
+  // An azimuthal main chart reaches beyond the hemisphere a globe thumbnail
+  // can display. Its boundary is not one honest closed shape on that globe,
+  // so the swapped view leaves the misleading footprint off.
+  if (projection.kind === "globe") return;
   const mainCamera = planetCamera();
   const mainRadius = mainCamera.radius * cam.scale;
   if (!(mainRadius > 1e-6)) return;
@@ -20712,7 +20864,7 @@ function drawPlanetMiniViewportFootprint(projection) {
       ];
     }
     const length = Math.hypot(...point) || 1;
-    return azimuthalMiniScreenPoint(point.map(value => value / length), projection);
+    return planetMiniScreenPoint(point.map(value => value / length), projection);
   }).filter(Boolean);
   paintMiniViewportFootprint(points);
 }
@@ -20732,8 +20884,8 @@ function drawPlanetMiniNaturalWonderPerimeters(cells, projection) {
       const next = cell.ids[(side + 1) % cell.ids.length];
       const b = [PLANET.corners[3 * next], PLANET.corners[3 * next + 1],
                  PLANET.corners[3 * next + 2]];
-      const first = azimuthalMiniScreenPoint(a, projection);
-      const second = azimuthalMiniScreenPoint(b, projection);
+      const first = planetMiniScreenPoint(a, projection);
+      const second = planetMiniScreenPoint(b, projection);
       if (!first || !second || Math.hypot(first[0] - second[0], first[1] - second[1]) > projection.half)
         continue;
       segments.push([...first, ...second]);
@@ -20753,7 +20905,7 @@ function drawPlanetMiniNaturalWonderPerimeters(cells, projection) {
 function drawPlanetMini() {
   if (!planetReady()) return planetMap();
   const {width, height} = syncMiniCanvas();
-  const projection = azimuthalMiniProjection(width, height);
+  const projection = planetMiniProjection(width, height);
   const visible = new Set((state.turn_visible || state.visible).map(key));
   const spectator = !Number.isInteger(state.view_player);
   const index = planetMiniCellIndex();
@@ -20778,18 +20930,18 @@ function drawPlanetMini() {
   mx2.setTransform(DPR, 0, 0, DPR, 0, 0);
   mx2.fillStyle = "#07110f";
   mx2.fillRect(0, 0, projection.width, projection.height);
+  if (projection.kind === "globe") {
+    planetMiniClipPath(projection);
+    mx2.fillStyle = "#12305c"; mx2.fill();
+  }
   const paintReach = Math.min(Math.PI - .01,
                               Math.SQRT2 * AZIMUTHAL_MINI_SQUARE_HALF + .15);
   const towardFloor = Math.cos(paintReach);
   const batches = new Map();
   for (const entry of index.entries) {
-    if (dot3(entry.cell.center, projection.basis.out) < towardFloor) continue;
-    const points = [];
-    for (const vertex of entry.vertices) {
-      const point = azimuthalMiniScreenPoint(vertex, projection);
-      if (!point) { points.length = 0; break; }
-      points.push(point);
-    }
+    if (projection.kind !== "globe" &&
+        dot3(entry.cell.center, projection.basis.out) < towardFloor) continue;
+    const points = planetMiniCellScreenPoints(entry, projection);
     if (!points.length) continue;
     const color = entry.color;
     const packed = ((color[0] + .5) | 0) << 16 |
@@ -20800,9 +20952,9 @@ function drawPlanetMini() {
   }
   // The crop cuts ground off mid-projection, so the ground fill and
   // everything over it — perimeters, the footprint, cities — is clipped to
-  // the square rather than allowed to spill past the frame.
+  // the active chart or globe rather than allowed to spill past the frame.
   mx2.save();
-  azimuthalMiniSquarePath(projection); mx2.clip();
+  planetMiniClipPath(projection); mx2.clip();
   mx2.lineJoin = "round";
   for (const [packed, polygons] of batches) {
     const style = `rgb(${packed >> 16 & 255},${packed >> 8 & 255},${packed & 255})`;
@@ -20829,10 +20981,10 @@ function drawPlanetMini() {
   for (const city of state.cities) {
     const cell = PLANET.cells.get(key(city.pos));
     if (!cell) continue;
-    const center = azimuthalMiniScreenPoint(cell.center, projection);
+    const center = planetMiniScreenPoint(cell.center, projection);
     const cityState = ownerIsCityState(city.owner);
     const cityRadius = cityState ? 1.15 : 2.35;
-    if (!center || !azimuthalMiniInsideSquare(center, projection, cityRadius)) continue;
+    if (!center || !planetMiniContains(center, projection, cityRadius)) continue;
     const [x, y] = center;
     mx2.globalAlpha = cityState ? MAP_CIV_HIERARCHY.cityStateMarker : 1;
     drawCityIcon(mx2, x, y, cityRadius, cityBannerColor(city.owner),
@@ -20840,17 +20992,17 @@ function drawPlanetMini() {
                  Boolean(city.is_capital));
     mx2.globalAlpha = 1;
   }
-  // Detonations. The chart holds the whole world at once, so it is the one
-  // view where a strike on the far hemisphere shows at all — same flash and
-  // ring vocabulary as the flat minimap.
+  // Detonations use the same flash and ring vocabulary as the flat minimap.
+  // The chart can report a strike deep on the far side; the swapped globe,
+  // honestly, shows only the hemisphere facing it.
   const miniNow = performance.now();
   for (const b of anim.blasts) {
     const e = (miniNow - b.t0) / b.dur;
     if (e < 0 || e >= 1) continue;
     const cell = PLANET.cells.get(key(b.pos));
     if (!cell) continue;
-    const center = azimuthalMiniScreenPoint(cell.center, projection);
-    if (!center || !azimuthalMiniInsideSquare(center, projection, 3)) continue;
+    const center = planetMiniScreenPoint(cell.center, projection);
+    if (!center || !planetMiniContains(center, projection, 3)) continue;
     const [x, y] = center;
     const ee = 1 - (1 - e) * (1 - e);
     const reach = (b.radius + 1) * (b.thermo ? 3.4 : 2.6);
@@ -20867,9 +21019,7 @@ function drawPlanetMini() {
   }
   mx2.restore();
   mx2.strokeStyle = "#b9e3f388"; mx2.lineWidth = 1;
-  mx2.strokeRect(projection.centerX - projection.half + .5,
-                 projection.centerY - projection.half + .5,
-                 projection.side - 1, projection.side - 1);
+  planetMiniOutlinePath(projection); mx2.stroke();
   mx2.setTransform(1, 0, 0, 1, 0, 0);
   return true;
 }
@@ -21102,9 +21252,9 @@ mini.addEventListener("click", ev => {
   const r = mini.getBoundingClientRect();
   if (planetMap()) {
     if (!planetReady()) return;
-    const projection = azimuthalMiniProjection(r.width, r.height);
+    const projection = planetMiniProjection(r.width, r.height);
     const x = ev.clientX - r.left, y = ev.clientY - r.top;
-    const point = azimuthalMiniSphereAt(x, y, projection);
+    const point = planetMiniSphereAt(x, y, projection);
     const target = point && planetMiniCellAt(point, planetMiniCellIndex());
     const tile = target?.tile || (target && TMAP.get(target.key));
     if (tile) { takeCameraControl(); centerWorld(tile.pos); }
@@ -21130,6 +21280,8 @@ mini.addEventListener("click", ev => {
     cam.x = x; cam.y = y; draw(); drawMini();
   } else cameraFlight = {x, y, scale:cam.scale};
 });
+document.getElementById("swapmaps")?.addEventListener("click", () =>
+  setMapProjectionsSwapped(!mapProjectionsSwapped()));
 
 // ---------------------------------------------------------------- panels
 function victoryMetric(player, victory) {

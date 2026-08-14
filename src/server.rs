@@ -9534,7 +9534,9 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("knows_globe !== false"));
         assert!(EMBEDDED_INDEX.contains("sees_exoplanet !== false"));
         assert!(EMBEDDED_INDEX.contains("function visibleSkyBodies(st = state)"));
-        assert!(EMBEDDED_INDEX.contains("chart:!knowsGlobe()"));
+        assert!(EMBEDDED_INDEX.contains("function planetMainUsesChart()"));
+        assert!(EMBEDDED_INDEX.contains("return !knowsGlobe() || mapProjectionsSwapped();"));
+        assert!(EMBEDDED_INDEX.contains("chart:planetMainUsesChart()"));
         assert!(EMBEDDED_INDEX.contains("function planetChartFloor(centerX, centerY)"));
         assert!(EMBEDDED_INDEX.contains("function planetScaleClamp(scale)"));
         assert!(EMBEDDED_INDEX.contains("function planetMiniScale(width, height)"));
@@ -10522,7 +10524,7 @@ mod tests {
             ".minimap-frame.minimap-world-planet { width: 164px; height: 150px; }"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "position: absolute; z-index: 1; right: 10px; bottom: 9px;"
+            "position: absolute; z-index: 2; right: 10px; bottom: 9px;"
         ));
         // On a globe the minimap frame is square, so a dragged edge has to
         // carry the other axis with it. The square is settled *while* the
@@ -12514,7 +12516,7 @@ mod tests {
         // The screen boundary is walked densely, not just at the corners: a
         // straight screen edge is a curve on the azimuthal chart.
         assert!(planet.contains("miniViewportBoundaryScreenPoints().map"));
-        assert!(planet.contains("azimuthalMiniScreenPoint(point.map(value => value / length), projection)"));
+        assert!(planet.contains("planetMiniScreenPoint(point.map(value => value / length), projection)"));
         // A ray past the globe's limb is clamped to the limb rather than
         // dropped, so a zoomed-out footprint keeps its corners.
         assert!(planet.contains("if (distance >= 1 - 1e-6) {"));
@@ -12541,12 +12543,51 @@ mod tests {
         // frame: the overlays clip to the same square the raster fills and
         // the frame is stroked around.
         assert!(EMBEDDED_INDEX.contains("function azimuthalMiniSquarePath(projection)"));
-        assert!(EMBEDDED_INDEX.contains("azimuthalMiniSquarePath(projection); mx2.clip();"));
+        assert!(EMBEDDED_INDEX.contains("else azimuthalMiniSquarePath(projection);"));
+        assert!(EMBEDDED_INDEX.contains("planetMiniClipPath(projection); mx2.clip();"));
         // Minimap clicks invert the same chart the raster paints.
-        assert!(EMBEDDED_INDEX.contains("const projection = azimuthalMiniProjection(r.width, r.height);"));
-        assert!(EMBEDDED_INDEX.contains("const point = azimuthalMiniSphereAt(x, y, projection);"));
+        assert!(EMBEDDED_INDEX.contains("const projection = planetMiniProjection(r.width, r.height);"));
+        assert!(EMBEDDED_INDEX.contains("const point = planetMiniSphereAt(x, y, projection);"));
         assert!(EMBEDDED_INDEX.contains("const target = point && planetMiniCellAt(point, planetMiniCellIndex());"));
         assert!(EMBEDDED_INDEX.contains("avoidsSidebar:true, square:true"));
+    }
+
+    #[test]
+    fn browser_swap_maps_exchanges_planet_projections_and_keeps_minimap_travel() {
+        // The control lives on the minimap beside its travel affordance and is
+        // a real pressed-state button, not a label over the canvas.
+        assert!(EMBEDDED_INDEX.contains("id=\"swapmaps\" class=\"minimap-swap\""));
+        assert!(EMBEDDED_INDEX.contains(">⇄ Swap maps</button>"));
+        assert!(EMBEDDED_INDEX.contains(".minimap-swap[aria-pressed=\"true\"]"));
+        assert!(EMBEDDED_INDEX.contains("<span class=\"minimap-hint\">Click to travel</span>"));
+
+        // Unknown worlds and flat topologies cannot expose a globe through the
+        // swap. Once available, one stored toggle selects both complementary
+        // projections: full-detail azimuthal main map, orthographic minimap.
+        let swap = EMBEDDED_INDEX
+            .split("function mapProjectionsCanSwap()")
+            .nth(1)
+            .and_then(|tail| tail.split("// A globe's rectangle").next())
+            .expect("map projection swap state");
+        assert!(swap.contains("return planetMap() && knowsGlobe();"));
+        assert!(swap.contains("return !knowsGlobe() || mapProjectionsSwapped();"));
+        assert!(swap.contains("return mapProjectionsSwapped();"));
+        assert!(swap.contains("localStorage.setItem(MAP_PROJECTION_SWAP_STORAGE_KEY"));
+        assert!(EMBEDDED_INDEX.contains("chart:planetMainUsesChart()"));
+        assert!(EMBEDDED_INDEX.contains("? orthographicMiniProjection(width, height, camera)"));
+        assert!(EMBEDDED_INDEX.contains(": azimuthalMiniProjection(width, height, camera);"));
+
+        // The globe thumbnail has matching forward and inverse orthographic
+        // maps. Click-to-travel reads through the active projection selector,
+        // so the control continues to land on the cell actually clicked after
+        // either direction of the swap.
+        assert!(EMBEDDED_INDEX.contains("function orthographicMiniSphereAt(x, y, projection)"));
+        assert!(EMBEDDED_INDEX.contains("function orthographicMiniScreenPoint(point, projection, clampToLimb = false)"));
+        assert!(EMBEDDED_INDEX.contains("const projection = planetMiniProjection(r.width, r.height);"));
+        assert!(EMBEDDED_INDEX.contains("const point = planetMiniSphereAt(x, y, projection);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "setMapProjectionsSwapped(!mapProjectionsSwapped())"
+        ));
     }
 
     #[test]
@@ -12562,7 +12603,7 @@ mod tests {
             .and_then(|tail| tail.split("function chartUnrolledU").next())
             .expect("planet minimap renderer");
         assert!(planet_mini.contains("const batches = new Map();"));
-        assert!(planet_mini.contains("const point = azimuthalMiniScreenPoint(vertex, projection);"));
+        assert!(planet_mini.contains("const points = planetMiniCellScreenPoints(entry, projection);"));
         assert!(planet_mini.contains("mx2.fill(); mx2.stroke();"));
         // A canvas fill is superlinear in its path's subpaths, so the ground
         // must stay chunked — one path per colour costs ~10x, one path for
@@ -12579,7 +12620,7 @@ mod tests {
         );
         // Cells smeared past the crop's corners are culled before batching.
         assert!(planet_mini.contains("Math.SQRT2 * AZIMUTHAL_MINI_SQUARE_HALF + .15"));
-        assert!(planet_mini.contains("if (dot3(entry.cell.center, projection.basis.out) < towardFloor) continue;"));
+        assert!(planet_mini.contains("dot3(entry.cell.center, projection.basis.out) < towardFloor) continue;"));
     }
 
     #[test]
