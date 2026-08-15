@@ -11,6 +11,7 @@ spend a rung of the budget. Everything below is that sentence from a different a
 
 from pathlib import Path
 import json
+import re
 import sys
 import tempfile
 import time
@@ -82,6 +83,93 @@ class MirrorFreshnessTests(unittest.TestCase):
         )
 
 
+class TeardownOwnershipTests(unittest.TestCase):
+    """The ladder must never clean up a run whose ownership it cannot prove."""
+
+    TAG = "civvis-MINE"
+
+    def test_main_refuses_a_busy_game_before_preflight_or_teardown(self):
+        """The startup guard is the first defence against a foreign run."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            orders_bin = root / "civvis_orders"
+            orders_bin.write_text("#!/bin/sh\n")
+            argv = ["civ6_civvis_climb.py", "--orders-bin", str(orders_bin),
+                    "--logs", str(root / "logs")]
+            with mock.patch.object(climb.sys, "argv", argv), \
+                 mock.patch.object(climb, "busy", return_value="456\n"), \
+                 mock.patch.object(climb, "teardown") as teardown, \
+                 mock.patch.object(climb, "run") as run:
+                self.assertEqual(3, climb.main())
+
+        teardown.assert_not_called()
+        run.assert_not_called()
+
+    def test_an_untagged_cleanup_does_not_touch_a_running_game(self):
+        with mock.patch.object(climb, "busy", return_value="123\n"), \
+             mock.patch.object(climb, "run") as run:
+            self.assertFalse(climb.teardown())
+
+        run.assert_not_called()
+
+    def test_a_foreign_installed_tag_is_preserved_without_acquiring_or_stopping(self):
+        with mock.patch.object(climb, "installed_run_tag", return_value="civvis-OTHER"), \
+             mock.patch.object(climb.gamelock, "acquire") as acquire, \
+             mock.patch.object(climb.launcher, "stop") as stop, \
+             mock.patch.object(climb.install, "clear_run_tag") as clear:
+            self.assertFalse(climb.teardown(self.TAG))
+
+        acquire.assert_not_called()
+        stop.assert_not_called()
+        clear.assert_not_called()
+
+    def test_a_matching_tag_waits_for_its_live_controller_instead_of_killing_it(self):
+        with mock.patch.object(climb, "installed_run_tag", return_value=self.TAG), \
+             mock.patch.object(climb.gamelock, "acquire", return_value=False) as acquire, \
+             mock.patch.object(climb, "run") as run, \
+             mock.patch.object(climb.launcher, "stop") as stop:
+            self.assertFalse(climb.teardown(self.TAG))
+
+        acquire.assert_called_once_with(self.TAG)
+        run.assert_not_called()
+        stop.assert_not_called()
+
+    def test_matching_orphan_is_locked_then_stopped_and_cleared(self):
+        with mock.patch.object(climb, "installed_run_tag", return_value=self.TAG), \
+             mock.patch.object(climb.gamelock, "acquire", return_value=True) as acquire, \
+             mock.patch.object(climb.gamelock, "release") as release, \
+             mock.patch.object(climb, "busy", side_effect=["456\n", None]), \
+             mock.patch.object(climb, "run") as run, \
+             mock.patch.object(climb.time, "sleep"), \
+             mock.patch.object(climb.launcher, "stop", return_value=True) as stop, \
+             mock.patch.object(climb.install, "clear_run_tag", return_value=True) as clear, \
+             mock.patch.object(climb, "dismiss_crash_dialogs") as dismiss:
+            self.assertTrue(climb.teardown(self.TAG))
+
+        acquire.assert_called_once_with(self.TAG)
+        self.assertEqual(2, run.call_count, "only tag-specific controller sweeps")
+        for call in run.call_args_list:
+            self.assertEqual(["pkill", "-f"], call.args[0][:2])
+            self.assertIn(re.escape(self.TAG), call.args[0][2])
+        stop.assert_called_once_with(timeout_s=45.0)
+        clear.assert_called_once_with()
+        dismiss.assert_called_once_with()
+        release.assert_called_once_with()
+
+    def test_tag_change_after_lock_refuses_before_any_process_is_stopped(self):
+        with mock.patch.object(climb, "installed_run_tag",
+                               side_effect=[self.TAG, "civvis-OTHER"]), \
+             mock.patch.object(climb.gamelock, "acquire", return_value=True), \
+             mock.patch.object(climb.gamelock, "release") as release, \
+             mock.patch.object(climb, "run") as run, \
+             mock.patch.object(climb.launcher, "stop") as stop:
+            self.assertFalse(climb.teardown(self.TAG))
+
+        run.assert_not_called()
+        stop.assert_not_called()
+        release.assert_called_once_with()
+
+
 class _NoWait:
     """The `time` module with `sleep` removed, and nothing else changed."""
 
@@ -128,7 +216,7 @@ class _Harness:
                        "wake_steam", "outcome_of", "code_state")}
         climb.LEDGER = self.ledger
         climb.BLOCKED_BACKOFF_S = (0.0, 0.0, 0.0)   # the table, without the waiting
-        climb.teardown = lambda: None
+        climb.teardown = lambda *args, **kwargs: None
         climb.busy = lambda: None
         self.woke = []
         climb.wake_steam = lambda: self.woke.append(1)
