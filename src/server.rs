@@ -422,12 +422,13 @@ fn host_memory_percent() -> Option<f64> {
 const EMBEDDED_INDEX_HTML: &str = include_str!("../web/index.html");
 const EMBEDDED_APP_JS: &str = include_str!("../web/assets/app.js");
 /// The whole page source — the document plus its one external script — as a
-/// single searchable string. The server ships the two parts at `/` and
-/// `/assets/app.js`; the source-contract tests assert against this combined
-/// source, which is the same contract they checked when the script block was
-/// inline. (The split exists because the script was a 1.35 MB block inside
-/// `web/index.html`, making that file the repository's largest history payer
-/// at ~1 MB of pack growth per edit.)
+/// single searchable string. Only the source-contract tests read it: they
+/// assert against this combined source, which is the same contract they
+/// checked when the script block was inline. The server itself ships the two
+/// parts separately at `/` and `/assets/app.js`. (The split exists because
+/// the script was a 1.35 MB block inside `web/index.html`, making that file
+/// the repository's largest history payer at ~1 MB of pack growth per edit.)
+#[cfg(test)]
 static EMBEDDED_INDEX: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     let mut page = String::with_capacity(EMBEDDED_INDEX_HTML.len() + EMBEDDED_APP_JS.len());
     page.push_str(EMBEDDED_INDEX_HTML);
