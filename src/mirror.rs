@@ -8866,6 +8866,32 @@ fn host_amenity_report(state: &StateSnapshot) -> String {
     )
 }
 
+/// Firaxis serializes the integer Amenity ledger through Lua/JSON as floats.
+/// Keep a value only when both parts of the ledger are known, finite, and still
+/// representable by the integer rules engine; a partial query is not evidence
+/// that a city is content.
+fn host_city_amenity_surplus(city: &StateCity) -> Option<i64> {
+    if !city.amenities.is_finite()
+        || !city.amenities_needed.is_finite()
+        || city.amenities < 0.0
+        || city.amenities_needed < 0.0
+    {
+        return None;
+    }
+    let amenities = city.amenities.round();
+    let needed = city.amenities_needed.round();
+    if (city.amenities - amenities).abs() > 1e-6
+        || (city.amenities_needed - needed).abs() > 1e-6
+        || amenities < i64::MIN as f64
+        || amenities > i64::MAX as f64
+        || needed < i64::MIN as f64
+        || needed > i64::MAX as f64
+    {
+        return None;
+    }
+    Some(amenities as i64 - needed as i64)
+}
+
 /// Policy cards the host ruleset has retired, learned from its own refusals.
 ///
 /// ★★★★ **NO NEW MOD EVENT WAS NEEDED — THE ANSWER WAS ALREADY IN THE STREAM.**
@@ -9690,6 +9716,9 @@ fn apply_observed_city_economy(
     unmapped: &mut Vec<String>,
 ) {
     game.observed_city_yield_adjustments.clear();
+    // Clear first: the previous correction is part of `city_amenity_surplus`,
+    // and using it while deriving this turn's delta would compound it forever.
+    game.observed_city_amenity_adjustments.clear();
     game.observed_city_worked_tiles.clear();
     game.observed_city_specialists.clear();
 
@@ -9799,6 +9828,20 @@ fn apply_observed_city_economy(
     }
 
     // Exact citizen assignments and durable Great Work state are now in place.
+    // Calibrate the actual happiness band before deriving yield corrections.
+    // The correction is a delta, not a host-value override, so a simulated Arena
+    // still supplies its modeled Amenities on top of what Firaxis reported now.
+    for observed in &state.cities {
+        let Some(host_surplus) = host_city_amenity_surplus(observed) else {
+            continue;
+        };
+        let pos = crate::hex::offset_to_axial(observed.x, observed.y);
+        let Some(cid) = game.city_at(pos) else { continue };
+        let modeled_surplus = game.city_amenity_surplus(&game.cities[&cid]);
+        game.observed_city_amenity_adjustments
+            .insert(cid, host_surplus - modeled_surplus);
+    }
+
     // What remains is a local correction for host rules CIVVIS has not modeled.
     for observed in &state.cities {
         let Some(host) = observed.yields else { continue };
@@ -13071,6 +13114,7 @@ mod host_fact_tests {
         assert_eq!(city.amenities_needed, 7.0);
         assert_eq!(city.happiness_yield_mult, -20.0);
         assert_eq!(city.amenities_luxuries, 2.0);
+        assert_eq!(host_city_amenity_surplus(&city), Some(-4));
 
         let state = StateSnapshot {
             turn: 214,
@@ -13100,6 +13144,7 @@ mod host_fact_tests {
             "an absent amenity read defaults to the unknown_metric sentinel, not zero");
         assert!(silent.amenities_needed.is_nan());
         assert!(silent.happiness_yield_mult.is_nan());
+        assert_eq!(host_city_amenity_surplus(&silent), None);
 
         let state = StateSnapshot {
             turn: 40,
@@ -13122,6 +13167,7 @@ mod host_fact_tests {
         };
         assert_eq!(host_amenity_report(&state), "",
             "the mod's -1 must be refused as firmly as an absent field");
+        assert_eq!(host_city_amenity_surplus(&state.cities[0]), None);
     }
 
     /// The wire format is the risk: a Lua key that does not match the serde name
@@ -13186,5 +13232,98 @@ mod host_fact_tests {
         assert!(report.contains("host_yield_pct -15%"),
             "a taxed empire must report its tax, not be filtered away: {report}");
         assert!(report.contains("(2 short)"), "{report}");
+    }
+
+    /// The host ledger must be a planning input, not merely an observability
+    /// note.  At the same time, pinning the raw host value would make an Arena
+    /// appear to supply nothing in counterfactual scoring, so the bridge keeps
+    /// a delta and proves that a modeled repair still lifts the calibrated band.
+    #[test]
+    fn host_amenity_deficit_calibrates_planning_without_freezing_arena_gain() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 84,
+            width: 16,
+            height: 16,
+            chunk: 1,
+            plots: (0..16)
+                .flat_map(|x| (0..16).map(move |y| host_grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 84,
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Roma".to_string(),
+                x: 7,
+                y: 7,
+                pop: 12,
+                amenities: 0.0,
+                amenities_needed: 6.0,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut rebuilt = rebuild_from_state(&snapshot, &state, 2, 91_001, 250, 0);
+        let cid = rebuilt
+            .game
+            .city_at(crate::hex::offset_to_axial(7, 7))
+            .expect("the reported city is mirrored");
+
+        let before = rebuilt.game.city_amenity_surplus(&rebuilt.game.cities[&cid]);
+        assert_eq!(before, -6, "the host's own deficit directs the planner");
+        assert!(
+            rebuilt
+                .game
+                .observed_city_amenity_adjustments
+                .contains_key(&cid),
+            "a known host ledger must not remain a diagnostic-only field"
+        );
+        let saved = serde_json::to_string(&rebuilt.game)
+            .expect("the live calibration remains save-compatible");
+        let restored: crate::game::Game =
+            serde_json::from_str(&saved).expect("the calibration round-trips through a save");
+        assert_eq!(
+            restored.city_amenity_surplus(&restored.cities[&cid]),
+            -6,
+            "a saved mirror must not forget the host's current happiness band"
+        );
+
+        let site = rebuilt.game.cities[&cid]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != rebuilt.game.cities[&cid].pos)
+            .expect("the city has a legal neighboring plot");
+        let expected_gain = (rebuilt.game.rules.districts["entertainment_complex"].amenity
+            + rebuilt.game.rules.buildings["arena"].amenity)
+            .round() as i64;
+        {
+            let city = rebuilt.game.cities.get_mut(&cid).unwrap();
+            city.districts
+                .insert(crate::name!("entertainment_complex"), site);
+            city.buildings.push(crate::name!("arena"));
+        }
+        rebuilt.game.map.tiles.get_mut(&site).unwrap().district =
+            Some(crate::name!("entertainment_complex"));
+
+        let after = rebuilt.game.city_amenity_surplus(&rebuilt.game.cities[&cid]);
+        assert_eq!(
+            after - before,
+            expected_gain,
+            "the additive host correction must retain the Entertainment Complex and Arena's modeled Amenities"
+        );
+
+        let mut unavailable = state.clone();
+        unavailable.cities[0].amenities = f64::NAN;
+        unavailable.cities[0].amenities_needed = f64::NAN;
+        let mut unmapped = Vec::new();
+        apply_observed_city_economy(&mut rebuilt.game, &unavailable, &mut unmapped);
+        assert!(
+            !rebuilt
+                .game
+                .observed_city_amenity_adjustments
+                .contains_key(&cid),
+            "a later unavailable host query must clear rather than preserve a stale deficit"
+        );
     }
 }

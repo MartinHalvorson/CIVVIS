@@ -17606,6 +17606,12 @@ pub struct Game {
     /// contribute their modeled delta instead of being hidden by an override.
     #[serde(default)]
     pub observed_city_yield_adjustments: BTreeMap<u32, crate::rules::Yields>,
+    /// Per-city host-to-model Amenity-surplus corrections for a mirrored
+    /// Firaxis turn. Native games leave this empty. Like yield corrections,
+    /// these are additive: a planned Arena, Luxury, or policy still changes
+    /// the projected surplus instead of being masked by a frozen host value.
+    #[serde(default)]
+    pub observed_city_amenity_adjustments: BTreeMap<u32, i64>,
     #[serde(default)]
     pub observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
     #[serde(default)]
@@ -18059,6 +18065,8 @@ struct GameSer {
     #[serde(default)]
     observed_city_yield_adjustments: BTreeMap<u32, crate::rules::Yields>,
     #[serde(default)]
+    observed_city_amenity_adjustments: BTreeMap<u32, i64>,
+    #[serde(default)]
     observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
     #[serde(default)]
     observed_city_specialists: BTreeMap<u32, Vec<String>>,
@@ -18228,6 +18236,7 @@ impl From<GameSer> for Game {
             observed_leader_types: s.observed_leader_types,
             observed_yield_adjustments: s.observed_yield_adjustments,
             observed_city_yield_adjustments: s.observed_city_yield_adjustments,
+            observed_city_amenity_adjustments: s.observed_city_amenity_adjustments,
             observed_city_worked_tiles: s.observed_city_worked_tiles,
             observed_city_specialists: s.observed_city_specialists,
             observed_city_loyalty_per_turn: s.observed_city_loyalty_per_turn,
@@ -18416,6 +18425,7 @@ impl From<Game> for GameSer {
             observed_leader_types: g.observed_leader_types,
             observed_yield_adjustments: g.observed_yield_adjustments,
             observed_city_yield_adjustments: g.observed_city_yield_adjustments,
+            observed_city_amenity_adjustments: g.observed_city_amenity_adjustments,
             observed_city_worked_tiles: g.observed_city_worked_tiles,
             observed_city_specialists: g.observed_city_specialists,
             observed_city_loyalty_per_turn: g.observed_city_loyalty_per_turn,
@@ -18476,6 +18486,7 @@ impl Game {
         self.observed_city_strength.clear();
         self.observed_city_max_wall_hp.clear();
         self.observed_city_yield_adjustments.clear();
+        self.observed_city_amenity_adjustments.clear();
         self.observed_city_worked_tiles.clear();
         self.observed_city_specialists.clear();
         for tile in self.map.tiles.values_mut() {
@@ -18545,6 +18556,7 @@ impl Game {
         self.observed_city_strength.remove(&cid);
         self.observed_city_max_wall_hp.remove(&cid);
         self.observed_city_yield_adjustments.remove(&cid);
+        self.observed_city_amenity_adjustments.remove(&cid);
         self.observed_city_worked_tiles.remove(&cid);
         self.observed_city_specialists.remove(&cid);
         for player in self.players.iter_mut() {
@@ -18788,6 +18800,7 @@ impl Game {
             observed_leader_types: BTreeMap::new(),
             observed_yield_adjustments: BTreeMap::new(),
             observed_city_yield_adjustments: BTreeMap::new(),
+            observed_city_amenity_adjustments: BTreeMap::new(),
             observed_city_worked_tiles: BTreeMap::new(),
             observed_city_specialists: BTreeMap::new(),
             observed_city_loyalty_per_turn: BTreeMap::new(),
@@ -30596,6 +30609,11 @@ impl Game {
         self.city_amenities(city)
             - Self::city_amenities_required(city)
             - self.players[city.owner].bankruptcy_amenity_penalty
+            + self
+                .observed_city_amenity_adjustments
+                .get(&city.id)
+                .copied()
+                .unwrap_or(0)
     }
 
     fn amenity_yield_mult(&self, city: &City) -> f64 {
