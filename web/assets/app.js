@@ -14277,7 +14277,7 @@ function skyPointerWorld(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN) {
 // The extra margin keeps a coin-sized world practical to select without making
 // neighbouring bodies indistinguishable.
 function skyArrivalHit(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN) {
-  if (!planetMap() || !knowsGlobe()) return null;
+  if (!planetMap() || !knowsGlobe() || planetMainUsesChart()) return null;
   const margin = Math.max(8, Math.min(22, skyStageSpan() * .025));
   let best = null;
   for (const stop of skyWorldStops()) {
@@ -15033,7 +15033,8 @@ function skyTravelDuration(S) {
                   Math.min(1700 * SKY_TRAVEL_PACE, S * 240 * SKY_TRAVEL_PACE));
 }
 function skyTravel(pan, scale) {
-  if (!planetMap()) return;
+  // No sky to travel on a chart: see `skyNavShowing`.
+  if (!planetMap() || planetMainUsesChart()) return;
   takeCameraControl();
   const to = {x:pan.x, y:pan.y};
   const want = Math.max(planetMinScale(), scale);
@@ -15142,7 +15143,7 @@ function skyLadderPan(scale, subject) {
 // It sets a target rather than flying a path, because a slider under a finger
 // is a target that keeps moving and the ease is already a spring.
 function skyLadderTo(along) {
-  if (!planetMap()) return;
+  if (!planetMap() || planetMainUsesChart()) return;
   takeCameraControl();
   const subject = skyLadderSubject();
   const want = Math.max(planetMinScale(),
@@ -15207,7 +15208,13 @@ function syncSkyNavDockGeometry() {
   });
 }
 function skyNavShowing() {
-  if (!planetMap() || !knowsGlobe() || !mapOverlayVisible("controls")) return false;
+  // A chart has no sky. Before the globe is known there is nothing out there
+  // to be shown, and once Swap maps has put the azimuthal chart on the main
+  // map the viewer has chosen the instrument over the ball: the bar would be
+  // a way about a sky the chart never draws, and every stop on it would carry
+  // the camera off the sheet into black.
+  if (!planetMap() || !knowsGlobe() || planetMainUsesChart() ||
+      !mapOverlayVisible("controls")) return false;
   // Only home takes it down, and only while home fills the frame. Home is the
   // one world with a board on it and the one place the bar would be standing
   // over the game; every other world out here is somewhere to look at and
@@ -16526,11 +16533,14 @@ function drawSkyCaption(place, crew, alpha, note, above) {
 //   the craft       satellites, landings, the expedition, and launches
 //   the scale       and what all of it is a picture of
 //
-// None of this is above a chart. Filtering the *bodies* by what is known is not
-// enough on its own: the satellites and the expedition are drawn from whoever
-// launched them, which is every civilization rather than this one, so a
-// neighbour's craft would otherwise be seen orbiting a world its viewer has no
-// reason to believe is a ball.
+// None of this is above a chart — neither the chart of a world not yet known
+// to be round, nor the azimuthal chart Swap maps puts on the main map.
+// Filtering the *bodies* by what is known is not enough on its own: the
+// satellites and the expedition are drawn from whoever launched them, which is
+// every civilization rather than this one, so a neighbour's craft would
+// otherwise be seen orbiting a world its viewer has no reason to believe is a
+// ball; and on the swapped chart an orbit or a launch would be a line drawn
+// across a sheet that has no limb for it to pass behind.
 function drawPlanetSky(camera, radius, centerX, centerY) {
   if (camera.chart) return;
   const crews = skyCrews();
@@ -16717,7 +16727,9 @@ function drawSkyStarName(body, place, radius, alpha) {
 // perfectly still between turns. While the sky is open and something up there
 // is under way, the map keeps painting.
 function planetSkyAnimating() {
-  if (!state || !planetReady()) return false;
+  // The chart draws no sky, so nothing in it is moving: a satellite in orbit
+  // must not keep the painter awake over a sheet it is never drawn on.
+  if (!state || !planetReady() || planetMainUsesChart()) return false;
   // A launch begins at Earth's limb and must move even while the camera is
   // still close to home. The permanent orbit/voyage loops remain limited to
   // the open-sky view as before.
@@ -18876,9 +18888,12 @@ function drawPlanetMap() {
     cx.fillStyle = "#000";
     cx.fillRect(0, 0, MAPW, MAPH);
   }
-  // Stars emerge as the globe draws back; the black field stays constant.
+  // Stars emerge as the globe draws back; the black field stays constant. A
+  // chart is a sheet, not a ball in space: nothing of the sky — stars here,
+  // and the bodies, orbits, satellites and launches in `drawPlanetSky` — is
+  // ever painted over or around it.
   const depth = skyDepth(radius);
-  if (depth > 0) drawSkyStars(depth, radius);
+  if (depth > 0 && !camera.chart) drawSkyStars(depth, radius);
 
   // Standing over Mars, the Earth is a whole screen-width of world sitting
   // several screens off the side of the stage. Every one of its tiles still
