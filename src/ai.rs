@@ -2292,6 +2292,87 @@ impl BasicAi {
         None
     }
 
+    fn live_great_person_default_district(kind: &str) -> Option<&'static str> {
+        match kind {
+            "scientist" => Some("campus"),
+            "engineer" => Some("industrial_zone"),
+            "merchant" => Some("commercial_hub"),
+            "prophet" => Some("holy_site"),
+            "writer" | "artist" | "musician" => Some("theater_square"),
+            "general" => Some("encampment"),
+            "admiral" => Some("harbor"),
+            _ => None,
+        }
+    }
+
+    fn live_great_person_work(kind: &str) -> Option<&'static str> {
+        match kind {
+            "writer" => Some("writing"),
+            "artist" => Some("art"),
+            "musician" => Some("music"),
+            _ => None,
+        }
+    }
+
+    fn live_great_person_district<'a>(
+        need: &'a crate::game::LiveGreatPersonActivationNeed,
+    ) -> Option<&'a str> {
+        match need.required_district.as_deref() {
+            Some("city_center") => None,
+            Some(family) => Some(family),
+            None => Self::live_great_person_default_district(&need.kind),
+        }
+    }
+
+    /// Technology whose absence prevents an already-recruited physical Great
+    /// Person from ever receiving a legal activation plot in the live game.
+    pub(crate) fn live_great_person_tech_goal(g: &Game, pid: usize) -> Option<String> {
+        for need in &g.players[pid].live_great_person_activation_needs {
+            if let Some(family) = Self::live_great_person_district(need) {
+                let district = Self::civ_district(g, pid, family);
+                if let Some(tech) = g.rules.districts[district].tech.as_deref() {
+                    if !g.players[pid].techs.contains(&Name::new(tech)) {
+                        return Some(tech.to_string());
+                    }
+                }
+            }
+            // The Musician chain eventually needs a Broadcast Center. Walking
+            // to Radio now is safe even if Humanism still gates its Museum;
+            // the civic chooser below advances that independent half.
+            if need.kind == "musician" && !g.players[pid].techs.contains(&crate::name!("radio")) {
+                return Some("radio".to_string());
+            }
+        }
+        None
+    }
+
+    /// Civic counterpart of [`Self::live_great_person_tech_goal`]. Cultural
+    /// people ask for the complete slot chain, not merely a Theater Square:
+    /// Writers need Drama and Poetry, Artists and Musicians need Humanism.
+    pub(crate) fn live_great_person_civic_goal(g: &Game, pid: usize) -> Option<String> {
+        for need in &g.players[pid].live_great_person_activation_needs {
+            if let Some(family) = Self::live_great_person_district(need) {
+                let district = Self::civ_district(g, pid, family);
+                if let Some(civic) = g.rules.districts[district].civic.as_deref() {
+                    if !g.players[pid].civics.contains(&Name::new(civic)) {
+                        return Some(civic.to_string());
+                    }
+                }
+            }
+            let cultural = match need.kind.as_str() {
+                "writer" => Some("drama_poetry"),
+                "artist" | "musician" => Some("humanism"),
+                _ => None,
+            };
+            if let Some(civic) = cultural {
+                if !g.players[pid].civics.contains(&Name::new(civic)) {
+                    return Some(civic.to_string());
+                }
+            }
+        }
+        None
+    }
+
     fn research_step_toward(
         g: &Game,
         avail: &[Name],
@@ -3884,6 +3965,12 @@ impl BasicAi {
         if g.players[pid].research.is_none() {
             let avail = g.available_techs(pid);
             if !avail.is_empty() {
+                let great_person_goal = Self::live_great_person_tech_goal(g, pid);
+                let great_person_pick = Self::research_step_toward(
+                    g,
+                    &avail,
+                    great_person_goal.as_deref(),
+                );
                 let water_pick = Self::research_step_toward(
                     g,
                     &avail,
@@ -3894,7 +3981,8 @@ impl BasicAi {
                     &avail,
                     Self::economic_research_goal(g, pid),
                 );
-                let pick = water_pick
+                let pick = great_person_pick
+                    .or(water_pick)
                     .or(economic_pick)
                     .or_else(|| {
                         TECH_PRIORITY
@@ -3909,11 +3997,19 @@ impl BasicAi {
         if g.players[pid].civic.is_none() {
             let avail = g.available_civics(pid);
             if !avail.is_empty() {
-                let pick = CIVIC_PRIORITY
-                    .iter()
-                    .find(|c| avail.iter().any(|a| a == *c))
-                    .map(|c| Name::new(c))
-                    .unwrap_or_else(|| avail[0]);
+                let great_person_goal = Self::live_great_person_civic_goal(g, pid);
+                let pick = Self::civic_step_toward(
+                    g,
+                    &avail,
+                    great_person_goal.as_deref(),
+                )
+                .or_else(|| {
+                    CIVIC_PRIORITY
+                        .iter()
+                        .find(|c| avail.iter().any(|a| a == *c))
+                        .map(|c| Name::new(c))
+                })
+                .unwrap_or_else(|| avail[0]);
                 let _ = g.apply(pid, &Action::Civic { civic: Name::new(&pick) });
             }
         }
@@ -6549,6 +6645,215 @@ impl BasicAi {
         Some(wall)
     }
 
+    fn live_great_person_family_ready_or_queued(g: &Game, pid: usize, family: &str) -> bool {
+        g.player_city_ids(pid).into_iter().any(|city| {
+            g.city_has_district_family(&g.cities[&city], Name::new(family))
+                || matches!(
+                    g.cities[&city].queue.first(),
+                    Some(Item::District { district, .. })
+                        if g.district_family(*district) == family
+                )
+        })
+    }
+
+    fn live_great_person_district_item(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        family: &str,
+    ) -> Option<Item> {
+        if Self::live_great_person_family_ready_or_queued(g, pid, family)
+            || g.city_has_district_family(&g.cities[&cid], Name::new(family))
+        {
+            return None;
+        }
+        let district = Self::civ_district(g, pid, family);
+        g.district_sites(cid, district)
+            .into_iter()
+            .max_by(|left, right| {
+                g.district_yields(district, *left)
+                    .total()
+                    .partial_cmp(&g.district_yields(district, *right).total())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then(left.cmp(right))
+            })
+            .map(|pos| Item::District { district, pos })
+            .filter(|item| g.can_produce(pid, cid, item))
+    }
+
+    fn live_great_person_cultural_item(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        work: &str,
+    ) -> Option<Item> {
+        // The host's empty activation-plot list is authoritative. CIVVIS may
+        // believe a generic Palace `any` slot is open while Firaxis refuses
+        // this exact individual, and trusting the approximation here is what
+        // leaves the physical person parked. Build typed capacity until the
+        // next host frame exposes a real plot and clears the need.
+        let chain: &[&str] = match work {
+            "writing" => &["amphitheater"],
+            // Target first, then the prerequisite needed to make it buildable.
+            "art" => &["art_museum", "amphitheater"],
+            "music" => &["broadcast_center", "art_museum", "amphitheater"],
+            _ => return None,
+        };
+        let already_queued = g.player_city_ids(pid).into_iter().any(|city| {
+            matches!(
+                g.cities[&city].queue.first(),
+                Some(Item::Building { building })
+                    if chain.iter().any(|family| g.building_is_family(building, Name::new(family)))
+            )
+        });
+        if already_queued {
+            return None;
+        }
+        for family in chain {
+            let buildable_somewhere = g
+                .player_city_ids(pid)
+                .into_iter()
+                .any(|city| Self::civ_building(g, pid, city, family).is_some());
+            if buildable_somewhere {
+                return Self::civ_building(g, pid, cid, family);
+            }
+        }
+        None
+    }
+
+    /// Production that turns an already-owned physical Great Person into a
+    /// usable action. Ordinary/headless games never enter this path because
+    /// their mirror-only need list is empty.
+    fn live_great_person_activation_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        if self.minor || self.barb || !g.cities[&cid].queue.is_empty() {
+            return None;
+        }
+        for need in &g.players[pid].live_great_person_activation_needs {
+            let wonder_engineer = need.kind == "engineer"
+                && matches!(need.individual.as_deref(), Some("imhotep" | "gustave_eiffel"));
+            if wonder_engineer {
+                let wonder_queued = g.player_city_ids(pid).into_iter().any(|city| {
+                    matches!(g.cities[&city].queue.first(), Some(Item::Wonder { .. }))
+                });
+                if !wonder_queued {
+                    if let Some(wonder) = Self::cheapest_available_wonder(g, pid, cid) {
+                        return Some(wonder);
+                    }
+                }
+                continue;
+            }
+
+            if let Some(family) = Self::live_great_person_district(need) {
+                if !Self::live_great_person_family_ready_or_queued(g, pid, family) {
+                    if let Some(district) =
+                        Self::live_great_person_district_item(g, pid, cid, family)
+                    {
+                        return Some(district);
+                    }
+                    // A different city may be able to place this district. Do not
+                    // substitute the class default or build a later slot stage.
+                    continue;
+                }
+            }
+
+            if let Some(work) = Self::live_great_person_work(&need.kind) {
+                if let Some(building) =
+                    Self::live_great_person_cultural_item(g, pid, cid, work)
+                {
+                    return Some(building);
+                }
+            }
+
+            // Formation and promotion people can have infrastructure yet no
+            // eligible body. Create one instead of parking the person forever.
+            let no_special_district = need
+                .required_district
+                .as_deref()
+                .is_none_or(|family| family == "city_center");
+            if no_special_district && need.kind == "general" {
+                let land_queued = g.player_city_ids(pid).into_iter().any(|city| {
+                    matches!(g.cities[&city].queue.first(), Some(Item::Unit { unit })
+                        if g.rules.units[unit].class == "military"
+                            && g.rules.units[unit].domain.as_deref() != Some("sea"))
+                });
+                if !land_queued {
+                    if let Some(unit) = self.best_military(g, pid, cid, None) {
+                        return Some(Item::Unit {
+                            unit: Name::new(&unit),
+                        });
+                    }
+                }
+            }
+            if no_special_district && need.kind == "admiral" {
+                let navy_queued = g.player_city_ids(pid).into_iter().any(|city| {
+                    matches!(g.cities[&city].queue.first(), Some(Item::Unit { unit })
+                        if g.rules.units[unit].class == "military"
+                            && g.rules.units[unit].domain.as_deref() == Some("sea"))
+                });
+                if !navy_queued {
+                    if let Some(unit) = self.best_naval_unit(g, pid, cid) {
+                        return Some(Item::Unit { unit });
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Reserve the fastest idle city for one missing Great Person activation
+    /// requirement before the strategic governor can fill every queue with a
+    /// repeatable project. Re-running after the chosen item completes advances
+    /// multi-stage cultural chains one concrete prerequisite at a time.
+    pub(crate) fn prioritize_live_great_person_activation(
+        &self,
+        g: &mut Game,
+        pid: usize,
+    ) -> bool {
+        if g.players[pid].live_great_person_activation_needs.is_empty() {
+            return false;
+        }
+        let mut changed = false;
+        loop {
+            let choice = g
+                .player_city_ids(pid)
+                .into_iter()
+                .filter(|city| g.cities[city].queue.is_empty())
+                .filter_map(|city| {
+                    let item = self.live_great_person_activation_item(g, pid, city)?;
+                    let remaining = (g.item_cost_for_city(pid, city, &item)
+                        - g.cities[&city].production)
+                        .max(0.0);
+                    let turns = remaining / g.city_yields(city).production.max(0.1);
+                    Some((turns, format!("{item:?}"), city, item))
+                })
+                .min_by(|left, right| {
+                    left.0
+                        .total_cmp(&right.0)
+                        .then_with(|| left.1.cmp(&right.1))
+                        .then_with(|| left.2.cmp(&right.2))
+                });
+            let Some((_, _, city, item)) = choice else {
+                break;
+            };
+            if g
+                .apply(
+                    pid,
+                    &Action::Produce {
+                        city,
+                        item: item.clone(),
+                    },
+                )
+                .is_err()
+            {
+                break;
+            }
+            changed = true;
+            think!(self.journal, Cities, Decision, "Building an activation path for an idle Great Person";
+                   "{} starts {:?}, the fastest missing prerequisite", g.cities[&city].name, item);
+        }
+        changed
+    }
+
     pub fn pick_item(
         &self,
         g: &Game,
@@ -6728,6 +7033,12 @@ impl BasicAi {
             if let Some(unit) = self.siege_support_unit(g, pid, cid) {
                 return Some(Item::Unit { unit: Name::new(&unit) });
             }
+        }
+        // Survival and the force floor above still win. Once they are met,
+        // production already paid for as a physical Great Person outranks a
+        // new Spy, Product, district project, Settler, or ordinary building.
+        if let Some(item) = self.live_great_person_activation_item(g, pid, cid) {
+            return Some(item);
         }
         if !self.minor && !self.barb {
             let has_spaceport = g.cities.values().any(|city| {
@@ -11045,6 +11356,92 @@ mod tests {
         assert_eq!(BasicAi::claim_free_great_people(&mut game, 0), 1);
         assert_eq!(game.players[0].gp_claimed["scientist"], 1);
         assert!(game.players[0].great_people.iter().any(|person| person == "hypatia"));
+    }
+
+    #[test]
+    fn a_stranded_live_scientist_unlocks_and_queues_a_campus() {
+        let mut game = Game::new_full(1, 20, 14, 41_106, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        game.players[0]
+            .live_great_person_activation_needs
+            .push(crate::game::LiveGreatPersonActivationNeed {
+                kind: "scientist".to_string(),
+                individual: Some("hypatia".to_string()),
+                required_district: Some("campus".to_string()),
+            });
+
+        assert_eq!(
+            BasicAi::live_great_person_tech_goal(&game, 0).as_deref(),
+            Some("writing"),
+            "research must open the activation district before generic priorities"
+        );
+        grant_tech_with_prerequisites(&mut game, 0, "writing");
+        let ai = BasicAi::new();
+        assert!(ai.prioritize_live_great_person_activation(&mut game, 0));
+        let city = game.player_city_ids(0)[0];
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::District { district, .. })
+                if game.district_family(*district) == "campus"
+        ));
+        assert!(
+            !ai.prioritize_live_great_person_activation(&mut game, 0),
+            "a queued Campus satisfies every waiting Scientist without duplication"
+        );
+    }
+
+    #[test]
+    fn a_stranded_live_artist_builds_the_great_work_slot_chain() {
+        let mut game = Game::new_full(1, 20, 14, 41_107, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let theater = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&theater).unwrap().district = Some(crate::name!("theater_square"));
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("theater_square"), theater);
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+        game.players[0]
+            .live_great_person_activation_needs
+            .push(crate::game::LiveGreatPersonActivationNeed {
+                kind: "artist".to_string(),
+                individual: Some("donatello".to_string()),
+                required_district: Some("theater_square".to_string()),
+            });
+
+        assert_eq!(
+            BasicAi::live_great_person_civic_goal(&game, 0).as_deref(),
+            Some("humanism"),
+            "the planner must unlock the Museum rather than stopping at a Theater"
+        );
+        let ai = BasicAi::new();
+        assert!(ai.prioritize_live_great_person_activation(&mut game, 0));
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Building { building })
+                if game.building_is_family(building, crate::name!("amphitheater"))
+        ));
+        assert!(
+            !ai.prioritize_live_great_person_activation(&mut game, 0),
+            "the queued prerequisite must not be cloned by a second city"
+        );
     }
 
     /// The 36 cities that vanished at FULL loyalty, in one assertion: a city on
