@@ -5750,8 +5750,10 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("id=\"between-game-countdown\""));
         assert!(EMBEDDED_INDEX.contains("<option value=\"0\">None</option>"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"3000\">3s</option>"));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"5000\">5s</option>"));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"10000\" selected>10s</option>"));
+        // 5s carries the markup default to match the client's soft default
+        // for ordinary Civ worlds; a battlefield swaps the soft choice to 3s.
+        assert!(EMBEDDED_INDEX.contains("<option value=\"5000\" selected>5s</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"10000\">10s</option>"));
         assert!(EMBEDDED_INDEX.contains("const BETWEEN_GAME_COUNTDOWN_KEY"));
         assert!(EMBEDDED_INDEX.contains("betweenGameCountdownMs()"));
     }
