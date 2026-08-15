@@ -7220,16 +7220,14 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       w.dataset.signature = signature;
       const kicker = SPEC ? "A civilization ascendant"
         : winnerIds.includes(0) ? "Victory" : "Defeat";
-      w.innerHTML = `<div class="winner-content">
-        <span class="winner-kicker">${kicker}</span>
-        <span class="winner-mark" aria-hidden="true">✦</span>
-        <strong class="winner-title">${winnerName}</strong>
-        <span class="winner-verdict">${verdict}</span>
-        <span class="winner-meta">Turn ${reportedTurn(st)} · History remembers</span>
-        ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
-        <span class="winner-actions">
-          ${SPEC ? `` : `<button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
-            title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>`}
+      const winnerActions = SPEC
+        ? `<button class="winner-again winner-playon" id="play-on-one-more-turn"
+            onclick="playOnPastVictory('until_next_victory', false)"
+            title="Keep this world playing until a different victory ends it.">One more turn</button>
+          <button class="primary winner-again" id="finale-new-game" onclick="startNewSimulation()"
+            title="Start a new game now.">New Game</button>`
+        : `<button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
+            title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>
           <button class="winner-again winner-playon" id="play-on-look-around"
             onclick="playOnPastVictory('until_next_victory', true)"
             title="Keep this world and pause before another turn runs, so you can inspect the final map.">Take a look around</button>
@@ -7238,7 +7236,16 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
             title="Keep playing this world without a turn limit. The exact result shown here will not repeat; the next distinct victory ends the game.">Continue to the next Victory type</button>
           <button class="winner-again winner-playon" id="play-on-indefinite"
             onclick="playOnPastVictory('indefinite', false)"
-            title="Keep playing this world without a turn limit and ignore every later victory.">To infinity and beyond</button>
+            title="Keep playing this world without a turn limit and ignore every later victory.">To infinity and beyond</button>`;
+      w.innerHTML = `<div class="winner-content">
+        <span class="winner-kicker">${kicker}</span>
+        <span class="winner-mark" aria-hidden="true">✦</span>
+        <strong class="winner-title">${winnerName}</strong>
+        <span class="winner-verdict">${verdict}</span>
+        <span class="winner-meta">Turn ${reportedTurn(st)} · History remembers</span>
+        ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
+        <span class="winner-actions${SPEC ? " winner-actions-sim" : ""}">
+          ${winnerActions}
         </span>
         ${finaleCountdownChoiceMarkup()}
       </div>`;
