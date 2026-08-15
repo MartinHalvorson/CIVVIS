@@ -1013,8 +1013,8 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// evaluation arm). The frozen `advanced_v1` controller retains its project
 /// queues, so this is a compatibility re-pin rather than an Elo protocol move.
 /// The opening Scout, six-city fog floor, civilian policy timing, government
-/// prerequisite, zero-damage queue protection, and stalled-Settler founding
-/// changes are all behind live-bridge treatment flags. `BasicAi::new()` and
+/// prerequisite, major-war zero-damage siege handoff, and stalled-Settler
+/// founding changes are all behind live-bridge treatment flags. `BasicAi::new()` and
 /// `AdvancedAi::legacy()` leave those flags false; the focused ablation tests
 /// lock the boundary. Compatibility re-pin; the Elo protocol does not move.
 /// Physical Great People that have no host-valid activation plot now add
@@ -1023,7 +1023,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// Firaxis unit export. The assertion below locks that boundary, so the frozen
 /// headless anchor cannot enter any of the new planning branches. Compatibility
 /// re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6217_7b72_d11d_1321;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x98cc_9a83_7ff2_2a18;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
