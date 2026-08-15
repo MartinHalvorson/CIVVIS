@@ -724,3 +724,16 @@ re-run (the war half, seed 17000000, terminal decision rule) are in
 `docs/EVAL.md` (2026-08-14, "the Strength profile now plays the deployment's
 victory set"). Prior verdicts stand as decisions of the instrument that made
 them.
+
+That pre-registered re-run has since answered: **PASS** — deployment-online
+55.5% (Wilson CI 51.5%..59.4%), Elo +38 (CI +10..+66), sign p=0.0000,
+e-process crossed at map 57 (600 pairs, seed stream 18000000), compact-standard
+no-regression ACCEPT with direction *for* the withhold (167/123, p=0.0114).
+The four war flags (`siege_muster`, `home_defense`, `tactical_strategy`,
+`unit_objective_memory`) left `promoted_policy_envoy` on 2026-08-14; their
+withhold arms are aliases of `advanced`, the re-addition treatment is
+`advanced_war_half`, and the anchor is untouched (compatibility re-pin). The
+count of production behaviours priced by removal rises to two shipped removals
+(`city_target_floor` −41, the war half ~+32..+38 across 1,400 pairs on three
+disjoint seed streams; see `docs/EVAL.md` 2026-08-14, "the war half leaves the
+shipped controller").

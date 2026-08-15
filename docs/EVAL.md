@@ -9927,3 +9927,81 @@ correction is justified above by evidence independent of this treatment —
 `d_holy`'s three-row record (#1491), the #1578 census, and the estimand
 argument. The war half supplies the sharpest demonstration; it is not the
 motive, and whichever way the run goes, the lane closes.
+
+## 2026-08-14 — ★★★★★ the war half leaves the shipped controller: corrected-gate PASS
+
+The pre-registration in the previous entry ran exactly as declared —
+`ai_eval advanced_without_unpriced_war advanced --matrix --pairs 600 --seed
+17000000`, first use of the corrected gate, base `main` at `51091108` (#1589),
+raw log `civvis-civ6-runs/warhalf-corrected-gate-matrix-20260815T0117Z.log`
+(machine-local):
+
+```
+compact-standard   (NoRegression, three victories, seed prefix 17000000..=17000599)
+  paired-map score 51.8% (95% Wilson CI 47.8%..55.8%)   Elo-equivalent +13 (CI -15..+41)
+  paired direction 167 for / 310 neutral / 123 against  sign p = 0.0114
+  anytime-valid    withheld e = 6.197e0, p <= 0.1614 — not crossed
+  verdict          ACCEPT (Inconclusive — no established regression)
+
+deployment-online  (Strength, ALL SIX victories, seed prefix 18000000..=18000599)
+  paired-map score 55.5% (95% Wilson CI 51.5%..59.4%)   Elo-equivalent +38 (CI +10..+66)
+  paired direction 143 for / 380 neutral / 77 against   sign p = 0.0000
+  anytime-valid    withheld e = 1.895e4, p <= 0.0001, CROSSED at map 57
+  terminal score   349 / 251                            sign p = 0.0001
+  verdict          PASS
+
+multi-profile promotion gate: PASS — cleared every required profile
+```
+
+**Shipped.** Per the decision rule fixed before the run: `promoted_policy_envoy`
+no longer sets `siege_muster`, `home_defense`, `tactical_strategy`,
+`unit_objective_memory`. The frozen anchor is untouched — `AdvancedAi::legacy()`
+never routed through `promoted_policy_envoy` and `BasicAi::new()` constructs
+all four flags false — so the source contract is re-pinned as a compatibility
+re-pin. The three withhold arms (`advanced_without_unpriced_war`,
+`advanced_without_city_defence`, `advanced_without_unit_tactics`) are declared
+aliases of `advanced` so their pairs fail closed as self-play, exactly as
+`advanced_without_city_target_floor` did after #1504; the re-addition
+treatment `advanced_war_half` carries all four so the axis stays reachable.
+
+### The number to quote
+
+The +38 above prints with the instrument's own label — DISCOVERY ESTIMATE,
+selected on passing the gate — and the honest effect size is the family's
+whole record on the deployment shape: **54.6% / 54.9% / 55.5% across three
+disjoint seed streams (10800000, 11000000, 18000000), 1,400 pairs, roughly
++32 to +38 Elo**, with the anytime e-process crossing twice (map 134 at seed
+11000000, map 57 at stream 18000000). The estimate did not shrink as the
+sample grew, which is the signature `city_target_floor` (+41, #1504) showed
+and city defence (+14, stopped) did not.
+
+### What the corrected gate saw that the old one could not
+
+The compact child still runs three victories and still reads +13 with an
+uncrossed e-process — numerically the same reading the old deployment child
+gave (51.9%, +13, p=0.4671, seed 11200000-stream) when it REJECTed this
+withhold. The instrument change moved the Strength question onto the game
+deployment plays, and there the effect resolves in 57 maps. Mechanism, from
+the run's own seat table: military score 860 against the control's 921 —
+about seven percent of standing military spend — converting into production
+(329 vs 312), science (223 vs 215), culture (154 vs 147) and 70 more
+religious victories (225 vs 155) plus 64 more science victories (365 vs 301).
+Production not spent fighting is production spent on the lanes that win.
+Fourth instance of the audit's strongest pattern: the largest measured gains
+come from removing work.
+
+### Live delta, named as promised
+
+`enable_live_bridge` re-enables `siege-muster` and `home-defense` as
+registered treatments, so the real-game agent keeps both; its delta from this
+ship is `tactical_strategy` and `unit_objective_memory`, the quarter that
+measured null alone on the old gate (+11, p=0.3185, seed 11500000). If live
+runs degrade in ways the ladder attributes to unit behaviour, the first probe
+is `advanced_war_half` at the deployment profile, not a default flip.
+
+### The lane is closed
+
+Whichever way this run went, the rule said it ends the family's looks. It
+went PASS; the war half is off in production, the arms are aliases, and the
+one open door is the `advanced_war_half` re-addition arm, which asks the
+inverse question and starts its own ledger from zero looks.

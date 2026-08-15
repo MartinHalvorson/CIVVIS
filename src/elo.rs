@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 136] = [
+pub const EVAL_ONLY_AIS: [&str; 137] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -117,6 +117,7 @@ pub const EVAL_ONLY_AIS: [&str; 136] = [
     "advanced_evolved_blind",
     "advanced_settler_commit",
     "advanced_wide_opening",
+    "advanced_war_half",
     "advanced_plan_city_target",
     "advanced_expansion_payback",
     "advanced_late_expansion",
@@ -484,6 +485,7 @@ define_arm_kinds! {
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
     AdvancedV1 => "advanced_v1",
+    AdvancedWarHalf => "advanced_war_half",
     AdvancedWideOpening => "advanced_wide_opening",
     Basic => "basic",
     BasicEvolved => "basic_evolved",
@@ -1896,6 +1898,17 @@ fn artifact_effective_alias_from(
         // `docs/EVAL.md` reports five runs against it; declared effectively
         // `advanced` so the pair fails closed as self-play.
         ArmKind::AdvancedWithoutCityTargetFloor => ArmKind::Advanced,
+        // Same story on 2026-08-14 for the war half: the withhold passed the
+        // corrected-gate promotion matrix (+38, CI +10..+66, seed stream
+        // 18000000) and `promoted_policy_envoy` stopped setting the four
+        // flags, so these three withhold arms now build the production
+        // controller. Retained under their own names because `docs/EVAL.md`
+        // reports eight runs across the family; declared effectively
+        // `advanced` so the pairs fail closed as self-play. The inverse
+        // treatment is `AdvancedWarHalf`.
+        ArmKind::AdvancedWithoutUnpricedWar => ArmKind::Advanced,
+        ArmKind::AdvancedWithoutCityDefence => ArmKind::Advanced,
+        ArmKind::AdvancedWithoutUnitTactics => ArmKind::Advanced,
         // Production sets `plan_city_target`, so this "add" arm builds the
         // production controller and measures nothing. Fail it closed.
         ArmKind::AdvancedPlanCityTarget => ArmKind::Advanced,
@@ -2738,6 +2751,15 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             Box::new(ai)
         }
         "advanced_legacy_policy_deck" => Box::new(AdvancedAi::with_legacy_policy_deck()),
+        // ⚠ Since 2026-08-14 the three arms below are declared ALIASES of
+        // `advanced` (see the provenance table and `SCRIPTED_ALIASES`): the
+        // war-half withhold passed the promotion matrix on the corrected gate
+        // (deployment-online 55.5%, Elo +38, CI +10..+66, sign p=0.0000,
+        // e-process crossed at map 57, 600 pairs, seed stream 18000000), so
+        // `promoted_policy_envoy` no longer sets the four flags and these
+        // `disable_*` calls are no-ops. The names stay constructible so
+        // recorded runs that carry them keep resolving; the live treatment is
+        // `advanced_war_half` below, which re-adds what production removed.
         "advanced_without_city_defence" => {
             let mut ai = AdvancedAi::new();
             ai.disable_siege_muster();
@@ -2756,6 +2778,22 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_home_defense();
             ai.disable_tactical_strategy();
             ai.disable_unit_objective_memory();
+            Box::new(ai)
+        }
+        // Treatment for the war-half axis: identical to `advanced` except that
+        // the four flags removed from `promoted_policy_envoy` on 2026-08-14
+        // are turned back on. Since that removal this is a treatment rather
+        // than a re-labelling of production, exactly as `advanced_wide_opening`
+        // became for `city_target_floor` after #1504. Withholding the four
+        // measured +32/+34 on seeds 10800000/11000000 and +38 (CI +10..+66)
+        // on the corrected-gate matrix at seed stream 18000000; this arm asks
+        // the inverse question if anyone re-opens the axis.
+        "advanced_war_half" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_siege_muster();
+            ai.enable_home_defense();
+            ai.enable_tactical_strategy();
+            ai.enable_unit_objective_memory();
             Box::new(ai)
         }
         "advanced_fortify_idle_units" => {
@@ -3859,6 +3897,7 @@ impl ArmKind {
             Self::AdvancedLateExpansion => &["late-expansion"],
             Self::AdvancedExpansionDispatch => &["expansion-dispatch"],
             Self::AdvancedExpansionComplete => &["late-expansion", "expansion-dispatch"],
+            Self::AdvancedWarHalf => &["war-half"],
             Self::AdvancedWideOpening => &["city-target-floor"],
             Self::AdvancedPlanCityTarget => &["plan-city-target"],
             Self::AdvancedSettlerFirst => &["settler-oracle"],
@@ -4415,13 +4454,16 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_settler_founds_when_stalled" => (Vec::new(), "advanced_settler_founds_when_stalled"),
         "advanced_fortify_idle_units" => (Vec::new(), "advanced_fortify_idle_units"),
         "advanced_without_unpriced_economy" => (Vec::new(), "advanced_without_unpriced_economy"),
-        "advanced_without_unpriced_war" => (Vec::new(), "advanced_without_unpriced_war"),
-        "advanced_without_city_defence" => (Vec::new(), "advanced_without_city_defence"),
+        // Aliases since the 2026-08-14 war-half removal: the flags these
+        // withheld no longer ship, so the arms construct the control.
+        "advanced_without_unpriced_war" => (Vec::new(), "advanced"),
+        "advanced_without_city_defence" => (Vec::new(), "advanced"),
         "advanced_legacy_policy_deck" => (Vec::new(), "advanced_legacy_policy_deck"),
         "advanced_without_builder_floor" => (Vec::new(), "advanced_without_builder_floor"),
         "advanced_without_settler_deadline" => (Vec::new(), "advanced_without_settler_deadline"),
         "advanced_price_suzerainty" => (Vec::new(), "advanced_price_suzerainty"),
-        "advanced_without_unit_tactics" => (Vec::new(), "advanced_without_unit_tactics"),
+        "advanced_without_unit_tactics" => (Vec::new(), "advanced"),
+        "advanced_war_half" => (Vec::new(), "advanced_war_half"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
@@ -5631,7 +5673,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 105] = [
+            const SCRIPTED: [&str; 106] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5678,6 +5720,7 @@ mod tests {
                 "advanced_city_strategy_pressure_only",
                 "advanced_civ_blind",
                 "advanced_league_top",
+                "advanced_war_half",
                 "advanced_settler_first",
                 "advanced_holy_priority",
                 "advanced_holy_lane",
@@ -5742,11 +5785,16 @@ mod tests {
                 "live_without_war_reinforcement",
                 "live_without_war_patience",
             ];
-            const SCRIPTED_ALIASES: [&str; 4] = [
+            const SCRIPTED_ALIASES: [&str; 7] = [
                 "advanced_policy_envoy_priority",
                 "advanced_holy_v0",
                 "advanced_without_city_target_floor",
                 "advanced_plan_city_target",
+                // The war-half withhold arms alias `advanced` since the
+                // 2026-08-14 removal shipped what they used to withhold to.
+                "advanced_without_unpriced_war",
+                "advanced_without_city_defence",
+                "advanced_without_unit_tactics",
             ];
             assert!(
                 !resolved.artifacts.is_empty()
