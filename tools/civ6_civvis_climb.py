@@ -4,7 +4,7 @@ The retired ladder walker (`civ6_climb.py`, in git history) climbed every rung b
 never started a brain, so it could not host a CIVVIS-driven attempt. This does one
 rung, repeatedly, with the decision loop attached, and keeps a ledger.
 
-    python3 tools/civ6_civvis_climb.py --attempts 12 --victory civvis
+    python3 tools/civ6_civvis_climb.py --attempts 12
 
 ⚠ ONE HARNESS AT A TIME. There is one installation, one mod directory, one log and
 one run lock. Two harnesses driving it interleave their installs and each reads the
@@ -46,6 +46,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 LEDGER = Path.home() / "civvis-civ6-runs" / "civvis_ladder.jsonl"
+DEFAULT_VICTORY = "science"
+DEFAULT_STRATEGY = ""
 
 sys.path.insert(0, str(HERE))
 from civ6_control import launcher  # noqa: E402
@@ -1015,7 +1017,8 @@ def main() -> int:
     # --turns 250`): eight of eight domination-targeted games ended by score at the
     # turn limit, none by conquest. Score is the only lane whose budget is near 250.
     #
-    # ★★★★★ AND THE ANSWER IS NOT ANOTHER LANE — IT IS NOT PINNING ONE.
+    # ★★★★★ NATIVE STRENGTH SAYS NOT TO PIN A LANE, BUT THE FIRAXIS BRIEF NOW
+    # EXPLICITLY EXCLUDES THE LANE THAT MAKES ADAPTIVE WIN.
     #
     # Mirrored head-to-head at this ladder's own profile, 30 map pairs, 6 players,
     # 250 turns, using the arms added in #857:
@@ -1036,18 +1039,25 @@ def main() -> int:
     #
     # `civvis` is the value that restores letting the agent choose; it maps to a
     # plain `AdvancedAi::new()` with no `VictoryTarget`, which is the `advanced`
-    # controller both evaluations above were run against.
+    # controller both evaluations above were run against. It stays available.
+    # But 48 of its 60 native wins at this exact profile were Religious Victory,
+    # so it does not answer a brief that excludes religion. Of the two requested
+    # lanes, Science is the viable first attempt: it needs no contact, whereas
+    # Domination has both the revealed-city blocker and the 250-turn budget failure
+    # above. This pins OUR plan only; rivals retain every Firaxis victory condition.
     #
-    # ⚠ `domination`, `score` and `science` stay available and unchanged; only the
-    # default moves. Anyone comparing against the 104 existing rows must pass
-    # `--victory domination` explicitly, and rows either side of this commit are
-    # NOT comparable.
-    ap.add_argument("--victory", default="civvis")
-    # Passed straight through to the brain; see its `--strategy` note for why the
-    # default changed from the built-in AdvancedAi and what would undo it.
-    ap.add_argument("--strategy", default="auto",
-                    help="strategy the decider loads; `auto` is the strongest by "
-                         "outright-win lower bound, empty keeps the built-in")
+    # ⚠ `domination`, `score` and `civvis` stay available and unchanged; only the
+    # default moves. Rows either side of this change are NOT comparable.
+    ap.add_argument("--victory", default=DEFAULT_VICTORY,
+                    choices=["domination", "science", "score", "civvis"],
+                    help="victory objective; defaults to reachable non-religious "
+                         "Science. Domination remains an explicit experiment")
+    # The rated genome is an opt-in experiment. Its internal league strength does
+    # not establish Firaxis transfer, while stock AdvancedAi has the powered
+    # deployment-shaped result and makes concurrent controller work attributable.
+    ap.add_argument("--strategy", default=DEFAULT_STRATEGY,
+                    help="strategy the decider loads; empty keeps stock AdvancedAi. "
+                         "`auto` is an uncalibrated opt-in")
     # ★★★★★ ON BY DEFAULT since 2026-08-03, on the operator's call.
     #
     # 96 of 123 corpus runs reaching turn 50 NEVER DECLARED WAR, and the corpus
