@@ -77,12 +77,6 @@
   .utility-link:hover,
   .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
   .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  /* The one link in this row that starts a game rather than leaving the
-     site, tinted like the picker's selected lens so it reads as the action
-     it is without competing with the cards below. */
-  .utility-link.lucky { border-color: var(--accent); color: #cfe9fb; }
-  .utility-link.lucky:hover,
-  .utility-link.lucky:focus-visible { background: #2a3f52; }
 
   /* The report dialog: a visitor's bug or feature request, headed for the
      project's GitHub issue tracker — filed by the site itself for anonymous
@@ -115,6 +109,9 @@
   .report-choice[aria-pressed="true"] { border-color: var(--accent); background: #2a3f52; color: #fff; }
   .report-choices { display: flex; flex-wrap: wrap; gap: 8px; }
   .report-field { display: grid; gap: 5px; }
+  /* `display: grid` above outranks the hidden attribute's own display rule,
+     so the pen-name field needs this to stay shut until it is chosen. */
+  .report-field[hidden] { display: none; }
   .report-field span { color: var(--faint); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
   .report-field input,
   .report-field textarea {
@@ -181,7 +178,7 @@
     writing-mode: vertical-rl;
     transform: rotate(180deg);
     color: var(--faint);
-    font-size: 15px;
+    font-size: 22.5px;
     font-weight: 700;
     letter-spacing: 0.2em;
     text-transform: uppercase;
@@ -249,6 +246,11 @@
     font-weight: 700;
     text-decoration: none;
   }
+  /* The verb is the card's point — one colour-carrying button a third larger
+     than the Customize beside it, so a row reads as "start this" first and
+     "or change it" second. */
+  .verb-watch,
+  .verb-play { min-height: 44px; padding: 0 23px; font-size: 17px; }
   .verb-watch { background: var(--watch-bg); color: var(--watch-fg); }
   .verb-play { background: var(--play-bg); color: var(--play-fg); }
   .verb-watch:hover,
@@ -266,6 +268,12 @@
      switches who is at the keyboard. */
   .mode-card { transition: opacity 0.15s ease; }
   .mode-card.picking { border-color: var(--accent); }
+  /* Opening a row's panel merges its two pairs of buttons into one set: the
+     panel below now holds the customization, and its own mode chips do what
+     the two Customize buttons did, so those retire and each card is left
+     with the verb that starts the game. They come back when the panel
+     closes. */
+  .mode-card.merged .card-btn.customize { display: none; }
   .mode-card.muted { opacity: 0.55; }
   .mode-card.muted:hover,
   .mode-card.muted:focus-within { opacity: 1; }
@@ -379,17 +387,6 @@
       <p class="site-tagline">An open source Civilization VI Simulator for AI strategy development</p>
     </div>
     <nav class="utility-nav" aria-label="CIVVIS links">
-      <!-- A coin flip into one of the two watched presets, held in data
-           attributes so the roll below never has to spell a destination the
-           cards do not. The href is the un-rolled fallback: without
-           scripting this still opens the watched full game. -->
-      <a class="utility-link lucky" id="lucky" href="../"
-         data-watch-civ="../"
-         data-watch-tactics="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20"
-         aria-label="I&#8217;m feeling lucky: watch a random CIVVIS simulation">
-        <svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M5 2h14a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3ZM8.5 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM15.5 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM12 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM8.5 15a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM15.5 15a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z"/></svg>
-        I&#8217;m Feeling Lucky
-      </a>
       <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
         GitHub
@@ -400,7 +397,7 @@
       </a>
       <button class="utility-link" type="button" id="report-open">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 2C6.5 2 2 5.9 2 10.7c0 2.8 1.5 5.3 3.9 6.9L5 22l4.6-2.4c.8.2 1.6.3 2.4.3 5.5 0 10-3.9 10-8.7S17.5 2 12 2zm-1 4.5h2v6h-2v-6zm0 7.5h2v2h-2v-2z"/></svg>
-        Report Issue / Suggest Feature
+        Suggest Feature / Report Issue
       </button>
     </nav>
   </header>
@@ -428,18 +425,21 @@
          simulations) on the left, Play (single player) on the right. Each
          card reads top to bottom as name, description, actions, tags: the
          title line carries the card's name on the left and who is at the
-         keyboard on the right; the photograph and the name both open the
-         simulator immediately on the card's preset; the one Watch/Play
-         Customized button opens the row's shared customization panel in
-         place, directly below the row — the battle picker for Tactics, the
-         world picker for the full game — and each tag opens that panel on
-         the section the tag names. While a row's panel is open its two
-         cards are the mode selector: the selected option — AI simulation or
-         Single player — highlights and the other is muted, and the panel's
-         own chips switch between them in place. Without scripting, the
-         buttons and tags still land somewhere honest: the stock Tactics
-         world, or the simulator's own Game setup drawer (`?setup=1`). Each
-         card's photograph is a real capture of its own preset. -->
+         keyboard on the right; the photograph, the name and the card's own
+         colour-carrying verb all open the simulator immediately on the
+         card's preset. Four buttons stand in a row to begin with — Watch and
+         Customize on the left, Play and Customize on the right. Customize
+         opens the row's shared customization panel in place, directly below
+         the row — the battle picker for Tactics, the world picker for the
+         full game — and each tag opens that panel on the section the tag
+         names. Opening it merges the row's two pairs into one set: both
+         Customize buttons retire into the panel (whose own chips now switch
+         who is at the keyboard), the selected card highlights and the other
+         is muted, and the pairs come back when the panel closes. Without
+         scripting, the buttons and tags still land somewhere honest: the
+         preset itself, the stock Tactics world, or the simulator's own Game
+         setup drawer (`?setup=1`). Each card's photograph is a real capture
+         of its own preset. -->
     <section class="quadrants" aria-label="Game menu">
       <div class="grid-corner" aria-hidden="true"></div>
       <h2 class="col-head">Design &amp; Watch <span>AI simulations</span></h2>
@@ -457,7 +457,8 @@
           </div>
           <p class="card-desc">Two AI commanders fight a single battle while you watch.</p>
           <div class="card-actions">
-            <a class="card-btn verb-watch" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" aria-label="Customize and watch a Tactics battle">Watch Customized</a>
+            <a class="card-btn verb-watch" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" aria-labelledby="watch-tactics-title">Watch</a>
+            <a class="card-btn plain customize" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" aria-label="Customize a watched Tactics battle">Customize</a>
           </div>
           <ul class="card-tags" aria-label="Watch CIVVIS Tactics features">
             <li><a href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" data-lens="custom">AI vs AI</a></li>
@@ -479,7 +480,8 @@
           </div>
           <p class="card-desc">Command one side of a battle against the AI.</p>
           <div class="card-actions">
-            <a class="card-btn verb-play" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" aria-label="Customize and play a Tactics battle">Play Customized</a>
+            <a class="card-btn verb-play" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" aria-labelledby="play-tactics-title">Play</a>
+            <a class="card-btn plain customize" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" aria-label="Customize a played Tactics battle">Customize</a>
           </div>
           <ul class="card-tags" aria-label="Play CIVVIS Tactics features">
             <li><a href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" data-lens="custom">You vs Different AI Strategies &amp; Difficulties</a></li>
@@ -532,7 +534,8 @@
           </div>
           <p class="card-desc">A full game played end to end by AI civilizations.</p>
           <div class="card-actions">
-            <a class="card-btn verb-watch" href="../?setup=1" data-pick="watch-civ" aria-label="Customize and watch a full game">Watch Customized</a>
+            <a class="card-btn verb-watch" href="../" aria-labelledby="watch-civ-title">Watch</a>
+            <a class="card-btn plain customize" href="../?setup=1" data-pick="watch-civ" aria-label="Customize a watched game">Customize</a>
           </div>
           <ul class="card-tags" aria-label="Watch CIVVIS features">
             <li><a href="../?setup=1" data-pick="watch-civ" data-lens="seats">AI Empires</a></li>
@@ -554,7 +557,8 @@
           </div>
           <p class="card-desc">A full game — take one civilization against AI rivals.</p>
           <div class="card-actions">
-            <a class="card-btn verb-play" href="../?mode=play&amp;setup=1" data-pick="play-civ" aria-label="Customize and play a full game">Play Customized</a>
+            <a class="card-btn verb-play" href="../?mode=play" aria-labelledby="play-civ-title">Play</a>
+            <a class="card-btn plain customize" href="../?mode=play&amp;setup=1" data-pick="play-civ" aria-label="Customize a played game">Customize</a>
           </div>
           <ul class="card-tags" aria-label="Play CIVVIS features">
             <li><a href="../?mode=play&amp;setup=1" data-pick="play-civ" data-lens="seats">Your Seat</a></li>
@@ -627,6 +631,13 @@
         <button class="report-choice" type="button" data-identity="random" aria-pressed="false">Pick a name</button>
         <button class="report-choice" type="button" data-identity="github" aria-pressed="false">My GitHub account</button>
       </div>
+      <!-- Choosing a name opens this with one already rolled, so a visitor
+           who only wanted "not anonymous" is done, and one who wanted to be
+           somebody in particular types over it. -->
+      <label class="report-field" id="report-name-field" hidden>
+        <span>Name on the issue</span>
+        <input id="report-name" maxlength="60" autocomplete="off" spellcheck="false" placeholder="Whatever you would like this signed">
+      </label>
       <p class="report-hint" id="report-hint">The site files this as a GitHub issue, signed &#8220;anonymous&#8221; — no account needed.</p>
       <label class="report-nectar" aria-hidden="true">Website<input id="report-website" tabindex="-1" autocomplete="off"></label>
       <div class="report-footer">
@@ -635,25 +646,6 @@
       </div>
     </form>
   </dialog>
-
-  <script>
-  // "I'm Feeling Lucky": a coin flip between the two watched presets, rolled
-  // into the anchor's own href rather than intercepted on click, so the thing
-  // stays an ordinary link — middle-click and ⌘-click open a random world in
-  // a new tab, and the status bar names a destination that is really where
-  // the click goes. `pageshow` re-rolls because coming back from the viewer
-  // restores this page from the back/forward cache with the old roll still in
-  // the href, which would make the button look stuck on one game.
-  (() => {
-    const lucky = document.getElementById("lucky");
-    if (!lucky) return;
-    const worlds = [lucky.dataset.watchCiv, lucky.dataset.watchTactics].filter(Boolean);
-    if (!worlds.length) return;
-    const roll = () => { lucky.href = worlds[Math.floor(Math.random() * worlds.length)]; };
-    roll();
-    window.addEventListener("pageshow", roll);
-  })();
-  </script>
 
   <script>
   (() => {
@@ -684,13 +676,24 @@
       });
     const HINTS = {
       anonymous: "The site files this as a GitHub issue, signed “anonymous” — no account needed.",
-      random: `The site files this as a GitHub issue, signed “${penName}” — no account needed.`,
       github: "Submitting opens GitHub’s new-issue form in a new tab with this filled in; you press Create there under your own name.",
     };
+    // beta/_worker.js's own filter on the reporter, mirrored here so the hint
+    // states the name that will really be on the issue rather than the one
+    // being typed — the worker is still the one that enforces it. An emptied
+    // box falls back to the rolled name, so the choice always signs
+    // something.
+    const nameField = field("report-name");
+    const cleanName = value => String(value).replace(/[^\w. -]/g, "").trim().slice(0, 60);
+    const chosenName = () => cleanName(nameField.value) || penName;
     const sync = () => {
-      hint.textContent = HINTS[identity];
+      field("report-name-field").hidden = identity !== "random";
+      hint.textContent = identity === "random"
+        ? `The site files this as a GitHub issue, signed “${chosenName()}” — no account needed.`
+        : HINTS[identity];
       submit.textContent = identity === "github" ? "Open GitHub issue form" : "Submit report";
     };
+    nameField.addEventListener("input", sync);
     // Status is built from nodes, never markup: the fallback link carries the
     // visitor's own text in its URL.
     const say = (text, link) => {
@@ -713,7 +716,15 @@
       sync();
     });
     choose("[data-kind]", button => { kind = button.dataset.kind; });
-    choose("[data-identity]", button => { identity = button.dataset.identity; });
+    choose("[data-identity]", button => {
+      identity = button.dataset.identity;
+      // Opening the box is the invitation to type in it, and the rolled name
+      // is only a starting point — so hand it over ready to be overwritten.
+      if (identity === "random") {
+        if (!nameField.value) nameField.value = penName;
+        requestAnimationFrame(() => { nameField.focus(); nameField.select(); });
+      }
+    });
     opener.addEventListener("click", () => {
       // No <dialog> support: GitHub's plain form is the whole feature.
       if (typeof dialog.showModal !== "function") { window.open(`${REPO}/issues/new/choose`, "_blank", "noopener"); return; }
@@ -742,7 +753,7 @@
             kind,
             title,
             details: field("report-details").value.trim(),
-            reporter: identity === "random" ? penName : "anonymous",
+            reporter: identity === "random" ? chosenName() : "anonymous",
             website: field("report-website").value,
           }),
         });
@@ -970,7 +981,10 @@
     // The two cards of a row are their shared panel's mode selector. While
     // the row's panel is open, the card whose mode is selected highlights
     // and the row's other option is muted; the panel's own mode chips say
-    // the same thing in place.
+    // the same thing in place. `merged` is the same fact told to the
+    // buttons: with the panel open the row's two Customize buttons have
+    // become the panel and its chips, so both retire until it closes and
+    // each card keeps only the verb that starts the game.
     const markPicking = () => {
       for (const card of document.querySelectorAll(".mode-card")) {
         const pick = card.querySelector("[data-pick]")?.dataset.pick;
@@ -979,6 +993,7 @@
         const selected = shown && pick === (isCiv(pick) ? civMode : mode);
         card.classList.toggle("picking", selected);
         card.classList.toggle("muted", shown && !selected);
+        card.classList.toggle("merged", shown);
       }
       for (const chip of document.querySelectorAll(".picker-modes [data-mode]"))
         chip.setAttribute("aria-pressed",
