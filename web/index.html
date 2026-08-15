@@ -1800,7 +1800,8 @@
   }
   /* The result screen's answers keep their hierarchy: the offer that replaces
      the world spans the row, while the three ways to keep it sit side by side
-     underneath.
+     underneath. A simulation has just one continuation and one replacement,
+     so those two choices share a row.
      `.winner-content > *` sets every child to `display: block` further down
      this sheet at the same specificity, so the grid has to be named through
      its parent to survive. */
@@ -1810,6 +1811,12 @@
   }
   .winner-actions .winner-again { margin: 0; }
   .winner-actions .primary { grid-column: 1 / -1; justify-self: center; }
+  .winner-content > .winner-actions.winner-actions-sim {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .winner-content > .winner-actions.winner-actions-sim .primary {
+    grid-column: auto; justify-self: stretch;
+  }
   /* Playing on is quieter than replacing the world, while both continuation
      rules remain equally legible choices. */
   .winner-playon {

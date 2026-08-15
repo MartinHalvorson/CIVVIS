@@ -374,8 +374,18 @@ countdown instead, because the supervisor owns that handoff.
 
 ### Continue after victory
 
-A finale with a victor also offers three ways to keep the same map, seed, and
-empires from the turn on which victory was declared:
+At the end of a simulation, the supervisor countdown remains in charge and
+the result screen has two choices:
+
+- **One more turn** resumes the same map, seed, and empires under the
+  next-victory rule: the exact result shown cannot immediately repeat, but a
+  different victory can end the continued world.
+- **New Game** starts the next world immediately. Leaving the screen alone
+  keeps the existing countdown behavior and starts that next world when it
+  reaches zero.
+
+A human finale retains three ways to keep the same map, seed, and empires from
+the turn on which victory was declared:
 
 - **Take a look around** returns the world under the next-victory rule but
   pauses the exhibition before another AI turn can run. Resume whenever you

@@ -14589,8 +14589,18 @@ mod tests {
         // countdown, because the supervisor owns that handoff.
         assert!(EMBEDDED_INDEX.contains("class=\"primary winner-again\" onclick=\"startNewSimulation()\""));
         assert!(EMBEDDED_INDEX.contains("id=\"respawn\" role=\"timer\""));
-        // A victory finale also offers three ways to keep its world. A draw
-        // has no victor/result to play on past and offers the next battle.
+        // A simulation victory has its clear two-action choice while a
+        // person at the keyboard retains the fuller three-way continuation.
+        // A draw has no victor/result to play on past and offers the next
+        // battle.
+        assert!(EMBEDDED_INDEX.contains("const winnerActions = SPEC"));
+        assert!(EMBEDDED_INDEX.contains("winner-actions-sim"));
+        assert!(EMBEDDED_INDEX.contains("id=\"play-on-one-more-turn\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "onclick=\"playOnPastVictory('until_next_victory', false)\"\n            title=\"Keep this world playing until a different victory ends it.\">One more turn</button>"
+        ));
+        assert!(EMBEDDED_INDEX.contains("id=\"finale-new-game\""));
+        assert!(EMBEDDED_INDEX.contains(">New Game</button>"));
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-look-around\""));
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-next-victory\""));
         assert!(EMBEDDED_INDEX.contains("id=\"play-on-indefinite\""));
