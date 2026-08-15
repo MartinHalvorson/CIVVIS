@@ -7819,7 +7819,7 @@ mod tests {
         // and the factors behind its decisions. A second, unrelated civ filter
         // would let a reader inspect a plan for one empire beside another's
         // evidence, so it is deliberately absent.
-        assert!(EMBEDDED_INDEX.contains("<span>AI strategy</span>"));
+        assert!(EMBEDDED_INDEX.contains("<span id=\"strategytitle\">AI strategy</span>"));
         assert!(EMBEDDED_INDEX.contains("id=\"strategysec\""));
         assert!(EMBEDDED_INDEX.contains("id=\"strategyplayer\""));
         assert!(!EMBEDDED_INDEX.contains("id=\"reasonsec\""));
@@ -7886,6 +7886,49 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(".strategy-reason-filters { flex: 0 0 auto;"));
         assert!(!EMBEDDED_INDEX.contains(".reason-filter"));
         assert!(EMBEDDED_INDEX.contains("Recorded factors behind ${civ.civ}'s plan and decisions"));
+    }
+
+    /// Watching a battlefield, the deck reads tactically.
+    ///
+    /// The dossier is retitled AI Tactics and lays out one battle plan per
+    /// side still standing; the war and event logs retire — the only war is
+    /// the one on screen, and an arena writes no other history worth a
+    /// section — and the study tracks go with them, a side's research reading
+    /// inline in its block instead.
+    #[test]
+    fn browser_reads_a_battlefield_deck_as_ai_tactics() {
+        // The stylesheet retires the sections off one class on <body> …
+        assert!(EMBEDDED_INDEX
+            .contains("body.watching-tactics #warsec, body.watching-tactics #eventsec,"));
+        assert!(EMBEDDED_INDEX.contains(
+            "body.watching-tactics #researchtrack, body.watching-tactics #civicstrack { display: none; }"
+        ));
+        // … and the class is the watched world's, never the setup drawer's:
+        // `playing-tactics` describes what the drawer is configuring, which
+        // may be the other game entirely.
+        assert!(EMBEDDED_INDEX.contains("const tacticsWorld = isBattlefieldMapScript(st.map?.script);"));
+        assert!(EMBEDDED_INDEX
+            .contains("document.body.classList.toggle(\"watching-tactics\", tacticsWorld);"));
+        // Retiring the open card hands its room to the dossier rather than
+        // leaving the whole deck folded shut.
+        assert!(EMBEDDED_INDEX
+            .contains("openSidebarSection(document.getElementById(\"strategysec\"));"));
+        // The titles follow the world from one renderer, so the two modes
+        // cannot drift apart.
+        assert!(EMBEDDED_INDEX.contains("<span id=\"strategyplanheading\">Grand strategy</span>"));
+        assert!(EMBEDDED_INDEX.contains("const wantTitle = tactics ? \"AI Tactics\" : \"AI strategy\";"));
+        assert!(EMBEDDED_INDEX
+            .contains("const wantHeading = tactics ? \"Battle plans\" : \"Grand strategy\";"));
+        // A battle is understood by comparing the sides' plans, not by
+        // flipping a picker between them: every side still standing gets a
+        // block, while the picker keeps scoping the decision factors below.
+        assert!(EMBEDDED_INDEX.contains("function tacticsSideHtml(p, picked)"));
+        assert!(EMBEDDED_INDEX
+            .contains("tacticsSideHtml(players[id], order.length > 1 && id === seat)"));
+        // Ground truth beside intent: the block reports the army actually on
+        // the board, so a seat that publishes no plan — a human's, a
+        // baseline's, a fogged rival's — still reports the fight it is in.
+        assert!(EMBEDDED_INDEX.contains("u.owner === p.id && militaryUnit(u)"));
     }
 
     /// The war log and the game event log are narrowed the same way.
@@ -10583,7 +10626,7 @@ mod tests {
             .find("<span>War log</span>")
             .expect("war log");
         let strategy = EMBEDDED_INDEX
-            .find("<span>AI strategy</span>")
+            .find("<span id=\"strategytitle\">AI strategy</span>")
             .expect("AI strategy section");
         let government = EMBEDDED_INDEX
             .find("data-section=\"government\"")
