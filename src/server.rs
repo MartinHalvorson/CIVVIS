@@ -6905,11 +6905,18 @@ mod tests {
         );
         assert!(!block.contains('<'), "the catalog block must not be able to close its own element");
         for piece in [
-            // Rows: play above, watch below. Columns: Civ left, Tactics right.
+            // Rows: Tactics above, the full game below. Columns: Watch left,
+            // Play right. The immediate verb buttons carry the aria labels;
+            // the Tactics Customize buttons carry `data-pick` and fall back
+            // to the stock Tactics world without scripting.
             "href=\"/?mode=play\" aria-labelledby=\"play-civ-title\"",
             "href=\"/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play\" data-pick=\"play\"",
             "href=\"/\" aria-labelledby=\"watch-civ-title\"",
             "href=\"/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\" data-pick=\"watch\"",
+            // The full game's Customize lands in the simulator with the Game
+            // setup drawer open (`?setup=1`, honoured at the end of app.js).
+            "href=\"/?setup=1\"",
+            "href=\"/?mode=play&amp;setup=1\"",
             // The picker and its four lenses.
             "id=\"battle-picker\"",
             "data-lens=\"custom\"",
@@ -6927,6 +6934,10 @@ mod tests {
         let shim = include_str!("../beta/shim.js");
         assert!(shim.contains("if (mode === \"play\") payload.spectate = false;"));
         assert!(shim.contains("else if (mode === \"watch\") payload.spectate = true;"));
+        // The viewer honours the Customize links' `?setup=1`: it opens the
+        // sidebar's Game setup drawer on arrival instead of leaving the
+        // visitor to hunt for it.
+        assert!(EMBEDDED_INDEX.contains("searchParams.get(\"setup\") === \"1\""));
     }
 
     #[cfg(not(target_arch = "wasm32"))]

@@ -172,8 +172,10 @@ def required(mount: str) -> list:
     lane = "" if mount == "root" else "test/"
     return [
         "home/index.html" if mount == "root" else "index.html",
-        "home/assets/civ-world.jpg",
-        "home/assets/tactics-frontline.jpg",
+        "home/assets/watch-civ.jpg",
+        "home/assets/play-civ.jpg",
+        "home/assets/watch-tactics.jpg",
+        "home/assets/play-tactics.jpg",
         "download/index.html",
         f"{lane}index.html",
         f"{lane}civvis.wasm",
