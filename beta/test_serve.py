@@ -54,8 +54,8 @@ class RatingHostTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as held:
             root = pathlib.Path(held)
-            (root / "test").mkdir()
-            (root / "test/index.html").write_text("wasm", encoding="utf-8")
+            # The published lane carries the viewer at its root now.
+            (root / "index.html").write_text("wasm", encoding="utf-8")
             rating = FakeRatingHost()
             handler = functools.partial(
                 serve.Handler, directory=str(root), rating_host=rating
@@ -66,6 +66,10 @@ class RatingHostTests(unittest.TestCase):
             thread.start()
             self.addCleanup(server.shutdown)
             origin = f"http://127.0.0.1:{server.server_address[1]}"
+
+            # The /wasm channel maps onto the viewer at the lane root.
+            with urllib.request.urlopen(origin + "/wasm/") as response:
+                self.assertEqual(response.read(), b"wasm")
 
             with urllib.request.urlopen(origin + "/wasm/league.json") as response:
                 self.assertEqual(json.load(response)["round"], 12)

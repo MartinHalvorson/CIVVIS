@@ -1286,11 +1286,33 @@ pub fn battlefield_sizes() -> Vec<BattlefieldSize> {
 /// tournament a different experiment from the one that was rated.
 pub fn random_start_era(seed: u64) -> usize {
     let playable: Vec<usize> = playable_start_eras().filter_map(|spec| spec.era).collect();
+    playable[(scatter(seed) % playable.len() as u64) as usize]
+}
+
+/// The era a Random-era battle opens in: a seeded, scattered pick over the
+/// built rungs short of the Future.
+///
+/// The Future stays out of the hat deliberately — its battles are meant to be
+/// the modified era's drones and missiles, which nobody has built yet — and so
+/// does the Moon, which is not on the ladder at all yet. When those rungs are
+/// real they join this roll by name rather than the roll changing shape.
+pub fn random_battle_era(seed: u64) -> usize {
+    let eras: Vec<usize> = START_ERAS
+        .iter()
+        .filter(|spec| spec.id != "future")
+        .filter_map(|spec| spec.era)
+        .collect();
+    eras[(scatter(seed) % eras.len() as u64) as usize]
+}
+
+/// splitmix64's finalizer, shared by both era rolls: consecutive seeds are
+/// consecutive integers, and this is what keeps them from marching through
+/// the ladder in lockstep.
+fn scatter(seed: u64) -> u64 {
     let mut mix = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
     mix = (mix ^ (mix >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     mix = (mix ^ (mix >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    mix ^= mix >> 31;
-    playable[(mix % playable.len() as u64) as usize]
+    mix ^ (mix >> 31)
 }
 
 /// Which era a run opens its games in: one fixed rung of the ladder, or a
@@ -1321,6 +1343,89 @@ impl StartEraChoice {
         match self {
             Self::Fixed(era) => era.to_string(),
             Self::RandomPerGame => "random".to_string(),
+        }
+    }
+}
+
+/// Which era arms a custom battle.
+///
+/// The arena's original rule was "whatever start era the game was asked for",
+/// and that stays the default so every launch flag, benchmark and supervisor
+/// lane keeps meaning exactly what it meant. The other three are the setup
+/// box's choices: a fresh roll per battle, one rung of the ladder, or a
+/// hand-picked pool of rungs fielded together.
+///
+/// This is a Tactics rule rather than a start-era spelling because a series
+/// re-rolls it: `Random` must be remembered as *Random* across battles, not
+/// as whichever era the first battle happened to open in. A named scenario
+/// ignores it entirely — Trafalgar is fought by 1805 fleets whatever the
+/// lobby asked for.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TacticsEra {
+    /// The game's own start era, exactly as asked. The default, and the only
+    /// value a save from before this choice existed can mean.
+    #[default]
+    Start,
+    /// A fresh roll for every battle over the built rungs short of the
+    /// Future — see [`random_battle_era`].
+    Random,
+    /// One rung of the ladder, every battle.
+    Fixed(usize),
+    /// A hand-picked pool of eras fielded together, as a bitmask over era
+    /// indices. The battle opens with the pool's latest era researched, and
+    /// each side's army is dealt across the whole pool — so one field can
+    /// carry a Warrior company and a Modern Armor company at once.
+    Pool(u16),
+}
+
+impl TacticsEra {
+    /// Every built rung of the ladder, as the mask [`TacticsEra::Pool`] is
+    /// clamped against.
+    fn built_mask() -> u16 {
+        playable_start_eras()
+            .filter_map(|spec| spec.era)
+            .fold(0, |mask, era| mask | 1 << era)
+    }
+
+    /// The eras of a pool, earliest first. Empty for every other choice.
+    pub fn pool_eras(self) -> Vec<usize> {
+        let Self::Pool(mask) = self else {
+            return Vec::new();
+        };
+        (0..16).filter(|era| mask & 1 << era != 0).collect()
+    }
+
+    /// The era the battle with `seed` actually opens in, given the start era
+    /// the game was `asked` for.
+    pub fn start_era(self, asked: usize, seed: u64) -> usize {
+        match self {
+            Self::Start => asked,
+            Self::Random => random_battle_era(seed),
+            Self::Fixed(era) => era.min(last_start_era()),
+            // The pool's latest rung: the battle is *played* under the whole
+            // pool — the army mix is the deployment's job — but the world can
+            // only be one era old, and it has to be the one whose research
+            // makes every pooled unit real.
+            Self::Pool(mask) => Self::Pool(mask)
+                .pool_eras()
+                .into_iter()
+                .max()
+                .unwrap_or(asked),
+        }
+    }
+
+    /// The choice clamped to rungs that exist. A pool that names none — a
+    /// hand-written mask, or a save from a build with a longer ladder — falls
+    /// back to the arena's original rule rather than to an invented era.
+    fn sanitized(self) -> Self {
+        match self {
+            Self::Fixed(era) => Self::Fixed(era.min(last_start_era())),
+            Self::Pool(mask) => match mask & Self::built_mask() {
+                0 => Self::Start,
+                built => Self::Pool(built),
+            },
+            choice => choice,
         }
     }
 }
@@ -1410,6 +1515,11 @@ pub struct TacticsRules {
     /// and by the city each side holds if the economy grants one.
     #[serde(default)]
     pub flag: bool,
+    /// Which era arms the battle — see [`TacticsEra`]. A save from before the
+    /// choice existed reads as [`TacticsEra::Start`], which is exactly the
+    /// rule it was played under.
+    #[serde(default)]
+    pub era: TacticsEra,
 }
 
 fn one_battle() -> u32 {
@@ -1478,6 +1588,7 @@ impl TacticsRules {
             unique_units: self.unique_units,
             fog: self.fog,
             flag: self.flag,
+            era: self.era.sanitized(),
         }
     }
 
@@ -1516,6 +1627,9 @@ impl TacticsRules {
             unique_units: false,
             fog: false,
             flag: false,
+            // The battle brings its own era: Trafalgar is 1805 whatever the
+            // lobby's era control asked for.
+            era: TacticsEra::Start,
             ..self.sanitized()
         }
     }
@@ -1554,6 +1668,7 @@ impl Default for TacticsRules {
             unique_units: false,
             fog: true,
             flag: false,
+            era: TacticsEra::Start,
         }
     }
 }
@@ -2023,7 +2138,7 @@ mod tests {
     use super::{
         last_start_era, playable_start_eras, start_era_from_id, start_era_id,
         stock_start_era_id, BaseRuleset, GameMode, GameSpeed, MapPoles, MapScript, MapSize,
-        MapTopology, MatchSeries, TacticsRules,
+        MapTopology, MatchSeries, TacticsEra, TacticsRules,
         BATTLEFIELD_SIZES,
         BASE_RULESETS, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, MAP_POLES,
         MAP_TOPOLOGIES, START_ERAS, TACTICS_GLOBE_DIAMETERS,
@@ -2416,6 +2531,7 @@ mod tests {
             unique_units: true,
             fog: true,
             flag: true,
+            era: TacticsEra::Random,
         };
         let fought = generous.for_script(MapScript::Trafalgar);
         assert_eq!(
@@ -2430,6 +2546,8 @@ mod tests {
                 unique_units: false,
                 fog: false,
                 flag: false,
+                // The era choice goes with the economy: Trafalgar is 1805.
+                era: TacticsEra::Start,
             }
         );
         // An arena still gets exactly what it asked for, sanitized and no

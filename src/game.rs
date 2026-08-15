@@ -18791,6 +18791,15 @@ impl Game {
         // client from a later build must not be able to construct a world that
         // reads as a later era than the rules have a tree for.
         let start_era = start_era.min(crate::setup::last_start_era());
+        // A custom arena's era is the arena's own setting: one rung, a fresh
+        // roll per battle, or a pool's latest — see `TacticsEra`. A named
+        // scenario keeps the era its battle was fought in, and every other
+        // world keeps the start era it was asked for.
+        let start_era = if map_script.is_battlefield() && !map_script.is_scenario() {
+            tactics.era.start_era(start_era, seed)
+        } else {
+            start_era
+        };
         assert!(
             teams.is_empty() || teams.len() == num_players,
             "team assignments must be empty or contain one entry per major player"
@@ -19244,12 +19253,34 @@ impl Game {
             .filter(|unit| !self.players[unit.owner].is_barbarian)
             .map(|unit| (unit.id, unit.owner, unit.pos, unit.kind))
             .collect();
+        // A custom arena with an era pool is dealt *across* the pool rather
+        // than walked to the top: each side's Nth unit is capped at the
+        // pool's Nth era, cycling, so both sides carry the identical mix and
+        // every pooled era puts something real on the field. The count is
+        // kept per side because the two armies are dealt one after the other
+        // and must come out the same. Everywhere else the pool is empty and
+        // nothing is capped.
+        let pool = if self.map_script.is_battlefield() && !self.map_script.is_scenario() {
+            self.tactics.era.pool_eras()
+        } else {
+            Vec::new()
+        };
+        let mut dealt: BTreeMap<usize, usize> = BTreeMap::new();
         for (uid, owner, pos, kind) in starting {
+            let cap = (!pool.is_empty()).then(|| {
+                let index = dealt.entry(owner).or_insert(0);
+                let era = pool[*index % pool.len()];
+                *index += 1;
+                era
+            });
             let mut upgraded = kind;
             // The chain is acyclic and every rung is checked against what the
             // owner now knows, so this walks to the newest unit the start era
-            // reaches and stops.
+            // — or this unit's slice of the era pool — reaches and stops.
             while let Some(next) = self.unit_upgrade_target(owner, upgraded) {
+                if cap.is_some_and(|era| !self.unit_within_era(next, era)) {
+                    break;
+                }
                 upgraded = next;
             }
             if upgraded == kind {
@@ -42048,6 +42079,23 @@ impl Game {
         let target = self.player_unit_replacement(pid, base);
         let spec = self.rules.units.get(&target)?;
         (spec.buildable && self.unlocked(pid, &spec.tech, &spec.civic)).then_some(target)
+    }
+
+    /// Whether a game *opening* in `era` fields this unit: the knowledge
+    /// [`Self::open_in_start_era`] grants for that era — everything of the
+    /// eras before it — covers the unit's unlocking technology and civic. A
+    /// unit with no gate is every era's. This is what caps each rung of an
+    /// era-pool army at its own age.
+    fn unit_within_era(&self, unit: Name, era: usize) -> bool {
+        let Some(spec) = self.rules.units.get(&unit) else {
+            return false;
+        };
+        let known = |gate: &Option<Name>, tree: &SpecMap<crate::rules::TechSpec>| {
+            gate.as_ref()
+                .and_then(|name| tree.get(name))
+                .is_none_or(|entry| entry.era < era)
+        };
+        known(&spec.tech, &self.rules.techs) && known(&spec.civic, &self.rules.civics)
     }
     /// Unit production rules without the recursive obsolescence check. The
     /// resource credit is used only while automatically migrating an existing
@@ -72352,6 +72400,85 @@ mod district_mechanics {
         assert!(game.map.tiles.values().all(|tile| tile.resource.is_none()));
         assert!(game.map.tiles.values().all(|tile| game.rules.is_passable(tile)));
         assert!(game.map.tiles.values().all(|tile| !game.rules.is_water(tile)));
+    }
+
+    /// Which era arms a custom arena is the arena's own setting: one rung
+    /// fixes every battle, Random resolves through the shared per-seed roll
+    /// with the Future left out of the hat, and a Customize pool opens with
+    /// its latest rung researched while dealing both armies across the whole
+    /// spread — a Warrior company beside what an Ancient start could never
+    /// field. A named battle ignores all of it and keeps its own era.
+    #[test]
+    fn the_arena_era_choice_arms_the_battle() {
+        use crate::setup::TacticsEra;
+        let arena = |era: TacticsEra, seed: u64| {
+            Game::new_with(GameOptions {
+                map_script: MapScript::Battlefield,
+                tactics: TacticsRules { cities: 0, era, ..TacticsRules::default() },
+                ..GameOptions::new(2, 10, 10, seed, 250, 0)
+            })
+        };
+        let roster = |game: &Game, seat: usize| {
+            let mut kinds: Vec<Name> = game
+                .units
+                .values()
+                .filter(|unit| unit.owner == seat)
+                .map(|unit| unit.kind)
+                .collect();
+            kinds.sort_unstable();
+            kinds
+        };
+
+        // One rung, every battle.
+        let fixed = arena(TacticsEra::Fixed(4), 90_411);
+        assert_eq!(fixed.start_era, 4);
+        assert_eq!(fixed.world_era, 4);
+
+        // Random is the shared roll, so the same seed replays the same
+        // battle, the Future never comes up, and the seeds do scatter.
+        for seed in [1u64, 2, 3, 500, 90_411] {
+            let rolled = arena(TacticsEra::Random, seed);
+            assert_eq!(rolled.start_era, crate::setup::random_battle_era(seed));
+            assert!(
+                rolled.start_era < crate::setup::start_era_from_id("future").unwrap(),
+                "the Future stays out of the hat"
+            );
+        }
+        let scattered: BTreeSet<usize> =
+            (0..16).map(|seed| arena(TacticsEra::Random, seed).start_era).collect();
+        assert!(scattered.len() > 1, "sixteen seeds must not all land on one era");
+
+        // A pool of Ancient and Information opens with the Information era's
+        // research and deals both sides the identical cross-era mix.
+        let pooled = arena(TacticsEra::Pool(1 | 1 << 7), 90_411);
+        assert_eq!(pooled.start_era, 7);
+        assert_eq!(roster(&pooled, 0), roster(&pooled, 1), "the two armies must stay even");
+        let ancient: BTreeSet<Name> = roster(&arena(TacticsEra::Fixed(0), 90_411), 0)
+            .into_iter()
+            .collect();
+        let pooled_kinds: BTreeSet<Name> = roster(&pooled, 0).into_iter().collect();
+        assert!(
+            pooled_kinds.iter().any(|kind| ancient.contains(kind)),
+            "the pool keeps its Ancient rung on the field: {pooled_kinds:?}"
+        );
+        assert!(
+            pooled_kinds.iter().any(|kind| !ancient.contains(kind)),
+            "and fields what an Ancient start never could: {pooled_kinds:?}"
+        );
+
+        // A named battle keeps the era it was fought in whatever the arena
+        // control says: the server hands Gettysburg its own Industrial start
+        // — see `new_game_params` — and the arena's era choice must not
+        // reach past it, in either direction.
+        for asked in [TacticsEra::Fixed(0), TacticsEra::Random, TacticsEra::Pool(1)] {
+            let gettysburg = Game::new_with(GameOptions {
+                map_script: MapScript::Gettysburg,
+                start_era: 4,
+                tactics: TacticsRules { era: asked, ..TacticsRules::default() },
+                ..GameOptions::new(2, 26, 20, 7, 250, 0)
+            });
+            assert_eq!(gettysburg.start_era, 4, "a scenario's era is the battle's, not {asked:?}");
+        }
     }
 
     #[test]
