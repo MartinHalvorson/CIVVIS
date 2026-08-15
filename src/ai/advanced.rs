@@ -153,6 +153,13 @@ const LIVE_WONDER_RACE_BONUS: f64 = 1_500.0;
 /// Standard turns a settler avoids a site it stood on and could not found. See
 /// `advanced_settler_step`.
 const SETTLER_DEAD_SITE_AVOID_TURNS: u32 = 30;
+/// Loyalty per turn at which a forecast city is treated as doomed before its
+/// Settler is sent: -8 empties a full bar in at most thirteen turns. The same
+/// emergency threshold the live mirror uses for a settler's current plot.
+const SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN: f64 = -8.0;
+/// New-target picks re-asked after a doomed forecast before the pick is left to
+/// the ordinary fallback.
+const SETTLE_TARGET_FORECAST_RETRIES: usize = 3;
 const RECOVERY_POSTURE_LIMIT: u32 = 25;
 /// Tiles a rush will march. Measured capital separations on 6p 74x46 run a
 /// median 13 and a p90 17, so 16 covers roughly nine seats in ten while
@@ -17962,6 +17969,18 @@ impl AdvancedAi {
         Some(self.base.fortify_or_stop(g, pid, uid))
     }
 
+    /// Would a city founded at `site` right now bleed Loyalty fast enough to
+    /// revolt before it repays its Settler? The engine's own complete Loyalty
+    /// calculation on a speculative city — the same instrument the live mirror
+    /// applies to a settler's current plot (`block_loyalty_doomed_settler_sites`),
+    /// asked of the *chosen* plot before the walk. One game clone per call.
+    fn settle_site_is_loyalty_doomed(&self, g: &Game, pid: usize, site: Pos) -> bool {
+        let mut forecast = g.clone();
+        let city = forecast.found_city_for(pid, site, None);
+        forecast.city_loyalty_per_turn(&forecast.cities[&city])
+            <= SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN
+    }
+
     /// Whether `uid` retired `pos` after standing on it unable to found. Expired
     /// entries are pruned at the top of `advanced_settler_step`.
     fn settler_site_is_dead(&self, uid: u32, pos: Pos) -> bool {
@@ -18172,11 +18191,42 @@ impl AdvancedAi {
                         <= SETTLER_STEP_RISK_LIMIT)
         });
         let target = valid_target.or_else(|| {
-            self.best_settler_target(g, pid, uid, 8, avoid)
-                .map(|(pos, _)| {
-                    self.settler_targets.insert(uid, pos);
-                    pos
-                })
+            // ★★★★ FORECAST THE SITE BEFORE THE WALK, NOT AFTER IT. The
+            // mirror's loyalty forecast (`block_loyalty_doomed_settler_sites`)
+            // evaluates only the plot the settler already stands on, so a
+            // settler could be sent seven tiles into a contested frontier and
+            // learn on arrival that the city would revolt inside thirteen
+            // turns. Run civvis-20260815T190904Z: (53,27), four tiles from a
+            // rival capital and five from another rival city, priced at 124
+            // and walked to over 25 turns; the forecast then refused it. Asking
+            // the same forecast here, once per NEW target, costs one clone per
+            // pick and stops the walk before it starts. Bounded retries so a
+            // frontier of doomed plots cannot loop the pick forever.
+            // ⚠ Behind `settler_commit`, which the frozen anchor never sets.
+            let mut attempts = 0;
+            loop {
+                let Some((pos, _)) = self.best_settler_target(g, pid, uid, 8, avoid) else {
+                    break None;
+                };
+                attempts += 1;
+                if self.settler_commit
+                    && attempts <= SETTLE_TARGET_FORECAST_RETRIES
+                    && self.settle_site_is_loyalty_doomed(g, pid, pos)
+                {
+                    think!(self.journal(), Expansion, Detail,
+                           "Settler refuses {pos:?} before walking there";
+                           "the city would lose at least {:.0} Loyalty a turn beside its \
+                            neighbours; the site is retired and the next best is asked",
+                           -SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN; pos);
+                    self.settler_dead_sites.entry(uid).or_default().insert(
+                        pos,
+                        g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+                    );
+                    continue;
+                }
+                self.settler_targets.insert(uid, pos);
+                break Some(pos);
+            }
         });
         let Some(target) = target else {
             return self.base.settler_step(g, pid, uid);
@@ -42140,6 +42190,97 @@ mod research_probe {
         );
     }
 
+    /// A settler beside a large rival city must not be sent to a plot the
+    /// Loyalty forecast says will revolt: the doomed picks are retired before
+    /// the walk and the settler ends up aimed at ground it can hold.
+    #[test]
+    fn a_settler_refuses_a_loyalty_doomed_target_before_walking_there() {
+        let mut game = Game::new_full(2, 40, 24, 91_775, 250, 0, false);
+        game.current = 0;
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            let pos = game.units[&settler].pos;
+            game.remove_unit(settler);
+            game.found_city_for(pid, pos, None);
+        }
+        for unit in game.player_unit_ids(0) {
+            game.remove_unit(unit);
+        }
+        let ours = game.player_city_ids(0)[0];
+        let theirs = game.player_city_ids(1)[0];
+        let home = game.cities[&ours].pos;
+        let rival = game.cities[&theirs].pos;
+        assert!(game.wdist(home, rival) >= 12, "fixture needs a distant rival");
+        let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        for position in positions {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            game.players[0].explored.insert(position);
+        }
+        game.cities.get_mut(&theirs).unwrap().pop = 12;
+        game.cities.get_mut(&ours).unwrap().pop = 6;
+
+        // The forecast itself: doomed beside the rival, healthy beside home.
+        let ai = AdvancedAi::new();
+        let mut beside_rival: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|p| game.wdist(*p, rival) == 4 && game.wdist(*p, home) >= 4)
+            .collect();
+        beside_rival.sort_unstable();
+        assert!(ai.settle_site_is_loyalty_doomed(&game, 0, beside_rival[0]));
+        let mut beside_home: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|p| game.wdist(*p, home) == 4 && game.wdist(*p, rival) >= 10)
+            .collect();
+        beside_home.sort_unstable();
+        assert!(!ai.settle_site_is_loyalty_doomed(&game, 0, beside_home[0]));
+
+        // A settler standing four tiles from the rival, with no target yet.
+        let start = beside_rival[0];
+        let settler = game.spawn_test_unit("settler", 0, start);
+        game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+        let mut ai = AdvancedAi::new();
+        assert!(ai.settler_commit);
+        let _ = ai.advanced_settler_step(&mut game, 0, settler);
+
+        let dead = ai.settler_dead_sites.get(&settler).cloned().unwrap_or_default();
+        assert!(
+            !dead.is_empty(),
+            "the best local site beside a pop-12 rival is doomed and must be retired"
+        );
+        if let Some(target) = ai.settler_targets.get(&settler).copied() {
+            assert!(!dead.contains_key(&target), "a retired site cannot be the target");
+            assert!(
+                !ai.settle_site_is_loyalty_doomed(&game, 0, target)
+                    || dead.len() >= SETTLE_TARGET_FORECAST_RETRIES,
+                "the target is holdable, or every retry was spent"
+            );
+        }
+
+        // The frozen anchor never forecasts: same board, no site retired.
+        let mut frozen_board = game.clone();
+        let mut frozen = AdvancedAi::legacy();
+        assert!(!frozen.settler_commit);
+        let _ = frozen.advanced_settler_step(&mut frozen_board, 0, settler);
+        assert!(frozen.settler_dead_sites.get(&settler).is_none_or(|sites| sites.is_empty()));
+    }
+
     /// Off by default, set only by the live bridge, holdable off on its own —
     /// the wonder race follows the same contract as every other bridge
     /// repair, so the frozen `advanced_v1` anchor keeps its ladder.
@@ -42608,3 +42749,4 @@ mod research_probe {
         );
     }
 }
+
