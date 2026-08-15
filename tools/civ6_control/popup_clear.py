@@ -571,7 +571,8 @@ def main():
 
     cleared = 0
     last_target, misses = None, 0
-    esc_sent = False
+    esc_budget_used = 0
+    leader_passes = 0
     no_target_passes = 0
     waiting_since = None
     warned_setup = False
@@ -603,8 +604,33 @@ def main():
                 freshness = 3600.0 if kind in ("advisor", "congress") else 180.0
                 playing = game_in_progress(args.runs, fresh_seconds=freshness)
                 covered = kind != "map"
+                # ★ ESCALATE ON PERSISTENCE, NOT ON ANY ONE BRANCH'S LATCH.
+                # Three measured leader stalls took three different branches:
+                # the animated scene reset the exact-match no-op guard (#1595),
+                # the target-less scene never clicked at all (#1631), and on
+                # 2026-08-15T12:3x a QUEUE of scenes alternated targets 60 px
+                # apart, so the per-branch once-per-map-return latch spent its
+                # single ESC on scene one and left the rest to the watchdog.
+                # A leader covering a live map is the one condition all
+                # variants share, so count THAT: ESC at ~10 s, again at ~35 s,
+                # once more at ~75 s of continuous leader cover (the covered
+                # chase polls at 0.75 s), and never more than three per
+                # episode. Question scenes ignore ESC by design; the click
+                # paths keep running between escalations regardless.
+                if kind == "leader" and playing and front.startswith("Civ6"):
+                    leader_passes += 1
+                    if (leader_passes in (13, 47, 100)
+                            and esc_budget_used < 3
+                            and not args.dry_run):
+                        macos_input.press_key("escape", check=True)
+                        esc_budget_used += 1
+                        log(f"leader has covered the map for {leader_passes} "
+                            f"passes; sent ESC ({esc_budget_used}/3)")
+                elif kind != "leader":
+                    leader_passes = 0
                 if kind == "map":
-                    esc_sent = False
+                    esc_budget_used = 0
+                    leader_passes = 0
                     no_target_passes = 0
                 elif kind == "card" and not args.cards:
                     # ⚠ OFF BY DEFAULT, ON EVIDENCE. With the counter fixed, the
@@ -628,20 +654,6 @@ def main():
                     log(f"{kind} on screen (dark={dark:.2f}) but no target found; leaving it alone")
                     if kind == "leader":
                         no_target_passes += 1
-                        # The same watchdog-spending screen as the animated
-                        # conversation, one branch later: a leader scene whose
-                        # buttons never render a findable target (run
-                        # civvis-20260815T091500Z sat at dark=0.53 until the
-                        # outer watchdog spent the attempt). The fading-in case
-                        # from 2026-08-02 resolves within a pass or two, so four
-                        # consecutive empty reads is a scene that will never
-                        # offer one — give it the single ESC the clicked path
-                        # already gets, behind the same once-per-scene latch.
-                        if (no_target_passes >= 4 and not esc_sent
-                                and front.startswith("Civ6")):
-                            macos_input.press_key("escape", check=True)
-                            esc_sent = True
-                            log("leader scene offered no target on 4 passes; sent ESC once")
                     else:
                         no_target_passes = 0
                 elif (choice := click_target(kind, targets, window.size[0])) is None:
@@ -657,16 +669,6 @@ def main():
                     # left alone than hammered on a live map.
                     if misses == 2:
                         log(f"{kind} at {targets[-1]} did not respond twice; leaving it alone")
-                    if kind == "leader" and not esc_sent and front.startswith("Civ6"):
-                        # Leaving a leader conversation alone stalls the game
-                        # until the outer watchdog kills the attempt, so this
-                        # one screen gets a single escalation: a loaded scene
-                        # honours ESC even when it eats clicks. Exactly once
-                        # per scene — if ESC does not clear it either, the
-                        # screen really is undrivable and stays untouched.
-                        macos_input.press_key("escape", check=True)
-                        esc_sent = True
-                        log("leader scene ignored clicks twice; sent ESC once")
                     misses += 1
                 else:
                     # Bottom-most button: 'Goodbye' on a farewell, and on a
