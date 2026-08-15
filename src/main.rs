@@ -988,7 +988,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// both new predicates short-circuit to their historical forms; the focused
 /// regression asserts that boundary. Compatibility re-pin; the Elo protocol
 /// does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x68dd_6682_16ab_849e;
+/// The same live-only observation gate keeps a stale major-war defense from
+/// becoming a counter-campaign at less than half the rival's power. The
+/// frozen anchor's false gate preserves its historical denial path, asserted
+/// in the regression. Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x9d51_3f58_7d44_3201;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
