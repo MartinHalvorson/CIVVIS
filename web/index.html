@@ -1870,6 +1870,7 @@
     position: absolute; z-index: 6; left: auto; right: var(--panel-edge); bottom: var(--panel-edge);
     width: var(--world-minimap-width); height: var(--minimap-height);
     display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 6px; border-radius: 12px;
+    container-type: inline-size;
     background: #090b0de8; border: 1px solid #41484c; box-shadow: 0 14px 35px #0008;
   }
   .minimap-label {
@@ -1886,20 +1887,17 @@
   }
   .minimap-label.widget-drag-handle::before { position: absolute; left: 3px; }
   .minimap-hint {
-    position: absolute; z-index: 2; right: 10px; bottom: 9px; padding: 2px 4px;
-    color: #9aac9f; background: #07110fb8; border-radius: 4px; pointer-events: none;
-    font-size: var(--type-caption); font-weight: 850; letter-spacing: .05em; text-transform: uppercase;
+    position: absolute; z-index: 2; right: 8px; bottom: 9px; padding: 2px;
+    margin: 0; color: #9aac9f; background: #07110fb8; border: 0; border-radius: 4px;
+    pointer-events: none; font-size: clamp(6px, 5cqi, 9px); font-weight: 850; line-height: normal;
+    letter-spacing: 0; text-transform: uppercase; white-space: nowrap;
   }
-  .minimap-frame.minimap-can-swap .minimap-hint { bottom: 32px; }
   .minimap-swap {
-    position: absolute; z-index: 2; left: 10px; bottom: 9px; padding: 2px 5px;
-    color: #d7c58c; background: #07110fd9; border: 1px solid #7d704b99; border-radius: 4px;
-    font-size: var(--type-caption); font-weight: 850; line-height: inherit; letter-spacing: .05em;
-    text-transform: uppercase; cursor: pointer;
+    left: 8px; right: auto; pointer-events: auto; cursor: pointer;
   }
-  .minimap-swap:hover { color: #fff0bd; border-color: #b99d57; background: #182118ee; }
+  .minimap-swap:hover { transform: none; color: #c4d3c9; background: #07110fe0; }
+  .minimap-swap:active { transform: none; }
   .minimap-swap:focus-visible { outline: 2px solid #e1c56e; outline-offset: 2px; }
-  .minimap-swap[aria-pressed="true"] { color: #fff0bd; border-color: #d0ad50; }
   .minimap-swap[hidden] { display: none; }
   #mini { width: 100%; height: 100%; min-height: 0; flex: 1; border-radius: 7px; background: #07110f; cursor: pointer; }
   #err {
@@ -3985,9 +3983,9 @@
     <div class="minimap-label widget-drag-handle" data-widget-drag tabindex="0" role="button" aria-label="Move world minimap; use arrow keys or drag" title="Drag to move · arrow keys also move"><span>World minimap</span></div>
     <button class="overlay-close" type="button" data-overlay-close="minimap" aria-label="Hide world minimap; restore it in Display Settings" title="Hide world minimap · restore in Display Settings">✕</button>
     <canvas id="mini" width="200" height="140"></canvas>
-    <button id="swapmaps" class="minimap-swap" type="button" aria-pressed="false"
+    <button id="swapmaps" class="minimap-hint minimap-swap" type="button" aria-pressed="false"
       aria-label="Swap maps — show the azimuthal chart on the main map and the globe in the minimap"
-      title="Swap maps — show the azimuthal chart on the main map and the globe here" hidden>⇄ Swap maps</button>
+      title="Swap maps — show the azimuthal chart on the main map and the globe here" hidden>Swap maps</button>
     <span class="minimap-hint">Click to travel</span>
   </div>
   <div id="pedia" role="dialog" aria-modal="true" aria-labelledby="pediatitle">
