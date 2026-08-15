@@ -5463,11 +5463,29 @@ function armFinaleCountdown(signature) {
     serverInstance: state?.server_instance ?? null,
     seed: state?.seed ?? null,
   };
+  startFinaleCountdownTimer();
+}
+
+// The count itself, from the full selected interval starting now. Shared by
+// the first arming and by a change of interval made from the result screen,
+// which starts the count over at the new length — a shorter choice asks for
+// the next game sooner, not for it this instant.
+function startFinaleCountdownTimer() {
+  cancelFinaleCountdown();
   finaleCountdownDeadline = Date.now() + betweenGameCountdownMs();
   // Sub-second ticks so the number on the button is never a second stale, and
   // so a throttled background tab cannot overshoot the start by a whole tick.
   finaleCountdownTimer = setInterval(tickFinaleCountdown, 200);
   tickFinaleCountdown();
+}
+
+// A human's result screen is on the table and its interval just changed: it
+// counts again, at the new length. The click that made the change already
+// stopped the old count, as any click does; this is the one gesture that
+// asks for another, because it names how long it should be.
+function rearmFinaleCountdown() {
+  if (SPEC || !finaleCountdownResult || !document.getElementById("finale-restart")) return;
+  startFinaleCountdownTimer();
 }
 
 function tickFinaleCountdown() {
@@ -5538,7 +5556,8 @@ function paintExhibitionCountdown() {
   const respawn = document.getElementById("respawn");
   if (!respawn || !state || !exhibitionCountdownWorld ||
       (state.server_instance ?? null) !== exhibitionCountdownWorld.serverInstance ||
-      (state.seed ?? null) !== exhibitionCountdownWorld.seed) {
+      (state.seed ?? null) !== exhibitionCountdownWorld.seed ||
+      (state.restart_hold ?? null) !== exhibitionCountdownWorld.hold) {
     clearExhibitionCountdown();
     return;
   }
@@ -5565,13 +5584,18 @@ function syncExhibitionCountdown(st) {
   const remaining = Number.isFinite(preciseMilliseconds)
     ? Math.max(0, preciseMilliseconds)
     : Math.max(0, wholeSeconds * 1000);
+  // The hold is part of the identity: a countdown changed from the result
+  // screen starts over on the server as a new hold, and that is the one case
+  // where a deadline genuinely moves later. Within one hold it never does.
   const world = {
     serverInstance: st.server_instance ?? null,
     seed: st.seed ?? null,
+    hold: st.restart_hold ?? null,
   };
   const sameWorld = exhibitionCountdownWorld &&
     exhibitionCountdownWorld.serverInstance === world.serverInstance &&
-    exhibitionCountdownWorld.seed === world.seed;
+    exhibitionCountdownWorld.seed === world.seed &&
+    exhibitionCountdownWorld.hold === world.hold;
   const candidateDeadline = Date.now() + remaining;
   exhibitionCountdownDeadline = sameWorld
     ? Math.min(exhibitionCountdownDeadline, candidateDeadline)
@@ -6423,6 +6447,44 @@ function rememberBetweenGameCountdown(ms) {
   betweenGameCountdownDisagreed = 0;
   try { localStorage.setItem(BETWEEN_GAME_COUNTDOWN_KEY, String(ms)); } catch (e) {}
 }
+// One chooser for both controls: the Display Settings select and its copy on
+// the result screen. The choice is remembered and told to the server, and a
+// count already running starts over at the new length — the exhibition's on
+// the server, which re-arms its hold as a new one and reports the fresh
+// remainder for the local painter to anchor to, and a human finale's here.
+function chooseBetweenGameCountdown(ms) {
+  const select = document.getElementById("between-game-countdown");
+  if (!select || !betweenGameCountdownOffered(select, ms)) return;
+  select.value = String(ms);
+  rememberBetweenGameCountdown(ms);
+  syncFinaleCountdownChoice();
+  setPace({between_game_countdown_ms: ms});
+  rearmFinaleCountdown();
+}
+// The result screen's copy says what the setting says, unless it is the
+// control being used.
+function syncFinaleCountdownChoice() {
+  const source = document.getElementById("between-game-countdown");
+  const mirror = document.getElementById("finale-countdown");
+  if (!source || !mirror || document.activeElement === mirror) return;
+  if (mirror.value !== source.value) mirror.value = source.value;
+}
+// The between-game hold, offered on the result screen itself: the setting is
+// in Display Settings, but the result screen is where a viewer finds out what
+// it is set to, and the interval is the one thing about that screen worth
+// changing while it is up. Option for option the Display Settings control,
+// so the two can never disagree about what is on offer.
+function finaleCountdownChoiceMarkup() {
+  const source = document.getElementById("between-game-countdown");
+  if (!source) return "";
+  const options = [...source.options].map(option =>
+    `<option value="${escapeAttr(option.value)}"${option.selected ? " selected" : ""}>` +
+    `${escapeAttr(option.textContent)}</option>`).join("");
+  return `<label class="winner-countdown-choice"><span>Between games</span>` +
+    `<select id="finale-countdown" aria-label="Between-game countdown" ` +
+    `title="How long a finished game is shown before the next one begins. Changing it starts the count again at the new length.">` +
+    `${options}</select></label>`;
+}
 function restoreBetweenGameCountdown() {
   const select = document.getElementById("between-game-countdown");
   if (!select) return;
@@ -6518,6 +6580,7 @@ function updateBetweenGameCountdownControl(st) {
       setPace({between_game_countdown_ms: betweenGameCountdownMs()});
     }
   }
+  syncFinaleCountdownChoice();
 }
 async function setPace(opts) {
   try {
@@ -7099,6 +7162,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         <span class="winner-meta">Turn ${st.turn} · the world plays on without you</span>
         <button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
           title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>
+        ${finaleCountdownChoiceMarkup()}
       </div>`;
       armFinaleCountdown(signature);
     }
@@ -7120,6 +7184,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         ${SPEC ? `<span class="winner-countdown" id="respawn" role="timer"></span>` : ``}
         ${SPEC ? `` : `<button class="primary winner-again" onclick="startNewSimulation()" id="finale-restart"
           title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>`}
+        ${finaleCountdownChoiceMarkup()}
       </div>`;
       armFinaleCountdown(signature);
     }
@@ -7175,6 +7240,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
             onclick="playOnPastVictory('indefinite', false)"
             title="Keep playing this world without a turn limit and ignore every later victory.">To infinity and beyond</button>
         </span>
+        ${finaleCountdownChoiceMarkup()}
       </div>`;
       armFinaleCountdown(signature);
     }
@@ -29459,11 +29525,15 @@ function chooseWatchPace(value) {
 }
 document.getElementById("specspeed").onchange = event => chooseWatchPace(event.currentTarget.value);
 restorePace();
-document.getElementById("between-game-countdown").onchange = () => {
-  const ms = betweenGameCountdownMs();
-  rememberBetweenGameCountdown(ms);
-  setPace({between_game_countdown_ms: ms});
-};
+document.getElementById("between-game-countdown").onchange = () =>
+  chooseBetweenGameCountdown(betweenGameCountdownMs());
+// The result screen offers the same choice where a viewer actually meets it,
+// as a copy of the Display Settings control; the copy is re-rendered with the
+// screen, so the listener lives on the permanent overlay.
+document.getElementById("winner").addEventListener("change", event => {
+  const select = event.target.closest?.("#finale-countdown");
+  if (select) chooseBetweenGameCountdown(Number(select.value));
+});
 restoreBetweenGameCountdown();
 document.getElementById("renderresolution").onchange = () => {
   rememberRenderResolution(document.getElementById("renderresolution").value);

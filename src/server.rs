@@ -1285,6 +1285,18 @@ pub struct Shared {
     /// browser persists and reasserts its choice when the supervisor starts a
     /// fresh process.
     pub between_game_countdown_ms: AtomicU64,
+    /// Set when the between-game countdown is changed while a finished game
+    /// is being held on its result screen: the stepper then counts the new
+    /// length from that moment rather than from the game's end. A shorter
+    /// choice is a request for the next world sooner, not for it now, and a
+    /// longer one is a request for more time, not for what is left of it.
+    pub finale_rearm: AtomicBool,
+    /// Which hold the countdown belongs to: bumped every time a hold starts
+    /// or starts over, and published beside `restart_in` so a viewer's own
+    /// clock can tell a re-armed hold — a deadline that has genuinely moved
+    /// later — from a late or duplicate snapshot of the same hold, which it
+    /// must never let move a countdown backwards.
+    pub finale_hold: AtomicU64,
     pub paused: AtomicBool,
     pub restart_in: AtomicU64, // ms until auto-restart; u64::MAX = not pending
     /// Measured wall time of a full game turn, including pacing sleeps.
@@ -4214,7 +4226,14 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 continue;
             }
             if s.game.is_finished() {
-                let t0 = *over_since.get_or_insert_with(Instant::now);
+                // A viewer who changed the countdown while this result was
+                // on screen asked for the new length from that moment — a
+                // new hold, so the viewer's clock re-anchors to it.
+                if sh.finale_rearm.swap(false, Ordering::Relaxed) || over_since.is_none() {
+                    over_since = Some(Instant::now());
+                    sh.finale_hold.fetch_add(1, Ordering::Relaxed);
+                }
+                let t0 = over_since.unwrap_or_else(Instant::now);
                 let left = final_countdown_ms(&sh)
                     .saturating_sub(t0.elapsed().as_millis() as u64);
                 sh.restart_in.store(left, Ordering::Relaxed);
@@ -4246,6 +4265,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
             } else {
                 over_since = None;
                 sh.restart_in.store(u64::MAX, Ordering::Relaxed);
+                sh.finale_rearm.store(false, Ordering::Relaxed);
                 let step_started = Instant::now();
                 let turn_before = s.game.turn;
                 let finished_before = s.game.is_finished();
@@ -4265,6 +4285,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 // turn.
                 if s.game.is_finished() {
                     over_since = Some(Instant::now());
+                    sh.finale_hold.fetch_add(1, Ordering::Relaxed);
                     sh.restart_in
                         .store(final_countdown_ms(&sh), Ordering::Relaxed);
                 }
@@ -4358,6 +4379,8 @@ fn decorate(o: &mut Value, sh: &Shared) {
         // instead of using their one-second long-poll cadence as a clock.
         o["restart_in_ms"] = json!(r);
         o["restart_in"] = json!(r.div_ceil(1000));
+        // Which hold this remainder belongs to; see `Shared::finale_hold`.
+        o["restart_hold"] = json!(sh.finale_hold.load(Ordering::Relaxed));
     }
     // The match this battle belongs to, when the arena is being played as a
     // series. Absent for a single battle, so a viewer that finds it knows a
@@ -4662,8 +4685,17 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 .as_u64()
                 .and_then(|value| match valid_between_game_countdown_ms(value) {
                     Some(value) => {
-                        sh.between_game_countdown_ms
-                            .store(value, Ordering::Relaxed);
+                        let before = sh
+                            .between_game_countdown_ms
+                            .swap(value, Ordering::Relaxed);
+                        // Changed while a result is being held: the new
+                        // length is counted from now. The stepper reads the
+                        // flag on its next pass and moves the hold's start.
+                        if before != value
+                            && sh.restart_in.load(Ordering::Relaxed) != u64::MAX
+                        {
+                            sh.finale_rearm.store(true, Ordering::Relaxed);
+                        }
                         None
                     }
                     None => Some(
@@ -5796,6 +5828,8 @@ mod tests {
             session: Mutex::new(session),
             pace_ms: AtomicU64::new(0),
             between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
+            finale_rearm: AtomicBool::new(false),
+            finale_hold: AtomicU64::new(0),
             paused: AtomicBool::new(false),
             restart_in: AtomicU64::new(u64::MAX),
             turn_us: AtomicU64::new(0),
@@ -6975,6 +7009,58 @@ mod tests {
             "the precise and backwards-compatible countdowns describe one deadline"
         );
 
+        // Changing the interval while the result is held starts the count
+        // over at the new length — from now, not from the game's end. Let at
+        // least a second of the three run off, then ask for ten: a re-armed
+        // hold reports close to the whole ten seconds, where a hold that
+        // merely re-read its length would report ten minus what had elapsed.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let state = read("/state");
+            let left = state["restart_in_ms"].as_u64().unwrap_or(u64::MAX);
+            if left <= 2_000 {
+                break;
+            }
+            assert!(Instant::now() < deadline, "the three-second hold never ran down");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let rearmed: Value = serde_json::from_str(
+            &http_post(port, "/pace", "{\"between_game_countdown_ms\":10000}")
+                .expect("lengthen the held result's countdown"),
+        )
+        .expect("countdown change is JSON");
+        assert_eq!(rearmed["between_game_countdown_ms"], json!(10_000));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let restarted = loop {
+            let state = read("/state");
+            let left = state["restart_in_ms"].as_u64().unwrap_or(0);
+            if left > 3_000 {
+                break left;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the held result never picked up the longer countdown"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert!(
+            restarted > 9_300,
+            "a changed countdown counts the new length from the change ({restarted} ms left of 10 s; \
+             a hold that only re-read its length would have at most 9 s)"
+        );
+        // And it is published as a new hold, so a viewer's clock — which
+        // never lets a remainder move a countdown later within one hold —
+        // re-anchors to the longer count instead of running the old one out.
+        let first_hold = decided["restart_hold"].as_u64().expect("a held result names its hold");
+        let after = read("/state");
+        assert!(after["restart_in_ms"].as_u64().unwrap_or(0) > 3_000);
+        assert!(
+            after["restart_hold"].as_u64().unwrap() > first_hold,
+            "a re-armed hold must be a new hold: {} then {}",
+            first_hold,
+            after["restart_hold"]
+        );
+
         let played_on: Value = serde_json::from_str(
             &http_post(
                 port,
@@ -7347,6 +7433,52 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("Number(st.restart_in_ms)"));
         assert!(EMBEDDED_INDEX.contains("between_game_countdown_ms"));
+    }
+
+    /// The result screen is where a viewer meets the between-game hold, so it
+    /// offers the same choice there — a copy of the Display Settings control,
+    /// on every one of the three endings — and a change made from either
+    /// place starts the count over at the new length: the socket server
+    /// re-arms its hold, the published build's shim re-arms its clock, and a
+    /// human finale re-arms its own timer.
+    #[test]
+    fn the_result_screen_offers_the_between_game_interval() {
+        for contract in [
+            "id=\"finale-countdown\"",
+            "function finaleCountdownChoiceMarkup() {",
+            "function chooseBetweenGameCountdown(ms) {",
+            "function syncFinaleCountdownChoice() {",
+            "function rearmFinaleCountdown() {",
+            "function startFinaleCountdownTimer() {",
+            "chooseBetweenGameCountdown(betweenGameCountdownMs());",
+            "document.getElementById(\"winner\").addEventListener(\"change\", event => {",
+            "if (select) chooseBetweenGameCountdown(Number(select.value));",
+            "setPace({between_game_countdown_ms: ms});\n  rearmFinaleCountdown();",
+            ".winner-content > .winner-countdown-choice {",
+            // The exhibition's local painter never lets a remainder move a
+            // deadline later within one hold; a re-armed hold arrives as a
+            // new hold and anchors afresh.
+            "hold: st.restart_hold ?? null,",
+            "exhibitionCountdownWorld.hold === world.hold;",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(contract), "result-screen countdown contract is missing: {contract}");
+        }
+        assert_eq!(
+            EMBEDDED_INDEX.matches("${finaleCountdownChoiceMarkup()}").count(),
+            3,
+            "all three endings — victory, a last city lost, a Tactics draw — offer the interval"
+        );
+        let shim = include_str!("../beta/shim.js");
+        assert!(shim.contains(
+            "if (changed && finaleEndsAt !== null) { finaleEndsAt = performance.now() + betweenGameCountdownMs; finaleHold += 1; }"
+        ));
+        assert!(shim.contains("state.restart_hold = finaleHold;"));
+        // And a drawn battle is held and counted down like a won one: the
+        // shim once looked only for a winner, so a Tactics draw in the
+        // published build sat on "Preparing the next battle" for ever.
+        assert!(shim.contains(
+            "const finished = state.finished === true || (state.winner !== undefined && state.winner !== null);"
+        ));
     }
 
     /// A full spectator state intentionally waits for either the next frame or
@@ -13184,6 +13316,8 @@ mod tests {
             session: Mutex::new(session),
             pace_ms: AtomicU64::new(0),
             between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
+            finale_rearm: AtomicBool::new(false),
+            finale_hold: AtomicU64::new(0),
             paused: AtomicBool::new(false),
             restart_in: AtomicU64::new(u64::MAX),
             turn_us: AtomicU64::new(0),
@@ -16224,6 +16358,8 @@ pub fn serve_with_game(
         session: Mutex::new(session),
         pace_ms: AtomicU64::new(500), // half a second per turn by default
         between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
+        finale_rearm: AtomicBool::new(false),
+        finale_hold: AtomicU64::new(0),
         paused: AtomicBool::new(initially_paused),
         restart_in: AtomicU64::new(u64::MAX),
         turn_us: AtomicU64::new(0),
