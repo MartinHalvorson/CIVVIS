@@ -1678,6 +1678,13 @@ pub struct AdvancedAi {
     /// Production Advanced enables this. Historical evaluator controls retain
     /// the old flat-gene delegation.
     pub plan_city_target: bool,
+    /// Let a severe, empire-wide Amenity crisis reclaim one repeatable economic
+    /// project for the district or building chain that repairs it.
+    ///
+    /// This is off for ordinary and frozen controllers. The live bridge and
+    /// native repair bundle enable it, so a Science plan can keep its project
+    /// tempo except when host-observed happiness has become the binding loss.
+    pub amenity_project_preemption: bool,
     /// Price the city ceiling off the land the board actually shows, densely.
     ///
     /// ★★★★ THE STOCK CEILING IS WHAT LOSES SETTLER GAMES, and three live
@@ -2571,6 +2578,7 @@ impl AdvancedAi {
             belief_pressure: false,
             city_target_floor: 3,
             plan_city_target: false,
+            amenity_project_preemption: false,
             wide_map_capacity: false,
             city_strategy: false,
             city_strategy_emphasis: true,
@@ -3220,6 +3228,18 @@ impl AdvancedAi {
         // against the Amenity band's 0.872 — and 60.3% / 40.0% of city-turns
         // already carry the 2 / 3 specialty districts these cards need.
         self.enable_housing_cards();
+        // ⚠⚠ THE SCIENCE PROJECT LOOP CAN MAKE THE AMENITY REPAIR UNREACHABLE.
+        // On live run `civvis-20260815T051714Z`, every one of five cities sat
+        // between -3 and -5 Amenities from t140 onward, costing 10–30% of its
+        // yields, while adaptive Science restarted Campus Research Grants 39
+        // times from t176 to t233. `BasicAi::pick_item` already ranks an
+        // Entertainment Complex above ordinary district lanes, but explicit
+        // Science production bypasses that picker whenever it fills a queue.
+        // The repair pauses one repeatable project only after at least two
+        // cities enter the -3 band; it preserves victory projects, force gaps,
+        // and the rest of the Science queue while the district/building chain
+        // completes.
+        self.enable_amenity_project_preemption();
         // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
         // live runs the median empire ends on **30 techs of 77**, `engineering`
         // is reached by only **73%** and at a median turn **116** — which is why
@@ -3336,6 +3356,7 @@ impl AdvancedAi {
         self.enable_housing_cards();
         self.enable_housing_research();
         self.enable_campus_every_city();
+        self.enable_amenity_project_preemption();
         self.enable_district_coverage();
         self.enable_slot_kind_tiebreak();
         // Keeping it loyal, and not slotting cards that multiply zero.
@@ -3521,6 +3542,17 @@ impl AdvancedAi {
 
     pub fn disable_campus_every_city(&mut self) {
         self.campus_every_city = false;
+    }
+
+    /// When host-observed Amenity deficits have crossed a severe empire-wide
+    /// threshold, pause one repeatable project for the concrete repair chain.
+    /// Frozen controllers leave the ordinary project ordering untouched.
+    pub fn enable_amenity_project_preemption(&mut self) {
+        self.amenity_project_preemption = true;
+    }
+
+    pub fn disable_amenity_project_preemption(&mut self) {
+        self.amenity_project_preemption = false;
     }
 
     /// Put `medina_quarter` and `insulae` in the deck when a city is short of
@@ -13329,6 +13361,150 @@ impl AdvancedAi {
         }
     }
 
+    /// A Science project earns useful Great Person points, but it is not worth
+    /// preserving while several host-observed cities are deep in the unhappy
+    /// bands. The baseline governor already asks for an Entertainment Complex;
+    /// this separately gated handoff makes that request reachable when
+    /// strategic production has occupied every queue with repeatable projects.
+    ///
+    /// A new district starts only at the deliberately conservative,
+    /// empire-wide threshold of two cities at -3 or worse. Once that district
+    /// is underway, one remaining severe city may still complete its direct
+    /// amenity building. A war, Recovery, Conquest, a one-off project, and a
+    /// victory project retain their existing owners. One repair chain at a time
+    /// keeps the rest of the research economy working and prevents a crisis
+    /// from turning into a blanket Entertainment Complex build-out.
+    fn redirect_repeatable_projects_for_amenity_crisis(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        let active_major_war = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+                && g.is_at_war(pid, player.id)
+        });
+        if !self.amenity_project_preemption
+            || active_major_war
+            || matches!(
+                plan.strategy,
+                GrandStrategy::Conquest | GrandStrategy::Recovery
+            )
+        {
+            return;
+        }
+
+        let city_ids = g.player_city_ids(pid);
+        let severe: Vec<(u32, i64)> = city_ids
+            .iter()
+            .filter_map(|cid| {
+                let shortfall = (-g.city_amenity_surplus(&g.cities[cid])).max(0);
+                (shortfall >= 3).then_some((*cid, shortfall))
+            })
+            .collect();
+        if severe.is_empty() {
+            return;
+        }
+        let may_start_district = severe.len() >= 2;
+        let total_shortfall: i64 = city_ids
+            .iter()
+            .map(|cid| (-g.city_amenity_surplus(&g.cities[cid])).max(0))
+            .sum();
+
+        let is_amenity_repair = |item: &Item| match item {
+            Item::District { district, .. } => g.rules.districts[district].amenity > 0.0,
+            Item::Building { building } => g.rules.buildings[building].amenity > 0.0,
+            _ => false,
+        };
+        // An item already in the chain owns the single reservation until it
+        // completes. The next turn can then choose its direct amenity building.
+        if city_ids
+            .iter()
+            .any(|cid| g.cities[cid].queue.first().is_some_and(is_amenity_repair))
+        {
+            return;
+        }
+
+        let mut best: Option<(u8, i64, f64, u32, String, Item)> = None;
+        for cid in city_ids {
+            let shortfall = (-g.city_amenity_surplus(&g.cities[&cid])).max(0);
+            if shortfall == 0 {
+                continue;
+            }
+            let redirectable = match g.cities[&cid].queue.first() {
+                Some(Item::Project { project }) => {
+                    let spec = &g.rules.projects[project];
+                    spec.repeatable
+                        && (!spec.completion_gpp.is_empty() || !spec.ongoing_yields.is_empty())
+                }
+                None => true,
+                _ => false,
+            };
+            if !redirectable {
+                continue;
+            }
+            for item in g.producible_items(pid, cid) {
+                let (stage, amenity) = match &item {
+                    Item::Building { building } => (1, g.rules.buildings[building].amenity),
+                    Item::District { district, .. } => (0, g.rules.districts[district].amenity),
+                    _ => continue,
+                };
+                // A district begins only in the deep band that triggered the
+                // emergency. Its direct amenity building may finish after the
+                // district has already lifted that city into the -1/-2 band.
+                if amenity <= 0.0 || (stage == 0 && (!may_start_district || shortfall < 3)) {
+                    continue;
+                }
+                let key = format!("{item:?}");
+                let replace = best.as_ref().is_none_or(
+                    |(old_stage, old_shortfall, old_amenity, old_city, old_key, _)| {
+                        stage > *old_stage
+                            || (stage == *old_stage
+                                && (shortfall > *old_shortfall
+                                    || (shortfall == *old_shortfall
+                                        && (amenity > *old_amenity + f64::EPSILON
+                                            || ((amenity - *old_amenity).abs() <= f64::EPSILON
+                                                && (cid, key.as_str())
+                                                    < (*old_city, old_key.as_str()))))))
+                    },
+                );
+                if replace {
+                    best = Some((stage, shortfall, amenity, cid, key, item));
+                }
+            }
+        }
+
+        let Some((_, _, _, city, _, item)) = best else {
+            return;
+        };
+        let prior = g.cities[&city].queue.first().cloned();
+        let city_name = g.cities[&city].name.clone();
+        if g
+            .apply(
+                pid,
+                &Action::Produce {
+                    city,
+                    item: item.clone(),
+                },
+            )
+            .is_ok()
+            && self.journal().wants(crate::reasoning::Level::Decision)
+        {
+            match prior {
+                Some(prior) => think!(self.journal(), Economy, Decision,
+                    "{} pauses {} for {}", city_name, Self::plain_item(&prior), Self::plain_item(&item);
+                    "severe Amenity crisis: {} cities at -3 or worse, {} total short",
+                    severe.len(), total_shortfall),
+                None => think!(self.journal(), Economy, Decision,
+                    "{} starts {} for a severe Amenity crisis", city_name, Self::plain_item(&item);
+                    "{} cities at -3 or worse, {} total short", severe.len(), total_shortfall),
+            }
+        }
+    }
+
     /// Run the strategic production governor. `adaptive_expansion_dispatch`
     /// names the one new route exposed by the experiment, so the census does
     /// not accidentally attribute Recovery or an explicitly targeted lane to
@@ -22593,6 +22769,12 @@ impl AdvancedAi {
             {
                 self.advanced_production(g, pid, &plan, adaptive_expansion_dispatch);
             }
+            // Strategic production may have just refilled an idle city with a
+            // repeatable Research Grant. Run this handoff afterwards so its
+            // single concrete Amenity repair is the final queue decision.
+            if self.victory_planning {
+                self.redirect_repeatable_projects_for_amenity_crisis(g, pid, &plan);
+            }
             if active_victory_target.is_none() {
                 self.advanced_support_production(g, pid, &plan);
                 // The adaptive empire's Settler gate lives in the baseline
@@ -29816,6 +29998,101 @@ mod tests {
             game.cities[&city].queue.first(),
             Some(Item::Unit { unit }) if unit == "settler"
         ));
+    }
+
+    #[test]
+    fn severe_amenity_crisis_reclaims_one_research_grant_for_the_repair_chain() {
+        // Live run `civvis-20260815T051714Z` kept every city on Campus Research
+        // Grants while five host cities sat in the -3 through -5 bands. The
+        // regular amenity lane is sound; the failure is that it never receives
+        // an empty queue from the explicit Science producer.
+        let (mut game, city, home) = empire_with_a_capital(71_110);
+        game.at_war.clear();
+        let other = found_nearby_test_city(&mut game, 0, home);
+        game.players[0]
+            .civics
+            .insert(crate::name!("games_recreation"));
+        game.players[0].techs.insert(crate::name!("writing"));
+        for cid in [city, other] {
+            let deficit_pop = (6..30)
+                .find(|pop| {
+                    game.cities.get_mut(&cid).unwrap().pop = *pop;
+                    game.city_amenity_surplus(&game.cities[&cid]) <= -3
+                })
+                .expect("fixture reaches the severe Amenity band");
+            game.cities.get_mut(&cid).unwrap().pop = deficit_pop;
+            install_ai_test_district(&mut game, cid, "campus");
+            let grant = Item::Project {
+                project: crate::name!("campus_research_grants"),
+            };
+            assert!(game.can_produce(0, cid, &grant));
+            game.apply(0, &Action::Produce { city: cid, item: grant })
+                .expect("queue Campus Research Grants");
+        }
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 2,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        // Ordinary and frozen controllers leave the historic project loop
+        // alone; this is a separately ablatable live repair.
+        let ordinary = AdvancedAi::new();
+        assert!(!ordinary.amenity_project_preemption);
+        ordinary.redirect_repeatable_projects_for_amenity_crisis(&mut game, 0, &plan);
+        assert!(
+            [city, other].into_iter().all(|cid| matches!(
+                game.cities[&cid].queue.first(),
+                Some(Item::Project { project }) if *project == crate::name!("campus_research_grants")
+            )),
+            "the live-only gate leaves normal project ordering unchanged"
+        );
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.amenity_project_preemption);
+        live.redirect_repeatable_projects_for_amenity_crisis(&mut game, 0, &plan);
+        let repair_city = [city, other]
+            .into_iter()
+            .find(|cid| matches!(
+                game.cities[cid].queue.first(),
+                Some(Item::District { district, .. }) if game.rules.districts[district].amenity > 0.0
+            ))
+            .expect("one severe city pauses its grant for an amenity district");
+        let project_city = if repair_city == city { other } else { city };
+        assert!(matches!(
+            game.cities[&project_city].queue.first(),
+            Some(Item::Project { project }) if *project == crate::name!("campus_research_grants")
+        ));
+
+        // One in-flight repair reserves the whole intervention. The next city
+        // keeps its research grant instead of turning the emergency into a
+        // blanket district order.
+        live.redirect_repeatable_projects_for_amenity_crisis(&mut game, 0, &plan);
+        assert!(matches!(
+            game.cities[&project_city].queue.first(),
+            Some(Item::Project { project }) if *project == crate::name!("campus_research_grants")
+        ));
+
+        // Once the district exists, the next reservation continues its direct
+        // amenity building before starting a second district elsewhere.
+        game.cities.get_mut(&repair_city).unwrap().queue.clear();
+        install_ai_test_district(&mut game, repair_city, "entertainment_complex");
+        let legal_repair_items = game.producible_items(0, repair_city);
+        live.redirect_repeatable_projects_for_amenity_crisis(&mut game, 0, &plan);
+        assert!(matches!(
+            game.cities[&repair_city].queue.first(),
+            Some(Item::Building { building }) if game.rules.buildings[building].amenity > 0.0
+        ),
+            "the next repair stage must be a direct Amenity building; legal: {legal_repair_items:?}, queued: {:?}",
+            game.cities[&repair_city].queue.first()
+        );
+        live.disable_amenity_project_preemption();
+        assert!(!live.amenity_project_preemption);
     }
 
     #[test]
