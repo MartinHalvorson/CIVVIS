@@ -1002,7 +1002,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `plan_city_target`, both false in `AdvancedAi::legacy()`. The regression
 /// holds the anchor's research grant while the live plan replaces it with one
 /// Settler. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7882_d739_4a2f_b51e;
+/// The named live-Great-Person gate is a host-only fact in
+/// `Player::live_great_person_offer_blockers`. `Game::new` and old saves leave
+/// it empty; only `mirror.rs` writes it from Firaxis's current offer. The
+/// assertion below locks that boundary, so the source-contract re-pin does not
+/// silently alter headless `advanced_v1` tournament rows. Compatibility
+/// re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x641e_70fe_a0c9_5153;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -3510,6 +3516,14 @@ mod tests {
             civvis::ai::AdvancedAi::new().coordinates_forces(),
             "the stock entrant does victory-plan, so `advanced` rows straddle \
              the nuclear-lane change — recorded here honestly"
+        );
+        let headless = Game::new(2, 24, 16, 71_032, 200, 0);
+        assert!(
+            headless
+                .live_great_person_offer_blocker(0, "scientist")
+                .is_none(),
+            "the frozen headless anchor has no Firaxis named-offer export; if this \
+             becomes populated, the live-only GPP gate can alter its ledger"
         );
     }
 

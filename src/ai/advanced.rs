@@ -6871,6 +6871,15 @@ impl AdvancedAi {
             if award <= f64::EPSILON {
                 continue;
             }
+            // A class race is not necessarily a usable named offer. Firaxis can
+            // offer Hildegard of Bingen as a Scientist to an empire with no Holy
+            // Site, or Mary Leakey to one with no Theater. The live mirror carries
+            // that hard prerequisite separately from this simulator's generic
+            // class model; once it says the current offer cannot activate, GPP has
+            // no race tempo to extend. Ongoing project yields remain above.
+            if g.live_great_person_offer_blocker(pid, &kind).is_some() {
+                continue;
+            }
             let mut affinity: f64 = match (plan.strategy, kind.as_str()) {
                 (GrandStrategy::Science, "scientist") => 2.5,
                 (GrandStrategy::Culture, "writer" | "artist" | "musician") => 2.6,
@@ -31531,6 +31540,23 @@ mod tests {
             forcing > far + 100.0,
             "a project that claims and overtakes in the live race must receive an extension: {forcing} <= {far}"
         );
+
+        // The live class alone is not enough: a Campus project can be racing
+        // for Hildegard of Bingen while Firaxis requires a Holy Site. The
+        // mirror's named-offer blocker must remove the race tempo rather than
+        // letting a generic Scientist valuation monopolize production.
+        game.players[0]
+            .live_great_person_offer_blockers
+            .insert(
+                "scientist".to_string(),
+                "the live GREAT_PERSON_INDIVIDUAL_HILDEGARD_OF_BINGEN offer requires an active DISTRICT_HOLY_SITE".to_string(),
+            );
+        let blocked_offer = ai.production_value(&game, 0, city, &project, &plan, &counts);
+        assert!(
+            blocked_offer < far,
+            "an unusable live offer keeps ordinary yields only, not the GPP race: {blocked_offer} >= {far}"
+        );
+        game.players[0].live_great_person_offer_blockers.clear();
 
         game.active_congress_effects
             .push(crate::game::CongressEffect {
