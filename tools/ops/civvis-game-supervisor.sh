@@ -193,8 +193,16 @@ while true; do
   # A wedged core is invisible until a game fails to start, so recycle the game
   # cleanly whenever the previous attempt did not play a turn.
   if (( consecutive_failures > 0 )); then
-    say "previous attempt started no game; clean-restarting Civ 6"
-    python3 tools/civ6_launch.py --restart >>"$SUP" 2>&1
+    # ⚠ --stop, NOT --restart. The climb's `busy()` refuses to touch a running
+    # Civ 6 it cannot prove it owns ("refusing to stop an unowned run", exit 3)
+    # — and --restart hands it exactly that: a relaunched, unowned game parked
+    # at the menu. Measured 2026-08-15 12:30–12:35Z: restart → climb refuses →
+    # failure → restart, four times in five minutes into the ten-minute nap,
+    # with each "attempt" lasting under a second. The remedy must leave the
+    # game DOWN; the climb launches Civ 6 itself and then owns what it
+    # launched. A wedged core is equally cleared by a stop.
+    say "previous attempt started no game; stopping Civ 6 so the next climb owns its launch"
+    python3 tools/civ6_launch.py --stop >>"$SUP" 2>&1
   fi
 
   PIN=$(cat "$PINFILE" 2>/dev/null || print -r -- head)
