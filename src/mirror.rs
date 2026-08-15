@@ -2406,6 +2406,55 @@ mod tests {
         );
     }
 
+    /// A city Civilization VI reports as building a WONDER is busy, on both the
+    /// first reconstruction and every later sync — the mirror must not seed it
+    /// idle and let the planner replace the wonder the next turn (Hagia Sophia,
+    /// Rome, run civvis-20260815T202611Z t124→t125).
+    #[test]
+    fn a_wonder_under_construction_keeps_the_city_queue_busy() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(6, 5, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 40,
+            cities: vec![StateCity {
+                id: 1,
+                name: "Rome".to_string(),
+                x: 5,
+                y: 5,
+                pop: 6,
+                producing: Some("BUILDING_HAGIA_SOPHIA".to_string()),
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let city = mirror.cid_of[&1];
+        assert!(
+            matches!(
+                mirror.game.cities[&city].queue.first(),
+                Some(crate::game::Item::Wonder { wonder, .. }) if wonder == "hagia_sophia"
+            ),
+            "fresh reconstruction: {:?}",
+            mirror.game.cities[&city].queue
+        );
+
+        state.turn = 41;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            matches!(
+                mirror.game.cities[&city].queue.first(),
+                Some(crate::game::Item::Wonder { wonder, .. }) if wonder == "hagia_sophia"
+            ),
+            "later sync: {:?}",
+            mirror.game.cities[&city].queue
+        );
+    }
+
     #[test]
     fn live_mirror_permanently_blocks_host_granted_spy_production() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -8793,7 +8842,7 @@ fn blocked_production_from(
         let translated: std::collections::BTreeSet<String> = names
             .iter()
             .filter_map(|name| {
-                civvis_production_item(rules, Some(name), &[])
+                civvis_production_item(rules, Some(name), &[], None)
                     .map(|item| crate::game::Game::production_block_key(&item))
                     .or_else(|| {
                         civvis_node_name(&rules.districts, name, "DISTRICT_")
@@ -9495,13 +9544,27 @@ fn refused_policies_through(
 /// busy with something it is not, which is worse than the idle city this fixes: it
 /// would suppress a real production decision instead of merely repeating one.
 ///
-/// Districts are deliberately NOT reconstructed — `Item::District` carries a `pos`
-/// the export does not give, and inventing one would place a district on arbitrary
-/// ground.
+/// Districts are reconstructed only where the export names the plot; a district the
+/// export did not place is refused rather than invented on arbitrary ground.
+///
+/// ★★★★ A WONDER IN PROGRESS IS A BUSY CITY, AND UNTIL NOW IT READ AS AN IDLE ONE.
+/// Civilization VI names a wonder under construction `BUILDING_<WONDER>`; that is
+/// not a `rules.buildings` row, so this returned `None`, the queue was seeded
+/// empty, and the planner chose production from scratch every turn — the first
+/// live wonder the seat ever started (Hagia Sophia, Rome, run
+/// civvis-20260815T202611Z t124, 14 turns) was replaced by a University the very
+/// next turn, `0 already banked` both times. `release_foreign_production` could
+/// not help: the host WAS building what we asked for. The export carries the plots
+/// of COMPLETED wonders only, so the queue item takes the city centre as its
+/// placeholder plot when `centre` is given — a committed queue is skipped by the
+/// planner and never re-emitted as an order, so the plot is a marker of busyness
+/// and nothing reads it as ground. Callers translating a bare name for a block key
+/// pass `None` and get the same wonder item keyed by name.
 fn civvis_production_item(
     rules: &crate::rules::Rules,
     civ6: Option<&str>,
     districts: &[StateDistrict],
+    centre: Option<crate::Pos>,
 ) -> Option<crate::game::Item> {
     let civ6 = civ6?.trim();
     if civ6.is_empty() {
@@ -9515,6 +9578,12 @@ fn civvis_production_item(
     if let Some(name) = civvis_node_name(&rules.buildings, civ6, "BUILDING_") {
         return Some(crate::game::Item::Building {
             building: crate::name::Name::new(&name),
+        });
+    }
+    if let Some(name) = civvis_node_name(&rules.wonders, civ6, "BUILDING_") {
+        return Some(crate::game::Item::Wonder {
+            wonder: crate::name::Name::new(&name),
+            pos: centre.unwrap_or((0, 0)),
         });
     }
     // Firaxis's repeatable district grants use implementation names while
@@ -10813,9 +10882,12 @@ pub fn rebuild_from_state(
                 // from scratch each turn with no knowledge of work in progress —
                 // which is what a run alternating Builder / Monument / Campus every
                 // second turn looks like from the inside.
-                if let Some(item) =
-                    civvis_production_item(&game_rules, city.producing.as_deref(), &city.districts)
-                {
+                if let Some(item) = civvis_production_item(
+                    &game_rules,
+                    city.producing.as_deref(),
+                    &city.districts,
+                    Some(crate::hex::offset_to_axial(city.x, city.y)),
+                ) {
                     if built.queue.is_empty() {
                         built.queue.push(item);
                     }
@@ -12292,6 +12364,7 @@ impl LiveMirror {
                     &self.game.rules,
                     city.producing.as_deref(),
                     &city.districts,
+                    Some(crate::hex::offset_to_axial(city.x, city.y)),
                 );
                 // This must run before replacing `live.queue`: the old queue is the
                 // only exact identity of an abandoned district foundation.
@@ -13034,12 +13107,12 @@ mod host_fact_tests {
     #[test]
     fn civ6_production_names_become_civvis_queue_items() {
         let rules = crate::rules::Rules::shared();
-        let settler = civvis_production_item(&rules, Some("UNIT_SETTLER"), &[]);
+        let settler = civvis_production_item(&rules, Some("UNIT_SETTLER"), &[], None);
         assert!(
             matches!(settler, Some(crate::game::Item::Unit { .. })),
             "UNIT_SETTLER should map to a CIVVIS unit build, got {settler:?}"
         );
-        let monument = civvis_production_item(&rules, Some("BUILDING_MONUMENT"), &[]);
+        let monument = civvis_production_item(&rules, Some("BUILDING_MONUMENT"), &[], None);
         assert!(
             matches!(monument, Some(crate::game::Item::Building { .. })),
             "BUILDING_MONUMENT should map to a CIVVIS building, got {monument:?}"
@@ -13048,6 +13121,7 @@ mod host_fact_tests {
             &rules,
             Some("PROJECT_ENHANCE_DISTRICT_THEATER"),
             &[],
+            None,
         );
         assert_eq!(
             theater,
@@ -13059,13 +13133,13 @@ mod host_fact_tests {
         // ⚠ Refusing to guess is the point. A wrong item tells CIVVIS a city is busy
         // with something it is not, which SUPPRESSES a real production decision —
         // worse than the repeated one this fixes.
-        assert!(civvis_production_item(&rules, Some("UNIT_NOT_A_REAL_THING"), &[]).is_none());
-        assert!(civvis_production_item(&rules, Some(""), &[]).is_none());
-        assert!(civvis_production_item(&rules, None, &[]).is_none());
+        assert!(civvis_production_item(&rules, Some("UNIT_NOT_A_REAL_THING"), &[], None).is_none());
+        assert!(civvis_production_item(&rules, Some(""), &[], None).is_none());
+        assert!(civvis_production_item(&rules, None, &[], None).is_none());
         // A district still refuses when the export did not say WHERE — inventing a
         // plot would place it on arbitrary ground, which is the one thing worse
         // than repeating the order.
-        assert!(civvis_production_item(&rules, Some("DISTRICT_CAMPUS"), &[]).is_none());
+        assert!(civvis_production_item(&rules, Some("DISTRICT_CAMPUS"), &[], None).is_none());
         // ...and resolves once the plot is carried, which is what stops a city
         // building a district from reading as idle for sixty turns.
         let campus = civvis_production_item(
@@ -13079,6 +13153,7 @@ mod host_fact_tests {
                 complete: false,
                 ..StateDistrict::default()
             }],
+            None,
         );
         match campus {
             // ⚠ AXIAL, not the offset the export sent. Mixing the two is this
@@ -13101,8 +13176,33 @@ mod host_fact_tests {
                 complete: false,
                 ..StateDistrict::default()
             }],
+            None,
         )
         .is_none());
+
+        // ★ A wonder under construction is a busy city. `BUILDING_HAGIA_SOPHIA` is
+        // not a `rules.buildings` row and used to fall through to None — the first
+        // live wonder the seat ever started was replaced by a University the next
+        // turn because the mirror seeded Rome's queue empty. With a centre it is a
+        // placed marker; without one (block-key translation) it still names the
+        // wonder.
+        let centre = crate::hex::offset_to_axial(20, 9);
+        match civvis_production_item(&rules, Some("BUILDING_HAGIA_SOPHIA"), &[], Some(centre)) {
+            Some(crate::game::Item::Wonder { wonder, pos }) => {
+                assert_eq!(wonder, crate::name!("hagia_sophia"));
+                assert_eq!(pos, centre, "the placeholder plot is the city centre");
+            }
+            other => panic!("an in-progress wonder should be an Item::Wonder: {other:?}"),
+        }
+        assert!(matches!(
+            civvis_production_item(&rules, Some("BUILDING_HAGIA_SOPHIA"), &[], None),
+            Some(crate::game::Item::Wonder { .. })
+        ));
+        // And an ordinary building is still a building, not a wonder.
+        assert!(matches!(
+            civvis_production_item(&rules, Some("BUILDING_LIBRARY"), &[], Some(centre)),
+            Some(crate::game::Item::Building { .. })
+        ));
     }
 
     /// ⚠ THE REGRESSION THIS EXISTS TO PREVENT, PINNED AS A TEST.
