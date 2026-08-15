@@ -1769,6 +1769,21 @@ fn translate(
                 },
             )
         }
+        // The encampment's own gun, silent for the same reason the city's was:
+        // 21 EncampmentStrike skips by turn 181 of run civvis-20260815T024518Z,
+        // all at war. Keyed by the owning city exactly like CityStrike; the mod
+        // walks that city's districts to find the encampment, because only the
+        // live game knows where it stands.
+        Action::EncampmentStrike { city, target } => {
+            mirror_state.cid_of.iter().find(|(_, cid)| **cid == *city).map(
+                |(civ6, _)| Order {
+                    kind: "encampment_strike",
+                    subject: Some(*civ6),
+                    verb: None,
+                    pos: Some(civvis::hex::axial_to_offset(target.0, target.1)),
+                },
+            )
+        }
         // Delegations and embassies buy diplomatic visibility (a combat bonus
         // against that rival) and a relationship modifier for pocket change,
         // and both were untranslatable: 16 SendDelegation and 7 SendEmbassy
@@ -3797,6 +3812,19 @@ mod tests {
         assert_eq!(strike.kind, "city_strike");
         assert_eq!(strike.subject, Some(65_536));
         assert_eq!(strike.pos, Some(civvis::hex::axial_to_offset(5, 6)));
+
+        let encampment = translate(
+            &Action::EncampmentStrike {
+                city,
+                target: (7, 5),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("an encampment strike from a mapped city translates");
+        assert_eq!(encampment.kind, "encampment_strike");
+        assert_eq!(encampment.subject, Some(65_536));
+        assert_eq!(encampment.pos, Some(civvis::hex::axial_to_offset(7, 5)));
     }
 
     #[test]
