@@ -253,13 +253,23 @@ while true; do
 
   TAG=$(date -u +%Y%m%dT%H%M%SZ)
   say "starting a game on $HEAD_SHA (log climb-$TAG.log)"
+  # The success check below must not read a PREVIOUS cycle's play log. A climb
+  # that exits before creating one — 2026-08-15T11:07:31Z: "something already
+  # holds the game; refusing to stop an unowned run", gone in under a second —
+  # left `ls -t` pointing at the finished game's log, which scored the failed
+  # cycle as "played turns: 293" and reset consecutive_failures. Under a
+  # persistent instant failure that misread would spin fast forever and the
+  # recovery/backoff arms below would never fire. Mark the cycle start; only a
+  # play log written after the mark can vouch for this cycle.
+  CYCLE_MARK=$LOGS/.cycle-start
+  : > "$CYCLE_MARK"
   python3 -u tools/civ6_civvis_climb.py --attempts 1 --strategy "$STRATEGY" \
       --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
 
   # "Played a turn" is the only honest success test: a run can reach the map,
   # emit autoclose events and still never seat the agent.
   PLAY=$(ls -t "$LOGS"/civvis-*-play.log 2>/dev/null | head -1)
-  if [[ -n "$PLAY" ]] && grep -qE "^\[turn [0-9]+\]" "$PLAY" 2>/dev/null; then
+  if [[ -n "$PLAY" && "$PLAY" -nt "$CYCLE_MARK" ]] && grep -qE "^\[turn [0-9]+\]" "$PLAY" 2>/dev/null; then
     consecutive_failures=0
     say "game on $HEAD_SHA played turns: $(grep -cE '^\[turn [0-9]+\]' "$PLAY") turn lines"
   else
