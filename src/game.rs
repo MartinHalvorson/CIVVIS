@@ -17837,6 +17837,12 @@ pub struct Game {
     /// the block can be scoped; before this it sent only a bare hash.
     #[serde(default)]
     pub blocked_districts: BTreeMap<u32, BTreeSet<Name>>,
+    /// Fresh district plots Firaxis explicitly approved after rejecting a different
+    /// CIVVIS coordinate. Native games leave this empty. A positive host candidate
+    /// wins over the accompanying temporary refusal, so the next planner decision
+    /// can select a real placement instead of waiting out the cooldown.
+    #[serde(default)]
+    pub host_district_sites: BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>,
     /// Wonders a HOST engine says have no legal plot IN THIS CITY, scoped for the
     /// same reason as [`Game::blocked_districts`] — Hanging Gardens needs a river
     /// and Great Bath floodplains, so one city having no ground says nothing about
@@ -18365,6 +18371,7 @@ impl From<GameSer> for Game {
             blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
+            host_district_sites: BTreeMap::new(),
             blocked_wonders: BTreeMap::new(),
             blocked_production: BTreeMap::new(),
             blocked_purchases: BTreeMap::new(),
@@ -18927,6 +18934,7 @@ impl Game {
             blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
+            host_district_sites: BTreeMap::new(),
             blocked_wonders: BTreeMap::new(),
             blocked_production: BTreeMap::new(),
             blocked_purchases: BTreeMap::new(),
@@ -41036,6 +41044,24 @@ impl Game {
 
     pub fn district_sites(&self, cid: u32, dname: impl AsName) -> Vec<Pos> {
         let dname = dname.as_name();
+        // A positive answer from the host is stronger than our reconstructed
+        // placement model. These coordinates are kept only for the short refusal
+        // window and only when their tile is on the mirrored board; if the export
+        // did not reveal one, retain the ordinary fallback below.
+        if let Some(sites) = self
+            .host_district_sites
+            .get(&cid)
+            .and_then(|by_district| by_district.get(&dname))
+        {
+            let sites: Vec<Pos> = sites
+                .iter()
+                .copied()
+                .filter(|position| self.map.tiles.contains_key(position))
+                .collect();
+            if !sites.is_empty() {
+                return sites;
+            }
+        }
         // A district the HOST refused to place IN THIS CITY. Empty in an ordinary
         // game; see `blocked_districts` for why this is per city and not global.
         if self
