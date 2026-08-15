@@ -5210,8 +5210,19 @@ impl BasicAi {
             if !self.minor && !self.barb && g.cities[cid].is_capital && self.book_pos < 4 {
                 let mut played = false;
                 while self.book_pos < 4 && !played {
-                    let gene =
-                        [self.w.open0, self.w.open1, self.w.open2, self.w.open3][self.book_pos];
+                    // The live recon repair used to wake only after all four
+                    // scripted builds. That made "replace our eyes when they
+                    // are gone" powerless in the more important zero-scout
+                    // opening. Use the repair's bounded predicate for the
+                    // first slot, replacing one opener rather than adding a
+                    // fifth build. Frozen controllers retain their genes.
+                    let missing_opening_recon =
+                        self.book_pos == 0 && self.recon_is_the_missing_arm(g, pid);
+                    let gene = if missing_opening_recon {
+                        0.0 // OPENING_MENU[0] is Scout.
+                    } else {
+                        [self.w.open0, self.w.open1, self.w.open2, self.w.open3][self.book_pos]
+                    };
                     self.book_pos += 1;
                     let i = gene.max(0.0) as usize;
                     if i >= OPENING_MENU.len() {
@@ -13499,6 +13510,23 @@ mod tests {
         let pos = with_scout.cities[&home].pos;
         with_scout.spawn_test_unit("scout", 0, pos);
         assert!(!ai.recon_is_the_missing_arm(&with_scout, 0));
+    }
+
+    #[test]
+    fn the_live_recon_repair_spends_the_first_opening_slot_on_a_scout() {
+        let (mut game, mut ai) = blind_empire(4_413);
+
+        ai.cities(&mut game, 0);
+
+        let capital = game.player_city_ids(0)[0];
+        assert!(matches!(
+            game.cities[&capital].queue.first(),
+            Some(Item::Unit { unit }) if unit == "scout"
+        ));
+        assert_eq!(
+            ai.book_pos, 1,
+            "the Scout replaces the first scripted build instead of adding a fifth opener"
+        );
     }
 
     /// An army is not eyes, and a charted world needs none.

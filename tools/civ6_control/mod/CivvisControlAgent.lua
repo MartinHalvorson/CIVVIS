@@ -1038,8 +1038,13 @@ local function upgradeUnit(unit)
 	-- Recording WHICH costs one string per blocked unit and is the difference
 	-- between "the engine declined to answer" and "we never asked properly".
 	try(function()
+		-- UnitPanel's ordinary-command path asks the real, current-turn
+		-- question with `(false, true)`. The old diagnostic used `(true,
+		-- true)`, the loose exclusion test used only to decide whether a
+		-- command could ever appear in the UI; on live upgrades that returned
+		-- the Boolean and no results table, hiding every failure reason.
 		local can, results = UnitManager.CanStartCommand(
-			unit, CMD["UNITCOMMAND_UPGRADE"], true, true);
+			unit, CMD["UNITCOMMAND_UPGRADE"], false, true);
 		if can == true then return; end
 		if UnitCommandResults == nil then
 			upgradeBlockedWhy[name] = "?no UnitCommandResults global";
