@@ -6613,6 +6613,16 @@ pub struct StateSnapshot {
     /// not know it had.
     #[serde(default)]
     pub government: Option<String>,
+    /// Every Firaxis government this seat has held at any point in the game,
+    /// current one included. Returning to one of these costs Anarchy, and the
+    /// engine charges it — but only through `past_governments`, which a board
+    /// rebuilt fresh each turn never carries. Without this field the planner
+    /// prices the return switch as free, proposes it plus its deck every turn,
+    /// and the bridge guard vetoes the switch while the deck is refused: run
+    /// civvis-20260815T012010Z logged 127 guard blocks and 15 deck-refusal
+    /// turns this way. A plain list; empty is ordinary early game.
+    #[serde(default)]
+    pub used_governments: Vec<String>,
     /// Civ 6 belief type of the pantheon this seat has founded, if any.
     ///
     /// ⚠ Its absence was not silent, only unread: 125 `pantheon` orders in 173 turns,
@@ -10340,6 +10350,25 @@ pub fn rebuild_from_state(
             }
         }
     }
+    // The seat's government HISTORY, not just its present. Returning to a
+    // used government costs Anarchy and `do_government` charges it — but only
+    // via `past_governments`, which a fresh rebuild never carries, so the
+    // planner priced return switches as free and proposed them (deck and all)
+    // every turn against the bridge guard's permanent veto. Seeding history
+    // makes the planner feel the real cost; `guard_government_orders` in
+    // tools/civ6_brain.py stays as the backstop.
+    for civ6 in &state.used_governments {
+        match civvis_node_name(&game.rules.governments, civ6, "GOVERNMENT_") {
+            Some(name) => {
+                game.players[0].past_governments.insert(name);
+            }
+            None => {
+                if !unmapped.contains(civ6) {
+                    unmapped.push(civ6.clone());
+                }
+            }
+        }
+    }
     for civ6 in &state.civics {
         match civvis_node_name(&game.rules.civics, civ6, "CIVIC_") {
             Some(name) => {
@@ -11549,6 +11578,17 @@ impl LiveMirror {
                 if changed {
                     self.game.prune_policies_to_government(0);
                 }
+            } else if !self.unmapped.contains(civ6) {
+                self.unmapped.push(civ6.clone());
+            }
+        }
+        // History too, same as the rebuild path: without it the planner prices
+        // a return switch as Anarchy-free and re-proposes it forever.
+        for civ6 in &state.used_governments {
+            if let Some(name) =
+                civvis_node_name(&self.game.rules.governments, civ6, "GOVERNMENT_")
+            {
+                self.game.players[0].past_governments.insert(name);
             } else if !self.unmapped.contains(civ6) {
                 self.unmapped.push(civ6.clone());
             }
@@ -12791,6 +12831,55 @@ mod host_fact_tests {
         let bare: StateSnapshot =
             serde_json::from_str(r#"{"turn": 3}"#).expect("an absent field parses");
         assert_eq!(bare.great_person_costs, None);
+    }
+
+    /// The government HISTORY must reach the planner, so a return switch is
+    /// priced at its real Anarchy cost instead of free. Run
+    /// civvis-20260815T012010Z: 127 guard blocks and 15 deck-refusal turns
+    /// from the planner re-proposing a used government (deck and all) that
+    /// its history-less board believed was a fresh, free switch.
+    #[test]
+    fn used_governments_reach_the_planners_history() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 92,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(3, 3)],
+        }]);
+        let state = StateSnapshot {
+            turn: 92,
+            government: Some("GOVERNMENT_MONARCHY".to_string()),
+            used_governments: vec![
+                "GOVERNMENT_CHIEFDOM".to_string(),
+                "GOVERNMENT_OLIGARCHY".to_string(),
+                "GOVERNMENT_MONARCHY".to_string(),
+                "GOVERNMENT_FROM_A_FUTURE_EXPANSION".to_string(),
+            ],
+            ..StateSnapshot::default()
+        };
+        let report = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let game = &report.game;
+
+        for used in ["chiefdom", "oligarchy", "monarchy"] {
+            assert!(
+                game.players[0].past_governments.contains(used),
+                "{used} must be in the seeded history"
+            );
+        }
+        assert!(
+            report
+                .unmapped
+                .iter()
+                .any(|issue| issue.contains("GOVERNMENT_FROM_A_FUTURE_EXPANSION")),
+            "an unknown government must be reported: {:?}",
+            report.unmapped
+        );
+
+        // An older mod that sends no history must not invent one.
+        let bare: StateSnapshot =
+            serde_json::from_str(r#"{"turn": 3}"#).expect("an absent field parses");
+        assert!(bare.used_governments.is_empty());
     }
 
     /// A host offer's class does not tell us the infrastructure it needs.

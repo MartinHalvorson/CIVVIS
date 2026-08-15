@@ -5729,6 +5729,35 @@ local function exportState(player, pid, turn)
 		local row = GameInfo.Governments[index];
 		return row ~= nil and row.GovernmentType or nil;
 	end);
+	-- ★★★ THE GOVERNMENTS THIS SEAT HAS ALREADY USED, current one included.
+	-- Returning to one costs Anarchy; CIVVIS's engine charges that too — but
+	-- only through a history a board rebuilt fresh each turn never carries, so
+	-- the planner priced return switches as FREE and re-proposed them (deck
+	-- and all) every turn against the brain guard's standing veto: 127 blocks
+	-- in run civvis-20260815T012010Z. Derived STATELESSLY from the engine's
+	-- own answer (GovernmentScreen.lua:886: a switch that would cost Anarchy
+	-- turns is a return switch), so it survives reloads and needs no session
+	-- table against the main chunk's register ceiling.
+	--
+	-- A plain ARRAY: empty is ordinary before the first government and encodes
+	-- as `[]`, which the Rust Vec accepts — the OPPOSITE of the great-person
+	-- maps, which must return nil. See those comments before changing this.
+	local used_governments = try(function()
+		local culture = player:GetCulture();
+		if culture == nil then return nil; end
+		local current = try(function() return culture:GetCurrentGovernment(); end, -1);
+		local out = {};
+		for row in GameInfo.Governments() do
+			local anarchy = try(function()
+				return culture:GetAnarchyTurns(row.Index);
+			end, 0) or 0;
+			if anarchy > 0 or (current ~= nil and current >= 0
+					and row.Index == current) then
+				out[#out + 1] = row.GovernmentType;
+			end
+		end
+		return out;
+	end);
 	-- ★★★★ THE PANTHEON WE ALREADY HOLD. Same shape as the government above and the
 	-- same consequence: nothing carried it, so CIVVIS's mirrored player had none and
 	-- chose one again every turn -- 125 `pantheon` orders in 173 turns of run
@@ -5913,6 +5942,7 @@ local function exportState(player, pid, turn)
 		civic = civic,
 		civic_progress = civic_progress,
 		government = government,
+		used_governments = used_governments,
 		pantheon = pantheon,
 		founded_religion = founded_religion,
 		founded_religions = founded_religions,
