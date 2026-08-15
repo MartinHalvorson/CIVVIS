@@ -2167,13 +2167,16 @@ pub struct AdvancedAi {
     /// Off in [`AdvancedAi::legacy`] and [`AdvancedAi::pre_policy_envoy`] so an
     /// evaluator control can measure it; on in the promoted production agent.
     pub research_economy: bool,
-    /// Keep asking for a Campus in every city that can still repay one.
+    /// Keep the first Campus reachable, then keep asking for one in every city
+    /// that can still repay it.
     ///
     /// Two terms in the district valuation stop the empire at half coverage:
     /// `balanced_core`'s `district_count * 2 < city_count` cliff, and
     /// `RESEARCH_CAMPUS_COVERAGE`'s game-fraction horizon. Live end-of-game
-    /// Campus coverage over 19 runs is **exactly 50 of 100 cities**. Off for
-    /// the frozen native controllers.
+    /// Campus coverage over 19 runs is **exactly 50 of 100 cities**. The
+    /// research handoff stops an early housing detour from delaying Writing
+    /// past the point where this valuation can act. Off for the frozen native
+    /// controllers.
     pub campus_every_city: bool,
     /// Put the two reachable housing cards in the deck. See
     /// `HOUSING_DECK_INSERT`: `medina_quarter` is slotted in 0 of 107 live runs
@@ -7192,6 +7195,36 @@ impl AdvancedAi {
         let _ = g.apply(pid, &Action::MoveProduct { from, to, product: Name::new(&product) });
     }
 
+    /// The tech that makes the live plan's first Campus legal.
+    ///
+    /// A Campus valuation cannot pay for the technology that unlocks the
+    /// district: before Writing, the district is absent from every production
+    /// menu. That gap surfaced in live run `civvis-20260815T103152Z`: the
+    /// Prophet race correctly chose Astrology at turn 32, but the live housing
+    /// goal then chose Wheel toward Engineering at turn 34 and Writing did not
+    /// arrive until turn 83. Three Holy Sites and two Theatre Squares filled
+    /// the intervening opening without a Campus.
+    ///
+    /// Keep the finite-race opener and any war or victory beeline above this
+    /// handoff. Once an empire has two cities including a legal Campus site,
+    /// though, its live coverage promise needs Writing before the optional housing
+    /// detour. `campus_every_city` is false for frozen controllers, preserving
+    /// the recorded `advanced_v1` research order exactly.
+    fn first_campus_tech(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        if !self.campus_every_city
+            || g.players[pid].techs.contains(&crate::name!("writing"))
+        {
+            return None;
+        }
+        let campus = crate::name!("campus");
+        let cities = g.player_city_ids(pid);
+        (cities.len() >= 2
+            && cities
+                .iter()
+                .any(|city| !g.district_sites(*city, campus).is_empty()))
+        .then_some("writing")
+    }
+
     /// The technology behind the best Campus building this empire is already
     /// equipped to use and cannot research its way to on merit.
     ///
@@ -7425,9 +7458,14 @@ impl AdvancedAi {
             // worthless prerequisite the argmax will never take on merit.
             let forced_goal =
                 forced_goal.or_else(|| self.unreachable_science_building_tech(g, pid));
+            // A live Campus promise has to make its first district legal before
+            // an optional housing detour can spend the same slot. Strategy
+            // openings above this point (including Astrology) still win; this
+            // only bridges their handoff to the production treatment below.
+            let forced_goal = forced_goal.or_else(|| self.first_campus_tech(g, pid));
             // And after THAT, the growth ceiling: a Campus the empire can reach
             // still only makes beakers out of citizens it is allowed to have.
-            // Behind the science goal on purpose — this never takes a slot the
+            // Behind the science goals on purpose — this never takes a slot the
             // science chain wanted, it takes one the argmax would have spent on
             // whatever happened to be cheapest.
             let forced_goal = forced_goal.or_else(|| self.unreachable_housing_tech(g, pid));
@@ -40745,6 +40783,106 @@ mod research_probe {
         // And the whole path short-circuits for a frozen controller.
         let legacy = AdvancedAi::legacy();
         assert_eq!(legacy.unreachable_housing_tech(&game, 0), None);
+    }
+
+    /// The live Campus treatment used to be unable to act during a religious
+    /// opening: Astronomy won correctly, then the housing goal pulled the next
+    /// slot to Engineering and Writing waited behind ordinary scores. Keep the
+    /// finite Prophet opener, but make the first Campus legal before that
+    /// optional detour consumes its handoff.
+    #[test]
+    fn live_first_campus_writing_precedes_the_housing_research_detour() {
+        let setup = || {
+            let mut game = Game::new(2, 32, 24, 9_102, 250, 0);
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("starting settler");
+            game.apply(0, &Action::FoundCity { unit: settler })
+                .expect("found city");
+            let capital = game.player_city_ids(0)[0];
+            let home = game.cities[&capital].pos;
+            let second_site = game
+                .map
+                .tiles
+                .iter()
+                .filter(|(_, tile)| {
+                    tile.owner_city.is_none()
+                        && game.rules.is_passable(tile)
+                        && !game.rules.is_water(tile)
+                })
+                .map(|(position, _)| *position)
+                .find(|position| {
+                    (4..=10).contains(&game.wdist(home, *position))
+                        && game
+                            .cities
+                            .values()
+                            .all(|city| game.wdist(city.pos, *position) >= 4)
+                })
+                .expect("test map has a nearby city site");
+            game.found_city_for(0, second_site, None);
+            game.players[0].techs.extend([
+                crate::name!("mining"),
+                crate::name!("pottery"),
+                crate::name!("astrology"),
+            ]);
+            let capped = (2..40)
+                .find(|pop| {
+                    game.cities.get_mut(&capital).unwrap().pop = *pop;
+                    game.city_housing_headroom(&game.cities[&capital]) < HOUSING_CARD_HEADROOM
+                })
+                .expect("some population overruns this city's housing");
+            game.cities.get_mut(&capital).unwrap().pop = capped;
+            game
+        };
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Religion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: 1,
+            rush: false,
+        };
+
+        let mut housing_game = setup();
+        let mut housing_only = AdvancedAi::new();
+        housing_only.enable_housing_research();
+        assert_eq!(
+            housing_only.unreachable_housing_tech(&housing_game, 0),
+            Some("engineering"),
+            "the fixture must reproduce the competing live housing goal"
+        );
+        housing_only.advanced_research(&mut housing_game, 0, &plan);
+        let housing_pick = housing_game.players[0]
+            .research
+            .as_deref()
+            .expect("the housing goal selects a prerequisite");
+        assert!(
+            housing_only.tech_leads_to(&housing_game, housing_pick, "engineering"),
+            "with Campus coverage off, the existing housing route remains available"
+        );
+
+        let mut live_game = setup();
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert_eq!(
+            live.first_campus_tech(&live_game, 0),
+            Some("writing"),
+            "two cities with a legal Campus site make the live coverage promise actionable"
+        );
+        assert_eq!(
+            AdvancedAi::legacy().first_campus_tech(&live_game, 0),
+            None,
+            "the frozen controller does not acquire the Writing handoff"
+        );
+        live.advanced_research(&mut live_game, 0, &plan);
+        assert_eq!(
+            live_game.players[0].research.as_deref(),
+            Some("writing"),
+            "Writing must beat the post-Astrology housing detour"
+        );
     }
 
     /// Off by default, set only by the live bridge, holdable off on its own —
