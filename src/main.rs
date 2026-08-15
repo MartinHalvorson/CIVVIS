@@ -3587,6 +3587,14 @@ mod tests {
             "advanced_v1 is legacy(); if it ever reaches the settler_commit path the \
              re-pin above stops being free and ELO_PROTOCOL_VERSION must be bumped"
         );
+        // The global Recovery front hold is likewise a production-only branch.
+        // If the anchor ever enables it, its campaign movement may change and a
+        // source re-pin alone would be invalid.
+        assert!(
+            !civvis::ai::AdvancedAi::legacy().bounded_recovery,
+            "advanced_v1 is legacy(); if it ever carries bounded Recovery the global \
+             front-hold branch reaches the anchor and ELO_PROTOCOL_VERSION must be bumped"
+        );
         // ⚠ And record the other half honestly: `advanced` DOES set it, so that
         // entrant's settler pipeline genuinely changes. The anchor pins the scale
         // and is untouched, which is what this guard asks about — but v5 rows for
