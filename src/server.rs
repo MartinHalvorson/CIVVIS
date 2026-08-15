@@ -12344,6 +12344,98 @@ mod tests {
         );
     }
 
+    /// Every district color is a literal from Civilization VI's own palette,
+    /// rather than an approximation or a family fallback. This is intentionally
+    /// exhaustive: the browser and the rules roster must grow together, and a
+    /// missing unique district must be visible here instead of turning cream.
+    /// Harbors alone receive the requested thin GoldMetal keyline because their
+    /// blue-green fill sits directly on water.
+    #[test]
+    fn browser_pins_every_district_to_its_civ_vi_color_and_keys_harbors_in_gold() {
+        let expected = [
+            ("acropolis", "#af59f5"),
+            ("aerodrome", "#901d15"),
+            ("aqueduct", "#65872f"),
+            ("bath", "#65872f"),
+            ("campus", "#44b3ea"),
+            ("canal", "#629125"),
+            ("city_center", "#8d9ebe"),
+            ("commercial_hub", "#cec255"),
+            ("copacabana", "#debf56"),
+            ("cothon", "#5fa49c"),
+            ("dam", "#659725"),
+            ("diplomatic_quarter", "#a44dc0"),
+            ("encampment", "#bc1616"),
+            ("entertainment_complex", "#dcbc4f"),
+            ("government_plaza", "#b05ccb"),
+            ("hansa", "#d38f3d"),
+            ("harbor", "#5fa49c"),
+            ("hippodrome", "#dcbb4e"),
+            ("holy_site", "#b6c1e3"),
+            ("ikanda", "#bc1616"),
+            ("industrial_zone", "#d38f3d"),
+            ("lavra", "#b6c1e3"),
+            ("mbanza", "#689e2b"),
+            ("neighborhood", "#689e2b"),
+            ("observatory", "#44b3ea"),
+            ("oppidum", "#cf8b35"),
+            ("preserve", "#90ba37"),
+            ("royal_navy_dockyard", "#5fa49c"),
+            ("seowon", "#44b3ea"),
+            ("spaceport", "#019dda"),
+            ("street_carnival", "#dcbc4f"),
+            ("suguba", "#cec255"),
+            ("thanh", "#bc1616"),
+            ("theater_square", "#af59f5"),
+            ("water_park", "#debf56"),
+        ];
+        let rules: serde_json::Value =
+            serde_json::from_str(include_str!("../data/districts.json")).unwrap();
+        let districts = rules.as_object().unwrap();
+        assert_eq!(
+            districts.len(),
+            expected.len(),
+            "the browser palette no longer covers the rules roster"
+        );
+
+        let palette = EMBEDDED_INDEX
+            .split_once("const DISTRICT_COLOR = Object.freeze({")
+            .unwrap()
+            .1
+            .split_once("});")
+            .unwrap()
+            .0;
+        assert_eq!(
+            palette.matches(":\"#").count(),
+            expected.len(),
+            "the district palette has a missing or unreviewed extra entry"
+        );
+        for (district, color) in expected {
+            assert!(
+                districts.contains_key(district),
+                "{district} is not a rules district"
+            );
+            assert!(
+                palette.contains(&format!("{district}:\"{color}\"")),
+                "{district} is not pinned to Civ VI color {color}"
+            );
+        }
+        assert!(!EMBEDDED_INDEX.contains("const FAMILY_COLOR"));
+        assert!(EMBEDDED_INDEX
+            .contains("industrial_zone:\"industry\", hansa:\"industry\", oppidum:\"industry\""));
+
+        assert!(EMBEDDED_INDEX.contains("const HARBOR_DISTRICT_OUTLINE = \"#cbad73\";"));
+        assert!(EMBEDDED_INDEX.contains(
+            "DISTRICT_FAMILY[district] === \"harbor\" ? HARBOR_DISTRICT_OUTLINE : fallback"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "cx.strokeStyle = districtOutlineColor(t.district, \"rgba(13,18,24,.78)\");\n  cx.lineWidth = 1.6;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "cx.strokeStyle = districtOutlineColor(district); cx.lineWidth = 2 * scale;"
+        ));
+    }
+
     /// A finished, undamaged building stands the middle 70% of its district
     /// token, with 15% clear above and below. It used to be a stub on the
     /// lower half — under a third of the token — which read as a progress meter
