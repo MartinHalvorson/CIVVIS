@@ -1724,7 +1724,9 @@ pub struct AdvancedAi {
     /// the old flat-gene delegation.
     pub plan_city_target: bool,
     /// Let a severe, empire-wide Amenity crisis reclaim one repeatable economic
-    /// project for the district or building chain that repairs it.
+    /// project for the district or building chain that repairs it, and replace
+    /// a lower-value culture-adjacency card with Liberalism when it already
+    /// pays across multiple developed cities.
     ///
     /// This is off for ordinary and frozen controllers. The live bridge and
     /// native repair bundle enable it, so a Science plan can keep its project
@@ -3637,8 +3639,9 @@ impl AdvancedAi {
     }
 
     /// When host-observed Amenity deficits have crossed a severe empire-wide
-    /// threshold, pause one repeatable project for the concrete repair chain.
-    /// Frozen controllers leave the ordinary project ordering untouched.
+    /// threshold, pause one repeatable project for the concrete repair chain
+    /// and let the policy deck use its direct empire-wide repair. Frozen
+    /// controllers leave both ordinary orderings untouched.
     pub fn enable_amenity_project_preemption(&mut self) {
         self.amenity_project_preemption = true;
     }
@@ -8252,6 +8255,33 @@ impl AdvancedAi {
         if self.suzerain_cards_need_a_suzerainty && suzerainties == 0 {
             desired.retain(|card| !SUZERAIN_CONDITIONAL.contains(card));
             desired.extend(SUZERAIN_CONDITIONAL);
+        }
+
+        // A host-observed Amenity deficit is an immediate yield loss, but a
+        // repair district needs several turns before it changes that fact. If
+        // Liberalism can help at least two already-developed cities, use the
+        // one card that repairs both now. `desired_set` below intentionally
+        // protects every ordinary desired card from replacement, so merely
+        // inserting Liberalism would leave a currently slotted Aesthetics
+        // untouched. Demote that narrow, same-slot culture-adjacency donor
+        // explicitly; Grand Opera and expansion's Expropriation stay wanted.
+        //
+        // This shares the live-only crisis arm with the concrete repair chain:
+        // normal and frozen controller decks return before reading city
+        // Amenities at all.
+        if self.amenity_project_preemption
+            && city_ids
+                .iter()
+                .filter(|cid| {
+                    let city = &g.cities[cid];
+                    g.city_specialty_district_count(city) >= 2
+                        && g.city_amenity_surplus(city) < 0
+                })
+                .count()
+                >= 2
+        {
+            desired.retain(|card| !matches!(*card, "aesthetics" | "liberalism"));
+            desired.insert(0, "liberalism");
         }
 
         let elite_active = g.players[pid].policies.contains(&crate::name!("elite_forces"));
@@ -31151,6 +31181,95 @@ mod tests {
         );
         live.disable_amenity_project_preemption();
         assert!(!live.amenity_project_preemption);
+    }
+
+    #[test]
+    fn widespread_observed_amenity_deficits_slot_liberalism_over_aesthetics() {
+        // At turn 175 of `civvis-20260815T120417Z`, Rome, Mediolanum, and
+        // Arretium each had multiple specialty districts, a host-confirmed
+        // Amenity deficit, and a yield penalty, while Aesthetics occupied an
+        // economic/wildcard lane. Liberalism pays immediately in all three;
+        // the existing project repair cannot help until its build completes.
+        let build = |live: bool, deficits: bool| {
+            let mut game = Game::new(2, 32, 24, 71_111, 250, 0);
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("starting settler");
+            game.apply(0, &Action::FoundCity { unit: settler })
+                .expect("found city");
+            let capital = game.player_city_ids(0)[0];
+            let other = found_test_city(&mut game, 0);
+            game.players[0].government = Some("theocracy".to_string());
+            game.players[0].civics.extend([
+                crate::name!("the_enlightenment"),
+                crate::name!("medieval_faires"),
+                crate::name!("opera_ballet"),
+                crate::name!("scorched_earth"),
+            ]);
+            for city in [capital, other] {
+                install_ai_test_district(&mut game, city, "campus");
+                install_ai_test_district(&mut game, city, "theater_square");
+                if deficits {
+                    // This is the additive correction the live mirror writes:
+                    // hold each city at -4 regardless of its modeled luxuries.
+                    let modeled = game.city_amenity_surplus(&game.cities[&city]);
+                    game.observed_city_amenity_adjustments
+                        .insert(city, -4 - modeled);
+                }
+            }
+            for _ in 0..4 {
+                game.spawn_test_unit("warrior", 0, game.cities[&capital].pos);
+            }
+            for policy in ["aesthetics", "grand_opera", "expropriation"] {
+                game.apply(
+                    0,
+                    &Action::SlotPolicy {
+                        policy: Name::new(policy),
+                    },
+                )
+                .unwrap_or_else(|error| panic!("slot {policy}: {error}"));
+            }
+
+            let mut ai = AdvancedAi::new();
+            // Keep Expropriation in the live Conquest portfolio; the policy
+            // relief must make room without sacrificing active expansion.
+            ai.enable_wide_map_capacity();
+            if live {
+                ai.enable_amenity_project_preemption();
+            }
+            ai.refresh_research_weight(&game);
+            ai.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
+            game.players[0].policies.clone()
+        };
+
+        let ordinary = build(false, true);
+        let healthy = build(true, false);
+        let relieved = build(true, true);
+        for control in [&ordinary, &healthy] {
+            assert!(
+                control.contains(&crate::name!("aesthetics")),
+                "the live gate and a real deficit are both required: {control:?}"
+            );
+            assert!(
+                !control.contains(&crate::name!("liberalism")),
+                "normal or healthy decks keep their existing culture card: {control:?}"
+            );
+        }
+        assert!(
+            relieved.contains(&crate::name!("liberalism")),
+            "two developed deficit cities should get the immediate Amenity repair: {relieved:?}"
+        );
+        assert!(
+            !relieved.contains(&crate::name!("aesthetics")),
+            "Liberalism needs a same-slot donor rather than another inert wish: {relieved:?}"
+        );
+        assert!(
+            relieved.contains(&crate::name!("grand_opera"))
+                && relieved.contains(&crate::name!("expropriation")),
+            "Amenity relief must preserve theater-building culture and active expansion: {relieved:?}"
+        );
     }
 
     #[test]

@@ -1012,6 +1012,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// becomes live only through `enable_live_bridge` (or an explicit engine-repair
 /// evaluation arm). The frozen `advanced_v1` controller retains its project
 /// queues, so this is a compatibility re-pin rather than an Elo protocol move.
+/// The related Liberalism relief uses that same false-by-default gate before it
+/// reads a city Amenity or policy deck: only a live controller with two
+/// developed, host-observed deficit cities can trade Aesthetics for the
+/// immediately paying card. `AdvancedAi::legacy()` cannot enter the branch, so
+/// this is also a compatibility re-pin rather than an Elo protocol move.
 /// The opening Scout, six-city fog floor, civilian policy timing, government
 /// prerequisite, major-war zero-damage siege handoff, stalled-Settler founding,
 /// and first-Campus Writing handoff changes are all behind live-bridge treatment
@@ -1036,7 +1041,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// treatment flags false, so it retains the historic generic selector and
 /// never enters either release helper. Compatibility re-pin; the Elo protocol
 /// does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0450_f070_1868_2314;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf66d_729b_67ee_088e;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
