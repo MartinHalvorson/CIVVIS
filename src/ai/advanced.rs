@@ -1181,6 +1181,11 @@ pub struct AdvancedAi {
     /// outmatched (0.62) and Recovery triggers keep the war endable. **Off by
     /// default, live-bridge only.**
     pub war_patience: bool,
+    /// Do not open a fresh direct war once the shared endgame reserve leaves
+    /// no time to turn a declaration into a capture. Timed attacks already
+    /// use this reserve while they are appointed; the direct victory-denial
+    /// fallback must not bypass it. **Off by default, live-bridge only.**
+    pub endgame_war_runway: bool,
     /// Finish a city the army has already broken open before re-aiming the
     /// campaign at a fresh one.
     ///
@@ -2615,6 +2620,7 @@ impl AdvancedAi {
             war_economy: false,
             war_reinforcement: false,
             war_patience: false,
+            endgame_war_runway: false,
             siege_commitment: false,
             relief_targets_the_siege: false,
             blind_objective_units: false,
@@ -2984,6 +2990,13 @@ impl AdvancedAi {
         self.war_patience = true;
     }
 
+    /// Keep a fresh direct declaration out of the final campaign reserve.
+    /// Native tournament games leave this disabled so their recorded ladders
+    /// stay comparable.
+    pub fn enable_endgame_war_runway(&mut self) {
+        self.endgame_war_runway = true;
+    }
+
     /// Keep the campaign pointed at a city the army has already breached and
     /// beaten down, instead of re-picking a fresh objective and letting the
     /// broken one heal. Native tournament games leave this disabled so their
@@ -3271,6 +3284,11 @@ impl AdvancedAi {
         // holds `OVERWHELMING_WAR_RATIO` over the defender: the measured live
         // pattern is one declaration per game and no second attempt.
         self.enable_war_patience();
+        // ⚠ A counter-leader emergency declaration reached France at t235 with
+        // only sixteen turns left, captured nothing, and Zulu won at t251.
+        // Timed attacks already reserve their scaled campaign window; the
+        // direct denial fallback must not spend a war on less runway.
+        self.enable_endgame_war_runway();
         // ⚠ And the war it keeps prosecuting still has to end on a captured
         // city. The campaign re-picks its objective from scratch every turn and
         // prices fifteen turns of siege at ~37 points, less than the distance
@@ -3419,6 +3437,7 @@ impl AdvancedAi {
         self.enable_siege_tracks_the_wall();
         self.enable_siege_commitment();
         self.enable_war_patience();
+        self.enable_endgame_war_runway();
         // Holding one. Barbarians take 7.0 major cities a game, 65% of
         // everything a major loses.
         self.enable_home_defense();
@@ -3718,6 +3737,10 @@ impl AdvancedAi {
 
     pub fn disable_war_patience(&mut self) {
         self.war_patience = false;
+    }
+
+    pub fn disable_endgame_war_runway(&mut self) {
+        self.endgame_war_runway = false;
     }
 
     pub fn disable_siege_commitment(&mut self) {
@@ -10892,6 +10915,23 @@ impl AdvancedAi {
         };
         if self.timed_war_opening(g, pid, target) {
             return;
+        }
+        // Timed attacks already refuse an appointment that cannot finish
+        // before this same scaled reserve. The direct victory-denial fallback
+        // used to bypass it and could declare in the final turns with no
+        // plausible path to a capture. Keep that late-game guard live-only so
+        // the frozen tournament controller retains its recorded behaviour.
+        if self.endgame_war_runway {
+            let reserve = g.standard_duration(TIMED_WAR_ENDGAME_RESERVE);
+            if g.turn.saturating_add(reserve) >= g.max_turns {
+                if self.journal().wants(crate::reasoning::Level::Strategy) {
+                    let runway = g.max_turns.saturating_sub(g.turn);
+                    think!(self.journal(), Military, Strategy,
+                           "Holding off war with {}", g.players[target].civ;
+                           "{runway} turns remain, at or below the {reserve}-turn campaign reserve for a fresh declaration");
+                }
+                return;
+            }
         }
         let emergency_target = g
             .emergency_objective(pid)
@@ -28604,6 +28644,22 @@ mod tests {
             "the usual elective-war margin must reject this outnumbered army"
         );
 
+        // The live bridge must not spend its final campaign window on the
+        // same urgent fallback. Timed attacks already reserve this scaled
+        // runway, so the direct path must hold even though urgency normally
+        // waives the power gate.
+        let mut endgame = game.clone();
+        let reserve = endgame.standard_duration(TIMED_WAR_ENDGAME_RESERVE);
+        endgame.turn = endgame.max_turns.saturating_sub(reserve);
+        let mut guarded = AdvancedAi::targeting(VictoryTarget::Domination);
+        guarded.enable_live_bridge();
+        assert!(guarded.urgent_victory_threat(&endgame, 1));
+        guarded.advanced_diplomacy(&mut endgame, 0, &plan);
+        assert!(
+            !endgame.is_at_war(0, 1),
+            "the live direct fallback must reserve enough turns to turn a declaration into a capture"
+        );
+
         ai.advanced_diplomacy(&mut game, 0, &plan);
         assert!(
             game.is_at_war(0, 1),
@@ -41675,23 +41731,40 @@ mod research_probe {
     }
 
     /// Off by default, set only by the live bridge, each holdable off on its
-    /// own — the war-conversion trio follows the same contract as every other
+    /// own — the war-conversion quartet follows the same contract as every other
     /// bridge repair.
     #[test]
-    fn only_the_live_bridge_fights_the_war_conversion_trio() {
+    fn only_the_live_bridge_fights_the_war_conversion_quartet() {
         let fresh = AdvancedAi::new();
         assert!(!fresh.war_economy);
         assert!(!fresh.war_reinforcement);
         assert!(!fresh.war_patience);
+        assert!(!fresh.endgame_war_runway);
         let legacy = AdvancedAi::legacy();
-        assert!(!legacy.war_economy && !legacy.war_reinforcement && !legacy.war_patience);
+        assert!(
+            !legacy.war_economy
+                && !legacy.war_reinforcement
+                && !legacy.war_patience
+                && !legacy.endgame_war_runway
+        );
         let mut live = AdvancedAi::new();
         live.enable_live_bridge();
-        assert!(live.war_economy && live.war_reinforcement && live.war_patience);
+        assert!(
+            live.war_economy
+                && live.war_reinforcement
+                && live.war_patience
+                && live.endgame_war_runway
+        );
         live.disable_war_economy();
         live.disable_war_reinforcement();
         live.disable_war_patience();
-        assert!(!live.war_economy && !live.war_reinforcement && !live.war_patience);
+        live.disable_endgame_war_runway();
+        assert!(
+            !live.war_economy
+                && !live.war_reinforcement
+                && !live.war_patience
+                && !live.endgame_war_runway
+        );
     }
 
     /// The routing in `take_turn` must name the adaptive Conquest plan behind
