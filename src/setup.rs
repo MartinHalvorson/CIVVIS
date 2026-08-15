@@ -956,22 +956,27 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 18] = [
         description: "Almost nothing but ocean — scattered specks of land, and the sea lanes between them are the map.",
         script: MapScript::WaterWorld,
     },
+    // The Tactics maps are named for what fills them, because the lobby asks
+    // for the world type first and the map second: a flat world offers Land,
+    // a planet offers Land or Ocean, and only one Land is ever on the menu
+    // at a time. The ids stay what saves, sweeps and deep links have always
+    // named — `battlefield` is still the bounded field.
     MapScriptSpec {
         id: "battlefield",
-        name: "Battlefield",
-        description: "A small bounded arena for tactical unit combat: open ground shaped by mountains, rivers, woods and water, with no resources and nothing to develop.",
+        name: "Land",
+        description: "A small bounded field for tactical unit combat, walled on all four sides: open ground shaped by mountains, rivers, woods and water, with no resources and nothing to develop. Offered at three sizes — Field, March and Battlefield.",
         script: MapScript::Battlefield,
     },
     MapScriptSpec {
         id: "tactics_planet",
-        name: "Planet",
+        name: "Land",
         description: "A land planet for Tactics: a globe that is more than four-fifths dry ground, with scattered seas rather than an ocean. One city for each side, planted on opposite faces of the world and joined by a march overland. Offered at four diameters, from a world half the size of Duel up to one larger than it.",
         script: MapScript::TacticsPlanet,
     },
     MapScriptSpec {
         id: "tactics_ocean",
         name: "Ocean",
-        description: "A water planet for Tactics: open sea over the whole globe, broken by scattered islets and the channels between them. Each side opens with a fleet and a city on its own island, on opposite faces of the world, and every route between them is a sea lane. Offered at the same four diameters as Planet.",
+        description: "A water planet for Tactics: open sea over the whole globe, broken by scattered islets and the channels between them. Each side opens with a fleet and a city on its own island, on opposite faces of the world, and every route between them is a sea lane. Offered at the same four diameters as Land.",
         script: MapScript::TacticsOcean,
     },
     MapScriptSpec {
@@ -1102,9 +1107,17 @@ pub struct BattlefieldSize {
 }
 
 /// The Tactics maps the setup menu offers, smallest first within each family.
-/// The arena entries are bounded fields; then the globes, land and then ocean,
-/// each offered at four diameters; then the scenarios, which carry their own
-/// chart and so have exactly one size each.
+/// The arena entries are the bounded Land field at three sizes — Field, March
+/// and Battlefield, named as a ladder from a small square through a long
+/// ground to the full field the site's Tactics link opens; then the globes,
+/// land and then ocean, each offered at four diameters; then the scenarios,
+/// which carry their own chart and so have exactly one size each.
+///
+/// The lobby offers this table one map at a time: which entries it shows is
+/// decided by the scenario, world type and map chosen above it, so a named
+/// battle lists only its own chart and a custom battle lists the sizes its map
+/// is drawn at. Any map may carry several rows here; a scenario that is ever
+/// charted at more than one size needs nothing but a second row.
 ///
 /// A globe's size is named by its **diameter**, which is the subdivision
 /// frequency of the icosahedron it is built from — the same number
@@ -1124,7 +1137,7 @@ pub const TACTICS_GLOBE_DIAMETERS: [i32; 4] = [8, 10, 15, 20];
 /// globe families share one ladder.
 pub const BATTLEFIELD_SIZES: [BattlefieldSize; 12] = [
     BattlefieldSize {
-        id: "10x10", name: "Square · 10×10", width: 10, height: 10,
+        id: "10x10", name: "Field · 10×10", width: 10, height: 10,
         script: MapScript::Battlefield, topology: MapTopology::Flat,
     },
     BattlefieldSize {
@@ -1132,7 +1145,7 @@ pub const BATTLEFIELD_SIZES: [BattlefieldSize; 12] = [
         script: MapScript::Battlefield, topology: MapTopology::Flat,
     },
     BattlefieldSize {
-        id: "20x20", name: "Field · 20×20", width: 20, height: 20,
+        id: "20x20", name: "Battlefield · 20×20", width: 20, height: 20,
         script: MapScript::Battlefield, topology: MapTopology::Flat,
     },
     // Diameter 8 keeps the bare id `planet`: it is the globe Tactics shipped

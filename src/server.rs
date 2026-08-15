@@ -8206,25 +8206,41 @@ mod tests {
         let payload_rows = payload.as_array().expect("scenario payload is an array");
         assert!(payload_rows.iter().any(|row| row["id"] == json!("kadesh")));
         assert!(payload_rows.iter().any(|row| row["id"] == json!("mosul")));
+        // The battle is the first Tactics question after who is playing: a
+        // Scenario select that opens on Custom and lists every catalogued
+        // battle by era, filled from the same /rules answer. A named battle
+        // brings its own map, so the world-type and map controls leave the
+        // form while one is chosen, and its briefing sits under the select.
         for control in [
             "RULES.scenario_scripts",
             "function isScenarioMapScript(",
             "syncScenarioSettings()",
             "RULES.historical_scenarios",
-            "scenarioBrowserView",
-            "setScenarioBrowserView",
+            "function syncScenarioMenu()",
+            "function tacticsScenarioId()",
+            "function tacticsMapScript()",
+            "function adoptTacticsWorld(script, width, height)",
+            "document.body.classList.toggle(\"tactics-preset\", !!scenario);",
         ] {
             assert!(
                 EMBEDDED_APP_JS.contains(control),
                 "the browser lost its scenario handling: {control}"
             );
         }
-        for view in ["era", "person", "terrain"] {
-            assert!(
-                EMBEDDED_INDEX.contains(&format!("data-scenario-view=\"{view}\"")),
-                "the browser lost its {view} scenario lens"
-            );
+        for markup in [
+            "id=\"tactics-scenario\"",
+            "<option value=\"\" selected>Custom</option>",
+            "id=\"tactics-scenario-brief\"",
+            "class=\"small tactics-only tactics-custom-only\">World type",
+            "class=\"small tactics-custom-only\">Map",
+            "body.playing-tactics.tactics-preset .tactics-custom-only { display: none; }",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(markup), "the setup form lost {markup}");
         }
+        assert!(
+            !EMBEDDED_INDEX.contains("data-scenario-view="),
+            "the scenario browser was retired for the Scenario select"
+        );
     }
 
     /// Nothing the setup panel runs during page load may read a module
@@ -8848,7 +8864,7 @@ mod tests {
             );
         }
         assert!(EMBEDDED_INDEX.contains(
-            "[\"gamemode\", true], [\"humanplayers\", true], [\"np\", true], [\"mapshape\", true],"
+            ": [\"np\", \"mapshape\", \"maptype\", \"tactics-scenario\", \"tactics-scenario-brief\", \"tacticsworldtype\"];"
         ));
     }
 
@@ -9898,19 +9914,27 @@ mod tests {
         }
         assert!(EMBEDDED_INDEX.contains("function syncRequiredVictoriesCap"));
         assert!(EMBEDDED_INDEX.contains("required_victory_types: requiredVictories,"));
+        // The short setup pass is asked in the order its questions depend on
+        // one another, and the two games ask their world questions in
+        // different orders: Civ sizes, shapes and fills the world; Tactics
+        // names the battle, then — for a custom one — the world type, the
+        // map that type offers, and last the size, which depends on both.
+        assert!(EMBEDDED_INDEX.contains("function setupControlOrder(tactics) {"));
         assert!(EMBEDDED_INDEX.contains(
-            "[\"gamemode\", true], [\"humanplayers\", true], [\"np\", true], [\"mapshape\", true],"
+            "? [\"tactics-scenario\", \"tactics-scenario-brief\", \"tacticsworldtype\", \"maptype\", \"np\", \"mapshape\"]"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "[\"maptype\", true], [\"startera\", true], [\"gamespeed\", true],"
+            ": [\"np\", \"mapshape\", \"maptype\", \"tactics-scenario\", \"tactics-scenario-brief\", \"tacticsworldtype\"];"
         ));
         // Every card the short setup pass shows has to be named here. One
         // that is not stays where the markup put it while the named ones move
         // ahead of the advanced drawer, which strands it above the whole form
         // — the way the endgame rules were stranded until they were nested.
         assert!(EMBEDDED_INDEX.contains(
-            "basic.push(document.getElementById(\"victory-options\"),\n    document.getElementById(\"tactics-options\"), document.getElementById(\"saves-group\"));"
+            "return [\"gamemode\", \"humanplayers\", \"civ6-status\", ...world, \"startera\", \"gamespeed\",\n    \"victory-options\", \"tactics-options\", \"saves-group\"];"
         ));
+        // Recomposed on every change of mode, from the same one function.
+        assert!(EMBEDDED_INDEX.contains("placeSetupControls(tactics);"));
         // The arena card: it appears only in Tactics and carries everything
         // the mode is set up with — whether the field is fogged, its deadline,
         // the four economy grants, how many battles the match is, and whether
@@ -10216,9 +10240,11 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function teamRules() { return [\"2\", \"3\", \"4\", \"pairs\"]; }"));
         assert!(EMBEDDED_INDEX.contains("option.disabled = !split;"));
         // The world size decides which splits exist, so it re-fits them before
-        // the panel's own delegated listener stages what is now selected.
+        // the panel's own delegated listener stages what is now selected. In
+        // Tactics the same pick is first remembered for the map it was made
+        // on, so moving between maps and back returns to it.
         assert!(EMBEDDED_INDEX.contains(
-            "document.getElementById(\"np\").addEventListener(\"change\", () => {\n  syncTeams();\n  syncCustomLeaderSelection();\n});"
+            "  if (tacticsMode()) tacticsSizeChoices[tacticsMapScript()] = readSetting(\"np\");\n  syncTeams();\n  syncCustomLeaderSelection();\n});"
         ));
         // The server is handed the seat-by-seat assignment, never the rule
         // that produced it; a world on screen is read back the other way.
@@ -10346,7 +10372,6 @@ mod tests {
             ".victory-option-grid { display: grid; grid-template-columns: minmax(0, 1fr);",
             ".victory-endgame {\n    display: grid; grid-template-columns: minmax(0, 1fr);",
             ".tactics-options {\n    grid-template-columns: minmax(0, 1fr);",
-            ".scenario-browser-battles { display: grid; grid-template-columns: minmax(0, 1fr);",
             ".era-mods-body {\n    display: grid; grid-template-columns: minmax(0, 1fr);",
             ".display-settings-group-body {\n    display: grid; grid-template-columns: minmax(0, 1fr);",
             ".advanced-settings-body {\n    display: grid; grid-template-columns: minmax(0, 1fr);",
