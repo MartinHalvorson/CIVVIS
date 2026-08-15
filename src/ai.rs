@@ -7030,21 +7030,30 @@ impl BasicAi {
         if can_add_military
             && ((military as f64) < military_floor || missing_siege_arm || missing_recon_arm)
         {
-            let picked = if missing_siege_arm {
-                self.best_military_role(g, pid, cid, None, true)
-                    .or_else(|| self.combined_arms_unit(g, pid, cid, melee, ranged))
-            } else if missing_recon_arm {
-                // ⚠ Falls through to the ordinary choice rather than forcing
-                // one. A city that cannot build any recon unit at all must not
-                // be pinned on this branch: the empire still needs the build.
-                self.best_recon(g, pid, cid)
-                    .or_else(|| self.combined_arms_unit(g, pid, cid, melee, ranged))
-            } else if rushing && melee < self.rush_military_floor {
-                self.best_military(g, pid, cid, Some(false))
-                    .or_else(|| self.combined_arms_unit(g, pid, cid, melee, ranged))
+            // A capability gap is an invitation to build that capability, not
+            // a permanent waiver of the standing-army ceiling. A city without
+            // oil cannot answer a missing artillery arm; falling through to a
+            // Machine Gun there made every idle city repeat the same unrelated
+            // defender while the wall-breaker remained impossible. Try the
+            // concrete gaps in order, then use ordinary force production only
+            // while the actual headcount is below its floor.
+            let siege_pick = missing_siege_arm
+                .then(|| self.best_military_role(g, pid, cid, None, true))
+                .flatten();
+            let recon_pick = missing_recon_arm
+                .then(|| self.best_recon(g, pid, cid))
+                .flatten();
+            let force_pick = if (military as f64) < military_floor {
+                if rushing && melee < self.rush_military_floor {
+                    self.best_military(g, pid, cid, Some(false))
+                        .or_else(|| self.combined_arms_unit(g, pid, cid, melee, ranged))
+                } else {
+                    self.combined_arms_unit(g, pid, cid, melee, ranged)
+                }
             } else {
-                self.combined_arms_unit(g, pid, cid, melee, ranged)
+                None
             };
+            let picked = siege_pick.or(recon_pick).or(force_pick);
             if let Some(m) = picked {
                 // ⚠ THE BRANCH THAT WINS MUST SAY SO.
                 //
@@ -14621,6 +14630,95 @@ mod tests {
 
         let melee = ai.combined_arms_unit(&g, 0, cid, 2, 2).unwrap();
         assert!(!g.rules.units[melee].has_ranged_attack());
+    }
+
+    /// A missing arm only owns production when this city can supply it.  The
+    /// t208--241 live Rome loss had no Oil, so neither Artillery nor Rocket
+    /// Artillery was legal; the old siege-first fallback ignored the available
+    /// Spec Ops recon arm and built Machine Guns/AT Crews until the empire had
+    /// 30 unrelated defenders and still no city-taking capability.
+    #[test]
+    fn an_unfillable_siege_gap_yields_to_a_buildable_recon_gap() {
+        let (mut g, home, enemy) = walled_war_game(90_079);
+        g.cities.get_mut(&enemy).unwrap().wall_hp = 100;
+        g.players[0].techs.extend([
+            crate::name!("military_engineering"),
+            crate::name!("metal_casting"),
+            crate::name!("steel"),
+            crate::name!("chemistry"),
+            crate::name!("advanced_ballistics"),
+            crate::name!("plastics"),
+        ]);
+        // Artillery needs Oil and Bombards need Niter.  The strongest generic
+        // fallback (Machine Gun) needs neither, which is exactly why the old
+        // branch could inflate the army forever without repairing its role.
+        g.players[0]
+            .strategic_resources
+            .insert(crate::name!("oil"), 0.0);
+        g.players[0]
+            .strategic_resources
+            .insert(crate::name!("niter"), 0.0);
+        let mut ai = BasicAi::new();
+        ai.siege_role = true;
+        ai.recon_replacement = true;
+
+        assert!(ai.siege_is_the_missing_arm(&g, 0));
+        assert!(ai.recon_is_the_missing_arm(&g, 0));
+        assert_eq!(
+            ai.best_military_role(&g, 0, home, None, true),
+            None,
+            "the wall-breaking arm is genuinely unavailable without Oil/Niter"
+        );
+        assert_eq!(
+            ai.best_recon(&g, 0, home).as_deref(),
+            Some("spec_ops"),
+            "a legal recon unit remains available to repair the other live gap"
+        );
+
+        let item = ai
+            .pick_item(&g, 0, home, 1, 0, 0, 0, 1, 24, 6, 0)
+            .expect("the capability gap should still choose the concrete recon unit");
+        assert_eq!(
+            item,
+            Item::Unit {
+                unit: crate::name!("spec_ops")
+            },
+            "an unfillable siege request must not hide the buildable recon arm behind a generic Machine Gun"
+        );
+    }
+
+    #[test]
+    fn an_unfillable_role_gap_above_the_force_floor_keeps_the_ordinary_queue() {
+        let (mut g, home, enemy) = walled_war_game(90_080);
+        g.cities.get_mut(&enemy).unwrap().wall_hp = 100;
+        g.players[0].techs.extend([
+            crate::name!("military_engineering"),
+            crate::name!("metal_casting"),
+            crate::name!("steel"),
+            crate::name!("advanced_ballistics"),
+        ]);
+        g.players[0]
+            .strategic_resources
+            .insert(crate::name!("oil"), 0.0);
+        g.players[0]
+            .strategic_resources
+            .insert(crate::name!("niter"), 0.0);
+        let mut live = BasicAi::new();
+        live.siege_role = true;
+        let frozen = BasicAi::new();
+
+        assert!(live.siege_is_the_missing_arm(&g, 0));
+        assert_eq!(live.best_military_role(&g, 0, home, None, true), None);
+        let ordinary = frozen
+            .pick_item(&g, 0, home, 1, 0, 0, 0, 1, 24, 6, 0)
+            .expect("the ordinary queue has a legal production choice");
+        let treated = live
+            .pick_item(&g, 0, home, 1, 0, 0, 0, 1, 24, 6, 0)
+            .expect("the unavailable live role must fall through to the ordinary queue");
+        assert_eq!(
+            treated, ordinary,
+            "once the force floor is met, an unavailable role gap must not manufacture a generic military unit"
+        );
     }
 
     #[test]
