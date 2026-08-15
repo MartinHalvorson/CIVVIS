@@ -933,6 +933,20 @@ def main() -> int:
                     help="enable the envoy lane (cfg.EnvoyEnabled) for ONE isolated "
                          "run; OFF by default because chooseEnvoy has an unresolved "
                          "SIGSEGV history — do not use in a deployment batch")
+    # `civ6_play.py` keeps each mutation independently switchable.  The harness
+    # must preserve that boundary: `--envoys` alone remains the historical
+    # all-on experiment, while a `--no-envoy-*` flag makes a one-variable run
+    # possible without editing the installed mod.
+    ap.add_argument("--envoy-place", action=argparse.BooleanOptionalAction, default=True,
+                    help="allow influence-token placement when --envoys is enabled; "
+                         "use --no-envoy-place to isolate another envoy mutation")
+    ap.add_argument("--envoy-levy", action=argparse.BooleanOptionalAction, default=True,
+                    help="allow city-state levies when --envoys is enabled; use "
+                         "--no-envoy-levy for an isolated run")
+    ap.add_argument("--envoy-consider", action=argparse.BooleanOptionalAction,
+                    default=True,
+                    help="allow prompt-clearing when --envoys is enabled; use "
+                         "--no-envoy-consider for an isolated run")
     ap.add_argument("--difficulty", default="DIFFICULTY_SETTLER")
     # Six players, because the size IS the player count — see `civ6_play.py`.
     ap.add_argument("--map-size", default="MAPSIZE_SMALL")
@@ -1279,8 +1293,15 @@ def main() -> int:
             # unspent envoys and `envoys_free` never once decreases across 62
             # runs, so this is the largest resource the agent never touches —
             # but the actuation path has three recorded SIGSEGVs, so the flag
-            # stays off and this only makes the experiment RUNNABLE.
+            # stays off and this only makes the experiment RUNNABLE.  Forward
+            # every non-default mutation switch with it: sending no flag means
+            # the child retains its stable all-true defaults, while an explicit
+            # `--no-envoy-*` makes the launch's isolation visible in its command
+            # line and in civ6_play's effective config.
             + (["--envoys"] if args.envoys else [])
+            + (["--no-envoy-place"] if args.envoys and not args.envoy_place else [])
+            + (["--no-envoy-levy"] if args.envoys and not args.envoy_levy else [])
+            + (["--no-envoy-consider"] if args.envoys and not args.envoy_consider else [])
             + [
              # ⚠ Popups must not sit on the map. They are closed by the autoclose shim
              # already, but the delay is how long they are VISIBLE, and the operator is
