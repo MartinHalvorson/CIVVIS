@@ -1096,7 +1096,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// native constructor and `AdvancedAi::legacy()` keep the one-at-a-time gate in
 /// both settler routes (asserted). Compatibility re-pin; the Elo protocol does not
 /// move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5c9d_647c_6d55_13c3;
+/// `war_patience` is now bounded by `WAR_PATIENCE_LIMIT_TURNS`; the flag is set
+/// only by the live bridge and the native repair bundle, never by
+/// `AdvancedAi::legacy()`, so the anchor's peace rules are unchanged.
+/// Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8361_df92_8aa2_bb85;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

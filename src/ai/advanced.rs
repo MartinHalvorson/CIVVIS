@@ -133,6 +133,23 @@ const RUSH_WINDOW_CLOSES: u32 = 60;
 /// 0.62 outmatched trigger and Recovery trigger keep their shape: the moment
 /// the advantage is gone, so is the patience.
 const OVERWHELMING_WAR_RATIO: f64 = 2.5;
+/// Standard turns without a campaign gain after which `war_patience` lapses and
+/// the stall clause fires again even over an overwhelmed target.
+///
+/// ★★★★ AN OVERWHELMING WAR THAT NEVER TAKES A CITY IS NOT A WALKOVER, IT IS A
+/// TAX. Patience was written for a slow wall taking its time to fall; on the
+/// live Civilization VI seat the walls never fall at all. Run
+/// civvis-20260815T220819Z: at war with the Maori (their power 24–72 against
+/// our 400–800) from ~t100 to the end at t224, "Pressing the war … a war to
+/// finish, not to quit" on every assessment, the Grand strategy read Conquest
+/// on 72 of 88 assessments, no city was ever taken, and the economy bought
+/// 98 city-turns of AT Crews for it. Runs T182350Z and T190904Z carried
+/// 140- and 200-turn wars the same way, without a capture. Forty standard
+/// turns (twenty at Online) with no city gained is longer than any siege that
+/// is actually working; after that the empire sues, the plan leaves
+/// Conquest, and production goes back to development. A city gained resets
+/// the clock, so a war that IS progressing keeps its patience.
+const WAR_PATIENCE_LIMIT_TURNS: u32 = 40;
 /// Distance from the campaign objective inside which a force group counts as
 /// the front rather than a rear reinforcement, used by
 /// [`AdvancedAi::wartime_reinforcement_step`]. The staging ring is 3..=5 and
@@ -1192,7 +1209,9 @@ pub struct AdvancedAi {
     /// flag is on and the empire holds `OVERWHELMING_WAR_RATIO` over its
     /// campaign target, the stall clause stands down and the ordinary
     /// outmatched (0.62) and Recovery triggers keep the war endable. **Off by
-    /// default, live-bridge only.**
+    /// default, live-bridge only.** Bounded by `WAR_PATIENCE_LIMIT_TURNS`
+    /// standard turns without a campaign gain — see that constant for the
+    /// live wars that never landed a city.
     pub war_patience: bool,
     /// Do not open a fresh direct war once the shared endgame reserve leaves
     /// no time to turn a declaration into a capture. Timed attacks already
@@ -4046,6 +4065,13 @@ impl AdvancedAi {
 
     pub fn coordinates_forces(&self) -> bool {
         self.victory_planning
+    }
+
+    /// Whether `war_patience` has lapsed: no campaign gain for
+    /// `WAR_PATIENCE_LIMIT_TURNS` standard turns. See the constant.
+    fn war_patience_exhausted(&self, g: &Game) -> bool {
+        g.turn.saturating_sub(self.last_campaign_progress)
+            >= g.standard_duration(WAR_PATIENCE_LIMIT_TURNS).max(1)
     }
 
     fn observe_campaign(&mut self, g: &Game, pid: usize) {
@@ -8937,7 +8963,8 @@ impl AdvancedAi {
         let overwhelming = self.war_patience
             && plan.strategy == GrandStrategy::Conquest
             && plan.target_player == Some(partner)
-            && my_power >= partner_power * OVERWHELMING_WAR_RATIO;
+            && my_power >= partner_power * OVERWHELMING_WAR_RATIO
+            && !self.war_patience_exhausted(g);
         let fatigued = !overwhelming
             && self.major_war_since.is_some_and(|started| {
                 g.turn.saturating_sub(started) >= 24
@@ -10913,21 +10940,31 @@ impl AdvancedAi {
             // not offered away while the empire holds an overwhelming power
             // advantage over that target. The outmatched and Recovery offer
             // triggers below keep their shape.
-            let overwhelming = self.war_patience
+            let overwhelms = self.war_patience
                 && plan.strategy == GrandStrategy::Conquest
                 && plan.target_player == Some(*other)
                 && my_power >= g.military_power(*other) * OVERWHELMING_WAR_RATIO;
+            let overwhelming = overwhelms && !self.war_patience_exhausted(g);
             let fatigued = stalled && !overwhelming;
             if stalled
-                && overwhelming
+                && overwhelms
                 && g.is_at_war(pid, *other)
                 && self.journal().wants(crate::reasoning::Level::Decision)
             {
                 let their_power = g.military_power(*other);
-                think!(self.journal(), Diplomacy, Decision,
-                       "Pressing the war on {}", g.players[*other].civ;
-                       "the campaign has stalled, but {my_power:.0} power against \
-                        their {their_power:.0} is a war to finish, not to quit");
+                if overwhelming {
+                    think!(self.journal(), Diplomacy, Decision,
+                           "Pressing the war on {}", g.players[*other].civ;
+                           "the campaign has stalled, but {my_power:.0} power against \
+                            their {their_power:.0} is a war to finish, not to quit");
+                } else {
+                    think!(self.journal(), Diplomacy, Decision,
+                           "Patience with the war on {} has run out", g.players[*other].civ;
+                           "{my_power:.0} power against their {their_power:.0} and still no \
+                            city gained in {} turns — a walkover that never lands is a tax on \
+                            the economy, so peace is offered and the plan may leave Conquest",
+                           g.turn.saturating_sub(self.last_campaign_progress));
+                }
             }
             let peace_pending = g.pending_deals.iter().any(|deal| {
                 deal.peace
@@ -42769,10 +42806,14 @@ mod research_probe {
         );
 
         // With the flag: the stall clause stands down against the overwhelmed
-        // campaign target, and the denied-partner guard refuses the deal.
+        // campaign target, and the denied-partner guard refuses the deal —
+        // while the campaign is still gaining ground (a city gained fifteen
+        // turns ago is inside the patience window).
         let mut patient = AdvancedAi::new();
         patient.enable_war_patience();
         patient.major_war_since = Some(60);
+        patient.last_campaign_progress = 85;
+        assert!(!patient.war_patience_exhausted(&game));
         assert!(
             patient.incoming_deal_value(&game, 0, &white_peace, &campaign) < 0.0,
             "with the flag, an overwhelming attacker keeps prosecuting"
@@ -42783,6 +42824,39 @@ mod research_probe {
             !patient.peace_offers.contains(&1),
             "with the flag, no stall offer goes to the overwhelmed target"
         );
+
+        // ★ Patience is bounded: forty standard turns without a city gained
+        // and the same overwhelming attacker sues, accepts, and journals why.
+        let mut worn_out = AdvancedAi::new();
+        worn_out.enable_war_patience();
+        worn_out.major_war_since = Some(60);
+        worn_out.last_campaign_progress = 60;
+        assert!(worn_out.war_patience_exhausted(&game));
+        assert!(
+            worn_out.incoming_deal_value(&game, 0, &white_peace, &campaign) > 0.0,
+            "patience lapsed: the white peace is accepted"
+        );
+        let journal = crate::reasoning::Journal::recording();
+        worn_out.attach_journal(journal.handle());
+        let mut suing = game.clone();
+        worn_out.advanced_diplomacy(&mut suing, 0, &campaign);
+        assert!(
+            worn_out.peace_offers.contains(&1),
+            "patience lapsed: the stall offer goes to the target"
+        );
+        assert!(
+            journal
+                .since(0)
+                .thoughts
+                .iter()
+                .any(|thought| thought.headline.starts_with("Patience with the war on")),
+            "the lapse is journaled by name"
+        );
+        // A gained city resets the clock: progress five turns ago and the
+        // same attacker is patient again.
+        worn_out.last_campaign_progress = 95;
+        assert!(!worn_out.war_patience_exhausted(&game));
+        assert!(worn_out.incoming_deal_value(&game, 0, &white_peace, &campaign) < 0.0);
 
         // Scope: patience covers exactly the campaign target. The same
         // stalled war read against a plan that is not fighting player 1
