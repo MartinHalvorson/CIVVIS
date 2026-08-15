@@ -6285,6 +6285,11 @@ pub struct StateGreatPerson {
     pub individual: Option<String>,
     #[serde(default)]
     pub class: Option<String>,
+    /// Firaxis `ActionRequiresCompletedDistrictType` for this exact physical
+    /// individual. The current market offer is no longer authoritative after
+    /// recruitment, so the unit carries its own copy into the production AI.
+    #[serde(default)]
+    pub required_district: Option<String>,
     #[serde(default)]
     pub charges: i32,
     #[serde(default)]
@@ -7010,6 +7015,7 @@ fn apply_great_person_points(
     state: &StateSnapshot,
     unmapped: &mut Vec<String>,
 ) {
+    apply_live_great_person_activation_needs(game, state, unmapped);
     // Civilization VI names the class `GREAT_PERSON_CLASS_SCIENTIST`; CIVVIS
     // keys the same thing `scientist`. The nine classes correspond one to one,
     // so the translation is the suffix, lowercased — and an unrecognised class
@@ -7056,6 +7062,77 @@ fn apply_great_person_points(
         }
     }
     apply_live_great_person_offer_blockers(game, state, unmapped);
+}
+
+/// Carry physical Great People with no currently legal use back into planning.
+///
+/// The unit-order bridge can already activate a person in place or walk them to
+/// any host-provided activation plot. An empty plot list is the remaining hard
+/// case: movement cannot solve it, and without this signal the production AI
+/// never learns that a district, Great Work slot, Wonder, or eligible military
+/// unit is now a prerequisite for consuming an asset the empire already owns.
+fn apply_live_great_person_activation_needs(
+    game: &mut crate::game::Game,
+    state: &StateSnapshot,
+    unmapped: &mut Vec<String>,
+) {
+    let mut needs = Vec::new();
+    for unit in &state.units {
+        let Some(person) = unit.great_person.as_ref() else {
+            continue;
+        };
+        if person.can_activate || !person.activation_plots.is_empty() {
+            continue;
+        }
+        let kind = person
+            .class
+            .as_deref()
+            .and_then(|class| class.strip_prefix("GREAT_PERSON_CLASS_"))
+            .filter(|kind| !kind.is_empty())
+            .map(str::to_ascii_lowercase)
+            .or_else(|| {
+                unit.kind
+                    .strip_prefix("UNIT_GREAT_")
+                    .filter(|kind| !kind.is_empty())
+                    .map(str::to_ascii_lowercase)
+            });
+        let Some(kind) = kind else {
+            let issue = format!("great_person_unit_class:{}", unit.kind);
+            if !unmapped.contains(&issue) {
+                unmapped.push(issue);
+            }
+            continue;
+        };
+
+        let required_district = person.required_district.as_deref().and_then(|required| {
+            if required.eq_ignore_ascii_case("DISTRICT_CITY_CENTER") {
+                return Some("city_center".to_string());
+            }
+            let district = civvis_node_name(&game.rules.districts, required, "DISTRICT_");
+            if district.is_none() {
+                let issue = format!("great_person_unit_district:{required}");
+                if !unmapped.contains(&issue) {
+                    unmapped.push(issue);
+                }
+            }
+            district.map(|district| {
+                game.district_family(crate::name::Name::new(&district))
+                    .to_string()
+            })
+        });
+        let individual = person
+            .individual
+            .as_deref()
+            .and_then(|individual| individual.strip_prefix("GREAT_PERSON_INDIVIDUAL_"))
+            .filter(|individual| !individual.is_empty())
+            .map(str::to_ascii_lowercase);
+        needs.push(crate::game::LiveGreatPersonActivationNeed {
+            kind,
+            individual,
+            required_district,
+        });
+    }
+    game.players[0].live_great_person_activation_needs = needs;
 }
 
 /// Carry only a hard, named live-offer prerequisite into the simulator.
@@ -12278,6 +12355,7 @@ impl LiveMirror {
         apply_tile_memory(&mut self.game, snapshot);
         apply_city_memory(&mut self.game);
         apply_governor_state(&mut self.game, state, &mut self.unmapped);
+        apply_great_person_points(&mut self.game, state, &mut self.unmapped);
         apply_observed_host_metrics(&mut self.game, state, &mut self.unmapped);
         block_loyalty_doomed_settler_sites(&mut self.game);
         // After the city passes, for the same reason as on the rebuild path:
@@ -12831,6 +12909,55 @@ mod host_fact_tests {
         let bare: StateSnapshot =
             serde_json::from_str(r#"{"turn": 3}"#).expect("an absent field parses");
         assert_eq!(bare.great_person_costs, None);
+    }
+
+    #[test]
+    fn physical_great_people_without_activation_plots_reach_production_planning() {
+        let mut game = crate::game::Game::new_full(1, 20, 14, 95_104, 80, 0, false);
+        let mut state = StateSnapshot {
+            units: vec![StateUnit {
+                id: 77,
+                kind: "UNIT_GREAT_SCIENTIST".to_string(),
+                great_person: Some(StateGreatPerson {
+                    individual: Some(
+                        "GREAT_PERSON_INDIVIDUAL_HILDEGARD_OF_BINGEN".to_string(),
+                    ),
+                    class: Some("GREAT_PERSON_CLASS_SCIENTIST".to_string()),
+                    required_district: Some("DISTRICT_HOLY_SITE".to_string()),
+                    charges: 1,
+                    can_activate: false,
+                    activation_plots: Vec::new(),
+                }),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut unmapped = Vec::new();
+
+        apply_great_person_points(&mut game, &state, &mut unmapped);
+
+        assert!(unmapped.is_empty(), "the stock class and district both map");
+        assert_eq!(game.players[0].live_great_person_activation_needs.len(), 1);
+        let need = &game.players[0].live_great_person_activation_needs[0];
+        assert_eq!(need.kind, "scientist");
+        assert_eq!(need.individual.as_deref(), Some("hildegard_of_bingen"));
+        assert_eq!(need.required_district.as_deref(), Some("holy_site"));
+
+        state.units[0]
+            .great_person
+            .as_mut()
+            .unwrap()
+            .activation_plots
+            .push(StateActivationPlot {
+                x: 8,
+                y: 5,
+                distance: 2,
+            });
+        apply_great_person_points(&mut game, &state, &mut unmapped);
+        assert!(
+            game.players[0].live_great_person_activation_needs.is_empty(),
+            "a host-valid destination clears the production demand immediately"
+        );
     }
 
     /// The government HISTORY must reach the planner, so a return switch is
