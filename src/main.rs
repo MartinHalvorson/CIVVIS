@@ -1012,7 +1012,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// becomes live only through `enable_live_bridge` (or an explicit engine-repair
 /// evaluation arm). The frozen `advanced_v1` controller retains its project
 /// queues, so this is a compatibility re-pin rather than an Elo protocol move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4c60_2170_7abf_ec5c;
+/// The opening Scout, six-city fog floor, civilian policy timing, government
+/// prerequisite, zero-damage queue protection, and stalled-Settler founding
+/// changes are all behind live-bridge treatment flags. `BasicAi::new()` and
+/// `AdvancedAi::legacy()` leave those flags false; the focused ablation tests
+/// lock the boundary. Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe92d_bb28_b2b2_4277;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
