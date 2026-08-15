@@ -1314,6 +1314,9 @@ fn tactics_rules(args: &[String]) -> setup::TacticsRules {
         unique_units: flag_or(args, "--tactics-unique-units", stock.unique_units),
         fog: flag_or(args, "--tactics-fog", stock.fog),
         flag: flag_or(args, "--tactics-flag", stock.flag),
+        // The command line's era is `--start-era`, which these flags leave
+        // alone: a run's era is part of the experiment, not the economy.
+        era: stock.era,
     }
     .sanitized()
 }
