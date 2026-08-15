@@ -1056,7 +1056,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// only when `endgame_war_runway` is enabled through the live bridge. The
 /// frozen anchor leaves that flag false, retaining its historical late-war
 /// behavior. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5825_fe6f_9859_014a;
+/// The live wonder race is likewise gated by `live_wonder_race`, which only
+/// `enable_live_bridge` sets: `AdvancedAi::legacy()` and every rated arm keep
+/// the `Item::Wonder` refusal exactly as it was, so no headless anchor can enter
+/// the new valuation branch. Compatibility re-pin; the Elo protocol does not
+/// move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc2d7_8fc8_500d_60f9;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
