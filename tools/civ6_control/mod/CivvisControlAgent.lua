@@ -1911,6 +1911,11 @@ local warDeclared = {};
 -- intent does not rebuild the working deal and re-open a session every turn
 -- against a rival who just declined. See the `peace` arm of `applyOrder`.
 local peaceAsked = {};
+-- The `delegation` arm shares this table rather than declaring its own: the
+-- main chunk sits at Lua's 200-register ceiling and one more file-scope local
+-- fails the whole mod to compile in-game with no log line anywhere (the
+-- install test guards this). Peace keys are numeric seats; delegation keys
+-- are "<session name><seat>" strings, so the two can never collide.
 
 -- How many units have already been aimed at the target plot this turn, and
 -- which approach tiles are taken.
@@ -7343,6 +7348,50 @@ local function applyOrder(player, pid, row, turn)
 			major = major and true or false, threw = not ok,
 		});
 		return ok, ok and "peace_asked" or "throw";
+	end
+
+	-- Delegations and embassies: diplomatic visibility and a relationship
+	-- modifier for pocket change. `verb` is the session name
+	-- (DIPLOMATIC_DELEGATION or RESIDENT_EMBASSY) handed to DiplomacyManager
+	-- verbatim — DiplomacyActionView.lua:470 is the reference. The rival's
+	-- answer arrives as a leader-scene popup the harness's clearers already
+	-- close, the same accepted risk as the peace arm above, so one ask per
+	-- target per cooldown window and nothing here may claim more than "asked".
+	if kind == "delegation" then
+		local diplomacy = try(function() return player:GetDiplomacy(); end);
+		if diplomacy == nil then return false, "no_diplomacy"; end
+		if subject < 0 then
+			return false, "delegation_target_unmapped";
+		end
+		if try(function() return diplomacy:IsAtWarWith(subject); end, false) then
+			return false, "delegation_at_war";
+		end
+		local present;
+		if verb == "RESIDENT_EMBASSY" then
+			present = try(function() return diplomacy:HasEmbassyAt(subject); end, false);
+		else
+			present = try(function() return diplomacy:HasDelegationAt(subject); end, false);
+		end
+		if present then return false, "delegation_already_present"; end
+		-- An unaffordable session is a leader scene opened for a guaranteed
+		-- no; the cost read is the shipped GetGoldCost helper's.
+		local cost = try(function()
+			return diplomacy:GetDiplomaticActionCost("DIPLOACTION_" .. verb);
+		end, 0) or 0;
+		local balance = try(function()
+			return player:GetTreasury():GetGoldBalance();
+		end, 0) or 0;
+		if balance < cost then return false, "delegation_unaffordable"; end
+		local key = verb .. subject;
+		local asked = peaceAsked[key];
+		if asked ~= nil and (turn - asked) < (cfg.PeaceRetryTurns or 5) then
+			return false, "delegation_cooldown";
+		end
+		local ok = pcall(function()
+			DiplomacyManager.RequestSession(pid, subject, verb);
+		end);
+		if ok then peaceAsked[key] = turn; end
+		return ok, ok and "delegation_asked" or "throw";
 	end
 
 	-- ★★★★★ CIVVIS'S OWN POLICY, GOVERNMENT AND PANTHEON CHOICES.

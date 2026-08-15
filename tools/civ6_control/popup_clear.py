@@ -333,6 +333,23 @@ def advisor_buttons(rgb, grey):
     return sorted(targets, key=lambda point: (point[0], point[1]))
 
 
+def near(a, b, tol=8):
+    """The same point seen through animation wobble.
+
+    A leader portrait breathes: the detected target drifts a pixel or two
+    between passes ((1197,387) -> (1196,387) on run civvis-20260815T020727Z),
+    which must not read as a NEW target — that reset is how one conversation
+    ate clicks for 900 s until the outer watchdog killed the attempt.
+    """
+    return abs(a[0] - b[0]) <= tol and abs(a[1] - b[1]) <= tol
+
+
+def same_scene(kind, choice, last_target, tol=8):
+    """Whether this pass is still looking at the scene it clicked last pass."""
+    return (last_target is not None and kind == last_target[0]
+            and near(tuple(int(v) for v in choice), last_target[1], tol))
+
+
 def click_target(kind, targets, width):
     """Return the only target the external watchdog may actuate.
 
@@ -554,6 +571,7 @@ def main():
 
     cleared = 0
     last_target, misses = None, 0
+    esc_sent = False
     waiting_since = None
     warned_setup = False
     warned_cards = False
@@ -585,7 +603,7 @@ def main():
                 playing = game_in_progress(args.runs, fresh_seconds=freshness)
                 covered = kind != "map"
                 if kind == "map":
-                    pass
+                    esc_sent = False
                 elif kind == "card" and not args.cards:
                     # ⚠ OFF BY DEFAULT, ON EVIDENCE. With the counter fixed, the
                     # mod closes completion cards from Lua and says so:
@@ -612,13 +630,23 @@ def main():
                     log(f"{kind} on screen but {front!r} is frontmost; not clicking")
                 elif args.dry_run:
                     log(f"DRY RUN: would click {kind} at {choice} (dark={dark:.2f})")
-                elif (kind, tuple(int(v) for v in choice)) == last_target and misses >= 2:
+                elif same_scene(kind, choice, last_target) and misses >= 2:
                     # ⚠ Never keep clicking something that demonstrably does
                     # nothing. A repeated no-op is either a target we have
                     # misread or a screen we cannot drive, and both are safer
                     # left alone than hammered on a live map.
                     if misses == 2:
                         log(f"{kind} at {targets[-1]} did not respond twice; leaving it alone")
+                    if kind == "leader" and not esc_sent and front.startswith("Civ6"):
+                        # Leaving a leader conversation alone stalls the game
+                        # until the outer watchdog kills the attempt, so this
+                        # one screen gets a single escalation: a loaded scene
+                        # honours ESC even when it eats clicks. Exactly once
+                        # per scene — if ESC does not clear it either, the
+                        # screen really is undrivable and stays untouched.
+                        macos_input.press_key("escape", check=True)
+                        esc_sent = True
+                        log("leader scene ignored clicks twice; sent ESC once")
                     misses += 1
                 else:
                     # Bottom-most button: 'Goodbye' on a farewell, and on a
@@ -636,8 +664,8 @@ def main():
                     # the tool written to expose it.
                     next_choice = click_target(kind_after, targets_after, after.size[0])
                     identical = (kind_after == kind and next_choice is not None
-                                 and tuple(int(v) for v in next_choice) == target[1])
-                    misses = misses + 1 if (identical and target == last_target) else 0
+                                 and near(tuple(int(v) for v in next_choice), target[1]))
+                    misses = misses + 1 if (identical and same_scene(*target, last_target)) else 0
                     last_target = target
                     if kind_after == "map":
                         cleared += 1

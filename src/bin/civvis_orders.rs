@@ -1784,6 +1784,30 @@ fn translate(
                 },
             )
         }
+        // Delegations and embassies buy diplomatic visibility (a combat bonus
+        // against that rival) and a relationship modifier for pocket change,
+        // and both were untranslatable: 16 SendDelegation and 7 SendEmbassy
+        // skips in run civvis-20260815T020330Z, 8 more delegations by turn 70
+        // of the next game. Same seat-mapping as the war arm above; the verb
+        // is the session name the Lua side hands to DiplomacyManager.
+        Action::SendDelegation { player } => Some(Order {
+            kind: "delegation",
+            subject: state
+                .rivals
+                .get(player.saturating_sub(1))
+                .map(|r| r.player as i64),
+            verb: Some("DIPLOMATIC_DELEGATION".to_string()),
+            pos: None,
+        }),
+        Action::SendEmbassy { player } => Some(Order {
+            kind: "delegation",
+            subject: state
+                .rivals
+                .get(player.saturating_sub(1))
+                .map(|r| r.player as i64),
+            verb: Some("RESIDENT_EMBASSY".to_string()),
+            pos: None,
+        }),
         _ => None,
     }
 }
@@ -2762,7 +2786,7 @@ mod tests {
     use super::*;
     use civvis::mirror::{
         Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateGreatPerson,
-        StateGovernor, StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
+        StateGovernor, StateRival, StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
     };
 
     /// One land patch is enough: the override reads cities, not terrain.
@@ -3801,6 +3825,52 @@ mod tests {
         assert_eq!(encampment.kind, "encampment_strike");
         assert_eq!(encampment.subject, Some(65_536));
         assert_eq!(encampment.pos, Some(civvis::hex::axial_to_offset(7, 5)));
+    }
+
+    #[test]
+    fn delegations_and_embassies_name_the_firaxis_seat() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 40,
+            rivals: vec![StateRival {
+                player: 4,
+                civ: "CIVILIZATION_PERSIA".to_string(),
+                leader: "LEADER_NADER_SHAH".to_string(),
+                ..StateRival::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+
+        let delegation = translate(
+            &Action::SendDelegation { player: 1 },
+            &mirror,
+            &state,
+        )
+        .expect("a delegation to a mapped rival translates");
+        assert_eq!(delegation.kind, "delegation");
+        assert_eq!(delegation.subject, Some(4));
+        assert_eq!(delegation.verb.as_deref(), Some("DIPLOMATIC_DELEGATION"));
+
+        let embassy = translate(&Action::SendEmbassy { player: 1 }, &mirror, &state)
+            .expect("an embassy to a mapped rival translates");
+        assert_eq!(embassy.kind, "delegation");
+        assert_eq!(embassy.subject, Some(4));
+        assert_eq!(embassy.verb.as_deref(), Some("RESIDENT_EMBASSY"));
+
+        // An unmet seat still crosses, with no subject: the Lua side names it
+        // `delegation_target_unmapped` instead of the bridge dropping it here.
+        let unmet = translate(&Action::SendDelegation { player: 3 }, &mirror, &state)
+            .expect("an unmapped rival still crosses for the ledger");
+        assert_eq!(unmet.subject, None);
     }
 
     #[test]
