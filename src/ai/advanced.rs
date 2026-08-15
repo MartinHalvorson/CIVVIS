@@ -19948,7 +19948,29 @@ impl AdvancedAi {
                 });
                 low_hp_unit || capturable_city
             });
+            let arena = g.is_arena();
             let relieving = plan.threatened_city.is_some();
+            // Recovery is a bounded defensive posture when it was selected
+            // solely because the empire is globally outmatched. A fogged
+            // enemy city can still make the local ratio read 3.00, but that
+            // is not evidence that the whole army should spend its brief
+            // recovery window advancing away from home. In the live Rome run
+            // at t106, eight units marched on Puteoli under exactly that
+            // label; no home city had been named yet, so the later relief
+            // force started several turns farther from Cumae than it needed
+            // to be.
+            //
+            // A named threatened city keeps the established relief route,
+            // and a finishable unit or city remains an Engage posture. The
+            // direct tactical scan also runs before this movement posture,
+            // so holding the front does not decline an ordinary nearby trade.
+            // `bounded_recovery` is false in the frozen controller, which
+            // preserves its source-contract path while the deployed policy
+            // gets only the temporary global-outmatch case.
+            let global_recovery_holds_front = !arena
+                && self.bounded_recovery
+                && plan.strategy == GrandStrategy::Recovery
+                && plan.threatened_city.is_none();
             // A Tactics arena has none of the three reasons a Civ army stands
             // still, so it does none of the three standing-still postures.
             //
@@ -19966,7 +19988,6 @@ impl AdvancedAi {
             // the whole of the difference: everything below is the shipped
             // Civ doctrine, unchanged, and an arena only stops asking to be
             // let out of the fight.
-            let arena = g.is_arena();
             let locally_superior = arena || local_strength_ratio >= LOCAL_SUPERIORITY_FLOOR;
             // ⚠ MEASURED AND REJECTED: letting a rush ignore `relieving` and
             // `Muster` — on the theory that a stack sized against one
@@ -19977,6 +19998,8 @@ impl AdvancedAi {
             // without a different mechanism.
             let posture = if !arena && average_hp <= self.base.w.withdraw_hp + 10.0 {
                 ForcePosture::Recover
+            } else if global_recovery_holds_front && !forcing_focus {
+                ForcePosture::Hold
             } else if (focus_target.is_some()
                 && (locally_superior || plan.threatened_city.is_some() || forcing_focus))
                 || (units.iter().any(|uid| {
@@ -32911,6 +32934,145 @@ mod tests {
         assert!(
             unseen_ratio < LOCAL_SUPERIORITY_FLOOR,
             "one warrior must not read an unseen city as locally dominant: {unseen_ratio}"
+        );
+    }
+
+    #[test]
+    fn global_recovery_holds_an_unthreatened_front_but_keeps_a_forcing_finish() {
+        // The t106 live-Rome shape: a declared major war and an enemy city
+        // known outside current sight, but no local siege yet. The ordinary
+        // fog-safe mover can still see a 3.00 local ratio here; Recovery must
+        // make that a temporary home hold rather than an offensive march.
+        let (mut game, _capital, home) = empire_with_a_capital(71_116);
+        let enemy_site = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.wdist(**position, home) >= 15
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .min()
+            .expect("fixture needs a distant enemy city site");
+        game.current = 1;
+        let enemy_settler = game.spawn_test_unit("settler", 1, enemy_site);
+        game.apply(
+            1,
+            &Action::FoundCity {
+                unit: enemy_settler,
+            },
+        )
+        .expect("found the distant enemy city");
+        game.current = 0;
+        let target_city = *game
+            .player_city_ids(1)
+            .first()
+            .expect("the enemy must own its founded city");
+        let objective = game.cities[&target_city].pos;
+        for unit in game.player_unit_ids(1) {
+            game.remove_unit(unit);
+        }
+        let launch = game
+            .nbrs(home)
+            .into_iter()
+            .find(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile)
+                        && !game.rules.is_water(tile)
+                        && game.city_at(*position).is_none()
+                        && game.units_at(*position).is_empty()
+                })
+            })
+            .expect("the capital has an empty land launch tile");
+        let warrior = game.spawn_test_unit("warrior", 0, launch);
+        assert!(
+            !game.player_can_see(0, objective),
+            "the objective must be outside the turn-start sight frame"
+        );
+
+        let conquest = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(target_city),
+            threatened_city: None,
+            desired_cities: 2,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let recovery = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            ..conquest.clone()
+        };
+        let mut ai = AdvancedAi::new();
+        assert!(
+            ai.bounded_recovery,
+            "the promoted controller carries the bounded Recovery policy"
+        );
+
+        ai.rebuild_force_groups(&game, 0, &conquest);
+        assert_eq!(
+            ai.force_groups()
+                .iter()
+                .find(|group| group.units.contains(&warrior))
+                .expect("the warrior receives a normal force order")
+                .posture,
+            ForcePosture::Advance,
+            "outside Recovery the fogged city remains the ordinary campaign objective"
+        );
+
+        ai.rebuild_force_groups(&game, 0, &recovery);
+        let holding = ai
+            .force_groups()
+            .iter()
+            .find(|group| group.units.contains(&warrior))
+            .expect("the warrior receives a Recovery force order");
+        assert_eq!(holding.objective, objective);
+        assert_eq!(
+            holding.posture,
+            ForcePosture::Hold,
+            "an outmatched Recovery plan without a threatened city must not advance on a fogged campaign objective"
+        );
+
+        let mut legacy = AdvancedAi::legacy();
+        legacy.rebuild_force_groups(&game, 0, &recovery);
+        assert_eq!(
+            legacy
+                .force_groups()
+                .iter()
+                .find(|group| group.units.contains(&warrior))
+                .expect("the frozen controller receives the same force order")
+                .posture,
+            ForcePosture::Advance,
+            "the legacy anchor leaves bounded Recovery off and keeps its historical campaign movement"
+        );
+
+        // A finishable adjacent unit still overrides the home hold. This is
+        // the existing forcing-focus exception, not a second attack policy.
+        let contact = game
+            .nbrs(launch)
+            .into_iter()
+            .find(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile)
+                        && !game.rules.is_water(tile)
+                        && game.city_at(*position).is_none()
+                        && game.units_at(*position).is_empty()
+                })
+            })
+            .expect("the warrior has an empty adjacent land contact");
+        let enemy = game.spawn_test_unit("warrior", 1, contact);
+        game.units.get_mut(&enemy).unwrap().hp = 1;
+        ai.rebuild_force_groups(&game, 0, &recovery);
+        assert_eq!(
+            ai.force_groups()
+                .iter()
+                .find(|group| group.units.contains(&warrior))
+                .expect("the warrior keeps its force order at contact")
+                .posture,
+            ForcePosture::Engage,
+            "Recovery may still finish a visible enemy it can immediately remove"
         );
     }
 
