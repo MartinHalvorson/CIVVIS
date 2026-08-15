@@ -4757,6 +4757,15 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             if let Some(v) = parsed["paused"].as_bool() {
                 session.spectator_paused = v;
             }
+            // The arena's fog is a live rule: the vision stamp reads it on
+            // every sight computation, so flipping it takes effect at the
+            // next reckoning and invalidates the cached frames by itself.
+            // The params move with it so the automatic successor — and a
+            // same-settings restart — carries the rule the battle ended on.
+            if let Some(on) = parsed["tactics_fog"].as_bool() {
+                session.game.tactics.fog = on;
+                session.params.tactics.fog = on;
+            }
             let mut o = session.state();
             drop(session);
             decorate(&mut o, sh);
@@ -7098,6 +7107,66 @@ mod tests {
         );
         assert_eq!(super::promoted_binary_commit("civvis-brief"), None);
         assert_eq!(super::promoted_binary_commit("civvis-zzzz"), None);
+    }
+
+    /// The arena's fog is a live rule of the battle on screen: `/pace` flips
+    /// it mid-game, the answer and every later state document carry the flip,
+    /// and the session's params move with it so the game that follows keeps
+    /// the rule. The engine reads the flag on every sight reckoning, so
+    /// nothing else needs to be told.
+    #[test]
+    fn the_pace_endpoint_flips_the_arena_fog_for_the_running_battle() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = new_game_params(
+            &current(),
+            &json!({
+                "num_players": 2, "map_script": "battlefield",
+                "width": 11, "height": 10,
+            }),
+        );
+        params.spectate = true;
+        params.seed = 20_260_815;
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "arena server never came up");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        // Hold the battle still so no result can replace the world under the
+        // readings below.
+        http_post(port, "/pace", "{\"paused\":true}").expect("pause the arena");
+        let before: Value =
+            serde_json::from_str(&http_get(port, "/state").expect("read the arena")).unwrap();
+        assert_eq!(before["tactics"]["fog"], json!(true), "an arena opens fogged");
+        let lifted: Value = serde_json::from_str(
+            &http_post(port, "/pace", "{\"tactics_fog\":false}").expect("lift the fog"),
+        )
+        .unwrap();
+        assert_eq!(
+            lifted["tactics"]["fog"],
+            json!(false),
+            "the flip answers with the rule it just set"
+        );
+        let held: Value =
+            serde_json::from_str(&http_get(port, "/state").expect("read it back")).unwrap();
+        assert_eq!(
+            held["tactics"]["fog"],
+            json!(false),
+            "every later state document carries the lifted fog"
+        );
+        let refogged: Value = serde_json::from_str(
+            &http_post(port, "/pace", "{\"tactics_fog\":true}").expect("lower the fog again"),
+        )
+        .unwrap();
+        assert_eq!(
+            refogged["tactics"]["fog"],
+            json!(true),
+            "the rule turns both ways while the battle runs"
+        );
     }
 
     /// A result has to arrive with the window it promises, and that window has
@@ -10919,6 +10988,47 @@ mod tests {
             ),
             "map controls should not offer dismissal while their restore switch is hidden"
         );
+        // The simulation stats record starts over from its own panel — the
+        // control says "Reset" — and a world seen running clears the stored
+        // repeat guard, so a restarted arena that ends the same way on the
+        // same seed still counts as the new game it is. The guard's one job
+        // remains the page reopened over a finished world, which never
+        // renders a live frame.
+        assert!(
+            EMBEDDED_INDEX.contains("data-sim-stats-clear "),
+            "the simulation stats panel offers its reset control"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains(">Reset</button>"),
+            "the record's own control says Reset"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains(
+                "if (simulationStats.last) { delete simulationStats.last; saveSimulationStats(); }"
+            ),
+            "a live frame frees the repeat guard for the next result"
+        );
+        // The empire columns exist where there is an empire: on a battlefield
+        // they leave the standings and the Display Settings roster the same
+        // way the nuclear stockpile does before the bomb.
+        assert!(
+            EMBEDDED_INDEX.contains("function worldStandingsInPlay()"),
+            "the arena-free columns declare their existence test"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("[\"suzerain\", \"Suzerainty\", worldStandingsInPlay]"),
+            "the empire columns carry the arena existence test"
+        );
+        // The arena's fog is a live rule offered on the turn box, pushed over
+        // the same live-settings endpoint as the watch pace.
+        assert!(
+            EMBEDDED_INDEX.contains("<select data-hud-fog "),
+            "the turn box offers the in-game fog rule"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("setPace({tactics_fog: on});"),
+            "the fog flip rides the live-settings endpoint"
+        );
         // Every editable settings group uses one compact full-width column;
         // labels and controls may share a row, but separate choices never do.
         for single_column_settings_grid in [
@@ -11510,9 +11620,10 @@ mod tests {
             "if (html === hudHtml || hudLayoutGesture?.name === \"players\" || playerHudColumnGesture\n      || playerHudReorderGesture || hudPaceHeldOpen()) {"
         ));
         assert!(EMBEDDED_INDEX.contains("function hudPaceHeldOpen()"));
-        // The moment focus leaves the select, the held snapshots paint.
+        // The moment focus leaves either held select — watch pace or the
+        // arena's in-game fog — the held snapshots paint.
         assert!(EMBEDDED_INDEX.contains(
-            "if (ev.target.closest?.(\"[data-hud-pace]\") && state) drawPlayerHud();"
+            "if (ev.target.closest?.(\"[data-hud-pace], [data-hud-fog]\") && state) drawPlayerHud();"
         ));
         // The bars are placed from the rendered heading, so they cannot drift
         // from the columns they name.
