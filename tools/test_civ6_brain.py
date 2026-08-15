@@ -169,6 +169,20 @@ class Civ6BrainTest(unittest.TestCase):
         self.assertEqual(command[command.index("--strategy") + 1], "auto")
         self.assertEqual(command[command.index("--civ") + 1], "CIVILIZATION_ROME")
 
+    def test_default_decider_keeps_stock_weights(self) -> None:
+        decider = civ6_brain.Decider(
+            Path("/tmp/civvis-orders"),
+            Path("/tmp/live-run"),
+            civ6_brain.DEFAULT_VICTORY,
+        )
+
+        command = decider.command()
+
+        self.assertEqual(civ6_brain.DEFAULT_VICTORY, "science")
+        self.assertEqual(civ6_brain.DEFAULT_STRATEGY, "")
+        self.assertEqual(command[command.index("--victory") + 1], "science")
+        self.assertNotIn("--strategy", command)
+
 
 class SeatCivTest(unittest.TestCase):
     """The civ Civilization VI dealt must reach the decider, or `--strategy auto`

@@ -31,6 +31,9 @@ from pathlib import Path
 
 from civ6_control.orders import orders_db_path
 
+DEFAULT_VICTORY = "science"
+DEFAULT_STRATEGY = ""
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS orders (
     run TEXT NOT NULL, turn INTEGER NOT NULL, seq INTEGER NOT NULL,
@@ -258,7 +261,7 @@ class Decider:
     """
 
     def __init__(self, binary: Path, run_dir: Path, victory: str,
-                 war_from_plan: bool = False, strategy: str | None = "auto"):
+                 war_from_plan: bool = False, strategy: str | None = None):
         self.binary = binary
         self.run_dir = run_dir
         self.victory = victory
@@ -477,17 +480,15 @@ def main() -> int:
     # reveal a city -- see the frontier and probe notes in CivvisControlAgent.lua --
     # prefer one of those and pass `domination` deliberately, not by default.
     #
-    # The default moved to `civvis` on 2026-08-14, following the climb harness,
-    # whose default moved in #859 on the measured ordering adaptive >> score >
-    # domination (30 mirrored map pairs at the ladder's own profile, 6p/250t:
-    # untargeted beat domination-target 60-0, and the domination arm recorded
-    # zero victories of any type; see the `--victory` note in
-    # civ6_civvis_climb.py). The climb harness always passes `--civvis-victory`
-    # explicitly, so this default decides only runs that drive the brain
-    # directly -- which is exactly where it kept reproducing the defect the
-    # note above describes, twelve days after the layer above stopped doing so.
+    # `civvis` is the strongest native controller setting, but its measured edge
+    # is mostly Religious Victory (48 of 60 wins at this profile). The Firaxis
+    # verification seat is now deliberately trying the strongest REACHABLE
+    # non-religious lane instead: Science needs no revealed rival city, while
+    # Domination does and recorded zero victories in its 60-game native arm.
+    # This pins only our controller's objective; it does not alter the host game's
+    # enabled victory conditions, so a rival religious win remains a real loss.
     # Rows from direct-brain runs either side of this change are NOT comparable.
-    ap.add_argument("--victory", default="civvis",
+    ap.add_argument("--victory", default=DEFAULT_VICTORY,
                     choices=["domination", "science", "score", "civvis"],
                     help="which victory CIVVIS plays for; `civvis` lets it choose. "
                          "⚠ domination is unreachable while no rival city is ever "
@@ -501,8 +502,7 @@ def main() -> int:
     # brief asks for "whatever the provably highest ELO player-strategy CIVVIS has".
     #
     # `auto` ranks on `league::strategy_strength`, the outright-win LOWER BOUND, not
-    # the placement rating -- and the two disagree sharply, which is why the default
-    # was wrong rather than merely unset:
+    # the placement rating -- and the two disagree sharply:
     #
     #     strategy         rating   games  wins   winrate
     #     adv-religious      1601     116    58     50.0%   <- what `auto` picks
@@ -511,15 +511,14 @@ def main() -> int:
     # The higher-RATED strategy wins barely half as often. Placement Glicko answers
     # "who should be matched with whom"; it is not a strength ordering.
     #
-    # ⚠ TRANSFER TO THIS BRIDGE IS UNMEASURED. Those games are CIVVIS-vs-CIVVIS, and
-    # this project has already watched a champion genome go +48 in compact evaluation
-    # and -53 deployed. Treat the first Civ 6 runs under this as the measurement, not
-    # as a settled improvement -- and if outcomes worsen, `--strategy ""` restores the
-    # old behaviour exactly.
-    ap.add_argument("--strategy", default="auto",
-                    help="strategy for the decider to load; `auto` takes the "
-                         "strongest by outright-win lower bound. Empty string keeps "
-                         "the built-in AdvancedAi")
+    # ⚠ TRANSFER TO THIS BRIDGE IS UNMEASURED. Those games are CIVVIS-vs-CIVVIS,
+    # every completed local Firaxis run inspected under `auto` lost, and this
+    # project has already watched a champion genome go +48 in compact evaluation
+    # and -53 deployed. Stock `AdvancedAi` is the deployment-tested controller;
+    # an explicit strategy remains available as an experiment, never the default.
+    ap.add_argument("--strategy", default=DEFAULT_STRATEGY,
+                    help="strategy for the decider to load; empty keeps the "
+                         "deployment-tested stock AdvancedAi. `auto` is opt-in")
     ap.add_argument("--skip-kinds", default="",
                     help="comma-separated order kinds to drop (bisect only)")
     ap.add_argument("--skip-verbs", default="",

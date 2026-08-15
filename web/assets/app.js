@@ -21872,6 +21872,7 @@ function drawPlayerHud() {
   // without the next simulation frame snapping the HUD back to the leader.
   const victoryScroll = victoryHud.querySelector(".hud-rail")?.scrollTop || 0;
   const playerScroll = hud.querySelector(".diplomacy-ribbon")?.scrollTop || 0;
+  const playerScrollLeft = hud.querySelector(".player-standings")?.scrollLeft || 0;
   const overview = playerHudOverview();
   if (overview !== victoryHudHtml && hudLayoutGesture?.name !== "victory") {
     victoryHudHtml = overview;
@@ -22170,6 +22171,8 @@ function drawPlayerHud() {
   // This is a string comparison on every other frame.
   syncPlayerHudColumns();
   syncHudColumnRoster();
+  const playerStandings = hud.querySelector(".player-standings");
+  if (playerStandings) playerStandings.scrollLeft = playerScrollLeft;
   // innerHTML also replaced the plate seam; restamp its live automatic or
   // preferred width and accessibility range.
   syncTurnPlateWidth();
@@ -22284,6 +22287,36 @@ function runHudAction(target) {
 // swallowed. Act on the press, which always lands on what was under the
 // cursor, and keep click for keyboard activation — which reports no press.
 const hudRibbon = document.getElementById("playerhud");
+// A mouse wheel supplies vertical deltas even when the only overflow under it
+// is horizontal. Translate those notches so the whole HUD is usable without
+// trying to catch its scrollbar. A deliberately shortened roster keeps its
+// native vertical wheel; its heading still offers the horizontal gesture, and
+// Shift+wheel explicitly asks for it anywhere in the standings. Trackpad
+// deltaX and touch swipes remain native so their momentum is not distorted.
+hudRibbon.addEventListener("wheel", event => {
+  const standings = event.target.closest?.(".player-standings");
+  if (!standings || standings.scrollWidth <= standings.clientWidth ||
+      Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+  const ribbon = event.target.closest?.(".diplomacy-ribbon");
+  if (!event.shiftKey && ribbon && ribbon.scrollHeight > ribbon.clientHeight) return;
+  const scale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 24
+    : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? standings.clientWidth : 1;
+  standings.scrollLeft += event.deltaY * scale;
+  event.preventDefault();
+}, {passive:false});
+
+// The standings wrapper is keyboard-focusable, but the application's global
+// Left/Right shortcuts otherwise cycle cities before the browser can pan it.
+hudRibbon.addEventListener("keydown", event => {
+  const standings = event.target.closest?.(".player-standings");
+  if (!standings || event.target !== standings ||
+      (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const direction = event.key === "ArrowLeft" ? -1 : 1;
+  standings.scrollLeft += direction * (event.shiftKey ? standings.clientWidth * .8 : 48);
+});
+
 hudRibbon.addEventListener("change", ev => {
   const pace = ev.target.closest?.("[data-hud-pace]");
   if (!pace) return;

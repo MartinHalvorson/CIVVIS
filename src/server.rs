@@ -10485,6 +10485,34 @@ mod tests {
             "const playerScroll = hud.querySelector(\".diplomacy-ribbon\")?.scrollTop || 0;"
         ));
         assert!(EMBEDDED_INDEX.contains("playerRibbon.scrollTop = playerScroll;"));
+        // Live spectator frames must not return the table to its first column
+        // while somebody is reading farther across it.
+        assert!(EMBEDDED_INDEX.contains(
+            "const playerScrollLeft = hud.querySelector(\".player-standings\")?.scrollLeft || 0;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "playerStandings.scrollLeft = playerScrollLeft;"
+        ));
+        // The horizontal bar is large enough to acquire with a mouse, while a
+        // vertical wheel and the focused arrow keys can move the same scroller
+        // without touching that bar. A shortened roster retains its vertical
+        // wheel because the conversion yields to a vertically overflowing row
+        // ribbon unless Shift explicitly requests horizontal movement.
+        assert!(EMBEDDED_INDEX.contains(
+            "#playerhud > .player-standings::-webkit-scrollbar { height: 9px; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "hudRibbon.addEventListener(\"wheel\", event => {"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "!event.shiftKey && ribbon && ribbon.scrollHeight > ribbon.clientHeight"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "standings.scrollLeft += event.deltaY * scale;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "standings.scrollLeft += direction * (event.shiftKey ? standings.clientWidth * .8 : 48);"
+        ));
         // The wide-screen default has three exact seams: the player HUD fills
         // from its live clear-left edge through the victory tracker's left
         // edge, the tracker owns ten percent of screen width and reaches the
