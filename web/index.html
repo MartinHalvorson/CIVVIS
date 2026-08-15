@@ -3346,7 +3346,7 @@
      window resize. */
   @media (min-width: 2200px) {
     #playerhud {
-      grid-template-columns: 168px minmax(0, 1fr);
+      grid-template-columns: var(--turn-plate-width, 168px) minmax(0, 1fr);
       --hud-ident-min: 66px; --hud-identity-bias: 1.3; --hud-stat-min: 44px;
     }
   }
@@ -3358,15 +3358,18 @@
      see the toll's own type size. */
   @media (max-width: 1580px) {
     #playerhud {
-      grid-template-columns: 144px minmax(0, 1fr);
+      grid-template-columns: var(--turn-plate-width, 144px) minmax(0, 1fr);
       --hud-ident-min: 41px; --hud-stat-min: 36px;
     }
   }
   /* Twelve value columns, a turn plate and a standing rail stop fitting side by
-     side around here. */
+     side around here. Every band, above and below, names its plate track
+     through --turn-plate-width: that is the seam's own property, and a band
+     that wrote a bare pixel width here left the seam dragging a variable
+     nothing read — the plate stood still on any laptop-width masthead. */
   @media (max-width: 1300px) {
     #playerhud {
-      grid-template-columns: 144px minmax(0, 1fr);
+      grid-template-columns: var(--turn-plate-width, 144px) minmax(0, 1fr);
       --hud-ident-min: 33.5px; --hud-stat-min: 34px;
     }
   }
@@ -3377,7 +3380,7 @@
        this rule. The floor that matters for a roster row is the one on
        #playerhud[data-type-size="compact"]. */
     #playerhud {
-      grid-template-columns: 140px minmax(0, 1fr);
+      grid-template-columns: var(--turn-plate-width, 140px) minmax(0, 1fr);
       --hud-ident-min: 27.5px;
       --hud-watch-column: 70px;
       --hud-stat-min: 32px; --hud-stat-gap: 2px;
@@ -3451,7 +3454,9 @@
   #maparea.player-hud-compact #playerhud {
     top: var(--panel-edge); left: max(var(--panel-edge), var(--player-hud-left, 0px));
     right: var(--panel-edge); width: auto; padding: 4px;
-    grid-template-columns: 140px minmax(0, 1fr);
+    /* The viewer's dragged width still rules the plate here: this selector
+       outranks every other plate track, so it has to read the same property. */
+    grid-template-columns: var(--turn-plate-width, 140px) minmax(0, 1fr);
     --hud-lock-column: 11px; --hud-watch-column: 70px; --hud-ident-min: 27.5px;
     --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }

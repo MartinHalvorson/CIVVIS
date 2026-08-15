@@ -11894,6 +11894,12 @@ mod tests {
             "grid-template-columns: var(--turn-plate-width, 164px) minmax(0, 1fr);",
             "var(--turn-plate-width, clamp(148px, 33%, 164px))",
             "var(--turn-plate-width, 168px)",
+            // Every masthead band reads the seam's property. Five bands once
+            // pinned a bare pixel width, and on any laptop-width masthead
+            // (1580px and under, or a compact map) the seam dragged a
+            // variable nothing read.
+            "grid-template-columns: var(--turn-plate-width, 144px) minmax(0, 1fr);",
+            "grid-template-columns: var(--turn-plate-width, 140px) minmax(0, 1fr);",
             ".turn-plate-seam {",
             "#playerhud.turn-plate-wide .victory-turn {",
             "#playerhud.turn-plate-wide .turn-settings {",
@@ -11902,6 +11908,15 @@ mod tests {
             assert!(
                 EMBEDDED_INDEX.contains(contract),
                 "turn plate width contract is missing: {contract}"
+            );
+        }
+        // No band may pin the plate track without the seam's property, or the
+        // seam goes dead in that band. Every first track is a var(...) read.
+        for bare in ["grid-template-columns: 140px minmax", "grid-template-columns: 144px minmax",
+                     "grid-template-columns: 164px minmax", "grid-template-columns: 168px minmax"] {
+            assert!(
+                !EMBEDDED_INDEX.contains(bare),
+                "a masthead band pins the plate track without --turn-plate-width: {bare}"
             );
         }
     }
