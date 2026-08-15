@@ -4478,8 +4478,8 @@
       <div class="sec settings-sec" id="game-settings">
       <div id="newgame-options">
         <label class="small civ6-hidden">Game mode<select id="gamemode" style="margin-top:4px"
-          title="Civ is the full game. Tactics is a playground for tactical unit combat: a named historical battle, or a custom one on a small flat field or a small globe — land or ocean, with mountains, rivers, woods and water but no resources or city-states — where two evenly-armed sides begin at opposite ends of the ground.">
-          <option value="civ" selected>Civ</option>
+          title="Civvis is the full game. Tactics is a playground for tactical unit combat: a named historical battle, or a custom one on a small flat field or a small globe — land or ocean, with mountains, rivers, woods and water but no resources or city-states — where two evenly-armed sides begin at opposite ends of the ground.">
+          <option value="civ" selected>Civvis</option>
           <option value="tactics">Tactics</option>
         </select></label>
         <label class="small">Human players<select id="humanplayers" style="margin-top:4px">
@@ -4492,6 +4492,14 @@
           <div class="civ6-line"><span class="civ6-dot"></span><span id="civ6-host">Checking this computer…</span></div>
           <div class="civ6-line civ6-run" id="civ6-run" hidden></div>
         </div>
+        <label class="small civ6-hidden">AI player pool<select id="aiplayerpool" style="margin-top:4px"
+          title="Which of the rated AI strategies may be seated for the game's AI civilizations, in the Civvis game and Tactics alike. Each civ is played by one of the pool's best still-unseated strategies: Best 1 hands every civ the strongest strategy still free, the wider pools draw rank-weighted from the best few, and All opens the whole roster. The pool always includes the generic strategies — none of them is tied to a leader, so any leader, including a general leader with no particular special ability or power, can be handed any of them.">
+          <option value="best1">Best AI strategy per civ</option>
+          <option value="best2">Best 2 AI strategies per civ</option>
+          <option value="best3" selected>Best 3 AI strategies per civ</option>
+          <option value="best5">Best 5 AI strategies per civ</option>
+          <option value="all">All AI strategies</option>
+        </select></label>
         <label class="small tactics-only">Scenario<span class="setup-info" style="cursor:help;opacity:.7"
           title="Custom is a battle of your own: choose the world type, map and size below and set the arena up in Tactics settings. A named battle brings its own ground, opening forces, era and clock, and is fought under the economy it had — only how long you play, and how many battles the match is, stay yours."> ⓘ</span><select id="tactics-scenario" style="margin-top:4px">
           <option value="" selected>Custom</option>

@@ -859,6 +859,65 @@ pub const MAP_POLES: [MapPolesSpec; 2] = [
     },
 ];
 
+/// How deep the AI player pool runs: which of the rated strategies may be
+/// seated for the AI civilizations of the next game.
+///
+/// The pool is drawn per civilization in the game — each AI seat takes one of
+/// the roster's best still-unseated strategies, so `Best1` hands every civ the
+/// strongest strategy still free, and the wider settings sample rank-weighted
+/// from the best few. `All` opens the whole live roster. The pool always
+/// contains the generic strategies (`league::generic_strategies`): none of the
+/// roster's strategies is tied to a leader, so any leader — including a
+/// neutral historical identity with no special ability or power — can be
+/// handed any of them. The default is `Best3`, which is the exhibition's
+/// long-standing seating policy; a changed pool depth changes only who is
+/// eligible, never how seats rotate across civilizations.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AiPlayerPool {
+    Best1,
+    Best2,
+    #[default]
+    Best3,
+    Best5,
+    All,
+}
+
+impl AiPlayerPool {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Best1 => "best1",
+            Self::Best2 => "best2",
+            Self::Best3 => "best3",
+            Self::Best5 => "best5",
+            Self::All => "all",
+        }
+    }
+
+    /// How many of the roster's best strategies each seat samples from.
+    /// `All` is unbounded; the seating clamps to the live roster's size.
+    pub const fn depth(self) -> usize {
+        match self {
+            Self::Best1 => 1,
+            Self::Best2 => 2,
+            Self::Best3 => 3,
+            Self::Best5 => 5,
+            Self::All => usize::MAX,
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id {
+            "best1" | "best" => Some(Self::Best1),
+            "best2" => Some(Self::Best2),
+            "best3" => Some(Self::Best3),
+            "best5" => Some(Self::Best5),
+            "all" => Some(Self::All),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct MapScriptSpec {
     pub id: &'static str,

@@ -88,6 +88,23 @@ pub enum StrategyKind {
     },
 }
 
+impl StrategyKind {
+    /// Whether this strategy can be handed to any leader.
+    ///
+    /// Every kind the league holds today is generic: a builtin agent or an
+    /// `Advanced` genome parameterizes how the seat plays, never whose kit it
+    /// plays with, so any leader — including a neutral historical identity
+    /// with no special ability or power — can run it. The per-leader tables in
+    /// [`Strategy::leader_elo`] are ratings *about* combinations that were
+    /// played, not a binding. A future kind tuned to one leader's abilities
+    /// must answer `false` here, which is the one place seating asks.
+    pub const fn generic(&self) -> bool {
+        match self {
+            StrategyKind::Builtin { .. } | StrategyKind::Advanced { .. } => true,
+        }
+    }
+}
+
 /// Why an entrant is kept out of live seating, and what would reverse that.
 ///
 /// The point of the type is `revisit_when`. A cost-based exclusion is a
@@ -428,6 +445,24 @@ impl League {
     pub fn humans(&self) -> Vec<usize> {
         (0..self.strategies.len())
             .filter(|i| self.strategies[*i].human)
+            .collect()
+    }
+
+    /// The generic strategy pool: live-eligible entrants any leader can be
+    /// handed ([`StrategyKind::generic`]).
+    ///
+    /// This is what live seating draws from. A seat is a leader before it is
+    /// anything else — possibly one from outside the rated combinations, such
+    /// as the Expanded Historical roster's neutral identities, which carry no
+    /// special ability or power and usually no rating history — so only a
+    /// strategy that is not leader-specific may take an arbitrary seat. Today
+    /// that is the whole exhibition pool, and the anchors (`advanced`,
+    /// `basic`) are never retired, so the set cannot be empty in any roster
+    /// that has entrants at all.
+    pub fn generic_strategies(&self) -> Vec<usize> {
+        self.exhibition_active()
+            .into_iter()
+            .filter(|i| self.strategies[*i].kind.generic())
             .collect()
     }
 }
@@ -3052,10 +3087,13 @@ pub fn seat_by_leader_civ_seeded(
     seed: u64,
     top_n: usize,
 ) -> Vec<usize> {
-    let active = league.exhibition_active();
+    // A seat is a leader before it is anything else — possibly one with no
+    // rated history and no special ability at all — so candidates come from
+    // the generic pool: the strategies any leader can be handed.
+    let active = league.generic_strategies();
     assert!(
         !active.is_empty(),
-        "league has no exhibition-eligible strategies"
+        "league has no exhibition-eligible generic strategies"
     );
     let mut rng = Rng::new(seed ^ 0x5350_4543_4941_4c49);
     let mut used = BTreeSet::new();
@@ -3136,10 +3174,10 @@ pub fn seat_by_leader_civ_seeded(
 }
 
 pub fn seat_by_leader_civ(league: &League, combinations: &[(String, String)]) -> Vec<usize> {
-    let active = league.exhibition_active();
+    let active = league.generic_strategies();
     assert!(
         !active.is_empty(),
-        "league has no exhibition-eligible strategies"
+        "league has no exhibition-eligible generic strategies"
     );
     let mut used: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
     combinations
@@ -6534,5 +6572,44 @@ mod searching_anchor_tests {
                 "the exhibition selector returned an offline-only entrant"
             );
         }
+    }
+
+    /// The AI player pool's standing promise: every roster carries generic
+    /// strategies — ones no leader is bound to — so any leader, including a
+    /// neutral historical identity with no special ability or power, can be
+    /// seated. Today every kind is generic, so the set is the whole live
+    /// pool, and the never-retired anchors keep it from ever emptying.
+    #[test]
+    fn the_generic_pool_is_the_whole_live_pool_and_holds_the_anchors() {
+        let league = shipped_league().expect("the committed roster parses");
+        let generic = league.generic_strategies();
+        assert_eq!(generic, league.exhibition_active());
+        for anchor in ["advanced", "basic"] {
+            let index = league
+                .strategies
+                .iter()
+                .position(|s| s.name == anchor)
+                .expect("the shipped roster retains its anchors");
+            assert!(
+                generic.contains(&index),
+                "the generic pool must keep the never-retired anchor {anchor}"
+            );
+        }
+        assert!(league.strategies.iter().all(|s| s.kind.generic()));
+    }
+
+    /// `All` as a pool depth: an unbounded top_n clamps to the live roster
+    /// and still seats a full table without repeats.
+    #[test]
+    fn an_unbounded_pool_depth_seats_the_whole_roster() {
+        let league = shipped_league().expect("the committed roster parses");
+        let civs: Vec<String> = ["Rome", "Egypt", "Greece", "China"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let seats = seat_by_civ_seeded(&league, &civs, civs.len(), 11, usize::MAX);
+        assert_eq!(seats.len(), civs.len());
+        let distinct: std::collections::BTreeSet<usize> = seats.iter().copied().collect();
+        assert_eq!(distinct.len(), civs.len(), "a wide pool must not repeat entrants");
     }
 }

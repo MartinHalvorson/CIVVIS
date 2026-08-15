@@ -30,7 +30,7 @@ use crate::rules::Rules;
 use crate::setup::{
     battlefield_map_scripts, battlefield_sizes, future_era_from_id, future_era_id, scenario_map_scripts,
     start_era_from_id, start_era_id,
-    turn_structure_id, world_map_scripts, BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript,
+    turn_structure_id, world_map_scripts, AiPlayerPool, BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript,
     MapSize, MapTopology, TacticsRules, TurnStructure, BASE_RULESETS,
     CIV6_GAME_SPEEDS,
     CIV6_MAP_SIZES, FUTURE_ERAS, MAP_POLES, MAP_TOPOLOGIES, START_ERAS,
@@ -507,11 +507,17 @@ pub struct Params {
     /// transition after a completed spectator game.
     pub supervised: bool,
     /// League directory to seat major players from (`civvis play --league`):
-    /// each civ samples its top three live-eligible strategies with 3:2:1 rank
-    /// weights, and the HUD shows per-player Elo. `None` still annotates Elo
+    /// each civ samples from the roster's best few live-eligible strategies
+    /// with descending rank weights — `ai_pool` says how deep the pool runs —
+    /// and the HUD shows per-player Elo. `None` still annotates Elo
     /// when a `league/` dir exists, because the default fleet below IS the
     /// league's "advanced" entrant — but the AIs themselves are unchanged.
     pub league_dir: Option<String>,
+    /// How deep the AI player pool runs: which of the rated strategies may be
+    /// seated for the game's AI civilizations. The setup panel's "AI player
+    /// pool" control, read on every world — the full Civvis game and a
+    /// Tactics arena alike. `Best3` is the long-standing stock policy.
+    pub ai_pool: AiPlayerPool,
     /// Rate the finished game into `league_dir` (`--league-record`). Off by
     /// default because the shipped `data/league` roster is a committed
     /// snapshot: a run that seats from it must not rewrite it. Point this at
@@ -2043,8 +2049,9 @@ fn automatic_successor_seed(seed: u64) -> u64 {
 
 impl Session {
     /// Seat AIs plus each seat's league identity. With a roster to seat from,
-    /// each major gets a rank-weighted sample from the top three proven winners
-    /// for this table size (`league::seat_by_civ_seeded`), overall placement
+    /// each major gets a rank-weighted sample from the best proven winners
+    /// for this table size (`league::seat_by_civ_seeded`) — the AI player
+    /// pool setting says how many are eligible — overall placement
     /// rating breaking win-bound ties, repeats avoided while possible, and the
     /// sampled entrants rotated across the table's civilizations by Latin
     /// square over the league round — never seated by their rating on the civ
@@ -2061,6 +2068,7 @@ impl Session {
         game: &Game,
         league: Option<&crate::league::League>,
         seat_from_roster: bool,
+        ai_pool: AiPlayerPool,
         force_strategy: Option<&str>,
     ) -> (Vec<Box<dyn Ai + Send>>, Vec<Option<usize>>) {
         let mut seat_strategy: Vec<Option<usize>> = vec![None; game.players.len()];
@@ -2084,7 +2092,7 @@ impl Session {
                     &civs,
                     table_size,
                     game.seed,
-                    3,
+                    ai_pool.depth(),
                 )) {
                     seat_strategy[*id] = Some(pick);
                 }
@@ -2293,6 +2301,7 @@ impl Session {
             &game,
             league.as_ref(),
             seat_from_roster,
+            params.ai_pool,
             params.force_strategy.as_deref(),
         );
         // Only a watched table records its reasoning. Everywhere else the
@@ -2385,6 +2394,7 @@ impl Session {
             &game,
             league.as_ref(),
             seat_from_roster,
+            params.ai_pool,
             params.force_strategy.as_deref(),
         );
         // A save carries the world, not what anyone was thinking while they
@@ -3676,6 +3686,7 @@ fn stock_opening_params(seed: u64) -> Params {
         supervised: false,
         league_dir: None,
         league_record: false,
+        ai_pool: AiPlayerPool::Best3,
         force_strategy: None,
     }
 }
@@ -3720,6 +3731,7 @@ fn simulation_settings(params: &Params) -> Value {
         "poles": params.map_poles.id(),
         "speed": params.game_speed.id(),
         "leader_pool": params.leader_pool.id(),
+        "ai_pool": params.ai_pool.id(),
         "teams": params.teams,
         "victories": victories,
         "mercy_rule": params.mercy_rule,
@@ -3934,6 +3946,15 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     }
     if let Some(v) = request["leader_pool"].as_str().and_then(LeaderPool::from_id) {
         p.leader_pool = v.available_or_default();
+    }
+    // The AI player pool: how many of the roster's best strategies may be
+    // seated for the AI civilizations. An unknown depth is refused rather
+    // than silently seating a different pool than the panel promised.
+    if let Some(v) = request["ai_player_pool"]
+        .as_str()
+        .and_then(AiPlayerPool::from_id)
+    {
+        p.ai_pool = v;
     }
     let selected_pool = p.leader_pool;
     p.civs.retain(|civ| {
@@ -5332,7 +5353,7 @@ mod tests {
     use crate::setup::{
         battlefield_map_scripts, battlefield_sizes, future_era_from_id, scenario_map_scripts,
         start_era_from_id, world_map_scripts,
-        TacticsRules,
+        AiPlayerPool, TacticsRules,
         BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology,
         TurnStructure, MAP_POLES,
     };
@@ -6848,8 +6869,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("if (links) links.hidden = false;"));
         // The chip names the mode that is NOT on screen, in both directions.
         assert!(EMBEDDED_INDEX.contains("function syncModeLink(tactics = watchingBattlefield())"));
-        assert!(EMBEDDED_INDEX.contains("link.textContent = tactics ? \"⊕ Civ\" : \"⚔ Tactics\";"));
-        // Returning to Civ names no settings, which is the stock exhibition,
+        assert!(EMBEDDED_INDEX.contains("link.textContent = tactics ? \"⊕ Civvis\" : \"⚔ Tactics\";"));
+        // Returning to Civvis names no settings, which is the stock exhibition,
         // and neither destination moves a viewer off the lane they arrived
         // on — `/` and `/test` are different builds of this viewer.
         assert!(EMBEDDED_INDEX.contains(
@@ -8725,6 +8746,7 @@ mod tests {
             supervised: false,
             league_dir: None,
             league_record: false,
+            ai_pool: AiPlayerPool::Best3,
             force_strategy: None,
         }
     }
@@ -8762,6 +8784,31 @@ mod tests {
         assert_eq!(majors.len(), 4);
         let unique: std::collections::BTreeSet<&str> = majors.iter().copied().collect();
         assert_eq!(unique.len(), 4, "two majors were seated as {majors:?}");
+    }
+
+    /// The AI player pool travels the whole loop: a request names a depth,
+    /// the params carry it into seating, the published settings hand it back
+    /// to the panel, and a depth nobody offers is refused rather than
+    /// silently seating a different pool than the panel promised.
+    #[test]
+    fn the_ai_player_pool_is_parsed_published_and_nonsense_is_refused() {
+        let current = current();
+        assert_eq!(current.ai_pool, AiPlayerPool::Best3);
+
+        let narrowed = new_game_params(&current, &json!({"ai_player_pool": "best1"}));
+        assert_eq!(narrowed.ai_pool, AiPlayerPool::Best1);
+        assert_eq!(simulation_settings(&narrowed)["ai_pool"], json!("best1"));
+
+        let opened = new_game_params(&current, &json!({"ai_player_pool": "all"}));
+        assert_eq!(opened.ai_pool, AiPlayerPool::All);
+        assert_eq!(opened.ai_pool.depth(), usize::MAX);
+
+        let refused = new_game_params(&narrowed, &json!({"ai_player_pool": "everyone"}));
+        assert_eq!(refused.ai_pool, AiPlayerPool::Best1);
+
+        // The stock lobby names the exhibition's long-standing best-three
+        // policy, so an untouched panel changes nothing about seating.
+        assert_eq!(default_setup_json()["ai_pool"], json!("best3"));
     }
 
     /// A save name becomes a path, so it is checked rather than trusted.
@@ -9674,10 +9721,33 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(">Human players<"));
         assert!(EMBEDDED_INDEX.contains("id=\"gamemode\""));
         assert!(EMBEDDED_INDEX.contains(">Game mode<"));
-        // The Tactics game mode is offered beside Civ, from the markup: the
-        // choice between whole games is not data the server rosters.
-        assert!(EMBEDDED_INDEX.contains("<option value=\"civ\" selected>Civ</option>"));
+        // The Tactics game mode is offered beside Civvis, from the markup: the
+        // choice between whole games is not data the server rosters. The full
+        // game wears the project's own name; only its wire value stays `civ`,
+        // because staged settings and saved lobbies already carry it.
+        assert!(EMBEDDED_INDEX.contains("<option value=\"civ\" selected>Civvis</option>"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"tactics\">Tactics</option>"));
+        // The AI player pool follows who plays: it says which of the rated
+        // strategies may be seated for the AI civilizations, in the Civvis
+        // game and Tactics alike, and its stock depth is the exhibition's
+        // long-standing best-three policy.
+        assert!(EMBEDDED_INDEX.contains("id=\"aiplayerpool\""));
+        assert!(EMBEDDED_INDEX.contains(">AI player pool<"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"best1\">Best AI strategy per civ</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"best2\">Best 2 AI strategies per civ</option>"));
+        assert!(EMBEDDED_INDEX
+            .contains("<option value=\"best3\" selected>Best 3 AI strategies per civ</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"best5\">Best 5 AI strategies per civ</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All AI strategies</option>"));
+        assert!(
+            EMBEDDED_INDEX.find(">Human players<") < EMBEDDED_INDEX.find(">AI player pool<"),
+            "the AI player pool is asked right after who plays"
+        );
+        assert!(
+            EMBEDDED_INDEX.find(">AI player pool<") < EMBEDDED_INDEX.find(">Base game ruleset<"),
+            "the AI player pool belongs to the short setup pass, not the advanced drawer"
+        );
+        assert!(EMBEDDED_INDEX.contains("ai_player_pool: readSetting(\"aiplayerpool\") || \"best3\","));
         // Who plays leads the primary path. The advanced ruleset and the
         // start-era ladder still come from the server, so a new ruleset — or a
         // rung somebody finally builds — never means editing the markup.
@@ -10133,7 +10203,7 @@ mod tests {
         // ahead of the advanced drawer, which strands it above the whole form
         // — the way the endgame rules were stranded until they were nested.
         assert!(EMBEDDED_INDEX.contains(
-            "return [\"gamemode\", \"humanplayers\", \"civ6-status\", ...world, \"startera\", \"gamespeed\",\n    \"victory-options\", \"tactics-options\", \"saves-group\"];"
+            "return [\"gamemode\", \"humanplayers\", \"civ6-status\", \"aiplayerpool\", ...world, \"startera\", \"gamespeed\",\n    \"victory-options\", \"tactics-options\", \"saves-group\"];"
         ));
         // Recomposed on every change of mode, from the same one function.
         assert!(EMBEDDED_INDEX.contains("placeSetupControls(tactics);"));
@@ -13331,6 +13401,7 @@ mod tests {
                 "poles": "poles",
                 "speed": "quick",
                 "leader_pool": "historical",
+                "ai_pool": "best3",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
                 "mercy_rule": null,
@@ -13496,6 +13567,7 @@ mod tests {
                 "poles": "poles",
                 "speed": "quick",
                 "leader_pool": "historical",
+                "ai_pool": "best3",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
                 "mercy_rule": null,

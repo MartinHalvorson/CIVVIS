@@ -94,7 +94,7 @@ function setupControlOrder(tactics) {
   const world = tactics
     ? ["tactics-scenario", "tactics-scenario-brief", "tacticsworldtype", "maptype", "np", "mapshape"]
     : ["np", "mapshape", "maptype", "tactics-scenario", "tactics-scenario-brief", "tacticsworldtype"];
-  return ["gamemode", "humanplayers", "civ6-status", ...world, "startera", "gamespeed",
+  return ["gamemode", "humanplayers", "civ6-status", "aiplayerpool", ...world, "startera", "gamespeed",
     "victory-options", "tactics-options", "saves-group"];
 }
 // Compose the pass in the live DOM. Moving the real controls (rather than
@@ -21980,7 +21980,7 @@ function simulationStatsSection() {
   const mode = simulationStatsMode();
   const bucket = simulationStats[mode];
   const games = bucket?.games || 0;
-  const modeLabel = mode === "tactics" ? "Tactics" : "Civ";
+  const modeLabel = mode === "tactics" ? "Tactics" : "Civvis";
   const summary = games
     ? `${modeLabel} · ${games} game${games === 1 ? "" : "s"} · avg ${Math.round(bucket.turns / games)} turns`
     : `${modeLabel} · no finished games yet`;
@@ -30182,6 +30182,10 @@ function selectedSimulationSettings() {
   return {num_players: np, map_script: ourMap, map_topology: mapTopology,
           map_poles: mapPoles, game_speed: gameSpeed,
           leader_pool: leaderPool,
+          // Which of the rated strategies may play the AI civilizations —
+          // read in both game modes, because a Tactics arena seats its two
+          // sides from the same pool a world does.
+          ai_player_pool: readSetting("aiplayerpool") || "best3",
           leader_selection: leaderSelection,
           base_ruleset: baseRuleset, start_era: startEra,
           future_era: futureEra,
@@ -30318,6 +30322,8 @@ function applyQueuedSimulationSettings(settings) {
   document.getElementById("gamespeed").value = settings.speed;
   setOptionalWorldNumber("mapseed", settings.seed);
   document.getElementById("leaderpool").value = normalizedLeaderPoolId(settings.leader_pool || "civ6");
+  if (settings.ai_pool)
+    document.getElementById("aiplayerpool").value = settings.ai_pool;
   if (settings.leader_selection)
     document.getElementById("leaderselection").value = settings.leader_selection;
   syncLeaderPool();
@@ -30693,8 +30699,8 @@ function watchingBattlefield() {
 // one Tactics world rather than two that differ for no reason.
 const TACTICS_CHIP_QUERY = "map=battlefield&players=2&era=information&arena=20x20";
 // The mode chip beside Home. It always names the mode the deck is NOT
-// showing, which makes the whole distance between Civ and Tactics one click
-// in either direction. Going back to Civ asks for nothing at all, because a
+// showing, which makes the whole distance between Civvis and Tactics one click
+// in either direction. Going back to Civvis asks for nothing at all, because a
 // visit that names no settings is the stock exhibition. Both destinations
 // keep the path this document was served from: the front page and /test are
 // different builds of the viewer, and choosing a game mode is no reason to
@@ -30705,7 +30711,7 @@ function syncModeLink(tactics = watchingBattlefield()) {
   // A circle crossed by its own equator and meridian: the astronomer's Earth,
   // and the brand mark directly above it. Both marks are drawn in outline
   // because the ⌂ they stand beside is — a filled ◉ shouts over it.
-  link.textContent = tactics ? "⊕ Civ" : "⚔ Tactics";
+  link.textContent = tactics ? "⊕ Civvis" : "⚔ Tactics";
   link.href = tactics ? location.pathname : `${location.pathname}?${TACTICS_CHIP_QUERY}`;
   link.title = tactics
     ? "Leave the arena for the full game: whole civilizations on a fresh world"
