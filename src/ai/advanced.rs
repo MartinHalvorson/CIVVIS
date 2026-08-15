@@ -1780,7 +1780,9 @@ pub struct AdvancedAi {
     /// time so the race never starves settlers, districts or defenders.
     /// `threatened`, `city.buildings.len() < 2`, the remaining-turns budget
     /// and the host's own `blocked_wonders` refusals all still apply exactly
-    /// as before.
+    /// as before. The empire-wide `Recovery` posture also closes the race: a
+    /// city outside the immediate siege ring must not commit a long queue
+    /// while its threatened neighbours need the same production to survive.
     ///
     /// Off for ordinary and frozen controllers, and deliberately NOT part of
     /// the native repair bundle: it prices a Firaxis-specific opportunity (an
@@ -16149,6 +16151,7 @@ impl AdvancedAi {
                     .unwrap_or(0);
                 let live_race_opens = self.live_wonder_race
                     && !lane_opens
+                    && plan.strategy != GrandStrategy::Recovery
                     && city_count >= 3
                     && city.buildings.len() >= 3
                     && wonder_era + 2 >= g.world_era
@@ -42492,6 +42495,21 @@ mod research_probe {
         let raced =
             live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0));
         assert!(raced > 0.0, "the live seat opens the wonder arm: {raced}");
+        let recovery_plan = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            ..plan.clone()
+        };
+        assert!(
+            live.production_value(
+                &game,
+                0,
+                capital,
+                &pyramids,
+                &recovery_plan,
+                &live.counts(&game, 0),
+            ) < -1_000.0,
+            "Recovery must reserve even a locally safe city's production for defense"
+        );
         let mut score_lane = AdvancedAi::targeting(VictoryTarget::Score);
         score_lane.enable_live_bridge();
         let scored = score_lane.production_value(
