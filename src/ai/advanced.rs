@@ -150,6 +150,9 @@ const REINFORCEMENT_FRONT_RADIUS: i32 = 8;
 /// Raw production value the live wonder race adds on top of a wonder's yields.
 /// See `live_wonder_race` and the `Item::Wonder` arm of `production_value`.
 const LIVE_WONDER_RACE_BONUS: f64 = 1_500.0;
+/// Standard turns a settler avoids a site it stood on and could not found. See
+/// `advanced_settler_step`.
+const SETTLER_DEAD_SITE_AVOID_TURNS: u32 = 30;
 const RECOVERY_POSTURE_LIMIT: u32 = 25;
 /// Tiles a rush will march. Measured capital separations on 6p 74x46 run a
 /// median 13 and a p90 17, so 16 covers roughly nine seats in ten while
@@ -1515,6 +1518,11 @@ pub struct AdvancedAi {
     /// turn on which it may be reconsidered. Without this cooldown, clearing a
     /// target simply reselects the same top-ranked tile one turn later.
     settler_avoid: BTreeMap<u32, (Pos, u32)>,
+    /// Sites a settler stood on and could not found, each with the turn its
+    /// retirement expires. A set rather than the single `settler_avoid` slot:
+    /// the stall counter overwrites that slot, and a doomed frontier is usually
+    /// several adjacent plots. See `advanced_settler_step`.
+    settler_dead_sites: BTreeMap<u32, BTreeMap<Pos, u32>>,
     /// The target each settler is committed to and the closest it has come to
     /// it. A dodge around a hostile is a legal move but not progress, so the
     /// stall counter is driven from this rather than from whether the unit
@@ -2678,6 +2686,7 @@ impl AdvancedAi {
             religion_sues_peace: false,
             settler_blocked_turns: BTreeMap::new(),
             settler_avoid: BTreeMap::new(),
+            settler_dead_sites: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
             linked_settler_progress: false,
             live_governor_assignment_adapter: false,
@@ -17742,7 +17751,9 @@ impl AdvancedAi {
                 Some(score_cache),
             )
             .into_iter()
-            .filter(|(position, _)| Some(*position) != avoid)
+            .filter(|(position, _)| {
+                Some(*position) != avoid && !self.settler_site_is_dead(uid, *position)
+            })
             .collect::<Vec<_>>();
         if !self.settlement_safety {
             return BasicAi::first_reachable_settle_site(g, uid, &candidates);
@@ -17951,8 +17962,19 @@ impl AdvancedAi {
         Some(self.base.fortify_or_stop(g, pid, uid))
     }
 
+    /// Whether `uid` retired `pos` after standing on it unable to found. Expired
+    /// entries are pruned at the top of `advanced_settler_step`.
+    fn settler_site_is_dead(&self, uid: u32, pos: Pos) -> bool {
+        self.settler_dead_sites
+            .get(&uid)
+            .is_some_and(|sites| sites.contains_key(&pos))
+    }
+
     fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let current = g.units[&uid].pos;
+        if let Some(sites) = self.settler_dead_sites.get_mut(&uid) {
+            sites.retain(|_, until| *until > g.turn);
+        }
         if self
             .settler_avoid
             .get(&uid)
@@ -17974,15 +17996,28 @@ impl AdvancedAi {
         // the empire held 7 cities from t98 to t202. Retire the site for a
         // while — the same bounded avoidance the stall counter uses — so the
         // next pick, which already refuses `blocked_city_sites`, runs now.
+        // ⚠ Behind `settler_commit`, which every default constructor leaves off
+        // and the frozen `advanced_v1` anchor never sets, so the ladder is
+        // untouched (`elo_anchor_never_reaches_the_settler_commit_path`).
         if let Some(target) = self.settler_targets.get(&uid).copied() {
-            if target == current && !g.can_found_city(uid) {
+            if self.settler_commit && target == current && !g.can_found_city(uid) {
                 think!(self.journal(), Expansion, Detail,
                        "Settler abandons {target:?}";
                        "it stands on the site and the city cannot be founded there \
                         — the target is retired and a new one will be chosen";
                        target);
-                self.settler_avoid
-                    .insert(uid, (target, g.turn + g.standard_duration(8)));
+                // A SET with a long expiry, not the single `settler_avoid`
+                // slot: the mirror's doom forecast is recomputed only for the
+                // plot the settler stands on, so a site retired for the stall
+                // counter's eight turns was re-picked the moment the settler
+                // stepped off it, and the stall path's own `settler_avoid`
+                // write then evicted it (replayed: abandoned t151, marching
+                // back at t156). Thirty standard turns outlasts the walk to the
+                // next site, and a doomed frontier is usually several plots.
+                self.settler_dead_sites.entry(uid).or_default().insert(
+                    target,
+                    g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+                );
                 self.settler_targets.remove(&uid);
                 self.settler_stalls.remove(&uid);
                 self.settler_blocked_turns.remove(&uid);
@@ -18125,6 +18160,7 @@ impl AdvancedAi {
                 // site can join that set after the pick (see the standing
                 // case at the top of this function for the measured cost).
                 && !g.blocked_city_sites.contains(target)
+                && !self.settler_site_is_dead(uid, *target)
                 // A momentarily unavailable route is not a bad site. Under
                 // `settler_commit` the stall counter decides when to give up,
                 // not a single blocked turn.
@@ -41910,6 +41946,8 @@ mod research_probe {
         assert!(game.can_found_city(settler), "the fixture site is foundable before the block");
 
         let mut ai = AdvancedAi::new();
+        assert!(ai.settler_commit, "the deployed controller carries settler_commit");
+        assert!(!AdvancedAi::legacy().settler_commit, "the frozen anchor never reaches this path");
         ai.settler_targets.insert(settler, site);
         // The mirror's loyalty forecast, a host `found_refused`, or a
         // city-state's border all arrive through this one set.
@@ -41924,10 +41962,14 @@ mod research_probe {
             Some(&site),
             "the blocked site must not survive as the settler's target"
         );
-        assert_eq!(
-            ai.settler_avoid.get(&settler).map(|(position, _)| *position),
-            Some(site),
-            "the retired site is avoided for a bounded while so the next pick cannot be it"
+        assert!(
+            ai.settler_site_is_dead(settler, site),
+            "the retired site is dead for a bounded while so the next pick cannot be it"
+        );
+        let expiry = ai.settler_dead_sites[&settler][&site];
+        assert!(
+            expiry > game.turn + game.standard_duration(8),
+            "the retirement must outlast the stall counter's own eight-turn avoidance"
         );
         assert!(
             game.units.get(&settler).is_some_and(|unit| unit.pos != site)

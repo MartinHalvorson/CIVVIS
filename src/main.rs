@@ -1061,7 +1061,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the `Item::Wonder` refusal exactly as it was, so no headless anchor can enter
 /// the new valuation branch. Compatibility re-pin; the Elo protocol does not
 /// move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc2d7_8fc8_500d_60f9;
+/// A settler standing on a cached target that `can_found_city` now refuses
+/// retires that target with the bounded avoidance the stall counter uses — behind
+/// `settler_commit`, which `AdvancedAi::legacy()` leaves off
+/// (`elo_anchor_never_reaches_the_settler_commit_path`); the re-validation of a
+/// cached target also refuses `blocked_city_sites`, a set that is empty in every
+/// ordinary and frozen game. Compatibility re-pin; the Elo protocol does not
+/// move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbf67_dcb6_4884_e687;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
