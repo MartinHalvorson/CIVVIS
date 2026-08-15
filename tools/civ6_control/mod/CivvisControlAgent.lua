@@ -8341,6 +8341,28 @@ local function applyOrder(player, pid, row, turn)
 			end
 			return activated, verb;
 		end
+		if verb == "DELETE" then
+			-- CIVVIS retires a unit that can do nothing more -- today only the
+			-- zero-charge Great Prophet left on the map after its religion was
+			-- founded (see the Prophet branch of the Great Person routine, which
+			-- does the same under the built-in ladder). Gated through
+			-- CanStartCommand by `commandUnit`, so a unit the engine still values
+			-- is refused rather than lost; the refusal is named so the ledger can
+			-- tell "asked and declined" from "never asked".
+			local deleted = commandUnit(unit, CMD["UNITCOMMAND_DELETE"]);
+			if deleted then
+				emit("gp", { turn = turn, unit = subject, action = "retired_by_civvis",
+					kind_name = unitTypeName(unit) });
+			else
+				emit("delete_refused", {
+					turn = turn, unit = subject,
+					unit_kind = unitTypeName(unit),
+					x = try(function() return unit:GetX(); end, -1),
+					y = try(function() return unit:GetY(); end, -1),
+				});
+			end
+			return deleted, verb;
+		end
 		if verb == "ENTER_FORMATION" then
 			-- `x`/`y` carry the target owner/id for this non-positional command.
 			-- This is the exact stock UnitPanel.lua signature.

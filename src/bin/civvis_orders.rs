@@ -685,6 +685,8 @@ fn host_city_target(
 struct GreatPersonStall {
     on_cooldown: usize,
     no_activation_plot: usize,
+    /// Founded zero-charge Prophets sent for retirement this frame.
+    retired_prophets: usize,
 }
 
 impl GreatPersonStall {
@@ -702,6 +704,31 @@ fn great_person_orders(
         let Some(person) = &unit.great_person else {
             continue;
         };
+        // ★★★★ A PROPHET WHOSE RELIGION IS ALREADY FOUNDED, WITH NO CHARGE LEFT,
+        // IS A GHOST — and a ghost blocks a hex for the rest of the game. This
+        // build leaves the zero-charge unit on the map after the religion is
+        // created; the mirror does not model Great People, so CIVVIS paths
+        // other units through its hex, and `defer_great_person_plot_conflicts`
+        // then drops every one of those orders. Measured on run
+        // civvis-20260815T210845Z: Confucius (charges 0, Buddhism founded)
+        // stood beside Rome from ~t45; the settler built at t83 received no
+        // order for 21 turns (`deferred_activation_plot_conflicts=2` every
+        // turn) while the journal said "marching". Run T190904Z carried Simon
+        // Peter the same way for 100+ turns. The control mod already retires
+        // such a Prophet in its own turn routine (`UNITCOMMAND_DELETE` once the
+        // religion is created and the charge is spent), but under
+        // `--civvis-decides` that routine never runs for a unit CIVVIS owns —
+        // so the bridge asks for the same retirement here.
+        if is_founded_zero_charge_prophet(unit, person, state) {
+            orders.push(Order {
+                kind: "unit",
+                subject: Some(unit.id),
+                verb: Some("DELETE".to_string()),
+                pos: None,
+            });
+            stall.retired_prophets += 1;
+            continue;
+        }
         // Firaxis's GetActionCharges is not the activation authority for every
         // class. Great Writers report zero while CanStartCommand is true and
         // still have works to create. Trust the host's command verdict first;
@@ -745,6 +772,25 @@ fn great_person_orders(
     (orders, stall)
 }
 
+/// A Great Prophet that can no longer do anything: the seat has founded its
+/// religion, the unit reports no charge, cannot activate and has no activation
+/// plot. Everything else — a Prophet still to found, a Writer whose charges read
+/// zero while `CanStartCommand` says otherwise — is left exactly as before.
+fn is_founded_zero_charge_prophet(
+    unit: &civvis::mirror::StateUnit,
+    person: &civvis::mirror::StateGreatPerson,
+    state: &civvis::mirror::StateSnapshot,
+) -> bool {
+    unit.kind.eq_ignore_ascii_case("UNIT_GREAT_PROPHET")
+        && person.charges == 0
+        && !person.can_activate
+        && person.activation_plots.is_empty()
+        && state
+            .founded_religion
+            .as_deref()
+            .is_some_and(|religion| !religion.trim().is_empty())
+}
+
 /// Keep every physical Great Person hex clear for the current Lua batch.
 ///
 /// Firaxis queues unit operations. `CanStartCommand` can therefore approve a Great
@@ -762,7 +808,15 @@ fn defer_great_person_plot_conflicts(
     let people = state
         .units
         .iter()
-        .filter(|unit| unit.great_person.is_some())
+        .filter(|unit| {
+            unit.great_person.as_ref().is_some_and(|person| {
+                // A founded zero-charge Prophet is being retired, not activated:
+                // there is no retirement race to protect on its hex, and
+                // reserving it is exactly what black-holed the settler's exit
+                // from Rome for 21 turns on run civvis-20260815T210845Z.
+                !is_founded_zero_charge_prophet(unit, person, state)
+            })
+        })
         .map(|unit| (unit.id, (unit.x, unit.y)))
         .collect::<Vec<_>>();
     let mut deferred = 0;
@@ -1577,7 +1631,19 @@ fn decide(
     let (person_orders, great_person_stall) = great_person_orders(state);
     if !person_orders.is_empty() {
         note_bits.push(format!("great_people_orders={}", person_orders.len()));
-        orders.extend(person_orders);
+        // Retirements go FIRST: the ghost's hex is what other units in this
+        // very batch want to walk through, and the host executes in order.
+        let (retirements, others): (Vec<Order>, Vec<Order>) = person_orders
+            .into_iter()
+            .partition(|order| order.verb.as_deref() == Some("DELETE"));
+        orders.splice(0..0, retirements);
+        orders.extend(others);
+    }
+    if great_person_stall.retired_prophets > 0 {
+        note_bits.push(format!(
+            "retired_founded_prophets={}",
+            great_person_stall.retired_prophets
+        ));
     }
     if great_person_stall.total() > 0 {
         // Kept under the old key so existing log readers still find it, with the
@@ -3919,6 +3985,64 @@ mod tests {
             "PROMOTION_SUPER_CARRIER"
         );
         assert_eq!(civ6_unit_promotion_name("surf_band"), "PROMOTION_SURF_ROCK");
+    }
+
+    /// The zero-charge Prophet left on the map after its religion was founded
+    /// is retired from the bridge, and its hex stops swallowing other units'
+    /// orders; a Prophet whose seat has NOT founded yet keeps every protection.
+    #[test]
+    fn a_founded_zero_charge_prophet_is_retired_and_stops_reserving_its_hex() {
+        let ghost = StateUnit {
+            id: 851_977,
+            kind: "UNIT_GREAT_PROPHET".to_string(),
+            x: 59,
+            y: 16,
+            great_person: Some(StateGreatPerson {
+                charges: 0,
+                can_activate: false,
+                activation_plots: Vec::new(),
+                ..StateGreatPerson::default()
+            }),
+            ..StateUnit::default()
+        };
+        let founded = StateSnapshot {
+            founded_religion: Some("RELIGION_BUDDHISM".to_string()),
+            units: vec![ghost.clone()],
+            ..StateSnapshot::default()
+        };
+
+        let (orders, stall) = great_person_orders(&founded);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].subject, Some(851_977));
+        assert_eq!(orders[0].verb.as_deref(), Some("DELETE"));
+        assert_eq!(stall.retired_prophets, 1);
+        assert_eq!(stall.total(), 0, "a retirement is not a stall");
+
+        // Its hex no longer black-holes the settler's exit from the capital.
+        let settler_move = || Order {
+            kind: "unit",
+            subject: Some(2_031_627),
+            verb: Some("MOVE_TO".to_string()),
+            pos: Some((59, 16)),
+        };
+        let (kept, deferred) = defer_great_person_plot_conflicts(vec![settler_move()], &founded);
+        assert_eq!(deferred, 0);
+        assert_eq!(kept.len(), 1);
+
+        // Before the religion exists the same unit is a Prophet still to found:
+        // no retirement, still a named stall, hex still reserved.
+        let unfounded = StateSnapshot {
+            founded_religion: None,
+            units: vec![ghost],
+            ..StateSnapshot::default()
+        };
+        let (orders, stall) = great_person_orders(&unfounded);
+        assert!(orders.is_empty());
+        assert_eq!(stall.retired_prophets, 0);
+        assert_eq!(stall.no_activation_plot, 1);
+        let (kept, deferred) = defer_great_person_plot_conflicts(vec![settler_move()], &unfounded);
+        assert_eq!(deferred, 1);
+        assert!(kept.is_empty());
     }
 
     #[test]
