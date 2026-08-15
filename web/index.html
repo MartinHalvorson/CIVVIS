@@ -440,6 +440,13 @@
   #strategysec[open] { flex: 3 0 0; min-height: 460px; }
   #eventsec[open] { flex: 2 0 0; min-height: 302px; }
   #warsec[open] { flex: 2 0 0; min-height: 266px; }
+  /* A battlefield is decided by the fighting. Watching one, the deck keeps
+     the dossier — retitled AI Tactics, one battle plan per side — and
+     retires the war and event logs: the only war is the one on screen, and
+     the world has no other history worth a section. The study tracks go with
+     them; an arena side's research reads inline in its battle plan. */
+  body.watching-tactics #warsec, body.watching-tactics #eventsec,
+  body.watching-tactics #researchtrack, body.watching-tactics #civicstrack { display: none; }
   /* A <details> hands its children to an internal content box, so the panel
      inside it only inherits the extra height if that box is told to grow
      too. Browsers without ::details-content simply keep the log at its
@@ -1248,6 +1255,17 @@
   .force-chip.advance { background: #7a5f2740; color: #e9c07c; }
   .force-chip.muster { background: #2a4a6b3d; color: #9fc7e6; }
   .force-chip.recover { background: #3d3a5c40; color: #c0b6e8; }
+  /* AI Tactics: one block per battlefield side, in standings order, each a
+     dossier of that side's doctrine, objective, force groups and condition.
+     The picked side (the one whose decision factors are open below) carries
+     its civ color as an inset spine. Own border-bottom + :last-child, never
+     a sibling-combinator top border — a hidden sibling would keep it. */
+  .tactics-side { padding: 6px 0 7px; border-bottom: 1px solid var(--line-soft); }
+  .tactics-side:last-child { border-bottom: 0; padding-bottom: 2px; }
+  .tactics-side.tactics-side-picked { padding-left: 7px; box-shadow: inset 2px 0 0 var(--civ, #d5e0da); }
+  .tactics-side-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
+  .tactics-side-civ { color: var(--civ, #e7efea); font-size: var(--type-secondary); font-weight: 800; }
+  .tactics-side-controller { min-width: 0; overflow: hidden; color: #9db0a8; font-size: var(--type-small); text-overflow: ellipsis; white-space: nowrap; }
 
   #map-controls-dock {
     position: absolute; z-index: 14;
@@ -4810,7 +4828,7 @@
          active plan through the evidence that changed or carried it forward. -->
     <details class="sidebar-section" id="strategysec" data-section="active-strategy" name="deck-section">
       <summary class="section-label">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">◆</span><span>AI strategy</span></span>
+        <span class="section-title"><span class="section-icon" aria-hidden="true">◆</span><span id="strategytitle">AI strategy</span></span>
         <span class="section-meta"><span class="event-scope" id="strategyscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
       </summary>
       <div class="sec strategy-sec">
@@ -4820,14 +4838,14 @@
           </label>
         </div>
         <div class="strategy-track strategy-plan-track" id="strategyplantrack">
-          <div class="strategy-heading"><span>Grand strategy</span></div>
+          <div class="strategy-heading"><span id="strategyplanheading">Grand strategy</span></div>
           <div id="strategyplan"></div>
         </div>
-        <div class="strategy-track">
+        <div class="strategy-track" id="researchtrack">
           <div class="strategy-heading"><span>Research</span><span><button class="mini" onclick='openPedia()'>Pedia</button> <button class="mini" onclick='openTree("techs")'>Tree</button></span></div>
           <div id="research" class="progress-slot"></div>
         </div>
-        <div class="strategy-track culture">
+        <div class="strategy-track culture" id="civicstrack">
           <div class="strategy-heading"><span>Civic development</span><button class="mini" onclick='openTree("civics")'>Tree</button></div>
           <div id="civics" class="progress-slot"></div>
         </div>
