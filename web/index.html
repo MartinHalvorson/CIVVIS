@@ -3310,14 +3310,16 @@
   body.overlay-minimap-hidden #victoryhud {
     bottom: var(--panel-edge); height: auto;
   }
-  /* Two sections share the rail panel: the simulation stats above, the
-     victory tracker below, each behind its own heading bar — the drag handle
-     and its fold chevron. The first bar keeps clear of the corner ✕. */
+  /* Two sections share the rail panel: the arena stats above, the victory
+     tracker below, each behind its own heading bar — the drag handle and its
+     fold chevron. The first bar leaves the close control's whole hit area
+     clear, rather than merely padding the title under it. */
   #victoryhud .hud-region-bar {
     position: relative; flex: 0 0 auto; display: flex; align-items: center;
     gap: 4px; min-height: 18px; margin: 0 3px 3px;
   }
-  #victoryhud > .sim-stats-region .hud-region-bar { padding-right: 20px; }
+  #victoryhud > .sim-stats-region .hud-region-bar { margin-right: 27px; }
+  #victoryhud > .sim-stats-region .hud-region-bar > .hud-section-heading { width: auto; }
   #victoryhud .hud-region-bar > .hud-section-heading {
     position: relative; flex: 1 1 auto; min-width: 0; justify-content: center;
     margin: 0; padding-left: 10px; color: #c7d3ce; font-size: var(--type-secondary);
@@ -3332,8 +3334,11 @@
     flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 3px;
     padding: 0 3px 2px; overflow-y: auto; overscroll-behavior: contain;
   }
-  .sim-stats-summary { flex: 0 0 auto; color: #c7d3ce; font-size: var(--type-small); }
-  .sim-stats-controls { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; }
+  .sim-stats-summary-row { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .sim-stats-summary {
+    flex: 1 1 auto; min-width: 0; color: #c7d3ce; font-size: var(--type-label); white-space: nowrap;
+  }
+  .sim-stats-controls { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
   .sim-stats-view, .sim-stats-clear {
     margin: 0; padding: 1px 7px; border: 1px solid #526a618f; border-radius: 6px;
     color: #b9c8c2; background: transparent; box-shadow: none;
@@ -3341,7 +3346,7 @@
   }
   .sim-stats-view:hover, .sim-stats-clear:hover { color: #fff; transform: none; box-shadow: none; }
   .sim-stats-view.active { color: #ecd37e; border-color: #d7b66a8c; background: #d7b66a1a; }
-  .sim-stats-clear { margin-left: auto; }
+  .sim-stats-summary-row .sim-stats-clear { flex: 0 0 auto; margin-left: auto; }
   .sim-stats-clear:hover { border-color: #9b6c66; background: #35201e; }
   .sim-stats-rows { min-height: 0; display: flex; flex-direction: column; gap: 1px; }
   .sim-stat-row {

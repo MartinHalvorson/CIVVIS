@@ -531,7 +531,8 @@ fn defer_host_peace_retries(
     (allowed, deferred)
 }
 
-/// Keep only commands whose preconditions belong to the observed Firaxis frame.
+/// Keep only commands whose preconditions belong to the observed Firaxis frame —
+/// but send a unit's whole planned WALK, not just its first step.
 ///
 /// CIVVIS applies a unit's whole turn synchronously to its planning clone, so a
 /// builder can log MOVE_TO followed by IMPROVE and a military unit can log several
@@ -539,27 +540,71 @@ fn defer_host_peace_retries(
 /// one callback, every later command still sees the unit at its original position.
 /// The next exported frame is the first point where another command for that unit
 /// can be evaluated honestly. Different units and non-unit orders remain independent.
-fn defer_unit_followups(orders: Vec<Order>) -> (Vec<Order>, usize) {
-    let mut seen = std::collections::BTreeSet::new();
+///
+/// ★★★★★ ONE HEX PER TURN WAS THE PRICE OF THAT RULE, FOR EVERY UNIT, FOR TWO
+/// WEEKS. CIVVIS's own movement is one `Move` action per hex, so a settler with two
+/// movement points logs `MOVE_TO a, MOVE_TO b` and a scout logs three steps.
+/// Keeping the FIRST order per unit therefore sent exactly one adjacent hex per turn
+/// and deferred the rest — measured on run civvis-20260815T190904Z: **442 of 442**
+/// MOVE_TO orders were the only MOVE_TO their unit received that turn, every one
+/// aimed at an adjacent hex, and scouts (3 MP), settlers (2 MP) and builders (2 MP)
+/// all crawled one tile per turn. That is the whole "live settlers cross 0.78
+/// tiles/turn on 2 movement points" finding, and it compounds: a guard walks to its
+/// settler at 1 hex/turn, the settler waits, the founding lands 7 turns after the
+/// settler was built for a 4-hex trip, and `settlers == 0` blocks the next one
+/// meanwhile.
+///
+/// The causal-safety rule only requires that a later command not be evaluated
+/// against a position the unit has not yet reached. A path of moves is different
+/// from a move followed by an act: `UNITOPERATION_MOVE_TO` takes a DESTINATION and
+/// Firaxis paths to it with the unit's real movement, spending as much of this turn
+/// as it can and continuing next turn if the ground was further than CIVVIS priced
+/// (the mod already treats stopping short as ordinary — see `applyOrders`). So the
+/// contiguous prefix of a unit's MOVE_TO steps collapses into ONE MOVE_TO at the
+/// furthest planned hex, and only the first NON-move command (IMPROVE, FOUND_CITY,
+/// ATTACK, RANGE_ATTACK, FORTIFY, ...) and anything after it still wait for the
+/// next frame, exactly as before. Melee attacks stay conservative on purpose: CIVVIS
+/// chose the tile it strikes from, and a MOVE_TO onto the defender would let the
+/// host pathfinder pick another; the finishing-volley code above already collapses
+/// approach+blow where it has proved the line on a private board.
+fn coalesce_unit_paths(orders: Vec<Order>) -> (Vec<Order>, usize, usize) {
+    // Per unit: where its kept order sits in `out`, and whether that order is still
+    // an open walk (every order for the unit so far has been a MOVE_TO).
+    let mut kept: std::collections::BTreeMap<i64, (usize, bool)> =
+        std::collections::BTreeMap::new();
+    let mut out: Vec<Order> = Vec::with_capacity(orders.len());
     let mut deferred = 0;
-    let orders = orders
-        .into_iter()
-        .filter(|order| {
-            if order.kind != "unit" {
-                return true;
+    let mut coalesced = 0;
+    for order in orders {
+        if order.kind != "unit" {
+            out.push(order);
+            continue;
+        }
+        let Some(subject) = order.subject else {
+            out.push(order);
+            continue;
+        };
+        let is_step = order.verb.as_deref() == Some("MOVE_TO") && order.pos.is_some();
+        match kept.get_mut(&subject) {
+            None => {
+                kept.insert(subject, (out.len(), is_step));
+                out.push(order);
             }
-            let Some(subject) = order.subject else {
-                return true;
-            };
-            if seen.insert(subject) {
-                true
-            } else {
-                deferred += 1;
-                false
+            Some((index, open)) => {
+                if *open && is_step {
+                    // The walk continues: the host only needs its last hex.
+                    out[*index].pos = order.pos;
+                    coalesced += 1;
+                } else {
+                    // A command that must see the unit where the walk ends, or a
+                    // move after such a command. Next frame.
+                    *open = false;
+                    deferred += 1;
+                }
             }
-        })
-        .collect();
-    (orders, deferred)
+        }
+    }
+    (out, deferred, coalesced)
 }
 
 /// Firaxis resolves Governor operations asynchronously. CIVVIS can spend several
@@ -1644,8 +1689,12 @@ fn decide(
         ));
     }
 
-    let (causally_safe, deferred_unit_followups) = defer_unit_followups(orders);
+    let (causally_safe, deferred_unit_followups, coalesced_path_steps) =
+        coalesce_unit_paths(orders);
     orders = causally_safe;
+    if coalesced_path_steps > 0 {
+        note_bits.push(format!("coalesced_path_steps={coalesced_path_steps}"));
+    }
     if deferred_unit_followups > 0 {
         note_bits.push(format!("deferred_unit_followups={deferred_unit_followups}"));
     }
@@ -4214,27 +4263,21 @@ mod tests {
         assert_eq!(unlink.pos, None);
     }
 
+    fn unit_order(subject: i64, verb: &str, pos: Option<(i32, i32)>) -> Order {
+        Order {
+            kind: "unit",
+            subject: Some(subject),
+            verb: Some(verb.to_string()),
+            pos,
+        }
+    }
+
     #[test]
     fn unit_followups_wait_for_the_next_observed_firaxis_frame() {
-        let (orders, deferred) = defer_unit_followups(vec![
-            Order {
-                kind: "unit",
-                subject: Some(42),
-                verb: Some("MOVE_TO".to_string()),
-                pos: Some((4, 5)),
-            },
-            Order {
-                kind: "unit",
-                subject: Some(42),
-                verb: Some("IMPROVE:IMPROVEMENT_FARM".to_string()),
-                pos: None,
-            },
-            Order {
-                kind: "unit",
-                subject: Some(99),
-                verb: Some("FORTIFY".to_string()),
-                pos: None,
-            },
+        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
+            unit_order(42, "MOVE_TO", Some((4, 5))),
+            unit_order(42, "IMPROVE:IMPROVEMENT_FARM", None),
+            unit_order(99, "FORTIFY", None),
             Order {
                 kind: "research",
                 subject: None,
@@ -4244,11 +4287,98 @@ mod tests {
         ]);
 
         assert_eq!(deferred, 1);
+        assert_eq!(coalesced, 0);
         assert_eq!(orders.len(), 3);
         assert_eq!(orders[0].subject, Some(42));
         assert_eq!(orders[0].verb.as_deref(), Some("MOVE_TO"));
+        assert_eq!(orders[0].pos, Some((4, 5)));
         assert_eq!(orders[1].subject, Some(99));
         assert_eq!(orders[2].kind, "research");
+    }
+
+    /// A settler with two movement points logs two hex steps; the host must be
+    /// asked for the WHOLE walk, or it spends every turn on the first hex.
+    #[test]
+    fn a_units_planned_walk_becomes_one_move_to_its_furthest_hex() {
+        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
+            unit_order(7, "MOVE_TO", Some((10, 10))),
+            unit_order(7, "MOVE_TO", Some((11, 10))),
+            unit_order(7, "MOVE_TO", Some((12, 11))),
+            unit_order(7, "FOUND_CITY", None),
+        ]);
+
+        assert_eq!(coalesced, 2, "two later steps folded into the first");
+        assert_eq!(deferred, 1, "the founding still waits for the arrival frame");
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].subject, Some(7));
+        assert_eq!(orders[0].verb.as_deref(), Some("MOVE_TO"));
+        assert_eq!(orders[0].pos, Some((12, 11)));
+    }
+
+    /// Only the CONTIGUOUS prefix of moves is a walk. A move logged after an act
+    /// was planned from where the act leaves the unit, so it waits like the act.
+    #[test]
+    fn a_move_after_an_act_is_not_folded_into_the_walk() {
+        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
+            unit_order(3, "MOVE_TO", Some((1, 1))),
+            unit_order(3, "MOVE_TO", Some((2, 1))),
+            unit_order(3, "RANGE_ATTACK", Some((4, 1))),
+            unit_order(3, "MOVE_TO", Some((1, 1))),
+        ]);
+
+        assert_eq!(coalesced, 1);
+        assert_eq!(deferred, 2);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].pos, Some((2, 1)));
+    }
+
+    /// Melee stays conservative: the strike is not turned into a MOVE_TO onto the
+    /// defender, and a unit whose first order is the strike sends only the strike.
+    #[test]
+    fn a_melee_strike_terminates_the_walk_and_leads_alone_when_first() {
+        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
+            unit_order(5, "MOVE_TO", Some((8, 8))),
+            unit_order(5, "ATTACK", Some((9, 8))),
+            unit_order(6, "ATTACK", Some((9, 8))),
+            unit_order(6, "MOVE_TO", Some((9, 8))),
+        ]);
+
+        assert_eq!(coalesced, 0);
+        assert_eq!(deferred, 2);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0].subject, Some(5));
+        assert_eq!(orders[0].verb.as_deref(), Some("MOVE_TO"));
+        assert_eq!(orders[0].pos, Some((8, 8)));
+        assert_eq!(orders[1].subject, Some(6));
+        assert_eq!(orders[1].verb.as_deref(), Some("ATTACK"));
+    }
+
+    /// Units are folded independently even when their steps interleave, and each
+    /// keeps the slot of its FIRST order so the batch's relative order — which the
+    /// host executes sequentially — is preserved.
+    #[test]
+    fn interleaved_units_fold_independently_and_keep_their_batch_slots() {
+        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
+            unit_order(1, "MOVE_TO", Some((0, 1))),
+            unit_order(2, "MOVE_TO", Some((5, 5))),
+            unit_order(1, "MOVE_TO", Some((0, 2))),
+            Order {
+                kind: "produce",
+                subject: Some(65_536),
+                verb: Some("UNIT_SETTLER".to_string()),
+                pos: None,
+            },
+            unit_order(2, "MOVE_TO", Some((6, 5))),
+            unit_order(2, "MOVE_TO", Some((7, 5))),
+            unit_order(1, "IMPROVE:IMPROVEMENT_MINE", None),
+        ]);
+
+        assert_eq!(coalesced, 3);
+        assert_eq!(deferred, 1);
+        assert_eq!(orders.len(), 3);
+        assert_eq!((orders[0].subject, orders[0].pos), (Some(1), Some((0, 2))));
+        assert_eq!((orders[1].subject, orders[1].pos), (Some(2), Some((7, 5))));
+        assert_eq!(orders[2].kind, "produce");
     }
 
     #[test]

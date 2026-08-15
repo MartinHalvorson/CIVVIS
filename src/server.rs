@@ -11011,7 +11011,7 @@ mod tests {
         for fold in [
             "data-hud-fold=\"standings\"",
             "data-hud-fold=\"turnplate\"",
-            "hudFoldButton(\"simstats\", \"simulation stats\")",
+            "hudFoldButton(\"simstats\", \"Arena Stats\")",
             "hudFoldButton(\"victory\", \"victory tracker\")",
             "hudFoldButton(\"turnplate\", \"turn box\", \"turn-plate-fold\")",
         ] {
@@ -11026,12 +11026,12 @@ mod tests {
             ),
             "map controls should not offer dismissal while their restore switch is hidden"
         );
-        // The simulation stats record starts over from its own panel — the
-        // control says "Reset" — and a world seen running clears the stored
-        // repeat guard, so a restarted arena that ends the same way on the
-        // same seed still counts as the new game it is. The guard's one job
-        // remains the page reopened over a finished world, which never
-        // renders a live frame.
+        // Arena Stats starts over from its own panel — the control says
+        // "Reset" — and records winners by civilization, strategy, and
+        // victory type. A world seen running clears the stored repeat guard,
+        // so a restarted arena that ends the same way on the same seed still
+        // counts as the new game it is. The guard's one job remains the page
+        // reopened over a finished world, which never renders a live frame.
         assert!(
             EMBEDDED_INDEX.contains("data-sim-stats-clear "),
             "the simulation stats panel offers its reset control"
@@ -11045,6 +11045,31 @@ mod tests {
                 "if (simulationStats.last) { delete simulationStats.last; saveSimulationStats(); }"
             ),
             "a live frame frees the repeat guard for the next result"
+        );
+        for arena_stats_contract in [
+            "<span>Arena Stats</span>",
+            "#victoryhud > .sim-stats-region .hud-region-bar { margin-right: 27px; }",
+            "#victoryhud > .sim-stats-region .hud-region-bar > .hud-section-heading { width: auto; }",
+            "victories: {label: \"Victory types\", title: \"Wins by victory type\"},",
+            "bucket.victories ??= {};",
+            "function bumpSimulationVictory(table, victory) {",
+            "bumpSimulationVictory(bucket.victories, victoryVerdict(st.victory_type, st.victory_label));",
+            "viewButton(\"civs\") + viewButton(\"strategies\") + viewButton(\"victories\")",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(arena_stats_contract),
+                "Arena Stats contract is missing: {arena_stats_contract}"
+            );
+        }
+        let arena_stats_summary = EMBEDDED_INDEX
+            .find("<div class=\"sim-stats-summary-row\"><div class=\"sim-stats-summary\">")
+            .expect("Arena Stats summary row");
+        let arena_stats_views = EMBEDDED_INDEX
+            .find("<div class=\"sim-stats-controls\" role=\"group\" aria-label=\"Arena Stats record view\">")
+            .expect("Arena Stats view controls");
+        assert!(
+            arena_stats_summary < arena_stats_views,
+            "Arena Stats should put its summary and Reset control above the view controls"
         );
         // The empire columns exist where there is an empire: on a battlefield
         // they leave the standings and the Display Settings roster the same
