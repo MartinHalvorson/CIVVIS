@@ -95,28 +95,58 @@
 
   .mode-card {
     display: flex;
-    align-items: stretch;
+    flex-direction: column;
     min-width: 0;
     overflow: hidden;
     border: 1px solid var(--border);
     border-radius: 4px;
     background: var(--panel);
-    color: var(--text);
-    text-decoration: none;
-    transition: background 120ms ease, border-color 120ms ease;
   }
-  .mode-card:hover,
-  .mode-card:focus-visible { background: var(--panel-raised); border-color: var(--border-strong); }
-  .mode-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .card-thumb { width: 150px; flex: none; object-fit: cover; background: #0d1117; }
-  .card-body { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; padding: 14px 16px; }
+  .card-thumb {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1200 / 725;
+    object-fit: cover;
+    background: #0d1117;
+    border-bottom: 1px solid var(--border);
+  }
+  .card-body { display: flex; flex: 1; flex-direction: column; gap: 8px; min-width: 0; padding: 14px 16px 16px; }
   .card-kicker { color: var(--faint); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
   .card-title { margin: 0; color: #fff; font-size: 19px; font-weight: 700; }
-  .card-desc { color: var(--muted); font-size: 13px; line-height: 1.5; }
-  .card-verb { align-self: center; flex: none; margin: 0 16px; padding: 8px 18px; border-radius: 3px; font-size: 13px; font-weight: 700; }
+  .card-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+  .card-tags li {
+    padding: 3px 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+  .card-desc { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 6px; }
+  .card-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    padding: 0 18px;
+    border-radius: 3px;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+  }
   .verb-watch { background: var(--watch-bg); color: var(--watch-fg); }
   .verb-play { background: var(--play-bg); color: var(--play-fg); }
-  /* The Tactics card that opened the picker stays marked while it is open. */
+  .verb-watch:hover,
+  .verb-watch:focus-visible { background: #315d7e; color: #fff; }
+  .verb-play:hover,
+  .verb-play:focus-visible { background: #3b6534; color: #fff; }
+  .card-btn.plain { border: 1px solid var(--border-strong); background: var(--panel-raised); color: var(--muted); }
+  .card-btn.plain:hover,
+  .card-btn.plain:focus-visible { border-color: var(--accent); color: #fff; }
+  .card-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The Tactics card whose Customize opened the picker stays marked while it is open. */
   .mode-card.picking { border-color: var(--accent); }
 
   /* The battle picker: the historical scenario library, opened by either
