@@ -7011,6 +7011,100 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("searchParams.get(\"setup\") === \"1\""));
     }
 
+    /// The home page's cards are rows a visitor can act on anywhere: the
+    /// photograph and the title open the card's preset exactly as the verb
+    /// button does; the title line carries who is at the keyboard on its
+    /// right, in the same font and size; each card reads name, description,
+    /// actions, tags in that order; and Customize and every tag open the
+    /// row's own customization panel in place — the battle picker below the
+    /// Tactics row, the world picker below the CIVVIS row — with each tag
+    /// landing on the section it names.
+    #[test]
+    fn the_home_cards_link_their_art_and_open_their_panels_in_place() {
+        let landing = include_str!("../beta/landing.html");
+        const TACTICS: &str = "../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20";
+        for piece in [
+            // The art is a way in: each photograph links its card's preset.
+            &format!("<a class=\"card-thumb-link\" href=\"{TACTICS}\">") as &str,
+            &format!("<a class=\"card-thumb-link\" href=\"{TACTICS}&amp;mode=play\">"),
+            "<a class=\"card-thumb-link\" href=\"../\">",
+            "<a class=\"card-thumb-link\" href=\"../?mode=play\">",
+            // The title links the same preset, and the mode descriptor sits
+            // beside it on the one title line, styled at the title's own
+            // font and size.
+            &format!("<h3 class=\"card-title\" id=\"watch-tactics-title\"><a href=\"{TACTICS}\">Watch CIVVIS Tactics</a></h3>"),
+            &format!("<h3 class=\"card-title\" id=\"play-tactics-title\"><a href=\"{TACTICS}&amp;mode=play\">Play CIVVIS Tactics</a></h3>"),
+            "<h3 class=\"card-title\" id=\"watch-civ-title\"><a href=\"../\">Watch CIVVIS</a></h3>",
+            "<h3 class=\"card-title\" id=\"play-civ-title\"><a href=\"../?mode=play\">Play CIVVIS</a></h3>",
+            "<span class=\"card-mode\">AI simulation</span>",
+            "<span class=\"card-mode\">Single player</span>",
+            ".card-mode { color: var(--muted); font-size: 19px; font-weight: 700;",
+            ".card-title { margin: 0; color: #fff; font-size: 19px; font-weight: 700; }",
+            // The full game's Customize opens the world picker in place and
+            // still names Game setup as its scriptless destination.
+            "href=\"../?setup=1\" data-pick=\"watch-civ\"",
+            "href=\"../?mode=play&amp;setup=1\" data-pick=\"play-civ\"",
+            // The tags: every one opens its row's panel on the section it
+            // names, with an honest scriptless destination behind it.
+            "data-pick=\"watch\" data-lens=\"custom\">AI vs AI</a>",
+            "data-pick=\"watch\" data-lens=\"custom\">Custom Maps</a>",
+            "data-pick=\"watch\" data-lens=\"era\">Historical Battles</a>",
+            "data-pick=\"watch\" data-lens=\"eras\">Any Era</a>",
+            "data-pick=\"play\" data-lens=\"custom\">You vs Different AI Strategies &amp; Difficulties</a>",
+            "data-pick=\"play\" data-lens=\"eras\">Any Era</a>",
+            "data-pick=\"watch-civ\" data-lens=\"seats\">AI Empires</a>",
+            "data-pick=\"watch-civ\" data-lens=\"worlds\">Fresh World Every Visit</a>",
+            "data-pick=\"watch-civ\" data-lens=\"victory\">Every Victory Lane</a>",
+            "data-pick=\"play-civ\" data-lens=\"seats\">Your Seat</a>",
+            "data-pick=\"play-civ\" data-lens=\"seats\">AI Rivals</a>",
+            "data-pick=\"play-civ\" data-lens=\"worlds\">Custom Worlds</a>",
+            // A click carries both halves: which panel, and which section.
+            "open(card.dataset.pick, card.dataset.lens);",
+            // The world picker and its lenses; the battle picker's fifth
+            // lens deals the custom field in any era.
+            "id=\"game-picker\"",
+            "data-lens=\"worlds\"",
+            "data-lens=\"sizes\"",
+            "data-lens=\"victory\"",
+            "data-lens=\"seats\"",
+            "data-lens=\"eras\" aria-selected=\"false\">Any era</button>",
+            // The panels are grid rows of the menu itself, spanning it, so
+            // each opens directly below its own row of cards.
+            "grid-column: 1 / -1;",
+        ] {
+            assert!(landing.contains(piece), "the home page lost {piece}");
+        }
+        // Reading order inside a card: title row, description, actions, tags
+        // — and each panel sits below the row of cards that opens it.
+        let index = |needle: &str| {
+            landing
+                .find(needle)
+                .unwrap_or_else(|| panic!("the home page lost {needle}"))
+        };
+        for card in ["watch-tactics", "play-tactics", "watch-civ", "play-civ"] {
+            let title = index(&format!("id=\"{card}-title\""));
+            let tags = index(&format!("aria-label=\"{}",
+                match card {
+                    "watch-tactics" => "Watch CIVVIS Tactics features",
+                    "play-tactics" => "Play CIVVIS Tactics features",
+                    "watch-civ" => "Watch CIVVIS features",
+                    _ => "Play CIVVIS features",
+                }));
+            let desc = landing[title..].find("class=\"card-desc\"").expect("a description") + title;
+            let actions = landing[title..].find("class=\"card-actions\"").expect("actions") + title;
+            assert!(
+                title < desc && desc < actions && actions < tags,
+                "{card} must read title, description, actions, tags"
+            );
+        }
+        assert!(
+            index("id=\"watch-tactics-title\"") < index("id=\"battle-picker\"")
+                && index("id=\"battle-picker\"") < index("id=\"watch-civ-title\"")
+                && index("id=\"play-civ-title\"") < index("id=\"game-picker\""),
+            "each panel must sit directly below its own row of cards"
+        );
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn promoted_binary_name_carries_the_runtime_revision() {
