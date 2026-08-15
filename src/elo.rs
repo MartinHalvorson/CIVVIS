@@ -21,24 +21,22 @@ use crate::rng::Rng;
 use crate::rules::Rules;
 use crate::setup::{GameMode, MapPoles, MapScript, MapSize, MapTopology};
 
-pub const BUILTIN_AIS: [&str; 10] = [
+pub const BUILTIN_AIS: [&str; 8] = [
     "advanced",
     "advanced_evolved",
     "advanced_v1",
     "basic",
     "random",
     "evolved",
-    "neural",
     "strategic",
     "strategic_deep",
-    "policy",
 ];
 
 /// Controls intended for paired evaluator experiments, not persistent
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 138] = [
+pub const EVAL_ONLY_AIS: [&str; 134] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -181,10 +179,6 @@ pub const EVAL_ONLY_AIS: [&str; 138] = [
     "strategic_deep_consolidate",
     "strategic_deep_militarize",
     "strategic_deep_league",
-    "production",
-    "production_net",
-    "policy_wide",
-    "policy_wide_frozen",
     "strategic_warm",
     "strategic_cold",
     "strategic_noprophet",
@@ -499,12 +493,6 @@ define_arm_kinds! {
     Basic => "basic",
     BasicEvolved => "basic_evolved",
     Evolved => "evolved",
-    Neural => "neural",
-    Policy => "policy",
-    PolicyWide => "policy_wide",
-    PolicyWideFrozen => "policy_wide_frozen",
-    Production => "production",
-    ProductionNet => "production_net",
     Random => "random",
     Strategic => "strategic",
     StrategicCheap => "strategic_cheap",
@@ -1817,7 +1805,6 @@ fn artifact_effective_alias_from(
     kind: ArmKind,
     champion: bool,
     net: bool,
-    wide_net: bool,
     league: bool,
 ) -> ArmKind {
     let basic_fallback = if champion {
@@ -1833,46 +1820,11 @@ fn artifact_effective_alias_from(
     match kind {
         ArmKind::Evolved | ArmKind::AdvancedEvolved => advanced_fallback,
         ArmKind::BasicEvolved => basic_fallback,
-        ArmKind::Neural => {
-            if net {
-                ArmKind::Neural
-            } else {
-                basic_fallback
-            }
-        }
-        ArmKind::Policy => {
-            if net {
-                ArmKind::Policy
-            } else {
-                advanced_fallback
-            }
-        }
-        ArmKind::PolicyWide => {
-            if wide_net {
-                ArmKind::PolicyWide
-            } else {
-                advanced_fallback
-            }
-        }
-        ArmKind::PolicyWideFrozen => {
-            if wide_net {
-                ArmKind::PolicyWideFrozen
-            } else {
-                advanced_fallback
-            }
-        }
         ArmKind::Strategic | ArmKind::StrategicWarm => {
             if net {
                 ArmKind::Strategic
             } else {
                 ArmKind::StrategicScore
-            }
-        }
-        ArmKind::ProductionNet => {
-            if net {
-                ArmKind::ProductionNet
-            } else {
-                ArmKind::Production
             }
         }
         ArmKind::StrategicDeepLeague => {
@@ -1936,25 +1888,13 @@ fn artifact_effective_alias(kind: ArmKind, dir: &str) -> ArmKind {
         ArmKind::Evolved
             | ArmKind::AdvancedEvolved
             | ArmKind::BasicEvolved
-            | ArmKind::Neural
-            | ArmKind::Policy
-            | ArmKind::PolicyWide
-            | ArmKind::PolicyWideFrozen
             | ArmKind::AdvancedEvolvedBlind
             | ArmKind::AdvancedBankingDedication
     ) && crate::evolve::load_champion(dir).is_some();
-    let net = matches!(
-        kind,
-        ArmKind::Neural
-            | ArmKind::Policy
-            | ArmKind::Strategic
-            | ArmKind::StrategicWarm
-            | ArmKind::ProductionNet
-    ) && crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH).is_some();
-    let wide_net = matches!(kind, ArmKind::PolicyWide | ArmKind::PolicyWideFrozen)
-        && crate::valuenet::ValueNet::load_width(dir, crate::decision_features::WIDTH).is_some();
+    let net = matches!(kind, ArmKind::Strategic | ArmKind::StrategicWarm)
+        && crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH).is_some();
     let league = kind == ArmKind::StrategicDeepLeague && league_generalist().is_some();
-    artifact_effective_alias_from(kind, champion, net, wide_net, league)
+    artifact_effective_alias_from(kind, champion, net, league)
 }
 
 /// Construct a canonical, already-resolved arm. Public callers enter through
@@ -3200,9 +3140,9 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             Box::new(ai)
         }
         "random" => Box::new(RandomAi::new(seed)),
-        // Exact netless fallback played by `neural` when the committed
-        // champion is present. Naming it makes provenance collapse checks
-        // compare controller *and* weights instead of dropping the genome.
+        // Named so provenance collapse checks compare controller *and*
+        // weights instead of dropping the genome. (Historically also the
+        // exact netless fallback the retired `neural` arm played.)
         "basic_evolved" => Box::new(
             crate::evolve::load_champion("evolved")
                 .map(BasicAi::with_weights)
@@ -3213,36 +3153,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
                 .map(AdvancedAi::with_weights)
                 .unwrap_or_default(),
         ),
-        "neural" => {
-            let w = crate::evolve::load_champion("evolved").unwrap_or_default();
-            match crate::valuenet::ValueNet::load_width("evolved", crate::evolve::FEATURE_WIDTH) {
-                Some(n) => Box::new(crate::neural::NeuralAi::new(w, n)),
-                None => Box::new(BasicAi::with_weights(w)),
-            }
-        }
-        // `policy` scored with the 34-wide `decision_features` and a net
-        // trained on it. The 25-wide vector is unchanged by 96% of the
-        // candidates this agent clones; the wide one moves for 69% of unit
-        // moves, so this is the first configuration where the tactical
-        // evaluator can distinguish the actions it is ranking at all.
-        // `policy_wide` denied the one correlate it was measured to be
-        // exploiting. A causal test of the ranking failure, not a proposed
-        // agent.
-        "policy_wide_frozen" => Box::new(
-            crate::policy::PolicyAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
-            )
-            .with_frozen_contact(),
-        ),
-        "policy_wide" => Box::new(
-            crate::policy::PolicyAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
-            )
-            .with_decision_features(),
-        ),
-        "policy" => Box::new(crate::policy::PolicyAi::with_weights(
-            crate::evolve::load_champion("evolved").unwrap_or_default(),
-        )),
         "strategic" => Box::new(crate::strategic::StrategicAi::with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
@@ -3450,23 +3360,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.model_rival_lanes = true;
             Box::new(ai)
         }
-        // Rollout search over what a city builds, rate-limited to one
-        // decision every fifteen turns so the whole feature costs about
-        // what the lane search costs.
-        // The same search judged by the trained value net rather than
-        // score share. It measured identically to `production` (109/240
-        // against 108/240), which is the evidence that a net over the same
-        // 25 features is a re-weighting of score share and not a second
-        // opinion. Kept so the comparison can be re-run.
-        "production_net" => Box::new(
-            crate::production::ProductionSearchAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
-            )
-            .with_value_net(),
-        ),
-        "production" => Box::new(crate::production::ProductionSearchAi::with_weights(
-            crate::evolve::load_champion("evolved").unwrap_or_default(),
-        )),
         // The frozen pre-promotion control: branches projected from a newly
         // constructed planner, which is what every `strategic` number
         // published before 2026-07-26 was measured on. Kept so those numbers
@@ -3613,10 +3506,7 @@ pub enum Architecture {
     LegacyAdvanced,
     Basic,
     Random,
-    Neural,
-    Policy,
     Strategic,
-    Production,
 }
 
 /// Origin of the policy weights actually supplied to an arm.
@@ -3694,9 +3584,6 @@ impl ArmKind {
         match self {
             Self::Basic | Self::BasicEvolved => Architecture::Basic,
             Self::Random => Architecture::Random,
-            Self::Neural => Architecture::Neural,
-            Self::Policy | Self::PolicyWide | Self::PolicyWideFrozen => Architecture::Policy,
-            Self::Production | Self::ProductionNet => Architecture::Production,
             Self::AdvancedV1 => Architecture::LegacyAdvanced,
             Self::Strategic
             | Self::StrategicCheap
@@ -3740,13 +3627,7 @@ impl ArmKind {
             Self::StrategicDeepMilitarize => WeightSource::Doctrine("militarize"),
             Self::AdvancedEvolved | Self::BasicEvolved => WeightSource::Champion,
             Self::Evolved => WeightSource::Champion,
-            Self::Neural
-            | Self::Policy
-            | Self::PolicyWide
-            | Self::PolicyWideFrozen
-            | Self::Production
-            | Self::ProductionNet
-            | Self::Strategic
+            Self::Strategic
             | Self::StrategicCheap
             | Self::StrategicCold
             | Self::StrategicDeep
@@ -3781,16 +3662,10 @@ impl ArmKind {
         }
     }
 
-    fn evaluator(self, net: bool, wide_net: bool) -> EvaluatorSource {
+    fn evaluator(self, net: bool) -> EvaluatorSource {
         match self {
             Self::Random => EvaluatorSource::Random,
-            Self::Neural | Self::Policy | Self::ProductionNet if net => {
-                EvaluatorSource::ValueNet { width: crate::evolve::FEATURE_WIDTH }
-            }
-            Self::PolicyWide | Self::PolicyWideFrozen if wide_net => {
-                EvaluatorSource::ValueNet { width: crate::decision_features::WIDTH }
-            }
-            Self::StrategicScore | Self::Production => EvaluatorSource::ScoreShare,
+            Self::StrategicScore => EvaluatorSource::ScoreShare,
             Self::Strategic
             | Self::StrategicCheap
             | Self::StrategicCold
@@ -4015,11 +3890,6 @@ impl ArmKind {
         let champion = crate::evolve::load_champion(dir).is_some();
         let net = crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH)
             .is_some();
-        let wide_net = crate::valuenet::ValueNet::load_width(
-            dir,
-            crate::decision_features::WIDTH,
-        )
-        .is_some();
         let league = match self {
             Self::StrategicDeepLeague => league_generalist().is_some(),
             Self::AdvancedLeagueTop => shipped_league_top_advanced().is_some(),
@@ -4029,7 +3899,7 @@ impl ArmKind {
             canonical: self.name(),
             architecture: self.architecture(),
             weights: self.weights(champion, league),
-            evaluator: self.evaluator(net, wide_net),
+            evaluator: self.evaluator(net),
             treatments: self.treatments(),
         }
     }
@@ -4240,8 +4110,6 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
     let kind = ArmKind::from_name(name).unwrap_or(ArmKind::Basic);
     let champion = crate::evolve::load_champion(dir).is_some();
     let net = crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH).is_some();
-    let wide_net =
-        crate::valuenet::ValueNet::load_width(dir, crate::decision_features::WIDTH).is_some();
     let basic_fallback = if champion { "basic_evolved" } else { "basic" };
     let advanced_fallback = if champion {
         "advanced_evolved"
@@ -4293,39 +4161,6 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
                 ..genome
             }],
             basic_fallback,
-        ),
-        // NeuralAi needs the net to exist at all and drops all the way to
-        // the lightweight controller without it. Preserve whether that
-        // controller loaded the champion genome in the effective identity.
-        "neural" => (
-            vec![genome, value(true)],
-            if net { "neural" } else { basic_fallback },
-        ),
-        "policy" => (
-            vec![genome, value(true)],
-            if net { "policy" } else { advanced_fallback },
-        ),
-        // The *wide* net is definitional and is a different artifact from
-        // the one `policy` wants: `load_width` refuses each to the other,
-        // so without a 34-wide net in place this is the scripted agent.
-        "policy_wide" | "policy_wide_frozen" => (
-            vec![
-                genome,
-                ArtifactStatus {
-                    file: VALUENET_FILE,
-                    found: wide_net,
-                    definitional: true,
-                },
-            ],
-            if wide_net {
-                if name == "policy_wide" {
-                    "policy_wide"
-                } else {
-                    "policy_wide_frozen"
-                }
-            } else {
-                advanced_fallback
-            },
         ),
         // Strategic keeps its lane rollouts without a net; what it loses is
         // the learned terminal evaluator, which is exactly the published
@@ -4396,12 +4231,6 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "strategic_rot10" => (vec![genome, value(false)], "strategic_rot10"),
         // The genome tunes both its rollout policy and its scripted
         // governor; it consults no net.
-        "production" => (vec![genome], "production"),
-        // The net is definitional: without it this is exactly `production`.
-        "production_net" => (
-            vec![genome, value(true)],
-            if net { "production_net" } else { "production" },
-        ),
         // The bridge arms are scripted composites: no genome, no value net, and
         // each is effective as ITSELF. Without an explicit row they inherit the
         // catch-all and the evaluator reports them as plain `basic`, which would
@@ -4547,7 +4376,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "basic" => (Vec::new(), "basic"),
         _ => (Vec::new(), "basic"),
     };
-    let effective = artifact_effective_alias_from(kind, champion, net, wide_net, league).name();
+    let effective = artifact_effective_alias_from(kind, champion, net, league).name();
     debug_assert_eq!(
         effective, independently_declared_effective,
         "artifact alias table and provenance row diverged for {name}"
@@ -5306,8 +5135,6 @@ mod tests {
         for (name, effective) in [
             ("evolved", "advanced"),
             ("advanced_evolved", "advanced"),
-            ("neural", "basic"),
-            ("policy", "advanced"),
             ("strategic", "strategic_score"),
         ] {
             let resolved = builtin_provenance(name, dir);
@@ -5429,14 +5256,14 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
         fs::create_dir_all(dir).unwrap();
 
-        let error = strict_builtin_arm_in("policy", dir)
-            .expect_err("a bare artifact tier must not construct the learned policy");
-        assert_eq!(error.requested(), "policy");
+        let error = strict_builtin_arm_in("strategic", dir)
+            .expect_err("a bare artifact tier must not construct the learned searcher");
+        assert_eq!(error.requested(), "strategic");
         let provenance = error
             .provenance()
             .expect("a known degraded arm reports its provenance");
         assert!(provenance.degraded());
-        assert_eq!(provenance.effective, "advanced");
+        assert_eq!(provenance.effective, "strategic_score");
         assert_eq!(provenance.missing(), vec![CHAMPION_FILE, VALUENET_FILE]);
 
         let unknown = strict_builtin_arm_in("not-a-selectable-arm", dir)
@@ -5460,8 +5287,8 @@ mod tests {
         fs::create_dir_all(dir).unwrap();
         fs::write(format!("{dir}/{VALUENET_FILE}"), "{\"sizes\":[1,2]}").unwrap();
         fs::write(format!("{dir}/{CHAMPION_FILE}"), "not json").unwrap();
-        let resolved = builtin_provenance("neural", dir);
-        assert_eq!(resolved.effective, "basic");
+        let resolved = builtin_provenance("strategic", dir);
+        assert_eq!(resolved.effective, "strategic_score");
         assert_eq!(resolved.missing(), vec![CHAMPION_FILE, VALUENET_FILE]);
         fs::remove_dir_all(dir).unwrap();
     }
@@ -5480,19 +5307,6 @@ mod tests {
         )
         .expect("the committed champion fixture must be available");
 
-        for (name, effective) in [
-            ("neural", "basic_evolved"),
-            ("policy", "advanced_evolved"),
-            ("policy_wide", "advanced_evolved"),
-            ("policy_wide_frozen", "advanced_evolved"),
-        ] {
-            let resolved = builtin_provenance(name, dir);
-            assert_eq!(resolved.effective, effective, "{name}");
-            assert!(resolved.degraded(), "{name}");
-            assert!(resolved.untrained(), "{name}");
-            assert_eq!(resolved.missing(), vec![VALUENET_FILE], "{name}");
-        }
-
         let evolved_alias = builtin_provenance("evolved", dir);
         assert_eq!(evolved_alias.effective, "advanced_evolved");
         assert!(!evolved_alias.degraded(), "a loaded alias is not degraded");
@@ -5500,24 +5314,6 @@ mod tests {
             collapsed_entrants(&["evolved", "advanced_evolved"], dir),
             vec![(
                 "evolved".to_string(),
-                "advanced_evolved".to_string(),
-                "advanced_evolved"
-            )]
-        );
-
-        assert!(collapsed_entrants(&["neural", "basic"], dir).is_empty());
-        assert_eq!(
-            collapsed_entrants(&["neural", "basic_evolved"], dir),
-            vec![(
-                "neural".to_string(),
-                "basic_evolved".to_string(),
-                "basic_evolved"
-            )]
-        );
-        assert_eq!(
-            collapsed_entrants(&["policy", "advanced_evolved"], dir),
-            vec![(
-                "policy".to_string(),
                 "advanced_evolved".to_string(),
                 "advanced_evolved"
             )]
@@ -5534,26 +5330,10 @@ mod tests {
             crate::evolve::load_champion(ARTIFACT_DIR).is_some(),
             "the production artifact tier must resolve the committed champion"
         );
-        for (name, effective) in [
-            ("neural", "basic_evolved"),
-            ("policy", "advanced_evolved"),
-            ("policy_wide", "advanced_evolved"),
-            ("policy_wide_frozen", "advanced_evolved"),
-        ] {
-            assert_eq!(
-                builtin_provenance(name, ARTIFACT_DIR).effective,
-                effective,
-                "{name}"
-            );
-        }
-        assert!(collapsed_entrants(&["neural", "basic"], ARTIFACT_DIR).is_empty());
         assert_eq!(
-            collapsed_entrants(&["policy", "advanced_evolved"], ARTIFACT_DIR),
-            vec![(
-                "policy".to_string(),
-                "advanced_evolved".to_string(),
-                "advanced_evolved"
-            )]
+            builtin_provenance("evolved", ARTIFACT_DIR).effective,
+            "advanced_evolved",
+            "the embedded champion must load for the evolved alias"
         );
         assert_eq!(
             collapsed_entrants(
@@ -5571,10 +5351,7 @@ mod tests {
 
     #[test]
     fn typed_specs_keep_aliases_collapsed_and_components_visible() {
-        let policy = builtin_arm("policy").expect("policy is selectable");
         let evolved = builtin_arm("advanced_evolved").expect("control is selectable");
-        assert_eq!(policy.spec, evolved.spec);
-
         let stock = builtin_arm("advanced").expect("stock is selectable");
         assert_eq!(
             evolved.spec.differing_axes(&stock.spec),
@@ -5688,10 +5465,10 @@ mod tests {
         let dir = "target/test-provenance-collapse";
         let _ = fs::remove_dir_all(dir);
         fs::create_dir_all(dir).unwrap();
-        let collapsed = collapsed_entrants(&["policy", "advanced", "basic"], dir);
+        let collapsed = collapsed_entrants(&["evolved", "advanced", "basic"], dir);
         assert_eq!(
             collapsed,
-            vec![("policy".to_string(), "advanced".to_string(), "advanced")]
+            vec![("evolved".to_string(), "advanced".to_string(), "advanced")]
         );
         assert!(collapsed_entrants(&["advanced", "basic", "random"], dir).is_empty());
         fs::remove_dir_all(dir).unwrap();
