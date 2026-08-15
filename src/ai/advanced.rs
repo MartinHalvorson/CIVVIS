@@ -17860,6 +17860,34 @@ impl AdvancedAi {
         {
             self.settler_avoid.remove(&uid);
         }
+        // ★★★★ STANDING ON A TARGET THAT CANNOT BE FOUNDED IS A DEAD END, and
+        // until now nothing left it. The founding branch below fires only when
+        // `can_found_city` agrees; when it does not — the host refused the
+        // plot, the plot proved to be a city-state's, or the mirror's loyalty
+        // forecast doomed it the moment the settler arrived
+        // (`block_loyalty_doomed_settler_sites` evaluates only the settler's
+        // CURRENT plot) — the cached target still passed every check the
+        // re-validation below makes, so the settler journaled "HELD short …
+        // it is already standing on its target" every turn. Measured on run
+        // civvis-20260815T190904Z: the settler built at t126 reached (53,27)
+        // at t151, stood there 25 turns and died at t176 without founding;
+        // the empire held 7 cities from t98 to t202. Retire the site for a
+        // while — the same bounded avoidance the stall counter uses — so the
+        // next pick, which already refuses `blocked_city_sites`, runs now.
+        if let Some(target) = self.settler_targets.get(&uid).copied() {
+            if target == current && !g.can_found_city(uid) {
+                think!(self.journal(), Expansion, Detail,
+                       "Settler abandons {target:?}";
+                       "it stands on the site and the city cannot be founded there \
+                        — the target is retired and a new one will be chosen";
+                       target);
+                self.settler_avoid
+                    .insert(uid, (target, g.turn + g.standard_duration(8)));
+                self.settler_targets.remove(&uid);
+                self.settler_stalls.remove(&uid);
+                self.settler_blocked_turns.remove(&uid);
+            }
+        }
         let avoid = self.settler_avoid.get(&uid).map(|(position, _)| *position);
         // Search only the immediate neighborhood for the capital. The target
         // is fixed after the first assessment, preventing a rolling optimum
@@ -17991,6 +18019,12 @@ impl AdvancedAi {
                     .owner_city
                     .is_none_or(|cid| g.cities[&cid].owner == pid)
                 && Some(*target) != avoid
+                // A site the host or the mirror has since blocked is not a
+                // target, however it was chosen: `best_settler_target`
+                // refuses `blocked_city_sites` when it PICKS a site, but a
+                // site can join that set after the pick (see the standing
+                // case at the top of this function for the measured cost).
+                && !g.blocked_city_sites.contains(target)
                 // A momentarily unavailable route is not a bad site. Under
                 // `settler_commit` the stall counter decides when to give up,
                 // not a single blocked turn.
@@ -41728,6 +41762,78 @@ mod research_probe {
         assert!(live.base.wonder_ring_settle_value);
         live.disable_wonder_ring_settle_value();
         assert!(!live.base.wonder_ring_settle_value);
+    }
+
+    /// A settler standing on the site it chose, which the host or the mirror
+    /// has since blocked, must retire that site and pick another — not stand
+    /// there journaling "already standing on its target" until it dies, as
+    /// the settler of run civvis-20260815T190904Z did for 25 turns.
+    #[test]
+    fn a_settler_on_a_site_it_can_no_longer_found_retires_it_and_moves_on() {
+        let mut game = Game::new_full(2, 40, 24, 91_774, 250, 0, false);
+        game.current = 0;
+        let capital_settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: capital_settler }).unwrap();
+        let capital = game.player_city_ids(0)[0];
+        let home = game.cities[&capital].pos;
+        for unit in game.player_unit_ids(0) {
+            game.remove_unit(unit);
+        }
+        // Flat, open, explored land everywhere so the choice is about the
+        // block and nothing else.
+        let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        for position in positions {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            game.players[0].explored.insert(position);
+        }
+        let mut sites: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| game.wdist(*position, home) == 5)
+            .collect();
+        sites.sort_unstable();
+        let site = sites[0];
+        let settler = game.spawn_test_unit("settler", 0, site);
+        assert!(game.can_found_city(settler), "the fixture site is foundable before the block");
+
+        let mut ai = AdvancedAi::new();
+        ai.settler_targets.insert(settler, site);
+        // The mirror's loyalty forecast, a host `found_refused`, or a
+        // city-state's border all arrive through this one set.
+        game.blocked_city_sites.insert(site);
+        assert!(!game.can_found_city(settler));
+
+        game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+        let _ = ai.advanced_settler_step(&mut game, 0, settler);
+
+        assert_ne!(
+            ai.settler_targets.get(&settler),
+            Some(&site),
+            "the blocked site must not survive as the settler's target"
+        );
+        assert_eq!(
+            ai.settler_avoid.get(&settler).map(|(position, _)| *position),
+            Some(site),
+            "the retired site is avoided for a bounded while so the next pick cannot be it"
+        );
+        assert!(
+            game.units.get(&settler).is_some_and(|unit| unit.pos != site)
+                || ai.settler_targets.get(&settler).is_some_and(|next| *next != site),
+            "the settler either stepped off the dead site or holds a new target"
+        );
     }
 
     /// Off by default, set only by the live bridge, each holdable off on its
