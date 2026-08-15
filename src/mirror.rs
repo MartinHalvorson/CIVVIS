@@ -2831,6 +2831,64 @@ mod tests {
         );
     }
 
+    /// A positive wonder placement response is the escape hatch from its paired
+    /// temporary refusal, just as it is for districts. This uses Pyramids because
+    /// its flat desert rule is easy to make explicit in a tiny mirrored board.
+    #[test]
+    fn a_host_approved_wonder_site_reopens_the_same_city() {
+        let mut game = crate::game::Game::new(4, 20, 20, 71, 500, 0);
+        assert!(game.map.tiles.contains_key(&(6, 6)), "fixture city site exists");
+        let city = game.place_city(0, (6, 6), None);
+        let site = (7, 6);
+        assert!(game.map.tiles.contains_key(&site), "fixture wonder site exists");
+        game.players[0].techs = game.rules.techs.keys().copied().collect();
+        game.players[0].civics = game.rules.civics.keys().copied().collect();
+        {
+            let tile = game.map.tiles.get_mut(&site).unwrap();
+            tile.terrain = crate::name!("desert");
+            tile.hills = false;
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+            tile.owner_city = Some(city);
+        }
+        let owned_tiles = &mut game.cities.get_mut(&city).unwrap().owned_tiles;
+        if !owned_tiles.contains(&site) {
+            owned_tiles.push(site);
+        }
+        let wonder = crate::name!("pyramids");
+        let item = crate::game::Item::Wonder { wonder, pos: site };
+        assert!(
+            game.can_produce(0, city, &item),
+            "precondition: the configured Pyramids site is buildable"
+        );
+
+        game.blocked_wonders.entry(city).or_default().insert(wonder);
+        assert!(
+            game.wonder_sites(city, &wonder).is_empty(),
+            "precondition: the paired refusal blocks the normal model"
+        );
+        game.host_wonder_sites
+            .entry(city)
+            .or_default()
+            .entry(wonder)
+            .or_default()
+            .insert(site);
+
+        assert_eq!(
+            game.wonder_sites(city, &wonder),
+            vec![site],
+            "the host-approved tile must be the sole fresh candidate"
+        );
+        assert!(
+            game.can_produce(0, city, &item),
+            "the approved coordinate has to reach the production gate, not merely a field"
+        );
+    }
+
     /// ★★★★★ A MIRRORED CAPITAL MUST NOT BE PAID FOR ITS PALACE TWICE.
     ///
     /// CIVVIS models the palace positionally — `city_has_palace` derives it from
@@ -6951,6 +7009,11 @@ pub struct StateSnapshot {
     /// the next decision name a plot Firaxis has already approved.
     #[serde(default)]
     pub host_district_sites: BTreeMap<i64, BTreeMap<String, BTreeSet<crate::Pos>>>,
+    /// Fresh, host-approved alternatives for a wonder CIVVIS asked to place on
+    /// the wrong tile. They use the same short-lived `build_no_plot` evidence as
+    /// districts, but the Firaxis event identifies wonders under `building`.
+    #[serde(default)]
+    pub host_wonder_sites: BTreeMap<i64, BTreeMap<String, BTreeSet<crate::Pos>>>,
     /// Wonders Civilization VI refused to place, by ITS city id, from the same
     /// `build_no_plot` event. Kept apart from [`StateSnapshot::refused_districts`]
     /// because the mod reports a refused wonder under `building` and a refused
@@ -7951,6 +8014,7 @@ pub fn state_from_events(
         state.refused_policy_names = refused_policies_through(path, turn);
         state.refused_districts = refused_districts_through(path, turn);
         state.host_district_sites = host_district_sites_through(path, state.turn);
+        state.host_wonder_sites = host_wonder_sites_through(path, state.turn);
         state.refused_wonders = refused_wonders_through(path, turn);
         state.refused_production = refused_production(path, state.turn);
         state.refused_purchases = refused_purchases(path, state.turn);
@@ -8629,6 +8693,36 @@ fn host_district_sites_from(
     out
 }
 
+/// Translate fresh, host-approved wonder plots onto the reconstructed city ids.
+///
+/// The event is structurally identical to a district placement disagreement, but
+/// Firaxis names a wonder under `building`. The candidate set is intentionally
+/// separate so a district name can never be interpreted against the wonder table.
+fn host_wonder_sites_from(
+    offered: &BTreeMap<i64, BTreeMap<String, BTreeSet<crate::Pos>>>,
+    city_ids: &BTreeMap<u32, i64>,
+    rules: &crate::rules::Rules,
+) -> BTreeMap<u32, BTreeMap<Name, BTreeSet<crate::Pos>>> {
+    let mut out = BTreeMap::new();
+    for (cid, civ6_id) in city_ids {
+        let Some(by_wonder) = offered.get(civ6_id) else {
+            continue;
+        };
+        let translated: BTreeMap<Name, BTreeSet<crate::Pos>> = by_wonder
+            .iter()
+            .filter_map(|(civ6, sites)| {
+                civvis_node_name(&rules.wonders, civ6, "BUILDING_")
+                    .map(|wonder| (Name::new(&wonder), sites.clone()))
+            })
+            .filter(|(_, sites)| !sites.is_empty())
+            .collect();
+        if !translated.is_empty() {
+            out.insert(*cid, translated);
+        }
+    }
+    out
+}
+
 /// The wonder counterpart of `blocked_districts_from`, translated against the
 /// wonder ruleset: a refused `BUILDING_` name that answers to no wonder here would
 /// filter nothing while making the set look populated.
@@ -8780,6 +8874,27 @@ fn host_district_sites_through(
     path: &std::path::Path,
     current_turn: u32,
 ) -> BTreeMap<i64, BTreeMap<String, BTreeSet<crate::Pos>>> {
+    host_sites_through(path, current_turn, "district", "DISTRICT_")
+}
+
+/// The wonder counterpart of [`host_district_sites_through`].
+fn host_wonder_sites_through(
+    path: &std::path::Path,
+    current_turn: u32,
+) -> BTreeMap<i64, BTreeMap<String, BTreeSet<crate::Pos>>> {
+    host_sites_through(path, current_turn, "building", "BUILDING_")
+}
+
+/// Read the newest fresh, host-approved coordinates for one `build_no_plot` field.
+///
+/// A later zero-site response cancels a prior positive response, regardless of
+/// whether that response named a district or a wonder.
+fn host_sites_through(
+    path: &std::path::Path,
+    current_turn: u32,
+    field: &str,
+    prefix: &str,
+) -> BTreeMap<i64, BTreeMap<String, BTreeSet<crate::Pos>>> {
     let Ok(raw) = std::fs::read_to_string(path) else {
         return BTreeMap::new();
     };
@@ -8793,21 +8908,21 @@ fn host_district_sites_through(
         if event.get("kind").and_then(|value| value.as_str()) != Some("build_no_plot") {
             continue;
         }
-        let (Some(turn), Some(city), Some(district), Some(offered)) = (
+        let (Some(turn), Some(city), Some(item), Some(offered)) = (
             event.get("turn").and_then(|value| value.as_u64()),
             event.get("city").and_then(|value| value.as_i64()),
-            event.get("district").and_then(|value| value.as_str()),
+            event.get(field).and_then(|value| value.as_str()),
             event.get("offered").and_then(|value| value.as_i64()),
         ) else {
             continue;
         };
         if turn > u64::from(current_turn)
             || turn < u64::from(oldest)
-            || !district.starts_with("DISTRICT_")
+            || !item.starts_with(prefix)
         {
             continue;
         }
-        let key = (city, district.to_string());
+        let key = (city, item.to_string());
         if newest.get(&key).is_some_and(|(known_turn, _)| *known_turn > turn) {
             continue;
         }
@@ -8836,12 +8951,12 @@ fn host_district_sites_through(
     }
 
     let mut out: BTreeMap<i64, BTreeMap<String, BTreeSet<crate::Pos>>> = BTreeMap::new();
-    for ((city, district), (_, sites)) in newest {
+    for ((city, item), (_, sites)) in newest {
         let Some(sites) = sites else {
             continue;
         };
         if !sites.is_empty() {
-            out.entry(city).or_default().insert(district, sites);
+            out.entry(city).or_default().insert(item, sites);
         }
     }
     out
@@ -11148,6 +11263,8 @@ pub fn rebuild_from_state(
         blocked_districts_from(&state.refused_districts, &city_ids, &game.rules);
     game.host_district_sites =
         host_district_sites_from(&state.host_district_sites, &city_ids, &game.rules);
+    game.host_wonder_sites =
+        host_wonder_sites_from(&state.host_wonder_sites, &city_ids, &game.rules);
     game.blocked_wonders =
         blocked_wonders_from(&state.refused_wonders, &city_ids, &game.rules);
     let blocked_production =
@@ -11767,6 +11884,11 @@ impl LiveMirror {
         }
         self.game.host_district_sites = host_district_sites_from(
             &state.host_district_sites,
+            &self.cid_of.iter().map(|(civ6, cid)| (*cid, *civ6)).collect(),
+            &self.game.rules,
+        );
+        self.game.host_wonder_sites = host_wonder_sites_from(
+            &state.host_wonder_sites,
             &self.cid_of.iter().map(|(civ6, cid)| (*cid, *civ6)).collect(),
             &self.game.rules,
         );
@@ -12777,6 +12899,55 @@ mod transient_refusal_tests {
         );
         assert!(
             host_district_sites_through(&p, 50).is_empty(),
+            "a placement response older than the production cooldown is no longer current"
+        );
+    }
+
+    /// Wonders carry their production type under `building`, rather than the
+    /// district key. Their host candidates must still replace an invalid CIVVIS
+    /// coordinate and vanish after a newer zero response or the normal TTL.
+    #[test]
+    fn fresh_host_wonder_sites_follow_the_newest_offer() {
+        let p = events("host_wonder_sites", &[
+            r#"{"kind":"build_no_plot","turn":40,"city":7,"building":"BUILDING_PYRAMIDS","offered":2,"offered_plots":[{"x":10,"y":8}]}"#,
+            r#"{"kind":"build_no_plot","turn":41,"city":7,"building":"BUILDING_PYRAMIDS","offered":1,"offered_plots":[{"x":10,"y":7}]}"#,
+            r#"{"kind":"build_no_plot","turn":42,"city":7,"building":"BUILDING_ORACLE","offered":1,"offered_plots":[{"x":9,"y":8}]}"#,
+            r#"{"kind":"build_no_plot","turn":43,"city":7,"building":"BUILDING_ORACLE","offered":0,"offered_plots":[]}"#,
+            r#"{"kind":"state","turn":49}"#,
+        ]);
+        let state = state_from_events(&p, Some(49)).expect("state at the current turn");
+        let pyramids = state
+            .host_wonder_sites
+            .get(&7)
+            .and_then(|by_wonder| by_wonder.get("BUILDING_PYRAMIDS"))
+            .expect("the latest positive Pyramids offer is fresh");
+        assert_eq!(
+            pyramids.iter().copied().collect::<Vec<_>>(),
+            vec![crate::hex::offset_to_axial(10, 7)],
+            "the newest host location replaces the older coordinate rather than merging it"
+        );
+        let city_ids: BTreeMap<u32, i64> = [(99, 7)].into_iter().collect();
+        let mapped = host_wonder_sites_from(
+            &state.host_wonder_sites,
+            &city_ids,
+            &crate::rules::Rules::embedded(),
+        );
+        assert_eq!(
+            mapped
+                .get(&99)
+                .and_then(|by_wonder| by_wonder.get(&crate::name::Name::new("pyramids"))),
+            Some(pyramids),
+            "the CIV6 city/name pair must reach its reconstructed city and wonder"
+        );
+        assert!(
+            state
+                .host_wonder_sites
+                .get(&7)
+                .is_none_or(|by_wonder| !by_wonder.contains_key("BUILDING_ORACLE")),
+            "a newer zero-site answer withdraws the previous positive offer"
+        );
+        assert!(
+            host_wonder_sites_through(&p, 50).is_empty(),
             "a placement response older than the production cooldown is no longer current"
         );
     }
