@@ -2771,6 +2771,66 @@ mod tests {
         );
     }
 
+    /// A positive host answer must beat the temporary block emitted beside it.
+    /// Otherwise the bridge learns the legal coordinates and still leaves the
+    /// district unavailable for all eight cooldown turns.
+    #[test]
+    fn a_host_approved_district_site_reopens_the_same_city() {
+        let mut game = crate::game::Game::new(4, 20, 20, 71, 500, 0);
+        assert!(game.map.tiles.contains_key(&(6, 6)), "fixture city site exists");
+        let city = game.place_city(0, (6, 6), None);
+        game.players[0].techs = game.rules.techs.keys().copied().collect();
+        game.players[0].civics = game.rules.civics.keys().copied().collect();
+        game.cities.get_mut(&city).unwrap().pop = 12;
+        let mut candidate = None;
+        for district in game.rules.districts.keys().copied() {
+            for site in game.district_sites(city, district) {
+                let item = crate::game::Item::District {
+                    district,
+                    pos: site,
+                };
+                if game.can_produce(0, city, &item) {
+                    candidate = Some((district, site));
+                    break;
+                }
+            }
+            if candidate.is_some() {
+                break;
+            }
+        }
+        let (district, site) =
+            candidate.expect("an unlocked grown city needs a buildable district");
+
+        game.blocked_districts.entry(city).or_default().insert(district);
+        assert!(
+            game.district_sites(city, district).is_empty(),
+            "precondition: the paired refusal blocks the normal model"
+        );
+        game.host_district_sites
+            .entry(city)
+            .or_default()
+            .entry(district)
+            .or_default()
+            .insert(site);
+
+        assert_eq!(
+            game.district_sites(city, district),
+            vec![site],
+            "the host-approved tile must be the sole fresh candidate"
+        );
+        assert!(
+            game.can_produce(
+                0,
+                city,
+                &crate::game::Item::District {
+                    district,
+                    pos: site,
+                }
+            ),
+            "the approved coordinate has to reach the production gate, not merely a field"
+        );
+    }
+
     /// ★★★★★ A MIRRORED CAPITAL MUST NOT BE PAID FOR ITS PALACE TWICE.
     ///
     /// CIVVIS models the palace positionally — `city_has_palace` derives it from
@@ -6884,6 +6944,13 @@ pub struct StateSnapshot {
     #[serde(default)]
     pub refused_districts:
         std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    /// Fresh, host-approved alternatives for a district CIVVIS asked to place
+    /// on the wrong tile.  Like [`StateSnapshot::refused_districts`], these
+    /// arrive through `build_no_plot` rather than the state payload; unlike a
+    /// refusal, their coordinates are a positive, short-lived fact that lets
+    /// the next decision name a plot Firaxis has already approved.
+    #[serde(default)]
+    pub host_district_sites: BTreeMap<i64, BTreeMap<String, BTreeSet<crate::Pos>>>,
     /// Wonders Civilization VI refused to place, by ITS city id, from the same
     /// `build_no_plot` event. Kept apart from [`StateSnapshot::refused_districts`]
     /// because the mod reports a refused wonder under `building` and a refused
@@ -7883,6 +7950,7 @@ pub fn state_from_events(
         state.refused_trade_routes = refused_trade_routes_through(path, turn);
         state.refused_policy_names = refused_policies_through(path, turn);
         state.refused_districts = refused_districts_through(path, turn);
+        state.host_district_sites = host_district_sites_through(path, state.turn);
         state.refused_wonders = refused_wonders_through(path, turn);
         state.refused_production = refused_production(path, state.turn);
         state.refused_purchases = refused_purchases(path, state.turn);
@@ -8529,6 +8597,38 @@ fn blocked_districts_from(
     out
 }
 
+/// Translate fresh, host-approved district plots onto the reconstructed city ids.
+///
+/// A `build_no_plot` with `offered > 0` says the district is valid in this city,
+/// but the direct CIVVIS order named a different coordinate.  The companion
+/// `offered_plots` list is Firaxis's authoritative replacement candidate set.  It
+/// is deliberately separate from [`blocked_districts_from`]: one is a negative
+/// feedback signal and this is the positive way out of that same mismatch.
+fn host_district_sites_from(
+    offered: &BTreeMap<i64, BTreeMap<String, BTreeSet<crate::Pos>>>,
+    city_ids: &BTreeMap<u32, i64>,
+    rules: &crate::rules::Rules,
+) -> BTreeMap<u32, BTreeMap<Name, BTreeSet<crate::Pos>>> {
+    let mut out = BTreeMap::new();
+    for (cid, civ6_id) in city_ids {
+        let Some(by_district) = offered.get(civ6_id) else {
+            continue;
+        };
+        let translated: BTreeMap<Name, BTreeSet<crate::Pos>> = by_district
+            .iter()
+            .filter_map(|(civ6, sites)| {
+                civvis_node_name(&rules.districts, civ6, "DISTRICT_")
+                    .map(|district| (Name::new(&district), sites.clone()))
+            })
+            .filter(|(_, sites)| !sites.is_empty())
+            .collect();
+        if !translated.is_empty() {
+            out.insert(*cid, translated);
+        }
+    }
+    out
+}
+
 /// The wonder counterpart of `blocked_districts_from`, translated against the
 /// wonder ruleset: a refused `BUILDING_` name that answers to no wonder here would
 /// filter nothing while making the set look populated.
@@ -8666,6 +8766,85 @@ fn refused_wonders_through(
     turn: Option<u32>,
 ) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
     refused_no_plot_through(path, turn, "building", "BUILDING_")
+}
+
+/// The newest fresh positive placement result for every `(city, district)` pair.
+///
+/// Firaxis writes `offered_plots` only after it rejected CIVVIS's requested
+/// coordinate.  Reusing the list on the next board gives the planner a small,
+/// authoritative candidate set instead of making the bridge silently substitute a
+/// tile in the current order.  A later `offered: 0` supersedes an earlier positive
+/// result, so a site that ceased to be legal never survives merely because its old
+/// event is still inside the cooldown window.
+fn host_district_sites_through(
+    path: &std::path::Path,
+    current_turn: u32,
+) -> BTreeMap<i64, BTreeMap<String, BTreeSet<crate::Pos>>> {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return BTreeMap::new();
+    };
+    let oldest = current_turn.saturating_sub(PRODUCTION_REFUSAL_TTL);
+    let mut newest: BTreeMap<(i64, String), (u64, Option<BTreeSet<crate::Pos>>)> =
+        BTreeMap::new();
+    for line in raw.lines().filter(|line| line.contains("build_no_plot")) {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if event.get("kind").and_then(|value| value.as_str()) != Some("build_no_plot") {
+            continue;
+        }
+        let (Some(turn), Some(city), Some(district), Some(offered)) = (
+            event.get("turn").and_then(|value| value.as_u64()),
+            event.get("city").and_then(|value| value.as_i64()),
+            event.get("district").and_then(|value| value.as_str()),
+            event.get("offered").and_then(|value| value.as_i64()),
+        ) else {
+            continue;
+        };
+        if turn > u64::from(current_turn)
+            || turn < u64::from(oldest)
+            || !district.starts_with("DISTRICT_")
+        {
+            continue;
+        }
+        let key = (city, district.to_string());
+        if newest.get(&key).is_some_and(|(known_turn, _)| *known_turn > turn) {
+            continue;
+        }
+        let sites = (offered > 0).then(|| {
+            event
+                .get("offered_plots")
+                .and_then(|value| value.as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|plot| {
+                    let (x, y) = (
+                        plot.get("x").and_then(|value| value.as_i64()),
+                        plot.get("y").and_then(|value| value.as_i64()),
+                    );
+                    let (Some(x), Some(y)) = (x, y) else {
+                        return None;
+                    };
+                    let (Ok(x), Ok(y)) = (i32::try_from(x), i32::try_from(y)) else {
+                        return None;
+                    };
+                    Some(crate::hex::offset_to_axial(x, y))
+                })
+                .collect::<BTreeSet<_>>()
+        });
+        newest.insert(key, (turn, sites));
+    }
+
+    let mut out: BTreeMap<i64, BTreeMap<String, BTreeSet<crate::Pos>>> = BTreeMap::new();
+    for ((city, district), (_, sites)) in newest {
+        let Some(sites) = sites else {
+            continue;
+        };
+        if !sites.is_empty() {
+            out.entry(city).or_default().insert(district, sites);
+        }
+    }
+    out
 }
 
 /// ⚠ One event, two keys. `build_no_plot` names a refused district under `district`
@@ -10967,6 +11146,8 @@ pub fn rebuild_from_state(
     // because it needs `city_ids`, which is only complete once every city is planted.
     game.blocked_districts =
         blocked_districts_from(&state.refused_districts, &city_ids, &game.rules);
+    game.host_district_sites =
+        host_district_sites_from(&state.host_district_sites, &city_ids, &game.rules);
     game.blocked_wonders =
         blocked_wonders_from(&state.refused_wonders, &city_ids, &game.rules);
     let blocked_production =
@@ -11584,6 +11765,11 @@ impl LiveMirror {
         for (cid, names) in refused {
             self.game.blocked_districts.entry(cid).or_default().extend(names);
         }
+        self.game.host_district_sites = host_district_sites_from(
+            &state.host_district_sites,
+            &self.cid_of.iter().map(|(civ6, cid)| (*cid, *civ6)).collect(),
+            &self.game.rules,
+        );
         // The wonder half of the same event, unioned for the same reason.
         let refused_wonders = blocked_wonders_from(
             &state.refused_wonders,
@@ -12544,6 +12730,55 @@ mod transient_refusal_tests {
         ]);
         let refused = refused_no_plot_through(&p, Some(42), "district", "DISTRICT_");
         assert!(refused[&7].contains("DISTRICT_CAMPUS"), "or it is asked every turn");
+    }
+
+    /// The host already supplied the way out of a wrong-coordinate refusal. Keep
+    /// only the latest fresh offer: an old positive answer must not override a newer
+    /// zero-site answer, and neither belongs on a later board after the cooldown.
+    #[test]
+    fn fresh_host_district_sites_follow_the_newest_offer() {
+        let p = events("host_sites", &[
+            r#"{"kind":"build_no_plot","turn":40,"city":7,"district":"DISTRICT_CAMPUS","offered":2,"offered_plots":[{"x":10,"y":8}]}"#,
+            r#"{"kind":"build_no_plot","turn":41,"city":7,"district":"DISTRICT_CAMPUS","offered":1,"offered_plots":[{"x":10,"y":7}]}"#,
+            r#"{"kind":"build_no_plot","turn":42,"city":7,"district":"DISTRICT_THEATER","offered":1,"offered_plots":[{"x":9,"y":8}]}"#,
+            r#"{"kind":"build_no_plot","turn":43,"city":7,"district":"DISTRICT_THEATER","offered":0,"offered_plots":[]}"#,
+            r#"{"kind":"state","turn":49}"#,
+        ]);
+        let state = state_from_events(&p, Some(49)).expect("state at the current turn");
+        let campus = state
+            .host_district_sites
+            .get(&7)
+            .and_then(|by_district| by_district.get("DISTRICT_CAMPUS"))
+            .expect("the latest positive Campus offer is fresh");
+        assert_eq!(
+            campus.iter().copied().collect::<Vec<_>>(),
+            vec![crate::hex::offset_to_axial(10, 7)],
+            "the newest host location replaces the older coordinate rather than merging it"
+        );
+        let city_ids: BTreeMap<u32, i64> = [(99, 7)].into_iter().collect();
+        let mapped = host_district_sites_from(
+            &state.host_district_sites,
+            &city_ids,
+            &crate::rules::Rules::embedded(),
+        );
+        assert_eq!(
+            mapped
+                .get(&99)
+                .and_then(|by_district| by_district.get(&crate::name::Name::new("campus"))),
+            Some(campus),
+            "the CIV6 city/name pair must reach its reconstructed city and district"
+        );
+        assert!(
+            state
+                .host_district_sites
+                .get(&7)
+                .is_none_or(|by_district| !by_district.contains_key("DISTRICT_THEATER")),
+            "a newer zero-site answer withdraws the previous positive offer"
+        );
+        assert!(
+            host_district_sites_through(&p, 50).is_empty(),
+            "a placement response older than the production cooldown is no longer current"
+        );
     }
 
     /// And expires, which is what keeps the district from being foreclosed in a
