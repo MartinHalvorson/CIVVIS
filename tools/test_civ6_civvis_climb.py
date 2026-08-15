@@ -88,6 +88,23 @@ class TeardownOwnershipTests(unittest.TestCase):
 
     TAG = "civvis-MINE"
 
+    def test_main_refuses_a_busy_game_before_preflight_or_teardown(self):
+        """The startup guard is the first defence against a foreign run."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            orders_bin = root / "civvis_orders"
+            orders_bin.write_text("#!/bin/sh\n")
+            argv = ["civ6_civvis_climb.py", "--orders-bin", str(orders_bin),
+                    "--logs", str(root / "logs")]
+            with mock.patch.object(climb.sys, "argv", argv), \
+                 mock.patch.object(climb, "busy", return_value="456\n"), \
+                 mock.patch.object(climb, "teardown") as teardown, \
+                 mock.patch.object(climb, "run") as run:
+                self.assertEqual(3, climb.main())
+
+        teardown.assert_not_called()
+        run.assert_not_called()
+
     def test_an_untagged_cleanup_does_not_touch_a_running_game(self):
         with mock.patch.object(climb, "busy", return_value="123\n"), \
              mock.patch.object(climb, "run") as run:
