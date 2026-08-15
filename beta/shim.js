@@ -402,6 +402,10 @@
   let finaleEndsAt = null;
   let finaleResultId = null;
   let finaleRating = null;
+  // Which hold the countdown belongs to, exactly as the socket server counts
+  // its own: bumped when a hold starts or starts over, and published as
+  // `restart_hold` so the viewer's clock re-anchors to a re-armed hold.
+  let finaleHold = 0;
 
   // A result holds the screen for the selected interval and then the next
   // world opens. Reading it off each answer keeps the countdown attached to
@@ -429,10 +433,15 @@
       });
     }
     if (finaleRating !== null) await finaleRating;
-    if (finaleEndsAt === null) finaleEndsAt = performance.now() + betweenGameCountdownMs;
+    if (finaleEndsAt === null) {
+      finaleEndsAt = performance.now() + betweenGameCountdownMs;
+      finaleHold += 1;
+    }
     const left = finaleEndsAt - performance.now();
     if (left > 0) {
       state.restart_in = Math.ceil(left / 1000);
+      state.restart_in_ms = Math.ceil(left);
+      state.restart_hold = finaleHold;
       return state;
     }
     finaleEndsAt = null;
@@ -511,7 +520,12 @@
       if (typeof parsed.ms === "number") pace = parsed.ms;
       if (typeof parsed.between_game_countdown_ms === "number" &&
           FINALE_OPTIONS_MS.has(parsed.between_game_countdown_ms)) {
+        // Changed while a result is being held: the new length counts from
+        // now, exactly as the socket server re-arms its own hold. A shorter
+        // choice asks for the next world sooner, not for it this instant.
+        const changed = betweenGameCountdownMs !== parsed.between_game_countdown_ms;
         betweenGameCountdownMs = parsed.between_game_countdown_ms;
+        if (changed && finaleEndsAt !== null) { finaleEndsAt = performance.now() + betweenGameCountdownMs; finaleHold += 1; }
       }
       if (typeof parsed.paused === "boolean") {
         paused = parsed.paused;
