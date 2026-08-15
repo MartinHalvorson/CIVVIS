@@ -372,6 +372,73 @@ struct Order {
     pos: Option<(i32, i32)>,
 }
 
+/// Firaxis remembers a submitted peace offer per rival for five turns.
+///
+/// `CivvisControlAgent.lua` rejects another offer while
+/// `turn - asked < (cfg.PeaceRetryTurns or 5)`. Keep that host-only fact at the
+/// persistent outbound boundary: the planner can still decide to seek peace on
+/// every turn, but the bridge emits only the first request and the next legal
+/// retry. It also survives a fresh mirror or fresh AI, because the cooldown
+/// belongs to Firaxis rather than either reconstructed object.
+const HOST_PEACE_RETRY_TURNS: u32 = 5;
+
+#[derive(Default)]
+struct HostPeaceRetries {
+    last_request: std::collections::BTreeMap<i64, u32>,
+}
+
+impl HostPeaceRetries {
+    fn observe(&mut self, state: &civvis::mirror::StateSnapshot) {
+        self.last_request.retain(|target, asked| {
+            *asked <= state.turn
+                && state
+                    .rivals
+                    .iter()
+                    .any(|rival| rival.at_war && rival.player as i64 == *target)
+        });
+    }
+
+    fn permits(&self, target: i64, turn: u32) -> bool {
+        self.last_request
+            .get(&target)
+            .map_or(true, |asked| {
+                turn.saturating_sub(*asked) >= HOST_PEACE_RETRY_TURNS
+            })
+    }
+
+    fn record(&mut self, target: i64, turn: u32) {
+        self.last_request.insert(target, turn);
+    }
+}
+
+/// Withhold only peace orders whose known Firaxis cooldown has not expired.
+///
+/// This is deliberately below translation, so native `MakePeace`, negotiated
+/// peace deals, and the report-only mirrored peace path all obey the same host
+/// contract. Other diplomacy stays untouched.
+fn defer_host_peace_retries(
+    orders: Vec<Order>,
+    state: &civvis::mirror::StateSnapshot,
+    retries: &mut HostPeaceRetries,
+) -> (Vec<Order>, Vec<i64>) {
+    retries.observe(state);
+    let mut allowed = Vec::with_capacity(orders.len());
+    let mut deferred = Vec::new();
+    for order in orders {
+        let Some(target) = (order.kind == "peace").then_some(order.subject).flatten() else {
+            allowed.push(order);
+            continue;
+        };
+        if retries.permits(target, state.turn) {
+            retries.record(target, state.turn);
+            allowed.push(order);
+        } else {
+            deferred.push(target);
+        }
+    }
+    (allowed, deferred)
+}
+
 /// Keep only commands whose preconditions belong to the observed Firaxis frame.
 ///
 /// CIVVIS applies a unit's whole turn synchronously to its planning clone, so a
@@ -1122,6 +1189,7 @@ fn decide(
     war_from_plan: bool,
     withheld: &[String],
     ours: &mut std::collections::BTreeMap<i64, String>,
+    host_peace_retries: &mut HostPeaceRetries,
 ) -> String {
     // Only the live bridge has Firaxis's non-walking Trader representation and
     // host-city religious purchase rule. Enable those narrow adapters before
@@ -1460,6 +1528,18 @@ fn decide(
         }
     } else {
         note_bits.push("plan=none".to_string());
+    }
+
+    let (host_legal, deferred_peace_retries) =
+        defer_host_peace_retries(orders, state, host_peace_retries);
+    orders = host_legal;
+    if !deferred_peace_retries.is_empty() {
+        let targets = deferred_peace_retries
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        note_bits.push(format!("peace_host_cooldown=[{targets}]"));
     }
 
     let (activation_safe, deferred_activation_plot_conflicts) =
@@ -2744,7 +2824,17 @@ fn main() {
         // One-shot: there is no next turn to be self-limiting against, so this starts
         // empty and every foreign choice is released once.
         let mut ours = std::collections::BTreeMap::new();
-        let reply = decide(&mut live, &mut ai, &snapshot, &state, war_from_plan, &withheld, &mut ours);
+        let mut host_peace_retries = HostPeaceRetries::default();
+        let reply = decide(
+            &mut live,
+            &mut ai,
+            &snapshot,
+            &state,
+            war_from_plan,
+            &withheld,
+            &mut ours,
+            &mut host_peace_retries,
+        );
         // ⚠ `--explain` USED TO WORK ONLY UNDER `--serve`, which is the mode you cannot
         // debug in. Replaying one recorded turn is the fast loop — seconds, no game,
         // no lock — and it was the one path that could not say why it chose anything.
@@ -2775,6 +2865,10 @@ fn main() {
     // mirror every turn and this must survive that, exactly like the unit memory
     // carried through `remap_unit_memory` below. See `release_foreign_production`.
     let mut ours: std::collections::BTreeMap<i64, String> = std::collections::BTreeMap::new();
+    // This records an operation Firaxis already accepted, rather than a simulated
+    // choice. Keep it through all bridge reconstruction modes so a fresh board or
+    // diagnostic fresh AI cannot repeat a host-cooldown peace request.
+    let mut host_peace_retries = HostPeaceRetries::default();
     let mut explain_cursor: u64 = 0;
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
@@ -2847,7 +2941,16 @@ fn main() {
                         None => ai.forget_unit_memory(),
                     }
                     board.carry_treasury_baseline(carried_treasury);
-                    let reply = decide(&mut board, &mut ai, &snapshot, &state, war_from_plan, &withheld, &mut ours);
+                    let reply = decide(
+                        &mut board,
+                        &mut ai,
+                        &snapshot,
+                        &state,
+                        war_from_plan,
+                        &withheld,
+                        &mut ours,
+                        &mut host_peace_retries,
+                    );
                     live = Some(board);
                     reply
                 } else {
@@ -2856,7 +2959,16 @@ fn main() {
                         let mut fresh = civvis::mirror::LiveMirror::new(
                             &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
                         );
-                        let reply = decide(&mut fresh, &mut ai, &snapshot, &state, war_from_plan, &withheld, &mut ours);
+                        let reply = decide(
+                            &mut fresh,
+                            &mut ai,
+                            &snapshot,
+                            &state,
+                            war_from_plan,
+                            &withheld,
+                            &mut ours,
+                            &mut host_peace_retries,
+                        );
                         live = Some(fresh);
                         reply
                     }
@@ -2877,9 +2989,27 @@ fn main() {
                                 _ => civvis::ai::AdvancedAi::targeting(
                                     civvis::ai::VictoryTarget::Domination),
                             };
-                            decide(existing, &mut throwaway, &snapshot, &state, war_from_plan, &withheld, &mut ours)
+                            decide(
+                                existing,
+                                &mut throwaway,
+                                &snapshot,
+                                &state,
+                                war_from_plan,
+                                &withheld,
+                                &mut ours,
+                                &mut host_peace_retries,
+                            )
                         } else {
-                            decide(existing, &mut ai, &snapshot, &state, war_from_plan, &withheld, &mut ours)
+                            decide(
+                                existing,
+                                &mut ai,
+                                &snapshot,
+                                &state,
+                                war_from_plan,
+                                &withheld,
+                                &mut ours,
+                                &mut host_peace_retries,
+                            )
                         }
                     }
                 }
@@ -3015,6 +3145,43 @@ mod tests {
         Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateGreatPerson,
         StateGovernor, StateRival, StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
     };
+
+    #[test]
+    fn host_peace_backoff_matches_firaxis_retry_window() {
+        let mut retries = HostPeaceRetries::default();
+        let mut state = StateSnapshot {
+            turn: 58,
+            rivals: vec![StateRival {
+                player: 2,
+                at_war: true,
+                ..StateRival::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let peace = || Order {
+            kind: "peace",
+            subject: Some(2),
+            verb: Some("MAKE_PEACE".to_string()),
+            pos: None,
+        };
+
+        let (orders, deferred) = defer_host_peace_retries(vec![peace()], &state, &mut retries);
+        assert_eq!(orders.len(), 1, "the first host request is legal");
+        assert!(deferred.is_empty());
+
+        for turn in 59..63 {
+            state.turn = turn;
+            let (orders, deferred) =
+                defer_host_peace_retries(vec![peace()], &state, &mut retries);
+            assert!(orders.is_empty(), "turn {turn} remains inside host cooldown");
+            assert_eq!(deferred, vec![2]);
+        }
+
+        state.turn = 63;
+        let (orders, deferred) = defer_host_peace_retries(vec![peace()], &state, &mut retries);
+        assert_eq!(orders.len(), 1, "the fifth turn is legal again");
+        assert!(deferred.is_empty());
+    }
 
     /// One land patch is enough: the override reads cities, not terrain.
     fn production_board() -> (Snapshot, StateSnapshot) {
@@ -3274,6 +3441,7 @@ mod tests {
             false,
             &[],
             &mut ours,
+            &mut HostPeaceRetries::default(),
         ))
         .unwrap();
         let attacks = reply["orders"]
@@ -4219,6 +4387,7 @@ mod tests {
             false,
             &[],
             &mut Default::default(),
+            &mut HostPeaceRetries::default(),
         ))
         .expect("the decision is JSON");
 
@@ -4393,7 +4562,16 @@ mod tests {
         let before = serde_json::to_value(&mirror.game).expect("mirror game serializes");
         let mut ai = civvis::ai::AdvancedAi::new();
 
-        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false, &[], &mut Default::default());
+        let reply = decide(
+            &mut mirror,
+            &mut ai,
+            &snapshot,
+            &state,
+            false,
+            &[],
+            &mut Default::default(),
+            &mut HostPeaceRetries::default(),
+        );
 
         assert!(reply.contains("\"turn\":4"));
         assert_eq!(
@@ -4467,6 +4645,7 @@ mod tests {
             false,
             &[],
             &mut Default::default(),
+            &mut HostPeaceRetries::default(),
         ))
         .expect("the decision is JSON");
 
@@ -4532,7 +4711,16 @@ mod tests {
         }));
 
         let mut ai = civvis::ai::AdvancedAi::new();
-        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false, &[], &mut Default::default());
+        let reply = decide(
+            &mut mirror,
+            &mut ai,
+            &snapshot,
+            &state,
+            false,
+            &[],
+            &mut Default::default(),
+            &mut HostPeaceRetries::default(),
+        );
 
         assert!(
             reply.contains("\"verb\":\"TRADE_ROUTE\"") && reply.contains("\"subject\":42"),
