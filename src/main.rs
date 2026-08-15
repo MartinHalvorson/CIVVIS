@@ -992,7 +992,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// becoming a counter-campaign at less than half the rival's power. The
 /// frozen anchor's false gate preserves its historical denial path, asserted
 /// in the regression. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x9d51_3f58_7d44_3201;
+/// The live-only peacetime-deterrence gate now converts its raised defender
+/// target into city queues before adaptive Science can refill them with
+/// projects. `AdvancedAi::legacy()` leaves that gate false; the regression
+/// asserts both the frozen project and the live defender. Compatibility re-pin;
+/// the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd85d_af99_840e_c126;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

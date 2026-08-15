@@ -13113,25 +13113,64 @@ impl AdvancedAi {
         }
     }
 
+    /// The live peacetime deterrence target is normally a small multiplier of
+    /// the ordinary one-unit-per-city floor. Return its raised target only
+    /// while the empire is peacefully short of it: Conquest and Recovery own
+    /// their stronger wartime redirects below, and an unmet rival must remain
+    /// invisible through [`Self::enemy_weighted_army_target`].
+    fn peacetime_deterrence_force_gap(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Option<usize> {
+        if !self.peacetime_deterrence
+            || matches!(
+                plan.strategy,
+                GrandStrategy::Conquest | GrandStrategy::Recovery
+            )
+            || g.players.iter().any(|player| {
+                player.id != pid
+                    && player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && g.is_at_war(pid, player.id)
+            })
+        {
+            return None;
+        }
+        let city_count = g.player_city_ids(pid).len();
+        let desired = self.enemy_weighted_army_target(g, pid, city_count);
+        let counts = self.counts(g, pid);
+        let land = counts
+            .military
+            .saturating_sub(counts.naval + counts.aircraft);
+        (desired > city_count && land < desired).then_some(desired)
+    }
+
     /// A live strategic pivot must reach city queues, not only policies and
     /// unit orders. Pause repeatable economic projects when Conquest or
     /// Recovery has a real land-force gap; item progress remains banked and
-    /// can resume after the emergency. One-off and victory projects are never
-    /// interrupted here.
+    /// can resume after the emergency. The same direct handoff applies to the
+    /// live-only peacetime deterrence floor, which may claim an idle city
+    /// before the adaptive Science governor fills it. One-off and victory
+    /// projects are never interrupted here.
     fn redirect_repeatable_projects_for_force_gap(
         &self,
         g: &mut Game,
         pid: usize,
         plan: &StrategicPlan,
     ) {
+        let peacetime_target = self.peacetime_deterrence_force_gap(g, pid, plan);
         if !matches!(
             plan.strategy,
             GrandStrategy::Conquest | GrandStrategy::Recovery
-        ) {
+        ) && peacetime_target.is_none()
+        {
             return;
         }
         let city_ids = g.player_city_ids(pid);
-        let desired_land = 2 * city_ids.len();
+        let desired_land = peacetime_target.unwrap_or(2 * city_ids.len());
         for cid in city_ids {
             let counts = self.counts(g, pid);
             let land = counts
@@ -13140,14 +13179,19 @@ impl AdvancedAi {
             if land >= desired_land {
                 return;
             }
-            let Some(Item::Project { project }) = g.cities[&cid].queue.first() else {
-                continue;
+            let redirectable = match g.cities[&cid].queue.first() {
+                Some(Item::Project { project }) => {
+                    let spec = &g.rules.projects[project];
+                    spec.repeatable
+                        && (!spec.completion_gpp.is_empty() || !spec.ongoing_yields.is_empty())
+                }
+                // This branch is intentionally limited to the pre-war target.
+                // Wartime production still enters through its ordinary plan,
+                // rather than seizing every empty queue after a declaration.
+                None => peacetime_target.is_some(),
+                _ => false,
             };
-            let project = *project;
-            let spec = &g.rules.projects[&project];
-            if !spec.repeatable
-                || (spec.completion_gpp.is_empty() && spec.ongoing_yields.is_empty())
-            {
+            if !redirectable {
                 continue;
             }
             let best = {
@@ -29521,6 +29565,73 @@ mod tests {
 
         assert!(matches!(
             game.cities[&city].queue.first(),
+            Some(Item::Unit { unit }) if game.rules.units[unit].class == "military"
+        ));
+    }
+
+    #[test]
+    fn peacetime_deterrence_redirects_an_adaptive_science_grant_into_a_defender() {
+        // The live run `civvis-20260815T033005Z` reached turn 174 at 85 power
+        // against the strongest met rival's 540, then repeatedly queued Campus
+        // Research Grants through turn 251. It finished with two Warriors at 40
+        // against India's 962. The live bridge was already raising its
+        // deterrence target, but adaptive Science bypassed the production
+        // governor that could spend it.
+        let (mut game, city, home) = empire_with_a_capital(71_108);
+        game.at_war.clear();
+        game.record_contact(0, 1);
+        let idle_city = found_nearby_test_city(&mut game, 0, home);
+        for _ in 0..2 {
+            game.spawn_test_unit("warrior", 1, anchor_at(&game, home, 15));
+        }
+        install_ai_test_district(&mut game, city, "campus");
+        game.players[0].techs.insert(crate::name!("writing"));
+        let grant = Item::Project {
+            project: crate::name!("campus_research_grants"),
+        };
+        assert!(game.can_produce(0, city, &grant));
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: grant.clone(),
+            },
+        )
+        .expect("queue Campus Research Grants");
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 1,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        // The frozen anchor leaves the science project alone: it has no live
+        // peacetime deterrence treatment to turn a rival's observed army into
+        // a production obligation.
+        let anchor = AdvancedAi::legacy();
+        anchor.redirect_repeatable_projects_for_force_gap(&mut game, 0, &plan);
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Project { project }) if *project == crate::name!("campus_research_grants")
+        ));
+
+        let mut live = AdvancedAi::new();
+        live.enable_peacetime_deterrence();
+        assert_eq!(
+            live.enemy_weighted_army_target(&game, 0, 2),
+            3,
+            "the met rival raises the two-city peacetime floor before a declaration"
+        );
+        live.redirect_repeatable_projects_for_force_gap(&mut game, 0, &plan);
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Unit { unit }) if game.rules.units[unit].class == "military"
+        ));
+        assert!(matches!(
+            game.cities[&idle_city].queue.first(),
             Some(Item::Unit { unit }) if game.rules.units[unit].class == "military"
         ));
     }
