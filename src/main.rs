@@ -983,7 +983,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// them, as the `siege-muster`/`home-defense` treatments) and the
 /// `advanced_war_half` re-addition arm. Compatibility re-pin; the Elo
 /// protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x810b_05f9_ed18_b891;
+/// Live strategic targeting now excludes unintroduced mirror seats behind
+/// `battlefront_observation`. `AdvancedAi::legacy()` holds that flag false, so
+/// both new predicates short-circuit to their historical forms; the focused
+/// regression asserts that boundary. Compatibility re-pin; the Elo protocol
+/// does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x68dd_6682_16ab_849e;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

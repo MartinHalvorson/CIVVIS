@@ -2699,6 +2699,9 @@ mod tests {
     fn imminent_space_race_routes_to_denial() {
         let mut game = Game::new_full(3, 24, 16, 23, 300, 0, false);
         found_capitals(&mut game, 3);
+        for rival in 1..game.players.len() {
+            game.record_contact(0, rival);
+        }
         game.players[2].science_projects.extend([
             "launch_earth_satellite".to_string(),
             "launch_moon_landing".to_string(),
@@ -2726,6 +2729,9 @@ mod tests {
     fn urgent_denial_retargets_when_a_different_rival_takes_the_lead() {
         let mut game = Game::new_full(3, 24, 16, 24, 300, 0, false);
         found_capitals(&mut game, 3);
+        for rival in 1..game.players.len() {
+            game.record_contact(0, rival);
+        }
         for rival in [1, 2] {
             game.players[rival]
                 .science_projects
