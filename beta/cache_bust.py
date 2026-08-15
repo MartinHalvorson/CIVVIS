@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Give every published build dependency a content-addressed URL.
 
-The lane's HTML is a moving pointer and is always revalidated. Once that fresh
+A lane's HTML is a moving pointer and is always revalidated. Once that fresh
 page arrives, these query versions make the browser request a new URL for every
 JS, WASM, or atlas whose bytes changed. Unchanged files keep the same URL and
 remain safely reusable from cache.
+
+The lane is the whole unit: the viewer at its root and the landing page's
+photographs under home/ are versioned by the same pass, so no page in the lane
+carries a hand-maintained hash. A reference that already has a `?v=` (an older
+pinned revision's hand-written one) is re-derived from the actual bytes.
 """
 
 from __future__ import annotations
@@ -15,7 +20,7 @@ import pathlib
 import re
 
 
-ASSET_REFERENCE = re.compile(r'(["\'])(assets/[^"\'?#]+)\1')
+ASSET_REFERENCE = re.compile(r'(["\'])(assets/[^"\'?#]+)(?:\?v=[0-9a-f]+)?\1')
 
 
 def content_version(path: pathlib.Path) -> str:
@@ -27,6 +32,31 @@ def replace_once(text: str, needle: str, replacement: str, label: str) -> str:
     if count != 1:
         raise ValueError(f"expected exactly one unversioned {label}; found {count}")
     return text.replace(needle, replacement, 1)
+
+
+def version_references(page_path: pathlib.Path, base: pathlib.Path) -> int:
+    """Rewrite every assets/ reference in one file to a content-addressed URL.
+
+    `base` is the directory the file's relative references resolve against —
+    the file's own directory for a page, the lane root for the viewer script.
+    Returns how many references were versioned; a reference to a file that
+    does not exist on disk fails the build.
+    """
+    versioned = 0
+
+    def version_asset(match: re.Match[str]) -> str:
+        nonlocal versioned
+        quote, relative = match.groups()
+        asset_path = base / relative
+        if not asset_path.is_file():
+            raise FileNotFoundError(f"{page_path.name} references missing {relative}")
+        versioned += 1
+        return f"{quote}{relative}?v={content_version(asset_path)}{quote}"
+
+    text = page_path.read_text(encoding="utf-8")
+    text = ASSET_REFERENCE.sub(version_asset, text)
+    page_path.write_text(text, encoding="utf-8")
+    return versioned
 
 
 def version_lane(lane: pathlib.Path) -> None:
@@ -78,33 +108,29 @@ def version_lane(lane: pathlib.Path) -> None:
         f'src="shim.js?v={shim_version}"',
         "shim script in index.html",
     )
-
-    referenced_assets = 0
-
-    def version_asset(match: re.Match[str]) -> str:
-        nonlocal referenced_assets
-        quote, relative = match.groups()
-        asset_path = lane / relative
-        if not asset_path.is_file():
-            raise FileNotFoundError(f"published page references missing {relative}")
-        referenced_assets += 1
-        return f"{quote}{relative}?v={content_version(asset_path)}{quote}"
+    page_path.write_text(page, encoding="utf-8")
 
     # The viewer's script (`assets/app.js`) carries the atlas references now.
-    # Version them inside the script first and write it back, so the script's
-    # own bytes — and therefore the hash the page requests it by — change
-    # whenever any atlas it names changes: the same dependency-hash chaining
-    # the generated shim uses for the wasm and worker. In a pre-app.js lane
-    # the references sit in the page and the pass below covers them.
+    # Version them inside the script first, so the script's own bytes — and
+    # therefore the hash the page requests it by — change whenever any atlas
+    # it names changes: the same dependency-hash chaining the generated shim
+    # uses for the wasm and worker. In a pre-app.js lane the references sit
+    # in the page and the page's own pass covers them.
+    referenced_assets = 0
     if app_js_path.is_file():
-        appjs = app_js_path.read_text(encoding="utf-8")
-        appjs = ASSET_REFERENCE.sub(version_asset, appjs)
-        app_js_path.write_text(appjs, encoding="utf-8")
-
-    page = ASSET_REFERENCE.sub(version_asset, page)
+        referenced_assets += version_references(app_js_path, lane)
+    referenced_assets += version_references(page_path, lane)
     if referenced_assets == 0:
-        raise ValueError("published page contains no unversioned atlas references")
-    page_path.write_text(page, encoding="utf-8")
+        raise ValueError("published viewer contains no unversioned atlas references")
+
+    # The other pages of the lane. The landing page's photographs live in
+    # home/assets and are referenced relative to the page; the downloads page
+    # references no local assets today, and versioning zero of them is a
+    # shape, not an error — verify.py asserts the files themselves ship.
+    for page_dir in ("home", "download"):
+        lane_page = lane / page_dir / "index.html"
+        if lane_page.is_file():
+            version_references(lane_page, lane / page_dir)
 
 
 def main() -> int:

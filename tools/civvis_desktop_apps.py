@@ -29,14 +29,17 @@ from typing import Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 
 REPOSITORY_URL = "https://github.com/MartinHalvorson/CIVVIS"
-# The subdirectory `beta/publish.sh` writes the viewer into. It is NOT `beta/`:
-# the published tree is a two-lane site whose viewer lives under `test/`, and
-# `beta/` is only the source directory the publisher is invoked from. Reading
-# the wrong one raised FileNotFoundError after the build had already succeeded,
-# so every desktop app silently stopped rebuilding while CI stayed green —
-# nothing here is exercised by the suite unless a test names this constant.
+# Where `beta/publish.sh` writes the viewer inside its --out directory. The
+# publisher emits one complete LANE per revision with the viewer at the lane
+# ROOT — "." rather than a subdirectory (it was `test/` when the publisher
+# emitted a half-assembled site; the deploy workflow now stacks two whole
+# lanes itself). It is NOT `beta/`: that is only the source directory the
+# publisher is invoked from. Reading the wrong place raised FileNotFoundError
+# after the build had already succeeded, so every desktop app silently
+# stopped rebuilding while CI stayed green — nothing here is exercised by the
+# suite unless a test names this constant.
 # `viewer_lane_matches_the_publisher` pins it against publish.sh itself.
-VIEWER_LANE = "test"
+VIEWER_LANE = "."
 FULL_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 GENERATED_BUILD_NAME = re.compile(r"^build-[0-9a-f]+-\d{8}T\d{6}Z$")
 TEMPLATE_TOKENS = ("MODE", "LABEL", "COMMIT", "COMMIT_TIME", "BUILT_AT", "REPO")

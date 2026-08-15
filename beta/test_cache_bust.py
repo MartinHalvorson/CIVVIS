@@ -113,6 +113,40 @@ class CacheBustTests(unittest.TestCase):
                 content_version(second_lane / "shim.js"),
             )
 
+    def test_versions_the_landing_photographs_and_replaces_stale_hand_hashes(self) -> None:
+        # The lane is the whole unit: home/index.html's photographs are
+        # versioned by the same pass as the viewer, resolved against the
+        # page's own directory. A reference that already carries a ?v= — an
+        # older pinned revision's hand-written hash — is re-derived from the
+        # actual bytes rather than trusted.
+        with tempfile.TemporaryDirectory() as directory:
+            lane = self.make_lane(pathlib.Path(directory))
+            (lane / "home" / "assets").mkdir(parents=True)
+            (lane / "home" / "assets" / "photo.jpg").write_bytes(b"photo-v1")
+            (lane / "home" / "assets" / "plain.jpg").write_bytes(b"photo-v2")
+            (lane / "home" / "index.html").write_text(
+                '<img src="assets/photo.jpg?v=deadbeef"><img src="assets/plain.jpg">',
+                encoding="utf-8",
+            )
+            photo_version = content_version(lane / "home" / "assets" / "photo.jpg")
+            plain_version = content_version(lane / "home" / "assets" / "plain.jpg")
+
+            version_lane(lane)
+
+            landing = (lane / "home" / "index.html").read_text(encoding="utf-8")
+            self.assertIn(f'src="assets/photo.jpg?v={photo_version}"', landing)
+            self.assertIn(f'src="assets/plain.jpg?v={plain_version}"', landing)
+            self.assertNotIn("deadbeef", landing)
+
+    def test_a_lane_without_extra_pages_still_versions(self) -> None:
+        # publish.sh always emits home/ and download/, but the versioner keeps
+        # accepting a bare viewer lane — the shape its own older tests build.
+        with tempfile.TemporaryDirectory() as directory:
+            lane = self.make_lane(pathlib.Path(directory))
+            version_lane(lane)
+            page = (lane / "index.html").read_text(encoding="utf-8")
+            self.assertIn("?v=", page)
+
     def test_missing_referenced_asset_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             lane = self.make_lane(pathlib.Path(directory))

@@ -4,20 +4,26 @@ name: to-test-auto-30
 # the name says the automatic half — /test refreshes on a half-hourly tick —
 # and to-prod-manual-only says the other half.
 #
-#   /        the STABLE lane: whatever the `site-stable` tag names. It moves
-#            only when somebody runs to-prod-manual-only, because
-#            whether a build is worth being the front page is a judgement,
-#            and no gate can make it.
-#   /test    the HEAD lane: origin/main as of this run, republished on a
-#            schedule. It exists so the newest engine is always playable
-#            without anyone deciding anything.
+#   /        the STABLE lane: whatever the `site-stable` tag names — the
+#            viewer at /, the landing page at /home, the binaries page at
+#            /download, all from the promoted commit. It moves only when
+#            somebody runs to-prod-manual-only, because whether a build is
+#            worth being the front page is a judgement, and no gate can
+#            make it.
+#   /test    the HEAD lane: the same complete set of pages from origin/main
+#            as of this run — /test, /test/home, /test/download —
+#            republished on a schedule. It exists so the newest site is
+#            always reviewable without anyone deciding anything, and every
+#            link inside it stays inside it: clicking around /test never
+#            lands in prod.
 #
 # Every deployment carries both lanes. That is not an implementation shortcut,
 # it is what Cloudflare Pages deployments are: immutable snapshots of a whole
 # directory. There is no such thing as updating half a site, so each deploy
 # rebuilds the stable lane from its pinned tag and the test lane from head,
 # assembles one directory, and ships it. Both lanes therefore always exist,
-# and a promotion is nothing but moving the tag and deploying again.
+# and a promotion is nothing but moving the tag and deploying again — which
+# now moves every page at once, not just the viewer.
 #
 # **The cadence: every commit, half an hour of cooldown, one governor.**
 # The schedule fires every 30 minutes, and the `gate` job decides whether a
@@ -265,20 +271,24 @@ jobs:
             ./beta/publish.sh --commit "${{ steps.lanes.outputs.head }}" --out "$PWD/lane-test"
           fi
 
-      # One site from the two lanes. publish.sh emits a single-lane shape —
-      # landing at index.html, viewer under test/ — and the viewer is
-      # relative-pathed, so it works at any mount point. The head build
-      # provides the shell (landing, download page, _worker.js, its viewer as
-      # /test); the stable build's viewer is then mounted at the root; the
-      # landing page becomes a real file at /home.
+      # One site from the two lanes. publish.sh emits a complete lane —
+      # viewer at its root, /home and /download beside it, every link
+      # lane-relative — so the identical tree serves at the site root and
+      # under /test. The stable lane becomes the root; the head lane is
+      # mounted, whole, at /test; the deployment-global shell (_worker.js,
+      # 404.html — always head's, publish.sh copies them from the invoking
+      # tree) stays only at the root.
       - name: Assemble the site
         run: |
           set -euo pipefail
           rm -rf site
-          cp -R lane-test site
-          mkdir -p site/home
-          mv site/index.html site/home/index.html
-          cp -R lane-stable/test/. site/
+          cp -R lane-stable site
+          cp -R lane-test site/test
+          rm -f site/test/_worker.js site/test/404.html
+          for page in index.html home/index.html download/index.html build.json; do
+            test -f "site/$page"      || { echo "::error::site/$page is missing"; exit 1; }
+            test -f "site/test/$page" || { echo "::error::site/test/$page is missing"; exit 1; }
+          done
           echo "root  $(python3 -c "import json;print(json.load(open('site/build.json'))['short'])")"
           echo "test  $(python3 -c "import json;print(json.load(open('site/test/build.json'))['short'])")"
 
@@ -351,6 +361,6 @@ jobs:
             echo
             echo "- https://civvis.ai — the promoted build"
             echo "- https://civvis.ai/test/ — the latest main"
-            echo "- https://civvis.ai/home — the landing page"
-            echo "- https://civvis.ai/download/ — the native binaries"
+            echo "- https://civvis.ai/home and /test/home — the landing pages"
+            echo "- https://civvis.ai/download/ and /test/download/ — the native binaries"
           } >> "$GITHUB_STEP_SUMMARY"

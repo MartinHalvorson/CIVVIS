@@ -157,13 +157,13 @@ def fresh_profile(prefix: str) -> str:
     return tempfile.mkdtemp(prefix=prefix)
 
 
-# The site carries the same viewer twice: the promoted stable build at the
-# root and the automatic head build under /test. Each lane is checked
-# separately (`--mount root` / `--mount test`) because they are different
-# engines from different commits, and a deploy that plays in one lane and not
-# the other is exactly the mistake worth catching. The lane-independent pages
-# are asserted both times; that costs nothing and keeps either invocation
-# sufficient to reject a bundle with no landing page.
+# The site carries the same set of pages twice: the promoted stable lane at
+# the root and the automatic head lane under /test, each a complete tree —
+# viewer, landing page, downloads page. Each lane is checked separately
+# (`--mount root` / `--mount test`) because they are different builds from
+# different commits, and a deploy that works in one lane and not the other is
+# exactly the mistake worth catching. Every page is asserted per lane, so
+# either invocation rejects a bundle whose lane is missing its landing page.
 #
 # The atlases are republished as WebP when Pillow is available and stay PNG
 # when it is not, so the required-files list asks for a strategic map atlas in
@@ -171,18 +171,20 @@ def fresh_profile(prefix: str) -> str:
 def required(mount: str) -> list:
     lane = "" if mount == "root" else "test/"
     return [
-        "home/index.html" if mount == "root" else "index.html",
-        "home/assets/watch-civ.jpg",
-        "home/assets/play-civ.jpg",
-        "home/assets/watch-tactics.jpg",
-        "home/assets/play-tactics.jpg",
-        "download/index.html",
         f"{lane}index.html",
         f"{lane}civvis.wasm",
         f"{lane}shim.js",
         f"{lane}worker.js",
         f"{lane}build.json",
         (f"{lane}assets/feature-atlas.webp", f"{lane}assets/feature-atlas.png"),
+        # The landing photographs are deliberately not pinned by name here:
+        # each lane ships its own revision's art, so the stable lane's set
+        # legitimately differs from head's. The page's own references are
+        # checked against the disk further down instead.
+        f"{lane}home/index.html",
+        f"{lane}download/index.html",
+        # Deployment-global rather than lane content: the shell always sits at
+        # the site root, whichever lane is being checked.
         "_worker.js",
         # Its existence is behaviour: without it, Pages answers unknown paths
         # with the front page instead of a 404.
@@ -450,14 +452,28 @@ def check_gate(dist: pathlib.Path) -> list[str]:
         if b"releases/latest/download/" not in get("/download/").read():
             problems.append("/download/ is not serving the downloads page")
 
-        # And so is the test lane. A `TEST_PASSWORD` left in the Pages environment
-        # would put a door back in front of everyone the channel sends here,
-        # and would look exactly like a working site from every other angle.
-        head_lane = get("/test/").read()
-        if b"Test build" in head_lane and b"shim.js" not in head_lane:
-            problems.append("/test/ is asking for a password; is TEST_PASSWORD set?")
-        elif b"shim.js" not in head_lane:
-            problems.append("/test/ is not serving the viewer")
+        # And so is the test lane — when this directory carries one. A
+        # standalone publish.sh build is a single lane and has no /test; the
+        # assembled two-lane site always does. A `TEST_PASSWORD` left in the
+        # Pages environment would put a door back in front of everyone, and
+        # would look exactly like a working site from every other angle.
+        if (dist / "test" / "index.html").is_file():
+            head_lane = get("/test/").read()
+            if b"Test build" in head_lane and b"shim.js" not in head_lane:
+                problems.append("/test/ is asking for a password; is TEST_PASSWORD set?")
+            elif b"shim.js" not in head_lane:
+                problems.append("/test/ is not serving the viewer")
+
+            # Every page exists per lane now, and reviewing the test lane
+            # means clicking around /test without ever landing in prod — so
+            # the test lane's landing and downloads pages must answer at
+            # their own addresses, not merely exist as files.
+            if b'aria-label="CIVVIS links"' not in get("/test/home/").read():
+                problems.append("the test lane's landing page is not being served at /test/home")
+            if b"releases/latest/download/" not in get("/test/download/").read():
+                problems.append("/test/download/ is not serving the downloads page")
+        else:
+            print("    (single-lane build: no /test to route)")
 
         # /beta — the lane's day-one name — is scrapped, and dead paths in
         # general answer 404. The second probe is what proves 404.html is
@@ -473,7 +489,10 @@ def check_gate(dist: pathlib.Path) -> list[str]:
                     problems.append(f"{dead} answers HTTP {gone.code} rather than 404")
 
         # Both engines reach their pages as modules, not as HTML apologies.
-        for lane in ("/civvis.wasm", "/test/civvis.wasm"):
+        modules = ["/civvis.wasm"]
+        if (dist / "test" / "index.html").is_file():
+            modules.append("/test/civvis.wasm")
+        for lane in modules:
             module = get(lane)
             if module.read(4) != b"\x00asm":
                 problems.append(f"{lane} is not being served as a WebAssembly module")
@@ -536,10 +555,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--mount",
         choices=("test", "root"),
-        default="test",
-        help="which lane to open in the browser: 'test' (default, and the shape "
-             "publish.sh emits on its own) or 'root' (the promoted stable lane "
-             "of an assembled two-lane site)",
+        default="root",
+        help="which lane to open in the browser: 'root' (default — the shape "
+             "publish.sh emits on its own, and the promoted stable lane of an "
+             "assembled two-lane site) or 'test' (the head lane mounted at "
+             "/test of an assembled site)",
     )
     parser.add_argument("--seconds", type=float, default=25.0)
     parser.add_argument("--min-turns", type=int, default=3)
@@ -654,6 +674,25 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 1
 
+    # The landing page, by its own references: every photograph the lane's
+    # home page asks for must ship beside it, content-versioned like the
+    # atlases. Reference-driven rather than a pinned filename list, because
+    # each lane carries its own revision's art.
+    home_page = (dist / lane / "home" / "index.html").read_text(encoding="utf-8")
+    for asset_url in re.findall(r'''["'](assets/[^"']+)["']''', home_page):
+        match = re.fullmatch(r"(assets/[^?]+)\?v=([0-9a-f]{64})", asset_url)
+        if (
+            not match
+            or not (dist / lane / "home" / match.group(1)).is_file()
+            or match.group(2) != digest(f"home/{match.group(1)}")
+        ):
+            print(
+                f"    the landing page has a missing, unversioned, or mismatched "
+                f"photograph: {asset_url}",
+                file=sys.stderr,
+            )
+            return 1
+
     print(
         f"    the viewer is relative-pathed for /{lane}; JS, WASM, and atlases are content-versioned"
     )
@@ -663,7 +702,7 @@ def main(argv: list[str] | None = None) -> int:
     # and a disagreement is a 404 on the only page whose whole job is handing
     # somebody a program. Renaming an asset must therefore fail here rather
     # than on a visitor's click.
-    downloads = (dist / "download" / "index.html").read_text(encoding="utf-8")
+    downloads = (dist / lane / "download" / "index.html").read_text(encoding="utf-8")
     linked = set(re.findall(r"releases/latest/download/([^\"']+)", downloads))
     workflow = here.parent / ".github" / "workflows" / "release.yml"
     if not linked:
@@ -688,7 +727,7 @@ def main(argv: list[str] | None = None) -> int:
         if gate_problems:
             print("\nFAILED: the site would not route correctly", file=sys.stderr)
             return 1
-        print("    / is the stable lane; /home, /download and /test all answer")
+        print("    / is the stable lane; /home, /download and the whole /test lane answer")
 
     if not pathlib.Path(args.chrome).exists():
         print(f"    no Chrome at {args.chrome}; skipping the browser check", file=sys.stderr)

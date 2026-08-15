@@ -289,30 +289,14 @@ def main(argv: list[str] | None = None) -> int:
             f"got {download['status']}",
         )
 
-        print("==> stable build channels follow the latest published artifacts")
-        rust = hit(path="/rust")
-        check(problems, "/rust points at the latest native release",
-              rust["status"] == 302 and rust["location"] == "/download/",
-              f"got {rust['status']} {rust['location']!r}")
-        check(problems, "/rust is temporary and uncached",
-              rust["status"] != 301 and rust["cacheControl"] == "no-store",
-              f"got {rust['status']} {rust['cacheControl']!r}")
-        rust_slash = hit(path="/rust/")
-        check(problems, "/rust/ is the same native channel",
-              rust_slash["location"] == "/download/",
-              f"got {rust_slash['location']!r}")
-
-        wasm = hit(path="/wasm?game=7311")
-        check(problems, "/wasm points at the latest WASM build",
-              wasm["status"] == 302 and wasm["location"] == "/test/?game=7311",
-              f"got {wasm['status']} {wasm['location']!r}")
-        check(problems, "/wasm is temporary and uncached",
-              wasm["status"] != 301 and wasm["cacheControl"] == "no-store",
-              f"got {wasm['status']} {wasm['cacheControl']!r}")
-        wasm_slash = hit(path="/wasm/")
-        check(problems, "/wasm/ is the same browser channel",
-              wasm_slash["location"] == "/test/",
-              f"got {wasm_slash['location']!r}")
+        # The old /rust and /wasm build channels are gone; they take no
+        # special routing and fall through to the asset layer like any other
+        # retired URL, where the deployed 404.html answers for them.
+        for retired in ("/rust", "/wasm"):
+            gone = hit(path=retired)
+            check(problems, f"{retired} is no longer a redirect",
+                  gone["status"] != 302 and not gone["location"],
+                  f"got {gone['status']} {gone['location']!r}")
 
         print("==> so is the test lane, which is the point of publishing it")
         lane = hit(path="/test/")
@@ -322,6 +306,20 @@ def main(argv: list[str] | None = None) -> int:
         # Open to anyone following a link is not the same as wanting an
         # unfinished build to be the first search result for the project.
         check(problems, "the test lane is not indexed", lane["robots"] == "noindex", f"got {lane['robots']!r}")
+
+        # Every page exists in both lanes now, and the /test prefix is the
+        # whole of the difference: the worker passes /test/home and
+        # /test/download through like any lane file, with the lane's noindex.
+        test_home = hit(path="/test/home")
+        check(problems, "/test/home passes through to the test landing page",
+              test_home["status"] == 200 and test_home["body"].strip() == "asset:/test/home",
+              f"got {test_home['status']} {test_home['body'][:60]!r}")
+        check(problems, "the test landing page is not indexed",
+              test_home["robots"] == "noindex", f"got {test_home['robots']!r}")
+        test_download = hit(path="/test/download/")
+        check(problems, "/test/download/ passes through to the test downloads page",
+              test_download["status"] == 200 and "asset:/test/download/" in test_download["body"],
+              f"got {test_download['status']}")
 
         # /beta — the lane's day-one name — is scrapped: an explicit 404 from
         # the worker itself. It cannot merely fall through, because for an
@@ -365,6 +363,9 @@ def main(argv: list[str] | None = None) -> int:
         check(problems, "a shut door serves no viewer", "asset:" not in closed["body"])
         check(problems, "a shut door hides the engine too",
               "asset:" not in hit(path="/test/civvis.wasm", env=gated)["body"])
+        check(problems, "a shut door covers every test page",
+              "asset:" not in hit(path="/test/home", env=gated)["body"]
+              and "asset:" not in hit(path="/test/download/", env=gated)["body"])
 
         wrong = hit(path="/test/", method="POST", body={"password": "0000"}, env=gated)
         check(problems, "a wrong password is refused", wrong["status"] == 401, f"got {wrong['status']}")

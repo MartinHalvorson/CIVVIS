@@ -316,7 +316,7 @@
 
       <div class="row-label" aria-hidden="true">Tactics</div>
       <div class="mode-card">
-        <img class="card-thumb" src="/home/assets/watch-tactics.jpg?v=1a1d7d25c56e4a683a9e8d63ea0ea02e204cd62e49a923ab1c45774da6866f10" alt="Two AI armies meeting in the middle of a CIVVIS Gettysburg battlefield." fetchpriority="high">
+        <img class="card-thumb" src="assets/watch-tactics.jpg" alt="Two AI armies meeting in the middle of a CIVVIS Gettysburg battlefield." fetchpriority="high">
         <div class="card-body">
           <span class="card-kicker">AI simulation</span>
           <h3 class="card-title" id="watch-tactics-title">Watch CIVVIS Tactics</h3>
@@ -327,14 +327,14 @@
           </ul>
           <p class="card-desc">Two AI commanders fight a single battle while you watch.</p>
           <div class="card-actions">
-            <a class="card-btn verb-watch" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" aria-labelledby="watch-tactics-title">Watch</a>
-            <a class="card-btn plain" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" aria-label="Customize a watched Tactics battle">Customize</a>
+            <a class="card-btn verb-watch" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" aria-labelledby="watch-tactics-title">Watch</a>
+            <a class="card-btn plain" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" aria-label="Customize a watched Tactics battle">Customize</a>
           </div>
         </div>
       </div>
 
       <div class="mode-card">
-        <img class="card-thumb" src="/home/assets/play-tactics.jpg?v=a5b9c71f60403a2dfc96f5496493d0f41ce39fca93a6bed904e125555ddd4661" alt="A CIVVIS naval battle at Lepanto: the player's galleys closing with the Ottoman line.">
+        <img class="card-thumb" src="assets/play-tactics.jpg" alt="A CIVVIS naval battle at Lepanto: the player's galleys closing with the Ottoman line.">
         <div class="card-body">
           <span class="card-kicker">Single player</span>
           <h3 class="card-title" id="play-tactics-title">Play CIVVIS Tactics</h3>
@@ -345,15 +345,15 @@
           </ul>
           <p class="card-desc">Command one side of a battle against the AI.</p>
           <div class="card-actions">
-            <a class="card-btn verb-play" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" aria-labelledby="play-tactics-title">Play</a>
-            <a class="card-btn plain" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" aria-label="Customize a played Tactics battle">Customize</a>
+            <a class="card-btn verb-play" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" aria-labelledby="play-tactics-title">Play</a>
+            <a class="card-btn plain" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" aria-label="Customize a played Tactics battle">Customize</a>
           </div>
         </div>
       </div>
 
       <div class="row-label" aria-hidden="true">CIVVIS</div>
       <div class="mode-card">
-        <img class="card-thumb" src="/home/assets/watch-civ.jpg?v=9f7df93c6b237f7b1b057cb3874b13d5e672422facef2bb1324171ea218ef28e" alt="A CIVVIS globe at mid-game: AI empires sharing two continents, borders and cities drawn across the planet.">
+        <img class="card-thumb" src="assets/watch-civ.jpg" alt="A CIVVIS globe at mid-game: AI empires sharing two continents, borders and cities drawn across the planet.">
         <div class="card-body">
           <span class="card-kicker">AI simulation</span>
           <h3 class="card-title" id="watch-civ-title">Watch CIVVIS</h3>
@@ -364,14 +364,14 @@
           </ul>
           <p class="card-desc">A full game played end to end by AI civilizations.</p>
           <div class="card-actions">
-            <a class="card-btn verb-watch" href="/" aria-labelledby="watch-civ-title">Watch</a>
-            <a class="card-btn plain" href="/?setup=1" aria-label="Customize a watched game">Customize</a>
+            <a class="card-btn verb-watch" href="../" aria-labelledby="watch-civ-title">Watch</a>
+            <a class="card-btn plain" href="../?setup=1" aria-label="Customize a watched game">Customize</a>
           </div>
         </div>
       </div>
 
       <div class="mode-card">
-        <img class="card-thumb" src="/home/assets/play-civ.jpg?v=c31ab52ae751970f7dcf9a8f3b69aab36036486c6d3030f0286dd3932fde5f60" alt="The opening of a single-player CIVVIS game: a settler with its orders bar open on a young world.">
+        <img class="card-thumb" src="assets/play-civ.jpg" alt="The opening of a single-player CIVVIS game: a settler with its orders bar open on a young world.">
         <div class="card-body">
           <span class="card-kicker">Single player</span>
           <h3 class="card-title" id="play-civ-title">Play CIVVIS</h3>
@@ -382,8 +382,8 @@
           </ul>
           <p class="card-desc">A full game — take one civilization against AI rivals.</p>
           <div class="card-actions">
-            <a class="card-btn verb-play" href="/?mode=play" aria-labelledby="play-civ-title">Play</a>
-            <a class="card-btn plain" href="/?mode=play&amp;setup=1" aria-label="Customize a played game">Customize</a>
+            <a class="card-btn verb-play" href="../?mode=play" aria-labelledby="play-civ-title">Play</a>
+            <a class="card-btn plain" href="../?mode=play&amp;setup=1" aria-label="Customize a played game">Customize</a>
           </div>
         </div>
       </div>
@@ -455,7 +455,9 @@
     if (!picker || !groups || !lensBar || !quadrants.length) return;
     // The site's one stock Tactics world: the same field the viewer's own
     // Tactics chip opens, so a Custom pick here and a Custom pick there agree.
-    const CUSTOM = "/?map=battlefield&players=2&era=information&arena=20x20";
+    // Lane-relative like every link on this page (the page lives at
+    // <lane>/home/), so the test lane's picker opens the test viewer.
+    const CUSTOM = "../?map=battlefield&players=2&era=information&arena=20x20";
     const HASH = { play: "#play-tactics", watch: "#watch-tactics" };
     const ERAS = ["Ancient", "Classical", "Medieval", "Renaissance", "Industrial", "Modern", "Atomic", "Information", "Future"];
     const TERRAINS = [["land", "Land"], ["land_water", "Land & Water"], ["water", "Water"],
@@ -478,7 +480,7 @@
       return [];
     };
     const battleCard = b =>
-      `<a class="battle-card" href="${esc(into(`/?map=${b.id}&players=2`))}">` +
+      `<a class="battle-card" href="${esc(into(`../?map=${b.id}&players=2`))}">` +
       `<span class="battle-card-name">${esc(b.name)}</span>` +
       `<span class="battle-card-meta">${esc(b.date)} · ${esc(b.location)}</span>` +
       `<span class="battle-card-detail">${esc(b.map)}</span>` +
