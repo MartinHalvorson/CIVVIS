@@ -12979,6 +12979,39 @@ mod tests {
         ));
     }
 
+    /// The azimuthal chart on the main map is a sheet, not a ball in space:
+    /// nothing of the sky is drawn over or around it — no stars, no bodies,
+    /// no orbits, satellites, launches or expedition lanes — and nothing of
+    /// the sky can be steered from it. The sky navigator comes down with the
+    /// swap, its stops and ladder are inert, a click on where a world would
+    /// hang flies nowhere, and a satellite in orbit does not keep the painter
+    /// awake over a chart it is never drawn on. Every one of those was a way
+    /// of carrying the camera off the sheet into black or of drawing a line
+    /// across the map that belonged to the globe.
+    #[test]
+    fn browser_keeps_the_sky_off_the_azimuthal_main_map() {
+        for contract in [
+            // The one gate everything reads: the chart is the main map.
+            "function planetMainUsesChart()",
+            // The sky layer, whole: bodies, orbits, satellites, launches.
+            "function drawPlanetSky(camera, radius, centerX, centerY) {\n  if (camera.chart) return;",
+            // The stars behind it, likewise.
+            "if (depth > 0 && !camera.chart) drawSkyStars(depth, radius);",
+            // The way about the sky: not shown, and inert if reached anyway.
+            "if (!planetMap() || !knowsGlobe() || planetMainUsesChart() ||\n      !mapOverlayVisible(\"controls\")) return false;",
+            "function skyTravel(pan, scale) {\n  // No sky to travel on a chart: see `skyNavShowing`.\n  if (!planetMap() || planetMainUsesChart()) return;",
+            "function skyLadderTo(along) {\n  if (!planetMap() || planetMainUsesChart()) return;",
+            "if (!planetMap() || !knowsGlobe() || planetMainUsesChart()) return null;",
+            // And no animation clock for a sky nobody sees.
+            "if (!state || !planetReady() || planetMainUsesChart()) return false;",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(contract),
+                "the azimuthal main map let the sky back in: {contract}"
+            );
+        }
+    }
+
     #[test]
     fn browser_planet_minimap_paints_forward_cell_polygons_not_a_per_pixel_raster() {
         // The drag path redraws the minimap on every pointermove, so the
