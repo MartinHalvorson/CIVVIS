@@ -1075,12 +1075,19 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// cached target also refuses `blocked_city_sites`, a set that is empty in every
 /// ordinary and frozen game. Compatibility re-pin; the Elo protocol does not
 /// move.
+/// A new Settler target is forecast through the engine's Loyalty model only
+/// while `loyalty_rate_alarm` is on. Both default constructors and the frozen
+/// anchor leave that treatment flag false; the live bridge enables it with the
+/// live Loyalty emergency handling. If every inspected target is immediately
+/// doomed, the live controller holds rather than falling through to the
+/// unaware baseline picker. Compatibility re-pin; the Elo protocol does not
+/// move.
 /// A missing siege/recon arm now owns a city queue only when that city can
 /// actually build the requested role. Both `siege_role` and
 /// `recon_replacement` remain disabled by `AdvancedAi::legacy()`, so the
 /// frozen anchor retains its prior production path. Compatibility re-pin; the
 /// Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1d6b_48f0_3b58_a775;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe618_def8_6bbc_8f7f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
