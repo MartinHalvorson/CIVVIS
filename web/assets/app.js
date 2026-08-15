@@ -1966,12 +1966,22 @@ const PLAYER_HUD_COLUMNS = [
   // is a fact every game has from turn one; the nuclear stockpile is the one
   // that has to be invented first, so it joins the table beside the military
   // strength it changes the meaning of.
-  ...[["cities", "Cities"], ["population", "Population"], ["food", "Food"], ["production", "Production"],
-      ["science", "Science"], ["culture", "Culture"], ["faith", "Faith"],
-      ["gold", "Gold"], ["military", "Military"],
+  // An arena has no empire behind it: the economy is a fixed grant, nothing
+  // is built or worshipped, and no city-state offers a suzerain. Those
+  // columns do not exist on a battlefield — like the nuclear stockpile
+  // before the bomb, they are not facts of that world, so they leave the
+  // Display Settings roster too. Cities, production and military remain: an
+  // arena can seat a city, and the fight is the point.
+  ...[["cities", "Cities"], ["population", "Population", worldStandingsInPlay],
+      ["food", "Food", worldStandingsInPlay], ["production", "Production"],
+      ["science", "Science", worldStandingsInPlay],
+      ["culture", "Culture", worldStandingsInPlay],
+      ["faith", "Faith", worldStandingsInPlay],
+      ["gold", "Gold", worldStandingsInPlay], ["military", "Military"],
       ["nukes", "Nuclear stockpile", nuclearStandingsInPlay],
-      ["wonders", "Wonders"],
-      ["suzerain", "Suzerainty"], ["score", "Score"]]
+      ["wonders", "Wonders", worldStandingsInPlay],
+      ["suzerain", "Suzerainty", worldStandingsInPlay],
+      ["score", "Score", worldStandingsInPlay]]
     .map(([key, label, exists]) =>
       ({key, label, block:"stats", min:"--hud-stat-min", width:1, exists})),
 ];
@@ -2088,6 +2098,14 @@ function nuclearStandingsInPlay() {
     Boolean(state.players?.some(player =>
       player.science_projects?.includes?.("manhattan_project") ||
       playerNuclearStockpile(player) > 0));
+}
+
+// The empire columns exist where there is an empire: a Tactics arena grants
+// its economy instead of growing one, so those readings are not facts of a
+// battlefield world any more than the nuclear stockpile is a fact of the
+// Ancient Age.
+function worldStandingsInPlay() {
+  return !watchingBattlefield();
 }
 
 // Both classes of device, as one arsenal.
@@ -6712,13 +6730,14 @@ function paceHeldOpen() {
   return [document.getElementById("specspeed"), document.querySelector("[data-hud-pace]")]
     .some(select => select && document.activeElement === select);
 }
-// Only the standings' own copy of the pace select dies when the standings
-// repaint, so only that copy needs to hold the repaint while it is held
-// open. The sidebar #specspeed lives outside #playerhud and never has this
-// problem.
+// Only the standings' own copies of these selects die when the standings
+// repaint, so only those copies need to hold the repaint while one is held
+// open — the turn plate's fog select is the same kind of hostage as its
+// pace select. The sidebar #specspeed lives outside #playerhud and never
+// has this problem.
 function hudPaceHeldOpen() {
-  const select = document.querySelector("[data-hud-pace]");
-  return !!select && document.activeElement === select;
+  return [...document.querySelectorAll("[data-hud-pace], [data-hud-fog]")]
+    .some(select => document.activeElement === select);
 }
 function paceOffered(select, ms) {
   return [...select.options].some(o => +o.value === ms);
@@ -7639,6 +7658,13 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     // the game that would have replaced this one.
     clearFinaleCountdown();
     clearExhibitionCountdown();
+    // A world seen running means the next finale is a new game, whatever its
+    // key: a restart reuses the seed, and a deterministic Tactics battle then
+    // ends with the same winner on the same turn, so the stored repeat guard
+    // would swallow every game after the first. The guard exists for a page
+    // reopened over a finished world — that page never renders a live frame,
+    // so clearing it here keeps the reload dedup and frees the replay.
+    if (simulationStats.last) { delete simulationStats.last; saveSimulationStats(); }
   }
   draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();
   refreshTileTip();
@@ -22022,7 +22048,7 @@ function simulationStatsSection() {
     `<div class="sim-stats-controls" role="group" aria-label="Simulation record view">` +
     viewButton("civs") + viewButton("strategies") +
     (games ? `<button class="sim-stats-clear" type="button" data-sim-stats-clear ` +
-      `title="Clear the saved ${modeLabel} record" aria-label="Clear the saved ${modeLabel} record">Clear</button>` : ``) +
+      `title="Reset the saved ${modeLabel} record" aria-label="Reset the saved ${modeLabel} record">Reset</button>` : ``) +
     `</div>` +
     `<div class="sim-stats-rows">${body}</div>` +
     `</div></section>`;
@@ -22108,10 +22134,24 @@ function hudTurnPlate() {
   // hand-played game has no pause or restart to measure against, so the row
   // belongs to the watched regimes only.
   const liveTimeText = SPEC ? liveClockLabel() : null;
+  // The arena's fog is a rule of the battle on screen, and it can be turned
+  // while the battle runs: the engine reads it on every sight computation. A
+  // scenario keeps its own fixed rule, exactly as the lobby presents it.
+  const fogRow = isBattlefieldMapScript(state.map.script) &&
+      !isScenarioMapScript(state.map.script) && state.tactics
+    ? `<div class="turn-setting" title="Whether each side sees only what its own units can. ` +
+      `Turning it changes the rule of the battle on screen from the next sight reckoning, for both sides alike.">` +
+      `<span>In-game fog:</span><span class="turn-pace-choice"><select data-hud-fog ` +
+      `aria-label="In-game fog">` +
+      `<option value="1"${state.tactics.fog ? " selected" : ""}>On</option>` +
+      `<option value="0"${state.tactics.fog ? "" : " selected"}>Off</option>` +
+      `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span></div>`
+    : ``;
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
     `game speed ${speedName}; ${turnStructureName.toLowerCase()} turns; ` +
     (liveTimeText ? `live time ${liveTimeText}; ` : ``) +
     `watch pace ${watchPace}; ` +
+    (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
     `${cityStateCount} city states remaining, ${cityStatesLost} eliminated`;
   // A count and the toll it was taken out of are one reading, so they share a
@@ -22139,6 +22179,7 @@ function hudTurnPlate() {
         `<span>Live time:</span><b data-live-time>${liveTimeText}</b></div>`
       : ``) +
     `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
+    fogRow +
     rosterRow("Civs:", civCount, civsLost) +
     rosterRow("City states:", cityStateCount, cityStatesLost) +
     `</div></section>`;
@@ -22874,6 +22915,12 @@ hudRibbon.addEventListener("keydown", event => {
 });
 
 hudRibbon.addEventListener("change", ev => {
+  const fog = ev.target.closest?.("[data-hud-fog]");
+  if (fog) {
+    chooseTacticsFog(fog.value === "1");
+    fog.blur();
+    return;
+  }
   const pace = ev.target.closest?.("[data-hud-pace]");
   if (!pace) return;
   chooseWatchPace(pace.value);
@@ -22886,7 +22933,7 @@ hudRibbon.addEventListener("change", ev => {
 // so the open menu's anchor survives the next snapshot. The moment focus
 // leaves it, paint whatever those held snapshots changed.
 hudRibbon.addEventListener("focusout", ev => {
-  if (ev.target.closest?.("[data-hud-pace]") && state) drawPlayerHud();
+  if (ev.target.closest?.("[data-hud-pace], [data-hud-fog]") && state) drawPlayerHud();
 });
 hudRibbon.addEventListener("mousedown", ev => {
   if (ev.button !== 0) return;
@@ -29987,6 +30034,15 @@ function chooseWatchPace(value) {
   rememberPace(ms); // the pick outranks any state already in flight
   setPace({ms: paceChoice});
   if (state) drawPlayerHud();
+}
+// The arena's fog rule, flipped for the battle on screen. The lobby's own
+// control follows the flip so a client-issued restart carries the rule the
+// battle was just fought under; the server moves its own params in the same
+// request, so its automatic successor carries it too.
+function chooseTacticsFog(on) {
+  const select = document.getElementById("tacticsfog");
+  if (select) select.value = on ? "1" : "0";
+  setPace({tactics_fog: on});
 }
 document.getElementById("specspeed").onchange = event => chooseWatchPace(event.currentTarget.value);
 restorePace();
