@@ -853,6 +853,7 @@ fn withhold_live_treatment(
         "wide-map-capacity" => ai.disable_wide_map_capacity(),
         "garrison-under-fire" => ai.disable_garrison_under_fire(),
         "escort-unstick" => ai.disable_escort_unstick(),
+        "stacked-escort" => ai.disable_stacked_escort(),
         "religion-sues-peace" => ai.disable_religion_sues_peace(),
         "stranded-settler-discount" => ai.disable_stranded_settler_discount(),
         "housing-buildings" => ai.disable_housing_buildings(),
@@ -878,7 +879,7 @@ fn withhold_live_treatment(
                  housing-districts, housing-cards, housing-research, campus-every-city, \
                  muster-at-command-radius, war-economy, war-reinforcement, war-patience, \
                  recon-replacement, wide-map-capacity, garrison-under-fire, \
-                 escort-unstick, religion-sues-peace, stranded-settler-discount, \
+                 escort-unstick, stacked-escort, religion-sues-peace, stranded-settler-discount, \
                  siege-commitment, wonder-ring-settle-value, garrison-walls, \
                  amenity-project-preemption"
             ))
