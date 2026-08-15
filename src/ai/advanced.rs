@@ -13451,22 +13451,33 @@ impl AdvancedAi {
         }
     }
 
-    /// Let the live bleeding-city treatment interrupt one unsafe committed
-    /// queue. `BasicAi::besieged_city_item` normally reaches only an empty
-    /// queue through `pick_item`, while Recovery's strategic governor skips a
+    /// Let the live city-siege treatment interrupt one unsafe committed queue.
+    /// `BasicAi::besieged_city_item` normally reaches only an empty queue
+    /// through `pick_item`, while Recovery's strategic governor skips a
     /// commitment at its safe default preemption margin. That left a city
     /// already losing health able to finish a Campus before it could ask for
-    /// the walls or defender the existing evaluator selected.
+    /// the walls or defender the existing evaluator selected. It also left a
+    /// confirmed major-war raiding party free to spend a turn breaking the
+    /// walls while the city finished a Builder.
     ///
     /// This is deliberately not a second siege heuristic: the established
     /// evaluator still supplies the visibility/damage proof and the exact
-    /// defensive item. It is live-only, preserves repairs, walls, and military
-    /// production, and claims at most the most-damaged unsafe queue each turn.
+    /// defensive item. Before damage, that evaluator proves a multi-unit siege;
+    /// this handoff may act on that proof only during an active major war.
+    /// It is live-only, preserves repairs, walls, and military production, and
+    /// claims at most one unsafe queue each turn.
     fn redirect_unsafe_city_queue_for_defense(&self, g: &mut Game, pid: usize) {
         if !self.base.garrison_under_fire {
             return;
         }
 
+        let active_major_war = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+                && g.is_at_war(pid, player.id)
+        });
         let mut best: Option<(i32, u32, Item, Item)> = None;
         for city in g.player_city_ids(pid) {
             let Some(committed) = g.cities[&city].queue.first().cloned() else {
@@ -13482,11 +13493,12 @@ impl AdvancedAi {
             let wall_damage = g
                 .city_max_wall_hp(&g.cities[&city])
                 .saturating_sub(g.cities[&city].wall_hp);
-            // Visible raiders may choose an EMPTY city's next build through
-            // `besieged_city_item`; they may not erase production already
-            // invested in a Settler, district, or project. Queue preemption is
-            // the under-fire escalation and needs city or wall damage.
-            if damage == 0 && wall_damage == 0 {
+            // Before it is damaged, `besieged_city_item` only supplies a
+            // defender after seeing a real multi-unit raiding party. That is
+            // enough proof to reclaim one queue during a major war; without
+            // that war, retain the damage gate so scouts and barbarians cannot
+            // erase committed infrastructure merely by passing nearby.
+            if damage == 0 && wall_damage == 0 && !active_major_war {
                 continue;
             }
             let total_damage = damage.saturating_add(wall_damage);
@@ -13514,7 +13526,7 @@ impl AdvancedAi {
         {
             think!(self.journal(), Economy, Decision,
                 "{} pauses {} for {}", city_name, Self::plain_item(&committed), Self::plain_item(&defence);
-                "under fire with {damage} combined city/wall health missing; this is the highest-priority unsafe queue");
+                "under fire or facing a confirmed major-war siege with {damage} combined city/wall health missing; this is the highest-priority unsafe queue");
         }
     }
 
@@ -23575,8 +23587,6 @@ mod tests {
         };
         let city_campus = queue_campus(&mut game, city);
         let other_campus = queue_campus(&mut game, other);
-        game.at_war.insert((0, 1));
-        game.at_war.insert((1, 0));
         let raider_positions: Vec<Pos> = game
             .wdisk(game.cities[&other].pos, 2)
             .into_iter()
@@ -23595,9 +23605,28 @@ mod tests {
         let mut live = AdvancedAi::new();
         live.enable_siege_muster();
         live.enable_garrison_under_fire();
-        live.redirect_unsafe_city_queue_for_defense(&mut game, 0);
-        assert_eq!(game.cities[&city].queue.first(), Some(&city_campus));
-        assert_eq!(game.cities[&other].queue.first(), Some(&other_campus));
+
+        // The same visible group remains a normal, non-destructive sighting
+        // until an actual major war begins.
+        let mut peaceful = game.clone();
+        peaceful.at_war.clear();
+        live.redirect_unsafe_city_queue_for_defense(&mut peaceful, 0);
+        assert_eq!(peaceful.cities[&city].queue.first(), Some(&city_campus));
+        assert_eq!(peaceful.cities[&other].queue.first(), Some(&other_campus));
+
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+
+        // A confirmed multi-unit siege in a major war is actionable before
+        // the first wall hit. This is the t84 Cumae shape: waiting for damage
+        // gave Nubia a full turn to turn an active Builder into a lost city.
+        let mut preventative = game.clone();
+        live.redirect_unsafe_city_queue_for_defense(&mut preventative, 0);
+        assert_eq!(preventative.cities[&city].queue.first(), Some(&city_campus));
+        assert!(matches!(
+            preventative.cities[&other].queue.first(),
+            Some(Item::Building { building }) if building == "walls"
+        ));
 
         game.cities.get_mut(&city).unwrap().hp = 170;
         game.cities.get_mut(&other).unwrap().hp = 145;
