@@ -1990,7 +1990,11 @@ const HUD_SORT_STORAGE_KEY = "civvis-player-hud-sort-v1";
 const HUD_COLUMN_LAYOUT_STORAGE_KEY = "civvis-hud-column-layout-v1";
 const playerHudColumnWidths = new Map(PLAYER_HUD_COLUMNS.map(c => [c.key, c.width]));
 let playerHudColumnOrder = PLAYER_HUD_COLUMNS.map(column => column.key);
-let playerHudHiddenColumns = new Set();
+// The one column a fresh viewer starts without: the live Elo delta is a
+// second reading of the rating beside it, so it waits in the Display
+// Settings roster until asked for. A saved layout still decides for itself.
+const PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS = ["elo_delta"];
+let playerHudHiddenColumns = new Set(PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS);
 const playerHudColumnMinPx = new Map();
 let playerHudColumnGesture = null;
 let playerHudReorderGesture = null;
@@ -2044,7 +2048,7 @@ try {
   // keeping the table on screen.
   if (PLAYER_HUD_COLUMNS.filter(playerHudColumnExists)
       .every(column => playerHudHiddenColumns.has(column.key)))
-    playerHudHiddenColumns = new Set();
+    playerHudHiddenColumns = new Set(PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS);
 } catch (_) {}
 
 function savePlayerHudColumnLayout() {
@@ -2559,7 +2563,7 @@ function resetPlayerHudColumns(persist = true) {
   for (const column of PLAYER_HUD_COLUMNS)
     playerHudColumnWidths.set(column.key, column.width);
   playerHudColumnOrder = PLAYER_HUD_COLUMNS.map(column => column.key);
-  playerHudHiddenColumns = new Set();
+  playerHudHiddenColumns = new Set(PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS);
   playerHudColumnMinPx.clear();
   syncPlayerHudColumns();
   renderHudColumnList();
@@ -22613,7 +22617,7 @@ function drawPlayerHud() {
         switch (column.key) {
           case "lock":
             return `<button class="lock-toggle" data-hud-col="lock" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
-              `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>`;
+              `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "🔒" : "○"}</button>`;
           case "rank":
             return `<span class="diplomacy-rank" data-hud-col="rank" title="Score rank ${rank}">#${rank}</span>`;
           // A civilization with no capital leaves this button disabled, and a
