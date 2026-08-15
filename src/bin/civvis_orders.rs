@@ -1731,6 +1731,44 @@ fn translate(
                 },
             )
         }
+        // ★★★ GREAT PERSON POINTS AT THE THRESHOLD ARE YIELD ALREADY PAID FOR.
+        // These two actions were on the untranslatable list, so every claim CIVVIS
+        // decided on fell into the skipped tally — 260 RecruitGreatPerson and 25
+        // PatronizeGreatPerson skips in run civvis-20260815T020330Z alone, while
+        // four classes sat above 370 banked points. The class crosses as the
+        // Firaxis `GREAT_PERSON_CLASS_*` name (the exact inverse of the mirror's
+        // suffix-lowercase import); the mod resolves WHICH individual that class
+        // currently offers, because only the live timeline knows.
+        Action::RecruitGreatPerson { kind } => Some(Order {
+            kind: "gp_recruit",
+            subject: None,
+            verb: Some(format!("GREAT_PERSON_CLASS_{}", kind.to_ascii_uppercase())),
+            pos: None,
+        }),
+        Action::PatronizeGreatPerson { kind, currency } => Some(Order {
+            kind: if currency == "faith" {
+                "gp_patronize_faith"
+            } else {
+                "gp_patronize"
+            },
+            subject: None,
+            verb: Some(format!("GREAT_PERSON_CLASS_{}", kind.to_ascii_uppercase())),
+            pos: None,
+        }),
+        // A city under attack that never fires back was the other big skip:
+        // 98 CityStrike decisions dropped in the same run, all of them while at
+        // war. The strike is free damage the defender is already owed, and
+        // holding a city is worth double the score of taking one.
+        Action::CityStrike { city, target } => {
+            mirror_state.cid_of.iter().find(|(_, cid)| **cid == *city).map(
+                |(civ6, _)| Order {
+                    kind: "city_strike",
+                    subject: Some(*civ6),
+                    verb: None,
+                    pos: Some(civvis::hex::axial_to_offset(target.0, target.1)),
+                },
+            )
+        }
         _ => None,
     }
 }
@@ -3640,6 +3678,101 @@ mod tests {
             promote.verb.as_deref(),
             Some("GOVERNOR_THE_DEFENDER,GOVERNOR_PROMOTION_GARRISON_COMMANDER")
         );
+    }
+
+    #[test]
+    fn great_person_claims_cross_the_bridge() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 40,
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+
+        let recruit = translate(
+            &Action::RecruitGreatPerson {
+                kind: "scientist".to_string(),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a recruit decision translates");
+        assert_eq!(recruit.kind, "gp_recruit");
+        assert_eq!(recruit.subject, None);
+        assert_eq!(recruit.verb.as_deref(), Some("GREAT_PERSON_CLASS_SCIENTIST"));
+
+        let gold = translate(
+            &Action::PatronizeGreatPerson {
+                kind: "merchant".to_string(),
+                currency: "gold".to_string(),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a gold patronage translates");
+        assert_eq!(gold.kind, "gp_patronize");
+        assert_eq!(gold.verb.as_deref(), Some("GREAT_PERSON_CLASS_MERCHANT"));
+
+        let faith = translate(
+            &Action::PatronizeGreatPerson {
+                kind: "general".to_string(),
+                currency: "faith".to_string(),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a faith patronage translates");
+        assert_eq!(faith.kind, "gp_patronize_faith");
+        assert_eq!(faith.verb.as_deref(), Some("GREAT_PERSON_CLASS_GENERAL"));
+    }
+
+    #[test]
+    fn a_city_strike_names_its_city_and_target() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 40,
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Capital".to_string(),
+                x: 6,
+                y: 6,
+                pop: 5,
+                capital: true,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let city = mirror.game.player_city_ids(0)[0];
+
+        let strike = translate(
+            &Action::CityStrike {
+                city,
+                target: (5, 6),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a strike from a mapped city translates");
+        assert_eq!(strike.kind, "city_strike");
+        assert_eq!(strike.subject, Some(65_536));
+        assert_eq!(strike.pos, Some(civvis::hex::axial_to_offset(5, 6)));
     }
 
     #[test]
