@@ -246,6 +246,33 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 43] = [
     "amenity-project-preemption",
 ];
 
+/// Every `live_without_*` control's tag list: the bridge list minus the one
+/// withheld tag, in bridge order — exactly the lists the arms carried when
+/// they were written out by hand, now derived so a new bridge treatment
+/// updates all of them at once.
+static LIVE_WITHOUT_TREATMENTS: std::sync::LazyLock<BTreeMap<&'static str, Vec<&'static str>>> =
+    std::sync::LazyLock::new(|| {
+        LIVE_BRIDGE_TREATMENTS
+            .iter()
+            .map(|withheld| {
+                (
+                    *withheld,
+                    LIVE_BRIDGE_TREATMENTS
+                        .iter()
+                        .copied()
+                        .filter(|tag| tag != withheld)
+                        .collect(),
+                )
+            })
+            .collect()
+    });
+
+fn live_without(withheld: &'static str) -> &'static [&'static str] {
+    LIVE_WITHOUT_TREATMENTS
+        .get(withheld)
+        .unwrap_or_else(|| panic!("{withheld} is not a live-bridge treatment"))
+}
+
 /// The four bridge treatments that stay out of the native bundle, as tags.
 /// Three encode a rule of Firaxis' game rather than repairing one of ours; the
 /// fourth is excluded on evidence. See `AdvancedAi::enable_engine_repairs`.
@@ -2279,15 +2306,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.city_target_floor = civvis_production_city_target_floor();
             Box::new(ai)
         }
-        // Treatment for the city-target axis: identical to `advanced` except
-        // that the baseline production governor is handed the empire's own
-        // `plan.desired_cities` instead of the flat `city_target` gene. See
-        // `AdvancedAi::plan_city_target` and `docs/OPENINGS.md` §19.
-        "advanced_plan_city_target" => {
-            let mut ai = AdvancedAi::new();
-            ai.plan_city_target = true;
-            Box::new(ai)
-        }
         // Upper bound for the expansion-valuation axis: a settler outbids every
         // other item whenever the five gates permit one at all. This is not a
         // shippable policy, it is the oracle-ablation question — is there ANY
@@ -2700,35 +2718,12 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             Box::new(ai)
         }
         "advanced_legacy_policy_deck" => Box::new(AdvancedAi::with_legacy_policy_deck()),
-        // ⚠ Since 2026-08-14 the three arms below are declared ALIASES of
-        // `advanced` (see the provenance table and `SCRIPTED_ALIASES`): the
-        // war-half withhold passed the promotion matrix on the corrected gate
-        // (deployment-online 55.5%, Elo +38, CI +10..+66, sign p=0.0000,
-        // e-process crossed at map 57, 600 pairs, seed stream 18000000), so
-        // `promoted_policy_envoy` no longer sets the four flags and these
-        // `disable_*` calls are no-ops. The names stay constructible so
-        // recorded runs that carry them keep resolving; the live treatment is
-        // `advanced_war_half` below, which re-adds what production removed.
-        "advanced_without_city_defence" => {
-            let mut ai = AdvancedAi::new();
-            ai.disable_siege_muster();
-            ai.disable_home_defense();
-            Box::new(ai)
-        }
-        "advanced_without_unit_tactics" => {
-            let mut ai = AdvancedAi::new();
-            ai.disable_tactical_strategy();
-            ai.disable_unit_objective_memory();
-            Box::new(ai)
-        }
-        "advanced_without_unpriced_war" => {
-            let mut ai = AdvancedAi::new();
-            ai.disable_siege_muster();
-            ai.disable_home_defense();
-            ai.disable_tactical_strategy();
-            ai.disable_unit_objective_memory();
-            Box::new(ai)
-        }
+        // The declared aliases of `advanced` (the war-half withhold trio,
+        // `advanced_plan_city_target`, `advanced_without_city_target_floor`,
+        // `advanced_holy_v0`, `advanced_policy_envoy_priority`) have no
+        // bodies here: `artifact_effective_alias_from` collapses them before
+        // construction, and both callers of this factory pass the collapsed
+        // kind. The evidence for each aliasing lives on the collapse arms.
         // Treatment for the war-half axis: identical to `advanced` except that
         // the four flags removed from `promoted_policy_envoy` on 2026-08-14
         // are turned back on. Since that removal this is a treatment rather
@@ -2787,11 +2782,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.plan_city_target = false;
             Box::new(ai)
         }
-        "advanced_without_city_target_floor" => {
-            let mut ai = AdvancedAi::new();
-            ai.city_target_floor = PRE_PROMOTION_CITY_TARGET_FLOOR;
-            Box::new(ai)
-        }
         "advanced_without_bounded_recovery" => {
             let mut ai = AdvancedAi::new();
             ai.disable_bounded_recovery();
@@ -2808,11 +2798,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             let mut ai = AdvancedAi::with_weights(w);
             ai.holy_lane_parity = true;
             Box::new(ai)
-        }
-        "advanced_holy_v0" => {
-            let mut w = Weights::default();
-            w.d_holy = PRE_2026_08_10_D_HOLY;
-            Box::new(AdvancedAi::with_weights(w))
         }
         // Upper bound for the lane-district axis: a Religion empire prices its
         // own Holy Site the way a Culture empire prices its own Theater Square.
@@ -3710,40 +3695,41 @@ impl ArmKind {
             // mechanism that differs instead of the catch-all
             // "implementation" axis, which the evaluator refuses.
             Self::Live => &LIVE_BRIDGE_TREATMENTS,
-            // This deliberately derives the control from the shared bridge
-            // tag list. Keep amenity-project-preemption last in that list;
-            // the regression test below verifies this arm omits that tag.
+            // Every `live_without_*` arm derives its list from the shared
+            // bridge table below, so adding a bridge treatment cannot
+            // silently miss a control's tag list. The invariant tests pin
+            // each arm to bridge-minus-exactly-its-tag.
             Self::LiveWithoutAmenityProjectPreemption => {
-                &LIVE_BRIDGE_TREATMENTS[..LIVE_BRIDGE_TREATMENTS.len() - 1]
+                live_without("amenity-project-preemption")
             }
-            Self::LiveWithoutStackedEscort => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutJointTactics => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutHomeDefense => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutSolventFaithArmy => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutSiegeMuster => &["joint-tactics", "live-trader-route", "live-religious-purchase", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutDistrictCoverage => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutLoyaltyRateAlarm => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutBoundedRecovery => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutArmyTargetWeighsEnemy => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutSiegeTracksWall => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutBlindObjectiveStrength => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutSiegeRole => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutComeAshore => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutSuzerainCards => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutReliefTargetsTheSiege => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutBlindObjectiveUnits => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutMusterAtCommandRadius => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutSlotKindTiebreak => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutHousingDistricts => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutCampusEveryCity => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutHousingCards => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutHousingResearch => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutHousingBuildings => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "amenity-project-preemption"],
-            Self::LiveWithoutPeacetimeDeterrence => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutLoyaltyPolicyDefence => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutWarEconomy => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-reinforcement", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutWarReinforcement => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-patience", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
-            Self::LiveWithoutWarPatience => &["joint-tactics", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "loyalty-policy-defence", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "peacetime-deterrence", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "slot-kind-tiebreak", "siege-role", "come-ashore", "relief-targets-the-siege", "blind-objective-units", "suzerain-cards", "muster-at-command-radius", "housing-districts", "campus-every-city", "housing-cards", "housing-research", "war-economy", "war-reinforcement", "wide-map-capacity", "garrison-under-fire", "escort-unstick", "stacked-escort", "religion-sues-peace", "recon-replacement", "stranded-settler-discount", "siege-commitment", "wonder-ring-settle-value", "garrison-walls", "housing-buildings", "amenity-project-preemption"],
+            Self::LiveWithoutStackedEscort => live_without("stacked-escort"),
+            Self::LiveWithoutJointTactics => live_without("joint-tactics"),
+            Self::LiveWithoutHomeDefense => live_without("home-defense"),
+            Self::LiveWithoutSolventFaithArmy => live_without("solvent-faith-army"),
+            Self::LiveWithoutSiegeMuster => live_without("siege-muster"),
+            Self::LiveWithoutDistrictCoverage => live_without("district-coverage"),
+            Self::LiveWithoutLoyaltyRateAlarm => live_without("loyalty-rate-alarm"),
+            Self::LiveWithoutBoundedRecovery => live_without("bounded-recovery"),
+            Self::LiveWithoutArmyTargetWeighsEnemy => live_without("army-target-weighs-enemy"),
+            Self::LiveWithoutSiegeTracksWall => live_without("siege-tracks-wall"),
+            Self::LiveWithoutBlindObjectiveStrength => live_without("blind-objective-strength"),
+            Self::LiveWithoutSiegeRole => live_without("siege-role"),
+            Self::LiveWithoutComeAshore => live_without("come-ashore"),
+            Self::LiveWithoutSuzerainCards => live_without("suzerain-cards"),
+            Self::LiveWithoutReliefTargetsTheSiege => live_without("relief-targets-the-siege"),
+            Self::LiveWithoutBlindObjectiveUnits => live_without("blind-objective-units"),
+            Self::LiveWithoutMusterAtCommandRadius => live_without("muster-at-command-radius"),
+            Self::LiveWithoutSlotKindTiebreak => live_without("slot-kind-tiebreak"),
+            Self::LiveWithoutHousingDistricts => live_without("housing-districts"),
+            Self::LiveWithoutCampusEveryCity => live_without("campus-every-city"),
+            Self::LiveWithoutHousingCards => live_without("housing-cards"),
+            Self::LiveWithoutHousingResearch => live_without("housing-research"),
+            Self::LiveWithoutHousingBuildings => live_without("housing-buildings"),
+            Self::LiveWithoutPeacetimeDeterrence => live_without("peacetime-deterrence"),
+            Self::LiveWithoutLoyaltyPolicyDefence => live_without("loyalty-policy-defence"),
+            Self::LiveWithoutWarEconomy => live_without("war-economy"),
+            Self::LiveWithoutWarReinforcement => live_without("war-reinforcement"),
+            Self::LiveWithoutWarPatience => live_without("war-patience"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name

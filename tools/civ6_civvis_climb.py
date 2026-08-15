@@ -265,9 +265,26 @@ def ensure_popup_clear() -> None:
     Civilization VI is frontmost AND the map is positively covered AND the harness
     has already recorded a turn, so it cannot touch the setup screens.
     """
-    if run(["pgrep", "-f", "popup_clear.py"]).strip():
-        print("[popups] clearer already running", flush=True)
-        return
+    # ⚠ AN INHERITED CLEARER RUNS THE CODE OF WHATEVER BATCH STARTED IT.
+    # Measured 2026-08-15: one clearer started 2026-08-14T22:46 guarded twelve
+    # later batches with day-old code, so two shipped leader-scene stall fixes
+    # (#1595, #1631) never reached a live game and the outer watchdog kept
+    # spending attempts on screens the current build already handles. Same
+    # invariant as `retire_mirror` above: a fresh batch retires the helper and
+    # starts its own from this checkout.
+    stale = [int(pid) for pid in run(["pgrep", "-f", "popup_clear.py"]).split()
+             if pid.isdecimal()]
+    if stale:
+        print(f"[popups] retiring {len(stale)} inherited clearer(s) so this "
+              "batch gets the current build", flush=True)
+        for pid in stale:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+        deadline = time.monotonic() + 10.0
+        while any(process_running(pid) for pid in stale) and time.monotonic() < deadline:
+            time.sleep(0.25)
     clearer = HERE / "civ6_control" / "popup_clear.py"
     if not clearer.exists():
         print(f"[popups] no clearer at {clearer}; stuck screens will sit on the map",

@@ -703,73 +703,301 @@ fn release_foreign_production(
     released
 }
 
-/// Keep enough live defenders committed to a nearby barbarian until Firaxis
-/// confirms that it died.
+#[derive(Default)]
+struct BarbarianFinishingVolley {
+    /// Barbarians the exact planning model removed before ordinary movement.
+    targets: usize,
+    /// Direct attacks to send from the exported frame, including one reserve
+    /// attacker when Firaxis may leave a modelled kill alive.
+    actions: Vec<Action>,
+    reserves: usize,
+}
+
+#[derive(Clone)]
+struct FinishingCandidate {
+    unit: u32,
+    /// Exact CIVVIS actions used to prove and score the line.
+    simulation: Vec<Action>,
+    /// One order the host can execute from its exported frame. A melee order
+    /// may collapse approach moves plus the final attack into MOVE_TO(enemy).
+    order: Action,
+    kills: bool,
+    ranged: bool,
+    damage: i32,
+    attacker_loss: i32,
+}
+
+/// Legal attacks a mapped unit can make on `target` from the exported frame.
 ///
-/// The order bridge sends one command per unit from a single exported frame,
-/// while CIVVIS normally applies combat serially to an exact native board. In
-/// the live game those are not equivalent: CIVVIS can predict that a Slinger
-/// and Warrior kill a damaged raider, remove it from the throwaway board, and
-/// send an adjacent Spearman away. If Firaxis's terrain/modifier calculation
-/// leaves the raider alive, the unused Spearman cannot be recalled and the
-/// raider gets a free turn.
+/// Geometry alone is not enough here: line of sight, siege setup, remaining
+/// attacks and promotions can all make an apparently direct shot illegal. Each
+/// candidate therefore has to survive the engine's own `apply` on a private
+/// board before it can pre-empt the unit's ordinary movement order.
+fn live_finishing_candidates(
+    game: &civvis::game::Game,
+    pid: usize,
+    target: u32,
+    mapped: &std::collections::BTreeMap<u32, i64>,
+    committed: &std::collections::BTreeSet<u32>,
+) -> Vec<FinishingCandidate> {
+    let Some(defender) = game.units.get(&target) else {
+        return Vec::new();
+    };
+    let target_pos = defender.pos;
+    let target_hp = defender.hp;
+    let mut candidates = Vec::new();
+
+    for unit in game.player_unit_ids(pid) {
+        if committed.contains(&unit) || !mapped.contains_key(&unit) {
+            continue;
+        }
+        let friendly = &game.units[&unit];
+        let spec = &game.rules.units[friendly.kind];
+        if spec.class != "military"
+            || friendly.moves_left <= 0.0
+            || friendly.attacks_left <= 0
+            || friendly
+                .linked_to
+                .and_then(|peer| game.units.get(&peer))
+                .is_some_and(|peer| game.rules.units[peer.kind].class != "military")
+        {
+            continue;
+        }
+        let distance = game.wdist(friendly.pos, target_pos);
+        let mut modes = Vec::with_capacity(3);
+        if spec.has_ranged_attack() && distance <= game.unit_attack_range(unit) {
+            let order = Action::Ranged {
+                unit,
+                target: target_pos,
+            };
+            modes.push((true, vec![order.clone()], order));
+        }
+        if spec.is_melee_capable() && distance == 1 {
+            let order = Action::Attack {
+                unit,
+                target: target_pos,
+            };
+            modes.push((false, vec![order.clone()], order));
+        } else if spec.is_melee_capable() && distance > 1 {
+            // Civ VI resolves melee through MOVE_TO on the occupied tile, so
+            // one host order can cover an approach and its blow. Prove the
+            // corresponding line with CIVVIS's own pathfinder first; a route
+            // stopped by terrain, stacking, ZOC or exhausted movement never
+            // becomes a host order.
+            let mut approach = game.clone();
+            let mut simulation = Vec::new();
+            for _ in 0..game.map.tiles.len() {
+                if approach.wdist(approach.units[&unit].pos, target_pos) <= 1 {
+                    break;
+                }
+                let Some(next) = approach.route_step(unit, target_pos, 1) else {
+                    break;
+                };
+                let step = Action::Move { unit, to: next };
+                if approach.apply(pid, &step).is_err() {
+                    break;
+                }
+                simulation.push(step);
+            }
+            if approach.wdist(approach.units[&unit].pos, target_pos) == 1 {
+                let attack = Action::Attack {
+                    unit,
+                    target: target_pos,
+                };
+                if approach.apply(pid, &attack).is_ok() {
+                    simulation.push(attack);
+                    modes.push((
+                        false,
+                        simulation,
+                        Action::Attack {
+                            unit,
+                            target: target_pos,
+                        },
+                    ));
+                }
+            }
+        }
+
+        for (ranged, simulation, order) in modes {
+            let attacker_hp = friendly.hp;
+            let mut after = game.clone();
+            let mut legal = true;
+            for action in &simulation {
+                if after.apply(pid, action).is_err() {
+                    legal = false;
+                    break;
+                }
+            }
+            if !legal || !after.units.contains_key(&unit) {
+                continue;
+            }
+            let remaining = after.units.get(&target).map(|unit| unit.hp).unwrap_or(0);
+            let damage = (target_hp - remaining).max(0);
+            if damage == 0 {
+                continue;
+            }
+            let attacker_loss = attacker_hp - after.units[&unit].hp;
+            candidates.push(FinishingCandidate {
+                unit,
+                simulation,
+                order,
+                kills: !after.units.contains_key(&target),
+                ranged,
+                damage,
+                attacker_loss,
+            });
+        }
+    }
+
+    // A certain kill first; otherwise make the shortest volley. Ranged fire
+    // breaks a tie without risking a melee body, then damage and retaliation
+    // distinguish otherwise equivalent blows.
+    candidates.sort_by(|left, right| {
+        right
+            .kills
+            .cmp(&left.kills)
+            .then_with(|| right.ranged.cmp(&left.ranged))
+            .then_with(|| right.damage.cmp(&left.damage))
+            .then_with(|| left.attacker_loss.cmp(&right.attacker_loss))
+            .then_with(|| left.unit.cmp(&right.unit))
+    });
+    // A unit with both attack modes still contributes only one seat to the
+    // volley. The preferred mode is first after the ordering above.
+    let mut seen = std::collections::BTreeSet::new();
+    candidates.retain(|candidate| seen.insert(candidate.unit));
+    candidates
+}
+
+/// Finish exposed barbarians before their attackers receive campaign moves.
 ///
-/// When at least two units can attack it now, plan a visible barbarian inside
-/// the home-defense ring at full durability. A lone defender therefore keeps
-/// exact-HP kill judgment. This changes only the disposable planning clone;
-/// the authoritative mirror keeps the exported HP, and the next frame removes
-/// the reserve as soon as Firaxis reports the target gone. Rival wars keep
-/// their ordinary exact-HP planning because this repair is for the permanently
-/// hostile barbarian seat, not a blanket license to overcommit every campaign.
-fn reserve_live_barbarian_defenders(planned_game: &mut civvis::game::Game, pid: usize) -> usize {
+/// The old live-only repair rewrote every wounded barbarian to 100 HP on the
+/// planning board. That kept a second defender from being released after a
+/// simulated kill, but it also erased the decisive tactical fact: this unit is
+/// one blow from death. The active run `civvis-20260815T095258Z` then showed
+/// barbarians survive successive exported frames on 1, 3, 6, 8, 16 and 20 HP
+/// while nearby units promoted or marched. The reserve was firing throughout.
+///
+/// Keep the exported HP. For a wounded barbarian inside the existing six-tile
+/// home-defense ring, prove a kill using only attacks legal *right now*, apply
+/// that shortest volley before the normal AI turn, and reserve one additional
+/// direct attacker when one is available. The extra order preserves the old
+/// host/model safety margin: if Firaxis leaves the predicted kill alive it gets
+/// the second blow; if the first blow killed it, a ranged order is refused and
+/// a melee order can only enter the cleared tile or be blocked by the first
+/// attacker. Rivals remain entirely on the ordinary campaign path.
+fn finish_live_barbarians(
+    planned_game: &mut civvis::game::Game,
+    pid: usize,
+    mapped: &std::collections::BTreeMap<u32, i64>,
+) -> BarbarianFinishingVolley {
     let Some(barbarian) = planned_game.barb_pid else {
-        return 0;
+        return BarbarianFinishingVolley::default();
     };
     let cities = planned_game
         .player_city_ids(pid)
         .into_iter()
-        .filter_map(|cid| planned_game.cities.get(&cid).map(|city| city.pos))
+        .filter_map(|city| planned_game.cities.get(&city).map(|city| city.pos))
         .collect::<Vec<_>>();
-    let targets = planned_game
+    let mut targets = planned_game
         .units
         .values()
         .filter(|unit| {
-            if unit.owner != barbarian
-                || planned_game.rules.units[unit.kind].class != "military"
-                || !cities
+            unit.owner == barbarian
+                && planned_game.rules.units[unit.kind].class == "military"
+                && unit.hp < 100
+                && cities
                     .iter()
                     .any(|city| planned_game.wdist(*city, unit.pos) <= 6)
-                || unit.hp >= 100
-            {
-                return false;
-            }
-            let direct_attackers = planned_game
-                .units
-                .values()
-                .filter(|friendly| {
-                    if friendly.owner != pid
-                        || friendly.moves_left <= 0.0
-                        || friendly.attacks_left <= 0
-                    {
-                        return false;
-                    }
-                    let spec = &planned_game.rules.units[friendly.kind];
-                    let distance = planned_game.wdist(friendly.pos, unit.pos);
-                    spec.class == "military"
-                        && ((spec.has_ranged_attack()
-                            && distance <= planned_game.unit_attack_range(friendly.id))
-                            || (spec.is_melee_capable() && distance == 1))
-                })
-                .take(2)
-                .count();
-            direct_attackers >= 2
         })
-        .map(|unit| unit.id)
+        .map(|unit| (unit.hp, unit.pos, unit.id))
         .collect::<Vec<_>>();
-    for target in &targets {
-        planned_game.units.get_mut(target).unwrap().hp = 100;
+    targets.sort_unstable();
+
+    let mut result = BarbarianFinishingVolley::default();
+    let mut committed = std::collections::BTreeSet::new();
+    for (_, _, target) in targets {
+        if !planned_game.units.contains_key(&target) {
+            continue;
+        }
+        let initial = live_finishing_candidates(planned_game, pid, target, mapped, &committed);
+        if initial.is_empty() {
+            continue;
+        }
+
+        // Prove that a direct volley actually removes the target before taking
+        // any unit away from the ordinary AI. Damage-only opportunities remain
+        // the joint tactical planner's decision.
+        let mut proof = planned_game.clone();
+        let mut proof_committed = committed.clone();
+        let mut chosen = Vec::new();
+        while proof.units.contains_key(&target) {
+            let Some(candidate) = live_finishing_candidates(
+                &proof,
+                pid,
+                target,
+                mapped,
+                &proof_committed,
+            )
+            .into_iter()
+            .next()
+            else {
+                break;
+            };
+            let mut legal = true;
+            for action in &candidate.simulation {
+                if proof.apply(pid, action).is_err() {
+                    legal = false;
+                    break;
+                }
+            }
+            if !legal {
+                break;
+            }
+            proof_committed.insert(candidate.unit);
+            chosen.push(candidate);
+        }
+        if proof.units.contains_key(&target) {
+            continue;
+        }
+
+        for candidate in &chosen {
+            let mut legal = true;
+            for action in &candidate.simulation {
+                if planned_game.apply(pid, action).is_err() {
+                    legal = false;
+                    break;
+                }
+            }
+            if !legal {
+                break;
+            }
+            committed.insert(candidate.unit);
+            result.actions.push(candidate.order.clone());
+        }
+        if planned_game.units.contains_key(&target) {
+            continue;
+        }
+        result.targets += 1;
+
+        // One predicted attack plus one available attacker is the exact shape
+        // the old durability rewrite was trying to preserve. Keep the reserve
+        // explicit instead of making the target look healthy to every scorer.
+        if chosen.len() == 1 {
+            if let Some(backup) = initial
+                .into_iter()
+                .find(|candidate| !committed.contains(&candidate.unit))
+            {
+                if let Some(unit) = planned_game.units.get_mut(&backup.unit) {
+                    unit.moves_left = 0.0;
+                    unit.attacks_left = 0;
+                }
+                committed.insert(backup.unit);
+                result.actions.push(backup.order);
+                result.reserves += 1;
+            }
+        }
     }
-    targets.len()
+    result
 }
 
 /// The skipped-reason key for a move whose destination is the unit's own tile.
@@ -918,7 +1146,6 @@ fn decide(
     // board shown to the next decision is never a mixture of one real game and one
     // speculative CIVVIS turn.
     let mut planned_game = mirror_state.game.clone();
-    let barbarian_reserve = reserve_live_barbarian_defenders(&mut planned_game, 0);
     // Firaxis keeps a Trader visible while it is travelling an active route;
     // CIVVIS's native model consumes it into `game.routes`.  The authoritative
     // mirror carries both so the map remains faithful.  Remove only the busy
@@ -928,6 +1155,12 @@ fn decide(
     let released =
         release_foreign_production(&mut planned_game, &mirror_state.cid_of, state, ours);
     let before = planned_game.log.len();
+    let barbarian_finishers =
+        finish_live_barbarians(&mut planned_game, 0, &mirror_state.civ6_of);
+    // Finishing attacks are translated explicitly below, including the reserve
+    // order that was intentionally not applied to the planning board. Ordinary
+    // AI actions start after the attacks that were applied there.
+    let ai_actions_begin = planned_game.log.len();
     // ⚠ MEASURE LEGALITY BEFORE THE TURN IS TAKEN. Asking afterwards reported
     // `all_legal = 0` — the enumeration short-circuits once the seat has acted — which
     // would have been read as "CIVVIS cannot declare war" when it only meant "I asked
@@ -983,7 +1216,11 @@ fn decide(
         .count();
     ai.take_turn(&mut planned_game, 0);
 
-    let mut orders: Vec<Order> = Vec::new();
+    let mut orders: Vec<Order> = barbarian_finishers
+        .actions
+        .iter()
+        .filter_map(|action| translate(action, mirror_state, state))
+        .collect();
     let mut skipped: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
     let mut skipped_examples: Vec<String> = Vec::new();
@@ -1025,11 +1262,16 @@ fn decide(
             pre_traders.join("; ")
         ));
     }
-    if barbarian_reserve > 0 {
-        note_bits.push(format!("barbarian_defense_reserve={barbarian_reserve}"));
+    if barbarian_finishers.targets > 0 {
+        note_bits.push(format!(
+            "barbarian_finishing_volleys={} attacks={} reserves={}",
+            barbarian_finishers.targets,
+            barbarian_finishers.actions.len(),
+            barbarian_finishers.reserves,
+        ));
     }
 
-    for (seat, action) in planned_game.log.since(before) {
+    for (seat, action) in planned_game.log.since(ai_actions_begin) {
         if *seat != 0 {
             continue;
         }
@@ -2986,7 +3228,7 @@ mod tests {
     }
 
     #[test]
-    fn local_barbarian_reserve_changes_only_the_throwaway_planning_board() {
+    fn local_barbarian_finishing_volley_keeps_exported_hp_and_proves_the_kill() {
         let (snapshot, state) = local_barbarian_defense_board();
         let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
         let barbarian = mirror.game.barb_pid.unwrap();
@@ -2999,34 +3241,27 @@ mod tests {
             .id;
         let mut planned = mirror.game.clone();
 
-        assert_eq!(reserve_live_barbarian_defenders(&mut planned, 0), 1);
-        assert_eq!(planned.units[&hostile].hp, 100);
+        let volley = finish_live_barbarians(&mut planned, 0, &mirror.civ6_of);
+        assert_eq!(volley.targets, 1);
+        assert!(
+            volley.actions.len() >= 2,
+            "the host/model safety margin keeps at least two direct attackers: {:?}",
+            volley.actions
+        );
+        assert!(
+            !planned.units.contains_key(&hostile),
+            "the exact planning model must prove the target dies before pre-empting movement"
+        );
         assert_eq!(
             mirror.game.units[&hostile].hp, 64,
             "the exported board must retain Firaxis's actual damage"
         );
-
-        let extra_defenders = planned
-            .player_unit_ids(0)
-            .into_iter()
-            .skip(1)
-            .collect::<Vec<_>>();
-        for defender in extra_defenders {
-            let unit = planned.units.get_mut(&defender).unwrap();
-            unit.moves_left = 0.0;
-            unit.attacks_left = 0;
-        }
-        planned.units.get_mut(&hostile).unwrap().hp = 64;
-        assert_eq!(reserve_live_barbarian_defenders(&mut planned, 0), 0);
-        assert_eq!(
-            planned.units[&hostile].hp, 64,
-            "a lone defender still judges the host's exact damaged target"
-        );
     }
 
     #[test]
-    fn adjacent_spearman_is_committed_until_firaxis_confirms_the_barbarian_died() {
-        let (snapshot, state) = local_barbarian_defense_board();
+    fn dying_barbarian_gets_a_direct_attack_and_a_reserve_before_any_movement() {
+        let (snapshot, mut state) = local_barbarian_defense_board();
+        state.hostiles[0].hp = 8.0;
         let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
         let mut ai = civvis::ai::AdvancedAi::new();
         let mut ours = std::collections::BTreeMap::new();
@@ -3041,22 +3276,85 @@ mod tests {
             &mut ours,
         ))
         .unwrap();
-        let spearman = reply["orders"]
+        let attacks = reply["orders"]
             .as_array()
             .unwrap()
             .iter()
-            .find(|order| order["kind"] == "unit" && order["subject"] == 102)
-            .expect("the adjacent Spearman receives an order");
-
-        assert_eq!(spearman["verb"], "ATTACK");
+            .take_while(|order| {
+                matches!(order["verb"].as_str(), Some("ATTACK" | "RANGE_ATTACK"))
+                    && order["x"] == 5
+                    && order["y"] == 4
+            })
+            .collect::<Vec<_>>();
         assert_eq!(
-            (spearman["x"].as_i64(), spearman["y"].as_i64()),
-            (Some(5), Some(4))
+            attacks.len(),
+            2,
+            "one modelled kill and one host-side reserve must lead the order list: {}",
+            reply["orders"]
         );
         assert!(reply["note"]
             .as_str()
             .unwrap()
-            .contains("barbarian_defense_reserve=1"));
+            .contains("barbarian_finishing_volleys=1 attacks=2 reserves=1"));
+    }
+
+    #[test]
+    fn healthy_barbarian_does_not_preempt_the_ordinary_tactical_planner() {
+        let (snapshot, state) = local_barbarian_defense_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let barbarian = mirror.game.barb_pid.unwrap();
+        let hostile = mirror
+            .game
+            .units
+            .values()
+            .find(|unit| unit.owner == barbarian)
+            .unwrap()
+            .id;
+        let mut planned = mirror.game.clone();
+        planned.units.get_mut(&hostile).unwrap().hp = 100;
+
+        let volley = finish_live_barbarians(&mut planned, 0, &mirror.civ6_of);
+        assert_eq!(volley.targets, 0);
+        assert!(volley.actions.is_empty());
+        assert_eq!(planned.units[&hostile].hp, 100);
+    }
+
+    #[test]
+    fn reachable_melee_finish_collapses_approach_and_attack_into_one_host_order() {
+        let (snapshot, mut state) = local_barbarian_defense_board();
+        state.hostiles[0].hp = 1.0;
+        state.units.retain(|unit| unit.id == 102);
+        let chariot = state.units.iter_mut().find(|unit| unit.id == 102).unwrap();
+        chariot.kind = "UNIT_HEAVY_CHARIOT".to_string();
+        chariot.x = 5;
+        chariot.y = 6;
+        chariot.moves = 4.0;
+
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let chariot = mirror
+            .civ6_of
+            .iter()
+            .find_map(|(unit, civ6)| (*civ6 == 102).then_some(*unit))
+            .unwrap();
+        let target = civvis::hex::offset_to_axial(5, 4);
+        assert!(
+            mirror.game.wdist(mirror.game.units[&chariot].pos, target) > 1,
+            "the host-order collapse is only meaningful when an approach is required"
+        );
+        let mut planned = mirror.game.clone();
+
+        let volley = finish_live_barbarians(&mut planned, 0, &mirror.civ6_of);
+        assert_eq!(volley.targets, 1);
+        assert_eq!(
+            volley.actions,
+            vec![Action::Attack { unit: chariot, target }],
+            "the live host receives its native move-to-enemy operation, not a \
+             deferred MOVE_TO followed by an attack next turn"
+        );
+        assert_eq!(
+            planned.units[&chariot].pos, target,
+            "the private CIVVIS board still simulates and scores the full approach"
+        );
     }
 
     #[test]
