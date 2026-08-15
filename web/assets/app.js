@@ -4724,6 +4724,286 @@ function finishTurnPlateSeamGesture(event) {
   syncTurnPlateWidth();
 }
 
+// ------------------------------------------------------------- HUD folds
+// Each half of the two composite panels collapses on its own: the masthead's
+// turn box and player standings, and the right rail's simulation stats and
+// victory tracker. A fold keeps the widget where it is — unlike the Display
+// Settings switches, which take a whole widget off the map — so the other
+// half simply receives the room. The two masthead halves are exclusive:
+// collapsing the only visible half swaps the fold rather than emptying the
+// panel.
+const HUD_FOLD_STORAGE_KEY = "civvis-hud-folds-v1";
+const HUD_FOLD_NAMES = ["simstats", "victory", "turnplate", "standings"];
+let HUD_FOLDS = (() => {
+  const folds = {};
+  try {
+    const saved = JSON.parse(localStorage.getItem(HUD_FOLD_STORAGE_KEY) || "{}");
+    for (const name of HUD_FOLD_NAMES) {
+      if (typeof saved?.[name] === "boolean") folds[name] = saved[name];
+    }
+  } catch (_) {}
+  return folds;
+})();
+function hudFolded(name) { return HUD_FOLDS[name] === true; }
+function saveHudFolds() {
+  try { localStorage.setItem(HUD_FOLD_STORAGE_KEY, JSON.stringify(HUD_FOLDS)); } catch (_) {}
+}
+function applyHudFolds() {
+  const playerHud = document.getElementById("playerhud");
+  playerHud?.classList.toggle("turn-plate-collapsed", hudFolded("turnplate"));
+  playerHud?.classList.toggle("standings-collapsed", hudFolded("standings"));
+  const victoryHud = document.getElementById("victoryhud");
+  victoryHud?.classList.toggle("sim-stats-collapsed", hudFolded("simstats"));
+  victoryHud?.classList.toggle("victory-collapsed", hudFolded("victory"));
+}
+function toggleHudFold(name) {
+  if (!HUD_FOLD_NAMES.includes(name)) return;
+  const folded = !hudFolded(name);
+  if (folded && name === "turnplate" && hudFolded("standings")) HUD_FOLDS.standings = false;
+  if (folded && name === "standings" && hudFolded("turnplate")) HUD_FOLDS.turnplate = false;
+  HUD_FOLDS[name] = folded;
+  saveHudFolds();
+  applyHudFolds();
+  if (state) drawPlayerHud();
+  syncTurnPlateWidth();
+  syncSimStatsHeight();
+  refitMapAreaToChrome();
+}
+function hudFoldButton(name, label, extraClass = "") {
+  const folded = hudFolded(name);
+  const verb = folded ? "Expand" : "Collapse";
+  return `<button class="hud-fold${extraClass ? ` ${extraClass}` : ""}" type="button" data-hud-fold="${name}" ` +
+    `aria-expanded="${!folded}" aria-label="${verb} the ${label}" title="${verb} the ${label}">${folded ? "▸" : "▾"}</button>`;
+}
+
+// ------------------------------------------------------- simulation stats
+// The record that persists between simulations: every finished game bumps a
+// win–loss–draw ledger per civilization and per controlling player or AI
+// profile, kept per mode so a Tactics record never mixes into a Civ one.
+// Aggregates only — the ledger stays a few hundred bytes however many games
+// it has seen.
+const SIMULATION_STATS_KEY = "civvis-simulation-stats-v1";
+const SIM_STATS_VIEW_KEY = "civvis-sim-stats-view-v1";
+let simulationStats = (() => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SIMULATION_STATS_KEY) || "{}");
+    if (saved && typeof saved === "object" && !Array.isArray(saved)) return saved;
+  } catch (_) {}
+  return {};
+})();
+let simStatsView = (() => {
+  try {
+    return localStorage.getItem(SIM_STATS_VIEW_KEY) === "strategies" ? "strategies" : "civs";
+  } catch (_) { return "civs"; }
+})();
+function saveSimulationStats() {
+  try { localStorage.setItem(SIMULATION_STATS_KEY, JSON.stringify(simulationStats)); } catch (_) {}
+}
+function rememberSimStatsView(view) {
+  simStatsView = view === "strategies" ? "strategies" : "civs";
+  try { localStorage.setItem(SIM_STATS_VIEW_KEY, simStatsView); } catch (_) {}
+}
+function simulationStatsMode(st = state) {
+  return st && isBattlefieldMapScript(st.map?.script) ? "tactics" : "civ";
+}
+function simulationStatsBucket(mode) {
+  const bucket = simulationStats[mode] ?? (simulationStats[mode] = {});
+  bucket.games ??= 0;
+  bucket.turns ??= 0;
+  bucket.civs ??= {};
+  bucket.strategies ??= {};
+  return bucket;
+}
+// The seat's controller, the same preference order the standings print:
+// a registered person, then the league handle, then the plain AI name.
+function simulationSeatName(p) {
+  return p.player_username || p.ai_username || p.ai_name || "AI player";
+}
+function bumpSimulationRecord(table, key, column) {
+  const row = table[key] ?? (table[key] = {w:0, l:0, d:0});
+  row[column] += 1;
+}
+// Called from the result screens, whose signature guard already runs once per
+// distinct result; the stored key repeats that guard across reloads so a page
+// reopened over a finished world cannot count the same game twice.
+function recordSimulationResult(st, signature, winnerIds) {
+  const key = `${st.server_instance ?? ""}|${signature}`;
+  if (simulationStats.last === key) return;
+  simulationStats.last = key;
+  const bucket = simulationStatsBucket(simulationStatsMode(st));
+  bucket.games += 1;
+  bucket.turns += Number(reportedTurn(st)) || 0;
+  const winnerSeats = new Set(winnerIds
+    .map(id => st.players[id]?.id)
+    .filter(id => id !== undefined));
+  for (const p of st.players) {
+    if (p.is_minor || p.is_barbarian) continue;
+    const column = winnerSeats.size === 0 ? "d" : winnerSeats.has(p.id) ? "w" : "l";
+    bumpSimulationRecord(bucket.civs, p.civ || "Unknown civilization", column);
+    bumpSimulationRecord(bucket.strategies, simulationSeatName(p), column);
+  }
+  saveSimulationStats();
+  if (state) drawPlayerHud();
+}
+function clearSimulationStats(mode) {
+  delete simulationStats[mode];
+  saveSimulationStats();
+  if (state) drawPlayerHud();
+}
+
+// -------------------------------------------------- simulation stats seam
+// The divider between the simulation stats and the victory tracker: the turn
+// plate's seam turned on its side. Without a preference the top section takes
+// its content height (capped by the stylesheet) and the tracker keeps the
+// rest; a dragged height is a small local preference like the plate's.
+const SIM_STATS_HEIGHT_KEY = "civvis-sim-stats-height-v1";
+const SIM_STATS_MIN_HEIGHT = 56;
+let simStatsHeight = (() => {
+  try {
+    const saved = Number(localStorage.getItem(SIM_STATS_HEIGHT_KEY));
+    return Number.isFinite(saved) && saved >= SIM_STATS_MIN_HEIGHT ? Math.round(saved) : null;
+  } catch (_) { return null; }
+})();
+let simStatsSeamGesture = null;
+// The victory tracker keeps a usable stretch below the stats; this floor only
+// keeps the stats from swallowing the whole rail.
+function simStatsMaxHeight() {
+  const hud = document.getElementById("victoryhud");
+  return Math.max(SIM_STATS_MIN_HEIGHT, (hud?.clientHeight || 0) - 96);
+}
+function syncSimStatsHeight() {
+  const hud = document.getElementById("victoryhud");
+  if (!hud) return;
+  const effective = simStatsHeight === null ? null
+    : Math.round(Math.max(SIM_STATS_MIN_HEIGHT, Math.min(simStatsMaxHeight(), simStatsHeight)));
+  hud.classList.toggle("sim-stats-sized", effective !== null);
+  if (effective === null) hud.style.removeProperty("--sim-stats-height");
+  else hud.style.setProperty("--sim-stats-height", `${effective}px`);
+  const seam = hud.querySelector("[data-sim-stats-seam]");
+  if (seam) {
+    seam.setAttribute("aria-valuemin", `${SIM_STATS_MIN_HEIGHT}`);
+    seam.setAttribute("aria-valuemax", `${Math.round(simStatsMaxHeight())}`);
+    seam.setAttribute("aria-valuenow",
+      `${effective ?? Math.round(hud.querySelector(".sim-stats-region")?.getBoundingClientRect().height || SIM_STATS_MIN_HEIGHT)}`);
+  }
+}
+function applySimStatsHeight(height, persist = true) {
+  const candidate = height === null || height === undefined ? NaN : Number(height);
+  simStatsHeight = Number.isFinite(candidate)
+    ? Math.round(Math.max(SIM_STATS_MIN_HEIGHT, Math.min(simStatsMaxHeight(), candidate)))
+    : null;
+  syncSimStatsHeight();
+  if (persist) {
+    try {
+      if (simStatsHeight === null) localStorage.removeItem(SIM_STATS_HEIGHT_KEY);
+      else localStorage.setItem(SIM_STATS_HEIGHT_KEY, `${simStatsHeight}`);
+    } catch (_) {}
+  }
+}
+function beginSimStatsSeamGesture(event) {
+  if (event.button !== undefined && event.button !== 0) return;
+  const section = document.getElementById("victoryhud")?.querySelector(".sim-stats-region");
+  if (!section) return;
+  event.preventDefault();
+  event.stopPropagation();
+  simStatsSeamGesture = {
+    pointerId:event.pointerId, startY:event.clientY,
+    startHeight:section.getBoundingClientRect().height, moved:false,
+  };
+  document.body.classList.add("layout-resizing");
+  document.body.style.setProperty("--layout-resize-cursor", "row-resize");
+}
+function moveSimStatsSeamGesture(event) {
+  const gesture = simStatsSeamGesture;
+  if (!gesture || event.pointerId !== gesture.pointerId) return;
+  event.preventDefault();
+  const dy = event.clientY - gesture.startY;
+  if (Math.abs(dy) > 1) gesture.moved = true;
+  if (gesture.moved) applySimStatsHeight(gesture.startHeight + dy, false);
+}
+function finishSimStatsSeamGesture(event) {
+  const gesture = simStatsSeamGesture;
+  if (!gesture || (event && event.pointerId !== gesture.pointerId)) return;
+  simStatsSeamGesture = null;
+  document.body.classList.remove("layout-resizing");
+  document.body.style.removeProperty("--layout-resize-cursor");
+  if (gesture.moved) applySimStatsHeight(simStatsHeight);
+}
+// Fold chevrons and the stats' own controls live inside the two repainted
+// HUDs, so like every close control they act on the pointer press — a repaint
+// between press and release would otherwise detach the button before a click
+// is born. Zero-detail click stays for keyboard and scripted activation.
+function runHudFoldPress(event) {
+  const fold = event.target.closest?.("[data-hud-fold]");
+  if (fold) {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleHudFold(fold.dataset.hudFold);
+    return true;
+  }
+  const view = event.target.closest?.("[data-sim-stats-view]");
+  if (view) {
+    event.preventDefault();
+    event.stopPropagation();
+    rememberSimStatsView(view.dataset.simStatsView);
+    if (state) drawPlayerHud();
+    return true;
+  }
+  const clear = event.target.closest?.("[data-sim-stats-clear]");
+  if (clear) {
+    event.preventDefault();
+    event.stopPropagation();
+    clearSimulationStats(simulationStatsMode());
+    return true;
+  }
+  return false;
+}
+{
+  const hud = document.getElementById("victoryhud");
+  hud?.addEventListener("pointerdown", event => {
+    if (event.target.closest?.("[data-sim-stats-seam]"))
+      beginSimStatsSeamGesture(event);
+  });
+  hud?.addEventListener("dblclick", event => {
+    if (!event.target.closest?.("[data-sim-stats-seam]")) return;
+    event.preventDefault();
+    applySimStatsHeight(null);
+  });
+  hud?.addEventListener("keydown", event => {
+    const seam = event.target.closest?.("[data-sim-stats-seam]");
+    if (!seam) return;
+    const step = event.shiftKey ? 24 : 8;
+    const current = simStatsHeight
+      ?? hud.querySelector(".sim-stats-region")?.getBoundingClientRect().height
+      ?? SIM_STATS_MIN_HEIGHT;
+    let next = null;
+    if (event.key === "ArrowUp") next = current - step;
+    if (event.key === "ArrowDown") next = current + step;
+    if (event.key === "Home") next = SIM_STATS_MIN_HEIGHT;
+    if (event.key === "End") next = simStatsMaxHeight();
+    if (next === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+    applySimStatsHeight(next);
+  });
+  window.addEventListener("pointermove", moveSimStatsSeamGesture, {passive:false});
+  window.addEventListener("pointerup", finishSimStatsSeamGesture);
+  window.addEventListener("pointercancel", finishSimStatsSeamGesture);
+  const simStatsSizeObserver = typeof ResizeObserver === "function"
+    ? new ResizeObserver(syncSimStatsHeight) : null;
+  simStatsSizeObserver?.observe(hud);
+  for (const root of [hud, document.getElementById("playerhud")]) {
+    root?.addEventListener("pointerdown", event => {
+      if (event.button === 0 || event.pointerType === "touch") runHudFoldPress(event);
+    });
+    root?.addEventListener("click", event => {
+      if (event.detail === 0) runHudFoldPress(event);
+    });
+  }
+  applyHudFolds();
+  syncSimStatsHeight();
+}
+
 function screenToWorld(sx, sy) {
   const vx = (sx - MAPW / 2) / cam.scale;
   const vy = (sy - MAPH / 2) / cam.scale / mapProjectionY();
@@ -6468,6 +6748,11 @@ let betweenGameCountdownRealigned = false;
 let betweenGameCountdownDisagreed = 0;
 let betweenGameCountdownChoice = null;
 let betweenGameCountdownAsserted = null;
+// Whether the interval was ever picked by hand. Until it is, the mode picks
+// the default — a Tactics battle resolves in seconds, so three of them
+// between battles reads as a beat rather than a wait — and that soft choice
+// swaps with the world on screen instead of following the viewer around.
+let betweenGameCountdownExplicit = false;
 function betweenGameCountdownHeldOpen() {
   const select = document.getElementById("between-game-countdown");
   return !!select && document.activeElement === select;
@@ -6484,6 +6769,7 @@ function rememberBetweenGameCountdown(ms) {
   betweenGameCountdownChoice = ms;
   betweenGameCountdownAsserted = null;
   betweenGameCountdownDisagreed = 0;
+  betweenGameCountdownExplicit = true;
   try { localStorage.setItem(BETWEEN_GAME_COUNTDOWN_KEY, String(ms)); } catch (e) {}
 }
 // One chooser for both controls: the Display Settings select and its copy on
@@ -6529,11 +6815,34 @@ function restoreBetweenGameCountdown() {
   if (!select) return;
   let stored = null;
   try { stored = localStorage.getItem(BETWEEN_GAME_COUNTDOWN_KEY); } catch (e) {}
-  if (stored === null || stored === "") return;
+  if (stored === null || stored === "") { applyBetweenGameCountdownDefault(); return; }
   const ms = +stored;
-  if (!Number.isFinite(ms) || !betweenGameCountdownOffered(select, ms)) return;
+  if (!Number.isFinite(ms) || !betweenGameCountdownOffered(select, ms)) {
+    applyBetweenGameCountdownDefault();
+    return;
+  }
   betweenGameCountdownChoice = ms;
+  betweenGameCountdownExplicit = true;
   select.value = String(ms);
+}
+// With nothing picked by hand, the mode's default stands as a soft choice:
+// 3s between Tactics battles, the stock 10s everywhere else. Holding it in
+// betweenGameCountdownChoice lets the ordinary assert path tell a fresh
+// server about it once, exactly as it would a remembered preference, without
+// writing anything a later session would mistake for one. Re-applied when a
+// new world lands, so the default follows the game on screen.
+function applyBetweenGameCountdownDefault(tactics = watchingBattlefield()) {
+  if (betweenGameCountdownExplicit) return;
+  const select = document.getElementById("between-game-countdown");
+  if (!select || betweenGameCountdownHeldOpen()) return;
+  const ms = tactics ? 3_000 : 10_000;
+  if (!betweenGameCountdownOffered(select, ms) || betweenGameCountdownChoice === ms) return;
+  betweenGameCountdownChoice = ms;
+  betweenGameCountdownAsserted = null;
+  betweenGameCountdownDisagreed = 0;
+  select.value = String(ms);
+  syncFinaleCountdownChoice();
+  rearmFinaleCountdown();
 }
 function syncPerformancePresetSelect() {
   const select = document.getElementById("performancepreset");
@@ -7082,6 +7391,9 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     // opens the drawer and flips the mode select has not left the game they
     // are watching, and the chip must keep offering the other one.
     syncModeLink(tactics);
+    // So does the between-game default: a Tactics world counts down in 3s
+    // unless the viewer has picked an interval by hand.
+    applyBetweenGameCountdownDefault(tactics);
     const majors = st.players.filter(p => !p.is_minor && !p.is_barbarian).length;
     const playerSelect = document.getElementById("np");
     if (!tactics && [...playerSelect.options].some(o => +o.value === majors)) {
@@ -7225,6 +7537,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
           title="Starts a new game when the count reaches zero. Any click or key press stops the countdown.">Start another game</button>`}
         ${finaleCountdownChoiceMarkup()}
       </div>`;
+      recordSimulationResult(st, signature, []);
       armFinaleCountdown(signature);
     }
     const respawn = document.getElementById("respawn");
@@ -7288,6 +7601,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
         </span>
         ${finaleCountdownChoiceMarkup()}
       </div>`;
+      recordSimulationResult(st, signature, winnerIds);
       armFinaleCountdown(signature);
     }
     const respawn = document.getElementById("respawn");
@@ -21643,6 +21957,62 @@ function syncVictoryLeaderCapacity(victoryHud = document.getElementById("victory
 // The turn plate is the standings' left cell: the world's age and turn first,
 // then the handful of setup and display choices a viewer needs at a glance.
 // The whole observer sentence remains on its tooltip.
+// The record row a name has earned: wins–losses, with draws only once one
+// exists — a Tactics arena full of decisive battles never prints a zero.
+function formatSimulationRecord(row) {
+  return row.d ? `${row.w}–${row.l}–${row.d}` : `${row.w}–${row.l}`;
+}
+function describeSimulationRecord(row) {
+  const parts = [`${row.w} win${row.w === 1 ? "" : "s"}`, `${row.l} loss${row.l === 1 ? "" : "es"}`];
+  if (row.d) parts.push(`${row.d} draw${row.d === 1 ? "" : "s"}`);
+  return parts.join(", ");
+}
+// The persistent record above the victory tracker: this mode's games and
+// average length, then the win–loss ledger by civilization or by controlling
+// player or AI profile — whichever view was chosen last.
+function simulationStatsSection() {
+  const mode = simulationStatsMode();
+  const bucket = simulationStats[mode];
+  const games = bucket?.games || 0;
+  const modeLabel = mode === "tactics" ? "Tactics" : "Civ";
+  const summary = games
+    ? `${modeLabel} · ${games} game${games === 1 ? "" : "s"} · avg ${Math.round(bucket.turns / games)} turns`
+    : `${modeLabel} · no finished games yet`;
+  const table = bucket?.[simStatsView] || {};
+  const rows = Object.entries(table)
+    .sort(([aName, a], [bName, b]) => b.w - a.w
+      || (b.w + b.l + b.d) - (a.w + a.l + a.d)
+      || aName.localeCompare(bName))
+    .map(([name, row]) =>
+      `<div class="sim-stat-row" title="${escapeAttr(`${name} — ${describeSimulationRecord(row)}`)}">` +
+      `<span class="sim-stat-name">${name}</span>` +
+      `<span class="sim-stat-record">${formatSimulationRecord(row)}</span></div>`)
+    .join("");
+  const body = rows ||
+    `<div class="sim-stats-empty">Finished games are recorded here, and the record persists between simulations.</div>`;
+  const viewButton = view =>
+    `<button class="sim-stats-view${simStatsView === view ? " active" : ""}" type="button" ` +
+    `data-sim-stats-view="${view}" aria-pressed="${simStatsView === view}" ` +
+    `title="${view === "civs" ? "Win–loss record by civilization" : "Win–loss record by controlling player or AI profile"}">` +
+    `${view === "civs" ? "Civs" : "Strategies"}</button>`;
+  return `<section class="hud-region sim-stats-region" aria-labelledby="sim-stats-title">` +
+    `<div class="hud-region-bar">` +
+    `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
+    `aria-label="Move simulation stats; use arrow keys or drag" title="Drag to move · arrow keys also move" id="sim-stats-title">` +
+    `<span>Simulation stats</span></div>` +
+    hudFoldButton("simstats", "simulation stats") +
+    `</div>` +
+    `<div class="sim-stats-body">` +
+    `<div class="sim-stats-summary">${summary}</div>` +
+    `<div class="sim-stats-controls" role="group" aria-label="Simulation record view">` +
+    viewButton("civs") + viewButton("strategies") +
+    (games ? `<button class="sim-stats-clear" type="button" data-sim-stats-clear ` +
+      `title="Clear the saved ${modeLabel} record" aria-label="Clear the saved ${modeLabel} record">Clear</button>` : ``) +
+    `</div>` +
+    `<div class="sim-stats-rows">${body}</div>` +
+    `</div></section>`;
+}
+
 function hudTurnPlate() {
   const actor = state.players[SPEC ? state.current : 0] || state.players[state.player];
   const viewer = state.players[state.player] || actor;
@@ -21739,6 +22109,7 @@ function hudTurnPlate() {
     `<div class="turn-setting"><span>${label}</span>` +
     `<b>${alive}<small class="turn-toll">(${lost} eliminated)</small></b></div>`;
   return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
+    hudFoldButton("turnplate", "turn box", "turn-plate-fold") +
     `<span class="turn-era">${ageLabel}</span>` +
     `<div class="${turnCountClasses}"><span class="turn-label">Turn</span>` +
     `<div class="turn-progress"><strong>${reportedTurn()}</strong>` +
@@ -21828,11 +22199,18 @@ function playerHudOverview() {
   const victoryMinHeight = victoryCount * victoryTrackHeight + Math.max(0, victoryCount - 1) * 2;
   const victoryMinWidth = victoryCount * 148 + Math.max(0, victoryCount - 1) * 2;
   const overview =
+    `<button class="overlay-close" type="button" data-overlay-close="victory" aria-label="Hide victory tracker; restore it in Display Settings" title="Hide victory tracker · restore in Display Settings">✕</button>` +
+    simulationStatsSection() +
+    `<button class="sim-stats-seam" type="button" data-sim-stats-seam role="separator" ` +
+    `aria-orientation="horizontal" aria-label="Simulation stats height; drag or use arrow keys, double-click resets" ` +
+    `title="Drag to divide the panel · double-click resets"></button>` +
+    `<section class="hud-region victory-region" aria-labelledby="victory-tracker-title">` +
+    `<div class="hud-region-bar">` +
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move victory tracker; use arrow keys or drag" title="Drag to move · arrow keys also move" id="victory-tracker-title">` +
     `<span>Victory tracker</span></div>` +
-    `<button class="overlay-close" type="button" data-overlay-close="victory" aria-label="Hide victory tracker; restore it in Display Settings" title="Hide victory tracker · restore in Display Settings">✕</button>` +
-    `<section class="hud-region victory-region" aria-labelledby="victory-tracker-title">` +
+    hudFoldButton("victory", "victory tracker") +
+    `</div>` +
     `<div class="hud-rail" tabindex="0" aria-label="Victory paths; scroll vertically for every path">` +
     `<div class="victory-ribbon" style="--victory-rows:${victoryCount};` +
     `--victory-min-height:${victoryMinHeight}px;--victory-min-width:${victoryMinWidth}px">` +
@@ -22086,8 +22464,13 @@ function drawPlayerHud() {
   // emit one cell per column from this list, in this order, so the table and
   // the viewer's saved arrangement cannot disagree.
   const visibleColumns = visiblePlayerHudColumns();
+  // The corner ✕ folds the standings in place and leaves the turn box; the
+  // whole masthead is still switched from Display Settings. Each collapsed
+  // half leaves a slim strip that brings it back.
   const html =
-    `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore it in Display Settings" title="Hide player standings · restore in Display Settings">✕</button>` +
+    `<button class="overlay-close" type="button" data-hud-fold="standings" aria-label="Collapse player standings; the turn box stays" title="Collapse player standings · the turn box stays">✕</button>` +
+    `<button class="hud-restore turn-plate-restore" type="button" data-hud-fold="turnplate" aria-label="Show the turn box" title="Show the turn box">▸</button>` +
+    `<button class="hud-restore standings-restore" type="button" data-hud-fold="standings" aria-label="Show player standings" title="Show player standings">▸</button>` +
     hudTurnPlate() +
     `<button class="turn-plate-seam" type="button" data-turn-plate-seam role="separator" ` +
     `aria-orientation="vertical" aria-label="Turn plate width; drag or use arrow keys, double-click resets" ` +
