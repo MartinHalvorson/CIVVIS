@@ -1091,7 +1091,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `recon_replacement` remain disabled by `AdvancedAi::legacy()`, so the
 /// frozen anchor retains its prior production path. Compatibility re-pin; the
 /// Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb7df_b261_f708_6491;
+/// A globally outmatched world-map Recovery front now holds its existing formation
+/// unless there is a named home threat or a finishable immediate engagement.
+/// That branch is gated by `bounded_recovery`, which the `advanced_v1` legacy
+/// anchor leaves false; the current production controller intentionally carries
+/// the behavior. Release `ai_eval advanced_v1 basic --pairs 10 --jobs 1 --seed
+/// 31337 --players 4 --turns 200 --deployment-comparison` reports from
+/// `8f6c6673` and this branch were byte-identical (SHA-256 `c7876b…a345`).
+/// Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7ee4_de50_8a97_4b75;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -3577,6 +3585,14 @@ mod tests {
             !civvis::ai::AdvancedAi::legacy().settler_commit,
             "advanced_v1 is legacy(); if it ever reaches the settler_commit path the \
              re-pin above stops being free and ELO_PROTOCOL_VERSION must be bumped"
+        );
+        // The global Recovery front hold is likewise a production-only branch.
+        // If the anchor ever enables it, its campaign movement may change and a
+        // source re-pin alone would be invalid.
+        assert!(
+            !civvis::ai::AdvancedAi::legacy().bounded_recovery,
+            "advanced_v1 is legacy(); if it ever carries bounded Recovery the global \
+             front-hold branch reaches the anchor and ELO_PROTOCOL_VERSION must be bumped"
         );
         // ⚠ And record the other half honestly: `advanced` DOES set it, so that
         // entrant's settler pipeline genuinely changes. The anchor pins the scale
