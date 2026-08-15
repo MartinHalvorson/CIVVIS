@@ -9792,3 +9792,138 @@ quoted as evidence the anchor holds parity at deployment. The direction at
 power is the opposite, by a margin no prefix of that size could see. This is
 the same lesson as the city-target floor: **re-run a doubtful read at higher
 resolution before believing it** — in both directions.
+
+## 2026-08-14 — the Strength profile now plays the deployment's victory set
+
+`ai_eval --matrix` no longer hard-codes `--victories science,culture,domination`
+into both children (#658). The victory list is now a field of the profile:
+`compact-standard` keeps the three-victory set, and `deployment-online` — the
+child that carries the matrix's **Strength** requirement — plays all six, which
+is the set the exhibition and the live bridge actually run. The profile-pinning
+test asserts both lists so neither can drift silently again.
+
+The 2026-08-11 entry ("the gate's three-victory set is justified") and
+`docs/AI_GAPS.md` both said changing the gate needs its own evidence, brought as
+its own question rather than as an exception for a treatment that wants it.
+This entry is that evidence. It engages the resolution measurement that entry
+made rather than repeating the framing it corrected.
+
+### Conceded in full: the three-victory set resolves more maps
+
+Across the runs recorded on 2026-08-11, the three-victory profile produced a
+mean 190 discordant maps per 400 (47.5%) against 154 (38.5%) for all six at the
+same 6p 74x46 shape — about 23% more decisive maps per unit compute (seeds
+10800000/11000000 all six; 11200000-stream, 11400000, 11500000, 11700000-stream
+three-victory). That measurement is right and it is kept: `compact-standard`,
+whose NoRegression job is exactly generic tripwire resolution, stays on the
+three-victory set because of it.
+
+### The error it priced: resolution of the wrong question
+
+The Strength requirement asks one question — should this challenger displace
+the incumbent **in deployment** — and deployment plays all six victories. A
+discordant map on a game deployment does not play is decisiveness about a
+different question. The war half is the measured demonstration that the two
+victory sets can disagree about resolution itself, not merely about the answer:
+on the deployment set the anytime e-process **crossed at map 134** (seed
+11000000, e = 4.469e2, p <= 0.0022, +34 Elo, sign p=0.0019), while the same
+arm on the three-victory set spent 400 maps to reach +13 at p=0.4671 (matrix
+seed 11200000 stream) — recorded at the time as "nothing there to resolve."
+The profile with 23% fewer discordant maps reached a verdict on the deployment
+question in a third of the sample; the profile with more discordant maps could
+not reach one at any affordable extension, because the effect it was pointed at
+belongs to the other game. Decisive maps per run and information about
+deployment per run are different quantities. The Strength child must buy the
+second.
+
+### Why "report both profiles" cannot be the load-bearing mechanism
+
+The 2026-08-11 practice — a victory-routed treatment must report both victory
+sets — requires knowing a treatment is victory-routed before measuring it. The
+war half did not announce itself: four military flags, where the naive
+expectation (military machinery matters more when domination is one route in
+three, so withholding it should look better there, not worse) points the wrong
+way, and the dependence surfaced only because the isolation was run afterward.
+The faith census (2026-08-12, PR #1578) then showed the divergence is not
+confined to victory routing: on the gate's set the same agent earns 2.4x the
+faith (6047 against 2474 per seat), spends 40% of it rather than 74%, and
+refuses the Religion grand strategy outright — a different empire, in which
+every faith-, religion-, city-state- and long-economy-adjacent treatment was
+being priced. A rule that must be applied by judgment before the evidence that
+would trigger the judgment exists is not an instrument property. The victory
+list is one, and this file already carries the general statement, kept from the
+`d_holy` post-mortem: **a promotion gate that disables a victory condition
+cannot promote a treatment whose payoff is that victory.** This change is that
+sentence, applied.
+
+### The recorded divergences, read against deployment truth
+
+`d_holy` (#1491): gated +20 Elo at 4p 24x16 over 1200 pairs, **+2 Elo (CI
+−46..+50, 32/31, p=1.0000)** at the deployment shape with all six victories,
+**−44 Elo (28/58, sign p=0.0016)** at the same shape on the three-victory set.
+The all-six deployment read is the deployment truth by construction — the
+treatment is worthless there, not a 44-point liability — and the promote-only
+error came from gating on a shape and set that were both not deployment's. The
+war half: replicated +32/+34 on the deployment set (seeds 10800000/11000000,
+sign p=0.0039/0.0019) and retained OFF on the three-victory read. In both
+recorded divergences the all-six number is the one that describes the deployed
+game; there is no recorded case of the reverse.
+
+### The price, stated
+
+About 23% fewer discordant maps per Strength-child run. At the measured rate of
+roughly three hours per 1,200 maps on this hardware (2026-08-11 city-defence
+entry, seed 12000000), restoring the old effective power at 400 pairs costs
+about 90 further pairs — under an hour per matrix run, paid only on the
+Strength child. The NoRegression child keeps the cheaper set, so the tripwire
+loses nothing.
+
+### What does not change
+
+Every verdict already recorded in this file stands: a matrix verdict is a
+decision by the instrument that ran it, each entry carries its configuration,
+and nothing here re-reads a rejected arm. Re-opening any retained arm requires
+a fresh, pre-registered run on the corrected instrument — and exactly one is
+pre-registered now, because it is the only retained arm whose deployment-set
+evidence already exists on two disjoint seeds.
+
+### ★ Pre-registration: the war half on the corrected gate
+
+```
+ai_eval advanced_without_unpriced_war advanced --matrix --pairs 600 --seed 17000000
+```
+
+Compact child stream 17000000, deployment child stream 18000000 — disjoint
+from every seed recorded in this file (largest to date 16100000, 400 pairs).
+600 pairs rather than 400 because the prior estimate (54.6%/54.9%, seeds
+10800000/11000000) sits where a 400-map Wilson interval touches parity — the
+prior confirmation's CI read `-0..+68` — and a rejection manufactured by
+interval width alone is the outcome the floor's 200-map lesson already warned
+against.
+
+Decision rule, fixed before the run:
+
+- **PASS** ships the withhold: `promoted_policy_envoy` stops setting
+  `siege_muster`, `home_defense`, `tactical_strategy`,
+  `unit_objective_memory`; the frozen anchor is untouched; the withhold arms
+  invert into re-addition treatments exactly as `city_target_floor`'s did
+  (#1504). The live bridge re-enables `siege-muster` and `home-defense` as
+  registered live treatments, so the live agent's delta is the two unit-tactics
+  flags — the quarter that measured null on its own (+11, p=0.3185, seed
+  11500000) — and that delta will be named in the shipping PR.
+- **INCONCLUSIVE with the challenger e-process crossed and score above 50%**
+  (a width failure, not an evidence failure) extends the same seed streams once
+  to 1,000 pairs total, and that verdict is final. No other extension, no new
+  seed.
+- **Any other outcome** — RETAIN, INCONCLUSIVE without the e-crossing, or a
+  compact-standard regression — ends the lane as "measured, uncertified" at the
+  war half's recorded numbers, with no further looks.
+
+For the multiple-comparisons ledger: this family has been looked at three times
+whole (10800000, 11000000, 11200000-stream) and four times in quarters
+(11400000, 11500000, 11700000-stream, 12000000). This is one more look, taken
+with a terminal decision rule declared before the run, on an instrument whose
+correction is justified above by evidence independent of this treatment —
+`d_holy`'s three-row record (#1491), the #1578 census, and the estimand
+argument. The war half supplies the sharpest demonstration; it is not the
+motive, and whichever way the run goes, the lane closes.

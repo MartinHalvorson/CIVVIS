@@ -705,14 +705,22 @@ incumbent when copied (46.9%, 95% CI 42.6%..51.3%, Elo −22, 500 maps, seed
 parameter tune has ever promoted. **The only gain in this audit came from
 deleting work, not adding or re-weighting it.**
 
-### ⚠ One open question the audit raised and cannot settle itself
+### The victory-set question the audit raised is settled (2026-08-14)
 
-The promotion matrix runs **three of six victory conditions**
-(`science,culture,domination`, hard-coded since #658), so religious, diplomatic
-and score victories are invisible to it. That is defensible as variance
-reduction — religion ends most games early on the default profile — but it has
-now produced two divergences from the deployment configuration in opposite
-directions: it would have rejected `d_holy`'s religion-routed gain, and it did
-reject a war-flag withhold worth +34 where the exhibition plays. Whether the gate
-should carry an all-victories profile is a question for its own evidence, not
-for whichever treatment happens to want it.
+The promotion matrix ran **three of six victory conditions**
+(`science,culture,domination`, hard-coded since #658) on both children, so
+religious, diplomatic and score victories were invisible to it, and it produced
+two recorded divergences from the deployment configuration: `d_holy`'s
+three-victory read said −44 Elo where the deployment set says parity (#1491),
+and it retained a war-flag withhold that replicated +32/+34 where the
+exhibition plays (seeds 10800000/11000000). The question was settled on its own
+evidence, not for a treatment that wanted it: the **Strength** child
+(`deployment-online`) now plays all six victories — the estimand it certifies
+is deployment, so its games must end every way a deployment game can — while
+`compact-standard` keeps the three-victory set for its measured ~23% higher
+decisive-map rate, which is exactly what a NoRegression tripwire should buy.
+The full decision, its cost, and the single pre-registered corrected-gate
+re-run (the war half, seed 17000000, terminal decision rule) are in
+`docs/EVAL.md` (2026-08-14, "the Strength profile now plays the deployment's
+victory set"). Prior verdicts stand as decisions of the instrument that made
+them.

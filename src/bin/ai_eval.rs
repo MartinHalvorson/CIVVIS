@@ -893,6 +893,14 @@ struct MatrixProfile {
     city_states: usize,
     turns: u32,
     speed: &'static str,
+    /// The victory checkboxes this profile's games leave enabled. Per-profile
+    /// because the two requirements buy different things with the list: the
+    /// Strength question is "should this displace the incumbent *in
+    /// deployment*", so its games must be able to end every way a deployment
+    /// game can; the NoRegression tripwire keeps the three-victory set for the
+    /// ~23% higher decisive-map rate measured in `docs/EVAL.md` (2026-08-11,
+    /// the gate's three-victory entry).
+    victories: &'static str,
     requirement: MatrixRequirement,
 }
 
@@ -931,6 +939,7 @@ const PROMOTION_PROFILES: [MatrixProfile; 2] = [
         city_states: 4,
         turns: 500,
         speed: "standard",
+        victories: "science,culture,domination",
         requirement: MatrixRequirement::NoRegression,
     },
     MatrixProfile {
@@ -941,6 +950,11 @@ const PROMOTION_PROFILES: [MatrixProfile; 2] = [
         city_states: 9,
         turns: 250,
         speed: "online",
+        // The deployment's full set (#658 hard-coded three for both profiles;
+        // changed 2026-08-14, see `docs/EVAL.md` — the Strength verdict now
+        // attaches to the game the exhibition and the live bridge actually
+        // play).
+        victories: "science,culture,religious,diplomatic,domination,score",
         requirement: MatrixRequirement::Strength,
     },
 ];
@@ -996,7 +1010,7 @@ fn matrix_child_args(request: MatrixChildRequest<'_>) -> Vec<String> {
         "poles".to_string(),
         "--randomize-civs".to_string(),
         "--victories".to_string(),
-        "science,culture,domination".to_string(),
+        profile.victories.to_string(),
         "--difficulty".to_string(),
         difficulty.to_string(),
         // A profile matrix asks the explicitly replacement-oriented question
@@ -2206,11 +2220,21 @@ mod tests {
         assert_eq!(number(&compact, "--players", 0), 4);
         assert_eq!(number(&compact, "--turns", 0), 500);
         assert_eq!(text(&compact, "--speed", "missing"), "standard");
+        assert_eq!(
+            text(&compact, "--victories", "missing"),
+            "science,culture,domination",
+            "the NoRegression tripwire keeps the three-victory set for its measured resolution"
+        );
         assert_eq!(number(&deployment, "--players", 0), 6);
         assert_eq!(number(&deployment, "--width", 0), 74);
         assert_eq!(number(&deployment, "--height", 0), 46);
         assert_eq!(number(&deployment, "--turns", 0), 250);
         assert_eq!(text(&deployment, "--speed", "missing"), "online");
+        assert_eq!(
+            text(&deployment, "--victories", "missing"),
+            VictoryConditions::NAMES.join(","),
+            "the Strength verdict attaches to the deployment's full victory set"
+        );
         assert_eq!(matrix_profile_seed(90_000, 0), 90_000);
         assert_eq!(matrix_profile_seed(90_000, 1), 1_090_000);
         let extended = matrix_child_args(MatrixChildRequest {
