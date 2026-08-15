@@ -239,6 +239,20 @@ class PopupClearTest(unittest.TestCase):
             self.assertFalse(popup_clear.game_in_progress(root, fresh_seconds=180))
             self.assertTrue(popup_clear.game_in_progress(root, fresh_seconds=600))
 
+    def test_animation_wobble_reads_as_the_same_scene(self) -> None:
+        # Run civvis-20260815T020727Z: the leader target drifted (1197,387) ->
+        # (1196,387) between passes, the exact-match no-op guard kept resetting,
+        # and one conversation ate clicks for 900 s. A pixel or two of drift is
+        # the SAME scene; a different button across the window is not.
+        self.assertTrue(popup_clear.near((1197, 387), (1196, 387)))
+        self.assertTrue(popup_clear.same_scene(
+            "leader", (1196.4, 387.0), ("leader", (1197, 387))))
+        self.assertFalse(popup_clear.same_scene(
+            "leader", (1300, 387), ("leader", (1197, 387))))
+        self.assertFalse(popup_clear.same_scene(
+            "card", (1197, 387), ("leader", (1197, 387))))
+        self.assertFalse(popup_clear.same_scene("leader", (1197, 387), None))
+
 
 if __name__ == "__main__":
     unittest.main()
