@@ -14020,15 +14020,21 @@ impl AdvancedAi {
     /// A new district starts only at the deliberately conservative,
     /// empire-wide threshold of two cities at -3 or worse. Once that district
     /// is underway, one remaining severe city may still complete its direct
-    /// amenity building. A war, Recovery, Conquest, a one-off project, and a
-    /// victory project retain their existing owners. One repair chain at a time
-    /// keeps the rest of the research economy working and prevents a crisis
-    /// from turning into a blanket Entertainment Complex build-out.
+    /// amenity building. Recovery, a one-off project, a unit, an active
+    /// district, and a victory project retain their existing owners. During an
+    /// active Conquest war, a separately stricter broad-pressure arm may
+    /// reserve one unthreatened city's amenity district before every usable
+    /// specialty slot becomes a non-amenity district; it can pause only a
+    /// repeatable project when that reservation needs a queue. One repair
+    /// chain at a time keeps the rest of the research economy working and
+    /// prevents a crisis from turning into a blanket Entertainment Complex
+    /// build-out.
     fn redirect_repeatable_projects_for_amenity_crisis(
         &self,
         g: &mut Game,
         pid: usize,
         plan: &StrategicPlan,
+        broad_wartime_only: bool,
     ) {
         let active_major_war = g.players.iter().any(|player| {
             player.id != pid
@@ -14037,17 +14043,26 @@ impl AdvancedAi {
                 && !player.is_barbarian
                 && g.is_at_war(pid, player.id)
         });
-        if !self.amenity_project_preemption
-            || active_major_war
-            || matches!(
-                plan.strategy,
-                GrandStrategy::Conquest | GrandStrategy::Recovery
-            )
-        {
+        if !self.amenity_project_preemption || plan.strategy == GrandStrategy::Recovery {
             return;
         }
 
         let city_ids = g.player_city_ids(pid);
+        let city_count = city_ids.len();
+        let shortfalls: Vec<(u32, i64)> = city_ids
+            .iter()
+            .map(|cid| {
+                (
+                    *cid,
+                    (-g.city_amenity_surplus(&g.cities[cid])).max(0),
+                )
+            })
+            .collect();
+        let short_cities = shortfalls
+            .iter()
+            .filter(|(_, shortfall)| *shortfall > 0)
+            .count();
+        let total_shortfall: i64 = shortfalls.iter().map(|(_, shortfall)| *shortfall).sum();
         let severe: Vec<(u32, i64)> = city_ids
             .iter()
             .filter_map(|cid| {
@@ -14055,14 +14070,34 @@ impl AdvancedAi {
                 (shortfall >= 3).then_some((*cid, shortfall))
             })
             .collect();
-        if severe.is_empty() {
+        // The ordinary handoff protects all active Conquest queues. Its one
+        // exception is deliberately much stricter than the peaceful -3 band:
+        // at least three quarters of a four-or-more-city empire must already
+        // be short, with an aggregate deficit of all but one city. This catches
+        // the turn-88 shape from `civvis-20260815T230003Z` (three of four
+        // cities at -1), while a local wartime problem stays with normal
+        // production and the policy deck.
+        let broad_wartime_conquest = active_major_war
+            && plan.strategy == GrandStrategy::Conquest
+            && city_count >= 4
+            && short_cities.saturating_mul(4) >= city_count.saturating_mul(3)
+            && total_shortfall >= city_count.saturating_sub(1) as i64;
+        // The pre-production call exists solely to preserve an amenity slot
+        // before the Conquest governor fills an idle queue or turns a
+        // repeatable project into a unit. The ordinary late call retains its
+        // peaceful severe-crisis role.
+        if broad_wartime_only && !broad_wartime_conquest {
             return;
         }
-        let may_start_district = severe.len() >= 2;
-        let total_shortfall: i64 = city_ids
-            .iter()
-            .map(|cid| (-g.city_amenity_surplus(&g.cities[cid])).max(0))
-            .sum();
+        if (active_major_war || plan.strategy == GrandStrategy::Conquest)
+            && !broad_wartime_conquest
+        {
+            return;
+        }
+        if severe.is_empty() && !broad_wartime_conquest {
+            return;
+        }
+        let may_start_district = severe.len() >= 2 || broad_wartime_conquest;
 
         let is_amenity_repair = |item: &Item| match item {
             Item::District { district, .. } => g.rules.districts[district].amenity > 0.0,
@@ -14084,6 +14119,15 @@ impl AdvancedAi {
             if shortfall == 0 {
                 continue;
             }
+            let city = &g.cities[&cid];
+            let threatened = plan.threatened_city == Some(cid)
+                || (city.last_attacked > 0
+                    && g.turn.saturating_sub(city.last_attacked) <= 4);
+            // The wartime exception never replaces production in a city the
+            // defense governor has named or that the host says was just hit.
+            if broad_wartime_conquest && threatened {
+                continue;
+            }
             let redirectable = match g.cities[&cid].queue.first() {
                 Some(Item::Project { project }) => {
                     let spec = &g.rules.projects[project];
@@ -14103,9 +14147,16 @@ impl AdvancedAi {
                     _ => continue,
                 };
                 // A district begins only in the deep band that triggered the
-                // emergency. Its direct amenity building may finish after the
+                // ordinary emergency. The broad wartime arm is the one
+                // exception: its empire-level threshold is stricter, and it
+                // must reserve a remaining slot while its local city is still
+                // at -1. Its direct amenity building may finish after the
                 // district has already lifted that city into the -1/-2 band.
-                if amenity <= 0.0 || (stage == 0 && (!may_start_district || shortfall < 3)) {
+                if amenity <= 0.0
+                    || (stage == 0
+                        && (!may_start_district
+                            || (shortfall < 3 && !broad_wartime_conquest)))
+                {
                     continue;
                 }
                 let key = format!("{item:?}");
@@ -14143,14 +14194,20 @@ impl AdvancedAi {
             .is_ok()
             && self.journal().wants(crate::reasoning::Level::Decision)
         {
+            let crisis = if broad_wartime_conquest {
+                "broad wartime Amenity pressure"
+            } else {
+                "severe Amenity crisis"
+            };
             match prior {
                 Some(prior) => think!(self.journal(), Economy, Decision,
                     "{} pauses {} for {}", city_name, Self::plain_item(&prior), Self::plain_item(&item);
-                    "severe Amenity crisis: {} cities at -3 or worse, {} total short",
-                    severe.len(), total_shortfall),
+                    "{}: {} of {} cities short, {} total Amenities missing",
+                    crisis, short_cities, city_count, total_shortfall),
                 None => think!(self.journal(), Economy, Decision,
-                    "{} starts {} for a severe Amenity crisis", city_name, Self::plain_item(&item);
-                    "{} cities at -3 or worse, {} total short", severe.len(), total_shortfall),
+                    "{} starts {} for {}", city_name, Self::plain_item(&item), crisis;
+                    "{} of {} cities short, {} total Amenities missing",
+                    short_cities, city_count, total_shortfall),
             }
         }
     }
@@ -23998,6 +24055,13 @@ impl AdvancedAi {
         // before strategic production fills every queue with another project.
         self.base.prioritize_live_great_person_activation(g, pid);
 
+        // A broad wartime Amenity loss must be inspected before either the
+        // baseline opening or the Conquest production governor fills its one
+        // remaining amenity slot. The helper's `broad_wartime_only` arm is
+        // otherwise a no-op and never replaces a unit, wall, active district,
+        // or threatened-city queue.
+        self.redirect_repeatable_projects_for_amenity_crisis(g, pid, &plan, true);
+
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
         if self.base.book_pos < 4 {
@@ -24070,7 +24134,7 @@ impl AdvancedAi {
             // repeatable Research Grant. Run this handoff afterwards so its
             // single concrete Amenity repair is the final queue decision.
             if self.victory_planning {
-                self.redirect_repeatable_projects_for_amenity_crisis(g, pid, &plan);
+                self.redirect_repeatable_projects_for_amenity_crisis(g, pid, &plan, false);
             }
             if active_victory_target.is_none() {
                 self.advanced_support_production(g, pid, &plan);
@@ -31863,7 +31927,7 @@ mod tests {
         // alone; this is a separately ablatable live repair.
         let ordinary = AdvancedAi::new();
         assert!(!ordinary.amenity_project_preemption);
-        ordinary.redirect_repeatable_projects_for_amenity_crisis(&mut game, 0, &plan);
+        ordinary.redirect_repeatable_projects_for_amenity_crisis(&mut game, 0, &plan, false);
         assert!(
             [city, other].into_iter().all(|cid| matches!(
                 game.cities[&cid].queue.first(),
@@ -31875,7 +31939,7 @@ mod tests {
         let mut live = AdvancedAi::new();
         live.enable_live_bridge();
         assert!(live.amenity_project_preemption);
-        live.redirect_repeatable_projects_for_amenity_crisis(&mut game, 0, &plan);
+        live.redirect_repeatable_projects_for_amenity_crisis(&mut game, 0, &plan, false);
         let repair_city = [city, other]
             .into_iter()
             .find(|cid| matches!(
@@ -31892,7 +31956,7 @@ mod tests {
         // One in-flight repair reserves the whole intervention. The next city
         // keeps its research grant instead of turning the emergency into a
         // blanket district order.
-        live.redirect_repeatable_projects_for_amenity_crisis(&mut game, 0, &plan);
+        live.redirect_repeatable_projects_for_amenity_crisis(&mut game, 0, &plan, false);
         assert!(matches!(
             game.cities[&project_city].queue.first(),
             Some(Item::Project { project }) if *project == crate::name!("campus_research_grants")
@@ -31903,7 +31967,7 @@ mod tests {
         game.cities.get_mut(&repair_city).unwrap().queue.clear();
         install_ai_test_district(&mut game, repair_city, "entertainment_complex");
         let legal_repair_items = game.producible_items(0, repair_city);
-        live.redirect_repeatable_projects_for_amenity_crisis(&mut game, 0, &plan);
+        live.redirect_repeatable_projects_for_amenity_crisis(&mut game, 0, &plan, false);
         assert!(matches!(
             game.cities[&repair_city].queue.first(),
             Some(Item::Building { building }) if game.rules.buildings[building].amenity > 0.0
@@ -32026,6 +32090,131 @@ mod tests {
                 .filter(|city| game.cities[city].queue.first().is_some())
                 .count(),
             1
+        );
+    }
+
+    #[test]
+    fn broad_wartime_amenity_pressure_reclaims_one_repeatable_project_before_slots_close() {
+        // In `civvis-20260815T230003Z` at t88, three of four cities were at
+        // -1 while Arretium's one-turn Theater project occupied a legal second
+        // specialty slot. The generic Conquest governor filled the other slots
+        // with Commercial Hubs, after which no direct Amenity district could
+        // be started. The broad arm can reserve an idle slot or interrupt that
+        // one repeatable project, but never a unit or an active district.
+        let (mut game, capital, home) = empire_with_a_capital(71_113);
+        let mut cities = vec![capital];
+        for _ in 0..3 {
+            cities.push(found_nearby_test_city(&mut game, 0, home));
+        }
+        game.players[0].civics.insert(crate::name!("games_recreation"));
+        game.players[0].techs.insert(crate::name!("writing"));
+        for city in &cities {
+            game.cities.get_mut(city).unwrap().pop = 7;
+            install_ai_test_district(&mut game, *city, "campus");
+        }
+        let grant = Item::Project {
+            project: crate::name!("campus_research_grants"),
+        };
+        assert!(game.can_produce(0, capital, &grant));
+        game.apply(
+            0,
+            &Action::Produce {
+                city: capital,
+                item: grant.clone(),
+            },
+        )
+        .expect("queue the repeatable project that may yield one safe slot");
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        assert!(game.can_produce(0, cities[1], &builder));
+        game.apply(
+            0,
+            &Action::Produce {
+                city: cities[1],
+                item: builder.clone(),
+            },
+        )
+        .expect("a wartime unit/build queue remains out of bounds");
+        for (city, target) in cities.iter().zip([-1, -1, -1, 0]) {
+            let modeled = game.city_amenity_surplus(&game.cities[city]);
+            game.observed_city_amenity_adjustments
+                .insert(*city, target - modeled);
+        }
+        let fixture_shortfalls: Vec<i64> = cities
+            .iter()
+            .map(|city| (-game.city_amenity_surplus(&game.cities[city])).max(0))
+            .collect();
+        assert_eq!(fixture_shortfalls, vec![1, 1, 1, 0]);
+        assert!(game.players[1].alive && game.is_at_war(0, 1));
+        let legal = game.producible_items(0, capital);
+        assert!(
+            legal.iter().any(|item| matches!(
+                item,
+                Item::District { district, .. }
+                    if game.district_family(*district) == "entertainment_complex"
+            )),
+            "the fixture needs a usable Entertainment Complex slot: {legal:?}"
+        );
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 5,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        // A two-city shortfall is still ordinary wartime production, not an
+        // excuse to interrupt the project.
+        let mut below_threshold = game.clone();
+        *below_threshold
+            .observed_city_amenity_adjustments
+            .get_mut(&cities[2])
+            .expect("the third city has the calibrated -1 adjustment") += 1;
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        live.redirect_repeatable_projects_for_amenity_crisis(
+            &mut below_threshold,
+            0,
+            &plan,
+            true,
+        );
+        assert_eq!(
+            below_threshold.cities[&capital].queue.first(),
+            Some(&grant),
+            "a merely local wartime shortage preserves the project"
+        );
+
+        let ordinary = AdvancedAi::new();
+        ordinary.redirect_repeatable_projects_for_amenity_crisis(&mut game, 0, &plan, true);
+        assert_eq!(
+            game.cities[&capital].queue.first(),
+            Some(&grant),
+            "the frozen/live-disabled controller keeps the historic queue"
+        );
+
+        live.redirect_repeatable_projects_for_amenity_crisis(&mut game, 0, &plan, true);
+        let queues: Vec<_> = cities
+            .iter()
+            .map(|city| (*city, game.cities[city].queue.first()))
+            .collect();
+        assert!(matches!(
+            game.cities[&capital].queue.first(),
+            Some(Item::District { district, .. })
+                if game.district_family(*district) == "entertainment_complex"
+        ), "the broad handoff turns exactly one repeatable project into the missing Entertainment Complex: {queues:?}");
+        assert_eq!(
+            game.cities[&cities[1]].queue.first(),
+            Some(&builder),
+            "the wartime exception must never replace an active unit queue"
+        );
+        assert!(
+            cities[2..]
+                .iter()
+                .all(|city| game.cities[city].queue.first().is_none()),
+            "one repair owns the intervention instead of turning every city into an amenity build"
         );
     }
 
