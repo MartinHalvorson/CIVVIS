@@ -6075,6 +6075,47 @@ local function exportState(player, pid, turn)
 			if not any then return nil; end
 			return out;
 		end, nil),
+		-- The class and cost alone still leave a fatal ambiguity: a current
+		-- Great Scientist can be Hildegard of Bingen, who requires a Holy Site,
+		-- or Mary Leakey, who requires a Theater, while CIVVIS's generic
+		-- Scientist model sees only a Campus. Export the exact named offer and
+		-- Firaxis's hard completed-district prerequisite so the planner does
+		-- not spend a project race on a person this empire cannot activate.
+		--
+		-- Keep the same min-cost/current-offer selection as `great_person_costs`
+		-- directly above. The timeline includes later people in each class; its
+		-- lowest-cost unclaimed entry is the one the Recruit operation would
+		-- judge.
+		-- And return nil rather than an empty map: the encoder writes `{}` as
+		-- `[]`, which cannot deserialize as Rust's BTreeMap.
+		great_person_offers = try(function()
+			local greatPeople = Game.GetGreatPeople();
+			if greatPeople == nil then return nil; end
+			local timeline = greatPeople:GetTimeline();
+			if timeline == nil then return nil; end
+			local out, costs = {}, {};
+			local any = false;
+			for _, entry in ipairs(timeline) do
+				if entry.Individual ~= nil and entry.Claimant == nil
+						and entry.Cost ~= nil then
+					local info = GameInfo.GreatPersonIndividuals[entry.Individual];
+					local class = info ~= nil and info.GreatPersonClassType or nil;
+					if class ~= nil then
+						local prior = costs[class];
+						if prior == nil or entry.Cost < prior then
+							costs[class] = entry.Cost;
+							out[class] = {
+								individual = info.GreatPersonIndividualType,
+								required_district = info.ActionRequiresCompletedDistrictType,
+							};
+							any = true;
+						end
+					end
+				end
+			end
+			if not any then return nil; end
+			return out;
+		end, nil),
 		governor_points = governor_points,
 		governor_points_spent = governor_points_spent,
 		governors = governor_roster,

@@ -6293,6 +6293,23 @@ pub struct StateGreatPerson {
     pub activation_plots: Vec<StateActivationPlot>,
 }
 
+/// One currently recruitable entry in Firaxis's Great Person timeline.
+///
+/// The enclosing map is keyed by `GREAT_PERSON_CLASS_*`; keeping the class
+/// outside this value mirrors the live timeline's one-current-offer-per-class
+/// shape and keeps the bridge's empty-map `nil` convention intact.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateGreatPersonOffer {
+    /// Firaxis's named individual, retained for a readable blocker and for
+    /// telemetry. It may be absent on an older control mod.
+    #[serde(default)]
+    pub individual: Option<String>,
+    /// Firaxis `ActionRequiresCompletedDistrictType`, when this individual
+    /// cannot activate without an already-completed district of that family.
+    #[serde(default)]
+    pub required_district: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateActivationPlot {
     #[serde(default)]
@@ -6518,16 +6535,17 @@ fn mirrored_city_state_name(game: &crate::game::Game, minor: &StateMinor) -> Opt
 /// by the watchdog. The mod now returns `nil` when the table is empty; this is
 /// the second half of that repair, so a future map-valued export cannot take the
 /// board down the same way before anyone notices the encoder's behaviour.
-fn map_or_empty_sequence<'de, D>(
+fn map_or_empty_sequence<'de, D, T>(
     deserializer: D,
-) -> Result<Option<BTreeMap<String, f64>>, D::Error>
+) -> Result<Option<BTreeMap<String, T>>, D::Error>
 where
     D: serde::Deserializer<'de>,
+    T: serde::Deserialize<'de>,
 {
     #[derive(serde::Deserialize)]
     #[serde(untagged)]
-    enum MapOrSequence {
-        Map(BTreeMap<String, f64>),
+    enum MapOrSequence<T> {
+        Map(BTreeMap<String, T>),
         /// Only ever empty in practice; a populated array has no key to carry.
         ///
         /// The payload is never read, and rustc offers to replace it with `()`
@@ -6779,6 +6797,18 @@ pub struct StateSnapshot {
     /// every time, because the ask itself was priced against the wrong game.
     #[serde(default, deserialize_with = "map_or_empty_sequence")]
     pub great_person_costs: Option<BTreeMap<String, f64>>,
+    /// The named Great Person currently offered by Firaxis for each class,
+    /// including the one hard prerequisite the class label cannot express.
+    ///
+    /// A Great Scientist is not necessarily usable at a Campus: Hildegard of
+    /// Bingen requires a Holy Site, while Mary Leakey requires a Theater
+    /// district. The planner previously read only the class and could spend a
+    /// whole Campus-project race on an individual it had no possible way to
+    /// activate. The host's `ActionRequiresCompletedDistrictType` is the
+    /// authoritative necessary condition, carried here without attempting to
+    /// recreate every named effect in CIVVIS's ruleset.
+    #[serde(default, deserialize_with = "map_or_empty_sequence")]
+    pub great_person_offers: Option<BTreeMap<String, StateGreatPersonOffer>>,
     /// Total Governor Titles obtained and spent according to Firaxis. These are
     /// separate from the roster because a title can be held unspent.
     #[serde(default)]
@@ -7015,6 +7045,99 @@ fn apply_great_person_points(
             }
         }
     }
+    apply_live_great_person_offer_blockers(game, state, unmapped);
+}
+
+/// Carry only a hard, named live-offer prerequisite into the simulator.
+///
+/// The class label is not enough: Firaxis offers Hildegard of Bingen as a
+/// Great Scientist but requires a Holy Site, and Mary Leakey as a Great
+/// Scientist but requires a Theater. A Campus-only science empire can recruit
+/// both and leave their physical units stranded indefinitely. Do not guess at
+/// all of Firaxis's positional conditions here; `required_district` is the
+/// authoritative *necessary* infrastructure condition, so the absence of that
+/// district is a safe reason not to spend another point, project, or patronage
+/// purchase on the live offer.
+fn apply_live_great_person_offer_blockers(
+    game: &mut crate::game::Game,
+    state: &StateSnapshot,
+    unmapped: &mut Vec<String>,
+) {
+    let mut blockers = BTreeMap::new();
+    let Some(offers) = state.great_person_offers.as_ref() else {
+        // A persistent mirror may have received this field last turn from a
+        // newer mod and omit it after a rollback. Never keep a stale live-only
+        // refusal alive when the current host frame no longer knows it.
+        game.players[0].live_great_person_offer_blockers.clear();
+        return;
+    };
+
+    for (class, offer) in offers {
+        let Some(kind) = class
+            .strip_prefix("GREAT_PERSON_CLASS_")
+            .filter(|kind| !kind.is_empty())
+            .map(str::to_ascii_lowercase)
+        else {
+            let issue = format!("great_person_offer_class:{class}");
+            if !unmapped.contains(&issue) {
+                unmapped.push(issue);
+            }
+            continue;
+        };
+        let Some(required_district) = offer
+            .required_district
+            .as_deref()
+            .filter(|district| !district.trim().is_empty())
+        else {
+            continue;
+        };
+
+        // Check the exact host name first. This covers `DISTRICT_CITY_CENTER`,
+        // which CIVVIS deliberately does not store in `City::districts` because
+        // every city already owns one. Then compare CIVVIS district families so
+        // a unique like Russia's Lavra satisfies Firaxis's `DISTRICT_HOLY_SITE`
+        // prerequisite without pretending the two literal names are equal.
+        let required_family =
+            civvis_node_name(&game.rules.districts, required_district, "DISTRICT_")
+                .map(|district| game.district_family(crate::name::Name::new(&district)));
+        let active = (required_district.eq_ignore_ascii_case("DISTRICT_CITY_CENTER")
+            && !state.cities.is_empty())
+            || state.cities.iter().any(|city| {
+                city.districts.iter().any(|district| {
+                    if !district.complete || district.pillaged {
+                        return false;
+                    }
+                    district.kind.eq_ignore_ascii_case(required_district)
+                        || required_family.is_some_and(|family| {
+                            civvis_node_name(&game.rules.districts, &district.kind, "DISTRICT_")
+                                .is_some_and(|district| {
+                                    game.district_family(crate::name::Name::new(&district)) == family
+                                })
+                        })
+                })
+            });
+        if active {
+            continue;
+        }
+        if required_family.is_none() {
+            let issue = format!("great_person_offer_district:{required_district}");
+            if !unmapped.contains(&issue) {
+                unmapped.push(issue);
+            }
+        }
+        let individual = offer
+            .individual
+            .as_deref()
+            .filter(|individual| !individual.trim().is_empty())
+            .unwrap_or(class);
+        blockers.insert(
+            kind,
+            format!(
+                "the live {individual} offer requires an active {required_district}"
+            ),
+        );
+    }
+    game.players[0].live_great_person_offer_blockers = blockers;
 }
 
 fn apply_governor_state(
@@ -7528,7 +7651,12 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "taken_religion_beliefs", "prophet_pending",
         "policies", "policy_slots", "gold", "gold_per_turn", "faith", "science",
         "culture", "score",
-        "military", "trade_capacity", "great_person_points", "governor_points",
+        "military",
+        "trade_capacity",
+        "great_person_points",
+        "great_person_costs",
+        "great_person_offers",
+        "governor_points",
         "governor_points_spent",
         // The age. `the_schema_allowlists_cover_every_declared_field` fails if a
         // StateSnapshot field is missing here.
@@ -12470,6 +12598,7 @@ mod host_fact_tests {
     fn an_empty_great_person_table_arrives_as_a_json_array_and_must_not_lose_the_board() {
         let raw = r#"{"turn": 92, "gold": 140, "science": 7.5,
                       "great_person_points": [],
+                      "great_person_offers": [],
                       "techs": ["TECH_POTTERY"]}"#;
         let state: StateSnapshot =
             serde_json::from_str(raw).expect("an empty map encoded as [] must still parse");
@@ -12481,6 +12610,13 @@ mod host_fact_tests {
         assert_eq!(state.turn, 92, "and the rest of the board must survive it");
         assert_eq!(state.gold, 140);
         assert_eq!(state.techs, vec!["TECH_POTTERY".to_string()]);
+        assert!(
+            state
+                .great_person_offers
+                .as_ref()
+                .is_some_and(BTreeMap::is_empty),
+            "the same Lua empty-map trap must not lose a new named-offer field"
+        );
 
         // The populated and absent forms keep working.
         let populated: StateSnapshot = serde_json::from_str(
@@ -12655,6 +12791,132 @@ mod host_fact_tests {
         let bare: StateSnapshot =
             serde_json::from_str(r#"{"turn": 3}"#).expect("an absent field parses");
         assert_eq!(bare.great_person_costs, None);
+    }
+
+    /// A host offer's class does not tell us the infrastructure it needs.
+    ///
+    /// Run civvis-20260815T042826Z recruited Hildegard of Bingen into an
+    /// empire with three Campuses but no Holy Site, then Mary Leakey into the
+    /// same Theater-less science empire. They had zero activation plots for
+    /// 190 and 74 turns respectively. The live offer's required district must
+    /// therefore gate every way the reconstructed game can claim it, while a
+    /// later host state that does have the district must immediately reopen the
+    /// ordinary class race.
+    #[test]
+    fn live_offer_district_blocker_prevents_an_unusable_scientist_race() {
+        let wire = state_from_json(
+            r#"{"turn":92,"great_person_offers":{"GREAT_PERSON_CLASS_SCIENTIST":{"individual":"GREAT_PERSON_INDIVIDUAL_HILDEGARD_OF_BINGEN","required_district":"DISTRICT_HOLY_SITE"}}}"#,
+        )
+        .expect("the Lua offer shape parses");
+        assert!(
+            wire.schema_gaps.is_empty(),
+            "the recognized offer stays quiet"
+        );
+        let wire_offer = wire
+            .great_person_offers
+            .as_ref()
+            .and_then(|offers| offers.get("GREAT_PERSON_CLASS_SCIENTIST"))
+            .expect("the named Scientist offer crosses the wire");
+        assert_eq!(
+            wire_offer.required_district.as_deref(),
+            Some("DISTRICT_HOLY_SITE")
+        );
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 92,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(2, 3), host_grass(3, 3), host_grass(4, 3)],
+        }]);
+        let mut offers = BTreeMap::new();
+        offers.insert(
+            "GREAT_PERSON_CLASS_SCIENTIST".to_string(),
+            StateGreatPersonOffer {
+                individual: Some("GREAT_PERSON_INDIVIDUAL_HILDEGARD_OF_BINGEN".to_string()),
+                required_district: Some("DISTRICT_HOLY_SITE".to_string()),
+            },
+        );
+        let campus_only = StateSnapshot {
+            turn: 92,
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Rome".to_string(),
+                x: 3,
+                y: 3,
+                pop: 6,
+                capital: true,
+                districts: vec![StateDistrict {
+                    kind: "DISTRICT_CAMPUS".to_string(),
+                    x: 4,
+                    y: 3,
+                    ..StateDistrict::default()
+                }],
+                ..StateCity::default()
+            }],
+            great_person_offers: Some(offers.clone()),
+            ..StateSnapshot::default()
+        };
+        let mut game = rebuild_from_state(&snapshot, &campus_only, 2, 1, 250, 0).game;
+
+        let blocker = game
+            .live_great_person_offer_blocker(0, "scientist")
+            .expect("Hildegard cannot use a Campus as a Holy Site");
+        assert!(blocker.contains("HILDEGARD_OF_BINGEN"));
+        assert!(blocker.contains("DISTRICT_HOLY_SITE"));
+        assert!(
+            !game.can_activate_current_great_person(0, "scientist"),
+            "the generic Campus Scientist must yield to the live named offer"
+        );
+        let cost = game.gp_cost(0, "scientist");
+        game.players[0].gpp.insert("scientist".to_string(), cost);
+        assert!(
+            game.apply(
+                0,
+                &crate::game::Action::RecruitGreatPerson {
+                    kind: "scientist".to_string(),
+                },
+            )
+            .is_err(),
+            "even a ready-point automatic claim must share the live blocker"
+        );
+
+        let mut with_holy_site = campus_only.clone();
+        with_holy_site.cities[0].districts.push(StateDistrict {
+            kind: "DISTRICT_HOLY_SITE".to_string(),
+            x: 2,
+            y: 3,
+            ..StateDistrict::default()
+        });
+        let reopened = rebuild_from_state(&snapshot, &with_holy_site, 2, 1, 250, 0).game;
+        assert!(
+            reopened
+                .live_great_person_offer_blocker(0, "scientist")
+                .is_none(),
+            "the necessary district removes only the live hard blocker"
+        );
+        assert!(
+            reopened.can_activate_current_great_person(0, "scientist"),
+            "the ordinary Campus-targeted model resumes once Firaxis's condition holds"
+        );
+
+        let mut city_center_only = campus_only;
+        city_center_only
+            .great_person_offers
+            .as_mut()
+            .and_then(|offers| offers.get_mut("GREAT_PERSON_CLASS_SCIENTIST"))
+            .expect("the test offer remains present")
+            .required_district = Some("DISTRICT_CITY_CENTER".to_string());
+        let centre_open = rebuild_from_state(&snapshot, &city_center_only, 2, 1, 250, 0).game;
+        assert!(
+            centre_open
+                .live_great_person_offer_blocker(0, "scientist")
+                .is_none(),
+            "every exported city has its implicit City Center even though it is not in districts"
+        );
+
+        let bare: StateSnapshot =
+            serde_json::from_str(r#"{"turn": 3}"#).expect("an older control mod still parses");
+        assert!(bare.great_person_offers.is_none());
     }
 
     #[test]

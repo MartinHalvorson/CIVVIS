@@ -16199,6 +16199,12 @@ pub struct Player {
     pub envoys_free: i64,
     #[serde(default)]
     pub gpp: BTreeMap<String, f64>, // great person points by type
+    /// Hard activation prerequisites of the *live* named offer, keyed by
+    /// Great Person class. Headless games leave this empty; the Firaxis mirror
+    /// fills it only when an offered individual names a completed district the
+    /// empire does not have.
+    #[serde(default)]
+    pub live_great_person_offer_blockers: BTreeMap<String, String>,
     #[serde(default)]
     pub gp_claimed: BTreeMap<String, i64>,
     /// IDs of named Great People recruited from the global market.
@@ -16424,6 +16430,7 @@ impl Player {
             influence: 0.0,
             envoys_free: 0,
             gpp: BTreeMap::new(),
+            live_great_person_offer_blockers: BTreeMap::new(),
             gp_claimed: BTreeMap::new(),
             great_people: Vec::new(),
             pantheon: None,
@@ -25797,6 +25804,21 @@ impl Game {
             .any(|city| city.owner == pid && self.city_has_active_district_family(city, family))
     }
 
+    /// A live bridge may know that Firaxis's named offer has a prerequisite
+    /// CIVVIS's current generic person does not. For example, a Campus empire
+    /// can model a Scientist as usable while the host is actually offering
+    /// Hildegard of Bingen, who cannot activate without a Holy Site.
+    ///
+    /// This is deliberately player-local and defaults empty: ordinary games,
+    /// saved games, and the frozen tournament anchor retain their historical
+    /// offer model unless an authoritative host export supplies a blocker.
+    pub fn live_great_person_offer_blocker(&self, pid: usize, kind: &str) -> Option<&str> {
+        self.players[pid]
+            .live_great_person_offer_blockers
+            .get(kind)
+            .map(String::as_str)
+    }
+
     /// Why this Great Person cannot be claimed right now, if they cannot.
     /// The reasons are written for a person to read: the observation hands
     /// them to the client so a card with enough points but no Recruit button
@@ -25812,6 +25834,9 @@ impl Game {
         kind: &str,
         spec: &crate::rules::GreatPersonSpec,
     ) -> Result<(), String> {
+        if let Some(blocker) = self.live_great_person_offer_blocker(pid, kind) {
+            return Err(blocker.to_string());
+        }
         if kind == "scientist" && !self.has_great_person_district(pid, crate::name!("campus")) {
             return Err("this Great Scientist requires an active Campus".into());
         }
