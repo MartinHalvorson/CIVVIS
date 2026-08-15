@@ -1262,9 +1262,9 @@ fn main() {
     // `builtin_provenance`'s contract is "resolve what the production builtin
     // factory will actually construct from `dir`" -- but that factory takes
     // no directory. Every one of its arms resolves the constant `ARTIFACT_DIR`,
-    // and the agent constructors below it (`StrategicAi::with_weights`,
-    // `PolicyAi::with_weights`, `ProductionSearchAi::with_weights`) each load
-    // their own net from that same constant. So pointing this flag somewhere
+    // and the agent constructors below it (`StrategicAi::with_weights` and
+    // kin) each load their own net from that same constant. So pointing this
+    // flag somewhere
     // else moved the *report* and never the run: it would print a net found in
     // one directory and then play the agent that read another.
     //
