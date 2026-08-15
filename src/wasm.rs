@@ -134,14 +134,26 @@ fn current_frame(session: &Session) -> SpectatorFrame {
 /// It returns without playing anything when the page is holding a frame that
 /// is not the one on the table — a stale tab, or a world it has not caught up
 /// with — because the turn it is asking for already exists.
-fn advance_one_frame(session: &mut Session, held: SpectatorFrame) {
+///
+/// The returned figure is the frame's wall-clock price in milliseconds: the
+/// same seat shares [`auto_step_loop`](super::auto_step_loop) sleeps between
+/// steps, summed over the steps this frame contains. This build has no thread
+/// to spend it on — the shim owns the clock — so the price rides back on the
+/// `/state` answer as `frame_budget_ms` and the shim holds the reply that
+/// long. Pricing it here rather than in the shim is what keeps Blitz meaning
+/// the same two turns a second it means on a socket: only the engine knows
+/// how many living seats divide the turn budget, and which structure the
+/// world is being played under.
+fn advance_one_frame(session: &mut Session, held: SpectatorFrame) -> u64 {
     if !session.params.spectate
         || PAUSED.with(Cell::get)
         || session.game.is_finished()
         || current_frame(session) != held
     {
-        return;
+        return 0;
     }
+    let pace = PACE.with(Cell::get);
+    let mut budget: u64 = 0;
     // A turn is one step per seat, so the frame is normally a round away. The
     // cap is not a policy, only a promise that a seat which somehow never
     // completes returns control to the page instead of hanging the tab; it
@@ -150,19 +162,32 @@ fn advance_one_frame(session: &mut Session, held: SpectatorFrame) {
     for _ in 0..STEP_CAP {
         let turn_before = session.game.turn;
         let finished_before = session.game.is_finished();
-        session.step();
-        if spectator_step_completes_frame(
-            PACE.with(Cell::get),
-            turn_before,
-            finished_before,
-            &session.game,
-        ) {
+        let (pid, _) = session.step();
+        // The socket stepper's own accounting: a seat owes its share of the
+        // whole-turn budget, only the living divide it, and a simultaneous
+        // step is the whole round so it spends the whole budget at once.
+        budget = budget.saturating_add(if session.game.turn_structure
+            == TurnStructure::Simultaneous
+        {
+            pace
+        } else {
+            let living: Vec<_> = session.game.players.iter().filter(|p| p.alive).collect();
+            let minors = living
+                .iter()
+                .filter(|p| p.is_minor || p.is_barbarian)
+                .count();
+            let majors = living.len() - minors;
+            let p = &session.game.players[pid];
+            seat_delay_ms(pace, majors, minors, p.is_minor || p.is_barbarian)
+        });
+        if spectator_step_completes_frame(pace, turn_before, finished_before, &session.game) {
             FRAME_SEQUENCE.with(|sequence| sequence.set(sequence.get().wrapping_add(1)));
         }
         if current_frame(session) != held {
-            return;
+            break;
         }
     }
+    budget
 }
 
 /// The fields [`decorate`](super::decorate) adds from `Shared`'s atomics.
@@ -280,9 +305,7 @@ fn route(method: &str, target: &str, body: &str) -> Value {
         // answered with the world as it stands, exactly as before.
         ("GET", "/state") => with_session(|session| {
             let held = query_value(target, "have").and_then(held_frame);
-            if let Some(held) = held {
-                advance_one_frame(session, held);
-            }
+            let budget = held.map_or(0, |held| advance_one_frame(session, held));
             let frame = current_frame(session);
             let mut o = session.state();
             if query_value(target, "planet") == Some("1") {
@@ -291,6 +314,9 @@ fn route(method: &str, target: &str, body: &str) -> Value {
                 }
             }
             decorate_browser(&mut o);
+            // What the frame in this answer costs on the wall clock; the shim
+            // spends it, because a wasm module cannot sleep.
+            o["frame_budget_ms"] = json!(budget);
             deliver_browser_tiles(frame, held, &mut o);
             o
         }),

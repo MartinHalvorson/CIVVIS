@@ -32,6 +32,8 @@ window.Worker = class {
     let answer;
     if (message.path === "/runtime") {
       answer = { commit: new URL(location.href).searchParams.get("build") || "test" };
+    } else if (message.path.startsWith("/state") && message.path.includes("have=priced")) {
+      answer = { seed: 7, turn: 3, winner: null, frame_budget_ms: 700 };
     } else if (message.path.startsWith("/state")) {
       answer = {
         seed: 7, turn: 227, winner: 0, server_commit: "test",
@@ -144,6 +146,18 @@ def main() -> int:
         assert not dev.evaluate(
             "!!document.getElementById('civvis-beta-loading')"
         ), "the startup notice remained after the local game was ready"
+
+        # The engine prices each delivered frame in wall-clock milliseconds
+        # and the shim spends that price on its own clock — even while the
+        # shim's `pace` variable still holds its boot zero, which is the exact
+        # state the unpaced-Blitz bug lived in: the module reported the Blitz
+        # default, the page saw agreement and never pushed `/pace`, and this
+        # clock waited nothing.
+        begun = time.time()
+        priced = dev.evaluate("fetch('/state?have=priced').then(r => r.json())")
+        spent = time.time() - begun
+        assert priced["turn"] == 3, priced
+        assert spent >= 0.6, f"a 700ms frame budget was spent in {spent:.3f}s"
 
         selected = dev.evaluate(
             "fetch('/pace', {method:'POST', body:JSON.stringify({between_game_countdown_ms:3000})}).then(r => r.json())"
