@@ -16058,6 +16058,27 @@ pub struct QuickDeal {
     pub partner_value: f64,
 }
 
+/// A physical Firaxis Great Person that the live bridge cannot currently use.
+///
+/// Headless CIVVIS games retire Great People immediately and therefore leave
+/// this empty. The live mirror fills it only for a person whose host-validated
+/// activation-plot list is empty, so an AI can create the missing district,
+/// Great Work capacity, Wonder, or eligible unit instead of treating the
+/// person standing in the capital as already spent.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct LiveGreatPersonActivationNeed {
+    /// CIVVIS class spelling, such as `scientist` or `writer`.
+    pub kind: String,
+    /// Firaxis individual spelling with its prefix removed and lowercased.
+    /// This is optional because older control-mod exports did not include it.
+    #[serde(default)]
+    pub individual: Option<String>,
+    /// CIVVIS district-family spelling for an individual's authoritative hard
+    /// prerequisite. `None` means Firaxis named no completed-district gate.
+    #[serde(default)]
+    pub required_district: Option<String>,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Player {
     pub id: usize,
@@ -16205,6 +16226,12 @@ pub struct Player {
     /// empire does not have.
     #[serde(default)]
     pub live_great_person_offer_blockers: BTreeMap<String, String>,
+    /// Physical Great People in a mirrored Civilization VI game for whom the
+    /// host currently exposes no legal activation plot. This is mirror input,
+    /// never persistent policy; an empty/default value preserves ordinary
+    /// engine and old-save behavior.
+    #[serde(default)]
+    pub live_great_person_activation_needs: Vec<LiveGreatPersonActivationNeed>,
     #[serde(default)]
     pub gp_claimed: BTreeMap<String, i64>,
     /// IDs of named Great People recruited from the global market.
@@ -16431,6 +16458,7 @@ impl Player {
             envoys_free: 0,
             gpp: BTreeMap::new(),
             live_great_person_offer_blockers: BTreeMap::new(),
+            live_great_person_activation_needs: Vec::new(),
             gp_claimed: BTreeMap::new(),
             great_people: Vec::new(),
             pantheon: None,
