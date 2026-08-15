@@ -1075,7 +1075,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// cached target also refuses `blocked_city_sites`, a set that is empty in every
 /// ordinary and frozen game. Compatibility re-pin; the Elo protocol does not
 /// move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x53e3_ba2a_d10a_d591;
+/// A missing siege/recon arm now owns a city queue only when that city can
+/// actually build the requested role. Both `siege_role` and
+/// `recon_replacement` remain disabled by `AdvancedAi::legacy()`, so the
+/// frozen anchor retains its prior production path. Compatibility re-pin; the
+/// Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1d6b_48f0_3b58_a775;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
