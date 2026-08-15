@@ -7473,6 +7473,12 @@ mod tests {
             "if (changed && finaleEndsAt !== null) { finaleEndsAt = performance.now() + betweenGameCountdownMs; finaleHold += 1; }"
         ));
         assert!(shim.contains("state.restart_hold = finaleHold;"));
+        // And a drawn battle is held and counted down like a won one: the
+        // shim once looked only for a winner, so a Tactics draw in the
+        // published build sat on "Preparing the next battle" for ever.
+        assert!(shim.contains(
+            "const finished = state.finished === true || (state.winner !== undefined && state.winner !== null);"
+        ));
     }
 
     /// A full spectator state intentionally waits for either the next frame or

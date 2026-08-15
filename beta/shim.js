@@ -416,7 +416,10 @@
     const configured = state.between_game_countdown_ms;
     if (typeof configured === "number" && FINALE_OPTIONS_MS.has(configured))
       betweenGameCountdownMs = configured;
-    const finished = state.winner !== undefined && state.winner !== null;
+    // A finished world is held whether or not it has a winner: a Tactics
+    // battle that runs out its clock is drawn, and a draw once held the
+    // published build's screen for ever because only a winner counted.
+    const finished = state.finished === true || (state.winner !== undefined && state.winner !== null);
     if (!finished) {
       finaleEndsAt = null;
       finaleResultId = null;
