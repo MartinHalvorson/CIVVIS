@@ -4136,7 +4136,11 @@
         </script>
       </div>
     </div>
-    <details class="sidebar-section" data-section="display-settings">
+    <!-- The deck's sections share one <details name>, so the browser keeps at
+         most one of them open: opening a section closes the one that was, and
+         closing the open one leaves the column folded. `initSidebarSections`
+         holds the same rule where the attribute is not understood yet. -->
+    <details class="sidebar-section" data-section="display-settings" name="deck-section">
       <summary class="section-label" id="display-settings-header">
         <span class="section-title"><span class="section-icon" aria-hidden="true">◈</span><span>Display Settings</span></span>
         <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
@@ -4323,7 +4327,7 @@
       </div>
       </div>
     </details>
-    <details class="sidebar-section" id="setupsec" data-section="game-settings">
+    <details class="sidebar-section" id="setupsec" data-section="game-settings" name="deck-section">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">⚙</span><span>Game setup</span></span>
         <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
@@ -4598,7 +4602,7 @@
          and the factors behind its decisions, then wars, then the world's own
          record of what happened. Reading downward follows a decision from its
          active plan through the evidence that changed or carried it forward. -->
-    <details class="sidebar-section" id="strategysec" data-section="active-strategy">
+    <details class="sidebar-section" id="strategysec" data-section="active-strategy" name="deck-section">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">◆</span><span>AI strategy</span></span>
         <span class="section-meta"><span class="event-scope" id="strategyscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
@@ -4644,7 +4648,7 @@
       </div>
     </details>
 
-    <details class="sidebar-section" id="warsec" data-section="war-log">
+    <details class="sidebar-section" id="warsec" data-section="war-log" name="deck-section">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">⚔</span><span>War log</span></span>
         <span class="section-meta"><span class="event-scope" id="warscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
@@ -4668,7 +4672,7 @@
       </div>
     </details>
 
-    <details class="sidebar-section" id="eventsec" data-section="event-log">
+    <details class="sidebar-section" id="eventsec" data-section="event-log" name="deck-section">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">☷</span><span>Game event log</span></span>
         <span class="section-meta"><span class="event-scope" id="eventscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
@@ -4690,7 +4694,7 @@
       </div>
     </details>
 
-    <details class="sidebar-section" id="govsec" data-section="government" style="display:none">
+    <details class="sidebar-section" id="govsec" data-section="government" style="display:none" name="deck-section">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">♜</span><span>Government</span></span>
         <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
