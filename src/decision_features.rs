@@ -173,10 +173,15 @@ pub fn decision_features(g: &Game, pid: usize) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::{decision_features, WIDTH};
-    use crate::action_space::{kind_name, legal_encoded};
-    use crate::ai::{Ai, BasicAi};
     use crate::evolve::features;
-    use crate::game::{Action, Game};
+    use crate::game::Game;
+    #[cfg(feature = "closed-experiments")]
+    use crate::action_space::{kind_name, legal_encoded};
+    #[cfg(feature = "closed-experiments")]
+    use crate::ai::{Ai, BasicAi};
+    #[cfg(feature = "closed-experiments")]
+    use crate::game::Action;
+    #[cfg(feature = "closed-experiments")]
     use std::collections::BTreeMap;
 
     #[test]
@@ -204,6 +209,9 @@ mod tests {
     /// move these numbers. Thresholds are set well below the measured
     /// values so ordinary rules churn does not fail the suite, but far
     /// above what `evolve::features` achieves — moves are 2.1% there.
+    /// Rides the `closed-experiments` feature with the action encoder it
+    /// exercises.
+    #[cfg(feature = "closed-experiments")]
     #[test]
     fn the_decisions_that_were_invisible_are_visible() {
         let mut base: BTreeMap<&'static str, (usize, usize)> = BTreeMap::new();

@@ -3,6 +3,8 @@
 //! reference engine (`civvis/`); deterministic per seed within this engine.
 #![recursion_limit = "512"]
 
+// The action encoder's consumers are all in `experiments/closed/`; the module
+// compiles only `kind_name` without the `closed-experiments` feature.
 pub mod action_space;
 pub mod actionlog;
 pub mod ai;
@@ -21,7 +23,6 @@ pub mod leader_roster;
 pub mod mapgen;
 pub mod mirror;
 pub mod name;
-pub mod neural;
 pub mod obs;
 pub mod odds;
 // The oracle's only consumer is `experiments/closed/ablate.rs`, so it rides
@@ -35,8 +36,6 @@ pub mod parallel;
 
 pub mod obs_tensor;
 pub mod decision_features;
-pub mod policy;
-pub mod production;
 pub mod rating;
 pub mod reasoning;
 pub mod rng;
