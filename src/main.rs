@@ -1045,12 +1045,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the Elo protocol does not move.
 /// The local-defense handoff is likewise live-only: `garrison_under_fire`
 /// changes the emergency chooser from a generic military pick to a
-/// melee-capable land defender, while the queue release stops treating a siege
-/// piece as a city defender. `AdvancedAi::legacy()` leaves both city-defense
-/// treatment flags false, so it retains the historic generic selector and
-/// never enters either release helper. Compatibility re-pin; the Elo protocol
-/// does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0db7_d9bb_06e2_6bbf;
+/// melee-capable land defender, lets the queue release replace a siege piece,
+/// and lets it start a defender after clearing a host-owned queue.
+/// `AdvancedAi::legacy()` leaves both city-defense treatment flags false, so
+/// it retains the historic generic selector and never enters either release
+/// helper. Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb4e1_e49f_bd23_18a4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
