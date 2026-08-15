@@ -1587,6 +1587,17 @@ pub struct AdvancedAi {
     /// Kept as the `advanced_parallel_settlers` entrant with the null
     /// recorded, on the `advanced_lane_reachable` precedent, so the axis can
     /// be re-measured rather than re-derived if the settler economy changes.
+    ///
+    /// ★★★★ 2026-08-15: THE FLAG HAS A CONSUMER AGAIN, ON THE LIVE SEAT ONLY.
+    /// The live bridge sets it "to measure the target-plus-throughput cell",
+    /// and on that seat the economy is NOT the binding constraint the native
+    /// null found: run civvis-20260815T210845Z founded cities at t2/19/45/58/78
+    /// with Rome at pop 5–14 and land open, and the journal's refusal on
+    /// t19, t42, t43 and t47 was "a settler is already in flight". So
+    /// `settler_in_flight_allowed` and `BasicAi::pick_item` open a second
+    /// pipeline slot under this flag once the empire holds two cities and is
+    /// still at least two seats short of its target. `enable_parallel_settlers`
+    /// sets both halves; nothing native sets either.
     pub parallel_settlers: bool,
     /// Slot `limitanei` (+2 Loyalty in cities with a garrison) when expanding or
     /// conquering.
@@ -2827,6 +2838,14 @@ impl AdvancedAi {
 
     pub fn disable_wide_map_capacity(&mut self) {
         self.wide_map_capacity = false;
+    }
+
+    /// Let two Settlers walk at once (see `parallel_settlers`). Set by the
+    /// Civilization VI bridge only; native constructors and the frozen anchor
+    /// keep the one-at-a-time gate in both settler routes.
+    pub fn enable_parallel_settlers(&mut self) {
+        self.parallel_settlers = true;
+        self.base.parallel_settlers = true;
     }
 
     /// A city losing hitpoints is besieged, whatever the fog says. See
@@ -15178,6 +15197,13 @@ impl AdvancedAi {
             // A Settler whose route is repeatedly denied no longer owns the
             // empire's entire expansion pipeline. The city target remains the
             // hard cap, so this opens only the next genuinely missing seat.
+            2
+        } else if self.parallel_settlers && city_count >= 2 && city_count + settlers + 1 < desired_cities
+        {
+            // The live seat's throughput cell (see `parallel_settlers`): a
+            // second walker once the empire holds two cities and is still at
+            // least two seats short. `BasicAi::pick_item` opens the same width
+            // for the early Cities route.
             2
         } else {
             1
@@ -29660,6 +29686,27 @@ mod tests {
             !AdvancedAi::settler_delay_is_resolved(false, false),
             "same target, no progress: still blocked"
         );
+    }
+
+    /// The live seat walks two Settlers at once from two cities on, while the
+    /// empire is at least two seats short; every default constructor and the
+    /// frozen anchor keep the one-at-a-time gate in both settler routes.
+    #[test]
+    fn parallel_settlers_open_a_second_pipeline_slot() {
+        let mut ai = AdvancedAi::new();
+        assert!(!ai.parallel_settlers && !ai.base.parallel_settlers, "off unless the bridge asks");
+        assert_eq!(ai.settler_in_flight_allowed(8, 3, 1), 1);
+        assert!(!AdvancedAi::legacy().parallel_settlers);
+        assert!(!AdvancedAi::legacy().base.parallel_settlers);
+
+        ai.enable_parallel_settlers();
+        assert!(ai.parallel_settlers && ai.base.parallel_settlers, "both routes see the flag");
+        assert_eq!(ai.settler_in_flight_allowed(8, 3, 1), 2, "three cities, one walker, five short");
+        assert_eq!(ai.settler_in_flight_allowed(8, 2, 0), 2, "two cities open the second slot");
+        assert_eq!(ai.settler_in_flight_allowed(8, 1, 1), 1, "one city keeps a single walker");
+        assert_eq!(ai.settler_in_flight_allowed(3, 2, 0), 1, "one seat short: one walker covers it");
+        assert_eq!(ai.settler_in_flight_allowed(4, 2, 1), 1, "the walker already covers the seat but one");
+        assert_eq!(ai.settler_in_flight_allowed(5, 2, 1), 2);
     }
 
     #[test]

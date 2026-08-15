@@ -1091,6 +1091,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `recon_replacement` remain disabled by `AdvancedAi::legacy()`, so the
 /// frozen anchor retains its prior production path. Compatibility re-pin; the
 /// Elo protocol does not move.
+/// The second settler pipeline slot is behind `parallel_settlers`, which only
+/// the Civilization VI bridge sets (`AdvancedAi::enable_parallel_settlers`); every
+/// native constructor and `AdvancedAi::legacy()` keep the one-at-a-time gate in
+/// both settler routes (asserted). Compatibility re-pin; the Elo protocol does not
+/// move.
 /// A globally outmatched world-map Recovery front now holds its existing formation
 /// unless there is a named home threat or a finishable immediate engagement.
 /// That branch is gated by `bounded_recovery`, which the `advanced_v1` legacy
@@ -1099,7 +1104,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// 31337 --players 4 --turns 200 --deployment-comparison` reports from
 /// `8f6c6673` and this branch were byte-identical (SHA-256 `c7876b…a345`).
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7ee4_de50_8a97_4b75;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xce14_5b83_8186_71fb;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
