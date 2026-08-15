@@ -6967,14 +6967,15 @@ mod tests {
         assert!(!block.contains('<'), "the catalog block must not be able to close its own element");
         for piece in [
             // Rows: Tactics above, the full game below. Columns: Watch left,
-            // Play right. The immediate verb buttons carry the aria labels;
-            // the Tactics Customize buttons carry `data-pick` and fall back
-            // to the stock Tactics world without scripting. Every viewer
-            // link is lane-relative (`../` from the lane's /home), so the
-            // test lane's home page opens the test lane's viewer.
-            "href=\"../?mode=play\" aria-labelledby=\"play-civ-title\"",
+            // Play right. The immediate ways in are the photograph and the
+            // title; each card's one Watch/Play Customized button carries
+            // `data-pick` and falls back to an honest destination without
+            // scripting. Every viewer link is lane-relative (`../` from the
+            // lane's /home), so the test lane's home page opens the test
+            // lane's viewer.
+            "<h3 class=\"card-title\" id=\"play-civ-title\"><a href=\"../?mode=play\">Play CIVVIS</a></h3>",
             "href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play\" data-pick=\"play\"",
-            "href=\"../\" aria-labelledby=\"watch-civ-title\"",
+            "<h3 class=\"card-title\" id=\"watch-civ-title\"><a href=\"../\">Watch CIVVIS</a></h3>",
             "href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\" data-pick=\"watch\"",
             // "I'm Feeling Lucky" rolls between the two watched destinations
             // the cards already offer. Its href is rolled by script, so the
@@ -6984,8 +6985,9 @@ mod tests {
             "id=\"lucky\"",
             "data-watch-civ=\"../\"",
             "data-watch-tactics=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\"",
-            // The full game's Customize lands in the simulator with the Game
-            // setup drawer open (`?setup=1`, honoured at the end of app.js).
+            // The full game's Customized buttons land in the simulator with
+            // the Game setup drawer open (`?setup=1`, honoured at the end of
+            // app.js) when nothing can open the panel in place.
             "href=\"../?setup=1\"",
             "href=\"../?mode=play&amp;setup=1\"",
             // The picker and its four lenses.
@@ -7071,8 +7073,36 @@ mod tests {
             // The panels are grid rows of the menu itself, spanning it, so
             // each opens directly below its own row of cards.
             "grid-column: 1 / -1;",
+            // One action per card: the verb and Customize merged into a
+            // single Watch/Play Customized button that opens the row's
+            // shared panel.
+            "data-pick=\"watch\" aria-label=\"Customize and watch a Tactics battle\">Watch Customized</a>",
+            "data-pick=\"play\" aria-label=\"Customize and play a Tactics battle\">Play Customized</a>",
+            "data-pick=\"watch-civ\" aria-label=\"Customize and watch a full game\">Watch Customized</a>",
+            "data-pick=\"play-civ\" aria-label=\"Customize and play a full game\">Play Customized</a>",
+            // While a row's shared panel is open, its two cards are the mode
+            // selector — the selected option highlights, the other mutes —
+            // and the panel's own chips switch between them in place.
+            "card.classList.toggle(\"picking\", selected);",
+            "card.classList.toggle(\"muted\", shown && !selected);",
+            ".mode-card.muted { opacity: 0.55; }",
+            "id=\"battle-modes\"",
+            "id=\"game-modes\"",
+            "data-mode=\"watch\" aria-pressed=\"true\">AI simulation</button>",
+            "data-mode=\"play\" aria-pressed=\"false\">Single player</button>",
+            "data-mode=\"watch-civ\" aria-pressed=\"true\">AI simulation</button>",
+            "data-mode=\"play-civ\" aria-pressed=\"false\">Single player</button>",
+            ".picker-lens[aria-pressed=\"true\"] { border-color: var(--accent); background: #2a3f52; color: #fff; }",
         ] {
             assert!(landing.contains(piece), "the home page lost {piece}");
+        }
+        // The merged button replaced the two-button pair everywhere: no card
+        // offers a bare verb or a bare Customize any more.
+        for gone in [">Customize</a>", ">Watch</a>", ">Play</a>"] {
+            assert!(
+                !landing.contains(gone),
+                "the home page grew a separate {gone} action back"
+            );
         }
         // Reading order inside a card: title row, description, actions, tags
         // — and each panel sits below the row of cards that opens it.
