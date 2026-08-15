@@ -1952,6 +1952,12 @@ pub struct BasicAi {
     /// it off so their recorded ladders and the frozen `advanced_v1` rating
     /// anchor keep replaying the historical controller.
     pub(crate) settler_strand_discount: bool,
+    /// Let a second Settler enter the pipeline while one is already walking,
+    /// once the empire holds two cities and is still at least two short of
+    /// its target. Set only through `AdvancedAi::enable_parallel_settlers`
+    /// (the Civilization VI bridge); every native constructor and the frozen
+    /// `advanced_v1` anchor keep the one-at-a-time gate. See `pick_item`.
+    pub(crate) parallel_settlers: bool,
     /// Each owned Settler's last seen tile and how many consecutive turns it
     /// has stood on it. See [`BasicAi::stranded_settlers`] for why the
     /// expansion gate needs this and nothing else does.
@@ -3094,10 +3100,18 @@ impl BasicAi {
             rush_military_floor: 0,
             housing_buildings: false,
             settler_strand_discount: false,
+            parallel_settlers: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
             journal: Journal::default(),
         }
+    }
+
+    /// Open the second settler pipeline slot (see `parallel_settlers`). The
+    /// Civilization VI bridge sets this through `AdvancedAi::enable_parallel_settlers`;
+    /// exposed here so the bridge's `--explain-settler` probe can play the same gate.
+    pub fn enable_parallel_settlers(&mut self) {
+        self.parallel_settlers = true;
     }
 
     pub fn with_weights(w: Weights) -> BasicAi {
@@ -3136,6 +3150,7 @@ impl BasicAi {
             rush_military_floor: 0,
             housing_buildings: false,
             settler_strand_discount: false,
+            parallel_settlers: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
             journal: Journal::default(),
@@ -7160,7 +7175,24 @@ impl BasicAi {
             // discounted. See `stranded_settlers`.
             let room = ((n_cities + settlers) as f64) < self.w.city_target;
             let stranded = self.stranded_settlers(g, pid);
-            let none_in_flight = settlers.saturating_sub(stranded) == 0;
+            // ★★★★ ONE SETTLER AT A TIME IS THE PACE OF THE WHOLE EMPIRE. On the
+            // live Civilization VI seat the cities of run civvis-20260815T210845Z
+            // were founded at t2/19/45/58/78 and "a settler is already in flight"
+            // was the refusal on t19, t42, t43 and t47 — a two-city empire with
+            // pop to spare and land open, waiting on one walker. Under
+            // `parallel_settlers` a second Settler may start once the empire
+            // holds two cities and is still at least two short of its target;
+            // the target stays the hard cap and every other gate below is
+            // unchanged.
+            let pipeline = if self.parallel_settlers
+                && n_cities >= 2
+                && ((n_cities + settlers + 1) as f64) < self.w.city_target
+            {
+                2
+            } else {
+                1
+            };
+            let none_in_flight = settlers.saturating_sub(stranded) < pipeline;
             let grown = (city_pop as f64) >= self.w.settler_min_pop;
             let in_window = (g.turn as f64) < self.w.settler_stop_turn;
             if room && none_in_flight && grown && in_window {
@@ -7180,7 +7212,11 @@ impl BasicAi {
                     why.push("already at the city target");
                 }
                 if !none_in_flight {
-                    why.push("a settler is already in flight");
+                    why.push(if pipeline > 1 {
+                        "the settler pipeline is full"
+                    } else {
+                        "a settler is already in flight"
+                    });
                 }
                 if !grown {
                     why.push("the city is below settler_min_pop");
@@ -12194,6 +12230,57 @@ mod tests {
         ai.refresh_settler_idle(&game, 0);
         assert_eq!(ai.stranded_settlers(&game, 0), 0);
         assert!(ai.settler_idle.is_empty(), "dead settlers are pruned");
+    }
+
+    /// The early Cities route: a two-city empire with a Settler walking and pop
+    /// to spare starts a second one only under `parallel_settlers`, and never
+    /// past the city target.
+    #[test]
+    fn parallel_settlers_let_a_second_settler_start_while_one_walks() {
+        let mut game = Game::new_full(
+            1, 24, 16, crate::rng::fixture_seed("PIPELINE", 91_777), 250, 0, false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let capital = game.player_city_ids(0)[0];
+        game.cities.get_mut(&capital).unwrap().pop = 5;
+        game.turn = 30;
+        // A scout on the board and a siege arm in the counts, so neither the
+        // recon nor the siege capability gap pre-empts the settler gate.
+        let home = game.cities[&capital].pos;
+        game.spawn_unit("scout", 0, home);
+        game.spawn_unit("warrior", 0, home);
+        let ask = |ai: &BasicAi| ai.pick_item(&game, 0, capital, 2, 1, 6, 2, 1, 20, 10, 10);
+
+        // The league genome the live seat plays wants ~8 cities; the default
+        // weights want 4, which would cap the pipeline before it is tested.
+        let mut stock = BasicAi::new();
+        stock.w.city_target = 8.0;
+        assert!(!stock.parallel_settlers, "off unless the bridge asks");
+        assert!(
+            !matches!(ask(&stock), Some(Item::Unit { unit }) if unit == "settler"),
+            "stock: a settler is already in flight"
+        );
+
+        let mut treated = BasicAi::new();
+        treated.w.city_target = 8.0;
+        treated.parallel_settlers = true;
+        assert!(
+            matches!(ask(&treated), Some(Item::Unit { unit }) if unit == "settler"),
+            "the live pipeline lets the capital start the next settler while one walks: {:?}",
+            ask(&treated)
+        );
+        // Still capped by the city target: two cities plus one walker plus this
+        // one must stay below it.
+        treated.w.city_target = 4.0;
+        assert!(
+            !matches!(ask(&treated), Some(Item::Unit { unit }) if unit == "settler"),
+            "the target is the hard cap"
+        );
     }
 
     /// The frozen `advanced_v1` anchor and every native tournament game keep
