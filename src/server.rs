@@ -10220,9 +10220,11 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function teamRules() { return [\"2\", \"3\", \"4\", \"pairs\"]; }"));
         assert!(EMBEDDED_INDEX.contains("option.disabled = !split;"));
         // The world size decides which splits exist, so it re-fits them before
-        // the panel's own delegated listener stages what is now selected.
+        // the panel's own delegated listener stages what is now selected. In
+        // Tactics the same pick is first remembered for the map it was made
+        // on, so moving between maps and back returns to it.
         assert!(EMBEDDED_INDEX.contains(
-            "document.getElementById(\"np\").addEventListener(\"change\", () => {\n  syncTeams();\n  syncCustomLeaderSelection();\n});"
+            "  if (tacticsMode()) tacticsSizeChoices[tacticsMapScript()] = readSetting(\"np\");\n  syncTeams();\n  syncCustomLeaderSelection();\n});"
         ));
         // The server is handed the seat-by-seat assignment, never the rule
         // that produced it; a world on screen is read back the other way.
