@@ -436,32 +436,40 @@ const BLDG_ICON = { monument:"🗿", granary:"🌾", walls:"🧱", medieval_wall
                     shrine:"⛩", library:"📜", market:"⚖", barracks:"🛡",
                     lighthouse:"🗼", amphitheater:"🎭", aqueduct:"⛲", arena:"🎪",
                     workshop:"🔧", armory:"🛡", bank:"🏦", university:"🎓" };
-// Hues are Civ VI's own district language, at the game's saturation rather
-// than softened for the map: science blue, culture violet, faith a pale
-// sky-white, gold a yellow coin, production orange, military red, amenities
-// magenta, and the Government Plaza its own pink — the one district whose
-// color in the base game says "government" and not a yield.
-//
-// Harbor is the deep sea blue rather than the cyan it used to be. Cyan is the
-// aqueduct family's (`water` below), and a Harbor next to a Dam was two
-// near-identical light blues; sea blue is both truer to the game and the only
-// pair of blues on a coastal city that a glance has to separate.
-const DISTRICT_COLOR = { campus:"#3aa7e0", holy_site:"#e6f1f9", commercial_hub:"#f2c73d",
-                         harbor:"#2280ac", encampment:"#c8352b", theater_square:"#9b51d8",
-                         industrial_zone:"#e07b1e", entertainment_complex:"#d94f8f",
-                         government_plaza:"#f58fc0" };
-// Every unique district is its parent in a local hat — a Seowon is a Campus,
-// an Ikanda an Encampment — so they share a silhouette and a color. Grouping by
-// family is also what keeps thirty-five kinds down to a set of shapes a player
-// can actually learn.
+// The complete Civ VI district palette. The six yield districts use Firaxis's
+// exact named RGB values from Base/Assets/UI/Civ6_ColorAtlas.xml; non-yield
+// districts use the matching lit palette entry in Firaxis's 256px district
+// icon atlas. Unique districts that point at their parent's atlas entry repeat
+// that exact value here. Keeping every shipped district explicit is deliberate:
+// a new or mis-grouped district must not silently inherit an unrelated color.
+const DISTRICT_COLOR = Object.freeze({
+  city_center:"#8d9ebe",
+  campus:"#44b3ea", seowon:"#44b3ea", observatory:"#44b3ea",
+  holy_site:"#b6c1e3", lavra:"#b6c1e3",
+  encampment:"#bc1616", ikanda:"#bc1616", thanh:"#bc1616",
+  commercial_hub:"#cec255", suguba:"#cec255",
+  harbor:"#5fa49c", royal_navy_dockyard:"#5fa49c", cothon:"#5fa49c",
+  theater_square:"#af59f5", acropolis:"#af59f5",
+  industrial_zone:"#d38f3d", hansa:"#d38f3d", oppidum:"#cf8b35",
+  entertainment_complex:"#dcbc4f", street_carnival:"#dcbc4f", hippodrome:"#dcbb4e",
+  water_park:"#debf56", copacabana:"#debf56",
+  aqueduct:"#65872f", bath:"#65872f", canal:"#629125", dam:"#659725",
+  neighborhood:"#689e2b", mbanza:"#689e2b",
+  aerodrome:"#901d15", spaceport:"#019dda",
+  government_plaza:"#b05ccb", diplomatic_quarter:"#a44dc0",
+  preserve:"#90ba37",
+});
+// Every unique district is its parent in a local hat — a Seowon is a Campus
+// and an Ikanda an Encampment. Families drive building placement and the two
+// small infrastructure glyphs; color comes only from the exhaustive table.
 const DISTRICT_FAMILY = {
   campus:"campus", seowon:"campus", observatory:"campus",
   holy_site:"faith", lavra:"faith",
-  encampment:"war", ikanda:"war", oppidum:"war", thanh:"war",
+  encampment:"war", ikanda:"war", thanh:"war",
   commercial_hub:"trade", suguba:"trade",
   harbor:"harbor", royal_navy_dockyard:"harbor", cothon:"harbor",
   theater_square:"culture", acropolis:"culture",
-  industrial_zone:"industry", hansa:"industry",
+  industrial_zone:"industry", hansa:"industry", oppidum:"industry",
   entertainment_complex:"fun", street_carnival:"fun", hippodrome:"fun",
   copacabana:"fun", water_park:"fun",
   aqueduct:"water", bath:"water", canal:"water", dam:"water",
@@ -470,18 +478,13 @@ const DISTRICT_FAMILY = {
   government_plaza:"civic", diplomatic_quarter:"civic",
   preserve:"preserve", city_center:"civic",
 };
-// A unique district wears its parent's color, so these repeat the table above
-// and add the families no base district names directly. `civic` is what is
-// left of the old government tan once the Government Plaza takes its own pink:
-// the City Center and the Diplomatic Quarter.
-const FAMILY_COLOR = {
-  campus:"#3aa7e0", faith:"#e6f1f9", war:"#c8352b", trade:"#f2c73d",
-  harbor:"#2280ac", culture:"#9b51d8", industry:"#e07b1e", fun:"#d94f8f",
-  water:"#7ec8e8", homes:"#b99b6e", air:"#9fb0c4", civic:"#d8c58a",
-  preserve:"#5fb85f",
-};
-const districtColor = d =>
-  DISTRICT_COLOR[d] || FAMILY_COLOR[DISTRICT_FAMILY[d]] || "#ddd";
+const districtColor = d => DISTRICT_COLOR[d] || "#ddd";
+// A Harbor's base-game blue-green is close to CIVVIS water at survey zoom.
+// Firaxis's exact GoldMetal swatch keys only that family without changing the
+// district fill; all other districts keep the standard dark counter outline.
+const HARBOR_DISTRICT_OUTLINE = "#cbad73";
+const districtOutlineColor = (district, fallback = "#101716") =>
+  DISTRICT_FAMILY[district] === "harbor" ? HARBOR_DISTRICT_OUTLINE : fallback;
 // Text yields — tooltips and the sidebar, where a yield is a word in a line
 // rather than a mark on the map. The map's numbered-marker palette lives with
 // `drawTileYields`.
@@ -8578,9 +8581,10 @@ function tri(ax, ay, bx, by, ccx, ccy) {
 }
 
 // Districts are colored squares — board-game tokens rather than tiny
-// architecture. The family color IS the identity (blue = science, purple =
-// culture, orange = industry), readable from survey zoom without a key, and
-// the token is deliberately flat: solid color, thin outline, no lighting.
+// architecture. The exact Civ VI color IS the identity (blue = science,
+// purple = culture, orange = industry), readable from survey zoom without a
+// key, and the token is deliberately flat: solid color, thin outline, no
+// lighting.
 // Completed buildings stand on the token as dark bars; see `drawDistrictBars`.
 //
 // Square, not round, because the other painted piece on a tile is a unit, and
@@ -8799,7 +8803,8 @@ function drawDistrict(t, x, y, buildings = []) {
   // a printed counter on the board rather than a lit game piece.
   cx.fillStyle = col;
   districtTokenPath(x, y, hx); cx.fill();
-  cx.strokeStyle = "rgba(13,18,24,.78)"; cx.lineWidth = 1.6; cx.stroke();
+  cx.strokeStyle = districtOutlineColor(t.district, "rgba(13,18,24,.78)");
+  cx.lineWidth = 1.6; cx.stroke();
   drawDistrictGlyph(t, x, y, ink);
   drawDistrictBars(x, y, buildings, ink, districtDrawsGlyph(t.district));
   cx.restore();
@@ -17914,7 +17919,8 @@ function drawEmpireDistrictBadge(x, y, tile, scale = 1) {
     // The lens badge is the map token shrunk to a label: the same square,
     // covering the same ink as the 7.5px disc it replaces (7.5·√π/2).
     const half = 6.6 * scale;
-    cx.fillStyle = districtColor(district); cx.strokeStyle = "#101716"; cx.lineWidth = 2 * scale;
+    cx.fillStyle = districtColor(district);
+    cx.strokeStyle = districtOutlineColor(district); cx.lineWidth = 2 * scale;
     districtTokenPath(x, y, half); cx.fill(); cx.stroke();
     const label = districtAdjacencyLabel(tile);
     if (label) {
@@ -19900,8 +19906,8 @@ function drawScene() {
           cx.stroke();
           cx.lineCap = "butt";
         }
-        // family fallback here too, so the twenty-seven districts with no color
-        // of their own stop coming off the queue as the same plain cream glyph
+        // The exhaustive base-game table keeps every district's queue glyph in
+        // the same exact color as its map counter.
         if (it.unit) {
           drawUnitPictogram(it.unit, mx, my, mr * 1.42, "#f0ead8");
         } else if (it.wonder) {
