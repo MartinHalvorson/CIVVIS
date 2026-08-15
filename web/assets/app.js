@@ -94,7 +94,7 @@ function setupControlOrder(tactics) {
   const world = tactics
     ? ["tactics-scenario", "tactics-scenario-brief", "tacticsworldtype", "maptype", "np", "mapshape"]
     : ["np", "mapshape", "maptype", "tactics-scenario", "tactics-scenario-brief", "tacticsworldtype"];
-  return ["gamemode", "humanplayers", "civ6-status", ...world, "startera", "gamespeed",
+  return ["gamemode", "humanplayers", "civ6-status", "aiplayerpool", ...world, "startera", "gamespeed",
     "victory-options", "tactics-options", "saves-group"];
 }
 // Compose the pass in the live DOM. Moving the real controls (rather than
@@ -1990,7 +1990,11 @@ const HUD_SORT_STORAGE_KEY = "civvis-player-hud-sort-v1";
 const HUD_COLUMN_LAYOUT_STORAGE_KEY = "civvis-hud-column-layout-v1";
 const playerHudColumnWidths = new Map(PLAYER_HUD_COLUMNS.map(c => [c.key, c.width]));
 let playerHudColumnOrder = PLAYER_HUD_COLUMNS.map(column => column.key);
-let playerHudHiddenColumns = new Set();
+// The one column a fresh viewer starts without: the live Elo delta is a
+// second reading of the rating beside it, so it waits in the Display
+// Settings roster until asked for. A saved layout still decides for itself.
+const PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS = ["elo_delta"];
+let playerHudHiddenColumns = new Set(PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS);
 const playerHudColumnMinPx = new Map();
 let playerHudColumnGesture = null;
 let playerHudReorderGesture = null;
@@ -2044,7 +2048,7 @@ try {
   // keeping the table on screen.
   if (PLAYER_HUD_COLUMNS.filter(playerHudColumnExists)
       .every(column => playerHudHiddenColumns.has(column.key)))
-    playerHudHiddenColumns = new Set();
+    playerHudHiddenColumns = new Set(PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS);
 } catch (_) {}
 
 function savePlayerHudColumnLayout() {
@@ -2559,7 +2563,7 @@ function resetPlayerHudColumns(persist = true) {
   for (const column of PLAYER_HUD_COLUMNS)
     playerHudColumnWidths.set(column.key, column.width);
   playerHudColumnOrder = PLAYER_HUD_COLUMNS.map(column => column.key);
-  playerHudHiddenColumns = new Set();
+  playerHudHiddenColumns = new Set(PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS);
   playerHudColumnMinPx.clear();
   syncPlayerHudColumns();
   renderHudColumnList();
@@ -7498,6 +7502,12 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   if (st.error) { errEl.textContent = st.error; errEl.style.display = "block";
     setTimeout(() => errEl.style.display = "none", 2500); }
   const w = document.getElementById("winner");
+  // A Tactics battle is decided by where the armies stand, and centring the
+  // result card would hide exactly that answer. In the arena the verdict
+  // parks in the map area's upper-right third instead; judged per snapshot
+  // rather than once, because the page outlives the world — an arena can
+  // hand off to a full Civ game, whose verdict takes the centre back.
+  w.classList.toggle("winner-tactics", isBattlefieldMapScript(st.map?.script));
   const hasWinner = st.winner !== null && st.winner !== undefined;
   const drawn = gameDrawn(st);
   // Being eliminated ends the game for the person at the keyboard even though
@@ -21979,7 +21989,7 @@ function simulationStatsSection() {
   const mode = simulationStatsMode();
   const bucket = simulationStats[mode];
   const games = bucket?.games || 0;
-  const modeLabel = mode === "tactics" ? "Tactics" : "Civ";
+  const modeLabel = mode === "tactics" ? "Tactics" : "Civvis";
   const summary = games
     ? `${modeLabel} · ${games} game${games === 1 ? "" : "s"} · avg ${Math.round(bucket.turns / games)} turns`
     : `${modeLabel} · no finished games yet`;
@@ -22612,7 +22622,7 @@ function drawPlayerHud() {
         switch (column.key) {
           case "lock":
             return `<button class="lock-toggle" data-hud-col="lock" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
-              `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>`;
+              `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "🔒" : "○"}</button>`;
           case "rank":
             return `<span class="diplomacy-rank" data-hud-col="rank" title="Score rank ${rank}">#${rank}</span>`;
           // A civilization with no capital leaves this button disabled, and a
@@ -30213,6 +30223,10 @@ function selectedSimulationSettings() {
   return {num_players: np, map_script: ourMap, map_topology: mapTopology,
           map_poles: mapPoles, game_speed: gameSpeed,
           leader_pool: leaderPool,
+          // Which of the rated strategies may play the AI civilizations —
+          // read in both game modes, because a Tactics arena seats its two
+          // sides from the same pool a world does.
+          ai_player_pool: readSetting("aiplayerpool") || "best3",
           leader_selection: leaderSelection,
           base_ruleset: baseRuleset, start_era: startEra,
           future_era: futureEra,
@@ -30359,6 +30373,8 @@ function applyQueuedSimulationSettings(settings) {
   document.getElementById("gamespeed").value = settings.speed;
   setOptionalWorldNumber("mapseed", settings.seed);
   document.getElementById("leaderpool").value = normalizedLeaderPoolId(settings.leader_pool || "civ6");
+  if (settings.ai_pool)
+    document.getElementById("aiplayerpool").value = settings.ai_pool;
   if (settings.leader_selection)
     document.getElementById("leaderselection").value = settings.leader_selection;
   syncLeaderPool();
@@ -30750,8 +30766,8 @@ function watchingBattlefield() {
 // one Tactics world rather than two that differ for no reason.
 const TACTICS_CHIP_QUERY = "map=battlefield&players=2&era=information&arena=20x20";
 // The mode chip beside Home. It always names the mode the deck is NOT
-// showing, which makes the whole distance between Civ and Tactics one click
-// in either direction. Going back to Civ asks for nothing at all, because a
+// showing, which makes the whole distance between Civvis and Tactics one click
+// in either direction. Going back to Civvis asks for nothing at all, because a
 // visit that names no settings is the stock exhibition. Both destinations
 // keep the path this document was served from: the front page and /test are
 // different builds of the viewer, and choosing a game mode is no reason to
@@ -30762,7 +30778,7 @@ function syncModeLink(tactics = watchingBattlefield()) {
   // A circle crossed by its own equator and meridian: the astronomer's Earth,
   // and the brand mark directly above it. Both marks are drawn in outline
   // because the ⌂ they stand beside is — a filled ◉ shouts over it.
-  link.textContent = tactics ? "⊕ Civ" : "⚔ Tactics";
+  link.textContent = tactics ? "⊕ Civvis" : "⚔ Tactics";
   link.href = tactics ? location.pathname : `${location.pathname}?${TACTICS_CHIP_QUERY}`;
   link.title = tactics
     ? "Leave the arena for the full game: whole civilizations on a fresh world"

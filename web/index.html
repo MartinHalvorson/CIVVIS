@@ -1988,6 +1988,34 @@
     width: auto; min-width: 0; margin: 0; padding: 4px 8px;
     font-size: var(--type-small); letter-spacing: 0; text-transform: none;
   }
+  /* A Tactics result is written in the final positions of the armies, so the
+     arena's verdict card must not cover them: it sits in the upper-right
+     third of the map area — the fitted rectangle the world is actually drawn
+     into, so it tucks under the player strip and beside the rail instead of
+     over the field. A third of a small map is no place to read a verdict,
+     so the width is clamped, and the outer min() keeps the card inside a
+     map area narrower than the clamp's floor. */
+  #winner.winner-tactics {
+    top: calc(var(--map-area-top) + var(--panel-edge));
+    left: auto; right: calc(var(--map-area-right) + var(--panel-edge));
+    transform: none;
+    width: min(clamp(300px, calc(var(--map-area-width) / 3), 440px),
+               calc(var(--map-area-width) - 2 * var(--panel-edge)));
+    padding: clamp(14px, 2.4vmin, 22px) clamp(16px, 2.8vmin, 26px);
+  }
+  /* The corner card keeps the full screen's hierarchy at a size that fits a
+     third of the field. */
+  #winner.winner-tactics .winner-title { font-size: 24px; }
+  #winner.winner-tactics .winner-mark { margin-top: 6px; font-size: 18px; }
+  #winner.winner-tactics .winner-countdown-time { font-size: 28px; }
+  /* Three ways to play on will not share a row a third of the map wide, so
+     the answers stack; the simulation's pair still fits side by side. */
+  #winner.winner-tactics .winner-content > .winner-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #winner.winner-tactics .winner-content > .winner-actions.winner-actions-sim {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 
   /* Rich panel content */
   .research-card { width: 100%; height: 55px; min-height: 55px; display: grid; grid-template-columns: 32px minmax(0, 1fr) 36px; align-items: center; gap: 10px; }
@@ -3133,7 +3161,8 @@
   /* Locking a seat keeps its row in view while the rest of the table scrolls
      past it — one row, even when the table seats two of that civilization. The
      control is a quiet dot until it is switched on or reached by pointer or
-     keyboard, so twelve of them do not compete with the numbers beside them. */
+     keyboard, so twelve of them do not compete with the numbers beside them;
+     a locked row wears a padlock, which says held-in-place without a legend. */
   #playerhud .lock-toggle {
     width: 13px; height: 13px; display: grid; place-items: center;
     margin: 0; padding: 0; border: 0; border-radius: 4px; box-shadow: none;
@@ -4459,8 +4488,8 @@
       <div class="sec settings-sec" id="game-settings">
       <div id="newgame-options">
         <label class="small civ6-hidden">Game mode<select id="gamemode" style="margin-top:4px"
-          title="Civ is the full game. Tactics is a playground for tactical unit combat: a named historical battle, or a custom one on a small flat field or a small globe — land or ocean, with mountains, rivers, woods and water but no resources or city-states — where two evenly-armed sides begin at opposite ends of the ground.">
-          <option value="civ" selected>Civ</option>
+          title="Civvis is the full game. Tactics is a playground for tactical unit combat: a named historical battle, or a custom one on a small flat field or a small globe — land or ocean, with mountains, rivers, woods and water but no resources or city-states — where two evenly-armed sides begin at opposite ends of the ground.">
+          <option value="civ" selected>Civvis</option>
           <option value="tactics">Tactics</option>
         </select></label>
         <label class="small">Human players<select id="humanplayers" style="margin-top:4px">
@@ -4473,6 +4502,14 @@
           <div class="civ6-line"><span class="civ6-dot"></span><span id="civ6-host">Checking this computer…</span></div>
           <div class="civ6-line civ6-run" id="civ6-run" hidden></div>
         </div>
+        <label class="small civ6-hidden">AI player pool<select id="aiplayerpool" style="margin-top:4px"
+          title="Which of the rated AI strategies may be seated for the game's AI civilizations, in the Civvis game and Tactics alike. Each civ is played by one of the pool's best still-unseated strategies: Best 1 hands every civ the strongest strategy still free, the wider pools draw rank-weighted from the best few, and All opens the whole roster. The pool always includes the generic strategies — none of them is tied to a leader, so any leader, including a general leader with no particular special ability or power, can be handed any of them.">
+          <option value="best1">Best AI strategy per civ</option>
+          <option value="best2">Best 2 AI strategies per civ</option>
+          <option value="best3" selected>Best 3 AI strategies per civ</option>
+          <option value="best5">Best 5 AI strategies per civ</option>
+          <option value="all">All AI strategies</option>
+        </select></label>
         <label class="small tactics-only">Scenario<span class="setup-info" style="cursor:help;opacity:.7"
           title="Custom is a battle of your own: choose the world type, map and size below and set the arena up in Tactics settings. A named battle brings its own ground, opening forces, era and clock, and is fought under the economy it had — only how long you play, and how many battles the match is, stay yours."> ⓘ</span><select id="tactics-scenario" style="margin-top:4px">
           <option value="" selected>Custom</option>

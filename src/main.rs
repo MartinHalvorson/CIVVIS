@@ -1045,12 +1045,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the Elo protocol does not move.
 /// The local-defense handoff is likewise live-only: `garrison_under_fire`
 /// changes the emergency chooser from a generic military pick to a
-/// melee-capable land defender, while the queue release stops treating a siege
-/// piece as a city defender. `AdvancedAi::legacy()` leaves both city-defense
-/// treatment flags false, so it retains the historic generic selector and
-/// never enters either release helper. Compatibility re-pin; the Elo protocol
-/// does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0db7_d9bb_06e2_6bbf;
+/// melee-capable land defender, lets the queue release replace a siege piece,
+/// and lets it start a defender after clearing a host-owned queue.
+/// `AdvancedAi::legacy()` leaves both city-defense treatment flags false, so
+/// it retains the historic generic selector and never enters either release
+/// helper. Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb4e1_e49f_bd23_18a4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -1342,6 +1342,16 @@ fn leader_pool(args: &[String]) -> LeaderPool {
         std::process::exit(2);
     }
     pool
+}
+
+/// How deep the AI player pool runs: which of the rated strategies may be
+/// seated for the game's AI civilizations.
+fn ai_player_pool(args: &[String]) -> setup::AiPlayerPool {
+    let id = arg_text(args, "--ai-pool", setup::AiPlayerPool::default().id());
+    setup::AiPlayerPool::from_id(&id).unwrap_or_else(|| {
+        eprintln!("unknown AI player pool {id:?}; choose best1, best2, best3, best5, or all");
+        std::process::exit(2);
+    })
 }
 
 /// The civilizations a Tactics match is between, resolved the same way the
@@ -3083,6 +3093,7 @@ fn main() {
                         (!dir.is_empty()).then_some(dir)
                     },
                     league_record: args.iter().any(|a| a == "--league-record"),
+                    ai_pool: ai_player_pool(&args),
                     force_strategy: {
                         let name = arg_text(&args, "--force-strategy", "");
                         (!name.is_empty()).then_some(name)
@@ -3230,7 +3241,7 @@ fn main() {
                       [--leader-pool civ6|historical|today] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
-                      [--spectate] [--supervised] [--force-strategy NAME] [--resume checkpoint.json] [--strict] \
+                      [--spectate] [--supervised] [--force-strategy NAME] [--ai-pool best1|best2|best3|best5|all] [--resume checkpoint.json] [--strict] \
                       [--league dir] [--league-record] [--standings [--civ Rome | --civs]] [--rounds N] \
                       [--evolve-every N] [--pop N] [--worker ID] [--lease-seconds N] \
                       [rating: --dir league/ --backtest|--sweep|--stages --burn-in F --stage-decay F --anchors a,b]"
