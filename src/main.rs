@@ -1068,6 +1068,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the `Item::Wonder` refusal exactly as it was, so no headless anchor can enter
 /// the new valuation branch. Compatibility re-pin; the Elo protocol does not
 /// move.
+/// The same live-only wonder race now closes during the empire-wide `Recovery`
+/// posture, even if the individual building city is not yet threatened. The
+/// frozen anchor leaves `live_wonder_race` false and cannot enter either
+/// branch. Compatibility re-pin; the Elo protocol does not move.
 /// A settler standing on a cached target that `can_found_city` now refuses
 /// retires that target with the bounded avoidance the stall counter uses — behind
 /// `settler_commit`, which `AdvancedAi::legacy()` leaves off
@@ -1087,7 +1091,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `recon_replacement` remain disabled by `AdvancedAi::legacy()`, so the
 /// frozen anchor retains its prior production path. Compatibility re-pin; the
 /// Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe618_def8_6bbc_8f7f;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb7df_b261_f708_6491;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
