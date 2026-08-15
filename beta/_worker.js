@@ -1,15 +1,18 @@
 // The whole site's request handler.
 //
-// The site is two builds of the same program plus the pages around them:
+// The site is the same set of pages twice — one complete lane per build:
 //
-//   /        the STABLE lane — the promoted build, deliberately chosen
-//   /test    the HEAD lane — republished automatically from the latest main
-//   /home    the landing page (a real file at home/index.html)
-//   /download, /rust, /wasm — the native binaries and the moving pointers
+//   /              the STABLE lane — the promoted build, deliberately chosen:
+//                  the viewer at /, the landing page at /home, the native
+//                  binaries at /download
+//   /test/...      the HEAD lane — the same pages, republished automatically
+//                  from the latest main: /test, /test/home, /test/download
 //
-// Both lanes are the same viewer with relative asset paths, so each works at
-// its mount point without rewrites; they differ only in which commit their
-// engine was compiled from, and each states its commit in its own build.json.
+// Both lanes are relative-pathed, so each works at its mount point without
+// rewrites, and every link inside a lane stays inside the lane — reviewing
+// /test means clicking around /test and never landing in prod. The lanes
+// differ only in which commit they were built from, and each states its
+// commit in its own build.json.
 //
 // **This is a `_worker.js`, deliberately, and it must stay one.** Cloudflare
 // Pages also supports a `functions/` directory, and that is the obvious way to
@@ -24,20 +27,6 @@
 
 const COOKIE = "civvis_test";
 const WEEK = 60 * 60 * 24 * 7;
-
-/// Give a build channel a stable address without teaching browsers that its
-/// current destination can never change. Both destinations are themselves
-/// moving pointers: `/download/` links GitHub's latest native Rust release,
-/// while `/test/` is replaced whenever the WASM site is published.
-function buildChannel(url, path) {
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: `${path}${url.search}`,
-      "Cache-Control": "no-store",
-    },
-  });
-}
 
 /// What the cookie carries: proof of the password rather than the password.
 async function token(password) {
@@ -166,14 +155,11 @@ export default {
         });
       }
     }
-    // `/home` needs no case here: the landing page is a real file at
-    // home/index.html, and Pages resolves the directory index on its own.
-    if (url.pathname === "/rust" || url.pathname === "/rust/") {
-      return buildChannel(url, "/download/");
-    }
-    if (url.pathname === "/wasm" || url.pathname === "/wasm/") {
-      return buildChannel(url, "/test/");
-    }
+    // `/home`, `/download` and the whole `/test` lane need no cases here:
+    // every page is a real file in the deployed tree, and Pages resolves the
+    // directory indexes on its own. (`/rust` and `/wasm`, the old build
+    // channels, were dropped in favour of those real addresses; they fall
+    // through to the 404 like any other retired URL.)
 
     // /beta — the lane's name for its first day — is scrapped. Answered with
     // an explicit 404 rather than left to fall through, because falling

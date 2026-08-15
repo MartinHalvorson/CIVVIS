@@ -11,23 +11,26 @@ viewer is not a reimplementation: it is `web/index.html`, copied byte for byte
 apart from the asset paths a subdirectory forces.
 
 ```
-civvis.ai            the STABLE lane — the promoted build, moved by a person
-civvis.ai/test       the HEAD lane — latest main, republished automatically
-civvis.ai/home       the landing page with build and project links
-civvis.ai/rust       the latest published native Rust release
-civvis.ai/wasm       the latest published WASM build
-civvis.ai/download   the native binaries, from the latest GitHub release
+civvis.ai                 the STABLE lane — the promoted build, moved by a person
+civvis.ai/home            its landing page
+civvis.ai/download        its native-binaries page, from the latest GitHub release
+civvis.ai/test            the HEAD lane — latest main, republished automatically
+civvis.ai/test/home       head's landing page
+civvis.ai/test/download   head's binaries page
 ```
 
-**The site is the same viewer twice, from two commits.** `/test` follows
-`main` on a schedule so the newest engine is always playable without anyone
-deciding anything; `/` is whatever the `site-stable` tag names and moves only
-when somebody runs the **to-prod-manual-only** workflow, because whether a build is
+**The site is the same set of pages twice, from two commits.** Each lane is a
+complete tree — the viewer at its root, `/home` and `/download` beside it —
+and every link inside a lane is lane-relative, so reviewing `/test` means
+clicking around `/test` and never landing in prod. `/test` follows `main` on
+a schedule so the newest site is always reviewable without anyone deciding
+anything; `/` is whatever the `site-stable` tag names and moves only when
+somebody runs the **to-prod-manual-only** workflow, because whether a build is
 worth being the front page is a judgement no gate can make. Each lane states
 its commit in its own `build.json`. Both lanes ship in every deployment —
 Pages deployments are immutable snapshots of a whole directory, so there is no
 such thing as updating half a site; a promotion is nothing but moving the tag
-and deploying again.
+and deploying again, which promotes every page at once.
 
 Repeat visitors cannot be left on an earlier deployment. Each lane's HTML is a
 moving pointer and revalidates on every visit. The publisher gives `shim.js`,
@@ -37,10 +40,9 @@ after the fresh page arrives; an unchanged file keeps its URL and can be reused
 from cache. Legacy unversioned URLs also revalidate. An already-open tab keeps
 running its loaded build until it is reloaded.
 
-`/rust` and `/wasm` are the stable build channels. They use uncached temporary
-redirects to `/download/` and `/test/`, respectively, so those short addresses
-keep following each newly published artifact without trapping a past visitor
-on one release. A query on `/wasm`, including `?game=<n>`, survives the redirect.
+(`/rust` and `/wasm`, the old build-channel redirects, were dropped in favour
+of the real addresses above; they 404 like any other retired URL. The
+installed desktop apps' local `/wasm/` channel is unrelated and remains.)
 
 `/` serves the product directly. Setting `ROOT_REDIRECT` in the Pages
 environment turns the root into a **302** to anywhere — the escape hatch that
@@ -56,13 +58,13 @@ to be movable.
 | `src/wasm.rs` | The engine's request router for the browser. A child module of `server`, `cfg`-gated to wasm, answering the same endpoints over the same JSON. |
 | `beta/worker.js` | Runs the module off the main thread. A turn is not a quick call, and the viewer paints on `requestAnimationFrame`; on the page's own thread the engine would stall the frames it exists to produce. |
 | `beta/shim.js` | Intercepts `fetch` before it reaches the network. Also owns the three things that genuinely became the page's job: the turn clock, the selected between-game finale countdown, and saved games in `localStorage`. |
-| `beta/_worker.js` | The whole site's routing: the two lanes, the `/rust` and `/wasm` pointers, the optional gates on `/` and `/test`, and the response headers. |
-| `beta/landing.html` | `civvis.ai/home` — the landing page: project links and the four-quadrant game picker — play Civ, play Tactics, watch Civ, watch Tactics. The Civ quadrants are settings-carrying links into the simulator; the Tactics quadrants open the battle picker (the historical scenario library, browsed by era, commander or terrain, plus Custom), and every battle card is such a link. The catalog is a copy of the engine's, written by `tools/landing_battles.py` and pinned by a test. |
-| `beta/download.html` | `civvis.ai/download`. Links `releases/latest/download/<asset>`, so it never needs republishing when a release is cut. |
+| `beta/_worker.js` | The whole site's routing: the two lanes, the optional gates on `/` and `/test`, and the response headers. |
+| `beta/landing.html` | `civvis.ai/home` (and `/test/home` from head's revision) — the landing page: project links and the four-quadrant game picker — play Civ, play Tactics, watch Civ, watch Tactics. The Civ quadrants are settings-carrying links into the simulator; the Tactics quadrants open the battle picker (the historical scenario library, browsed by era, commander or terrain, plus Custom), and every battle card is such a link. The catalog is a copy of the engine's, written by `tools/landing_battles.py` and pinned by a test. |
+| `beta/download.html` | `civvis.ai/download` (and `/test/download`). Links `releases/latest/download/<asset>`, so it never needs republishing when a release is cut. |
 | `.github/workflows/release.yml` | Builds those assets for Windows, macOS (both architectures) and Linux on a `v*` tag. |
 | `.github/workflows/to-test-auto-30.yml` | Builds both lanes, checks them, and deploys — half-hourly behind the gate, and on demand. Without the Cloudflare secrets it degrades to a dry run, so the schedule is safe before the account exists. |
 | `.github/workflows/to-prod-manual-only.yml` | Moves the `site-stable` tag to a chosen revision, then runs to-test-auto-30 — the only way `/` changes. |
-| `beta/publish.sh` | Assembles `beta/dist/` from a named revision. |
+| `beta/publish.sh` | Assembles one complete lane into `beta/dist/` from a named revision — viewer at the root, `/home` and `/download` beside it, every inter-page link lane-relative. |
 | `beta/verify.py` | Opens the assembled bundle in a real browser, watches it play, and walks through the password door. |
 | `beta/worker_test.py` | Calls `_worker.js` directly — the forward, the password, the headers — needing only Chrome. |
 | `beta/serve.sh` | Serves `beta/dist/` locally the way a static host would. |
@@ -157,10 +159,10 @@ By hand, the equivalent of one scheduled run:
 ```bash
 ./beta/publish.sh --commit <stable-sha> --out lane-stable
 ./beta/publish.sh --commit <head-sha>   --out lane-test
-cp -R lane-test site && mkdir site/home && mv site/index.html site/home/index.html
-cp -R lane-stable/test/. site/           # the viewer is relative-pathed; it
-                                         # mounts at the root unchanged
-./beta/worker_test.py                    # prove the routing behaves
+cp -R lane-stable site                    # each lane is a whole, relative-
+cp -R lane-test site/test                 # pathed site; it mounts anywhere
+rm -f site/test/_worker.js site/test/404.html   # the shell stays at the root
+./beta/worker_test.py                     # prove the routing behaves
 ./beta/verify.py --dist site --mount root
 ./beta/verify.py --dist site --mount test --no-gate
 npx wrangler pages deploy site --project-name civvis

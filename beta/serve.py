@@ -15,12 +15,18 @@ MAX_RESULT_BYTES = 64 * 1024
 
 
 def channel_path(path):
-    """Map the local /wasm channel onto the published /test bundle."""
+    """Map the local /wasm channel onto the published viewer.
+
+    The viewer sits at the lane root now — publish.sh emits one complete
+    lane per revision, viewer at its root with /home and /download beside it
+    — so the channel maps straight onto the root rather than a test/
+    subdirectory.
+    """
     parsed = urllib.parse.urlsplit(path)
     if parsed.path == "/wasm":
-        mapped = "/test/"
+        mapped = "/"
     elif parsed.path.startswith("/wasm/"):
-        mapped = "/test/" + parsed.path.removeprefix("/wasm/")
+        mapped = "/" + parsed.path.removeprefix("/wasm/")
     else:
         return path
     return urllib.parse.urlunsplit(("", "", mapped, parsed.query, parsed.fragment))
