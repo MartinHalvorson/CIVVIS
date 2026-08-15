@@ -844,6 +844,44 @@
   }
   .turn-plate-seam:hover::before, .turn-plate-seam:focus-visible::before { background: #d7b66a8c; }
   .turn-plate-seam:focus-visible { outline: 1px solid #d7b66a70; outline-offset: 1px; }
+  /* Each half of a composite panel folds on its own. The chevron rides its
+     section's heading; a collapsed half leaves a slim strip that brings it
+     back, so the panel never empties and never leaves the map. */
+  .hud-fold {
+    flex: 0 0 auto; width: 18px; height: 18px; display: grid; place-items: center;
+    margin: 0; padding: 0; border: 0; border-radius: 5px;
+    color: #d7b66aa6; background: transparent; box-shadow: none;
+    font-size: var(--type-control); line-height: 1; cursor: pointer;
+  }
+  .hud-fold:hover { color: #fff7dd; background: #ffffff14; transform: none; box-shadow: none; }
+  #playerhud .victory-turn { position: relative; }
+  .turn-plate-fold { position: absolute; z-index: 8; top: 1px; right: 1px; }
+  .hud-restore {
+    display: none; margin: 0; padding: 0; border: 1px solid #526a6156;
+    border-radius: 7px; color: #d7b66aa6; background: #07110f52; box-shadow: none;
+    font-size: var(--type-control); line-height: 1; cursor: pointer;
+  }
+  .hud-restore:hover { color: #fff7dd; border-color: #d7b66a70; transform: none; box-shadow: none; }
+  /* The masthead with its turn box folded: the standings take the row. */
+  #playerhud.turn-plate-collapsed { grid-template-columns: min-content minmax(0, 1fr) !important; }
+  #playerhud.turn-plate-collapsed > .victory-turn,
+  #playerhud.turn-plate-collapsed > .turn-plate-seam { display: none; }
+  #playerhud.turn-plate-collapsed > .turn-plate-restore {
+    display: grid; place-items: center; grid-column: 1; grid-row: 1; width: 16px;
+  }
+  /* The masthead with its standings folded: the panel shrinks to the turn box
+     plus the strip that restores them. The corner ✕ collapses the standings,
+     so it goes with them. */
+  #playerhud.standings-collapsed {
+    right: auto; width: auto;
+    grid-template-columns: var(--turn-plate-width, 164px) min-content !important;
+  }
+  #playerhud.standings-collapsed > .player-standings,
+  #playerhud.standings-collapsed > .turn-plate-seam,
+  #playerhud.standings-collapsed > .overlay-close { display: none; }
+  #playerhud.standings-collapsed > .standings-restore {
+    display: grid; place-items: center; grid-column: 2; grid-row: 1; width: 16px;
+  }
   /* A widened plate goes wide instead of tall: the era and the turn counter
      share the first line, and the settings below divide into two columns. The
      live overlay-width fitter selects this shape by default when the masthead
@@ -3205,7 +3243,7 @@
     bottom: calc(var(--minimap-height) + var(--panel-gap) + var(--panel-edge));
     width: var(--victory-hud-width); height: auto;
     display: grid; grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 22px minmax(0, 1fr);
+    grid-template-rows: var(--sim-stats-height, auto) minmax(0, 1fr);
     align-items: stretch; gap: 5px; min-width: 0; padding: 5px;
     overflow: hidden; border: 1px solid #526a618f; border-radius: 12px;
     background: linear-gradient(195deg, #091411ed, #0d1a17e6 54%, #0a1512ed);
@@ -3216,12 +3254,72 @@
   body.overlay-minimap-hidden #victoryhud {
     bottom: var(--panel-edge); height: auto;
   }
-  #victoryhud > .hud-section-heading {
-    position: relative; grid-column: 1; grid-row: 1; min-height: 22px;
-    justify-content: center; margin: 0 3px; color: #c7d3ce; font-size: var(--type-secondary);
+  /* Two sections share the rail panel: the simulation stats above, the
+     victory tracker below, each behind its own heading bar — the drag handle
+     and its fold chevron. The first bar keeps clear of the corner ✕. */
+  #victoryhud .hud-region-bar {
+    position: relative; flex: 0 0 auto; display: flex; align-items: center;
+    gap: 4px; min-height: 18px; margin: 0 3px 3px;
   }
-  #victoryhud > .hud-section-heading.widget-drag-handle::before { position: absolute; left: 3px; }
+  #victoryhud > .sim-stats-region .hud-region-bar { padding-right: 20px; }
+  #victoryhud .hud-region-bar > .hud-section-heading {
+    position: relative; flex: 1 1 auto; min-width: 0; justify-content: center;
+    margin: 0; padding-left: 10px; color: #c7d3ce; font-size: var(--type-secondary);
+  }
+  #victoryhud .hud-section-heading.widget-drag-handle::before { position: absolute; left: 3px; }
+  #victoryhud > .sim-stats-region { grid-column: 1; grid-row: 1; min-height: 0; }
   #victoryhud > .victory-region { grid-column: 1; grid-row: 2; min-height: 0; }
+  /* Without a dragged height the stats keep their content height; the cap
+     keeps a long ledger from swallowing the whole rail at the start. */
+  #victoryhud:not(.sim-stats-sized):not(.victory-collapsed) .sim-stats-body { max-height: 168px; }
+  .sim-stats-body {
+    flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 3px;
+    padding: 0 3px 2px; overflow-y: auto; overscroll-behavior: contain;
+  }
+  .sim-stats-summary { flex: 0 0 auto; color: #c7d3ce; font-size: var(--type-small); }
+  .sim-stats-controls { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; }
+  .sim-stats-view, .sim-stats-clear {
+    margin: 0; padding: 1px 7px; border: 1px solid #526a618f; border-radius: 6px;
+    color: #b9c8c2; background: transparent; box-shadow: none;
+    font-size: var(--type-small); line-height: 1.3; cursor: pointer;
+  }
+  .sim-stats-view:hover, .sim-stats-clear:hover { color: #fff; transform: none; box-shadow: none; }
+  .sim-stats-view.active { color: #ecd37e; border-color: #d7b66a8c; background: #d7b66a1a; }
+  .sim-stats-clear { margin-left: auto; }
+  .sim-stats-clear:hover { border-color: #9b6c66; background: #35201e; }
+  .sim-stats-rows { min-height: 0; display: flex; flex-direction: column; gap: 1px; }
+  .sim-stat-row {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+    padding: 1px 2px; font-size: var(--type-small); white-space: nowrap;
+  }
+  .sim-stat-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #dce6e1; }
+  .sim-stat-record { flex: 0 0 auto; color: #ecd37e; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sim-stats-empty { color: #94a59e; font-size: var(--type-small); line-height: 1.35; }
+  /* The divider between the two sections: the turn plate's seam turned on
+     its side, riding the stats' lower edge into the panel gap. */
+  .sim-stats-seam {
+    position: relative; z-index: 8; grid-column: 1; grid-row: 1;
+    justify-self: stretch; align-self: end; height: 7px;
+    margin: 0 9px -6px; padding: 0; border: 0; border-radius: 4px;
+    background: transparent; cursor: row-resize; touch-action: none;
+  }
+  .sim-stats-seam::before {
+    content: ""; position: absolute; inset: 2px 0; border-radius: 2px;
+    background: #d7b66a2e;
+  }
+  .sim-stats-seam:hover::before, .sim-stats-seam:focus-visible::before { background: #d7b66a8c; }
+  .sim-stats-seam:focus-visible { outline: 1px solid #d7b66a70; outline-offset: 1px; }
+  /* A folded section keeps its heading bar and hands the rest of the panel
+     to the other; folding both shrinks the panel to the two bars. */
+  #victoryhud.sim-stats-collapsed { grid-template-rows: min-content minmax(0, 1fr); }
+  #victoryhud.sim-stats-collapsed .sim-stats-body { display: none; }
+  #victoryhud.victory-collapsed { grid-template-rows: minmax(0, 1fr) min-content; }
+  #victoryhud.victory-collapsed .victory-region > .hud-rail { display: none; }
+  #victoryhud.sim-stats-collapsed .sim-stats-seam,
+  #victoryhud.victory-collapsed .sim-stats-seam { display: none; }
+  #victoryhud.sim-stats-collapsed.victory-collapsed {
+    bottom: auto; height: auto; grid-template-rows: min-content min-content;
+  }
   /* A standing rail scrolls down, not across. */
   #victoryhud .hud-rail { overflow-x: hidden; overflow-y: auto; }
   #victoryhud .hud-rail::-webkit-scrollbar { width: 3px; height: 3px; }
@@ -3249,7 +3347,7 @@
     font-size: var(--type-control); font-weight: 700; line-height: 1;
   }
   .overlay-close:hover { color: #fff; border-color: #9b6c66; background: #35201e; }
-  #victoryhud > .hud-section-heading, .minimap-frame > .minimap-label { padding-right: 25px; }
+  .minimap-frame > .minimap-label { padding-right: 25px; }
   #zoomctl .overlay-close {
     position: static; order: 20; width: 28px; height: 34px; flex: 0 0 28px;
     border: 0; border-left: 1px solid #ffffff0c; border-radius: 0;
@@ -3435,6 +3533,11 @@
       width: var(--compact-minimap-width); height: var(--compact-minimap-height);
     }
     #victoryhud .hud-rail { overflow-x: auto; overflow-y: hidden; }
+    /* The shallow stacked band has no room for two sections; the stats
+       yield until the standing rail returns. */
+    #victoryhud { grid-template-rows: minmax(0, 1fr); }
+    #victoryhud > .sim-stats-region, #victoryhud > .sim-stats-seam { display: none; }
+    #victoryhud > .victory-region { grid-row: 1; }
     #victoryhud .victory-ribbon {
       min-height: 0; width: max(100%, var(--victory-min-width, 514px));
       grid-template-rows: minmax(0, 1fr);
@@ -3490,6 +3593,11 @@
     max-width: 100%;
   }
   #maparea.player-hud-compact #victoryhud .hud-rail { overflow-x: auto; overflow-y: hidden; }
+  /* Same shallow band, chosen from the map's own width: one section only. */
+  #maparea.player-hud-compact #victoryhud { grid-template-rows: minmax(0, 1fr); }
+  #maparea.player-hud-compact #victoryhud > .sim-stats-region,
+  #maparea.player-hud-compact #victoryhud > .sim-stats-seam { display: none; }
+  #maparea.player-hud-compact #victoryhud > .victory-region { grid-row: 1; }
   #maparea.player-hud-compact #victoryhud .victory-ribbon {
     min-height: 0; width: max(100%, var(--victory-min-width, 514px));
     grid-template-rows: minmax(0, 1fr);
