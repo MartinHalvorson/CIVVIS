@@ -1056,7 +1056,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// only when `endgame_war_runway` is enabled through the live bridge. The
 /// frozen anchor leaves that flag false, retaining its historical late-war
 /// behavior. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5825_fe6f_9859_014a;
+/// A missing siege/recon arm now owns a city queue only when that city can
+/// actually build the requested role. Both `siege_role` and
+/// `recon_replacement` remain disabled by `AdvancedAi::legacy()`, so the
+/// frozen anchor retains its prior production path. Compatibility re-pin; the
+/// Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe7f8_3b2a_c191_38fe;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
