@@ -13,29 +13,68 @@ const GAME_MOD_STATE_KEY = "civvis-game-mods-v1";
 // the profiles that ever moved a HUD panel. Declared here, at the top, where
 // no load-time path can run first.
 let PLANET_GPU = null;
+// The command deck's scrolling sections — Display Settings, Game setup, AI
+// strategy, War log, Game event log, Government — are one accordion: at most
+// one is open at a time, and none is fine. Opening a section closes whichever
+// other one was open, so two long logs never stack and push a third off the
+// bottom of the deck. The markup asks the browser for the same rule natively
+// (one `name="deck-section"` shared by their `<details>` tags); this closes
+// the others where that attribute is not understood yet, and lets a scripted
+// open — a notification sending the player to Government — settle the layout
+// before it scrolls to the section. The lens dock and shortcut drawer below
+// the scroller are not sections of the deck; they keep their own state.
+const SIDEBAR_SECTIONS = "#side details.sidebar-section";
+function closeOtherSidebarSections(section) {
+  for (const other of document.querySelectorAll(SIDEBAR_SECTIONS)) {
+    if (other !== section && other.open) other.open = false;
+  }
+}
+function openSidebarSection(section) {
+  if (section.classList.contains("sidebar-section")) closeOtherSidebarSections(section);
+  section.open = true;
+}
 function initSidebarSections() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(SIDEBAR_SECTION_STATE_KEY) || "{}"); }
   catch (_) { saved = {}; }
+  const remember = () => {
+    try { localStorage.setItem(SIDEBAR_SECTION_STATE_KEY, JSON.stringify(saved)); }
+    catch (_) {}
+  };
+  // A store written before the deck became an accordion may hold several open
+  // sections; the first in reading order keeps its place and the rest close,
+  // and the store is rewritten so the next load agrees with what was shown.
+  let opened = false;
   // The lens dock is a fixed panel at the deck's lower edge now, so it needs
   // no scroll-into-view choreography — only the same saved disclosure state
   // as the scrolling sections above it.
   for (const section of document.querySelectorAll("#side details[data-section]")) {
     const key = section.dataset.section;
+    let open = section.open;
     if (Object.prototype.hasOwnProperty.call(saved, key)) {
-      section.open = !!saved[key];
+      open = !!saved[key];
     } else if (key === "active-strategy" &&
                Object.prototype.hasOwnProperty.call(saved, "ai-reasoning")) {
       // The two previous cards are one dossier now. Preserve a reader's open
       // reasoning log when they upgrade rather than making that trail vanish
       // behind the old strategy card's closed state.
-      section.open = !!saved["ai-reasoning"];
+      open = !!saved["ai-reasoning"];
     }
+    if (section.classList.contains("sidebar-section")) {
+      if (open && opened) open = false;
+      if (open) opened = true;
+    }
+    section.open = open;
+    saved[key] = open;
     section.addEventListener("toggle", () => {
+      if (section.open && section.classList.contains("sidebar-section")) {
+        closeOtherSidebarSections(section);
+      }
       saved[key] = section.open;
-      localStorage.setItem(SIDEBAR_SECTION_STATE_KEY, JSON.stringify(saved));
+      remember();
     });
   }
+  remember();
 }
 initSidebarSections();
 // The short setup pass, in the order its questions are asked. Which game is
@@ -28760,7 +28799,7 @@ function focusSection(id) {
   const section = document.getElementById(id);
   if (!section) return;
   document.body.classList.remove("sidebar-hidden");
-  if (section.tagName === "DETAILS") section.open = true;
+  if (section.tagName === "DETAILS") openSidebarSection(section);
   section.scrollIntoView({block: "nearest", behavior: "smooth"});
   section.classList.add("section-flash");
   setTimeout(() => section.classList.remove("section-flash"), 1200);
