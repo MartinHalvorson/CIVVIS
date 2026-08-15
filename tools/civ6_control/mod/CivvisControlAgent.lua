@@ -7180,6 +7180,41 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and "CITY_STRIKE" or "city_strike_throw";
 	end
 
+	-- The encampment's strike, same shape as the city's: `subject` is the
+	-- OWNING city's Firaxis id, and the command goes to the district OBJECT —
+	-- WorldInput.lua:2626 hands `CityManager.CanStartCommand` the selected
+	-- district with the same UNIT-keyed x/y params the city path uses. The
+	-- district is found by walking the city's districts for the encampment row
+	-- Index, the established pattern from the repair probe above.
+	if kind == "encampment_strike" then
+		local city = try(function() return CityManager.GetCity(pid, subject); end);
+		if city == nil then return false, "encampment_strike_city_missing"; end
+		if x == nil or y == nil then return false, "encampment_strike_no_target"; end
+		local row = try(function() return GameInfo.Districts["DISTRICT_ENCAMPMENT"]; end);
+		if row == nil then return false, "encampment_strike_no_district_row"; end
+		local encampment = nil;
+		try(function()
+			for _, d in city:GetDistricts():Members() do
+				if d:GetType() == row.Index then encampment = d; end
+			end
+		end);
+		if encampment == nil then return false, "encampment_strike_no_encampment"; end
+		local params = {};
+		params[UnitOperationTypes.PARAM_X] = x;
+		params[UnitOperationTypes.PARAM_Y] = y;
+		if not try(function()
+			return CityManager.CanStartCommand(
+				encampment, CityCommandTypes.RANGE_ATTACK, params);
+		end, false) then
+			return false, "encampment_strike_refused";
+		end
+		local ok = pcall(function()
+			CityManager.RequestCommand(
+				encampment, CityCommandTypes.RANGE_ATTACK, params);
+		end);
+		return ok, ok and "ENCAMPMENT_STRIKE" or "encampment_strike_throw";
+	end
+
 	if kind == "war" then
 		local diplomacy = try(function() return player:GetDiplomacy(); end);
 		if diplomacy == nil then return false, "no_diplomacy"; end
