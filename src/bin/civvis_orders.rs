@@ -567,10 +567,13 @@ fn defer_great_person_plot_conflicts(
     let orders = orders
         .into_iter()
         .filter(|order| {
+            // A Trade Route uses `pos` to name its destination city, not a
+            // physical hex the Trader will enter in this Lua batch.
             let conflicts = order.kind == "unit"
-                && people.iter().any(|(person, pos)| {
-                    order.subject != Some(*person) && order.pos == Some(*pos)
-                });
+                && order.verb.as_deref() != Some("TRADE_ROUTE")
+                && people
+                    .iter()
+                    .any(|(person, pos)| order.subject != Some(*person) && order.pos == Some(*pos));
             if conflicts {
                 deferred += 1;
             }
@@ -3265,7 +3268,7 @@ mod tests {
     }
 
     #[test]
-    fn every_great_person_reserves_its_hex_for_the_firaxis_batch() {
+    fn great_person_reservation_defers_physical_moves_but_not_trade_routes() {
         let state = StateSnapshot {
             units: vec![
                 StateUnit {
@@ -3320,14 +3323,21 @@ mod tests {
                     verb: Some("MOVE_TO".to_string()),
                     pos: Some((69, 27)),
                 },
+                Order {
+                    kind: "unit",
+                    subject: Some(14),
+                    verb: Some("TRADE_ROUTE".to_string()),
+                    pos: Some((68, 27)),
+                },
             ],
             &state,
         );
 
         assert_eq!(deferred, 2);
-        assert_eq!(orders.len(), 2);
+        assert_eq!(orders.len(), 3);
         assert_eq!(orders[0].subject, Some(72));
         assert_eq!(orders[1].subject, Some(12));
+        assert_eq!(orders[2].verb.as_deref(), Some("TRADE_ROUTE"));
     }
 
     #[test]
