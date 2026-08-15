@@ -79,19 +79,35 @@
   /* The menu: which game runs down the rows — Tactics above, Civ below —
      and who is at the keyboard across the columns — Watch (AI simulations)
      on the left, Play (single player) on the right. */
-  .quadrants { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+  /* A narrow first column carries the vertical row labels; the two card
+     columns share the rest. */
+  .quadrants { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); gap: 14px 18px; }
   .col-head {
     display: flex;
-    align-items: baseline;
-    gap: 10px;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
     margin: 0 0 2px;
     color: #fff;
-    font-size: 15px;
+    font-size: 21px;
     font-weight: 700;
     letter-spacing: 0.08em;
+    text-align: center;
     text-transform: uppercase;
   }
-  .col-head span { color: var(--faint); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: none; }
+  .col-head span { color: var(--faint); font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: none; }
+  .row-label {
+    align-self: center;
+    justify-self: center;
+    margin: 0;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    color: var(--faint);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
 
   .mode-card {
     display: flex;
@@ -240,7 +256,9 @@
 
   @media (max-width: 760px) {
     .quadrants { grid-template-columns: 1fr; }
-    .col-head { display: none; }
+    .col-head,
+    .row-label,
+    .grid-corner { display: none; }
     .picker-battles { grid-template-columns: 1fr; }
   }
 </style>
@@ -266,7 +284,7 @@
   <main class="shell">
     <p class="intro">
       CIVVIS is an open source simulator for the 4x turn-based strategy game
-      Sid Meier&#8217;s Civilization VI. Everything below is a preset
+      <cite>Sid Meier&#8217;s Civilization VI</cite>. Everything below is a preset
       configuration of settings for the simulator, but you can further change
       settings how you like or
       <a href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">clone the code</a>
@@ -284,9 +302,11 @@
          Tactics world. Each card's photograph is a real capture of its own
          preset. -->
     <section class="quadrants" aria-label="Game menu">
-      <h2 class="col-head">Watch <span>AI simulations</span></h2>
+      <div class="grid-corner" aria-hidden="true"></div>
+      <h2 class="col-head">Design &amp; Watch <span>AI simulations</span></h2>
       <h2 class="col-head">Play <span>Single player</span></h2>
 
+      <div class="row-label" aria-hidden="true">Tactics</div>
       <div class="mode-card">
         <img class="card-thumb" src="/home/assets/watch-tactics.jpg?v=1a1d7d25c56e4a683a9e8d63ea0ea02e204cd62e49a923ab1c45774da6866f10" alt="Two AI armies meeting in the middle of a CIVVIS Gettysburg battlefield." fetchpriority="high">
         <div class="card-body">
@@ -323,6 +343,7 @@
         </div>
       </div>
 
+      <div class="row-label" aria-hidden="true">CIVVIS</div>
       <div class="mode-card">
         <img class="card-thumb" src="/home/assets/watch-civ.jpg?v=9f7df93c6b237f7b1b057cb3874b13d5e672422facef2bb1324171ea218ef28e" alt="A CIVVIS globe at mid-game: AI empires sharing two continents, borders and cities drawn across the planet.">
         <div class="card-body">
