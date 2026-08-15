@@ -1341,6 +1341,16 @@ fn leader_pool(args: &[String]) -> LeaderPool {
     pool
 }
 
+/// How deep the AI player pool runs: which of the rated strategies may be
+/// seated for the game's AI civilizations.
+fn ai_player_pool(args: &[String]) -> setup::AiPlayerPool {
+    let id = arg_text(args, "--ai-pool", setup::AiPlayerPool::default().id());
+    setup::AiPlayerPool::from_id(&id).unwrap_or_else(|| {
+        eprintln!("unknown AI player pool {id:?}; choose best1, best2, best3, best5, or all");
+        std::process::exit(2);
+    })
+}
+
 /// The civilizations a Tactics match is between, resolved the same way the
 /// engine seats them.
 ///
@@ -3080,6 +3090,7 @@ fn main() {
                         (!dir.is_empty()).then_some(dir)
                     },
                     league_record: args.iter().any(|a| a == "--league-record"),
+                    ai_pool: ai_player_pool(&args),
                     force_strategy: {
                         let name = arg_text(&args, "--force-strategy", "");
                         (!name.is_empty()).then_some(name)
@@ -3227,7 +3238,7 @@ fn main() {
                       [--leader-pool civ6|historical|today] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
-                      [--spectate] [--supervised] [--force-strategy NAME] [--resume checkpoint.json] [--strict] \
+                      [--spectate] [--supervised] [--force-strategy NAME] [--ai-pool best1|best2|best3|best5|all] [--resume checkpoint.json] [--strict] \
                       [--league dir] [--league-record] [--standings [--civ Rome | --civs]] [--rounds N] \
                       [--evolve-every N] [--pop N] [--worker ID] [--lease-seconds N] \
                       [rating: --dir league/ --backtest|--sweep|--stages --burn-in F --stage-decay F --anchors a,b]"
