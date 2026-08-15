@@ -250,8 +250,16 @@
   .card-btn.plain:hover,
   .card-btn.plain:focus-visible { border-color: var(--accent); color: #fff; }
   .card-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  /* The Tactics card whose Customize opened the picker stays marked while it is open. */
+  /* The two cards of a row are the shared panel's mode selector: while the
+     panel is open, the selected option — AI simulation or Single player —
+     stays highlighted and the row's other option is muted. A muted card
+     un-mutes under the pointer, because clicking it is how the panel
+     switches who is at the keyboard. */
+  .mode-card { transition: opacity 0.15s ease; }
   .mode-card.picking { border-color: var(--accent); }
+  .mode-card.muted { opacity: 0.55; }
+  .mode-card.muted:hover,
+  .mode-card.muted:focus-within { opacity: 1; }
 
   /* The customization panels: each one lives inside the menu grid as a
      full-width row directly below the pair of cards it customizes — the
@@ -289,7 +297,9 @@
   .picker-back { flex: none; color: var(--text); }
   .picker-back:hover,
   .picker-lens:hover { border-color: var(--accent); color: #fff; }
-  .picker-lens[aria-selected="true"] { border-color: var(--accent); background: #2a3f52; color: #fff; }
+  .picker-lens[aria-selected="true"],
+  .picker-lens[aria-pressed="true"] { border-color: var(--accent); background: #2a3f52; color: #fff; }
+  .picker-modes { display: flex; flex-wrap: wrap; gap: 8px; }
   .picker-back:focus-visible,
   .picker-lens:focus-visible,
   .battle-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -399,14 +409,17 @@
          card reads top to bottom as name, description, actions, tags: the
          title line carries the card's name on the left and who is at the
          keyboard on the right; the photograph and the name both open the
-         simulator immediately on the card's preset, exactly as the verb
-         button does; Customize opens the customization panel in place,
-         directly below the card's own row — the battle picker for Tactics,
-         the world picker for the full game — and each tag opens that panel
-         on the section the tag names. Without scripting, Customize and the
-         tags still land somewhere honest: the stock Tactics world, or the
-         simulator's own Game setup drawer (`?setup=1`). Each card's
-         photograph is a real capture of its own preset. -->
+         simulator immediately on the card's preset; the one Watch/Play
+         Customized button opens the row's shared customization panel in
+         place, directly below the row — the battle picker for Tactics, the
+         world picker for the full game — and each tag opens that panel on
+         the section the tag names. While a row's panel is open its two
+         cards are the mode selector: the selected option — AI simulation or
+         Single player — highlights and the other is muted, and the panel's
+         own chips switch between them in place. Without scripting, the
+         buttons and tags still land somewhere honest: the stock Tactics
+         world, or the simulator's own Game setup drawer (`?setup=1`). Each
+         card's photograph is a real capture of its own preset. -->
     <section class="quadrants" aria-label="Game menu">
       <div class="grid-corner" aria-hidden="true"></div>
       <h2 class="col-head">Design &amp; Watch <span>AI simulations</span></h2>
@@ -424,8 +437,7 @@
           </div>
           <p class="card-desc">Two AI commanders fight a single battle while you watch.</p>
           <div class="card-actions">
-            <a class="card-btn verb-watch" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" aria-labelledby="watch-tactics-title">Watch</a>
-            <a class="card-btn plain" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" aria-label="Customize a watched Tactics battle">Customize</a>
+            <a class="card-btn verb-watch" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" aria-label="Customize and watch a Tactics battle">Watch Customized</a>
           </div>
           <ul class="card-tags" aria-label="Watch CIVVIS Tactics features">
             <li><a href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" data-lens="custom">AI vs AI</a></li>
@@ -447,8 +459,7 @@
           </div>
           <p class="card-desc">Command one side of a battle against the AI.</p>
           <div class="card-actions">
-            <a class="card-btn verb-play" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" aria-labelledby="play-tactics-title">Play</a>
-            <a class="card-btn plain" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" aria-label="Customize a played Tactics battle">Customize</a>
+            <a class="card-btn verb-play" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" aria-label="Customize and play a Tactics battle">Play Customized</a>
           </div>
           <ul class="card-tags" aria-label="Play CIVVIS Tactics features">
             <li><a href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" data-lens="custom">You vs Different AI Strategies &amp; Difficulties</a></li>
@@ -475,6 +486,10 @@
           </div>
           <button class="picker-back" type="button" id="battle-picker-back">← Back</button>
         </div>
+        <div class="picker-modes" id="battle-modes" role="group" aria-label="Who is at the keyboard">
+          <button class="picker-lens" type="button" data-mode="watch" aria-pressed="true">AI simulation</button>
+          <button class="picker-lens" type="button" data-mode="play" aria-pressed="false">Single player</button>
+        </div>
         <div class="picker-lenses" id="battle-lenses" role="tablist" aria-label="Battle catalog view">
           <button class="picker-lens" type="button" role="tab" data-lens="custom" aria-selected="true">Custom</button>
           <button class="picker-lens" type="button" role="tab" data-lens="era" aria-selected="false">Era-based</button>
@@ -497,8 +512,7 @@
           </div>
           <p class="card-desc">A full game played end to end by AI civilizations.</p>
           <div class="card-actions">
-            <a class="card-btn verb-watch" href="../" aria-labelledby="watch-civ-title">Watch</a>
-            <a class="card-btn plain" href="../?setup=1" data-pick="watch-civ" aria-label="Customize a watched game">Customize</a>
+            <a class="card-btn verb-watch" href="../?setup=1" data-pick="watch-civ" aria-label="Customize and watch a full game">Watch Customized</a>
           </div>
           <ul class="card-tags" aria-label="Watch CIVVIS features">
             <li><a href="../?setup=1" data-pick="watch-civ" data-lens="seats">AI Empires</a></li>
@@ -520,8 +534,7 @@
           </div>
           <p class="card-desc">A full game — take one civilization against AI rivals.</p>
           <div class="card-actions">
-            <a class="card-btn verb-play" href="../?mode=play" aria-labelledby="play-civ-title">Play</a>
-            <a class="card-btn plain" href="../?mode=play&amp;setup=1" data-pick="play-civ" aria-label="Customize a played game">Customize</a>
+            <a class="card-btn verb-play" href="../?mode=play&amp;setup=1" data-pick="play-civ" aria-label="Customize and play a full game">Play Customized</a>
           </div>
           <ul class="card-tags" aria-label="Play CIVVIS features">
             <li><a href="../?mode=play&amp;setup=1" data-pick="play-civ" data-lens="seats">Your Seat</a></li>
@@ -546,6 +559,10 @@
             <p id="game-picker-copy"></p>
           </div>
           <button class="picker-back" type="button" id="game-picker-back">← Back</button>
+        </div>
+        <div class="picker-modes" id="game-modes" role="group" aria-label="Who is at the keyboard">
+          <button class="picker-lens" type="button" data-mode="watch-civ" aria-pressed="true">AI simulation</button>
+          <button class="picker-lens" type="button" data-mode="play-civ" aria-pressed="false">Single player</button>
         </div>
         <div class="picker-lenses" id="game-lenses" role="tablist" aria-label="Game setup view">
           <button class="picker-lens" type="button" role="tab" data-lens="worlds" aria-selected="true">Worlds</button>
@@ -911,14 +928,22 @@
         "A fresh world every visit, played end to end by AI civilizations. Each card starts that simulation; every other setting is in the simulator’s Game setup."],
     };
     const isCiv = which => which === "watch-civ" || which === "play-civ";
-    // A card is marked while a panel it opened is on screen.
+    // The two cards of a row are their shared panel's mode selector. While
+    // the row's panel is open, the card whose mode is selected highlights
+    // and the row's other option is muted; the panel's own mode chips say
+    // the same thing in place.
     const markPicking = () => {
-      const active = new Set();
-      if (!picker.hidden) active.add(mode);
-      if (!gamePicker.hidden) active.add(civMode);
-      for (const card of document.querySelectorAll(".mode-card"))
-        card.classList.toggle("picking",
-          [...card.querySelectorAll("[data-pick]")].some(el => active.has(el.dataset.pick)));
+      for (const card of document.querySelectorAll(".mode-card")) {
+        const pick = card.querySelector("[data-pick]")?.dataset.pick;
+        if (!pick) continue;
+        const shown = isCiv(pick) ? !gamePicker.hidden : !picker.hidden;
+        const selected = shown && pick === (isCiv(pick) ? civMode : mode);
+        card.classList.toggle("picking", selected);
+        card.classList.toggle("muted", shown && !selected);
+      }
+      for (const chip of document.querySelectorAll(".picker-modes [data-mode]"))
+        chip.setAttribute("aria-pressed",
+          String(chip.dataset.mode === (isCiv(chip.dataset.mode) ? civMode : mode)));
     };
     // Either panel opens directly below its own row of cards — the battle
     // picker under the Tactics row, the world picker under the CIVVIS row —
@@ -977,6 +1002,14 @@
       civLens = button.dataset.lens;
       renderGame();
     });
+    // The chips switch who is at the keyboard without closing the panel or
+    // scrolling away; the section that was open stays open.
+    for (const bar of [document.getElementById("battle-modes"), document.getElementById("game-modes")])
+      bar.addEventListener("click", event => {
+        const chip = event.target.closest("[data-mode]");
+        if (!chip) return;
+        open(chip.dataset.mode, isCiv(chip.dataset.mode) ? civLens : lens, false);
+      });
     document.getElementById("battle-picker-back").addEventListener("click", () => {
       close(picker);
       document.querySelector(".quadrants").scrollIntoView({ behavior: "smooth", block: "start" });
