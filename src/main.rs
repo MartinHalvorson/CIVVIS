@@ -1012,13 +1012,18 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// becomes live only through `enable_live_bridge` (or an explicit engine-repair
 /// evaluation arm). The frozen `advanced_v1` controller retains its project
 /// queues, so this is a compatibility re-pin rather than an Elo protocol move.
+/// The opening Scout, six-city fog floor, civilian policy timing, government
+/// prerequisite, zero-damage queue protection, and stalled-Settler founding
+/// changes are all behind live-bridge treatment flags. `BasicAi::new()` and
+/// `AdvancedAi::legacy()` leave those flags false; the focused ablation tests
+/// lock the boundary. Compatibility re-pin; the Elo protocol does not move.
 /// Physical Great People that have no host-valid activation plot now add
 /// mirror-only production and research needs. `Game::new` leaves that list
 /// empty, old saves default it empty, and only `mirror.rs` populates it from a
 /// Firaxis unit export. The assertion below locks that boundary, so the frozen
 /// headless anchor cannot enter any of the new planning branches. Compatibility
 /// re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4dea_9377_bb0e_bb4d;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xaaf5_91fa_febe_ea9f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
