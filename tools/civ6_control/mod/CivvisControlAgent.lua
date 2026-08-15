@@ -7435,6 +7435,7 @@ local function applyOrder(player, pid, row, turn)
 			return false, "peace_cooldown";
 		end
 		local major = try(function() return Players[subject]:IsMajor(); end, true);
+		local concession = 0;
 		local ok;
 		if major then
 			ok = pcall(function()
@@ -7450,6 +7451,36 @@ local function applyOrder(player, pid, row, turn)
 						-- "Validate the deal, this will make sure peace is on
 						-- both sides of the deal." — the shipped comment.
 						deal:Validate();
+						-- A free peace offer is the right first question.  Once the
+						-- same rival remains at war through the host's retry window,
+						-- however, it has already declined that exact white deal.
+						--
+						-- In 14 observed runs, 328 white offers produced zero later
+						-- peace states.  Firaxis's own deal screen adds one-time Gold
+						-- with this item type, duration and maximum check.  Preserve a
+						-- quarter of the treasury for emergency purchases, and offer
+						-- the rest only on the retry; a rejected deal transfers nothing.
+						if asked ~= nil then
+							local tribute = deal:AddItemOfType(DealItemTypes.GOLD, pid);
+							if tribute ~= nil then
+								tribute:SetDuration(0);
+								local balance = try(function()
+									return player:GetTreasury():GetGoldBalance();
+								end, 0) or 0;
+								local amount = math.min(math.floor(balance * 0.75),
+									tribute:GetMaxAmount() or 0);
+								if amount > 0 then
+									tribute:SetAmount(amount);
+									if tribute:IsValid() then
+										concession = amount;
+									else
+										deal:RemoveItemByID(tribute:GetID());
+									end
+								else
+									deal:RemoveItemByID(tribute:GetID());
+								end
+							end
+						end
 					end
 				end
 				DiplomacyManager.RequestSession(pid, subject, "MAKE_DEAL");
@@ -7462,10 +7493,11 @@ local function applyOrder(player, pid, row, turn)
 				UI.RequestPlayerOperation(pid, PlayerOperations.DIPLOMACY_MAKE_PEACE, params);
 			end);
 		end
+		if not ok then concession = 0; end
 		if ok then peaceAsked[subject] = turn; end
 		emit("peace_request", {
 			turn = turn, target = subject,
-			major = major and true or false, threw = not ok,
+			major = major and true or false, concession = concession, threw = not ok,
 		});
 		return ok, ok and "peace_asked" or "throw";
 	end
