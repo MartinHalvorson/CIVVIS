@@ -800,6 +800,13 @@ class MatchMachine:
         """Run long work while preserving terminal, deadline, and host limits."""
         log_path.parent.mkdir(parents=True, exist_ok=True)
         started = time.monotonic()
+        # This loop keeps the process SIGSTOPped for admission, host pressure,
+        # visible-game yields, and the build duty cycle, so a wall-clock
+        # deadline kills healthy throttled work long before it has spent its
+        # budget.  Only unpaused execution ages against ``timeout``; the
+        # duty-cycle branch charges its own run pulses explicitly.
+        run_seconds = 0.0
+        last_check = started
         paused = False
         admission_pending = False
         cpu_throttled = purpose == "build"
@@ -839,6 +846,9 @@ class MatchMachine:
                 )
             while process.poll() is None:
                 now = time.monotonic()
+                if not paused:
+                    run_seconds += now - last_check
+                last_check = now
                 if self.stopping:
                     stop_process(process, timeout=2)
                     return None
@@ -851,7 +861,7 @@ class MatchMachine:
                     self.event("operator_window_ended", purpose=purpose)
                     stop_process(process, timeout=2)
                     return None
-                if now - started >= timeout:
+                if run_seconds >= timeout:
                     stop_process(process, timeout=2)
                     raise subprocess.TimeoutExpired(args, timeout)
 
@@ -964,6 +974,10 @@ class MatchMachine:
                             raise RuntimeError("cannot re-pause resource-capped build")
                         paused = True
                     time.sleep(BUILD_CPU_DUTY_CYCLE_SECONDS * (1.0 - duty))
+                    # The pulse ran with ``paused`` True at the next loop top
+                    # (the cycle always re-pauses a live process), so charge
+                    # its run share here rather than from the loop clock.
+                    run_seconds += BUILD_CPU_DUTY_CYCLE_SECONDS * duty
                     continue
                 comfortable = sample.comfortably_below(
                     self.args.limit, margin=RESUME_MARGIN
@@ -1587,7 +1601,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=max(1, int((os.cpu_count() or 1) * 0.4)),
         help="Cargo workers (default: 40%% of logical CPUs)",
     )
-    parser.add_argument("--build-timeout", type=float, default=1800)
+    parser.add_argument(
+        "--build-timeout",
+        type=float,
+        default=1800,
+        help="seconds of unpaused build execution; pauses and duty-cycle stops do not age it",
+    )
     parser.add_argument("--build-retry", type=float, default=60)
     parser.add_argument("--sync-interval", type=float, default=300)
     parser.add_argument("--poll", type=float, default=1)

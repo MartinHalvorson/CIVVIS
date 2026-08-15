@@ -682,6 +682,83 @@ class MatchMachineTests(unittest.TestCase):
                 ],
             )
 
+    def test_paused_build_does_not_age_against_the_timeout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.runtime = root
+            subject.args = SimpleNamespace(limit=60, poll=1)
+            subject.deadline = 10_000.0
+            subject.stopping = False
+            subject.watched_terminal_closed = mock.Mock(return_value=False)
+            subject.event = mock.Mock()
+            process = mock.Mock(pid=1234, returncode=0)
+            process.poll.side_effect = [None, None, None, None, 0]
+
+            with mock.patch.object(
+                machine.subprocess, "Popen", return_value=process
+            ), mock.patch.object(
+                machine, "resources", return_value=machine.Resources(90, 20, 12, 0, False)
+            ), mock.patch.object(
+                machine, "set_paused", return_value=True
+            ), mock.patch.object(
+                machine.time, "monotonic", side_effect=[0.0, 10.0, 20.0, 30.0]
+            ), mock.patch.object(machine.time, "sleep"), mock.patch.object(
+                machine, "stop_process"
+            ) as stop:
+                result = subject.resource_capped_command(
+                    "cargo",
+                    "build",
+                    cwd=root,
+                    env=None,
+                    timeout=5,
+                    purpose="build",
+                    log_path=root / "build.log",
+                )
+
+            self.assertEqual(result.returncode, 0)
+            stop.assert_not_called()
+
+    def test_duty_cycle_run_pulses_age_the_build_toward_its_timeout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.runtime = root
+            subject.args = SimpleNamespace(limit=60, poll=1)
+            subject.deadline = 10_000.0
+            subject.stopping = False
+            subject.watched_terminal_closed = mock.Mock(return_value=False)
+            subject.event = mock.Mock()
+            process = mock.Mock(pid=1234, returncode=None)
+            process.poll.return_value = None
+            duty = machine.build_cpu_duty_cycle(10, 60)
+            self.assertGreater(duty, 0.0)
+            timeout = 2.5 * machine.BUILD_CPU_DUTY_CYCLE_SECONDS * duty
+
+            with mock.patch.object(
+                machine.subprocess, "Popen", return_value=process
+            ), mock.patch.object(
+                machine, "resources", return_value=machine.Resources(10, 10, 12, 0, False)
+            ), mock.patch.object(
+                machine, "set_paused", return_value=True
+            ), mock.patch.object(
+                machine.time, "monotonic", side_effect=[float(i) for i in range(12)]
+            ), mock.patch.object(machine.time, "sleep"), mock.patch.object(
+                machine, "stop_process"
+            ) as stop:
+                with self.assertRaises(machine.subprocess.TimeoutExpired):
+                    subject.resource_capped_command(
+                        "cargo",
+                        "build",
+                        cwd=root,
+                        env=None,
+                        timeout=timeout,
+                        purpose="build",
+                        log_path=root / "build.log",
+                    )
+
+            stop.assert_called_once_with(process, timeout=2)
+
     def test_background_head_build_enables_visible_priority(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)
         subject.build_executor = mock.Mock()
