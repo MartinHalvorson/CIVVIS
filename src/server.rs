@@ -10524,7 +10524,7 @@ mod tests {
             ".minimap-frame.minimap-world-planet { width: 164px; height: 150px; }"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "position: absolute; z-index: 2; right: 10px; bottom: 9px;"
+            "position: absolute; z-index: 2; right: 8px; bottom: 9px;"
         ));
         // On a globe the minimap frame is square, so a dragged edge has to
         // carry the other axis with it. The square is settled *while* the
@@ -12533,7 +12533,9 @@ mod tests {
         assert!(EMBEDDED_INDEX
             .contains("const AZIMUTHAL_MINI_WORLD_SHARE = AZIMUTHAL_WORLD_SHARE;"));
         assert!(EMBEDDED_INDEX.contains("const AZIMUTHAL_MINI_SQUARE_HALF = (() => {"));
-        assert!(EMBEDDED_INDEX.contains("if (cropShare(mid) < AZIMUTHAL_MINI_WORLD_SHARE) low = mid; else high = mid;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (share < AZIMUTHAL_MINI_WORLD_SHARE) low = mid; else high = mid;"
+        ));
         assert!(EMBEDDED_INDEX.contains("function azimuthalMiniLocalSphereAt(x0, y0)"));
         assert!(EMBEDDED_INDEX.contains("function azimuthalMiniSphereAt(x, y, projection)"));
         assert!(EMBEDDED_INDEX.contains("function azimuthalMiniScreenPoint(point, projection)"));
