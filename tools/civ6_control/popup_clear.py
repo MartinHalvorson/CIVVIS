@@ -572,6 +572,7 @@ def main():
     cleared = 0
     last_target, misses = None, 0
     esc_sent = False
+    no_target_passes = 0
     waiting_since = None
     warned_setup = False
     warned_cards = False
@@ -604,6 +605,7 @@ def main():
                 covered = kind != "map"
                 if kind == "map":
                     esc_sent = False
+                    no_target_passes = 0
                 elif kind == "card" and not args.cards:
                     # ⚠ OFF BY DEFAULT, ON EVIDENCE. With the counter fixed, the
                     # mod closes completion cards from Lua and says so:
@@ -624,6 +626,24 @@ def main():
                             "this is setup, not a popup -- not clicking")
                 elif not targets:
                     log(f"{kind} on screen (dark={dark:.2f}) but no target found; leaving it alone")
+                    if kind == "leader":
+                        no_target_passes += 1
+                        # The same watchdog-spending screen as the animated
+                        # conversation, one branch later: a leader scene whose
+                        # buttons never render a findable target (run
+                        # civvis-20260815T091500Z sat at dark=0.53 until the
+                        # outer watchdog spent the attempt). The fading-in case
+                        # from 2026-08-02 resolves within a pass or two, so four
+                        # consecutive empty reads is a scene that will never
+                        # offer one — give it the single ESC the clicked path
+                        # already gets, behind the same once-per-scene latch.
+                        if (no_target_passes >= 4 and not esc_sent
+                                and front.startswith("Civ6")):
+                            macos_input.press_key("escape", check=True)
+                            esc_sent = True
+                            log("leader scene offered no target on 4 passes; sent ESC once")
+                    else:
+                        no_target_passes = 0
                 elif (choice := click_target(kind, targets, window.size[0])) is None:
                     log("advisor has no safe left-side acknowledgement; leaving it alone")
                 elif not front.startswith("Civ6"):
