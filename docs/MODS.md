@@ -100,8 +100,9 @@ effect. Lifting that ceiling is what
 
 ## Example
 
-`mods/swift-legions/` in this repository is a complete two-file mod, and the
-tests in `src/mods.rs` are the specification for everything above.
+`mods/swift-legions/` in this repository is a complete mod — `mod.json` plus
+its `units.json` and `speeds.json` overlays — and the tests in `src/mods.rs`
+are the specification for everything above.
 
 `mods/modified-future-era/` is the other kind of example: a mod the engine also
 ships as a lobby setting. Its two overlay files put ore on the Moon and add the
