@@ -43,6 +43,10 @@ def args(**changes):
 
 
 class Civ6PlayTest(unittest.TestCase):
+    def test_supervised_defaults_are_stock_science(self) -> None:
+        self.assertEqual(civ6_play.DEFAULT_CIVVIS_VICTORY, "science")
+        self.assertEqual(civ6_play.DEFAULT_CIVVIS_STRATEGY, "")
+
     def test_startup_ignores_auto_close_events_until_the_agent_is_loaded(self) -> None:
         self.assertFalse(civ6_play.startup_event_proves_game_started({
             "ctx": "autoclose", "kind": "autoclose_armed"
