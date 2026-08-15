@@ -13593,7 +13593,7 @@ impl AdvancedAi {
         }
     }
 
-    /// Let the live city-siege treatment interrupt one unsafe committed queue.
+    /// Let the live city-siege treatment interrupt one unsafe queue.
     /// `BasicAi::besieged_city_item` normally reaches only an empty queue
     /// through `pick_item`, while Recovery's strategic governor skips a
     /// commitment at its safe default preemption margin. That left a city
@@ -13606,8 +13606,11 @@ impl AdvancedAi {
     /// evaluator still supplies the visibility/damage proof and the exact
     /// defensive item. Before damage, that evaluator proves a multi-unit siege;
     /// this handoff may act on that proof only during an active major war.
-    /// It is live-only, preserves repairs, walls, and military production, and
-    /// claims at most one unsafe queue each turn.
+    /// `release_foreign_production` can also deliberately clear a host-owned
+    /// queue just before this pass. The newly empty city needs the same
+    /// handoff, or the ordinary governor refills it before the siege evaluator
+    /// can act. This is live-only, preserves repairs, walls, and military
+    /// production, and claims at most one unsafe queue each turn.
     fn redirect_unsafe_city_queue_for_defense(&self, g: &mut Game, pid: usize) {
         if !self.base.garrison_under_fire {
             return;
@@ -13620,12 +13623,13 @@ impl AdvancedAi {
                 && !player.is_barbarian
                 && g.is_at_war(pid, player.id)
         });
-        let mut best: Option<(i32, u32, Item, Item)> = None;
+        let mut best: Option<(i32, u32, Option<Item>, Item)> = None;
         for city in g.player_city_ids(pid) {
-            let Some(committed) = g.cities[&city].queue.first().cloned() else {
-                continue;
-            };
-            if Self::active_queue_is_defensive(g, &committed) {
+            let committed = g.cities[&city].queue.first().cloned();
+            if committed
+                .as_ref()
+                .is_some_and(|item| Self::active_queue_is_defensive(g, item))
+            {
                 continue;
             }
             let Some(defence) = self.base.besieged_city_item(g, pid, city) else {
@@ -13666,9 +13670,15 @@ impl AdvancedAi {
         .is_ok()
             && self.journal().wants(crate::reasoning::Level::Decision)
         {
-            think!(self.journal(), Economy, Decision,
-                "{} pauses {} for {}", city_name, Self::plain_item(&committed), Self::plain_item(&defence);
-                "under fire or facing a confirmed major-war siege with {damage} combined city/wall health missing; this is the highest-priority unsafe queue");
+            if let Some(committed) = committed {
+                think!(self.journal(), Economy, Decision,
+                    "{} pauses {} for {}", city_name, Self::plain_item(&committed), Self::plain_item(&defence);
+                    "under fire or facing a confirmed major-war siege with {damage} combined city/wall health missing; this is the highest-priority unsafe queue");
+            } else {
+                think!(self.journal(), Economy, Decision,
+                    "{} starts {}", city_name, Self::plain_item(&defence);
+                    "under fire or facing a confirmed major-war siege with {damage} combined city/wall health missing after a host queue release");
+            }
         }
     }
 
@@ -23918,6 +23928,66 @@ mod tests {
             !spec.siege && spec.is_melee_capable(),
             "the live emergency must replace siege with a unit that can defend locally; queued {unit}"
         );
+    }
+
+    #[test]
+    fn live_siege_response_starts_a_local_defender_after_a_queue_release() {
+        // Fresh-board planning seeds whatever Firaxis is building, then the
+        // bridge intentionally clears a queue it did not order. At t125 of
+        // the Ravenna siege, that left a bleeding walled city empty immediately
+        // before AdvancedAi's production pass. The old handoff considered only
+        // a committed queue, so it could not reserve the city for its local
+        // defender before ordinary production filled it.
+        let (mut game, city, _) = empire_with_a_capital(71_116);
+        game.players[0]
+            .techs
+            .extend([crate::name!("masonry"), crate::name!("engineering")]);
+        let city_state = game.cities.get_mut(&city).expect("capital exists");
+        city_state.buildings.push(crate::name!("walls"));
+        city_state.wall_hp = 100;
+        city_state.hp = 170;
+        assert!(
+            city_state.queue.is_empty(),
+            "the bridge's released host queue is the regression precondition"
+        );
+
+        // The frozen/default controller must leave the released queue alone.
+        let mut untouched = game.clone();
+        AdvancedAi::new().redirect_unsafe_city_queue_for_defense(&mut untouched, 0);
+        assert!(untouched.cities[&city].queue.is_empty());
+
+        let mut live = AdvancedAi::new();
+        live.enable_garrison_under_fire();
+        live.redirect_unsafe_city_queue_for_defense(&mut game, 0);
+        let defender = game.cities[&city]
+            .queue
+            .first()
+            .cloned()
+            .expect("the released under-fire city starts a local defender");
+        let Item::Unit { unit } = &defender else {
+            panic!("the emergency queue must be a unit");
+        };
+        let spec = &game.rules.units[unit];
+        assert!(
+            !spec.siege && spec.is_melee_capable(),
+            "the live emergency must start a unit that can defend locally; queued {unit}"
+        );
+
+        // The regular strategic governor runs later on the same turn. Its
+        // default preemption margin must preserve the defender that the
+        // handoff just started rather than treating the released queue as a
+        // fresh opportunity for ordinary production.
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 1,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        live.advanced_production(&mut game, 0, &plan, false);
+        assert_eq!(game.cities[&city].queue.first(), Some(&defender));
     }
 
     #[test]
