@@ -147,6 +147,9 @@ const REINFORCEMENT_FRONT_RADIUS: i32 = 8;
 /// Recovery is described in `assess` as a temporary battlefield posture. It
 /// lasted 164 turns on `civvis-20260802T205959Z` because its trigger is a
 /// condition it cannot resolve. This is what "temporary" is worth.
+/// Raw production value the live wonder race adds on top of a wonder's yields.
+/// See `live_wonder_race` and the `Item::Wonder` arm of `production_value`.
+const LIVE_WONDER_RACE_BONUS: f64 = 1_500.0;
 const RECOVERY_POSTURE_LIMIT: u32 = 25;
 /// Tiles a rush will march. Measured capital separations on 6p 74x46 run a
 /// median 13 and a p90 17, so 16 covers roughly nine seats in ten while
@@ -1737,6 +1740,39 @@ pub struct AdvancedAi {
     /// native repair bundle enable it, so a Science plan can keep its project
     /// tempo except when host-observed happiness has become the binding loss.
     pub amenity_project_preemption: bool,
+    /// Race for wonders on the live Civilization VI seat.
+    ///
+    /// ★★★★ THE LIVE SEAT HAS NEVER ORDERED A WONDER, and the games it loses
+    /// are decided by score. Every one of the 20 completed Settler runs of
+    /// 2026-08-14/15 ended on the host's turn-250 score tally (400–650 against
+    /// a best rival at 1050–1550), and across those runs `orders.sqlite` holds
+    /// **zero** wonder `produce` orders. The `Item::Wonder` arm of
+    /// [`AdvancedAi::production_value`] returns −10 000 unless the plan is
+    /// Culture, the assigned lane is Score, or the seat is Egypt/China with no
+    /// lane at all — and the live seat is Trajan under `--victory civvis`, so
+    /// the arm never opens. The one run whose plan did flip to Culture
+    /// (`civvis-20260815T125502Z`) asked for six ancient wonders at turn 129
+    /// and got 21 host refusals in 27 orders, every one `offered: 0` — the
+    /// Firaxis rivals had long since finished them.
+    ///
+    /// The host scores 15 points per wonder — 13.6 points per 100 production
+    /// against 2.2 for a Library — and its Settler-difficulty rivals do not
+    /// contest them early. So on the live seat the plan-strategy gate is
+    /// dropped: a developed city (three buildings) in an empire that has
+    /// already begun expanding (three cities) may take the cheapest legal
+    /// wonder no more than two eras behind the world's, priced by
+    /// `LIVE_WONDER_RACE_BONUS`, one wonder in production empire-wide at a
+    /// time so the race never starves settlers, districts or defenders.
+    /// `threatened`, `city.buildings.len() < 2`, the remaining-turns budget
+    /// and the host's own `blocked_wonders` refusals all still apply exactly
+    /// as before.
+    ///
+    /// Off for ordinary and frozen controllers, and deliberately NOT part of
+    /// the native repair bundle: it prices a Firaxis-specific opportunity (an
+    /// uncontested wonder catalogue and a score tally at the turn limit), and
+    /// CIVVIS-vs-CIVVIS wonders are the contested race the stock gate was
+    /// written for.
+    pub live_wonder_race: bool,
     /// Price the city ceiling off the land the board actually shows, densely.
     ///
     /// ★★★★ THE STOCK CEILING IS WHAT LOSES SETTLER GAMES, and three live
@@ -2655,6 +2691,7 @@ impl AdvancedAi {
             city_target_floor: 3,
             plan_city_target: false,
             amenity_project_preemption: false,
+            live_wonder_race: false,
             wide_map_capacity: false,
             city_strategy: false,
             city_strategy_emphasis: true,
@@ -3350,6 +3387,9 @@ impl AdvancedAi {
         // and the rest of the Science queue while the district/building chain
         // completes.
         self.enable_amenity_project_preemption();
+        // Zero wonder orders in twenty live Settler runs that all ended on the
+        // host's score tally, 15 points a wonder. See `live_wonder_race`.
+        self.enable_live_wonder_race();
         // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
         // live runs the median empire ends on **30 techs of 77**, `engineering`
         // is reached by only **73%** and at a median turn **116** — which is why
@@ -3667,6 +3707,17 @@ impl AdvancedAi {
 
     pub fn disable_amenity_project_preemption(&mut self) {
         self.amenity_project_preemption = false;
+    }
+
+    /// Let a developed live city take the cheapest legal wonder whatever the
+    /// grand strategy says. See `live_wonder_race`: the live seat had never
+    /// ordered one, and its games end on the host's score tally.
+    pub fn enable_live_wonder_race(&mut self) {
+        self.live_wonder_race = true;
+    }
+
+    pub fn disable_live_wonder_race(&mut self) {
+        self.live_wonder_race = false;
     }
 
     /// Put `medina_quarter` and `insulae` in the deck when a city is short of
@@ -16052,13 +16103,48 @@ impl AdvancedAi {
                         Some(Item::Wonder { wonder: queued, .. }) if queued == wonder
                     )
                 });
+                let lane_opens = plan.strategy == GrandStrategy::Culture
+                    || self.victory_target == Some(VictoryTarget::Score)
+                    || (wonder_civ && self.victory_target.is_none());
+                // The live seat's race: see `live_wonder_race`. One wonder in
+                // production empire-wide, in a city with three buildings, once
+                // the empire holds three cities — a race the plan does not
+                // choose must not out-bid settlers, districts or defenders
+                // in more than one queue at a time.
+                // And only wonders no more than two eras behind the world's:
+                // the one live run whose plan did open the arm asked for six
+                // ANCIENT wonders at turn 129 (world era 4) and the host
+                // answered `offered: 0` twenty-one times — the Firaxis rivals
+                // had long since finished them, and every such refusal hands
+                // that city's queue to the mod's fallback for a turn. Two eras
+                // rather than one because the live seat itself runs one to two
+                // eras behind the world (18 techs at world era 3, 24 at 4 on
+                // run civvis-20260815T182350Z), so a one-era floor left it
+                // nothing it could actually build.
+                let wonder_era = spec
+                    .tech
+                    .as_deref()
+                    .and_then(|tech| g.rules.techs.get(tech).map(|node| node.era))
+                    .or_else(|| {
+                        spec.civic
+                            .as_deref()
+                            .and_then(|civic| g.rules.civics.get(civic).map(|node| node.era))
+                    })
+                    .unwrap_or(0);
+                let live_race_opens = self.live_wonder_race
+                    && !lane_opens
+                    && city_count >= 3
+                    && city.buildings.len() >= 3
+                    && wonder_era + 2 >= g.world_era
+                    && !g.cities.values().any(|other| {
+                        other.owner == pid
+                            && matches!(other.queue.first(), Some(Item::Wonder { .. }))
+                    });
                 if already_queued
                     || threatened
                     || city.buildings.len() < 2
                     || turns > remaining_turns * 0.65
-                    || (plan.strategy != GrandStrategy::Culture
-                        && self.victory_target != Some(VictoryTarget::Score)
-                        && (!wonder_civ || self.victory_target.is_some()))
+                    || !(lane_opens || live_race_opens)
                 {
                     -10_000.0
                 } else {
@@ -16067,7 +16153,21 @@ impl AdvancedAi {
                         + spec.amenity * 50.0
                         + spec.great_work_slots.values().sum::<i32>() as f64 * 40.0
                         + spec.great_person_points.values().sum::<f64>() * 18.0
-                        + if plan.strategy == GrandStrategy::Culture {
+                        + if live_race_opens {
+                            // Priced in the same units as the rest of this
+                            // function, which is normalised by (7 + build
+                            // turns) before ranking: a Library the live journal
+                            // reports "worth 74" carries a raw of ~960, a
+                            // Settler "worth 130" ~1 560. The Score lane's
+                            // +180 never wins that contest — which is why the
+                            // Score lane builds no wonders either. Fifteen
+                            // host score points at ~100 raw each puts a
+                            // 220-cost wonder at ~80 in a 20-production city
+                            // (above a Library, below a Settler) and ~30 in a
+                            // 5-production one (below both) — strong cities
+                            // race, weak ones keep developing.
+                            LIVE_WONDER_RACE_BONUS
+                        } else if plan.strategy == GrandStrategy::Culture {
                             320.0
                         } else if self.victory_target == Some(VictoryTarget::Score) {
                             180.0
@@ -21661,6 +21761,13 @@ impl AdvancedAi {
                 }
             }
         }
+        // A home raider supplies a bounded defensive assignment, not a second
+        // major-war front. Remember this exact shape so responders keep their
+        // first claim below while every other pre-war campaign unit can retain
+        // its staging order.
+        let barbarian_only = g
+            .barb_pid
+            .filter(|barb| enemies.len() == 1 && enemies[0] == *barb);
         if enemies.is_empty() {
             if spec.domain.as_deref() == Some("sea") {
                 if let Some(settler) = unit
@@ -22069,6 +22176,17 @@ impl AdvancedAi {
                     return true;
                 }
                 return self.base.tactical_step(g, pid, uid, threat, &barb_only, radius);
+            }
+        }
+        // The defender's claim above is deliberately bounded to the nearest
+        // half-army. Let the unclaimed remainder keep assembling on its
+        // campaign ring rather than falling through to the barbarian tactical
+        // path, which treats the foreign objective as a one-tile approach and
+        // pulls correctly staged units out of position. Major wars continue to
+        // use their existing group and reinforcement path unchanged.
+        if barbarian_only.is_some() {
+            if let Some(acted) = self.campaign_staging_step(g, pid, uid, plan) {
+                return acted;
             }
         }
         let defend_target = plan.threatened_city.and_then(|cid| {
@@ -38383,6 +38501,150 @@ mod tests {
         );
     }
 
+    /// ★★★★★ A HOME RAIDER MUST NOT FREEZE THE REST OF A PRE-WAR ARMY.
+    ///
+    /// The live bridge intentionally puts the barbarian seat in `enemies`
+    /// while a raider threatens a city. That made the controller leave the
+    /// `enemies.is_empty()` branch, which contains `campaign_staging_step`.
+    /// Consequently, the bounded home-defense assignment did not merely claim
+    /// its responder: it paused every unclaimed assault unit until the raider
+    /// disappeared. On live run `civvis-20260815T190904Z`, Rome held off its
+    /// Netherlands declaration from turns 95 through 104 despite 337--462
+    /// power against 69--76, while home raiders remained in range.
+    #[test]
+    fn a_distant_campaign_unit_stays_staged_while_barbarians_are_at_home() {
+        let mut game = Game::new_full(2, 30, 20, 90_078, 120, 0, true);
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        for uid in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(uid);
+        }
+
+        let mut land: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        land.sort();
+        let mut sites = None;
+        'find_sites: for home in &land {
+            for objective in &land {
+                if game.wdist(*home, *objective) >= 16
+                    && game.wdisk(*home, crate::ai::HOME_THREAT_RADIUS).len() >= 24
+                    && game.wdisk(*objective, 4).len() >= 18
+                {
+                    sites = Some((*home, *objective));
+                    break 'find_sites;
+                }
+            }
+        }
+        let (home, objective_site) = sites.expect("the map has separated interior city sites");
+        for (player, site) in [(0, home), (1, objective_site)] {
+            game.current = player;
+            let settler = game.spawn_test_unit("settler", player, site);
+            game.apply(player, &Action::FoundCity { unit: settler })
+                .expect("each chosen site can found a city");
+        }
+        game.current = 0;
+        game.record_contact(0, 1);
+        let target_city = game.player_city_ids(1)[0];
+        let objective = game.cities[&target_city].pos;
+        let barb = game.barb_pid.expect("a barbarian-seated game has barb_pid");
+        for uid in game.units.keys().copied().collect::<Vec<_>>() {
+            if game.units[&uid].owner == barb {
+                game.remove_unit(uid);
+            }
+        }
+        let open = |g: &Game, pos: Pos| {
+            g.map
+                .get(pos)
+                .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                && g.city_at(pos).is_none()
+                && g.units_at(pos).is_empty()
+        };
+        let raider_at = game
+            .wdisk(home, crate::ai::HOME_THREAT_RADIUS - 1)
+            .into_iter()
+            .filter(|pos| open(&game, *pos))
+            .max_by_key(|pos| (game.wdist(*pos, objective), *pos))
+            .expect("the home ring has an open land tile");
+        game.spawn_test_unit("warrior", barb, raider_at);
+        let staging_at = game
+            .wdisk(objective, 4)
+            .into_iter()
+            .filter(|pos| {
+                open(&game, *pos)
+                    && game.wdist(*pos, objective) == 4
+                    && game.wdist(*pos, raider_at) > 10
+                    && game.nbrs(*pos).into_iter().any(|next| {
+                        game.wdist(next, objective) == 3
+                            && game.map.get(next).is_some_and(|tile| {
+                                tile.owner_city
+                                    .and_then(|city| game.cities.get(&city))
+                                    .is_none_or(|city| city.owner != 1)
+                            })
+                    })
+            })
+            .max_by_key(|pos| (game.wdist(*pos, raider_at), *pos))
+            .expect("a legal staging tile remains outside the home-recall range");
+        let assault = game.spawn_test_unit("swordsman", 0, staging_at);
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(target_city),
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut ai = AdvancedAi::new();
+        ai.enable_home_defense();
+        ai.battlefront_observation = false;
+
+        assert!(
+            BasicAi::barbarian_presence_at_home(&game, 0),
+            "precondition: the barbarian is inside Rome's home-threat ring"
+        );
+        assert!(
+            ai.campaign_staging_position(&game, 0, 1, assault, objective, staging_at),
+            "precondition: the assault unit already occupies a lawful 3--5 staging tile"
+        );
+        assert_eq!(
+            ai.base.home_defense_objective(&game, 0, assault, &[barb]),
+            None,
+            "the assault unit is beyond the bounded recall range and stays unclaimed"
+        );
+
+        // This is the old fall-through: it treats the foreign city as a
+        // tactical destination even though the only actual enemy is the
+        // barbarian, and walks a correctly staged unit one tile closer.
+        let mut historic = game.clone();
+        let historic_ai = ai.clone();
+        assert!(
+            historic_ai
+                .base
+                .tactical_step(&mut historic, 0, assault, objective, &[barb], 1),
+            "precondition: the old tactical fallback would abandon the staging ring"
+        );
+        assert_ne!(
+            historic.units[&assault].pos, staging_at,
+            "the historical fallback must move the staged unit before this regression is meaningful"
+        );
+
+        let _ = ai.advanced_military_step(&mut game, 0, assault, &plan);
+        assert_eq!(
+            game.units[&assault].pos, staging_at,
+            "after bounded defenders get first claim, the unclaimed assault unit must hold its campaign staging tile"
+        );
+        assert!(
+            game.units[&assault].fortified,
+            "the campaign staging order must claim and hold the assault unit while the home raider is active"
+        );
+        assert!(
+            !game.is_at_war(0, 1),
+            "the pre-war staging treatment must not open the major war itself"
+        );
+    }
+
     /// ★★★★★ A RELIEF COLUMN MUST AIM AT THE SIEGE, NOT AT ITS OWN DOORSTEP.
     ///
     /// `domain_objective`'s `threatened_city` arm gathers every hostile within 8
@@ -41728,6 +41990,175 @@ mod research_probe {
         assert!(live.base.wonder_ring_settle_value);
         live.disable_wonder_ring_settle_value();
         assert!(!live.base.wonder_ring_settle_value);
+    }
+
+    /// Off by default, set only by the live bridge, holdable off on its own —
+    /// the wonder race follows the same contract as every other bridge
+    /// repair, so the frozen `advanced_v1` anchor keeps its ladder.
+    #[test]
+    fn only_the_live_bridge_races_for_wonders() {
+        assert!(!AdvancedAi::new().live_wonder_race);
+        assert!(!AdvancedAi::legacy().live_wonder_race);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.live_wonder_race);
+        live.disable_live_wonder_race();
+        assert!(!live.live_wonder_race);
+    }
+
+    /// The live seat had never ordered a wonder because the `Item::Wonder`
+    /// arm returns −10 000 for every plan but Culture and every lane but
+    /// Score. On the live seat a developed city in a three-city empire prices
+    /// the wonder at the Score-lane valuation; a second city may not open a
+    /// second race while the first is still building; and the stock
+    /// controller keeps refusing exactly as it always did.
+    #[test]
+    fn live_seat_races_for_one_wonder_at_a_time_and_stock_still_refuses() {
+        let mut game = Game::new_full(1, 32, 20, 91_772, 250, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let capital = game.player_city_ids(0)[0];
+        let techs: Vec<Name> = game.rules.techs.keys().cloned().collect();
+        let civics: Vec<Name> = game.rules.civics.keys().cloned().collect();
+        game.players[0].techs.extend(techs);
+        game.players[0].civics.extend(civics);
+        for position in game.cities[&capital].owned_tiles.clone() {
+            if position == game.cities[&capital].pos {
+                continue;
+            }
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("desert");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+        }
+        // Three buildings make the capital "developed"; two more cities make
+        // the empire one that has begun expanding.
+        for building in ["monument", "granary", "water_mill"] {
+            game.cities
+                .get_mut(&capital)
+                .unwrap()
+                .buildings
+                .push(Name::new(building));
+        }
+        let home = game.cities[&capital].pos;
+        let mut founded = 0;
+        let mut sites: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        sites.sort_unstable();
+        for site in sites {
+            if founded == 2 {
+                break;
+            }
+            let distant = game.wdist(site, home) >= 5
+                && game
+                    .player_city_ids(0)
+                    .iter()
+                    .all(|c| game.wdist(site, game.cities[c].pos) >= 5);
+            let tile = &game.map.tiles[&site];
+            if distant && game.rules.is_passable(tile) && !game.rules.is_water(tile) {
+                game.found_city_for(0, site, None);
+                founded += 1;
+            }
+        }
+        assert_eq!(game.player_city_ids(0).len(), 3, "fixture must hold three cities");
+        let pyramids = game
+            .producible_items(0, capital)
+            .into_iter()
+            .find(|item| matches!(item, Item::Wonder { wonder, .. } if wonder == "pyramids"))
+            .expect("the desert capital can place the Pyramids");
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 6,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        let stock = AdvancedAi::new();
+        assert!(
+            stock.production_value(&game, 0, capital, &pyramids, &plan, &stock.counts(&game, 0))
+                < -1_000.0,
+            "the stock controller keeps refusing wonders outside the Culture plan"
+        );
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        let raced =
+            live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0));
+        assert!(raced > 0.0, "the live seat opens the wonder arm: {raced}");
+        let mut score_lane = AdvancedAi::targeting(VictoryTarget::Score);
+        score_lane.enable_live_bridge();
+        let scored = score_lane.production_value(
+            &game,
+            0,
+            capital,
+            &pyramids,
+            &plan,
+            &score_lane.counts(&game, 0),
+        );
+        assert!(
+            raced > scored && scored > 0.0,
+            "the race must out-price the Score lane's token wonder appetite: {raced} vs {scored}"
+        );
+
+        // A second city may not open a second race while the capital builds.
+        game.cities.get_mut(&capital).unwrap().queue = vec![pyramids.clone()];
+        let other = game
+            .player_city_ids(0)
+            .into_iter()
+            .find(|c| *c != capital)
+            .unwrap();
+        for building in ["monument", "granary", "water_mill"] {
+            game.cities
+                .get_mut(&other)
+                .unwrap()
+                .buildings
+                .push(Name::new(building));
+        }
+        let another = game
+            .producible_items(0, other)
+            .into_iter()
+            .find(|item| matches!(item, Item::Wonder { wonder, .. } if wonder != "pyramids"));
+        if let Some(another) = another {
+            assert!(
+                live.production_value(&game, 0, other, &another, &plan, &live.counts(&game, 0))
+                    < -1_000.0,
+                "one wonder in production empire-wide at a time"
+            );
+        }
+
+        // A wonder three eras behind the world is one the Firaxis rivals have
+        // long since finished: the race does not ask for it.
+        game.cities.get_mut(&capital).unwrap().queue.clear();
+        game.world_era = 3;
+        assert!(
+            live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0))
+                < -1_000.0,
+            "an ancient wonder is not raced once the world is medieval"
+        );
+        game.world_era = 2;
+        assert!(
+            live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0))
+                > 0.0,
+            "wonders two eras behind the world are still raced"
+        );
+        game.world_era = 0;
+
+        // Withholding the treatment restores the stock refusal.
+        live.disable_live_wonder_race();
+        assert!(
+            live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0))
+                < -1_000.0
+        );
     }
 
     /// Off by default, set only by the live bridge, each holdable off on its
