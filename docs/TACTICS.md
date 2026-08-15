@@ -4,8 +4,9 @@
 `src/skirmish.rs` and `src/bin/battle_bench.rs`. §§1–8 are the original
 record, including the removal; §§9–10 record the operator-directed
 restoration, subsequent search improvements, and where they now run. §11
-records the arena deadline contract, and §12 the capture-the-flag
-objective.
+records the arena deadline contract, §12 the capture-the-flag
+objective, §13 the scenarios, and §15 the stock arena's move to two
+standing armies with no reinforcements (§14 is the lobby's setup order).
 
 ## 1. What the published state of the art is for this problem
 
@@ -606,7 +607,8 @@ attack at all.
 ## 11. Arena deadlines are draws (2026-08-08)
 
 Every Tactics setup surface offers a **50, 100, 150, or 200 turn** battle
-clock; 100 is the default. The command-line form is
+clock; 100 was the default when this was written (§15 moved it to 250 and
+added that rung on 2026-08-15). The command-line form is
 `--tactics-turn-limit <turns>`. A general explicit `--turns` value still
 overrides the Tactics choice for launchers that need a one-off cap.
 
@@ -935,3 +937,63 @@ tabs and card grid). It chose the same thing the Scenario select now chooses,
 one control up, and a setup pass reads better as one column of questions than
 as a column with a catalog folded into it. The catalog data it drew on is
 unchanged and still feeds the select and the briefing.
+
+## 15. The stock arena: two standing armies, no reinforcements (2026-08-15)
+
+Operator direction. The stock Tactics battle now opens with the two armies
+each side is dealt and **nothing behind them**: `TacticsRules::default()` is
+one city a side, **0 Production**, **0 Gold**, a technology every five turns,
+and a **250-turn** clock (a new top rung on the turn-limit ladder). No unit
+that was not on the field at turn one ever joins it, and nothing is upgraded
+mid-battle; the city stays as the objective the other side is coming for.
+Until this change the stock arena granted 30 Production and 30 Gold a turn on
+a 100-turn clock — every "stock economy" figure above was measured under that.
+
+Production per turn and Gold per turn are **still settings** on every setup
+surface — the lobby's Tactics card, `--tactics-production` / `--tactics-gold`
+on the command line, `tactics_production` / `tactics_gold` on `/setup` — so a
+reinforcement battle is one menu away; the default is what moved, not the
+menu.
+
+Two things kept honest by the profile:
+
+- The rating profile carries the arena's grants
+  (`arena=cities:1,production:0,gold:0,...`), so a Tactics ledger written under
+  the old default stays matched to its own arena rather than being read as
+  the new one.
+- `tools/tactics_bench.py` now pins the economy its baseline was recorded
+  under (`ECONOMY`: 30/30, five turns a tech, 100-turn clock) instead of
+  inheriting the stock arena, so `docs/TACTICS_BASELINE.md` still means what
+  it says. Re-baselining on the new stock arena is a deliberate change to that
+  pin, made in the same pull request as the new figures.
+
+Two rules had quietly assumed reinforcements, and both are corrected here so
+the stock battle can actually be won:
+
+- **Last army standing, with a city.** `check_elimination` kept a side with
+  a city alive after its last unit fell, on the stated ground that "it
+  collects Production every turn and the next unit off the queue puts it
+  back on the field". With no grant that is false, and measured on the new
+  stock arena the result was a battle nobody could win: seed 7 on the 20x20
+  field had Egypt annihilate Rome's whole company by turn 38 and then draw
+  at the clock, because four archers cannot walk into an empty city, and a
+  first `advanced`-vs-`basic` tournament went 4/4 draws at t500. A side with
+  no units is now finished unless it holds a city **and** the arena grants
+  Production or Gold to field another unit from; a defeated seat's empty
+  city satisfies the Domination lane on an arena the way a defeated seat with
+  no city already did. Same seed, same field: Egypt wins by domination on
+  turn 38. Eight `advanced`-vs-`basic` battles then decided in 24–36 turns
+  (3–4, one t500 draw with survivors on both sides).
+- **A drawn arena battle ends its tournament game.** `run_tournament` looped
+  `while game.winner.is_none()`, and a Tactics draw is terminal with
+  `winner: None` — so a drawn battle was played on forever by both
+  controllers at full CPU. Under the reinforced default a tournament arena
+  battle almost never drew inside 500 turns, so this had never bitten; the
+  first stock tournament after the change hung four workers. The loop now
+  runs `while !game.is_finished()`, drawn games are rated as games nobody
+  won (the path already existed), and a twelve-turn arena tournament is the
+  regression test.
+
+Old saves are unaffected: a save that predates the turn-limit field still
+loads its 100-turn clock (`legacy_turn_limit`), the same way a save that
+predates fog loads unfogged.
