@@ -258,6 +258,12 @@ const FAITH_ARMY_SOLVENCY_TURNS: f64 = 25.0;
 const SETTLER_ESCORT_DISTANCE: i32 = 4;
 const SETTLER_REPLACEMENT_BLOCKED_TURNS: u32 = 3;
 const SETTLER_ESCORT_SEARCH_RADIUS: i32 = 8;
+/// How many consecutive turns a settler holds position for a guard that has
+/// fallen off the pair before marching on unescorted. Two turns covers every
+/// ordinary desync (a refused step, a zone of control, a re-stack after the
+/// guard was pulled one tile away); anything longer is a livelocked guard,
+/// and waiting for one of those is how an expansion window closes.
+const STACKED_ESCORT_PATIENCE: u8 = 2;
 
 /// The per-tile discount `settle_sites` already applies inside the search
 /// radius. Named here because a census that scores siting against raw
@@ -1437,6 +1443,45 @@ pub struct AdvancedAi {
     /// `formation_movement_locked_by_zoc`) and fall through to the ordinary
     /// self-march. Native tournament controllers keep the frozen behaviour.
     escort_unstick: bool,
+    /// Escort settlers by stacked co-movement instead of formations.
+    ///
+    /// ★★★★ THE FORMATION CHANNEL DOES NOT WALK ON THE LIVE BRIDGE. Run
+    /// civvis-20260815T081505Z (Rome, Settler/Small/Online): seven escorts
+    /// were linked over 117 turns and every one was released by "Escort
+    /// abandoning a route without progress" — 0-for-7 — with two further
+    /// `cannot_enter_formation` refusals in the ledger. Meanwhile the two
+    /// settlers that marched alone were both CAPTURED by barbarians while
+    /// standing on or beside their chosen site with 0 moves left (t45-46 at
+    /// offset (55,31); t102-103 at (50,22), one turn before founding a
+    /// 213-point city). A civilian arrives with nothing left to spend, so it
+    /// must survive a full enemy turn alone on the frontier before
+    /// FOUND_CITY can be issued — unless a military unit shares its tile,
+    /// which blocks capture outright in both rule sets.
+    ///
+    /// Under the treatment no `LinkUnits`/`ENTER_FORMATION` is ever issued
+    /// for a settler. Instead a designated guard follows the settler with
+    /// plain `MoveTo` onto the settler's own tile — the one order this
+    /// bridge demonstrably applies (534/541 that run) — and the settler
+    /// waits, briefly and boundedly, when its guard has fallen off the pair.
+    /// Settlers act before military units in `advanced_units`, so a guard
+    /// that starts a turn stacked can always mirror the settler's step: it
+    /// pays the same terrain costs from the same tile.
+    stacked_escort: bool,
+    /// The military unit assigned to shadow each settler under
+    /// `stacked_escort`, keyed by settler id. Values are unique: a guard
+    /// serves one settler. No `linked_to` is involved, so this survives the
+    /// live bridge's fresh-board rebuild via `remap_unit_memory` rather than
+    /// depending on Firaxis reporting a formation that does not exist.
+    settler_guards: BTreeMap<u32, u32>,
+    /// Per-settler guard-wait bookkeeping under `stacked_escort`: the last
+    /// turn counted and how many consecutive turns the settler has held
+    /// position waiting for its guard to re-stack. Counted once per turn —
+    /// `advance_unit_serial` re-enters a unit up to eight times a turn — and
+    /// cleared the moment the guard stands on the settler's tile. Past
+    /// `STACKED_ESCORT_PATIENCE` the settler marches unescorted (the status
+    /// quo) while the guard keeps chasing; a livelocked guard must never
+    /// freeze expansion, which is this empire's binding constraint.
+    guard_wait: BTreeMap<u32, (u32, u8)>,
     /// A Religion strategy sues for peace instead of holding wars that starve
     /// its own lane.
     ///
@@ -2441,6 +2486,8 @@ impl AdvancedAi {
         self.settler_targets.clear();
         self.settler_stalls.clear();
         self.escort_march.clear();
+        self.settler_guards.clear();
+        self.guard_wait.clear();
         self.settler_blocked_turns.clear();
         self.settler_avoid.clear();
         self.settler_closest.clear();
@@ -2470,6 +2517,21 @@ impl AdvancedAi {
             .escort_march
             .iter()
             .filter_map(|(uid, held)| map.get(uid).map(|new| (*new, *held)))
+            .collect();
+        // Both sides of a guard binding are unit ids on the rebuilt board; a
+        // pair either survives whole or is dropped whole, so a half-remapped
+        // binding can never point a settler at a stranger.
+        self.settler_guards = self
+            .settler_guards
+            .iter()
+            .filter_map(|(settler, guard)| {
+                Some((*map.get(settler)?, *map.get(guard)?))
+            })
+            .collect();
+        self.guard_wait = self
+            .guard_wait
+            .iter()
+            .filter_map(|(settler, wait)| map.get(settler).map(|new| (*new, *wait)))
             .collect();
         self.settler_blocked_turns = self
             .settler_blocked_turns
@@ -2563,6 +2625,9 @@ impl AdvancedAi {
             production_settler_deadline: true,
             escort_march: BTreeMap::new(),
             escort_unstick: false,
+            stacked_escort: false,
+            settler_guards: BTreeMap::new(),
+            guard_wait: BTreeMap::new(),
             religion_sues_peace: false,
             settler_blocked_turns: BTreeMap::new(),
             settler_avoid: BTreeMap::new(),
@@ -2722,6 +2787,19 @@ impl AdvancedAi {
 
     pub fn disable_escort_unstick(&mut self) {
         self.escort_unstick = false;
+    }
+
+    /// Escort settlers by stacked co-movement instead of formations. See
+    /// `stacked_escort` for the 0-for-7 live formation record and the two
+    /// doorstep captures that motivated it.
+    pub fn enable_stacked_escort(&mut self) {
+        self.stacked_escort = true;
+    }
+
+    pub fn disable_stacked_escort(&mut self) {
+        self.stacked_escort = false;
+        self.settler_guards.clear();
+        self.guard_wait.clear();
     }
 
     /// A Religion strategy offers peace to unblock its spread lane. See
@@ -3013,6 +3091,10 @@ impl AdvancedAi {
         // Settler conversion is the score frontier the first seven live games
         // isolated; see escort_unstick.
         self.enable_escort_unstick();
+        // And the formation channel that escort depends on went 0-for-7 on
+        // the live bridge while two unescorted settlers were captured one
+        // turn short of founding; see stacked_escort.
+        self.enable_stacked_escort();
         // The religion lane was structurally blocked by its own wars; see
         // religion_sues_peace.
         self.enable_religion_sues_peace();
@@ -3345,6 +3427,7 @@ impl AdvancedAi {
     pub fn enable_engine_repairs_economy(&mut self) {
         // Getting a settler to a site it can keep.
         self.enable_escort_unstick();
+        self.enable_stacked_escort();
         self.enable_wonder_ring_settle_value();
         self.enable_stranded_settler_discount();
         self.enable_wide_map_capacity();
@@ -17185,6 +17268,120 @@ impl AdvancedAi {
         }
     }
 
+    /// The settler half of `stacked_escort`: keep a guard bound, and hold
+    /// position — briefly and boundedly — when the guard has fallen off the
+    /// pair.
+    ///
+    /// Returns `Some(acted)` when the turn was spent waiting or shedding a
+    /// stale formation link; `None` when the settler should march normally,
+    /// either because its guard is stacked (it will mirror the step when the
+    /// military loop reaches it) or because no guard can come and expansion
+    /// must not wait for one.
+    ///
+    /// There is deliberately NO minimum distance here, unlike the
+    /// formation-era `SETTLER_ESCORT_DISTANCE`: both settlers lost on run
+    /// civvis-20260815T081505Z were captured within one tile of their site —
+    /// the doorstep is where the guard matters most, because a civilian
+    /// always arrives with 0 moves and must survive a full enemy turn before
+    /// it can found.
+    fn stacked_escort_pace(&mut self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
+        if !self.stacked_escort {
+            return None;
+        }
+        // A real formation link — reconciled from the host, or left over from
+        // an older controller — would make the linked branch below defer to
+        // the very channel this treatment retires. Shed it.
+        if g.units[&uid].linked_to.is_some() {
+            return Some(g.apply(pid, &Action::UnlinkUnits { unit: uid }).is_ok());
+        }
+        let current = g.units[&uid].pos;
+        if let Some(guard) = self.settler_guards.get(&uid).copied() {
+            let alive = g.units.get(&guard).is_some_and(|unit| {
+                unit.owner == pid
+                    && g.rules.units[unit.kind].class == "military"
+                    && !matches!(
+                        g.rules.units[unit.kind].domain.as_deref(),
+                        Some("sea" | "air")
+                    )
+            });
+            if !alive {
+                self.settler_guards.remove(&uid);
+                self.guard_wait.remove(&uid);
+            }
+        }
+        if !self.settler_guards.contains_key(&uid) {
+            let taken: BTreeSet<u32> = self.settler_guards.values().copied().collect();
+            let threatened = self.plan.as_ref().and_then(|plan| plan.threatened_city);
+            let holds_threatened_city = |position: Pos| {
+                threatened.is_some_and(|city| {
+                    g.cities
+                        .get(&city)
+                        .is_some_and(|city| g.wdist(position, city.pos) <= 3)
+                })
+            };
+            let guard = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .filter(|candidate| {
+                    let unit = &g.units[candidate];
+                    let spec = &g.rules.units[unit.kind];
+                    spec.class == "military"
+                        && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                        && unit.linked_to.is_none()
+                        && !taken.contains(candidate)
+                        && g.wdist(unit.pos, current) <= SETTLER_ESCORT_SEARCH_RADIUS
+                        && !holds_threatened_city(unit.pos)
+                })
+                .min_by_key(|candidate| {
+                    let unit = &g.units[candidate];
+                    let spec = &g.rules.units[unit.kind];
+                    (
+                        g.wdist(unit.pos, current),
+                        spec.siege,
+                        spec.has_ranged_attack(),
+                        std::cmp::Reverse(g.unit_strength(unit, true) as i64),
+                        *candidate,
+                    )
+                });
+            match guard {
+                Some(guard) => {
+                    think!(self.journal(), Expansion, Detail, "A guard joins the settler";
+                           "it will share the settler's tile; a stacked civilian cannot \
+                            be captured");
+                    self.settler_guards.insert(uid, guard);
+                }
+                // Nobody can come: march unescorted rather than freeze the
+                // expansion window behind a guard that does not exist.
+                None => return None,
+            }
+        }
+        let guard = self.settler_guards[&uid];
+        if g.units[&guard].pos == current {
+            self.guard_wait.remove(&uid);
+            return None;
+        }
+        // Counted once per turn: `advance_unit_serial` re-enters a unit up to
+        // eight times a turn, and each of those is the same wait.
+        let (last_turn, waited) = self.guard_wait.get(&uid).copied().unwrap_or((0, 0));
+        let waited = if last_turn == g.turn {
+            waited
+        } else {
+            waited.saturating_add(1)
+        };
+        self.guard_wait.insert(uid, (g.turn, waited));
+        if waited > STACKED_ESCORT_PATIENCE {
+            // The guard is livelocked or refused. It keeps chasing, but the
+            // settler stops paying for it; the counter stays saturated until
+            // the guard actually re-stacks, so waiting and marching cannot
+            // oscillate.
+            return None;
+        }
+        think!(self.journal(), Expansion, Detail, "Settler waits for its guard";
+               "{waited} turn(s) so far; marching alone is how the last two settlers \
+                were captured");
+        Some(self.base.fortify_or_stop(g, pid, uid))
+    }
+
     fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let current = g.units[&uid].pos;
         if self
@@ -17348,6 +17545,9 @@ impl AdvancedAi {
                    g.player_city_ids(pid).len(),
                    self.plan.as_ref().map_or(0, |plan| plan.desired_cities); current);
             return g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
+        }
+        if let Some(acted) = self.stacked_escort_pace(g, pid, uid) {
+            return acted;
         }
         if let Some(escort) = g.units[&uid].linked_to.filter(|peer| {
             g.units.get(peer).is_some_and(|escort| {
@@ -20534,6 +20734,54 @@ impl AdvancedAi {
     /// civilian first records its target (or its obstruction) and the chosen
     /// escort can then close the gap in the same turn. Once linked, only the
     /// military leader issues movement orders and both pieces move together.
+    /// The military half of `stacked_escort`: shadow the bound settler with
+    /// plain moves onto its own tile, and hold that tile once there.
+    ///
+    /// Returns `None` when this unit guards nobody, so the ordinary military
+    /// planner runs. Settlers act before military units in `advanced_units`,
+    /// so by the time a guard acts the settler's tile for this turn is final;
+    /// a guard that started the turn stacked pays the same terrain costs from
+    /// the same tile and therefore always keeps up. No `LinkUnits` is ever
+    /// issued: the pair is two ordinary units that happen to share a tile,
+    /// which is legal for a military/civilian pair in both rule sets and is
+    /// the arrangement Civilization VI cannot capture through.
+    fn stacked_guard_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
+        let unit = g.units.get(&uid)?.clone();
+        let spec = &g.rules.units[unit.kind];
+        if spec.class != "military" || matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+            return None;
+        }
+        let settler = self
+            .settler_guards
+            .iter()
+            .find_map(|(settler, guard)| (*guard == uid).then_some(*settler))?;
+        let Some(settler_pos) = g
+            .units
+            .get(&settler)
+            .filter(|unit| unit.owner == pid && unit.kind == "settler")
+            .map(|unit| unit.pos)
+        else {
+            // Founded, died, or was captured: the guard goes back to the army.
+            self.settler_guards.remove(&settler);
+            self.guard_wait.remove(&settler);
+            return None;
+        };
+        if unit.pos == settler_pos {
+            think!(self.journal(), Expansion, Detail, "Guard stands with its settler";
+                   "sharing the tile blocks capture outright"; settler_pos);
+            return Some(self.base.fortify_or_stop(g, pid, uid));
+        }
+        // A guard that cannot close this turn stays a guard: the settler's
+        // own bounded patience decides when to stop waiting, and an idle
+        // chase still shadows the route. Standing down here would hand the
+        // unit back to a doctrine that owes the settler nothing.
+        let moved = self.base.step_toward(g, pid, uid, settler_pos);
+        if !moved {
+            return Some(self.base.fortify_or_stop(g, pid, uid));
+        }
+        Some(true)
+    }
+
     fn settler_escort_step(
         &mut self,
         g: &mut Game,
@@ -20541,6 +20789,9 @@ impl AdvancedAi {
         uid: u32,
         plan: &StrategicPlan,
     ) -> Option<bool> {
+        if self.stacked_escort {
+            return self.stacked_guard_step(g, pid, uid);
+        }
         if !self.settlement_safety {
             return None;
         }
@@ -22251,6 +22502,11 @@ impl AdvancedAi {
             cursor = end;
         }
         self.settler_targets
+            .retain(|uid, _| g.units.contains_key(uid));
+        self.settler_guards.retain(|settler, guard| {
+            g.units.contains_key(settler) && g.units.contains_key(guard)
+        });
+        self.guard_wait
             .retain(|uid, _| g.units.contains_key(uid));
         self.settler_stalls
             .retain(|uid, _| g.units.contains_key(uid));
