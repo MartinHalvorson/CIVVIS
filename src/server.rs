@@ -10783,6 +10783,13 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function syncPlayerLockPins()"));
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"lock\""));
         assert!(EMBEDDED_INDEX.contains("if (target.dataset.hudAction === \"lock\") toggleSeatLock(id);"));
+        // A locked row wears a padlock in the leading lock column; an unlocked
+        // one stays a quiet dot so twelve controls never compete with the
+        // numbers beside them.
+        assert!(
+            EMBEDDED_INDEX.contains("${locked ? \"🔒\" : \"○\"}"),
+            "the lock cell says locked with a padlock, not a filled dot"
+        );
         // Nothing but the viewer's own clicking may write the lock set. A
         // default synthesized from whichever civilization was being watched
         // moved the mark from row to row on its own, and the first real click
@@ -11000,6 +11007,20 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "const HUD_COLUMN_LAYOUT_STORAGE_KEY = \"civvis-hud-column-layout-v1\";"
         ), "order, visibility and content-fitted floors persist beside the shares");
+        // A fresh viewer starts without the live Elo delta — it is a second
+        // reading of the rating beside it, waiting in the Display Settings
+        // roster — and both the all-hidden recovery and a layout reset return
+        // to that same shipped default, not to every column visible.
+        assert!(EMBEDDED_INDEX.contains(
+            "const PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS = [\"elo_delta\"];"
+        ), "the Elo delta column is off until a viewer asks for it");
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("playerHudHiddenColumns = new Set(PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS);")
+                .count(),
+            3,
+            "boot, the all-hidden guard and the layout reset all start from the shipped default"
+        );
         // The floors stay in the stylesheet so the width breakpoints can lower
         // them; the shares belong to the viewer. A breakpoint that rewrote a
         // share would undo a dragged column on the next window resize, so no
