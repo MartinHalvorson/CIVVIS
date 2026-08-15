@@ -95,28 +95,58 @@
 
   .mode-card {
     display: flex;
-    align-items: stretch;
+    flex-direction: column;
     min-width: 0;
     overflow: hidden;
     border: 1px solid var(--border);
     border-radius: 4px;
     background: var(--panel);
-    color: var(--text);
-    text-decoration: none;
-    transition: background 120ms ease, border-color 120ms ease;
   }
-  .mode-card:hover,
-  .mode-card:focus-visible { background: var(--panel-raised); border-color: var(--border-strong); }
-  .mode-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .card-thumb { width: 150px; flex: none; object-fit: cover; background: #0d1117; }
-  .card-body { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; padding: 14px 16px; }
+  .card-thumb {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1200 / 725;
+    object-fit: cover;
+    background: #0d1117;
+    border-bottom: 1px solid var(--border);
+  }
+  .card-body { display: flex; flex: 1; flex-direction: column; gap: 8px; min-width: 0; padding: 14px 16px 16px; }
   .card-kicker { color: var(--faint); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
   .card-title { margin: 0; color: #fff; font-size: 19px; font-weight: 700; }
-  .card-desc { color: var(--muted); font-size: 13px; line-height: 1.5; }
-  .card-verb { align-self: center; flex: none; margin: 0 16px; padding: 8px 18px; border-radius: 3px; font-size: 13px; font-weight: 700; }
+  .card-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+  .card-tags li {
+    padding: 3px 8px;
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+  .card-desc { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 6px; }
+  .card-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    padding: 0 18px;
+    border-radius: 3px;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+  }
   .verb-watch { background: var(--watch-bg); color: var(--watch-fg); }
   .verb-play { background: var(--play-bg); color: var(--play-fg); }
-  /* The Tactics card that opened the picker stays marked while it is open. */
+  .verb-watch:hover,
+  .verb-watch:focus-visible { background: #315d7e; color: #fff; }
+  .verb-play:hover,
+  .verb-play:focus-visible { background: #3b6534; color: #fff; }
+  .card-btn.plain { border: 1px solid var(--border-strong); background: var(--panel-raised); color: var(--muted); }
+  .card-btn.plain:hover,
+  .card-btn.plain:focus-visible { border-color: var(--accent); color: #fff; }
+  .card-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The Tactics card whose Customize opened the picker stays marked while it is open. */
   .mode-card.picking { border-color: var(--accent); }
 
   /* The battle picker: the historical scenario library, opened by either
@@ -211,9 +241,6 @@
   @media (max-width: 760px) {
     .quadrants { grid-template-columns: 1fr; }
     .col-head { display: none; }
-    .card-thumb { width: 104px; }
-    .card-body { padding: 12px; }
-    .card-verb { margin: 0 12px; padding: 7px 14px; }
     .picker-battles { grid-template-columns: 1fr; }
   }
 </style>
@@ -246,56 +273,91 @@
       and add your own.
     </p>
 
-    <!-- Which game runs down the rows — Tactics above, Civ below — and who
-         is at the keyboard across the columns — Watch (AI simulations) on
-         the left, Play (single player) on the right. The Civ cards open the
-         simulator directly; the Tactics cards open the battle picker below
-         first, and only then hand over with the battle chosen. Without
-         scripting each Tactics card still opens the site's stock Tactics
-         world. -->
+    <!-- Which game runs down the rows — Tactics above, the full game below —
+         and who is at the keyboard across the columns — Watch (AI
+         simulations) on the left, Play (single player) on the right. Each
+         card offers two ways in: the verb button opens the simulator
+         immediately on the card's preset, and Customize opens the screens
+         with more to pick — the battle picker below for Tactics, the
+         simulator's own Game setup drawer (`?setup=1`) for the full game.
+         Without scripting a Tactics Customize still opens the site's stock
+         Tactics world. Each card's photograph is a real capture of its own
+         preset. -->
     <section class="quadrants" aria-label="Game menu">
       <h2 class="col-head">Watch <span>AI simulations</span></h2>
       <h2 class="col-head">Play <span>Single player</span></h2>
 
-      <a class="mode-card" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" aria-labelledby="watch-tactics-title">
-        <img class="card-thumb" src="/home/assets/tactics-frontline.jpg?v=7dc299716a556b25bd345534b2112a96112eea725ea91a4105494904156bcb8a" alt="A CIVVIS battlefield crowded with opposing units, cities, and front lines in an active war." fetchpriority="high">
-        <span class="card-body">
+      <div class="mode-card">
+        <img class="card-thumb" src="/home/assets/watch-tactics.jpg?v=1a1d7d25c56e4a683a9e8d63ea0ea02e204cd62e49a923ab1c45774da6866f10" alt="Two AI armies meeting in the middle of a CIVVIS Gettysburg battlefield." fetchpriority="high">
+        <div class="card-body">
           <span class="card-kicker">AI simulation</span>
-          <h3 class="card-title" id="watch-tactics-title">Civ Tactics</h3>
-          <span class="card-desc">Two AI commanders fight a single battle — a historical scenario with its real order of battle, or a custom field with two even armies.</span>
-        </span>
-        <span class="card-verb verb-watch">Watch</span>
-      </a>
+          <h3 class="card-title" id="watch-tactics-title">Watch CIVVIS Tactics</h3>
+          <ul class="card-tags" aria-label="Watch CIVVIS Tactics features">
+            <li>Historical battles</li>
+            <li>Custom fields</li>
+            <li>AI both sides</li>
+          </ul>
+          <p class="card-desc">Two AI commanders fight a single battle while you watch.</p>
+          <div class="card-actions">
+            <a class="card-btn verb-watch" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" aria-labelledby="watch-tactics-title">Watch</a>
+            <a class="card-btn plain" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" aria-label="Customize a watched Tactics battle">Customize</a>
+          </div>
+        </div>
+      </div>
 
-      <a class="mode-card" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" aria-labelledby="play-tactics-title">
-        <img class="card-thumb" src="/home/assets/tactics-frontline.jpg?v=7dc299716a556b25bd345534b2112a96112eea725ea91a4105494904156bcb8a" alt="A CIVVIS battlefield crowded with opposing units, cities, and front lines in an active war.">
-        <span class="card-body">
+      <div class="mode-card">
+        <img class="card-thumb" src="/home/assets/play-tactics.jpg?v=a5b9c71f60403a2dfc96f5496493d0f41ce39fca93a6bed904e125555ddd4661" alt="A CIVVIS naval battle at Lepanto: the player's galleys closing with the Ottoman line.">
+        <div class="card-body">
           <span class="card-kicker">Single player</span>
-          <h3 class="card-title" id="play-tactics-title">Civ Tactics</h3>
-          <span class="card-desc">Command one side of a battle against the AI — a historical scenario, or a custom field with two even armies.</span>
-        </span>
-        <span class="card-verb verb-play">Play</span>
-      </a>
+          <h3 class="card-title" id="play-tactics-title">Play CIVVIS Tactics</h3>
+          <ul class="card-tags" aria-label="Play CIVVIS Tactics features">
+            <li>Historical battles</li>
+            <li>Custom fields</li>
+            <li>AI opponent</li>
+          </ul>
+          <p class="card-desc">Command one side of a battle against the AI.</p>
+          <div class="card-actions">
+            <a class="card-btn verb-play" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" aria-labelledby="play-tactics-title">Play</a>
+            <a class="card-btn plain" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" aria-label="Customize a played Tactics battle">Customize</a>
+          </div>
+        </div>
+      </div>
 
-      <a class="mode-card" href="/" aria-labelledby="watch-civ-title">
-        <img class="card-thumb" src="/home/assets/civ-world.jpg?v=b09c9d1a799d298354c483c7507d7b23fb757568f601872a6463d009076de92b" alt="A CIVVIS world map showing two colorful continents of competing civilizations.">
-        <span class="card-body">
+      <div class="mode-card">
+        <img class="card-thumb" src="/home/assets/watch-civ.jpg?v=9f7df93c6b237f7b1b057cb3874b13d5e672422facef2bb1324171ea218ef28e" alt="A CIVVIS globe at mid-game: AI empires sharing two continents, borders and cities drawn across the planet.">
+        <div class="card-body">
           <span class="card-kicker">AI simulation</span>
-          <h3 class="card-title" id="watch-civ-title">Civ VI</h3>
-          <span class="card-desc">A full game played end to end by AI civilizations — a fresh world every visit, every victory lane open.</span>
-        </span>
-        <span class="card-verb verb-watch">Watch</span>
-      </a>
+          <h3 class="card-title" id="watch-civ-title">Watch CIVVIS</h3>
+          <ul class="card-tags" aria-label="Watch CIVVIS features">
+            <li>AI empires</li>
+            <li>Fresh world every visit</li>
+            <li>Every victory lane</li>
+          </ul>
+          <p class="card-desc">A full game played end to end by AI civilizations.</p>
+          <div class="card-actions">
+            <a class="card-btn verb-watch" href="/" aria-labelledby="watch-civ-title">Watch</a>
+            <a class="card-btn plain" href="/?setup=1" aria-label="Customize a watched game">Customize</a>
+          </div>
+        </div>
+      </div>
 
-      <a class="mode-card" href="/?mode=play" aria-labelledby="play-civ-title">
-        <img class="card-thumb" src="/home/assets/civ-world.jpg?v=b09c9d1a799d298354c483c7507d7b23fb757568f601872a6463d009076de92b" alt="A CIVVIS world map showing two colorful continents of competing civilizations.">
-        <span class="card-body">
+      <div class="mode-card">
+        <img class="card-thumb" src="/home/assets/play-civ.jpg?v=c31ab52ae751970f7dcf9a8f3b69aab36036486c6d3030f0286dd3932fde5f60" alt="The opening of a single-player CIVVIS game: a settler with its orders bar open on a young world.">
+        <div class="card-body">
           <span class="card-kicker">Single player</span>
-          <h3 class="card-title" id="play-civ-title">Civ VI</h3>
-          <span class="card-desc">A full game — take one civilization across the whole sweep of history against AI rivals.</span>
-        </span>
-        <span class="card-verb verb-play">Play</span>
-      </a>
+          <h3 class="card-title" id="play-civ-title">Play CIVVIS</h3>
+          <ul class="card-tags" aria-label="Play CIVVIS features">
+            <li>Your seat</li>
+            <li>AI rivals</li>
+            <li>Custom worlds</li>
+          </ul>
+          <p class="card-desc">A full game — take one civilization against AI rivals.</p>
+          <div class="card-actions">
+            <a class="card-btn verb-play" href="/?mode=play" aria-labelledby="play-civ-title">Play</a>
+            <a class="card-btn plain" href="/?mode=play&amp;setup=1" aria-label="Customize a played game">Customize</a>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- The battle picker: the historical scenario library, opened by either
@@ -306,7 +368,7 @@
     <section class="battle-picker" id="battle-picker" hidden aria-labelledby="battle-picker-title" tabindex="-1">
       <div class="picker-heading">
         <div>
-          <p class="eyebrow" id="battle-picker-mode">Watch Tactics · AI simulation</p>
+          <p class="eyebrow" id="battle-picker-mode">Watch CIVVIS Tactics · AI simulation</p>
           <h3 id="battle-picker-title">Choose the battle</h3>
           <p id="battle-picker-copy">Two AI commanders fight it out while you watch. A named battle opens on its own ground with its historical forces, era and clock; Custom opens a 20×20 field with two even armies, and every other setting is yours in the simulator&#8217;s Game setup.</p>
         </div>
@@ -360,7 +422,7 @@
     const picker = document.getElementById("battle-picker");
     const groups = document.getElementById("battle-groups");
     const lensBar = document.getElementById("battle-lenses");
-    const quadrants = [...document.querySelectorAll(".mode-card[data-pick]")];
+    const quadrants = [...document.querySelectorAll(".mode-card [data-pick]")];
     if (!picker || !groups || !lensBar || !quadrants.length) return;
     // The site's one stock Tactics world: the same field the viewer's own
     // Tactics chip opens, so a Custom pick here and a Custom pick there agree.
@@ -417,9 +479,9 @@
       groups.innerHTML = lens === "custom" ? customMarkup() : groupsFor(lens).map(groupMarkup).join("");
     };
     const heading = {
-      play: ["Play Tactics · single player", "Choose your battle",
+      play: ["Play CIVVIS Tactics · single player", "Choose your battle",
         "You take the first seat and the AI takes the other. A named battle opens on its own ground with its historical forces, era and clock; Custom opens a 20×20 field with two even armies, and every other setting is yours in the simulator\u2019s Game setup."],
-      watch: ["Watch Tactics · AI simulation", "Choose the battle",
+      watch: ["Watch CIVVIS Tactics · AI simulation", "Choose the battle",
         "Two AI commanders fight it out while you watch. A named battle opens on its own ground with its historical forces, era and clock; Custom opens a 20×20 field with two even armies, and every other setting is yours in the simulator\u2019s Game setup."],
     };
     const open = (which, focus = true) => {
@@ -428,7 +490,7 @@
       document.getElementById("battle-picker-mode").textContent = eyebrow;
       document.getElementById("battle-picker-title").textContent = title;
       document.getElementById("battle-picker-copy").textContent = copy;
-      for (const card of quadrants) card.classList.toggle("picking", card.dataset.pick === mode);
+      for (const card of quadrants) card.closest(".mode-card").classList.toggle("picking", card.dataset.pick === mode);
       picker.hidden = false;
       render();
       if (location.hash !== HASH[mode]) history.replaceState(null, "", location.pathname + location.search + HASH[mode]);
@@ -439,7 +501,7 @@
     };
     const close = () => {
       picker.hidden = true;
-      for (const card of quadrants) card.classList.remove("picking");
+      for (const card of quadrants) card.closest(".mode-card").classList.remove("picking");
       if (location.hash) history.replaceState(null, "", location.pathname + location.search);
     };
     for (const card of quadrants) card.addEventListener("click", event => {

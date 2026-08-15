@@ -31425,6 +31425,16 @@ resize();
 syncModeLink();
 boot();
 
+// `?setup=1` lands with the sidebar's Game setup drawer open: the home page's
+// Customize links arrive to change settings, so the settings should not have
+// to be hunted for. Expanding the sidebar first matters on the narrow layouts
+// that boot with it collapsed; the drawer's accordion closes its siblings.
+if (new URL(location.href).searchParams.get("setup") === "1") {
+  togglePanel(false, false);
+  const setupDrawer = document.getElementById("setupsec");
+  if (setupDrawer) setupDrawer.open = true;
+}
+
 // --- animation ticker: human-smooth tweens without letting a Retina canvas
 // compete with the simulation for an entire core at Lightning pace.  The old
 // spectator-only 30 FPS ceiling made a 120/144/240 Hz globe look needlessly
