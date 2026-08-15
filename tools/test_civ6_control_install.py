@@ -330,6 +330,17 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('"UNITCOMMAND_ACTIVATE_GREAT_PERSON"', source)
         self.assertIn("GetActivationHighlightPlots()", source)
 
+    def test_controller_retires_a_unit_civvis_asks_it_to_delete(self) -> None:
+        # The bridge retires the founded zero-charge Prophet (a ghost that
+        # otherwise blocks its hex for the rest of the game) with a `DELETE`
+        # verb; the mod must gate it through CanStartCommand and name a refusal.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn('if verb == "DELETE" then', source)
+        delete_block = source.split('if verb == "DELETE" then', 1)[1].split('if verb == "ENTER_FORMATION" then', 1)[0]
+        self.assertIn('commandUnit(unit, CMD["UNITCOMMAND_DELETE"])', delete_block)
+        self.assertIn('emit("delete_refused"', delete_block)
+        self.assertIn('action = "retired_by_civvis"', delete_block)
+
     def test_controller_protects_damaged_unwalled_cities_and_retires_spent_prophets(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
 

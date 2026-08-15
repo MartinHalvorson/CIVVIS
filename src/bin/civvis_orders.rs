@@ -531,7 +531,8 @@ fn defer_host_peace_retries(
     (allowed, deferred)
 }
 
-/// Keep only commands whose preconditions belong to the observed Firaxis frame.
+/// Keep only commands whose preconditions belong to the observed Firaxis frame —
+/// but send a unit's whole planned WALK, not just its first step.
 ///
 /// CIVVIS applies a unit's whole turn synchronously to its planning clone, so a
 /// builder can log MOVE_TO followed by IMPROVE and a military unit can log several
@@ -539,27 +540,71 @@ fn defer_host_peace_retries(
 /// one callback, every later command still sees the unit at its original position.
 /// The next exported frame is the first point where another command for that unit
 /// can be evaluated honestly. Different units and non-unit orders remain independent.
-fn defer_unit_followups(orders: Vec<Order>) -> (Vec<Order>, usize) {
-    let mut seen = std::collections::BTreeSet::new();
+///
+/// ★★★★★ ONE HEX PER TURN WAS THE PRICE OF THAT RULE, FOR EVERY UNIT, FOR TWO
+/// WEEKS. CIVVIS's own movement is one `Move` action per hex, so a settler with two
+/// movement points logs `MOVE_TO a, MOVE_TO b` and a scout logs three steps.
+/// Keeping the FIRST order per unit therefore sent exactly one adjacent hex per turn
+/// and deferred the rest — measured on run civvis-20260815T190904Z: **442 of 442**
+/// MOVE_TO orders were the only MOVE_TO their unit received that turn, every one
+/// aimed at an adjacent hex, and scouts (3 MP), settlers (2 MP) and builders (2 MP)
+/// all crawled one tile per turn. That is the whole "live settlers cross 0.78
+/// tiles/turn on 2 movement points" finding, and it compounds: a guard walks to its
+/// settler at 1 hex/turn, the settler waits, the founding lands 7 turns after the
+/// settler was built for a 4-hex trip, and `settlers == 0` blocks the next one
+/// meanwhile.
+///
+/// The causal-safety rule only requires that a later command not be evaluated
+/// against a position the unit has not yet reached. A path of moves is different
+/// from a move followed by an act: `UNITOPERATION_MOVE_TO` takes a DESTINATION and
+/// Firaxis paths to it with the unit's real movement, spending as much of this turn
+/// as it can and continuing next turn if the ground was further than CIVVIS priced
+/// (the mod already treats stopping short as ordinary — see `applyOrders`). So the
+/// contiguous prefix of a unit's MOVE_TO steps collapses into ONE MOVE_TO at the
+/// furthest planned hex, and only the first NON-move command (IMPROVE, FOUND_CITY,
+/// ATTACK, RANGE_ATTACK, FORTIFY, ...) and anything after it still wait for the
+/// next frame, exactly as before. Melee attacks stay conservative on purpose: CIVVIS
+/// chose the tile it strikes from, and a MOVE_TO onto the defender would let the
+/// host pathfinder pick another; the finishing-volley code above already collapses
+/// approach+blow where it has proved the line on a private board.
+fn coalesce_unit_paths(orders: Vec<Order>) -> (Vec<Order>, usize, usize) {
+    // Per unit: where its kept order sits in `out`, and whether that order is still
+    // an open walk (every order for the unit so far has been a MOVE_TO).
+    let mut kept: std::collections::BTreeMap<i64, (usize, bool)> =
+        std::collections::BTreeMap::new();
+    let mut out: Vec<Order> = Vec::with_capacity(orders.len());
     let mut deferred = 0;
-    let orders = orders
-        .into_iter()
-        .filter(|order| {
-            if order.kind != "unit" {
-                return true;
+    let mut coalesced = 0;
+    for order in orders {
+        if order.kind != "unit" {
+            out.push(order);
+            continue;
+        }
+        let Some(subject) = order.subject else {
+            out.push(order);
+            continue;
+        };
+        let is_step = order.verb.as_deref() == Some("MOVE_TO") && order.pos.is_some();
+        match kept.get_mut(&subject) {
+            None => {
+                kept.insert(subject, (out.len(), is_step));
+                out.push(order);
             }
-            let Some(subject) = order.subject else {
-                return true;
-            };
-            if seen.insert(subject) {
-                true
-            } else {
-                deferred += 1;
-                false
+            Some((index, open)) => {
+                if *open && is_step {
+                    // The walk continues: the host only needs its last hex.
+                    out[*index].pos = order.pos;
+                    coalesced += 1;
+                } else {
+                    // A command that must see the unit where the walk ends, or a
+                    // move after such a command. Next frame.
+                    *open = false;
+                    deferred += 1;
+                }
             }
-        })
-        .collect();
-    (orders, deferred)
+        }
+    }
+    (out, deferred, coalesced)
 }
 
 /// Firaxis resolves Governor operations asynchronously. CIVVIS can spend several
@@ -640,6 +685,8 @@ fn host_city_target(
 struct GreatPersonStall {
     on_cooldown: usize,
     no_activation_plot: usize,
+    /// Founded zero-charge Prophets sent for retirement this frame.
+    retired_prophets: usize,
 }
 
 impl GreatPersonStall {
@@ -657,6 +704,31 @@ fn great_person_orders(
         let Some(person) = &unit.great_person else {
             continue;
         };
+        // ★★★★ A PROPHET WHOSE RELIGION IS ALREADY FOUNDED, WITH NO CHARGE LEFT,
+        // IS A GHOST — and a ghost blocks a hex for the rest of the game. This
+        // build leaves the zero-charge unit on the map after the religion is
+        // created; the mirror does not model Great People, so CIVVIS paths
+        // other units through its hex, and `defer_great_person_plot_conflicts`
+        // then drops every one of those orders. Measured on run
+        // civvis-20260815T210845Z: Confucius (charges 0, Buddhism founded)
+        // stood beside Rome from ~t45; the settler built at t83 received no
+        // order for 21 turns (`deferred_activation_plot_conflicts=2` every
+        // turn) while the journal said "marching". Run T190904Z carried Simon
+        // Peter the same way for 100+ turns. The control mod already retires
+        // such a Prophet in its own turn routine (`UNITCOMMAND_DELETE` once the
+        // religion is created and the charge is spent), but under
+        // `--civvis-decides` that routine never runs for a unit CIVVIS owns —
+        // so the bridge asks for the same retirement here.
+        if is_founded_zero_charge_prophet(unit, person, state) {
+            orders.push(Order {
+                kind: "unit",
+                subject: Some(unit.id),
+                verb: Some("DELETE".to_string()),
+                pos: None,
+            });
+            stall.retired_prophets += 1;
+            continue;
+        }
         // Firaxis's GetActionCharges is not the activation authority for every
         // class. Great Writers report zero while CanStartCommand is true and
         // still have works to create. Trust the host's command verdict first;
@@ -700,6 +772,25 @@ fn great_person_orders(
     (orders, stall)
 }
 
+/// A Great Prophet that can no longer do anything: the seat has founded its
+/// religion, the unit reports no charge, cannot activate and has no activation
+/// plot. Everything else — a Prophet still to found, a Writer whose charges read
+/// zero while `CanStartCommand` says otherwise — is left exactly as before.
+fn is_founded_zero_charge_prophet(
+    unit: &civvis::mirror::StateUnit,
+    person: &civvis::mirror::StateGreatPerson,
+    state: &civvis::mirror::StateSnapshot,
+) -> bool {
+    unit.kind.eq_ignore_ascii_case("UNIT_GREAT_PROPHET")
+        && person.charges == 0
+        && !person.can_activate
+        && person.activation_plots.is_empty()
+        && state
+            .founded_religion
+            .as_deref()
+            .is_some_and(|religion| !religion.trim().is_empty())
+}
+
 /// Keep every physical Great Person hex clear for the current Lua batch.
 ///
 /// Firaxis queues unit operations. `CanStartCommand` can therefore approve a Great
@@ -717,7 +808,15 @@ fn defer_great_person_plot_conflicts(
     let people = state
         .units
         .iter()
-        .filter(|unit| unit.great_person.is_some())
+        .filter(|unit| {
+            unit.great_person.as_ref().is_some_and(|person| {
+                // A founded zero-charge Prophet is being retired, not activated:
+                // there is no retirement race to protect on its hex, and
+                // reserving it is exactly what black-holed the settler's exit
+                // from Rome for 21 turns on run civvis-20260815T210845Z.
+                !is_founded_zero_charge_prophet(unit, person, state)
+            })
+        })
         .map(|unit| (unit.id, (unit.x, unit.y)))
         .collect::<Vec<_>>();
     let mut deferred = 0;
@@ -1243,6 +1342,7 @@ fn withhold_live_treatment(
         "stranded-settler-discount" => ai.disable_stranded_settler_discount(),
         "housing-buildings" => ai.disable_housing_buildings(),
         "amenity-project-preemption" => ai.disable_amenity_project_preemption(),
+        "live-wonder-race" => ai.disable_live_wonder_race(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1266,7 +1366,7 @@ fn withhold_live_treatment(
                  recon-replacement, wide-map-capacity, garrison-under-fire, \
                  escort-unstick, stacked-escort, religion-sues-peace, stranded-settler-discount, \
                  siege-commitment, wonder-ring-settle-value, garrison-walls, \
-                 amenity-project-preemption"
+                 amenity-project-preemption, live-wonder-race"
             ))
         }
     }
@@ -1531,7 +1631,19 @@ fn decide(
     let (person_orders, great_person_stall) = great_person_orders(state);
     if !person_orders.is_empty() {
         note_bits.push(format!("great_people_orders={}", person_orders.len()));
-        orders.extend(person_orders);
+        // Retirements go FIRST: the ghost's hex is what other units in this
+        // very batch want to walk through, and the host executes in order.
+        let (retirements, others): (Vec<Order>, Vec<Order>) = person_orders
+            .into_iter()
+            .partition(|order| order.verb.as_deref() == Some("DELETE"));
+        orders.splice(0..0, retirements);
+        orders.extend(others);
+    }
+    if great_person_stall.retired_prophets > 0 {
+        note_bits.push(format!(
+            "retired_founded_prophets={}",
+            great_person_stall.retired_prophets
+        ));
     }
     if great_person_stall.total() > 0 {
         // Kept under the old key so existing log readers still find it, with the
@@ -1643,8 +1755,12 @@ fn decide(
         ));
     }
 
-    let (causally_safe, deferred_unit_followups) = defer_unit_followups(orders);
+    let (causally_safe, deferred_unit_followups, coalesced_path_steps) =
+        coalesce_unit_paths(orders);
     orders = causally_safe;
+    if coalesced_path_steps > 0 {
+        note_bits.push(format!("coalesced_path_steps={coalesced_path_steps}"));
+    }
     if deferred_unit_followups > 0 {
         note_bits.push(format!("deferred_unit_followups={deferred_unit_followups}"));
     }
@@ -2383,7 +2499,7 @@ fn main() {
     // baseline shows the remaining rate limit: one Settler is walking while the
     // empire is still short of its city plan. Measure the previously untested
     // target-plus-throughput cell as one explicit live treatment.
-    ai.parallel_settlers = true;
+    ai.enable_parallel_settlers();
     // ★★★ SAY WHICH GENOME IS PLAYING, ALWAYS — INCLUDING "the stock one".
     //
     // An axis nothing reports does not exist, and this project has already shipped a
@@ -2592,7 +2708,9 @@ fn main() {
                 .unwrap_or_else(|| "stock AdvancedAi::new — NOT the deployment".to_string())
         );
         let w = advanced.weights().clone();
-        let ai = civvis::ai::BasicAi::with_weights(w.clone());
+        let mut ai = civvis::ai::BasicAi::with_weights(w.clone());
+        // The live decider plays with the second pipeline slot open.
+        ai.enable_parallel_settlers();
         let pid = 0usize;
         let n_cities = g.player_city_ids(pid).len();
         let settlers = g
@@ -2614,7 +2732,16 @@ fn main() {
             n_cities + settlers,
             w.city_target
         );
-        println!("  settlers == 0                        {:>5}   {settlers}", settlers == 0);
+        // The live seat's pipeline width (see `AdvancedAi::parallel_settlers`).
+        let pipeline = if n_cities >= 2 && ((n_cities + settlers + 1) as f64) < w.city_target {
+            2
+        } else {
+            1
+        };
+        println!(
+            "  settlers < pipeline ({pipeline})            {:>5}   {settlers}",
+            settlers < pipeline
+        );
         println!(
             "  city_pop >= settler_min_pop          {:>5}   {city_pop} >= {:.1}",
             (city_pop as f64) >= w.settler_min_pop,
@@ -3227,6 +3354,11 @@ mod tests {
             !ai.amenity_project_preemption,
             "the named Amenity control must hold the queue handoff off"
         );
+
+        assert!(ai.live_wonder_race);
+        withhold_live_treatment(&mut ai, "live-wonder-race")
+            .expect("the wonder race's control arm is registered");
+        assert!(!ai.live_wonder_race, "the named wonder-race control must hold it off");
 
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
         assert!(
@@ -3866,6 +3998,64 @@ mod tests {
         assert_eq!(civ6_unit_promotion_name("surf_band"), "PROMOTION_SURF_ROCK");
     }
 
+    /// The zero-charge Prophet left on the map after its religion was founded
+    /// is retired from the bridge, and its hex stops swallowing other units'
+    /// orders; a Prophet whose seat has NOT founded yet keeps every protection.
+    #[test]
+    fn a_founded_zero_charge_prophet_is_retired_and_stops_reserving_its_hex() {
+        let ghost = StateUnit {
+            id: 851_977,
+            kind: "UNIT_GREAT_PROPHET".to_string(),
+            x: 59,
+            y: 16,
+            great_person: Some(StateGreatPerson {
+                charges: 0,
+                can_activate: false,
+                activation_plots: Vec::new(),
+                ..StateGreatPerson::default()
+            }),
+            ..StateUnit::default()
+        };
+        let founded = StateSnapshot {
+            founded_religion: Some("RELIGION_BUDDHISM".to_string()),
+            units: vec![ghost.clone()],
+            ..StateSnapshot::default()
+        };
+
+        let (orders, stall) = great_person_orders(&founded);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].subject, Some(851_977));
+        assert_eq!(orders[0].verb.as_deref(), Some("DELETE"));
+        assert_eq!(stall.retired_prophets, 1);
+        assert_eq!(stall.total(), 0, "a retirement is not a stall");
+
+        // Its hex no longer black-holes the settler's exit from the capital.
+        let settler_move = || Order {
+            kind: "unit",
+            subject: Some(2_031_627),
+            verb: Some("MOVE_TO".to_string()),
+            pos: Some((59, 16)),
+        };
+        let (kept, deferred) = defer_great_person_plot_conflicts(vec![settler_move()], &founded);
+        assert_eq!(deferred, 0);
+        assert_eq!(kept.len(), 1);
+
+        // Before the religion exists the same unit is a Prophet still to found:
+        // no retirement, still a named stall, hex still reserved.
+        let unfounded = StateSnapshot {
+            founded_religion: None,
+            units: vec![ghost],
+            ..StateSnapshot::default()
+        };
+        let (orders, stall) = great_person_orders(&unfounded);
+        assert!(orders.is_empty());
+        assert_eq!(stall.retired_prophets, 0);
+        assert_eq!(stall.no_activation_plot, 1);
+        let (kept, deferred) = defer_great_person_plot_conflicts(vec![settler_move()], &unfounded);
+        assert_eq!(deferred, 1);
+        assert!(kept.is_empty());
+    }
+
     #[test]
     fn great_person_reservation_defers_physical_moves_but_not_trade_routes() {
         let state = StateSnapshot {
@@ -4208,27 +4398,21 @@ mod tests {
         assert_eq!(unlink.pos, None);
     }
 
+    fn unit_order(subject: i64, verb: &str, pos: Option<(i32, i32)>) -> Order {
+        Order {
+            kind: "unit",
+            subject: Some(subject),
+            verb: Some(verb.to_string()),
+            pos,
+        }
+    }
+
     #[test]
     fn unit_followups_wait_for_the_next_observed_firaxis_frame() {
-        let (orders, deferred) = defer_unit_followups(vec![
-            Order {
-                kind: "unit",
-                subject: Some(42),
-                verb: Some("MOVE_TO".to_string()),
-                pos: Some((4, 5)),
-            },
-            Order {
-                kind: "unit",
-                subject: Some(42),
-                verb: Some("IMPROVE:IMPROVEMENT_FARM".to_string()),
-                pos: None,
-            },
-            Order {
-                kind: "unit",
-                subject: Some(99),
-                verb: Some("FORTIFY".to_string()),
-                pos: None,
-            },
+        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
+            unit_order(42, "MOVE_TO", Some((4, 5))),
+            unit_order(42, "IMPROVE:IMPROVEMENT_FARM", None),
+            unit_order(99, "FORTIFY", None),
             Order {
                 kind: "research",
                 subject: None,
@@ -4238,11 +4422,98 @@ mod tests {
         ]);
 
         assert_eq!(deferred, 1);
+        assert_eq!(coalesced, 0);
         assert_eq!(orders.len(), 3);
         assert_eq!(orders[0].subject, Some(42));
         assert_eq!(orders[0].verb.as_deref(), Some("MOVE_TO"));
+        assert_eq!(orders[0].pos, Some((4, 5)));
         assert_eq!(orders[1].subject, Some(99));
         assert_eq!(orders[2].kind, "research");
+    }
+
+    /// A settler with two movement points logs two hex steps; the host must be
+    /// asked for the WHOLE walk, or it spends every turn on the first hex.
+    #[test]
+    fn a_units_planned_walk_becomes_one_move_to_its_furthest_hex() {
+        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
+            unit_order(7, "MOVE_TO", Some((10, 10))),
+            unit_order(7, "MOVE_TO", Some((11, 10))),
+            unit_order(7, "MOVE_TO", Some((12, 11))),
+            unit_order(7, "FOUND_CITY", None),
+        ]);
+
+        assert_eq!(coalesced, 2, "two later steps folded into the first");
+        assert_eq!(deferred, 1, "the founding still waits for the arrival frame");
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].subject, Some(7));
+        assert_eq!(orders[0].verb.as_deref(), Some("MOVE_TO"));
+        assert_eq!(orders[0].pos, Some((12, 11)));
+    }
+
+    /// Only the CONTIGUOUS prefix of moves is a walk. A move logged after an act
+    /// was planned from where the act leaves the unit, so it waits like the act.
+    #[test]
+    fn a_move_after_an_act_is_not_folded_into_the_walk() {
+        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
+            unit_order(3, "MOVE_TO", Some((1, 1))),
+            unit_order(3, "MOVE_TO", Some((2, 1))),
+            unit_order(3, "RANGE_ATTACK", Some((4, 1))),
+            unit_order(3, "MOVE_TO", Some((1, 1))),
+        ]);
+
+        assert_eq!(coalesced, 1);
+        assert_eq!(deferred, 2);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].pos, Some((2, 1)));
+    }
+
+    /// Melee stays conservative: the strike is not turned into a MOVE_TO onto the
+    /// defender, and a unit whose first order is the strike sends only the strike.
+    #[test]
+    fn a_melee_strike_terminates_the_walk_and_leads_alone_when_first() {
+        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
+            unit_order(5, "MOVE_TO", Some((8, 8))),
+            unit_order(5, "ATTACK", Some((9, 8))),
+            unit_order(6, "ATTACK", Some((9, 8))),
+            unit_order(6, "MOVE_TO", Some((9, 8))),
+        ]);
+
+        assert_eq!(coalesced, 0);
+        assert_eq!(deferred, 2);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0].subject, Some(5));
+        assert_eq!(orders[0].verb.as_deref(), Some("MOVE_TO"));
+        assert_eq!(orders[0].pos, Some((8, 8)));
+        assert_eq!(orders[1].subject, Some(6));
+        assert_eq!(orders[1].verb.as_deref(), Some("ATTACK"));
+    }
+
+    /// Units are folded independently even when their steps interleave, and each
+    /// keeps the slot of its FIRST order so the batch's relative order — which the
+    /// host executes sequentially — is preserved.
+    #[test]
+    fn interleaved_units_fold_independently_and_keep_their_batch_slots() {
+        let (orders, deferred, coalesced) = coalesce_unit_paths(vec![
+            unit_order(1, "MOVE_TO", Some((0, 1))),
+            unit_order(2, "MOVE_TO", Some((5, 5))),
+            unit_order(1, "MOVE_TO", Some((0, 2))),
+            Order {
+                kind: "produce",
+                subject: Some(65_536),
+                verb: Some("UNIT_SETTLER".to_string()),
+                pos: None,
+            },
+            unit_order(2, "MOVE_TO", Some((6, 5))),
+            unit_order(2, "MOVE_TO", Some((7, 5))),
+            unit_order(1, "IMPROVE:IMPROVEMENT_MINE", None),
+        ]);
+
+        assert_eq!(coalesced, 3);
+        assert_eq!(deferred, 1);
+        assert_eq!(orders.len(), 3);
+        assert_eq!((orders[0].subject, orders[0].pos), (Some(1), Some((0, 2))));
+        assert_eq!((orders[1].subject, orders[1].pos), (Some(2), Some((7, 5))));
+        assert_eq!(orders[2].kind, "produce");
     }
 
     #[test]

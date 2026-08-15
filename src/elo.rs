@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 134] = [
+pub const EVAL_ONLY_AIS: [&str; 136] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -54,6 +54,7 @@ pub const EVAL_ONLY_AIS: [&str; 134] = [
     // moves, which is exactly what a rating anchor must not do.
     "live",
     "live_without_amenity_project_preemption",
+    "live_without_live_wonder_race",
     "live_without_home_defense",
     "live_without_joint_tactics",
     "live_without_loyalty_policy_defence",
@@ -81,6 +82,7 @@ pub const EVAL_ONLY_AIS: [&str; 134] = [
     "live_without_war_economy",
     "live_without_war_reinforcement",
     "live_without_war_patience",
+    "live_without_endgame_war_runway",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -200,7 +202,7 @@ pub const EVAL_ONLY_AIS: [&str; 134] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 43] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 45] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -232,6 +234,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 43] = [
     "war-economy",
     "war-reinforcement",
     "war-patience",
+    "endgame-war-runway",
     "wide-map-capacity",
     "garrison-under-fire",
     "escort-unstick",
@@ -244,6 +247,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 43] = [
     "garrison-walls",
     "housing-buildings",
     "amenity-project-preemption",
+    "live-wonder-race",
 ];
 
 /// Every `live_without_*` control's tag list: the bridge list minus the one
@@ -273,19 +277,24 @@ fn live_without(withheld: &'static str) -> &'static [&'static str] {
         .unwrap_or_else(|| panic!("{withheld} is not a live-bridge treatment"))
 }
 
-/// The four bridge treatments that stay out of the native bundle, as tags.
-/// Three encode a rule of Firaxis' game rather than repairing one of ours; the
-/// fourth is excluded on evidence. See `AdvancedAi::enable_engine_repairs`.
-pub const FIRAXIS_ONLY_TREATMENTS: [&str; 4] = [
+/// The five bridge treatments that stay out of the native bundle, as tags.
+/// Three encode a rule of Firaxis' game rather than repairing one of ours, one
+/// is excluded on evidence, and the wonder race prices a Firaxis-only
+/// opportunity. See `AdvancedAi::enable_engine_repairs`.
+pub const FIRAXIS_ONLY_TREATMENTS: [&str; 5] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
     "solvent-faith-army",
+    // Prices a Firaxis-specific opportunity — an uncontested wonder catalogue
+    // on the Settler seat, and a score tally at the host's turn limit — that
+    // CIVVIS-vs-CIVVIS games do not offer.
+    "live-wonder-race",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
 /// siege, threat reading, and the war/peace decision.
-pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 23] = [
+pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 24] = [
     "muster-at-command-radius",
     "war-reinforcement",
     "come-ashore",
@@ -302,6 +311,7 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 23] = [
     "siege-tracks-wall",
     "siege-commitment",
     "war-patience",
+    "endgame-war-runway",
     "home-defense",
     "garrison-under-fire",
     "garrison-walls",
@@ -335,7 +345,7 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 16] = [
 /// tags — `LIVE_BRIDGE_TREATMENTS` minus `FIRAXIS_ONLY_TREATMENTS`, and the
 /// union of the two halves above. `engine_repair_tags_partition_the_bridge`
 /// fails if any of those three relationships stops holding.
-pub const ENGINE_REPAIR_TREATMENTS: [&str; 39] = [
+pub const ENGINE_REPAIR_TREATMENTS: [&str; 40] = [
     "muster-at-command-radius",
     "war-reinforcement",
     "come-ashore",
@@ -352,6 +362,7 @@ pub const ENGINE_REPAIR_TREATMENTS: [&str; 39] = [
     "siege-tracks-wall",
     "siege-commitment",
     "war-patience",
+    "endgame-war-runway",
     "home-defense",
     "garrison-under-fire",
     "garrison-walls",
@@ -409,6 +420,7 @@ define_arm_kinds! {
     // held off, so each repair can be priced in cities and score.
     Live => "live",
     LiveWithoutAmenityProjectPreemption => "live_without_amenity_project_preemption",
+    LiveWithoutLiveWonderRace => "live_without_live_wonder_race",
     LiveWithoutHomeDefense => "live_without_home_defense",
     LiveWithoutJointTactics => "live_without_joint_tactics",
     LiveWithoutLoyaltyPolicyDefence => "live_without_loyalty_policy_defence",
@@ -436,6 +448,7 @@ define_arm_kinds! {
     LiveWithoutWarEconomy => "live_without_war_economy",
     LiveWithoutWarReinforcement => "live_without_war_reinforcement",
     LiveWithoutWarPatience => "live_without_war_patience",
+    LiveWithoutEndgameWarRunway => "live_without_endgame_war_runway",
     LiveWithoutStackedEscort => "live_without_stacked_escort",
     Advanced => "advanced",
     AdvancedBankingDedication => "advanced_banking_dedication",
@@ -2956,6 +2969,12 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_amenity_project_preemption();
             Box::new(ai)
         }
+        "live_without_live_wonder_race" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_live_wonder_race();
+            Box::new(ai)
+        }
         "live_without_stacked_escort" => {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge();
@@ -3122,6 +3141,12 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge();
             ai.disable_war_patience();
+            Box::new(ai)
+        }
+        "live_without_endgame_war_runway" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_endgame_war_runway();
             Box::new(ai)
         }
         "random" => Box::new(RandomAi::new(seed)),
@@ -3702,6 +3727,7 @@ impl ArmKind {
             Self::LiveWithoutAmenityProjectPreemption => {
                 live_without("amenity-project-preemption")
             }
+            Self::LiveWithoutLiveWonderRace => live_without("live-wonder-race"),
             Self::LiveWithoutStackedEscort => live_without("stacked-escort"),
             Self::LiveWithoutJointTactics => live_without("joint-tactics"),
             Self::LiveWithoutHomeDefense => live_without("home-defense"),
@@ -3730,6 +3756,7 @@ impl ArmKind {
             Self::LiveWithoutWarEconomy => live_without("war-economy"),
             Self::LiveWithoutWarReinforcement => live_without("war-reinforcement"),
             Self::LiveWithoutWarPatience => live_without("war-patience"),
+            Self::LiveWithoutEndgameWarRunway => live_without("endgame-war-runway"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name
@@ -4225,6 +4252,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live_without_amenity_project_preemption" => {
             (Vec::new(), "live_without_amenity_project_preemption")
         }
+        "live_without_live_wonder_race" => (Vec::new(), "live_without_live_wonder_race"),
         "live_without_home_defense" => (Vec::new(), "live_without_home_defense"),
         "live_without_joint_tactics" => (Vec::new(), "live_without_joint_tactics"),
         "live_without_loyalty_policy_defence" => {
@@ -4254,6 +4282,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live_without_war_economy" => (Vec::new(), "live_without_war_economy"),
         "live_without_war_reinforcement" => (Vec::new(), "live_without_war_reinforcement"),
         "live_without_war_patience" => (Vec::new(), "live_without_war_patience"),
+        "live_without_endgame_war_runway" => (Vec::new(), "live_without_endgame_war_runway"),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_build_first" => (Vec::new(), "advanced_build_first"),
         "advanced_synergy" => (Vec::new(), "advanced_synergy"),
@@ -5484,7 +5513,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 107] = [
+            const SCRIPTED: [&str; 109] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5569,6 +5598,7 @@ mod tests {
                 // weights artifact and no value net.
                 "live",
                 "live_without_amenity_project_preemption",
+                "live_without_live_wonder_race",
                 "live_without_home_defense",
                 "live_without_loyalty_policy_defence",
                 "live_without_siege_muster",
@@ -5596,6 +5626,7 @@ mod tests {
                 "live_without_war_economy",
                 "live_without_war_reinforcement",
                 "live_without_war_patience",
+                "live_without_endgame_war_runway",
             ];
             const SCRIPTED_ALIASES: [&str; 7] = [
                 "advanced_policy_envoy_priority",
@@ -5676,11 +5707,16 @@ mod tests {
         /// one of ours, except the last, which is excluded on evidence: the
         /// deployment-profile run split every map at +0 Elo for 2.5x the
         /// rollout branches.
-        const EXCLUDED: [&str; 4] = [
+        const EXCLUDED: [&str; 5] = [
             "live_trader_route_adapter",
             "live_religious_purchase_guard",
             "solvent_faith_army",
             "joint_tactics",
+            // Prices a Firaxis-specific opportunity: an uncontested wonder
+            // catalogue on the Settler seat and a score tally at the host's
+            // turn limit. CIVVIS-vs-CIVVIS wonders are the contested race the
+            // stock gate was written for, so the native bundle keeps it.
+            "live_wonder_race",
         ];
         let source = include_str!("ai/advanced.rs");
         let calls = |name: &str| -> BTreeSet<String> {

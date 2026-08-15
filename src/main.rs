@@ -1052,7 +1052,55 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// queue. The new helper is live-only and returns before inspecting any city
 /// under the frozen anchor. Compatibility re-pin; the Elo protocol does not
 /// move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x45a1_e239_49c9_e996;
+/// A fresh direct declaration likewise observes the timed-war endgame reserve
+/// only when `endgame_war_runway` is enabled through the live bridge. The
+/// frozen anchor leaves that flag false, retaining its historical late-war
+/// behavior. Compatibility re-pin; the Elo protocol does not move.
+/// A home barbarian now lets only unclaimed live-bridge units retain their
+/// pre-war campaign staging after the bounded garrison/defense responders get
+/// first claim. `AdvancedAi::legacy()` leaves `home_defense` false, so it
+/// never inserts the barbarian seat into this path. The fixed 10-pair
+/// `advanced_v1`/`basic` seed prefix (31337 through 31346) matched the prior
+/// 17/20 wins, 131.9 average turns, score, and per-seat metrics exactly.
+/// Compatibility re-pin; the Elo protocol does not move.
+/// The live wonder race is likewise gated by `live_wonder_race`, which only
+/// `enable_live_bridge` sets: `AdvancedAi::legacy()` and every rated arm keep
+/// the `Item::Wonder` refusal exactly as it was, so no headless anchor can enter
+/// the new valuation branch. Compatibility re-pin; the Elo protocol does not
+/// move.
+/// The same live-only wonder race now closes during the empire-wide `Recovery`
+/// posture, even if the individual building city is not yet threatened. The
+/// frozen anchor leaves `live_wonder_race` false and cannot enter either
+/// branch. Compatibility re-pin; the Elo protocol does not move.
+/// A settler standing on a cached target that `can_found_city` now refuses
+/// retires that target with the bounded avoidance the stall counter uses — behind
+/// `settler_commit`, which `AdvancedAi::legacy()` leaves off
+/// (`elo_anchor_never_reaches_the_settler_commit_path`); the re-validation of a
+/// cached target also refuses `blocked_city_sites`, a set that is empty in every
+/// ordinary and frozen game. Compatibility re-pin; the Elo protocol does not
+/// move.
+/// A new Settler target is forecast through the engine's Loyalty model only
+/// while `loyalty_rate_alarm` is on. Both default constructors and the frozen
+/// anchor leave that treatment flag false; the live bridge enables it with the
+/// live Loyalty emergency handling. If every inspected target is immediately
+/// doomed, the live controller holds rather than falling through to the
+/// unaware baseline picker. Compatibility re-pin; the Elo protocol does not
+/// move.
+/// A missing siege/recon arm now owns a city queue only when that city can
+/// actually build the requested role. Both `siege_role` and
+/// `recon_replacement` remain disabled by `AdvancedAi::legacy()`, so the
+/// frozen anchor retains its prior production path. Compatibility re-pin; the
+/// Elo protocol does not move.
+/// The second settler pipeline slot is behind `parallel_settlers`, which only
+/// the Civilization VI bridge sets (`AdvancedAi::enable_parallel_settlers`); every
+/// native constructor and `AdvancedAi::legacy()` keep the one-at-a-time gate in
+/// both settler routes (asserted). Compatibility re-pin; the Elo protocol does not
+/// move.
+/// `war_patience` is now bounded by `WAR_PATIENCE_LIMIT_TURNS`; the flag is set
+/// only by the live bridge and the native repair bundle, never by
+/// `AdvancedAi::legacy()`, so the anchor's peace rules are unchanged.
+/// Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8e97_1aa9_5d32_dbf3;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -3539,6 +3587,14 @@ mod tests {
             "advanced_v1 is legacy(); if it ever reaches the settler_commit path the \
              re-pin above stops being free and ELO_PROTOCOL_VERSION must be bumped"
         );
+        // The global Recovery front hold is likewise a production-only branch.
+        // If the anchor ever enables it, its campaign movement may change and a
+        // source re-pin alone would be invalid.
+        assert!(
+            !civvis::ai::AdvancedAi::legacy().bounded_recovery,
+            "advanced_v1 is legacy(); if it ever carries bounded Recovery the global \
+             front-hold branch reaches the anchor and ELO_PROTOCOL_VERSION must be bumped"
+        );
         // ⚠ And record the other half honestly: `advanced` DOES set it, so that
         // entrant's settler pipeline genuinely changes. The anchor pins the scale
         // and is untouched, which is what this guard asks about — but v5 rows for
@@ -3644,6 +3700,7 @@ mod tests {
                 ("war_economy", ai.war_economy),
                 ("war_reinforcement", ai.war_reinforcement),
                 ("war_patience", ai.war_patience),
+                ("endgame_war_runway", ai.endgame_war_runway),
                 ("siege_commitment", ai.siege_commitment),
                 ("relief_targets_the_siege", ai.relief_targets_the_siege),
                 ("blind_objective_units", ai.blind_objective_units),

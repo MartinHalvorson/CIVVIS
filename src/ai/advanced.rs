@@ -133,6 +133,23 @@ const RUSH_WINDOW_CLOSES: u32 = 60;
 /// 0.62 outmatched trigger and Recovery trigger keep their shape: the moment
 /// the advantage is gone, so is the patience.
 const OVERWHELMING_WAR_RATIO: f64 = 2.5;
+/// Standard turns without a campaign gain after which `war_patience` lapses and
+/// the stall clause fires again even over an overwhelmed target.
+///
+/// ★★★★ AN OVERWHELMING WAR THAT NEVER TAKES A CITY IS NOT A WALKOVER, IT IS A
+/// TAX. Patience was written for a slow wall taking its time to fall; on the
+/// live Civilization VI seat the walls never fall at all. Run
+/// civvis-20260815T220819Z: at war with the Maori (their power 24–72 against
+/// our 400–800) from ~t100 to the end at t224, "Pressing the war … a war to
+/// finish, not to quit" on every assessment, the Grand strategy read Conquest
+/// on 72 of 88 assessments, no city was ever taken, and the economy bought
+/// 98 city-turns of AT Crews for it. Runs T182350Z and T190904Z carried
+/// 140- and 200-turn wars the same way, without a capture. Forty standard
+/// turns (twenty at Online) with no city gained is longer than any siege that
+/// is actually working; after that the empire sues, the plan leaves
+/// Conquest, and production goes back to development. A city gained resets
+/// the clock, so a war that IS progressing keeps its patience.
+const WAR_PATIENCE_LIMIT_TURNS: u32 = 40;
 /// Distance from the campaign objective inside which a force group counts as
 /// the front rather than a rear reinforcement, used by
 /// [`AdvancedAi::wartime_reinforcement_step`]. The staging ring is 3..=5 and
@@ -147,6 +164,19 @@ const REINFORCEMENT_FRONT_RADIUS: i32 = 8;
 /// Recovery is described in `assess` as a temporary battlefield posture. It
 /// lasted 164 turns on `civvis-20260802T205959Z` because its trigger is a
 /// condition it cannot resolve. This is what "temporary" is worth.
+/// Raw production value the live wonder race adds on top of a wonder's yields.
+/// See `live_wonder_race` and the `Item::Wonder` arm of `production_value`.
+const LIVE_WONDER_RACE_BONUS: f64 = 1_500.0;
+/// Standard turns a settler avoids a site it stood on and could not found. See
+/// `advanced_settler_step`.
+const SETTLER_DEAD_SITE_AVOID_TURNS: u32 = 30;
+/// Loyalty per turn at which a forecast city is treated as doomed before its
+/// Settler is sent: -8 empties a full bar in at most thirteen turns. The same
+/// emergency threshold the live mirror uses for a settler's current plot.
+const SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN: f64 = -8.0;
+/// New-target picks re-asked after a doomed forecast. Exhaustion holds the
+/// Settler rather than routing it through the unfiltered baseline picker.
+const SETTLE_TARGET_FORECAST_RETRIES: usize = 3;
 const RECOVERY_POSTURE_LIMIT: u32 = 25;
 /// Tiles a rush will march. Measured capital separations on 6p 74x46 run a
 /// median 13 and a p90 17, so 16 covers roughly nine seats in ten while
@@ -1179,8 +1209,15 @@ pub struct AdvancedAi {
     /// flag is on and the empire holds `OVERWHELMING_WAR_RATIO` over its
     /// campaign target, the stall clause stands down and the ordinary
     /// outmatched (0.62) and Recovery triggers keep the war endable. **Off by
-    /// default, live-bridge only.**
+    /// default, live-bridge only.** Bounded by `WAR_PATIENCE_LIMIT_TURNS`
+    /// standard turns without a campaign gain — see that constant for the
+    /// live wars that never landed a city.
     pub war_patience: bool,
+    /// Do not open a fresh direct war once the shared endgame reserve leaves
+    /// no time to turn a declaration into a capture. Timed attacks already
+    /// use this reserve while they are appointed; the direct victory-denial
+    /// fallback must not bypass it. **Off by default, live-bridge only.**
+    pub endgame_war_runway: bool,
     /// Finish a city the army has already broken open before re-aiming the
     /// campaign at a fresh one.
     ///
@@ -1507,6 +1544,11 @@ pub struct AdvancedAi {
     /// turn on which it may be reconsidered. Without this cooldown, clearing a
     /// target simply reselects the same top-ranked tile one turn later.
     settler_avoid: BTreeMap<u32, (Pos, u32)>,
+    /// Sites a settler stood on and could not found, each with the turn its
+    /// retirement expires. A set rather than the single `settler_avoid` slot:
+    /// the stall counter overwrites that slot, and a doomed frontier is usually
+    /// several adjacent plots. See `advanced_settler_step`.
+    settler_dead_sites: BTreeMap<u32, BTreeMap<Pos, u32>>,
     /// The target each settler is committed to and the closest it has come to
     /// it. A dodge around a hostile is a legal move but not progress, so the
     /// stall counter is driven from this rather than from whether the unit
@@ -1564,6 +1606,17 @@ pub struct AdvancedAi {
     /// Kept as the `advanced_parallel_settlers` entrant with the null
     /// recorded, on the `advanced_lane_reachable` precedent, so the axis can
     /// be re-measured rather than re-derived if the settler economy changes.
+    ///
+    /// ★★★★ 2026-08-15: THE FLAG HAS A CONSUMER AGAIN, ON THE LIVE SEAT ONLY.
+    /// The live bridge sets it "to measure the target-plus-throughput cell",
+    /// and on that seat the economy is NOT the binding constraint the native
+    /// null found: run civvis-20260815T210845Z founded cities at t2/19/45/58/78
+    /// with Rome at pop 5–14 and land open, and the journal's refusal on
+    /// t19, t42, t43 and t47 was "a settler is already in flight". So
+    /// `settler_in_flight_allowed` and `BasicAi::pick_item` open a second
+    /// pipeline slot under this flag once the empire holds two cities and is
+    /// still at least two seats short of its target. `enable_parallel_settlers`
+    /// sets both halves; nothing native sets either.
     pub parallel_settlers: bool,
     /// Slot `limitanei` (+2 Loyalty in cities with a garrison) when expanding or
     /// conquering.
@@ -1732,6 +1785,41 @@ pub struct AdvancedAi {
     /// native repair bundle enable it, so a Science plan can keep its project
     /// tempo except when host-observed happiness has become the binding loss.
     pub amenity_project_preemption: bool,
+    /// Race for wonders on the live Civilization VI seat.
+    ///
+    /// ★★★★ THE LIVE SEAT HAS NEVER ORDERED A WONDER, and the games it loses
+    /// are decided by score. Every one of the 20 completed Settler runs of
+    /// 2026-08-14/15 ended on the host's turn-250 score tally (400–650 against
+    /// a best rival at 1050–1550), and across those runs `orders.sqlite` holds
+    /// **zero** wonder `produce` orders. The `Item::Wonder` arm of
+    /// [`AdvancedAi::production_value`] returns −10 000 unless the plan is
+    /// Culture, the assigned lane is Score, or the seat is Egypt/China with no
+    /// lane at all — and the live seat is Trajan under `--victory civvis`, so
+    /// the arm never opens. The one run whose plan did flip to Culture
+    /// (`civvis-20260815T125502Z`) asked for six ancient wonders at turn 129
+    /// and got 21 host refusals in 27 orders, every one `offered: 0` — the
+    /// Firaxis rivals had long since finished them.
+    ///
+    /// The host scores 15 points per wonder — 13.6 points per 100 production
+    /// against 2.2 for a Library — and its Settler-difficulty rivals do not
+    /// contest them early. So on the live seat the plan-strategy gate is
+    /// dropped: a developed city (three buildings) in an empire that has
+    /// already begun expanding (three cities) may take the cheapest legal
+    /// wonder no more than two eras behind the world's, priced by
+    /// `LIVE_WONDER_RACE_BONUS`, one wonder in production empire-wide at a
+    /// time so the race never starves settlers, districts or defenders.
+    /// `threatened`, `city.buildings.len() < 2`, the remaining-turns budget
+    /// and the host's own `blocked_wonders` refusals all still apply exactly
+    /// as before. The empire-wide `Recovery` posture also closes the race: a
+    /// city outside the immediate siege ring must not commit a long queue
+    /// while its threatened neighbours need the same production to survive.
+    ///
+    /// Off for ordinary and frozen controllers, and deliberately NOT part of
+    /// the native repair bundle: it prices a Firaxis-specific opportunity (an
+    /// uncontested wonder catalogue and a score tally at the turn limit), and
+    /// CIVVIS-vs-CIVVIS wonders are the contested race the stock gate was
+    /// written for.
+    pub live_wonder_race: bool,
     /// Price the city ceiling off the land the board actually shows, densely.
     ///
     /// ★★★★ THE STOCK CEILING IS WHAT LOSES SETTLER GAMES, and three live
@@ -2615,6 +2703,7 @@ impl AdvancedAi {
             war_economy: false,
             war_reinforcement: false,
             war_patience: false,
+            endgame_war_runway: false,
             siege_commitment: false,
             relief_targets_the_siege: false,
             blind_objective_units: false,
@@ -2636,6 +2725,7 @@ impl AdvancedAi {
             religion_sues_peace: false,
             settler_blocked_turns: BTreeMap::new(),
             settler_avoid: BTreeMap::new(),
+            settler_dead_sites: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
             linked_settler_progress: false,
             live_governor_assignment_adapter: false,
@@ -2649,6 +2739,7 @@ impl AdvancedAi {
             city_target_floor: 3,
             plan_city_target: false,
             amenity_project_preemption: false,
+            live_wonder_race: false,
             wide_map_capacity: false,
             city_strategy: false,
             city_strategy_emphasis: true,
@@ -2766,6 +2857,14 @@ impl AdvancedAi {
 
     pub fn disable_wide_map_capacity(&mut self) {
         self.wide_map_capacity = false;
+    }
+
+    /// Let two Settlers walk at once (see `parallel_settlers`). Set by the
+    /// Civilization VI bridge only; native constructors and the frozen anchor
+    /// keep the one-at-a-time gate in both settler routes.
+    pub fn enable_parallel_settlers(&mut self) {
+        self.parallel_settlers = true;
+        self.base.parallel_settlers = true;
     }
 
     /// A city losing hitpoints is besieged, whatever the fog says. See
@@ -2982,6 +3081,13 @@ impl AdvancedAi {
     /// their recorded ladders stay comparable.
     pub fn enable_war_patience(&mut self) {
         self.war_patience = true;
+    }
+
+    /// Keep a fresh direct declaration out of the final campaign reserve.
+    /// Native tournament games leave this disabled so their recorded ladders
+    /// stay comparable.
+    pub fn enable_endgame_war_runway(&mut self) {
+        self.endgame_war_runway = true;
     }
 
     /// Keep the campaign pointed at a city the army has already breached and
@@ -3271,6 +3377,11 @@ impl AdvancedAi {
         // holds `OVERWHELMING_WAR_RATIO` over the defender: the measured live
         // pattern is one declaration per game and no second attempt.
         self.enable_war_patience();
+        // ⚠ A counter-leader emergency declaration reached France at t235 with
+        // only sixteen turns left, captured nothing, and Zulu won at t251.
+        // Timed attacks already reserve their scaled campaign window; the
+        // direct denial fallback must not spend a war on less runway.
+        self.enable_endgame_war_runway();
         // ⚠ And the war it keeps prosecuting still has to end on a captured
         // city. The campaign re-picks its objective from scratch every turn and
         // prices fifteen turns of siege at ~37 points, less than the distance
@@ -3332,6 +3443,9 @@ impl AdvancedAi {
         // and the rest of the Science queue while the district/building chain
         // completes.
         self.enable_amenity_project_preemption();
+        // Zero wonder orders in twenty live Settler runs that all ended on the
+        // host's score tally, 15 points a wonder. See `live_wonder_race`.
+        self.enable_live_wonder_race();
         // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
         // live runs the median empire ends on **30 techs of 77**, `engineering`
         // is reached by only **73%** and at a median turn **116** — which is why
@@ -3419,6 +3533,7 @@ impl AdvancedAi {
         self.enable_siege_tracks_the_wall();
         self.enable_siege_commitment();
         self.enable_war_patience();
+        self.enable_endgame_war_runway();
         // Holding one. Barbarians take 7.0 major cities a game, 65% of
         // everything a major loses.
         self.enable_home_defense();
@@ -3650,6 +3765,17 @@ impl AdvancedAi {
         self.amenity_project_preemption = false;
     }
 
+    /// Let a developed live city take the cheapest legal wonder whatever the
+    /// grand strategy says. See `live_wonder_race`: the live seat had never
+    /// ordered one, and its games end on the host's score tally.
+    pub fn enable_live_wonder_race(&mut self) {
+        self.live_wonder_race = true;
+    }
+
+    pub fn disable_live_wonder_race(&mut self) {
+        self.live_wonder_race = false;
+    }
+
     /// Put `medina_quarter` and `insulae` in the deck when a city is short of
     /// housing and already carries the districts they key off.
     pub fn enable_housing_cards(&mut self) {
@@ -3718,6 +3844,10 @@ impl AdvancedAi {
 
     pub fn disable_war_patience(&mut self) {
         self.war_patience = false;
+    }
+
+    pub fn disable_endgame_war_runway(&mut self) {
+        self.endgame_war_runway = false;
     }
 
     pub fn disable_siege_commitment(&mut self) {
@@ -3935,6 +4065,13 @@ impl AdvancedAi {
 
     pub fn coordinates_forces(&self) -> bool {
         self.victory_planning
+    }
+
+    /// Whether `war_patience` has lapsed: no campaign gain for
+    /// `WAR_PATIENCE_LIMIT_TURNS` standard turns. See the constant.
+    fn war_patience_exhausted(&self, g: &Game) -> bool {
+        g.turn.saturating_sub(self.last_campaign_progress)
+            >= g.standard_duration(WAR_PATIENCE_LIMIT_TURNS).max(1)
     }
 
     fn observe_campaign(&mut self, g: &Game, pid: usize) {
@@ -8826,7 +8963,8 @@ impl AdvancedAi {
         let overwhelming = self.war_patience
             && plan.strategy == GrandStrategy::Conquest
             && plan.target_player == Some(partner)
-            && my_power >= partner_power * OVERWHELMING_WAR_RATIO;
+            && my_power >= partner_power * OVERWHELMING_WAR_RATIO
+            && !self.war_patience_exhausted(g);
         let fatigued = !overwhelming
             && self.major_war_since.is_some_and(|started| {
                 g.turn.saturating_sub(started) >= 24
@@ -10802,21 +10940,31 @@ impl AdvancedAi {
             // not offered away while the empire holds an overwhelming power
             // advantage over that target. The outmatched and Recovery offer
             // triggers below keep their shape.
-            let overwhelming = self.war_patience
+            let overwhelms = self.war_patience
                 && plan.strategy == GrandStrategy::Conquest
                 && plan.target_player == Some(*other)
                 && my_power >= g.military_power(*other) * OVERWHELMING_WAR_RATIO;
+            let overwhelming = overwhelms && !self.war_patience_exhausted(g);
             let fatigued = stalled && !overwhelming;
             if stalled
-                && overwhelming
+                && overwhelms
                 && g.is_at_war(pid, *other)
                 && self.journal().wants(crate::reasoning::Level::Decision)
             {
                 let their_power = g.military_power(*other);
-                think!(self.journal(), Diplomacy, Decision,
-                       "Pressing the war on {}", g.players[*other].civ;
-                       "the campaign has stalled, but {my_power:.0} power against \
-                        their {their_power:.0} is a war to finish, not to quit");
+                if overwhelming {
+                    think!(self.journal(), Diplomacy, Decision,
+                           "Pressing the war on {}", g.players[*other].civ;
+                           "the campaign has stalled, but {my_power:.0} power against \
+                            their {their_power:.0} is a war to finish, not to quit");
+                } else {
+                    think!(self.journal(), Diplomacy, Decision,
+                           "Patience with the war on {} has run out", g.players[*other].civ;
+                           "{my_power:.0} power against their {their_power:.0} and still no \
+                            city gained in {} turns — a walkover that never lands is a tax on \
+                            the economy, so peace is offered and the plan may leave Conquest",
+                           g.turn.saturating_sub(self.last_campaign_progress));
+                }
             }
             let peace_pending = g.pending_deals.iter().any(|deal| {
                 deal.peace
@@ -10892,6 +11040,23 @@ impl AdvancedAi {
         };
         if self.timed_war_opening(g, pid, target) {
             return;
+        }
+        // Timed attacks already refuse an appointment that cannot finish
+        // before this same scaled reserve. The direct victory-denial fallback
+        // used to bypass it and could declare in the final turns with no
+        // plausible path to a capture. Keep that late-game guard live-only so
+        // the frozen tournament controller retains its recorded behaviour.
+        if self.endgame_war_runway {
+            let reserve = g.standard_duration(TIMED_WAR_ENDGAME_RESERVE);
+            if g.turn.saturating_add(reserve) >= g.max_turns {
+                if self.journal().wants(crate::reasoning::Level::Strategy) {
+                    let runway = g.max_turns.saturating_sub(g.turn);
+                    think!(self.journal(), Military, Strategy,
+                           "Holding off war with {}", g.players[target].civ;
+                           "{runway} turns remain, at or below the {reserve}-turn campaign reserve for a fresh declaration");
+                }
+                return;
+            }
         }
         let emergency_target = g
             .emergency_objective(pid)
@@ -15070,6 +15235,13 @@ impl AdvancedAi {
             // empire's entire expansion pipeline. The city target remains the
             // hard cap, so this opens only the next genuinely missing seat.
             2
+        } else if self.parallel_settlers && city_count >= 2 && city_count + settlers + 1 < desired_cities
+        {
+            // The live seat's throughput cell (see `parallel_settlers`): a
+            // second walker once the empire holds two cities and is still at
+            // least two seats short. `BasicAi::pick_item` opens the same width
+            // for the early Cities route.
+            2
         } else {
             1
         }
@@ -16012,13 +16184,49 @@ impl AdvancedAi {
                         Some(Item::Wonder { wonder: queued, .. }) if queued == wonder
                     )
                 });
+                let lane_opens = plan.strategy == GrandStrategy::Culture
+                    || self.victory_target == Some(VictoryTarget::Score)
+                    || (wonder_civ && self.victory_target.is_none());
+                // The live seat's race: see `live_wonder_race`. One wonder in
+                // production empire-wide, in a city with three buildings, once
+                // the empire holds three cities — a race the plan does not
+                // choose must not out-bid settlers, districts or defenders
+                // in more than one queue at a time.
+                // And only wonders no more than two eras behind the world's:
+                // the one live run whose plan did open the arm asked for six
+                // ANCIENT wonders at turn 129 (world era 4) and the host
+                // answered `offered: 0` twenty-one times — the Firaxis rivals
+                // had long since finished them, and every such refusal hands
+                // that city's queue to the mod's fallback for a turn. Two eras
+                // rather than one because the live seat itself runs one to two
+                // eras behind the world (18 techs at world era 3, 24 at 4 on
+                // run civvis-20260815T182350Z), so a one-era floor left it
+                // nothing it could actually build.
+                let wonder_era = spec
+                    .tech
+                    .as_deref()
+                    .and_then(|tech| g.rules.techs.get(tech).map(|node| node.era))
+                    .or_else(|| {
+                        spec.civic
+                            .as_deref()
+                            .and_then(|civic| g.rules.civics.get(civic).map(|node| node.era))
+                    })
+                    .unwrap_or(0);
+                let live_race_opens = self.live_wonder_race
+                    && !lane_opens
+                    && plan.strategy != GrandStrategy::Recovery
+                    && city_count >= 3
+                    && city.buildings.len() >= 3
+                    && wonder_era + 2 >= g.world_era
+                    && !g.cities.values().any(|other| {
+                        other.owner == pid
+                            && matches!(other.queue.first(), Some(Item::Wonder { .. }))
+                    });
                 if already_queued
                     || threatened
                     || city.buildings.len() < 2
                     || turns > remaining_turns * 0.65
-                    || (plan.strategy != GrandStrategy::Culture
-                        && self.victory_target != Some(VictoryTarget::Score)
-                        && (!wonder_civ || self.victory_target.is_some()))
+                    || !(lane_opens || live_race_opens)
                 {
                     -10_000.0
                 } else {
@@ -16027,7 +16235,21 @@ impl AdvancedAi {
                         + spec.amenity * 50.0
                         + spec.great_work_slots.values().sum::<i32>() as f64 * 40.0
                         + spec.great_person_points.values().sum::<f64>() * 18.0
-                        + if plan.strategy == GrandStrategy::Culture {
+                        + if live_race_opens {
+                            // Priced in the same units as the rest of this
+                            // function, which is normalised by (7 + build
+                            // turns) before ranking: a Library the live journal
+                            // reports "worth 74" carries a raw of ~960, a
+                            // Settler "worth 130" ~1 560. The Score lane's
+                            // +180 never wins that contest — which is why the
+                            // Score lane builds no wonders either. Fifteen
+                            // host score points at ~100 raw each puts a
+                            // 220-cost wonder at ~80 in a 20-production city
+                            // (above a Library, below a Settler) and ~30 in a
+                            // 5-production one (below both) — strong cities
+                            // race, weak ones keep developing.
+                            LIVE_WONDER_RACE_BONUS
+                        } else if plan.strategy == GrandStrategy::Culture {
                             320.0
                         } else if self.victory_target == Some(VictoryTarget::Score) {
                             180.0
@@ -17602,7 +17824,9 @@ impl AdvancedAi {
                 Some(score_cache),
             )
             .into_iter()
-            .filter(|(position, _)| Some(*position) != avoid)
+            .filter(|(position, _)| {
+                Some(*position) != avoid && !self.settler_site_is_dead(uid, *position)
+            })
             .collect::<Vec<_>>();
         if !self.settlement_safety {
             return BasicAi::first_reachable_settle_site(g, uid, &candidates);
@@ -17811,14 +18035,77 @@ impl AdvancedAi {
         Some(self.base.fortify_or_stop(g, pid, uid))
     }
 
+    /// Would a city founded at `site` right now bleed Loyalty fast enough to
+    /// revolt before it repays its Settler? This asks the engine's complete
+    /// Loyalty calculation of a speculative city, using the same -8/turn
+    /// emergency threshold as the live mirror's current-plot protection.
+    fn settle_site_is_loyalty_doomed(&self, g: &Game, pid: usize, site: Pos) -> bool {
+        let mut forecast = g.speculative_clone();
+        let city = forecast.found_city_for(pid, site, None);
+        forecast.city_loyalty_per_turn(&forecast.cities[&city])
+            <= SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN
+    }
+
+    /// Whether `uid` retired `pos` after standing on it unable to found. Expired
+    /// entries are pruned at the top of `advanced_settler_step`.
+    fn settler_site_is_dead(&self, uid: u32, pos: Pos) -> bool {
+        self.settler_dead_sites
+            .get(&uid)
+            .is_some_and(|sites| sites.contains_key(&pos))
+    }
+
     fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let current = g.units[&uid].pos;
+        if let Some(sites) = self.settler_dead_sites.get_mut(&uid) {
+            sites.retain(|_, until| *until > g.turn);
+        }
         if self
             .settler_avoid
             .get(&uid)
             .is_some_and(|(_, until)| *until <= g.turn)
         {
             self.settler_avoid.remove(&uid);
+        }
+        // ★★★★ STANDING ON A TARGET THAT CANNOT BE FOUNDED IS A DEAD END, and
+        // until now nothing left it. The founding branch below fires only when
+        // `can_found_city` agrees; when it does not — the host refused the
+        // plot, the plot proved to be a city-state's, or the mirror's loyalty
+        // forecast doomed it the moment the settler arrived
+        // (`block_loyalty_doomed_settler_sites` evaluates only the settler's
+        // CURRENT plot) — the cached target still passed every check the
+        // re-validation below makes, so the settler journaled "HELD short …
+        // it is already standing on its target" every turn. Measured on run
+        // civvis-20260815T190904Z: the settler built at t126 reached (53,27)
+        // at t151, stood there 25 turns and died at t176 without founding;
+        // the empire held 7 cities from t98 to t202. Retire the site for a
+        // while — the same bounded avoidance the stall counter uses — so the
+        // next pick, which already refuses `blocked_city_sites`, runs now.
+        // ⚠ Behind `settler_commit`, which every default constructor leaves off
+        // and the frozen `advanced_v1` anchor never sets, so the ladder is
+        // untouched (`elo_anchor_never_reaches_the_settler_commit_path`).
+        if let Some(target) = self.settler_targets.get(&uid).copied() {
+            if self.settler_commit && target == current && !g.can_found_city(uid) {
+                think!(self.journal(), Expansion, Detail,
+                       "Settler abandons {target:?}";
+                       "it stands on the site and the city cannot be founded there \
+                        — the target is retired and a new one will be chosen";
+                       target);
+                // A SET with a long expiry, not the single `settler_avoid`
+                // slot: the mirror's doom forecast is recomputed only for the
+                // plot the settler stands on, so a site retired for the stall
+                // counter's eight turns was re-picked the moment the settler
+                // stepped off it, and the stall path's own `settler_avoid`
+                // write then evicted it (replayed: abandoned t151, marching
+                // back at t156). Thirty standard turns outlasts the walk to the
+                // next site, and a doomed frontier is usually several plots.
+                self.settler_dead_sites.entry(uid).or_default().insert(
+                    target,
+                    g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+                );
+                self.settler_targets.remove(&uid);
+                self.settler_stalls.remove(&uid);
+                self.settler_blocked_turns.remove(&uid);
+            }
         }
         let avoid = self.settler_avoid.get(&uid).map(|(position, _)| *position);
         // Search only the immediate neighborhood for the capital. The target
@@ -17951,6 +18238,13 @@ impl AdvancedAi {
                     .owner_city
                     .is_none_or(|cid| g.cities[&cid].owner == pid)
                 && Some(*target) != avoid
+                // A site the host or the mirror has since blocked is not a
+                // target, however it was chosen: `best_settler_target`
+                // refuses `blocked_city_sites` when it PICKS a site, but a
+                // site can join that set after the pick (see the standing
+                // case at the top of this function for the measured cost).
+                && !g.blocked_city_sites.contains(target)
+                && !self.settler_site_is_dead(uid, *target)
                 // A momentarily unavailable route is not a bad site. Under
                 // `settler_commit` the stall counter decides when to give up,
                 // not a single blocked turn.
@@ -17961,14 +18255,54 @@ impl AdvancedAi {
                     || self.settlement_tile_risk(g, pid, Some(uid), *target, &visible)
                         <= SETTLER_STEP_RISK_LIMIT)
         });
+        // The target forecast is a live-bridge repair, not a production or
+        // tournament policy. `settler_commit` is on in the normal promoted
+        // controller, whereas both default constructors leave
+        // `loyalty_rate_alarm` off; the live bridge enables it with the live
+        // Loyalty emergency treatment. Use the latter so the frozen anchor
+        // and the default advanced controller retain their established
+        // ladders.
+        let forecast_loyalty = self.base.loyalty_rate_alarm;
         let target = valid_target.or_else(|| {
-            self.best_settler_target(g, pid, uid, 8, avoid)
-                .map(|(pos, _)| {
+            // Ask the forecast before the walk. The mirror can only reject a
+            // doomed site after the Settler stands on it, which previously
+            // spent a long frontier walk merely to discover the city would
+            // revolt almost immediately. Retiring a rejected site reuses the
+            // bounded dead-site set from the current-plot repair (#1689), so
+            // the next candidate is genuinely distinct.
+            let mut rejected = 0;
+            loop {
+                let Some((pos, _)) = self.best_settler_target(g, pid, uid, 8, avoid) else {
+                    break None;
+                };
+                if !forecast_loyalty || !self.settle_site_is_loyalty_doomed(g, pid, pos) {
                     self.settler_targets.insert(uid, pos);
-                    pos
-                })
+                    break Some(pos);
+                }
+                think!(self.journal(), Expansion, Detail,
+                       "Settler refuses {pos:?} before walking there";
+                       "the city would lose at least {:.0} Loyalty a turn beside its \
+                        neighbours; the site is retired and the next best is asked",
+                       -SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN; pos);
+                self.settler_dead_sites.entry(uid).or_default().insert(
+                    pos,
+                    g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+                );
+                rejected += 1;
+                if rejected >= SETTLE_TARGET_FORECAST_RETRIES {
+                    break None;
+                }
+            }
         });
         let Some(target) = target else {
+            // Do not let a safe exhaustion fall through to `BasicAi`, which
+            // cannot see `settler_dead_sites` and may select the very plot the
+            // live forecast just retired. A later board can reveal a safe site
+            // or change the Loyalty calculation; until then, holding preserves
+            // the Settler rather than knowingly founding a doomed city.
+            if forecast_loyalty {
+                return false;
+            }
             return self.base.settler_step(g, pid, uid);
         };
         if current == target && g.can_found_city(uid) {
@@ -19651,7 +19985,29 @@ impl AdvancedAi {
                 });
                 low_hp_unit || capturable_city
             });
+            let arena = g.is_arena();
             let relieving = plan.threatened_city.is_some();
+            // Recovery is a bounded defensive posture when it was selected
+            // solely because the empire is globally outmatched. A fogged
+            // enemy city can still make the local ratio read 3.00, but that
+            // is not evidence that the whole army should spend its brief
+            // recovery window advancing away from home. In the live Rome run
+            // at t106, eight units marched on Puteoli under exactly that
+            // label; no home city had been named yet, so the later relief
+            // force started several turns farther from Cumae than it needed
+            // to be.
+            //
+            // A named threatened city keeps the established relief route,
+            // and a finishable unit or city remains an Engage posture. The
+            // direct tactical scan also runs before this movement posture,
+            // so holding the front does not decline an ordinary nearby trade.
+            // `bounded_recovery` is false in the frozen controller, which
+            // preserves its source-contract path while the deployed policy
+            // gets only the temporary global-outmatch case.
+            let global_recovery_holds_front = !arena
+                && self.bounded_recovery
+                && plan.strategy == GrandStrategy::Recovery
+                && plan.threatened_city.is_none();
             // A Tactics arena has none of the three reasons a Civ army stands
             // still, so it does none of the three standing-still postures.
             //
@@ -19669,7 +20025,6 @@ impl AdvancedAi {
             // the whole of the difference: everything below is the shipped
             // Civ doctrine, unchanged, and an arena only stops asking to be
             // let out of the fight.
-            let arena = g.is_arena();
             let locally_superior = arena || local_strength_ratio >= LOCAL_SUPERIORITY_FLOOR;
             // ⚠ MEASURED AND REJECTED: letting a rush ignore `relieving` and
             // `Muster` — on the theory that a stack sized against one
@@ -19680,6 +20035,8 @@ impl AdvancedAi {
             // without a different mechanism.
             let posture = if !arena && average_hp <= self.base.w.withdraw_hp + 10.0 {
                 ForcePosture::Recover
+            } else if global_recovery_holds_front && !forcing_focus {
+                ForcePosture::Hold
             } else if (focus_target.is_some()
                 && (locally_superior || plan.threatened_city.is_some() || forcing_focus))
                 || (units.iter().any(|uid| {
@@ -21621,6 +21978,13 @@ impl AdvancedAi {
                 }
             }
         }
+        // A home raider supplies a bounded defensive assignment, not a second
+        // major-war front. Remember this exact shape so responders keep their
+        // first claim below while every other pre-war campaign unit can retain
+        // its staging order.
+        let barbarian_only = g
+            .barb_pid
+            .filter(|barb| enemies.len() == 1 && enemies[0] == *barb);
         if enemies.is_empty() {
             if spec.domain.as_deref() == Some("sea") {
                 if let Some(settler) = unit
@@ -22029,6 +22393,17 @@ impl AdvancedAi {
                     return true;
                 }
                 return self.base.tactical_step(g, pid, uid, threat, &barb_only, radius);
+            }
+        }
+        // The defender's claim above is deliberately bounded to the nearest
+        // half-army. Let the unclaimed remainder keep assembling on its
+        // campaign ring rather than falling through to the barbarian tactical
+        // path, which treats the foreign objective as a one-tile approach and
+        // pulls correctly staged units out of position. Major wars continue to
+        // use their existing group and reinforcement path unchanged.
+        if barbarian_only.is_some() {
+            if let Some(acted) = self.campaign_staging_step(g, pid, uid, plan) {
+                return acted;
             }
         }
         let defend_target = plan.threatened_city.and_then(|cid| {
@@ -28604,6 +28979,22 @@ mod tests {
             "the usual elective-war margin must reject this outnumbered army"
         );
 
+        // The live bridge must not spend its final campaign window on the
+        // same urgent fallback. Timed attacks already reserve this scaled
+        // runway, so the direct path must hold even though urgency normally
+        // waives the power gate.
+        let mut endgame = game.clone();
+        let reserve = endgame.standard_duration(TIMED_WAR_ENDGAME_RESERVE);
+        endgame.turn = endgame.max_turns.saturating_sub(reserve);
+        let mut guarded = AdvancedAi::targeting(VictoryTarget::Domination);
+        guarded.enable_live_bridge();
+        assert!(guarded.urgent_victory_threat(&endgame, 1));
+        guarded.advanced_diplomacy(&mut endgame, 0, &plan);
+        assert!(
+            !endgame.is_at_war(0, 1),
+            "the live direct fallback must reserve enough turns to turn a declaration into a capture"
+        );
+
         ai.advanced_diplomacy(&mut game, 0, &plan);
         assert!(
             game.is_at_war(0, 1),
@@ -29332,6 +29723,27 @@ mod tests {
             !AdvancedAi::settler_delay_is_resolved(false, false),
             "same target, no progress: still blocked"
         );
+    }
+
+    /// The live seat walks two Settlers at once from two cities on, while the
+    /// empire is at least two seats short; every default constructor and the
+    /// frozen anchor keep the one-at-a-time gate in both settler routes.
+    #[test]
+    fn parallel_settlers_open_a_second_pipeline_slot() {
+        let mut ai = AdvancedAi::new();
+        assert!(!ai.parallel_settlers && !ai.base.parallel_settlers, "off unless the bridge asks");
+        assert_eq!(ai.settler_in_flight_allowed(8, 3, 1), 1);
+        assert!(!AdvancedAi::legacy().parallel_settlers);
+        assert!(!AdvancedAi::legacy().base.parallel_settlers);
+
+        ai.enable_parallel_settlers();
+        assert!(ai.parallel_settlers && ai.base.parallel_settlers, "both routes see the flag");
+        assert_eq!(ai.settler_in_flight_allowed(8, 3, 1), 2, "three cities, one walker, five short");
+        assert_eq!(ai.settler_in_flight_allowed(8, 2, 0), 2, "two cities open the second slot");
+        assert_eq!(ai.settler_in_flight_allowed(8, 1, 1), 1, "one city keeps a single walker");
+        assert_eq!(ai.settler_in_flight_allowed(3, 2, 0), 1, "one seat short: one walker covers it");
+        assert_eq!(ai.settler_in_flight_allowed(4, 2, 1), 1, "the walker already covers the seat but one");
+        assert_eq!(ai.settler_in_flight_allowed(5, 2, 1), 2);
     }
 
     #[test]
@@ -32559,6 +32971,145 @@ mod tests {
         assert!(
             unseen_ratio < LOCAL_SUPERIORITY_FLOOR,
             "one warrior must not read an unseen city as locally dominant: {unseen_ratio}"
+        );
+    }
+
+    #[test]
+    fn global_recovery_holds_an_unthreatened_front_but_keeps_a_forcing_finish() {
+        // The t106 live-Rome shape: a declared major war and an enemy city
+        // known outside current sight, but no local siege yet. The ordinary
+        // fog-safe mover can still see a 3.00 local ratio here; Recovery must
+        // make that a temporary home hold rather than an offensive march.
+        let (mut game, _capital, home) = empire_with_a_capital(71_116);
+        let enemy_site = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.wdist(**position, home) >= 15
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .min()
+            .expect("fixture needs a distant enemy city site");
+        game.current = 1;
+        let enemy_settler = game.spawn_test_unit("settler", 1, enemy_site);
+        game.apply(
+            1,
+            &Action::FoundCity {
+                unit: enemy_settler,
+            },
+        )
+        .expect("found the distant enemy city");
+        game.current = 0;
+        let target_city = *game
+            .player_city_ids(1)
+            .first()
+            .expect("the enemy must own its founded city");
+        let objective = game.cities[&target_city].pos;
+        for unit in game.player_unit_ids(1) {
+            game.remove_unit(unit);
+        }
+        let launch = game
+            .nbrs(home)
+            .into_iter()
+            .find(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile)
+                        && !game.rules.is_water(tile)
+                        && game.city_at(*position).is_none()
+                        && game.units_at(*position).is_empty()
+                })
+            })
+            .expect("the capital has an empty land launch tile");
+        let warrior = game.spawn_test_unit("warrior", 0, launch);
+        assert!(
+            !game.player_can_see(0, objective),
+            "the objective must be outside the turn-start sight frame"
+        );
+
+        let conquest = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(target_city),
+            threatened_city: None,
+            desired_cities: 2,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let recovery = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            ..conquest.clone()
+        };
+        let mut ai = AdvancedAi::new();
+        assert!(
+            ai.bounded_recovery,
+            "the promoted controller carries the bounded Recovery policy"
+        );
+
+        ai.rebuild_force_groups(&game, 0, &conquest);
+        assert_eq!(
+            ai.force_groups()
+                .iter()
+                .find(|group| group.units.contains(&warrior))
+                .expect("the warrior receives a normal force order")
+                .posture,
+            ForcePosture::Advance,
+            "outside Recovery the fogged city remains the ordinary campaign objective"
+        );
+
+        ai.rebuild_force_groups(&game, 0, &recovery);
+        let holding = ai
+            .force_groups()
+            .iter()
+            .find(|group| group.units.contains(&warrior))
+            .expect("the warrior receives a Recovery force order");
+        assert_eq!(holding.objective, objective);
+        assert_eq!(
+            holding.posture,
+            ForcePosture::Hold,
+            "an outmatched Recovery plan without a threatened city must not advance on a fogged campaign objective"
+        );
+
+        let mut legacy = AdvancedAi::legacy();
+        legacy.rebuild_force_groups(&game, 0, &recovery);
+        assert_eq!(
+            legacy
+                .force_groups()
+                .iter()
+                .find(|group| group.units.contains(&warrior))
+                .expect("the frozen controller receives the same force order")
+                .posture,
+            ForcePosture::Advance,
+            "the legacy anchor leaves bounded Recovery off and keeps its historical campaign movement"
+        );
+
+        // A finishable adjacent unit still overrides the home hold. This is
+        // the existing forcing-focus exception, not a second attack policy.
+        let contact = game
+            .nbrs(launch)
+            .into_iter()
+            .find(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile)
+                        && !game.rules.is_water(tile)
+                        && game.city_at(*position).is_none()
+                        && game.units_at(*position).is_empty()
+                })
+            })
+            .expect("the warrior has an empty adjacent land contact");
+        let enemy = game.spawn_test_unit("warrior", 1, contact);
+        game.units.get_mut(&enemy).unwrap().hp = 1;
+        ai.rebuild_force_groups(&game, 0, &recovery);
+        assert_eq!(
+            ai.force_groups()
+                .iter()
+                .find(|group| group.units.contains(&warrior))
+                .expect("the warrior keeps its force order at contact")
+                .posture,
+            ForcePosture::Engage,
+            "Recovery may still finish a visible enemy it can immediately remove"
         );
     }
 
@@ -38327,6 +38878,150 @@ mod tests {
         );
     }
 
+    /// ★★★★★ A HOME RAIDER MUST NOT FREEZE THE REST OF A PRE-WAR ARMY.
+    ///
+    /// The live bridge intentionally puts the barbarian seat in `enemies`
+    /// while a raider threatens a city. That made the controller leave the
+    /// `enemies.is_empty()` branch, which contains `campaign_staging_step`.
+    /// Consequently, the bounded home-defense assignment did not merely claim
+    /// its responder: it paused every unclaimed assault unit until the raider
+    /// disappeared. On live run `civvis-20260815T190904Z`, Rome held off its
+    /// Netherlands declaration from turns 95 through 104 despite 337--462
+    /// power against 69--76, while home raiders remained in range.
+    #[test]
+    fn a_distant_campaign_unit_stays_staged_while_barbarians_are_at_home() {
+        let mut game = Game::new_full(2, 30, 20, 90_078, 120, 0, true);
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        for uid in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(uid);
+        }
+
+        let mut land: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        land.sort();
+        let mut sites = None;
+        'find_sites: for home in &land {
+            for objective in &land {
+                if game.wdist(*home, *objective) >= 16
+                    && game.wdisk(*home, crate::ai::HOME_THREAT_RADIUS).len() >= 24
+                    && game.wdisk(*objective, 4).len() >= 18
+                {
+                    sites = Some((*home, *objective));
+                    break 'find_sites;
+                }
+            }
+        }
+        let (home, objective_site) = sites.expect("the map has separated interior city sites");
+        for (player, site) in [(0, home), (1, objective_site)] {
+            game.current = player;
+            let settler = game.spawn_test_unit("settler", player, site);
+            game.apply(player, &Action::FoundCity { unit: settler })
+                .expect("each chosen site can found a city");
+        }
+        game.current = 0;
+        game.record_contact(0, 1);
+        let target_city = game.player_city_ids(1)[0];
+        let objective = game.cities[&target_city].pos;
+        let barb = game.barb_pid.expect("a barbarian-seated game has barb_pid");
+        for uid in game.units.keys().copied().collect::<Vec<_>>() {
+            if game.units[&uid].owner == barb {
+                game.remove_unit(uid);
+            }
+        }
+        let open = |g: &Game, pos: Pos| {
+            g.map
+                .get(pos)
+                .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                && g.city_at(pos).is_none()
+                && g.units_at(pos).is_empty()
+        };
+        let raider_at = game
+            .wdisk(home, crate::ai::HOME_THREAT_RADIUS - 1)
+            .into_iter()
+            .filter(|pos| open(&game, *pos))
+            .max_by_key(|pos| (game.wdist(*pos, objective), *pos))
+            .expect("the home ring has an open land tile");
+        game.spawn_test_unit("warrior", barb, raider_at);
+        let staging_at = game
+            .wdisk(objective, 4)
+            .into_iter()
+            .filter(|pos| {
+                open(&game, *pos)
+                    && game.wdist(*pos, objective) == 4
+                    && game.wdist(*pos, raider_at) > 10
+                    && game.nbrs(*pos).into_iter().any(|next| {
+                        game.wdist(next, objective) == 3
+                            && game.map.get(next).is_some_and(|tile| {
+                                tile.owner_city
+                                    .and_then(|city| game.cities.get(&city))
+                                    .is_none_or(|city| city.owner != 1)
+                            })
+                    })
+            })
+            .max_by_key(|pos| (game.wdist(*pos, raider_at), *pos))
+            .expect("a legal staging tile remains outside the home-recall range");
+        let assault = game.spawn_test_unit("swordsman", 0, staging_at);
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(target_city),
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut ai = AdvancedAi::new();
+        ai.enable_home_defense();
+        ai.battlefront_observation = false;
+
+        assert!(
+            BasicAi::barbarian_presence_at_home(&game, 0),
+            "precondition: the barbarian is inside Rome's home-threat ring"
+        );
+        assert!(
+            ai.campaign_staging_position(&game, 0, 1, assault, objective, staging_at),
+            "precondition: the assault unit already occupies a lawful 3--5 staging tile"
+        );
+        assert_eq!(
+            ai.base.home_defense_objective(&game, 0, assault, &[barb]),
+            None,
+            "the assault unit is beyond the bounded recall range and stays unclaimed"
+        );
+
+        // This is the old fall-through: it treats the foreign city as a
+        // tactical destination even though the only actual enemy is the
+        // barbarian, and walks a correctly staged unit one tile closer.
+        let mut historic = game.clone();
+        let historic_ai = ai.clone();
+        assert!(
+            historic_ai
+                .base
+                .tactical_step(&mut historic, 0, assault, objective, &[barb], 1),
+            "precondition: the old tactical fallback would abandon the staging ring"
+        );
+        assert_ne!(
+            historic.units[&assault].pos, staging_at,
+            "the historical fallback must move the staged unit before this regression is meaningful"
+        );
+
+        let _ = ai.advanced_military_step(&mut game, 0, assault, &plan);
+        assert_eq!(
+            game.units[&assault].pos, staging_at,
+            "after bounded defenders get first claim, the unclaimed assault unit must hold its campaign staging tile"
+        );
+        assert!(
+            game.units[&assault].fortified,
+            "the campaign staging order must claim and hold the assault unit while the home raider is active"
+        );
+        assert!(
+            !game.is_at_war(0, 1),
+            "the pre-war staging treatment must not open the major war itself"
+        );
+    }
+
     /// ★★★★★ A RELIEF COLUMN MUST AIM AT THE SIEGE, NOT AT ITS OWN DOORSTEP.
     ///
     /// `domain_objective`'s `threatened_city` arm gathers every hostile within 8
@@ -41674,24 +42369,494 @@ mod research_probe {
         assert!(!live.base.wonder_ring_settle_value);
     }
 
+    /// A settler standing on the site it chose, which the host or the mirror
+    /// has since blocked, must retire that site and pick another — not stand
+    /// there journaling "already standing on its target" until it dies, as
+    /// the settler of run civvis-20260815T190904Z did for 25 turns.
+    #[test]
+    fn a_settler_on_a_site_it_can_no_longer_found_retires_it_and_moves_on() {
+        let mut game = Game::new_full(2, 40, 24, 91_774, 250, 0, false);
+        game.current = 0;
+        let capital_settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: capital_settler }).unwrap();
+        let capital = game.player_city_ids(0)[0];
+        let home = game.cities[&capital].pos;
+        for unit in game.player_unit_ids(0) {
+            game.remove_unit(unit);
+        }
+        // Flat, open, explored land everywhere so the choice is about the
+        // block and nothing else.
+        let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        for position in positions {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            game.players[0].explored.insert(position);
+        }
+        let mut sites: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| game.wdist(*position, home) == 5)
+            .collect();
+        sites.sort_unstable();
+        let site = sites[0];
+        let settler = game.spawn_test_unit("settler", 0, site);
+        assert!(game.can_found_city(settler), "the fixture site is foundable before the block");
+
+        let mut ai = AdvancedAi::new();
+        assert!(ai.settler_commit, "the deployed controller carries settler_commit");
+        assert!(!AdvancedAi::legacy().settler_commit, "the frozen anchor never reaches this path");
+        ai.settler_targets.insert(settler, site);
+        // The mirror's loyalty forecast, a host `found_refused`, or a
+        // city-state's border all arrive through this one set.
+        game.blocked_city_sites.insert(site);
+        assert!(!game.can_found_city(settler));
+
+        game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+        let _ = ai.advanced_settler_step(&mut game, 0, settler);
+
+        assert_ne!(
+            ai.settler_targets.get(&settler),
+            Some(&site),
+            "the blocked site must not survive as the settler's target"
+        );
+        assert!(
+            ai.settler_site_is_dead(settler, site),
+            "the retired site is dead for a bounded while so the next pick cannot be it"
+        );
+        let expiry = ai.settler_dead_sites[&settler][&site];
+        assert!(
+            expiry > game.turn + game.standard_duration(8),
+            "the retirement must outlast the stall counter's own eight-turn avoidance"
+        );
+        assert!(
+            game.units.get(&settler).is_some_and(|unit| unit.pos != site)
+                || ai.settler_targets.get(&settler).is_some_and(|next| *next != site),
+            "the settler either stepped off the dead site or holds a new target"
+        );
+    }
+
+    /// A live settler must reject a frontier site whose speculative city would
+    /// immediately lose Loyalty, while normal and frozen controllers preserve
+    /// their established selection path.
+    #[test]
+    fn a_live_settler_refuses_a_loyalty_doomed_target_before_walking_there() {
+        let mut game = Game::new_full(2, 40, 24, 91_775, 250, 0, false);
+        game.current = 0;
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            let pos = game.units[&settler].pos;
+            game.remove_unit(settler);
+            game.found_city_for(pid, pos, None);
+        }
+        for unit in game.player_unit_ids(0) {
+            game.remove_unit(unit);
+        }
+        let ours = game.player_city_ids(0)[0];
+        let theirs = game.player_city_ids(1)[0];
+        let home = game.cities[&ours].pos;
+        let rival = game.cities[&theirs].pos;
+        assert!(game.wdist(home, rival) >= 12, "fixture needs a distant rival");
+        let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        for position in positions {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            game.players[0].explored.insert(position);
+        }
+        game.cities.get_mut(&theirs).unwrap().pop = 12;
+        game.cities.get_mut(&ours).unwrap().pop = 6;
+
+        let mut beside_rival: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(*pos, rival) == 4 && game.wdist(*pos, home) >= 4)
+            .collect();
+        beside_rival.sort_unstable();
+        let doomed = beside_rival[0];
+        assert!(
+            AdvancedAi::new().settle_site_is_loyalty_doomed(&game, 0, doomed),
+            "the fixture must put the candidate below the live emergency threshold"
+        );
+        let mut beside_home: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(*pos, home) == 4 && game.wdist(*pos, rival) >= 10)
+            .collect();
+        beside_home.sort_unstable();
+        assert!(
+            !AdvancedAi::new().settle_site_is_loyalty_doomed(&game, 0, beside_home[0]),
+            "the fixture must retain a holdable alternative"
+        );
+
+        let settler = game.spawn_test_unit("settler", 0, doomed);
+        game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+        let mut default_board = game.clone();
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.base.loyalty_rate_alarm);
+        let _ = live.advanced_settler_step(&mut game, 0, settler);
+        let retired = live.settler_dead_sites.get(&settler).cloned().unwrap_or_default();
+        assert!(
+            !retired.is_empty(),
+            "the live bridge retires a doomed candidate before the Settler walks"
+        );
+        if let Some(target) = live.settler_targets.get(&settler).copied() {
+            assert!(!retired.contains_key(&target));
+            assert!(
+                !live.settle_site_is_loyalty_doomed(&game, 0, target),
+                "a retained target must survive the same forecast"
+            );
+        }
+
+        let mut default = AdvancedAi::new();
+        assert!(default.settler_commit, "the normal controller does use settler_commit");
+        assert!(!default.base.loyalty_rate_alarm);
+        let _ = default.advanced_settler_step(&mut default_board, 0, settler);
+        assert!(
+            default
+                .settler_dead_sites
+                .get(&settler)
+                .is_none_or(|sites| sites.is_empty()),
+            "the normal controller must not enter the live-only forecast"
+        );
+    }
+
+    /// When every candidate examined by the live forecast is doomed, holding
+    /// is safer than falling through to `BasicAi`, which cannot see the
+    /// retired-site set and may found on the very plot just rejected.
+    #[test]
+    fn a_live_settler_holds_when_every_new_target_is_loyalty_doomed() {
+        let mut game = Game::new_full(2, 40, 24, 91_776, 250, 0, false);
+        game.current = 0;
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            let pos = game.units[&settler].pos;
+            game.remove_unit(settler);
+            game.found_city_for(pid, pos, None);
+        }
+        for unit in game.player_unit_ids(0) {
+            game.remove_unit(unit);
+        }
+        let ours = game.player_city_ids(0)[0];
+        let theirs = game.player_city_ids(1)[0];
+        let home = game.cities[&ours].pos;
+        let rival = game.cities[&theirs].pos;
+        let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        for position in positions {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            game.players[0].explored.insert(position);
+        }
+        game.cities.get_mut(&theirs).unwrap().pop = 12;
+        game.cities.get_mut(&ours).unwrap().pop = 6;
+        let mut beside_rival: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(*pos, rival) == 4 && game.wdist(*pos, home) >= 4)
+            .collect();
+        beside_rival.sort_unstable();
+        let doomed = beside_rival[0];
+        assert!(AdvancedAi::new().settle_site_is_loyalty_doomed(&game, 0, doomed));
+        // Give the sole candidate a deliberately strong first two rings. The
+        // test must exercise a real target pick, not pass because the normal
+        // value threshold rejects every flat, frontier site before Loyalty is
+        // considered.
+        for position in game.wdisk(doomed, 2) {
+            if let Some(tile) = game.map.tiles.get_mut(&position) {
+                tile.resource = Some(crate::name!("rice"));
+            }
+        }
+        for position in game.map.tiles.keys().copied().collect::<Vec<_>>() {
+            if position != doomed {
+                game.blocked_city_sites.insert(position);
+            }
+        }
+        let settler = game.spawn_test_unit("settler", 0, doomed);
+        game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+        let cities_before = game.player_city_ids(0).len();
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(
+            !game.blocked_city_sites.contains(&doomed),
+            "the lone candidate must remain available to the target picker"
+        );
+        assert_eq!(
+            live.best_settler_target(&game, 0, settler, 8, None)
+                .map(|(position, _)| position),
+            Some(doomed),
+            "the fixture must force the forecast to examine its lone candidate"
+        );
+        assert!(
+            !live.advanced_settler_step(&mut game, 0, settler),
+            "the safe exhaustion is a no-op, not an unfiltered fallback"
+        );
+        assert_eq!(game.player_city_ids(0).len(), cities_before);
+        assert_eq!(game.units[&settler].pos, doomed);
+        assert!(live.settler_site_is_dead(settler, doomed));
+        assert!(
+            !live.settler_targets.contains_key(&settler),
+            "no doomed target is retained after exhaustion"
+        );
+    }
+
+    /// Off by default, set only by the live bridge, holdable off on its own —
+    /// the wonder race follows the same contract as every other bridge
+    /// repair, so the frozen `advanced_v1` anchor keeps its ladder.
+    #[test]
+    fn only_the_live_bridge_races_for_wonders() {
+        assert!(!AdvancedAi::new().live_wonder_race);
+        assert!(!AdvancedAi::legacy().live_wonder_race);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.live_wonder_race);
+        live.disable_live_wonder_race();
+        assert!(!live.live_wonder_race);
+    }
+
+    /// The live seat had never ordered a wonder because the `Item::Wonder`
+    /// arm returns −10 000 for every plan but Culture and every lane but
+    /// Score. On the live seat a developed city in a three-city empire prices
+    /// the wonder at the Score-lane valuation; a second city may not open a
+    /// second race while the first is still building; and the stock
+    /// controller keeps refusing exactly as it always did.
+    #[test]
+    fn live_seat_races_for_one_wonder_at_a_time_and_stock_still_refuses() {
+        let mut game = Game::new_full(1, 32, 20, 91_772, 250, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let capital = game.player_city_ids(0)[0];
+        let techs: Vec<Name> = game.rules.techs.keys().cloned().collect();
+        let civics: Vec<Name> = game.rules.civics.keys().cloned().collect();
+        game.players[0].techs.extend(techs);
+        game.players[0].civics.extend(civics);
+        for position in game.cities[&capital].owned_tiles.clone() {
+            if position == game.cities[&capital].pos {
+                continue;
+            }
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("desert");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+        }
+        // Three buildings make the capital "developed"; two more cities make
+        // the empire one that has begun expanding.
+        for building in ["monument", "granary", "water_mill"] {
+            game.cities
+                .get_mut(&capital)
+                .unwrap()
+                .buildings
+                .push(Name::new(building));
+        }
+        let home = game.cities[&capital].pos;
+        let mut founded = 0;
+        let mut sites: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        sites.sort_unstable();
+        for site in sites {
+            if founded == 2 {
+                break;
+            }
+            let distant = game.wdist(site, home) >= 5
+                && game
+                    .player_city_ids(0)
+                    .iter()
+                    .all(|c| game.wdist(site, game.cities[c].pos) >= 5);
+            let tile = &game.map.tiles[&site];
+            if distant && game.rules.is_passable(tile) && !game.rules.is_water(tile) {
+                game.found_city_for(0, site, None);
+                founded += 1;
+            }
+        }
+        assert_eq!(game.player_city_ids(0).len(), 3, "fixture must hold three cities");
+        let pyramids = game
+            .producible_items(0, capital)
+            .into_iter()
+            .find(|item| matches!(item, Item::Wonder { wonder, .. } if wonder == "pyramids"))
+            .expect("the desert capital can place the Pyramids");
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 6,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        let stock = AdvancedAi::new();
+        assert!(
+            stock.production_value(&game, 0, capital, &pyramids, &plan, &stock.counts(&game, 0))
+                < -1_000.0,
+            "the stock controller keeps refusing wonders outside the Culture plan"
+        );
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        let raced =
+            live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0));
+        assert!(raced > 0.0, "the live seat opens the wonder arm: {raced}");
+        let recovery_plan = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            ..plan.clone()
+        };
+        assert!(
+            live.production_value(
+                &game,
+                0,
+                capital,
+                &pyramids,
+                &recovery_plan,
+                &live.counts(&game, 0),
+            ) < -1_000.0,
+            "Recovery must reserve even a locally safe city's production for defense"
+        );
+        let mut score_lane = AdvancedAi::targeting(VictoryTarget::Score);
+        score_lane.enable_live_bridge();
+        let scored = score_lane.production_value(
+            &game,
+            0,
+            capital,
+            &pyramids,
+            &plan,
+            &score_lane.counts(&game, 0),
+        );
+        assert!(
+            raced > scored && scored > 0.0,
+            "the race must out-price the Score lane's token wonder appetite: {raced} vs {scored}"
+        );
+
+        // A second city may not open a second race while the capital builds.
+        game.cities.get_mut(&capital).unwrap().queue = vec![pyramids.clone()];
+        let other = game
+            .player_city_ids(0)
+            .into_iter()
+            .find(|c| *c != capital)
+            .unwrap();
+        for building in ["monument", "granary", "water_mill"] {
+            game.cities
+                .get_mut(&other)
+                .unwrap()
+                .buildings
+                .push(Name::new(building));
+        }
+        let another = game
+            .producible_items(0, other)
+            .into_iter()
+            .find(|item| matches!(item, Item::Wonder { wonder, .. } if wonder != "pyramids"));
+        if let Some(another) = another {
+            assert!(
+                live.production_value(&game, 0, other, &another, &plan, &live.counts(&game, 0))
+                    < -1_000.0,
+                "one wonder in production empire-wide at a time"
+            );
+        }
+
+        // A wonder three eras behind the world is one the Firaxis rivals have
+        // long since finished: the race does not ask for it.
+        game.cities.get_mut(&capital).unwrap().queue.clear();
+        game.world_era = 3;
+        assert!(
+            live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0))
+                < -1_000.0,
+            "an ancient wonder is not raced once the world is medieval"
+        );
+        game.world_era = 2;
+        assert!(
+            live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0))
+                > 0.0,
+            "wonders two eras behind the world are still raced"
+        );
+        game.world_era = 0;
+
+        // Withholding the treatment restores the stock refusal.
+        live.disable_live_wonder_race();
+        assert!(
+            live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0))
+                < -1_000.0
+        );
+    }
+
     /// Off by default, set only by the live bridge, each holdable off on its
-    /// own — the war-conversion trio follows the same contract as every other
+    /// own — the war-conversion quartet follows the same contract as every other
     /// bridge repair.
     #[test]
-    fn only_the_live_bridge_fights_the_war_conversion_trio() {
+    fn only_the_live_bridge_fights_the_war_conversion_quartet() {
         let fresh = AdvancedAi::new();
         assert!(!fresh.war_economy);
         assert!(!fresh.war_reinforcement);
         assert!(!fresh.war_patience);
+        assert!(!fresh.endgame_war_runway);
         let legacy = AdvancedAi::legacy();
-        assert!(!legacy.war_economy && !legacy.war_reinforcement && !legacy.war_patience);
+        assert!(
+            !legacy.war_economy
+                && !legacy.war_reinforcement
+                && !legacy.war_patience
+                && !legacy.endgame_war_runway
+        );
         let mut live = AdvancedAi::new();
         live.enable_live_bridge();
-        assert!(live.war_economy && live.war_reinforcement && live.war_patience);
+        assert!(
+            live.war_economy
+                && live.war_reinforcement
+                && live.war_patience
+                && live.endgame_war_runway
+        );
         live.disable_war_economy();
         live.disable_war_reinforcement();
         live.disable_war_patience();
-        assert!(!live.war_economy && !live.war_reinforcement && !live.war_patience);
+        live.disable_endgame_war_runway();
+        assert!(
+            !live.war_economy
+                && !live.war_reinforcement
+                && !live.war_patience
+                && !live.endgame_war_runway
+        );
     }
 
     /// The routing in `take_turn` must name the adaptive Conquest plan behind
@@ -41803,10 +42968,14 @@ mod research_probe {
         );
 
         // With the flag: the stall clause stands down against the overwhelmed
-        // campaign target, and the denied-partner guard refuses the deal.
+        // campaign target, and the denied-partner guard refuses the deal —
+        // while the campaign is still gaining ground (a city gained fifteen
+        // turns ago is inside the patience window).
         let mut patient = AdvancedAi::new();
         patient.enable_war_patience();
         patient.major_war_since = Some(60);
+        patient.last_campaign_progress = 85;
+        assert!(!patient.war_patience_exhausted(&game));
         assert!(
             patient.incoming_deal_value(&game, 0, &white_peace, &campaign) < 0.0,
             "with the flag, an overwhelming attacker keeps prosecuting"
@@ -41817,6 +42986,39 @@ mod research_probe {
             !patient.peace_offers.contains(&1),
             "with the flag, no stall offer goes to the overwhelmed target"
         );
+
+        // ★ Patience is bounded: forty standard turns without a city gained
+        // and the same overwhelming attacker sues, accepts, and journals why.
+        let mut worn_out = AdvancedAi::new();
+        worn_out.enable_war_patience();
+        worn_out.major_war_since = Some(60);
+        worn_out.last_campaign_progress = 60;
+        assert!(worn_out.war_patience_exhausted(&game));
+        assert!(
+            worn_out.incoming_deal_value(&game, 0, &white_peace, &campaign) > 0.0,
+            "patience lapsed: the white peace is accepted"
+        );
+        let journal = crate::reasoning::Journal::recording();
+        worn_out.attach_journal(journal.handle());
+        let mut suing = game.clone();
+        worn_out.advanced_diplomacy(&mut suing, 0, &campaign);
+        assert!(
+            worn_out.peace_offers.contains(&1),
+            "patience lapsed: the stall offer goes to the target"
+        );
+        assert!(
+            journal
+                .since(0)
+                .thoughts
+                .iter()
+                .any(|thought| thought.headline.starts_with("Patience with the war on")),
+            "the lapse is journaled by name"
+        );
+        // A gained city resets the clock: progress five turns ago and the
+        // same attacker is patient again.
+        worn_out.last_campaign_progress = 95;
+        assert!(!worn_out.war_patience_exhausted(&game));
+        assert!(worn_out.incoming_deal_value(&game, 0, &white_peace, &campaign) < 0.0);
 
         // Scope: patience covers exactly the campaign target. The same
         // stalled war read against a plan that is not fighting player 1

@@ -1952,6 +1952,12 @@ pub struct BasicAi {
     /// it off so their recorded ladders and the frozen `advanced_v1` rating
     /// anchor keep replaying the historical controller.
     pub(crate) settler_strand_discount: bool,
+    /// Let a second Settler enter the pipeline while one is already walking,
+    /// once the empire holds two cities and is still at least two short of
+    /// its target. Set only through `AdvancedAi::enable_parallel_settlers`
+    /// (the Civilization VI bridge); every native constructor and the frozen
+    /// `advanced_v1` anchor keep the one-at-a-time gate. See `pick_item`.
+    pub(crate) parallel_settlers: bool,
     /// Each owned Settler's last seen tile and how many consecutive turns it
     /// has stood on it. See [`BasicAi::stranded_settlers`] for why the
     /// expansion gate needs this and nothing else does.
@@ -3094,10 +3100,18 @@ impl BasicAi {
             rush_military_floor: 0,
             housing_buildings: false,
             settler_strand_discount: false,
+            parallel_settlers: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
             journal: Journal::default(),
         }
+    }
+
+    /// Open the second settler pipeline slot (see `parallel_settlers`). The
+    /// Civilization VI bridge sets this through `AdvancedAi::enable_parallel_settlers`;
+    /// exposed here so the bridge's `--explain-settler` probe can play the same gate.
+    pub fn enable_parallel_settlers(&mut self) {
+        self.parallel_settlers = true;
     }
 
     pub fn with_weights(w: Weights) -> BasicAi {
@@ -3136,6 +3150,7 @@ impl BasicAi {
             rush_military_floor: 0,
             housing_buildings: false,
             settler_strand_discount: false,
+            parallel_settlers: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
             journal: Journal::default(),
@@ -7030,21 +7045,30 @@ impl BasicAi {
         if can_add_military
             && ((military as f64) < military_floor || missing_siege_arm || missing_recon_arm)
         {
-            let picked = if missing_siege_arm {
-                self.best_military_role(g, pid, cid, None, true)
-                    .or_else(|| self.combined_arms_unit(g, pid, cid, melee, ranged))
-            } else if missing_recon_arm {
-                // ⚠ Falls through to the ordinary choice rather than forcing
-                // one. A city that cannot build any recon unit at all must not
-                // be pinned on this branch: the empire still needs the build.
-                self.best_recon(g, pid, cid)
-                    .or_else(|| self.combined_arms_unit(g, pid, cid, melee, ranged))
-            } else if rushing && melee < self.rush_military_floor {
-                self.best_military(g, pid, cid, Some(false))
-                    .or_else(|| self.combined_arms_unit(g, pid, cid, melee, ranged))
+            // A capability gap is an invitation to build that capability, not
+            // a permanent waiver of the standing-army ceiling. A city without
+            // oil cannot answer a missing artillery arm; falling through to a
+            // Machine Gun there made every idle city repeat the same unrelated
+            // defender while the wall-breaker remained impossible. Try the
+            // concrete gaps in order, then use ordinary force production only
+            // while the actual headcount is below its floor.
+            let siege_pick = missing_siege_arm
+                .then(|| self.best_military_role(g, pid, cid, None, true))
+                .flatten();
+            let recon_pick = missing_recon_arm
+                .then(|| self.best_recon(g, pid, cid))
+                .flatten();
+            let force_pick = if (military as f64) < military_floor {
+                if rushing && melee < self.rush_military_floor {
+                    self.best_military(g, pid, cid, Some(false))
+                        .or_else(|| self.combined_arms_unit(g, pid, cid, melee, ranged))
+                } else {
+                    self.combined_arms_unit(g, pid, cid, melee, ranged)
+                }
             } else {
-                self.combined_arms_unit(g, pid, cid, melee, ranged)
+                None
             };
+            let picked = siege_pick.or(recon_pick).or(force_pick);
             if let Some(m) = picked {
                 // ⚠ THE BRANCH THAT WINS MUST SAY SO.
                 //
@@ -7151,7 +7175,24 @@ impl BasicAi {
             // discounted. See `stranded_settlers`.
             let room = ((n_cities + settlers) as f64) < self.w.city_target;
             let stranded = self.stranded_settlers(g, pid);
-            let none_in_flight = settlers.saturating_sub(stranded) == 0;
+            // ★★★★ ONE SETTLER AT A TIME IS THE PACE OF THE WHOLE EMPIRE. On the
+            // live Civilization VI seat the cities of run civvis-20260815T210845Z
+            // were founded at t2/19/45/58/78 and "a settler is already in flight"
+            // was the refusal on t19, t42, t43 and t47 — a two-city empire with
+            // pop to spare and land open, waiting on one walker. Under
+            // `parallel_settlers` a second Settler may start once the empire
+            // holds two cities and is still at least two short of its target;
+            // the target stays the hard cap and every other gate below is
+            // unchanged.
+            let pipeline = if self.parallel_settlers
+                && n_cities >= 2
+                && ((n_cities + settlers + 1) as f64) < self.w.city_target
+            {
+                2
+            } else {
+                1
+            };
+            let none_in_flight = settlers.saturating_sub(stranded) < pipeline;
             let grown = (city_pop as f64) >= self.w.settler_min_pop;
             let in_window = (g.turn as f64) < self.w.settler_stop_turn;
             if room && none_in_flight && grown && in_window {
@@ -7171,7 +7212,11 @@ impl BasicAi {
                     why.push("already at the city target");
                 }
                 if !none_in_flight {
-                    why.push("a settler is already in flight");
+                    why.push(if pipeline > 1 {
+                        "the settler pipeline is full"
+                    } else {
+                        "a settler is already in flight"
+                    });
                 }
                 if !grown {
                     why.push("the city is below settler_min_pop");
@@ -12187,6 +12232,57 @@ mod tests {
         assert!(ai.settler_idle.is_empty(), "dead settlers are pruned");
     }
 
+    /// The early Cities route: a two-city empire with a Settler walking and pop
+    /// to spare starts a second one only under `parallel_settlers`, and never
+    /// past the city target.
+    #[test]
+    fn parallel_settlers_let_a_second_settler_start_while_one_walks() {
+        let mut game = Game::new_full(
+            1, 24, 16, crate::rng::fixture_seed("PIPELINE", 91_777), 250, 0, false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let capital = game.player_city_ids(0)[0];
+        game.cities.get_mut(&capital).unwrap().pop = 5;
+        game.turn = 30;
+        // A scout on the board and a siege arm in the counts, so neither the
+        // recon nor the siege capability gap pre-empts the settler gate.
+        let home = game.cities[&capital].pos;
+        game.spawn_unit("scout", 0, home);
+        game.spawn_unit("warrior", 0, home);
+        let ask = |ai: &BasicAi| ai.pick_item(&game, 0, capital, 2, 1, 6, 2, 1, 20, 10, 10);
+
+        // The league genome the live seat plays wants ~8 cities; the default
+        // weights want 4, which would cap the pipeline before it is tested.
+        let mut stock = BasicAi::new();
+        stock.w.city_target = 8.0;
+        assert!(!stock.parallel_settlers, "off unless the bridge asks");
+        assert!(
+            !matches!(ask(&stock), Some(Item::Unit { unit }) if unit == "settler"),
+            "stock: a settler is already in flight"
+        );
+
+        let mut treated = BasicAi::new();
+        treated.w.city_target = 8.0;
+        treated.parallel_settlers = true;
+        assert!(
+            matches!(ask(&treated), Some(Item::Unit { unit }) if unit == "settler"),
+            "the live pipeline lets the capital start the next settler while one walks: {:?}",
+            ask(&treated)
+        );
+        // Still capped by the city target: two cities plus one walker plus this
+        // one must stay below it.
+        treated.w.city_target = 4.0;
+        assert!(
+            !matches!(ask(&treated), Some(Item::Unit { unit }) if unit == "settler"),
+            "the target is the hard cap"
+        );
+    }
+
     /// The frozen `advanced_v1` anchor and every native tournament game keep
     /// the historical gate: without the treatment a parked settler is still
     /// "in flight", so their recorded ladders stay comparable.
@@ -14621,6 +14717,95 @@ mod tests {
 
         let melee = ai.combined_arms_unit(&g, 0, cid, 2, 2).unwrap();
         assert!(!g.rules.units[melee].has_ranged_attack());
+    }
+
+    /// A missing arm only owns production when this city can supply it.  The
+    /// t208--241 live Rome loss had no Oil, so neither Artillery nor Rocket
+    /// Artillery was legal; the old siege-first fallback ignored the available
+    /// Spec Ops recon arm and built Machine Guns/AT Crews until the empire had
+    /// 30 unrelated defenders and still no city-taking capability.
+    #[test]
+    fn an_unfillable_siege_gap_yields_to_a_buildable_recon_gap() {
+        let (mut g, home, enemy) = walled_war_game(90_079);
+        g.cities.get_mut(&enemy).unwrap().wall_hp = 100;
+        g.players[0].techs.extend([
+            crate::name!("military_engineering"),
+            crate::name!("metal_casting"),
+            crate::name!("steel"),
+            crate::name!("chemistry"),
+            crate::name!("advanced_ballistics"),
+            crate::name!("plastics"),
+        ]);
+        // Artillery needs Oil and Bombards need Niter.  The strongest generic
+        // fallback (Machine Gun) needs neither, which is exactly why the old
+        // branch could inflate the army forever without repairing its role.
+        g.players[0]
+            .strategic_resources
+            .insert(crate::name!("oil"), 0.0);
+        g.players[0]
+            .strategic_resources
+            .insert(crate::name!("niter"), 0.0);
+        let mut ai = BasicAi::new();
+        ai.siege_role = true;
+        ai.recon_replacement = true;
+
+        assert!(ai.siege_is_the_missing_arm(&g, 0));
+        assert!(ai.recon_is_the_missing_arm(&g, 0));
+        assert_eq!(
+            ai.best_military_role(&g, 0, home, None, true),
+            None,
+            "the wall-breaking arm is genuinely unavailable without Oil/Niter"
+        );
+        assert_eq!(
+            ai.best_recon(&g, 0, home).as_deref(),
+            Some("spec_ops"),
+            "a legal recon unit remains available to repair the other live gap"
+        );
+
+        let item = ai
+            .pick_item(&g, 0, home, 1, 0, 0, 0, 1, 24, 6, 0)
+            .expect("the capability gap should still choose the concrete recon unit");
+        assert_eq!(
+            item,
+            Item::Unit {
+                unit: crate::name!("spec_ops")
+            },
+            "an unfillable siege request must not hide the buildable recon arm behind a generic Machine Gun"
+        );
+    }
+
+    #[test]
+    fn an_unfillable_role_gap_above_the_force_floor_keeps_the_ordinary_queue() {
+        let (mut g, home, enemy) = walled_war_game(90_080);
+        g.cities.get_mut(&enemy).unwrap().wall_hp = 100;
+        g.players[0].techs.extend([
+            crate::name!("military_engineering"),
+            crate::name!("metal_casting"),
+            crate::name!("steel"),
+            crate::name!("advanced_ballistics"),
+        ]);
+        g.players[0]
+            .strategic_resources
+            .insert(crate::name!("oil"), 0.0);
+        g.players[0]
+            .strategic_resources
+            .insert(crate::name!("niter"), 0.0);
+        let mut live = BasicAi::new();
+        live.siege_role = true;
+        let frozen = BasicAi::new();
+
+        assert!(live.siege_is_the_missing_arm(&g, 0));
+        assert_eq!(live.best_military_role(&g, 0, home, None, true), None);
+        let ordinary = frozen
+            .pick_item(&g, 0, home, 1, 0, 0, 0, 1, 24, 6, 0)
+            .expect("the ordinary queue has a legal production choice");
+        let treated = live
+            .pick_item(&g, 0, home, 1, 0, 0, 0, 1, 24, 6, 0)
+            .expect("the unavailable live role must fall through to the ordinary queue");
+        assert_eq!(
+            treated, ordinary,
+            "once the force floor is met, an unavailable role gap must not manufacture a generic military unit"
+        );
     }
 
     #[test]

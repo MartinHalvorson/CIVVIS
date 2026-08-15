@@ -6967,17 +6967,27 @@ mod tests {
         assert!(!block.contains('<'), "the catalog block must not be able to close its own element");
         for piece in [
             // Rows: Tactics above, the full game below. Columns: Watch left,
-            // Play right. The immediate verb buttons carry the aria labels;
-            // the Tactics Customize buttons carry `data-pick` and fall back
-            // to the stock Tactics world without scripting. Every viewer
-            // link is lane-relative (`../` from the lane's /home), so the
-            // test lane's home page opens the test lane's viewer.
-            "href=\"../?mode=play\" aria-labelledby=\"play-civ-title\"",
+            // Play right. The immediate ways in are the photograph and the
+            // title; each card's one Watch/Play Customized button carries
+            // `data-pick` and falls back to an honest destination without
+            // scripting. Every viewer link is lane-relative (`../` from the
+            // lane's /home), so the test lane's home page opens the test
+            // lane's viewer.
+            "<h3 class=\"card-title\" id=\"play-civ-title\"><a href=\"../?mode=play\">Play CIVVIS</a></h3>",
             "href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play\" data-pick=\"play\"",
-            "href=\"../\" aria-labelledby=\"watch-civ-title\"",
+            "<h3 class=\"card-title\" id=\"watch-civ-title\"><a href=\"../\">Watch CIVVIS</a></h3>",
             "href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\" data-pick=\"watch\"",
-            // The full game's Customize lands in the simulator with the Game
-            // setup drawer open (`?setup=1`, honoured at the end of app.js).
+            // "I'm Feeling Lucky" rolls between the two watched destinations
+            // the cards already offer. Its href is rolled by script, so the
+            // two candidates live in data attributes — pinned here beside the
+            // cards because a viewer link that stopped being lane-relative
+            // would send the test lane's visitors to the stable lane's game.
+            "id=\"lucky\"",
+            "data-watch-civ=\"../\"",
+            "data-watch-tactics=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\"",
+            // The full game's Customized buttons land in the simulator with
+            // the Game setup drawer open (`?setup=1`, honoured at the end of
+            // app.js) when nothing can open the panel in place.
             "href=\"../?setup=1\"",
             "href=\"../?mode=play&amp;setup=1\"",
             // The picker and its four lenses.
@@ -7034,6 +7044,128 @@ mod tests {
             "const budget = answer && typeof answer.frame_budget_ms === \"number\"\n        ? answer.frame_budget_ms : pace;"
         ));
         assert!(shim.contains("const owed = budget - (performance.now() - started);"));
+    }
+
+    /// The home page's cards are rows a visitor can act on anywhere: the
+    /// photograph and the title open the card's preset exactly as the verb
+    /// button does; the title line carries who is at the keyboard on its
+    /// right, in the same font and size; each card reads name, description,
+    /// actions, tags in that order; and Customize and every tag open the
+    /// row's own customization panel in place — the battle picker below the
+    /// Tactics row, the world picker below the CIVVIS row — with each tag
+    /// landing on the section it names.
+    #[test]
+    fn the_home_cards_link_their_art_and_open_their_panels_in_place() {
+        let landing = include_str!("../beta/landing.html");
+        const TACTICS: &str = "../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20";
+        for piece in [
+            // The art is a way in: each photograph links its card's preset.
+            &format!("<a class=\"card-thumb-link\" href=\"{TACTICS}\">") as &str,
+            &format!("<a class=\"card-thumb-link\" href=\"{TACTICS}&amp;mode=play\">"),
+            "<a class=\"card-thumb-link\" href=\"../\">",
+            "<a class=\"card-thumb-link\" href=\"../?mode=play\">",
+            // The title links the same preset, and the mode descriptor sits
+            // beside it on the one title line, styled at the title's own
+            // font and size.
+            &format!("<h3 class=\"card-title\" id=\"watch-tactics-title\"><a href=\"{TACTICS}\">Watch CIVVIS Tactics</a></h3>"),
+            &format!("<h3 class=\"card-title\" id=\"play-tactics-title\"><a href=\"{TACTICS}&amp;mode=play\">Play CIVVIS Tactics</a></h3>"),
+            "<h3 class=\"card-title\" id=\"watch-civ-title\"><a href=\"../\">Watch CIVVIS</a></h3>",
+            "<h3 class=\"card-title\" id=\"play-civ-title\"><a href=\"../?mode=play\">Play CIVVIS</a></h3>",
+            "<span class=\"card-mode\">AI simulation</span>",
+            "<span class=\"card-mode\">Single player</span>",
+            ".card-mode { color: var(--muted); font-size: 19px; font-weight: 700;",
+            ".card-title { margin: 0; color: #fff; font-size: 19px; font-weight: 700; }",
+            // The full game's Customize opens the world picker in place and
+            // still names Game setup as its scriptless destination.
+            "href=\"../?setup=1\" data-pick=\"watch-civ\"",
+            "href=\"../?mode=play&amp;setup=1\" data-pick=\"play-civ\"",
+            // The tags: every one opens its row's panel on the section it
+            // names, with an honest scriptless destination behind it.
+            "data-pick=\"watch\" data-lens=\"custom\">AI vs AI</a>",
+            "data-pick=\"watch\" data-lens=\"custom\">Custom Maps</a>",
+            "data-pick=\"watch\" data-lens=\"era\">Historical Battles</a>",
+            "data-pick=\"watch\" data-lens=\"eras\">Any Era</a>",
+            "data-pick=\"play\" data-lens=\"custom\">You vs Different AI Strategies &amp; Difficulties</a>",
+            "data-pick=\"play\" data-lens=\"eras\">Any Era</a>",
+            "data-pick=\"watch-civ\" data-lens=\"seats\">AI Empires</a>",
+            "data-pick=\"watch-civ\" data-lens=\"worlds\">Fresh World Every Visit</a>",
+            "data-pick=\"watch-civ\" data-lens=\"victory\">Every Victory Lane</a>",
+            "data-pick=\"play-civ\" data-lens=\"seats\">Your Seat</a>",
+            "data-pick=\"play-civ\" data-lens=\"seats\">AI Rivals</a>",
+            "data-pick=\"play-civ\" data-lens=\"worlds\">Custom Worlds</a>",
+            // A click carries both halves: which panel, and which section.
+            "open(card.dataset.pick, card.dataset.lens);",
+            // The world picker and its lenses; the battle picker's fifth
+            // lens deals the custom field in any era.
+            "id=\"game-picker\"",
+            "data-lens=\"worlds\"",
+            "data-lens=\"sizes\"",
+            "data-lens=\"victory\"",
+            "data-lens=\"seats\"",
+            "data-lens=\"eras\" aria-selected=\"false\">Any era</button>",
+            // The panels are grid rows of the menu itself, spanning it, so
+            // each opens directly below its own row of cards.
+            "grid-column: 1 / -1;",
+            // One action per card: the verb and Customize merged into a
+            // single Watch/Play Customized button that opens the row's
+            // shared panel.
+            "data-pick=\"watch\" aria-label=\"Customize and watch a Tactics battle\">Watch Customized</a>",
+            "data-pick=\"play\" aria-label=\"Customize and play a Tactics battle\">Play Customized</a>",
+            "data-pick=\"watch-civ\" aria-label=\"Customize and watch a full game\">Watch Customized</a>",
+            "data-pick=\"play-civ\" aria-label=\"Customize and play a full game\">Play Customized</a>",
+            // While a row's shared panel is open, its two cards are the mode
+            // selector — the selected option highlights, the other mutes —
+            // and the panel's own chips switch between them in place.
+            "card.classList.toggle(\"picking\", selected);",
+            "card.classList.toggle(\"muted\", shown && !selected);",
+            ".mode-card.muted { opacity: 0.55; }",
+            "id=\"battle-modes\"",
+            "id=\"game-modes\"",
+            "data-mode=\"watch\" aria-pressed=\"true\">AI simulation</button>",
+            "data-mode=\"play\" aria-pressed=\"false\">Single player</button>",
+            "data-mode=\"watch-civ\" aria-pressed=\"true\">AI simulation</button>",
+            "data-mode=\"play-civ\" aria-pressed=\"false\">Single player</button>",
+            ".picker-lens[aria-pressed=\"true\"] { border-color: var(--accent); background: #2a3f52; color: #fff; }",
+        ] {
+            assert!(landing.contains(piece), "the home page lost {piece}");
+        }
+        // The merged button replaced the two-button pair everywhere: no card
+        // offers a bare verb or a bare Customize any more.
+        for gone in [">Customize</a>", ">Watch</a>", ">Play</a>"] {
+            assert!(
+                !landing.contains(gone),
+                "the home page grew a separate {gone} action back"
+            );
+        }
+        // Reading order inside a card: title row, description, actions, tags
+        // — and each panel sits below the row of cards that opens it.
+        let index = |needle: &str| {
+            landing
+                .find(needle)
+                .unwrap_or_else(|| panic!("the home page lost {needle}"))
+        };
+        for card in ["watch-tactics", "play-tactics", "watch-civ", "play-civ"] {
+            let title = index(&format!("id=\"{card}-title\""));
+            let tags = index(&format!("aria-label=\"{}",
+                match card {
+                    "watch-tactics" => "Watch CIVVIS Tactics features",
+                    "play-tactics" => "Play CIVVIS Tactics features",
+                    "watch-civ" => "Watch CIVVIS features",
+                    _ => "Play CIVVIS features",
+                }));
+            let desc = landing[title..].find("class=\"card-desc\"").expect("a description") + title;
+            let actions = landing[title..].find("class=\"card-actions\"").expect("actions") + title;
+            assert!(
+                title < desc && desc < actions && actions < tags,
+                "{card} must read title, description, actions, tags"
+            );
+        }
+        assert!(
+            index("id=\"watch-tactics-title\"") < index("id=\"battle-picker\"")
+                && index("id=\"battle-picker\"") < index("id=\"watch-civ-title\"")
+                && index("id=\"play-civ-title\"") < index("id=\"game-picker\""),
+            "each panel must sit directly below its own row of cards"
+        );
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -10912,7 +11044,7 @@ mod tests {
         for fold in [
             "data-hud-fold=\"standings\"",
             "data-hud-fold=\"turnplate\"",
-            "hudFoldButton(\"simstats\", \"simulation stats\")",
+            "hudFoldButton(\"simstats\", \"Arena Stats\")",
             "hudFoldButton(\"victory\", \"victory tracker\")",
             "hudFoldButton(\"turnplate\", \"turn box\", \"turn-plate-fold\")",
         ] {
@@ -10927,12 +11059,12 @@ mod tests {
             ),
             "map controls should not offer dismissal while their restore switch is hidden"
         );
-        // The simulation stats record starts over from its own panel — the
-        // control says "Reset" — and a world seen running clears the stored
-        // repeat guard, so a restarted arena that ends the same way on the
-        // same seed still counts as the new game it is. The guard's one job
-        // remains the page reopened over a finished world, which never
-        // renders a live frame.
+        // Arena Stats starts over from its own panel — the control says
+        // "Reset" — and records winners by civilization, strategy, and
+        // victory type. A world seen running clears the stored repeat guard,
+        // so a restarted arena that ends the same way on the same seed still
+        // counts as the new game it is. The guard's one job remains the page
+        // reopened over a finished world, which never renders a live frame.
         assert!(
             EMBEDDED_INDEX.contains("data-sim-stats-clear "),
             "the simulation stats panel offers its reset control"
@@ -10946,6 +11078,31 @@ mod tests {
                 "if (simulationStats.last) { delete simulationStats.last; saveSimulationStats(); }"
             ),
             "a live frame frees the repeat guard for the next result"
+        );
+        for arena_stats_contract in [
+            "<span>Arena Stats</span>",
+            "#victoryhud > .sim-stats-region .hud-region-bar { margin-right: 27px; }",
+            "#victoryhud > .sim-stats-region .hud-region-bar > .hud-section-heading { width: auto; }",
+            "victories: {label: \"Victory types\", title: \"Wins by victory type\"},",
+            "bucket.victories ??= {};",
+            "function bumpSimulationVictory(table, victory) {",
+            "bumpSimulationVictory(bucket.victories, victoryVerdict(st.victory_type, st.victory_label));",
+            "viewButton(\"civs\") + viewButton(\"strategies\") + viewButton(\"victories\")",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(arena_stats_contract),
+                "Arena Stats contract is missing: {arena_stats_contract}"
+            );
+        }
+        let arena_stats_summary = EMBEDDED_INDEX
+            .find("<div class=\"sim-stats-summary-row\"><div class=\"sim-stats-summary\">")
+            .expect("Arena Stats summary row");
+        let arena_stats_views = EMBEDDED_INDEX
+            .find("<div class=\"sim-stats-controls\" role=\"group\" aria-label=\"Arena Stats record view\">")
+            .expect("Arena Stats view controls");
+        assert!(
+            arena_stats_summary < arena_stats_views,
+            "Arena Stats should put its summary and Reset control above the view controls"
         );
         // The empire columns exist where there is an empire: on a battlefield
         // they leave the standings and the Display Settings roster the same
