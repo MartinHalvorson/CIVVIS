@@ -1966,12 +1966,22 @@ const PLAYER_HUD_COLUMNS = [
   // is a fact every game has from turn one; the nuclear stockpile is the one
   // that has to be invented first, so it joins the table beside the military
   // strength it changes the meaning of.
-  ...[["cities", "Cities"], ["population", "Population"], ["food", "Food"], ["production", "Production"],
-      ["science", "Science"], ["culture", "Culture"], ["faith", "Faith"],
-      ["gold", "Gold"], ["military", "Military"],
+  // An arena has no empire behind it: the economy is a fixed grant, nothing
+  // is built or worshipped, and no city-state offers a suzerain. Those
+  // columns do not exist on a battlefield — like the nuclear stockpile
+  // before the bomb, they are not facts of that world, so they leave the
+  // Display Settings roster too. Cities, production and military remain: an
+  // arena can seat a city, and the fight is the point.
+  ...[["cities", "Cities"], ["population", "Population", worldStandingsInPlay],
+      ["food", "Food", worldStandingsInPlay], ["production", "Production"],
+      ["science", "Science", worldStandingsInPlay],
+      ["culture", "Culture", worldStandingsInPlay],
+      ["faith", "Faith", worldStandingsInPlay],
+      ["gold", "Gold", worldStandingsInPlay], ["military", "Military"],
       ["nukes", "Nuclear stockpile", nuclearStandingsInPlay],
-      ["wonders", "Wonders"],
-      ["suzerain", "Suzerainty"], ["score", "Score"]]
+      ["wonders", "Wonders", worldStandingsInPlay],
+      ["suzerain", "Suzerainty", worldStandingsInPlay],
+      ["score", "Score", worldStandingsInPlay]]
     .map(([key, label, exists]) =>
       ({key, label, block:"stats", min:"--hud-stat-min", width:1, exists})),
 ];
@@ -2088,6 +2098,14 @@ function nuclearStandingsInPlay() {
     Boolean(state.players?.some(player =>
       player.science_projects?.includes?.("manhattan_project") ||
       playerNuclearStockpile(player) > 0));
+}
+
+// The empire columns exist where there is an empire: a Tactics arena grants
+// its economy instead of growing one, so those readings are not facts of a
+// battlefield world any more than the nuclear stockpile is a fact of the
+// Ancient Age.
+function worldStandingsInPlay() {
+  return !watchingBattlefield();
 }
 
 // Both classes of device, as one arsenal.
@@ -6712,13 +6730,14 @@ function paceHeldOpen() {
   return [document.getElementById("specspeed"), document.querySelector("[data-hud-pace]")]
     .some(select => select && document.activeElement === select);
 }
-// Only the standings' own copy of the pace select dies when the standings
-// repaint, so only that copy needs to hold the repaint while it is held
-// open. The sidebar #specspeed lives outside #playerhud and never has this
-// problem.
+// Only the standings' own copies of these selects die when the standings
+// repaint, so only those copies need to hold the repaint while one is held
+// open — the turn plate's fog select is the same kind of hostage as its
+// pace select. The sidebar #specspeed lives outside #playerhud and never
+// has this problem.
 function hudPaceHeldOpen() {
-  const select = document.querySelector("[data-hud-pace]");
-  return !!select && document.activeElement === select;
+  return [...document.querySelectorAll("[data-hud-pace], [data-hud-fog]")]
+    .some(select => document.activeElement === select);
 }
 function paceOffered(select, ms) {
   return [...select.options].some(o => +o.value === ms);
@@ -6790,13 +6809,17 @@ function chooseBetweenGameCountdown(ms) {
   setPace({between_game_countdown_ms: ms});
   rearmFinaleCountdown();
 }
-// The result screen's copy says what the setting says, unless it is the
-// control being used.
+// The copies say what the setting says, unless one is the control being
+// used. There are two: the result screen's, and the Tactics card's
+// post-match control — the same knob offered where a match is set up.
 function syncFinaleCountdownChoice() {
   const source = document.getElementById("between-game-countdown");
-  const mirror = document.getElementById("finale-countdown");
-  if (!source || !mirror || document.activeElement === mirror) return;
-  if (mirror.value !== source.value) mirror.value = source.value;
+  if (!source) return;
+  for (const id of ["finale-countdown", "tacticspostmatch"]) {
+    const mirror = document.getElementById(id);
+    if (!mirror || document.activeElement === mirror) continue;
+    if (mirror.value !== source.value) mirror.value = source.value;
+  }
 }
 // The between-game hold, offered on the result screen itself: the setting is
 // in Display Settings, but the result screen is where a viewer finds out what
@@ -6828,6 +6851,7 @@ function restoreBetweenGameCountdown() {
   betweenGameCountdownChoice = ms;
   betweenGameCountdownExplicit = true;
   select.value = String(ms);
+  syncFinaleCountdownChoice();
 }
 // With nothing picked by hand, the mode's default stands as a soft choice:
 // 3s between Tactics battles, 5s everywhere else. Holding it in
@@ -7374,6 +7398,20 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   // speaking for, so the one view that can read every plan is the last one
   // that should hide it.
   document.getElementById("strategysec").style.display = "block";
+  // Watching a battlefield, the deck drops the war and event logs — the only
+  // war is the one on screen, and an arena writes no other history worth a
+  // section — and the dossier restyles itself as AI Tactics. The class is the
+  // world's, not the setup panel's (`playing-tactics` describes what the
+  // drawer is configuring, which may be the other game entirely). When the
+  // sections retire while one of them was the open card, their room passes to
+  // the dossier rather than leaving the whole deck folded shut.
+  const tacticsWorld = isBattlefieldMapScript(st.map?.script);
+  if (document.body.classList.contains("watching-tactics") !== tacticsWorld) {
+    document.body.classList.toggle("watching-tactics", tacticsWorld);
+    if (tacticsWorld && (document.getElementById("warsec")?.open ||
+        document.getElementById("eventsec")?.open))
+      openSidebarSection(document.getElementById("strategysec"));
+  }
   if (SPEC) closeTrade();
   syncViewPlayer();
   if (newWorld && st.seed !== undefined) { lastSeed = st.seed; loadTacks(); }
@@ -7634,6 +7672,13 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     // the game that would have replaced this one.
     clearFinaleCountdown();
     clearExhibitionCountdown();
+    // A world seen running means the next finale is a new game, whatever its
+    // key: a restart reuses the seed, and a deterministic Tactics battle then
+    // ends with the same winner on the same turn, so the stored repeat guard
+    // would swallow every game after the first. The guard exists for a page
+    // reopened over a finished world — that page never renders a live frame,
+    // so clearing it here keeps the reload dedup and frees the replay.
+    if (simulationStats.last) { delete simulationStats.last; saveSimulationStats(); }
   }
   draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();
   refreshTileTip();
@@ -22017,7 +22062,7 @@ function simulationStatsSection() {
     `<div class="sim-stats-controls" role="group" aria-label="Simulation record view">` +
     viewButton("civs") + viewButton("strategies") +
     (games ? `<button class="sim-stats-clear" type="button" data-sim-stats-clear ` +
-      `title="Clear the saved ${modeLabel} record" aria-label="Clear the saved ${modeLabel} record">Clear</button>` : ``) +
+      `title="Reset the saved ${modeLabel} record" aria-label="Reset the saved ${modeLabel} record">Reset</button>` : ``) +
     `</div>` +
     `<div class="sim-stats-rows">${body}</div>` +
     `</div></section>`;
@@ -22103,10 +22148,24 @@ function hudTurnPlate() {
   // hand-played game has no pause or restart to measure against, so the row
   // belongs to the watched regimes only.
   const liveTimeText = SPEC ? liveClockLabel() : null;
+  // The arena's fog is a rule of the battle on screen, and it can be turned
+  // while the battle runs: the engine reads it on every sight computation. A
+  // scenario keeps its own fixed rule, exactly as the lobby presents it.
+  const fogRow = isBattlefieldMapScript(state.map.script) &&
+      !isScenarioMapScript(state.map.script) && state.tactics
+    ? `<div class="turn-setting" title="Whether each side sees only what its own units can. ` +
+      `Turning it changes the rule of the battle on screen from the next sight reckoning, for both sides alike.">` +
+      `<span>In-game fog:</span><span class="turn-pace-choice"><select data-hud-fog ` +
+      `aria-label="In-game fog">` +
+      `<option value="1"${state.tactics.fog ? " selected" : ""}>On</option>` +
+      `<option value="0"${state.tactics.fog ? "" : " selected"}>Off</option>` +
+      `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span></div>`
+    : ``;
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
     `game speed ${speedName}; ${turnStructureName.toLowerCase()} turns; ` +
     (liveTimeText ? `live time ${liveTimeText}; ` : ``) +
     `watch pace ${watchPace}; ` +
+    (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
     `${cityStateCount} city states remaining, ${cityStatesLost} eliminated`;
   // A count and the toll it was taken out of are one reading, so they share a
@@ -22134,6 +22193,7 @@ function hudTurnPlate() {
         `<span>Live time:</span><b data-live-time>${liveTimeText}</b></div>`
       : ``) +
     `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
+    fogRow +
     rosterRow("Civs:", civCount, civsLost) +
     rosterRow("City states:", cityStateCount, cityStatesLost) +
     `</div></section>`;
@@ -22869,6 +22929,12 @@ hudRibbon.addEventListener("keydown", event => {
 });
 
 hudRibbon.addEventListener("change", ev => {
+  const fog = ev.target.closest?.("[data-hud-fog]");
+  if (fog) {
+    chooseTacticsFog(fog.value === "1");
+    fog.blur();
+    return;
+  }
   const pace = ev.target.closest?.("[data-hud-pace]");
   if (!pace) return;
   chooseWatchPace(pace.value);
@@ -22881,7 +22947,7 @@ hudRibbon.addEventListener("change", ev => {
 // so the open menu's anchor survives the next snapshot. The moment focus
 // leaves it, paint whatever those held snapshots changed.
 hudRibbon.addEventListener("focusout", ev => {
-  if (ev.target.closest?.("[data-hud-pace]") && state) drawPlayerHud();
+  if (ev.target.closest?.("[data-hud-pace], [data-hud-fog]") && state) drawPlayerHud();
 });
 hudRibbon.addEventListener("mousedown", ev => {
   if (ev.button !== 0) return;
@@ -24700,6 +24766,105 @@ function strategyStudy(p) {
   };
 }
 
+// The section speaks its world's language: "AI Tactics · Battle plans" over a
+// battlefield, "AI strategy · Grand strategy" over the full game. Written only
+// on change — this runs every frame under a text node the browser would
+// otherwise re-lay-out for nothing.
+function setStrategyPanelMode(tactics) {
+  const title = document.getElementById("strategytitle");
+  const heading = document.getElementById("strategyplanheading");
+  const wantTitle = tactics ? "AI Tactics" : "AI strategy";
+  const wantHeading = tactics ? "Battle plans" : "Grand strategy";
+  if (title && title.textContent !== wantTitle) title.textContent = wantTitle;
+  if (heading && heading.textContent !== wantHeading) heading.textContent = wantHeading;
+}
+
+// One battlefield side, read whole: who is giving the orders, under what
+// doctrine, toward which objective, with which force groups, and in what
+// condition. The intent rows come from the side's published plan and drop
+// out when the fact is absent — under fog a rival publishes nothing, and its
+// block honestly shrinks. The condition rows are ground truth read off the
+// board's own units, so a seat with no published plan still reports the
+// fight it is visibly in.
+function tacticsSideHtml(p, picked) {
+  if (!p) return "";
+  const plan = p.ai_plan || null;
+  const strategy = plan?.strategy || p.ai_strategy || "";
+  const row = (label, value, title) => value === null || value === undefined || value === ""
+    ? ""
+    : `<div class="dossier-row"${title ? ` title="${reasonEscape(title)}"` : ""}>` +
+      `<span>${label}</span><b>${value}</b></div>`;
+  // The one view that cannot see every unit is a played game; say so in the
+  // row that would otherwise present a partial count as the whole army.
+  const fogged = state.view_player !== null && state.view_player !== undefined &&
+    state.view_player !== p.id;
+  const units = (state.units || []).filter(u => u.owner === p.id && militaryUnit(u));
+  const strength = units.length
+    ? Math.round(units.reduce((sum, u) =>
+        sum + (Number.isFinite(u.hp) ? Math.max(0, Math.min(100, u.hp)) : 100), 0) / units.length)
+    : 0;
+  const dealt = Math.round(units.reduce((sum, u) => sum + (u.damage_dealt || 0), 0));
+  const promoted = units.filter(u => (u.level || 1) > 1).length;
+  const kinds = new Map();
+  for (const u of units) kinds.set(u.type, (kinds.get(u.type) || 0) + 1);
+  const composition = [...kinds.entries()].sort((a, b) =>
+    b[1] - a[1] || String(a[0]).localeCompare(String(b[0])));
+  const compositionLine = composition.slice(0, 4)
+    .map(([type, count]) => `${count} ${titleCase(type)}`).join(" · ") +
+    (composition.length > 4 ? ` · +${composition.length - 4} more` : "");
+  const forces = plan?.forces || [];
+  const chips = forces.slice(0, 6).map(force =>
+    `<span class="force-chip ${force.posture}" title="${reasonEscape(`${titleCase(force.posture)} · ` +
+      `${force.units} ${force.domain === "sea" ? "naval" : "land"} units · objective ` +
+      `${force.objective?.[0]},${force.objective?.[1]} · local strength ` +
+      `${Math.round((force.strength_ratio || 0) * 100)}% of the defenders · readiness ` +
+      `${Math.round((force.readiness || 0) * 100)}%`)}">` +
+    `${force.domain === "sea" ? "⚓" : "⚔"} ${titleCase(force.posture)} ×${force.units}</span>`).join("");
+  const objective = plan?.target_city
+    ? `${reasonEscape(plan.target_city.name)}${plan.target_city.owner_civ
+        ? ` (${reasonEscape(plan.target_city.owner_civ)})` : ""}`
+    : plan?.target_civ ? reasonEscape(plan.target_civ) : "";
+  const study = strategyStudy(p);
+  const cost = study.research ? techCost(study.research) : 0;
+  const researchValue = study.research
+    ? `${titleCase(study.research)}${cost > 0
+        ? ` · ${Math.min(100, Math.round(100 * (study.researchProgress || 0) / cost))}%` : ""}`
+    : "";
+  const controller = p.player_username || p.player_name || p.ai_username || p.ai_name || "";
+  return `<div class="tactics-side${picked ? " tactics-side-picked" : ""}" style="--civ:${pcol(p.id)}">` +
+    `<div class="tactics-side-head"><span class="tactics-side-civ">${reasonEscape(p.civ)}</span>` +
+    (controller ? `<span class="tactics-side-controller" title="${
+        reasonEscape(`The agent giving ${p.civ} its orders`)}">${reasonEscape(controller)}</span>` : "") +
+    `</div>` +
+    row("Doctrine", strategy
+      ? `<span class="ai-plan ${reasonEscape(strategy)}">${titleCase(strategy)}</span>` : "",
+      "The doctrine this AI is fighting under — the plan its orders serve") +
+    row("Objective", objective,
+      plan?.target_civ && plan?.target_city && plan.target_civ !== plan.target_city.owner_civ
+        ? `The city this side's fighting is aimed at, in a campaign against ${plan.target_civ}`
+        : "The city or civilization this side's fighting is aimed at") +
+    row("Defending", plan?.threatened_city ? reasonEscape(plan.threatened_city.name) : "",
+      "The city this side expects to lose first") +
+    (chips
+      ? `<div class="dossier-note">${chips}${forces.length > 6
+          ? ` <span class="dossier-empty">+${forces.length - 6} more</span>` : ""}</div>`
+      : "") +
+    row("Army", units.length
+      ? `${units.length} unit${units.length === 1 ? "" : "s"} · ${strength}%`
+      : "None in the field",
+      units.length
+        ? `${units.length} military units at ${strength}% average health` +
+          (promoted ? ` · ${promoted} promoted` : "") +
+          (fogged ? " — counted from the units you can see" : "")
+        : (fogged ? "No military units in sight" : "No military units on the board")) +
+    (compositionLine ? `<div class="dossier-note">${reasonEscape(compositionLine)}</div>` : "") +
+    row("Damage dealt", dealt ? String(dealt) : "",
+      "Battle damage dealt by the units still standing — losses take their tally with them") +
+    row("Researching", researchValue,
+      "What this side is researching at the arena's tech pace") +
+    `</div>`;
+}
+
 function drawStrategyPanel() {
   const scope = document.getElementById("strategyscope");
   const track = document.getElementById("strategyplantrack");
@@ -24707,9 +24872,40 @@ function drawStrategyPanel() {
   const rdiv = document.getElementById("research");
   const cdiv = document.getElementById("civics");
   if (!scope || !track || !planEl || !rdiv || !cdiv) return;
+  const tactics = watchingBattlefield();
+  setStrategyPanelMode(tactics);
   const seats = strategySeats();
   const seat = strategyViewSeat();
   syncStrategyOptions(seats, seat);
+  if (tactics) {
+    // A battle is understood by comparing the sides' plans, not by flipping a
+    // picker between them: every side still standing gets a block, in
+    // standings order. The picker keeps its other job — scoping the decision
+    // factors below — and the block it names carries the civ-colored spine.
+    // The study tracks are retired by the stylesheet; a side's research reads
+    // inline in its block instead, so they are not painted at all here.
+    const players = state.players || [];
+    const order = seats.slice().sort((a, b) =>
+      (players[b]?.score || 0) - (players[a]?.score || 0) || a - b);
+    if (!order.length) {
+      scope.textContent = "";
+      scope.title = "";
+      track.style.display = "none";
+      return;
+    }
+    const names = order.map(id => players[id]?.civ || `Player ${id}`);
+    scope.textContent = names.length === 2 ? `${names[0]} vs ${names[1]}`
+      : names.length === 1 ? names[0] : `${names.length} sides`;
+    scope.title = `The battle plan of every side still standing: ${names.join(", ")}`;
+    const html = order.map(id =>
+      tacticsSideHtml(players[id], order.length > 1 && id === seat)).join("");
+    track.style.display = "block";
+    if (track.strategyHtml !== html) {
+      track.strategyHtml = html;
+      planEl.innerHTML = html;
+    }
+    return;
+  }
   const p = seat === null ? null : (state.players || [])[seat];
   if (!p) {
     scope.textContent = "";
@@ -29945,11 +30141,17 @@ document.getElementById("tacticsworldtype").addEventListener("change", () => {
 document.getElementById("tactics-scenario").addEventListener("change", () => {
   const scenario = historicalScenario(tacticsScenarioId());
   syncBattlefieldSizes(true);
-  if (scenario) {
-    scenarioStartEra(scenario);
-    scenarioTurnChoice(scenario.turns);
-  }
+  if (scenario) scenarioTurnChoice(scenario.turns);
   syncScenarioChoice();
+});
+// Customize is the one era choice with configuration of its own, so choosing
+// it is what unfolds the pool — on the select itself, ahead of the panel's
+// delegated staging listener, like every other Tactics control that reshapes
+// the form.
+document.getElementById("tacticsera").addEventListener("change", () => {
+  syncTacticsEraPool();
+  const pool = document.getElementById("tactics-era-pool");
+  if (pool && !pool.hidden) pool.scrollIntoView({block: "nearest"});
 });
 // Bound on the select itself, so it has re-fitted the splits to the new size
 // before the panel's own delegated listener stages what is now selected.
@@ -29977,10 +30179,24 @@ function chooseWatchPace(value) {
   setPace({ms: paceChoice});
   if (state) drawPlayerHud();
 }
+// The arena's fog rule, flipped for the battle on screen. The lobby's own
+// control follows the flip so a client-issued restart carries the rule the
+// battle was just fought under; the server moves its own params in the same
+// request, so its automatic successor carries it too.
+function chooseTacticsFog(on) {
+  const select = document.getElementById("tacticsfog");
+  if (select) select.value = on ? "1" : "0";
+  setPace({tactics_fog: on});
+}
 document.getElementById("specspeed").onchange = event => chooseWatchPace(event.currentTarget.value);
 restorePace();
 document.getElementById("between-game-countdown").onchange = () =>
   chooseBetweenGameCountdown(betweenGameCountdownMs());
+// The Tactics card's post-match control is the same knob offered where a
+// match is set up, so it goes through the same chooser — which pushes the
+// choice to the server and re-syncs every copy, this one included.
+document.getElementById("tacticspostmatch").onchange = event =>
+  chooseBetweenGameCountdown(Number(event.currentTarget.value));
 // The result screen offers the same choice where a viewer actually meets it,
 // as a copy of the Display Settings control; the copy is re-rendered with the
 // screen, so the listener lives on the permanent overlay.
@@ -30074,7 +30290,28 @@ function worldSetupInputError() {
     if (input && input.value.trim() && readOptionalWholeSetting(id) === null)
       return `${label} must be a whole number in the range shown`;
   }
+  // A customized era pool with nothing in it names no army at all; the
+  // server would refuse it, so the start control says why first.
+  if (tacticsMode() && readSetting("tacticsera") === "custom" && !tacticsEraPool().length)
+    return "The era pool needs at least one era checked";
   return "";
+}
+// The eras the Customize pool has checked, earliest first. The ladder is
+// written inside the function for the same load-order reason
+// `syncScenarioSettings` documents: a top-level const would still be in its
+// temporal dead zone when the load path first reads settings.
+function tacticsEraPool() {
+  const ladder = ["ancient", "classical", "medieval", "renaissance",
+                  "industrial", "modern", "atomic", "information"];
+  return ladder.filter(era => document.getElementById(`erapool-${era}`)?.checked);
+}
+// Customize's configuration appears exactly while Customize is the era
+// choice — choosing it in the box is what "opens" the pool, and any other
+// choice folds it away rather than leaving a dead checklist under a decided
+// control.
+function syncTacticsEraPool() {
+  const pool = document.getElementById("tactics-era-pool");
+  if (pool) pool.hidden = readSetting("tacticsera") !== "custom";
 }
 function setOptionalWorldNumber(id, value, defaultValue = Number.NaN) {
   const input = document.getElementById(id);
@@ -30213,6 +30450,8 @@ function selectedSimulationSettings() {
           tactics_turns_per_tech: Number(readSetting("tacticsturnspertech")) || 0,
           tactics_best_of: Number(readSetting("tacticsbestof")) || 1,
           tactics_unique_units: readSetting("tacticsuniqueunits") === "1",
+          tactics_era: readSetting("tacticsera") || "random",
+          tactics_eras: tacticsEraPool(),
           ...(mapSeed === null ? {} : {seed: mapSeed}),
           // A battlefield's dimensions are its own setting: no seat count
           // implies an arena size, so the chosen one travels explicitly and
@@ -30274,7 +30513,15 @@ function selectedSimulationSummary(settings = null) {
   const startEra = settings ? settings.start_era : eras?.value;
   const stockEra = [...(eras?.options || [])]
     .find(option => option.value && !option.disabled)?.value;
-  const era = startEra && startEra !== stockEra ? chosenText("startera", startEra) : "";
+  // A Tactics world's era is the arena's own control, whose stock choice is
+  // Random; a named battle needs no clause because the battle's name already
+  // says more than its era would.
+  const tacticsEra = settings ? settings.tactics_era : readSetting("tacticsera");
+  const era = tactics
+    ? (battle || !tacticsEra || tacticsEra === "random" ? ""
+       : tacticsEra === "custom" ? "Cross-era"
+       : chosenText("tacticsera", tacticsEra).split(" · ")[0])
+    : startEra && startEra !== stockEra ? chosenText("startera", startEra) : "";
   const futures = document.getElementById("futureera");
   const futureEra = settings ? settings.future_era : futures?.value;
   const stockFuture = [...(futures?.options || [])]
@@ -30639,13 +30886,6 @@ function scenarioTurnChoice(turns) {
   select.value = String(choices.reduce((best, choice) =>
     Math.abs(choice - turns) < Math.abs(best - turns) ? choice : best, choices[0]));
 }
-function scenarioStartEra(scenario) {
-  const eras = document.getElementById("startera");
-  if (!eras) return;
-  const match = (RULES?.start_eras || []).find(era =>
-    era.era === scenario.era_index && era.playable);
-  if (match && [...eras.options].some(option => option.value === match.id)) eras.value = match.id;
-}
 function isScenarioMapScript(id) {
   return scenarioScripts().some(script => script.id === id);
 }
@@ -30678,6 +30918,29 @@ function syncScenarioSettings() {
       delete select.dataset.scenarioSaved;
     }
   }
+  // The era control is fixed the same way, but to the battle's own era
+  // rather than to "0": Gettysburg is Industrial whatever was chosen, and
+  // the greyed control should say so. The ladder is written here rather than
+  // at top level for the load-order reason above.
+  const eras = document.getElementById("tacticsera");
+  if (eras) {
+    const ladder = ["ancient", "classical", "medieval", "renaissance",
+                    "industrial", "modern", "atomic", "information", "future"];
+    const battle = tacticsMode() ? historicalScenario(tacticsScenarioId()) : null;
+    eras.disabled = !!battle;
+    const label = eras.closest("label");
+    if (label) label.classList.toggle("setting-fixed", !!battle);
+    if (battle && ladder[battle.era_index] &&
+        [...eras.options].some(option => option.value === ladder[battle.era_index])) {
+      if (eras.dataset.scenarioSaved === undefined) eras.dataset.scenarioSaved = eras.value;
+      eras.value = ladder[battle.era_index];
+    } else if (!battle && eras.dataset.scenarioSaved !== undefined) {
+      const saved = eras.dataset.scenarioSaved;
+      if ([...eras.options].some(option => option.value === saved)) eras.value = saved;
+      delete eras.dataset.scenarioSaved;
+    }
+  }
+  syncTacticsEraPool();
 }
 function battlefieldSizesForScript(script) {
   return battlefieldSizes().filter(size => !size.script || size.script === script);

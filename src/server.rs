@@ -31,7 +31,7 @@ use crate::setup::{
     battlefield_map_scripts, battlefield_sizes, future_era_from_id, future_era_id, scenario_map_scripts,
     start_era_from_id, start_era_id,
     turn_structure_id, world_map_scripts, AiPlayerPool, BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript,
-    MapSize, MapTopology, TacticsRules, TurnStructure, BASE_RULESETS,
+    MapSize, MapTopology, TacticsEra, TacticsRules, TurnStructure, BASE_RULESETS,
     CIV6_GAME_SPEEDS,
     CIV6_MAP_SIZES, FUTURE_ERAS, MAP_POLES, MAP_TOPOLOGIES, START_ERAS,
 };
@@ -4045,6 +4045,33 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(on) = request["tactics_flag"].as_bool() {
         p.tactics.flag = on;
     }
+    // Which era arms the battle: `random` re-rolls every battle of a series,
+    // a rung's id fixes it, and `custom` reads the pool from `tactics_eras`.
+    // The start-era contract holds here too — an id nobody has built, or a
+    // custom pool that names no built rung, is refused rather than
+    // substituted, so the previous setting stands and the client can see it
+    // did.
+    match request["tactics_era"].as_str() {
+        Some("random") => p.tactics.era = TacticsEra::Random,
+        Some("custom") => {
+            if let Some(pool) = request["tactics_eras"].as_array() {
+                let mask = pool
+                    .iter()
+                    .filter_map(|id| id.as_str())
+                    .filter_map(start_era_from_id)
+                    .fold(0u16, |mask, era| mask | 1 << era);
+                if mask != 0 {
+                    p.tactics.era = TacticsEra::Pool(mask);
+                }
+            }
+        }
+        Some(id) => {
+            if let Some(era) = start_era_from_id(id) {
+                p.tactics.era = TacticsEra::Fixed(era);
+            }
+        }
+        None => {}
+    }
     p.tactics = p.tactics.sanitized();
     // Advanced clients can still deliberately override individual stock
     // settings by sending them alongside num_players.
@@ -4730,6 +4757,15 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             if let Some(v) = parsed["paused"].as_bool() {
                 session.spectator_paused = v;
             }
+            // The arena's fog is a live rule: the vision stamp reads it on
+            // every sight computation, so flipping it takes effect at the
+            // next reckoning and invalidates the cached frames by itself.
+            // The params move with it so the automatic successor — and a
+            // same-settings restart — carries the rule the battle ended on.
+            if let Some(on) = parsed["tactics_fog"].as_bool() {
+                session.game.tactics.fog = on;
+                session.params.tactics.fog = on;
+            }
             let mut o = session.state();
             drop(session);
             decorate(&mut o, sh);
@@ -5353,7 +5389,7 @@ mod tests {
     use crate::setup::{
         battlefield_map_scripts, battlefield_sizes, future_era_from_id, scenario_map_scripts,
         start_era_from_id, world_map_scripts,
-        AiPlayerPool, TacticsRules,
+        AiPlayerPool, TacticsEra, TacticsRules,
         BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology,
         TurnStructure, MAP_POLES,
     };
@@ -6889,7 +6925,9 @@ mod tests {
         assert!(EMBEDDED_INDEX
             .contains(&format!("const TACTICS_CHIP_QUERY = \"{TACTICS_QUERY}\";")));
         let landing = include_str!("../beta/landing.html");
-        let card = format!("href=\"/?{}\"", TACTICS_QUERY.replace('&', "&amp;"));
+        // Lane-relative (`../` from the lane's /home), so the test lane's
+        // card opens the test lane's viewer.
+        let card = format!("href=\"../?{}\"", TACTICS_QUERY.replace('&', "&amp;"));
         assert!(
             landing.contains(&card),
             "the home page's Tactics card should open the world the chip does: {card}"
@@ -6931,15 +6969,17 @@ mod tests {
             // Rows: Tactics above, the full game below. Columns: Watch left,
             // Play right. The immediate verb buttons carry the aria labels;
             // the Tactics Customize buttons carry `data-pick` and fall back
-            // to the stock Tactics world without scripting.
-            "href=\"/?mode=play\" aria-labelledby=\"play-civ-title\"",
-            "href=\"/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play\" data-pick=\"play\"",
-            "href=\"/\" aria-labelledby=\"watch-civ-title\"",
-            "href=\"/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\" data-pick=\"watch\"",
+            // to the stock Tactics world without scripting. Every viewer
+            // link is lane-relative (`../` from the lane's /home), so the
+            // test lane's home page opens the test lane's viewer.
+            "href=\"../?mode=play\" aria-labelledby=\"play-civ-title\"",
+            "href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play\" data-pick=\"play\"",
+            "href=\"../\" aria-labelledby=\"watch-civ-title\"",
+            "href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\" data-pick=\"watch\"",
             // The full game's Customize lands in the simulator with the Game
             // setup drawer open (`?setup=1`, honoured at the end of app.js).
-            "href=\"/?setup=1\"",
-            "href=\"/?mode=play&amp;setup=1\"",
+            "href=\"../?setup=1\"",
+            "href=\"../?mode=play&amp;setup=1\"",
             // The picker and its four lenses.
             "id=\"battle-picker\"",
             "data-lens=\"custom\"",
@@ -6947,7 +6987,7 @@ mod tests {
             "data-lens=\"person\"",
             "data-lens=\"terrain\"",
             // A picked battle travels as the lobby's own map id, plus who plays.
-            "href=\"${esc(into(`/?map=${b.id}&players=2`))}\"",
+            "href=\"${esc(into(`../?map=${b.id}&players=2`))}\"",
             "const into = query => query + (mode === \"play\" ? \"&mode=play\" : \"\");",
         ] {
             assert!(landing.contains(piece), "the home page lost {piece}");
@@ -7006,6 +7046,66 @@ mod tests {
         );
         assert_eq!(super::promoted_binary_commit("civvis-brief"), None);
         assert_eq!(super::promoted_binary_commit("civvis-zzzz"), None);
+    }
+
+    /// The arena's fog is a live rule of the battle on screen: `/pace` flips
+    /// it mid-game, the answer and every later state document carry the flip,
+    /// and the session's params move with it so the game that follows keeps
+    /// the rule. The engine reads the flag on every sight reckoning, so
+    /// nothing else needs to be told.
+    #[test]
+    fn the_pace_endpoint_flips_the_arena_fog_for_the_running_battle() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = new_game_params(
+            &current(),
+            &json!({
+                "num_players": 2, "map_script": "battlefield",
+                "width": 11, "height": 10,
+            }),
+        );
+        params.spectate = true;
+        params.seed = 20_260_815;
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while http_get(port, "/status").is_none() {
+            assert!(Instant::now() < deadline, "arena server never came up");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        // Hold the battle still so no result can replace the world under the
+        // readings below.
+        http_post(port, "/pace", "{\"paused\":true}").expect("pause the arena");
+        let before: Value =
+            serde_json::from_str(&http_get(port, "/state").expect("read the arena")).unwrap();
+        assert_eq!(before["tactics"]["fog"], json!(true), "an arena opens fogged");
+        let lifted: Value = serde_json::from_str(
+            &http_post(port, "/pace", "{\"tactics_fog\":false}").expect("lift the fog"),
+        )
+        .unwrap();
+        assert_eq!(
+            lifted["tactics"]["fog"],
+            json!(false),
+            "the flip answers with the rule it just set"
+        );
+        let held: Value =
+            serde_json::from_str(&http_get(port, "/state").expect("read it back")).unwrap();
+        assert_eq!(
+            held["tactics"]["fog"],
+            json!(false),
+            "every later state document carries the lifted fog"
+        );
+        let refogged: Value = serde_json::from_str(
+            &http_post(port, "/pace", "{\"tactics_fog\":true}").expect("lower the fog again"),
+        )
+        .unwrap();
+        assert_eq!(
+            refogged["tactics"]["fog"],
+            json!(true),
+            "the rule turns both ways while the battle runs"
+        );
     }
 
     /// A result has to arrive with the window it promises, and that window has
@@ -7852,7 +7952,7 @@ mod tests {
         // and the factors behind its decisions. A second, unrelated civ filter
         // would let a reader inspect a plan for one empire beside another's
         // evidence, so it is deliberately absent.
-        assert!(EMBEDDED_INDEX.contains("<span>AI strategy</span>"));
+        assert!(EMBEDDED_INDEX.contains("<span id=\"strategytitle\">AI strategy</span>"));
         assert!(EMBEDDED_INDEX.contains("id=\"strategysec\""));
         assert!(EMBEDDED_INDEX.contains("id=\"strategyplayer\""));
         assert!(!EMBEDDED_INDEX.contains("id=\"reasonsec\""));
@@ -7919,6 +8019,49 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(".strategy-reason-filters { flex: 0 0 auto;"));
         assert!(!EMBEDDED_INDEX.contains(".reason-filter"));
         assert!(EMBEDDED_INDEX.contains("Recorded factors behind ${civ.civ}'s plan and decisions"));
+    }
+
+    /// Watching a battlefield, the deck reads tactically.
+    ///
+    /// The dossier is retitled AI Tactics and lays out one battle plan per
+    /// side still standing; the war and event logs retire — the only war is
+    /// the one on screen, and an arena writes no other history worth a
+    /// section — and the study tracks go with them, a side's research reading
+    /// inline in its block instead.
+    #[test]
+    fn browser_reads_a_battlefield_deck_as_ai_tactics() {
+        // The stylesheet retires the sections off one class on <body> …
+        assert!(EMBEDDED_INDEX
+            .contains("body.watching-tactics #warsec, body.watching-tactics #eventsec,"));
+        assert!(EMBEDDED_INDEX.contains(
+            "body.watching-tactics #researchtrack, body.watching-tactics #civicstrack { display: none; }"
+        ));
+        // … and the class is the watched world's, never the setup drawer's:
+        // `playing-tactics` describes what the drawer is configuring, which
+        // may be the other game entirely.
+        assert!(EMBEDDED_INDEX.contains("const tacticsWorld = isBattlefieldMapScript(st.map?.script);"));
+        assert!(EMBEDDED_INDEX
+            .contains("document.body.classList.toggle(\"watching-tactics\", tacticsWorld);"));
+        // Retiring the open card hands its room to the dossier rather than
+        // leaving the whole deck folded shut.
+        assert!(EMBEDDED_INDEX
+            .contains("openSidebarSection(document.getElementById(\"strategysec\"));"));
+        // The titles follow the world from one renderer, so the two modes
+        // cannot drift apart.
+        assert!(EMBEDDED_INDEX.contains("<span id=\"strategyplanheading\">Grand strategy</span>"));
+        assert!(EMBEDDED_INDEX.contains("const wantTitle = tactics ? \"AI Tactics\" : \"AI strategy\";"));
+        assert!(EMBEDDED_INDEX
+            .contains("const wantHeading = tactics ? \"Battle plans\" : \"Grand strategy\";"));
+        // A battle is understood by comparing the sides' plans, not by
+        // flipping a picker between them: every side still standing gets a
+        // block, while the picker keeps scoping the decision factors below.
+        assert!(EMBEDDED_INDEX.contains("function tacticsSideHtml(p, picked)"));
+        assert!(EMBEDDED_INDEX
+            .contains("tacticsSideHtml(players[id], order.length > 1 && id === seat)"));
+        // Ground truth beside intent: the block reports the army actually on
+        // the board, so a seat that publishes no plan — a human's, a
+        // baseline's, a fogged rival's — still reports the fight it is in.
+        assert!(EMBEDDED_INDEX.contains("u.owner === p.id && militaryUnit(u)"));
     }
 
     /// The war log and the game event log are narrowed the same way.
@@ -8676,6 +8819,63 @@ mod tests {
         assert!(!stock.tactics.unique_units);
         assert!(!stock.tactics.flag, "cities decide a battle unless the flag is asked for");
         assert_eq!(stock.tactics, TacticsRules::default());
+    }
+
+    /// The era control travels the same request, under the same contract the
+    /// start era established: a rung nobody has built — or a Customize pool
+    /// that names none — is refused rather than substituted, so the previous
+    /// setting stands and the client can see it did.
+    #[test]
+    fn the_arena_era_request_is_resolved_or_refused() {
+        let ask = |body: Value| new_game_params(&current(), &body);
+
+        // Silence keeps the arena's original rule.
+        let stock = ask(json!({"num_players": 2, "map_script": "battlefield"}));
+        assert_eq!(stock.tactics.era, TacticsEra::Start);
+
+        // The lobby's stock choice: a fresh roll every battle.
+        let rolled = ask(json!({"map_script": "battlefield", "tactics_era": "random"}));
+        assert_eq!(rolled.tactics.era, TacticsEra::Random);
+
+        // A rung's id fixes it, by the ladder's own index.
+        let medieval = ask(json!({"map_script": "battlefield", "tactics_era": "medieval"}));
+        assert_eq!(medieval.tactics.era, TacticsEra::Fixed(2));
+
+        // A rung nobody has built is refused, exactly as `start_era` is.
+        let stone = ask(json!({"map_script": "battlefield", "tactics_era": "stone_age"}));
+        assert_eq!(stone.tactics.era, TacticsEra::Start);
+        let moon = ask(json!({"map_script": "battlefield", "tactics_era": "moon"}));
+        assert_eq!(moon.tactics.era, TacticsEra::Start);
+
+        // Customize reads its pool from `tactics_eras`, as a mask over the
+        // ladder; ids that are not built rungs simply are not in it.
+        let pool = ask(json!({
+            "map_script": "battlefield", "tactics_era": "custom",
+            "tactics_eras": ["ancient", "information", "stone_age"],
+        }));
+        assert_eq!(pool.tactics.era, TacticsEra::Pool(1 | 1 << 7));
+        assert_eq!(pool.tactics.era.pool_eras(), vec![0, 7]);
+
+        // A pool that names nothing buildable is a refusal, not an army.
+        let empty = ask(json!({
+            "map_script": "battlefield", "tactics_era": "custom", "tactics_eras": [],
+        }));
+        assert_eq!(empty.tactics.era, TacticsEra::Start);
+        let unbuilt = ask(json!({
+            "map_script": "battlefield", "tactics_era": "custom",
+            "tactics_eras": ["stone_age"],
+        }));
+        assert_eq!(unbuilt.tactics.era, TacticsEra::Start);
+
+        // A refused id also never disturbs a choice already made: the ask
+        // rides on params that already carry Random.
+        let mut carrying = current();
+        carrying.tactics.era = TacticsEra::Random;
+        let refused = new_game_params(
+            &carrying,
+            &json!({"map_script": "battlefield", "tactics_era": "moon"}),
+        );
+        assert_eq!(refused.tactics.era, TacticsEra::Random);
     }
 
     /// The lobby's two map menus are cut from the one authoritative roster:
@@ -10169,7 +10369,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("class=\"small civ6-hidden\">Game mode"));
         for normal in [
             "class=\"small civ6-hidden tactics-hidden\">World shape",
-            "class=\"small civ6-hidden\">Start era",
+            "class=\"small civ6-hidden tactics-hidden\">Start era",
             "class=\"small era-future-setting\">Future era",
             "class=\"victory-options civ6-hidden\" id=\"victory-options\"",
         ] {
@@ -10284,6 +10484,45 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("tactics_fog: readSetting(\"tacticsfog\") === \"1\","));
         assert!(EMBEDDED_INDEX.contains("id=\"tacticsflag\""));
         assert!(EMBEDDED_INDEX.contains("tactics_flag: readSetting(\"tacticsflag\") === \"1\","));
+        // The era control travels as a string rather than a figure — `random`
+        // (the stock choice), a rung's id, or `custom` — and Customize's own
+        // configuration, the era pool, rides beside it as a list of ids. The
+        // pool's checklist runs the whole built ladder, and its two unbuilt
+        // rungs are shown as what is coming rather than hidden.
+        assert!(EMBEDDED_INDEX.contains("id=\"tacticsera\""));
+        assert!(EMBEDDED_INDEX.contains("tactics_era: readSetting(\"tacticsera\") || \"random\","));
+        assert!(EMBEDDED_INDEX.contains("tactics_eras: tacticsEraPool(),"));
+        assert!(EMBEDDED_INDEX.contains("id=\"tactics-era-pool\""));
+        for era in ["ancient", "classical", "medieval", "renaissance",
+                    "industrial", "modern", "atomic", "information"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("id=\"erapool-{era}\"")),
+                "the era pool is missing its {era} rung"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains("<option value=\"future_modified\" disabled>Modified Future Era · later</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"moon\" disabled>Moon · later</option>"));
+        // The post-match countdown is the between-game hold offered where a
+        // Tactics match is set up. Option for option the Display Settings
+        // control — the same contract the result screen's copy keeps — or
+        // the three could disagree about what is on offer.
+        let offered = |id: &str| -> Vec<String> {
+            let start = EMBEDDED_INDEX
+                .find(&format!("id=\"{id}\""))
+                .unwrap_or_else(|| panic!("{id} is not in the page"));
+            EMBEDDED_INDEX[start..start + EMBEDDED_INDEX[start..].find("</select>").expect("an unclosed select")]
+                .match_indices("<option value=\"")
+                .map(|(at, tag)| {
+                    let value = &EMBEDDED_INDEX[start + at + tag.len()..];
+                    value[..value.find('"').expect("an unclosed option value")].to_string()
+                })
+                .collect()
+        };
+        assert_eq!(
+            offered("tacticspostmatch"),
+            offered("between-game-countdown"),
+            "the Tactics post-match control must offer exactly the between-game choices"
+        );
         // The viewer knows where the flag stands and what taking it is
         // called; a lobby that can ask for the objective must also show it.
         // The viewer knows where the flags stand and what taking one is
@@ -10616,7 +10855,7 @@ mod tests {
             .find("<span>War log</span>")
             .expect("war log");
         let strategy = EMBEDDED_INDEX
-            .find("<span>AI strategy</span>")
+            .find("<span id=\"strategytitle\">AI strategy</span>")
             .expect("AI strategy section");
         let government = EMBEDDED_INDEX
             .find("data-section=\"government\"")
@@ -10687,6 +10926,47 @@ mod tests {
                 r#"body.sidebar-hidden .overlay-close[data-overlay-close="controls"] { display: none; }"#
             ),
             "map controls should not offer dismissal while their restore switch is hidden"
+        );
+        // The simulation stats record starts over from its own panel — the
+        // control says "Reset" — and a world seen running clears the stored
+        // repeat guard, so a restarted arena that ends the same way on the
+        // same seed still counts as the new game it is. The guard's one job
+        // remains the page reopened over a finished world, which never
+        // renders a live frame.
+        assert!(
+            EMBEDDED_INDEX.contains("data-sim-stats-clear "),
+            "the simulation stats panel offers its reset control"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains(">Reset</button>"),
+            "the record's own control says Reset"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains(
+                "if (simulationStats.last) { delete simulationStats.last; saveSimulationStats(); }"
+            ),
+            "a live frame frees the repeat guard for the next result"
+        );
+        // The empire columns exist where there is an empire: on a battlefield
+        // they leave the standings and the Display Settings roster the same
+        // way the nuclear stockpile does before the bomb.
+        assert!(
+            EMBEDDED_INDEX.contains("function worldStandingsInPlay()"),
+            "the arena-free columns declare their existence test"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("[\"suzerain\", \"Suzerainty\", worldStandingsInPlay]"),
+            "the empire columns carry the arena existence test"
+        );
+        // The arena's fog is a live rule offered on the turn box, pushed over
+        // the same live-settings endpoint as the watch pace.
+        assert!(
+            EMBEDDED_INDEX.contains("<select data-hud-fog "),
+            "the turn box offers the in-game fog rule"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("setPace({tactics_fog: on});"),
+            "the fog flip rides the live-settings endpoint"
         );
         // Every editable settings group uses one compact full-width column;
         // labels and controls may share a row, but separate choices never do.
@@ -11279,9 +11559,10 @@ mod tests {
             "if (html === hudHtml || hudLayoutGesture?.name === \"players\" || playerHudColumnGesture\n      || playerHudReorderGesture || hudPaceHeldOpen()) {"
         ));
         assert!(EMBEDDED_INDEX.contains("function hudPaceHeldOpen()"));
-        // The moment focus leaves the select, the held snapshots paint.
+        // The moment focus leaves either held select — watch pace or the
+        // arena's in-game fog — the held snapshots paint.
         assert!(EMBEDDED_INDEX.contains(
-            "if (ev.target.closest?.(\"[data-hud-pace]\") && state) drawPlayerHud();"
+            "if (ev.target.closest?.(\"[data-hud-pace], [data-hud-fog]\") && state) drawPlayerHud();"
         ));
         // The bars are placed from the rendered heading, so they cannot drift
         // from the columns they name.
@@ -14523,7 +14804,7 @@ mod tests {
             "class=\"small game-advanced-setting civ6-hidden tactics-hidden\" data-advanced-order=\"50\"", // thermal
             "class=\"overlay-options game-advanced-setting civ6-hidden tactics-hidden\"", // wraparound
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"60\"", // map seed
-            "class=\"small civ6-hidden\">Start era",
+            "class=\"small civ6-hidden tactics-hidden\">Start era",
             "class=\"victory-options civ6-hidden\"",
             "class=\"advanced-settings civ6-hidden\" id=\"game-mod-settings\"",
         ] {

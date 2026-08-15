@@ -427,6 +427,13 @@ fn route(method: &str, target: &str, body: &str) -> Value {
                 if let Some(paused) = parsed["paused"].as_bool() {
                     session.spectator_paused = paused;
                 }
+                // The arena's live fog rule, exactly as the native server
+                // takes it: the game for the battle on screen, the params
+                // for whatever game follows it.
+                if let Some(on) = parsed["tactics_fog"].as_bool() {
+                    session.game.tactics.fog = on;
+                    session.params.tactics.fog = on;
+                }
                 let mut out = session.state();
                 decorate_browser(&mut out);
                 if let Some(error) = countdown_error {

@@ -1,15 +1,18 @@
 // The whole site's request handler.
 //
-// The site is two builds of the same program plus the pages around them:
+// The site is the same set of pages twice — one complete lane per build:
 //
-//   /        the STABLE lane — the promoted build, deliberately chosen
-//   /test    the HEAD lane — republished automatically from the latest main
-//   /home    the landing page (a real file at home/index.html)
-//   /download, /rust, /wasm — the native binaries and the moving pointers
+//   /              the STABLE lane — the promoted build, deliberately chosen:
+//                  the viewer at /, the landing page at /home, the native
+//                  binaries at /download
+//   /test/...      the HEAD lane — the same pages, republished automatically
+//                  from the latest main: /test, /test/home, /test/download
 //
-// Both lanes are the same viewer with relative asset paths, so each works at
-// its mount point without rewrites; they differ only in which commit their
-// engine was compiled from, and each states its commit in its own build.json.
+// Both lanes are relative-pathed, so each works at its mount point without
+// rewrites, and every link inside a lane stays inside the lane — reviewing
+// /test means clicking around /test and never landing in prod. The lanes
+// differ only in which commit they were built from, and each states its
+// commit in its own build.json.
 //
 // **This is a `_worker.js`, deliberately, and it must stay one.** Cloudflare
 // Pages also supports a `functions/` directory, and that is the obvious way to
@@ -24,20 +27,6 @@
 
 const COOKIE = "civvis_test";
 const WEEK = 60 * 60 * 24 * 7;
-
-/// Give a build channel a stable address without teaching browsers that its
-/// current destination can never change. Both destinations are themselves
-/// moving pointers: `/download/` links GitHub's latest native Rust release,
-/// while `/test/` is replaced whenever the WASM site is published.
-function buildChannel(url, path) {
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: `${path}${url.search}`,
-      "Cache-Control": "no-store",
-    },
-  });
-}
 
 /// What the cookie carries: proof of the password rather than the password.
 async function token(password) {
@@ -116,6 +105,99 @@ function askForIt(wrong) {
   });
 }
 
+/// File a visitor's report as a GitHub issue.
+///
+/// The home page's "Report Issue / Suggest Feature" dialog posts here for the
+/// visitors who chose *not* to use a GitHub account — the site itself opens
+/// the issue on their behalf, under a token the Pages environment names as
+/// `GITHUB_ISSUE_TOKEN`. Without that token the answer is an honest 503 and
+/// the dialog falls back to offering the prefilled GitHub form, so an
+/// unconfigured deployment degrades to "bring your own account" rather than
+/// swallowing reports.
+///
+/// The issue carries a `from-site` label (plus `bug` or `enhancement`), so
+/// triage is one filter, and the body states the reporter's chosen name, the
+/// deployed build and the browser — the context a bug report from a stranger
+/// otherwise never has.
+async function fileReport(request, env, url) {
+  const token = env.GITHUB_ISSUE_TOKEN;
+  const answer = (status, payload) =>
+    new Response(JSON.stringify(payload), {
+      status,
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    });
+  if (!token) return answer(503, { error: "reporting is not configured" });
+
+  // A report is a couple of paragraphs. Refuse anything that is not, before
+  // parsing it, and cap every field again after: limits here are the whole
+  // spam defence besides the honeypot, so they are deliberately tight.
+  const raw = await request.text();
+  if (raw.length > 20_000) return answer(413, { error: "too long" });
+  let report;
+  try {
+    report = JSON.parse(raw);
+  } catch {
+    return answer(400, { error: "not JSON" });
+  }
+  // The dialog ships an off-screen "website" field no person ever fills.
+  // A filled one is a bot, told "thanks" and given nothing.
+  if (report.website) return answer(201, { url: "" });
+  const kind = report.kind === "feature" ? "feature" : "issue";
+  const title = String(report.title || "").trim();
+  const details = String(report.details || "").trim();
+  // The name is rendered as an identity claim in the issue body, so it gets
+  // word characters only — a "pen name" must not smuggle markdown, links or
+  // an @-mention into bold type.
+  const reporter =
+    String(report.reporter || "").replace(/[^\w. -]/g, "").trim().slice(0, 60) || "anonymous";
+  if (title.length < 3 || title.length > 140) return answer(400, { error: "title must be 3–140 characters" });
+  if (details.length > 5000) return answer(400, { error: "details must stay under 5000 characters" });
+
+  // One report per address per minute, kept in the edge cache. Best-effort —
+  // the cache is per-colo and may evict early — but it prices out the only
+  // cheap abuse: a loop hammering this endpoint from one machine.
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const cooldown = new Request(`https://civvis.ai/__report-cooldown/${ip}`);
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  if (cache) {
+    if (await cache.match(cooldown)) return answer(429, { error: "one report a minute, please" });
+    await cache.put(cooldown, new Response("held", { headers: { "Cache-Control": "max-age=60" } }));
+  }
+
+  // Stamp the report with the build it was filed against — the bundle's own
+  // build.json says which commit is live, and a bug without a commit is a
+  // guessing game. Absence (old bundle, test harness) is fine: unstamped.
+  let build = "";
+  try {
+    const shipped = await env.ASSETS.fetch(new Request(new URL("/build.json", url)));
+    if (shipped.ok) build = (await shipped.json()).short || "";
+  } catch {}
+
+  const body =
+    `${details || "(no details given)"}\n\n---\n` +
+    `Reported from civvis.ai by **${reporter}** via the site's report dialog (no GitHub account).\n` +
+    (build ? `Build: \`${build}\`\n` : "") +
+    `Browser: ${request.headers.get("User-Agent") || "unknown"}`;
+  const filed = await fetch("https://api.github.com/repos/MartinHalvorson/CIVVIS/issues", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
+      // GitHub refuses any request that does not say who is asking.
+      "User-Agent": "civvis.ai report dialog",
+    },
+    body: JSON.stringify({
+      title,
+      body,
+      labels: ["from-site", kind === "feature" ? "enhancement" : "bug"],
+    }),
+  });
+  if (!filed.ok) return answer(502, { error: "GitHub would not take the issue" });
+  const issue = await filed.json();
+  return answer(201, { url: issue.html_url || "", number: issue.number });
+}
+
 /// Serve a file, with the headers a `_headers` file would have carried — that
 /// file is ignored once a `_worker.js` exists, so the rules live here instead.
 async function asset(request, env, gated) {
@@ -166,13 +248,21 @@ export default {
         });
       }
     }
-    // `/home` needs no case here: the landing page is a real file at
-    // home/index.html, and Pages resolves the directory index on its own.
-    if (url.pathname === "/rust" || url.pathname === "/rust/") {
-      return buildChannel(url, "/download/");
-    }
-    if (url.pathname === "/wasm" || url.pathname === "/wasm/") {
-      return buildChannel(url, "/test/");
+    // `/home`, `/download` and the whole `/test` lane need no cases here:
+    // every page is a real file in the deployed tree, and Pages resolves the
+    // directory indexes on its own. (`/rust` and `/wasm`, the old build
+    // channels, were dropped in favour of those real addresses; they fall
+    // through to the 404 like any other retired URL.)
+
+    // The home page's report dialog files GitHub issues through here.
+    if (url.pathname === "/report") {
+      if (request.method !== "POST") {
+        return new Response("POST only", {
+          status: 405,
+          headers: { Allow: "POST", "Cache-Control": "no-store" },
+        });
+      }
+      return fileReport(request, env, url);
     }
 
     // /beta — the lane's name for its first day — is scrapped. Answered with

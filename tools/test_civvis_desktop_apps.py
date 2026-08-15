@@ -374,7 +374,7 @@ class DesktopAppsTests(unittest.TestCase):
                     (native_target / "release/civvis").write_bytes(b"native")
                 elif command[0] == "./beta/publish.sh":
                     lane = pathlib.Path(command[-1]) / desktop.VIEWER_LANE
-                    lane.mkdir(parents=True)
+                    lane.mkdir(parents=True, exist_ok=True)
                     (lane / "civvis.wasm").write_bytes(b"wasm")
                     (lane / "build.json").write_text(
                         '{"commit":"%s","built_at":"2026-08-03T17:09:00Z",'
@@ -573,17 +573,29 @@ class DesktopAppsTests(unittest.TestCase):
             "the viewer lane",
         )
         publish = (ROOT / "beta/publish.sh").read_text(encoding="utf-8")
+        # The publisher emits one complete lane with the viewer at its ROOT
+        # ("."), so the module and the page assembly land directly in $out. A
+        # publisher that grows a subdirectory lane again must change the
+        # constant with it — that is the drift this test exists to catch.
         lane = desktop.VIEWER_LANE
+        prefix = "" if lane == "." else f"{lane}/"
         self.assertIn(
-            f'"$out/{lane}/civvis.wasm"',
+            f'"$out/{prefix}civvis.wasm"',
             publish,
-            f"publish.sh does not write civvis.wasm into {lane}/",
+            f"publish.sh does not write civvis.wasm into the {lane!r} lane",
         )
         self.assertIn(
-            f'"$out/{lane}/"',
+            f'"$out/{prefix}"',
             publish,
-            f"publish.sh does not assemble the page in {lane}/",
+            f"publish.sh does not assemble the page in the {lane!r} lane",
         )
+        if lane == ".":
+            self.assertNotIn(
+                '"$out/test/',
+                publish,
+                "publish.sh still writes a test/ sublane; the packager and "
+                "the deploy workflow both read the lane root",
+            )
 
 
 if __name__ == "__main__":
