@@ -853,6 +853,7 @@ fn withhold_live_treatment(
         "religion-sues-peace" => ai.disable_religion_sues_peace(),
         "stranded-settler-discount" => ai.disable_stranded_settler_discount(),
         "housing-buildings" => ai.disable_housing_buildings(),
+        "amenity-project-preemption" => ai.disable_amenity_project_preemption(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -875,7 +876,8 @@ fn withhold_live_treatment(
                  muster-at-command-radius, war-economy, war-reinforcement, war-patience, \
                  recon-replacement, wide-map-capacity, garrison-under-fire, \
                  escort-unstick, religion-sues-peace, stranded-settler-discount, \
-                 siege-commitment, wonder-ring-settle-value, garrison-walls"
+                 siege-commitment, wonder-ring-settle-value, garrison-walls, \
+                 amenity-project-preemption"
             ))
         }
     }
@@ -2769,6 +2771,14 @@ mod tests {
         assert!(
             ai.blind_objective_units,
             "withholding one treatment must leave the rest of the composite intact"
+        );
+
+        assert!(ai.amenity_project_preemption);
+        withhold_live_treatment(&mut ai, "amenity-project-preemption")
+            .expect("the amenity repair's control arm is registered");
+        assert!(
+            !ai.amenity_project_preemption,
+            "the named Amenity control must hold the queue handoff off"
         );
 
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
