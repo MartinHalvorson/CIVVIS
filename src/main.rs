@@ -1013,17 +1013,19 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// evaluation arm). The frozen `advanced_v1` controller retains its project
 /// queues, so this is a compatibility re-pin rather than an Elo protocol move.
 /// The opening Scout, six-city fog floor, civilian policy timing, government
-/// prerequisite, major-war zero-damage siege handoff, and stalled-Settler
-/// founding changes are all behind live-bridge treatment flags. `BasicAi::new()` and
-/// `AdvancedAi::legacy()` leave those flags false; the focused ablation tests
-/// lock the boundary. Compatibility re-pin; the Elo protocol does not move.
+/// prerequisite, major-war zero-damage siege handoff, stalled-Settler founding,
+/// and first-Campus Writing handoff changes are all behind live-bridge treatment
+/// flags. `first_campus_tech` short-circuits on `campus_every_city` before it
+/// reads the board, and `AdvancedAi::legacy()` leaves that flag false; the
+/// focused ablation tests lock the boundary. Compatibility re-pin; the Elo
+/// protocol does not move.
 /// Physical Great People that have no host-valid activation plot now add
 /// mirror-only production and research needs. `Game::new` leaves that list
 /// empty, old saves default it empty, and only `mirror.rs` populates it from a
 /// Firaxis unit export. The assertion below locks that boundary, so the frozen
 /// headless anchor cannot enter any of the new planning branches. Compatibility
 /// re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x98cc_9a83_7ff2_2a18;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf13e_9a24_6135_e9d3;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
