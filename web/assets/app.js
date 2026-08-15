@@ -4801,11 +4801,17 @@ function hudFoldButton(name, label, extraClass = "") {
 // ------------------------------------------------------- simulation stats
 // The record that persists between simulations: every finished game bumps a
 // win–loss–draw ledger per civilization and per controlling player or AI
-// profile, kept per mode so a Tactics record never mixes into a Civ one.
+// profile, plus a count of wins by victory type. It stays per mode so a
+// Tactics record never mixes into a Civ one.
 // Aggregates only — the ledger stays a few hundred bytes however many games
 // it has seen.
 const SIMULATION_STATS_KEY = "civvis-simulation-stats-v1";
 const SIM_STATS_VIEW_KEY = "civvis-sim-stats-view-v1";
+const SIM_STATS_VIEWS = {
+  civs: {label: "Civs", title: "Win–loss record by civilization"},
+  strategies: {label: "Strategies", title: "Win–loss record by controlling player or AI profile"},
+  victories: {label: "Victory types", title: "Wins by victory type"},
+};
 let simulationStats = (() => {
   try {
     const saved = JSON.parse(localStorage.getItem(SIMULATION_STATS_KEY) || "{}");
@@ -4815,14 +4821,15 @@ let simulationStats = (() => {
 })();
 let simStatsView = (() => {
   try {
-    return localStorage.getItem(SIM_STATS_VIEW_KEY) === "strategies" ? "strategies" : "civs";
+    const saved = localStorage.getItem(SIM_STATS_VIEW_KEY);
+    return SIM_STATS_VIEWS[saved] ? saved : "civs";
   } catch (_) { return "civs"; }
 })();
 function saveSimulationStats() {
   try { localStorage.setItem(SIMULATION_STATS_KEY, JSON.stringify(simulationStats)); } catch (_) {}
 }
 function rememberSimStatsView(view) {
-  simStatsView = view === "strategies" ? "strategies" : "civs";
+  simStatsView = SIM_STATS_VIEWS[view] ? view : "civs";
   try { localStorage.setItem(SIM_STATS_VIEW_KEY, simStatsView); } catch (_) {}
 }
 function simulationStatsMode(st = state) {
@@ -4834,6 +4841,7 @@ function simulationStatsBucket(mode) {
   bucket.turns ??= 0;
   bucket.civs ??= {};
   bucket.strategies ??= {};
+  bucket.victories ??= {};
   return bucket;
 }
 // The seat's controller, the same preference order the standings print:
@@ -4844,6 +4852,9 @@ function simulationSeatName(p) {
 function bumpSimulationRecord(table, key, column) {
   const row = table[key] ?? (table[key] = {w:0, l:0, d:0});
   row[column] += 1;
+}
+function bumpSimulationVictory(table, victory) {
+  table[victory] = (Number(table[victory]) || 0) + 1;
 }
 // Called from the result screens, whose signature guard already runs once per
 // distinct result; the stored key repeats that guard across reloads so a page
@@ -4858,6 +4869,8 @@ function recordSimulationResult(st, signature, winnerIds) {
   const winnerSeats = new Set(winnerIds
     .map(id => st.players[id]?.id)
     .filter(id => id !== undefined));
+  if (winnerSeats.size)
+    bumpSimulationVictory(bucket.victories, victoryVerdict(st.victory_type, st.victory_label));
   for (const p of st.players) {
     if (p.is_minor || p.is_barbarian) continue;
     const column = winnerSeats.size === 0 ? "d" : winnerSeats.has(p.id) ? "w" : "l";
@@ -22043,45 +22056,57 @@ function describeSimulationRecord(row) {
 }
 // The persistent record above the victory tracker: this mode's games and
 // average length, then the win–loss ledger by civilization or by controlling
-// player or AI profile — whichever view was chosen last.
+// player or AI profile, or its wins by victory type — whichever view was
+// chosen last.
 function simulationStatsSection() {
   const mode = simulationStatsMode();
   const bucket = simulationStats[mode];
   const games = bucket?.games || 0;
   const modeLabel = mode === "tactics" ? "Tactics" : "Civvis";
   const summary = games
-    ? `${modeLabel} · ${games} game${games === 1 ? "" : "s"} · avg ${Math.round(bucket.turns / games)} turns`
-    : `${modeLabel} · no finished games yet`;
+    ? `${games} game${games === 1 ? "" : "s"}, avg ${Math.round(bucket.turns / games)} turns`
+    : "No finished games yet";
   const table = bucket?.[simStatsView] || {};
-  const rows = Object.entries(table)
-    .sort(([aName, a], [bName, b]) => b.w - a.w
-      || (b.w + b.l + b.d) - (a.w + a.l + a.d)
-      || aName.localeCompare(bName))
-    .map(([name, row]) =>
-      `<div class="sim-stat-row" title="${escapeAttr(`${name} — ${describeSimulationRecord(row)}`)}">` +
-      `<span class="sim-stat-name">${name}</span>` +
-      `<span class="sim-stat-record">${formatSimulationRecord(row)}</span></div>`)
-    .join("");
+  const rows = simStatsView === "victories"
+    ? Object.entries(table)
+      .sort(([aName, a], [bName, b]) => Number(b) - Number(a) || aName.localeCompare(bName))
+      .map(([name, wins]) => {
+        const count = Math.max(0, Math.round(Number(wins) || 0));
+        const label = `${count} win${count === 1 ? "" : "s"}`;
+        return `<div class="sim-stat-row" title="${escapeAttr(`${name} — ${label}`)}">` +
+          `<span class="sim-stat-name">${name}</span>` +
+          `<span class="sim-stat-record">${label}</span></div>`;
+      })
+      .join("")
+    : Object.entries(table)
+      .sort(([aName, a], [bName, b]) => b.w - a.w
+        || (b.w + b.l + b.d) - (a.w + a.l + a.d)
+        || aName.localeCompare(bName))
+      .map(([name, row]) =>
+        `<div class="sim-stat-row" title="${escapeAttr(`${name} — ${describeSimulationRecord(row)}`)}">` +
+        `<span class="sim-stat-name">${name}</span>` +
+        `<span class="sim-stat-record">${formatSimulationRecord(row)}</span></div>`)
+      .join("");
   const body = rows ||
     `<div class="sim-stats-empty">Finished games are recorded here, and the record persists between simulations.</div>`;
   const viewButton = view =>
     `<button class="sim-stats-view${simStatsView === view ? " active" : ""}" type="button" ` +
     `data-sim-stats-view="${view}" aria-pressed="${simStatsView === view}" ` +
-    `title="${view === "civs" ? "Win–loss record by civilization" : "Win–loss record by controlling player or AI profile"}">` +
-    `${view === "civs" ? "Civs" : "Strategies"}</button>`;
+    `title="${SIM_STATS_VIEWS[view].title}">${SIM_STATS_VIEWS[view].label}</button>`;
   return `<section class="hud-region sim-stats-region" aria-labelledby="sim-stats-title">` +
     `<div class="hud-region-bar">` +
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
-    `aria-label="Move simulation stats; use arrow keys or drag" title="Drag to move · arrow keys also move" id="sim-stats-title">` +
-    `<span>Simulation stats</span></div>` +
-    hudFoldButton("simstats", "simulation stats") +
+    `aria-label="Move Arena Stats; use arrow keys or drag" title="Drag to move · arrow keys also move" id="sim-stats-title">` +
+    `<span>Arena Stats</span></div>` +
+    hudFoldButton("simstats", "Arena Stats") +
     `</div>` +
     `<div class="sim-stats-body">` +
-    `<div class="sim-stats-summary">${summary}</div>` +
-    `<div class="sim-stats-controls" role="group" aria-label="Simulation record view">` +
-    viewButton("civs") + viewButton("strategies") +
+    `<div class="sim-stats-summary-row"><div class="sim-stats-summary">${summary}</div>` +
     (games ? `<button class="sim-stats-clear" type="button" data-sim-stats-clear ` +
       `title="Reset the saved ${modeLabel} record" aria-label="Reset the saved ${modeLabel} record">Reset</button>` : ``) +
+    `</div>` +
+    `<div class="sim-stats-controls" role="group" aria-label="Arena Stats record view">` +
+    viewButton("civs") + viewButton("strategies") + viewButton("victories") +
     `</div>` +
     `<div class="sim-stats-rows">${body}</div>` +
     `</div></section>`;
