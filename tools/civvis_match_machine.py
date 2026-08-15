@@ -280,16 +280,32 @@ class Resources:
         values.extend(value for value in (self.cpu, self.memory, self.gpu) if value is not None)
         return max(values)
 
+    def governed_maximum(self) -> float:
+        # The resources the fleet's own work actually consumes.  The simulator
+        # and the build are CPU-only, so shed/resume margins measured against
+        # the GPU describe another process's load — pausing fleet work cannot
+        # lower it, and holding margin-distance below the ceiling against it
+        # starves the whole fleet whenever a real game renders on this host.
+        values = [self.disk]
+        values.extend(value for value in (self.cpu, self.memory) if value is not None)
+        return max(values)
+
     def overloaded(self, limit: float) -> bool:
         # CPU is the admission-critical signal.  If sampling it fails, pause
         # safely rather than guessing that enough aggregate headroom remains.
+        # GPU and thermal stay in this hard gate: at the limit the host is
+        # genuinely saturated no matter whose load it is.
         return self.cpu is None or self.thermal_pressure is True or self.maximum() >= limit
 
     def comfortably_below(self, limit: float, margin: float = 10.0) -> bool:
+        # Margins buy headroom for the fleet's next process, so they apply to
+        # the governed resources only; the full maximum still has to clear the
+        # hard limit itself.
         return (
             self.cpu is not None
             and self.thermal_pressure is not True
-            and self.maximum() < limit - margin
+            and self.maximum() < limit
+            and self.governed_maximum() < limit - margin
         )
 
 
@@ -438,9 +454,9 @@ def winner_placement(row: dict[str, str] | None) -> str | None:
 def resource_action(sample: Resources, limit: float) -> str:
     if sample.overloaded(limit):
         return "shed_all"
-    if sample.maximum() >= limit - SHED_HEADLESS_MARGIN:
+    if sample.governed_maximum() >= limit - SHED_HEADLESS_MARGIN:
         return "shed_headless"
-    if sample.maximum() >= limit - SHED_ONE_MARGIN:
+    if sample.governed_maximum() >= limit - SHED_ONE_MARGIN:
         return "shed_one"
     if sample.comfortably_below(limit, margin=RESUME_MARGIN):
         return "resume"
@@ -911,7 +927,8 @@ class MatchMachine:
                 must_pause = (
                     sample.cpu is None
                     or sample.thermal_pressure is True
-                    or sample.maximum() >= self.args.limit - SHED_ONE_MARGIN
+                    or sample.maximum() >= self.args.limit
+                    or sample.governed_maximum() >= self.args.limit - SHED_ONE_MARGIN
                 )
                 if cpu_throttled:
                     duty = build_cpu_duty_cycle(sample.cpu, self.args.limit)

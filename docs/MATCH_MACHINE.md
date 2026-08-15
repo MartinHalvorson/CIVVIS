@@ -76,4 +76,7 @@ CPU, memory, filesystem capacity, and Apple GPU utilization are measured
 host-wide. At 70% the operator stops game process groups, preferring headless
 games; it resumes one at a time only below 60%. Any macOS thermal or performance
 warning is also a hard stop gate. The simulator is CPU-only; the single visible
-browser is the only deliberate graphics consumer.
+browser is the only deliberate graphics consumer. Because of that, the early
+shed and resume margins are measured against CPU, memory, and disk only:
+another process rendering on the GPU below the limit slows nothing down, while
+GPU at the limit itself remains a full stop.

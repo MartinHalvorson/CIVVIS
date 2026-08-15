@@ -226,6 +226,13 @@ pub struct FeatureSpec {
     pub move_cost: f64,
     #[serde(default)]
     pub natural_wonder: bool,
+    /// Civilization VI refuses a district on this feature and a Builder cannot
+    /// remove it: the Oasis is the shipped case. The rule was half-modelled —
+    /// city founding knew it, district siting did not — so run
+    /// civvis-20260811T230324Z asked the host for a Campus on one oasis tile
+    /// 40 times and was refused every time.
+    #[serde(default)]
+    pub blocks_district: bool,
     /// Present on every Natural Wonder and on nothing else: the ground the map
     /// generator is allowed to seat it on.
     #[serde(default)]
@@ -2937,9 +2944,22 @@ mod tests {
         // city-states carries a different set of Suzerain bonuses, so ledgers
         // recorded before this fingerprint are not comparable with ledgers
         // recorded after it.
+        // Moved by the Oasis gaining `blocks_district` (#1607): Civilization
+        // VI refuses a district on an Oasis, CIVVIS only knew that for city
+        // founding, and run civvis-20260811T230324Z asked the host for a
+        // Campus on one oasis tile 40 times.
+        //
+        // The conventional command's seat outcomes and production censuses
+        // came back identical across the change (advanced_v1 17/40, basic
+        // 3/40 on both sides) — read as a compatibility re-pin, with the same
+        // structural caveat as the city-states entry above: the 24×16 fractal
+        // seldom puts an Oasis inside a workable ring, so identity here is
+        // expected and is NOT evidence the rule is inert. It binds in the
+        // live regime, where the diagnosed re-ask loop lived; judge it on
+        // `build_no_plot` repeat structure there.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:d84eccb63bf01582"
+            "fnv1a64:f758c90083643ce3"
         );
     }
 

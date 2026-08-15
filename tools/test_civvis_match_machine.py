@@ -981,6 +981,17 @@ class MatchMachineTests(unittest.TestCase):
         self.assertEqual(machine.resource_action(machine.Resources(60, 20, 12, 0, False), 70), "shed_headless")
         self.assertEqual(machine.resource_action(edge, 70), "shed_all")
 
+    def test_gpu_load_below_the_limit_does_not_margin_gate_cpu_work(self):
+        crowded = machine.Resources(20, 20, 12, 60, False)
+        self.assertEqual(machine.resource_action(crowded, 70), "resume")
+        self.assertTrue(crowded.comfortably_below(70, margin=machine.RESUME_MARGIN))
+
+    def test_gpu_at_the_limit_still_stops_everything(self):
+        saturated = machine.Resources(20, 20, 12, 70, False)
+        self.assertEqual(machine.resource_action(saturated, 70), "shed_all")
+        self.assertTrue(saturated.overloaded(70))
+        self.assertFalse(saturated.comfortably_below(70, margin=machine.RESUME_MARGIN))
+
     def test_head_transition_recovery_alternates_headless_and_visible(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)
         subject.args = SimpleNamespace(limit=70)
