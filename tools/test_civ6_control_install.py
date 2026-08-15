@@ -54,6 +54,19 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("results[CityCommandResults.FAILURE_REASONS]", source)
         self.assertIn("reasons = reasons", source)
 
+    def test_upgrade_refusal_uses_the_unit_panels_current_turn_probe(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+        diagnostic = source.split("local function upgradeUnit(unit)", 1)[1].split(
+            "return nil;", 1
+        )[0]
+        self.assertIn(
+            'unit, CMD["UNITCOMMAND_UPGRADE"], false, true', diagnostic
+        )
+        self.assertNotIn(
+            'unit, CMD["UNITCOMMAND_UPGRADE"], true, true', diagnostic
+        )
+
     def test_every_unit_refusal_asks_the_engine_through_one_helper(self) -> None:
         """The `CanStartOperation` signature has been guessed wrong twice.
 
