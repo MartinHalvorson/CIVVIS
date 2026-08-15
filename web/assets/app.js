@@ -6826,7 +6826,7 @@ function restoreBetweenGameCountdown() {
   select.value = String(ms);
 }
 // With nothing picked by hand, the mode's default stands as a soft choice:
-// 3s between Tactics battles, the stock 10s everywhere else. Holding it in
+// 3s between Tactics battles, 5s everywhere else. Holding it in
 // betweenGameCountdownChoice lets the ordinary assert path tell a fresh
 // server about it once, exactly as it would a remembered preference, without
 // writing anything a later session would mistake for one. Re-applied when a
@@ -6835,7 +6835,7 @@ function applyBetweenGameCountdownDefault(tactics = watchingBattlefield()) {
   if (betweenGameCountdownExplicit) return;
   const select = document.getElementById("between-game-countdown");
   if (!select || betweenGameCountdownHeldOpen()) return;
-  const ms = tactics ? 3_000 : 10_000;
+  const ms = tactics ? 3_000 : 5_000;
   if (!betweenGameCountdownOffered(select, ms) || betweenGameCountdownChoice === ms) return;
   betweenGameCountdownChoice = ms;
   betweenGameCountdownAsserted = null;
