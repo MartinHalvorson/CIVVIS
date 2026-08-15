@@ -6757,7 +6757,17 @@ impl BasicAi {
                 let wonder_queued = g.player_city_ids(pid).into_iter().any(|city| {
                     matches!(g.cities[&city].queue.first(), Some(Item::Wonder { .. }))
                 });
-                if !wonder_queued {
+                // A host refusal already says this city cannot start the
+                // activation-path wonder CIVVIS proposed. Trying a different
+                // speculative wonder in that same city merely walks the whole
+                // catalogue after each `build_no_plot`; leave the city to its
+                // ordinary production chooser until the host block expires or
+                // a different city can supply the path.
+                let host_refused_a_wonder_here = g
+                    .blocked_wonders
+                    .get(&cid)
+                    .is_some_and(|wonders| !wonders.is_empty());
+                if !wonder_queued && !host_refused_a_wonder_here {
                     if let Some(wonder) = Self::cheapest_available_wonder(g, pid, cid) {
                         return Some(wonder);
                     }
@@ -11464,6 +11474,65 @@ mod tests {
             !ai.prioritize_live_great_person_activation(&mut game, 0),
             "the queued prerequisite must not be cloned by a second city"
         );
+    }
+
+    #[test]
+    fn a_live_wonder_engineer_does_not_cycle_through_host_rejected_wonders() {
+        let activation_board = || {
+            let mut game = Game::new_full(1, 24, 16, 91_772, 120, 0, false);
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+            let city = game.player_city_ids(0)[0];
+            let techs: Vec<Name> = game.rules.techs.keys().cloned().collect();
+            let civics: Vec<Name> = game.rules.civics.keys().cloned().collect();
+            game.players[0].techs.extend(techs);
+            game.players[0].civics.extend(civics);
+            for position in game.cities[&city].owned_tiles.clone() {
+                if position == game.cities[&city].pos {
+                    continue;
+                }
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = crate::name!("desert");
+                tile.feature = None;
+                tile.hills = false;
+                tile.resource = None;
+                tile.improvement = None;
+                tile.district = None;
+                tile.wonder = None;
+            }
+            game.players[0]
+                .live_great_person_activation_needs
+                .push(crate::game::LiveGreatPersonActivationNeed {
+                    kind: "engineer".to_string(),
+                    individual: Some("imhotep".to_string()),
+                    required_district: None,
+                });
+            (game, city)
+        };
+
+        let (mut available, city) = activation_board();
+        let ai = BasicAi::new();
+        assert!(ai.prioritize_live_great_person_activation(&mut available, 0));
+        assert!(matches!(
+            available.cities[&city].queue.first(),
+            Some(Item::Wonder { .. })
+        ));
+
+        let (mut refused, city) = activation_board();
+        refused
+            .blocked_wonders
+            .entry(city)
+            .or_default()
+            .insert(crate::name!("pyramids"));
+        assert!(
+            !ai.prioritize_live_great_person_activation(&mut refused, 0),
+            "one host rejection must return this city to ordinary production instead of trying every other wonder"
+        );
+        assert!(refused.cities[&city].queue.is_empty());
     }
 
     /// The 36 cities that vanished at FULL loyalty, in one assertion: a city on

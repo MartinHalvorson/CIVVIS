@@ -1030,6 +1030,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// Firaxis unit export. The assertion below locks that boundary, so the frozen
 /// headless anchor cannot enter any of the new planning branches. Compatibility
 /// re-pin; the Elo protocol does not move.
+/// A named live Great Engineer can ask for a wonder only while the host has not
+/// already refused a wonder in that city. This circuit breaker reads the same
+/// mirror-only activation need and host-refusal map, both empty in ordinary and
+/// frozen games; other cities remain eligible. Compatibility re-pin; the Elo
+/// protocol does not move.
 /// The wartime maintenance-card handoff requires `war_economy`, a zero
 /// treasury, and an active major war. `AdvancedAi::legacy()` leaves
 /// `war_economy` false, so it cannot enter the new policy branch. Compatibility
@@ -1041,7 +1046,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// treatment flags false, so it retains the historic generic selector and
 /// never enters either release helper. Compatibility re-pin; the Elo protocol
 /// does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf66d_729b_67ee_088e;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x98cb_e81c_f1ec_8348;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
