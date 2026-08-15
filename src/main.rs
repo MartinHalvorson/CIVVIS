@@ -1017,7 +1017,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// changes are all behind live-bridge treatment flags. `BasicAi::new()` and
 /// `AdvancedAi::legacy()` leave those flags false; the focused ablation tests
 /// lock the boundary. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x60e3_9668_644c_3fa7;
+/// Physical Great People that have no host-valid activation plot now add
+/// mirror-only production and research needs. `Game::new` leaves that list
+/// empty, old saves default it empty, and only `mirror.rs` populates it from a
+/// Firaxis unit export. The assertion below locks that boundary, so the frozen
+/// headless anchor cannot enter any of the new planning branches. Compatibility
+/// re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xaaf5_91fa_febe_ea9f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -3533,6 +3539,14 @@ mod tests {
                 .is_none(),
             "the frozen headless anchor has no Firaxis named-offer export; if this \
              becomes populated, the live-only GPP gate can alter its ledger"
+        );
+        assert!(
+            headless.players[0]
+                .live_great_person_activation_needs
+                .is_empty(),
+            "the frozen headless anchor has no physical Firaxis Great Person units; \
+             if this becomes populated, live activation infrastructure can alter \
+             its ledger"
         );
     }
 

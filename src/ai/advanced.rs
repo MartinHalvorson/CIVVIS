@@ -7362,6 +7362,8 @@ impl AdvancedAi {
             let available = g.available_techs(pid);
             let science_commitment = objective == GrandStrategy::Science
                 || self.diplomatic_science_backup(g, pid, plan);
+            let great_person_goal =
+                BasicAi::live_great_person_tech_goal(g, pid);
             let forced_goal = match objective {
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
@@ -7393,6 +7395,7 @@ impl AdvancedAi {
                 _ if plan.rush && !g.players[pid].techs.contains(&crate::name!("horseback_riding")) => {
                     Some("horseback_riding")
                 }
+                _ if great_person_goal.is_some() => great_person_goal.as_deref(),
                 _ if science_commitment => [
                     "rocketry",
                     "satellites",
@@ -7495,39 +7498,39 @@ impl AdvancedAi {
                 && !g.players[pid]
                     .civics
                     .contains(&crate::name!("political_philosophy"));
-            let forced_goal = if first_government {
-                Some("political_philosophy")
-            } else {
-                match objective {
-                    _ if g.has_ability(pid, "taxis")
-                        && !g.players[pid].civics.contains(&crate::name!("divine_right")) =>
-                    {
-                        Some("divine_right")
-                    }
-                    GrandStrategy::Culture => [
-                        "humanism",
-                        "conservation",
-                        "professional_sports",
-                        "cultural_heritage",
-                        "space_race",
-                        "environmentalism",
-                        "social_media",
-                    ]
-                    .into_iter()
-                    .find(|civic| !g.players[pid].civics.contains(&Name::new(civic))),
-                    GrandStrategy::Science if !g.players[pid].civics.contains(&crate::name!("space_race")) => {
-                        Some("space_race")
-                    }
-                    GrandStrategy::Diplomacy
-                        if !g.players[pid].civics.contains(&crate::name!("global_warming_mitigation")) =>
-                    {
-                        Some("global_warming_mitigation")
-                    }
-                    GrandStrategy::Religion if !g.players[pid].civics.contains(&crate::name!("theology")) => {
-                        Some("theology")
-                    }
-                    _ => None,
+            let great_person_goal =
+                BasicAi::live_great_person_civic_goal(g, pid);
+            let forced_goal = match objective {
+                _ if g.has_ability(pid, "taxis")
+                    && !g.players[pid].civics.contains(&crate::name!("divine_right")) =>
+                {
+                    Some("divine_right")
                 }
+                _ if great_person_goal.is_some() => great_person_goal.as_deref(),
+                _ if first_government => Some("political_philosophy"),
+                GrandStrategy::Culture => [
+                    "humanism",
+                    "conservation",
+                    "professional_sports",
+                    "cultural_heritage",
+                    "space_race",
+                    "environmentalism",
+                    "social_media",
+                ]
+                .into_iter()
+                .find(|civic| !g.players[pid].civics.contains(&Name::new(civic))),
+                GrandStrategy::Science if !g.players[pid].civics.contains(&crate::name!("space_race")) => {
+                    Some("space_race")
+                }
+                GrandStrategy::Diplomacy
+                    if !g.players[pid].civics.contains(&crate::name!("global_warming_mitigation")) =>
+                {
+                    Some("global_warming_mitigation")
+                }
+                GrandStrategy::Religion if !g.players[pid].civics.contains(&crate::name!("theology")) => {
+                    Some("theology")
+                }
+                _ => None,
             };
             let goal_pick = forced_goal.and_then(|goal| {
                 available
@@ -23228,6 +23231,12 @@ impl AdvancedAi {
         // before it begins taking damage.
         self.redirect_unsafe_city_queue_for_defense(g, pid);
         self.redirect_threatened_recovery_queue_for_walls(g, pid, &plan);
+
+        // Physical Firaxis Great People with no legal activation plot are
+        // mirror-owned assets the ordinary immediate-retirement model cannot
+        // see. Reserve the fastest idle city for their missing prerequisite
+        // before strategic production fills every queue with another project.
+        self.base.prioritize_live_great_person_activation(g, pid);
 
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
