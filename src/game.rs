@@ -17843,6 +17843,12 @@ pub struct Game {
     /// can select a real placement instead of waiting out the cooldown.
     #[serde(default)]
     pub host_district_sites: BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>,
+    /// Fresh wonder plots Firaxis explicitly approved after rejecting a different
+    /// CIVVIS coordinate. Like [`Game::host_district_sites`], this is bridge-only
+    /// feedback: a positive host answer wins over its paired temporary refusal so
+    /// the next decision can start the same wonder on legal ground.
+    #[serde(default)]
+    pub host_wonder_sites: BTreeMap<u32, BTreeMap<Name, BTreeSet<Pos>>>,
     /// Wonders a HOST engine says have no legal plot IN THIS CITY, scoped for the
     /// same reason as [`Game::blocked_districts`] — Hanging Gardens needs a river
     /// and Great Bath floodplains, so one city having no ground says nothing about
@@ -18372,6 +18378,7 @@ impl From<GameSer> for Game {
             blocked_policies: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
             host_district_sites: BTreeMap::new(),
+            host_wonder_sites: BTreeMap::new(),
             blocked_wonders: BTreeMap::new(),
             blocked_production: BTreeMap::new(),
             blocked_purchases: BTreeMap::new(),
@@ -18935,6 +18942,7 @@ impl Game {
             blocked_policies: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
             host_district_sites: BTreeMap::new(),
+            host_wonder_sites: BTreeMap::new(),
             blocked_wonders: BTreeMap::new(),
             blocked_production: BTreeMap::new(),
             blocked_purchases: BTreeMap::new(),
@@ -41296,6 +41304,23 @@ impl Game {
     pub fn wonder_sites(&self, cid: u32, wname: &str) -> Vec<Pos> {
         let city = &self.cities[&cid];
         let spec = &self.rules.wonders[wname];
+        // A positive host answer is stronger than our reconstructed placement
+        // model. Keep only fresh mirrored tiles; an incomplete map must retain
+        // the ordinary fallback rather than fabricate a wonder site.
+        if let Some(sites) = self
+            .host_wonder_sites
+            .get(&cid)
+            .and_then(|by_wonder| by_wonder.get(&Name::new(wname)))
+        {
+            let sites: Vec<Pos> = sites
+                .iter()
+                .copied()
+                .filter(|position| self.map.tiles.contains_key(position))
+                .collect();
+            if !sites.is_empty() {
+                return sites;
+            }
+        }
         // A host that has already said it has no ground for this wonder HERE is
         // answering about the city, not about one tile, so there is nothing left to
         // offer and no point re-deriving a site next turn. See `blocked_wonders`.

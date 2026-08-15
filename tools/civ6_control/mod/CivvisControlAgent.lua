@@ -3296,7 +3296,7 @@ local function buildParams(row, city, requestedX, requestedY)
 			return city:GetBuildQueue():HasBeenPlaced(row.Hash);
 		end, false);
 		if building ~= nil and building.IsWonder and not alreadyPlaced then
-			local where, offered = productionPlot(city,
+			local where, offered, offeredPlots = productionPlot(city,
 				CityOperationTypes.PARAM_BUILDING_TYPE, row.Hash,
 				requestedX, requestedY);
 			if where == nil then
@@ -3335,6 +3335,11 @@ local function buildParams(row, city, requestedX, requestedY)
 					turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
 					x = requestedX, y = requestedY,
 					offered = offered or 0,
+					-- A positive offer names the host-valid alternatives for this
+					-- specific wonder. Keep those coordinates just as we do for a
+					-- district so the next CIVVIS decision can choose one instead of
+					-- suppressing a usable Great Engineer activation path.
+					offered_plots = offeredPlots,
 					reasons = reasons,
 				});
 				return nil;
