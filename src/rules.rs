@@ -226,6 +226,13 @@ pub struct FeatureSpec {
     pub move_cost: f64,
     #[serde(default)]
     pub natural_wonder: bool,
+    /// Civilization VI refuses a district on this feature and a Builder cannot
+    /// remove it: the Oasis is the shipped case. The rule was half-modelled —
+    /// city founding knew it, district siting did not — so run
+    /// civvis-20260811T230324Z asked the host for a Campus on one oasis tile
+    /// 40 times and was refused every time.
+    #[serde(default)]
+    pub blocks_district: bool,
     /// Present on every Natural Wonder and on nothing else: the ground the map
     /// generator is allowed to seat it on.
     #[serde(default)]

@@ -3721,6 +3721,36 @@ mod natural_wonder_permanence_tests {
         assert_eq!(game.map.tiles[&site].feature.as_deref(), Some("pantanal"));
     }
 
+    /// Civilization VI refuses a district on an Oasis and a Builder cannot
+    /// clear one. CIVVIS knew this for city founding (above) and not for
+    /// district siting, so run civvis-20260811T230324Z asked the host for a
+    /// Campus on one oasis tile 40 times and was refused every time — the
+    /// re-ask loop #1577 bounded but could not close, because the belief that
+    /// the plot was legal came from here.
+    #[test]
+    fn no_district_may_be_sited_on_an_oasis() {
+        let (mut game, city, site) = wonder_beside_capital();
+        {
+            let tile = game.map.tiles.get_mut(&site).unwrap();
+            tile.terrain = crate::name!("desert");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.flooded = false;
+        }
+        game.cities.get_mut(&city).unwrap().pop = 10;
+        assert!(
+            game.district_sites(city, crate::name!("campus")).contains(&site),
+            "a bare desert tile is a legal Campus site"
+        );
+        game.map.tiles.get_mut(&site).unwrap().feature = Some(crate::name!("oasis"));
+        assert!(
+            !game.district_sites(city, crate::name!("campus")).contains(&site),
+            "and the same tile with an Oasis is not"
+        );
+    }
+
     #[test]
     fn oasis_keeps_its_yields_appeal_fresh_water_and_permanence() {
         let (mut game, city, site) = wonder_beside_capital();
@@ -40998,7 +41028,7 @@ impl Game {
                 self.rules
                     .features
                     .get(feature.as_str())
-                    .is_some_and(|feature| feature.natural_wonder)
+                    .is_some_and(|feature| feature.natural_wonder || feature.blocks_district)
             }) {
                 continue;
             }
