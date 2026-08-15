@@ -1052,7 +1052,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// queue. The new helper is live-only and returns before inspecting any city
 /// under the frozen anchor. Compatibility re-pin; the Elo protocol does not
 /// move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x45a1_e239_49c9_e996;
+/// A fresh direct declaration likewise observes the timed-war endgame reserve
+/// only when `endgame_war_runway` is enabled through the live bridge. The
+/// frozen anchor leaves that flag false, retaining its historical late-war
+/// behavior. Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4fa5_88d3_2cd6_1c59;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -3644,6 +3648,7 @@ mod tests {
                 ("war_economy", ai.war_economy),
                 ("war_reinforcement", ai.war_reinforcement),
                 ("war_patience", ai.war_patience),
+                ("endgame_war_runway", ai.endgame_war_runway),
                 ("siege_commitment", ai.siege_commitment),
                 ("relief_targets_the_siege", ai.relief_targets_the_siege),
                 ("blind_objective_units", ai.blind_objective_units),
