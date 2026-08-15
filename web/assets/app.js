@@ -8659,15 +8659,16 @@ function drawFeatureEffects(t, x, y) {
 // Strategic terrain marks are map symbols rather than reduced illustrations.
 // They are large enough to remain visible around a unit token, but the tile
 // pass clips them to their owning hex before they touch the neighbouring map.
-// Marsh keeps its low, broad inverse-hill silhouette so it reads as wet ground
-// rather than a fourth kind of tree.
+// Marsh is a half-height inverse-hill band — flat enough to read as standing
+// water rather than ground — with a black-outlined clump of reeds rising from
+// each end, so it cannot be mistaken for a fourth kind of tree.
 function drawStrategicMarsh(x, y) {
-  const h = .6;
+  const h = .3;
   cx.save();
   cx.lineCap = "round"; cx.lineJoin = "round";
   cx.fillStyle = "#86cddd";
   cx.strokeStyle = "#285f79";
-  cx.lineWidth = 1.8;
+  cx.lineWidth = 1.5;
   cx.beginPath();
   cx.moveTo(x - 15, y - 7 * h);
   cx.bezierCurveTo(x - 13, y - h, x - 12, y + 5 * h, x - 7, y + 5 * h);
@@ -8681,6 +8682,24 @@ function drawStrategicMarsh(x, y) {
   cx.bezierCurveTo(x - 11, y + 8 * h, x - 12.5, y + 5 * h, x - 15, y - 2 * h);
   cx.closePath();
   cx.fill(); cx.stroke();
+  // The reed clumps: four blades rooted in each end of the band, fanning
+  // outward. Deliberately plain black rather than the band's teal, so they
+  // stay legible over any ground colour at survey zoom.
+  cx.strokeStyle = "#000000";
+  cx.lineWidth = 1.0;
+  for (const s of [-1, 1]) {
+    const bx = x + s * 11;
+    cx.beginPath();
+    cx.moveTo(bx - s * 2, y + 1.5);
+    cx.quadraticCurveTo(bx - s * 2.2, y - 2.5, bx - s * 3.6, y - 5.5);
+    cx.moveTo(bx - s * .5, y + 1.2);
+    cx.quadraticCurveTo(bx - s * .2, y - 3.5, bx + s * .9, y - 7.5);
+    cx.moveTo(bx + s * .5, y + 1.6);
+    cx.quadraticCurveTo(bx + s * 1.2, y - 1.5, bx + s * 2.2, y - 3.2);
+    cx.moveTo(bx + s * 1.5, y + 1.5);
+    cx.quadraticCurveTo(bx + s * 2.4, y - 2, bx + s * 4.2, y - 4.5);
+    cx.stroke();
+  }
   cx.restore();
 }
 
