@@ -192,13 +192,20 @@ class RankingTests(unittest.TestCase):
             sorted((row.win_bound for row in rows), reverse=True),
         )
         self.assertEqual(rows[0].strategy, "g24-26")
-        self.assertEqual((rows[0].wins, rows[0].games), (189, 1069))
-        former_page_leader = next(row for row in rows if row.strategy == "g56-48")
+        self.assertEqual((rows[0].wins, rows[0].games), (198, 1174))
+        runner_up = next(row for row in rows if row.strategy == "g28-28")
         self.assertEqual(
-            (rows.index(former_page_leader) + 1, former_page_leader.wins, former_page_leader.games),
-            (39, 0, 23),
+            (rows.index(runner_up) + 1, runner_up.wins, runner_up.games),
+            (2, 544, 3615),
         )
-        self.assertEqual(excluded, 1)
+        # The round-4002 page's rank-39 strategy retired during the round-4119
+        # run, so the current table must not carry it.
+        self.assertNotIn(
+            "g56-48",
+            {row.strategy for row in rows}
+            | {row.strategy for row in without_table_evidence},
+        )
+        self.assertEqual(excluded, 9)
         current_artifact = artifact.read_text(encoding="utf-8")
         self.assertNotIn("WildCard9 (`g56-48`) — Rome — Trajan", current_artifact)
         self.assertNotIn("active, retired, and human", current_artifact)
