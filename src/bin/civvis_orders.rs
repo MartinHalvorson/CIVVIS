@@ -1288,6 +1288,7 @@ fn withhold_live_treatment(
         "stranded-settler-discount" => ai.disable_stranded_settler_discount(),
         "housing-buildings" => ai.disable_housing_buildings(),
         "amenity-project-preemption" => ai.disable_amenity_project_preemption(),
+        "live-wonder-race" => ai.disable_live_wonder_race(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1311,7 +1312,7 @@ fn withhold_live_treatment(
                  recon-replacement, wide-map-capacity, garrison-under-fire, \
                  escort-unstick, stacked-escort, religion-sues-peace, stranded-settler-discount, \
                  siege-commitment, wonder-ring-settle-value, garrison-walls, \
-                 amenity-project-preemption"
+                 amenity-project-preemption, live-wonder-race"
             ))
         }
     }
@@ -3276,6 +3277,11 @@ mod tests {
             !ai.amenity_project_preemption,
             "the named Amenity control must hold the queue handoff off"
         );
+
+        assert!(ai.live_wonder_race);
+        withhold_live_treatment(&mut ai, "live-wonder-race")
+            .expect("the wonder race's control arm is registered");
+        assert!(!ai.live_wonder_race, "the named wonder-race control must hold it off");
 
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
         assert!(

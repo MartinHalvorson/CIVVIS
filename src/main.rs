@@ -1063,7 +1063,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `advanced_v1`/`basic` seed prefix (31337 through 31346) matched the prior
 /// 17/20 wins, 131.9 average turns, score, and per-seat metrics exactly.
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1043_1d73_5f9a_388c;
+/// The live wonder race is likewise gated by `live_wonder_race`, which only
+/// `enable_live_bridge` sets: `AdvancedAi::legacy()` and every rated arm keep
+/// the `Item::Wonder` refusal exactly as it was, so no headless anchor can enter
+/// the new valuation branch. Compatibility re-pin; the Elo protocol does not
+/// move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x20f9_ba19_8487_1bd7;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
