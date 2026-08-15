@@ -18029,6 +18029,35 @@ impl AdvancedAi {
             // oscillate.
             return None;
         }
+        // ★★★★ WAITING IS ONLY SAFE ON A SAFE TILE. Run civvis-20260815T230003Z:
+        // the host refused the founding at (29,18) on t22, the settler then
+        // stood there "waiting for its guard" on t23 and t24 with a barbarian
+        // warrior three tiles away and its guard on the ADJACENT tile — not
+        // stacked, so not protecting — and on t25 the barbarians walked off
+        // with it (a barbarian Settler appears at (28,16)). One Settler and
+        // twenty turns of the opening lost; the second city landed at t37.
+        // Standing still is the one thing a threatened, unstacked settler must
+        // not do: step toward the guard instead — it closes the gap the guard
+        // is closing from the other side, so they stack a turn sooner — and
+        // wait only when no such step exists.
+        // Any hostile that can reach or approach the tile counts (risk > 0):
+        // the question here is not "is this a good tile to walk onto" (the
+        // step limit) but "can something take an unstacked civilian off it
+        // before the guard arrives" — a lone warrior two tiles out already can.
+        if self.settlement_safety {
+            let visible = self.battlefront_visibility(g, pid);
+            let risk = self.settlement_tile_risk(g, pid, Some(uid), current, &visible);
+            if risk > 0.0 {
+                let guard_pos = g.units[&guard].pos;
+                think!(self.journal(), Expansion, Detail, "Settler falls back toward its guard";
+                       "its tile is threatened (risk {risk:.0}) and the guard is {} tiles \
+                        away — waiting here is how the last settler was captured",
+                       g.wdist(current, guard_pos); guard_pos);
+                if self.settler_step_toward_safe(g, pid, uid, guard_pos) {
+                    return Some(true);
+                }
+            }
+        }
         think!(self.journal(), Expansion, Detail, "Settler waits for its guard";
                "{waited} turn(s) so far; marching alone is how the last two settlers \
                 were captured");
@@ -36464,6 +36493,108 @@ mod tests {
             }
             game.turn += 1;
         }
+    }
+
+    /// A settler waiting for its guard on a threatened tile does not stand
+    /// still — it steps toward the guard; on a quiet tile it waits as before.
+    #[test]
+    fn a_threatened_settler_falls_back_toward_its_guard_instead_of_waiting() {
+        // Two majors at war, flat explored ground, our capital and theirs.
+        let build = |with_enemy: bool| -> (Game, u32, u32, Pos) {
+            let mut game = Game::new_full(2, 30, 20, 8_121, 120, 0, false);
+            for pid in 0..2 {
+                let settler = game
+                    .player_unit_ids(pid)
+                    .into_iter()
+                    .find(|unit| game.units[unit].kind == "settler")
+                    .unwrap();
+                let pos = game.units[&settler].pos;
+                game.remove_unit(settler);
+                game.found_city_for(pid, pos, None);
+            }
+            for unit in game.player_unit_ids(0).into_iter().chain(game.player_unit_ids(1)) {
+                game.remove_unit(unit);
+            }
+            let home = game.cities[&game.player_city_ids(0)[0]].pos;
+            let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+            for position in positions {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = crate::name!("plains");
+                tile.feature = None;
+                tile.hills = false;
+                tile.district = None;
+                tile.district_foundation = None;
+                tile.wonder = None;
+                game.players[0].explored.insert(position);
+            }
+            game.current = 0;
+            game.turn = 22;
+            game.record_contact(0, 1);
+            game.at_war.insert((0, 1));
+            // Settler four tiles from home, guard two tiles behind it (toward
+            // home), enemy warrior two tiles ahead of it.
+            let mut ring: Vec<Pos> = game.wdisk(home, 4).into_iter().filter(|p| game.wdist(*p, home) == 4).collect();
+            ring.sort_unstable();
+            let source = ring[0];
+            let mut toward_home: Vec<Pos> = game
+                .map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|p| game.wdist(*p, source) == 2 && game.wdist(*p, home) == 2)
+                .collect();
+            toward_home.sort_unstable();
+            let guard_pos = toward_home[0];
+            let mut away: Vec<Pos> = game
+                .map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|p| game.wdist(*p, source) == 2 && game.wdist(*p, home) == 6)
+                .collect();
+            away.sort_unstable();
+            let settler = game.spawn_test_unit("settler", 0, source);
+            let guard = game.spawn_test_unit("warrior", 0, guard_pos);
+            game.units.get_mut(&guard).unwrap().moves_left = 0.0;
+            if with_enemy {
+                let enemy = game.spawn_test_unit("warrior", 1, away[0]);
+                game.units.get_mut(&enemy).unwrap().moves_left = 2.0;
+            }
+            (game, settler, guard, source)
+        };
+
+        // Threatened: the settler steps toward its guard rather than freezing.
+        let (mut game, settler, guard, source) = build(true);
+        let mut ai = AdvancedAi::new();
+        ai.enable_stacked_escort();
+        assert!(ai.settlement_safety);
+        let journal = crate::reasoning::Journal::recording();
+        ai.attach_journal(journal.handle());
+        let before = game.wdist(source, game.units[&guard].pos);
+        game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+        let _ = ai.advanced_settler_step(&mut game, 0, settler);
+        let after_pos = game.units[&settler].pos;
+        assert_ne!(after_pos, source, "a threatened settler must not stand still for its guard");
+        assert!(
+            game.wdist(after_pos, game.units[&guard].pos) < before,
+            "it closes the gap to the guard"
+        );
+        assert!(
+            journal
+                .since(0)
+                .thoughts
+                .iter()
+                .any(|thought| thought.headline.starts_with("Settler falls back toward its guard")),
+            "the fallback is journaled"
+        );
+
+        // Quiet: the same settler waits in place, as before.
+        let (mut calm, settler, _guard, source) = build(false);
+        let mut ai = AdvancedAi::new();
+        ai.enable_stacked_escort();
+        calm.units.get_mut(&settler).unwrap().moves_left = 2.0;
+        let _ = ai.advanced_settler_step(&mut calm, 0, settler);
+        assert_eq!(calm.units[&settler].pos, source, "on a quiet tile the settler holds for its guard");
     }
 
     #[test]

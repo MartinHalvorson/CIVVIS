@@ -1100,7 +1100,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// only by the live bridge and the native repair bundle, never by
 /// `AdvancedAi::legacy()`, so the anchor's peace rules are unchanged.
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8e97_1aa9_5d32_dbf3;
+/// The threat-aware guard wait lives inside `stacked_escort_pace`, behind
+/// `stacked_escort`, which only the live bridge and the native repair bundle set;
+/// `AdvancedAi::legacy()` never reaches it. Compatibility re-pin; the Elo
+/// protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x79e6_6f1a_dba3_a037;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
