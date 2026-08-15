@@ -14644,6 +14644,17 @@ impl AdvancedAi {
                 && !player.is_barbarian
                 && g.is_at_war(pid, player.id)
         });
+        // Expansion pays back only if the home empire survives to use the new
+        // city. In live run `civvis-20260815T064852Z`, Recovery was already
+        // losing cities and power at t113, yet an empty Ostia began a Settler
+        // instead of using that turn of production to hold the named bastion.
+        // This is intentionally narrower than Recovery itself: global
+        // outmatching without a local threat can still expand, and historical
+        // controllers retain their source-compatible expansion policy.
+        let threatened_recovery_holds_settlers = self.plan_city_target
+            && plan.strategy == GrandStrategy::Recovery
+            && plan.threatened_city.is_some()
+            && active_major_war;
         let offensive_conquest = plan.strategy == GrandStrategy::Conquest
             && (plan.target_city.is_some() || plan.threatened_city.is_some() || active_major_war);
         let desired_military = match plan.strategy {
@@ -14719,6 +14730,9 @@ impl AdvancedAi {
             }
         }
         let raw = match item {
+            Item::Unit { unit } if unit == "settler" && threatened_recovery_holds_settlers => {
+                -10_000.0
+            }
             Item::Unit { unit } if unit == "settler" => {
                 let site = self.best_settle_site(g, pid, city.pos, 11).or_else(|| {
                     g.players[pid]
@@ -23336,6 +23350,85 @@ mod tests {
             .expect("queue the active defender");
         live.redirect_threatened_recovery_queue_for_walls(&mut defending, 0, &recovery);
         assert_eq!(defending.cities[&city].queue.first(), Some(&warrior));
+    }
+
+    #[test]
+    fn threatened_recovery_does_not_start_a_live_settler() {
+        // In run civvis-20260815T064852Z, Recovery had already lost Cumae and
+        // was far behind Kongo at t113, but an empty Ostia still began a
+        // Settler. The strategic production route prices new empty queues
+        // directly, so it needs this local survival hold rather than a change
+        // to the Settler's general expansion value.
+        let (mut game, city, _) = empire_with_a_capital(71_115);
+        game.cities.get_mut(&city).unwrap().pop = 2;
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        assert!(game.can_produce(0, city, &settler));
+        let recovery = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: Some(city),
+            desired_cities: 2,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        let legacy = AdvancedAi::legacy();
+        let mut live = AdvancedAi::new();
+        assert!(!legacy.plan_city_target);
+        assert!(live.plan_city_target);
+        assert!(
+            legacy.production_value(
+                &game,
+                0,
+                city,
+                &settler,
+                &recovery,
+                &legacy.counts(&game, 0)
+            ) > 0.0,
+            "the frozen anchor retains the existing Settler valuation"
+        );
+        assert!(
+            live.production_value(&game, 0, city, &settler, &recovery, &live.counts(&game, 0))
+                < -1_000.0,
+            "a named bastion under a live major-war Recovery plan must hold production"
+        );
+
+        let no_threat = StrategicPlan {
+            threatened_city: None,
+            ..recovery.clone()
+        };
+        assert!(
+            live.production_value(&game, 0, city, &settler, &no_threat, &live.counts(&game, 0))
+                > 0.0,
+            "Recovery without a local threat keeps its normal expansion option"
+        );
+        let mut unrestricted = game.clone();
+        live.advanced_production(&mut unrestricted, 0, &no_threat, false);
+        assert!(matches!(
+            unrestricted.cities[&city].queue.first(),
+            Some(Item::Unit { unit }) if unit == "settler"
+        ));
+        let peaceful = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            ..recovery.clone()
+        };
+        assert!(
+            live.production_value(&game, 0, city, &settler, &peaceful, &live.counts(&game, 0))
+                > 0.0,
+            "a non-Recovery lane keeps the normal expansion option"
+        );
+
+        // Exercise the empty-queue strategic production path that formerly
+        // selected the high-valued Settler during Recovery.
+        live.advanced_production(&mut game, 0, &recovery, false);
+        assert!(game.cities[&city].queue.first().is_some());
+        assert!(
+            !matches!(game.cities[&city].queue.first(), Some(Item::Unit { unit }) if unit == "settler"),
+            "the Recovery turn must not start a fresh Settler while the bastion is threatened"
+        );
     }
 
     #[test]

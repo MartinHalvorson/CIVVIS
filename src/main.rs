@@ -1012,7 +1012,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// becomes live only through `enable_live_bridge` (or an explicit engine-repair
 /// evaluation arm). The frozen `advanced_v1` controller retains its project
 /// queues, so this is a compatibility re-pin rather than an Elo protocol move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x37e5_5149_afca_3d85;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4c60_2170_7abf_ec5c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
