@@ -1886,15 +1886,19 @@ pub struct BasicAi {
     /// siege against walls, compatible ram/tower escorts, and distinct light-
     /// versus-heavy cavalry jobs.
     ///
-    /// Off for the frozen Basic/`advanced_v1` tournament controls and enabled
-    /// by the production Advanced controller.
+    /// Off for the frozen Basic/`advanced_v1` tournament controls, and since
+    /// 2026-08-14 off for production Advanced too — the war-half withhold
+    /// passed the promotion matrix (see `AdvancedAi::promoted_policy_envoy`).
+    /// Set today only by the `advanced_war_half` re-addition arm and focused
+    /// evaluator controls.
     tactical_strategy: bool,
-    /// Let the production controller retain one unit's campaign objective,
-    /// dangerous approaches, and a short retreat commitment across turns.
+    /// Let a controller retain one unit's campaign objective, dangerous
+    /// approaches, and a short retreat commitment across turns.
     ///
-    /// This stays off for Basic and the frozen `advanced_v1` anchor: those
-    /// controllers keep their historical step-by-step choices while production
-    /// Advanced can use the richer state.
+    /// Off for Basic and the frozen `advanced_v1` anchor, and since 2026-08-14
+    /// off for production Advanced too (the war-half removal; see
+    /// `AdvancedAi::promoted_policy_envoy`). Evaluator arms opt in through
+    /// `AdvancedAi::enable_unit_objective_memory`.
     unit_objective_memory: bool,
     w: Weights,
     book_pos: usize, // opening-book progress (capital builds played so far)

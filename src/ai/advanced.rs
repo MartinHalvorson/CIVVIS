@@ -2370,12 +2370,29 @@ impl AdvancedAi {
         // 2026-08-01 composite. `plan_city_target` stays: the land-aware plan
         // is a different mechanism and is not what was measured here.
         ai.plan_city_target = true;
-        // Expansion is allowed only behind the existing production floors;
-        // make sure the larger empire can actually hold what it founds.
-        ai.base.siege_muster = true;
-        ai.base.home_defense = true;
-        ai.base.tactical_strategy = true;
-        ai.base.unit_objective_memory = true;
+        // ⚠ The four war flags — `siege_muster`, `home_defense`,
+        // `tactical_strategy`, `unit_objective_memory` — were REMOVED on
+        // 2026-08-14. "Make sure the larger empire can actually hold what it
+        // founds" was the justification for turning them on here; withholding
+        // all four measured +32/+34 over two disjoint 400-map deployment runs
+        // with all six victories (seeds 10800000/11000000, sign p=0.0039 and
+        // p=0.0019, e-process crossed at map 134), and the promotion matrix at
+        // 600 pairs on the corrected gate returned **PASS**: deployment-online
+        // 55.5% (Wilson CI 51.5%..59.4%), Elo +38 (CI +10..+66), 143/77,
+        // sign p=0.0000, e-process crossed at map 57 (seed stream 18000000),
+        // with compact-standard at 51.8%, direction 167/123 *for* the
+        // withhold, p=0.0114 (seed stream 17000000). The mechanism is the one
+        // the audit keeps finding: military score 860 against the control's
+        // 921 while production, science, culture and the religious victory
+        // count all rise — production not spent fighting is production spent
+        // on the lanes that win. Third instance of the largest gains coming
+        // from removing work (`city_target_floor` −41, this bundle).
+        //
+        // The live bridge still enables `siege-muster` and `home-defense` as
+        // registered treatments for real-game play; the live delta from this
+        // removal is the unit-tactics pair, which measured null on its own
+        // (+11, p=0.3185, seed 11500000). `advanced_war_half` in `src/elo.rs`
+        // re-adds all four as a treatment so the axis stays measurable.
         ai.bounded_recovery = true;
         ai
     }
@@ -2711,14 +2728,18 @@ impl AdvancedAi {
 
     /// Enable explicit battlefield roles: the land-unit counter cycle, safe
     /// ranged standoff, wall-focused siege/support, and cavalry job priority.
-    /// Production Advanced enables this at construction; the method exists for
-    /// focused evaluator controls.
+    /// Production Advanced enabled this at construction until 2026-08-14, when
+    /// the war-half withhold passed the promotion matrix (+38, CI +10..+66,
+    /// seed stream 18000000; see `promoted_policy_envoy`); now only the
+    /// `advanced_war_half` re-addition arm and focused evaluator controls set
+    /// it.
     pub fn enable_tactical_strategy(&mut self) {
         self.base.tactical_strategy = true;
     }
 
     /// Let a unit retain its campaign objective and a short, threat-driven
-    /// retreat across turns. Production Advanced enables this by default; the
+    /// retreat across turns. Production Advanced enabled this by default until
+    /// 2026-08-14 (the war-half removal; see `promoted_policy_envoy`); the
     /// explicit method keeps focused evaluators able to opt in deliberately.
     pub fn enable_unit_objective_memory(&mut self) {
         self.base.unit_objective_memory = true;
@@ -22729,6 +22750,9 @@ mod tests {
             rush: false,
         };
         let mut ai = AdvancedAi::new();
+        // Opt into the memory under test: `unit_objective_memory` left the
+        // production defaults on 2026-08-14 (the war-half removal).
+        ai.enable_unit_objective_memory();
         assert!(ai.base.unit_objective_memory);
         assert!(!AdvancedAi::legacy().base.unit_objective_memory);
 
@@ -23355,8 +23379,15 @@ mod tests {
 
     #[test]
     fn production_controller_enables_tactics_without_moving_the_legacy_anchor() {
-        assert!(AdvancedAi::new().base.tactical_strategy);
+        // Since the 2026-08-14 war-half removal, production no longer enables
+        // tactics either — the opt-in path is `enable_tactical_strategy`
+        // (the `advanced_war_half` arm and the evaluator controls). The
+        // anchor stays off, as it always was.
+        assert!(!AdvancedAi::new().base.tactical_strategy);
         assert!(!AdvancedAi::legacy().base.tactical_strategy);
+        let mut opted_in = AdvancedAi::new();
+        opted_in.enable_tactical_strategy();
+        assert!(opted_in.base.tactical_strategy);
     }
 
     #[test]
@@ -23376,7 +23407,11 @@ mod tests {
         let cavalry = game.spawn_test_unit("heavy_chariot", 0, position);
         let spear = game.spawn_test_unit("spearman", 0, position);
 
-        AdvancedAi::new().advanced_formations(&mut game, 0);
+        // Opt into the formation logic under test: `tactical_strategy` left
+        // the production defaults on 2026-08-14 (the war-half removal).
+        let mut ai = AdvancedAi::new();
+        ai.enable_tactical_strategy();
+        ai.advanced_formations(&mut game, 0);
 
         assert_eq!(game.units[&ram].linked_to, Some(spear));
         assert_eq!(game.units[&spear].linked_to, Some(ram));
@@ -23512,16 +23547,6 @@ mod tests {
                 production.battlefront_observation,
             ),
             (
-                "tactical_strategy",
-                frozen.base.tactical_strategy,
-                production.base.tactical_strategy,
-            ),
-            (
-                "unit_objective_memory",
-                frozen.base.unit_objective_memory,
-                production.base.unit_objective_memory,
-            ),
-            (
                 "amenity_districts",
                 frozen.base.amenity_districts,
                 production.base.amenity_districts,
@@ -23534,6 +23559,42 @@ mod tests {
             assert!(
                 in_production,
                 "{flag} is off in production, so `advanced_without_{flag}` is a                  byte-identical no-op and measures nothing"
+            );
+        }
+        // The four war flags left production on 2026-08-14 (the war-half
+        // withhold passed the corrected-gate matrix: +38, CI +10..+66, seed
+        // stream 18000000; see `promoted_policy_envoy`). Off in BOTH
+        // constructors now: their withhold arms are declared aliases of
+        // `advanced`, and the re-addition treatment is `advanced_war_half`.
+        for (flag, on_anchor, in_production) in [
+            (
+                "siege_muster",
+                frozen.base.siege_muster,
+                production.base.siege_muster,
+            ),
+            (
+                "home_defense",
+                frozen.base.home_defense,
+                production.base.home_defense,
+            ),
+            (
+                "tactical_strategy",
+                frozen.base.tactical_strategy,
+                production.base.tactical_strategy,
+            ),
+            (
+                "unit_objective_memory",
+                frozen.base.unit_objective_memory,
+                production.base.unit_objective_memory,
+            ),
+        ] {
+            assert!(
+                !on_anchor,
+                "{flag} is on for advanced_v1: the war-half removal re-pinned                  the source contract as behaviour-free for the anchor, and                  this is the assertion that keeps that claim honest"
+            );
+            assert!(
+                !in_production,
+                "{flag} is on in production: the war-half removal shipped on a                  corrected-gate PASS, so turning it back on needs its own                  matrix run through `advanced_war_half`, not a default"
             );
         }
     }
@@ -23551,8 +23612,12 @@ mod tests {
         assert!(production.plan_city_target);
         assert_eq!(production.base.w.city_target, 4.0);
         assert_eq!(production.base.w.builder_per_city, 0.5);
-        assert!(production.base.siege_muster);
-        assert!(production.base.home_defense);
+        // ⚠ Off since 2026-08-14: withholding the war half (these two plus the
+        // unit-tactics pair) passed the corrected-gate promotion matrix at
+        // +38 Elo (CI +10..+66, seed stream 18000000). `advanced_war_half`
+        // still carries all four, so the axis stays reachable.
+        assert!(!production.base.siege_muster);
+        assert!(!production.base.home_defense);
         assert!(production.bounded_recovery);
         assert!(production.settlement_safety);
         assert!(production.adjacency_site_planning);
@@ -33922,7 +33987,10 @@ mod tests {
             readiness: 1.0,
             local_strength_ratio: 1.0,
         };
-        let ai = AdvancedAi::new();
+        // Opt into the tactical extension under test: `tactical_strategy`
+        // left the production defaults on 2026-08-14 (the war-half removal).
+        let mut ai = AdvancedAi::new();
+        ai.enable_tactical_strategy();
         let first_reply = ai.forcing_reply_penalty(&game, 0, opener, &opening);
         let (bonus, paired_reply) = ai
             .friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
@@ -33964,6 +34032,7 @@ mod tests {
             })
             .expect("the friendly kill must be distinguishable from its interrupted reply");
         let mut live = AdvancedAi::new();
+        live.enable_tactical_strategy();
         live.base.w.trade_caution = trade_caution;
         live.force_groups = vec![group.clone()];
         let mut played = game.clone();
@@ -35448,6 +35517,10 @@ mod tests {
             rush: false,
         };
         let mut ai = AdvancedAi::new();
+        // Opt into the mechanism under test: `home_defense` left the
+        // production defaults on 2026-08-14 (the war-half removal) and is now
+        // set by the live bridge and the `advanced_war_half` arm.
+        ai.enable_home_defense();
         ai.battlefront_observation = false;
         assert_eq!(
             ai.base.home_defense_objective(&game, 0, soldier, &[barb]),

@@ -973,7 +973,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// seat-turns — so wherever the anchor's planner went Conquest, the gate
 /// resolved the same wartime package as before. Compatibility re-pin;
 /// the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0cfd_388b_d12e_abfd;
+/// The 2026-08-14 war-half removal: `promoted_policy_envoy` stops setting
+/// `siege_muster`, `home_defense`, `tactical_strategy` and
+/// `unit_objective_memory`, plus the alias declarations and doc updates
+/// that ride with it. `AdvancedAi::legacy()` never routed through
+/// `promoted_policy_envoy` and `BasicAi::new()` constructs all four flags
+/// false, so the anchor's behaviour is unchanged; the four flags are now
+/// false in production too and set only by `enable_live_bridge` (two of
+/// them, as the `siege-muster`/`home-defense` treatments) and the
+/// `advanced_war_half` re-addition arm. Compatibility re-pin; the Elo
+/// protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x810b_05f9_ed18_b891;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
