@@ -1023,7 +1023,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// Firaxis unit export. The assertion below locks that boundary, so the frozen
 /// headless anchor cannot enter any of the new planning branches. Compatibility
 /// re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xaaf5_91fa_febe_ea9f;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6217_7b72_d11d_1321;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

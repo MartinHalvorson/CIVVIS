@@ -17560,9 +17560,21 @@ impl AdvancedAi {
                     return false;
                 }
                 self.settler_targets.remove(&uid);
-                think!(self.journal(), Expansion, Decision, "Founding the capital at {current:?}";
-                       "the site is worth {:.1}", self.settle_value(g, pid, current); current);
-                return g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
+                // ⚠ Journal AFTER the engine answers. Run
+                // civvis-20260815T081505Z printed "Founding a city" twice
+                // (t35, t45) for cities that never existed, and the study
+                // that caught it had to cross-check orders.sqlite to learn
+                // the why-log cannot be trusted on foundings. A Decision
+                // line now asserts an applied action, never an intention.
+                let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
+                if founded {
+                    think!(self.journal(), Expansion, Decision, "Founding the capital at {current:?}";
+                           "the site is worth {:.1}", self.settle_value(g, pid, current); current);
+                } else {
+                    think!(self.journal(), Expansion, Detail, "Founding refused at {current:?}";
+                           "the engine would not take the capital here"; current);
+                }
+                return founded;
             }
             if let Some(target) = target {
                 think!(self.journal(), Expansion, Detail,
@@ -17635,12 +17647,19 @@ impl AdvancedAi {
                 return false;
             }
             self.settler_targets.remove(&uid);
-            think!(self.journal(), Expansion, Decision, "Founding a city at {current:?}";
-                   "the site is worth {:.1}; the empire holds {} cities and wants {}",
-                   self.settle_value(g, pid, current),
-                   g.player_city_ids(pid).len(),
-                   self.plan.as_ref().map_or(0, |plan| plan.desired_cities); current);
-            return g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
+            // ⚠ Journal AFTER the engine answers; see the capital branch.
+            let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
+            if founded {
+                think!(self.journal(), Expansion, Decision, "Founding a city at {current:?}";
+                       "the site is worth {:.1}; the empire holds {} cities and wants {}",
+                       self.settle_value(g, pid, current),
+                       g.player_city_ids(pid).len(),
+                       self.plan.as_ref().map_or(0, |plan| plan.desired_cities); current);
+            } else {
+                think!(self.journal(), Expansion, Detail, "Founding refused at {current:?}";
+                       "the engine would not take the city; the settler will re-plan"; current);
+            }
+            return founded;
         }
         if let Some(acted) = self.stacked_escort_pace(g, pid, uid) {
             return acted;
@@ -17852,15 +17871,19 @@ impl AdvancedAi {
         {
             return false;
         }
-        think!(self.journal(), Expansion, Decision,
-               "Founding where the settler stands at {here:?}";
-               "it stalled {SETTLER_STALL_LIMIT} turns short of a better site \
-                worth {:.1} against {:.1} here",
-               0.0, self.settle_value(g, pid, here); here);
         self.settler_targets.remove(&uid);
         self.settler_stalls.remove(&uid);
         self.settler_closest.remove(&uid);
-        g.apply(pid, &Action::FoundCity { unit: uid }).is_ok()
+        // ⚠ Journal AFTER the engine answers; see the capital branch.
+        let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
+        if founded {
+            think!(self.journal(), Expansion, Decision,
+                   "Founding where the settler stands at {here:?}";
+                   "it stalled {SETTLER_STALL_LIMIT} turns short of a better site \
+                    worth {:.1} against {:.1} here",
+                   0.0, self.settle_value(g, pid, here); here);
+        }
+        founded
     }
 
     fn improvement_value(
@@ -35125,6 +35148,40 @@ mod tests {
         assert!(ai.advanced_settler_step(&mut game, 0, settler));
         assert_eq!(game.units[&settler].linked_to, None);
         assert_eq!(game.units[&escort].linked_to, None);
+    }
+
+    #[test]
+    fn a_refused_founding_is_not_journaled_as_a_decision() {
+        let (mut game, _source, target) = stacked_escort_fixture();
+        let settler = game.spawn_test_unit("settler", 0, target);
+        // Isolationism passes `can_found_city` but fails `do_found_city`, so
+        // the decision branch is entered and the engine then refuses — the
+        // shape run civvis-20260815T081505Z hit twice (t35, t45) through a
+        // different refusal, printing "Founding a city" for cities that never
+        // existed and poisoning every count taken from the why-log.
+        game.players[0].policies.insert(crate::name!("isolationism"));
+        let journal = crate::reasoning::Journal::recording();
+        let mut ai = AdvancedAi::new();
+        ai.attach_journal(journal.handle());
+        ai.settler_targets.insert(settler, target);
+
+        assert!(
+            !ai.advanced_settler_step(&mut game, 0, settler),
+            "a refused founding is a failed step, not a success"
+        );
+        assert_eq!(game.player_city_ids(0).len(), 1, "no city may appear");
+        let headlines: Vec<String> = journal
+            .since(0)
+            .thoughts
+            .into_iter()
+            .map(|thought| thought.headline)
+            .collect();
+        assert!(
+            !headlines
+                .iter()
+                .any(|headline| headline.starts_with("Founding a city")),
+            "the journal must not claim a founding the engine refused: {headlines:?}"
+        );
     }
 
     #[test]
