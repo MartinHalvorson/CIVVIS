@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 134] = [
+pub const EVAL_ONLY_AIS: [&str; 135] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -81,6 +81,7 @@ pub const EVAL_ONLY_AIS: [&str; 134] = [
     "live_without_war_economy",
     "live_without_war_reinforcement",
     "live_without_war_patience",
+    "live_without_endgame_war_runway",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -200,7 +201,7 @@ pub const EVAL_ONLY_AIS: [&str; 134] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 43] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 44] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -232,6 +233,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 43] = [
     "war-economy",
     "war-reinforcement",
     "war-patience",
+    "endgame-war-runway",
     "wide-map-capacity",
     "garrison-under-fire",
     "escort-unstick",
@@ -285,7 +287,7 @@ pub const FIRAXIS_ONLY_TREATMENTS: [&str; 4] = [
 
 /// The military half of the native repair bundle: force assembly, marching,
 /// siege, threat reading, and the war/peace decision.
-pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 23] = [
+pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 24] = [
     "muster-at-command-radius",
     "war-reinforcement",
     "come-ashore",
@@ -302,6 +304,7 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 23] = [
     "siege-tracks-wall",
     "siege-commitment",
     "war-patience",
+    "endgame-war-runway",
     "home-defense",
     "garrison-under-fire",
     "garrison-walls",
@@ -335,7 +338,7 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 16] = [
 /// tags — `LIVE_BRIDGE_TREATMENTS` minus `FIRAXIS_ONLY_TREATMENTS`, and the
 /// union of the two halves above. `engine_repair_tags_partition_the_bridge`
 /// fails if any of those three relationships stops holding.
-pub const ENGINE_REPAIR_TREATMENTS: [&str; 39] = [
+pub const ENGINE_REPAIR_TREATMENTS: [&str; 40] = [
     "muster-at-command-radius",
     "war-reinforcement",
     "come-ashore",
@@ -352,6 +355,7 @@ pub const ENGINE_REPAIR_TREATMENTS: [&str; 39] = [
     "siege-tracks-wall",
     "siege-commitment",
     "war-patience",
+    "endgame-war-runway",
     "home-defense",
     "garrison-under-fire",
     "garrison-walls",
@@ -436,6 +440,7 @@ define_arm_kinds! {
     LiveWithoutWarEconomy => "live_without_war_economy",
     LiveWithoutWarReinforcement => "live_without_war_reinforcement",
     LiveWithoutWarPatience => "live_without_war_patience",
+    LiveWithoutEndgameWarRunway => "live_without_endgame_war_runway",
     LiveWithoutStackedEscort => "live_without_stacked_escort",
     Advanced => "advanced",
     AdvancedBankingDedication => "advanced_banking_dedication",
@@ -3124,6 +3129,12 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_war_patience();
             Box::new(ai)
         }
+        "live_without_endgame_war_runway" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_endgame_war_runway();
+            Box::new(ai)
+        }
         "random" => Box::new(RandomAi::new(seed)),
         // Named so provenance collapse checks compare controller *and*
         // weights instead of dropping the genome. (Historically also the
@@ -3730,6 +3741,7 @@ impl ArmKind {
             Self::LiveWithoutWarEconomy => live_without("war-economy"),
             Self::LiveWithoutWarReinforcement => live_without("war-reinforcement"),
             Self::LiveWithoutWarPatience => live_without("war-patience"),
+            Self::LiveWithoutEndgameWarRunway => live_without("endgame-war-runway"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name
@@ -4254,6 +4266,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live_without_war_economy" => (Vec::new(), "live_without_war_economy"),
         "live_without_war_reinforcement" => (Vec::new(), "live_without_war_reinforcement"),
         "live_without_war_patience" => (Vec::new(), "live_without_war_patience"),
+        "live_without_endgame_war_runway" => (Vec::new(), "live_without_endgame_war_runway"),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_build_first" => (Vec::new(), "advanced_build_first"),
         "advanced_synergy" => (Vec::new(), "advanced_synergy"),
@@ -5484,7 +5497,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 107] = [
+            const SCRIPTED: [&str; 108] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5596,6 +5609,7 @@ mod tests {
                 "live_without_war_economy",
                 "live_without_war_reinforcement",
                 "live_without_war_patience",
+                "live_without_endgame_war_runway",
             ];
             const SCRIPTED_ALIASES: [&str; 7] = [
                 "advanced_policy_envoy_priority",

@@ -6977,6 +6977,14 @@ mod tests {
             "href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play\" data-pick=\"play\"",
             "<h3 class=\"card-title\" id=\"watch-civ-title\"><a href=\"../\">Watch CIVVIS</a></h3>",
             "href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\" data-pick=\"watch\"",
+            // "I'm Feeling Lucky" rolls between the two watched destinations
+            // the cards already offer. Its href is rolled by script, so the
+            // two candidates live in data attributes — pinned here beside the
+            // cards because a viewer link that stopped being lane-relative
+            // would send the test lane's visitors to the stable lane's game.
+            "id=\"lucky\"",
+            "data-watch-civ=\"../\"",
+            "data-watch-tactics=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\"",
             // The full game's Customized buttons land in the simulator with
             // the Game setup drawer open (`?setup=1`, honoured at the end of
             // app.js) when nothing can open the panel in place.

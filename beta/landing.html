@@ -53,7 +53,10 @@
   .site-title { margin: 0; color: #fff; font-size: 26px; font-weight: 700; letter-spacing: 0.04em; }
   .site-title span { color: var(--accent); font-weight: 600; }
   .site-tagline { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
-  .utility-nav { display: flex; flex-wrap: wrap; gap: 10px; }
+  /* `margin-left: auto` keeps the row against the right edge even when the
+     header's own wrap drops it onto a second line, where `space-between`
+     alone would park it back on the left under the title. */
+  .utility-nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-left: auto; }
   .utility-link {
     display: inline-flex;
     align-items: center;
@@ -74,6 +77,12 @@
   .utility-link:hover,
   .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
   .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The one link in this row that starts a game rather than leaving the
+     site, tinted like the picker's selected lens so it reads as the action
+     it is without competing with the cards below. */
+  .utility-link.lucky { border-color: var(--accent); color: #cfe9fb; }
+  .utility-link.lucky:hover,
+  .utility-link.lucky:focus-visible { background: #2a3f52; }
 
   /* The report dialog: a visitor's bug or feature request, headed for the
      project's GitHub issue tracker — filed by the site itself for anonymous
@@ -370,6 +379,17 @@
       <p class="site-tagline">An open source Civilization VI Simulator for AI strategy development</p>
     </div>
     <nav class="utility-nav" aria-label="CIVVIS links">
+      <!-- A coin flip into one of the two watched presets, held in data
+           attributes so the roll below never has to spell a destination the
+           cards do not. The href is the un-rolled fallback: without
+           scripting this still opens the watched full game. -->
+      <a class="utility-link lucky" id="lucky" href="../"
+         data-watch-civ="../"
+         data-watch-tactics="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20"
+         aria-label="I&#8217;m feeling lucky: watch a random CIVVIS simulation">
+        <svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M5 2h14a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3ZM8.5 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM15.5 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM12 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM8.5 15a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM15.5 15a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z"/></svg>
+        I&#8217;m Feeling Lucky
+      </a>
       <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
         GitHub
@@ -388,10 +408,10 @@
   <main class="shell">
     <p class="intro">
       CIVVIS is an open source re-implementation of the 4X turn-based strategy
-      game <cite>Sid Meier&#8217;s Civilization VI</cite> &#8212; built as a
-      simulator user interface wrapping headless backend game logic. Everything
-      below is a preset starting configuration of settings for the simulator,
-      but you can further customize the settings how you like or
+      game <cite>Sid Meier&#8217;s Civilization VI</cite> &#8212; built with a
+      simulator user interface wrapping the headless backend game logic.
+      Everything below is a preset starting configuration of settings for the
+      simulator, but you can further customize the settings how you like or
       <a href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">clone the code</a>
       to really customize your own experience.
     </p>
@@ -604,7 +624,7 @@
       </label>
       <div class="report-choices" role="group" aria-label="Sign it as">
         <button class="report-choice" type="button" data-identity="anonymous" aria-pressed="true">Anonymous</button>
-        <button class="report-choice" type="button" data-identity="random" aria-pressed="false">Random pen name</button>
+        <button class="report-choice" type="button" data-identity="random" aria-pressed="false">Pick a name</button>
         <button class="report-choice" type="button" data-identity="github" aria-pressed="false">My GitHub account</button>
       </div>
       <p class="report-hint" id="report-hint">The site files this as a GitHub issue, signed &#8220;anonymous&#8221; — no account needed.</p>
@@ -615,6 +635,25 @@
       </div>
     </form>
   </dialog>
+
+  <script>
+  // "I'm Feeling Lucky": a coin flip between the two watched presets, rolled
+  // into the anchor's own href rather than intercepted on click, so the thing
+  // stays an ordinary link — middle-click and ⌘-click open a random world in
+  // a new tab, and the status bar names a destination that is really where
+  // the click goes. `pageshow` re-rolls because coming back from the viewer
+  // restores this page from the back/forward cache with the old roll still in
+  // the href, which would make the button look stuck on one game.
+  (() => {
+    const lucky = document.getElementById("lucky");
+    if (!lucky) return;
+    const worlds = [lucky.dataset.watchCiv, lucky.dataset.watchTactics].filter(Boolean);
+    if (!worlds.length) return;
+    const roll = () => { lucky.href = worlds[Math.floor(Math.random() * worlds.length)]; };
+    roll();
+    window.addEventListener("pageshow", roll);
+  })();
+  </script>
 
   <script>
   (() => {
