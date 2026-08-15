@@ -2620,6 +2620,15 @@ fn main() {
                 }
             }
         }
+        #[cfg(not(feature = "closed-experiments"))]
+        "selfplay" => {
+            eprintln!(
+                "selfplay is part of the closed training-data lane; rebuild with \
+                 --features closed-experiments to run the exporter"
+            );
+            std::process::exit(1);
+        }
+        #[cfg(feature = "closed-experiments")]
         "selfplay" => {
             let players = arg(&args, "--players", 4).max(2);
             let options = game_options(
