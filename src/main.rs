@@ -1047,10 +1047,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// changes the emergency chooser from a generic military pick to a
 /// melee-capable land defender, lets the queue release replace a siege piece,
 /// and lets it start a defender after clearing a host-owned queue.
-/// `AdvancedAi::legacy()` leaves both city-defense treatment flags false, so
-/// it retains the historic generic selector and never enters either release
-/// helper. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb4e1_e49f_bd23_18a4;
+/// `AdvancedAi::legacy()` also leaves `amenity_project_preemption` false, so
+/// it never reads the host-calibrated Amenity ledger or reserves an idle Arena
+/// queue. The new helper is live-only and returns before inspecting any city
+/// under the frozen anchor. Compatibility re-pin; the Elo protocol does not
+/// move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x45a1_e239_49c9_e996;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -13990,6 +13990,142 @@ impl AdvancedAi {
         }
     }
 
+    /// Give one idle city the next direct Entertainment Complex building when
+    /// a host-observed deficit is widespread. The existing crisis handoff
+    /// intentionally leaves Conquest and active wars alone because it would
+    /// replace an in-flight project; this narrower route has no such trade:
+    /// it only fills a queue that the higher-priority defense and Great Person
+    /// passes already left empty.
+    ///
+    /// One reservation at a time matters here. An Arena resolves its city's
+    /// immediate shortfall, but asking every eligible city to start one in the
+    /// same callback would turn an empire-wide penalty into a blanket wartime
+    /// infrastructure pivot. The next queue can be considered after the first
+    /// building is observed complete.
+    fn reserve_idle_amenity_building_for_widespread_crisis(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        if !self.amenity_project_preemption {
+            return;
+        }
+
+        let city_ids = g.player_city_ids(pid);
+        let shortfalls: Vec<(u32, i64)> = city_ids
+            .iter()
+            .map(|cid| {
+                (
+                    *cid,
+                    (-g.city_amenity_surplus(&g.cities[cid])).max(0),
+                )
+            })
+            .collect();
+        let short_cities = shortfalls
+            .iter()
+            .filter(|(_, shortfall)| *shortfall > 0)
+            .count();
+        let total_shortfall: i64 = shortfalls.iter().map(|(_, shortfall)| *shortfall).sum();
+        // A one-city local problem is for the normal queue scoring and policy
+        // deck. This is the observed shape at t250 of
+        // `civvis-20260815T164852Z`: all eight cities short, eleven Amenities
+        // missing in total, and every ordinary queue choosing something else.
+        if city_ids.len() < 4
+            || short_cities * 2 < city_ids.len()
+            || total_shortfall < city_ids.len() as i64
+        {
+            return;
+        }
+
+        let is_direct_entertainment_repair = |item: &Item| match item {
+            Item::Building { building } => {
+                let spec = &g.rules.buildings[building];
+                spec.amenity > 0.0
+                    && spec
+                        .district
+                        .map(|district| g.district_family(district) == "entertainment_complex")
+                        .unwrap_or(false)
+            }
+            _ => false,
+        };
+        // An Arena, Zoo, or Stadium already underway owns this one repair
+        // reservation. Do not create a competing copy while Firaxis still
+        // reports the earlier build as current.
+        if city_ids.iter().any(|cid| {
+            g.cities[cid]
+                .queue
+                .first()
+                .is_some_and(is_direct_entertainment_repair)
+        }) {
+            return;
+        }
+
+        // Prefer the deepest local shortfall, then the greatest immediate
+        // amenity lift, then the fastest legal completion. This makes a normal
+        // Arena the first stage of a chain without hard-coding its name.
+        let mut best: Option<(i64, f64, f64, u32, String, Item)> = None;
+        for (cid, shortfall) in shortfalls {
+            if shortfall == 0 || g.cities[&cid].queue.first().is_some() {
+                continue;
+            }
+            let city = &g.cities[&cid];
+            let threatened = plan.threatened_city == Some(cid)
+                || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
+            if threatened {
+                continue;
+            }
+            let production = g.city_yields(cid).production.max(1.0);
+            for item in g.producible_items(pid, cid) {
+                let Item::Building { building } = &item else {
+                    continue;
+                };
+                if !is_direct_entertainment_repair(&item) {
+                    continue;
+                }
+                let amenity = g.rules.buildings[building].amenity;
+                let turns = g.item_remaining_cost_for_city(pid, cid, &item) / production;
+                let key = format!("{item:?}");
+                let replace = best.as_ref().is_none_or(
+                    |(old_shortfall, old_amenity, old_turns, old_city, old_key, _)| {
+                        shortfall > *old_shortfall
+                            || (shortfall == *old_shortfall
+                                && (amenity > *old_amenity + f64::EPSILON
+                                    || ((amenity - *old_amenity).abs() <= f64::EPSILON
+                                        && (turns + f64::EPSILON < *old_turns
+                                            || ((turns - *old_turns).abs() <= f64::EPSILON
+                                                && (cid, key.as_str())
+                                                    < (*old_city, old_key.as_str()))))))
+                    },
+                );
+                if replace {
+                    best = Some((shortfall, amenity, turns, cid, key, item));
+                }
+            }
+        }
+
+        let Some((_, _, _, city, _, item)) = best else {
+            return;
+        };
+        let city_name = g.cities[&city].name.clone();
+        if g
+            .apply(
+                pid,
+                &Action::Produce {
+                    city,
+                    item: item.clone(),
+                },
+            )
+            .is_ok()
+            && self.journal().wants(crate::reasoning::Level::Decision)
+        {
+            think!(self.journal(), Economy, Decision,
+                "{} starts {} for widespread Amenity pressure", city_name, Self::plain_item(&item);
+                "{} of {} cities short, {} total Amenities missing; no direct repair was underway",
+                short_cities, city_ids.len(), total_shortfall);
+        }
+    }
+
     /// Run the strategic production governor. `adaptive_expansion_dispatch`
     /// names the one new route exposed by the experiment, so the census does
     /// not accidentally attribute Recovery or an explicitly targeted lane to
@@ -23506,6 +23642,13 @@ impl AdvancedAi {
                 &plan,
                 active_victory_target,
             );
+            // A broad host-observed Amenity deficit can persist through an
+            // active Conquest plan while every city finishes an unrelated
+            // queue. This comes after force, settlement, envoy, religion, and
+            // Science reservations, then claims only an idle, non-threatened
+            // city before the generic strategic scorer can refill it with a
+            // Builder or unit.
+            self.reserve_idle_amenity_building_for_widespread_crisis(g, pid, &plan);
             if plan.strategy == GrandStrategy::Recovery
                 || active_victory_target.is_some()
                 || adaptive_expansion_dispatch
@@ -31329,6 +31472,120 @@ mod tests {
         );
         live.disable_amenity_project_preemption();
         assert!(!live.amenity_project_preemption);
+    }
+
+    #[test]
+    fn widespread_live_amenity_pressure_reserves_one_idle_arena_during_conquest() {
+        // At t250 of `civvis-20260815T164852Z`, all eight Roman cities were
+        // short by eleven Amenities total. Four core cities already had an
+        // Entertainment Complex but no Arena, and an empty Rome started a
+        // Builder under the active Conquest plan. Reproduce the important
+        // constraints: host-calibrated deficits, an active war, and an
+        // existing Builder that must not be displaced.
+        let (mut game, capital, home) = empire_with_a_capital(71_112);
+        let mut cities = vec![capital];
+        for _ in 0..3 {
+            cities.push(found_nearby_test_city(&mut game, 0, home));
+        }
+        game.players[0]
+            .civics
+            .insert(crate::name!("games_recreation"));
+        for city in &cities {
+            install_ai_test_district(&mut game, *city, "entertainment_complex");
+            let modeled = game.city_amenity_surplus(&game.cities[city]);
+            game.observed_city_amenity_adjustments
+                .insert(*city, -1 - modeled);
+            let arena = Item::Building {
+                building: crate::name!("arena"),
+            };
+            assert!(game.can_produce(0, *city, &arena));
+        }
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        game.apply(
+            0,
+            &Action::Produce {
+                city: capital,
+                item: builder.clone(),
+            },
+        )
+        .expect("queue the active Builder that the Amenity repair must preserve");
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 5,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        let ordinary = AdvancedAi::new();
+        ordinary.reserve_idle_amenity_building_for_widespread_crisis(&mut game, 0, &plan);
+        assert_eq!(game.cities[&capital].queue.first(), Some(&builder));
+        assert!(
+            cities[1..]
+                .iter()
+                .all(|city| game.cities[city].queue.first().is_none()),
+            "the frozen/live-disabled controller must not create an Amenity reservation"
+        );
+
+        // A deep local deficit stays with ordinary production and policies;
+        // this direct handoff is reserved for the broad pressure recorded in
+        // the live run, not a way to override a war queue for one city.
+        let mut local = game.clone();
+        for city in &cities {
+            local.observed_city_amenity_adjustments.remove(city);
+        }
+        let local_city = cities[1];
+        let modeled = local.city_amenity_surplus(&local.cities[&local_city]);
+        local
+            .observed_city_amenity_adjustments
+            .insert(local_city, -4 - modeled);
+        let mut local_live = AdvancedAi::new();
+        local_live.enable_live_bridge();
+        local_live.reserve_idle_amenity_building_for_widespread_crisis(&mut local, 0, &plan);
+        assert_eq!(local.cities[&capital].queue.first(), Some(&builder));
+        assert!(
+            cities[1..]
+                .iter()
+                .all(|city| local.cities[city].queue.first().is_none()),
+            "one deeply unhappy city must not trigger the widespread queue reservation"
+        );
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        live.reserve_idle_amenity_building_for_widespread_crisis(&mut game, 0, &plan);
+        assert_eq!(game.cities[&capital].queue.first(), Some(&builder));
+        let reserved = cities[1..]
+            .iter()
+            .filter(|city| {
+                matches!(
+                    game.cities[city].queue.first(),
+                    Some(Item::Building { building }) if *building == crate::name!("arena")
+                )
+            })
+            .count();
+        assert_eq!(reserved, 1, "one idle city starts the direct repair chain");
+        assert_eq!(
+            cities[1..]
+                .iter()
+                .filter(|city| game.cities[city].queue.first().is_some())
+                .count(),
+            1,
+            "the widespread crisis reserves one queue, not every eligible city"
+        );
+
+        // The in-flight Arena owns the reservation until it completes.
+        live.reserve_idle_amenity_building_for_widespread_crisis(&mut game, 0, &plan);
+        assert_eq!(
+            cities[1..]
+                .iter()
+                .filter(|city| game.cities[city].queue.first().is_some())
+                .count(),
+            1
+        );
     }
 
     #[test]
