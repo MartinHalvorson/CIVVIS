@@ -13225,6 +13225,101 @@ impl AdvancedAi {
         }
     }
 
+    /// Let a peaceful live city plan reclaim one queue from a repeatable
+    /// economic project when the plan has another city to found. The
+    /// delegated baseline governor correctly values the Settler, but it only
+/// examines empty queues; adaptive Science can otherwise keep every city
+/// permanently occupied with Research Grants after the plan's target
+/// rises. Progress remains banked, so the project resumes once the
+/// bounded Settler pipeline is full.
+    ///
+    /// This is intentionally narrower than the force-gap handoff above:
+    /// active major wars and Conquest/Recovery retain their existing military
+    /// production paths, while one-off and victory projects are never paused.
+    fn redirect_repeatable_projects_for_settlement_gap(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        let active_major_war = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+                && g.is_at_war(pid, player.id)
+        });
+        if !self.plan_city_target
+            || active_major_war
+            || matches!(
+                plan.strategy,
+                GrandStrategy::Conquest | GrandStrategy::Recovery
+            )
+        {
+            return;
+        }
+
+        let city_count = g.player_city_ids(pid).len();
+        let counts = self.counts(g, pid);
+        if city_count + counts.settlers >= plan.desired_cities
+            || counts.settlers
+                >= self.settler_in_flight_allowed(
+                    plan.desired_cities,
+                    city_count,
+                    counts.settlers,
+                )
+        {
+            return;
+        }
+
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let best = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter_map(|cid| {
+                let redirectable = match g.cities[&cid].queue.first() {
+                    Some(Item::Project { project }) => {
+                        let spec = &g.rules.projects[project];
+                        spec.repeatable
+                            && (!spec.completion_gpp.is_empty() || !spec.ongoing_yields.is_empty())
+                    }
+                    _ => false,
+                };
+                if !redirectable || !g.can_produce(pid, cid, &settler) {
+                    return None;
+                }
+                let score = self.production_value(g, pid, cid, &settler, plan, &counts);
+                (score > 0.0).then_some((score, std::cmp::Reverse(cid)))
+            })
+            .max_by(|left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| left.1.cmp(&right.1))
+            });
+        let Some((score, std::cmp::Reverse(city))) = best else {
+            return;
+        };
+        let city_name = g.cities[&city].name.clone();
+        if g
+            .apply(
+                pid,
+                &Action::Produce {
+                    city,
+                    item: settler,
+                },
+            )
+            .is_ok()
+            && self.journal().wants(crate::reasoning::Level::Decision)
+        {
+            think!(self.journal(), Economy, Decision,
+                   "{} pauses a repeatable project for a settler", city_name;
+                   "worth {score:.0}; the peaceful {} plan has {city_count} cities and wants {}",
+                   plan.strategy.as_str(), plan.desired_cities);
+        }
+    }
+
     /// Run the strategic production governor. `adaptive_expansion_dispatch`
     /// names the one new route exposed by the experiment, so the census does
     /// not accidentally attribute Recovery or an explicitly targeted lane to
@@ -22434,7 +22529,11 @@ impl AdvancedAi {
             self.base.cities(g, pid);
         } else {
             if self.victory_planning {
+                // Emergency force readiness takes precedence; the peaceful
+                // settlement handoff can then spend a separate project queue
+                // only if the empire is still short of its city plan.
                 self.redirect_repeatable_projects_for_force_gap(g, pid, &plan);
+                self.redirect_repeatable_projects_for_settlement_gap(g, pid, &plan);
             }
             // The adaptive controller normally hands empty cities straight to
             // `BasicAi::cities`, bypassing `production_value`. Reserve one
@@ -29633,6 +29732,80 @@ mod tests {
         assert!(matches!(
             game.cities[&idle_city].queue.first(),
             Some(Item::Unit { unit }) if game.rules.units[unit].class == "military"
+        ));
+    }
+
+    #[test]
+    fn peaceful_city_plan_reclaims_a_research_grant_for_a_settler() {
+        // In live run `civvis-20260815T033005Z`, Rome had four cities at
+        // turn 121 when its plan rose to five. Its queues stayed on Campus
+        // Research Grants until it lost a city at turn 195, then still never
+        // started another Settler despite targets of six and seven. The
+        // baseline governor had the widened target, but only sees empty
+        // queues; this pins the handoff that reaches it.
+        let (mut game, city, home) = empire_with_a_capital(71_109);
+        game.at_war.clear();
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+        }
+        game.cities.get_mut(&city).unwrap().pop = 3;
+        install_ai_test_district(&mut game, city, "campus");
+        game.players[0].techs.insert(crate::name!("writing"));
+        let grant = Item::Project {
+            project: crate::name!("campus_research_grants"),
+        };
+        assert!(game.can_produce(0, city, &grant));
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: grant.clone(),
+            },
+        )
+        .expect("queue Campus Research Grants");
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 2,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        // The frozen anchor retains its existing project: this is a live
+        // city-plan repair, not a new behavior for historical evaluations.
+        let anchor = AdvancedAi::legacy();
+        assert!(!anchor.plan_city_target);
+        anchor.redirect_repeatable_projects_for_settlement_gap(&mut game, 0, &plan);
+        assert_eq!(game.cities[&city].queue.first(), Some(&grant));
+
+        let live = AdvancedAi::new();
+        assert!(live.plan_city_target);
+
+        // The handoff keeps the one-settler pipeline intact. A normal
+        // in-flight Settler consumes the next planned seat, so its project is
+        // not displaced merely because the target is still farther away.
+        let mut one_in_flight = game.clone();
+        one_in_flight.spawn_test_unit("settler", 0, home);
+        let later_plan = StrategicPlan {
+            desired_cities: 3,
+            ..plan.clone()
+        };
+        live.redirect_repeatable_projects_for_settlement_gap(&mut one_in_flight, 0, &later_plan);
+        assert_eq!(one_in_flight.cities[&city].queue.first(), Some(&grant));
+
+        // A major war remains the force-production path's responsibility.
+        let mut wartime = game.clone();
+        wartime.at_war.insert((0, 1));
+        live.redirect_repeatable_projects_for_settlement_gap(&mut wartime, 0, &plan);
+        assert_eq!(wartime.cities[&city].queue.first(), Some(&grant));
+
+        live.redirect_repeatable_projects_for_settlement_gap(&mut game, 0, &plan);
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Unit { unit }) if unit == "settler"
         ));
     }
 
