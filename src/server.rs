@@ -10491,7 +10491,7 @@ mod tests {
             .find("<div class=\"side-actions\" aria-label=\"Simulation controls\">")
             .expect("simulation controls");
         let interface_settings = EMBEDDED_INDEX
-            .find("<details class=\"sidebar-section\" data-section=\"display-settings\">")
+            .find("<details class=\"sidebar-section\" data-section=\"display-settings\"")
             .expect("display settings panel");
         let event_log = EMBEDDED_INDEX
             .find("<span>Game event log</span>")
@@ -11163,6 +11163,38 @@ mod tests {
         );
         assert!(EMBEDDED_INDEX.contains("function initSidebarSections()"));
         assert!(EMBEDDED_INDEX.contains("civvis-sidebar-sections-v1"));
+        // The sections are one accordion: at most one open at a time, none is
+        // fine. The markup asks the browser for it with a shared <details
+        // name>; the script holds the same rule where that attribute is not
+        // understood and settles the layout before a scripted open scrolls.
+        assert_eq!(
+            EMBEDDED_INDEX.matches(" name=\"deck-section\">").count(),
+            6,
+            "every scrolling left-panel section belongs to the deck's one accordion group"
+        );
+        for tag in [
+            "<details class=\"sidebar-section\" data-section=\"display-settings\" name=\"deck-section\">",
+            "<details class=\"sidebar-section\" id=\"setupsec\" data-section=\"game-settings\" name=\"deck-section\">",
+            "<details class=\"sidebar-section\" id=\"strategysec\" data-section=\"active-strategy\" name=\"deck-section\">",
+            "<details class=\"sidebar-section\" id=\"warsec\" data-section=\"war-log\" name=\"deck-section\">",
+            "<details class=\"sidebar-section\" id=\"eventsec\" data-section=\"event-log\" name=\"deck-section\">",
+            "<details class=\"sidebar-section\" id=\"govsec\" data-section=\"government\" style=\"display:none\" name=\"deck-section\">",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(tag), "missing accordion section {tag}");
+        }
+        assert!(
+            !EMBEDDED_INDEX.contains("<details id=\"maplensessec\" data-section=\"map-lenses\" name="),
+            "the lens dock is not a deck section and keeps its own disclosure"
+        );
+        assert!(EMBEDDED_INDEX.contains("const SIDEBAR_SECTIONS = \"#side details.sidebar-section\";"));
+        assert!(EMBEDDED_INDEX.contains("function closeOtherSidebarSections(section)"));
+        assert!(EMBEDDED_INDEX.contains("function openSidebarSection(section)"));
+        assert!(EMBEDDED_INDEX.contains("if (open && opened) open = false;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (section.open && section.classList.contains(\"sidebar-section\")) {\n        closeOtherSidebarSections(section);"
+        ));
+        assert!(EMBEDDED_INDEX.contains("if (section.tagName === \"DETAILS\") openSidebarSection(section);"));
+        assert!(!EMBEDDED_INDEX.contains("if (section.tagName === \"DETAILS\") section.open = true;"));
         // The lens dock is a fixed panel at the deck's lower edge. It shares
         // the saved-disclosure store with the scrolling sections and needs no
         // scroll-into-view choreography — that machinery went with the old
