@@ -39,6 +39,8 @@ from civ6_control.orders import orders_db_path, reset_orders_db  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_CIVVIS_VICTORY = "science"
+DEFAULT_CIVVIS_STRATEGY = ""
 
 # The ladder, weakest first. These are the game's own handicap type names; the
 # ladder is climbed in this order and each rung is only claimed by a win.
@@ -2738,11 +2740,13 @@ def main(argv: list[str] | None = None) -> int:
                     help="CIVVIS makes every decision; the mod only actuates")
     ap.add_argument("--civvis-bin", default=None,
                     help="civvis_orders binary; defaults to target/release/civvis_orders")
-    ap.add_argument("--civvis-victory", default="civvis",
+    ap.add_argument("--civvis-victory", default=DEFAULT_CIVVIS_VICTORY,
                     choices=["domination", "science", "score", "civvis"],
-                    help="victory objective passed to the supervised CIVVIS worker")
-    ap.add_argument("--civvis-strategy", default="auto",
-                    help="rated CIVVIS strategy name; auto selects the strongest bound")
+                    help="victory objective passed to the supervised CIVVIS worker; "
+                         "defaults to non-religious Science")
+    ap.add_argument("--civvis-strategy", default=DEFAULT_CIVVIS_STRATEGY,
+                    help="rated CIVVIS strategy name; empty keeps stock AdvancedAi. "
+                         "auto is an uncalibrated opt-in")
     # ⚠ This flag existed on `civ6_brain.py` and had no route here, so the only way
     # to turn it on was to start a SECOND brain beside this one — which is exactly
     # what `civ6_civvis_climb.py` did, and the two then raced over one orders.sqlite.

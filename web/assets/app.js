@@ -2871,7 +2871,6 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:".dossier-window .dossier-track-line > span, .dossier-window .dossier-track-line > b", min:9, max:13},
   {selector:".dossier-window .force-chip", min:9, max:12},
   {selector:".minimap-frame .minimap-label > span", min:9, max:13},
-  {selector:".minimap-frame .minimap-hint", min:9, max:11},
   {selector:"#pediahead b, #treetitle", min:14, max:22},
   {selector:"#pedialist button, #treecols .tnode", min:10, max:15},
   {selector:".empire-title, .diplo-title, .city-head-name, .trade-title, .capture-title", min:17, max:28},
@@ -14216,7 +14215,7 @@ function skyWorldGrab(drawn) {
 // its own limit.
 function skySurfaceAngle(reach, drawn, chart) {
   const across = reach / Math.max(1, drawn);
-  if (chart) return across <= CHART_LIMIT ? across : null;
+  if (chart) return across < Math.PI ? across : null;
   return across <= .985 ? Math.asin(across) : null;
 }
 // The basis a world is being seen through. Only the Earth's is steered by the
@@ -14511,14 +14510,24 @@ function skyStopReach() {
 // The shell that is actually drawn, at half the stop, so it comes out spanning
 // the stage rather than hanging somewhere off the edge of it.
 const SKY_BUBBLE_LY = SKY_STOP_LY / 2;
-// A chart pulls back to the edge of what a chart can honestly hold. Distance
-// across the sheet is angle over the ground, so the corner of the stage is at
-// `reach / radius` radians from the middle of it, and past about a hundred
-// degrees the rim is stretched into nonsense and the far cap is coming round to
-// meet itself. Stopping there is what keeps a flat world flat: no matter how
-// far out the camera goes it is always looking at a piece of a map, never at
-// the whole of an object.
-const CHART_LIMIT = 1.75;
+// An azimuthal chart has one honest copy of the ground from its centre through
+// every bearing to the antipode. The area inside any rectangular crop is the
+// integral of those bearing-by-bearing spherical caps. Keeping this arithmetic
+// shared by the main chart and the minimap makes "80% of the world" one fact,
+// independent of whether the crop is square or the viewer's wider map area.
+const AZIMUTHAL_WORLD_SHARE = 0.8;
+function azimuthalRectWorldShare(radius, left, right, top, bottom, samples = 96) {
+  let sum = 0;
+  for (let index = 0; index < samples; index++) {
+    const bearing = (index + .5) / samples * Math.PI * 2;
+    const cos = Math.cos(bearing), sin = Math.sin(bearing);
+    const horizontal = (cos >= 0 ? right : left) / Math.max(1e-12, Math.abs(cos));
+    const vertical = (sin >= 0 ? bottom : top) / Math.max(1e-12, Math.abs(sin));
+    const reach = Math.min(Math.PI, Math.min(horizontal, vertical) / radius);
+    sum += (1 - Math.cos(reach)) / 2;
+  }
+  return sum / samples;
+}
 function planetStageReach(centerX, centerY) {
   let corner = 0;
   for (const x of [0, MAPW])
@@ -14526,8 +14535,30 @@ function planetStageReach(centerX, centerY) {
       corner = Math.max(corner, Math.hypot(x - centerX, y - centerY));
   return corner;
 }
+let PLANET_CHART_FLOOR_CACHE = null;
 function planetChartFloor(centerX, centerY) {
-  return planetStageReach(centerX, centerY) / CHART_LIMIT;
+  const left = Math.max(1, centerX), right = Math.max(1, MAPW - centerX);
+  const top = Math.max(1, centerY), bottom = Math.max(1, MAPH - centerY);
+  const cached = PLANET_CHART_FLOOR_CACHE;
+  if (cached && cached.left === left && cached.right === right &&
+      cached.top === top && cached.bottom === bottom) return cached.radius;
+
+  // At the low end every bearing reaches the antipode; at the high end the
+  // visible cap is tiny. Bisect the radius between them until this viewport's
+  // rectangle contains the requested share of the sphere. On a 16:9 stage the
+  // last slivers of the corners lie past the antipode and stay empty instead
+  // of duplicating ground, while the real map itself covers about four fifths
+  // of the world.
+  let low = Math.min(left, right, top, bottom) / Math.PI;
+  let high = Math.max(left, right, top, bottom) * 8;
+  for (let index = 0; index < 42; index++) {
+    const radius = (low + high) / 2;
+    const share = azimuthalRectWorldShare(radius, left, right, top, bottom, 192);
+    if (share > AZIMUTHAL_WORLD_SHARE) low = radius; else high = radius;
+  }
+  const radius = (low + high) / 2;
+  PLANET_CHART_FLOOR_CACHE = {left, right, top, bottom, radius};
+  return radius;
 }
 // Zooming out stops where that picture is complete. Before the world is known
 // to be round there is no system to complete and no body to hold; after Swap
@@ -20549,31 +20580,18 @@ function drawPlanetStrategicBlast(b, x, y, reach, e, inradius) {
 //
 // The forward and inverse maps below are shared by the pixel painter, the
 // overlay painters, and minimap clicks, so all three agree about the crop.
-const AZIMUTHAL_MINI_WORLD_SHARE = 0.8;
+const AZIMUTHAL_MINI_WORLD_SHARE = AZIMUTHAL_WORLD_SHARE;
 // How many cell polygons share one fill call. A canvas fill's cost grows
 // superlinearly with the subpaths in its path, so painting the ground in
 // small chunks is an order of magnitude cheaper than one path per colour —
 // and the minimap repaints on every pointermove of a drag.
 const AZIMUTHAL_MINI_FILL_CHUNK = 48;
 const AZIMUTHAL_MINI_SQUARE_HALF = (() => {
-  // The share of the sphere inside the square crop, by eightfold symmetry:
-  // toward each bearing the crop reaches half / cos(bearing) radians, never
-  // past the antipode, and the ground within that reach is the spherical cap
-  // (1 - cos reach) / 2.
-  const cropShare = half => {
-    const samples = 96;
-    let sum = 0;
-    for (let i = 0; i < samples; i++) {
-      const bearing = (i + .5) / samples * (Math.PI / 4);
-      const reach = Math.min(half / Math.cos(bearing), Math.PI);
-      sum += (1 - Math.cos(reach)) / 2;
-    }
-    return sum / samples;
-  };
   let low = 0, high = Math.PI;
   for (let i = 0; i < 50; i++) {
     const mid = (low + high) / 2;
-    if (cropShare(mid) < AZIMUTHAL_MINI_WORLD_SHARE) low = mid; else high = mid;
+    const share = azimuthalRectWorldShare(1, mid, mid, mid, mid);
+    if (share < AZIMUTHAL_MINI_WORLD_SHARE) low = mid; else high = mid;
   }
   return (low + high) / 2; // ~1.994 radians for a 0.8 share
 })();
@@ -21854,6 +21872,7 @@ function drawPlayerHud() {
   // without the next simulation frame snapping the HUD back to the leader.
   const victoryScroll = victoryHud.querySelector(".hud-rail")?.scrollTop || 0;
   const playerScroll = hud.querySelector(".diplomacy-ribbon")?.scrollTop || 0;
+  const playerScrollLeft = hud.querySelector(".player-standings")?.scrollLeft || 0;
   const overview = playerHudOverview();
   if (overview !== victoryHudHtml && hudLayoutGesture?.name !== "victory") {
     victoryHudHtml = overview;
@@ -22152,6 +22171,8 @@ function drawPlayerHud() {
   // This is a string comparison on every other frame.
   syncPlayerHudColumns();
   syncHudColumnRoster();
+  const playerStandings = hud.querySelector(".player-standings");
+  if (playerStandings) playerStandings.scrollLeft = playerScrollLeft;
   // innerHTML also replaced the plate seam; restamp its live automatic or
   // preferred width and accessibility range.
   syncTurnPlateWidth();
@@ -22266,6 +22287,36 @@ function runHudAction(target) {
 // swallowed. Act on the press, which always lands on what was under the
 // cursor, and keep click for keyboard activation — which reports no press.
 const hudRibbon = document.getElementById("playerhud");
+// A mouse wheel supplies vertical deltas even when the only overflow under it
+// is horizontal. Translate those notches so the whole HUD is usable without
+// trying to catch its scrollbar. A deliberately shortened roster keeps its
+// native vertical wheel; its heading still offers the horizontal gesture, and
+// Shift+wheel explicitly asks for it anywhere in the standings. Trackpad
+// deltaX and touch swipes remain native so their momentum is not distorted.
+hudRibbon.addEventListener("wheel", event => {
+  const standings = event.target.closest?.(".player-standings");
+  if (!standings || standings.scrollWidth <= standings.clientWidth ||
+      Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+  const ribbon = event.target.closest?.(".diplomacy-ribbon");
+  if (!event.shiftKey && ribbon && ribbon.scrollHeight > ribbon.clientHeight) return;
+  const scale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 24
+    : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? standings.clientWidth : 1;
+  standings.scrollLeft += event.deltaY * scale;
+  event.preventDefault();
+}, {passive:false});
+
+// The standings wrapper is keyboard-focusable, but the application's global
+// Left/Right shortcuts otherwise cycle cities before the browser can pan it.
+hudRibbon.addEventListener("keydown", event => {
+  const standings = event.target.closest?.(".player-standings");
+  if (!standings || event.target !== standings ||
+      (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const direction = event.key === "ArrowLeft" ? -1 : 1;
+  standings.scrollLeft += direction * (event.shiftKey ? standings.clientWidth * .8 : 48);
+});
+
 hudRibbon.addEventListener("change", ev => {
   const pace = ev.target.closest?.("[data-hud-pace]");
   if (!pace) return;

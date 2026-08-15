@@ -10485,6 +10485,34 @@ mod tests {
             "const playerScroll = hud.querySelector(\".diplomacy-ribbon\")?.scrollTop || 0;"
         ));
         assert!(EMBEDDED_INDEX.contains("playerRibbon.scrollTop = playerScroll;"));
+        // Live spectator frames must not return the table to its first column
+        // while somebody is reading farther across it.
+        assert!(EMBEDDED_INDEX.contains(
+            "const playerScrollLeft = hud.querySelector(\".player-standings\")?.scrollLeft || 0;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "playerStandings.scrollLeft = playerScrollLeft;"
+        ));
+        // The horizontal bar is large enough to acquire with a mouse, while a
+        // vertical wheel and the focused arrow keys can move the same scroller
+        // without touching that bar. A shortened roster retains its vertical
+        // wheel because the conversion yields to a vertically overflowing row
+        // ribbon unless Shift explicitly requests horizontal movement.
+        assert!(EMBEDDED_INDEX.contains(
+            "#playerhud > .player-standings::-webkit-scrollbar { height: 9px; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "hudRibbon.addEventListener(\"wheel\", event => {"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "!event.shiftKey && ribbon && ribbon.scrollHeight > ribbon.clientHeight"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "standings.scrollLeft += event.deltaY * scale;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "standings.scrollLeft += direction * (event.shiftKey ? standings.clientWidth * .8 : 48);"
+        ));
         // The wide-screen default has three exact seams: the player HUD fills
         // from its live clear-left edge through the victory tracker's left
         // edge, the tracker owns ten percent of screen width and reaches the
@@ -10524,7 +10552,7 @@ mod tests {
             ".minimap-frame.minimap-world-planet { width: 164px; height: 150px; }"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "position: absolute; z-index: 2; right: 10px; bottom: 9px;"
+            "position: absolute; z-index: 2; right: 8px; bottom: 9px;"
         ));
         // On a globe the minimap frame is square, so a dragged edge has to
         // carry the other axis with it. The square is settled *while* the
@@ -12530,9 +12558,12 @@ mod tests {
         // The chart is azimuthal equidistant about the point facing the
         // viewer, cropped to the minimap's square, and the square's half-side
         // is derived from the share of the sphere the crop must hold.
-        assert!(EMBEDDED_INDEX.contains("const AZIMUTHAL_MINI_WORLD_SHARE = 0.8;"));
+        assert!(EMBEDDED_INDEX
+            .contains("const AZIMUTHAL_MINI_WORLD_SHARE = AZIMUTHAL_WORLD_SHARE;"));
         assert!(EMBEDDED_INDEX.contains("const AZIMUTHAL_MINI_SQUARE_HALF = (() => {"));
-        assert!(EMBEDDED_INDEX.contains("if (cropShare(mid) < AZIMUTHAL_MINI_WORLD_SHARE) low = mid; else high = mid;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (share < AZIMUTHAL_MINI_WORLD_SHARE) low = mid; else high = mid;"
+        ));
         assert!(EMBEDDED_INDEX.contains("function azimuthalMiniLocalSphereAt(x0, y0)"));
         assert!(EMBEDDED_INDEX.contains("function azimuthalMiniSphereAt(x, y, projection)"));
         assert!(EMBEDDED_INDEX.contains("function azimuthalMiniScreenPoint(point, projection)"));
@@ -12555,11 +12586,28 @@ mod tests {
     #[test]
     fn browser_swap_maps_exchanges_planet_projections_and_keeps_minimap_travel() {
         // The control lives on the minimap beside its travel affordance and is
-        // a real pressed-state button, not a label over the canvas.
-        assert!(EMBEDDED_INDEX.contains("id=\"swapmaps\" class=\"minimap-swap\""));
-        assert!(EMBEDDED_INDEX.contains(">⇄ Swap maps</button>"));
-        assert!(EMBEDDED_INDEX.contains(".minimap-swap[aria-pressed=\"true\"]"));
+        // a real pressed-state button styled by that affordance's own class.
+        // Their opposing anchors and shared bottom keep them level.
+        assert!(EMBEDDED_INDEX
+            .contains("id=\"swapmaps\" class=\"minimap-hint minimap-swap\""));
+        assert!(EMBEDDED_INDEX.contains(">Swap maps</button>"));
         assert!(EMBEDDED_INDEX.contains("<span class=\"minimap-hint\">Click to travel</span>"));
+        assert!(EMBEDDED_INDEX
+            .contains("left: 8px; right: auto; pointer-events: auto; cursor: pointer;"));
+        assert!(EMBEDDED_INDEX.contains("font-size: clamp(6px, 5cqi, 9px);"));
+        assert!(!EMBEDDED_INDEX.contains(".minimap-frame.minimap-can-swap .minimap-hint"));
+
+        // The main azimuthal chart's interactive floor is solved from its live
+        // rectangular viewport, so maximum zoom-out holds about 80% of the
+        // sphere just as the square minimap does.
+        assert!(EMBEDDED_INDEX.contains("const AZIMUTHAL_WORLD_SHARE = 0.8;"));
+        assert!(EMBEDDED_INDEX.contains("function azimuthalRectWorldShare("));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (share > AZIMUTHAL_WORLD_SHARE) low = radius; else high = radius;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const AZIMUTHAL_MINI_WORLD_SHARE = AZIMUTHAL_WORLD_SHARE;"
+        ));
 
         // Unknown worlds and flat topologies cannot expose a globe through the
         // swap. Once available, one stored toggle selects both complementary

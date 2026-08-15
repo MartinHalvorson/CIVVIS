@@ -735,7 +735,7 @@ class OneDeciderTests(_Harness, unittest.TestCase):
     which differed on exactly the flag the operator had just turned on.
     """
 
-    def _play_argv(self):
+    def _play_argv(self, argv_extra=()):
         """The argv the climb hands to `civ6_play.py`, and every other spawn."""
         seen = []
 
@@ -746,7 +746,7 @@ class OneDeciderTests(_Harness, unittest.TestCase):
 
         climb.subprocess.Popen = Recording
         try:
-            self.climb_with([{"last_turn": 40}], attempts=1)
+            self.climb_with([{"last_turn": 40}], attempts=1, argv_extra=argv_extra)
         finally:
             climb.subprocess.Popen = FakeProc
         return seen
@@ -773,12 +773,23 @@ class OneDeciderTests(_Harness, unittest.TestCase):
         self.assertNotIn("--civvis-war-from-plan", words)
         self.assertIn("--civvis-victory", words)
         self.assertIn("--civvis-strategy", words)
+        self.assertEqual(words[words.index("--civvis-victory") + 1], "science")
+        self.assertEqual(words[words.index("--civvis-strategy") + 1], "")
         # `--orders-bin` used to reach only the climb's own brain, so `civ6_play`
         # fell back to its repo-relative default and a worktree without a build died
         # with "CIVVIS decision binary does not exist" while the flag naming a real
         # binary sat on the command line.
         self.assertIn("--civvis-bin", words)
         self.assertEqual(words[words.index("--civvis-bin") + 1], str(self.orders_bin))
+
+    def test_domination_and_auto_remain_explicit_opt_ins(self):
+        play = next(
+            argv for argv in self._play_argv(("--victory", "domination", "--strategy", "auto"))
+            if any("civ6_play.py" in str(word) for word in argv)
+        )
+        words = [str(word) for word in play]
+        self.assertEqual(words[words.index("--civvis-victory") + 1], "domination")
+        self.assertEqual(words[words.index("--civvis-strategy") + 1], "auto")
 
     def test_civ6_play_forwards_the_war_flag_to_the_brain(self):
         """The far end of the same wire. A flag `civ6_play` accepts and drops is worse
