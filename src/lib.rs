@@ -35,11 +35,19 @@ pub mod parallel;
 
 
 pub mod obs_tensor;
+// The training-data lane (`selfplay` exporter and its 34-wide feature
+// vector) rides the `closed-experiments` feature with the action encoder and
+// oracle: the value-estimator studies it fed are closed, so normal builds
+// skip it and `--features closed-experiments` brings the exporter back
+// exactly as recorded. `obs_tensor` stays unconditional — the strategic
+// search's counterfactual sampling reads it directly.
+#[cfg(feature = "closed-experiments")]
 pub mod decision_features;
 pub mod rating;
 pub mod reasoning;
 pub mod rng;
 pub mod rules;
+#[cfg(feature = "closed-experiments")]
 pub mod selfplay;
 pub mod specmap;
 pub mod server;
