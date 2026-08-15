@@ -38,6 +38,42 @@ function initSidebarSections() {
   }
 }
 initSidebarSections();
+// The short setup pass, in the order its questions are asked. Which game is
+// being set up decides what every control under it means, so it is asked
+// first — before who is playing it, the way a menu asks for the game before
+// the seats. The two games then ask about the world in different orders. Civ
+// sizes the world, shapes it and fills it. Tactics names the battle first:
+// Custom goes on to ask for a world type — flat field or globe — then the map
+// that type offers, and the size last, because which sizes exist depends on
+// both; a named battle brings its own map and lists only the sizes it is
+// charted at, so the world-type and map controls leave the form while one is
+// chosen. Every card the pass shows has to be named here: one that is not
+// stays where the markup put it while the named ones move ahead of the
+// advanced drawer, which strands it above the whole form — the way the
+// endgame rules were stranded until they were nested.
+function setupControlOrder(tactics) {
+  const world = tactics
+    ? ["tactics-scenario", "tactics-scenario-brief", "tacticsworldtype", "maptype", "np", "mapshape"]
+    : ["np", "mapshape", "maptype", "tactics-scenario", "tactics-scenario-brief", "tacticsworldtype"];
+  return ["gamemode", "humanplayers", "civ6-status", ...world, "startera", "gamespeed",
+    "victory-options", "tactics-options", "saves-group"];
+}
+// Compose the pass in the live DOM. Moving the real controls (rather than
+// cloning them) preserves their ids, values, delegated change handler and
+// accessibility labels; a control is moved by its label where it has one.
+// Recomposed only when the order actually changes — moving a node takes the
+// focus off it, and the person who just picked Tactics from the mode select
+// should still be on that select.
+let placedSetupOrder = null;
+function placeSetupControls(tactics) {
+  const gameAdvanced = document.getElementById("game-advanced-settings");
+  if (!gameAdvanced || placedSetupOrder === tactics) return;
+  placedSetupOrder = tactics;
+  for (const id of setupControlOrder(tactics)) {
+    const node = document.getElementById(id);
+    if (node) gameAdvanced.before(node.closest("label") || node);
+  }
+}
 function initAdvancedSettings() {
   const moveByOrder = (source, selector, target) => {
     const nodes = [...source.querySelectorAll(selector)]
@@ -49,25 +85,11 @@ function initAdvancedSettings() {
   // (rather than cloning them) preserves their ids, values, delegated change
   // handler and accessibility labels.
   const game = document.getElementById("newgame-options");
-  const gameAdvanced = document.getElementById("game-advanced-settings");
   moveByOrder(game, ".game-advanced-setting", document.getElementById("game-advanced-settings-body"));
-  // Which game is being set up decides what every control under it means, so
-  // it is asked first — before who is playing it, the way a menu asks for the
-  // game before the seats.
-  const basic = [
-    ["gamemode", true], ["humanplayers", true], ["np", true], ["mapshape", true],
-    ["maptype", true], ["startera", true], ["gamespeed", true],
-  ].map(([id, label]) => label
-    ? document.getElementById(id).closest("label")
-    : document.getElementById(id));
-  basic.push(document.getElementById("victory-options"),
-    document.getElementById("tactics-options"), document.getElementById("saves-group"));
-  for (const node of basic) gameAdvanced.before(node);
-  // The Civ 6 host line describes the mode chosen directly above it, so it
-  // follows that control through the reorder rather than staying where the
-  // source happens to put it.
-  document.getElementById("humanplayers").closest("label")
-    .after(document.getElementById("civ6-status"));
+  // The short setup pass is composed for the Civ game here; `syncSetupMode`
+  // recomposes it whenever the game mode moves, because the two games ask
+  // their world questions in different orders.
+  placeSetupControls(readSetting("gamemode") === "tactics");
 
   let disclosureState = {};
   try { disclosureState = JSON.parse(localStorage.getItem(ADVANCED_SETTINGS_STATE_KEY) || "{}"); }
@@ -6941,24 +6963,25 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   if (newWorld && st.seed !== undefined) { lastSeed = st.seed; loadTacks(); }
   if (newWorld) {
     // The game mode belongs to this world too: a battlefield on screen reads
-    // back as Tactics, with the size control holding its Tactics map rather than a
-    // seat count. The mode is in place before the size and map are read back
-    // so both controls hold the roster those values live in.
+    // back as Tactics — the battle if its map is a named one, else Custom
+    // with the map's world type and the map itself, and the size control
+    // holding the Tactics size whose dimensions these are rather than a seat
+    // count. The mode is in place before the size and map are read back so
+    // every control holds the roster those values live in.
     const tactics = isBattlefieldMapScript(st.map.script);
-    document.getElementById("gamemode").value = tactics ? "tactics" : "civ";
-    syncSetupMode();
+    if (tactics) {
+      adoptTacticsWorld(st.map.script, st.map.width, st.map.height);
+    } else {
+      document.getElementById("gamemode").value = "civ";
+      syncSetupMode();
+    }
     // The masthead chip reads the world, not the setup panel: a viewer who
     // opens the drawer and flips the mode select has not left the game they
     // are watching, and the chip must keep offering the other one.
     syncModeLink(tactics);
     const majors = st.players.filter(p => !p.is_minor && !p.is_barbarian).length;
     const playerSelect = document.getElementById("np");
-    const arena = tactics ? battlefieldSizes().find(size =>
-      (!size.script || size.script === st.map.script) &&
-      size.width === st.map.width && size.height === st.map.height) : null;
-    if (arena) {
-      playerSelect.value = arena.id;
-    } else if ([...playerSelect.options].some(o => +o.value === majors)) {
+    if (!tactics && [...playerSelect.options].some(o => +o.value === majors)) {
       playerSelect.value = String(majors);
     }
     // Teams belong to this world as much as its map does, so a page that
@@ -6966,12 +6989,13 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     // offering to restart it as a free-for-all.
     syncTeams();
     document.getElementById("teams").value = teamRuleFromArray(st.teams);
-    document.getElementById("maptype").value = st.map.script || "tenins_ball";
-    selectedScenarioId = tactics && isScenarioMapScript(st.map.script) ? st.map.script : "";
-    document.getElementById("tactics-scenario").value = selectedScenarioId;
-    if (tactics) syncBattlefieldSizes(true);
-    renderScenarioBrowser();
-    document.getElementById("mapshape").value = st.map.shape || "planet";
+    // A battlefield's map and shape were read back above, into the Tactics
+    // controls; the Civ world's controls keep their own choices through it,
+    // so watching an arena costs nobody the world they had set up.
+    if (!tactics) {
+      document.getElementById("maptype").value = st.map.script || "tenins_ball";
+      document.getElementById("mapshape").value = st.map.shape || "planet";
+    }
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
     document.getElementById("gamespeed").value = st.game_speed || "standard";
@@ -7008,10 +7032,10 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       const arenaSettings = {
         tacticsfog: st.tactics.fog ? "1" : "0",
         tacticsflag: st.tactics.flag ? "1" : "0",
-        tacticsturnlimit: String(st.tactics.turn_limit ?? st.max_turns ?? 100),
+        tacticsturnlimit: String(st.tactics.turn_limit ?? st.max_turns ?? 250),
         tacticscities: String(st.tactics.cities ?? 1),
-        tacticsproduction: String(st.tactics.production ?? 30),
-        tacticsgold: String(st.tactics.gold ?? 30),
+        tacticsproduction: String(st.tactics.production ?? 0),
+        tacticsgold: String(st.tactics.gold ?? 0),
         tacticsturnspertech: String(st.tactics.turns_per_tech ?? 5),
         tacticsbestof: String(st.tactics.best_of ?? 1),
         tacticsuniqueunits: st.tactics.unique_units ? "1" : "0",
@@ -29368,8 +29392,9 @@ let civvisMapOptions = null;
 let civvisSizeOptions = null;
 let civVictoryChoices = null;
 let victoryRoster = "civvis";
-let scenarioBrowserView = "custom";
-let selectedScenarioId = "";
+// The Tactics size last chosen for each map, so moving between maps and back
+// returns to the size that was picked rather than to the smallest.
+const tacticsSizeChoices = {};
 document.getElementById("humanplayers").addEventListener("change", syncSetupMode);
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
@@ -29383,33 +29408,34 @@ document.getElementById("custom-leader-table").addEventListener("change", event 
   if (elo && selected)
     elo.innerHTML = customEloOptions(event.target.value, selected.dataset.leader || "", "");
 });
+// Each Tactics world question re-fits the ones below it, on the select
+// itself so the work is done before `#newgame-options`'s delegated listener
+// stages what is now selected. The battle decides whether the world type and
+// map are asked at all, and brings its own era and clock; the world type
+// decides which maps are offered; the map decides which sizes are.
 document.getElementById("maptype").addEventListener("change", () => {
   syncEarthShape();
-  if (readSetting("gamemode") === "tactics") syncBattlefieldSizes(true);
-  const map = document.getElementById("maptype").value;
-  selectedScenarioId = isScenarioMapScript(map) ? map : "";
-  document.getElementById("tactics-scenario").value = selectedScenarioId;
-  const scenario = historicalScenario(selectedScenarioId);
+  if (tacticsMode()) syncBattlefieldSizes(true);
+});
+document.getElementById("tacticsworldtype").addEventListener("change", () => {
+  syncMapRoster(false, true);
+  syncBattlefieldSizes(true);
+});
+document.getElementById("tactics-scenario").addEventListener("change", () => {
+  const scenario = historicalScenario(tacticsScenarioId());
+  syncBattlefieldSizes(true);
   if (scenario) {
     scenarioStartEra(scenario);
     scenarioTurnChoice(scenario.turns);
   }
-  syncScenarioSettings();
-  renderScenarioBrowser();
-});
-document.getElementById("tactics-scenario-lenses").addEventListener("click", event => {
-  const button = event.target.closest("[data-scenario-view]");
-  if (!button) return;
-  if (button.dataset.scenarioView === "custom" && selectedScenarioId) selectCustomScenario();
-  else setScenarioBrowserView(button.dataset.scenarioView);
-});
-document.getElementById("tactics-scenario-groups").addEventListener("click", event => {
-  const card = event.target.closest("[data-scenario-id]");
-  if (card) selectHistoricalScenario(card.dataset.scenarioId);
+  syncScenarioChoice();
 });
 // Bound on the select itself, so it has re-fitted the splits to the new size
 // before the panel's own delegated listener stages what is now selected.
 document.getElementById("np").addEventListener("change", () => {
+  // In Tactics the pick is remembered for the map it was made on, so moving
+  // to another map and back returns to it.
+  if (tacticsMode()) tacticsSizeChoices[tacticsMapScript()] = readSetting("np");
   syncTeams();
   syncCustomLeaderSelection();
 });
@@ -29596,11 +29622,12 @@ function selectedSimulationSettings() {
   const humanPlayers = readSetting("humanplayers");
   // In Tactics the size control holds a map-size id rather than a seat count:
   // every Tactics map seats two sides, and its dimensions travel
-  // explicitly because no seat count implies them.
-  const tactics = humanPlayers !== "civ6" && readSetting("gamemode") === "tactics";
+  // explicitly because no seat count implies them. The map is the battle
+  // chosen, or the custom map under it; the shape is the size's own.
+  const tactics = tacticsMode();
   const battlefield = tactics ? battlefieldSize(readSetting("np")) : null;
   const np = battlefield ? 2 : +readSetting("np");
-  const mapScript = readSetting("maptype");
+  const mapScript = tactics ? tacticsMapScript() : readSetting("maptype");
   const mapTopology = battlefield ? (battlefield.topology || "flat") : readSetting("mapshape");
   const mapPoles = readSetting("mappoles");
   const gameSpeed = readSetting("gamespeed");
@@ -29650,7 +29677,7 @@ function selectedSimulationSettings() {
           // request.
           tactics_fog: readSetting("tacticsfog") === "1",
           tactics_flag: readSetting("tacticsflag") === "1",
-          tactics_turn_limit: Number(readSetting("tacticsturnlimit")) || 100,
+          tactics_turn_limit: Number(readSetting("tacticsturnlimit")) || 250,
           tactics_cities: Number(readSetting("tacticscities")) || 0,
           tactics_production: Number(readSetting("tacticsproduction")) || 0,
           tactics_gold: Number(readSetting("tacticsgold")) || 0,
@@ -29695,8 +29722,18 @@ function selectedSimulationSummary(settings = null) {
   // The world-size option already includes its dimensions and seat count; the
   // compact first clause is enough to identify the choice without turning the
   // handoff screen into a settings table.
-  const size = chosenText("np", settings?.num_players).split(" · ")[0];
-  const map = chosenText("maptype", settings?.map_script).split(" · ")[0];
+  // A named battle is not on the map control — it is chosen one control up
+  // — so it is named from the catalog, and its one chart needs no size
+  // clause beside it; any other map is named from the control. A Tactics
+  // payload carries no seat count that names a size, so its size is found
+  // from the dimensions it carries instead.
+  const script = settings ? settings.map_script : tactics ? tacticsMapScript() : readSetting("maptype");
+  const battle = tactics ? historicalScenario(script) : null;
+  const ground = tactics && settings ? battlefieldSizesForScript(script)
+    .find(entry => entry.width === settings.width && entry.height === settings.height) : null;
+  const size = battle ? "" : ground ? ground.name.split(" · ")[0]
+    : chosenText("np", settings?.num_players).split(" · ")[0];
+  const map = battle ? battle.name : chosenText("maptype", script).split(" · ")[0];
   const speed = chosenText("gamespeed", settings?.game_speed).split(" · ")[0];
   // The era is named only when it is not the stock start: every other setting
   // on this line is one somebody chose, and "Ancient" is what you get by
@@ -29736,29 +29773,25 @@ function applyQueuedSimulationSettings(settings) {
   // single-player game and is now looking at it.
   if (SPEC) document.getElementById("humanplayers").value = "ai_sim";
   // The staged map says which game mode the queue describes: a battlefield
-  // is the Tactics mode's arena, and the size control reads back as the
-  // battlefield whose dimensions the queue carries.
+  // is the Tactics mode's arena, read back as the battle or the custom world
+  // type and map, with the size control holding the Tactics size whose
+  // dimensions the queue carries.
   const tactics = isBattlefieldMapScript(settings.map);
-  document.getElementById("gamemode").value = tactics ? "tactics" : "civ";
-  syncSetupMode();
   if (tactics) {
-    const size = battlefieldSizes().find(size =>
-      (!size.script || size.script === settings.map) &&
-      size.width === settings.width && size.height === settings.height);
-    if (size) document.getElementById("np").value = size.id;
+    adoptTacticsWorld(settings.map, settings.width, settings.height);
   } else {
+    document.getElementById("gamemode").value = "civ";
+    syncSetupMode();
     document.getElementById("np").value = String(settings.players);
   }
   // The staged size decides which splits exist, so it is in place first and
   // the queued assignment is read back as the rule that would produce it.
   syncTeams();
   document.getElementById("teams").value = teamRuleFromArray(settings.teams);
-  document.getElementById("maptype").value = settings.map;
-  selectedScenarioId = tactics && isScenarioMapScript(settings.map) ? settings.map : "";
-  document.getElementById("tactics-scenario").value = selectedScenarioId;
-  if (tactics) syncBattlefieldSizes(true);
-  renderScenarioBrowser();
-  if (settings.shape) document.getElementById("mapshape").value = settings.shape;
+  if (!tactics) {
+    document.getElementById("maptype").value = settings.map;
+    if (settings.shape) document.getElementById("mapshape").value = settings.shape;
+  }
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
   syncEarthShape();
   document.getElementById("gamespeed").value = settings.speed;
@@ -29891,23 +29924,17 @@ function syncSetupMode() {
   document.body.classList.toggle("spectating", seats === "ai_sim");
   document.body.classList.toggle("playing-civ6", civ6);
   document.body.classList.toggle("playing-tactics", tactics);
+  // The pass is asked in the order the mode asks it, and each Tactics
+  // question is re-fitted from the one above it: the battle, then the maps
+  // its world type offers, then the sizes its map is drawn at.
+  placeSetupControls(tactics);
+  syncScenarioMenu();
   syncMapRoster(civ6, tactics);
   syncBattlefieldSizes(tactics);
   // Again here rather than only inside the call above, which has several
   // early returns: leaving the arena card greyed out after a switch back to
   // a rolled map would be worse than never having greyed it.
-  syncScenarioSettings();
-  if (tactics) {
-    const map = document.getElementById("maptype")?.value || "";
-    selectedScenarioId = isScenarioMapScript(map) ? map : "";
-    const scenarioInput = document.getElementById("tactics-scenario");
-    if (scenarioInput) scenarioInput.value = selectedScenarioId;
-  } else {
-    selectedScenarioId = "";
-    const scenarioInput = document.getElementById("tactics-scenario");
-    if (scenarioInput) scenarioInput.value = "";
-  }
-  renderScenarioBrowser();
+  syncScenarioChoice();
   syncBattlefieldVictories(tactics);
   // The control's label is not relabelled from here. This runs once during
   // load, before the settings state it would read has been initialised, and
@@ -29956,63 +29983,70 @@ function scenarioTerrainName(terrain) {
 function scenarioEraNames() {
   return ["Ancient", "Classical", "Medieval", "Renaissance", "Industrial", "Modern", "Atomic", "Information", "Future"];
 }
-function scenarioGroupsForView(view) {
+// Whether the setup panel is describing a Tactics game: the mode is chosen,
+// and the Civilization VI mode — which configures the other game entirely —
+// has not outranked it.
+function tacticsMode() {
+  return readSetting("humanplayers") !== "civ6" && readSetting("gamemode") === "tactics";
+}
+// The battle chosen in the Scenario control, or "" for Custom. The control is
+// the one source of that answer, so nothing else has to be kept in step with
+// it; it is only meaningful while Tactics is the mode.
+function tacticsScenarioId() {
+  return readSetting("tactics-scenario");
+}
+// The world type a custom battle is fought on: a flat field or a globe.
+function tacticsWorldType() {
+  return readSetting("tacticsworldtype") === "planet" ? "planet" : "flat";
+}
+// The map the Tactics lobby is about to send: a named battle brings its own,
+// a custom one is whichever map the world type offers.
+function tacticsMapScript() {
+  return tacticsScenarioId() || readSetting("maptype");
+}
+// Which world type a Tactics map belongs to, read from the sizes it is
+// offered at: every size of a map carries the topology it is built on, and
+// the same /rules answer publishes both lists.
+function tacticsScriptWorldType(script) {
+  const size = battlefieldSizesForScript(script)[0];
+  return size && size.topology === "planet" ? "planet" : "flat";
+}
+// The custom maps a world type offers: Land on a flat field, Land or Ocean on
+// a globe. A named battle is never on it — a battle brings its own map and is
+// chosen one control up.
+function tacticsMapsForWorldType(worldType) {
+  return battlefieldScripts().filter(script =>
+    !isScenarioMapScript(script.id) && tacticsScriptWorldType(script.id) === worldType);
+}
+// Choose an option a select actually offers; a value it does not is left
+// alone rather than blanking the control.
+function setSelectValue(id, value) {
+  const select = document.getElementById(id);
+  if (!select) return false;
+  if (![...select.options].some(option => option.value === value)) return false;
+  select.value = value;
+  return true;
+}
+// The Scenario control: Custom first and by default, then every named battle
+// the catalog carries, grouped by era, earliest first. Filled from /rules
+// once it has answered, so a battle added to the catalog reaches the menu
+// without a markup change; the choice made before a refill survives it.
+function syncScenarioMenu() {
+  const select = document.getElementById("tactics-scenario");
   const scenarios = historicalScenarios();
-  if (view === "era") {
-    return scenarioEraNames().map(name => ({
-      name,
-      scenarios: scenarios.filter(scenario => scenario.era === name),
-    }));
-  }
-  if (view === "terrain") {
-    return [
-      ["land", "Land"], ["land_water", "Land & Water"], ["water", "Water"],
-      ["water_air", "Water & Air"], ["land_air", "Land & Air"],
-      ["land_water_air", "Land/Water/Air"],
-    ].map(([id, name]) => ({
-      name,
-      scenarios: scenarios.filter(scenario => scenario.terrain === id),
-    }));
-  }
-  if (view === "person") {
-    const commanders = [...new Set(scenarios.flatMap(scenario =>
-      scenario.forces.map(force => force.commander)))].sort((a, b) => a.localeCompare(b));
-    return commanders.map(name => ({
-      name,
-      scenarios: scenarios.filter(scenario =>
-        scenario.forces.some(force => force.commander === name)),
-    }));
-  }
-  return [];
-}
-function scenarioCardMarkup(scenario) {
-  const selected = scenario.id === selectedScenarioId;
-  return `<button class="scenario-card${selected ? " selected" : ""}" type="button"` +
-    ` data-scenario-id="${escapeAttr(scenario.id)}" aria-pressed="${selected}">` +
-    `<span class="scenario-card-name">${escapeAttr(scenario.name)}</span>` +
-    `<span class="scenario-card-meta">${escapeAttr(scenario.date)} · ${escapeAttr(scenario.location)}</span>` +
-    `<span class="scenario-card-detail">${escapeAttr(scenario.map)}</span>` +
-    `<span class="scenario-card-badges"><span class="scenario-badge">${escapeAttr(scenarioTerrainName(scenario.terrain))}</span>` +
-    `<span class="scenario-badge">${escapeAttr(scenario.turns)}-turn brief</span></span></button>`;
-}
-function scenarioGroupMarkup(group, index) {
-  const open = group.scenarios.length > 0 &&
-    (index === 0 || scenarioBrowserView === "person" && index < 2);
-  const count = group.scenarios.length
-    ? `${group.scenarios.length} battle${group.scenarios.length === 1 ? "" : "s"}`
-    : "No mapped battles yet";
-  return `<details class="scenario-browser-group"${open ? " open" : ""}>` +
-    `<summary><span>${escapeAttr(group.name)}</span><span class="scenario-browser-group-count">${escapeAttr(count)}</span></summary>` +
-    (group.scenarios.length
-      ? `<div class="scenario-browser-battles">${group.scenarios.map(scenarioCardMarkup).join("")}</div>`
-      : `<div class="scenario-browser-empty">This catalog branch is reserved for future historical maps.</div>`) +
-    `</details>`;
+  if (!select || !scenarios.length || select.dataset.filled === String(scenarios.length)) return;
+  const chosen = select.value;
+  select.innerHTML = `<option value="">Custom</option>` + scenarioEraNames().map(era => {
+    const battles = scenarios.filter(scenario => scenario.era === era);
+    if (!battles.length) return "";
+    return `<optgroup label="${escapeAttr(era)}">` + battles.map(scenario =>
+      `<option value="${escapeAttr(scenario.id)}" title="${escapeAttr(scenario.summary)}">` +
+      `${escapeAttr(scenario.name)} · ${escapeAttr(scenario.date)}</option>`).join("") + `</optgroup>`;
+  }).join("");
+  select.dataset.filled = String(scenarios.length);
+  if (!setSelectValue("tactics-scenario", chosen)) select.value = "";
 }
 function scenarioBriefMarkup(scenario) {
-  if (!scenario) {
-    return `<h4>Custom engagement</h4>` +
-      `<p class="scenario-brief-lede">Choose Battlefield, a Tactics Planet, or any named battle from the map controls. Custom keeps the map, era, clock, and arena economy live for you to shape.</p>`;
-  }
   const forces = scenario.forces.map((force, index) =>
     `<div class="scenario-force"><strong>${escapeAttr(force.label)}</strong>` +
     `<small>${escapeAttr(scenario.civs[index])} · ${escapeAttr(force.commander)}</small>` +
@@ -30024,30 +30058,47 @@ function scenarioBriefMarkup(scenario) {
     `<p class="scenario-brief-lede">${escapeAttr(scenario.summary)}</p>` +
     `<div class="scenario-brief-forces">${forces}</div>`;
 }
-function renderScenarioBrowser() {
-  const groups = document.getElementById("tactics-scenario-groups");
+// The briefing sits directly under the Scenario control and describes the
+// battle chosen there; Custom has no history to brief and shows nothing.
+function renderScenarioBrief(scenario) {
   const brief = document.getElementById("tactics-scenario-brief");
-  const count = document.getElementById("tactics-scenario-count");
-  if (!groups || !brief) return;
-  const scenarios = historicalScenarios();
-  if (count) count.textContent = `${scenarios.length} mapped battles`;
-  for (const button of document.querySelectorAll("#tactics-scenario-lenses [data-scenario-view]")) {
-    const active = button.dataset.scenarioView === scenarioBrowserView;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-selected", String(active));
-  }
-  if (scenarioBrowserView === "custom") {
-    groups.innerHTML = `<div class="scenario-browser-empty"><strong>Custom battlefield</strong><br>` +
-      `No historical force is loaded. Use the map and Tactics settings below to build your own engagement.</div>`;
-  } else {
-    groups.innerHTML = scenarioGroupsForView(scenarioBrowserView).map(scenarioGroupMarkup).join("");
-  }
-  brief.hidden = false;
-  brief.innerHTML = scenarioBriefMarkup(historicalScenario(selectedScenarioId));
+  if (!brief) return;
+  brief.hidden = !scenario;
+  brief.innerHTML = scenario ? scenarioBriefMarkup(scenario) : "";
 }
-function setScenarioBrowserView(view) {
-  scenarioBrowserView = ["custom", "era", "person", "terrain"].includes(view) ? view : "custom";
-  renderScenarioBrowser();
+// Everything that follows from which battle is chosen: a named battle hides
+// the world-type and map controls it decides itself, fixes the arena economy
+// it was fought under, and shows its briefing; Custom hands all of it back.
+// Leaving Tactics hands it back too, whatever the control still says.
+function syncScenarioChoice() {
+  const scenario = tacticsMode() ? historicalScenario(tacticsScenarioId()) : null;
+  document.body.classList.toggle("tactics-preset", !!scenario);
+  syncScenarioSettings();
+  renderScenarioBrief(scenario);
+}
+// Read a Tactics world back into the panel: the battle if its map is a named
+// one, else Custom with the map's world type and the map itself, and then
+// the size whose dimensions these are. The mode and the battle are put in
+// place first so `syncSetupMode` rebuilds every roster around them; the map
+// and the size are chosen after, once their rosters exist.
+function adoptTacticsWorld(script, width, height) {
+  const scenario = historicalScenario(script);
+  document.getElementById("gamemode").value = "tactics";
+  if (!setSelectValue("tactics-scenario", scenario ? script : "")) {
+    const select = document.getElementById("tactics-scenario");
+    if (select) select.value = "";
+  }
+  if (!scenario) setSelectValue("tacticsworldtype", tacticsScriptWorldType(script));
+  syncSetupMode();
+  if (!scenario) setSelectValue("maptype", script);
+  syncBattlefieldSizes(true);
+  const size = battlefieldSizesForScript(script)
+    .find(size => size.width === width && size.height === height);
+  if (size && setSelectValue("np", size.id)) {
+    tacticsSizeChoices[script] = size.id;
+    document.getElementById("np").dataset.tacticsChoice = size.id;
+  }
+  syncScenarioChoice();
 }
 function scenarioTurnChoice(turns) {
   const select = document.getElementById("tacticsturnlimit");
@@ -30064,33 +30115,6 @@ function scenarioStartEra(scenario) {
     era.era === scenario.era_index && era.playable);
   if (match && [...eras.options].some(option => option.value === match.id)) eras.value = match.id;
 }
-function selectHistoricalScenario(id) {
-  const scenario = historicalScenario(id);
-  const map = document.getElementById("maptype");
-  if (!scenario || !map || ![...map.options].some(option => option.value === id)) return;
-  selectedScenarioId = id;
-  document.getElementById("tactics-scenario").value = id;
-  document.getElementById("gamemode").value = "tactics";
-  map.value = id;
-  syncBattlefieldSizes(true);
-  scenarioStartEra(scenario);
-  scenarioTurnChoice(scenario.turns);
-  syncScenarioSettings();
-  renderScenarioBrowser();
-  updateRestartSimulationButton();
-  stageSelectedSimulationSettings();
-}
-function selectCustomScenario() {
-  selectedScenarioId = "";
-  document.getElementById("tactics-scenario").value = "";
-  const map = document.getElementById("maptype");
-  if (map && [...map.options].some(option => option.value === "battlefield")) map.value = "battlefield";
-  syncBattlefieldSizes(true);
-  syncScenarioSettings();
-  renderScenarioBrowser();
-  updateRestartSimulationButton();
-  stageSelectedSimulationSettings();
-}
 function isScenarioMapScript(id) {
   return scenarioScripts().some(script => script.id === id);
 }
@@ -30104,7 +30128,7 @@ function syncScenarioSettings() {
   // A function declaration hoists; the array it closes over must not need to.
   const fixed = ["tacticsfog", "tacticsflag", "tacticscities", "tacticsproduction",
                  "tacticsgold", "tacticsturnspertech", "tacticsuniqueunits"];
-  const scenario = isScenarioMapScript(document.getElementById("maptype")?.value);
+  const scenario = tacticsMode() && !!historicalScenario(tacticsScenarioId());
   for (const id of fixed) {
     const select = document.getElementById(id);
     if (!select) continue;
@@ -30175,26 +30199,41 @@ function syncMapRoster(civ6, tactics) {
   if (civ6 && !maps.length) return;
   if (tactics && !battlefieldScripts().length) return;
   const roster = civ6 ? "civ6" : tactics ? "tactics" : "civvis";
+  // In Tactics the roster is the chosen world type's, so a change of world
+  // type is a change of roster too.
+  const world = tactics ? tacticsWorldType() : "";
+  const offered = tactics ? tacticsMapsForWorldType(world) : [];
+  if (tactics && !offered.length) return;
   // `/rules` refills this control after load, so what is put back must be
   // whatever it holds now rather than the markup it was born with.
   if (select.dataset.roster !== "civ6" && select.dataset.roster !== "tactics")
     civvisMapOptions = select.innerHTML;
-  if ((select.dataset.roster || "civvis") === roster) return;
+  if ((select.dataset.roster || "civvis") === roster && (select.dataset.tacticsWorld || "") === world)
+    return;
   const chosen = select.value;
+  const chosenName = select.selectedOptions[0]?.textContent || "";
   // The world chosen for the Civ game survives a round trip through either
-  // other roster, so flipping a mode on and off costs nobody their map.
+  // other roster, so flipping a mode on and off costs nobody their map; the
+  // Tactics map likewise survives a trip out to Civ and back.
   if (select.dataset.roster !== "civ6" && select.dataset.roster !== "tactics")
     select.dataset.civvisChoice = chosen;
+  if (select.dataset.roster === "tactics") select.dataset.tacticsChoice = chosen;
   if (civ6) {
     select.innerHTML = maps.map(map =>
       `<option value="${escapeAttr(map.id)}">${map.name}</option>`).join("");
     const carried = maps.find(map => map.civvis === chosen);
     select.value = carried ? carried.id : (RULES.civ6.default_map || maps[0].id);
   } else if (tactics) {
-    // The Tactics menu is the battlefield roster from the same /rules
-    // answer, so a second arena can arrive without a page change.
-    select.innerHTML = battlefieldScripts().map(script =>
+    // The Tactics menu is the maps of the chosen world type — Land on a flat
+    // field, Land or Ocean on a globe — cut from the battlefield roster in
+    // the same /rules answer, so a new arena arrives without a page change.
+    // Land stays Land across a change of world type: the same map on the
+    // other shape, else the map last chosen here, else the first offered.
+    select.innerHTML = offered.map(script =>
       `<option value="${escapeAttr(script.id)}" title="${escapeAttr(script.description)}">${script.name}</option>`).join("");
+    const sameName = select.dataset.roster === "tactics" && offered.find(script => script.name === chosenName);
+    const carried = sameName || offered.find(script => script.id === select.dataset.tacticsChoice) || offered[0];
+    select.value = carried.id;
   } else {
     select.innerHTML = civvisMapOptions;
     const carried = maps.find(map => map.id === chosen);
@@ -30203,6 +30242,7 @@ function syncMapRoster(civ6, tactics) {
       select.value = restored;
   }
   select.dataset.roster = roster;
+  select.dataset.tacticsWorld = world;
   syncEarthShape();
 }
 // An arena is fought over, not converted or researched to death: entering
@@ -30227,27 +30267,42 @@ function syncBattlefieldVictories(tactics) {
 }
 // The world-size control is the Tactics-map-size control in Tactics: the same
 // select carries a different roster, exactly as the map control does for Civ 6
-// above. Every Tactics map seats exactly two sides, so the option says so and
-// the seat-dependent controls re-fit when the roster moves either way.
+// above. Which sizes it offers follows from the battle, world type and map
+// chosen above it — a named battle lists only the sizes it is charted at, a
+// custom map the sizes it is drawn at. Every Tactics map seats exactly two
+// sides, so the option says so and the seat-dependent controls re-fit when
+// the roster moves either way.
 function syncBattlefieldSizes(tactics) {
   const sizes = document.getElementById("np");
   if (!sizes) return;
   if (tactics && !battlefieldSizes().length) return;
   const roster = tactics ? "tactics" : "civvis";
   const sameRoster = (sizes.dataset.roster || "civvis") === roster;
+  const label = sizes.closest("label");
   if (sizes.dataset.roster !== "tactics") civvisSizeOptions = sizes.innerHTML;
   if (tactics) {
     if (!sameRoster) sizes.dataset.civvisChoice = sizes.value;
-    const script = document.getElementById("maptype")?.value;
+    const script = tacticsMapScript();
     const available = battlefieldSizesForScript(script);
     if (!available.length) return;
-    const chosen = sameRoster ? sizes.value : sizes.dataset.tacticsChoice;
+    // The size last chosen for this map, if it was this map's roster that
+    // was on the control; else the one remembered for the map from an
+    // earlier visit; else the smallest.
+    const held = sameRoster && sizes.dataset.tacticsScript === script ? sizes.value : "";
+    const chosen = held || tacticsSizeChoices[script] || sizes.dataset.tacticsChoice;
     sizes.innerHTML = available.map(size =>
       `<option value="${escapeAttr(size.id)}">${size.name} · 2 civs</option>`).join("");
     const carried = chosen && available.some(size => size.id === chosen)
       ? chosen : available[0].id;
     sizes.value = carried;
     sizes.dataset.tacticsChoice = carried;
+    sizes.dataset.tacticsScript = script;
+    tacticsSizeChoices[script] = carried;
+    // A named battle charted at one size has nothing to choose here: the
+    // control stays, saying what will be played, but reads as reported.
+    const fixed = !!historicalScenario(script) && available.length === 1;
+    sizes.disabled = fixed;
+    if (label) label.classList.toggle("setting-fixed", fixed);
   } else {
     if (sameRoster) return;
     const chosen = sizes.value;
@@ -30256,6 +30311,8 @@ function syncBattlefieldSizes(tactics) {
     const restored = sizes.dataset.civvisChoice;
     if (restored && [...sizes.options].some(option => option.value === restored))
       sizes.value = restored;
+    sizes.disabled = false;
+    if (label) label.classList.remove("setting-fixed");
   }
   sizes.dataset.roster = roster;
   // Which Tactics map is selected decides how much of the arena card is still

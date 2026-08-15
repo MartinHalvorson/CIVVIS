@@ -4587,18 +4587,26 @@ where
                 }
             })
             .collect();
-        while game.winner.is_none() {
+        // Until the game is *finished*, not until it has a winner: a Tactics
+        // battle that reaches its clock with both armies standing is a
+        // terminal draw with `winner: None`, and a loop keyed on the winner
+        // would play the drawn arena forever — measured as four hung workers
+        // the first time the stock arena stopped granting reinforcements and
+        // draws became ordinary. A world always ends with a winner (the clock
+        // awards its score tiebreak), so this is the same loop for a world.
+        while !game.is_finished() {
             let pid = game.current;
             ais[pid].take_turn(&mut game, pid);
-            if game.winner.is_none() && game.current == pid {
+            if !game.is_finished() && game.current == pid {
                 let _ = game.apply(pid, &Action::EndTurn);
             }
         }
 
         // A game nobody won is a game nobody won: every seat is rated as a
         // non-winner, and the ratings fall back to the score ordering they
-        // already carry. Only a lobby that switched the score victory off can
-        // reach this, but it must not take the rating run down with it.
+        // already carry. A drawn arena reaches this every time it happens; a
+        // world reaches it only when its lobby switched the score victory
+        // off. Either way it must not take the rating run down with it.
         let winner = game.winner;
         let results: Vec<RatedPlayer> = (0..cfg.players_per_game)
             .map(|pid| {
@@ -6234,9 +6242,28 @@ mod tests {
         };
         let stock = super::tournament_setup_contract(&arena);
         assert!(
-            stock.contains("arena=cities:1,production:30,gold:30,turns-per-tech:5"),
+            stock.contains("arena=cities:1,production:0,gold:0,turns-per-tech:5"),
             "the arena grants belong in the profile: {stock}"
         );
+        // The stock grants moved (30/30 → 0/0 on 2026-08-15), and the ledger
+        // written under the old grants must stay matched to its own arena
+        // rather than being read as the new one — which is what carrying the
+        // grants in the profile is for.
+        let reinforced = TourneyCfg {
+            map_script: MapScript::Battlefield,
+            tactics: crate::setup::TacticsRules {
+                production: 30,
+                gold: 30,
+                ..crate::setup::TacticsRules::default()
+            },
+            ..TourneyCfg::default()
+        };
+        let reinforced_contract = super::tournament_setup_contract(&reinforced);
+        assert!(
+            reinforced_contract.contains("arena=cities:1,production:30,gold:30,turns-per-tech:5"),
+            "{reinforced_contract}"
+        );
+        assert_ne!(stock, reinforced_contract);
 
         // The two settings that change what the battle *is* must not share a
         // ledger: one city is decided by taking it, none is an attrition duel.
@@ -6275,6 +6302,48 @@ mod tests {
         let spread_contract = super::tournament_setup_contract(&spread);
         assert!(spread_contract.contains("era=random"), "{spread_contract}");
         assert_ne!(stock, spread_contract);
+    }
+
+    /// A drawn arena battle ends the tournament game rather than hanging it.
+    /// The stock arena grants no reinforcements, so a battle that reaches
+    /// its clock with both armies standing is ordinary — and it is a
+    /// terminal draw with no winner, which the game loop has to recognise as
+    /// finished. A twelve-turn clock on the bounded field is a certain draw:
+    /// two Basic companies cannot close and eliminate each other in twelve
+    /// turns. Both games must complete, be rated as games nobody won, and
+    /// leave the pool with the right count.
+    #[test]
+    fn a_drawn_arena_battle_ends_the_tournament_game() {
+        let cfg = TourneyCfg {
+            games: 2,
+            players_per_game: 2,
+            width: 20,
+            height: 20,
+            map_script: MapScript::Battlefield,
+            max_turns: 12,
+            num_city_states: 0,
+            verbose: false,
+            jobs: 1,
+            ..TourneyCfg::default()
+        };
+        let names = vec!["basic".to_string(), "basic_b".to_string()];
+        let pool = super::run_tournament(
+            &names,
+            |_, seed| builtin_ai("basic", seed),
+            &cfg,
+        );
+        assert_eq!(pool.history.len(), 2, "both drawn battles were rated");
+        for game in &pool.history {
+            assert!(
+                game.players.iter().all(|player| !player.won),
+                "a drawn arena battle has no winner: {:?}",
+                game.players
+            );
+        }
+        for name in &names {
+            assert_eq!(pool.overall[name].games, 2, "{name} played both battles");
+            assert_eq!(pool.overall[name].wins, 0, "{name} won neither");
+        }
     }
 
     /// The era choice resolves per game, so a random-era ladder fights a

@@ -2303,56 +2303,21 @@
   .tactics-options > label { min-width: 0; }
   .tactics-options select { width: 100%; }
   /* A scenario is fought under the economy its battle had, so most of this
-     card is not a choice on one. The controls stay on screen and readable —
-     what they say is what will be played — but they read as reported rather
-     than offered. */
-  .tactics-options > label.setting-fixed { opacity: 0.55; }
-  .tactics-options > label.setting-fixed select { cursor: not-allowed; }
-  .tactics-scenario-browser {
-    display: none; gap: 9px; padding: 10px;
-    border: 1px solid var(--line-soft); border-radius: 9px;
-    background: linear-gradient(135deg, #0d1b1680, #091310a8);
-  }
-  body.playing-tactics .tactics-scenario-browser { display: grid; }
-  .scenario-browser-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-  .scenario-browser-heading h3 { margin: 0; color: var(--text); font-size: var(--type-body); }
-  .scenario-browser-count { color: var(--muted); font-size: var(--type-small); white-space: nowrap; }
-  .scenario-browser-help { margin: 0; color: var(--muted); font-size: var(--type-small); line-height: 1.4; }
-  .scenario-browser-lenses { display: flex; flex-wrap: wrap; gap: 6px; }
-  .scenario-browser-lens {
-    border: 1px solid var(--line-soft); border-radius: 999px; padding: 5px 10px;
-    color: var(--muted); background: #07100dcc; cursor: pointer; font: inherit;
-    font-size: var(--type-small); font-weight: 800;
-  }
-  .scenario-browser-lens:hover, .scenario-browser-lens.active {
-    border-color: var(--gold); color: var(--text); background: #332713;
-  }
-  .scenario-browser-groups { display: grid; gap: 7px; }
-  .scenario-browser-group {
-    overflow: hidden; border: 1px solid var(--line-soft); border-radius: 7px; background: #07100d80;
-  }
-  .scenario-browser-group > summary {
-    display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    padding: 8px 10px; color: var(--text); cursor: pointer; list-style: none;
-    font-size: var(--type-small); font-weight: 850;
-  }
-  .scenario-browser-group > summary::-webkit-details-marker { display: none; }
-  .scenario-browser-group > summary::after { content: "+"; color: var(--gold); font-size: var(--type-body); }
-  .scenario-browser-group[open] > summary { border-bottom: 1px solid var(--line-soft); }
-  .scenario-browser-group[open] > summary::after { content: "−"; }
-  .scenario-browser-group-count { color: var(--muted); font-weight: 600; }
-  .scenario-browser-battles { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 8px; }
-  .scenario-card {
-    min-width: 0; padding: 8px; text-align: left; border: 1px solid var(--line-soft);
-    border-radius: 7px; color: var(--text); background: #0b1712; cursor: pointer; font: inherit;
-  }
-  .scenario-card:hover, .scenario-card.selected { border-color: var(--gold); background: #2a2113; }
-  .scenario-card-name { display: block; font-weight: 850; }
-  .scenario-card-meta, .scenario-card-detail { display: block; color: var(--muted); font-size: var(--type-small); line-height: 1.35; }
-  .scenario-card-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-  .scenario-badge { display: inline-block; padding: 2px 5px; border: 1px solid var(--line-soft); border-radius: 999px; color: var(--gold); font-size: 10px; line-height: 1.2; }
-  .scenario-browser-empty { padding: 10px; color: var(--muted); font-size: var(--type-small); }
-  .scenario-brief { display: grid; gap: 8px; padding: 9px; border-top: 1px solid var(--line-soft); background: #050b0980; }
+     card is not a choice on one — nor is the size of a battle charted at one
+     size. The controls stay on screen and readable — what they say is what
+     will be played — but they read as reported rather than offered. */
+  .tactics-options > label.setting-fixed, #newgame-options > label.setting-fixed { opacity: 0.55; }
+  .tactics-options > label.setting-fixed select, #newgame-options > label.setting-fixed select { cursor: not-allowed; }
+  /* A named battle brings its own map, so while one is chosen the world type
+     and map are not questions: both controls leave the form rather than
+     sitting greyed under a choice that has already been made. Custom hands
+     them back. */
+  body.playing-tactics.tactics-preset .tactics-custom-only { display: none; }
+  /* The briefing of the battle chosen one control up: its ground, objective
+     and the two orders of battle. Hidden outright on Custom, which has no
+     history to brief. */
+  .scenario-brief { display: grid; gap: 8px; padding: 9px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: #050b0980; }
+  .scenario-brief[hidden] { display: none; }
   .scenario-brief h4 { margin: 0; color: var(--text); font-size: var(--type-body); }
   .scenario-brief-lede, .scenario-brief-objective { margin: 0; color: var(--muted); font-size: var(--type-small); line-height: 1.45; }
   .scenario-brief-facts { display: flex; flex-wrap: wrap; gap: 5px 10px; color: var(--gold); font-size: var(--type-small); }
@@ -4349,7 +4314,7 @@
       <div class="sec settings-sec" id="game-settings">
       <div id="newgame-options">
         <label class="small civ6-hidden">Game mode<select id="gamemode" style="margin-top:4px"
-          title="Civ is the full game. Tactics is a playground for tactical unit combat: a small flat battlefield with mountains, rivers, woods and water but no resources or city-states, where two evenly-armed sides begin in opposite corners of a square arena or at opposite ends of a long one.">
+          title="Civ is the full game. Tactics is a playground for tactical unit combat: a named historical battle, or a custom one on a small flat field or a small globe — land or ocean, with mountains, rivers, woods and water but no resources or city-states — where two evenly-armed sides begin at opposite ends of the ground.">
           <option value="civ" selected>Civ</option>
           <option value="tactics">Tactics</option>
         </select></label>
@@ -4363,6 +4328,16 @@
           <div class="civ6-line"><span class="civ6-dot"></span><span id="civ6-host">Checking this computer…</span></div>
           <div class="civ6-line civ6-run" id="civ6-run" hidden></div>
         </div>
+        <label class="small tactics-only">Scenario<span class="setup-info" style="cursor:help;opacity:.7"
+          title="Custom is a battle of your own: choose the world type, map and size below and set the arena up in Tactics settings. A named battle brings its own ground, opening forces, era and clock, and is fought under the economy it had — only how long you play, and how many battles the match is, stay yours."> ⓘ</span><select id="tactics-scenario" style="margin-top:4px">
+          <option value="" selected>Custom</option>
+        </select></label>
+        <div class="scenario-brief" id="tactics-scenario-brief" hidden></div>
+        <label class="small tactics-only tactics-custom-only">World type<span class="setup-info" style="cursor:help;opacity:.7"
+          title="Flat is a bounded field, walled on all four sides, with the two sides at opposite corners or opposite ends. Planet is a small globe with the two sides on opposite faces of the world, sailable or marchable all the way round. Which maps and sizes are offered below follows from it."> ⓘ</span><select id="tacticsworldtype" style="margin-top:4px">
+          <option value="flat" selected>Flat</option>
+          <option value="planet">Planet</option>
+        </select></label>
         <label class="small">World size<select id="np" style="margin-top:4px">
           <option value="2">Duel · 2 civs · 3 city-states · 44×26</option>
           <option value="4" selected>Tiny · 4 civs · 6 city-states · 60×38</option>
@@ -4375,7 +4350,7 @@
           <option value="flat">Flat</option>
           <option value="planet" selected>Planet</option>
         </select></label>
-        <label class="small">Map<select id="maptype" style="margin-top:4px">
+        <label class="small tactics-custom-only">Map<select id="maptype" style="margin-top:4px">
           <option value="land_only">Land Only</option>
           <option value="lakes">Lakes</option>
           <option value="inland_sea">Inland Sea</option>
@@ -4443,22 +4418,6 @@
         </div>
         <div class="tactics-options tactics-only" id="tactics-options" role="group" aria-labelledby="tactics-options-title">
           <h2 id="tactics-options-title">Tactics settings</h2>
-          <section class="tactics-scenario-browser" id="tactics-scenario-browser" aria-labelledby="tactics-scenario-title">
-            <div class="scenario-browser-heading">
-              <h3 id="tactics-scenario-title">Scenario library</h3>
-              <span class="scenario-browser-count" id="tactics-scenario-count">Loading battles…</span>
-            </div>
-            <p class="scenario-browser-help">Custom is the default. Browse the same battles by era, commander, or terrain; selecting one loads its fixed map, opening force, and briefing.</p>
-            <div class="scenario-browser-lenses" id="tactics-scenario-lenses" role="tablist" aria-label="Scenario catalog view">
-              <button class="scenario-browser-lens active" type="button" data-scenario-view="custom" role="tab" aria-selected="true">Custom</button>
-              <button class="scenario-browser-lens" type="button" data-scenario-view="era" role="tab" aria-selected="false">Era-based</button>
-              <button class="scenario-browser-lens" type="button" data-scenario-view="person" role="tab" aria-selected="false">Person-based</button>
-              <button class="scenario-browser-lens" type="button" data-scenario-view="terrain" role="tab" aria-selected="false">Terrain-based</button>
-            </div>
-            <input id="tactics-scenario" type="hidden" value="" aria-hidden="true">
-            <div class="scenario-browser-groups" id="tactics-scenario-groups"></div>
-            <div class="scenario-brief" id="tactics-scenario-brief" hidden></div>
-          </section>
           <label class="small">Fog of war<span class="setup-info" style="cursor:help;opacity:.7"
             title="Off, both commanders see the whole field: an arena is meant to test what each side does with what is in front of it rather than who finds the other first, and both armies are set down out of each other's sight with no city to march on and no border to trespass. On, each side sees only what its own units can, and finding the enemy is part of the battle. Either way the rule is symmetric — it is never a handicap given to one side."> ⓘ</span><select id="tacticsfog" style="margin-top:4px">
             <option value="0" selected>Off · the whole field</option>
@@ -4471,9 +4430,10 @@
             <option value="30">30 turns</option>
             <option value="40">40 turns</option>
             <option value="50">50 turns</option>
-            <option value="100" selected>100 turns</option>
+            <option value="100">100 turns</option>
             <option value="150">150 turns</option>
             <option value="200">200 turns</option>
+            <option value="250" selected>250 turns</option>
           </select></label>
           <label class="small">Capture the flag<span class="setup-info" style="cursor:help;opacity:.7"
             title="On, each side is given a flag in place of a city, standing where its city would have stood, and the battle is won by moving a unit onto the OTHER side's flag. Standing on your own captures nothing, so a flag is something to defend as well as something to take, and every flag is visible through the fog — both commanders know where they are marching. Off, a battle is decided the way an arena always has been: by the armies, and by the city each side holds if the economy grants one. The clock can still run out first either way, which stays a draw."> ⓘ</span><select id="tacticsflag" style="margin-top:4px">
@@ -4481,23 +4441,23 @@
             <option value="1">On · take the enemy's flag</option>
           </select></label>
           <label class="small">Cities per side<span class="setup-info" style="cursor:help;opacity:.7"
-            title="An arena is handed its economy rather than earning it. With one city, each side has somewhere to build reinforcements and a place the other side can take; with none, each side is exactly the army it was dealt and the battle is decided by that army alone. Either way no Settler is ever produced and the city is placed at setup, so there is no founding decision to make. Capture the flag overrides this: there a flag stands where the city would have, and the battle plays city-less."> ⓘ</span><select id="tacticscities" style="margin-top:4px">
-            <option value="1" selected>1 · reinforcements</option>
+            title="An arena is handed its economy rather than earning it. With one city, each side has a place the other side can take — and, if Production per turn is raised above zero, somewhere to build reinforcements; with none, each side is exactly the army it was dealt and the battle is decided by that army alone. Either way no Settler is ever produced and the city is placed at setup, so there is no founding decision to make. Capture the flag overrides this: there a flag stands where the city would have, and the battle plays city-less."> ⓘ</span><select id="tacticscities" style="margin-top:4px">
+            <option value="1" selected>1 · a city to hold</option>
             <option value="0">0 · armies only</option>
           </select></label>
           <label class="small">Production per turn<span class="setup-info" style="cursor:help;opacity:.7"
-            title="Flat Production the city collects every turn, identically for both sides. A Warrior costs 40 and a Modern Armor 680, so a higher figure keeps reinforcements arriving in the later eras. The city collects no Food and never grows."> ⓘ</span><select id="tacticsproduction" style="margin-top:4px">
-            <option value="0">0 · no reinforcements</option>
+            title="Flat Production the city collects every turn, identically for both sides. The stock battle grants none: two standing armies fight it out and no unit that was not on the field at turn one ever joins it. Raise it for reinforcements — a Warrior costs 40 and a Modern Armor 680, so a higher figure keeps them arriving in the later eras. The city collects no Food and never grows."> ⓘ</span><select id="tacticsproduction" style="margin-top:4px">
+            <option value="0" selected>0 · no reinforcements</option>
             <option value="15">15 · slow</option>
-            <option value="30" selected>30 · steady</option>
+            <option value="30">30 · steady</option>
             <option value="60">60 · fast</option>
             <option value="120">120 · relentless</option>
           </select></label>
           <label class="small">Gold per turn<span class="setup-info" style="cursor:help;opacity:.7"
-            title="Flat Gold both sides collect every turn. An arena charges no unit upkeep, so this is upgrade money and nothing else: it buys a damaged Warrior its way up to a Swordsman once the technology is in."> ⓘ</span><select id="tacticsgold" style="margin-top:4px">
-            <option value="0">0 · no upgrades</option>
+            title="Flat Gold both sides collect every turn. An arena charges no unit upkeep, so this is upgrade money and nothing else: it buys a damaged Warrior its way up to a Swordsman once the technology is in. The stock battle grants none, so the armies fight as dealt; raise it to let them upgrade mid-battle."> ⓘ</span><select id="tacticsgold" style="margin-top:4px">
+            <option value="0" selected>0 · no upgrades</option>
             <option value="15">15 · slow</option>
-            <option value="30" selected>30 · steady</option>
+            <option value="30">30 · steady</option>
             <option value="60">60 · fast</option>
             <option value="120">120 · relentless</option>
           </select></label>

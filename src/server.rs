@@ -422,12 +422,13 @@ fn host_memory_percent() -> Option<f64> {
 const EMBEDDED_INDEX_HTML: &str = include_str!("../web/index.html");
 const EMBEDDED_APP_JS: &str = include_str!("../web/assets/app.js");
 /// The whole page source — the document plus its one external script — as a
-/// single searchable string. The server ships the two parts at `/` and
-/// `/assets/app.js`; the source-contract tests assert against this combined
-/// source, which is the same contract they checked when the script block was
-/// inline. (The split exists because the script was a 1.35 MB block inside
-/// `web/index.html`, making that file the repository's largest history payer
-/// at ~1 MB of pack growth per edit.)
+/// single searchable string. Only the source-contract tests read it: they
+/// assert against this combined source, which is the same contract they
+/// checked when the script block was inline. The server itself ships the two
+/// parts separately at `/` and `/assets/app.js`. (The split exists because
+/// the script was a 1.35 MB block inside `web/index.html`, making that file
+/// the repository's largest history payer at ~1 MB of pack growth per edit.)
+#[cfg(test)]
 static EMBEDDED_INDEX: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     let mut page = String::with_capacity(EMBEDDED_INDEX_HTML.len() + EMBEDDED_APP_JS.len());
     page.push_str(EMBEDDED_INDEX_HTML);
@@ -8206,25 +8207,41 @@ mod tests {
         let payload_rows = payload.as_array().expect("scenario payload is an array");
         assert!(payload_rows.iter().any(|row| row["id"] == json!("kadesh")));
         assert!(payload_rows.iter().any(|row| row["id"] == json!("mosul")));
+        // The battle is the first Tactics question after who is playing: a
+        // Scenario select that opens on Custom and lists every catalogued
+        // battle by era, filled from the same /rules answer. A named battle
+        // brings its own map, so the world-type and map controls leave the
+        // form while one is chosen, and its briefing sits under the select.
         for control in [
             "RULES.scenario_scripts",
             "function isScenarioMapScript(",
             "syncScenarioSettings()",
             "RULES.historical_scenarios",
-            "scenarioBrowserView",
-            "setScenarioBrowserView",
+            "function syncScenarioMenu()",
+            "function tacticsScenarioId()",
+            "function tacticsMapScript()",
+            "function adoptTacticsWorld(script, width, height)",
+            "document.body.classList.toggle(\"tactics-preset\", !!scenario);",
         ] {
             assert!(
                 EMBEDDED_APP_JS.contains(control),
                 "the browser lost its scenario handling: {control}"
             );
         }
-        for view in ["era", "person", "terrain"] {
-            assert!(
-                EMBEDDED_INDEX.contains(&format!("data-scenario-view=\"{view}\"")),
-                "the browser lost its {view} scenario lens"
-            );
+        for markup in [
+            "id=\"tactics-scenario\"",
+            "<option value=\"\" selected>Custom</option>",
+            "id=\"tactics-scenario-brief\"",
+            "class=\"small tactics-only tactics-custom-only\">World type",
+            "class=\"small tactics-custom-only\">Map",
+            "body.playing-tactics.tactics-preset .tactics-custom-only { display: none; }",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(markup), "the setup form lost {markup}");
         }
+        assert!(
+            !EMBEDDED_INDEX.contains("data-scenario-view="),
+            "the scenario browser was retired for the Scenario select"
+        );
     }
 
     /// Nothing the setup panel runs during page load may read a module
@@ -8392,12 +8409,15 @@ mod tests {
         assert!(race.tactics.flag);
         assert_eq!(race.tactics.cities, 0, "a flag battle always plays city-less");
 
-        // Silence keeps the stock setup: one battle, and the identical
-        // roster on both sides, which is what the mode claims to be.
+        // Silence keeps the stock setup: one battle on the 250-turn clock,
+        // two standing armies with nothing to reinforce them, and the
+        // identical roster on both sides, which is what the mode claims to be.
         let stock = ask(json!({"num_players": 2, "map_script": "battlefield"}));
         assert_eq!(stock.tactics.best_of, 1);
-        assert_eq!(stock.tactics.turn_limit, 100);
-        assert_eq!(stock.max_turns, 100);
+        assert_eq!(stock.tactics.turn_limit, 250);
+        assert_eq!(stock.max_turns, 250);
+        assert_eq!(stock.tactics.production, 0, "the stock arena builds nothing");
+        assert_eq!(stock.tactics.gold, 0, "the stock arena upgrades nothing");
         assert!(!stock.tactics.unique_units);
         assert!(!stock.tactics.flag, "cities decide a battle unless the flag is asked for");
         assert_eq!(stock.tactics, TacticsRules::default());
@@ -8845,7 +8865,7 @@ mod tests {
             );
         }
         assert!(EMBEDDED_INDEX.contains(
-            "[\"gamemode\", true], [\"humanplayers\", true], [\"np\", true], [\"mapshape\", true],"
+            ": [\"np\", \"mapshape\", \"maptype\", \"tactics-scenario\", \"tactics-scenario-brief\", \"tacticsworldtype\"];"
         ));
     }
 
@@ -9895,19 +9915,27 @@ mod tests {
         }
         assert!(EMBEDDED_INDEX.contains("function syncRequiredVictoriesCap"));
         assert!(EMBEDDED_INDEX.contains("required_victory_types: requiredVictories,"));
+        // The short setup pass is asked in the order its questions depend on
+        // one another, and the two games ask their world questions in
+        // different orders: Civ sizes, shapes and fills the world; Tactics
+        // names the battle, then — for a custom one — the world type, the
+        // map that type offers, and last the size, which depends on both.
+        assert!(EMBEDDED_INDEX.contains("function setupControlOrder(tactics) {"));
         assert!(EMBEDDED_INDEX.contains(
-            "[\"gamemode\", true], [\"humanplayers\", true], [\"np\", true], [\"mapshape\", true],"
+            "? [\"tactics-scenario\", \"tactics-scenario-brief\", \"tacticsworldtype\", \"maptype\", \"np\", \"mapshape\"]"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "[\"maptype\", true], [\"startera\", true], [\"gamespeed\", true],"
+            ": [\"np\", \"mapshape\", \"maptype\", \"tactics-scenario\", \"tactics-scenario-brief\", \"tacticsworldtype\"];"
         ));
         // Every card the short setup pass shows has to be named here. One
         // that is not stays where the markup put it while the named ones move
         // ahead of the advanced drawer, which strands it above the whole form
         // — the way the endgame rules were stranded until they were nested.
         assert!(EMBEDDED_INDEX.contains(
-            "basic.push(document.getElementById(\"victory-options\"),\n    document.getElementById(\"tactics-options\"), document.getElementById(\"saves-group\"));"
+            "return [\"gamemode\", \"humanplayers\", \"civ6-status\", ...world, \"startera\", \"gamespeed\",\n    \"victory-options\", \"tactics-options\", \"saves-group\"];"
         ));
+        // Recomposed on every change of mode, from the same one function.
+        assert!(EMBEDDED_INDEX.contains("placeSetupControls(tactics);"));
         // The arena card: it appears only in Tactics and carries everything
         // the mode is set up with — whether the field is fogged, its deadline,
         // the four economy grants, how many battles the match is, and whether
@@ -9989,7 +10017,24 @@ mod tests {
                 "the turn-limit ladder is missing {limit}"
             );
         }
-        assert!(EMBEDDED_INDEX.contains("<option value=\"100\" selected>100 turns</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"250\" selected>250 turns</option>"));
+        // Two standing armies and no reinforcements is the stock arena: the
+        // lobby's Production and Gold menus open on zero, and both stay
+        // menus — the grants are the player's to raise.
+        assert!(EMBEDDED_INDEX.contains(
+            "<select id=\"tacticsproduction\" style=\"margin-top:4px\">\n            <option value=\"0\" selected>"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "<select id=\"tacticsgold\" style=\"margin-top:4px\">\n            <option value=\"0\" selected>"
+        ));
+        for grant in ["tacticsproduction", "tacticsgold"] {
+            let menu_at = EMBEDDED_INDEX.find(&format!("id=\"{grant}\"")).unwrap();
+            let menu = &EMBEDDED_INDEX[menu_at..menu_at + 700];
+            assert!(
+                menu.contains("<option value=\"30\">") && menu.contains("<option value=\"120\">"),
+                "{grant} must still offer reinforcements above zero"
+            );
+        }
         // Every offered match length is odd, so wins cannot split evenly.
         for length in ["1", "3", "5", "7", "11"] {
             assert!(
@@ -10196,9 +10241,11 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function teamRules() { return [\"2\", \"3\", \"4\", \"pairs\"]; }"));
         assert!(EMBEDDED_INDEX.contains("option.disabled = !split;"));
         // The world size decides which splits exist, so it re-fits them before
-        // the panel's own delegated listener stages what is now selected.
+        // the panel's own delegated listener stages what is now selected. In
+        // Tactics the same pick is first remembered for the map it was made
+        // on, so moving between maps and back returns to it.
         assert!(EMBEDDED_INDEX.contains(
-            "document.getElementById(\"np\").addEventListener(\"change\", () => {\n  syncTeams();\n  syncCustomLeaderSelection();\n});"
+            "  if (tacticsMode()) tacticsSizeChoices[tacticsMapScript()] = readSetting(\"np\");\n  syncTeams();\n  syncCustomLeaderSelection();\n});"
         ));
         // The server is handed the seat-by-seat assignment, never the rule
         // that produced it; a world on screen is read back the other way.
@@ -10326,7 +10373,6 @@ mod tests {
             ".victory-option-grid { display: grid; grid-template-columns: minmax(0, 1fr);",
             ".victory-endgame {\n    display: grid; grid-template-columns: minmax(0, 1fr);",
             ".tactics-options {\n    grid-template-columns: minmax(0, 1fr);",
-            ".scenario-browser-battles { display: grid; grid-template-columns: minmax(0, 1fr);",
             ".era-mods-body {\n    display: grid; grid-template-columns: minmax(0, 1fr);",
             ".display-settings-group-body {\n    display: grid; grid-template-columns: minmax(0, 1fr);",
             ".advanced-settings-body {\n    display: grid; grid-template-columns: minmax(0, 1fr);",
