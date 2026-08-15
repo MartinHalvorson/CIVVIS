@@ -1075,7 +1075,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// cached target also refuses `blocked_city_sites`, a set that is empty in every
 /// ordinary and frozen game. Compatibility re-pin; the Elo protocol does not
 /// move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbf67_dcb6_4884_e687;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x53e3_ba2a_d10a_d591;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
