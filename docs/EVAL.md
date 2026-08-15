@@ -10005,3 +10005,53 @@ Whichever way this run went, the rule said it ends the family's looks. It
 went PASS; the war half is off in production, the arms are aliases, and the
 one open door is the `advanced_war_half` re-addition arm, which asks the
 inverse question and starts its own ledger from zero looks.
+
+## 2026-08-14 — garrison loyalty is a null: the arm that existed to find out, found out
+
+`advanced_garrison_loyalty` was built with its question written on it: revolts
+are 42% of 192 observed live city losses, five policy cards carry loyalty
+effects the hardcoded portfolios never slot, and `limitanei` needs only
+`early_empire` and a MILITARY slot nothing competes for — "that is a mechanism,
+not an effect size — this arm exists to find out." It had never been run.
+
+First look, single pre-declared run against the post-#1592 production
+controller, matrix at 400 pairs, base `main` at `112dd2d9`, raw log
+`civvis-civ6-runs/garrison-loyalty-matrix-20260815T0319Z.log` (machine-local):
+
+```
+ai_eval advanced_garrison_loyalty advanced --matrix --pairs 400 --seed 19000000
+
+compact-standard   (NoRegression, seed prefix 19000000..=19000399)
+  paired-map score 49.6% (95% Wilson CI 44.8%..54.5%)   Elo-equivalent -3 (CI -37..+31)
+  paired direction 79 for / 241 neutral / 80 against    sign p = 1.0000
+  anytime-valid    e = 2.389e0, p <= 0.4186 — not crossed either way
+  verdict          ACCEPT (no established regression)
+
+deployment-online  (Strength, all six victories, seed prefix 20000000..=20000399)
+  paired-map score 47.9% (95% Wilson CI 43.0%..52.8%)   Elo-equivalent -15 (CI -49..+19)
+  paired direction 44 for / 295 neutral / 61 against    sign p = 0.1180
+  anytime-valid    neither direction crossed (challenger p <= 0.9385)
+  verdict          INCONCLUSIVE -> Strength REJECT
+
+multi-profile promotion gate: RETAIN advanced — cleared 1/2 required profiles
+```
+
+**A clean null, trending negative where it matters.** The flag stays off, and
+the arm's comment now carries the answer. The instrument's own note on the
+deployment child says what happened: wins tilt toward the control while
+terminal score is flat — a routing change without an economic one. The seat
+tables agree in the small: the treated arm holds slightly *less* faith, fewer
+tourists, and two fewer suzerainties per hundred games; whatever the loyalty
+card buys, the slot it occupies was buying more.
+
+This is the suzerainty lesson (#1575) restated on a military slot: **a
+fires-check proves a mechanism fires, not that the mechanism matters, and
+census headroom is what a perfect outcome is worth, not what a decision rule
+can reach.** The revolt census stands — 42% of live city losses, a median
+13-turn warning, four cards never slotted — and it remains a fact about the
+*live* regime. If anyone re-opens this axis, the honest instrument is a live
+batch (`live_without_loyalty_policy_defence` exists for exactly that side),
+not more native maps: the native game's loyalty pressure is evidently not
+where those losses come from.
+
+One look, recorded, lane rests. No disjoint confirm is owed to a null.

@@ -2985,6 +2985,15 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // portfolios in `strategic_policies` never reach. Revolts are 42% of 192
         // observed city losses and holding is worth roughly double the score, but
         // that is a mechanism, not an effect size — this arm exists to find out.
+        //
+        // It found out (2026-08-14, matrix at 400 pairs, seed 19000000): a
+        // clean null. compact-standard 49.6% (CI 44.8..54.5), Elo -3,
+        // direction 79/80, p=1.0000; deployment-online 47.9% (CI 43.0..52.8),
+        // Elo -15 (CI -49..+19), direction 44/61, p=0.1180;
+        // neither e-process moved. RETAIN. The revolt census stands; pricing
+        // the card into the slot decision wins nothing measurable — the same
+        // lesson as suzerainty (#1575): a mechanism that fires is not a
+        // mechanism that matters. See `docs/EVAL.md` 2026-08-14.
         "advanced_garrison_loyalty" => {
             let mut ai = AdvancedAi::new();
             ai.garrison_loyalty_policy = true;
