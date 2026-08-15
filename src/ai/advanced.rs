@@ -8119,6 +8119,30 @@ impl AdvancedAi {
             .iter()
             .filter(|unit| g.rules.units[g.units[unit].kind].class == "military")
             .count();
+        let at_major_war = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+                && g.is_at_war(pid, player.id)
+        });
+        // A zero treasury turns a negative cash flow into an immediate
+        // empire-wide Amenity penalty before recovery production can finish a
+        // Commercial Hub. The live war governor already knows it must keep
+        // the defending force, so use the current maintenance discount before
+        // asking that force to carry another turn of bankruptcy. `levee_en_masse`
+        // is deliberately listed first: its civic retires `conscription`, so
+        // the loop below takes the strongest available version without a
+        // second card-selection path.
+        let bankrupt_major_war = self.war_economy
+            && at_major_war
+            && military > 0
+            && g.players[pid].gold <= f64::EPSILON
+            && g.players[pid].gold_per_turn < -0.5;
+        if bankrupt_major_war {
+            desired.retain(|card| !matches!(*card, "conscription" | "levee_en_masse"));
+            desired.splice(0..0, ["levee_en_masse", "conscription"]);
+        }
         if self.victory_planning
             && objective == GrandStrategy::Conquest
             && military >= city_ids.len().max(1).saturating_mul(2)
@@ -33723,6 +33747,59 @@ mod tests {
             "control must keep today's behaviour — `limitanei` is slotted 0 times \
              in 83 live runs and the arm must be the only thing that changes that"
         );
+    }
+
+    #[test]
+    fn live_wartime_bankruptcy_slots_the_available_maintenance_discount() {
+        let build = |live_war_economy: bool, treasury: f64, successor_unlocked: bool| {
+            let mut game = Game::new(2, 24, 16, 79_098, 200, 0);
+            game.players[0].government = Some("chiefdom".to_string());
+            game.players[0]
+                .civics
+                .insert(crate::name!("state_workforce"));
+            if successor_unlocked {
+                game.players[0]
+                    .civics
+                    .insert(crate::name!("mobilization"));
+            }
+            game.players[0]
+                .policies
+                .extend([crate::name!("discipline"), crate::name!("urban_planning")]);
+            game.players[0].gold = treasury;
+            game.players[0].gold_per_turn = -6.0;
+            game.at_war.insert((0, 1));
+            game.at_war.insert((1, 0));
+
+            let mut ai = AdvancedAi::new();
+            if live_war_economy {
+                ai.enable_war_economy();
+            }
+            ai.strategic_policies(&mut game, 0, GrandStrategy::Recovery);
+            game.players[0].policies.clone()
+        };
+
+        // The frozen/ordinary controller and an empire that can still cover
+        // the loss retain their existing military portfolio.
+        assert!(
+            !build(false, 0.0, false).contains(&crate::name!("conscription"))
+        );
+        assert!(
+            !build(true, 1.0, false).contains(&crate::name!("conscription"))
+        );
+
+        let conscription = build(true, 0.0, false);
+        assert!(conscription.contains(&crate::name!("conscription")));
+        assert!(
+            !conscription.contains(&crate::name!("discipline")),
+            "the maintenance discount must take the one military slot"
+        );
+
+        // When the successor is unlocked it retires Conscription. The same
+        // intervention therefore takes the stronger two-Gold relief rather
+        // than silently doing nothing in the later eras.
+        let levee = build(true, 0.0, true);
+        assert!(levee.contains(&crate::name!("levee_en_masse")));
+        assert!(!levee.contains(&crate::name!("conscription")));
     }
 
     #[test]

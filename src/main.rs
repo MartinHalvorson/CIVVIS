@@ -1025,7 +1025,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// Firaxis unit export. The assertion below locks that boundary, so the frozen
 /// headless anchor cannot enter any of the new planning branches. Compatibility
 /// re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf13e_9a24_6135_e9d3;
+/// The wartime maintenance-card handoff requires `war_economy`, a zero
+/// treasury, and an active major war. `AdvancedAi::legacy()` leaves
+/// `war_economy` false, so it cannot enter the new policy branch. Compatibility
+/// re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc0c4_7aa6_1053_7417;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
