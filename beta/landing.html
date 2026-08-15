@@ -3,803 +3,324 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#09070f">
-<title>CIVVIS · Strategy, simulated</title>
-<meta name="description" content="CIVVIS is an open-source strategy engine: watch AI civilizations rise and fall, play a full single-player game, or command a focused battlefield.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2309070f'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%23d8b66b'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%23d8b66b' stroke-width='1.15'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#171d25">
+<title>CIVVIS.ai</title>
+<meta name="description" content="An open source Civilization VI Simulator for AI strategy development.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23171d25'/%3E%3Ccircle cx='16' cy='16' r='11.5' fill='none' stroke='%2366c0f4'/%3E%3Cpath d='M7 16h18M16 4.5c-4.2 4.1-4.2 18.9 0 23M16 4.5c4.2 4.1 4.2 18.9 0 23' fill='none' stroke='%2366c0f4' stroke-width='1.15'/%3E%3C/svg%3E">
 <style>
   :root {
     color-scheme: dark;
-    --void: #09070f;
-    --ink: #100c19;
-    --surface: #151021;
-    --surface-deep: #0d0a14;
-    --violet: #65409b;
-    --violet-bright: #a97bdd;
-    --violet-shadow: #2d174b;
-    --gold: #d8b66b;
-    --gold-bright: #f4dfac;
-    --ivory: #f3eddf;
-    --muted: #b8afc2;
-    --faint: #81778f;
-    --line: rgba(231, 211, 171, 0.18);
-    --line-strong: rgba(216, 182, 107, 0.54);
-    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-    --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --bg: #171d25;
+    --panel: #1f2733;
+    --panel-raised: #242f3d;
+    --border: #2e3a4a;
+    --border-strong: #46566a;
+    --text: #e2e8ef;
+    --muted: #93a3b5;
+    --faint: #67788b;
+    --accent: #66c0f4;
+    --watch-bg: #274b66;
+    --watch-fg: #a8d8f5;
+    --play-bg: #2f512a;
+    --play-fg: #a3e08a;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
   }
 
   * { box-sizing: border-box; }
-  html { max-width: 100%; background: var(--void); }
+  html { background: var(--bg); }
   body {
     min-width: 320px;
-    max-width: 100%;
-    min-height: 100vh;
     margin: 0;
     overflow-x: hidden;
-    color: var(--ivory);
-    background:
-      radial-gradient(900px 650px at 8% -8%, rgba(94, 49, 147, 0.56), transparent 68%),
-      radial-gradient(720px 560px at 94% 8%, rgba(176, 122, 54, 0.14), transparent 70%),
-      radial-gradient(900px 650px at 50% 110%, rgba(62, 33, 101, 0.36), transparent 72%),
-      var(--void);
-    font: 16px/1.55 var(--sans);
+    color: var(--text);
+    background: var(--bg);
+    font: 15px/1.55 var(--sans);
     -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
   }
-  body::before {
-    content: "";
-    position: fixed;
-    z-index: -1;
-    inset: 0;
-    pointer-events: none;
-    opacity: 0.32;
-    background-image:
-      linear-gradient(30deg, transparent 49.7%, rgba(225, 198, 143, 0.055) 50%, transparent 50.3%),
-      linear-gradient(150deg, transparent 49.7%, rgba(225, 198, 143, 0.035) 50%, transparent 50.3%);
-    background-size: 104px 60px;
-    mask-image: linear-gradient(to bottom, black, transparent 78%);
-  }
-
-  a { color: inherit; }
-  .shell {
-    width: min(1440px, 100%);
-    min-width: 0;
-    margin: 0 auto;
-    padding: 0 clamp(20px, 4vw, 64px);
-  }
+  .shell { width: min(1060px, 100%); margin: 0 auto; padding: 0 clamp(16px, 3vw, 32px); }
+  main { padding-bottom: 48px; }
 
   .site-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 28px;
-    min-height: 112px;
-    border-bottom: 1px solid var(--line);
-    min-width: 0;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding-top: 26px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
   }
-  .wordmark {
-    display: inline-flex;
-    align-items: center;
-    gap: 13px;
-    margin: 0;
-    color: var(--gold-bright);
-    font: 500 clamp(24px, 3vw, 33px)/1 var(--serif);
-    letter-spacing: 0.22em;
-    text-indent: 0.22em;
-    text-decoration: none;
-  }
-  .wordmark::before {
-    content: "";
-    width: 23px;
-    height: 23px;
-    flex: 0 0 23px;
-    border: 1px solid var(--gold);
-    border-radius: 50%;
-    box-shadow: inset 0 0 0 4px rgba(216, 182, 107, 0.12), 0 0 23px rgba(216, 182, 107, 0.18);
-  }
-  .wordmark .suffix {
-    margin-left: -9px;
-    color: var(--violet-bright);
-    font: 600 0.42em/1 var(--sans);
-    letter-spacing: 0.08em;
-    text-indent: 0;
-  }
-
-  .utility-nav {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    min-width: 0;
-  }
+  .site-title { margin: 0; color: #fff; font-size: 26px; font-weight: 700; letter-spacing: 0.04em; }
+  .site-title span { color: var(--accent); font-weight: 600; }
+  .site-tagline { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
+  .utility-nav { display: flex; gap: 10px; }
   .utility-link {
     display: inline-flex;
     align-items: center;
-    gap: 9px;
-    min-height: 42px;
+    gap: 8px;
+    min-height: 38px;
     padding: 0 14px;
-    border: 1px solid rgba(232, 214, 176, 0.2);
-    border-radius: 999px;
-    color: var(--muted);
-    background: rgba(18, 12, 28, 0.48);
-    font-size: 11px;
-    font-weight: 760;
-    letter-spacing: 0.16em;
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    background: var(--panel);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
     text-decoration: none;
-    text-transform: uppercase;
-    transition: border-color 180ms ease, color 180ms ease, background 180ms ease, transform 180ms ease;
   }
-  .utility-link svg { width: 16px; height: 16px; flex: none; }
+  .utility-link svg { width: 15px; height: 15px; flex: none; }
   .utility-link:hover,
-  .utility-link:focus-visible {
-    border-color: var(--gold);
-    color: var(--gold-bright);
-    background: rgba(72, 43, 103, 0.42);
-    transform: translateY(-1px);
-  }
-  .utility-link:focus-visible,
-  .mode-card:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 4px; }
+  .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
+  .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-  .hero {
-    max-width: 1000px;
-    margin: 0 auto;
-    padding: clamp(68px, 10vw, 136px) 0 clamp(48px, 7vw, 84px);
-    text-align: center;
-  }
-  .eyebrow {
+  .intro { max-width: 860px; margin: 18px 0 26px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+  .intro a { color: var(--accent); }
+
+  /* The menu: which game runs down the rows — Tactics above, Civ below —
+     and who is at the keyboard across the columns — Watch (AI simulations)
+     on the left, Play (single player) on the right. */
+  .quadrants { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+  .col-head {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    margin: 0 0 20px;
-    color: var(--gold);
-    font-size: 10px;
-    font-weight: 800;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-  }
-  .eyebrow::before,
-  .eyebrow::after {
-    content: "";
-    width: clamp(26px, 4vw, 48px);
-    height: 1px;
-    background: linear-gradient(90deg, transparent, var(--gold));
-  }
-  .eyebrow::after { background: linear-gradient(90deg, var(--gold), transparent); }
-  .hero h2 {
-    max-width: 850px;
-    margin: 0 auto;
-    color: var(--ivory);
-    font: 500 clamp(42px, 7.4vw, 86px)/0.98 var(--serif);
-    letter-spacing: -0.045em;
-    text-wrap: balance;
-  }
-  .hero h2 em { color: var(--gold-bright); font-style: italic; }
-  .hero-copy {
-    max-width: 700px;
-    margin: 30px auto 0;
-    color: var(--muted);
-    font-size: clamp(16px, 2vw, 19px);
-    line-height: 1.72;
-    text-wrap: pretty;
-  }
-  .hero-copy strong { color: var(--ivory); font-weight: 650; }
-  .hero-rule {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    align-items: baseline;
     gap: 10px;
-    margin-top: 38px;
-    color: var(--faint);
-    font-size: 10px;
-    font-weight: 740;
-    letter-spacing: 0.18em;
+    margin: 0 0 2px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
   }
-  .hero-rule::before,
-  .hero-rule::after {
-    content: "";
-    width: min(84px, 13vw);
-    height: 1px;
-    background: var(--line-strong);
-  }
-  .hero-rule span {
-    width: 6px;
-    height: 6px;
-    transform: rotate(45deg);
-    background: var(--gold);
-    box-shadow: 0 0 14px rgba(216, 182, 107, 0.6);
-  }
-
-  main { padding-bottom: clamp(68px, 10vw, 128px); }
-  .modes {
-    display: grid;
-    gap: clamp(22px, 3vw, 40px);
-    min-width: 0;
-  }
-  .modes-heading {
-    display: flex;
-    align-items: end;
-    justify-content: space-between;
-    gap: 24px;
-    padding: 0 4px;
-  }
-  .modes-heading .eyebrow {
-    justify-content: flex-start;
-    margin: 0 0 12px;
-  }
-  .modes-heading .eyebrow::before { display: none; }
-  .modes-heading h2 {
-    margin: 0;
-    color: var(--ivory);
-    font: 500 clamp(28px, 4vw, 44px)/1.04 var(--serif);
-    letter-spacing: -0.03em;
-  }
-  .modes-heading p:last-child {
-    max-width: 360px;
-    margin: 0;
-    color: var(--faint);
-    font-size: 14px;
-    text-align: right;
-  }
+  .col-head span { color: var(--faint); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: none; }
 
   .mode-card {
-    position: relative;
-    display: grid;
-    grid-template-columns: minmax(0, 1.18fr) minmax(340px, 0.82fr);
-    min-height: 480px;
+    display: flex;
+    align-items: stretch;
     min-width: 0;
-    width: 100%;
     overflow: hidden;
-    border: 1px solid var(--line);
-    border-radius: 20px;
-    background:
-      radial-gradient(620px 450px at 82% 13%, rgba(103, 62, 159, 0.2), transparent 72%),
-      linear-gradient(135deg, #161021, #0d0a15);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--panel);
+    color: var(--text);
     text-decoration: none;
-    isolation: isolate;
-    transition: border-color 230ms ease, box-shadow 230ms ease, transform 230ms ease;
-  }
-  .mode-card::before {
-    content: "";
-    position: absolute;
-    z-index: 3;
-    inset: 11px;
-    border: 1px solid rgba(238, 220, 183, 0.09);
-    border-radius: 12px;
-    pointer-events: none;
-    transition: border-color 230ms ease;
-  }
-  .mode-card::after {
-    content: "";
-    position: absolute;
-    z-index: 0;
-    inset: auto 0 0 auto;
-    width: 42%;
-    height: 72%;
-    background: radial-gradient(circle at 80% 80%, rgba(125, 73, 193, 0.23), transparent 70%);
-    pointer-events: none;
+    transition: background 120ms ease, border-color 120ms ease;
   }
   .mode-card:hover,
-  .mode-card:focus-visible {
-    border-color: var(--line-strong);
-    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(136, 86, 202, 0.08);
-    transform: translateY(-3px);
-  }
-  .mode-card:hover::before,
-  .mode-card:focus-visible::before { border-color: rgba(244, 223, 172, 0.22); }
+  .mode-card:focus-visible { background: var(--panel-raised); border-color: var(--border-strong); }
+  .mode-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .card-thumb { width: 150px; flex: none; object-fit: cover; background: #0d1117; }
+  .card-body { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; padding: 14px 16px; }
+  .card-kicker { color: var(--faint); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .card-title { margin: 0; color: #fff; font-size: 19px; font-weight: 700; }
+  .card-desc { color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .card-verb { align-self: center; flex: none; margin: 0 16px; padding: 8px 18px; border-radius: 3px; font-size: 13px; font-weight: 700; }
+  .verb-watch { background: var(--watch-bg); color: var(--watch-fg); }
+  .verb-play { background: var(--play-bg); color: var(--play-fg); }
+  /* The Tactics card that opened the picker stays marked while it is open. */
+  .mode-card.picking { border-color: var(--accent); }
 
-  .mode-media {
-    position: relative;
-    min-height: 360px;
-    min-width: 0;
-    overflow: hidden;
-    background: #08080b;
-  }
-  .mode-media::before {
-    content: "";
-    position: absolute;
-    z-index: 1;
-    inset: 0;
-    background:
-      linear-gradient(90deg, rgba(8, 6, 14, 0.05) 25%, rgba(11, 7, 18, 0.62) 100%),
-      linear-gradient(0deg, rgba(8, 6, 14, 0.5), transparent 45%);
-    transition: opacity 230ms ease;
-  }
-  .mode-media img {
-    width: 100%;
-    max-width: 100%;
-    height: 100%;
-    min-height: 480px;
-    display: block;
-    object-fit: cover;
-    object-position: center;
-    filter: saturate(0.86) contrast(1.05) brightness(0.9);
-    transition: transform 600ms cubic-bezier(.2,.8,.2,1), filter 300ms ease;
-  }
-  .mode-card:hover .mode-media img,
-  .mode-card:focus-visible .mode-media img {
-    transform: scale(1.045);
-    filter: saturate(1) contrast(1.06) brightness(0.98);
-  }
-  .media-kicker,
-  .mode-index {
-    position: absolute;
-    z-index: 2;
-    color: var(--gold-bright);
-    font-size: 9px;
-    font-weight: 800;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-  }
-  .media-kicker { top: 30px; left: 32px; }
-  .mode-index { right: 32px; bottom: 27px; color: rgba(244, 223, 172, 0.78); font: 500 34px/1 var(--serif); letter-spacing: 0; }
-
-  .mode-copy {
-    position: relative;
-    z-index: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: center;
-    padding: clamp(48px, 5.5vw, 84px) clamp(34px, 5vw, 78px);
-  }
-  .mode-label {
-    margin: 0 0 17px;
-    color: var(--gold);
-    font-size: 10px;
-    font-weight: 820;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-  }
-  .mode-copy h3 {
-    margin: 0;
-    color: var(--ivory);
-    font: 500 clamp(43px, 5vw, 65px)/0.93 var(--serif);
-    letter-spacing: -0.055em;
-  }
-  .mode-copy h3 em { color: var(--violet-bright); font-style: italic; }
-  .mode-copy > p:not(.mode-label) {
-    max-width: 440px;
-    margin: 24px 0 0;
-    color: var(--muted);
-    font-size: 15px;
-    line-height: 1.72;
-  }
-  .mode-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin: 26px 0 0;
-    padding: 0;
-    list-style: none;
-  }
-  .mode-list li {
-    padding: 6px 9px;
-    border: 1px solid rgba(232, 214, 176, 0.17);
-    border-radius: 999px;
-    color: #c4b9cd;
-    font-size: 9px;
-    font-weight: 760;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-  }
-  .mode-action {
-    display: inline-flex;
-    align-items: center;
-    gap: 12px;
-    margin-top: 31px;
-    color: var(--gold-bright);
-    font-size: 11px;
-    font-weight: 820;
-    letter-spacing: 0.17em;
-    text-transform: uppercase;
-  }
-  .mode-action::after {
-    content: "→";
-    display: grid;
-    width: 25px;
-    height: 25px;
-    place-items: center;
-    border: 1px solid rgba(216, 182, 107, 0.45);
-    border-radius: 50%;
-    font-size: 15px;
-    font-weight: 400;
-    letter-spacing: 0;
-    transition: transform 200ms ease, background 200ms ease;
-  }
-  .mode-card:hover .mode-action::after,
-  .mode-card:focus-visible .mode-action::after {
-    transform: translateX(4px);
-    background: rgba(216, 182, 107, 0.15);
-  }
-
-  /* Four ways in, one per quadrant: who is at the keyboard down the rows —
-     play above, watch below — and which game across the columns — Civ on
-     the left, Tactics on the right. Each quadrant is the mode card stacked:
-     its picture on top and its copy beneath. */
-  .quadrants {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: clamp(18px, 2.4vw, 32px);
-    min-width: 0;
-  }
-  .mode-card.quad { grid-template-columns: minmax(0, 1fr); min-height: 0; }
-  .mode-card.quad::after { display: none; }
-  .mode-card.quad .mode-media { min-height: 0; }
-  .mode-card.quad .mode-media::before {
-    background: linear-gradient(0deg, rgba(8, 6, 14, 0.66), transparent 55%);
-  }
-  .mode-card.quad .mode-media img { height: clamp(200px, 22vw, 290px); min-height: 0; }
-  .mode-card.quad .mode-copy {
-    min-height: 0;
-    padding: clamp(28px, 3.2vw, 44px) clamp(26px, 3.4vw, 46px) clamp(30px, 3.4vw, 46px);
-  }
-  .mode-card.quad .mode-copy h3 { font-size: clamp(36px, 3.6vw, 50px); }
-  .mode-card.quad .mode-copy > p:not(.mode-label) { margin-top: 16px; font-size: 14.5px; }
-  .mode-card.quad .mode-list { margin-top: 18px; }
-  .mode-card.quad .mode-action { margin-top: 24px; }
-  /* The Tactics quadrant that opened the picker stays lit while it is open,
-     so the page reads as one choice made and one still to make. */
-  .mode-card.quad.picking,
-  .mode-card.quad.picking:hover {
-    border-color: var(--gold);
-    box-shadow: 0 0 0 1px var(--gold), 0 24px 70px rgba(0, 0, 0, 0.42);
-  }
-
-  /* The battle picker: the historical scenario library, below the four and
-     opened by either Tactics quadrant. Custom is one card; the three lenses
-     browse the same battles by era, by commander and by terrain; every card
-     is a link into the simulator carrying the battle and who is playing it. */
+  /* The battle picker: the historical scenario library, opened by either
+     Tactics card. Custom is one card; the three lenses browse the same
+     battles by era, by commander and by terrain; every card is a link into
+     the simulator carrying the battle and who is playing it. */
   .battle-picker {
     display: grid;
-    gap: 20px;
+    gap: 14px;
     min-width: 0;
-    padding: clamp(24px, 3vw, 40px);
-    border: 1px solid var(--line-strong);
-    border-radius: 20px;
-    background:
-      radial-gradient(620px 450px at 90% 0%, rgba(103, 62, 159, 0.2), transparent 72%),
-      linear-gradient(135deg, #161021, #0d0a15);
+    margin-top: 22px;
+    padding: 18px;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--panel);
   }
   .battle-picker[hidden] { display: none; }
   .battle-picker:focus { outline: none; }
-  .picker-heading {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 20px;
-    flex-wrap: wrap;
-  }
-  .picker-heading .eyebrow { justify-content: flex-start; margin: 0 0 10px; }
-  .picker-heading .eyebrow::before { display: none; }
-  .picker-heading h3 {
-    margin: 0;
-    color: var(--ivory);
-    font: 500 clamp(28px, 3.4vw, 40px)/1.05 var(--serif);
-    letter-spacing: -0.03em;
-  }
-  .picker-heading p:not(.eyebrow) {
-    max-width: 620px;
-    margin: 12px 0 0;
+  .picker-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .eyebrow { margin: 0 0 4px; color: var(--faint); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .picker-heading h3 { margin: 0; color: #fff; font-size: 20px; }
+  .picker-heading p:not(.eyebrow) { max-width: 640px; margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+  .picker-back,
+  .picker-lens {
+    min-height: 34px;
+    padding: 0 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    background: var(--panel-raised);
     color: var(--muted);
-    font-size: 15px;
-    line-height: 1.65;
-  }
-  .picker-back {
-    flex: none;
-    min-height: 42px;
-    padding: 0 16px;
-    border: 1px solid rgba(232, 214, 176, 0.2);
-    border-radius: 999px;
-    color: var(--muted);
-    background: rgba(18, 12, 28, 0.48);
     cursor: pointer;
-    font: 760 11px/1 var(--sans);
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
+    font: 600 12.5px/1 var(--sans);
   }
+  .picker-back { flex: none; color: var(--text); }
   .picker-back:hover,
-  .picker-back:focus-visible,
-  .picker-lens:hover,
-  .picker-lens[aria-selected="true"] {
-    border-color: var(--gold);
-    color: var(--gold-bright);
-    background: rgba(72, 43, 103, 0.42);
-  }
+  .picker-lens:hover { border-color: var(--accent); color: #fff; }
+  .picker-lens[aria-selected="true"] { border-color: var(--accent); background: #2a3f52; color: #fff; }
   .picker-back:focus-visible,
   .picker-lens:focus-visible,
-  .battle-card:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 3px; }
+  .battle-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .picker-lenses { display: flex; flex-wrap: wrap; gap: 8px; }
-  .picker-lens {
-    min-height: 38px;
-    padding: 0 14px;
-    border: 1px solid rgba(232, 214, 176, 0.2);
-    border-radius: 999px;
-    color: var(--muted);
-    background: rgba(18, 12, 28, 0.48);
-    cursor: pointer;
-    font: 760 11px/1 var(--sans);
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
-  }
-  .picker-groups { display: grid; gap: 10px; min-width: 0; }
-  .picker-group {
-    overflow: hidden;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    background: rgba(8, 6, 14, 0.4);
-  }
+  .picker-groups { display: grid; gap: 8px; min-width: 0; }
+  .picker-group { overflow: hidden; border: 1px solid var(--border); border-radius: 3px; background: var(--bg); }
   .picker-group > summary {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 13px 16px;
-    color: var(--ivory);
+    padding: 10px 12px;
+    color: var(--text);
     cursor: pointer;
     list-style: none;
-    font: 500 17px/1.3 var(--serif);
+    font-size: 14px;
+    font-weight: 600;
   }
   .picker-group > summary::-webkit-details-marker { display: none; }
-  .picker-group > summary::after { content: "+"; color: var(--gold); font-size: 19px; line-height: 1; }
-  .picker-group[open] > summary { border-bottom: 1px solid var(--line); }
-  .picker-group[open] > summary::after { content: "−"; }
-  .picker-group-count {
-    color: var(--faint);
-    font: 700 10px/1 var(--sans);
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-  }
-  .picker-battles {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-    gap: 10px;
-    padding: 12px;
-  }
+  .picker-group > summary::after { content: "+"; color: var(--faint); font-size: 16px; line-height: 1; }
+  .picker-group[open] > summary { border-bottom: 1px solid var(--border); }
+  .picker-group[open] > summary::after { content: "\2212"; }
+  .picker-group-count { color: var(--faint); font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+  .picker-battles { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; padding: 10px; }
   .battle-card {
     display: block;
     min-width: 0;
-    padding: 15px 17px;
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    color: var(--ivory);
-    background: rgba(21, 16, 33, 0.8);
+    padding: 11px 13px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--panel);
+    color: var(--text);
     text-decoration: none;
-    transition: border-color 180ms ease, background 180ms ease, transform 180ms ease;
   }
   .battle-card:hover,
-  .battle-card:focus-visible {
-    border-color: var(--gold);
-    background: rgba(72, 43, 103, 0.32);
-    transform: translateY(-2px);
-  }
-  .battle-card.custom { border-color: var(--line-strong); }
-  .battle-card-name { display: block; font: 500 21px/1.1 var(--serif); letter-spacing: -0.02em; }
+  .battle-card:focus-visible { background: var(--panel-raised); border-color: var(--accent); }
+  .battle-card.custom { border-color: var(--border-strong); }
+  .battle-card-name { display: block; color: #fff; font-size: 15.5px; font-weight: 700; }
   .battle-card-meta,
-  .battle-card-detail { display: block; margin-top: 5px; color: var(--muted); font-size: 13px; line-height: 1.45; }
-  .battle-card-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+  .battle-card-detail { display: block; margin-top: 3px; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+  .battle-card-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
   .battle-badge {
     display: inline-block;
-    padding: 3px 7px;
-    border: 1px solid rgba(232, 214, 176, 0.2);
-    border-radius: 999px;
-    color: var(--gold);
-    font-size: 9px;
-    font-weight: 760;
-    letter-spacing: 0.1em;
+    padding: 2px 7px;
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    color: var(--muted);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
   }
-  .picker-empty { padding: 14px 16px; color: var(--faint); font-size: 13px; line-height: 1.5; }
+  .picker-empty { padding: 12px; color: var(--faint); font-size: 13px; line-height: 1.5; }
 
-  footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 18px;
-    min-height: 88px;
-    border-top: 1px solid var(--line);
-    color: var(--faint);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
-  }
-  footer b { color: var(--gold); font-weight: 800; }
-
-  @media (max-width: 860px) {
-    .modes-heading { display: block; }
-    .modes-heading p:last-child { margin-top: 16px; text-align: left; }
+  @media (max-width: 760px) {
     .quadrants { grid-template-columns: 1fr; }
-    .mode-card { grid-template-columns: 1fr; }
-    .mode-media { min-height: 290px; }
-    .mode-media img { min-height: 340px; }
-    .mode-copy { min-height: 350px; }
-  }
-  @media (max-width: 600px) {
-    .shell { padding: 0 18px; }
-    .site-header {
-      min-height: 94px;
-      gap: 16px;
-    }
-    .wordmark { gap: 8px; font-size: 23px; }
-    .wordmark::before { width: 18px; height: 18px; flex-basis: 18px; }
-    .wordmark .suffix { display: none; }
-    .utility-link { gap: 6px; min-height: 38px; padding: 0 10px; font-size: 9px; letter-spacing: 0.12em; }
-    .utility-link svg { width: 14px; height: 14px; }
-    .hero { padding-top: 68px; padding-bottom: 46px; }
-    .hero h2 { font-size: clamp(39px, 13vw, 56px); }
-    .hero-copy { margin-top: 24px; font-size: 16px; }
-    .modes-heading h2 { font-size: 31px; }
-    .mode-card { min-height: 0; border-radius: 16px; }
-    .mode-card::before { inset: 8px; border-radius: 10px; }
-    .mode-media { min-height: 235px; }
-    .mode-media img { min-height: 255px; }
-    .mode-copy { min-height: 0; padding: 42px 30px 46px; }
-    .mode-copy h3 { font-size: 51px; }
-    .media-kicker { top: 23px; left: 25px; }
-    .mode-index { right: 25px; bottom: 22px; font-size: 28px; }
+    .col-head { display: none; }
+    .card-thumb { width: 104px; }
+    .card-body { padding: 12px; }
+    .card-verb { margin: 0 12px; padding: 7px 14px; }
     .picker-battles { grid-template-columns: 1fr; }
-    footer { display: block; padding: 24px 0; line-height: 1.7; }
-    footer span { display: block; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
   }
 </style>
 </head>
 <body>
   <header class="shell site-header">
-    <div class="wordmark" aria-label="CIVVIS">CIVVIS<span class="suffix">.ai</span></div>
+    <div>
+      <h1 class="site-title">CIVVIS<span>.ai</span></h1>
+      <p class="site-tagline">An open source Civilization VI Simulator for AI strategy development</p>
+    </div>
     <nav class="utility-nav" aria-label="CIVVIS links">
-      <a class="utility-link" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
-        Watch
-      </a>
       <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
-        Code
+        GitHub
+      </a>
+      <a class="utility-link" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
+        Watch Demos
       </a>
     </nav>
   </header>
 
   <main class="shell">
-    <section class="hero" aria-labelledby="hero-title">
-      <p class="eyebrow">Open-source strategy simulation</p>
-      <h2 id="hero-title">History, rendered <em>one decision</em> at a time.</h2>
-      <p class="hero-copy">
-        <strong>Everything is built on the open-source CIVVIS.ai engine.</strong>
-        Watch AI simulations, or play in single-player mode. Preset historical
-        battles or build your own custom maps. Full Civ experience or isolated
-        battlefield tactics.
-      </p>
-      <div class="hero-rule" aria-hidden="true"><span></span></div>
+    <p class="intro">
+      CIVVIS is an open source simulator for the 4x turn-based strategy game
+      Sid Meier&#8217;s Civilization VI. Everything below is a preset
+      configuration of settings for the simulator, but you can further change
+      settings how you like or
+      <a href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">clone the code</a>
+      and add your own.
+    </p>
+
+    <!-- Which game runs down the rows — Tactics above, Civ below — and who
+         is at the keyboard across the columns — Watch (AI simulations) on
+         the left, Play (single player) on the right. The Civ cards open the
+         simulator directly; the Tactics cards open the battle picker below
+         first, and only then hand over with the battle chosen. Without
+         scripting each Tactics card still opens the site's stock Tactics
+         world. -->
+    <section class="quadrants" aria-label="Game menu">
+      <h2 class="col-head">Watch <span>AI simulations</span></h2>
+      <h2 class="col-head">Play <span>Single player</span></h2>
+
+      <a class="mode-card" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" aria-labelledby="watch-tactics-title">
+        <img class="card-thumb" src="/home/assets/tactics-frontline.jpg?v=7dc299716a556b25bd345534b2112a96112eea725ea91a4105494904156bcb8a" alt="A CIVVIS battlefield crowded with opposing units, cities, and front lines in an active war." fetchpriority="high">
+        <span class="card-body">
+          <span class="card-kicker">AI simulation</span>
+          <h3 class="card-title" id="watch-tactics-title">Civ Tactics</h3>
+          <span class="card-desc">Two AI commanders fight a single battle — a historical scenario with its real order of battle, or a custom field with two even armies.</span>
+        </span>
+        <span class="card-verb verb-watch">Watch</span>
+      </a>
+
+      <a class="mode-card" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" aria-labelledby="play-tactics-title">
+        <img class="card-thumb" src="/home/assets/tactics-frontline.jpg?v=7dc299716a556b25bd345534b2112a96112eea725ea91a4105494904156bcb8a" alt="A CIVVIS battlefield crowded with opposing units, cities, and front lines in an active war.">
+        <span class="card-body">
+          <span class="card-kicker">Single player</span>
+          <h3 class="card-title" id="play-tactics-title">Civ Tactics</h3>
+          <span class="card-desc">Command one side of a battle against the AI — a historical scenario, or a custom field with two even armies.</span>
+        </span>
+        <span class="card-verb verb-play">Play</span>
+      </a>
+
+      <a class="mode-card" href="/" aria-labelledby="watch-civ-title">
+        <img class="card-thumb" src="/home/assets/civ-world.jpg?v=b09c9d1a799d298354c483c7507d7b23fb757568f601872a6463d009076de92b" alt="A CIVVIS world map showing two colorful continents of competing civilizations.">
+        <span class="card-body">
+          <span class="card-kicker">AI simulation</span>
+          <h3 class="card-title" id="watch-civ-title">Civ VI</h3>
+          <span class="card-desc">A full game played end to end by AI civilizations — a fresh world every visit, every victory lane open.</span>
+        </span>
+        <span class="card-verb verb-watch">Watch</span>
+      </a>
+
+      <a class="mode-card" href="/?mode=play" aria-labelledby="play-civ-title">
+        <img class="card-thumb" src="/home/assets/civ-world.jpg?v=b09c9d1a799d298354c483c7507d7b23fb757568f601872a6463d009076de92b" alt="A CIVVIS world map showing two colorful continents of competing civilizations.">
+        <span class="card-body">
+          <span class="card-kicker">Single player</span>
+          <h3 class="card-title" id="play-civ-title">Civ VI</h3>
+          <span class="card-desc">A full game — take one civilization across the whole sweep of history against AI rivals.</span>
+        </span>
+        <span class="card-verb verb-play">Play</span>
+      </a>
     </section>
 
-    <section class="modes" aria-labelledby="modes-title">
-      <div class="modes-heading">
+    <!-- The battle picker: the historical scenario library, opened by either
+         Tactics card. Custom is one card — the site's stock Tactics world —
+         and the three lenses browse the same battles by era, by commander
+         and by terrain. Every card is a link into the simulator carrying the
+         battle and who is playing it. -->
+    <section class="battle-picker" id="battle-picker" hidden aria-labelledby="battle-picker-title" tabindex="-1">
+      <div class="picker-heading">
         <div>
-          <p class="eyebrow">Choose your command</p>
-          <h2 id="modes-title">One engine. Four ways in.</h2>
+          <p class="eyebrow" id="battle-picker-mode">Watch Tactics · AI simulation</p>
+          <h3 id="battle-picker-title">Choose the battle</h3>
+          <p id="battle-picker-copy">Two AI commanders fight it out while you watch. A named battle opens on its own ground with its historical forces, era and clock; Custom opens a 20×20 field with two even armies, and every other setting is yours in the simulator&#8217;s Game setup.</p>
         </div>
-        <p>Play a seat yourself, or watch the AIs — on a whole world, or on one battlefield.</p>
+        <button class="picker-back" type="button" id="battle-picker-back">← Back</button>
       </div>
-
-      <!-- Who is at the keyboard runs down the rows — play above, watch
-           below — and which game runs across the columns — Civ on the left,
-           Tactics on the right. The Civ quadrants open the simulator
-           directly; the Tactics quadrants open the battle picker below first,
-           and only then hand over with the battle chosen. Without scripting
-           each Tactics quadrant still opens the site's stock Tactics world. -->
-      <div class="quadrants">
-        <a class="mode-card quad game-civ" href="/?mode=play" aria-labelledby="play-civ-title">
-          <div class="mode-media">
-            <img src="/home/assets/civ-world.jpg?v=b09c9d1a799d298354c483c7507d7b23fb757568f601872a6463d009076de92b" alt="A CIVVIS world map showing two colorful continents of competing civilizations." fetchpriority="high">
-            <span class="media-kicker">Single player</span>
-            <span class="mode-index">I</span>
-          </div>
-          <div class="mode-copy">
-            <p class="mode-label">Civ · the complete game</p>
-            <h3 id="play-civ-title">Play Civ<em>.</em></h3>
-            <p>Take one seat at the table and guide a civilization across the full sweep of history — a leader, a world, and every rival empire played by the engine.</p>
-            <ul class="mode-list" aria-label="Play Civ features">
-              <li>Your seat</li>
-              <li>AI rivals</li>
-              <li>Custom worlds</li>
-            </ul>
-            <span class="mode-action">Take a seat</span>
-          </div>
-        </a>
-
-        <a class="mode-card quad game-tactics" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" aria-labelledby="play-tactics-title">
-          <div class="mode-media">
-            <img src="/home/assets/tactics-frontline.jpg?v=7dc299716a556b25bd345534b2112a96112eea725ea91a4105494904156bcb8a" alt="A CIVVIS battlefield crowded with opposing units, cities, and front lines in an active war." loading="lazy">
-            <span class="media-kicker">Single player</span>
-            <span class="mode-index">II</span>
-          </div>
-          <div class="mode-copy">
-            <p class="mode-label">Tactics · the decisive moment</p>
-            <h3 id="play-tactics-title">Play Tactics<em>.</em></h3>
-            <p>Command one side of a battle. Refight a named historical engagement with its real order of battle, or take a custom field with two even armies.</p>
-            <ul class="mode-list" aria-label="Play Tactics features">
-              <li>Historical battles</li>
-              <li>Custom fields</li>
-              <li>Battlefield AI opposite</li>
-            </ul>
-            <span class="mode-action">Choose your battle</span>
-          </div>
-        </a>
-
-        <a class="mode-card quad game-civ" href="/" aria-labelledby="watch-civ-title">
-          <div class="mode-media">
-            <img src="/home/assets/civ-world.jpg?v=b09c9d1a799d298354c483c7507d7b23fb757568f601872a6463d009076de92b" alt="A CIVVIS world map showing two colorful continents of competing civilizations." loading="lazy">
-            <span class="media-kicker">AI simulation</span>
-            <span class="mode-index">III</span>
-          </div>
-          <div class="mode-copy">
-            <p class="mode-label">Civ · the complete game</p>
-            <h3 id="watch-civ-title">Watch Civ<em>.</em></h3>
-            <p>Watch autonomous empires expand, scheme, and compete for victory on a fresh world — the standing exhibition, different every visit.</p>
-            <ul class="mode-list" aria-label="Watch Civ features">
-              <li>AI empires</li>
-              <li>Fresh world every visit</li>
-              <li>Every victory lane</li>
-            </ul>
-            <span class="mode-action">Watch the world</span>
-          </div>
-        </a>
-
-        <a class="mode-card quad game-tactics" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" aria-labelledby="watch-tactics-title">
-          <div class="mode-media">
-            <img src="/home/assets/tactics-frontline.jpg?v=7dc299716a556b25bd345534b2112a96112eea725ea91a4105494904156bcb8a" alt="A CIVVIS battlefield crowded with opposing units, cities, and front lines in an active war." loading="lazy">
-            <span class="media-kicker">AI simulation</span>
-            <span class="mode-index">IV</span>
-          </div>
-          <div class="mode-copy">
-            <p class="mode-label">Tactics · the decisive moment</p>
-            <h3 id="watch-tactics-title">Watch Tactics<em>.</em></h3>
-            <p>Watch two AI commanders fight it out — a named battle on its own ground, or a custom field with two even armies.</p>
-            <ul class="mode-list" aria-label="Watch Tactics features">
-              <li>Historical battles</li>
-              <li>Custom fields</li>
-              <li>Battlefield AI</li>
-            </ul>
-            <span class="mode-action">Choose the battle</span>
-          </div>
-        </a>
+      <div class="picker-lenses" id="battle-lenses" role="tablist" aria-label="Battle catalog view">
+        <button class="picker-lens" type="button" role="tab" data-lens="custom" aria-selected="true">Custom</button>
+        <button class="picker-lens" type="button" role="tab" data-lens="era" aria-selected="false">Era-based</button>
+        <button class="picker-lens" type="button" role="tab" data-lens="person" aria-selected="false">Person-based</button>
+        <button class="picker-lens" type="button" role="tab" data-lens="terrain" aria-selected="false">Terrain-based</button>
       </div>
-
-      <!-- The battle picker: the historical scenario library, opened by
-           either Tactics quadrant. Custom is one card — the site's stock
-           Tactics world — and the three lenses browse the same battles by
-           era, by commander and by terrain. Every card is a link into the
-           simulator carrying the battle and who is playing it. -->
-      <section class="battle-picker" id="battle-picker" hidden aria-labelledby="battle-picker-title" tabindex="-1">
-        <div class="picker-heading">
-          <div>
-            <p class="eyebrow" id="battle-picker-mode">Watch Tactics · AI simulation</p>
-            <h3 id="battle-picker-title">Choose the battle</h3>
-            <p id="battle-picker-copy">Two AI commanders fight it out while you watch. A named battle opens on its own ground with its historical forces, era and clock; Custom opens a 20×20 field with two even armies, and every other setting is yours in the simulator&#8217;s Game setup.</p>
-          </div>
-          <button class="picker-back" type="button" id="battle-picker-back">← Back to the four</button>
-        </div>
-        <div class="picker-lenses" id="battle-lenses" role="tablist" aria-label="Battle catalog view">
-          <button class="picker-lens" type="button" role="tab" data-lens="custom" aria-selected="true">Custom</button>
-          <button class="picker-lens" type="button" role="tab" data-lens="era" aria-selected="false">Era-based</button>
-          <button class="picker-lens" type="button" role="tab" data-lens="person" aria-selected="false">Person-based</button>
-          <button class="picker-lens" type="button" role="tab" data-lens="terrain" aria-selected="false">Terrain-based</button>
-        </div>
-        <div class="picker-groups" id="battle-groups"></div>
-      </section>
+      <div class="picker-groups" id="battle-groups"></div>
     </section>
   </main>
-
-  <footer class="shell">
-    <span><b>CIVVIS</b> · Open-source strategy simulation</span>
-    <span>Built for the long game</span>
-  </footer>
 
   <!-- The battle catalog, one row per battle, copied from the engine's
        `historical_scenarios::all()` by tools/landing_battles.py and pinned to
