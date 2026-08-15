@@ -105,6 +105,99 @@ function askForIt(wrong) {
   });
 }
 
+/// File a visitor's report as a GitHub issue.
+///
+/// The home page's "Report Issue / Suggest Feature" dialog posts here for the
+/// visitors who chose *not* to use a GitHub account — the site itself opens
+/// the issue on their behalf, under a token the Pages environment names as
+/// `GITHUB_ISSUE_TOKEN`. Without that token the answer is an honest 503 and
+/// the dialog falls back to offering the prefilled GitHub form, so an
+/// unconfigured deployment degrades to "bring your own account" rather than
+/// swallowing reports.
+///
+/// The issue carries a `from-site` label (plus `bug` or `enhancement`), so
+/// triage is one filter, and the body states the reporter's chosen name, the
+/// deployed build and the browser — the context a bug report from a stranger
+/// otherwise never has.
+async function fileReport(request, env, url) {
+  const token = env.GITHUB_ISSUE_TOKEN;
+  const answer = (status, payload) =>
+    new Response(JSON.stringify(payload), {
+      status,
+      headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    });
+  if (!token) return answer(503, { error: "reporting is not configured" });
+
+  // A report is a couple of paragraphs. Refuse anything that is not, before
+  // parsing it, and cap every field again after: limits here are the whole
+  // spam defence besides the honeypot, so they are deliberately tight.
+  const raw = await request.text();
+  if (raw.length > 20_000) return answer(413, { error: "too long" });
+  let report;
+  try {
+    report = JSON.parse(raw);
+  } catch {
+    return answer(400, { error: "not JSON" });
+  }
+  // The dialog ships an off-screen "website" field no person ever fills.
+  // A filled one is a bot, told "thanks" and given nothing.
+  if (report.website) return answer(201, { url: "" });
+  const kind = report.kind === "feature" ? "feature" : "issue";
+  const title = String(report.title || "").trim();
+  const details = String(report.details || "").trim();
+  // The name is rendered as an identity claim in the issue body, so it gets
+  // word characters only — a "pen name" must not smuggle markdown, links or
+  // an @-mention into bold type.
+  const reporter =
+    String(report.reporter || "").replace(/[^\w. -]/g, "").trim().slice(0, 60) || "anonymous";
+  if (title.length < 3 || title.length > 140) return answer(400, { error: "title must be 3–140 characters" });
+  if (details.length > 5000) return answer(400, { error: "details must stay under 5000 characters" });
+
+  // One report per address per minute, kept in the edge cache. Best-effort —
+  // the cache is per-colo and may evict early — but it prices out the only
+  // cheap abuse: a loop hammering this endpoint from one machine.
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const cooldown = new Request(`https://civvis.ai/__report-cooldown/${ip}`);
+  const cache = typeof caches !== "undefined" ? caches.default : null;
+  if (cache) {
+    if (await cache.match(cooldown)) return answer(429, { error: "one report a minute, please" });
+    await cache.put(cooldown, new Response("held", { headers: { "Cache-Control": "max-age=60" } }));
+  }
+
+  // Stamp the report with the build it was filed against — the bundle's own
+  // build.json says which commit is live, and a bug without a commit is a
+  // guessing game. Absence (old bundle, test harness) is fine: unstamped.
+  let build = "";
+  try {
+    const shipped = await env.ASSETS.fetch(new Request(new URL("/build.json", url)));
+    if (shipped.ok) build = (await shipped.json()).short || "";
+  } catch {}
+
+  const body =
+    `${details || "(no details given)"}\n\n---\n` +
+    `Reported from civvis.ai by **${reporter}** via the site's report dialog (no GitHub account).\n` +
+    (build ? `Build: \`${build}\`\n` : "") +
+    `Browser: ${request.headers.get("User-Agent") || "unknown"}`;
+  const filed = await fetch("https://api.github.com/repos/MartinHalvorson/CIVVIS/issues", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
+      // GitHub refuses any request that does not say who is asking.
+      "User-Agent": "civvis.ai report dialog",
+    },
+    body: JSON.stringify({
+      title,
+      body,
+      labels: ["from-site", kind === "feature" ? "enhancement" : "bug"],
+    }),
+  });
+  if (!filed.ok) return answer(502, { error: "GitHub would not take the issue" });
+  const issue = await filed.json();
+  return answer(201, { url: issue.html_url || "", number: issue.number });
+}
+
 /// Serve a file, with the headers a `_headers` file would have carried — that
 /// file is ignored once a `_worker.js` exists, so the rules live here instead.
 async function asset(request, env, gated) {
@@ -160,6 +253,17 @@ export default {
     // directory indexes on its own. (`/rust` and `/wasm`, the old build
     // channels, were dropped in favour of those real addresses; they fall
     // through to the 404 like any other retired URL.)
+
+    // The home page's report dialog files GitHub issues through here.
+    if (url.pathname === "/report") {
+      if (request.method !== "POST") {
+        return new Response("POST only", {
+          status: 405,
+          headers: { Allow: "POST", "Cache-Control": "no-store" },
+        });
+      }
+      return fileReport(request, env, url);
+    }
 
     // /beta — the lane's name for its first day — is scrapped. Answered with
     // an explicit 404 rather than left to fall through, because falling

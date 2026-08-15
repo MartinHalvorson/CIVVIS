@@ -105,9 +105,35 @@ const env = {
   },
 };
 
-window.hit = async ({ path, method = "GET", body, cookie, env: overrides }) => {
+// The report endpoint's outbound call to api.github.com, intercepted: the
+// test records what would have been filed and answers with a scripted reply,
+// so no real issue is ever opened by a test run.
+window.githubCalls = [];
+window.githubReply = {
+  status: 201,
+  body: { html_url: "https://github.com/MartinHalvorson/CIVVIS/issues/999", number: 999 },
+};
+const realFetch = globalThis.fetch.bind(globalThis);
+globalThis.fetch = async (resource, init) => {
+  const target = typeof resource === "string" ? resource : resource.url;
+  if (target.startsWith("https://api.github.com/")) {
+    const headers = (init && init.headers) || {};
+    window.githubCalls.push({
+      url: target,
+      method: (init && init.method) || "GET",
+      auth: headers.Authorization || "",
+      agent: headers["User-Agent"] || "",
+      payload: JSON.parse((init && init.body) || "{}"),
+    });
+    return new Response(JSON.stringify(window.githubReply.body), { status: window.githubReply.status });
+  }
+  return realFetch(resource, init);
+};
+
+window.hit = async ({ path, method = "GET", body, json, cookie, env: overrides }) => {
   const init = { method, redirect: "manual" };
   if (body) init.body = new URLSearchParams(body);
+  if (json !== undefined) init.body = JSON.stringify(json);
   if (cookie) init.headers = { Cookie: cookie };
   const response = await worker.fetch(
     new Request("https://civvis.ai" + path, init),
@@ -351,6 +377,81 @@ def main(argv: list[str] | None = None) -> int:
                       "max-age=31536000" in (versioned["cacheControl"] or "")
                       and "immutable" in (versioned["cacheControl"] or ""),
                       f"got {versioned['cacheControl']!r}")
+
+        # The home page's report dialog files GitHub issues through POST
+        # /report. The GitHub call itself is stubbed in the harness, so these
+        # checks see exactly what would have been filed — and no test run can
+        # open a real issue.
+        print("==> the report dialog can file a GitHub issue")
+        tokened = {"GITHUB_ISSUE_TOKEN": "a-fine-grained-token"}
+        report = {
+            "kind": "feature",
+            "title": "A sharper minimap",
+            "details": "The coastlines smear at small sizes.",
+            "reporter": "swift-settler-47",
+        }
+        unconfigured = hit(path="/report", method="POST", json=report)
+        check(problems, "no token means an honest 503",
+              unconfigured["status"] == 503 and "not configured" in unconfigured["body"],
+              f"got {unconfigured['status']} {unconfigured['body'][:60]!r}")
+        check(problems, "an unconfigured endpoint calls nobody",
+              not dev.evaluate("githubCalls.length"))
+
+        wrong_verb = hit(path="/report", env=tokened)
+        check(problems, "/report takes POST only", wrong_verb["status"] == 405,
+              f"got {wrong_verb['status']}")
+
+        filed = hit(path="/report", method="POST", json=report, env=tokened)
+        check(problems, "a report is filed as an issue",
+              filed["status"] == 201 and "issues/999" in filed["body"],
+              f"got {filed['status']} {filed['body'][:80]!r}")
+        call = dev.evaluate("githubCalls[0]") or {}
+        payload = call.get("payload") or {}
+        check(problems, "the issue lands on the CIVVIS repository",
+              call.get("url") == "https://api.github.com/repos/MartinHalvorson/CIVVIS/issues"
+              and call.get("method") == "POST",
+              f"got {call.get('method')!r} {call.get('url')!r}")
+        check(problems, "the token rides in the Authorization header",
+              call.get("auth") == "Bearer a-fine-grained-token" and call.get("agent"),
+              f"got {call.get('auth')!r} agent {call.get('agent')!r}")
+        check(problems, "a feature request is labelled for triage",
+              payload.get("labels") == ["from-site", "enhancement"],
+              f"got {payload.get('labels')!r}")
+        check(problems, "the issue signs the chosen pen name",
+              payload.get("title") == "A sharper minimap"
+              and "swift-settler-47" in (payload.get("body") or ""),
+              f"got {payload.get('body')!r}")
+
+        bugged = hit(path="/report", method="POST",
+                     json={**report, "kind": "issue", "reporter": ""}, env=tokened)
+        labels = (dev.evaluate("githubCalls[1]") or {}).get("payload", {}).get("labels")
+        check(problems, "an issue report is labelled a bug",
+              bugged["status"] == 201 and labels == ["from-site", "bug"],
+              f"got {bugged['status']} {labels!r}")
+        check(problems, "no reporter signs as anonymous",
+              "anonymous" in (dev.evaluate("githubCalls[1]") or {}).get("payload", {}).get("body", ""))
+
+        # The honeypot: the dialog ships an off-screen field no person fills.
+        # A filled one is a bot, thanked and given nothing.
+        honeyed = hit(path="/report", method="POST",
+                      json={**report, "website": "https://spam.example"}, env=tokened)
+        check(problems, "a filled honeypot files nothing",
+              honeyed["status"] == 201 and dev.evaluate("githubCalls.length") == 2,
+              f"got {honeyed['status']} after {dev.evaluate('githubCalls.length')} calls")
+
+        untitled = hit(path="/report", method="POST",
+                       json={**report, "title": "x"}, env=tokened)
+        check(problems, "a one-letter title is refused", untitled["status"] == 400,
+              f"got {untitled['status']}")
+        unparsed = hit(path="/report", method="POST", body={"not": "json"}, env=tokened)
+        check(problems, "a non-JSON body is refused", unparsed["status"] == 400,
+              f"got {unparsed['status']}")
+
+        dev.evaluate("githubReply.status = 401")
+        refused = hit(path="/report", method="POST", json=report, env=tokened)
+        check(problems, "GitHub refusing the token surfaces as 502",
+              refused["status"] == 502, f"got {refused['status']}")
+        dev.evaluate("githubReply.status = 201")
 
         # The door still exists; it is just not shut unless somebody shuts it.
         # This is checked because an unused capability is one that has quietly

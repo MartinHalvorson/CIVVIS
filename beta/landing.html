@@ -53,7 +53,7 @@
   .site-title { margin: 0; color: #fff; font-size: 26px; font-weight: 700; letter-spacing: 0.04em; }
   .site-title span { color: var(--accent); font-weight: 600; }
   .site-tagline { margin: 3px 0 0; color: var(--muted); font-size: 13.5px; }
-  .utility-nav { display: flex; gap: 10px; }
+  .utility-nav { display: flex; flex-wrap: wrap; gap: 10px; }
   .utility-link {
     display: inline-flex;
     align-items: center;
@@ -64,6 +64,8 @@
     border-radius: 3px;
     background: var(--panel);
     color: var(--text);
+    cursor: pointer;
+    font-family: inherit;
     font-size: 13px;
     font-weight: 600;
     text-decoration: none;
@@ -72,6 +74,73 @@
   .utility-link:hover,
   .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
   .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* The report dialog: a visitor's bug or feature request, headed for the
+     project's GitHub issue tracker — filed by the site itself for anonymous
+     and pen-name reports, or through GitHub's own prefilled form for whoever
+     wants their account name on it. */
+  .report-dialog {
+    width: min(560px, calc(100vw - 32px));
+    padding: 0;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    background: var(--panel);
+    color: var(--text);
+  }
+  .report-dialog::backdrop { background: rgba(9, 12, 17, 0.72); }
+  .report-form { display: grid; gap: 14px; padding: 18px; }
+  .report-close,
+  .report-choice {
+    min-height: 34px;
+    padding: 0 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    background: var(--panel-raised);
+    color: var(--muted);
+    cursor: pointer;
+    font: 600 12.5px/1 var(--sans);
+  }
+  .report-close { flex: none; color: var(--text); }
+  .report-close:hover,
+  .report-choice:hover { border-color: var(--accent); color: #fff; }
+  .report-choice[aria-pressed="true"] { border-color: var(--accent); background: #2a3f52; color: #fff; }
+  .report-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+  .report-field { display: grid; gap: 5px; }
+  .report-field span { color: var(--faint); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .report-field input,
+  .report-field textarea {
+    width: 100%;
+    padding: 9px 11px;
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    background: var(--bg);
+    color: var(--text);
+    font: 400 14px/1.5 var(--sans);
+  }
+  .report-field textarea { min-height: 110px; resize: vertical; }
+  .report-field input:focus-visible,
+  .report-field textarea:focus-visible { border-color: var(--accent); outline: none; }
+  .report-hint { margin: 0; color: var(--faint); font-size: 12px; line-height: 1.5; }
+  .report-footer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .report-submit {
+    min-height: 36px;
+    padding: 0 18px;
+    border: 0;
+    border-radius: 3px;
+    background: var(--watch-bg);
+    color: var(--watch-fg);
+    cursor: pointer;
+    font: 700 13px/1 var(--sans);
+  }
+  .report-submit:hover { background: #315d7e; color: #fff; }
+  .report-submit:disabled { cursor: default; opacity: 0.6; }
+  .report-status { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+  .report-status a { color: var(--accent); }
+  .report-close:focus-visible,
+  .report-choice:focus-visible,
+  .report-submit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The honeypot: a field no person ever sees or fills; a filled one is a bot. */
+  .report-nectar { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
 
   .intro { max-width: 860px; margin: 18px 0 26px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
   .intro a { color: var(--accent); }
@@ -276,8 +345,12 @@
       </a>
       <a class="utility-link" href="https://www.youtube.com/@civvis" target="_blank" rel="noreferrer">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.6 12 3.6 12 3.6s-7.5 0-9.4.5A3 3 0 0 0 .5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z"/></svg>
-        Watch Demos
+        Dev Progress
       </a>
+      <button class="utility-link" type="button" id="report-open">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 2C6.5 2 2 5.9 2 10.7c0 2.8 1.5 5.3 3.9 6.9L5 22l4.6-2.4c.8.2 1.6.3 2.4.3 5.5 0 10-3.9 10-8.7S17.5 2 12 2zm-1 4.5h2v6h-2v-6zm0 7.5h2v2h-2v-2z"/></svg>
+        Report Issue / Suggest Feature
+      </button>
     </nav>
   </header>
 
@@ -412,6 +485,157 @@
       <div class="picker-groups" id="battle-groups"></div>
     </section>
   </main>
+
+  <!-- The report dialog: feedback straight onto the project's GitHub issue
+       tracker. Whoever wants their GitHub name on it gets GitHub's own
+       prefilled new-issue form in a new tab; everyone else signs with a pen
+       name or stays anonymous and the site files the issue itself through
+       `POST /report` (beta/_worker.js). An unconfigured /report answers 503
+       and the dialog falls back to offering the prefilled form. -->
+  <dialog class="report-dialog" id="report-dialog" aria-labelledby="report-dialog-title">
+    <form class="report-form" id="report-form" novalidate>
+      <div class="picker-heading">
+        <div>
+          <p class="eyebrow">Feedback</p>
+          <h3 id="report-dialog-title">Report an issue or suggest a feature</h3>
+        </div>
+        <button class="report-close" type="button" id="report-close" aria-label="Close">✕ Close</button>
+      </div>
+      <div class="report-choices" role="group" aria-label="What kind of report">
+        <button class="report-choice" type="button" data-kind="issue" aria-pressed="true">Report an issue</button>
+        <button class="report-choice" type="button" data-kind="feature" aria-pressed="false">Suggest a feature</button>
+      </div>
+      <label class="report-field">
+        <span>Title</span>
+        <input id="report-title" maxlength="140" required placeholder="One line: what happened, or what should exist?">
+      </label>
+      <label class="report-field">
+        <span>Details</span>
+        <textarea id="report-details" maxlength="5000" placeholder="What did you do, what did you expect, and what happened instead? For a feature: what should it do, and when would you use it?"></textarea>
+      </label>
+      <div class="report-choices" role="group" aria-label="Sign it as">
+        <button class="report-choice" type="button" data-identity="anonymous" aria-pressed="true">Anonymous</button>
+        <button class="report-choice" type="button" data-identity="random" aria-pressed="false">Random pen name</button>
+        <button class="report-choice" type="button" data-identity="github" aria-pressed="false">My GitHub account</button>
+      </div>
+      <p class="report-hint" id="report-hint">The site files this as a GitHub issue, signed &#8220;anonymous&#8221; — no account needed.</p>
+      <label class="report-nectar" aria-hidden="true">Website<input id="report-website" tabindex="-1" autocomplete="off"></label>
+      <div class="report-footer">
+        <button class="report-submit" type="submit" id="report-submit">Submit report</button>
+        <p class="report-status" id="report-status" role="status"></p>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+  (() => {
+    const dialog = document.getElementById("report-dialog");
+    const opener = document.getElementById("report-open");
+    const form = document.getElementById("report-form");
+    if (!dialog || !opener || !form) return;
+    const field = id => document.getElementById(id);
+    const status = field("report-status");
+    const hint = field("report-hint");
+    const submit = field("report-submit");
+    const REPO = "https://github.com/MartinHalvorson/CIVVIS";
+    let kind = "issue";
+    let identity = "anonymous";
+    // The pen name: rolled once per visit, so one visitor's several reports
+    // read as the same person without being anyone in particular.
+    const ADJECTIVES = ["bold", "brisk", "calm", "clever", "eager", "keen", "lucky", "noble", "quick", "quiet", "stern", "swift"];
+    const NOUNS = ["archer", "builder", "catapult", "envoy", "galley", "legion", "scout", "settler", "trader", "warrior"];
+    const pick = list => list[Math.floor(Math.random() * list.length)];
+    const penName = `${pick(ADJECTIVES)}-${pick(NOUNS)}-${10 + Math.floor(Math.random() * 90)}`;
+    // GitHub's own new-issue form, carrying what was typed here — the path
+    // for named reports, and the fallback when the site cannot file.
+    const prefilled = () =>
+      `${REPO}/issues/new?` + new URLSearchParams({
+        title: field("report-title").value.trim(),
+        body: field("report-details").value.trim(),
+        labels: `from-site,${kind === "feature" ? "enhancement" : "bug"}`,
+      });
+    const HINTS = {
+      anonymous: "The site files this as a GitHub issue, signed “anonymous” — no account needed.",
+      random: `The site files this as a GitHub issue, signed “${penName}” — no account needed.`,
+      github: "Submitting opens GitHub’s new-issue form in a new tab with this filled in; you press Create there under your own name.",
+    };
+    const sync = () => {
+      hint.textContent = HINTS[identity];
+      submit.textContent = identity === "github" ? "Open GitHub issue form" : "Submit report";
+    };
+    // Status is built from nodes, never markup: the fallback link carries the
+    // visitor's own text in its URL.
+    const say = (text, link) => {
+      status.textContent = text;
+      if (link) {
+        const a = document.createElement("a");
+        a.href = link.href;
+        a.target = "_blank";
+        a.rel = "noreferrer";
+        a.textContent = link.text;
+        status.append(" ", a, ".");
+      }
+    };
+    const choose = (selector, apply) => form.addEventListener("click", event => {
+      const button = event.target.closest(selector);
+      if (!button) return;
+      apply(button);
+      for (const other of form.querySelectorAll(selector))
+        other.setAttribute("aria-pressed", String(other === button));
+      sync();
+    });
+    choose("[data-kind]", button => { kind = button.dataset.kind; });
+    choose("[data-identity]", button => { identity = button.dataset.identity; });
+    opener.addEventListener("click", () => {
+      // No <dialog> support: GitHub's plain form is the whole feature.
+      if (typeof dialog.showModal !== "function") { window.open(`${REPO}/issues/new/choose`, "_blank", "noopener"); return; }
+      say("");
+      dialog.showModal();
+    });
+    field("report-close").addEventListener("click", () => dialog.close());
+    // A click on the backdrop lands on the dialog element itself.
+    dialog.addEventListener("click", event => { if (event.target === dialog) dialog.close(); });
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      const title = field("report-title").value.trim();
+      if (title.length < 3) { say("A title of at least three characters, please."); return; }
+      if (identity === "github") {
+        window.open(prefilled(), "_blank", "noopener");
+        say("GitHub’s new-issue form is open in another tab — press Create there.");
+        return;
+      }
+      submit.disabled = true;
+      say("Filing…");
+      try {
+        const answer = await fetch("/report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            kind,
+            title,
+            details: field("report-details").value.trim(),
+            reporter: identity === "random" ? penName : "anonymous",
+            website: field("report-website").value,
+          }),
+        });
+        const filed = await answer.json().catch(() => ({}));
+        if (answer.ok) {
+          say("Filed — thank you.", filed.url ? { href: filed.url, text: `Issue #${Number(filed.number) || ""}`.trim() } : null);
+          field("report-title").value = "";
+          field("report-details").value = "";
+        } else if (answer.status === 503) {
+          say("The site cannot file this itself right now —", { href: prefilled(), text: "open GitHub’s form with it instead" });
+        } else {
+          say(filed.error ? `Not filed: ${filed.error}.` : "Not filed — something went wrong.");
+        }
+      } catch {
+        say("Not filed — the report could not reach the site.", { href: prefilled(), text: "Open GitHub’s form with it instead" });
+      } finally {
+        submit.disabled = false;
+      }
+    });
+  })();
+  </script>
 
   <!-- The battle catalog, one row per battle, copied from the engine's
        `historical_scenarios::all()` by tools/landing_battles.py and pinned to
