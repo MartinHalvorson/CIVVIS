@@ -6905,11 +6905,18 @@ mod tests {
         );
         assert!(!block.contains('<'), "the catalog block must not be able to close its own element");
         for piece in [
-            // Rows: play above, watch below. Columns: Civ left, Tactics right.
+            // Rows: Tactics above, the full game below. Columns: Watch left,
+            // Play right. The immediate verb buttons carry the aria labels;
+            // the Tactics Customize buttons carry `data-pick` and fall back
+            // to the stock Tactics world without scripting.
             "href=\"/?mode=play\" aria-labelledby=\"play-civ-title\"",
             "href=\"/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play\" data-pick=\"play\"",
             "href=\"/\" aria-labelledby=\"watch-civ-title\"",
             "href=\"/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\" data-pick=\"watch\"",
+            // The full game's Customize lands in the simulator with the Game
+            // setup drawer open (`?setup=1`, honoured at the end of app.js).
+            "href=\"/?setup=1\"",
+            "href=\"/?mode=play&amp;setup=1\"",
             // The picker and its four lenses.
             "id=\"battle-picker\"",
             "data-lens=\"custom\"",
@@ -6927,6 +6934,10 @@ mod tests {
         let shim = include_str!("../beta/shim.js");
         assert!(shim.contains("if (mode === \"play\") payload.spectate = false;"));
         assert!(shim.contains("else if (mode === \"watch\") payload.spectate = true;"));
+        // The viewer honours the Customize links' `?setup=1`: it opens the
+        // sidebar's Game setup drawer on arrival instead of leaving the
+        // visitor to hunt for it.
+        assert!(EMBEDDED_INDEX.contains("searchParams.get(\"setup\") === \"1\""));
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -10542,10 +10553,28 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "order: -1; width: clamp(220px, 18vw, 332px); min-width: clamp(220px, 18vw, 332px);"
         ));
-        for overlay in ["players", "victory", "minimap", "controls", "lenses"] {
+        // The standings' corner ✕ folds them in place (data-hud-fold) rather
+        // than dismissing the whole masthead; the turn box stays, and the
+        // Display Settings switch still removes the widget entirely.
+        for overlay in ["victory", "minimap", "controls", "lenses"] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("data-overlay-close=\"{overlay}\"")),
                 "map overlay {overlay} should have a close control"
+            );
+        }
+        // The chevrons are built by hudFoldButton, so the section names show
+        // up in source as its arguments; the standings ✕ and the two restore
+        // strips carry the attribute literally.
+        for fold in [
+            "data-hud-fold=\"standings\"",
+            "data-hud-fold=\"turnplate\"",
+            "hudFoldButton(\"simstats\", \"simulation stats\")",
+            "hudFoldButton(\"victory\", \"victory tracker\")",
+            "hudFoldButton(\"turnplate\", \"turn box\", \"turn-plate-fold\")",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(fold),
+                "HUD fold control is missing: {fold}"
             );
         }
         assert!(
@@ -16332,10 +16361,11 @@ mod tests {
         // Every place a panel or an overlay moves refits a fitted area.
         assert_eq!(
             EMBEDDED_INDEX.matches("refitMapAreaToChrome();").count(),
-            5,
-            "a fitted map area follows the standings, the overlay switches, and \
-             both HUD layout paths — five call sites; a sixth means a new one \
-             belongs in this count, a fourth means one was dropped"
+            6,
+            "a fitted map area follows the standings, the overlay switches, \
+             both HUD layout paths, and a HUD section fold — six call sites; \
+             a seventh means a new one belongs in this count, a fifth means \
+             one was dropped"
         );
     }
 
