@@ -50,7 +50,7 @@ DEFAULT_VICTORY = "science"
 DEFAULT_STRATEGY = ""
 
 sys.path.insert(0, str(HERE))
-from civ6_control import launcher  # noqa: E402
+from civ6_control import gamelock, install, launcher  # noqa: E402
 
 # Backoff between blocked starts. The first steps are short because the usual cause
 # is a Steam client that is coming back up on its own; the last is long because if
@@ -119,64 +119,97 @@ def dismiss_crash_dialogs() -> None:
     run(["osascript", "-e", script], timeout=25.0)
 
 
-def teardown() -> None:
-    """Stop everything, in the order that actually works.
+def installed_run_tag() -> str | None:
+    """Read the installed control mod's tag without changing the installation.
 
-    The harness first (so it cannot start another attempt), then the GAME — killing
-    the harness leaves `Civ6_Exe_Child` alive holding the run lock, and every later
-    attempt then dies with "another run holds the game".
+    A tag is the one identity shared by the game, its `civ6_play` controller, and
+    the control mod.  Treat an absent or unreadable tag as *not ours*: cleanup is
+    allowed to leave an orphan for an operator, but never to stop an unproven game.
     """
-    for pattern in ("civ6_brain.py", "civ6_play.py"):
-        run(["pkill", "-f", pattern])
-    time.sleep(1)
-    run(["osascript", "-e", 'tell application "Civ6" to quit'])
-    # ⚠⚠ VERIFY, AND ESCALATE. This used to be `pkill -f Civ6_Exe` followed by a
-    # two-second sleep and nothing else, and CIVILIZATION VI SURVIVES SIGTERM.
-    #
-    # Measured directly: `pkill -f Civ6_Exe` against a live `Civ6_Exe_Child` left the
-    # process alive, and calling this very function left it alive too — same pid
-    # before and after. `launcher.stop` waits for the process to actually go and
-    # escalates to `pkill -9`, which is why every manual stop in this project works
-    # and this one did not.
-    #
-    # What that cost: an attempt that fails to start leaves the game running with ITS
-    # run tag installed, and `gamelock.foreign_run` then refuses every LATER attempt
-    # in the same batch -- each one blocked by its own predecessor. Batch
-    # civvis-20260801T053852Z died with "5 starts in a row produced no game", and all
-    # four retries were blocked by attempt 1 rather than by anything of their own.
-    # The docstring above already named this failure; the code did not achieve it.
-    if not launcher.stop(timeout_s=45.0):
-        print("[teardown] the game is STILL running after stop(); the next attempt "
-              "will be refused as a foreign run", flush=True)
-    # ★★★★ AND CLEAR THE RUN TAG, because stopping the process is not enough.
-    #
-    # `gamelock.foreign_run` refuses when a game is up AND the installed tag is not
-    # ours. Every attempt in a batch gets a NEW tag, so a tag left behind by a failed
-    # attempt is "foreign" to its own successor — which is precisely the failure the
-    # comment above describes and `launcher.stop` was meant to end.
-    #
-    # It did not end it: `stop()` only settles the PROCESS, and the check races it.
-    # Measured on batch `climb4` — Civilization VI was DOWN and the next attempt was
-    # still refused with "a game is running under run tag
-    # 'civvis-20260801T155857Z'", the corpse of the attempt before it.
-    #
-    # A tag with no game behind it describes nothing. Clearing it makes the refusal
-    # impossible regardless of how the process check races, which is the property
-    # wanted here — not a better-timed check.
+    config = install.install_dir() / "config.json"
+    if not config.is_file():
+        return None
     try:
-        # Asked of `install`, the module that WRITES this file, so the two cannot
-        # disagree about where it lives — or about how to write it. The rewrite
-        # used to happen here directly and failed at the end of every game on a
-        # host whose TCC rule admits Finder to the bundle and refuses Terminal;
-        # install.clear_run_tag carries the same Finder fallback install() uses.
-        from civ6_control import install  # noqa: PLC0415
-        if install.clear_run_tag():
-            print("[teardown] cleared the installed run tag", flush=True)
+        tag = json.loads(config.read_text()).get("RunTag")
     except (OSError, json.JSONDecodeError) as exc:
-        # Never fatal: a batch that cannot tidy up must still be able to run.
-        print(f"[teardown] could not clear the run tag: {exc}", flush=True)
-    run([sys.executable, str(HERE / "civ6_control" / "gamelock.py"), "--break-stale"])
-    dismiss_crash_dialogs()
+        print(f"[teardown] could not read the installed run tag: {exc}", flush=True)
+        return None
+    return tag if isinstance(tag, str) and tag else None
+
+
+def teardown(expected_tag: str | None = None) -> bool:
+    """Stop only the completed run named by ``expected_tag``.
+
+    The old no-argument implementation killed every `civ6_play`, `civ6_brain`, and
+    Civilization VI process it could find.  An attempt that failed before creating a
+    game could therefore race a supervisor's next run and close that foreign game.
+    A run tag alone is not enough to establish ownership, so this acquires the shared
+    game lock before touching the game and rechecks the installed tag immediately
+    before the global stop.
+    """
+    if expected_tag is None:
+        if busy():
+            print("[teardown] refusing to stop an unowned running game", flush=True)
+        return False
+
+    actual_tag = installed_run_tag()
+    if actual_tag != expected_tag:
+        found = repr(actual_tag) if actual_tag is not None else "no readable tag"
+        print(f"[teardown] refusing to stop foreign run {found}; expected "
+              f"{expected_tag!r}", flush=True)
+        return False
+
+    # A live `civ6_play` keeps this lock until its own finally block has stopped the
+    # game.  If it still holds it, leave that controller to finish rather than
+    # terminating it from outside.  If it died, acquire() clears its stale lock and
+    # prevents a new controller from starting between our ownership check and stop.
+    if not gamelock.acquire(expected_tag):
+        print(f"[teardown] {expected_tag!r} still has a live controller; leaving "
+              "cleanup to it", flush=True)
+        return False
+
+    try:
+        if installed_run_tag() != expected_tag:
+            print(f"[teardown] run tag changed while acquiring cleanup ownership; "
+                  f"leaving {expected_tag!r} alone", flush=True)
+            return False
+
+        escaped_tag = re.escape(expected_tag)
+        # A dead play process can leave its brain behind, but it is safe to sweep
+        # only a process whose command line names this exact run.  Never match all
+        # brains/players again: another checkout may be driving the same install.
+        for pattern in (rf"civ6_brain\.py.*{escaped_tag}",
+                        rf"civ6_play\.py.*--tag {escaped_tag}"):
+            run(["pkill", "-f", pattern])
+        time.sleep(1)
+
+        # launcher.stop is deliberately global, so put the second ownership check
+        # immediately beside it while this harness holds gamelock.  A managed foreign
+        # controller cannot start between these lines; an unexpected tag change is a
+        # hard refusal, not an excuse to clear or quit somebody else's game.
+        if busy():
+            if installed_run_tag() != expected_tag:
+                print(f"[teardown] refusing to stop a run that changed from "
+                      f"{expected_tag!r}", flush=True)
+                return False
+            if not launcher.stop(timeout_s=45.0):
+                print("[teardown] the owned game is STILL running after stop(); "
+                      "preserving its run tag", flush=True)
+                return False
+
+        # Do not erase the identity while a process remains.  Besides making the
+        # next attempt's diagnostics honest, that keeps a still-running game guarded
+        # if stop() ever reports success before a late child exits.
+        if busy():
+            print("[teardown] an owned process is still running; preserving its "
+                  "run tag", flush=True)
+            return False
+        if installed_run_tag() == expected_tag and install.clear_run_tag():
+            print("[teardown] cleared the installed run tag", flush=True)
+        dismiss_crash_dialogs()
+        return True
+    finally:
+        gamelock.release()
 
 
 def busy() -> str | None:
@@ -1155,8 +1188,9 @@ def main() -> int:
         return 2
 
     if busy():
-        print("something already holds the game; tearing it down first", flush=True)
-    teardown()
+        print("something already holds the game; refusing to stop an unowned run",
+              flush=True)
+        return 3
 
     # ★★★★ GATE THE BATCH ON PREFLIGHT. `civ6_preflight.py` says in its own docstring
     # that "exit status is 0 only when every check passes, so this can gate a ladder"
@@ -1390,7 +1424,7 @@ def main() -> int:
             # play process killed by signal, which is the case that motivated the
             # explicit terminate in the first place.
             play_log.close()
-            teardown()
+            teardown(tag)
 
         record = outcome_of(tag)
         # ★★★★★ A KILLED ATTEMPT MUST SAY SO IN THE LEDGER.
