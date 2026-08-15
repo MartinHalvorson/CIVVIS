@@ -5003,6 +5003,90 @@ mod tests {
     }
 
     #[test]
+    fn an_unplanted_known_city_still_blocks_its_settlement_ring() {
+        // Firaxis keeps a met city-state in the state roster even when its
+        // centre has not arrived in the terrain feed. Its nearby revealed
+        // tiles must still inherit the four-tile founding floor.
+        let centre = (6, 6);
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 4,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+                .filter(|plot| (plot.x, plot.y) != centre)
+                .collect(),
+        }]);
+        let settler_offset = (4, 6);
+        let settler_pos = crate::hex::offset_to_axial(settler_offset.0, settler_offset.1);
+        let mut state = StateSnapshot {
+            turn: 4,
+            ..StateSnapshot::default()
+        };
+        state.units.push(StateUnit {
+            id: 17,
+            kind: "UNIT_SETTLER".to_string(),
+            x: settler_offset.0,
+            y: settler_offset.1,
+            ..StateUnit::default()
+        });
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let settler = mirror.uid_of[&17];
+        assert!(
+            mirror.game.can_found_city(settler),
+            "without a reported city the fixture must be legal"
+        );
+
+        state.turn = 5;
+        state.minors.push(StateMinor {
+            player: 7,
+            civ: "CIVILIZATION_KABUL".to_string(),
+            cities: vec![StateCity {
+                id: 5,
+                name: "Kabul".to_string(),
+                x: centre.0,
+                y: centre.1,
+                ..StateCity::default()
+            }],
+            ..StateMinor::default()
+        });
+        mirror.sync(&snapshot, &state, 0);
+
+        assert!(
+            mirror.game.city_at(crate::hex::offset_to_axial(centre.0, centre.1)).is_none(),
+            "the fixture deliberately omits Kabul's terrain centre"
+        );
+        assert!(mirror.game.blocked_city_sites.contains(&settler_pos));
+        assert!(
+            !mirror.game.can_found_city(settler),
+            "a persistent mirror must reject the host-illegal nearby site"
+        );
+
+        let fresh = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        let fresh_settler = fresh
+            .unit_ids
+            .iter()
+            .find_map(|(uid, civ6)| (*civ6 == 17).then_some(*uid))
+            .expect("the fresh board must retain the settler");
+        assert!(fresh.game.city_at(crate::hex::offset_to_axial(centre.0, centre.1)).is_none());
+        assert!(fresh.game.blocked_city_sites.contains(&settler_pos));
+        assert!(
+            !fresh.game.can_found_city(fresh_settler),
+            "a fresh-board decision must receive the same prohibition"
+        );
+
+        let legal = crate::hex::offset_to_axial(2, 6);
+        let control = mirror.game.spawn_test_unit("settler", 0, legal);
+        assert!(!mirror.game.blocked_city_sites.contains(&legal));
+        assert!(
+            mirror.game.can_found_city(control),
+            "exactly four tiles from Kabul remains a legal city site"
+        );
+    }
+
+    #[test]
     fn a_settler_does_not_found_a_city_that_population_pressure_will_erase() {
         // Geometry reproduces the live failure at a smaller offset: the doomed
         // site is eight tiles from our population-six city and six from the rival's,
@@ -11553,6 +11637,27 @@ fn apply_territory(
                 }
                 // Nor ours to count as territory — see the arm above.
                 assign.push((pos, None));
+            }
+        }
+    }
+    // State can report a city before the terrain export includes its centre.
+    // `plant_city` correctly refuses to invent that missing terrain, but the
+    // host still enforces the city's four-tile settlement floor on every
+    // revealed neighbour. Reserve the visible portion of that floor without
+    // inventing a city, its yields, ownership, or diplomacy.
+    for city in state
+        .cities
+        .iter()
+        .chain(state.rivals.iter().flat_map(|rival| rival.cities.iter()))
+        .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()))
+    {
+        let centre = crate::hex::offset_to_axial(city.x, city.y);
+        if game.city_at(centre).is_some() {
+            continue;
+        }
+        for site in game.wdisk(centre, 3) {
+            if game.map.tiles.contains_key(&site) {
+                blocked.insert(site);
             }
         }
     }
