@@ -2673,6 +2673,11 @@ impl AdvancedAi {
     /// ladders replay the historical controller move for move.
     pub fn enable_stranded_settler_discount(&mut self) {
         self.base.settler_strand_discount = true;
+        // Discounting the stuck body lets another Settler enter the pipeline,
+        // but does not convert the production already standing on legal, safe
+        // ground. Once the bounded stall counter expires, finish that city
+        // instead of beginning another target cycle.
+        self.settler_founds_when_stalled = true;
     }
 
     /// Record tactical steps so a unit stepped twice in one turn cannot walk
@@ -3530,6 +3535,7 @@ impl AdvancedAi {
     /// one; this is that omission.
     pub fn disable_stranded_settler_discount(&mut self) {
         self.base.settler_strand_discount = false;
+        self.settler_founds_when_stalled = false;
     }
 
     /// Keep asking for a Campus in every city that can still repay one. See
@@ -6174,9 +6180,14 @@ impl AdvancedAi {
             .count();
         let map_capacity = if self.wide_map_capacity {
             // Live-bridge pricing: one city per 45 passable tiles, ceiling
-            // twelve. See the `wide_map_capacity` field for the three-game
-            // Settler measurement this bounds.
-            (2 + land / 45).clamp(3, 12)
+            // twelve. A fresh live mirror knows the world's dimensions but
+            // deliberately carries only revealed terrain, so its counted
+            // passable land is smallest precisely when expansion must begin.
+            // Treat fog as unknown capacity, not proof of a three-city map.
+            // Practical-site checks still stop production when sites run out.
+            (2 + land / 45)
+                .clamp(3, 12)
+                .max(PRODUCTION_CITY_TARGET_FLOOR)
         } else {
             (2 + land / 55).clamp(3, 9)
         };
@@ -6194,8 +6205,17 @@ impl AdvancedAi {
         } else {
             map_capacity.min(6)
         };
+        // The deployed wide treatment formerly changed only the late ceiling,
+        // leaving the current live opening bound at three cities. Start that
+        // plan at the measured six-city floor; ordinary Advanced and the
+        // frozen anchor retain three.
+        let city_floor = if self.wide_map_capacity {
+            self.city_target_floor.max(PRODUCTION_CITY_TARGET_FLOOR)
+        } else {
+            self.city_target_floor
+        };
         let desired_cities =
-            (self.city_target_floor + g.turn as usize / city_cadence).min(city_ceiling);
+            (city_floor + g.turn as usize / city_cadence).min(city_ceiling);
         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
         if expansion_origins.is_empty() {
             expansion_origins.extend(
@@ -7383,35 +7403,48 @@ impl AdvancedAi {
         }
         if g.players[pid].civic.is_none() {
             let available = g.available_civics(pid);
-            let forced_goal = match objective {
-                _ if g.has_ability(pid, "taxis")
-                    && !g.players[pid].civics.contains(&crate::name!("divine_right")) =>
-                {
-                    Some("divine_right")
+            // A victory beeline cannot usefully precede the government's
+            // policy capacity. Science formerly aimed at Space Race from turn
+            // one, letting Games and Drama delay Political Philosophy while
+            // the empire needed Colonization. Secure the first government,
+            // then resume the victory lane.
+            let first_government = self.wide_map_capacity
+                && !g.players[pid]
+                    .civics
+                    .contains(&crate::name!("political_philosophy"));
+            let forced_goal = if first_government {
+                Some("political_philosophy")
+            } else {
+                match objective {
+                    _ if g.has_ability(pid, "taxis")
+                        && !g.players[pid].civics.contains(&crate::name!("divine_right")) =>
+                    {
+                        Some("divine_right")
+                    }
+                    GrandStrategy::Culture => [
+                        "humanism",
+                        "conservation",
+                        "professional_sports",
+                        "cultural_heritage",
+                        "space_race",
+                        "environmentalism",
+                        "social_media",
+                    ]
+                    .into_iter()
+                    .find(|civic| !g.players[pid].civics.contains(&Name::new(civic))),
+                    GrandStrategy::Science if !g.players[pid].civics.contains(&crate::name!("space_race")) => {
+                        Some("space_race")
+                    }
+                    GrandStrategy::Diplomacy
+                        if !g.players[pid].civics.contains(&crate::name!("global_warming_mitigation")) =>
+                    {
+                        Some("global_warming_mitigation")
+                    }
+                    GrandStrategy::Religion if !g.players[pid].civics.contains(&crate::name!("theology")) => {
+                        Some("theology")
+                    }
+                    _ => None,
                 }
-                GrandStrategy::Culture => [
-                    "humanism",
-                    "conservation",
-                    "professional_sports",
-                    "cultural_heritage",
-                    "space_race",
-                    "environmentalism",
-                    "social_media",
-                ]
-                .into_iter()
-                .find(|civic| !g.players[pid].civics.contains(&Name::new(civic))),
-                GrandStrategy::Science if !g.players[pid].civics.contains(&crate::name!("space_race")) => {
-                    Some("space_race")
-                }
-                GrandStrategy::Diplomacy
-                    if !g.players[pid].civics.contains(&crate::name!("global_warming_mitigation")) =>
-                {
-                    Some("global_warming_mitigation")
-                }
-                GrandStrategy::Religion if !g.players[pid].civics.contains(&crate::name!("theology")) => {
-                    Some("theology")
-                }
-                _ => None,
             };
             let goal_pick = forced_goal.and_then(|goal| {
                 available
@@ -7910,6 +7943,50 @@ impl AdvancedAi {
             && settlers == 0
             && !city_ids.is_empty()
             && city_ids.len() >= city_goal;
+        // Time live economic slots to what their cities are producing. Static
+        // victory portfolios begin with late cards, so Science used to replace
+        // Colonization and Ilkum while actively building their units. Policy
+        // selection also precedes production, which makes the city-plan gap
+        // the signal for pre-slotting Colonization this turn.
+        if self.wide_map_capacity {
+            let settler_queued = city_ids.iter().any(|city| {
+                matches!(
+                    g.cities[city].queue.first(),
+                    Some(Item::Unit { unit }) if unit == "settler"
+                )
+            });
+            let builder_queued = city_ids.iter().any(|city| {
+                matches!(
+                    g.cities[city].queue.first(),
+                    Some(Item::Unit { unit }) if unit == "builder"
+                )
+            });
+            let expansion_active = settler_queued || city_ids.len() + settlers < city_goal;
+            if expansion_active || builder_queued {
+                const TIMED_ECONOMY: [&str; 6] = [
+                    "expropriation",
+                    "colonization",
+                    "public_works",
+                    "serfdom",
+                    "ilkum",
+                    "urban_planning",
+                ];
+                desired.retain(|card| !TIMED_ECONOMY.contains(card));
+                let mut timed = Vec::new();
+                if expansion_active {
+                    timed.extend(["expropriation", "colonization"]);
+                }
+                if builder_queued {
+                    timed.extend(["public_works", "serfdom", "ilkum"]);
+                }
+                let committed_slots = usize::from(expansion_active) + usize::from(builder_queued);
+                if g.gov_slots(pid).economic.max(0) as usize > committed_slots {
+                    timed.push("urban_planning");
+                }
+                timed.extend(desired);
+                desired = timed;
+            }
+        }
         let at_war = g
             .at_war
             .iter()
@@ -13316,10 +13393,22 @@ impl AdvancedAi {
                 continue;
             };
             let damage = CITY_MAX_HP.saturating_sub(g.cities[&city].hp);
+            let wall_damage = g
+                .city_max_wall_hp(&g.cities[&city])
+                .saturating_sub(g.cities[&city].wall_hp);
+            // Visible raiders may choose an EMPTY city's next build through
+            // `besieged_city_item`; they may not erase production already
+            // invested in a Settler, district, or project. Queue preemption is
+            // the under-fire escalation and needs city or wall damage.
+            if damage == 0 && wall_damage == 0 {
+                continue;
+            }
+            let total_damage = damage.saturating_add(wall_damage);
             if best.as_ref().is_none_or(|(best_damage, best_city, _, _)| {
-                damage > *best_damage || (damage == *best_damage && city < *best_city)
+                total_damage > *best_damage
+                    || (total_damage == *best_damage && city < *best_city)
             }) {
-                best = Some((damage, city, committed, defence));
+                best = Some((total_damage, city, committed, defence));
             }
         }
 
@@ -13339,7 +13428,7 @@ impl AdvancedAi {
         {
             think!(self.journal(), Economy, Decision,
                 "{} pauses {} for {}", city_name, Self::plain_item(&committed), Self::plain_item(&defence);
-                "under siege with {damage} health missing; this is the highest-priority unsafe queue");
+                "under fire with {damage} combined city/wall health missing; this is the highest-priority unsafe queue");
         }
     }
 
@@ -23190,6 +23279,30 @@ mod tests {
         };
         let city_campus = queue_campus(&mut game, city);
         let other_campus = queue_campus(&mut game, other);
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+        let raider_positions: Vec<Pos> = game
+            .wdisk(game.cities[&other].pos, 2)
+            .into_iter()
+            .filter(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                }) && game.units_at(*position).is_empty()
+            })
+            .take(2)
+            .collect();
+        assert_eq!(raider_positions.len(), 2);
+        for position in raider_positions {
+            game.spawn_test_unit("warrior", 1, position);
+        }
+
+        let mut live = AdvancedAi::new();
+        live.enable_siege_muster();
+        live.enable_garrison_under_fire();
+        live.redirect_unsafe_city_queue_for_defense(&mut game, 0);
+        assert_eq!(game.cities[&city].queue.first(), Some(&city_campus));
+        assert_eq!(game.cities[&other].queue.first(), Some(&other_campus));
+
         game.cities.get_mut(&city).unwrap().hp = 170;
         game.cities.get_mut(&other).unwrap().hp = 145;
         let mut routed = game.clone();
@@ -23203,8 +23316,6 @@ mod tests {
         assert_eq!(game.cities[&city].queue.first(), Some(&city_campus));
         assert_eq!(game.cities[&other].queue.first(), Some(&other_campus));
 
-        let mut live = AdvancedAi::new();
-        live.enable_garrison_under_fire();
         live.redirect_unsafe_city_queue_for_defense(&mut game, 0);
         assert_eq!(game.cities[&city].queue.first(), Some(&city_campus));
         assert!(matches!(
@@ -23482,6 +23593,31 @@ mod tests {
         assert!(bridged.wide_map_capacity);
         bridged.disable_wide_map_capacity();
         assert!(!bridged.wide_map_capacity);
+    }
+
+    #[test]
+    fn wide_live_opening_does_not_mistake_fog_for_a_three_city_map() {
+        let (mut game, capital, _) = empire_with_a_capital(71_116);
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("ocean");
+            tile.feature = None;
+        }
+        game.map
+            .tiles
+            .get_mut(&game.cities[&capital].pos)
+            .unwrap()
+            .terrain = crate::name!("grassland");
+
+        let stock = AdvancedAi::new();
+        assert_eq!(stock.assess(&game, 0).desired_cities, 3);
+
+        let mut live = AdvancedAi::new();
+        live.enable_wide_map_capacity();
+        assert_eq!(
+            live.assess(&game, 0).desired_cities,
+            PRODUCTION_CITY_TARGET_FLOOR,
+            "the live mirror's unrevealed terrain must not cap the opening at three cities"
+        );
     }
 
     fn timed_war_fixture(seed: u64) -> (Game, u32, u32) {
@@ -28952,6 +29088,39 @@ mod tests {
     }
 
     #[test]
+    fn wide_live_opening_unlocks_a_real_government_before_the_science_beeline() {
+        let mut game = Game::new_full(1, 20, 14, 765, 300, 0, false);
+        game.players[0].civics.extend([
+            crate::name!("code_of_laws"),
+            crate::name!("craftsmanship"),
+            crate::name!("foreign_trade"),
+            crate::name!("early_empire"),
+            crate::name!("state_workforce"),
+            crate::name!("military_tradition"),
+        ]);
+        game.players[0].civic = None;
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: PRODUCTION_CITY_TARGET_FLOOR,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut live = AdvancedAi::targeting(VictoryTarget::Science);
+        live.enable_wide_map_capacity();
+
+        live.advanced_research(&mut game, 0, &plan);
+
+        assert_eq!(
+            game.players[0].civic.as_deref(),
+            Some("political_philosophy"),
+            "Games and Drama must not delay the first tier-one government"
+        );
+    }
+
+    #[test]
     fn religious_openings_fill_available_prophet_slots_with_stable_contenders() {
         let mut game = Game::new_full(4, 34, 20, 76_101, 300, 0, false);
         let mut capitals = Vec::new();
@@ -33190,6 +33359,52 @@ mod tests {
             !build(false),
             "control must keep today's behaviour — `limitanei` is slotted 0 times \
              in 83 live runs and the arm must be the only thing that changes that"
+        );
+    }
+
+    #[test]
+    fn live_policy_timing_slots_colonization_while_the_city_plan_is_short() {
+        let (mut game, city, _) = empire_with_a_capital(79_099);
+        game.cities.get_mut(&city).unwrap().pop = 3;
+        game.players[0].government = Some("chiefdom".to_string());
+        game.players[0]
+            .civics
+            .extend([crate::name!("code_of_laws"), crate::name!("early_empire")]);
+        game.players[0]
+            .policies
+            .extend([crate::name!("discipline"), crate::name!("urban_planning")]);
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: Item::Unit {
+                    unit: crate::name!("settler"),
+                },
+            },
+        )
+        .expect("the capital can build the timed Settler");
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+        ai.enable_wide_map_capacity();
+        ai.plan = Some(StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: PRODUCTION_CITY_TARGET_FLOOR,
+            assessed_turn: game.turn,
+            rush: false,
+        });
+
+        ai.strategic_policies(&mut game, 0, GrandStrategy::Science);
+
+        assert!(game.players[0]
+            .policies
+            .contains(&crate::name!("colonization")));
+        assert!(
+            !game.players[0]
+                .policies
+                .contains(&crate::name!("urban_planning")),
+            "the Settler multiplier owns the one early economic slot while expansion is active"
         );
     }
 
@@ -39756,11 +39971,17 @@ mod research_probe {
             !AdvancedAi::new().base.settler_strand_discount,
             "the frozen tournament controller must keep its recorded ladders"
         );
+        assert!(!AdvancedAi::new().settler_founds_when_stalled);
         let mut live = AdvancedAi::new();
         live.enable_live_bridge();
         assert!(live.base.settler_strand_discount, "the deployment turns it on");
+        assert!(
+            live.settler_founds_when_stalled,
+            "a safe legal city must finish the stranded Settler's conversion"
+        );
         live.disable_stranded_settler_discount();
         assert!(!live.base.settler_strand_discount, "and the control arm holds it off");
+        assert!(!live.settler_founds_when_stalled);
     }
 
     /// Off by default, set only by the live bridge, and holdable off on its own
