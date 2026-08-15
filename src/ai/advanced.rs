@@ -13266,6 +13266,77 @@ impl AdvancedAi {
         }
     }
 
+    /// Let the live bleeding-city treatment interrupt one unsafe committed
+    /// queue. `BasicAi::besieged_city_item` normally reaches only an empty
+    /// queue through `pick_item`, while Recovery's strategic governor skips a
+    /// commitment at its safe default preemption margin. That left a city
+    /// already losing health able to finish a Campus before it could ask for
+    /// the walls or defender the existing evaluator selected.
+    ///
+    /// This is deliberately not a second siege heuristic: the established
+    /// evaluator still supplies the visibility/damage proof and the exact
+    /// defensive item. It is live-only, preserves repairs, walls, and military
+    /// production, and claims at most the most-damaged unsafe queue each turn.
+    fn redirect_unsafe_city_queue_for_defense(&self, g: &mut Game, pid: usize) {
+        if !self.base.garrison_under_fire {
+            return;
+        }
+
+        let is_defensive = |item: &Item| match item {
+            Item::Repair { .. } => true,
+            Item::Project { project } => matches!(
+                project.as_str(),
+                "repair_outer_defenses" | "repair_encampment"
+            ),
+            Item::Building { building } => matches!(
+                building.as_str(),
+                "walls" | "medieval_walls" | "renaissance_walls"
+            ),
+            Item::Unit { unit } | Item::Formation { unit, .. } => {
+                g.rules.units[unit].class == "military"
+            }
+            _ => false,
+        };
+
+        let mut best: Option<(i32, u32, Item, Item)> = None;
+        for city in g.player_city_ids(pid) {
+            let Some(committed) = g.cities[&city].queue.first().cloned() else {
+                continue;
+            };
+            if is_defensive(&committed) {
+                continue;
+            }
+            let Some(defence) = self.base.besieged_city_item(g, pid, city) else {
+                continue;
+            };
+            let damage = CITY_MAX_HP.saturating_sub(g.cities[&city].hp);
+            if best.as_ref().is_none_or(|(best_damage, best_city, _, _)| {
+                damage > *best_damage || (damage == *best_damage && city < *best_city)
+            }) {
+                best = Some((damage, city, committed, defence));
+            }
+        }
+
+        let Some((damage, city, committed, defence)) = best else {
+            return;
+        };
+        let city_name = g.cities[&city].name.clone();
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city,
+                item: defence.clone(),
+            },
+        )
+        .is_ok()
+            && self.journal().wants(crate::reasoning::Level::Decision)
+        {
+            think!(self.journal(), Economy, Decision,
+                "{} pauses {} for {}", city_name, Self::plain_item(&committed), Self::plain_item(&defence);
+                "under siege with {damage} health missing; this is the highest-priority unsafe queue");
+        }
+    }
+
     /// Let a peaceful live city plan reclaim one queue from a repeatable
     /// economic project when the plan has another city to found. The
     /// delegated baseline governor correctly values the Settler, but it only
@@ -22708,6 +22779,12 @@ impl AdvancedAi {
         // the final pre-production state.
         self.settlement_atlas.borrow_mut().clear();
 
+        // The baseline emergency chooser only receives empty queues, and the
+        // Recovery governor intentionally preserves active ones. Let its
+        // live-only bleeding-city treatment reclaim one unsafe commitment
+        // before either path sees city production.
+        self.redirect_unsafe_city_queue_for_defense(g, pid);
+
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
         if self.base.book_pos < 4 {
@@ -22988,6 +23065,101 @@ mod tests {
         assert!(bridged.base.garrison_under_fire);
         bridged.disable_garrison_under_fire();
         assert!(!bridged.base.garrison_under_fire);
+    }
+
+    #[test]
+    fn live_siege_response_reclaims_one_unsafe_committed_queue() {
+        // At t104 of live run civvis-20260815T060130Z, damaged Cumae still
+        // had ten turns of Campus construction ahead of it. The ordinary
+        // emergency chooser only saw empty queues, while Recovery deliberately
+        // left this commitment alone. Use two damaged Campus queues to pin the
+        // one-city scope and make the priority observable.
+        let (mut game, city, home) = empire_with_a_capital(71_113);
+        let other = found_nearby_test_city(&mut game, 0, home);
+        game.players[0]
+            .techs
+            .extend([crate::name!("masonry"), crate::name!("writing")]);
+        let queue_campus = |game: &mut Game, city: u32| {
+            let campus = game
+                .producible_items(0, city)
+                .into_iter()
+                .find(
+                    |item| matches!(item, Item::District { district, .. } if district == "campus"),
+                )
+                .expect("fixture needs a legal Campus queue");
+            game.apply(
+                0,
+                &Action::Produce {
+                    city,
+                    item: campus.clone(),
+                },
+            )
+            .expect("queue the unsafe Campus");
+            campus
+        };
+        let city_campus = queue_campus(&mut game, city);
+        let other_campus = queue_campus(&mut game, other);
+        game.cities.get_mut(&city).unwrap().hp = 170;
+        game.cities.get_mut(&other).unwrap().hp = 145;
+        let mut routed = game.clone();
+
+        // The frozen anchor and the ordinary unbridged controller remain
+        // untouched: damage alone is actionable only when the bridge turns on
+        // garrison-under-fire.
+        for controller in [AdvancedAi::legacy(), AdvancedAi::new()] {
+            controller.redirect_unsafe_city_queue_for_defense(&mut game, 0);
+        }
+        assert_eq!(game.cities[&city].queue.first(), Some(&city_campus));
+        assert_eq!(game.cities[&other].queue.first(), Some(&other_campus));
+
+        let mut live = AdvancedAi::new();
+        live.enable_garrison_under_fire();
+        live.redirect_unsafe_city_queue_for_defense(&mut game, 0);
+        assert_eq!(game.cities[&city].queue.first(), Some(&city_campus));
+        assert!(matches!(
+            game.cities[&other].queue.first(),
+            Some(Item::Building { building }) if building == "walls"
+        ));
+
+        // The helper has to run before Recovery's ordinary production pass,
+        // which intentionally skips active queues. Exercise that turn route,
+        // not only the helper in isolation.
+        let mut routed_ai = AdvancedAi::new();
+        routed_ai.enable_garrison_under_fire();
+        routed_ai.base.book_pos = 4;
+        routed_ai.plan = Some(StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            target_player: None,
+            target_city: None,
+            threatened_city: Some(other),
+            desired_cities: 2,
+            assessed_turn: routed.turn,
+            rush: false,
+        });
+        routed_ai.take_turn(&mut routed, 0);
+        assert!(matches!(
+            routed.cities[&other].queue.first(),
+            Some(Item::Building { building }) if building == "walls"
+        ));
+
+        // A city already investing in a defender keeps that commitment even
+        // though the same evaluator would otherwise ask it for walls.
+        game.cities.get_mut(&city).unwrap().queue.clear();
+        game.cities.get_mut(&city).unwrap().hp = 145;
+        let warrior = Item::Unit {
+            unit: crate::name!("warrior"),
+        };
+        assert!(game.can_produce(0, city, &warrior));
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: warrior.clone(),
+            },
+        )
+        .expect("queue the active defender");
+        live.redirect_unsafe_city_queue_for_defense(&mut game, 0);
+        assert_eq!(game.cities[&city].queue.first(), Some(&warrior));
     }
 
     #[test]
