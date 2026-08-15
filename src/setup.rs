@@ -1294,10 +1294,10 @@ pub struct TacticsRules {
     /// units.
     pub turns_per_tech: u32,
     /// Turns each battle may run before neither side wins and the battle is
-    /// recorded as a draw. The setup surface offers the four values in
-    /// [`Self::TURN_LIMITS`]; old saves predate the choice and load the stock
-    /// 100-turn battle.
-    #[serde(default = "default_tactics_turn_limit")]
+    /// recorded as a draw. The setup surface offers the values in
+    /// [`Self::TURN_LIMITS`]; old saves predate the choice and load the
+    /// 100-turn battle they were fought under — see [`legacy_turn_limit`].
+    #[serde(default = "legacy_turn_limit")]
     pub turn_limit: u32,
     /// Battles the two civilizations fight before a match is decided. 1 is a
     /// single battle; any higher odd number is a series, taken by the first
@@ -1356,7 +1356,14 @@ fn one_battle() -> u32 {
     1
 }
 
-fn default_tactics_turn_limit() -> u32 {
+/// What `turn_limit` is worth in a save that does not carry it.
+///
+/// Deliberately not [`TacticsRules::default`]'s answer, for the same reason
+/// [`legacy_unfogged`] is not: every save without the field was written when
+/// the arena's only clock was 100 turns, and reading it back as the current
+/// 250-turn default would restate how long those battles were allowed to
+/// run. New battles get the current default; old ones keep their clock.
+fn legacy_turn_limit() -> u32 {
     100
 }
 
@@ -1383,7 +1390,12 @@ impl TacticsRules {
     /// `civvis tournament` is the instrument for that.
     pub const MAX_BEST_OF: u32 = 21;
     /// Battle clocks offered by every Tactics setup surface, shortest first.
-    pub const TURN_LIMITS: [u32; 8] = [10, 20, 30, 40, 50, 100, 150, 200];
+    /// 250 is the stock clock — an Online-speed game's length, long enough
+    /// that two armies with no reinforcements coming settle it on the field
+    /// rather than on the bell.
+    pub const TURN_LIMITS: [u32; 9] = [10, 20, 30, 40, 50, 100, 150, 200, 250];
+    /// The battle clock a new arena is given.
+    pub const DEFAULT_TURN_LIMIT: u32 = 250;
 
     /// Clamp a requested economy to what the mode can actually play.
     pub fn sanitized(self) -> Self {
@@ -1455,18 +1467,29 @@ impl TacticsRules {
 }
 
 impl Default for TacticsRules {
-    /// One city producing a unit every turn or two in the Ancient era, gold
-    /// enough to upgrade a unit every ten turns or so, and a technology every
-    /// five turns. Chosen so a battle keeps arriving at new units and new
-    /// matchups without the arena becoming a production race. Fogged, so
-    /// finding the enemy is part of the battle rather than given.
+    /// Two standing armies and nothing behind them: each side keeps the one
+    /// city it is dropped in with — the objective the other side is coming
+    /// for — but the city collects no Production and the side banks no Gold,
+    /// so no unit that was not on the field at turn one ever joins it, and
+    /// nothing is upgraded mid-battle. A technology every five turns still
+    /// moves the tree, but with no money to upgrade and nothing to build the
+    /// battle is decided by the armies as dealt. Production and Gold remain
+    /// the player's to raise from every setup surface when reinforcements
+    /// are wanted; this is the stock arena, not the only one. Fogged, so
+    /// finding the enemy is part of the battle rather than given, and a
+    /// 250-turn clock so two armies that must be careful with themselves
+    /// have room to settle it on the field.
+    ///
+    /// Until 2026-08-15 the stock arena granted 30 Production and 30 Gold a
+    /// turn on a 100-turn clock; the rating profile carries the grants and
+    /// the ledgers written under it stay matched to their own arena.
     fn default() -> Self {
         Self {
             cities: 1,
-            production: 30,
-            gold: 30,
+            production: 0,
+            gold: 0,
             turns_per_tech: 5,
-            turn_limit: default_tactics_turn_limit(),
+            turn_limit: Self::DEFAULT_TURN_LIMIT,
             best_of: 1,
             unique_units: false,
             fog: true,
@@ -2496,12 +2519,15 @@ mod tests {
 
     /// A battle clock is a small, deliberate Tactics setting rather than an
     /// arbitrary world-length number. Hand-written requests are normalized to
-    /// the closest offered value, and a save from before the field existed
-    /// receives the same 100-turn default as a new lobby.
+    /// the closest offered value, a new lobby opens on the 250-turn clock,
+    /// and a save from before the field existed keeps the 100-turn clock it
+    /// was fought under rather than being restated to the new default.
     #[test]
     fn tactics_turn_limits_use_the_published_ladder_and_survive_old_saves() {
-        assert_eq!(TacticsRules::TURN_LIMITS, [10, 20, 30, 40, 50, 100, 150, 200]);
-        assert_eq!(TacticsRules::default().turn_limit, 100);
+        assert_eq!(TacticsRules::TURN_LIMITS, [10, 20, 30, 40, 50, 100, 150, 200, 250]);
+        assert_eq!(TacticsRules::default().turn_limit, TacticsRules::DEFAULT_TURN_LIMIT);
+        assert_eq!(TacticsRules::DEFAULT_TURN_LIMIT, 250);
+        assert!(TacticsRules::TURN_LIMITS.contains(&TacticsRules::DEFAULT_TURN_LIMIT));
         for limit in TacticsRules::TURN_LIMITS {
             assert_eq!(
                 TacticsRules { turn_limit: limit, ..TacticsRules::default() }
@@ -2527,8 +2553,25 @@ mod tests {
         old.as_object_mut().unwrap().remove("turn_limit");
         assert_eq!(
             serde_json::from_value::<TacticsRules>(old).unwrap().turn_limit,
-            100
+            100,
+            "a save from before the clock was a setting keeps its 100 turns"
         );
+    }
+
+    /// The stock arena is two standing armies and no reinforcements: a city
+    /// each to hold, but nothing to build with and nothing to upgrade with,
+    /// so the battle is decided by the units dealt at turn one. The grants
+    /// stay real settings — anyone who wants reinforcements raises them.
+    #[test]
+    fn the_stock_arena_deals_two_standing_armies_and_no_reinforcements() {
+        let stock = TacticsRules::default();
+        assert_eq!(stock.cities, 1, "each side holds the one city it is dropped in with");
+        assert_eq!(stock.production, 0, "the stock city builds nothing");
+        assert_eq!(stock.gold, 0, "the stock side banks nothing to upgrade with");
+        assert_eq!(stock.sanitized(), stock, "the stock arena is already sane");
+        let reinforced = TacticsRules { production: 30, gold: 30, ..stock }.sanitized();
+        assert_eq!(reinforced.production, 30, "Production per turn is still the player's to set");
+        assert_eq!(reinforced.gold, 30, "Gold per turn is still the player's to set");
     }
 
     /// The world's shape and its poles are settings of their own, orthogonal to
