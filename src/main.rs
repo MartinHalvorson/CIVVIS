@@ -1102,7 +1102,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// anchor leaves false; the current production controller intentionally carries
 /// the behavior. Release `ai_eval advanced_v1 basic --pairs 10 --jobs 1 --seed
 /// 31337 --players 4 --turns 200 --deployment-comparison` reports from
-/// `8f6c6673` and this branch were byte-identical (SHA-256 `c7876b…a345`).
+/// `90aeec95` and this branch were byte-identical (SHA-256 `c7876b…a345`).
 /// Compatibility re-pin; the Elo protocol does not move.
 const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xce14_5b83_8186_71fb;
 
