@@ -889,3 +889,49 @@ Material on seed 1805: 25 against 12 without admirals, **20 against 12** with.
 Britain trades better and survives two seeds it previously lost, without the
 result swinging the other way — which is the size of effect wanted here after
 the rate experiment showed how easily a per-ship bonus overshoots.
+
+## 14. The setup order (2026-08-15)
+
+Operator-directed. The lobby's Tactics questions are asked in the order they
+depend on one another, and every answer narrows the next:
+
+1. **Game mode** — Civ or Tactics.
+2. **Human players** — who is at the keyboard, unchanged from Civ.
+3. **Scenario** — **Custom** first and by default, then every catalogued
+   battle (`historical_scenarios::SCENARIOS`, Trafalgar included) grouped by
+   era, earliest first. A named battle brings its own map, opening forces, era
+   and clock, and fixes the arena economy it was fought under (§13); its
+   briefing — ground, objective, both orders of battle — sits directly under
+   the control.
+4. **World type** — *Custom only.* **Flat**, a bounded field walled on all
+   four sides, or **Planet**, a small globe with the two sides on opposite
+   faces of the world.
+5. **Map** — *Custom only,* and cut to the world type: a flat world offers
+   **Land** (`MapScript::Battlefield`); a planet offers **Land**
+   (`TacticsPlanet`) or **Ocean** (`TacticsOcean`). Only one Land is ever on
+   the menu at a time, which is why the two can share the name — the ids they
+   travel under have not changed, so saves, sweeps and `?map=battlefield`
+   deep links mean what they always did.
+6. **World size** — whatever the combination above is drawn at, from
+   `setup::battlefield_sizes()` filtered on the map. Flat Land is a ladder of
+   three: **Field 10×10, March 10×20, Battlefield 20×20** (ids `10x10`,
+   `10x20`, `20x20`, unchanged; the last is the field the site's Tactics link
+   opens). Either globe is offered at diameters 8, 10, 15 and 20. A named
+   battle lists only the sizes it is charted at — one each today, shown
+   fixed — and a battle charted at a second size needs nothing but a second
+   `BattlefieldSize` row.
+
+Then the Tactics settings card, as before. The Civ mode's order (size, shape,
+map) is untouched: the same controls are recomposed by `placeSetupControls`
+whenever the mode moves, so each game asks its world questions in its own
+order and a Civ choice survives a visit to Tactics and back. Reading a world
+back into the panel — a page reloaded over a running battle, or staged
+next-game settings — goes through the same steps (`adoptTacticsWorld`): the
+battle if the map is a named one, else Custom with the map's world type and
+the map, then the size whose dimensions these are.
+
+What went: the scenario library browser (#1458's era/commander/terrain lens
+tabs and card grid). It chose the same thing the Scenario select now chooses,
+one control up, and a setup pass reads better as one column of questions than
+as a column with a catalog folded into it. The catalog data it drew on is
+unchanged and still feeds the select and the briefing.
