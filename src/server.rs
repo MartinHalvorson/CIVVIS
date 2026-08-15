@@ -6839,6 +6839,62 @@ mod tests {
         );
     }
 
+    /// The home page's Tactics quadrants open the battle picker before they
+    /// hand over to the simulator, and the picker is the historical scenario
+    /// library — the same catalog the engine ships, copied into the static
+    /// page by `tools/landing_battles.py` because a page cannot ask the
+    /// WebAssembly module before the module is loaded. A copy drifts, so this
+    /// pins it row for row: a battle added, renamed or re-dated in
+    /// `historical_scenarios.rs` fails here until the tool is run again.
+    ///
+    /// The four quadrants themselves are pinned by their destinations: Play
+    /// Civ seats the visitor through the shim's `mode=play`, Watch Civ is the
+    /// stock exhibition, and both Tactics quadrants fall back to the site's
+    /// one Tactics world when the picker cannot open — the same world the
+    /// viewer's chip opens (`viewer_offers_the_other_game_mode_in_a_chip_beside_home` above).
+    #[test]
+    fn the_home_page_carries_the_battle_catalog_the_engine_ships() {
+        let landing = include_str!("../beta/landing.html");
+        let block = landing
+            .split_once("<script id=\"battle-catalog\" type=\"application/json\">")
+            .expect("the home page carries a battle catalog block")
+            .1
+            .split_once("</script>")
+            .expect("the end of the catalog block")
+            .0;
+        let carried: Value = serde_json::from_str(block).expect("the catalog block is JSON");
+        let shipped = serde_json::to_value(crate::historical_scenarios::all())
+            .expect("the engine's catalog serializes");
+        assert_eq!(
+            carried, shipped,
+            "beta/landing.html is behind the engine's battle catalog; run tools/landing_battles.py"
+        );
+        assert!(!block.contains('<'), "the catalog block must not be able to close its own element");
+        for piece in [
+            // Rows: play above, watch below. Columns: Civ left, Tactics right.
+            "href=\"/?mode=play\" aria-labelledby=\"play-civ-title\"",
+            "href=\"/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play\" data-pick=\"play\"",
+            "href=\"/\" aria-labelledby=\"watch-civ-title\"",
+            "href=\"/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\" data-pick=\"watch\"",
+            // The picker and its four lenses.
+            "id=\"battle-picker\"",
+            "data-lens=\"custom\"",
+            "data-lens=\"era\"",
+            "data-lens=\"person\"",
+            "data-lens=\"terrain\"",
+            // A picked battle travels as the lobby's own map id, plus who plays.
+            "href=\"${esc(into(`/?map=${b.id}&players=2`))}\"",
+            "const into = query => query + (mode === \"play\" ? \"&mode=play\" : \"\");",
+        ] {
+            assert!(landing.contains(piece), "the home page lost {piece}");
+        }
+        // And the shim knows the word: `mode=play` seats the visitor,
+        // `mode=watch` leaves the world to its AIs.
+        let shim = include_str!("../beta/shim.js");
+        assert!(shim.contains("if (mode === \"play\") payload.spectate = false;"));
+        assert!(shim.contains("else if (mode === \"watch\") payload.spectate = true;"));
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn promoted_binary_name_carries_the_runtime_revision() {
