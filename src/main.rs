@@ -1039,6 +1039,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// treasury, and an active major war. `AdvancedAi::legacy()` leaves
 /// `war_economy` false, so it cannot enter the new policy branch. Compatibility
 /// re-pin; the Elo protocol does not move.
+/// The live war-production solvency handoff is gated by that same
+/// `war_economy` flag. `AdvancedAi::legacy()` leaves it false, so its recovery
+/// chooser and every production queue remain unchanged. Compatibility re-pin;
+/// the Elo protocol does not move.
 /// The local-defense handoff is likewise live-only: `garrison_under_fire`
 /// changes the emergency chooser from a generic military pick to a
 /// melee-capable land defender, while the queue release stops treating a siege
@@ -1046,7 +1050,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// treatment flags false, so it retains the historic generic selector and
 /// never enters either release helper. Compatibility re-pin; the Elo protocol
 /// does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x98cb_e81c_f1ec_8348;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0db7_d9bb_06e2_6bbf;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
