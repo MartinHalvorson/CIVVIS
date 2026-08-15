@@ -40,8 +40,6 @@
 use std::path::Path;
 
 use civvis::ai::Ai;
-#[allow(unused_imports)]
-use civvis::reasoning::Journal;
 use civvis::game::Action;
 use civvis::mirror;
 
@@ -2700,44 +2698,17 @@ fn explain_line(thought: &civvis::reasoning::Thought) -> String {
 /// ordered builder after builder.
 /// The variant's own name, taken from its Debug form.
 ///
-/// ⚠ A HAND-WRITTEN LIST OF LABELS GOES STALE AND LIES. The curated `action_label`
-/// below still reported `other = 932` over 81 turns — 11 a turn of something nobody
-/// could name, because the list did not cover every variant and there is no compiler
-/// error for a missing arm behind `_`. Reading the name off Debug cannot drift.
+/// ⚠ A HAND-WRITTEN LIST OF LABELS GOES STALE AND LIES. A curated `action_label`
+/// list (since removed) still reported `other = 932` over 81 turns — 11 a turn of
+/// something nobody could name, because the list did not cover every variant and
+/// there is no compiler error for a missing arm behind `_`. Reading the name off
+/// Debug cannot drift.
 fn action_variant(action: &Action) -> String {
     let text = format!("{action:?}");
     text.split(|c: char| !c.is_alphanumeric() && c != '_')
         .next()
         .unwrap_or("other")
         .to_string()
-}
-
-#[allow(dead_code)]
-fn action_label(action: &Action) -> &'static str {
-    match action {
-        Action::Buy { .. } => "buy_unit",
-        Action::BuyBuilding { .. } => "buy_building",
-        Action::BuyDistrict { .. } => "buy_district",
-        Action::BuyPlot { .. } => "buy_plot",
-        Action::Improve { .. } => "improve",
-        Action::Promote { .. } => "promote",
-        Action::Government { .. } => "government",
-        Action::ChooseDedication { .. } => "dedication",
-        Action::MakePeace { .. } => "peace",
-        Action::Denounce { .. } => "denounce",
-        Action::Produce { .. } => "produce_unmapped",
-        Action::Pillage { .. } => "pillage",
-        Action::RepairImprovement { .. } => "repair",
-        Action::Upgrade { .. } => "upgrade_other",
-        Action::CombineUnits { .. } => "combine",
-        Action::LinkUnits { .. } | Action::UnlinkUnits { .. } => "link",
-        Action::ContributeDistrict { .. } | Action::ContributeProject { .. } => "contribute",
-        Action::AssignSpy { .. } | Action::SpyMission { .. } | Action::PromoteSpy { .. } => "spy",
-        Action::ProposeDeal { .. } | Action::AcceptDeal { .. } | Action::RejectDeal { .. } => "deal",
-        Action::Trade { .. } => "trade",
-        Action::CongressVote { .. } => "congress",
-        _ => "other",
-    }
 }
 
 #[cfg(test)]

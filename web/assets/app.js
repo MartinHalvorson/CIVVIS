@@ -7032,10 +7032,10 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       const arenaSettings = {
         tacticsfog: st.tactics.fog ? "1" : "0",
         tacticsflag: st.tactics.flag ? "1" : "0",
-        tacticsturnlimit: String(st.tactics.turn_limit ?? st.max_turns ?? 100),
+        tacticsturnlimit: String(st.tactics.turn_limit ?? st.max_turns ?? 250),
         tacticscities: String(st.tactics.cities ?? 1),
-        tacticsproduction: String(st.tactics.production ?? 30),
-        tacticsgold: String(st.tactics.gold ?? 30),
+        tacticsproduction: String(st.tactics.production ?? 0),
+        tacticsgold: String(st.tactics.gold ?? 0),
         tacticsturnspertech: String(st.tactics.turns_per_tech ?? 5),
         tacticsbestof: String(st.tactics.best_of ?? 1),
         tacticsuniqueunits: st.tactics.unique_units ? "1" : "0",
@@ -29677,7 +29677,7 @@ function selectedSimulationSettings() {
           // request.
           tactics_fog: readSetting("tacticsfog") === "1",
           tactics_flag: readSetting("tacticsflag") === "1",
-          tactics_turn_limit: Number(readSetting("tacticsturnlimit")) || 100,
+          tactics_turn_limit: Number(readSetting("tacticsturnlimit")) || 250,
           tactics_cities: Number(readSetting("tacticscities")) || 0,
           tactics_production: Number(readSetting("tacticsproduction")) || 0,
           tactics_gold: Number(readSetting("tacticsgold")) || 0,

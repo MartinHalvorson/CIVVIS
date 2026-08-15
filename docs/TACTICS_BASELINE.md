@@ -7,7 +7,9 @@ and quote the diff in the pull request that moves it.
 Every figure is the left controller's share of 40 seat-mirrored games on a
 20x20 arena, with a 95% Wilson interval. Seat-mirrored means each
 controller plays both ends of every draw, so a starting-corner advantage cannot
-read as a controller advantage.
+read as a controller advantage. The arena economy is pinned by the battery
+(`ECONOMY` in `tools/tactics_bench.py`) rather than taken from the stock arena,
+so the rows stay comparable when the stock arena moves.
 
 ## Regimes
 
