@@ -156,7 +156,11 @@ async function fileReport(request, env, url) {
   const kind = report.kind === "feature" ? "feature" : "issue";
   const title = String(report.title || "").trim();
   const details = String(report.details || "").trim();
-  const reporter = String(report.reporter || "").trim().slice(0, 60) || "anonymous";
+  // The name is rendered as an identity claim in the issue body, so it gets
+  // word characters only — a "pen name" must not smuggle markdown, links or
+  // an @-mention into bold type.
+  const reporter =
+    String(report.reporter || "").replace(/[^\w. -]/g, "").trim().slice(0, 60) || "anonymous";
   if (title.length < 3 || title.length > 140) return answer(400, { error: "title must be 3–140 characters" });
   if (details.length > 5000) return answer(400, { error: "details must stay under 5000 characters" });
 
