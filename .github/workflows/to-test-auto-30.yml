@@ -286,7 +286,11 @@ jobs:
         run: ./beta/worker_test.py
 
       - name: Check the stable lane plays
-        run: ./beta/verify.py --dist site --mount root --seconds 40
+        # The promoted tag can predate the current engine's compact map-patch
+        # protocol. It still has to boot, play, and paint correctly; only the
+        # current /test lane below is required to satisfy current performance
+        # contracts before it is published.
+        run: ./beta/verify.py --dist site --mount root --seconds 40 --allow-legacy-full-map
 
       - name: Check the test lane plays
         run: ./beta/verify.py --dist site --mount test --seconds 40 --no-gate
