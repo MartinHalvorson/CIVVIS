@@ -2521,6 +2521,54 @@ mod city_name_tests {
     }
 
     #[test]
+    fn a_host_refused_trade_route_is_not_enumerated_either() {
+        // The enumeration used to paraphrase the validator with a looser
+        // inline filter that skipped `blocked_trade_routes`, so a run's notes
+        // reported waiting routes for a trader whose every destination the
+        // host had refused (run civvis-20260815T081505Z, "routes=2" for 54
+        // turns). What `legal_actions` offers must be what `do_trade_route`
+        // would take.
+        let mut game = Game::new(2, 24, 16, 3, 200, 0);
+        let sites: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+            .map(|(pos, _)| *pos)
+            .collect();
+        let origin = sites[0];
+        let destination = sites
+            .iter()
+            .copied()
+            .find(|pos| game.wdist(origin, *pos) >= 4 && game.wdist(origin, *pos) <= 15)
+            .unwrap();
+        game.place_city(0, origin, None);
+        let destination_city = game.place_city(1, destination, None);
+        let trader = game.spawn_test_unit("trader", 0, origin);
+        // The enumeration sits behind the empire capacity gate, which is zero
+        // before Foreign Trade; the gate is not what this test is about.
+        game.observed_trade_capacity.insert(0, 1);
+
+        let offered = |game: &Game| {
+            game.legal_actions(0).into_iter().any(|action| {
+                matches!(
+                    action,
+                    Action::TradeRoute { unit, city }
+                        if unit == trader && city == destination_city
+                )
+            })
+        };
+        assert!(offered(&game), "the fixture route must start legal");
+
+        game.blocked_trade_routes.insert((origin, destination));
+        assert!(
+            !offered(&game),
+            "a host-refused route must vanish from the enumeration, not \
+             linger as an action the engine would refuse"
+        );
+    }
+
+    #[test]
     fn every_civilization_has_a_deep_unique_city_name_pool() {
         for civilization in CIV_NAMES {
             let names = city_names(civilization);
@@ -43728,15 +43776,17 @@ impl Game {
                         Some(cid) if self.cities[&cid].owner == pid => cid,
                         _ => continue,
                     };
-                    for (dest, dc) in &self.cities {
-                        if *dest == origin
-                            || self.is_at_war(pid, dc.owner)
-                            || self.wdist(self.cities[&origin].pos, dc.pos) > 15
-                            || self
-                                .routes
-                                .iter()
-                                .any(|r| r.origin == origin && r.dest == *dest)
-                        {
+                    // Ask the one validator `do_trade_route` will consult,
+                    // not a looser paraphrase of it. The inline filter here
+                    // used to skip `blocked_trade_routes` and the World
+                    // Congress embargo, so run civvis-20260815T081505Z
+                    // reported "routes=2" in its notes for 54 straight turns
+                    // while the trader idled — both destinations had been
+                    // host-refused at t25/t26 and the actual picker rightly
+                    // proposed nothing. An action this enumeration offers
+                    // must be one the engine would take.
+                    for dest in self.cities.keys() {
+                        if !self.can_establish_trade_route(pid, origin, *dest) {
                             continue;
                         }
                         acts.push(Action::TradeRoute {
