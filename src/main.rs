@@ -1056,7 +1056,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// only when `endgame_war_runway` is enabled through the live bridge. The
 /// frozen anchor leaves that flag false, retaining its historical late-war
 /// behavior. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5825_fe6f_9859_014a;
+/// A home barbarian now lets only unclaimed live-bridge units retain their
+/// pre-war campaign staging after the bounded garrison/defense responders get
+/// first claim. `AdvancedAi::legacy()` leaves `home_defense` false, so it
+/// never inserts the barbarian seat into this path. The fixed 10-pair
+/// `advanced_v1`/`basic` seed prefix (31337 through 31346) matched the prior
+/// 17/20 wins, 131.9 average turns, score, and per-seat metrics exactly.
+/// Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1043_1d73_5f9a_388c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
