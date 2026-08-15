@@ -1017,7 +1017,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// changes are all behind live-bridge treatment flags. `BasicAi::new()` and
 /// `AdvancedAi::legacy()` leave those flags false; the focused ablation tests
 /// lock the boundary. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe92d_bb28_b2b2_4277;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x60e3_9668_644c_3fa7;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
