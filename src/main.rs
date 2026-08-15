@@ -1078,7 +1078,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The selection-time Loyalty forecast for a new settle target is likewise behind
 /// `settler_commit`, which `AdvancedAi::legacy()` leaves off; the anchor's settler
 /// picks are unchanged. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1bb3_10cb_ef89_0251;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0657_55b3_c9ec_b48d;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
