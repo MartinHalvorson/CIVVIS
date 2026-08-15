@@ -13266,6 +13266,28 @@ impl AdvancedAi {
         }
     }
 
+    /// Whether an active queue is already doing the work a local defence
+    /// handoff would ask it to do. Both live city-defence paths below share
+    /// this conservative release: repairing an asset, fortifying it, or
+    /// raising a military unit stays with the city that already chose it.
+    fn active_queue_is_defensive(g: &Game, item: &Item) -> bool {
+        match item {
+            Item::Repair { .. } => true,
+            Item::Project { project } => matches!(
+                project.as_str(),
+                "repair_outer_defenses" | "repair_encampment"
+            ),
+            Item::Building { building } => matches!(
+                building.as_str(),
+                "walls" | "medieval_walls" | "renaissance_walls"
+            ),
+            Item::Unit { unit } | Item::Formation { unit, .. } => {
+                g.rules.units[unit].class == "military"
+            }
+            _ => false,
+        }
+    }
+
     /// Let the live bleeding-city treatment interrupt one unsafe committed
     /// queue. `BasicAi::besieged_city_item` normally reaches only an empty
     /// queue through `pick_item`, while Recovery's strategic governor skips a
@@ -13282,28 +13304,12 @@ impl AdvancedAi {
             return;
         }
 
-        let is_defensive = |item: &Item| match item {
-            Item::Repair { .. } => true,
-            Item::Project { project } => matches!(
-                project.as_str(),
-                "repair_outer_defenses" | "repair_encampment"
-            ),
-            Item::Building { building } => matches!(
-                building.as_str(),
-                "walls" | "medieval_walls" | "renaissance_walls"
-            ),
-            Item::Unit { unit } | Item::Formation { unit, .. } => {
-                g.rules.units[unit].class == "military"
-            }
-            _ => false,
-        };
-
         let mut best: Option<(i32, u32, Item, Item)> = None;
         for city in g.player_city_ids(pid) {
             let Some(committed) = g.cities[&city].queue.first().cloned() else {
                 continue;
             };
-            if is_defensive(&committed) {
+            if Self::active_queue_is_defensive(g, &committed) {
                 continue;
             }
             let Some(defence) = self.base.besieged_city_item(g, pid, city) else {
@@ -13334,6 +13340,75 @@ impl AdvancedAi {
             think!(self.journal(), Economy, Decision,
                 "{} pauses {} for {}", city_name, Self::plain_item(&committed), Self::plain_item(&defence);
                 "under siege with {damage} health missing; this is the highest-priority unsafe queue");
+        }
+    }
+
+    /// Let the Recovery plan's one identified bastion begin ancient Walls
+    /// before it bleeds. `garrison_walls_item` already identifies the capital
+    /// and small frontier cities that need this live-only doctrine, but it
+    /// normally reaches only an empty queue. In live run
+    /// `civvis-20260815T064852Z`, threatened Cumae sat unwalled in an
+    /// eighteen-turn University at t109 and fell before that queue emptied.
+    ///
+    /// This is a preventive counterpart to `redirect_unsafe_city_queue_for_defense`:
+    /// it reuses the existing wall eligibility, only accepts Walls (never the
+    /// doctrine's ordinary Granary carve-out), only acts during an active major
+    /// war and Recovery, and can reclaim exactly the plan's threatened city.
+    fn redirect_threatened_recovery_queue_for_walls(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        if !self.base.garrison_walls || plan.strategy != GrandStrategy::Recovery {
+            return;
+        }
+        let active_major_war = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+                && g.is_at_war(pid, player.id)
+        });
+        if !active_major_war {
+            return;
+        }
+        let Some(city) = plan.threatened_city else {
+            return;
+        };
+        let Some(committed) = g
+            .cities
+            .get(&city)
+            .filter(|candidate| candidate.owner == pid)
+            .and_then(|candidate| candidate.queue.first())
+            .cloned()
+        else {
+            return;
+        };
+        if Self::active_queue_is_defensive(g, &committed) {
+            return;
+        }
+        let Some(walls) = self.base.garrison_walls_item(g, pid, city) else {
+            return;
+        };
+        if !matches!(&walls, Item::Building { building } if building == "walls") {
+            return;
+        }
+
+        let city_name = g.cities[&city].name.clone();
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city,
+                item: walls.clone(),
+            },
+        )
+        .is_ok()
+            && self.journal().wants(crate::reasoning::Level::Decision)
+        {
+            think!(self.journal(), Economy, Decision,
+                "{} pauses {} for walls", city_name, Self::plain_item(&committed);
+                "Recovery identifies it as threatened and the live garrison doctrine can defend it now");
         }
     }
 
@@ -22780,10 +22855,12 @@ impl AdvancedAi {
         self.settlement_atlas.borrow_mut().clear();
 
         // The baseline emergency chooser only receives empty queues, and the
-        // Recovery governor intentionally preserves active ones. Let its
-        // live-only bleeding-city treatment reclaim one unsafe commitment
-        // before either path sees city production.
+        // Recovery governor intentionally preserves active ones. Let the
+        // live-only bleeding response reclaim one unsafe commitment, then let
+        // the existing wall doctrine protect the plan's one threatened city
+        // before it begins taking damage.
         self.redirect_unsafe_city_queue_for_defense(g, pid);
+        self.redirect_threatened_recovery_queue_for_walls(g, pid, &plan);
 
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
@@ -23160,6 +23237,105 @@ mod tests {
         .expect("queue the active defender");
         live.redirect_unsafe_city_queue_for_defense(&mut game, 0);
         assert_eq!(game.cities[&city].queue.first(), Some(&warrior));
+    }
+
+    #[test]
+    fn threatened_recovery_queue_uses_the_live_wall_doctrine_before_damage() {
+        // At t109 of live run civvis-20260815T064852Z, Cumae was intact but
+        // threatened, unwalled, and eighteen turns into a University. Its
+        // Granary was already complete, so the existing garrison doctrine's
+        // next legal item was precisely Walls; its empty-queue-only reach was
+        // the problem.
+        let (mut game, city, _) = empire_with_a_capital(71_114);
+        game.players[0]
+            .techs
+            .extend([crate::name!("masonry"), crate::name!("writing")]);
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("granary"));
+        let campus = game
+            .producible_items(0, city)
+            .into_iter()
+            .find(|item| matches!(item, Item::District { district, .. } if district == "campus"))
+            .expect("fixture needs the unsafe Campus queue");
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: campus.clone(),
+            },
+        )
+        .expect("queue the Campus");
+        let prepared = game.clone();
+        let recovery = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: Some(city),
+            desired_cities: 1,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        // Neither the frozen anchor nor the ordinary unbridged controller may
+        // seize a queue merely because the city is a capital.
+        for controller in [AdvancedAi::legacy(), AdvancedAi::new()] {
+            controller.redirect_threatened_recovery_queue_for_walls(&mut game, 0, &recovery);
+        }
+        assert_eq!(game.cities[&city].queue.first(), Some(&campus));
+
+        let mut live = AdvancedAi::new();
+        live.enable_garrison_walls();
+        let mut peaceful = prepared.clone();
+        let quiet_plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            ..recovery.clone()
+        };
+        live.redirect_threatened_recovery_queue_for_walls(&mut peaceful, 0, &quiet_plan);
+        assert_eq!(peaceful.cities[&city].queue.first(), Some(&campus));
+
+        live.redirect_threatened_recovery_queue_for_walls(&mut game, 0, &recovery);
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Building { building }) if building == "walls"
+        ));
+
+        // Exercise the normal turn route too. The actual Recovery assessment
+        // must retain the threatened city long enough for the queue handoff to
+        // run before the strategic governor sees the Campus commitment.
+        let mut routed = prepared.clone();
+        routed.spawn_test_unit("modern_armor", 1, routed.cities[&city].pos);
+        let mut routed_ai = AdvancedAi::new();
+        routed_ai.enable_garrison_walls();
+        routed_ai.base.book_pos = 4;
+        routed_ai.plan = Some(recovery.clone());
+        assert_eq!(routed_ai.threatened_city(&routed, 0), Some(city));
+        routed_ai.take_turn(&mut routed, 0);
+        assert!(matches!(
+            routed.cities[&city].queue.first(),
+            Some(Item::Building { building }) if building == "walls"
+        ));
+
+        // An active defender keeps its production even at the identified
+        // bastion. The wall doctrine only reclaims unsafe infrastructure.
+        let mut defending = prepared;
+        defending.cities.get_mut(&city).unwrap().queue.clear();
+        let warrior = Item::Unit {
+            unit: crate::name!("warrior"),
+        };
+        defending
+            .apply(
+                0,
+                &Action::Produce {
+                    city,
+                    item: warrior.clone(),
+                },
+            )
+            .expect("queue the active defender");
+        live.redirect_threatened_recovery_queue_for_walls(&mut defending, 0, &recovery);
+        assert_eq!(defending.cities[&city].queue.first(), Some(&warrior));
     }
 
     #[test]
