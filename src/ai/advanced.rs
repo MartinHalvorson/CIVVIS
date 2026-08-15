@@ -153,6 +153,13 @@ const LIVE_WONDER_RACE_BONUS: f64 = 1_500.0;
 /// Standard turns a settler avoids a site it stood on and could not found. See
 /// `advanced_settler_step`.
 const SETTLER_DEAD_SITE_AVOID_TURNS: u32 = 30;
+/// Loyalty per turn at which a forecast city is treated as doomed before its
+/// Settler is sent: -8 empties a full bar in at most thirteen turns. The same
+/// emergency threshold the live mirror uses for a settler's current plot.
+const SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN: f64 = -8.0;
+/// New-target picks re-asked after a doomed forecast. Exhaustion holds the
+/// Settler rather than routing it through the unfiltered baseline picker.
+const SETTLE_TARGET_FORECAST_RETRIES: usize = 3;
 const RECOVERY_POSTURE_LIMIT: u32 = 25;
 /// Tiles a rush will march. Measured capital separations on 6p 74x46 run a
 /// median 13 and a p90 17, so 16 covers roughly nine seats in ten while
@@ -17962,6 +17969,17 @@ impl AdvancedAi {
         Some(self.base.fortify_or_stop(g, pid, uid))
     }
 
+    /// Would a city founded at `site` right now bleed Loyalty fast enough to
+    /// revolt before it repays its Settler? This asks the engine's complete
+    /// Loyalty calculation of a speculative city, using the same -8/turn
+    /// emergency threshold as the live mirror's current-plot protection.
+    fn settle_site_is_loyalty_doomed(&self, g: &Game, pid: usize, site: Pos) -> bool {
+        let mut forecast = g.speculative_clone();
+        let city = forecast.found_city_for(pid, site, None);
+        forecast.city_loyalty_per_turn(&forecast.cities[&city])
+            <= SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN
+    }
+
     /// Whether `uid` retired `pos` after standing on it unable to found. Expired
     /// entries are pruned at the top of `advanced_settler_step`.
     fn settler_site_is_dead(&self, uid: u32, pos: Pos) -> bool {
@@ -18171,14 +18189,54 @@ impl AdvancedAi {
                     || self.settlement_tile_risk(g, pid, Some(uid), *target, &visible)
                         <= SETTLER_STEP_RISK_LIMIT)
         });
+        // The target forecast is a live-bridge repair, not a production or
+        // tournament policy. `settler_commit` is on in the normal promoted
+        // controller, whereas both default constructors leave
+        // `loyalty_rate_alarm` off; the live bridge enables it with the live
+        // Loyalty emergency treatment. Use the latter so the frozen anchor
+        // and the default advanced controller retain their established
+        // ladders.
+        let forecast_loyalty = self.base.loyalty_rate_alarm;
         let target = valid_target.or_else(|| {
-            self.best_settler_target(g, pid, uid, 8, avoid)
-                .map(|(pos, _)| {
+            // Ask the forecast before the walk. The mirror can only reject a
+            // doomed site after the Settler stands on it, which previously
+            // spent a long frontier walk merely to discover the city would
+            // revolt almost immediately. Retiring a rejected site reuses the
+            // bounded dead-site set from the current-plot repair (#1689), so
+            // the next candidate is genuinely distinct.
+            let mut rejected = 0;
+            loop {
+                let Some((pos, _)) = self.best_settler_target(g, pid, uid, 8, avoid) else {
+                    break None;
+                };
+                if !forecast_loyalty || !self.settle_site_is_loyalty_doomed(g, pid, pos) {
                     self.settler_targets.insert(uid, pos);
-                    pos
-                })
+                    break Some(pos);
+                }
+                think!(self.journal(), Expansion, Detail,
+                       "Settler refuses {pos:?} before walking there";
+                       "the city would lose at least {:.0} Loyalty a turn beside its \
+                        neighbours; the site is retired and the next best is asked",
+                       -SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN; pos);
+                self.settler_dead_sites.entry(uid).or_default().insert(
+                    pos,
+                    g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+                );
+                rejected += 1;
+                if rejected >= SETTLE_TARGET_FORECAST_RETRIES {
+                    break None;
+                }
+            }
         });
         let Some(target) = target else {
+            // Do not let a safe exhaustion fall through to `BasicAi`, which
+            // cannot see `settler_dead_sites` and may select the very plot the
+            // live forecast just retired. A later board can reveal a safe site
+            // or change the Loyalty calculation; until then, holding preserves
+            // the Settler rather than knowingly founding a doomed city.
+            if forecast_loyalty {
+                return false;
+            }
             return self.base.settler_step(g, pid, uid);
         };
         if current == target && g.can_found_city(uid) {
@@ -42137,6 +42195,197 @@ mod research_probe {
             game.units.get(&settler).is_some_and(|unit| unit.pos != site)
                 || ai.settler_targets.get(&settler).is_some_and(|next| *next != site),
             "the settler either stepped off the dead site or holds a new target"
+        );
+    }
+
+    /// A live settler must reject a frontier site whose speculative city would
+    /// immediately lose Loyalty, while normal and frozen controllers preserve
+    /// their established selection path.
+    #[test]
+    fn a_live_settler_refuses_a_loyalty_doomed_target_before_walking_there() {
+        let mut game = Game::new_full(2, 40, 24, 91_775, 250, 0, false);
+        game.current = 0;
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            let pos = game.units[&settler].pos;
+            game.remove_unit(settler);
+            game.found_city_for(pid, pos, None);
+        }
+        for unit in game.player_unit_ids(0) {
+            game.remove_unit(unit);
+        }
+        let ours = game.player_city_ids(0)[0];
+        let theirs = game.player_city_ids(1)[0];
+        let home = game.cities[&ours].pos;
+        let rival = game.cities[&theirs].pos;
+        assert!(game.wdist(home, rival) >= 12, "fixture needs a distant rival");
+        let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        for position in positions {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            game.players[0].explored.insert(position);
+        }
+        game.cities.get_mut(&theirs).unwrap().pop = 12;
+        game.cities.get_mut(&ours).unwrap().pop = 6;
+
+        let mut beside_rival: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(*pos, rival) == 4 && game.wdist(*pos, home) >= 4)
+            .collect();
+        beside_rival.sort_unstable();
+        let doomed = beside_rival[0];
+        assert!(
+            AdvancedAi::new().settle_site_is_loyalty_doomed(&game, 0, doomed),
+            "the fixture must put the candidate below the live emergency threshold"
+        );
+        let mut beside_home: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(*pos, home) == 4 && game.wdist(*pos, rival) >= 10)
+            .collect();
+        beside_home.sort_unstable();
+        assert!(
+            !AdvancedAi::new().settle_site_is_loyalty_doomed(&game, 0, beside_home[0]),
+            "the fixture must retain a holdable alternative"
+        );
+
+        let settler = game.spawn_test_unit("settler", 0, doomed);
+        game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+        let mut default_board = game.clone();
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.base.loyalty_rate_alarm);
+        let _ = live.advanced_settler_step(&mut game, 0, settler);
+        let retired = live.settler_dead_sites.get(&settler).cloned().unwrap_or_default();
+        assert!(
+            !retired.is_empty(),
+            "the live bridge retires a doomed candidate before the Settler walks"
+        );
+        if let Some(target) = live.settler_targets.get(&settler).copied() {
+            assert!(!retired.contains_key(&target));
+            assert!(
+                !live.settle_site_is_loyalty_doomed(&game, 0, target),
+                "a retained target must survive the same forecast"
+            );
+        }
+
+        let mut default = AdvancedAi::new();
+        assert!(default.settler_commit, "the normal controller does use settler_commit");
+        assert!(!default.base.loyalty_rate_alarm);
+        let _ = default.advanced_settler_step(&mut default_board, 0, settler);
+        assert!(
+            default
+                .settler_dead_sites
+                .get(&settler)
+                .is_none_or(|sites| sites.is_empty()),
+            "the normal controller must not enter the live-only forecast"
+        );
+    }
+
+    /// When every candidate examined by the live forecast is doomed, holding
+    /// is safer than falling through to `BasicAi`, which cannot see the
+    /// retired-site set and may found on the very plot just rejected.
+    #[test]
+    fn a_live_settler_holds_when_every_new_target_is_loyalty_doomed() {
+        let mut game = Game::new_full(2, 40, 24, 91_776, 250, 0, false);
+        game.current = 0;
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            let pos = game.units[&settler].pos;
+            game.remove_unit(settler);
+            game.found_city_for(pid, pos, None);
+        }
+        for unit in game.player_unit_ids(0) {
+            game.remove_unit(unit);
+        }
+        let ours = game.player_city_ids(0)[0];
+        let theirs = game.player_city_ids(1)[0];
+        let home = game.cities[&ours].pos;
+        let rival = game.cities[&theirs].pos;
+        let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        for position in positions {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            game.players[0].explored.insert(position);
+        }
+        game.cities.get_mut(&theirs).unwrap().pop = 12;
+        game.cities.get_mut(&ours).unwrap().pop = 6;
+        let mut beside_rival: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(*pos, rival) == 4 && game.wdist(*pos, home) >= 4)
+            .collect();
+        beside_rival.sort_unstable();
+        let doomed = beside_rival[0];
+        assert!(AdvancedAi::new().settle_site_is_loyalty_doomed(&game, 0, doomed));
+        // Give the sole candidate a deliberately strong first two rings. The
+        // test must exercise a real target pick, not pass because the normal
+        // value threshold rejects every flat, frontier site before Loyalty is
+        // considered.
+        for position in game.wdisk(doomed, 2) {
+            if let Some(tile) = game.map.tiles.get_mut(&position) {
+                tile.resource = Some(crate::name!("rice"));
+            }
+        }
+        for position in game.map.tiles.keys().copied().collect::<Vec<_>>() {
+            if position != doomed {
+                game.blocked_city_sites.insert(position);
+            }
+        }
+        let settler = game.spawn_test_unit("settler", 0, doomed);
+        game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+        let cities_before = game.player_city_ids(0).len();
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(
+            !game.blocked_city_sites.contains(&doomed),
+            "the lone candidate must remain available to the target picker"
+        );
+        assert_eq!(
+            live.best_settler_target(&game, 0, settler, 8, None)
+                .map(|(position, _)| position),
+            Some(doomed),
+            "the fixture must force the forecast to examine its lone candidate"
+        );
+        assert!(
+            !live.advanced_settler_step(&mut game, 0, settler),
+            "the safe exhaustion is a no-op, not an unfiltered fallback"
+        );
+        assert_eq!(game.player_city_ids(0).len(), cities_before);
+        assert_eq!(game.units[&settler].pos, doomed);
+        assert!(live.settler_site_is_dead(settler, doomed));
+        assert!(
+            !live.settler_targets.contains_key(&settler),
+            "no doomed target is retained after exhaustion"
         );
     }
 
