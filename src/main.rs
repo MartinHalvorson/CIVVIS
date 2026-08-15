@@ -1056,6 +1056,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// only when `endgame_war_runway` is enabled through the live bridge. The
 /// frozen anchor leaves that flag false, retaining its historical late-war
 /// behavior. Compatibility re-pin; the Elo protocol does not move.
+/// A home barbarian now lets only unclaimed live-bridge units retain their
+/// pre-war campaign staging after the bounded garrison/defense responders get
+/// first claim. `AdvancedAi::legacy()` leaves `home_defense` false, so it
+/// never inserts the barbarian seat into this path. The fixed 10-pair
+/// `advanced_v1`/`basic` seed prefix (31337 through 31346) matched the prior
+/// 17/20 wins, 131.9 average turns, score, and per-seat metrics exactly.
+/// Compatibility re-pin; the Elo protocol does not move.
 /// The live wonder race is likewise gated by `live_wonder_race`, which only
 /// `enable_live_bridge` sets: `AdvancedAi::legacy()` and every rated arm keep
 /// the `Item::Wonder` refusal exactly as it was, so no headless anchor can enter

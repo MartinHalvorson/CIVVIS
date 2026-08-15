@@ -21831,6 +21831,13 @@ impl AdvancedAi {
                 }
             }
         }
+        // A home raider supplies a bounded defensive assignment, not a second
+        // major-war front. Remember this exact shape so responders keep their
+        // first claim below while every other pre-war campaign unit can retain
+        // its staging order.
+        let barbarian_only = g
+            .barb_pid
+            .filter(|barb| enemies.len() == 1 && enemies[0] == *barb);
         if enemies.is_empty() {
             if spec.domain.as_deref() == Some("sea") {
                 if let Some(settler) = unit
@@ -22239,6 +22246,17 @@ impl AdvancedAi {
                     return true;
                 }
                 return self.base.tactical_step(g, pid, uid, threat, &barb_only, radius);
+            }
+        }
+        // The defender's claim above is deliberately bounded to the nearest
+        // half-army. Let the unclaimed remainder keep assembling on its
+        // campaign ring rather than falling through to the barbarian tactical
+        // path, which treats the foreign objective as a one-tile approach and
+        // pulls correctly staged units out of position. Major wars continue to
+        // use their existing group and reinforcement path unchanged.
+        if barbarian_only.is_some() {
+            if let Some(acted) = self.campaign_staging_step(g, pid, uid, plan) {
+                return acted;
             }
         }
         let defend_target = plan.threatened_city.and_then(|cid| {
@@ -38550,6 +38568,150 @@ mod tests {
             "a raider pillaging at home must draw the soldier in or take a hit; \
              the soldier stood at {:?} with the raider untouched at {raider_at:?}",
             game.units.get(&soldier).map(|unit| unit.pos)
+        );
+    }
+
+    /// ★★★★★ A HOME RAIDER MUST NOT FREEZE THE REST OF A PRE-WAR ARMY.
+    ///
+    /// The live bridge intentionally puts the barbarian seat in `enemies`
+    /// while a raider threatens a city. That made the controller leave the
+    /// `enemies.is_empty()` branch, which contains `campaign_staging_step`.
+    /// Consequently, the bounded home-defense assignment did not merely claim
+    /// its responder: it paused every unclaimed assault unit until the raider
+    /// disappeared. On live run `civvis-20260815T190904Z`, Rome held off its
+    /// Netherlands declaration from turns 95 through 104 despite 337--462
+    /// power against 69--76, while home raiders remained in range.
+    #[test]
+    fn a_distant_campaign_unit_stays_staged_while_barbarians_are_at_home() {
+        let mut game = Game::new_full(2, 30, 20, 90_078, 120, 0, true);
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        for uid in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(uid);
+        }
+
+        let mut land: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        land.sort();
+        let mut sites = None;
+        'find_sites: for home in &land {
+            for objective in &land {
+                if game.wdist(*home, *objective) >= 16
+                    && game.wdisk(*home, crate::ai::HOME_THREAT_RADIUS).len() >= 24
+                    && game.wdisk(*objective, 4).len() >= 18
+                {
+                    sites = Some((*home, *objective));
+                    break 'find_sites;
+                }
+            }
+        }
+        let (home, objective_site) = sites.expect("the map has separated interior city sites");
+        for (player, site) in [(0, home), (1, objective_site)] {
+            game.current = player;
+            let settler = game.spawn_test_unit("settler", player, site);
+            game.apply(player, &Action::FoundCity { unit: settler })
+                .expect("each chosen site can found a city");
+        }
+        game.current = 0;
+        game.record_contact(0, 1);
+        let target_city = game.player_city_ids(1)[0];
+        let objective = game.cities[&target_city].pos;
+        let barb = game.barb_pid.expect("a barbarian-seated game has barb_pid");
+        for uid in game.units.keys().copied().collect::<Vec<_>>() {
+            if game.units[&uid].owner == barb {
+                game.remove_unit(uid);
+            }
+        }
+        let open = |g: &Game, pos: Pos| {
+            g.map
+                .get(pos)
+                .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                && g.city_at(pos).is_none()
+                && g.units_at(pos).is_empty()
+        };
+        let raider_at = game
+            .wdisk(home, crate::ai::HOME_THREAT_RADIUS - 1)
+            .into_iter()
+            .filter(|pos| open(&game, *pos))
+            .max_by_key(|pos| (game.wdist(*pos, objective), *pos))
+            .expect("the home ring has an open land tile");
+        game.spawn_test_unit("warrior", barb, raider_at);
+        let staging_at = game
+            .wdisk(objective, 4)
+            .into_iter()
+            .filter(|pos| {
+                open(&game, *pos)
+                    && game.wdist(*pos, objective) == 4
+                    && game.wdist(*pos, raider_at) > 10
+                    && game.nbrs(*pos).into_iter().any(|next| {
+                        game.wdist(next, objective) == 3
+                            && game.map.get(next).is_some_and(|tile| {
+                                tile.owner_city
+                                    .and_then(|city| game.cities.get(&city))
+                                    .is_none_or(|city| city.owner != 1)
+                            })
+                    })
+            })
+            .max_by_key(|pos| (game.wdist(*pos, raider_at), *pos))
+            .expect("a legal staging tile remains outside the home-recall range");
+        let assault = game.spawn_test_unit("swordsman", 0, staging_at);
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(target_city),
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut ai = AdvancedAi::new();
+        ai.enable_home_defense();
+        ai.battlefront_observation = false;
+
+        assert!(
+            BasicAi::barbarian_presence_at_home(&game, 0),
+            "precondition: the barbarian is inside Rome's home-threat ring"
+        );
+        assert!(
+            ai.campaign_staging_position(&game, 0, 1, assault, objective, staging_at),
+            "precondition: the assault unit already occupies a lawful 3--5 staging tile"
+        );
+        assert_eq!(
+            ai.base.home_defense_objective(&game, 0, assault, &[barb]),
+            None,
+            "the assault unit is beyond the bounded recall range and stays unclaimed"
+        );
+
+        // This is the old fall-through: it treats the foreign city as a
+        // tactical destination even though the only actual enemy is the
+        // barbarian, and walks a correctly staged unit one tile closer.
+        let mut historic = game.clone();
+        let historic_ai = ai.clone();
+        assert!(
+            historic_ai
+                .base
+                .tactical_step(&mut historic, 0, assault, objective, &[barb], 1),
+            "precondition: the old tactical fallback would abandon the staging ring"
+        );
+        assert_ne!(
+            historic.units[&assault].pos, staging_at,
+            "the historical fallback must move the staged unit before this regression is meaningful"
+        );
+
+        let _ = ai.advanced_military_step(&mut game, 0, assault, &plan);
+        assert_eq!(
+            game.units[&assault].pos, staging_at,
+            "after bounded defenders get first claim, the unclaimed assault unit must hold its campaign staging tile"
+        );
+        assert!(
+            game.units[&assault].fortified,
+            "the campaign staging order must claim and hold the assault unit while the home raider is active"
+        );
+        assert!(
+            !game.is_at_war(0, 1),
+            "the pre-war staging treatment must not open the major war itself"
         );
     }
 
