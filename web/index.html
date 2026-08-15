@@ -1988,6 +1988,34 @@
     width: auto; min-width: 0; margin: 0; padding: 4px 8px;
     font-size: var(--type-small); letter-spacing: 0; text-transform: none;
   }
+  /* A Tactics result is written in the final positions of the armies, so the
+     arena's verdict card must not cover them: it sits in the upper-right
+     third of the map area — the fitted rectangle the world is actually drawn
+     into, so it tucks under the player strip and beside the rail instead of
+     over the field. A third of a small map is no place to read a verdict,
+     so the width is clamped, and the outer min() keeps the card inside a
+     map area narrower than the clamp's floor. */
+  #winner.winner-tactics {
+    top: calc(var(--map-area-top) + var(--panel-edge));
+    left: auto; right: calc(var(--map-area-right) + var(--panel-edge));
+    transform: none;
+    width: min(clamp(300px, calc(var(--map-area-width) / 3), 440px),
+               calc(var(--map-area-width) - 2 * var(--panel-edge)));
+    padding: clamp(14px, 2.4vmin, 22px) clamp(16px, 2.8vmin, 26px);
+  }
+  /* The corner card keeps the full screen's hierarchy at a size that fits a
+     third of the field. */
+  #winner.winner-tactics .winner-title { font-size: 24px; }
+  #winner.winner-tactics .winner-mark { margin-top: 6px; font-size: 18px; }
+  #winner.winner-tactics .winner-countdown-time { font-size: 28px; }
+  /* Three ways to play on will not share a row a third of the map wide, so
+     the answers stack; the simulation's pair still fits side by side. */
+  #winner.winner-tactics .winner-content > .winner-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #winner.winner-tactics .winner-content > .winner-actions.winner-actions-sim {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 
   /* Rich panel content */
   .research-card { width: 100%; height: 55px; min-height: 55px; display: grid; grid-template-columns: 32px minmax(0, 1fr) 36px; align-items: center; gap: 10px; }

@@ -7493,6 +7493,12 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   if (st.error) { errEl.textContent = st.error; errEl.style.display = "block";
     setTimeout(() => errEl.style.display = "none", 2500); }
   const w = document.getElementById("winner");
+  // A Tactics battle is decided by where the armies stand, and centring the
+  // result card would hide exactly that answer. In the arena the verdict
+  // parks in the map area's upper-right third instead; judged per snapshot
+  // rather than once, because the page outlives the world — an arena can
+  // hand off to a full Civ game, whose verdict takes the centre back.
+  w.classList.toggle("winner-tactics", isBattlefieldMapScript(st.map?.script));
   const hasWinner = st.winner !== null && st.winner !== undefined;
   const drawn = gameDrawn(st);
   // Being eliminated ends the game for the person at the keyboard even though
