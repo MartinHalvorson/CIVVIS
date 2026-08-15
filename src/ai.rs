@@ -6554,7 +6554,9 @@ impl BasicAi {
     /// A count of units spread across an empire says nothing about whether
     /// THIS city can hold, so this branch is keyed on the city's own besiegers
     /// and answers with the two things that defend a city: walls, then a
-    /// defender.
+    /// defender.  The live under-fire treatment asks specifically for a
+    /// melee-capable land defender: a siege piece belongs at a distant enemy
+    /// wall and cannot hold the city it is being built in.
     fn besieged_city_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
         // ⚠ Two, not one. Reacting to a single hostile in range fires on every
         // scout that wanders past, and measured over 24 paired maps that bought
@@ -6574,7 +6576,16 @@ impl BasicAi {
                 return Some(wall);
             }
         }
-        self.best_military(g, pid, cid, None)
+        // `garrison_under_fire` is live-bridge-only.  Keep the frozen
+        // controller's historical generic military selector intact, but make
+        // the emergency path choose a unit that can occupy and defend a local
+        // tile rather than the highest-bombard siege unit.
+        let defender = if self.garrison_under_fire {
+            self.best_military(g, pid, cid, Some(false))
+        } else {
+            self.best_military(g, pid, cid, None)
+        };
+        defender
             .map(|unit| Item::Unit {
                 unit: Name::new(&unit),
             })

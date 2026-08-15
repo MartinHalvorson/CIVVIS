@@ -13494,7 +13494,9 @@ impl AdvancedAi {
     /// Whether an active queue is already doing the work a local defence
     /// handoff would ask it to do. Both live city-defence paths below share
     /// this conservative release: repairing an asset, fortifying it, or
-    /// raising a military unit stays with the city that already chose it.
+    /// raising a local non-siege defender stays with the city that already
+    /// chose it. An offensive siege queue must remain preemptible: it cannot
+    /// hold the city during the turns it takes to complete.
     fn active_queue_is_defensive(g: &Game, item: &Item) -> bool {
         match item {
             Item::Repair { .. } => true,
@@ -13507,7 +13509,10 @@ impl AdvancedAi {
                 "walls" | "medieval_walls" | "renaissance_walls"
             ),
             Item::Unit { unit } | Item::Formation { unit, .. } => {
-                g.rules.units[unit].class == "military"
+                let spec = &g.rules.units[unit];
+                spec.class == "military"
+                    && !spec.siege
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
             }
             _ => false,
         }
@@ -23749,6 +23754,62 @@ mod tests {
         .expect("queue the active defender");
         live.redirect_unsafe_city_queue_for_defense(&mut game, 0);
         assert_eq!(game.cities[&city].queue.first(), Some(&warrior));
+    }
+
+    #[test]
+    fn live_siege_response_replaces_a_queued_siege_with_a_local_defender() {
+        // In live run civvis-20260815T120417Z, Aquileia was already building a
+        // Trebuchet when its walls began falling. The old release classified
+        // every military queue as defensive, then the emergency picker chose
+        // another Trebuchet after it finally preempted a civilian build. A
+        // siege piece cannot hold the city while it is being constructed.
+        let (mut game, city, _) = empire_with_a_capital(71_115);
+        game.players[0]
+            .techs
+            .extend([crate::name!("masonry"), crate::name!("engineering")]);
+        let city_state = game.cities.get_mut(&city).expect("capital exists");
+        city_state.buildings.push(crate::name!("walls"));
+        city_state.wall_hp = 100;
+        city_state.hp = 170;
+
+        let siege = Item::Unit {
+            unit: crate::name!("catapult"),
+        };
+        assert!(game.can_produce(0, city, &siege));
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: siege.clone(),
+            },
+        )
+        .expect("queue the offensive siege piece");
+        assert!(
+            !AdvancedAi::active_queue_is_defensive(&game, &siege),
+            "a siege queue cannot count as the city's local defense"
+        );
+
+        // The legacy/default path cannot reach the under-fire selector.
+        let mut untouched = game.clone();
+        AdvancedAi::new().redirect_unsafe_city_queue_for_defense(&mut untouched, 0);
+        assert_eq!(untouched.cities[&city].queue.first(), Some(&siege));
+
+        let mut live = AdvancedAi::new();
+        live.enable_garrison_under_fire();
+        live.redirect_unsafe_city_queue_for_defense(&mut game, 0);
+        let Item::Unit { unit } = game.cities[&city]
+            .queue
+            .first()
+            .cloned()
+            .expect("the city keeps a defensive unit queued")
+        else {
+            panic!("the emergency queue must be a unit");
+        };
+        let spec = &game.rules.units[&unit];
+        assert!(
+            !spec.siege && spec.is_melee_capable(),
+            "the live emergency must replace siege with a unit that can defend locally; queued {unit}"
+        );
     }
 
     #[test]
