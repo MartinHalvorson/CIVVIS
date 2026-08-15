@@ -6242,12 +6242,30 @@ impl AdvancedAi {
                 g.turn.saturating_sub(started)
                     >= g.standard_duration(RECOVERY_POSTURE_LIMIT).max(1)
             });
+        // A stale Recovery normally gives the planner permission to pursue a
+        // different win condition. It must not turn a collapsing major war
+        // into an offensive denial the army cannot possibly execute: recent
+        // live losses repeatedly held 14--41% of the leader's power at this
+        // point. Preserve ordinary terminal counters; this is only the live
+        // bridge's already-stale, already-at-war, less-than-half-power case.
+        let impossible_denial = self.battlefront_observation
+            && recovery_is_stale
+            && !wartime_majors.is_empty()
+            && denial.is_some_and(|(rival, counter)| {
+                counter == GrandStrategy::Conquest
+                    && my_power * 2.0 < g.military_power(rival)
+            });
         let (strategy, because) = if at_war
             && (threatened_city.is_some() || (my_power * 1.25 < strongest_rival && !recovery_is_stale))
         {
             (
                 GrandStrategy::Recovery,
                 "at war and losing ground at home",
+            )
+        } else if impossible_denial {
+            (
+                GrandStrategy::Recovery,
+                "holding the line before an impossible counter-campaign",
             )
         } else if emergency_objective.is_some() {
             (
@@ -24807,6 +24825,44 @@ mod tests {
             fresh.assess(&game, 0).strategy,
             GrandStrategy::Recovery,
             "the bound must not fire on a war that started last turn"
+        );
+    }
+
+    #[test]
+    fn an_impossible_victory_denial_keeps_a_stale_major_war_defensive() {
+        let (mut game, _) = outgunned_at_war_fixture();
+        game.turn = 100;
+        game.players[1].science_projects.extend([
+            "launch_earth_satellite".to_string(),
+            "launch_moon_landing".to_string(),
+            "launch_mars_colony".to_string(),
+            "exoplanet_expedition".to_string(),
+        ]);
+        game.players[1].exoplanet_distance = 42.0;
+
+        let mut ai = AdvancedAi::new();
+        ai.major_war_since = Some(0);
+        assert_eq!(
+            ai.victory_denial(&game, 0),
+            Some((1, GrandStrategy::Conquest)),
+            "the fixture needs a terminal Science counter"
+        );
+        assert!(
+            game.military_power(0) * 2.0 < game.military_power(1),
+            "the fixture needs an impossible counterattack"
+        );
+        let mut anchor = AdvancedAi::legacy();
+        anchor.bounded_recovery = true;
+        anchor.major_war_since = Some(0);
+        assert_eq!(
+            anchor.assess(&game, 0).strategy,
+            GrandStrategy::Conquest,
+            "advanced_v1 keeps the historical stale-denial path"
+        );
+        assert_eq!(
+            ai.assess(&game, 0).strategy,
+            GrandStrategy::Recovery,
+            "a stale defense must not send its last army into an impossible denial"
         );
     }
 
