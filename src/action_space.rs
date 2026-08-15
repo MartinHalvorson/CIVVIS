@@ -12,11 +12,21 @@
 //! indices and feature rows. The kind mask says which of the [`KINDS`]
 //! categories are available at all, which is what a hierarchical policy
 //! (choose kind, then choose among that kind's actions) needs.
-use crate::game::{effective_strength, Action, Game};
+//!
+//! Every consumer of the encoding lives in `experiments/closed/`, so the
+//! encoder rides the same `closed-experiments` opt-in feature as `oracle`:
+//! normal builds compile only [`kind_name`], which the simultaneous-turns
+//! census reads, and `--features closed-experiments` brings the encoding
+//! back exactly as recorded.
+use crate::game::Action;
+#[cfg(feature = "closed-experiments")]
+use crate::game::{effective_strength, Game};
+#[cfg(feature = "closed-experiments")]
 use crate::Pos;
 
 /// Every `Action` discriminant, in a stable order. Appending is safe;
 /// reordering invalidates trained policies.
+#[cfg(feature = "closed-experiments")]
 pub const KINDS: [&str; 85] = [
     "move", "move_to", "attack", "ranged", "found_city", "improve",
     "found_corporation", "move_product", "contribute_project",
@@ -43,22 +53,29 @@ pub const KINDS: [&str; 85] = [
 
 /// The original scalar action block. It is kept as an append-only prefix so
 /// old and destination-aware representations can be ablated on one corpus.
+#[cfg(feature = "closed-experiments")]
 pub const LEGACY_NUMERIC_WIDTH: usize = 13;
 
 /// Target terrain, role, local-force, and plan-progress terms appended after
 /// [`LEGACY_NUMERIC_WIDTH`].
+#[cfg(feature = "closed-experiments")]
 pub const DESTINATION_WIDTH: usize = 35;
 /// Actor-role prefix inside the destination block.
+#[cfg(feature = "closed-experiments")]
 pub const DESTINATION_ROLE_WIDTH: usize = 8;
 /// Explicit objective terms inside the destination block: present, distance,
 /// and progress from the actor's current tile to the candidate.
+#[cfg(feature = "closed-experiments")]
 pub const PLAN_OFFSET: usize = DESTINATION_ROLE_WIDTH;
+#[cfg(feature = "closed-experiments")]
 pub const PLAN_WIDTH: usize = 3;
 
 /// Width of one action's feature row: kind one-hot, the legacy numeric block,
 /// then the destination-aware block described in [`features_with_context`].
+#[cfg(feature = "closed-experiments")]
 pub const FEATURE_WIDTH: usize = KINDS.len() + LEGACY_NUMERIC_WIDTH + DESTINATION_WIDTH;
 
+#[cfg(feature = "closed-experiments")]
 #[derive(Clone, Copy)]
 struct SpatialUnit {
     id: u32,
@@ -76,6 +93,7 @@ struct SpatialUnit {
 /// of candidates, but those facts change only after one is applied. The
 /// explicit objectives are supplied by the caller's high-level plan. Passing
 /// an empty slice keeps the generic encoder useful when no planner exists.
+#[cfg(feature = "closed-experiments")]
 pub struct FeatureContext {
     friendly: Vec<SpatialUnit>,
     hostile: Vec<SpatialUnit>,
@@ -84,6 +102,7 @@ pub struct FeatureContext {
     objectives: Vec<Pos>,
 }
 
+#[cfg(feature = "closed-experiments")]
 impl FeatureContext {
     pub fn new(g: &Game, pid: usize, objectives: &[Pos]) -> FeatureContext {
         let visible = g.player_visibility(pid);
@@ -149,6 +168,7 @@ impl FeatureContext {
     }
 }
 
+#[cfg(feature = "closed-experiments")]
 pub fn kind_index(action: &Action) -> usize {
     let name = kind_name(action);
     KINDS
@@ -249,6 +269,7 @@ pub fn kind_name(action: &Action) -> &'static str {
 
 /// The tile an action points at, when it has one. Policies use this to look
 /// up the corresponding cell of the spatial observation.
+#[cfg(feature = "closed-experiments")]
 pub fn target_tile(g: &Game, action: &Action) -> Option<Pos> {
     match action {
         Action::Move { to, .. } | Action::MoveTo { to, .. } => Some(*to),
@@ -286,21 +307,25 @@ pub fn target_tile(g: &Game, action: &Action) -> Option<Pos> {
 }
 
 /// One action's fixed-width feature row without an external strategic plan.
+#[cfg(feature = "closed-experiments")]
 pub fn features(g: &Game, pid: usize, action: &Action) -> Vec<f32> {
     let context = FeatureContext::new(g, pid, &[]);
     features_with_context(g, pid, action, &context)
 }
 
+#[cfg(feature = "closed-experiments")]
 fn nearest(g: &Game, from: Pos, positions: impl Iterator<Item = Pos>) -> Option<i32> {
     positions.map(|position| g.wdist(from, position)).min()
 }
 
+#[cfg(feature = "closed-experiments")]
 fn distance_feature(distance: Option<i32>, scale: f32) -> f32 {
     distance
         .map(|distance| (distance as f32 / scale).clamp(0.0, 1.0))
         .unwrap_or(1.0)
 }
 
+#[cfg(feature = "closed-experiments")]
 fn progress_feature(before: Option<i32>, after: Option<i32>, scale: f32) -> f32 {
     match (before, after) {
         (Some(before), Some(after)) => ((before - after) as f32 / scale).clamp(-1.0, 1.0),
@@ -317,6 +342,7 @@ fn progress_feature(before: Option<i32>, after: Option<i32>, scale: f32) -> f32 
 /// high-level objective. Absolute coordinates and movement direction are
 /// intentionally absent; learning deterministic tie-breaking would raise
 /// imitation accuracy without teaching strategy.
+#[cfg(feature = "closed-experiments")]
 pub fn features_with_context(
     g: &Game,
     pid: usize,
@@ -567,6 +593,7 @@ pub fn features_with_context(
 /// Unit whose activation an action consumes, when the action belongs to one.
 /// Exposed so policy datasets can distinguish alternative destinations for the
 /// same unit from the separate decision of which unit to activate next.
+#[cfg(feature = "closed-experiments")]
 pub fn acting_unit(action: &Action) -> Option<u32> {
     match action {
         Action::Move { unit, .. }
@@ -593,6 +620,7 @@ pub fn acting_unit(action: &Action) -> Option<u32> {
     }
 }
 
+#[cfg(feature = "closed-experiments")]
 pub struct Encoded {
     pub actions: Vec<Action>,
     pub kinds: Vec<usize>,
@@ -602,6 +630,7 @@ pub struct Encoded {
     pub kind_mask: [bool; KINDS.len()],
 }
 
+#[cfg(feature = "closed-experiments")]
 pub fn legal_encoded(g: &Game, pid: usize) -> Encoded {
     legal_encoded_with_objectives(g, pid, &[])
 }
@@ -609,6 +638,7 @@ pub fn legal_encoded(g: &Game, pid: usize) -> Encoded {
 /// Encode the legal set with objectives from the caller's high-level plan.
 /// The same context is reused for the whole set, so spatial observation cost
 /// is per decision rather than per candidate.
+#[cfg(feature = "closed-experiments")]
 pub fn legal_encoded_with_objectives(g: &Game, pid: usize, objectives: &[Pos]) -> Encoded {
     let actions = g.legal_actions(pid);
     let mut kinds = Vec::with_capacity(actions.len());
@@ -629,7 +659,7 @@ pub fn legal_encoded_with_objectives(g: &Game, pid: usize, objectives: &[Pos]) -
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "closed-experiments"))]
 mod tests {
     use super::{
         features_with_context, kind_index, legal_encoded, FeatureContext, FEATURE_WIDTH,
