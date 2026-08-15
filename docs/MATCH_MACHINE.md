@@ -68,7 +68,9 @@ The operator fetches `origin/main` every five minutes. A new revision closes
 the launch gate, lets active games finish, resets only its private detached
 build worktree, builds and validates HEAD, then starts new matches from the
 promoted immutable binary. It never pulls, commits, or edits a development
-worktree.
+worktree. The build timeout charges only unpaused execution: pressure pauses,
+visible-game yields, and the CPU duty cycle stop the clock, so a busy host
+slows a revision down without rejecting it.
 
 CPU, memory, filesystem capacity, and Apple GPU utilization are measured
 host-wide. At 70% the operator stops game process groups, preferring headless
