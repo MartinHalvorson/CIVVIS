@@ -997,7 +997,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// projects. `AdvancedAi::legacy()` leaves that gate false; the regression
 /// asserts both the frozen project and the live defender. Compatibility re-pin;
 /// the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd85d_af99_840e_c126;
+/// The peaceful city-plan handoff is likewise unreachable to the frozen
+/// anchor: its call site requires `victory_planning`, and its own gate is
+/// `plan_city_target`, both false in `AdvancedAi::legacy()`. The regression
+/// holds the anchor's research grant while the live plan replaces it with one
+/// Settler. Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7882_d739_4a2f_b51e;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
