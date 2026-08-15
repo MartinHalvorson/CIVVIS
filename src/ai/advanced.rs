@@ -13345,19 +13345,61 @@ impl AdvancedAi {
         }
     }
 
+    /// Whether the live war-production path must yield to the baseline
+    /// solvency recovery before it adds another upkeep bill.
+    ///
+    /// `BasicAi::product_for` uses the same reserve-and-deficit predicate:
+    /// below 100 Gold plus 25 per city, a negative income selects a Trader, a
+    /// profitable building, or a useful upkeep-free item instead of a unit.
+    /// The live `war_economy` route bypasses that picker and used to ignore the
+    /// recovery entirely. In the current Rome run, nine cities held 160 Gold
+    /// at -24.39 per turn on t174, then reached zero at -39.39 on t179; a
+    /// Field Cannon was disbanded on almost every following turn with no
+    /// visible enemy nearby. Those were accounting deaths, so replacing them
+    /// cannot be a military solution.
+    ///
+    /// Keep the baseline's emergency exception. An empire at major war with
+    /// fewer military units than cities may still raise its first garrison;
+    /// every other live war queue takes the same recovery branch that the
+    /// ordinary governor would have used.
+    fn live_war_economy_requires_recovery(
+        &self,
+        g: &Game,
+        pid: usize,
+        counts: &EmpireCounts,
+    ) -> bool {
+        if !self.war_economy || self.base.minor || self.base.barb {
+            return false;
+        }
+        let city_count = g.player_city_ids(pid).len();
+        let at_major_war = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_barbarian
+                && !player.is_minor
+                && g.is_at_war(pid, player.id)
+        });
+        let recovery_reserve = 100.0 + 25.0 * city_count as f64;
+        let economic_recovery = g.players[pid].gold_per_turn < -0.5
+            && g.players[pid].gold < recovery_reserve;
+        let emergency_defense = at_major_war && counts.military < city_count.max(1);
+        economic_recovery && !emergency_defense
+    }
+
     /// The adaptive agent normally delegates routine city queues to the
     /// lightweight governor. Reserve at most one empty queue per turn for a
     /// support capability that the active campaign and army can actually use.
     fn advanced_support_production(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        let counts = self.counts(g, pid);
         if self.base.book_pos < 4
             || !g
                 .players
                 .iter()
                 .any(|other| other.id != pid && g.is_at_war(pid, other.id))
+            || self.live_war_economy_requires_recovery(g, pid, &counts)
         {
             return;
         }
-        let counts = self.counts(g, pid);
         let best: Option<(f64, u32, String)> = {
             let _memo = g.query_memo();
             let mut best = None;
@@ -13457,6 +13499,9 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) {
+        if self.live_war_economy_requires_recovery(g, pid, &self.counts(g, pid)) {
+            return;
+        }
         let peacetime_target = self.peacetime_deterrence_force_gap(g, pid, plan);
         if !matches!(
             plan.strategy,
@@ -13951,6 +13996,7 @@ impl AdvancedAi {
         }
         let mut counts = self.counts(g, pid);
         let city_ids = g.player_city_ids(pid);
+        let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
         for cid in city_ids {
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
@@ -13959,7 +14005,39 @@ impl AdvancedAi {
                 let value = self.production_value(g, pid, cid, &item, plan, &counts);
                 (value, item)
             });
-            if committed.is_some() && self.preempt_margin <= 1.0 {
+            // The ordinary governor's recovery path only receives empty
+            // queues. Preserve that contract even when an experimental
+            // preemption margin is active: a banked unit can finish, but no
+            // fresh upkeep-bearing commitment starts while the treasury heals.
+            if committed.is_some() && (self.preempt_margin <= 1.0 || economic_recovery) {
+                continue;
+            }
+            if economic_recovery {
+                let recovery = self
+                    .base
+                    .economic_recovery_item(g, pid, cid, counts.traders)
+                    .or_else(|| self.base.upkeep_free_recovery_item(g, pid, cid));
+                if let Some(item) = recovery {
+                    if g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: item.clone(),
+                        },
+                    )
+                    .is_ok()
+                    {
+                        if self.journal().wants(crate::reasoning::Level::Decision) {
+                            let city_name = g.cities[&cid].name.clone();
+                            let gold = g.players[pid].gold;
+                            let gold_per_turn = g.players[pid].gold_per_turn;
+                            think!(self.journal(), Economy, Decision,
+                                "{} starts {}", city_name, Self::plain_item(&item);
+                                "{gold:.0} Gold at {gold_per_turn:.1}/turn; recovery avoids further upkeep");
+                        }
+                        counts.add_item(g, &item);
+                    }
+                }
                 continue;
             }
             let best: Option<(f64, String, Item)> = {
@@ -33980,6 +34058,105 @@ mod tests {
         let levee = build(true, 0.0, true);
         assert!(levee.contains(&crate::name!("levee_en_masse")));
         assert!(!levee.contains(&crate::name!("conscription")));
+    }
+
+    #[test]
+    fn live_war_economy_recovers_before_rearming_a_bankrupt_army() {
+        // The live Rome board at t174 had the same shape: a standing army,
+        // nine cities, Gold below BasicAi's recovery reserve, and a negative
+        // cash flow. Advanced production bypassed that baseline guard, kept
+        // adding Field Cannons, and the host disbanded one almost every turn.
+        let (mut game, city, home) = empire_with_a_capital(79_100);
+        let _second_city = found_nearby_test_city(&mut game, 0, home);
+        game.players[0].techs.insert(crate::name!("ballistics"));
+        game.players[0].gold = 149.0;
+        game.players[0].gold_per_turn = -24.39;
+        for _ in 0..2 {
+            game.spawn_test_unit("warrior", 0, home);
+        }
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 2,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        // Make the unguarded choice unmistakable. The recovery branch itself
+        // ignores these appetite genes, so the paired assertion proves the
+        // solvency handoff rather than a coincidental ordinary re-ranking.
+        let arm_forces = |ai: &mut AdvancedAi| {
+            ai.base.w.p_military = 100.0;
+            ai.base.w.p_builder = 0.01;
+            ai.base.w.p_trader = 0.01;
+            ai.base.w.p_building = 0.01;
+            ai.base.w.p_district = 0.01;
+            ai.base.w.p_wonder = 0.01;
+            ai.base.w.p_project = 0.01;
+        };
+        let mut ordinary = AdvancedAi::new();
+        arm_forces(&mut ordinary);
+        let mut unguarded = game.clone();
+        ordinary.advanced_production(&mut unguarded, 0, &plan, false);
+        assert!(
+            matches!(
+                unguarded.cities[&city].queue.first(),
+                Some(Item::Unit { unit }) if unguarded.rules.units[unit].class == "military"
+            ),
+            "without the live war-economy recovery, this board starts another military unit"
+        );
+
+        // A second home city supplies a concrete internal route once Foreign
+        // Trade is known, so the baseline's first-choice recovery is legal.
+        game.players[0]
+            .civics
+            .insert(crate::name!("foreign_trade"));
+        let mut live = AdvancedAi::new();
+        live.enable_war_economy();
+        arm_forces(&mut live);
+        let recovery = live
+            .base
+            .economic_recovery_item(&game, 0, city, live.counts(&game, 0).traders)
+            .or_else(|| live.base.upkeep_free_recovery_item(&game, 0, city))
+            .expect("a productive city has a legal recovery item");
+        assert!(
+            !matches!(
+                &recovery,
+                Item::Unit { unit } if game.rules.units[unit].class == "military"
+            ),
+            "the baseline recovery item cannot deepen the maintenance bill"
+        );
+        assert!(live.live_war_economy_requires_recovery(&game, 0, &live.counts(&game, 0)));
+        live.advanced_production(&mut game, 0, &plan, false);
+        assert_eq!(
+            game.cities[&city].queue.first(),
+            Some(&recovery),
+            "the live production route must use the same recovery item as BasicAi"
+        );
+
+        // Do not strand a genuinely undefended empire. This is the same
+        // emergency exception BasicAi uses before it begins economic recovery.
+        let mut emergency = unguarded;
+        for cid in emergency.player_city_ids(0) {
+            emergency.cities.get_mut(&cid).unwrap().queue.clear();
+        }
+        for uid in emergency.player_unit_ids(0) {
+            if emergency.units[&uid].kind == "warrior" {
+                emergency.remove_unit(uid);
+            }
+        }
+        let counts = live.counts(&emergency, 0);
+        assert!(counts.military < emergency.player_city_ids(0).len());
+        assert!(!live.live_war_economy_requires_recovery(&emergency, 0, &counts));
+        live.advanced_production(&mut emergency, 0, &plan, false);
+        assert!(
+            matches!(
+                emergency.cities[&city].queue.first(),
+                Some(Item::Unit { unit }) if emergency.rules.units[unit].class == "military"
+            ),
+            "an undermanned major-war empire retains its emergency defender path"
+        );
     }
 
     #[test]
