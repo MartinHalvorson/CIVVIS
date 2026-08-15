@@ -7102,6 +7102,84 @@ local function applyOrder(player, pid, row, turn)
 			or "governor_promote_throw";
 	end
 
+	-- Claim a Great Person with banked points, or buy one outright with gold or
+	-- faith. `verb` names the class (`GREAT_PERSON_CLASS_*`); WHICH individual
+	-- that class offers only the live timeline knows, so it is resolved here.
+	-- The shipped GreatPeoplePopup.lua is the reference for every call below:
+	-- the operation takes the timeline entry's `Individual` id verbatim (not a
+	-- GameInfo Index or Hash — the governor path's crash class does not apply).
+	if kind == "gp_recruit" or kind == "gp_patronize"
+			or kind == "gp_patronize_faith" then
+		local greatPeople = try(function() return Game.GetGreatPeople(); end);
+		if greatPeople == nil then return false, "no_great_people"; end
+		local timeline = try(function() return greatPeople:GetTimeline(); end);
+		if timeline == nil then return false, "gp_no_timeline"; end
+		for _, entry in ipairs(timeline) do
+			if entry.Individual ~= nil and entry.Claimant == nil then
+				local info = try(function()
+					return GameInfo.GreatPersonIndividuals[entry.Individual];
+				end);
+				if info ~= nil and info.GreatPersonClassType == verb then
+					local resolved = info.GreatPersonIndividualType or verb;
+					local params = {};
+					params[PlayerOperations.PARAM_GREAT_PERSON_INDIVIDUAL_TYPE] =
+						entry.Individual;
+					if kind == "gp_recruit" then
+						if not try(function()
+							return greatPeople:CanRecruitPerson(pid, entry.Individual);
+						end, false) then
+							return false, "gp_cannot_recruit";
+						end
+						local ok = pcall(function()
+							UI.RequestPlayerOperation(
+								pid, PlayerOperations.RECRUIT_GREAT_PERSON, params);
+						end);
+						return ok, ok and resolved or "gp_recruit_throw";
+					end
+					local yield = kind == "gp_patronize_faith"
+						and YieldTypes.FAITH or YieldTypes.GOLD;
+					if not try(function()
+						return greatPeople:CanPatronizePerson(
+							pid, entry.Individual, yield);
+					end, false) then
+						return false, "gp_cannot_patronize";
+					end
+					params[PlayerOperations.PARAM_YIELD_TYPE] = yield;
+					local ok = pcall(function()
+						UI.RequestPlayerOperation(
+							pid, PlayerOperations.PATRONIZE_GREAT_PERSON, params);
+					end);
+					return ok, ok and resolved or "gp_patronize_throw";
+				end
+			end
+		end
+		return false, "gp_class_not_offered";
+	end
+
+	-- A city's ranged strike. `subject` is the Firaxis city id, x/y the target
+	-- plot in offset coordinates. WorldInput.lua:2545 is the reference, and it
+	-- holds a trap worth naming: the CITY command takes the UNIT operation's
+	-- parameter keys (`UnitOperationTypes.PARAM_X/Y`), and must be asked with
+	-- `CanStartCommand` first — an unasked request fails silently.
+	if kind == "city_strike" then
+		local city = try(function() return CityManager.GetCity(pid, subject); end);
+		if city == nil then return false, "city_strike_city_missing"; end
+		if x == nil or y == nil then return false, "city_strike_no_target"; end
+		local params = {};
+		params[UnitOperationTypes.PARAM_X] = x;
+		params[UnitOperationTypes.PARAM_Y] = y;
+		if not try(function()
+			return CityManager.CanStartCommand(
+				city, CityCommandTypes.RANGE_ATTACK, params);
+		end, false) then
+			return false, "city_strike_refused";
+		end
+		local ok = pcall(function()
+			CityManager.RequestCommand(city, CityCommandTypes.RANGE_ATTACK, params);
+		end);
+		return ok, ok and "CITY_STRIKE" or "city_strike_throw";
+	end
+
 	if kind == "war" then
 		local diplomacy = try(function() return player:GetDiplomacy(); end);
 		if diplomacy == nil then return false, "no_diplomacy"; end
