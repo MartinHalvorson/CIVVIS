@@ -1440,6 +1440,9 @@ pub fn build(spec: &Position, seed: u64) -> Option<Game> {
             // position is read at `spec.turns` and never asks who "won", so
             // the two clocks must not be allowed to disagree.
             turn_limit: *crate::setup::TacticsRules::TURN_LIMITS.last().expect("turn ladder"),
+            // And no era choice: a position deploys its exact force by hand,
+            // so a rolled or pooled era would re-arm the experiment.
+            era: crate::setup::TacticsEra::Start,
         },
         ..crate::game::GameOptions::new(2, spec.width, spec.height, seed, spec.turns + 8, 0)
     });
