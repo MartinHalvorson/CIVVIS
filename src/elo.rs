@@ -2926,10 +2926,12 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         }
         // ★★★★★ THE VICTORY LANE THE REAL GAMES ARE ACTUALLY GIVEN.
         //
-        // `civ6_civvis_climb.py --victory` defaults to `domination` and every one
-        // of the 104 ladder rows carries it, with **zero wins**. Nothing in the
-        // registry could measure that choice, so the single most consequential
-        // setting in the deployment was the one axis never evaluated.
+        // `civ6_civvis_climb.py --victory` defaulted to `domination` until #859
+        // (2026-08-02; `civ6_brain.py`'s own default followed 2026-08-14), and
+        // every one of the 104 ladder rows to that point carries it, with
+        // **zero wins**. Nothing in the registry could measure that choice, so
+        // the single most consequential setting in the deployment was the one
+        // axis never evaluated — until these arms.
         //
         // ⚠ It is not merely unwon, it is out of budget: `victory_eval`'s own
         // per-target turn limits are 650 for Domination and 300 for Score, and

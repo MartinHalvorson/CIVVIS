@@ -457,7 +457,8 @@ def main() -> int:
     ap.add_argument("--mode", choices=["stub", "civvis"], default="civvis")
     ap.add_argument("--bin", default=None,
                     help="path to the civvis-orders binary (--mode civvis)")
-    # ⚠⚠ DOMINATION IS CURRENTLY UNREACHABLE, AND IT IS THE DEFAULT.
+    # ⚠⚠ DOMINATION IS CURRENTLY UNREACHABLE, AND UNTIL 2026-08-14 IT WAS THE
+    # DEFAULT.
     #
     # Domination needs a captured capital, and `findWarTarget` needs a rival city
     # plot to be REVEALED before it will target one -- correctly, or the seat would
@@ -475,11 +476,23 @@ def main() -> int:
     # `civvis` lets the agent choose. Until reconnaissance can cross water and
     # reveal a city -- see the frontier and probe notes in CivvisControlAgent.lua --
     # prefer one of those and pass `domination` deliberately, not by default.
-    ap.add_argument("--victory", default="domination",
+    #
+    # The default moved to `civvis` on 2026-08-14, following the climb harness,
+    # whose default moved in #859 on the measured ordering adaptive >> score >
+    # domination (30 mirrored map pairs at the ladder's own profile, 6p/250t:
+    # untargeted beat domination-target 60-0, and the domination arm recorded
+    # zero victories of any type; see the `--victory` note in
+    # civ6_civvis_climb.py). The climb harness always passes `--civvis-victory`
+    # explicitly, so this default decides only runs that drive the brain
+    # directly -- which is exactly where it kept reproducing the defect the
+    # note above describes, twelve days after the layer above stopped doing so.
+    # Rows from direct-brain runs either side of this change are NOT comparable.
+    ap.add_argument("--victory", default="civvis",
                     choices=["domination", "science", "score", "civvis"],
                     help="which victory CIVVIS plays for; `civvis` lets it choose. "
                          "⚠ domination is unreachable while no rival city is ever "
-                         "revealed -- see the note above")
+                         "revealed -- see the note above; pass it deliberately, "
+                         "never by default")
     # ★★★★ WHICH STRATEGY ACTUALLY PLAYS, which nothing ever chose.
     #
     # `civvis_orders` has taken `--strategy` for a while and NO harness script passed
