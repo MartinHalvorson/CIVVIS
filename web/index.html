@@ -4471,9 +4471,10 @@
             <option value="30">30 turns</option>
             <option value="40">40 turns</option>
             <option value="50">50 turns</option>
-            <option value="100" selected>100 turns</option>
+            <option value="100">100 turns</option>
             <option value="150">150 turns</option>
             <option value="200">200 turns</option>
+            <option value="250" selected>250 turns</option>
           </select></label>
           <label class="small">Capture the flag<span class="setup-info" style="cursor:help;opacity:.7"
             title="On, each side is given a flag in place of a city, standing where its city would have stood, and the battle is won by moving a unit onto the OTHER side's flag. Standing on your own captures nothing, so a flag is something to defend as well as something to take, and every flag is visible through the fog — both commanders know where they are marching. Off, a battle is decided the way an arena always has been: by the armies, and by the city each side holds if the economy grants one. The clock can still run out first either way, which stays a draw."> ⓘ</span><select id="tacticsflag" style="margin-top:4px">
@@ -4481,23 +4482,23 @@
             <option value="1">On · take the enemy's flag</option>
           </select></label>
           <label class="small">Cities per side<span class="setup-info" style="cursor:help;opacity:.7"
-            title="An arena is handed its economy rather than earning it. With one city, each side has somewhere to build reinforcements and a place the other side can take; with none, each side is exactly the army it was dealt and the battle is decided by that army alone. Either way no Settler is ever produced and the city is placed at setup, so there is no founding decision to make. Capture the flag overrides this: there a flag stands where the city would have, and the battle plays city-less."> ⓘ</span><select id="tacticscities" style="margin-top:4px">
-            <option value="1" selected>1 · reinforcements</option>
+            title="An arena is handed its economy rather than earning it. With one city, each side has a place the other side can take — and, if Production per turn is raised above zero, somewhere to build reinforcements; with none, each side is exactly the army it was dealt and the battle is decided by that army alone. Either way no Settler is ever produced and the city is placed at setup, so there is no founding decision to make. Capture the flag overrides this: there a flag stands where the city would have, and the battle plays city-less."> ⓘ</span><select id="tacticscities" style="margin-top:4px">
+            <option value="1" selected>1 · a city to hold</option>
             <option value="0">0 · armies only</option>
           </select></label>
           <label class="small">Production per turn<span class="setup-info" style="cursor:help;opacity:.7"
-            title="Flat Production the city collects every turn, identically for both sides. A Warrior costs 40 and a Modern Armor 680, so a higher figure keeps reinforcements arriving in the later eras. The city collects no Food and never grows."> ⓘ</span><select id="tacticsproduction" style="margin-top:4px">
-            <option value="0">0 · no reinforcements</option>
+            title="Flat Production the city collects every turn, identically for both sides. The stock battle grants none: two standing armies fight it out and no unit that was not on the field at turn one ever joins it. Raise it for reinforcements — a Warrior costs 40 and a Modern Armor 680, so a higher figure keeps them arriving in the later eras. The city collects no Food and never grows."> ⓘ</span><select id="tacticsproduction" style="margin-top:4px">
+            <option value="0" selected>0 · no reinforcements</option>
             <option value="15">15 · slow</option>
-            <option value="30" selected>30 · steady</option>
+            <option value="30">30 · steady</option>
             <option value="60">60 · fast</option>
             <option value="120">120 · relentless</option>
           </select></label>
           <label class="small">Gold per turn<span class="setup-info" style="cursor:help;opacity:.7"
-            title="Flat Gold both sides collect every turn. An arena charges no unit upkeep, so this is upgrade money and nothing else: it buys a damaged Warrior its way up to a Swordsman once the technology is in."> ⓘ</span><select id="tacticsgold" style="margin-top:4px">
-            <option value="0">0 · no upgrades</option>
+            title="Flat Gold both sides collect every turn. An arena charges no unit upkeep, so this is upgrade money and nothing else: it buys a damaged Warrior its way up to a Swordsman once the technology is in. The stock battle grants none, so the armies fight as dealt; raise it to let them upgrade mid-battle."> ⓘ</span><select id="tacticsgold" style="margin-top:4px">
+            <option value="0" selected>0 · no upgrades</option>
             <option value="15">15 · slow</option>
-            <option value="30" selected>30 · steady</option>
+            <option value="30">30 · steady</option>
             <option value="60">60 · fast</option>
             <option value="120">120 · relentless</option>
           </select></label>

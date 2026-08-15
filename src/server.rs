@@ -8392,12 +8392,15 @@ mod tests {
         assert!(race.tactics.flag);
         assert_eq!(race.tactics.cities, 0, "a flag battle always plays city-less");
 
-        // Silence keeps the stock setup: one battle, and the identical
-        // roster on both sides, which is what the mode claims to be.
+        // Silence keeps the stock setup: one battle on the 250-turn clock,
+        // two standing armies with nothing to reinforce them, and the
+        // identical roster on both sides, which is what the mode claims to be.
         let stock = ask(json!({"num_players": 2, "map_script": "battlefield"}));
         assert_eq!(stock.tactics.best_of, 1);
-        assert_eq!(stock.tactics.turn_limit, 100);
-        assert_eq!(stock.max_turns, 100);
+        assert_eq!(stock.tactics.turn_limit, 250);
+        assert_eq!(stock.max_turns, 250);
+        assert_eq!(stock.tactics.production, 0, "the stock arena builds nothing");
+        assert_eq!(stock.tactics.gold, 0, "the stock arena upgrades nothing");
         assert!(!stock.tactics.unique_units);
         assert!(!stock.tactics.flag, "cities decide a battle unless the flag is asked for");
         assert_eq!(stock.tactics, TacticsRules::default());
@@ -9989,7 +9992,24 @@ mod tests {
                 "the turn-limit ladder is missing {limit}"
             );
         }
-        assert!(EMBEDDED_INDEX.contains("<option value=\"100\" selected>100 turns</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"250\" selected>250 turns</option>"));
+        // Two standing armies and no reinforcements is the stock arena: the
+        // lobby's Production and Gold menus open on zero, and both stay
+        // menus — the grants are the player's to raise.
+        assert!(EMBEDDED_INDEX.contains(
+            "<select id=\"tacticsproduction\" style=\"margin-top:4px\">\n            <option value=\"0\" selected>"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "<select id=\"tacticsgold\" style=\"margin-top:4px\">\n            <option value=\"0\" selected>"
+        ));
+        for grant in ["tacticsproduction", "tacticsgold"] {
+            let menu_at = EMBEDDED_INDEX.find(&format!("id=\"{grant}\"")).unwrap();
+            let menu = &EMBEDDED_INDEX[menu_at..menu_at + 700];
+            assert!(
+                menu.contains("<option value=\"30\">") && menu.contains("<option value=\"120\">"),
+                "{grant} must still offer reinforcements above zero"
+            );
+        }
         // Every offered match length is odd, so wins cannot split evenly.
         for length in ["1", "3", "5", "7", "11"] {
             assert!(

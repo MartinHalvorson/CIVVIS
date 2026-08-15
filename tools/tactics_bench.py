@@ -50,6 +50,20 @@ BASELINE = REPO / "docs" / "TACTICS_BASELINE.md"
 # `docs/TACTICS_BASELINE.md` are only comparable because this does not change.
 WIDTH, HEIGHT, PLAYERS = 20, 20, 2
 
+# The economy the baseline was recorded under, pinned for the same reason. The
+# stock arena moved on 2026-08-15 to two standing armies with no reinforcements
+# (0 Production, 0 Gold, a 250-turn clock); the battery keeps the arena its
+# recorded figures were fought on — one city producing 30 a turn, 30 Gold a turn
+# for upgrades, a technology every five turns and a 100-turn clock — so a
+# regime's row still means what it did. To re-baseline on the new stock arena,
+# change these and `--write-baseline` in the same pull request.
+ECONOMY = (
+    "--tactics-production", "30",
+    "--tactics-gold", "30",
+    "--tactics-turns-per-tech", "5",
+    "--tactics-turn-limit", "100",
+)
+
 
 @dataclass(frozen=True)
 class Regime:
@@ -149,6 +163,7 @@ def run_match(exe: str, regime: Regime, left: str, right: str, games: int, ratin
         "--games", str(games),
         "--ais", f"{left},{right}",
         "--ratings", str(ratings),
+        *ECONOMY,
         *regime.flags,
     ]
     finished = subprocess.run(command, capture_output=True, text=True, cwd=REPO)
@@ -223,7 +238,9 @@ and quote the diff in the pull request that moves it.
 Every figure is the left controller's share of {games} seat-mirrored games on a
 {WIDTH}x{HEIGHT} arena, with a 95% Wilson interval. Seat-mirrored means each
 controller plays both ends of every draw, so a starting-corner advantage cannot
-read as a controller advantage.
+read as a controller advantage. The arena economy is pinned by the battery
+(`ECONOMY` in `tools/tactics_bench.py`) rather than taken from the stock arena,
+so the rows stay comparable when the stock arena moves.
 
 ## Regimes
 

@@ -59592,12 +59592,21 @@ impl Game {
             if self.units.values().any(|unit| unit.owner == pid) {
                 return;
             }
-            // A side that still holds its city is not finished: it collects
-            // Production every turn and the next unit off the queue puts it
-            // back on the field. Losing the last unit ends a side only when
-            // it has nothing left to build one with — which, with the arena
-            // set to no cities, is the moment the last unit falls.
-            if self.cities.values().any(|city| city.owner == pid) {
+            // A side that still holds its city is not finished *if the city
+            // can put a unit back on the field*: granted Production finishes
+            // the next unit off the queue, and granted Gold buys one. Losing
+            // the last unit ends a side only when it has nothing left to
+            // field one with — which is the moment the last unit falls when
+            // the arena seats no cities, and equally when it seats one but
+            // grants neither Production nor Gold, the stock arena since the
+            // grants went to zero. Without this the stock battle could not
+            // be won by annihilation: the side that lost its whole army
+            // would stand "alive" behind a city that will never build, and
+            // the side that destroyed it, if it had no melee left to walk
+            // in, would be handed a draw at the clock for winning the fight.
+            if self.cities.values().any(|city| city.owner == pid)
+                && (self.tactics.production > 0 || self.tactics.gold > 0)
+            {
                 return;
             }
             self.players[pid].alive = false;
@@ -59962,7 +59971,17 @@ impl Game {
                     .values()
                     .find(|c| c.is_capital && c.original_owner == original_owner)
                 {
-                    Some(capital) => capital.owner == candidate,
+                    // On an arena a side can fall with its city still
+                    // standing in its own name — its last unit gone and no
+                    // grant to field another — and a battle is decided by
+                    // the armies, so a defeated seat's empty city satisfies
+                    // the lane the way a defeated seat with no city does
+                    // below. A world never reaches this: a civilization that
+                    // owns a city is by definition still in the game.
+                    Some(capital) => {
+                        capital.owner == candidate
+                            || (self.is_arena() && !self.players[original_owner].alive)
+                    }
                     // The engine begins with settlers, so a Capital can be
                     // missing rather than lost. Defeating a civ before it
                     // founds one satisfies that seat, and a candidate that
@@ -71743,11 +71762,12 @@ mod district_mechanics {
     }
 
     /// An arena's economy is granted, never earned, and identically to both
-    /// sides: one city per side at the stock setting, producing exactly the
-    /// flat Production figure and no Food to grow on, flat Gold per side to
-    /// upgrade with, and a technology every `turns_per_tech` turns whatever
-    /// era it is. Culture stays at zero, so no civic ever completes and no
-    /// policy ever lands mid-battle.
+    /// sides: one city per side, producing exactly the flat Production figure
+    /// and no Food to grow on, flat Gold per side to upgrade with, and a
+    /// technology every `turns_per_tech` turns whatever era it is. Culture
+    /// stays at zero, so no civic ever completes and no policy ever lands
+    /// mid-battle. The grants are raised from the stock arena's zero here,
+    /// because it is the paying that is under test.
     #[test]
     fn an_arena_economy_is_granted_rather_than_earned() {
         let rules = TacticsRules {
@@ -71843,12 +71863,13 @@ mod district_mechanics {
 
     /// The no-city arena still techs and still banks upgrade money: the grant
     /// is per side, not per city, which is what keeps the zero setting a real
-    /// option rather than a side that can do nothing but walk forward.
+    /// option rather than a side that can do nothing but walk forward. Gold
+    /// is granted here because the stock arena grants none.
     #[test]
     fn a_city_less_arena_still_collects_gold_and_science() {
         let mut game = Game::new_with(GameOptions {
             map_script: MapScript::Battlefield,
-            tactics: TacticsRules { cities: 0, ..TacticsRules::default() },
+            tactics: TacticsRules { cities: 0, gold: 30, ..TacticsRules::default() },
             ..GameOptions::new(2, 10, 10, 90_411, 250, 0)
         });
         assert!(game.cities.is_empty());
@@ -71994,7 +72015,7 @@ mod district_mechanics {
     fn a_zero_tech_pace_freezes_the_tree() {
         let mut game = Game::new_with(GameOptions {
             map_script: MapScript::Battlefield,
-            tactics: TacticsRules { turns_per_tech: 0, ..TacticsRules::default() },
+            tactics: TacticsRules { turns_per_tech: 0, gold: 30, ..TacticsRules::default() },
             ..GameOptions::new(2, 10, 10, 90_411, 250, 0)
         });
         let cheapest = game
@@ -72025,9 +72046,96 @@ mod district_mechanics {
             "no technology completes at a zero pace"
         );
         assert_eq!(game.player_era(0), era_before, "the era cannot move either");
-        // Gold is a separate grant and keeps coming: a frozen tree still
-        // upgrades, it just cannot unlock anything new to upgrade into.
+        // Gold is a separate grant and keeps coming when it is granted: a
+        // frozen tree still upgrades, it just cannot unlock anything new to
+        // upgrade into.
         assert!(game.players[0].gold > 0.0);
+    }
+
+    /// The stock arena is two standing armies and no reinforcements. Each
+    /// side is dropped in with its company and its city, and then nothing:
+    /// the city collects no Production so it never banks a point toward a
+    /// unit, and the side banks no Gold so it never upgrades one. Whatever is
+    /// on the field at turn one is the whole battle. The grant is then raised
+    /// on the same game to show the same driver does pay when asked — so the
+    /// zero above is the arena's answer and not the test's.
+    #[test]
+    fn the_stock_arena_never_reinforces_either_side() {
+        let mut game = Game::new_with(GameOptions {
+            map_script: MapScript::Battlefield,
+            ..GameOptions::new(2, 10, 10, 90_411, 250, 0)
+        });
+        assert_eq!(game.tactics, TacticsRules::default());
+        let dealt: Vec<usize> = (0..2).map(|seat| game.player_unit_ids(seat).len()).collect();
+        assert!(dealt.iter().all(|count| *count > 0), "each side opens with an army: {dealt:?}");
+        assert_eq!(dealt[0], dealt[1], "and the same army: {dealt:?}");
+        let mut cities = Vec::new();
+        for seat in 0..2 {
+            let held: Vec<u32> = game
+                .cities
+                .values()
+                .filter(|city| city.owner == seat)
+                .map(|city| city.id)
+                .collect();
+            assert_eq!(held.len(), 1, "seat {seat} still holds a city to defend");
+            assert_eq!(
+                game.city_yields(held[0]).production,
+                0.0,
+                "the stock city collects no Production"
+            );
+            assert_eq!(game.arena_side_yields(seat).gold, 0.0, "and the side banks no Gold");
+            // Queue a Warrior anyway, so the test is about the paying and
+            // not about whether the AI chose to build.
+            game.cities.get_mut(&held[0]).unwrap().queue =
+                vec![Item::Unit { unit: crate::name!("warrior") }];
+            cities.push(held[0]);
+        }
+        let gold_before: Vec<f64> = (0..2).map(|seat| game.players[seat].gold).collect();
+        // Thirty turns of the paying — long enough for a 30-Production city
+        // to have finished several Warriors. The arena's own turn is what
+        // pays cities and grants, so it is what is driven here.
+        for _ in 0..30 {
+            for seat in 0..2 {
+                game.begin_turn(seat);
+            }
+        }
+        for seat in 0..2 {
+            assert_eq!(
+                game.cities[&cities[seat]].production,
+                0.0,
+                "seat {seat} banked Production toward a unit it was never granted"
+            );
+            assert_eq!(
+                game.player_unit_ids(seat).len(),
+                dealt[seat],
+                "seat {seat} fielded a unit it was not dealt"
+            );
+            assert_eq!(
+                game.players[seat].gold, gold_before[seat],
+                "seat {seat} banked Gold the stock arena does not grant"
+            );
+        }
+
+        // Raised, the same grants reach the same city and the same treasury:
+        // the setting is real, and zero was the default rather than the rule.
+        game.tactics.production = 30;
+        game.tactics.gold = 30;
+        for _ in 0..3 {
+            for seat in 0..2 {
+                game.begin_turn(seat);
+            }
+        }
+        for seat in 0..2 {
+            assert!(
+                game.cities[&cities[seat]].production > 0.0
+                    || game.player_unit_ids(seat).len() > dealt[seat],
+                "seat {seat} was granted Production and neither banked nor spent it"
+            );
+            assert!(
+                game.players[seat].gold > gold_before[seat],
+                "seat {seat} was granted Gold and banked none"
+            );
+        }
     }
 
     /// A Tactics battlefield opens as a two-sided arena: flat and walled even
@@ -72593,6 +72701,52 @@ mod district_mechanics {
         assert!(!game.players[1].alive, "a side with no units left has lost the field");
         assert_eq!(game.winner, Some(0));
         assert_eq!(game.victory_type.as_deref(), Some("domination"));
+    }
+
+    /// The stock arena seats a city a side but grants it nothing, so a side
+    /// whose last unit falls has no way back onto the field and the battle
+    /// is over — the annihilating side wins by domination even if it has no
+    /// melee left to walk into the empty city. Grant the city Production, or
+    /// the side Gold, and the same side is still in the battle: the next
+    /// unit off the queue, or the next one bought, puts it back on the field.
+    #[test]
+    fn a_side_with_a_city_it_cannot_field_from_falls_with_its_last_unit() {
+        let arena = |production: u32, gold: u32| {
+            Game::new_with(GameOptions {
+                map_script: MapScript::Battlefield,
+                tactics: TacticsRules { cities: 1, production, gold, ..TacticsRules::default() },
+                ..GameOptions::new(2, 10, 10, 7_311, 250, 0)
+            })
+        };
+        // The stock grants: nothing behind the army.
+        let mut stock = arena(0, 0);
+        assert_eq!(stock.tactics.production, 0);
+        assert_eq!(stock.tactics.gold, 0);
+        assert!(stock.cities.values().any(|city| city.owner == 1), "seat 1 holds a city");
+        for uid in stock.player_unit_ids(1) {
+            stock.remove_unit(uid);
+        }
+        stock.check_elimination(1);
+        stock.check_domination();
+        assert!(!stock.players[1].alive, "a city that can never field a unit is not a way back");
+        assert!(stock.cities.values().any(|city| city.owner == 1), "the empty city still stands");
+        assert_eq!(stock.winner, Some(0), "the last army standing takes the field");
+        assert_eq!(stock.victory_type.as_deref(), Some("domination"));
+
+        // Either grant keeps a side with a city in the battle.
+        for (production, gold) in [(30, 0), (0, 30)] {
+            let mut reinforced = arena(production, gold);
+            for uid in reinforced.player_unit_ids(1) {
+                reinforced.remove_unit(uid);
+            }
+            reinforced.check_elimination(1);
+            reinforced.check_domination();
+            assert!(
+                reinforced.players[1].alive,
+                "with {production} Production and {gold} Gold the city can field a unit again"
+            );
+            assert_eq!(reinforced.winner, None);
+        }
     }
 
     /// An arena has no empire behind it, so it runs none of an empire's
