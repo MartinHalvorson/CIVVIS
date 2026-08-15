@@ -6790,13 +6790,17 @@ function chooseBetweenGameCountdown(ms) {
   setPace({between_game_countdown_ms: ms});
   rearmFinaleCountdown();
 }
-// The result screen's copy says what the setting says, unless it is the
-// control being used.
+// The copies say what the setting says, unless one is the control being
+// used. There are two: the result screen's, and the Tactics card's
+// post-match control — the same knob offered where a match is set up.
 function syncFinaleCountdownChoice() {
   const source = document.getElementById("between-game-countdown");
-  const mirror = document.getElementById("finale-countdown");
-  if (!source || !mirror || document.activeElement === mirror) return;
-  if (mirror.value !== source.value) mirror.value = source.value;
+  if (!source) return;
+  for (const id of ["finale-countdown", "tacticspostmatch"]) {
+    const mirror = document.getElementById(id);
+    if (!mirror || document.activeElement === mirror) continue;
+    if (mirror.value !== source.value) mirror.value = source.value;
+  }
 }
 // The between-game hold, offered on the result screen itself: the setting is
 // in Display Settings, but the result screen is where a viewer finds out what
@@ -6828,6 +6832,7 @@ function restoreBetweenGameCountdown() {
   betweenGameCountdownChoice = ms;
   betweenGameCountdownExplicit = true;
   select.value = String(ms);
+  syncFinaleCountdownChoice();
 }
 // With nothing picked by hand, the mode's default stands as a soft choice:
 // 3s between Tactics battles, 5s everywhere else. Holding it in
@@ -30089,11 +30094,17 @@ document.getElementById("tacticsworldtype").addEventListener("change", () => {
 document.getElementById("tactics-scenario").addEventListener("change", () => {
   const scenario = historicalScenario(tacticsScenarioId());
   syncBattlefieldSizes(true);
-  if (scenario) {
-    scenarioStartEra(scenario);
-    scenarioTurnChoice(scenario.turns);
-  }
+  if (scenario) scenarioTurnChoice(scenario.turns);
   syncScenarioChoice();
+});
+// Customize is the one era choice with configuration of its own, so choosing
+// it is what unfolds the pool — on the select itself, ahead of the panel's
+// delegated staging listener, like every other Tactics control that reshapes
+// the form.
+document.getElementById("tacticsera").addEventListener("change", () => {
+  syncTacticsEraPool();
+  const pool = document.getElementById("tactics-era-pool");
+  if (pool && !pool.hidden) pool.scrollIntoView({block: "nearest"});
 });
 // Bound on the select itself, so it has re-fitted the splits to the new size
 // before the panel's own delegated listener stages what is now selected.
@@ -30125,6 +30136,11 @@ document.getElementById("specspeed").onchange = event => chooseWatchPace(event.c
 restorePace();
 document.getElementById("between-game-countdown").onchange = () =>
   chooseBetweenGameCountdown(betweenGameCountdownMs());
+// The Tactics card's post-match control is the same knob offered where a
+// match is set up, so it goes through the same chooser — which pushes the
+// choice to the server and re-syncs every copy, this one included.
+document.getElementById("tacticspostmatch").onchange = event =>
+  chooseBetweenGameCountdown(Number(event.currentTarget.value));
 // The result screen offers the same choice where a viewer actually meets it,
 // as a copy of the Display Settings control; the copy is re-rendered with the
 // screen, so the listener lives on the permanent overlay.
@@ -30218,7 +30234,28 @@ function worldSetupInputError() {
     if (input && input.value.trim() && readOptionalWholeSetting(id) === null)
       return `${label} must be a whole number in the range shown`;
   }
+  // A customized era pool with nothing in it names no army at all; the
+  // server would refuse it, so the start control says why first.
+  if (tacticsMode() && readSetting("tacticsera") === "custom" && !tacticsEraPool().length)
+    return "The era pool needs at least one era checked";
   return "";
+}
+// The eras the Customize pool has checked, earliest first. The ladder is
+// written inside the function for the same load-order reason
+// `syncScenarioSettings` documents: a top-level const would still be in its
+// temporal dead zone when the load path first reads settings.
+function tacticsEraPool() {
+  const ladder = ["ancient", "classical", "medieval", "renaissance",
+                  "industrial", "modern", "atomic", "information"];
+  return ladder.filter(era => document.getElementById(`erapool-${era}`)?.checked);
+}
+// Customize's configuration appears exactly while Customize is the era
+// choice — choosing it in the box is what "opens" the pool, and any other
+// choice folds it away rather than leaving a dead checklist under a decided
+// control.
+function syncTacticsEraPool() {
+  const pool = document.getElementById("tactics-era-pool");
+  if (pool) pool.hidden = readSetting("tacticsera") !== "custom";
 }
 function setOptionalWorldNumber(id, value, defaultValue = Number.NaN) {
   const input = document.getElementById(id);
@@ -30357,6 +30394,8 @@ function selectedSimulationSettings() {
           tactics_turns_per_tech: Number(readSetting("tacticsturnspertech")) || 0,
           tactics_best_of: Number(readSetting("tacticsbestof")) || 1,
           tactics_unique_units: readSetting("tacticsuniqueunits") === "1",
+          tactics_era: readSetting("tacticsera") || "random",
+          tactics_eras: tacticsEraPool(),
           ...(mapSeed === null ? {} : {seed: mapSeed}),
           // A battlefield's dimensions are its own setting: no seat count
           // implies an arena size, so the chosen one travels explicitly and
@@ -30418,7 +30457,15 @@ function selectedSimulationSummary(settings = null) {
   const startEra = settings ? settings.start_era : eras?.value;
   const stockEra = [...(eras?.options || [])]
     .find(option => option.value && !option.disabled)?.value;
-  const era = startEra && startEra !== stockEra ? chosenText("startera", startEra) : "";
+  // A Tactics world's era is the arena's own control, whose stock choice is
+  // Random; a named battle needs no clause because the battle's name already
+  // says more than its era would.
+  const tacticsEra = settings ? settings.tactics_era : readSetting("tacticsera");
+  const era = tactics
+    ? (battle || !tacticsEra || tacticsEra === "random" ? ""
+       : tacticsEra === "custom" ? "Cross-era"
+       : chosenText("tacticsera", tacticsEra).split(" · ")[0])
+    : startEra && startEra !== stockEra ? chosenText("startera", startEra) : "";
   const futures = document.getElementById("futureera");
   const futureEra = settings ? settings.future_era : futures?.value;
   const stockFuture = [...(futures?.options || [])]
@@ -30783,13 +30830,6 @@ function scenarioTurnChoice(turns) {
   select.value = String(choices.reduce((best, choice) =>
     Math.abs(choice - turns) < Math.abs(best - turns) ? choice : best, choices[0]));
 }
-function scenarioStartEra(scenario) {
-  const eras = document.getElementById("startera");
-  if (!eras) return;
-  const match = (RULES?.start_eras || []).find(era =>
-    era.era === scenario.era_index && era.playable);
-  if (match && [...eras.options].some(option => option.value === match.id)) eras.value = match.id;
-}
 function isScenarioMapScript(id) {
   return scenarioScripts().some(script => script.id === id);
 }
@@ -30822,6 +30862,29 @@ function syncScenarioSettings() {
       delete select.dataset.scenarioSaved;
     }
   }
+  // The era control is fixed the same way, but to the battle's own era
+  // rather than to "0": Gettysburg is Industrial whatever was chosen, and
+  // the greyed control should say so. The ladder is written here rather than
+  // at top level for the load-order reason above.
+  const eras = document.getElementById("tacticsera");
+  if (eras) {
+    const ladder = ["ancient", "classical", "medieval", "renaissance",
+                    "industrial", "modern", "atomic", "information", "future"];
+    const battle = tacticsMode() ? historicalScenario(tacticsScenarioId()) : null;
+    eras.disabled = !!battle;
+    const label = eras.closest("label");
+    if (label) label.classList.toggle("setting-fixed", !!battle);
+    if (battle && ladder[battle.era_index] &&
+        [...eras.options].some(option => option.value === ladder[battle.era_index])) {
+      if (eras.dataset.scenarioSaved === undefined) eras.dataset.scenarioSaved = eras.value;
+      eras.value = ladder[battle.era_index];
+    } else if (!battle && eras.dataset.scenarioSaved !== undefined) {
+      const saved = eras.dataset.scenarioSaved;
+      if ([...eras.options].some(option => option.value === saved)) eras.value = saved;
+      delete eras.dataset.scenarioSaved;
+    }
+  }
+  syncTacticsEraPool();
 }
 function battlefieldSizesForScript(script) {
   return battlefieldSizes().filter(size => !size.script || size.script === script);

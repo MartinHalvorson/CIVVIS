@@ -2411,6 +2411,15 @@
      will be played — but they read as reported rather than offered. */
   .tactics-options > label.setting-fixed, #newgame-options > label.setting-fixed { opacity: 0.55; }
   .tactics-options > label.setting-fixed select, #newgame-options > label.setting-fixed select { cursor: not-allowed; }
+  /* The era pool qualifies the Era control above it the way the endgame rules
+     qualify the victory checklist: inside the same card, set off by a rule. */
+  .tactics-era-pool {
+    display: grid; grid-template-columns: minmax(0, 1fr);
+    gap: 5px; margin-top: 2px; padding-top: 9px;
+    border-top: 1px solid var(--line-soft);
+  }
+  .era-pool-later { opacity: 0.55; cursor: not-allowed; }
+  .era-pool-later small { margin-left: auto; color: var(--muted); }
   /* A named battle brings its own map, so while one is chosen the world type
      and map are not questions: both controls leave the form rather than
      sitting greyed under a choice that has already been made. Custom hands
@@ -4557,7 +4566,7 @@
           <option value="islands">Islands</option>
           <option value="water_world">Water World</option>
         </select></label>
-        <label class="small civ6-hidden">Start era<select id="startera" style="margin-top:4px">
+        <label class="small civ6-hidden tactics-hidden">Start era<select id="startera" style="margin-top:4px">
           <option value="stone_age" disabled>Stone Age · later</option>
           <option value="ancient" selected>Ancient</option>
         </select></label>
@@ -4626,6 +4635,51 @@
             <option value="200">200 turns</option>
             <option value="250" selected>250 turns</option>
           </select></label>
+          <label class="small">Post-match countdown<span class="setup-info" style="cursor:help;opacity:.7"
+            title="How long a decided battle stays on screen before the next one begins. This is the same control the post-match screen and Display settings offer — changing it in any of the three changes all of them — and it is remembered for this viewer rather than being part of the battle."> ⓘ</span><select id="tacticspostmatch" style="margin-top:4px" aria-label="Between-game countdown">
+            <option value="0">None</option>
+            <option value="3000">3s</option>
+            <option value="5000" selected>5s</option>
+            <option value="10000">10s</option>
+          </select></label>
+          <label class="small">Era<span class="setup-info" style="cursor:help;opacity:.7"
+            title="Which era's units the two armies are drawn from, and how far the technology behind them reaches. Random rolls one of the built eras fresh for every battle of the match; the Modified Future Era's drones and missiles, and the Moon, join the list when their units exist. Customize opens the era pool below, where several eras can be fielded together on one ground."> ⓘ</span><select id="tacticsera" style="margin-top:4px">
+            <option value="random" selected>Random · a fresh era each battle</option>
+            <option value="ancient">Ancient</option>
+            <option value="classical">Classical</option>
+            <option value="medieval">Medieval</option>
+            <option value="renaissance">Renaissance</option>
+            <option value="industrial">Industrial</option>
+            <option value="modern">Modern</option>
+            <option value="atomic">Atomic</option>
+            <option value="information">Information</option>
+            <option value="future_modified" disabled>Modified Future Era · later</option>
+            <option value="moon" disabled>Moon · later</option>
+            <option value="custom">Customize · pick the era pool</option>
+          </select></label>
+          <!-- The era pool: Customize's own configuration, revealed only while
+               it is the era choice. Each checked era deals its own rung of
+               units into both armies, so one field can carry a Warrior company
+               beside a Modern Armor company. The two unbuilt rungs stay
+               visible for the same reason the Stone Age stays on the start-era
+               ladder: the panel explains the shape of the feature before it
+               ships. -->
+          <div class="tactics-era-pool" id="tactics-era-pool" role="group" aria-labelledby="tactics-era-pool-title" hidden>
+            <div class="small" id="tactics-era-pool-title">Era pool<span class="setup-info" style="cursor:help;opacity:.7"
+              title="The eras fielded together. Both armies are dealt across every checked era in the same mix, and research and the build menu reach the latest of them, so the later rungs' units can be built or upgraded to mid-battle wherever the economy allows it."> ⓘ</span></div>
+            <div class="victory-option-grid">
+              <label class="victory-option"><input type="checkbox" id="erapool-ancient" checked>Ancient</label>
+              <label class="victory-option"><input type="checkbox" id="erapool-classical" checked>Classical</label>
+              <label class="victory-option"><input type="checkbox" id="erapool-medieval" checked>Medieval</label>
+              <label class="victory-option"><input type="checkbox" id="erapool-renaissance" checked>Renaissance</label>
+              <label class="victory-option"><input type="checkbox" id="erapool-industrial" checked>Industrial</label>
+              <label class="victory-option"><input type="checkbox" id="erapool-modern" checked>Modern</label>
+              <label class="victory-option"><input type="checkbox" id="erapool-atomic" checked>Atomic</label>
+              <label class="victory-option"><input type="checkbox" id="erapool-information" checked>Information</label>
+              <label class="victory-option era-pool-later"><input type="checkbox" disabled>Modified Future Era<small>Later</small></label>
+              <label class="victory-option era-pool-later"><input type="checkbox" disabled>Moon<small>Later</small></label>
+            </div>
+          </div>
           <label class="small">Capture the flag<span class="setup-info" style="cursor:help;opacity:.7"
             title="On, each side is given a flag in place of a city, standing where its city would have stood, and the battle is won by moving a unit onto the OTHER side's flag. Standing on your own captures nothing, so a flag is something to defend as well as something to take, and every flag is visible through the fog — both commanders know where they are marching. Off, a battle is decided the way an arena always has been: by the armies, and by the city each side holds if the economy grants one. The clock can still run out first either way, which stays a draw."> ⓘ</span><select id="tacticsflag" style="margin-top:4px">
             <option value="0" selected>Off · last army standing</option>

@@ -18,8 +18,9 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/dist"
 [ -d "$root" ] || { echo "no build at $root — run ./beta/publish.sh first" >&2; exit 1; }
 
 echo "serving $root"
-echo "  landing page  http://127.0.0.1:$port/"
-echo "  test build    http://127.0.0.1:$port/test/"
+echo "  viewer        http://127.0.0.1:$port/"
+echo "  landing page  http://127.0.0.1:$port/home/"
+echo "  downloads     http://127.0.0.1:$port/download/"
 echo "  WASM channel  http://127.0.0.1:$port/wasm/"
 echo
 

@@ -2,17 +2,21 @@
 #
 # Assemble a published build of CIVVIS for civvis.ai.
 #
-# The output is a plain directory of static files — no server, no runtime, no
+# The output is one complete LANE of the site — the viewer at its root with
+# the engine compiled to WebAssembly beside it, the landing page at /home and
+# the downloads page at /download — a plain directory of static files with no
 # host-specific anything beyond the two Cloudflare Pages control files, which
-# any other host simply ignores. Everything under `beta/` is the same viewer
-# the desktop build serves, with the engine compiled to WebAssembly beside it.
+# any other host simply ignores. Every link between the pages is
+# lane-relative, so the same tree serves unchanged at the site root (the
+# stable lane) and under /test (the head lane); the deploy workflow builds one
+# lane per revision and stacks them.
 #
 #   ./beta/publish.sh                  build from the working tree
 #   ./beta/publish.sh --commit <ref>   build from a pinned revision
 #
 # Nothing in `web/` or `src/` is edited. The viewer is *copied* and the copy is
-# adjusted for living in a subdirectory; if any of those adjustments stops
-# matching, this script fails rather than publishing a page with dead links.
+# adjusted for living in a lane; if any of those adjustments stops matching,
+# this script fails rather than publishing a page with dead links.
 
 set -euo pipefail
 
@@ -64,43 +68,51 @@ raw_wasm="$source_tree/target/wasm32-unknown-unknown/release/civvis.wasm"
 [ -f "$raw_wasm" ] || { echo "the wasm build produced nothing at $raw_wasm" >&2; exit 1; }
 
 rm -rf "$out"
-mkdir -p "$out/test"
+mkdir -p "$out"
 
 if command -v wasm-opt >/dev/null; then
   echo "==> shrinking the module"
   # -O3 keeps the optimiser aimed at speed: this module simulates whole games,
   # and -Oz costs more turn time than it saves bytes over the wire.
-  wasm-opt -O3 "$raw_wasm" -o "$out/test/civvis.wasm"
+  wasm-opt -O3 "$raw_wasm" -o "$out/civvis.wasm"
 else
   echo "==> wasm-opt is not installed; publishing the unshrunk module" >&2
-  cp "$raw_wasm" "$out/test/civvis.wasm"
+  cp "$raw_wasm" "$out/civvis.wasm"
 fi
 
-echo "==> assembling the page"
-cp "$repo_root/beta/shim.js" "$repo_root/beta/worker.js" "$out/test/"
-cp -R "$source_tree/web/assets" "$out/test/assets"
-cp "$repo_root/beta/landing.html" "$out/index.html"
-# The workflow moves this landing document to `/home/index.html` when it
-# assembles the two engine lanes. Keep its photographs beside that final
-# address, and use `/home/assets/...` in the page so the standalone preview
-# shape and the deployed site resolve the same files.
+echo "==> assembling the pages"
+cp "$repo_root/beta/shim.js" "$repo_root/beta/worker.js" "$out/"
+cp -R "$source_tree/web/assets" "$out/assets"
+# Every page of the site exists once per lane, built from the lane's own
+# revision: the promoted stable lane shows the promoted landing and download
+# pages, and /test shows head's. A pinned revision that predates one of the
+# pages falls back to head's copy, so any commit stays publishable.
+landing_page="$source_tree/beta/landing.html"
+[ -f "$landing_page" ] || landing_page="$repo_root/beta/landing.html"
+landing_assets="$source_tree/beta/assets"
+[ -d "$landing_assets" ] || landing_assets="$repo_root/beta/assets"
+download_page="$source_tree/beta/download.html"
+[ -f "$download_page" ] || download_page="$repo_root/beta/download.html"
 mkdir -p "$out/home"
-cp -R "$repo_root/beta/assets" "$out/home/assets"
+cp "$landing_page" "$out/home/index.html"
+cp -R "$landing_assets" "$out/home/assets"
 # `/download/` rather than `/download.html`: the page outlives any one release
 # and gets linked around, so it should have the tidier address.
 mkdir -p "$out/download"
-cp "$repo_root/beta/download.html" "$out/download/index.html"
+cp "$download_page" "$out/download/index.html"
 # The gate travels *inside* the deployed directory. See beta/_worker.js for
-# why this is not a `functions/` directory.
+# why this is not a `functions/` directory. Unlike the pages, these two are
+# deployment-global rather than lane content — always head's copy, and the
+# deploy workflow keeps only the root copy when it stacks two lanes.
 cp "$repo_root/beta/_worker.js" "$out/_worker.js"
 # Its very existence switches Pages from single-page-app fallback (unknown
 # path -> the front page, 200) to honest 404s. See the comment inside it.
 cp "$repo_root/beta/404.html" "$out/404.html"
 
-# The viewer, copied and then made to work one directory down. Each
-# substitution is checked, because a silently unmatched one publishes a page
-# whose strategic map sprites are simply missing.
-python3 - "$source_tree/web/index.html" "$out/test/index.html" "$out/test/assets" <<'PY'
+# The viewer, copied and then made lane-relative. Each substitution is
+# checked, because a silently unmatched one publishes a page whose strategic
+# map sprites are simply missing.
+python3 - "$source_tree/web/index.html" "$out/index.html" "$out/assets" <<'PY'
 import re, sys, pathlib
 
 source, target = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
@@ -120,7 +132,8 @@ app_js = assets / "app.js"
 script = app_js.read_text(encoding="utf-8") if app_js.is_file() else ""
 
 # The page asks for its assets from the site root, which is where a desktop
-# build serves them. Published under /test/ they sit beside the page instead.
+# build serves them. Published in a lane they sit beside the page instead —
+# and lane-relative is what lets the identical tree serve at / and at /test.
 #
 # The check is "none left afterwards", not "exactly N rewritten". An exact
 # count fails the build every time somebody adds a sprite atlas — which is
@@ -140,9 +153,23 @@ for needle, replacement in edits:
     page = page.replace(needle, replacement)
     script = script.replace(needle, replacement)
 
+# Links between the site's pages must stay inside the lane too: a test-lane
+# viewer linking `/home` would silently drop the visitor back into prod.
+# Tolerated as already absent (a revision may predate the link); the guard
+# below is what is enforced.
+for needle, replacement in [('href="/home"', 'href="home/"')]:
+    page = page.replace(needle, replacement)
+    script = script.replace(needle, replacement)
+
 for stranded in ('"/assets/',):
     if stranded in page or stranded in script:
         raise SystemExit(f"{stranded!r} survived the rewrite; the published page would 404 on it")
+leaked = sorted(set(re.findall(r'(?:href|src)="(/[^"]*)"', page + script)))
+if leaked:
+    raise SystemExit(
+        f"the viewer still links the site root ({', '.join(leaked)}); "
+        "a lane page must link relatively so /test stays /test"
+    )
 
 # The sprite atlases, republished as lossless WebP.
 #
@@ -207,14 +234,58 @@ target.write_text(page, encoding="utf-8")
 print(f"   viewer written to {target} ({len(page):,} bytes)")
 PY
 
+# The landing and download pages are lane content too, so the same rule
+# holds: every link between pages stays inside the lane. Head's sources are
+# authored lane-relative already; these needles translate OLDER pinned
+# revisions, whose pages linked the site by absolute path, and are therefore
+# tolerated as absent. What is enforced is the guard: no root-absolute
+# href/src, and no script-built root link, may survive into any lane page.
+python3 - "$out" <<'PY'
+import re, sys, pathlib
+
+out = pathlib.Path(sys.argv[1])
+
+edits = {
+    out / "home" / "index.html": [
+        # the photographs, with whatever hand-written ?v= they carried
+        ('src="/home/assets/', 'src="assets/'),
+        # links into the viewer, one directory up
+        ('href="/?', 'href="../?'),
+        ('href="/"', 'href="../"'),
+        # the same viewer links built by the page's own script
+        ('"/?map=', '"../?map='),
+        ('`/?map=', '`../?map='),
+    ],
+    out / "download" / "index.html": [
+        ('href="/test/"', 'href="../"'),  # the lane's own viewer
+        ('href="/home"', 'href="../home/"'),
+        ('href="/"', 'href="../"'),
+    ],
+}
+
+for path, rules in edits.items():
+    text = path.read_text(encoding="utf-8")
+    for needle, replacement in rules:
+        text = text.replace(needle, replacement)
+    leaked = sorted(set(re.findall(r'(?:href|src)="(/[^"]*)"', text)))
+    if leaked:
+        raise SystemExit(
+            f"{path.name} still links the site root ({', '.join(leaked)}); "
+            "a lane page must link relatively so /test stays /test"
+        )
+    if '"/?map=' in text or '`/?map=' in text:
+        raise SystemExit(f"{path.name} still builds root-absolute viewer links in its script")
+    path.write_text(text, encoding="utf-8")
+PY
+
 # Browser caches cannot be purged by a deployment. Give every JS, WASM, and
 # atlas dependency a URL derived from its actual bytes, so fresh HTML always
 # asks for fresh content while unchanged files remain reusable across builds.
-python3 "$repo_root/beta/cache_bust.py" "$out/test"
+python3 "$repo_root/beta/cache_bust.py" "$out"
 
-wasm_bytes=$(wc -c < "$out/test/civvis.wasm" | tr -d ' ')
+wasm_bytes=$(wc -c < "$out/civvis.wasm" | tr -d ' ')
 bundle_bytes=$(find "$out" -type f -exec wc -c {} + | tail -1 | awk '{print $1}')
-cat > "$out/test/build.json" <<JSON
+cat > "$out/build.json" <<JSON
 {
   "commit": "$commit",
   "short": "$short",
@@ -229,7 +300,7 @@ echo
 echo "published build $short -> $out"
 echo "  engine      $(printf "%'d" "$wasm_bytes") bytes"
 if command -v brotli >/dev/null; then
-  echo "  over a wire $(printf "%'d" "$(brotli -q 11 -c "$out/test/civvis.wasm" | wc -c | tr -d ' ')") bytes brotli"
+  echo "  over a wire $(printf "%'d" "$(brotli -q 11 -c "$out/civvis.wasm" | wc -c | tr -d ' ')") bytes brotli"
 fi
 echo "  bundle      $(printf "%'d" "$bundle_bytes") bytes on disk"
 
