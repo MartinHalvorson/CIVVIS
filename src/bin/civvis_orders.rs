@@ -2499,7 +2499,7 @@ fn main() {
     // baseline shows the remaining rate limit: one Settler is walking while the
     // empire is still short of its city plan. Measure the previously untested
     // target-plus-throughput cell as one explicit live treatment.
-    ai.parallel_settlers = true;
+    ai.enable_parallel_settlers();
     // ★★★ SAY WHICH GENOME IS PLAYING, ALWAYS — INCLUDING "the stock one".
     //
     // An axis nothing reports does not exist, and this project has already shipped a
@@ -2708,7 +2708,9 @@ fn main() {
                 .unwrap_or_else(|| "stock AdvancedAi::new — NOT the deployment".to_string())
         );
         let w = advanced.weights().clone();
-        let ai = civvis::ai::BasicAi::with_weights(w.clone());
+        let mut ai = civvis::ai::BasicAi::with_weights(w.clone());
+        // The live decider plays with the second pipeline slot open.
+        ai.enable_parallel_settlers();
         let pid = 0usize;
         let n_cities = g.player_city_ids(pid).len();
         let settlers = g
@@ -2730,7 +2732,16 @@ fn main() {
             n_cities + settlers,
             w.city_target
         );
-        println!("  settlers == 0                        {:>5}   {settlers}", settlers == 0);
+        // The live seat's pipeline width (see `AdvancedAi::parallel_settlers`).
+        let pipeline = if n_cities >= 2 && ((n_cities + settlers + 1) as f64) < w.city_target {
+            2
+        } else {
+            1
+        };
+        println!(
+            "  settlers < pipeline ({pipeline})            {:>5}   {settlers}",
+            settlers < pipeline
+        );
         println!(
             "  city_pop >= settler_min_pop          {:>5}   {city_pop} >= {:.1}",
             (city_pop as f64) >= w.settler_min_pop,
