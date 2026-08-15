@@ -6770,6 +6770,15 @@ pub struct StateSnapshot {
     /// (Great Scientist points) is invisible to the planner that chooses it.
     #[serde(default, deserialize_with = "map_or_empty_sequence")]
     pub great_person_points: Option<BTreeMap<String, f64>>,
+    /// The live RECRUIT COST of each class's current unclaimed Great Person,
+    /// by the same class-type key. Points without costs sent the planner's
+    /// threshold check to CIVVIS's own market formula, which quoted 60-ish
+    /// where the live timeline wanted hundreds: run civvis-20260815T033823Z
+    /// recorded 45 `gp_cannot_recruit` refusals — the recruit order finally
+    /// crossed the bridge (#1596) only for the live game to answer "not yet"
+    /// every time, because the ask itself was priced against the wrong game.
+    #[serde(default, deserialize_with = "map_or_empty_sequence")]
+    pub great_person_costs: Option<BTreeMap<String, f64>>,
     /// Total Governor Titles obtained and spent according to Firaxis. These are
     /// separate from the roster because a title can be held unspent.
     #[serde(default)]
@@ -6982,6 +6991,29 @@ fn apply_great_person_points(
             }
         }
         game.players[0].gpp = gpp;
+    }
+    // The live recruit cost lands on CIVVIS's idea of the class's current
+    // person via `great_person_offer_costs`, which `gp_cost` consults before
+    // its market formula. The two games disagree about WHO is on offer, but
+    // the number that gates the recruit decision — cost minus banked points —
+    // is the live game's, which is the one the order will be judged by.
+    if let Some(costs) = state.great_person_costs.as_ref() {
+        for (class, cost) in costs {
+            let Some(kind) = class.strip_prefix("GREAT_PERSON_CLASS_") else {
+                let issue = format!("great_person_cost_class:{class}");
+                if !unmapped.contains(&issue) {
+                    unmapped.push(issue);
+                }
+                continue;
+            };
+            let kind = kind.to_ascii_lowercase();
+            let id = game
+                .current_great_person(&kind)
+                .map(|(id, _)| id.to_string());
+            if let Some(id) = id {
+                game.great_person_offer_costs.insert(id, *cost);
+            }
+        }
     }
 }
 
@@ -12575,6 +12607,54 @@ mod host_fact_tests {
             !game.players[0].gpp.contains_key("not_a_great_person_class"),
             "and must not be invented into the race"
         );
+    }
+
+    /// The live recruit COST must land on the class's current person, so the
+    /// planner's `gp_cost - points` gate answers with the live game's number.
+    /// Run civvis-20260815T033823Z: 45 `gp_cannot_recruit` refusals because
+    /// the ask was priced by CIVVIS's market formula instead of the timeline
+    /// the order is judged by.
+    #[test]
+    fn live_recruit_costs_reprice_the_current_great_person() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 92,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(3, 3)],
+        }]);
+        let mut costs = BTreeMap::new();
+        costs.insert("GREAT_PERSON_CLASS_SCIENTIST".to_string(), 385.0);
+        costs.insert("NOT_A_GREAT_PERSON_CLASS".to_string(), 9.0);
+        let state = StateSnapshot {
+            turn: 92,
+            great_person_costs: Some(costs),
+            ..StateSnapshot::default()
+        };
+        let report = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let game = &report.game;
+
+        assert_eq!(
+            game.gp_cost(0, "scientist"),
+            385.0,
+            "the gate must quote the live timeline, not the market formula"
+        );
+        assert!(
+            report
+                .unmapped
+                .iter()
+                .any(|issue| issue.contains("great_person_cost_class:NOT_A_GREAT_PERSON_CLASS")),
+            "an unprefixed class must be reported: {:?}",
+            report.unmapped
+        );
+
+        // An older mod that sends no costs must parse to None, so the import
+        // never runs and the engine's own offer pricing stays in charge. (The
+        // offer map itself is NOT empty after a rebuild — the engine prices
+        // its own market — so absence is asserted on the wire, not the map.)
+        let bare: StateSnapshot =
+            serde_json::from_str(r#"{"turn": 3}"#).expect("an absent field parses");
+        assert_eq!(bare.great_person_costs, None);
     }
 
     #[test]

@@ -6041,6 +6041,40 @@ local function exportState(player, pid, turn)
 			if not any then return nil; end
 			return out;
 		end, nil),
+		-- The live RECRUIT COST of each class's current unclaimed Great
+		-- Person, from the same timeline the recruit order is judged by.
+		-- Points without costs made the planner price the claim against
+		-- CIVVIS's own market formula: 45 gp_cannot_recruit refusals in run
+		-- civvis-20260815T033823Z were the recruit order crossing the bridge
+		-- only to be asked years early. Min cost per class = the current
+		-- individual; the timeline also lists later eras at higher prices.
+		--
+		-- ⚠⚠ Same serde trap as great_person_points above: RETURN nil, NEVER
+		-- an empty table — `{}` encodes as `[]` and kills the whole snapshot.
+		great_person_costs = try(function()
+			local greatPeople = Game.GetGreatPeople();
+			if greatPeople == nil then return nil; end
+			local timeline = greatPeople:GetTimeline();
+			if timeline == nil then return nil; end
+			local out = {};
+			local any = false;
+			for _, entry in ipairs(timeline) do
+				if entry.Individual ~= nil and entry.Claimant == nil
+						and entry.Cost ~= nil then
+					local info = GameInfo.GreatPersonIndividuals[entry.Individual];
+					local class = info ~= nil and info.GreatPersonClassType or nil;
+					if class ~= nil then
+						local prior = out[class];
+						if prior == nil or entry.Cost < prior then
+							out[class] = entry.Cost;
+							any = true;
+						end
+					end
+				end
+			end
+			if not any then return nil; end
+			return out;
+		end, nil),
 		governor_points = governor_points,
 		governor_points_spent = governor_points_spent,
 		governors = governor_roster,
