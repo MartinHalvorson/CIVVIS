@@ -1100,7 +1100,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// only by the live bridge and the native repair bundle, never by
 /// `AdvancedAi::legacy()`, so the anchor's peace rules are unchanged.
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8361_df92_8aa2_bb85;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8e97_1aa9_5d32_dbf3;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
