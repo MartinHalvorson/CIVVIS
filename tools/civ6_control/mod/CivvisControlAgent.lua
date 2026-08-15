@@ -8005,8 +8005,15 @@ local function applyOrder(player, pid, row, turn)
 	if kind == "unit" then
 		-- Asked for fresh, right here: the previous order in this very list may have
 		-- killed or consumed it.
+		--
+		-- Name the unit in the refusal. Run civvis-20260815T003946Z logged 86
+		-- bare `unit_gone` strings across 140 war turns, and an id-less entry
+		-- cannot answer the question the ledger exists for — one leaked corpse
+		-- re-ordered forever (a mirror bug) reads identically to rolling
+		-- one-turn death latency (inherent). With the id, the two are one
+		-- `GROUP BY` apart.
 		local unit = liveUnit(pid, subject);
-		if unit == nil then return false, "unit_gone"; end
+		if unit == nil then return false, "unit_gone:" .. tostring(subject); end
 		if verb == "ACTIVATE_GREAT_PERSON" then
 			local activated = commandUnit(
 				unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"]);
