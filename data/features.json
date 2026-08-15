@@ -104,6 +104,7 @@
   },
   "oasis": {
     "appeal": 1,
+    "blocks_district": true,
     "yields": {
       "food": 3,
       "gold": 1
