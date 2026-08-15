@@ -9,6 +9,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -53,6 +55,177 @@ class DeciderProtocolTest(unittest.TestCase):
         rows, note = decider.ask(1)
         self.assertEqual(rows, [])
         self.assertEqual(note, "real")
+
+
+class _RuntimeCommandRunner:
+    def __init__(self, revision: str, fail_build: bool = False) -> None:
+        self.revision = revision
+        self.fail_build = fail_build
+        self.calls: list[tuple[list[str], Path]] = []
+
+    def __call__(self, command, cwd, capture_output, text, timeout, env):
+        command = list(command)
+        cwd = Path(cwd)
+        self.calls.append((command, cwd))
+        if command[0] == "git" and command[-2:] == ["rev-parse", "origin/main"]:
+            return SimpleNamespace(returncode=0, stdout=self.revision + "\n", stderr="")
+        if command[0] == "git" and "worktree" in command and "add" in command:
+            source = Path(command[-2])
+            (source / "tools").mkdir(parents=True)
+            (source / ".git").write_text("gitdir: fake\n")
+            (source / "tools" / "civ6_brain.py").write_text("# fetched brain\n")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if command[0] == "cargo":
+            if self.fail_build:
+                return SimpleNamespace(returncode=101, stdout="", stderr="compile error")
+            built = Path(env["CARGO_TARGET_DIR"]) / "release" / "civvis_orders"
+            built.parent.mkdir(parents=True, exist_ok=True)
+            built.write_bytes(b"verified GitHub binary")
+            built.chmod(0o755)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+
+class GitHubRuntimeUpdaterTest(unittest.TestCase):
+    NEW = "a" * 40
+    OLD = "b" * 40
+
+    def updater(self, root: Path, runner: _RuntimeCommandRunner,
+                current: str | None = OLD) -> civ6_brain.GitHubRuntimeUpdater:
+        repo = root / "repo"
+        repo.mkdir()
+        return civ6_brain.GitHubRuntimeUpdater(
+            repo=repo,
+            current_revision=current,
+            cache_root=root / "cache",
+            command_runner=runner,
+        )
+
+    def test_new_main_is_built_offline_and_published_by_exact_sha(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runner = _RuntimeCommandRunner(self.NEW)
+            updater = self.updater(root, runner)
+
+            offered = updater.refresh_once()
+
+            self.assertIsNotNone(offered)
+            self.assertEqual(offered.revision, self.NEW)
+            self.assertEqual(
+                offered.binary,
+                (root / "cache" / "published" / self.NEW /
+                 "civvis_orders").resolve(),
+            )
+            self.assertEqual(offered.binary.read_bytes(), b"verified GitHub binary")
+            self.assertTrue(offered.brain.is_file())
+            self.assertEqual(updater.take_ready(), offered)
+            commands = [call[0] for call in runner.calls]
+            self.assertTrue(any(command[-4:] == ["fetch", "--quiet", "origin", "main"]
+                                for command in commands))
+            self.assertTrue(any("worktree" in command and self.NEW in command
+                                for command in commands))
+            self.assertTrue(any(command[:3] == ["cargo", "build", "--release"]
+                                and "--locked" in command for command in commands))
+
+    def test_multiple_main_advances_are_built_and_offered_during_one_game(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runner = _RuntimeCommandRunner(self.NEW)
+            updater = self.updater(root, runner)
+
+            first = updater.refresh_once()
+            self.assertEqual(updater.take_ready(), first)
+            runner.revision = "c" * 40
+            second = updater.refresh_once()
+
+            self.assertIsNotNone(second)
+            self.assertEqual(second.revision, "c" * 40)
+            self.assertEqual(updater.take_ready(), second)
+            commands = [call[0] for call in runner.calls]
+            self.assertTrue(any(
+                command[:4] == ["git", "-C", str(updater.source), "checkout"]
+                and command[-1] == "c" * 40
+                for command in commands
+            ))
+            self.assertEqual(
+                sum(command[0] == "cargo" for command in commands), 2
+            )
+
+    def test_a_failed_github_build_never_replaces_the_verified_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            updater = self.updater(
+                root, _RuntimeCommandRunner(self.NEW, fail_build=True)
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "compile error"):
+                updater.refresh_once()
+
+            self.assertIsNone(updater.take_ready())
+            self.assertFalse(
+                (root / "cache" / "published" / self.NEW / "civvis_orders").exists()
+            )
+
+    def test_an_unchanged_main_does_not_rebuild_or_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runner = _RuntimeCommandRunner(self.NEW)
+            updater = self.updater(root, runner, current=self.NEW)
+
+            self.assertIsNone(updater.refresh_once())
+            self.assertIsNone(updater.take_ready())
+            self.assertFalse(any(call[0][0] == "cargo" for call in runner.calls))
+
+    def test_runtime_exec_preserves_the_run_and_replaces_provenance(self) -> None:
+        runtime = civ6_brain.LiveRuntime(
+            revision=self.NEW,
+            binary=Path("/verified/civvis_orders"),
+            brain=Path("/github/tools/civ6_brain.py"),
+        )
+
+        command = civ6_brain.runtime_exec_command(
+            runtime,
+            ["old-brain.py", "--run-dir", "/run", "--bin=/old/bin",
+             "--victory", "science"],
+        )
+
+        self.assertEqual(command[0], sys.executable)
+        self.assertEqual(command[1], "/github/tools/civ6_brain.py")
+        self.assertIn("--bin=/verified/civvis_orders", command)
+        self.assertEqual(
+            command[command.index("--runtime-revision") + 1], self.NEW
+        )
+        self.assertEqual(command[command.index("--run-dir") + 1], "/run")
+
+    def test_decider_drops_its_old_process_before_using_the_new_binary(self) -> None:
+        decider = civ6_brain.Decider(
+            Path("/old/civvis_orders"), Path("/run"), "science"
+        )
+        with mock.patch.object(decider, "stop") as stop:
+            changed = decider.use_runtime(Path("/verified/civvis_orders"))
+
+        self.assertTrue(changed)
+        stop.assert_called_once_with()
+        self.assertEqual(decider.binary, Path("/verified/civvis_orders"))
+
+    def test_runtime_handoff_is_durable_and_names_both_revisions(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run = Path(temporary)
+            runtime = civ6_brain.LiveRuntime(
+                revision=self.NEW,
+                binary=Path("/verified/civvis_orders"),
+                brain=Path("/github/tools/civ6_brain.py"),
+            )
+
+            civ6_brain.record_runtime_event(
+                run, "handoff", 42, self.OLD, runtime
+            )
+
+            event = json.loads((run / "runtime_updates.jsonl").read_text())
+            self.assertEqual(event["status"], "handoff")
+            self.assertEqual(event["turn"], 42)
+            self.assertEqual(event["from_revision"], self.OLD)
+            self.assertEqual(event["to_revision"], self.NEW)
+            self.assertEqual(event["source"], "origin/main")
 
 
 class Civ6BrainTest(unittest.TestCase):

@@ -916,9 +916,10 @@ depend on one another, and every answer narrows the next:
    deep links mean what they always did.
 6. **World size** — whatever the combination above is drawn at, from
    `setup::battlefield_sizes()` filtered on the map. Flat Land is a ladder of
-   three: **Field 10×10, March 10×20, Battlefield 20×20** (ids `10x10`,
-   `10x20`, `20x20`, unchanged; the last is the field the site's Tactics link
-   opens). Either globe is offered at diameters 8, 10, 15 and 20. A named
+   three: **Square 10×10, March 10×20, Field 20×20** (ids `10x10`, `10x20`,
+   `20x20`; the last is the field the site's Tactics link opens — #1626
+   briefly renamed them Field/March/Battlefield and the operator put the
+   original names back). Either globe is offered at diameters 8, 10, 15 and 20. A named
    battle lists only the sizes it is charted at — one each today, shown
    fixed — and a battle charted at a second size needs nothing but a second
    `BattlefieldSize` row.

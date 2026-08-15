@@ -22,10 +22,15 @@ which one actually drove the game.
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import json
+import os
+import re
+import shutil
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -33,6 +38,8 @@ from civ6_control.orders import orders_db_path
 
 DEFAULT_VICTORY = "science"
 DEFAULT_STRATEGY = ""
+DEFAULT_GITHUB_REFRESH_SECONDS = 30.0
+GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS orders (
@@ -64,6 +71,182 @@ def stub_orders(state: dict) -> list[tuple]:
     turn = int(state.get("turn", 0))
     tech = STUB_RESEARCH[turn % len(STUB_RESEARCH)]
     return [("research", None, tech, None, None)]
+
+
+@dataclass(frozen=True)
+class LiveRuntime:
+    """One verified GitHub revision ready to take over at a turn boundary."""
+
+    revision: str
+    binary: Path
+    brain: Path
+
+
+class GitHubRuntimeUpdater:
+    """Build ``origin/main`` beside the live game without blocking its turns.
+
+    The running decider is an executable image, not a path lookup: replacing the
+    file on disk cannot update it.  This worker therefore builds GitHub's current
+    protected main branch in a dedicated detached worktree and publishes a
+    revision-named binary.  The foreground brain consumes that offer only before
+    it starts a new turn, where re-execing cannot split an orders transaction.
+
+    A fetch or build failure never replaces ``_ready`` and never touches the active
+    executable.  The game keeps using its last verified runtime while the worker
+    retries, which is safer than falling back to a half-built GitHub tip.
+    """
+
+    def __init__(self, repo: Path, current_revision: str | None,
+                 refresh_seconds: float = DEFAULT_GITHUB_REFRESH_SECONDS,
+                 cache_root: Path | None = None, command_runner=None) -> None:
+        self.repo = repo.resolve()
+        self.refresh_seconds = max(1.0, float(refresh_seconds))
+        self.cache_root = (cache_root or (
+            Path.home() / ".cache" / "civvis" / "live-game-runtime"
+        )).expanduser().resolve()
+        self.source = self.cache_root / "source"
+        self.target = self.cache_root / "target"
+        self.published = self.cache_root / "published"
+        self._command_runner = command_runner or subprocess.run
+        self._current_revision = current_revision
+        self._offered_revision: str | None = None
+        self._ready: LiveRuntime | None = None
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._last_error = ""
+
+    def _checked(self, command: list[str], cwd: Path,
+                 timeout: float = 120.0, env: dict[str, str] | None = None) -> str:
+        result = self._command_runner(
+            command, cwd=str(cwd), capture_output=True, text=True,
+            timeout=timeout, env=env,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "no output").strip()
+            raise RuntimeError(
+                f"{' '.join(command[:4])} failed ({result.returncode}): "
+                f"{detail[-500:]}"
+            )
+        return (result.stdout or "").strip()
+
+    def _prepare_source(self, revision: str) -> None:
+        self.cache_root.mkdir(parents=True, exist_ok=True)
+        if self.source.exists() and self.source.is_dir() and not any(self.source.iterdir()):
+            self.source.rmdir()
+        if not self.source.exists():
+            self._checked(
+                ["git", "-C", str(self.repo), "worktree", "add", "--detach",
+                 str(self.source), revision],
+                self.repo,
+            )
+            return
+        self._checked(
+            ["git", "-C", str(self.source), "rev-parse", "--is-inside-work-tree"],
+            self.source,
+        )
+        dirty = self._checked(
+            ["git", "-C", str(self.source), "status", "--porcelain"],
+            self.source,
+        )
+        if dirty:
+            raise RuntimeError(
+                f"dedicated live-runtime worktree is dirty: {dirty[:300]}"
+            )
+        self._checked(
+            ["git", "-C", str(self.source), "checkout", "--detach", "--quiet",
+             revision],
+            self.source,
+        )
+
+    def _build(self, revision: str) -> LiveRuntime:
+        self._prepare_source(revision)
+        runtime_dir = self.published / revision
+        binary = runtime_dir / "civvis_orders"
+        brain = self.source / "tools" / "civ6_brain.py"
+        if not brain.is_file():
+            raise RuntimeError(f"GitHub runtime has no decision worker at {brain}")
+        if not binary.is_file() or binary.stat().st_size == 0:
+            env = os.environ.copy()
+            env["CARGO_TARGET_DIR"] = str(self.target)
+            env["GIT_TERMINAL_PROMPT"] = "0"
+            self._checked(
+                ["cargo", "build", "--release", "--locked", "--bin",
+                 "civvis_orders"],
+                self.source,
+                timeout=1800.0,
+                env=env,
+            )
+            built = self.target / "release" / "civvis_orders"
+            if not built.is_file() or built.stat().st_size == 0:
+                raise RuntimeError(f"cargo reported success but {built} is absent")
+            runtime_dir.mkdir(parents=True, exist_ok=True)
+            temporary = runtime_dir / f".civvis_orders.{os.getpid()}.tmp"
+            shutil.copy2(built, temporary)
+            temporary.chmod(temporary.stat().st_mode | 0o111)
+            os.replace(temporary, binary)
+        return LiveRuntime(revision=revision, binary=binary, brain=brain)
+
+    def refresh_once(self) -> LiveRuntime | None:
+        """Fetch and offer a newer verified main revision, synchronously."""
+        env = os.environ.copy()
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        self._checked(
+            ["git", "-C", str(self.repo), "-c", "gc.auto=0", "fetch",
+             "--quiet", "origin", "main"],
+            self.repo,
+            env=env,
+        )
+        revision = self._checked(
+            ["git", "-C", str(self.repo), "rev-parse", "origin/main"],
+            self.repo,
+        ).lower()
+        if not GIT_SHA.fullmatch(revision):
+            raise RuntimeError(f"origin/main did not resolve to a full Git SHA: {revision!r}")
+        with self._lock:
+            if revision in {self._current_revision, self._offered_revision}:
+                return None
+        runtime = self._build(revision)
+        with self._lock:
+            self._ready = runtime
+            self._offered_revision = revision
+        return runtime
+
+    def _worker(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self.refresh_once()
+                self._last_error = ""
+            except Exception as exc:  # a failed refresh must not stop live decisions
+                detail = str(exc)
+                if detail != self._last_error:
+                    print(f"[brain] GitHub runtime refresh failed; keeping the "
+                          f"verified runtime: {detail}", flush=True)
+                    self._last_error = detail
+            self._stop.wait(self.refresh_seconds)
+
+    def start(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(
+            target=self._worker, name="civvis-github-runtime", daemon=True
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=5.0)
+
+    def take_ready(self) -> LiveRuntime | None:
+        with self._lock:
+            runtime = self._ready
+            self._ready = None
+            if runtime is not None:
+                self._current_revision = runtime.revision
+                self._offered_revision = None
+            return runtime
 
 
 def civvis_orders(binary: Path, run_dir: Path, turn: int, victory: str,
@@ -277,6 +460,7 @@ class Decider:
         self.war_from_plan = war_from_plan
         self.civ: str | None = None
         self.proc: subprocess.Popen | None = None
+        self.why = None
 
     def command(self) -> list[str]:
         """The precise decider invocation for the current seat identity."""
@@ -309,12 +493,17 @@ class Decider:
         # diagnosis tonight came from replaying turns with `--explain` after the fact;
         # this makes the same account available for the run as it happens, including
         # the decider's own crash output, which DEVNULL was also swallowing.
-        why = (self.run_dir / "why.log").open("a", buffering=1)
-        self.proc = subprocess.Popen(
-            self.command(),
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=why, text=True, bufsize=1,
-        )
+        self.why = (self.run_dir / "why.log").open("a", buffering=1)
+        try:
+            self.proc = subprocess.Popen(
+                self.command(),
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=self.why, text=True, bufsize=1,
+            )
+        except Exception:
+            self.why.close()
+            self.why = None
+            raise
         print("[brain] decider server up (fresh board, persistent agent, "
               f"strategy={self.strategy or 'stock'} civ={self.civ or 'unknown'}, "
               f"explaining into {self.run_dir / 'why.log'})", flush=True)
@@ -374,6 +563,19 @@ class Decider:
                 self.proc.wait(timeout=10)
             except (subprocess.SubprocessError, OSError):
                 self.proc.kill()
+        self.proc = None
+        if getattr(self, "why", None) is not None:
+            self.why.close()
+            self.why = None
+
+    def use_runtime(self, binary: Path) -> bool:
+        """Move the next decision to ``binary`` without splitting this turn."""
+        binary = binary.resolve()
+        if binary == self.binary.resolve():
+            return False
+        self.stop()
+        self.binary = binary
+        return True
 
 
 def write_turn(conn: sqlite3.Connection, run: str, turn: int,
@@ -451,6 +653,63 @@ def record_note(run_dir: Path, turn: int, note: str) -> None:
         pass
 
 
+def local_revision(repo: Path) -> str | None:
+    """Return this launcher's exact source revision without trusting git errors."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    revision = (result.stdout or "").strip().lower()
+    return revision if result.returncode == 0 and GIT_SHA.fullmatch(revision) else None
+
+
+def record_runtime_event(run_dir: Path, status: str, turn: int | None,
+                         from_revision: str | None, runtime: LiveRuntime,
+                         detail: str | None = None) -> None:
+    """Durably name every mid-game GitHub handoff and any failed re-exec."""
+    payload = {
+        "kind": "runtime_update",
+        "status": status,
+        "turn": turn,
+        "from_revision": from_revision,
+        "to_revision": runtime.revision,
+        "source": "origin/main",
+        "binary": str(runtime.binary),
+    }
+    if detail:
+        payload["detail"] = detail
+    try:
+        with (run_dir / "runtime_updates.jsonl").open("a") as handle:
+            handle.write(json.dumps(payload, sort_keys=True) + "\n")
+    except OSError:
+        pass
+
+
+def _replace_cli_option(arguments: list[str], option: str, value: str) -> None:
+    for index, argument in enumerate(arguments):
+        if argument == option:
+            if index + 1 < len(arguments):
+                arguments[index + 1] = value
+            else:
+                arguments.append(value)
+            return
+        if argument.startswith(option + "="):
+            arguments[index] = f"{option}={value}"
+            return
+    arguments.extend([option, value])
+
+
+def runtime_exec_command(runtime: LiveRuntime, argv: list[str]) -> list[str]:
+    """Recreate this brain's invocation from the newly fetched source tree."""
+    arguments = list(argv[1:])
+    _replace_cli_option(arguments, "--bin", str(runtime.binary))
+    _replace_cli_option(arguments, "--runtime-revision", runtime.revision)
+    return [sys.executable, str(runtime.brain), *arguments]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-dir", required=True)
@@ -460,6 +719,16 @@ def main() -> int:
     ap.add_argument("--mode", choices=["stub", "civvis"], default="civvis")
     ap.add_argument("--bin", default=None,
                     help="path to the civvis-orders binary (--mode civvis)")
+    ap.add_argument("--runtime-revision", default=None,
+                    help=argparse.SUPPRESS)
+    ap.add_argument(
+        "--github-refresh-seconds", type=float,
+        default=DEFAULT_GITHUB_REFRESH_SECONDS,
+        help="seconds between background origin/main checks; 0 disables the "
+             "turn-boundary live upgrade (default: 30)",
+    )
+    ap.add_argument("--github-cache", default=None,
+                    help="private worktree/build cache for live GitHub updates")
     # ⚠⚠ DOMINATION IS CURRENTLY UNREACHABLE, AND UNTIL 2026-08-14 IT WAS THE
     # DEFAULT.
     #
@@ -553,11 +822,27 @@ def main() -> int:
 
     orders_db = orders_db_path(run_dir, args.orders_db)
     conn = connect(orders_db)
+    repo_root = Path(__file__).resolve().parent.parent
+    runtime_revision = args.runtime_revision or local_revision(repo_root)
     print(f"[brain] mode={args.mode} run={run_tag} db={orders_db} "
-          f"decider={'server' if args.server else 'per-turn'}", flush=True)
+          f"decider={'server' if args.server else 'per-turn'} "
+          f"revision={runtime_revision or 'unverified'}", flush=True)
     strategy = None if args.strategy.strip().lower() in {"", "stock", "none"} else args.strategy
     decider = (Decider(binary, run_dir, args.victory, args.war_from_plan, strategy)
                if args.mode == "civvis" and args.server else None)
+    updater = None
+    if args.mode == "civvis" and args.github_refresh_seconds > 0:
+        updater = GitHubRuntimeUpdater(
+            repo=repo_root,
+            current_revision=runtime_revision,
+            refresh_seconds=args.github_refresh_seconds,
+            cache_root=(Path(args.github_cache).expanduser()
+                        if args.github_cache else None),
+        )
+        updater.start()
+        print(f"[brain] watching GitHub origin/main every "
+              f"{args.github_refresh_seconds:g}s; verified builds publish from "
+              f"{updater.cache_root}", flush=True)
 
     deadline = time.time() + args.seconds
     offset = 0
@@ -608,6 +893,38 @@ def main() -> int:
             turn = int(event.get("turn", -1))
             if turn < 0 or turn in served:
                 continue
+            runtime = updater.take_ready() if updater is not None else None
+            if runtime is not None:
+                previous = runtime_revision
+                record_runtime_event(
+                    run_dir, "handoff", turn, previous, runtime
+                )
+                print(f"[brain] turn {turn}: GitHub origin/main advanced "
+                      f"{(previous or 'unverified')[:12]} -> "
+                      f"{runtime.revision[:12]}; restarting the persistent "
+                      "decider before this turn", flush=True)
+                updater.stop()
+                if decider is not None:
+                    decider.stop()
+                command = runtime_exec_command(runtime, sys.argv)
+                try:
+                    os.execv(command[0], command)
+                except OSError as exc:
+                    # The Rust runtime is still useful even if Python could not
+                    # re-exec.  Move the next decision to it and keep the game
+                    # alive, while recording that the bridge itself stayed old.
+                    record_runtime_event(
+                        run_dir, "reexec_failed", turn, previous, runtime,
+                        str(exc),
+                    )
+                    print(f"[brain] could not re-exec the GitHub decision worker: "
+                          f"{exc}; using its verified Rust runtime in this process",
+                          flush=True)
+                    binary = runtime.binary
+                    runtime_revision = runtime.revision
+                    if decider is not None:
+                        decider.use_runtime(binary)
+                    updater.start()
             served.add(turn)
             started = time.time()
             if args.mode == "stub":
@@ -648,6 +965,8 @@ def main() -> int:
         time.sleep(0.1)
     if decider is not None:
         decider.stop()
+    if updater is not None:
+        updater.stop()
     print("[brain] done", flush=True)
     return 0
 

@@ -15552,9 +15552,11 @@ mod tests {
         assert!(checked > 10, "the route scan found almost nothing to check");
     }
 
-    /// A world nobody is steering turns on its own, and it is doing so when the
-    /// page opens. Three things about that turn are the whole of it and none of
-    /// them may drift:
+    /// A world nobody is steering can turn on its own — once asked. It holds
+    /// still when the page opens (operator-directed, 2026-08-15; it opened
+    /// turning from #1453 until then), and the button starts it and is
+    /// remembered. Three things about the turn itself are the whole of it and
+    /// none of them may drift:
     ///
     /// It goes about the world's poles rather than about anything the camera
     /// is doing, so a globe turns the way a planet does from wherever it is
@@ -15577,8 +15579,12 @@ mod tests {
     #[test]
     fn the_world_turns_about_its_own_poles_until_a_hand_stops_it() {
         let js = EMBEDDED_APP_JS;
-        // Default on: only an explicit "0" from a previous visit holds it.
-        assert!(js.contains(r#"let WORLD_SPIN = localStorage.getItem(WORLD_SPIN_STORAGE_KEY) !== "0";"#));
+        // Default off: only an explicit "1" from a previous visit — the
+        // button, remembered — turns it, and the control opens saying so.
+        assert!(js.contains(r#"let WORLD_SPIN = localStorage.getItem(WORLD_SPIN_STORAGE_KEY) === "1";"#));
+        assert!(EMBEDDED_INDEX.contains(
+            r#"<button id="spin" type="button" aria-pressed="false" title="Let the world turn" aria-label="Let the world turn">"#
+        ));
         // The poles, not the camera's up and not the screen's sideways.
         assert!(js.contains("const WORLD_POLE = [0, 0, 1];"));
         assert!(js.contains(
@@ -15612,8 +15618,9 @@ mod tests {
              turn as they take the camera"
         );
         // The button is the instrument: a globe whose meridian keeps the
-        // world's own period, lit only while there is a world turning.
-        assert!(EMBEDDED_INDEX.contains(r#"<button id="spin" type="button" aria-pressed="true""#));
+        // world's own period, lit only while there is a world turning — and
+        // it opens unlit, because the world opens still.
+        assert!(EMBEDDED_INDEX.contains(r#"<button id="spin" type="button" aria-pressed="false""#));
         let period_ms: u64 = js
             .split_once("const WORLD_SPIN_PERIOD_MS = ")
             .expect("the spin's period")
