@@ -6889,7 +6889,9 @@ mod tests {
         assert!(EMBEDDED_INDEX
             .contains(&format!("const TACTICS_CHIP_QUERY = \"{TACTICS_QUERY}\";")));
         let landing = include_str!("../beta/landing.html");
-        let card = format!("href=\"/?{}\"", TACTICS_QUERY.replace('&', "&amp;"));
+        // Lane-relative (`../` from the lane's /home), so the test lane's
+        // card opens the test lane's viewer.
+        let card = format!("href=\"../?{}\"", TACTICS_QUERY.replace('&', "&amp;"));
         assert!(
             landing.contains(&card),
             "the home page's Tactics card should open the world the chip does: {card}"
@@ -6931,15 +6933,17 @@ mod tests {
             // Rows: Tactics above, the full game below. Columns: Watch left,
             // Play right. The immediate verb buttons carry the aria labels;
             // the Tactics Customize buttons carry `data-pick` and fall back
-            // to the stock Tactics world without scripting.
-            "href=\"/?mode=play\" aria-labelledby=\"play-civ-title\"",
-            "href=\"/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play\" data-pick=\"play\"",
-            "href=\"/\" aria-labelledby=\"watch-civ-title\"",
-            "href=\"/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\" data-pick=\"watch\"",
+            // to the stock Tactics world without scripting. Every viewer
+            // link is lane-relative (`../` from the lane's /home), so the
+            // test lane's home page opens the test lane's viewer.
+            "href=\"../?mode=play\" aria-labelledby=\"play-civ-title\"",
+            "href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play\" data-pick=\"play\"",
+            "href=\"../\" aria-labelledby=\"watch-civ-title\"",
+            "href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\" data-pick=\"watch\"",
             // The full game's Customize lands in the simulator with the Game
             // setup drawer open (`?setup=1`, honoured at the end of app.js).
-            "href=\"/?setup=1\"",
-            "href=\"/?mode=play&amp;setup=1\"",
+            "href=\"../?setup=1\"",
+            "href=\"../?mode=play&amp;setup=1\"",
             // The picker and its four lenses.
             "id=\"battle-picker\"",
             "data-lens=\"custom\"",
@@ -6947,7 +6951,7 @@ mod tests {
             "data-lens=\"person\"",
             "data-lens=\"terrain\"",
             // A picked battle travels as the lobby's own map id, plus who plays.
-            "href=\"${esc(into(`/?map=${b.id}&players=2`))}\"",
+            "href=\"${esc(into(`../?map=${b.id}&players=2`))}\"",
             "const into = query => query + (mode === \"play\" ? \"&mode=play\" : \"\");",
         ] {
             assert!(landing.contains(piece), "the home page lost {piece}");
