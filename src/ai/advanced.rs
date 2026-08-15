@@ -6093,7 +6093,19 @@ impl AdvancedAi {
         let major_rivals: Vec<usize> = g
             .players
             .iter()
-            .filter(|p| p.id != pid && p.alive && !p.is_minor && !p.is_barbarian)
+            .filter(|p| {
+                p.id != pid
+                    && p.alive
+                    && !p.is_minor
+                    && !p.is_barbarian
+                    // A mirror retains empty seats for civilizations the host has
+                    // not introduced. Their generated zero power must not make a
+                    // real, met rival look weak enough to attack. This is part of
+                    // live fog observation, not the frozen advanced_v1 anchor.
+                    && (!self.battlefront_observation
+                        || g.has_met(pid, p.id)
+                        || g.is_at_war(pid, p.id))
+            })
             .map(|p| p.id)
             .collect();
         // City-states follow their Suzerain into wars and can also be attacked
@@ -6656,6 +6668,12 @@ impl AdvancedAi {
         // hard legality masks, never soft terms in the positional score.
         if g.is_at_war(pid, other) {
             return true;
+        }
+        // A host only supplies public score, military, and city facts after the
+        // seat has met a civilization. The generated slots left behind for every
+        // other civilization are placeholders, not actors we may target.
+        if self.battlefront_observation && !g.has_met(pid, other) {
+            return false;
         }
         if g.are_friends(pid, other) || g.alliance_with(pid, other).is_some() {
             return false;
@@ -24667,6 +24685,7 @@ mod tests {
                 game.remove_unit(settler);
             }
             game.current = 0;
+            game.record_contact(0, 1);
             let mut rush = AdvancedAi::new();
             rush.early_rush = true;
             let Some((target, capital)) = rush.early_rush_victim(&game, 0) else {
@@ -25904,13 +25923,71 @@ mod tests {
     }
 
     #[test]
+    fn strategic_planning_excludes_unmet_zero_power_majors() {
+        let mut game = Game::new_full(3, 36, 22, 784, 300, 0, false);
+        game.current = 0;
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let capital = game.player_city_ids(0)[0];
+        let home = game.cities[&capital].pos;
+        let expansion_sites: Vec<_> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.wdist(**position, home) >= 3
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.city_at(**position).is_none()
+            })
+            .map(|(position, _)| *position)
+            .take(2)
+            .collect();
+        assert_eq!(expansion_sites.len(), 2, "fixture needs two vacant city sites");
+        for site in expansion_sites {
+            game.place_city(0, site, None);
+        }
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.spawn_test_unit("warrior", 0, home);
+        game.spawn_test_unit("warrior", 0, anchor_at(&game, home, 1));
+        game.turn = 80;
+        for player in 0..game.players.len() {
+            game.players[player].met.clear();
+        }
+        game.record_contact(0, 1);
+        game.observed_military_power.insert(1, 300.0);
+
+        let ai = AdvancedAi::new();
+        assert!(
+            !ai.campaign_target_legal(&game, 0, 2),
+            "an unmet placeholder is not a legal campaign target"
+        );
+        assert!(
+            AdvancedAi::legacy().campaign_target_legal(&game, 0, 2),
+            "the fog repair is gated by battlefront observation so advanced_v1 keeps its frozen path"
+        );
+        let plan = ai.assess(&game, 0);
+        assert_ne!(plan.strategy, GrandStrategy::Conquest);
+        assert_ne!(plan.target_player, Some(2));
+    }
+
+    #[test]
     fn initial_plan_coordinates_expansion() {
         let g = Game::new(2, 24, 16, 71, 80, 0);
         let ai = AdvancedAi::new();
         let plan = ai.assess(&g, 0);
         assert_eq!(plan.strategy, GrandStrategy::Expansion);
         assert!(plan.desired_cities >= 3);
-        assert!(plan.target_player.is_some());
+        assert!(
+            plan.target_player.is_none(),
+            "an opening plan must not select an unseen civilization"
+        );
     }
 
     #[test]
@@ -26227,6 +26304,8 @@ mod tests {
             .find(|player| player.is_minor && !player.is_barbarian)
             .unwrap()
             .id;
+        game.record_contact(0, 1);
+        game.record_contact(0, minor);
         let rival_capital = game.cities[&game.player_city_ids(1)[0]].pos;
         for _ in 0..6 {
             game.spawn_test_unit("giant_death_robot", 1, rival_capital);
@@ -26297,7 +26376,10 @@ mod tests {
         );
 
         // A loaded legacy position can contain contradictory relationship
-        // state. An actual war remains a forcing objective until peace.
+        // state or omit the contact record. An actual war remains a forcing
+        // objective until peace.
+        game.players[0].met.remove(&1);
+        game.players[1].met.remove(&0);
         game.at_war.insert((0, 1));
         assert!(ai.campaign_target_legal(&game, 0, 1));
         assert!(
@@ -26889,6 +26971,9 @@ mod tests {
         }
         game.current = 0;
         game.turn = 190;
+        for rival in 1..game.players.len() {
+            game.record_contact(0, rival);
+        }
         let mut ai = AdvancedAi::new();
         ai.plan = Some(StrategicPlan {
             strategy: GrandStrategy::Expansion,
@@ -28185,6 +28270,9 @@ mod tests {
             }
             game.current = 0;
             game.turn = 190;
+            for rival in 1..game.players.len() {
+                game.record_contact(0, rival);
+            }
         };
 
         let mut science = Game::new_full(3, 36, 22, 761, 300, 0, false);
@@ -28232,6 +28320,9 @@ mod tests {
         }
         game.current = 0;
         game.turn = 190;
+        for rival in 1..game.players.len() {
+            game.record_contact(0, rival);
+        }
         game.players[2]
             .science_projects
             .insert("exoplanet_expedition".to_string());
@@ -28282,6 +28373,9 @@ mod tests {
         }
         game.current = 0;
         game.turn = 150;
+        for rival in 1..game.players.len() {
+            game.record_contact(0, rival);
+        }
         game.players[3].religion = Some("Runaway Faith".to_string());
         for owner in 1..4 {
             let city = game.player_city_ids(owner)[0];
@@ -35148,6 +35242,7 @@ mod tests {
         let mut game = Game::new_full(2, 24, 16, 111, 200, 0, false);
         game.players[0].civ = "Byzantium".to_string();
         game.players[0].religion = Some("Eastern Orthodoxy".to_string());
+        game.record_contact(0, 1);
         let ai = AdvancedAi::new();
         let plan = ai.assess(&game, 0);
         assert_eq!(plan.strategy, GrandStrategy::Conquest);
