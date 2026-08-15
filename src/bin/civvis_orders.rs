@@ -411,6 +411,98 @@ impl HostPeaceRetries {
     }
 }
 
+/// Firaxis blocks outer-defense repairs for three turns after a city takes damage.
+///
+/// `civvis_orders --serve --fresh-board` deliberately reconstructs the board for
+/// every decision, so `City::last_attacked` otherwise returns to its default zero
+/// each turn. That made a recently hit city look eligible for
+/// `PROJECT_REPAIR_OUTER_DEFENSES`; Firaxis then rejected the order and left an
+/// endangered city on its offensive queue. Keep this host-only cooldown beside the
+/// other persistent bridge facts, then apply it to the newly reconstructed board
+/// before the AI evaluates production.
+#[derive(Clone, Copy)]
+struct HostCityDamage {
+    garrison: Option<f64>,
+    outer_defenses: Option<f64>,
+}
+
+impl HostCityDamage {
+    fn from_city(city: &civvis::mirror::StateCity) -> Self {
+        let bar = |damage: f64, maximum: f64| {
+            (damage.is_finite() && maximum.is_finite() && damage >= 0.0 && maximum > 0.0)
+                .then_some((damage / maximum).clamp(0.0, 1.0))
+        };
+        Self {
+            garrison: bar(city.damage, city.max_damage),
+            outer_defenses: bar(city.wall_damage, city.max_wall_damage),
+        }
+    }
+
+    fn increased_since(self, previous: Self) -> bool {
+        let increased = |now: Option<f64>, was: Option<f64>| {
+            now.zip(was)
+                .is_some_and(|(now, was)| now > was + f64::EPSILON)
+        };
+        increased(self.garrison, previous.garrison)
+            || increased(self.outer_defenses, previous.outer_defenses)
+    }
+}
+
+#[derive(Default)]
+struct HostCityAttackCooldowns {
+    observed_turn: Option<u32>,
+    health: std::collections::BTreeMap<i64, HostCityDamage>,
+    last_attack: std::collections::BTreeMap<i64, u32>,
+}
+
+impl HostCityAttackCooldowns {
+    /// Retain a hit only when adjacent state frames prove it. A skipped/replayed
+    /// turn is unknown rather than evidence of an attack, which avoids inventing a
+    /// host cooldown from an arbitrary long gap.
+    fn observe(&mut self, state: &civvis::mirror::StateSnapshot) {
+        let health: std::collections::BTreeMap<i64, HostCityDamage> = state
+            .cities
+            .iter()
+            .map(|city| (city.id, HostCityDamage::from_city(city)))
+            .collect();
+        let consecutive = self
+            .observed_turn
+            .is_some_and(|previous| state.turn == previous.saturating_add(1));
+        if consecutive {
+            for (&city, &current) in &health {
+                if self
+                    .health
+                    .get(&city)
+                    .is_some_and(|previous| current.increased_since(*previous))
+                {
+                    self.last_attack.insert(city, state.turn);
+                }
+            }
+        } else if self.observed_turn.is_some_and(|previous| state.turn < previous) {
+            // A replay starts a new timeline. Retaining a future timestamp would
+            // make `saturating_sub` claim every repair is still cooling down.
+            self.last_attack.clear();
+        }
+        self.last_attack.retain(|city, attack_turn| {
+            health.contains_key(city) && *attack_turn <= state.turn
+        });
+        self.observed_turn = Some(state.turn);
+        self.health = health;
+    }
+
+    /// Restore the host's recent-hit timestamp after a fresh reconstruction.
+    fn apply(&self, mirror: &mut civvis::mirror::LiveMirror) {
+        for (&host_city, &city) in &mirror.cid_of {
+            let Some(&attack_turn) = self.last_attack.get(&host_city) else {
+                continue;
+            };
+            if let Some(live) = mirror.game.cities.get_mut(&city) {
+                live.last_attacked = attack_turn;
+            }
+        }
+    }
+}
+
 /// Withhold only peace orders whose known Firaxis cooldown has not expired.
 ///
 /// This is deliberately below translation, so native `MakePeace`, negotiated
@@ -2869,6 +2961,10 @@ fn main() {
     // choice. Keep it through all bridge reconstruction modes so a fresh board or
     // diagnostic fresh AI cannot repeat a host-cooldown peace request.
     let mut host_peace_retries = HostPeaceRetries::default();
+    // The Firaxis repair cooldown belongs to the host, not the reconstructed
+    // board. It must therefore survive `--fresh-board` just like the peace and
+    // treasury handoffs above.
+    let mut host_city_attack_cooldowns = HostCityAttackCooldowns::default();
     let mut explain_cursor: u64 = 0;
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
@@ -2880,6 +2976,7 @@ fn main() {
             ),
             Some((snapshot, state)) => {
                 let (mirror_players, mirror_turns) = mirror_setup(&state, players, max_turns);
+                host_city_attack_cooldowns.observe(&state);
                 // ★★★★★ FRESH BOARD, PERSISTENT AGENT — the one combination that works.
                 //
                 // Three of the four quadrants were measured: fresh board + fresh agent
@@ -2941,6 +3038,7 @@ fn main() {
                         None => ai.forget_unit_memory(),
                     }
                     board.carry_treasury_baseline(carried_treasury);
+                    host_city_attack_cooldowns.apply(&mut board);
                     let reply = decide(
                         &mut board,
                         &mut ai,
@@ -2959,6 +3057,7 @@ fn main() {
                         let mut fresh = civvis::mirror::LiveMirror::new(
                             &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
                         );
+                        host_city_attack_cooldowns.apply(&mut fresh);
                         let reply = decide(
                             &mut fresh,
                             &mut ai,
@@ -2974,6 +3073,7 @@ fn main() {
                     }
                     Some(existing) => {
                         existing.sync(&snapshot, &state, frontier);
+                        host_city_attack_cooldowns.apply(existing);
                         // `--fresh-ai` isolates the two halves of persistence: keep the
                         // mirror, throw away the agent. If orders come back, the empty
                         // turns are the AGENT's carried state; if they stay empty, they
@@ -3181,6 +3281,67 @@ mod tests {
         let (orders, deferred) = defer_host_peace_retries(vec![peace()], &state, &mut retries);
         assert_eq!(orders.len(), 1, "the fifth turn is legal again");
         assert!(deferred.is_empty());
+    }
+
+    #[test]
+    fn fresh_board_retains_firaxis_city_repair_cooldown_after_damage() {
+        let (snapshot, mut state) = production_board();
+        state.turn = 40;
+        let city = &mut state.cities[0];
+        city.producing = None;
+        city.buildings = vec!["BUILDING_WALLS".to_string()];
+        city.damage = 0.0;
+        city.max_damage = 200.0;
+        city.wall_damage = 0.0;
+        city.max_wall_damage = 100.0;
+
+        let mut cooldowns = HostCityAttackCooldowns::default();
+        cooldowns.observe(&state);
+
+        // This mirrors Ravenna on the measured t125 frame: its wall and
+        // garrison both took a fresh hit, so the host's repair project cannot
+        // start even though a fresh model board normally permits it.
+        state.turn = 41;
+        state.cities[0].damage = 18.0;
+        state.cities[0].wall_damage = 68.0;
+        cooldowns.observe(&state);
+
+        let repair = civvis::game::Item::Project {
+            project: civvis::name::Name::new("repair_outer_defenses"),
+        };
+        let unchecked =
+            civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let city = unchecked.cid_of[&7];
+        assert!(
+            unchecked.game.can_produce(0, city, &repair),
+            "precondition: a fresh board alone loses the host hit timestamp"
+        );
+
+        let mut tracked =
+            civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        cooldowns.apply(&mut tracked);
+        let city = tracked.cid_of[&7];
+        assert_eq!(tracked.game.cities[&city].last_attacked, 41);
+        assert!(
+            !tracked.game.can_produce(0, city, &repair),
+            "the host cooldown must prevent the repair Civ 6 would reject"
+        );
+
+        // No further damage leaves the last-hit turn intact. Firaxis permits
+        // the repair again on the third later turn, matching `Game::can_produce`.
+        for turn in 42..=44 {
+            state.turn = turn;
+            cooldowns.observe(&state);
+        }
+        let mut cooled =
+            civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        cooldowns.apply(&mut cooled);
+        let city = cooled.cid_of[&7];
+        assert_eq!(cooled.game.cities[&city].last_attacked, 41);
+        assert!(
+            cooled.game.can_produce(0, city, &repair),
+            "the exact three-turn Firaxis cooldown must eventually expire"
+        );
     }
 
     /// One land patch is enough: the override reads cities, not terrain.
