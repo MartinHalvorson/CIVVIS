@@ -7156,6 +7156,30 @@ local function applyOrder(player, pid, row, turn)
 		return false, "gp_class_not_offered";
 	end
 
+	-- A city's ranged strike. `subject` is the Firaxis city id, x/y the target
+	-- plot in offset coordinates. WorldInput.lua:2545 is the reference, and it
+	-- holds a trap worth naming: the CITY command takes the UNIT operation's
+	-- parameter keys (`UnitOperationTypes.PARAM_X/Y`), and must be asked with
+	-- `CanStartCommand` first — an unasked request fails silently.
+	if kind == "city_strike" then
+		local city = try(function() return CityManager.GetCity(pid, subject); end);
+		if city == nil then return false, "city_strike_city_missing"; end
+		if x == nil or y == nil then return false, "city_strike_no_target"; end
+		local params = {};
+		params[UnitOperationTypes.PARAM_X] = x;
+		params[UnitOperationTypes.PARAM_Y] = y;
+		if not try(function()
+			return CityManager.CanStartCommand(
+				city, CityCommandTypes.RANGE_ATTACK, params);
+		end, false) then
+			return false, "city_strike_refused";
+		end
+		local ok = pcall(function()
+			CityManager.RequestCommand(city, CityCommandTypes.RANGE_ATTACK, params);
+		end);
+		return ok, ok and "CITY_STRIKE" or "city_strike_throw";
+	end
+
 	if kind == "war" then
 		local diplomacy = try(function() return player:GetDiplomacy(); end);
 		if diplomacy == nil then return false, "no_diplomacy"; end
