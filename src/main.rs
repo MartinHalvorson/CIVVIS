@@ -1096,15 +1096,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// native constructor and `AdvancedAi::legacy()` keep the one-at-a-time gate in
 /// both settler routes (asserted). Compatibility re-pin; the Elo protocol does not
 /// move.
-/// A globally outmatched world-map Recovery front now holds its existing formation
-/// unless there is a named home threat or a finishable immediate engagement.
-/// That branch is gated by `bounded_recovery`, which the `advanced_v1` legacy
-/// anchor leaves false; the current production controller intentionally carries
-/// the behavior. Release `ai_eval advanced_v1 basic --pairs 10 --jobs 1 --seed
-/// 31337 --players 4 --turns 200 --deployment-comparison` reports from
-/// `90aeec95` and this branch were byte-identical (SHA-256 `c7876b…a345`).
+/// `war_patience` is now bounded by `WAR_PATIENCE_LIMIT_TURNS`; the flag is set
+/// only by the live bridge and the native repair bundle, never by
+/// `AdvancedAi::legacy()`, so the anchor's peace rules are unchanged.
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xce14_5b83_8186_71fb;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8e97_1aa9_5d32_dbf3;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
