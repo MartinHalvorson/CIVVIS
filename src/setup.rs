@@ -964,7 +964,7 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 18] = [
     MapScriptSpec {
         id: "battlefield",
         name: "Land",
-        description: "A small bounded field for tactical unit combat, walled on all four sides: open ground shaped by mountains, rivers, woods and water, with no resources and nothing to develop. Offered at three sizes — Field, March and Battlefield.",
+        description: "A small bounded field for tactical unit combat, walled on all four sides: open ground shaped by mountains, rivers, woods and water, with no resources and nothing to develop. Offered at three sizes — Square, March and Field.",
         script: MapScript::Battlefield,
     },
     MapScriptSpec {
@@ -1107,11 +1107,12 @@ pub struct BattlefieldSize {
 }
 
 /// The Tactics maps the setup menu offers, smallest first within each family.
-/// The arena entries are the bounded Land field at three sizes — Field, March
-/// and Battlefield, named as a ladder from a small square through a long
-/// ground to the full field the site's Tactics link opens; then the globes,
-/// land and then ocean, each offered at four diameters; then the scenarios,
-/// which carry their own chart and so have exactly one size each.
+/// The arena entries are the bounded Land field at three sizes — Square, March
+/// and Field, the names it shipped with (#1367; briefly renamed in #1626 and
+/// put back at the operator's word): a small square, a long ground, and the
+/// full field the site's Tactics link opens; then the globes, land and then
+/// ocean, each offered at four diameters; then the scenarios, which carry
+/// their own chart and so have exactly one size each.
 ///
 /// The lobby offers this table one map at a time: which entries it shows is
 /// decided by the scenario, world type and map chosen above it, so a named
@@ -1137,7 +1138,7 @@ pub const TACTICS_GLOBE_DIAMETERS: [i32; 4] = [8, 10, 15, 20];
 /// globe families share one ladder.
 pub const BATTLEFIELD_SIZES: [BattlefieldSize; 12] = [
     BattlefieldSize {
-        id: "10x10", name: "Field · 10×10", width: 10, height: 10,
+        id: "10x10", name: "Square · 10×10", width: 10, height: 10,
         script: MapScript::Battlefield, topology: MapTopology::Flat,
     },
     BattlefieldSize {
@@ -1145,7 +1146,7 @@ pub const BATTLEFIELD_SIZES: [BattlefieldSize; 12] = [
         script: MapScript::Battlefield, topology: MapTopology::Flat,
     },
     BattlefieldSize {
-        id: "20x20", name: "Battlefield · 20×20", width: 20, height: 20,
+        id: "20x20", name: "Field · 20×20", width: 20, height: 20,
         script: MapScript::Battlefield, topology: MapTopology::Flat,
     },
     // Diameter 8 keeps the bare id `planet`: it is the globe Tactics shipped
