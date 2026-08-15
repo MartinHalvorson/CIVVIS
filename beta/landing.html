@@ -287,14 +287,6 @@
   }
   .mode-card:hover::before,
   .mode-card:focus-visible::before { border-color: rgba(244, 223, 172, 0.22); }
-  .mode-card.tactics { grid-template-columns: minmax(340px, 0.82fr) minmax(0, 1.18fr); }
-  .mode-card.tactics .mode-media { grid-column: 2; }
-  .mode-card.tactics .mode-copy { grid-column: 1; grid-row: 1; }
-  .mode-card.tactics::after {
-    right: auto;
-    left: 0;
-    background: radial-gradient(circle at 10% 80%, rgba(125, 73, 193, 0.3), transparent 70%);
-  }
 
   .mode-media {
     position: relative;
@@ -312,11 +304,6 @@
       linear-gradient(90deg, rgba(8, 6, 14, 0.05) 25%, rgba(11, 7, 18, 0.62) 100%),
       linear-gradient(0deg, rgba(8, 6, 14, 0.5), transparent 45%);
     transition: opacity 230ms ease;
-  }
-  .tactics .mode-media::before {
-    background:
-      linear-gradient(270deg, rgba(8, 6, 14, 0.05) 25%, rgba(11, 7, 18, 0.7) 100%),
-      linear-gradient(0deg, rgba(8, 6, 14, 0.5), transparent 45%);
   }
   .mode-media img {
     width: 100%;
@@ -346,8 +333,6 @@
   }
   .media-kicker { top: 30px; left: 32px; }
   .mode-index { right: 32px; bottom: 27px; color: rgba(244, 223, 172, 0.78); font: 500 34px/1 var(--serif); letter-spacing: 0; }
-  .tactics .media-kicker { left: auto; right: 32px; text-align: right; }
-  .tactics .mode-index { right: auto; left: 32px; }
 
   .mode-copy {
     position: relative;
@@ -429,6 +414,186 @@
     background: rgba(216, 182, 107, 0.15);
   }
 
+  /* Four ways in, one per quadrant: who is at the keyboard down the rows —
+     play above, watch below — and which game across the columns — Civ on
+     the left, Tactics on the right. Each quadrant is the mode card stacked:
+     its picture on top and its copy beneath. */
+  .quadrants {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: clamp(18px, 2.4vw, 32px);
+    min-width: 0;
+  }
+  .mode-card.quad { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  .mode-card.quad::after { display: none; }
+  .mode-card.quad .mode-media { min-height: 0; }
+  .mode-card.quad .mode-media::before {
+    background: linear-gradient(0deg, rgba(8, 6, 14, 0.66), transparent 55%);
+  }
+  .mode-card.quad .mode-media img { height: clamp(200px, 22vw, 290px); min-height: 0; }
+  .mode-card.quad .mode-copy {
+    min-height: 0;
+    padding: clamp(28px, 3.2vw, 44px) clamp(26px, 3.4vw, 46px) clamp(30px, 3.4vw, 46px);
+  }
+  .mode-card.quad .mode-copy h3 { font-size: clamp(36px, 3.6vw, 50px); }
+  .mode-card.quad .mode-copy > p:not(.mode-label) { margin-top: 16px; font-size: 14.5px; }
+  .mode-card.quad .mode-list { margin-top: 18px; }
+  .mode-card.quad .mode-action { margin-top: 24px; }
+  /* The Tactics quadrant that opened the picker stays lit while it is open,
+     so the page reads as one choice made and one still to make. */
+  .mode-card.quad.picking,
+  .mode-card.quad.picking:hover {
+    border-color: var(--gold);
+    box-shadow: 0 0 0 1px var(--gold), 0 24px 70px rgba(0, 0, 0, 0.42);
+  }
+
+  /* The battle picker: the historical scenario library, below the four and
+     opened by either Tactics quadrant. Custom is one card; the three lenses
+     browse the same battles by era, by commander and by terrain; every card
+     is a link into the simulator carrying the battle and who is playing it. */
+  .battle-picker {
+    display: grid;
+    gap: 20px;
+    min-width: 0;
+    padding: clamp(24px, 3vw, 40px);
+    border: 1px solid var(--line-strong);
+    border-radius: 20px;
+    background:
+      radial-gradient(620px 450px at 90% 0%, rgba(103, 62, 159, 0.2), transparent 72%),
+      linear-gradient(135deg, #161021, #0d0a15);
+  }
+  .battle-picker[hidden] { display: none; }
+  .battle-picker:focus { outline: none; }
+  .picker-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .picker-heading .eyebrow { justify-content: flex-start; margin: 0 0 10px; }
+  .picker-heading .eyebrow::before { display: none; }
+  .picker-heading h3 {
+    margin: 0;
+    color: var(--ivory);
+    font: 500 clamp(28px, 3.4vw, 40px)/1.05 var(--serif);
+    letter-spacing: -0.03em;
+  }
+  .picker-heading p:not(.eyebrow) {
+    max-width: 620px;
+    margin: 12px 0 0;
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.65;
+  }
+  .picker-back {
+    flex: none;
+    min-height: 42px;
+    padding: 0 16px;
+    border: 1px solid rgba(232, 214, 176, 0.2);
+    border-radius: 999px;
+    color: var(--muted);
+    background: rgba(18, 12, 28, 0.48);
+    cursor: pointer;
+    font: 760 11px/1 var(--sans);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
+  }
+  .picker-back:hover,
+  .picker-back:focus-visible,
+  .picker-lens:hover,
+  .picker-lens[aria-selected="true"] {
+    border-color: var(--gold);
+    color: var(--gold-bright);
+    background: rgba(72, 43, 103, 0.42);
+  }
+  .picker-back:focus-visible,
+  .picker-lens:focus-visible,
+  .battle-card:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 3px; }
+  .picker-lenses { display: flex; flex-wrap: wrap; gap: 8px; }
+  .picker-lens {
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid rgba(232, 214, 176, 0.2);
+    border-radius: 999px;
+    color: var(--muted);
+    background: rgba(18, 12, 28, 0.48);
+    cursor: pointer;
+    font: 760 11px/1 var(--sans);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
+  }
+  .picker-groups { display: grid; gap: 10px; min-width: 0; }
+  .picker-group {
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: rgba(8, 6, 14, 0.4);
+  }
+  .picker-group > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 13px 16px;
+    color: var(--ivory);
+    cursor: pointer;
+    list-style: none;
+    font: 500 17px/1.3 var(--serif);
+  }
+  .picker-group > summary::-webkit-details-marker { display: none; }
+  .picker-group > summary::after { content: "+"; color: var(--gold); font-size: 19px; line-height: 1; }
+  .picker-group[open] > summary { border-bottom: 1px solid var(--line); }
+  .picker-group[open] > summary::after { content: "−"; }
+  .picker-group-count {
+    color: var(--faint);
+    font: 700 10px/1 var(--sans);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+  .picker-battles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 10px;
+    padding: 12px;
+  }
+  .battle-card {
+    display: block;
+    min-width: 0;
+    padding: 15px 17px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    color: var(--ivory);
+    background: rgba(21, 16, 33, 0.8);
+    text-decoration: none;
+    transition: border-color 180ms ease, background 180ms ease, transform 180ms ease;
+  }
+  .battle-card:hover,
+  .battle-card:focus-visible {
+    border-color: var(--gold);
+    background: rgba(72, 43, 103, 0.32);
+    transform: translateY(-2px);
+  }
+  .battle-card.custom { border-color: var(--line-strong); }
+  .battle-card-name { display: block; font: 500 21px/1.1 var(--serif); letter-spacing: -0.02em; }
+  .battle-card-meta,
+  .battle-card-detail { display: block; margin-top: 5px; color: var(--muted); font-size: 13px; line-height: 1.45; }
+  .battle-card-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+  .battle-badge {
+    display: inline-block;
+    padding: 3px 7px;
+    border: 1px solid rgba(232, 214, 176, 0.2);
+    border-radius: 999px;
+    color: var(--gold);
+    font-size: 9px;
+    font-weight: 760;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .picker-empty { padding: 14px 16px; color: var(--faint); font-size: 13px; line-height: 1.5; }
+
   footer {
     display: flex;
     align-items: center;
@@ -447,18 +612,8 @@
   @media (max-width: 860px) {
     .modes-heading { display: block; }
     .modes-heading p:last-child { margin-top: 16px; text-align: left; }
-    .mode-card,
-    .mode-card.tactics { grid-template-columns: 1fr; }
-    .mode-card.tactics .mode-media,
-    .mode-card.tactics .mode-copy { grid-column: 1; grid-row: auto; }
-    .mode-card.tactics .mode-copy { grid-row: 2; }
-    .mode-card.tactics .mode-media::before {
-      background:
-        linear-gradient(90deg, rgba(8, 6, 14, 0.05) 25%, rgba(11, 7, 18, 0.62) 100%),
-        linear-gradient(0deg, rgba(8, 6, 14, 0.5), transparent 45%);
-    }
-    .tactics .media-kicker { right: auto; left: 32px; text-align: left; }
-    .tactics .mode-index { right: 32px; left: auto; }
+    .quadrants { grid-template-columns: 1fr; }
+    .mode-card { grid-template-columns: 1fr; }
     .mode-media { min-height: 290px; }
     .mode-media img { min-height: 340px; }
     .mode-copy { min-height: 350px; }
@@ -486,8 +641,7 @@
     .mode-copy h3 { font-size: 51px; }
     .media-kicker { top: 23px; left: 25px; }
     .mode-index { right: 25px; bottom: 22px; font-size: 28px; }
-    .tactics .media-kicker { left: 25px; }
-    .tactics .mode-index { right: 25px; }
+    .picker-battles { grid-template-columns: 1fr; }
     footer { display: block; padding: 24px 0; line-height: 1.7; }
     footer span { display: block; }
   }
@@ -528,48 +682,117 @@
       <div class="modes-heading">
         <div>
           <p class="eyebrow">Choose your command</p>
-          <h2 id="modes-title">One engine. Two scales of history.</h2>
+          <h2 id="modes-title">One engine. Four ways in.</h2>
         </div>
-        <p>Begin with an empire—or isolate the battle that decides its fate.</p>
+        <p>Play a seat yourself, or watch the AIs — on a whole world, or on one battlefield.</p>
       </div>
 
-      <a class="mode-card" href="/" aria-labelledby="civ-title">
-        <div class="mode-media">
-          <img src="/home/assets/civ-world.jpg?v=b09c9d1a799d298354c483c7507d7b23fb757568f601872a6463d009076de92b" alt="A CIVVIS world map showing two colorful continents of competing civilizations." fetchpriority="high">
-          <span class="media-kicker">Strategic world view</span>
-          <span class="mode-index">I</span>
-        </div>
-        <div class="mode-copy">
-          <p class="mode-label">The complete experience</p>
-          <h3 id="civ-title">Civ<em>.</em></h3>
-          <p>Guide a civilization across the full sweep of history. Pick a leader, shape a world, play a single seat—or watch autonomous empires expand, scheme, and compete for victory.</p>
-          <ul class="mode-list" aria-label="Civ features">
-            <li>Single player</li>
-            <li>AI simulations</li>
-            <li>Custom worlds</li>
-          </ul>
-          <span class="mode-action">Enter the world</span>
-        </div>
-      </a>
+      <!-- Who is at the keyboard runs down the rows — play above, watch
+           below — and which game runs across the columns — Civ on the left,
+           Tactics on the right. The Civ quadrants open the simulator
+           directly; the Tactics quadrants open the battle picker below first,
+           and only then hand over with the battle chosen. Without scripting
+           each Tactics quadrant still opens the site's stock Tactics world. -->
+      <div class="quadrants">
+        <a class="mode-card quad game-civ" href="/?mode=play" aria-labelledby="play-civ-title">
+          <div class="mode-media">
+            <img src="/home/assets/civ-world.jpg?v=b09c9d1a799d298354c483c7507d7b23fb757568f601872a6463d009076de92b" alt="A CIVVIS world map showing two colorful continents of competing civilizations." fetchpriority="high">
+            <span class="media-kicker">Single player</span>
+            <span class="mode-index">I</span>
+          </div>
+          <div class="mode-copy">
+            <p class="mode-label">Civ · the complete game</p>
+            <h3 id="play-civ-title">Play Civ<em>.</em></h3>
+            <p>Take one seat at the table and guide a civilization across the full sweep of history — a leader, a world, and every rival empire played by the engine.</p>
+            <ul class="mode-list" aria-label="Play Civ features">
+              <li>Your seat</li>
+              <li>AI rivals</li>
+              <li>Custom worlds</li>
+            </ul>
+            <span class="mode-action">Take a seat</span>
+          </div>
+        </a>
 
-      <a class="mode-card tactics" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" aria-labelledby="tactics-title">
-        <div class="mode-media">
-          <img src="/home/assets/tactics-frontline.jpg?v=7dc299716a556b25bd345534b2112a96112eea725ea91a4105494904156bcb8a" alt="A CIVVIS battlefield crowded with opposing units, cities, and front lines in an active war." loading="lazy">
-          <span class="media-kicker">Battlefield command</span>
-          <span class="mode-index">II</span>
+        <a class="mode-card quad game-tactics" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" aria-labelledby="play-tactics-title">
+          <div class="mode-media">
+            <img src="/home/assets/tactics-frontline.jpg?v=7dc299716a556b25bd345534b2112a96112eea725ea91a4105494904156bcb8a" alt="A CIVVIS battlefield crowded with opposing units, cities, and front lines in an active war." loading="lazy">
+            <span class="media-kicker">Single player</span>
+            <span class="mode-index">II</span>
+          </div>
+          <div class="mode-copy">
+            <p class="mode-label">Tactics · the decisive moment</p>
+            <h3 id="play-tactics-title">Play Tactics<em>.</em></h3>
+            <p>Command one side of a battle. Refight a named historical engagement with its real order of battle, or take a custom field with two even armies.</p>
+            <ul class="mode-list" aria-label="Play Tactics features">
+              <li>Historical battles</li>
+              <li>Custom fields</li>
+              <li>Battlefield AI opposite</li>
+            </ul>
+            <span class="mode-action">Choose your battle</span>
+          </div>
+        </a>
+
+        <a class="mode-card quad game-civ" href="/" aria-labelledby="watch-civ-title">
+          <div class="mode-media">
+            <img src="/home/assets/civ-world.jpg?v=b09c9d1a799d298354c483c7507d7b23fb757568f601872a6463d009076de92b" alt="A CIVVIS world map showing two colorful continents of competing civilizations." loading="lazy">
+            <span class="media-kicker">AI simulation</span>
+            <span class="mode-index">III</span>
+          </div>
+          <div class="mode-copy">
+            <p class="mode-label">Civ · the complete game</p>
+            <h3 id="watch-civ-title">Watch Civ<em>.</em></h3>
+            <p>Watch autonomous empires expand, scheme, and compete for victory on a fresh world — the standing exhibition, different every visit.</p>
+            <ul class="mode-list" aria-label="Watch Civ features">
+              <li>AI empires</li>
+              <li>Fresh world every visit</li>
+              <li>Every victory lane</li>
+            </ul>
+            <span class="mode-action">Watch the world</span>
+          </div>
+        </a>
+
+        <a class="mode-card quad game-tactics" href="/?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" aria-labelledby="watch-tactics-title">
+          <div class="mode-media">
+            <img src="/home/assets/tactics-frontline.jpg?v=7dc299716a556b25bd345534b2112a96112eea725ea91a4105494904156bcb8a" alt="A CIVVIS battlefield crowded with opposing units, cities, and front lines in an active war." loading="lazy">
+            <span class="media-kicker">AI simulation</span>
+            <span class="mode-index">IV</span>
+          </div>
+          <div class="mode-copy">
+            <p class="mode-label">Tactics · the decisive moment</p>
+            <h3 id="watch-tactics-title">Watch Tactics<em>.</em></h3>
+            <p>Watch two AI commanders fight it out — a named battle on its own ground, or a custom field with two even armies.</p>
+            <ul class="mode-list" aria-label="Watch Tactics features">
+              <li>Historical battles</li>
+              <li>Custom fields</li>
+              <li>Battlefield AI</li>
+            </ul>
+            <span class="mode-action">Choose the battle</span>
+          </div>
+        </a>
+      </div>
+
+      <!-- The battle picker: the historical scenario library, opened by
+           either Tactics quadrant. Custom is one card — the site's stock
+           Tactics world — and the three lenses browse the same battles by
+           era, by commander and by terrain. Every card is a link into the
+           simulator carrying the battle and who is playing it. -->
+      <section class="battle-picker" id="battle-picker" hidden aria-labelledby="battle-picker-title" tabindex="-1">
+        <div class="picker-heading">
+          <div>
+            <p class="eyebrow" id="battle-picker-mode">Watch Tactics · AI simulation</p>
+            <h3 id="battle-picker-title">Choose the battle</h3>
+            <p id="battle-picker-copy">Two AI commanders fight it out while you watch. A named battle opens on its own ground with its historical forces, era and clock; Custom opens a 20×20 field with two even armies, and every other setting is yours in the simulator&#8217;s Game setup.</p>
+          </div>
+          <button class="picker-back" type="button" id="battle-picker-back">← Back to the four</button>
         </div>
-        <div class="mode-copy">
-          <p class="mode-label">The decisive moment</p>
-          <h3 id="tactics-title">Tactics<em>.</em></h3>
-          <p>Strip strategy down to the ground beneath your units. Revisit preset historical battles, or build a custom battlefield with the map, era, formation, and objective you want to test.</p>
-          <ul class="mode-list" aria-label="Tactics features">
-            <li>Historical battles</li>
-            <li>Custom maps</li>
-            <li>Battlefield AI</li>
-          </ul>
-          <span class="mode-action">Enter the battlefield</span>
+        <div class="picker-lenses" id="battle-lenses" role="tablist" aria-label="Battle catalog view">
+          <button class="picker-lens" type="button" role="tab" data-lens="custom" aria-selected="true">Custom</button>
+          <button class="picker-lens" type="button" role="tab" data-lens="era" aria-selected="false">Era-based</button>
+          <button class="picker-lens" type="button" role="tab" data-lens="person" aria-selected="false">Person-based</button>
+          <button class="picker-lens" type="button" role="tab" data-lens="terrain" aria-selected="false">Terrain-based</button>
         </div>
-      </a>
+        <div class="picker-groups" id="battle-groups"></div>
+      </section>
     </section>
   </main>
 
@@ -577,5 +800,153 @@
     <span><b>CIVVIS</b> · Open-source strategy simulation</span>
     <span>Built for the long game</span>
   </footer>
+
+  <!-- The battle catalog, one row per battle, copied from the engine's
+       `historical_scenarios::all()` by tools/landing_battles.py and pinned to
+       it by a test — a static page cannot ask the WebAssembly module before
+       the module is loaded, so it carries the answer. -->
+  <script id="battle-catalog" type="application/json">
+[
+{"civs":["Egypt","Gaul"],"date":"1274 BCE","era":"Ancient","era_index":0,"forces":[{"commander":"Ramesses II","label":"Egyptian field army","units":["heavy_chariot","archer","spearman","warrior"]},{"commander":"Muwatalli II","label":"Hittite coalition","units":["heavy_chariot","heavy_chariot","swordsman","archer"]}],"height":16,"id":"kadesh","location":"Orontes river valley","map":"River valley · chariot lanes and a defended crossing","name":"Kadesh","objective":"Break the Hittite counterattack before it reaches the Egyptian camp.","summary":"Ramesses II's expeditionary army is surprised beside the Orontes while Muwatalli II's chariots sweep in from the north. Hold the crossing, then turn the ambush into a withdrawal.","terrain":"land_water","turns":34,"width":22},
+{"civs":["Greece","Persia"],"date":"490 BCE","era":"Ancient","era_index":0,"forces":[{"commander":"Miltiades","label":"Athenian hoplite line","units":["hoplite","hoplite","spearman","archer"]},{"commander":"Datis","label":"Persian landing force","units":["archer","archer","horseman","spearman"]}],"height":14,"id":"marathon","location":"Marathon coastal plain","map":"Coastal plain · marsh, beach, and open running ground","name":"Marathon","objective":"Cross the killing ground and break the Persian landing force.","summary":"Miltiades refuses to wait behind the Athenian wall. Hoplites must cross the open plain quickly enough to deny Persian archery its full advantage while the wings close on the center.","terrain":"land_water","turns":28,"width":20},
+{"civs":["Greece","Persia"],"date":"480 BCE","era":"Ancient","era_index":0,"forces":[{"commander":"Leonidas","label":"Hellenic rearguard","units":["hoplite","hoplite","spearman","archer"]},{"commander":"Xerxes I","label":"Persian expedition","units":["spearman","archer","horseman","swordsman"]}],"height":14,"id":"thermopylae","location":"The Gates of Thermopylae","map":"Mountain pass · a narrow road below the ridge","name":"Thermopylae","objective":"Hold the pass long enough for the allied army to withdraw.","summary":"Leonidas turns a bottleneck into a force multiplier. The Persian host has numbers, but only a few can fight at once—until the mountain path opens a second front.","terrain":"land","turns":24,"width":18},
+{"civs":["Macedon","Persia"],"date":"331 BCE","era":"Classical","era_index":1,"forces":[{"commander":"Alexander the Great","label":"Macedonian army","units":["horseman","swordsman","spearman","archer","heavy_chariot"]},{"commander":"Darius III","label":"Achaemenid host","units":["horseman","heavy_chariot","archer","spearman","swordsman"]}],"height":18,"id":"gaugamela","location":"Nineveh plain","map":"Open plain · prepared lanes for cavalry and chariots","name":"Gaugamela","objective":"Punch through to the Persian center without losing the flanks.","summary":"Alexander pulls the Persian line apart with a feint, then drives the Companion cavalry at Darius. The wings must survive the numerical tide while the center makes the decisive charge.","terrain":"land","turns":40,"width":24},
+{"civs":["Phoenicia","Rome"],"date":"216 BCE","era":"Classical","era_index":1,"forces":[{"commander":"Hannibal Barca","label":"Carthaginian army","units":["swordsman","horseman","horseman","spearman","archer"]},{"commander":"Varro","label":"Roman consular army","units":["legion","legion","spearman","archer","horseman"]}],"height":16,"id":"cannae","location":"Aufidus river plain","map":"Windy plain · river bend and enveloping wings","name":"Cannae","objective":"Complete the double envelopment before the Roman legions escape.","summary":"Hannibal offers a deliberately yielding center and holds his veteran African infantry on the wings. Rome's mass becomes its trap when the cavalry closes the rear.","terrain":"land","turns":38,"width":22},
+{"civs":["Rome","Egypt"],"date":"31 BCE","era":"Classical","era_index":1,"forces":[{"commander":"Agrippa","label":"Octavian's fleet","units":["galley","galley","quadrireme","archer"]},{"commander":"Mark Antony","label":"Antonian fleet","units":["quadrireme","quadrireme","galley","archer"]}],"height":18,"id":"actium","location":"Ambracian Gulf","map":"Gulf and headlands · fleets fighting for the channel","name":"Actium","objective":"Force a passage through the strait while keeping the shore army covered.","summary":"Octavian seals the gulf and waits for Antony and Cleopatra to break out. The fleet battle is decided by the channel, the wind, and the moment the flagship squadron commits.","terrain":"land_water","turns":36,"width":24},
+{"civs":["England","France"],"date":"1066","era":"Medieval","era_index":2,"forces":[{"commander":"Harold Godwinson","label":"English shieldwall","units":["man_at_arms","man_at_arms","crossbowman","spearman"]},{"commander":"William the Conqueror","label":"Norman host","units":["knight","knight","crossbowman","man_at_arms"]}],"height":16,"id":"hastings","location":"Senlac Hill","map":"Ridge and open slope · shieldwall frontage","name":"Hastings","objective":"Break the English shieldwall without letting the pursuit destroy the army.","summary":"Harold's housecarls hold the ridge while William alternates pressure with feigned retreats. A single undisciplined pursuit can open the gate the Norman cavalry needs.","terrain":"land","turns":34,"width":20},
+{"civs":["Arabia","England"],"date":"1187","era":"Medieval","era_index":2,"forces":[{"commander":"Saladin","label":"Ayyubid field army","units":["horseman","horseman","crossbowman","man_at_arms"]},{"commander":"Guy of Lusignan","label":"Crusader host","units":["knight","knight","man_at_arms","crossbowman"]}],"height":16,"id":"hattin","location":"Horns of Hattin","map":"Dry hills · smoke, heat, and a blocked spring","name":"Hattin","objective":"Cut the crusader army off from water and close around the True Cross.","summary":"Saladin turns thirst into a weapon. The crusader host must cross broken ground toward the lake while mounted archers and disciplined reserves deny every clean escape.","terrain":"land","turns":36,"width":22},
+{"civs":["England","France"],"date":"1415","era":"Medieval","era_index":2,"forces":[{"commander":"Henry V","label":"English army","units":["man_at_arms","crossbowman","crossbowman","knight"]},{"commander":"Charles d'Albret","label":"French host","units":["knight","knight","man_at_arms","crossbowman"]}],"height":16,"id":"agincourt","location":"Pas de Calais","map":"Mudbound corridor · hedges, stakes, and two woods","name":"Agincourt","objective":"Let the mud and stakes break the French charge, then survive the crush.","summary":"Henry V's exhausted army occupies the narrowest ground it can find. English longbow fire turns the French advantage in armor and numbers into a series of isolated collisions.","terrain":"land","turns":35,"width":20},
+{"civs":["Ottomans","Byzantium"],"date":"1453","era":"Renaissance","era_index":3,"forces":[{"commander":"Mehmed II","label":"Ottoman besieging army","units":["bombard","man_at_arms","knight","crossbowman"]},{"commander":"Constantine XI","label":"Constantinopolitan garrison","units":["crossbowman","man_at_arms","spearman","bombard"]}],"height":18,"id":"constantinople_1453","location":"Theodosian Walls","map":"Walled city · sea walls, land walls, and the Golden Horn","name":"Constantinople","objective":"Open a breach before the defenders can shift the reserve across the walls.","summary":"Mehmed II brings the new age of gunpowder to the oldest walls in Europe. The defenders have a narrow inner line, a chain across the harbor, and no depth once the breach opens.","terrain":"land_water","turns":42,"width":24},
+{"civs":["Venice","Ottomans"],"date":"1571","era":"Renaissance","era_index":3,"forces":[{"commander":"Don John of Austria","label":"Holy League fleet","units":["galley","galley","quadrireme","quadrireme"]},{"commander":"Ali Pasha","label":"Ottoman fleet","units":["galley","galley","quadrireme","quadrireme"]}],"height":18,"id":"lepanto","location":"Gulf of Patras","map":"Enclosed sea · three squadrons and a crowded center","name":"Lepanto","objective":"Break the opposing center before the flank galleys can turn inward.","summary":"The Holy League and Ottoman fleet meet in the last great galley battle. The board is all formation: hold the line, protect the flagship, and use the wings before the center locks.","terrain":"water","turns":32,"width":24},
+{"civs":["Spain","England"],"date":"1588","era":"Renaissance","era_index":3,"forces":[{"commander":"Alonso Pérez de Guzmán","label":"Spanish Armada","units":["frigate","frigate","caravel","galley"]},{"commander":"Charles Howard","label":"English fleet","units":["frigate","frigate","caravel","galley"]}],"height":18,"id":"spanish_armada","location":"English Channel","map":"Channel sea lanes · shoals, wind, and a lee shore","name":"Spanish Armada","objective":"Escort the invasion fleet through the channel while denying English fire ships.","summary":"The Armada's crescent tries to preserve a tight formation and reach the rendezvous in the Netherlands. English ships need distance, weather, and one opening in the line.","terrain":"water","turns":34,"width":26},
+{"civs":["France","England"],"date":"1815","era":"Industrial","era_index":4,"forces":[{"commander":"Napoleon Bonaparte","label":"French Army of the North","units":["line_infantry","cuirassier","field_cannon","cavalry","infantry"]},{"commander":"Arthur Wellesley","label":"Anglo-Allied army","units":["line_infantry","field_cannon","cavalry","infantry","line_infantry"]}],"height":18,"id":"waterloo","location":"Mont-Saint-Jean ridge","map":"Rolling ridge · sunken road, farms, and a final reserve","name":"Waterloo","objective":"Hold the ridge until the Prussian arrival, or break it before dusk.","summary":"Napoleon must crack Wellington's reverse-slope defense before Blücher's army appears. The French attack has to synchronize artillery, infantry, cavalry, and the Imperial Guard reserve.","terrain":"land","turns":44,"width":28},
+{"civs":["America","America"],"date":"1863","era":"Industrial","era_index":4,"forces":[{"commander":"George G. Meade","label":"Union Army of the Potomac","units":["line_infantry","field_cannon","cavalry","infantry","field_cannon"]},{"commander":"Robert E. Lee","label":"Confederate Army of Northern Virginia","units":["line_infantry","field_cannon","cavalry","infantry","line_infantry"]}],"height":20,"id":"gettysburg","location":"Pennsylvania crossroads","map":"Ridges and wheat fields · the Round Tops anchor the flank","name":"Gettysburg","objective":"Take the high ground before the opposing army can entrench it.","summary":"A meeting engagement hardens around Cemetery Ridge. The attacker has room to maneuver but must pay for every slope; the defender must keep the line from being rolled at either end.","terrain":"land","turns":46,"width":26},
+{"civs":["England","France"],"date":"1805","era":"Industrial","era_index":4,"forces":[{"commander":"Horatio Nelson","label":"Royal Navy","units":["frigate","frigate","frigate","frigate"]},{"commander":"Pierre-Charles Villeneuve","label":"Combined Fleet","units":["frigate","frigate","frigate","frigate"]}],"height":24,"id":"trafalgar","location":"Cape Trafalgar","map":"Open sea and Andalusian lee shore · two crossing columns","name":"Trafalgar","objective":"Break the Combined Fleet's line before its van can turn back into the battle.","summary":"Nelson's two columns bear down on Villeneuve's crescent. The existing fixed chart preserves the unequal sixty-ship order of battle and the British approach that made this battle decisive.","terrain":"water","turns":40,"width":30},
+{"civs":["Russia","Germany"],"date":"1942–43","era":"Modern","era_index":5,"forces":[{"commander":"Georgy Zhukov","label":"Soviet defenders","units":["infantry","infantry","artillery","tank","machine_gun"]},{"commander":"Friedrich Paulus","label":"German Sixth Army","units":["infantry","infantry","artillery","tank","bomber"]}],"height":20,"id":"stalingrad","location":"Volga industrial district","map":"Ruined city · factories, river bank, and shattered blocks","name":"Stalingrad","objective":"Take the factories without opening a corridor for the encircling relief force.","summary":"The battle is fought in meters inside the city while the wider front decides whether the pocket survives. Close infantry combat and the Soviet counterstroke share one board.","terrain":"land_air","turns":48,"width":28},
+{"civs":["America","Germany"],"date":"6 June 1944","era":"Modern","era_index":5,"forces":[{"commander":"Dwight D. Eisenhower","label":"Allied landing force","units":["infantry","infantry","tank","artillery","fighter"]},{"commander":"Erwin Rommel","label":"German coastal defense","units":["infantry","infantry","field_cannon","tank","fighter"]}],"height":20,"id":"normandy","location":"Normandy beaches and bocage","map":"Beachhead · surf, seawalls, hedgerows, and air cover","name":"Normandy","objective":"Secure the beachhead and connect the separated landing sectors before the armor arrives.","summary":"The opening hours of D-Day ask three questions at once: can the landing craft reach shore, can infantry clear the exits, and can the defenders move reserves through the bocage under allied air power?","terrain":"land_water_air","turns":46,"width":28},
+{"civs":["America","Japan"],"date":"1942","era":"Modern","era_index":5,"forces":[{"commander":"Chester W. Nimitz","label":"United States carrier force","units":["aircraft_carrier","destroyer","fighter","bomber"]},{"commander":"Isoroku Yamamoto","label":"Japanese Combined Fleet","units":["aircraft_carrier","destroyer","fighter","bomber"]}],"height":20,"id":"midway","location":"Central Pacific","map":"Open ocean · carrier search arcs around the island","name":"Midway","objective":"Find the enemy carriers first and preserve enough air strength for the second strike.","summary":"Midway is a contest of scouting, timing, and the fragile bridge between a carrier deck and an enemy flight deck. The island is an anchor; the decision lives in the air above the water.","terrain":"water_air","turns":42,"width":28},
+{"civs":["America","Korea"],"date":"1950","era":"Atomic","era_index":6,"forces":[{"commander":"Douglas MacArthur","label":"X Corps landing force","units":["infantry","tank","artillery","destroyer"]},{"commander":"Kim Il-sung","label":"Korean People's Army","units":["infantry","tank","artillery","field_cannon"]}],"height":18,"id":"inchon","location":"Inchon tidal harbor","map":"Tidal estuary · seawalls, mudflats, and a city objective","name":"Inchon","objective":"Seize the port at high tide and cut the opposing army's supply line to Seoul.","summary":"MacArthur's landing turns the Korean War's front. The approach is narrow and tidal, so the first wave must hold the seawall before the road network becomes a battlefield.","terrain":"land_water","turns":40,"width":24},
+{"civs":["France","Vietnam"],"date":"1954","era":"Atomic","era_index":6,"forces":[{"commander":"Christian de Castries","label":"French entrenched camp","units":["infantry","artillery","field_cannon","machine_gun"]},{"commander":"Vo Nguyen Giap","label":"Viet Minh siege army","units":["infantry","artillery","field_cannon","infantry"]}],"height":18,"id":"dien_bien_phu","location":"Muong Thanh valley","map":"Valley fortress · surrounding hills and a threatened airstrip","name":"Dien Bien Phu","objective":"Keep the airstrip open while the surrounding artillery positions close in.","summary":"A garrison that expected to control the valley finds itself overlooked by a concealed siege. Every artillery piece is a position to find, and every supply flight is a turn the perimeter must survive.","terrain":"land_air","turns":44,"width":22},
+{"civs":["Israel","Egypt"],"date":"1967","era":"Atomic","era_index":6,"forces":[{"commander":"Moshe Dayan","label":"Israeli Defense Forces","units":["modern_armor","modern_armor","fighter","infantry"]},{"commander":"Abdel Hakim Amer","label":"Egyptian field army","units":["modern_armor","infantry","fighter","artillery"]}],"height":18,"id":"six_day_war","location":"Sinai and the Levant","map":"Desert frontier · armored corridors and airfields","name":"Six-Day War","objective":"Win the opening air battle, then turn the armored breakthrough into a collapse.","summary":"The campaign compresses air superiority and mobile ground warfare into a few violent days. Armor can move far, but only if the first strike keeps the sky clear.","terrain":"land_air","turns":38,"width":26},
+{"civs":["America","Arabia"],"date":"1991","era":"Information","era_index":7,"forces":[{"commander":"Norman Schwarzkopf","label":"Coalition VII Corps","units":["modern_armor","modern_armor","rocket_artillery","jet_fighter","helicopter"]},{"commander":"Saddam Hussein","label":"Iraqi Republican Guard","units":["modern_armor","modern_armor","rocket_artillery","fighter","infantry"]}],"height":18,"id":"desert_storm","location":"Kuwait and southern Iraq","map":"Open desert · armored hook under a precision-air umbrella","name":"Desert Storm","objective":"Break the prepared line and complete the armored envelopment before reserves regroup.","summary":"The ground campaign is short because the air campaign has already changed the geometry. Armor, artillery, and aircraft must keep the corridor moving rather than chase every position.","terrain":"land_air","turns":40,"width":28},
+{"civs":["America","Arabia"],"date":"2004","era":"Information","era_index":7,"forces":[{"commander":"James Mattis","label":"Multi-National Force","units":["infantry","modern_armor","machine_gun","helicopter"]},{"commander":"Abu Musab al-Zarqawi","label":"Insurgent defense","units":["infantry","machine_gun","rocket_artillery","infantry"]}],"height":18,"id":"fallujah","location":"Fallujah, Iraq","map":"Dense city · alleys, compounds, and overwatch lanes","name":"Fallujah","objective":"Clear the city block by block while preserving the breach force for the next district.","summary":"Urban combat makes every street a decision. The attacker needs armor and infantry to cooperate at close range; the defender wins time by turning buildings into mutually supporting strongpoints.","terrain":"land_air","turns":42,"width":22},
+{"civs":["Arabia","America"],"date":"2016–17","era":"Information","era_index":7,"forces":[{"commander":"Abadi coalition","label":"Iraqi Security Forces","units":["infantry","modern_armor","rocket_artillery","drone","helicopter"]},{"commander":"Mosul garrison","label":"Islamic State defense","units":["infantry","machine_gun","modern_at","drone","rocket_artillery"]}],"height":20,"id":"mosul","location":"Mosul and the Tigris","map":"River city · bridges, dense districts, and drone overwatch","name":"Mosul","objective":"Take the east bank, secure the bridges, and isolate the old city.","summary":"The battle combines an urban siege with a river crossing and a persistent sensor battle. The coalition's advantage is coordination; the defender's is the density and depth of the city.","terrain":"land_water_air","turns":48,"width":26}
+]
+</script>
+  <script>
+  (() => {
+    const catalog = JSON.parse(document.getElementById("battle-catalog").textContent);
+    const picker = document.getElementById("battle-picker");
+    const groups = document.getElementById("battle-groups");
+    const lensBar = document.getElementById("battle-lenses");
+    const quadrants = [...document.querySelectorAll(".mode-card[data-pick]")];
+    if (!picker || !groups || !lensBar || !quadrants.length) return;
+    // The site's one stock Tactics world: the same field the viewer's own
+    // Tactics chip opens, so a Custom pick here and a Custom pick there agree.
+    const CUSTOM = "/?map=battlefield&players=2&era=information&arena=20x20";
+    const HASH = { play: "#play-tactics", watch: "#watch-tactics" };
+    const ERAS = ["Ancient", "Classical", "Medieval", "Renaissance", "Industrial", "Modern", "Atomic", "Information", "Future"];
+    const TERRAINS = [["land", "Land"], ["land_water", "Land & Water"], ["water", "Water"],
+      ["water_air", "Water & Air"], ["land_air", "Land & Air"], ["land_water_air", "Land/Water/Air"]];
+    let mode = "watch";
+    let lens = "custom";
+    const esc = value => String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+    const titleCase = value => String(value).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    const terrainName = id => (TERRAINS.find(([key]) => key === id) || [id, titleCase(id)])[1];
+    // Every link carries who is playing: a played battle seats the visitor,
+    // a watched one leaves both sides to the AI, exactly as the quadrants do.
+    const into = query => query + (mode === "play" ? "&mode=play" : "");
+    const groupsFor = view => {
+      if (view === "era") return ERAS.map(name => ({ name, battles: catalog.filter(b => b.era === name) }));
+      if (view === "terrain") return TERRAINS.map(([id, name]) => ({ name, battles: catalog.filter(b => b.terrain === id) }));
+      if (view === "person") {
+        const commanders = [...new Set(catalog.flatMap(b => b.forces.map(f => f.commander)))].sort((a, b) => a.localeCompare(b));
+        return commanders.map(name => ({ name, battles: catalog.filter(b => b.forces.some(f => f.commander === name)) }));
+      }
+      return [];
+    };
+    const battleCard = b =>
+      `<a class="battle-card" href="${esc(into(`/?map=${b.id}&players=2`))}">` +
+      `<span class="battle-card-name">${esc(b.name)}</span>` +
+      `<span class="battle-card-meta">${esc(b.date)} · ${esc(b.location)}</span>` +
+      `<span class="battle-card-detail">${esc(b.map)}</span>` +
+      `<span class="battle-card-badges"><span class="battle-badge">${esc(terrainName(b.terrain))}</span>` +
+      `<span class="battle-badge">${esc(b.era)}</span><span class="battle-badge">${esc(b.turns)}-turn brief</span></span></a>`;
+    const groupMarkup = (group, index) => {
+      const open = group.battles.length > 0 && (index === 0 || (lens === "person" && index < 2));
+      const count = group.battles.length ? `${group.battles.length} battle${group.battles.length === 1 ? "" : "s"}` : "No mapped battles yet";
+      return `<details class="picker-group"${open ? " open" : ""}>` +
+        `<summary><span>${esc(group.name)}</span><span class="picker-group-count">${esc(count)}</span></summary>` +
+        (group.battles.length
+          ? `<div class="picker-battles">${group.battles.map(battleCard).join("")}</div>`
+          : `<div class="picker-empty">This branch of the catalog is reserved for future historical maps.</div>`) +
+        `</details>`;
+    };
+    const customMarkup = () =>
+      `<div class="picker-battles">` +
+      `<a class="battle-card custom" href="${esc(into(CUSTOM))}">` +
+      `<span class="battle-card-name">Custom battlefield</span>` +
+      `<span class="battle-card-meta">Field · 20×20 · two even armies</span>` +
+      `<span class="battle-card-detail">A bounded field of open ground, mountains, rivers, woods and water, both sides dealt the same Information-era army. Every other setting — the world type, map and size, fog, the flag, the arena economy — is yours in the simulator&#8217;s Game setup.</span>` +
+      `<span class="battle-card-badges"><span class="battle-badge">Land</span><span class="battle-badge">Information</span><span class="battle-badge">Even sides</span></span></a>` +
+      `</div>`;
+    const render = () => {
+      for (const button of lensBar.querySelectorAll("[data-lens]"))
+        button.setAttribute("aria-selected", String(button.dataset.lens === lens));
+      groups.innerHTML = lens === "custom" ? customMarkup() : groupsFor(lens).map(groupMarkup).join("");
+    };
+    const heading = {
+      play: ["Play Tactics · single player", "Choose your battle",
+        "You take the first seat and the AI takes the other. A named battle opens on its own ground with its historical forces, era and clock; Custom opens a 20×20 field with two even armies, and every other setting is yours in the simulator\u2019s Game setup."],
+      watch: ["Watch Tactics · AI simulation", "Choose the battle",
+        "Two AI commanders fight it out while you watch. A named battle opens on its own ground with its historical forces, era and clock; Custom opens a 20×20 field with two even armies, and every other setting is yours in the simulator\u2019s Game setup."],
+    };
+    const open = (which, focus = true) => {
+      mode = which === "play" ? "play" : "watch";
+      const [eyebrow, title, copy] = heading[mode];
+      document.getElementById("battle-picker-mode").textContent = eyebrow;
+      document.getElementById("battle-picker-title").textContent = title;
+      document.getElementById("battle-picker-copy").textContent = copy;
+      for (const card of quadrants) card.classList.toggle("picking", card.dataset.pick === mode);
+      picker.hidden = false;
+      render();
+      if (location.hash !== HASH[mode]) history.replaceState(null, "", location.pathname + location.search + HASH[mode]);
+      if (focus) {
+        picker.scrollIntoView({ behavior: "smooth", block: "start" });
+        picker.focus({ preventScroll: true });
+      }
+    };
+    const close = () => {
+      picker.hidden = true;
+      for (const card of quadrants) card.classList.remove("picking");
+      if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+    };
+    for (const card of quadrants) card.addEventListener("click", event => {
+      // Plain clicks open the picker; a modified click (new tab) keeps the
+      // link's own destination, the stock Tactics world.
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+      event.preventDefault();
+      open(card.dataset.pick);
+    });
+    lensBar.addEventListener("click", event => {
+      const button = event.target.closest("[data-lens]");
+      if (!button) return;
+      lens = button.dataset.lens;
+      render();
+    });
+    document.getElementById("battle-picker-back").addEventListener("click", () => {
+      close();
+      document.querySelector(".quadrants").scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    // A link straight to the picker — the hash names which Tactics — opens
+    // it without a click, and the back button closes it the same way.
+    const fromHash = () => {
+      const which = Object.keys(HASH).find(key => HASH[key] === location.hash);
+      if (which) open(which, false); else if (!picker.hidden) close();
+    };
+    window.addEventListener("hashchange", fromHash);
+    fromHash();
+  })();
+  </script>
 </body>
 </html>

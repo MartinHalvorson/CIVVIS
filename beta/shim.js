@@ -161,6 +161,14 @@
     if (era) payload.start_era = era;
     const turns = whole("turns");
     if (turns) payload.max_turns = turns;
+    // Who is at the keyboard. `mode=play` seats the visitor in the first
+    // chair — a single-player game on the settings the link names — and
+    // `mode=watch` leaves the world to its AIs. Anything else leaves the
+    // stock setting standing, which is the spectated exhibition. This is
+    // how the home page's "Play" quadrants differ from its "Watch" ones.
+    const mode = word("mode");
+    if (mode === "play") payload.spectate = false;
+    else if (mode === "watch") payload.spectate = true;
     // A battlefield's dimensions are their own setting — no seat count
     // implies an arena size — so they travel as the one token the lobby's
     // size control uses to name them: `arena=20x20`.
