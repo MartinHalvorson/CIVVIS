@@ -188,8 +188,8 @@ class ProtectedInstallTest(unittest.TestCase):
             "the blank refusal must not come back",
         )
 
-    def test_a_refused_district_names_the_plots_the_engine_offered(self) -> None:
-        """`offered` proves a district is placeable here and never says WHERE.
+    def test_a_refused_placement_names_the_plots_the_engine_offered(self) -> None:
+        """`offered` proves a placement is possible here and never says WHERE.
 
         `productionPlot` asks the engine for every plot it would accept, reads x
         and y off each, and kept only the count. So CIVVIS goes on naming the
@@ -208,10 +208,13 @@ class ProtectedInstallTest(unittest.TestCase):
         # offer many plots.
         self.assertIn("if #offeredPlots < (cfg.OfferedPlotsReported or 8) then", source)
 
-        # ⚠ The wonder call site destructures two values and must keep working;
-        # Lua discards extra returns, so it is left alone deliberately.
-        self.assertIn("local where, offered = productionPlot(city,", source)
+        # Both placement callers must carry the engine's authoritative candidates.
+        # A wonder used to discard the third return, leaving a valid host site
+        # visible only as a count and suppressing its Great Engineer path.
+        self.assertIn("local where, offered, offeredPlots = productionPlot(city,", source)
         self.assertIn("where, offered, offeredPlots = productionPlot(city,", source)
+        wonder = source[source.index('building = row.Type or tostring(row.Hash),') :][:1200]
+        self.assertIn("offered_plots = offeredPlots,", wonder)
 
     def test_a_refused_build_records_the_turn_it_happened(self) -> None:
         """⚠⚠⚠ Without a turn, every filter on this event is a no-op.
