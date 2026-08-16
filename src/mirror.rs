@@ -10373,6 +10373,10 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // if a new StateSnapshot field is missing here — this list is a second
         // copy of the struct's names and nothing keeps them in step automatically.
         "envoys_free",
+        // The World Congress emergencies and scored competitions (Firaxis's own
+        // crisis table, `GetEmergencyInfoTable`): carried for the ledger and the
+        // agent, not mirrored yet.
+        "emergencies",
     ];
     const CITY: &[&str] = CITY_KEYS;
     const DISTRICT: &[&str] = &[
