@@ -1464,6 +1464,7 @@ fn withhold_live_treatment(
         "score-horizon" => ai.disable_score_horizon(),
         "naval-recon" => ai.disable_naval_recon(),
         "counter-in-lane" => ai.disable_counter_in_lane(),
+        "tally-culture" => ai.disable_tally_culture(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1489,7 +1490,8 @@ fn withhold_live_treatment(
                  siege-commitment, wonder-ring-settle-value, garrison-walls, \
                  amenity-project-preemption, amenity-district-path, governor-every-lane, \
                  live-wonder-race, expansion-before-prophet, no-elective-war, \
-                 fog-land-capacity, recon-flight, score-horizon, naval-recon, counter-in-lane"
+                 fog-land-capacity, recon-flight, score-horizon, naval-recon, counter-in-lane, \
+                 tally-culture"
             ))
         }
     }
@@ -3612,6 +3614,11 @@ mod tests {
         withhold_live_treatment(&mut ai, "counter-in-lane")
             .expect("the counter-in-lane control arm is registered");
         assert!(!ai.counter_in_lane, "the named counter-in-lane control must hold it off");
+
+        assert!(ai.tally_culture);
+        withhold_live_treatment(&mut ai, "tally-culture")
+            .expect("the tally-culture control arm is registered");
+        assert!(!ai.tally_culture, "the named tally-culture control must hold it off");
 
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
         assert!(

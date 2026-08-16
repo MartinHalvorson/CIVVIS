@@ -1235,7 +1235,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `counter_in_lane`, which the live bridge now enables and
 /// `AdvancedAi::legacy()` leaves off (asserted); the frozen anchor still
 /// declares. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2c3c_de43_3a0a_34fc;
+/// The tally price of culture is behind `tally_culture`, off for
+/// `AdvancedAi::legacy()` (asserted); the frozen anchor's lanes keep their
+/// bred yield weights and district table. Compatibility re-pin; the Elo
+/// protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xfaac_34f7_ab6f_0c40;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
