@@ -7270,6 +7270,76 @@ local function onGovernorAppointed(playerID, governorID)
 	});
 end
 
+-- Build and submit a major-civilization peace proposal without opening a
+-- diplomacy session.  A session displays `DiplomacyDealView`, whose only safe
+-- automatic exit is refusal; it therefore cannot carry an outbound peace offer
+-- in an unattended run.  Firaxis's own `ProposeWorkingDeal(false)` sends this
+-- same validated working deal directly with `PROPOSED`.
+--
+-- Keep construction separate from `applyOrder` so the offline regression can
+-- exercise the actual engine-call shape, not a reimplementation of it.
+-- Returns `(submitted, concession, reason)`.  `submitted` names an actual
+-- `SendWorkingDeal` call, deliberately not merely a `pcall` that did not throw.
+local function submitMajorPeaceDeal(pid, subject, player, asked)
+	if DealManager.HasPendingDeal(pid, subject) then
+		return false, 0, "pending";
+	end
+	DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
+	local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, subject);
+	if deal == nil then return false, 0, "no_working_deal"; end
+
+	local item = deal:AddItemOfType(DealItemTypes.AGREEMENTS, pid);
+	if item == nil then return false, 0, "no_peace_item"; end
+	item:SetSubType(DealAgreementTypes.MAKE_PEACE);
+	item:SetLocked(true);
+	-- "Validate the deal, this will make sure peace is on both sides of the
+	-- deal." — the shipped comment beside the UI's Make Peace action.
+	deal:Validate();
+	if not deal:IsValid() then return false, 0, "invalid_deal"; end
+
+	local concession = 0;
+	-- A free peace offer is the right first question.  Once the same rival
+	-- remains at war through the host's retry window, it has already declined
+	-- that exact white deal.  Preserve a quarter of the treasury for emergency
+	-- purchases and offer the rest only on the retry; a rejected deal transfers
+	-- nothing.
+	if asked ~= nil then
+		local tribute = deal:AddItemOfType(DealItemTypes.GOLD, pid);
+		if tribute ~= nil then
+			tribute:SetDuration(0);
+			local balance = try(function()
+				return player:GetTreasury():GetGoldBalance();
+			end, 0) or 0;
+			local amount = math.min(math.floor(balance * 0.75),
+				tribute:GetMaxAmount() or 0);
+			if amount > 0 then
+				tribute:SetAmount(amount);
+				if tribute:IsValid() then
+					concession = amount;
+				else
+					deal:RemoveItemByID(tribute:GetID());
+				end
+			else
+				deal:RemoveItemByID(tribute:GetID());
+			end
+		end
+	end
+	-- The optional Gold item changes the finished package.  Match the shipped
+	-- proposal surface by validating that final package before it can be sent.
+	deal:Validate();
+	if not deal:IsValid() then return false, 0, "invalid_deal"; end
+
+	-- This is the exact normal-offer call in shipped DiplomacyDealView.lua.
+	-- Unlike `RequestSession(..., "MAKE_DEAL")`, it does not route through the
+	-- anti-stall closer that must refuse every on-screen deal.
+	DealManager.SendWorkingDeal(DealProposalAction.PROPOSED, pid, subject);
+	return true, concession, "submitted";
+end
+
+-- Exposed solely for the Lua 5.1 regression.  A bare global is required: the
+-- Civilization VI UI sandbox has no `_G` table.
+CivvisSubmitMajorPeaceDeal = submitMajorPeaceDeal;
+
 local function applyOrder(player, pid, row, turn)
 	-- A city that is already taking fire cannot wait for the strategic planner to
 	-- notice the same fact on its next board. Return only engine-visible enemies;
@@ -7673,13 +7743,13 @@ local function applyOrder(player, pid, row, turn)
 	--   (`DIPLOMACY_MAKE_PEACE` with PARAM_PLAYER_ONE/TWO);
 	-- - a MAJOR takes the deal: DiplomacyActionView.lua:434 CHOICE_MAKE_PEACE —
 	--   a locked MAKE_PEACE agreement in the outgoing working deal, validated,
-	--   then a MAKE_DEAL session. The rival answers on its own turn; acceptance
+	--   then submitted with `DealProposalAction.PROPOSED`. The rival answers on
+	--   its own turn; acceptance
 	--   shows up as `at_war` dropping in a later export, and nothing here may
-	--   claim more than "asked".
+	--   claim more than "submitted".
 	--
-	-- ⚠ Re-asking every turn would rebuild the working deal and re-open a
-	-- session against a rival who just said no — and the deal screen is a known
-	-- stall shape. One ask per target per PeaceRetryTurns (default 5) turns.
+	-- ⚠ Re-asking every turn would rebuild the working deal against a rival who
+	-- just said no. One ask per target per PeaceRetryTurns (default 5) turns.
 	if kind == "peace" then
 		local diplomacy = try(function() return player:GetDiplomacy(); end);
 		if diplomacy == nil then return false, "no_diplomacy"; end
@@ -7696,55 +7766,15 @@ local function applyOrder(player, pid, row, turn)
 		end
 		local major = try(function() return Players[subject]:IsMajor(); end, true);
 		local concession = 0;
-		local ok;
+		local ok, submitted, reason;
 		if major then
-			ok = pcall(function()
-				if not DealManager.HasPendingDeal(pid, subject) then
-					DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
-					local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, subject);
-					if deal ~= nil then
-						local item = deal:AddItemOfType(DealItemTypes.AGREEMENTS, pid);
-						if item ~= nil then
-							item:SetSubType(DealAgreementTypes.MAKE_PEACE);
-							item:SetLocked(true);
-						end
-						-- "Validate the deal, this will make sure peace is on
-						-- both sides of the deal." — the shipped comment.
-						deal:Validate();
-						-- A free peace offer is the right first question.  Once the
-						-- same rival remains at war through the host's retry window,
-						-- however, it has already declined that exact white deal.
-						--
-						-- In 14 observed runs, 328 white offers produced zero later
-						-- peace states.  Firaxis's own deal screen adds one-time Gold
-						-- with this item type, duration and maximum check.  Preserve a
-						-- quarter of the treasury for emergency purchases, and offer
-						-- the rest only on the retry; a rejected deal transfers nothing.
-						if asked ~= nil then
-							local tribute = deal:AddItemOfType(DealItemTypes.GOLD, pid);
-							if tribute ~= nil then
-								tribute:SetDuration(0);
-								local balance = try(function()
-									return player:GetTreasury():GetGoldBalance();
-								end, 0) or 0;
-								local amount = math.min(math.floor(balance * 0.75),
-									tribute:GetMaxAmount() or 0);
-								if amount > 0 then
-									tribute:SetAmount(amount);
-									if tribute:IsValid() then
-										concession = amount;
-									else
-										deal:RemoveItemByID(tribute:GetID());
-									end
-								else
-									deal:RemoveItemByID(tribute:GetID());
-								end
-							end
-						end
-					end
-				end
-				DiplomacyManager.RequestSession(pid, subject, "MAKE_DEAL");
-			end);
+			local ran;
+			ran, submitted, concession, reason = pcall(
+				submitMajorPeaceDeal, pid, subject, player, asked);
+			if not ran then
+				submitted, concession, reason = false, 0, "throw";
+			end
+			ok = submitted;
 		else
 			ok = pcall(function()
 				local params = {};
@@ -7752,14 +7782,20 @@ local function applyOrder(player, pid, row, turn)
 				params[PlayerOperations.PARAM_PLAYER_TWO] = subject;
 				UI.RequestPlayerOperation(pid, PlayerOperations.DIPLOMACY_MAKE_PEACE, params);
 			end);
+			submitted = ok;
+			reason = ok and "submitted" or "throw";
 		end
 		if not ok then concession = 0; end
-		if ok then peaceAsked[subject] = turn; end
+		-- A pending offer is already inside the engine.  Retrying it on every
+		-- turn cannot improve its chance and only muddies the action ledger.
+		if ok or reason == "pending" then peaceAsked[subject] = turn; end
 		emit("peace_request", {
 			turn = turn, target = subject,
-			major = major and true or false, concession = concession, threw = not ok,
+			major = major and true or false, concession = concession,
+			submitted = submitted and true or false, reason = reason,
+			threw = reason == "throw",
 		});
-		return ok, ok and "peace_asked" or "throw";
+		return ok, ok and "peace_submitted" or reason;
 	end
 
 	-- Delegations and embassies: diplomatic visibility and a relationship
