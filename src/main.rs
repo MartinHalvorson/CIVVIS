@@ -1235,7 +1235,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `counter_in_lane`, which the live bridge now enables and
 /// `AdvancedAi::legacy()` leaves off (asserted); the frozen anchor still
 /// declares. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2c3c_de43_3a0a_34fc;
+/// The era-paced city cadence is behind `era_paced_expansion`, off for
+/// `AdvancedAi::legacy()` (asserted); the frozen anchor still adds a city
+/// per ninety standard turns. Compatibility re-pin; the Elo protocol does
+/// not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5f7a_c505_79ec_fd0e;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

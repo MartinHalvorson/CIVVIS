@@ -207,7 +207,7 @@ pub const EVAL_ONLY_AIS: [&str; 141] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 54] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 55] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -262,6 +262,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 54] = [
     "score-horizon",
     "naval-recon",
     "counter-in-lane",
+    "era-paced-expansion",
 ];
 
 /// Every `live_without_*` control's tag list: the bridge list minus the one
@@ -291,12 +292,12 @@ fn live_without(withheld: &'static str) -> &'static [&'static str] {
         .unwrap_or_else(|| panic!("{withheld} is not a live-bridge treatment"))
 }
 
-/// The nine bridge treatments that stay out of the native bundle, as tags.
+/// The ten bridge treatments that stay out of the native bundle, as tags.
 /// Three encode a rule of Firaxis' game rather than repairing one of ours, one
 /// is excluded on evidence, and the wonder race, the Prophet deferral and the
 /// elective-war stand-down price Firaxis-only records. See
 /// `AdvancedAi::enable_engine_repairs`.
-pub const FIRAXIS_ONLY_TREATMENTS: [&str; 9] = [
+pub const FIRAXIS_ONLY_TREATMENTS: [&str; 10] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -318,6 +319,9 @@ pub const FIRAXIS_ONLY_TREATMENTS: [&str; 9] = [
     // Prices the Settler seat's last-quarter score-leader war record; the
     // native response shape is measured by its own `advanced_counter_*` arms.
     "counter-in-lane",
+    // Prices the Settler seat's uncontested land at its own era pace; the
+    // league cadence was bred against CIVVIS rivals who contest the ground.
+    "era-paced-expansion",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
@@ -5801,7 +5805,7 @@ mod tests {
         /// one of ours, except the last, which is excluded on evidence: the
         /// deployment-profile run split every map at +0 Elo for 2.5x the
         /// rollout branches.
-        const EXCLUDED: [&str; 9] = [
+        const EXCLUDED: [&str; 10] = [
             "live_trader_route_adapter",
             "live_religious_purchase_guard",
             "solvent_faith_army",
@@ -5821,6 +5825,8 @@ mod tests {
             "fog_land_capacity",
             // The native response shape has its own `advanced_counter_*` arms.
             "counter_in_lane",
+            // The Settler seat's era pace; the league cadence stays bred.
+            "era_paced_expansion",
         ];
         let source = include_str!("ai/advanced.rs");
         let calls = |name: &str| -> BTreeSet<String> {
