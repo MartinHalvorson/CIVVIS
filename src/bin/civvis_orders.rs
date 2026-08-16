@@ -1344,6 +1344,7 @@ fn withhold_live_treatment(
         "amenity-project-preemption" => ai.disable_amenity_project_preemption(),
         "amenity-district-path" => ai.disable_amenity_district_path(),
         "live-wonder-race" => ai.disable_live_wonder_race(),
+        "expansion-before-prophet" => ai.disable_expansion_before_prophet(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1367,7 +1368,8 @@ fn withhold_live_treatment(
                  recon-replacement, wide-map-capacity, garrison-under-fire, \
                  escort-unstick, stacked-escort, religion-sues-peace, stranded-settler-discount, \
                  siege-commitment, wonder-ring-settle-value, garrison-walls, \
-                 amenity-project-preemption, amenity-district-path, live-wonder-race"
+                 amenity-project-preemption, amenity-district-path, live-wonder-race, \
+                 expansion-before-prophet"
             ))
         }
     }
@@ -3367,6 +3369,14 @@ mod tests {
         assert!(
             !ai.amenity_district_path,
             "the named amenity-path control must hold it off"
+        );
+
+        assert!(ai.expansion_before_prophet);
+        withhold_live_treatment(&mut ai, "expansion-before-prophet")
+            .expect("the Prophet deferral's control arm is registered");
+        assert!(
+            !ai.expansion_before_prophet,
+            "the named Prophet-deferral control must hold it off"
         );
 
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");

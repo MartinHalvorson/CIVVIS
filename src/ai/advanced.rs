@@ -171,6 +171,10 @@ const LIVE_WONDER_RACE_BONUS: f64 = 1_500.0;
 /// What a district's first-tier amenity building is worth at district-choice
 /// time, as a share of its amenity: it is a second build, not the district.
 /// See `AdvancedAi::amenity_district_path`.
+/// Cities the live seat wants standing before it enters the Prophet race.
+/// See `AdvancedAi::expansion_before_prophet`.
+const EXPANSION_BEFORE_PROPHET_CITIES: usize = 3;
+
 const HOSTED_AMENITY_DISCOUNT: f64 = 0.75;
 
 /// What each further city a regional amenity building reaches is worth, as a
@@ -1858,6 +1862,29 @@ pub struct AdvancedAi {
     /// CIVVIS-vs-CIVVIS wonders are the contested race the stock gate was
     /// written for.
     pub live_wonder_race: bool,
+    /// Let the third city come before the Prophet on the live seat.
+    ///
+    /// ★★★★ EVERY LIVE GAME READS `Grand strategy: religion` FROM TURN 19–26.
+    /// `religious_opening_viable` ranks the seat among the Prophet contenders
+    /// and, on Settler, the rivals found late, so the seat is always one; the
+    /// branch sits ahead of Expansion in the grand-strategy chain, and its
+    /// comment says the race "only occupies one city, so the baseline governor
+    /// can continue settlers in the rest of the empire". With one or two cities
+    /// there is no rest of the empire: the capital IS the producer. Run
+    /// civvis-20260816T011314Z: Religion from t19, Rome built Holy Site →
+    /// Shrine → Holy Site prayers ×2 from t26 to t41 while the second city made
+    /// 2.7 production a turn, and the third city came at t55 (t18→t55 with two
+    /// cities against the Inca's 132 score at t50). T190904Z/T220819Z/T233405Z/
+    /// T003229Z all read Religion t19–26 → t43–75. The Prophet was founded at
+    /// t73 in T003229Z anyway — the slot was never at risk.
+    ///
+    /// With this on, while the empire holds fewer than
+    /// `EXPANSION_BEFORE_PROPHET_CITIES` cities, a site is reachable and the
+    /// expansion window is open, the Prophet branch yields to Expansion; the
+    /// race resumes at the third city. Firaxis-only: it prices the Settler
+    /// seat's slow rivals, and CIVVIS-vs-CIVVIS contenders are the real race
+    /// the stock order was written for. Off for ordinary and frozen controllers.
+    pub expansion_before_prophet: bool,
     /// Price the city ceiling off the land the board actually shows, densely.
     ///
     /// ★★★★ THE STOCK CEILING IS WHAT LOSES SETTLER GAMES, and three live
@@ -2781,6 +2808,7 @@ impl AdvancedAi {
             amenity_project_preemption: false,
             amenity_district_path: false,
             live_wonder_race: false,
+            expansion_before_prophet: false,
             wide_map_capacity: false,
             city_strategy: false,
             city_strategy_emphasis: true,
@@ -3488,6 +3516,7 @@ impl AdvancedAi {
         // Zero wonder orders in twenty live Settler runs that all ended on the
         // host's score tally, 15 points a wonder. See `live_wonder_race`.
         self.enable_live_wonder_race();
+        self.enable_expansion_before_prophet();
         // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
         // live runs the median empire ends on **30 techs of 77**, `engineering`
         // is reached by only **73%** and at a median turn **116** — which is why
@@ -3827,6 +3856,15 @@ impl AdvancedAi {
 
     pub fn disable_live_wonder_race(&mut self) {
         self.live_wonder_race = false;
+    }
+
+    /// Let the third city come before the Prophet. See `expansion_before_prophet`.
+    pub fn enable_expansion_before_prophet(&mut self) {
+        self.expansion_before_prophet = true;
+    }
+
+    pub fn disable_expansion_before_prophet(&mut self) {
+        self.expansion_before_prophet = false;
     }
 
     /// Put `medina_quarter` and `insulae` in the deck when a city is short of
@@ -6701,6 +6739,21 @@ impl AdvancedAi {
             (
                 GrandStrategy::Conquest,
                 "strong enough to take what a neighbour has",
+            )
+        } else if self.expansion_before_prophet
+            && cities.len() < EXPANSION_BEFORE_PROPHET_CITIES
+            && has_site
+            && self.adaptive_expansion_window_open(g)
+            && self.religious_opening_viable(g, pid)
+        {
+            // ★★★★ The Prophet branch below assumes "the rest of the empire"
+            // keeps settling while one city races; with one or two cities the
+            // capital is the whole empire, and on the live Settler seat the
+            // race was never close. See `expansion_before_prophet`. Only the
+            // Religion outcome is displaced: every other branch runs as before.
+            (
+                GrandStrategy::Expansion,
+                "the third city comes before the Prophet",
             )
         } else if self.religious_opening_viable(g, pid) {
             // A Prophet is a finite global race, not an economic goal that can
@@ -44043,6 +44096,105 @@ mod research_probe {
         frozen.major_war_since = Some(60);
         frozen.last_campaign_progress = 60;
         assert_eq!(frozen.assess(&game, 0).strategy, GrandStrategy::Conquest);
+    }
+
+    /// Every live game read `Grand strategy: religion` from turn 19–26 with one
+    /// or two cities, and the capital built the Holy Site while the second
+    /// city could not make a settler. See `expansion_before_prophet`.
+    #[test]
+    fn the_third_city_comes_before_the_prophet_on_the_live_seat() {
+        let mut game = Game::new_full(2, 24, 16, 7_931, 300, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        let capital = game.player_city_ids(0)[0];
+        let home = game.cities[&capital].pos;
+        // Sites 4–10 tiles from home, clear of every city, on walkable ground.
+        let mut sites = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                tile.owner_city.is_none()
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && (4..=10).contains(&game.wdist(home, **position))
+            })
+            .map(|(position, _)| *position)
+            .collect::<Vec<_>>();
+        sites.sort();
+        let mut found_next = |game: &mut Game| {
+            let site = sites
+                .iter()
+                .copied()
+                .find(|site| game.cities.values().all(|city| game.wdist(city.pos, *site) >= 4))
+                .expect("the test map has another city site");
+            game.found_city_for(0, site, None)
+        };
+        found_next(&mut game);
+        assert_eq!(game.player_city_ids(0).len(), 2);
+        // The Prophet race is on: a Prophet is already pending for the seat.
+        game.players[0].prophet_pending = true;
+        game.current = 0;
+        game.turn = 26;
+        assert!(AdvancedAi::expansion_window_open(&game));
+
+        let mut stock = AdvancedAi::new();
+        assert!(!stock.expansion_before_prophet);
+        assert!(stock.religious_opening_viable(&game, 0));
+        assert!(
+            stock.best_settle_site(&game, 0, home, 10).is_some(),
+            "the fixture needs a reachable settle site"
+        );
+        let journal = crate::reasoning::Journal::recording();
+        stock.attach_journal(journal.handle());
+        assert_eq!(
+            stock.assess(&game, 0).strategy,
+            GrandStrategy::Religion,
+            "the stock chain enters the Prophet race with two cities"
+        );
+        assert!(journal
+            .since(0)
+            .thoughts
+            .iter()
+            .any(|thought| thought.detail.contains("a Prophet is a finite race")));
+
+        let mut frozen = AdvancedAi::legacy();
+        assert!(!frozen.expansion_before_prophet);
+        assert_eq!(frozen.assess(&game, 0).strategy, GrandStrategy::Religion);
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.expansion_before_prophet);
+        let journal = crate::reasoning::Journal::recording();
+        live.attach_journal(journal.handle());
+        assert_eq!(
+            live.assess(&game, 0).strategy,
+            GrandStrategy::Expansion,
+            "the live seat settles its third city before racing for the Prophet"
+        );
+        assert!(journal
+            .since(0)
+            .thoughts
+            .iter()
+            .any(|thought| thought.detail.contains("the third city comes before the Prophet")));
+
+        // The control arm holds it off.
+        live.disable_expansion_before_prophet();
+        assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Religion);
+        live.enable_expansion_before_prophet();
+        assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Expansion);
+
+        // At three cities the race resumes exactly as before.
+        found_next(&mut game);
+        assert_eq!(game.player_city_ids(0).len(), 3);
+        assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Religion);
     }
 
     #[test]

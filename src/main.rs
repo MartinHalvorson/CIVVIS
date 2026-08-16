@@ -1130,7 +1130,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// its civilization has already founded a religion. `live_wonder_race` remains
 /// false for the frozen anchor, so its historical wonder choices cannot enter
 /// the new guard. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7512_b42d_643a_192c;
+/// The Prophet deferral is behind `expansion_before_prophet`, which only the
+/// live bridge sets (Firaxis-only); `AdvancedAi::new()` and `legacy()` enter
+/// the Prophet race with two cities exactly as before (asserted).
+/// Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6557_86f2_1072_bcfd;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
