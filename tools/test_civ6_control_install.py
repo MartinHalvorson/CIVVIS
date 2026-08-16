@@ -420,6 +420,18 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("favor = try(function() return player:GetFavor(); end, nil)", source)
         self.assertIn("dvp = try(function() return other:GetStats():GetDiplomaticVictoryPoints(); end, nil)", source)
 
+    def test_controller_exports_the_strategic_stockpiles(self) -> None:
+        # The board carried no strategic resources at all, so no resource unit
+        # was ever producible on the live seat and nothing was ever obsolete.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn("strategic_resources = try(function()", source)
+        block = source.split("strategic_resources = try(function()", 1)[1].split("great_person_points = try(function()", 1)[0]
+        self.assertIn("player:GetResources()", block)
+        self.assertIn('row.ResourceClassType == "RESOURCECLASS_STRATEGIC"', block)
+        self.assertIn("resources:GetResourceAmount(row.ResourceType)", block)
+        # nil, not {}, when nothing is stocked (an empty table encodes as `[]`).
+        self.assertIn("if not any then return nil; end", block)
+
     def test_controller_protects_damaged_unwalled_cities_and_retires_spent_prophets(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
 

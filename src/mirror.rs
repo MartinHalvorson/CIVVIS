@@ -4639,6 +4639,62 @@ mod tests {
         );
     }
 
+    /// The seat's strategic stockpiles reach the board: a Bombard needs Niter,
+    /// a Trebuchet is obsolete once a Bombard can be built. The won game
+    /// civvis-20260816T054344Z ordered a Trebuchet the host refused on 29 turns
+    /// because the board had no Niter and no Bombard.
+    #[test]
+    fn the_seats_strategic_stockpiles_reach_the_board() {
+        let plots = (3..=9)
+            .flat_map(|x| (3..=9).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+            .collect::<Vec<_>>();
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 120,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots,
+        }]);
+        let mut state = StateSnapshot {
+            turn: 120,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Rome".to_string(),
+            x: 5,
+            y: 5,
+            pop: 8,
+            capital: true,
+            ..StateCity::default()
+        });
+        state.strategic_resources = Some(BTreeMap::from([
+            ("RESOURCE_NITER".to_string(), 40.0),
+            ("RESOURCE_IRON".to_string(), 12.0),
+            ("RESOURCE_UNOBTAINIUM".to_string(), 3.0),
+        ]));
+        let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let game = &mirror.game;
+        assert_eq!(game.strategic_stockpile(0, crate::name!("niter")), 40.0);
+        assert_eq!(game.strategic_stockpile(0, crate::name!("iron")), 12.0);
+        assert_eq!(game.strategic_stockpile(0, crate::name!("horses")), 0.0);
+        assert!(
+            mirror.unmapped.iter().any(|issue| issue == "strategic_resource:RESOURCE_UNOBTAINIUM"),
+            "a resource the ruleset does not know is reported: {:?}",
+            mirror.unmapped
+        );
+
+        // And nothing stocked reads as nothing, not as a deserialisation failure.
+        state.strategic_resources = None;
+        let empty = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        assert_eq!(empty.game.strategic_stockpile(0, crate::name!("niter")), 0.0);
+        let parsed: StateSnapshot = serde_json::from_str(
+            r#"{"turn":5,"strategic_resources":[]}"#,
+        )
+        .expect("an empty stockpile list still parses");
+        assert!(parsed.strategic_resources.is_none() || parsed.strategic_resources.as_ref().is_some_and(|m| m.is_empty()));
+    }
+
     /// A Great Person is not a unit CIVVIS models, but the ground it stands on
     /// is occupied all the same. Run civvis-20260816T003229Z: the founded
     /// zero-charge Prophet stood beside the capital for 130 turns and a Builder
@@ -6179,6 +6235,46 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
 /// on turn 40 is still explored on turn 200 even when the seat cannot currently see it —
 /// which is what `explored` means, as distinct from `is_revealed` at this instant.
 /// Idempotent.
+/// Put the seat's strategic stockpiles on the board.
+///
+/// ★★★★ THE BOARD HAD NO STRATEGIC RESOURCES AT ALL. Nothing exported them, so
+/// `Game::strategic_stockpile` answered 0 for every resource on every live turn:
+/// `can_produce` refused every Swordsman, Knight, Musketman and Bombard, the
+/// armies were the resource-free units (AT crews, pike-and-shot, chariots — see
+/// the production histograms of every live run), and `unit_is_obsolete` never
+/// retired a predecessor whose successor costs a resource. Measured on the won
+/// game civvis-20260816T054344Z: a Trebuchet ordered on 29 turns across eight
+/// cities, each `civvis_build_unplayable` — the host had Niter and a Bombard,
+/// the board had neither. Translated from the host's `RESOURCE_X` to CIVVIS's
+/// `x`; a resource the ruleset does not know is reported, not dropped.
+pub(crate) fn apply_strategic_stockpiles(
+    game: &mut crate::game::Game,
+    state: &StateSnapshot,
+    unmapped: &mut Vec<String>,
+) {
+    let Some(seat) = game.players.get_mut(0) else {
+        return;
+    };
+    seat.strategic_resources.clear();
+    let Some(stock) = state.strategic_resources.as_ref() else {
+        return;
+    };
+    for (host, amount) in stock {
+        let name = host
+            .strip_prefix("RESOURCE_")
+            .unwrap_or(host)
+            .to_ascii_lowercase();
+        if game.rules.resources.contains_key(&Name::new(&name)) {
+            seat.strategic_resources.insert(Name::new(&name), amount.max(0.0));
+        } else {
+            let issue = format!("strategic_resource:{host}");
+            if !unmapped.contains(&issue) {
+                unmapped.push(issue);
+            }
+        }
+    }
+}
+
 pub(crate) fn apply_explored(game: &mut crate::game::Game, snapshot: &Snapshot) {
     // The seat is player 0 throughout this bridge: `plant_unit(&mut game, 0, …)` for
     // our own units, `game.players[0]` for our civics and techs.
@@ -7731,6 +7827,13 @@ pub struct StateSnapshot {
     /// (Great Scientist points) is invisible to the planner that chooses it.
     #[serde(default, deserialize_with = "map_or_empty_sequence")]
     pub great_person_points: Option<BTreeMap<String, f64>>,
+    /// The seat's strategic stockpiles by host resource type
+    /// (`RESOURCE_IRON` → amount). Without them `Game::strategic_stockpile`
+    /// read 0 for everything on the live seat: no unit that costs a strategic
+    /// resource was ever producible, and no unit was ever obsolete for want of
+    /// a buildable successor. See `apply_strategic_stockpiles`.
+    #[serde(default, deserialize_with = "map_or_empty_sequence")]
+    pub strategic_resources: Option<BTreeMap<String, f64>>,
     /// The live RECRUIT COST of each class's current unclaimed Great Person,
     /// by the same class-type key. Points without costs sent the planner's
     /// threshold check to CIVVIS's own market formula, which quoted 60-ish
@@ -12376,6 +12479,7 @@ pub fn rebuild_from_state(
     ));
     apply_governor_state(&mut game, state, &mut unmapped);
     apply_great_person_points(&mut game, state, &mut unmapped);
+    apply_strategic_stockpiles(&mut game, state, &mut unmapped);
     apply_observed_host_metrics(&mut game, state, &mut unmapped);
     block_loyalty_doomed_settler_sites(&mut game);
 
@@ -13513,6 +13617,7 @@ impl LiveMirror {
         if skip_rivals {
             apply_governor_state(&mut self.game, state, &mut self.unmapped);
             apply_great_person_points(&mut self.game, state, &mut self.unmapped);
+            apply_strategic_stockpiles(&mut self.game, state, &mut self.unmapped);
             return;
         }
         for uid in std::mem::take(&mut self.rival_units) {
@@ -13823,6 +13928,7 @@ impl LiveMirror {
         apply_city_memory(&mut self.game);
         apply_governor_state(&mut self.game, state, &mut self.unmapped);
         apply_great_person_points(&mut self.game, state, &mut self.unmapped);
+        apply_strategic_stockpiles(&mut self.game, state, &mut self.unmapped);
         apply_observed_host_metrics(&mut self.game, state, &mut self.unmapped);
         block_loyalty_doomed_settler_sites(&mut self.game);
         // After the city passes, for the same reason as on the rebuild path:

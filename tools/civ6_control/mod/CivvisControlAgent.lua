@@ -6356,6 +6356,35 @@ local function exportState(player, pid, turn)
 		-- here is what crashed the game four times, once per attempt, and a
 		-- pcall cannot catch that: it is a segfault inside the host, not a Lua
 		-- error. Base/Assets/UI/.../GreatPeoplePopup.lua:2098 is the reference.
+		-- ★★★★ THE STOCKPILES, WHICH THE BOARD HAS NEVER CARRIED. Without them
+		-- CIVVIS's `strategic_stockpile` reads 0 for every resource, so no unit
+		-- that costs Iron/Horses/Niter/Coal/Oil is ever producible on the live
+		-- seat (the armies were AT crews, pike-and-shot and chariots) and a
+		-- unit is never obsolete for want of a buildable successor: the WON game
+		-- civvis-20260816T054344Z ordered a Trebuchet the host called
+		-- `civvis_build_unplayable` on 29 turns across eight cities. Keyed by the
+		-- host's resource type; the Rust side translates. Only the strategic
+		-- class — the same filter the shipped TopPanel_Expansion2 uses.
+		-- ⚠ nil, not `{}`, when nothing is stocked: see `great_person_points`.
+		strategic_resources = try(function()
+			local resources = player:GetResources();
+			if resources == nil then return nil; end
+			local out = {};
+			local any = false;
+			for row in GameInfo.Resources() do
+				if row.ResourceClassType == "RESOURCECLASS_STRATEGIC" then
+					local amount = try(function()
+						return resources:GetResourceAmount(row.ResourceType);
+					end, nil);
+					if amount ~= nil and amount > 0 then
+						out[row.ResourceType] = amount;
+						any = true;
+					end
+				end
+			end
+			if not any then return nil; end
+			return out;
+		end, nil),
 		great_person_points = try(function()
 			local points = player:GetGreatPeoplePoints();
 			if points == nil then return nil; end
