@@ -521,18 +521,31 @@ class ProtectedInstallTest(unittest.TestCase):
         # shim asks the agent to vote from inside the popup right before its
         # OnAccept, through a LuaEvent, and the agent answers with the same voter.
         shim = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
-        rung = shim.split('if NAME == "WorldCongressPopup" and type(OnAccept) == "function" then', 1)[1].split("return true;", 1)[0]
-        self.assertIn("LuaEvents.CivvisCongressBallot()", rung)
-        self.assertLess(rung.index("LuaEvents.CivvisCongressBallot()"), rung.index("OnAccept();"),
-                        "the ballot goes in before the submission")
+        # Both WorldCongressPopup rungs raise it, and the OnPass rung — the one
+        # that actually runs for the session popup, since the shipped script
+        # defines OnPass as well as OnAccept — raises it before it closes.
+        for closer in ("OnPass", "OnAccept"):
+            rung = shim.split(f'if NAME == "WorldCongressPopup" and type({closer}) == "function" then', 1)[1].split("return true;", 1)[0]
+            self.assertIn("LuaEvents.CivvisCongressBallot()", rung, closer)
+            self.assertLess(rung.index("LuaEvents.CivvisCongressBallot()"), rung.index(f"{closer}();"),
+                            f"the ballot goes in before {closer}")
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
-        self.assertIn("LuaEvents.CivvisCongressBallot.Add(function()", source)
-        handler = source.split("LuaEvents.CivvisCongressBallot.Add(function()", 1)[1].split("end);", 1)[0]
-        self.assertIn("voteWorldCongress(ballotPid)", handler)
-        self.assertIn('source = "popup"', handler)
-        self.assertIn("envoyTally.ballot_hooked", source)
-        # The blocker-time call stays, marked, so the ledger tells the two apart.
-        self.assertIn('source = "blocker"', source)
+        # One shared ballot, two triggers: the core's own stage-1 event and the
+        # shim's popup event; once per turn, only latched when something was cast.
+        self.assertIn("local function castBallot(trigger)", source)
+        ballot = source.split("local function castBallot(trigger)", 1)[1].split("if not envoyTally.ballot_hooked then", 1)[0]
+        self.assertIn("voteWorldCongress(ballotPid)", ballot)
+        self.assertIn("envoyTally.ballot_turn", ballot)
+        self.assertIn("favor_before = before", ballot)
+        self.assertIn('LuaEvents.CivvisCongressBallot.Add(function() castBallot("popup"); end);', source)
+        self.assertIn('Events.WorldCongressStage1.Add(function(playerID)', source)
+        self.assertIn('castBallot("stage1")', source)
+        self.assertIn('emit("wc_ballot_hooked"', source)
+        # The blocker path defers to the triggers and falls back a cycle later.
+        blocker = source.split('if name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"', 1)[1].split("local parked = UNIT_BLOCKERS[name]", 1)[0]
+        self.assertIn("if envoyTally.ballot_turn == turn then", blocker)
+        self.assertIn("elseif seen.forfeits >= 2 then", blocker)
+        self.assertIn('source = "blocker"', blocker)
 
     def test_the_state_export_carries_the_emergencies(self) -> None:
         # The leader's +8 in one session came from World Fair / World Games

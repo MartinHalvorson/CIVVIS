@@ -11105,21 +11105,54 @@ local function tick()
 		-- local would cross the 200-register ceiling); the flag hangs off
 		-- `envoyTally` for the same reason. `source` on the event tells the two
 		-- call sites apart in the ledger; the popup one is the one that counts.
+		-- ⚠⚠ AND THE FIRST POPUP-MOMENT ATTEMPT NEVER FIRED EITHER: batch-9
+		-- game civvis-20260816T223457Z has no `source:"popup"` row at all —
+		-- the shim's WorldCongressPopup ladder runs its `OnPass` rung, not the
+		-- `OnAccept` one the event was raised in. Two triggers now, either of
+		-- which casts once per turn: the game core's own
+		-- `Events.WorldCongressStage1(playerID)` — the very event the shipped
+		-- popup opens on, i.e. the earliest moment a person could vote — and
+		-- the shim's ballot event, now raised from the rung that runs.
+		-- `castBallot` is shared; `envoyTally.ballot_turn` is the once-per-turn
+		-- latch and is only set when something was cast, so a trigger that
+		-- arrives before the resolutions are readable does not spend the turn.
+		-- The blocker path below defers to these and only falls back a forfeit
+		-- cycle later. Every ballot reports its trigger, the core's `Stage`,
+		-- and Favor before, so the next `wc_outcome` says which moment took.
+		local function castBallot(trigger)
+			local ballotPlayer, ballotPid = localPlayer();
+			if ballotPlayer == nil then return; end
+			local ballotTurn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+			if envoyTally.ballot_turn == ballotTurn then
+				emit("wc_vote", { turn = ballotTurn, source = trigger, cast = 0, spent = 0,
+				                  why = "already_cast" });
+				return;
+			end
+			local stage = try(function()
+				local r = Game.GetWorldCongress():GetResolutions(ballotPid);
+				return r and r.Stage or nil;
+			end, nil);
+			local before = tonumber(try(function() return ballotPlayer:GetFavor(); end, -1)) or -1;
+			local cast, spent, why, leader, leaderPoints, leaderScore = voteWorldCongress(ballotPid);
+			if (cast or 0) > 0 then envoyTally.ballot_turn = ballotTurn; end
+			emit("wc_vote", { turn = ballotTurn, cast = cast, spent = spent,
+			                  why = why, leader = leader,
+			                  leader_points = leaderPoints,
+			                  leader_score = leaderScore, source = trigger,
+			                  stage = stage, favor_before = before });
+		end
 		if not envoyTally.ballot_hooked then
 			envoyTally.ballot_hooked = true;
-			pcall(function()
-				LuaEvents.CivvisCongressBallot.Add(function()
-					local ballotPlayer, ballotPid = localPlayer();
-					if ballotPlayer == nil then return; end
-					local ballotTurn = try(function() return Game.GetCurrentGameTurn(); end, -1);
-					local cast, spent, why, leader, leaderPoints, leaderScore =
-						voteWorldCongress(ballotPid);
-					emit("wc_vote", { turn = ballotTurn, cast = cast, spent = spent,
-					                  why = why, leader = leader,
-					                  leader_points = leaderPoints,
-					                  leader_score = leaderScore, source = "popup" });
+			local hookedLua = pcall(function()
+				LuaEvents.CivvisCongressBallot.Add(function() castBallot("popup"); end);
+			end);
+			local hookedStage = pcall(function()
+				Events.WorldCongressStage1.Add(function(playerID)
+					if tonumber(playerID) == pid then castBallot("stage1"); end
 				end);
 			end);
+			emit("wc_ballot_hooked", { turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+			                           popup = hookedLua, stage1 = hookedStage });
 		end
 		if not try(function() return player:IsTurnActive(); end, false) then return; end
 
@@ -11336,16 +11369,25 @@ local function tick()
 						-- through to the dismissal exactly as before.
 						if name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"
 								and seen.voted_turn ~= turn then
-							seen.voted_turn = turn;
-							-- ⚠ Kept, and marked: this call has never registered
-							-- (see the popup handler above), and the popup-time
-							-- ballot is the one that should. Both are in the
-							-- ledger so the next `wc_outcome` says which took.
-							local cast, spent, why, leader, leaderPoints, leaderScore = voteWorldCongress(pid);
-							emit("wc_vote", { turn = turn, cast = cast, spent = spent,
-							                  why = why, leader = leader,
-							                  leader_points = leaderPoints,
-							                  leader_score = leaderScore, source = "blocker" });
+							-- ⚠ THE BLOCKER IS SEEN BEFORE THE SESSION IS OPEN FOR
+							-- VOTING (its ballot never registered; see `castBallot`
+							-- above), so it defers: if the stage-1/popup ballot has
+							-- cast this turn there is nothing to do, and otherwise
+							-- it waits one forfeit cycle for those triggers before
+							-- falling back to the old vote-and-submit, so a session
+							-- that neither trigger reaches still ends.
+							if envoyTally.ballot_turn == turn then
+								seen.voted_turn = turn;
+								emit("wc_vote", { turn = turn, cast = 0, spent = 0,
+								                  why = "cast_at_stage1", source = "blocker" });
+							elseif seen.forfeits >= 2 then
+								seen.voted_turn = turn;
+								local cast, spent, why, leader, leaderPoints, leaderScore = voteWorldCongress(pid);
+								emit("wc_vote", { turn = turn, cast = cast, spent = spent,
+								                  why = why, leader = leader,
+								                  leader_points = leaderPoints,
+								                  leader_score = leaderScore, source = "blocker" });
+							end
 						end
 						local parked = UNIT_BLOCKERS[name] and parkReadyUnits(player) or 0;
 						local dropped = dismissBlocker(pid, blocker);
