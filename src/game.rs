@@ -16399,6 +16399,26 @@ pub struct LiveGreatPersonActivationNeed {
     pub required_district: Option<String>,
 }
 
+/// Aggregate public standings reported by an authoritative host for one
+/// civilization.
+///
+/// A live mirror deliberately keeps fogged cities and units out of the board,
+/// but Civilization VI's standings expose these empire-wide totals. Keeping
+/// them separate from the reconstructed objects lets the HUD be exact without
+/// manufacturing hidden locations, infrastructure, or armies.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ObservedPublicEmpireStats {
+    pub city_count: Option<usize>,
+    pub population: Option<i32>,
+    pub wonder_count: Option<usize>,
+    pub suzerain_count: Option<usize>,
+    pub nuclear_devices: Option<i64>,
+    pub thermonuclear_devices: Option<i64>,
+    pub techs: Option<usize>,
+    pub civics: Option<usize>,
+    pub tourism_per_turn: Option<f64>,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Player {
     pub id: usize,
@@ -17995,6 +18015,11 @@ pub struct Game {
     /// counterfactual deltas when the AI evaluates a policy or build on a clone.
     #[serde(default)]
     pub observed_yield_adjustments: BTreeMap<usize, crate::rules::Yields>,
+    /// Public empire-wide figures from an authoritative host which cannot be
+    /// reconstructed from fog-limited city and unit records. Native games leave
+    /// this empty and derive every standing from their full board.
+    #[serde(default)]
+    pub observed_public_empire_stats: BTreeMap<usize, ObservedPublicEmpireStats>,
     /// Per-city host-to-model corrections and exact citizen assignments for a
     /// mirrored Firaxis turn. Native games leave these empty. Corrections are
     /// additive so counterfactual buildings, policies, and assignments still
@@ -18511,6 +18536,8 @@ struct GameSer {
     #[serde(default)]
     observed_yield_adjustments: BTreeMap<usize, crate::rules::Yields>,
     #[serde(default)]
+    observed_public_empire_stats: BTreeMap<usize, ObservedPublicEmpireStats>,
+    #[serde(default)]
     observed_city_yield_adjustments: BTreeMap<u32, crate::rules::Yields>,
     #[serde(default)]
     observed_city_amenity_adjustments: BTreeMap<u32, i64>,
@@ -18688,6 +18715,7 @@ impl From<GameSer> for Game {
             observed_trade_capacity: s.observed_trade_capacity,
             observed_leader_types: s.observed_leader_types,
             observed_yield_adjustments: s.observed_yield_adjustments,
+            observed_public_empire_stats: s.observed_public_empire_stats,
             observed_city_yield_adjustments: s.observed_city_yield_adjustments,
             observed_city_amenity_adjustments: s.observed_city_amenity_adjustments,
             observed_city_housing_adjustments: s.observed_city_housing_adjustments,
@@ -18882,6 +18910,7 @@ impl From<Game> for GameSer {
             observed_trade_capacity: g.observed_trade_capacity,
             observed_leader_types: g.observed_leader_types,
             observed_yield_adjustments: g.observed_yield_adjustments,
+            observed_public_empire_stats: g.observed_public_empire_stats,
             observed_city_yield_adjustments: g.observed_city_yield_adjustments,
             observed_city_amenity_adjustments: g.observed_city_amenity_adjustments,
             observed_city_housing_adjustments: g.observed_city_housing_adjustments,
@@ -19271,6 +19300,7 @@ impl Game {
             observed_trade_capacity: BTreeMap::new(),
             observed_leader_types: BTreeMap::new(),
             observed_yield_adjustments: BTreeMap::new(),
+            observed_public_empire_stats: BTreeMap::new(),
             observed_city_yield_adjustments: BTreeMap::new(),
             observed_city_amenity_adjustments: BTreeMap::new(),
             observed_city_housing_adjustments: BTreeMap::new(),
@@ -60744,18 +60774,23 @@ impl Game {
         } else {
             0.0
         };
+        let observed = self.observed_public_empire_stats.get(&pid);
 
         VictoryRaces {
             science,
             science_projects: completed_projects,
             science_project_target: science_projects.len(),
             exoplanet_distance: player.exoplanet_distance,
-            techs: player.techs.len(),
+            techs: observed
+                .and_then(|stats| stats.techs)
+                .unwrap_or(player.techs.len()),
             tech_total: self.rules.techs.len(),
             culture,
             foreign_tourists,
             culture_target,
-            civics: player.civics.len(),
+            civics: observed
+                .and_then(|stats| stats.civics)
+                .unwrap_or(player.civics.len()),
             civic_total: self.rules.civics.len(),
             domestic_tourists: self.domestic_tourists(pid),
             rival_domestic,

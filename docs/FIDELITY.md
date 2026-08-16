@@ -603,11 +603,22 @@ usually none — the one column of the mirror a viewer could never trust. The
 host reads them for every player (its World Rankings and Deal screens call
 `GetTechs():GetScienceYield`, `GetCulture():GetCultureYield`,
 `GetStats():GetTourism`, `GetTreasury():GetGoldBalance` on other players), so
-the rival record now carries `science`, `culture`, `tourism`, `gold`,
-`gold_per_turn` (net), `faith`, `faith_per_turn`, and the mirror puts them on
-the rival's seat: treasury and Faith directly, per-turn Science and Culture as
-the same host-to-model delta seat 0 carries. `civ6_mirror_check.py` PUBLIC
-compares them per rival seat.
+the rival record carries `science`, `culture`, `tourism`, `gold`,
+`gold_per_turn` (net), `faith`, `faith_per_turn`, and its technology and civic
+counts. The mirror puts the balances directly on the rival seat and uses the
+five host yield rates as host-to-model deltas, just as it does for seat 0.
+
+The rest of the player HUD is now an explicit fog-safe `public_stats` aggregate
+for the active civilization and every met major: city count, total population,
+Food and Production per turn, World Wonder count, suzerainty count, and both
+nuclear-device counts. The exporter totals a player's cities but does **not**
+send the hidden city identities, positions, improvements, or units that made
+those totals. CIVVIS holds that aggregate apart from its reconstructed city
+records, so an unseen empire can correctly read seven cities and 49 population
+without inventing seven map locations. Technology/civic counts and tourism are
+also surfaced in the public observation. `civ6_mirror_check.py` PUBLIC compares
+every current HUD total, economy rate, research count, and tourism figure per
+rival seat.
 
 Still open on the other civilizations, in order of value: rival cities'
 districts and buildings are not exported (a rival city record is name, size,
