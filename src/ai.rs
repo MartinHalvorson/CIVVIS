@@ -3946,42 +3946,55 @@ impl BasicAi {
         for uid in ids {
             let mark = work_mark(g, uid);
             let pos = g.units[&uid].pos;
-            let motion = self.unit_motion.entry(uid).or_default();
-            let was_looping = motion.looping;
-            if motion.tiles.is_empty() {
-                motion.work = mark;
-            }
-            if motion.work != mark {
-                // The unit achieved something, so whatever it was doing was
-                // worth doing. Judge it from here rather than against a
-                // history that has just been made irrelevant.
-                *motion = UnitMotion {
-                    work: mark,
-                    resume_turn: motion.resume_turn,
-                    ..UnitMotion::default()
-                };
-            } else {
-                motion.fruitless += 1;
-            }
-            motion.tiles.push_back(pos);
-            while motion.tiles.len() > LIVELOCK_WINDOW {
-                motion.tiles.pop_front();
-            }
-            motion.looping = motion.circling();
-            let looping = motion.looping;
-            let fruitless = motion.fruitless;
-            let footprint = motion.footprint();
-            let stand_down = looping && fruitless >= LIVELOCK_STAND_DOWN_AFTER;
-            if stand_down {
-                // The tabu has had a full second window to redirect this unit
-                // and has not. Stop paying for the same fruitless search, hold
-                // the ground, and come back to the problem with a clean slate
-                // once the world around it has changed.
-                *motion = UnitMotion {
-                    work: mark,
-                    resume_turn: g.turn + LIVELOCK_STAND_DOWN_TURNS,
-                    ..UnitMotion::default()
-                };
+            let (was_looping, looping, fruitless, footprint, stand_down) = {
+                let motion = self.unit_motion.entry(uid).or_default();
+                let was_looping = motion.looping;
+                if motion.tiles.is_empty() {
+                    motion.work = mark;
+                }
+                if motion.work != mark {
+                    // The unit achieved something, so whatever it was doing was
+                    // worth doing. Judge it from here rather than against a
+                    // history that has just been made irrelevant.
+                    *motion = UnitMotion {
+                        work: mark,
+                        resume_turn: motion.resume_turn,
+                        ..UnitMotion::default()
+                    };
+                } else {
+                    motion.fruitless += 1;
+                }
+                motion.tiles.push_back(pos);
+                while motion.tiles.len() > LIVELOCK_WINDOW {
+                    motion.tiles.pop_front();
+                }
+                motion.looping = motion.circling();
+                let looping = motion.looping;
+                let fruitless = motion.fruitless;
+                let footprint = motion.footprint();
+                let stand_down = looping && fruitless >= LIVELOCK_STAND_DOWN_AFTER;
+                if stand_down {
+                    // The tabu has had a full second window to redirect this unit
+                    // and has not. Stop paying for the same fruitless search, hold
+                    // the ground, and come back to the problem with a clean slate
+                    // once the world around it has changed.
+                    *motion = UnitMotion {
+                        work: mark,
+                        resume_turn: g.turn + LIVELOCK_STAND_DOWN_TURNS,
+                        ..UnitMotion::default()
+                    };
+                }
+                (was_looping, looping, fruitless, footprint, stand_down)
+            };
+            let retired_goal = (looping && !was_looping && self.explore_dead_targets)
+                .then(|| self.explore_goal.borrow().get(&uid).map(|(goal, _)| *goal))
+                .flatten();
+            if let Some(goal) = retired_goal {
+                // A live Scout can move enough to evade the no-progress probe
+                // while still returning to the same blocked frontier approach.
+                // The loop proves the held goal is not producing discovery, so
+                // retire it now and let this turn choose a fresh outward route.
+                self.retire_exploration_target(g, uid, goal);
             }
             // Say it once when the loop is first recognized, and once more if
             // it outlasts every attempt to steer out of it.
@@ -3992,6 +4005,13 @@ impl BasicAi {
                        "{fruitless} turns inside {footprint} tiles with nothing to show for \
                         them, and steering it out did not work; holding for \
                         {LIVELOCK_STAND_DOWN_TURNS} turns";
+                       pos);
+            } else if let Some(goal) = retired_goal {
+                think!(self.journal, Military, Detail,
+                       "{kind} {uid} abandons looped reconnaissance goal {goal:?}";
+                       "{fruitless} turns inside {footprint} tiles found no new ground; \
+                        that target and its ring are retired for \
+                        {EXPLORE_DEAD_TARGET_TURNS} turns";
                        pos);
             } else if looping && !was_looping {
                 think!(self.journal, Military, Detail,
@@ -10385,6 +10405,24 @@ impl BasicAi {
         chosen
     }
 
+    /// Retire one exploration target that the Firaxis host has shown it cannot
+    /// turn into discovery. The target's ring goes with it because a blocked
+    /// frontier is rarely one plot wide, and every destination cache is cleared
+    /// so the next exploration step must choose a genuinely different route.
+    fn retire_exploration_target(&self, g: &Game, uid: u32, target: Pos) {
+        let mut dead = self.explore_dead.borrow_mut();
+        let unit_dead = dead.entry(uid).or_default();
+        unit_dead.retain(|_, expiry| *expiry > g.turn);
+        let expiry = g.turn + EXPLORE_DEAD_TARGET_TURNS;
+        unit_dead.insert(target, expiry);
+        for neighbour in g.nbrs(target) {
+            unit_dead.insert(neighbour, expiry);
+        }
+        drop(dead);
+        self.explore_last.borrow_mut().remove(&uid);
+        self.explore_goal.borrow_mut().remove(&uid);
+    }
+
     fn explore_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let upos = g.units[&uid].pos;
         // A tribal village the scout can already reach this turn is a
@@ -10445,17 +10483,7 @@ impl BasicAi {
                     }
                 };
                 if stuck >= EXPLORE_STUCK_TURNS {
-                    {
-                        let mut dead = self.explore_dead.borrow_mut();
-                        let unit_dead = dead.entry(uid).or_default();
-                        unit_dead.retain(|_, expiry| *expiry > g.turn);
-                        let expiry = g.turn + EXPLORE_DEAD_TARGET_TURNS;
-                        unit_dead.insert(target, expiry);
-                        for neighbour in g.nbrs(target) {
-                            unit_dead.insert(neighbour, expiry);
-                        }
-                    }
-                    self.explore_last.borrow_mut().remove(&uid);
+                    self.retire_exploration_target(g, uid, target);
                     think!(self.journal, Military, Detail,
                            "{} {uid} gives up on {target:?}", g.units[&uid].kind;
                            "ordered there {stuck} turns running from {upos:?} and never moved; \
@@ -11586,6 +11614,68 @@ mod tests {
         );
         assert!(ai.retreads_a_loop(scout, ground[1]));
         assert!(!ai.retreads_a_loop(scout, ground[7]));
+    }
+
+    /// The host can move a Scout around an obstacle without ever taking the
+    /// committed route toward new ground. That is a distinct failure from an
+    /// outright refused move: it must retire the goal when the unit's own
+    /// history proves the loop, rather than wait forever for the same-tile
+    /// refusal counter.
+    #[test]
+    fn a_live_scout_loop_retires_its_committed_goal() {
+        let (mut game, ground, scout) = scouted_world();
+        let home = ground[0];
+        let other = game
+            .nbrs(home)
+            .into_iter()
+            .find(|pos| {
+                game.map
+                    .get(*pos)
+                    .is_some_and(|tile| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+            })
+            .expect("the scout has a second land tile for the loop");
+        game.players[0].explored.clear();
+        game.turn = 10;
+
+        let mut live = BasicAi::new();
+        live.enable_explore_dead_targets();
+        live.enable_explore_commit();
+        let goal = live
+            .exploration_goal(&game, 0, scout, false)
+            .expect("the board has unexplored ground");
+        assert_eq!(live.explore_goal.borrow().get(&scout).map(|(goal, _)| *goal), Some(goal));
+
+        // The route order changes the Scout's position, but it returns to the
+        // same two tiles for a whole livelock window and reveals nothing.
+        for turn in 0..LIVELOCK_WINDOW {
+            game.turn = 10 + turn as u32;
+            game.units.get_mut(&scout).unwrap().pos = if turn.is_multiple_of(2) {
+                home
+            } else {
+                other
+            };
+            live.begin_movement_turn(&game, 0);
+        }
+
+        let dead = live.explore_dead.borrow();
+        let retired = dead.get(&scout).expect("the loop retires its held goal");
+        assert_eq!(retired.get(&goal), Some(&(game.turn + EXPLORE_DEAD_TARGET_TURNS)));
+        assert!(
+            game.nbrs(goal).iter().all(|neighbour| retired.contains_key(neighbour)),
+            "the blocked goal's ring is retired with it"
+        );
+        drop(dead);
+        assert!(
+            !live.explore_goal.borrow().contains_key(&scout),
+            "the next step must choose a new destination rather than keep the looped one"
+        );
+        let rerouted = live
+            .exploration_goal(&game, 0, scout, false)
+            .expect("there is another route to discover");
+        assert_ne!(rerouted, goal, "the Scout is sent toward fresh ground");
+
+        let plain = BasicAi::new();
+        assert!(!plain.explore_dead_targets, "the retirement remains live-bridge only");
     }
 
     #[test]

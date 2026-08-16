@@ -1282,7 +1282,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The live envoy bank gates both the plan-aware scorer and the later
 /// `BasicAi` fallback, while `AdvancedAi::legacy()` keeps both historical
 /// paths enabled. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe4a2_1323_e409_abbc;
+/// A looped reconnaissance target is retired only behind
+/// `explore_dead_targets`, which the Firaxis order bridge explicitly enables;
+/// `AdvancedAi::legacy()` keeps that flag off. Compatibility re-pin; the Elo
+/// protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa63f_8cb6_bdac_677f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
