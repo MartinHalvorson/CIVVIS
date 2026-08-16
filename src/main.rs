@@ -1121,7 +1121,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// hands, so a fresh settlement cannot prolong a stale war; the frozen anchor
 /// never enables `war_patience`. Compatibility re-pin; the Elo protocol does
 /// not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x238c_dd54_e28a_ab4b;
+/// The hosted-amenity and regional-reach pricing is behind
+/// `amenity_district_path`, which only the live bridge and the native repair
+/// bundle set; `AdvancedAi::new()` and `AdvancedAi::legacy()` price the
+/// Entertainment Complex exactly as before (asserted). Compatibility re-pin;
+/// the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x783d_60ea_a1c1_047d;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
