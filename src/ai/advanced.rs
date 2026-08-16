@@ -18959,6 +18959,29 @@ impl AdvancedAi {
             return self.base.settler_step(g, pid, uid);
         };
         if current == target && g.can_found_city(uid) {
+            // A cached target may have been safe when it was chosen but become
+            // loyalty-doomed while the Settler walked there: a nearby rival can
+            // grow, found, or become newly visible during that trip. The fresh
+            // target loop above forecasts before marching, but intentionally
+            // retains a valid cache rather than paying for a speculative city
+            // each turn. Recheck once at arrival, when founding would otherwise
+            // make the loss irreversible.
+            if forecast_loyalty && self.settle_site_is_loyalty_doomed(g, pid, current) {
+                think!(self.journal(), Expansion, Detail,
+                       "Settler abandons loyalty-doomed arrival at {current:?}";
+                       "the cached site now loses at least {:.0} Loyalty a turn, so it is \
+                        retired before founding and the next target will be distinct",
+                       -SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN; current);
+                self.settler_dead_sites.entry(uid).or_default().insert(
+                    current,
+                    g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+                );
+                self.settler_targets.remove(&uid);
+                self.settler_stalls.remove(&uid);
+                self.settler_blocked_turns.remove(&uid);
+                self.settler_closest.remove(&uid);
+                return false;
+            }
             if self.settlement_safety
                 && self.settlement_tile_risk(g, pid, Some(uid), current, &visible)
                     > SETTLER_STEP_RISK_LIMIT
@@ -44041,6 +44064,108 @@ mod research_probe {
                 .is_none_or(|sites| sites.is_empty()),
             "the normal controller must not enter the live-only forecast"
         );
+    }
+
+    /// A target forecast at selection cannot see Loyalty pressure that changes
+    /// during a long march. At the arrival branch, the live controller must
+    /// recheck the cached site before it spends a Settler founding a city that
+    /// will immediately revolt; normal and frozen evaluators retain their
+    /// historical cached-target behavior.
+    #[test]
+    fn a_live_settler_rechecks_cached_loyalty_when_it_arrives() {
+        let mut game = Game::new_full(2, 40, 24, 91_778, 250, 0, false);
+        game.current = 0;
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            let pos = game.units[&settler].pos;
+            game.remove_unit(settler);
+            game.found_city_for(pid, pos, None);
+        }
+        for unit in game.player_unit_ids(0) {
+            game.remove_unit(unit);
+        }
+        let ours = game.player_city_ids(0)[0];
+        let theirs = game.player_city_ids(1)[0];
+        let home = game.cities[&ours].pos;
+        let rival = game.cities[&theirs].pos;
+        let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        for position in positions {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            game.players[0].explored.insert(position);
+        }
+        game.cities.get_mut(&ours).unwrap().pop = 6;
+        let mut beside_rival: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(*pos, rival) == 4 && game.wdist(*pos, home) >= 4)
+            .collect();
+        beside_rival.sort_unstable();
+        let target = beside_rival[0];
+        let settler = game.spawn_test_unit("settler", 0, target);
+        game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+        assert!(game.can_found_city(settler));
+
+        // This is the board that created the cache. The rival is not yet large
+        // enough to make the target untenable.
+        game.cities.get_mut(&theirs).unwrap().pop = 1;
+        assert!(
+            !AdvancedAi::new().settle_site_is_loyalty_doomed(&game, 0, target),
+            "the cached target must begin viable"
+        );
+
+        // A five-turn march is enough for a nearby city to grow or appear in
+        // the mirror. At arrival the same target is now a clear loss.
+        game.cities.get_mut(&theirs).unwrap().pop = 12;
+        assert!(
+            AdvancedAi::new().settle_site_is_loyalty_doomed(&game, 0, target),
+            "the arrival board must make the formerly safe target untenable"
+        );
+        let cities_before = game.player_city_ids(0).len();
+        let mut default_board = game.clone();
+        let mut frozen_board = game.clone();
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        live.settler_targets.insert(settler, target);
+        assert!(
+            !live.advanced_settler_step(&mut game, 0, settler),
+            "the live arrival check must retire the target rather than found"
+        );
+        assert_eq!(game.player_city_ids(0).len(), cities_before);
+        assert!(live.settler_site_is_dead(settler, target));
+        assert!(
+            !live.settler_targets.contains_key(&settler),
+            "the next turn must select a distinct target"
+        );
+
+        let mut default = AdvancedAi::new();
+        default.settler_targets.insert(settler, target);
+        assert!(
+            default.advanced_settler_step(&mut default_board, 0, settler),
+            "the normal controller keeps its historical cached-target behavior"
+        );
+        assert_eq!(default_board.player_city_ids(0).len(), cities_before + 1);
+
+        let mut frozen = AdvancedAi::legacy();
+        frozen.settler_targets.insert(settler, target);
+        assert!(
+            frozen.advanced_settler_step(&mut frozen_board, 0, settler),
+            "the frozen evaluator is unchanged by the live arrival guard"
+        );
+        assert_eq!(frozen_board.player_city_ids(0).len(), cities_before + 1);
     }
 
     /// When every candidate examined by the live forecast is doomed, holding
