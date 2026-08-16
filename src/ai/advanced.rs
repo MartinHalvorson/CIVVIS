@@ -4209,10 +4209,24 @@ impl AdvancedAi {
     }
 
     /// Whether `war_patience` has lapsed: no foreign-city acquisition for
-    /// `WAR_PATIENCE_LIMIT_TURNS` standard turns. See the constant.
+    /// `WAR_PATIENCE_LIMIT_TURNS` standard turns, counted from the current
+    /// war's start or its last capture, whichever is later. See the constant.
+    ///
+    /// ★★★★ A WAR ONE TURN OLD IS NOT A STALEMATE. #1710 made
+    /// `last_campaign_progress` reset only on an observed foreign city changing
+    /// hands, so a fresh settlement cannot prolong a stale war — right, and it
+    /// left a war declared today with a reference of the last capture (never)
+    /// or the first observation. Run civvis-20260816T030249Z: "Declaring war
+    /// on Arabia" at t71, and at t72 "The war is a stalemate the plan stops
+    /// paying for | no foreign city captured in 47 turns" — the posture and
+    /// the peace offers of a lapsed war, one turn in. `major_war_since` is
+    /// the war's own start (`observe_campaign`, `None` at peace); the later of
+    /// the two is the reference every war deserves.
     fn war_patience_exhausted(&self, g: &Game) -> bool {
-        g.turn.saturating_sub(self.last_campaign_progress)
-            >= g.standard_duration(WAR_PATIENCE_LIMIT_TURNS).max(1)
+        let reference = self
+            .last_campaign_progress
+            .max(self.major_war_since.unwrap_or(0));
+        g.turn.saturating_sub(reference) >= g.standard_duration(WAR_PATIENCE_LIMIT_TURNS).max(1)
     }
 
     fn observe_campaign(&mut self, g: &Game, pid: usize) {
@@ -44555,6 +44569,34 @@ mod research_probe {
         found_next(&mut game);
         assert_eq!(game.player_city_ids(0).len(), 3);
         assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Religion);
+    }
+
+    /// A war declared today is not a stalemate: patience counts from the
+    /// later of the war's start and its last capture. See
+    /// `war_patience_exhausted` (civvis-20260816T030249Z: declared t71,
+    /// "stalemate" t72).
+    #[test]
+    fn a_fresh_war_starts_its_own_patience_window() {
+        let mut game = Game::new_full(2, 24, 16, 7_933, 300, 0, false);
+        game.turn = 100;
+        let limit = game.standard_duration(WAR_PATIENCE_LIMIT_TURNS).max(1);
+        let mut ai = AdvancedAi::new();
+        ai.enable_war_patience();
+        // The last capture (or first observation) is long past…
+        ai.last_campaign_progress = 20;
+        ai.major_war_since = None;
+        assert!(ai.war_patience_exhausted(&game), "a war with no start on record and no capture for eighty turns has lapsed");
+        // …but a war that opened this turn has a full window ahead of it.
+        ai.major_war_since = Some(100);
+        assert!(!ai.war_patience_exhausted(&game), "a war one turn old is not a stalemate");
+        ai.major_war_since = Some(100 - limit + 1);
+        assert!(!ai.war_patience_exhausted(&game), "one turn inside the window");
+        ai.major_war_since = Some(100 - limit);
+        assert!(ai.war_patience_exhausted(&game), "the window lapses at the limit");
+        // A capture inside an old war extends it the same way.
+        ai.major_war_since = Some(20);
+        ai.last_campaign_progress = 95;
+        assert!(!ai.war_patience_exhausted(&game), "a recent capture keeps an old war alive");
     }
 
     #[test]
