@@ -1461,6 +1461,7 @@ fn withhold_live_treatment(
         "no-elective-war" => ai.disable_no_elective_war(),
         "fog-land-capacity" => ai.disable_fog_land_capacity(),
         "recon-flight" => ai.disable_recon_flight(),
+        "score-horizon" => ai.disable_score_horizon(),
         "naval-recon" => ai.disable_naval_recon(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
@@ -1487,7 +1488,7 @@ fn withhold_live_treatment(
                  siege-commitment, wonder-ring-settle-value, garrison-walls, \
                  amenity-project-preemption, amenity-district-path, governor-every-lane, \
                  live-wonder-race, expansion-before-prophet, no-elective-war, \
-                 fog-land-capacity, recon-flight, naval-recon"
+                 fog-land-capacity, recon-flight, score-horizon, naval-recon"
             ))
         }
     }
@@ -3597,6 +3598,10 @@ mod tests {
             .expect("the recon-flight control arm is registered");
         assert!(!ai.recon_flight, "the named recon-flight control must hold it off");
 
+        assert!(ai.score_horizon);
+        withhold_live_treatment(&mut ai, "score-horizon")
+            .expect("the score-horizon control arm is registered");
+        assert!(!ai.score_horizon, "the named score-horizon control must hold it off");
         assert!(ai.naval_recon());
         withhold_live_treatment(&mut ai, "naval-recon")
             .expect("the naval-recon control arm is registered");

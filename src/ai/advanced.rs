@@ -2026,6 +2026,32 @@ pub struct AdvancedAi {
     /// freezing. Off for ordinary and frozen controllers; on for the live
     /// bridge and the native repair bundle (a CIVVIS scout dies the same way).
     pub recon_flight: bool,
+    /// Do not build a space race, or a bomb, that cannot finish before the
+    /// turn limit.
+    ///
+    /// ★★★★ THE LAST FIFTY TURNS OF A SETTLER GAME ARE A SCORE TALLY, AND THE
+    /// SCIENCE LANE SPENT THEM ON A LAUNCH PAD. Run civvis-20260816T093036Z
+    /// (250 turns, Online): the Science strategy queued a Spaceport at ~t226
+    /// (24 city-turns), the war lane a Manhattan Project (16 city-turns), and
+    /// the game ended 871 to 1,157 on score with 69 of 77 techs — the first
+    /// launch needs Rocketry, four projects and fifty light-years of travel,
+    /// none of which fit in the turns left. Run civvis-20260816T101521Z built
+    /// TWO Spaceports after t220 and ended 787 to 1,198. Both empires ended
+    /// on the tally, where a Spaceport is worth two points and the buildings
+    /// those city-turns would have bought are worth one each and yield.
+    ///
+    /// With this on, `space_race_can_finish` prices the remaining chain —
+    /// the launch pad if none stands, every project not yet completed, the
+    /// unresearched ancestors of their techs at the empire's own pace, and
+    /// the fifty light-years at a generous three per turn — against the
+    /// turns left, and when it does not fit: `science_production` is skipped
+    /// (a Diplomacy backup too), the strategic governor's Spaceport arms price
+    /// zero, and the nuclear project arms price zero when the device cannot be
+    /// finished either (`nuclear_lane_can_finish`). Research is untouched:
+    /// every tech is still two points and the lane's yields still pay. Off
+    /// for ordinary and frozen controllers; on for the live bridge and the
+    /// native repair bundle (a native league game ends on the same tally).
+    pub score_horizon: bool,
     /// Price the city ceiling off the land the board actually shows, densely.
     ///
     /// ★★★★ THE STOCK CEILING IS WHAT LOSES SETTLER GAMES, and three live
@@ -2994,6 +3020,7 @@ impl AdvancedAi {
             expansion_before_prophet: false,
             no_elective_war: false,
             recon_flight: false,
+            score_horizon: false,
             wide_map_capacity: false,
             fog_land_capacity: false,
             city_strategy: false,
@@ -3544,6 +3571,9 @@ impl AdvancedAi {
         // And the recon it rebuilds must stop walking into barbarians. See
         // `recon_flight`.
         self.enable_recon_flight();
+        // And the last fifty turns are a tally, not a launch window. See
+        // `score_horizon`.
+        self.enable_score_horizon();
         // And the sea gets one eye of its own. See `BasicAi::naval_recon`.
         self.enable_naval_recon();
         // ⚠ A revealed natural wonder is priced into founding only through the
@@ -3853,6 +3883,9 @@ impl AdvancedAi {
         // And the recon it rebuilds must stop walking into barbarians. See
         // `recon_flight`.
         self.enable_recon_flight();
+        // And the last fifty turns are a tally, not a launch window. See
+        // `score_horizon`.
+        self.enable_score_horizon();
         // And the sea gets one eye of its own. See `BasicAi::naval_recon`.
         self.enable_naval_recon();
         // A Religion plan that keeps its wars blockades its own lane.
@@ -4135,6 +4168,16 @@ impl AdvancedAi {
 
     pub fn disable_recon_flight(&mut self) {
         self.recon_flight = false;
+    }
+
+    /// Skip a space race or a bomb that cannot finish before the turn limit.
+    /// See `score_horizon`.
+    pub fn enable_score_horizon(&mut self) {
+        self.score_horizon = true;
+    }
+
+    pub fn disable_score_horizon(&mut self) {
+        self.score_horizon = false;
     }
 
     /// Put `medina_quarter` and `insulae` in the deck when a city is short of
@@ -13639,6 +13682,139 @@ impl AdvancedAi {
             .collect()
     }
 
+    /// Whether the science victory can still be completed before the turn
+    /// limit. Prices the remaining chain against the turns left: production
+    /// of the launch pad (if none stands) and every project not yet completed
+    /// at the empire's best city, research of the unknown ancestors of those
+    /// projects' techs at the empire's own pace (both overlap, so the larger
+    /// counts), then the fifty light-years at the current expedition speed.
+    /// Always true without a turn limit. See `score_horizon`.
+    pub(crate) fn space_race_can_finish(&self, g: &Game, pid: usize) -> bool {
+        if g.max_turns == 0 {
+            return true;
+        }
+        let remaining_turns = g.max_turns.saturating_sub(g.turn) as f64;
+        let player = &g.players[pid];
+        let completed = &player.science_projects;
+        let chain = [
+            "launch_earth_satellite",
+            "launch_moon_landing",
+            "launch_mars_colony",
+            "exoplanet_expedition",
+        ];
+        let mut production = 0.0;
+        let mut techs_needed: BTreeSet<Name> = BTreeSet::new();
+        for project in chain {
+            if completed.contains(project) {
+                continue;
+            }
+            let Some(spec) = g.rules.projects.get(project) else {
+                continue;
+            };
+            production += g.item_cost(&Item::Project {
+                project: Name::new(project),
+            });
+            if let Some(tech) = spec.tech {
+                if !player.techs.contains(&tech) {
+                    techs_needed.insert(tech);
+                    if let Some(ancestors) = g.rules.tech_ancestors.get(tech.as_str()) {
+                        for ancestor in ancestors {
+                            let ancestor = Name::new(ancestor);
+                            if !player.techs.contains(&ancestor) {
+                                techs_needed.insert(ancestor);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let city_ids = g.player_city_ids(pid);
+        let has_spaceport = city_ids
+            .iter()
+            .any(|cid| g.cities[cid].districts.contains_key(crate::name!("spaceport")));
+        if !has_spaceport {
+            production += g.item_cost(&Item::District {
+                district: crate::name!("spaceport"),
+                pos: (0, 0),
+            });
+        }
+        let best_production = city_ids
+            .iter()
+            .map(|cid| g.city_yields(*cid).production)
+            .fold(0.0, f64::max)
+            .max(1.0);
+        let production_turns = production / best_production;
+        // The empire's own pace: techs known per turn so far, floored at the
+        // ruleset's ordinary cadence so a fresh board does not read as instant.
+        let turns_per_tech = if player.techs.is_empty() {
+            8.0
+        } else {
+            (g.turn as f64 / player.techs.len() as f64).max(2.0)
+        };
+        let research_turns = techs_needed.len() as f64 * turns_per_tech;
+        // Travel is priced generously — the two laser stations that a racing
+        // empire builds triple the base speed — so the horizon only closes a
+        // race that is out of reach, never one that is merely hard.
+        let speed = g.exoplanet_speed(pid).max(3.0);
+        let travel_turns = if completed.contains("exoplanet_expedition") {
+            (crate::game::EXOPLANET_DESTINATION - player.exoplanet_distance).max(0.0) / speed
+        } else {
+            crate::game::EXOPLANET_DESTINATION / speed
+        };
+        production_turns.max(research_turns) + travel_turns <= remaining_turns
+    }
+
+    /// Whether a nuclear project queued now in `cid` can end in a finished
+    /// device before the turn limit: the project itself plus the device it
+    /// unlocks (or the device alone), at this city's production. Always true
+    /// without a turn limit. See `score_horizon`.
+    pub(crate) fn nuclear_lane_can_finish(
+        &self,
+        g: &Game,
+        _pid: usize,
+        cid: u32,
+        project: &str,
+    ) -> bool {
+        if g.max_turns == 0 {
+            return true;
+        }
+        let remaining_turns = g.max_turns.saturating_sub(g.turn) as f64;
+        let cost = |name: &str| {
+            g.rules
+                .projects
+                .contains_key(name)
+                .then(|| {
+                    g.item_cost(&Item::Project {
+                        project: Name::new(name),
+                    })
+                })
+                .unwrap_or(0.0)
+        };
+        let total = match project {
+            "manhattan_project" => cost("manhattan_project") + cost("build_nuclear_device"),
+            "operation_ivy" => cost("operation_ivy") + cost("build_thermonuclear_device"),
+            other => cost(other),
+        };
+        let production = g.city_yields(cid).production.max(1.0);
+        total / production <= remaining_turns
+    }
+
+    /// The science lane's production pass, behind the turn-limit horizon:
+    /// `science_production` when the race can still finish, a journaled skip
+    /// when it cannot. See `score_horizon`.
+    fn space_race_production(&self, g: &mut Game, pid: usize) {
+        if !self.score_horizon || self.space_race_can_finish(g, pid) {
+            self.science_production(g, pid);
+        } else {
+            think!(self.journal(), Cities, Detail,
+                   "The space race cannot finish before the turn limit";
+                   "{} turns left; the launch pad, the remaining projects, their techs \
+                    and fifty light-years do not fit, so the cities build for the tally \
+                    instead of a Spaceport",
+                   g.max_turns.saturating_sub(g.turn));
+        }
+    }
+
     fn science_production(&self, g: &mut Game, pid: usize) {
         let completed = g.players[pid].science_projects.clone();
         let project = if !completed.contains("launch_earth_satellite") {
@@ -16847,6 +17023,13 @@ impl AdvancedAi {
                     + effects.get("unlock_apprenticeship").copied().unwrap_or(0.0) * 120.0;
 
                 let strategic_family = match (plan.strategy, family.as_str()) {
+                    // See `score_horizon`: a launch pad that cannot launch in
+                    // time is two points of district and nothing else.
+                    (GrandStrategy::Science, "spaceport")
+                        if self.score_horizon && !self.space_race_can_finish(g, pid) =>
+                    {
+                        0.0
+                    }
                     (GrandStrategy::Science, "spaceport") if district_count == 0 => 3_000.0,
                     (GrandStrategy::Science, "spaceport") => 250.0,
                     (GrandStrategy::Science, "campus") => 170.0,
@@ -17188,12 +17371,24 @@ impl AdvancedAi {
                                     }
                             }
                         }
+                        "manhattan_project" | "operation_ivy"
+                            if self.score_horizon
+                                && !self.nuclear_lane_can_finish(g, pid, cid, project) =>
+                        {
+                            0.0
+                        }
                         "manhattan_project" | "operation_ivy" => {
                             if plan.strategy == GrandStrategy::Conquest {
                                 2_200.0
                             } else {
                                 350.0
                             }
+                        }
+                        "build_nuclear_device" | "build_thermonuclear_device"
+                            if self.score_horizon
+                                && !self.nuclear_lane_can_finish(g, pid, cid, project) =>
+                        {
+                            0.0
                         }
                         "build_nuclear_device" | "build_thermonuclear_device" => {
                             if plan.strategy == GrandStrategy::Conquest {
@@ -25296,7 +25491,7 @@ impl AdvancedAi {
                 && (plan.strategy == GrandStrategy::Science
                     || self.diplomatic_science_backup(g, pid, &plan))
             {
-                self.science_production(g, pid);
+                self.space_race_production(g, pid);
             }
             if self.victory_planning && plan.strategy == GrandStrategy::Culture {
                 self.culture_spending(g, pid);
@@ -32929,6 +33124,107 @@ mod tests {
             g.cities[&city].queue.first(),
             Some(Item::Project { project }) if project == "launch_earth_satellite"
         ));
+    }
+
+    /// ★★★★ The last fifty turns of a Settler game are a tally, and the science
+    /// lane spent them on a launch pad (civvis-20260816T093036Z: Spaceport at
+    /// t226 + Manhattan Project, 871 vs 1,157; T101521Z: two Spaceports after
+    /// t220, 787 vs 1,198). See `score_horizon`. A one-city empire on turn 170
+    /// of 200 with Rocketry only cannot finish four projects, their techs and
+    /// fifty light-years in thirty turns: the treated seat prices the launch
+    /// pad at nothing and skips the space-race governor, journaling why; the
+    /// same seat on turn 20 races as before, as does the withheld arm.
+    #[test]
+    fn a_space_race_that_cannot_finish_before_the_turn_limit_is_not_started() {
+        let fresh = || {
+            let mut g = Game::new(2, 24, 16, 71, 200, 0);
+            let settler = g
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|uid| g.units[uid].kind == "settler")
+                .unwrap();
+            g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+            let city = g.player_city_ids(0)[0];
+            let site = g.cities[&city]
+                .owned_tiles
+                .iter()
+                .copied()
+                .find(|position| *position != g.cities[&city].pos)
+                .unwrap();
+            {
+                let tile = g.map.tiles.get_mut(&site).unwrap();
+                tile.terrain = crate::name!("plains");
+                tile.feature = None;
+                tile.resource = None;
+                tile.hills = false;
+            }
+            g.players[0].techs.insert(crate::name!("rocketry"));
+            (g, city)
+        };
+
+        // Late: thirty turns left.
+        let (mut late, city) = fresh();
+        late.turn = 170;
+        let mut live = AdvancedAi::targeting(VictoryTarget::Science);
+        live.enable_live_bridge();
+        assert!(live.score_horizon, "the live seat carries the treatment");
+        assert!(
+            !live.space_race_can_finish(&late, 0),
+            "four projects, their techs and fifty light-years do not fit in thirty turns"
+        );
+        let journal = crate::reasoning::Journal::recording();
+        live.attach_journal(journal.handle());
+        // The space-race governor is skipped and says why; the withheld arm
+        // queues the launch pad exactly as the historical controller does.
+        live.space_race_production(&mut late, 0);
+        assert!(
+            !late.cities[&city].queue.iter().any(|item| matches!(
+                item,
+                Item::District { district, .. } if district == "spaceport"
+            )),
+            "no Spaceport is queued thirty turns from the tally: {:?}",
+            late.cities[&city].queue
+        );
+        assert!(
+            journal
+                .since(0)
+                .thoughts
+                .iter()
+                .any(|thought| thought.headline.starts_with("The space race cannot finish")),
+            "the skipped race is journaled"
+        );
+        let (mut late_withheld, city_withheld) = fresh();
+        late_withheld.turn = 170;
+        let mut withheld = AdvancedAi::targeting(VictoryTarget::Science);
+        withheld.enable_live_bridge();
+        withheld.disable_score_horizon();
+        withheld.space_race_production(&mut late_withheld, 0);
+        assert!(
+            matches!(
+                late_withheld.cities[&city_withheld].queue.first(),
+                Some(Item::District { district, .. }) if district == "spaceport"
+            ),
+            "the withheld arm still reserves the launch pad"
+        );
+
+        // With turns to spare the same seat still races.
+        let (mut early, _) = fresh();
+        early.max_turns = 100_000;
+        assert!(
+            live.space_race_can_finish(&early, 0),
+            "with the limit far away the chain fits and the race is on"
+        );
+
+        // Nuclear lane: a bomb that cannot be finished prices zero, one that can does not.
+        assert!(!live.nuclear_lane_can_finish(&late, 0, city, "manhattan_project"));
+        let (mut boundless, city) = fresh();
+        boundless.max_turns = 0;
+        assert!(live.space_race_can_finish(&boundless, 0), "no turn limit, no horizon");
+        assert!(live.nuclear_lane_can_finish(&boundless, 0, city, "manhattan_project"));
+
+        // Defaults: off for the stock and frozen controllers.
+        assert!(!AdvancedAi::new().score_horizon);
+        assert!(!AdvancedAi::legacy().score_horizon);
     }
 
     #[test]
