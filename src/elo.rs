@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 141] = [
+pub const EVAL_ONLY_AIS: [&str; 158] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -88,6 +88,23 @@ pub const EVAL_ONLY_AIS: [&str; 141] = [
     "live_without_war_reinforcement",
     "live_without_war_patience",
     "live_without_endgame_war_runway",
+    "live_without_stacked_escort",
+    "live_without_counter_in_lane",
+    "live_without_era_paced_expansion",
+    "live_without_escort_unstick",
+    "live_without_frontier_loyalty",
+    "live_without_garrison_under_fire",
+    "live_without_garrison_walls",
+    "live_without_naval_recon",
+    "live_without_recon_flight",
+    "live_without_recon_replacement",
+    "live_without_religion_sues_peace",
+    "live_without_score_horizon",
+    "live_without_siege_commitment",
+    "live_without_stranded_settler_discount",
+    "live_without_tally_culture",
+    "live_without_wide_map_capacity",
+    "live_without_wonder_ring_settle_value",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -504,6 +521,22 @@ define_arm_kinds! {
     LiveWithoutWarReinforcement => "live_without_war_reinforcement",
     LiveWithoutWarPatience => "live_without_war_patience",
     LiveWithoutEndgameWarRunway => "live_without_endgame_war_runway",
+    LiveWithoutCounterInLane => "live_without_counter_in_lane",
+    LiveWithoutEraPacedExpansion => "live_without_era_paced_expansion",
+    LiveWithoutEscortUnstick => "live_without_escort_unstick",
+    LiveWithoutFrontierLoyalty => "live_without_frontier_loyalty",
+    LiveWithoutGarrisonUnderFire => "live_without_garrison_under_fire",
+    LiveWithoutGarrisonWalls => "live_without_garrison_walls",
+    LiveWithoutNavalRecon => "live_without_naval_recon",
+    LiveWithoutReconFlight => "live_without_recon_flight",
+    LiveWithoutReconReplacement => "live_without_recon_replacement",
+    LiveWithoutReligionSuesPeace => "live_without_religion_sues_peace",
+    LiveWithoutScoreHorizon => "live_without_score_horizon",
+    LiveWithoutSiegeCommitment => "live_without_siege_commitment",
+    LiveWithoutStrandedSettlerDiscount => "live_without_stranded_settler_discount",
+    LiveWithoutTallyCulture => "live_without_tally_culture",
+    LiveWithoutWideMapCapacity => "live_without_wide_map_capacity",
+    LiveWithoutWonderRingSettleValue => "live_without_wonder_ring_settle_value",
     LiveWithoutStackedEscort => "live_without_stacked_escort",
     Advanced => "advanced",
     AdvancedBankingDedication => "advanced_banking_dedication",
@@ -3234,6 +3267,102 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_endgame_war_runway();
             Box::new(ai)
         }
+        "live_without_counter_in_lane" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_counter_in_lane();
+            Box::new(ai)
+        }
+        "live_without_era_paced_expansion" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_era_paced_expansion();
+            Box::new(ai)
+        }
+        "live_without_escort_unstick" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_escort_unstick();
+            Box::new(ai)
+        }
+        "live_without_frontier_loyalty" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_frontier_loyalty();
+            Box::new(ai)
+        }
+        "live_without_garrison_under_fire" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_garrison_under_fire();
+            Box::new(ai)
+        }
+        "live_without_garrison_walls" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_garrison_walls();
+            Box::new(ai)
+        }
+        "live_without_naval_recon" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_naval_recon();
+            Box::new(ai)
+        }
+        "live_without_recon_flight" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_recon_flight();
+            Box::new(ai)
+        }
+        "live_without_recon_replacement" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_recon_replacement();
+            Box::new(ai)
+        }
+        "live_without_religion_sues_peace" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_religion_sues_peace();
+            Box::new(ai)
+        }
+        "live_without_score_horizon" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_score_horizon();
+            Box::new(ai)
+        }
+        "live_without_siege_commitment" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_siege_commitment();
+            Box::new(ai)
+        }
+        "live_without_stranded_settler_discount" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_stranded_settler_discount();
+            Box::new(ai)
+        }
+        "live_without_tally_culture" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_tally_culture();
+            Box::new(ai)
+        }
+        "live_without_wide_map_capacity" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_wide_map_capacity();
+            Box::new(ai)
+        }
+        "live_without_wonder_ring_settle_value" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_wonder_ring_settle_value();
+            Box::new(ai)
+        }
         "random" => Box::new(RandomAi::new(seed)),
         // Named so provenance collapse checks compare controller *and*
         // weights instead of dropping the genome. (Historically also the
@@ -3849,6 +3978,22 @@ impl ArmKind {
             Self::LiveWithoutWarReinforcement => live_without("war-reinforcement"),
             Self::LiveWithoutWarPatience => live_without("war-patience"),
             Self::LiveWithoutEndgameWarRunway => live_without("endgame-war-runway"),
+            Self::LiveWithoutCounterInLane => live_without("counter-in-lane"),
+            Self::LiveWithoutEraPacedExpansion => live_without("era-paced-expansion"),
+            Self::LiveWithoutEscortUnstick => live_without("escort-unstick"),
+            Self::LiveWithoutFrontierLoyalty => live_without("frontier-loyalty"),
+            Self::LiveWithoutGarrisonUnderFire => live_without("garrison-under-fire"),
+            Self::LiveWithoutGarrisonWalls => live_without("garrison-walls"),
+            Self::LiveWithoutNavalRecon => live_without("naval-recon"),
+            Self::LiveWithoutReconFlight => live_without("recon-flight"),
+            Self::LiveWithoutReconReplacement => live_without("recon-replacement"),
+            Self::LiveWithoutReligionSuesPeace => live_without("religion-sues-peace"),
+            Self::LiveWithoutScoreHorizon => live_without("score-horizon"),
+            Self::LiveWithoutSiegeCommitment => live_without("siege-commitment"),
+            Self::LiveWithoutStrandedSettlerDiscount => live_without("stranded-settler-discount"),
+            Self::LiveWithoutTallyCulture => live_without("tally-culture"),
+            Self::LiveWithoutWideMapCapacity => live_without("wide-map-capacity"),
+            Self::LiveWithoutWonderRingSettleValue => live_without("wonder-ring-settle-value"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name
@@ -4384,6 +4529,23 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live_without_war_reinforcement" => (Vec::new(), "live_without_war_reinforcement"),
         "live_without_war_patience" => (Vec::new(), "live_without_war_patience"),
         "live_without_endgame_war_runway" => (Vec::new(), "live_without_endgame_war_runway"),
+        "live_without_stacked_escort" => (Vec::new(), "live_without_stacked_escort"),
+        "live_without_counter_in_lane" => (Vec::new(), "live_without_counter_in_lane"),
+        "live_without_era_paced_expansion" => (Vec::new(), "live_without_era_paced_expansion"),
+        "live_without_escort_unstick" => (Vec::new(), "live_without_escort_unstick"),
+        "live_without_frontier_loyalty" => (Vec::new(), "live_without_frontier_loyalty"),
+        "live_without_garrison_under_fire" => (Vec::new(), "live_without_garrison_under_fire"),
+        "live_without_garrison_walls" => (Vec::new(), "live_without_garrison_walls"),
+        "live_without_naval_recon" => (Vec::new(), "live_without_naval_recon"),
+        "live_without_recon_flight" => (Vec::new(), "live_without_recon_flight"),
+        "live_without_recon_replacement" => (Vec::new(), "live_without_recon_replacement"),
+        "live_without_religion_sues_peace" => (Vec::new(), "live_without_religion_sues_peace"),
+        "live_without_score_horizon" => (Vec::new(), "live_without_score_horizon"),
+        "live_without_siege_commitment" => (Vec::new(), "live_without_siege_commitment"),
+        "live_without_stranded_settler_discount" => (Vec::new(), "live_without_stranded_settler_discount"),
+        "live_without_tally_culture" => (Vec::new(), "live_without_tally_culture"),
+        "live_without_wide_map_capacity" => (Vec::new(), "live_without_wide_map_capacity"),
+        "live_without_wonder_ring_settle_value" => (Vec::new(), "live_without_wonder_ring_settle_value"),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_build_first" => (Vec::new(), "advanced_build_first"),
         "advanced_synergy" => (Vec::new(), "advanced_synergy"),
@@ -5614,7 +5776,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 114] = [
+            const SCRIPTED: [&str; 131] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5733,6 +5895,23 @@ mod tests {
                 "live_without_war_reinforcement",
                 "live_without_war_patience",
                 "live_without_endgame_war_runway",
+                "live_without_stacked_escort",
+                "live_without_counter_in_lane",
+                "live_without_era_paced_expansion",
+                "live_without_escort_unstick",
+                "live_without_frontier_loyalty",
+                "live_without_garrison_under_fire",
+                "live_without_garrison_walls",
+                "live_without_naval_recon",
+                "live_without_recon_flight",
+                "live_without_recon_replacement",
+                "live_without_religion_sues_peace",
+                "live_without_score_horizon",
+                "live_without_siege_commitment",
+                "live_without_stranded_settler_discount",
+                "live_without_tally_culture",
+                "live_without_wide_map_capacity",
+                "live_without_wonder_ring_settle_value",
             ];
             const SCRIPTED_ALIASES: [&str; 7] = [
                 "advanced_policy_envoy_priority",
