@@ -327,7 +327,7 @@ fn dark_age_policy_cards_are_offered_only_inside_a_dark_age() {
     );
     assert!(
         !dark.contains(&crate::name!("automated_workforce")),
-        "Automated Workforce is one of the explicitly out-of-scope Dark Age cards"
+        "Automated Workforce is an Information-era card"
     );
 }
 
@@ -339,7 +339,8 @@ fn every_dark_age_card_is_a_wildcard_with_a_cost() {
         .iter()
         .filter(|(_, spec)| spec.dark_age)
         .collect();
-    assert_eq!(dark.len(), 7);
+    // The thirteen `Policies_XP1` rows with RequiresDarkAge = 1.
+    assert_eq!(dark.len(), 13);
     for (name, spec) in dark {
         assert_eq!(spec.slot, "wildcard", "{name} must take a Wildcard slot");
         assert!(
@@ -459,11 +460,226 @@ fn isolationism_closes_the_frontier_and_pays_at_home() {
         !game.can_produce_unit(0, city, crate::name!("settler"), true, 0.0),
         "Isolationism forbids training Settlers"
     );
-    // The shipped card pays +3 of all three yields on a domestic route.
-    assert_eq!(game.policy_effect(0, "domestic_trade_food"), 3.0);
-    assert_eq!(game.policy_effect(0, "domestic_trade_production"), 3.0);
-    assert_eq!(game.policy_effect(0, "domestic_trade_gold"), 3.0);
-    assert_eq!(game.policy_effect(0, "policy_trade_route_capacity"), 1.0);
+    // The shipped rows (ISOLATIONISM_DOMESTIC_TRADE_ROUTE_FODD/_PRODUCTION):
+    // +2 Food and +2 Production on a domestic route that stays on one
+    // continent (`Intercontinental=0`), and nothing else — no Gold, no
+    // route capacity.
+    assert_eq!(game.policy_effect(0, "domestic_same_continent_trade_food"), 2.0);
+    assert_eq!(game.policy_effect(0, "domestic_same_continent_trade_production"), 2.0);
+    assert_eq!(game.policy_effect(0, "domestic_trade_food"), 0.0);
+    assert_eq!(game.policy_effect(0, "domestic_trade_gold"), 0.0);
+    assert_eq!(game.policy_effect(0, "policy_trade_route_capacity"), 0.0);
+}
+
+#[test]
+fn the_dark_age_cards_carry_the_shipped_modifier_amounts() {
+    // Every figure below is a `PolicyModifiers` → `ModifierArguments` row of
+    // the live game's rules database; the ones this replaced were guesses.
+    let rules = crate::rules::Rules::embedded();
+    let effect = |card: &str, key: &str| rules.policies[card].effects.get(key).copied();
+    // Inquisition: INQUISITION_SCIENCE_MODIFIER Amount=-25 — read on live
+    // Rome (run civvis-20260816T223457Z, t57-61) as "-25% from Modifiers"
+    // in every city.
+    assert_eq!(effect("inquisition", "city_science_pct"), Some(-25.0));
+    // Monasticism: the Culture penalty has no requirement set.
+    assert_eq!(effect("monasticism", "city_culture_pct"), Some(-25.0));
+    assert_eq!(effect("monasticism", "holy_site_city_science_pct"), Some(75.0));
+    assert_eq!(effect("monasticism", "no_holy_site_city_culture_pct"), None);
+    // Robber Barons: Stock Exchange for the Gold, Factory for the Production.
+    assert_eq!(effect("robber_barons", "stock_exchange_city_gold_pct"), Some(50.0));
+    assert_eq!(effect("robber_barons", "factory_city_production_pct"), Some(25.0));
+    assert_eq!(effect("robber_barons", "city_amenities"), Some(-2.0));
+    // Letters of Marque: trade-route plunder doubled (ADJUST_PLUNDER_YIELDS,
+    // not the improvement/district pillage rows), route yields halved, no
+    // capacity change.
+    assert_eq!(effect("letters_of_marque", "trade_route_plunder_pct"), Some(100.0));
+    assert_eq!(effect("letters_of_marque", "pillage_yield_pct"), None);
+    assert_eq!(effect("letters_of_marque", "trade_route_yield_pct"), Some(-50.0));
+    assert_eq!(effect("letters_of_marque", "policy_trade_route_capacity"), None);
+    // Elite Forces: ELITEFORCES_EXTRA_MAINTENANCE Amount=-2.
+    assert_eq!(effect("elite_forces", "unit_maintenance_surcharge"), Some(2.0));
+    // The six late cards CIVVIS never carried.
+    assert_eq!(effect("disinformation_campaign", "city_science_pct"), Some(-10.0));
+    assert_eq!(effect("disinformation_campaign", "city_culture_pct"), Some(-10.0));
+    assert_eq!(effect("automated_workforce", "city_amenities"), Some(-1.0));
+    assert_eq!(effect("automated_workforce", "city_loyalty"), Some(-5.0));
+    assert_eq!(effect("automated_workforce", "project_production_pct"), Some(20.0));
+    assert_eq!(effect("collectivism", "city_housing"), Some(2.0));
+    assert_eq!(effect("collectivism", "great_people_pct"), Some(-50.0));
+    assert_eq!(effect("rogue_state", "nuclear_project_production_pct"), Some(50.0));
+    assert_eq!(effect("flower_power", "unit_production_pct"), Some(-100.0));
+    assert_eq!(effect("cyber_warfare", "combat_vs_information_era"), Some(10.0));
+}
+
+#[test]
+fn monasticism_docks_culture_in_every_city_and_robber_barons_reads_its_own_buildings() {
+    let mut game = two_player_game();
+    game.players[0].age = "dark".to_string();
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    game.current = 0;
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let city = game.player_city_ids(0)[0];
+    game.cities.get_mut(&city).unwrap().pop = 3;
+    let before = game.city_yields(city);
+    assert!(before.culture > 0.0);
+    // No Holy Site here, and the Culture is docked all the same.
+    game.players[0]
+        .policies
+        .insert(crate::name!("monasticism"));
+    let after = game.city_yields(city);
+    assert!(
+        (after.culture - before.culture * 0.75).abs() < 1e-9,
+        "-25% Culture without a Holy Site: {} -> {}",
+        before.culture,
+        after.culture
+    );
+    assert!((after.science - before.science).abs() < 1e-9, "no Holy Site, no Science bonus");
+    game.players[0].policies.clear();
+
+    // Robber Barons pays nothing until the named building stands.
+    game.players[0]
+        .policies
+        .insert(crate::name!("robber_barons"));
+    let plain = game.city_yields(city);
+    let bank = game.clone();
+    // A building is active only on its standing district: place the
+    // Commercial Hub and Industrial Zone the two buildings live in.
+    let mut ring = game.nbrs(game.cities[&city].pos).into_iter().filter(|position| {
+        game.map.get(*position).is_some_and(|tile| tile.district.is_none() && tile.wonder.is_none())
+    });
+    let hub = ring.next().unwrap();
+    let zone = ring.next().unwrap();
+    let mut with_stock_exchange = game.clone();
+    with_stock_exchange.map.tiles.get_mut(&hub).unwrap().district = Some(crate::name!("commercial_hub"));
+    with_stock_exchange
+        .cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("commercial_hub"), hub);
+    with_stock_exchange
+        .cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("stock_exchange"));
+    let mut with_factory = game.clone();
+    with_factory.map.tiles.get_mut(&zone).unwrap().district = Some(crate::name!("industrial_zone"));
+    with_factory
+        .cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("industrial_zone"), zone);
+    with_factory
+        .cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("factory"));
+    assert!((bank.city_yields(city).gold - plain.gold).abs() < 1e-9);
+    // The building's own yields ride along and the card also costs two
+    // Amenities, so compare at the percentage level: percentages SUM, and
+    // the card's term is +50 Gold / +25 Production on top of whatever band
+    // the city is in with the card.
+    let pct_of = |game: &Game, key: &str| {
+        let c = &game.cities[&city];
+        (game.amenity_yield_mult(c) - 1.0) * 100.0
+            + (Game::loyalty_yield_mult(c.loyalty) - 1.0) * 100.0
+            + match key {
+                "gold" => game.handicap_yield_pct(0).gold,
+                _ => game.handicap_yield_pct(0).production,
+            }
+    };
+    let mut stock_exchange_no_card = with_stock_exchange.clone();
+    stock_exchange_no_card.players[0].policies.clear();
+    let base = stock_exchange_no_card.city_yields(city).gold
+        / (1.0 + pct_of(&stock_exchange_no_card, "gold") / 100.0);
+    let expected = base * (1.0 + (pct_of(&with_stock_exchange, "gold") + 50.0) / 100.0);
+    assert!(
+        (with_stock_exchange.city_yields(city).gold - expected).abs() < 1e-9,
+        "+50% Gold with a Stock Exchange: {} vs {}",
+        with_stock_exchange.city_yields(city).gold,
+        expected
+    );
+    let mut factory_no_card = with_factory.clone();
+    factory_no_card.players[0].policies.clear();
+    let base = factory_no_card.city_yields(city).production
+        / (1.0 + pct_of(&factory_no_card, "production") / 100.0);
+    let expected = base * (1.0 + (pct_of(&with_factory, "production") + 25.0) / 100.0);
+    assert!(
+        (with_factory.city_yields(city).production - expected).abs() < 1e-9,
+        "+25% Production with a Factory: {} vs {}",
+        with_factory.city_yields(city).production,
+        expected
+    );
+}
+
+#[test]
+fn letters_of_marque_halves_what_a_route_earns_at_both_ends() {
+    let mut game = two_player_game();
+    game.players[0].age = "dark".to_string();
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler }).unwrap();
+    }
+    let origin = game.player_city_ids(0)[0];
+    let dest = game.player_city_ids(1)[0];
+    game.cities.get_mut(&origin).unwrap().pop = 3;
+    let before = game.city_yields(origin);
+    game.routes.push(crate::game::TradeRoute {
+        origin,
+        dest,
+        owner: 0,
+        ends: game.turn + 30,
+    });
+    let with_route = game.city_yields(origin);
+    let route_gold = with_route.gold - before.gold;
+    assert!(route_gold > 0.0, "an international route pays its origin Gold");
+    game.players[0]
+        .policies
+        .insert(crate::name!("letters_of_marque"));
+    let halved = game.city_yields(origin);
+    // The card touches nothing but the route (no band change: no Amenity
+    // term on the card), so the origin's Gold drops by exactly half the
+    // route's share.
+    assert!(
+        (halved.gold - (before.gold + route_gold / 2.0)).abs() < 1e-9,
+        "-50% at the origin: {} vs {}",
+        halved.gold,
+        before.gold + route_gold / 2.0
+    );
+    // And the destination half: Trade Policy A on the destination's seat
+    // pays +4 per incoming foreign route, halved when the destination's
+    // owner holds the card.
+    game.players[0].policies.clear();
+    game.players[1]
+        .policies
+        .insert(crate::name!("letters_of_marque"));
+    game.players[1].age = "dark".to_string();
+    let dest_before = game.city_yields(dest).gold;
+    game.active_congress_effects.push(crate::game::CongressEffect {
+        resolution: "trade_policy".to_string(),
+        outcome: "A".to_string(),
+        target: "1".to_string(),
+        expires: game.turn + 30,
+    });
+    let dest_after = game.city_yields(dest).gold;
+    assert!(
+        (dest_after - dest_before - 2.0).abs() < 1e-9,
+        "+4 from Incoming Trade Routes, halved at the destination: {} -> {}",
+        dest_before,
+        dest_after
+    );
 }
 
 #[test]
@@ -1148,10 +1364,16 @@ fn every_dark_age_card_spans_the_eras_the_shipped_game_offers_it_in() {
         ("monasticism", 1, 2),
         ("twilight_valor", 1, 3),
         ("inquisition", 1, 3),
-        ("elite_forces", 1, 3),
         ("isolationism", 1, 4),
         ("letters_of_marque", 3, 5),
         ("robber_barons", 4, 6),
+        ("elite_forces", 4, 8),
+        ("collectivism", 5, 6),
+        ("rogue_state", 6, 8),
+        ("flower_power", 6, 8),
+        ("cyber_warfare", 7, 8),
+        ("automated_workforce", 7, 8),
+        ("disinformation_campaign", 7, 8),
     ] {
         let spec = &rules.policies[name];
         assert!(spec.dark_age, "{name} is a Dark Age card");
