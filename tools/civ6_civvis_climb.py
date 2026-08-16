@@ -1467,6 +1467,9 @@ def main() -> int:
         resumes: list[dict] = []
         torn_down = False
         record: dict = {}
+        # The frozen run's own row, kept in case the reload never reaches a turn:
+        # a resume that fails must not erase the game it was trying to save.
+        before_resume: dict = {}
         try:
             while True:
                 # Above the child's own ceiling, never above its base budget. See
@@ -1501,6 +1504,7 @@ def main() -> int:
                       f"of {args.max_resumes})", flush=True)
                 resumes.append({"tag": cont, "from_turn": record.get("last_turn"),
                                 "save": save.name})
+                before_resume = record
                 run_tag = cont
                 play_log = (logs / f"{cont}-play.log").open("w")
                 torn_down = False
@@ -1519,6 +1523,15 @@ def main() -> int:
 
         if not record:
             record = outcome_of(run_tag)
+        if resumes and record.get("last_turn") is None:
+            # ⚠ THE RELOAD NEVER REACHED A TURN (the Load Game flow refused, the
+            # save would not open, the game did not come back). The attempt is
+            # the frozen game as it stood, not a hole: keep its row and say the
+            # resume failed, so nothing that was played is lost from the ledger.
+            failed = record.get("blocked") or tail_of(logs / f"{run_tag}-play.log")
+            record = before_resume
+            record["reason"] = "attempt frozen; resume failed"
+            record["resume_failed"] = {"tag": run_tag, "why": failed or "no turn observed"}
         if resumes:
             # ★ SAY IT WAS RESUMED. The row's score is the continuation's; the
             # original tag and each freeze turn are kept so a reader can tell a

@@ -1290,6 +1290,28 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         self.assertEqual([r["from_turn"] for r in row["resumes"]], [102, 140])
         self.assertTrue(row["resumes"][-1]["tag"].endswith("-cont2"))
 
+    def test_a_resume_that_never_reaches_a_turn_keeps_the_frozen_row(self):
+        verdicts = ["frozen", "exited"]
+        saved_wait = climb.wait_watching_the_turn
+        saved_latest = climb._latest_autosave
+        climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
+        climb._latest_autosave = lambda newer_than=None: Path("/saves/AutoSave_0102.Civ6Save")
+        try:
+            code, rows = self.climb_with(
+                [{"last_turn": 102, "last_score": 340}, {"last_turn": None}],
+                attempts=1)
+        finally:
+            climb.wait_watching_the_turn = saved_wait
+            climb._latest_autosave = saved_latest
+        self.assertEqual(len(rows), 1, "the frozen game is the row, not a hole")
+        row = rows[0]
+        self.assertEqual(row["attempt"], 1, "and it spends its rung like any played game")
+        self.assertEqual(row["last_turn"], 102)
+        self.assertEqual(row["last_score"], 340)
+        self.assertEqual(row["reason"], "attempt frozen; resume failed")
+        self.assertTrue(row["resume_failed"]["tag"].endswith("-cont1"))
+        self.assertEqual([r["from_turn"] for r in row["resumes"]], [102])
+
     def test_resumes_can_be_switched_off(self):
         verdicts = ["frozen"]
         saved_wait = climb.wait_watching_the_turn
