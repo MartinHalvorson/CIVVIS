@@ -1150,6 +1150,9 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// live bridge sets (Firaxis-only); `AdvancedAi::new()` and `legacy()` take
 /// the "strong enough" branch exactly as before (asserted). Compatibility
 /// re-pin; the Elo protocol does not move.
+/// The war-patience reference is read only under `war_patience`, which the
+/// frozen anchor never sets. Compatibility re-pin; the Elo protocol does not
+/// move.
 const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x00fa_6a25_76a3_892d;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
