@@ -1130,7 +1130,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// live bridge sets (Firaxis-only); `AdvancedAi::new()` and `legacy()` enter
 /// the Prophet race with two cities exactly as before (asserted).
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x783d_60ea_a1c1_047d;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa73a_dfab_a553_981a;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
