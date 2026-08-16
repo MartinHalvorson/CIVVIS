@@ -8782,16 +8782,39 @@ impl AdvancedAi {
         // empire-wide Amenity penalty before recovery production can finish a
         // Commercial Hub. The live war governor already knows it must keep
         // the defending force, so use the current maintenance discount before
-        // asking that force to carry another turn of bankruptcy. `levee_en_masse`
-        // is deliberately listed first: its civic retires `conscription`, so
-        // the loop below takes the strongest available version without a
-        // second card-selection path.
-        let bankrupt_major_war = self.war_economy
-            && at_major_war
+        // asking that force to carry another turn of bankruptcy.
+        //
+        // This must also happen while a confirmed Conquest campaign is still
+        // staging. On the live Rome board, the counter-leader plan held 85
+        // Gold at -59 per turn before it declared: waiting for the declaration
+        // (or for Gold to reach exactly zero) let the maintenance bill consume
+        // its entire emergency reserve first. The same `100 + 25/city`
+        // runway that diverts production into recovery is the relevant bound
+        // here. An ordinary peaceful deficit still keeps its normal policy
+        // portfolio; only a major war or a named Conquest target may trade a
+        // military card for solvency.
+        //
+        // `levee_en_masse` is deliberately listed first: its civic retires
+        // `conscription`, so the loop below takes the strongest available
+        // version without a second card-selection path.
+        let recovery_reserve = 100.0 + 25.0 * city_ids.len() as f64;
+        let staged_conquest = objective == GrandStrategy::Conquest
+            && self
+                .plan
+                .as_ref()
+                .is_some_and(|plan| {
+                    plan.target_player.is_some_and(|target| {
+                        g.players.get(target).is_some_and(|player| {
+                            player.alive && !player.is_minor && !player.is_barbarian
+                        })
+                    })
+                });
+        let maintenance_emergency = self.war_economy
+            && (at_major_war || staged_conquest)
             && military > 0
-            && g.players[pid].gold <= f64::EPSILON
+            && g.players[pid].gold < recovery_reserve
             && g.players[pid].gold_per_turn < -0.5;
-        if bankrupt_major_war {
+        if maintenance_emergency {
             desired.retain(|card| !matches!(*card, "conscription" | "levee_en_masse"));
             desired.splice(0..0, ["levee_en_masse", "conscription"]);
         }
@@ -36574,13 +36597,13 @@ mod tests {
             game.players[0].policies.clone()
         };
 
-        // The frozen/ordinary controller and an empire that can still cover
-        // the loss retain their existing military portfolio.
+        // The frozen/ordinary controller and an empire with a full recovery
+        // runway retain their existing military portfolio.
         assert!(
             !build(false, 0.0, false).contains(&crate::name!("conscription"))
         );
         assert!(
-            !build(true, 1.0, false).contains(&crate::name!("conscription"))
+            !build(true, 100.0, false).contains(&crate::name!("conscription"))
         );
 
         let conscription = build(true, 0.0, false);
@@ -36596,6 +36619,76 @@ mod tests {
         let levee = build(true, 0.0, true);
         assert!(levee.contains(&crate::name!("levee_en_masse")));
         assert!(!levee.contains(&crate::name!("conscription")));
+    }
+
+    #[test]
+    fn live_staged_conquest_preserves_maintenance_runway_before_declaration() {
+        let build = |live_war_economy: bool, target_player: Option<usize>| {
+            let mut game = Game::new(2, 24, 16, 79_101, 200, 0);
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("starting settler");
+            game.apply(0, &Action::FoundCity { unit: settler })
+                .expect("found city");
+            game.players[0].government = Some("chiefdom".to_string());
+            game.players[0].civics.extend([
+                crate::name!("state_workforce"),
+                crate::name!("mobilization"),
+                crate::name!("scorched_earth"),
+            ]);
+            game.players[0]
+                .policies
+                .extend([crate::name!("discipline"), crate::name!("urban_planning")]);
+            // The live counter-leader board reached 85 Gold at -59/turn before
+            // it declared. This is below the one-city 125-Gold recovery
+            // runway, but not yet a zero treasury.
+            game.players[0].gold = 85.0;
+            game.players[0].gold_per_turn = -59.0;
+            assert!(
+                !game.is_at_war(0, 1),
+                "the regression must exercise staging, not the existing wartime path"
+            );
+
+            let mut ai = AdvancedAi::new();
+            if live_war_economy {
+                ai.enable_war_economy();
+            }
+            ai.plan = Some(StrategicPlan {
+                strategy: GrandStrategy::Conquest,
+                target_player,
+                target_city: None,
+                threatened_city: None,
+                desired_cities: 1,
+                assessed_turn: game.turn,
+                rush: false,
+            });
+            ai.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
+            game.players[0].policies.clone()
+        };
+
+        let frozen = build(false, Some(1));
+        let untargeted = build(true, None);
+        let staged = build(true, Some(1));
+        for (label, policies) in [("frozen", &frozen), ("untargeted", &untargeted)] {
+            assert!(
+                policies.contains(&crate::name!("total_war")),
+                "{label} controller must retain the earlier Conquest military card: {policies:?}"
+            );
+            assert!(
+                !policies.contains(&crate::name!("levee_en_masse")),
+                "{label} controller must not preemptively take the maintenance card: {policies:?}"
+            );
+        }
+        assert!(
+            staged.contains(&crate::name!("levee_en_masse")),
+            "a named counter-leader campaign must preserve its recovery runway before it declares: {staged:?}"
+        );
+        assert!(
+            !staged.contains(&crate::name!("total_war")),
+            "the maintenance intervention must actually take the contested military slot: {staged:?}"
+        );
     }
 
     #[test]
