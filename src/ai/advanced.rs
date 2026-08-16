@@ -172,6 +172,14 @@ const LIVE_WONDER_RACE_BONUS: f64 = 1_500.0;
 /// six cities, a third at twelve. See `AdvancedAi::live_wonder_race_lanes`.
 const LIVE_WONDER_RACE_CITIES_PER_LANE: usize = 6;
 
+/// Rings around a settle site inside which a rival major's owned tiles read as
+/// a provocation. See `AdvancedAi::foreign_border_pressure`.
+const FOREIGN_BORDER_RADIUS: i32 = 3;
+/// Settle-value penalty per rival-owned tile within that radius.
+const FOREIGN_BORDER_TILE_PENALTY: f64 = 4.0;
+/// The most the border term may take off a site.
+const FOREIGN_BORDER_PENALTY_CAP: f64 = 40.0;
+
 /// The techs that may unlock the first Walls, as the static names the research
 /// goal chain carries. See `AdvancedAi::walls_tech_goal`.
 const WALL_TECH_NAMES: [&str; 1] = ["masonry"];
@@ -17725,7 +17733,47 @@ impl AdvancedAi {
             .filter(|distance| *distance > 6)
             .map(|distance| (distance - 6).min(8) as f64 * 3.5)
             .unwrap_or(0.0);
-        self.settlement_tile_risk(g, pid, None, pos, visible) + isolation
+        // ★★★★ A SITE PRESSED AGAINST A RIVAL'S BORDER IS A PROVOCATION, and
+        // on the live Settler seat it has been answered with a war three times
+        // in five games, each within ten turns of the founding, each costing
+        // cities: T021044Z Puteoli (t65, "worth −22.7", beside Babylon → war
+        // t67, two cities lost), T040537Z Ostia (t53) and Mediolanum (t66)
+        // beside an unseen Khmer → war t61, both captured and the capital with
+        // them, T045316Z Lugdunum/Mediolanum (t52/56) beside Sweden → war t60.
+        // Firaxis' AI holds a grievance for settling near it and reads a
+        // border-hugging city as the weak one to take; nothing in the site
+        // value knew a border was there — the loyalty forecast asks about
+        // cities, and the cities were in fog. The border is visible ground.
+        // Behind `settlement_safety`, the live seat's settler-survival gate.
+        let provocation = if self.settlement_safety {
+            self.foreign_border_pressure(g, pid, pos)
+        } else {
+            0.0
+        };
+        self.settlement_tile_risk(g, pid, None, pos, visible) + isolation + provocation
+    }
+
+    /// How much of the ground within `FOREIGN_BORDER_RADIUS` of `pos` a rival
+    /// major already owns, priced per tile and capped. See
+    /// `settlement_safety_penalty`.
+    fn foreign_border_pressure(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
+        let owned = g.wdisk(pos, FOREIGN_BORDER_RADIUS)
+            .into_iter()
+            .filter(|tile| {
+                g.map
+                    .get(*tile)
+                    .and_then(|t| t.owner_city)
+                    .and_then(|city| g.cities.get(&city))
+                    .map(|city| city.owner)
+                    .is_some_and(|owner| {
+                        owner != pid
+                            && g.players
+                                .get(owner)
+                                .is_some_and(|p| p.alive && !p.is_minor && !p.is_barbarian)
+                    })
+            })
+            .count();
+        (owned as f64 * FOREIGN_BORDER_TILE_PENALTY).min(FOREIGN_BORDER_PENALTY_CAP)
     }
 
     fn settlement_route_risk(
@@ -44938,6 +44986,92 @@ mod research_probe {
         live.major_war_since = Some(60);
         live.last_campaign_progress = 60;
         assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Conquest);
+    }
+
+    /// A settle site pressed against a rival's border is a provocation the
+    /// live seat has paid for with cities three times in five games. See
+    /// `foreign_border_pressure`.
+    #[test]
+    fn a_site_inside_a_rivals_border_is_priced_as_a_provocation() {
+        let mut game = Game::new_full(2, 32, 20, 7_934, 300, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        let theirs = game.player_city_ids(1)[0];
+        let their_home = game.cities[&theirs].pos;
+        // A plot two steps outside their centre, ringed by their owned tiles.
+        let pressed = game
+            .wring(their_home, 3)
+            .into_iter()
+            .find(|pos| {
+                game.map.get(*pos).is_some_and(|t| {
+                    !game.rules.is_water(t) && game.rules.is_passable(t) && t.owner_city.is_none()
+                }) && game.wdisk(*pos, FOREIGN_BORDER_RADIUS).iter().any(|near| {
+                    game.map.get(*near).and_then(|t| t.owner_city) == Some(theirs)
+                })
+            })
+            .expect("some open plot near the rival's border");
+        let owned_near = game
+            .wdisk(pressed, FOREIGN_BORDER_RADIUS)
+            .iter()
+            .filter(|near| game.map.get(**near).and_then(|t| t.owner_city) == Some(theirs))
+            .count();
+        assert!(owned_near > 0);
+        // A plot well away from anyone's border.
+        let ours = game.cities[&game.player_city_ids(0)[0]].pos;
+        let quiet = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| {
+                game.map.get(*pos).is_some_and(|t| !game.rules.is_water(t) && game.rules.is_passable(t))
+                    && game.wdisk(*pos, FOREIGN_BORDER_RADIUS).iter().all(|near| {
+                        game.map.get(*near).and_then(|t| t.owner_city).is_none()
+                    })
+            })
+            .min_by_key(|pos| game.wdist(*pos, ours))
+            .expect("some plot clear of every border");
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.settlement_safety);
+        let pressure = live.foreign_border_pressure(&game, 0, pressed);
+        assert!(
+            (pressure - (owned_near as f64 * FOREIGN_BORDER_TILE_PENALTY).min(FOREIGN_BORDER_PENALTY_CAP)).abs()
+                < 1e-9,
+            "priced per rival-owned tile within {FOREIGN_BORDER_RADIUS}, capped"
+        );
+        assert_eq!(live.foreign_border_pressure(&game, 0, quiet), 0.0);
+        // Our own border is not a provocation.
+        let home_ring = game
+            .wring(ours, 2)
+            .into_iter()
+            .find(|pos| game.map.get(*pos).is_some_and(|t| !game.rules.is_water(t)))
+            .expect("a plot in our own territory");
+        assert_eq!(live.foreign_border_pressure(&game, 0, home_ring), 0.0);
+        // The penalty reaches the site value.
+        let visible = game.player_vision_now(0);
+        let with = live.settlement_safety_penalty(&game, 0, pressed, &visible);
+        live.settlement_safety = false;
+        let without = live.settlement_safety_penalty(&game, 0, pressed, &visible);
+        assert!(
+            (with - without - pressure).abs() < 1e-9,
+            "the safety penalty carries exactly the border term under settlement_safety"
+        );
+        // The frozen anchor never prices it.
+        let frozen = AdvancedAi::legacy();
+        assert!(!frozen.settlement_safety);
+        assert_eq!(
+            frozen.settlement_safety_penalty(&game, 0, pressed, &visible),
+            without
+        );
     }
 
     /// Every live game read `Grand strategy: religion` from turn 19–26 with one
