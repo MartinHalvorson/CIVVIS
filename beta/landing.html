@@ -28,6 +28,7 @@
 
   * { box-sizing: border-box; }
   html { background: var(--bg); }
+  @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
   body {
     min-width: 320px;
     margin: 0;
@@ -127,6 +128,11 @@
   .report-field input:focus-visible,
   .report-field textarea:focus-visible { border-color: var(--accent); outline: none; }
   .report-hint { margin: 0; color: var(--faint); font-size: 12px; line-height: 1.5; }
+  /* The consent line: a checkbox, not a form field — device details ride
+     along only when the reporter ticks it, and only a bug report asks. */
+  .report-consent { display: flex; gap: 8px; align-items: flex-start; color: var(--muted); font-size: 12.5px; line-height: 1.45; cursor: pointer; }
+  .report-consent[hidden] { display: none; }
+  .report-consent input { flex: none; margin-top: 2px; accent-color: var(--accent); }
   .report-footer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .report-submit {
     min-height: 36px;
@@ -148,15 +154,35 @@
   /* The honeypot: a field no person ever sees or fills; a filled one is a bot. */
   .report-nectar { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
 
-  .intro { max-width: 860px; margin: 18px 0 26px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+  .intro { max-width: 860px; margin: 14px 0 18px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
   .intro a { color: var(--accent); }
 
   /* The menu: which game runs down the rows — Tactics above, Civ below —
      and who is at the keyboard across the columns — Watch (AI simulations)
      on the left, Play (single player) on the right. */
+  /* The row index rides the menu's left edge and stays put while the page
+     scrolls: every row, in page order, one click away — so the whole menu
+     is legible in one glance even when its lower rows sit past the fold. */
+  .home-layout { display: flex; align-items: flex-start; gap: 16px; }
+  .row-nav { position: sticky; top: 14px; display: flex; flex: none; flex-direction: column; gap: 6px; }
+  .row-nav a {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--panel);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+  .row-nav a:hover,
+  .row-nav a:focus-visible { border-color: var(--accent); color: #fff; }
+  .row-nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* A narrow first column carries the vertical row labels; the two card
      columns share the rest. */
-  .quadrants { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); gap: 14px 18px; }
+  .quadrants { display: grid; flex: 1; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); gap: 12px 16px; min-width: 0; }
   .col-head {
     display: flex;
     flex-direction: column;
@@ -192,6 +218,9 @@
     border: 1px solid var(--border);
     border-radius: 4px;
     background: var(--panel);
+    /* The row index scrolls to a row's first card; land it just clear of
+       the viewport edge. */
+    scroll-margin-top: 14px;
   }
   /* The photograph is a way in, not decoration: it opens the same preset the
      verb button does. */
@@ -206,41 +235,48 @@
     object-fit: cover;
     background: #0d1117;
   }
-  .card-body { display: flex; flex: 1; flex-direction: column; gap: 8px; min-width: 0; padding: 14px 16px 16px; }
+  .card-body { display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; padding: 10px 12px 12px; }
   /* One line: the card's name on the left, who is at the keyboard on the
      right, in the same font and size. */
   .card-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 2px 14px; flex-wrap: wrap; }
-  .card-title { margin: 0; color: #fff; font-size: 19px; font-weight: 700; }
+  .card-title { margin: 0; color: #fff; font-size: 17px; font-weight: 700; }
   .card-title a { color: inherit; text-decoration: none; }
   .card-title a:hover,
   .card-title a:focus-visible { color: var(--accent); }
   .card-title a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .card-mode { color: var(--muted); font-size: 19px; font-weight: 700; white-space: nowrap; }
+  .card-mode { color: var(--muted); font-size: 17px; font-weight: 700; white-space: nowrap; }
   /* The tags are shortcuts: each one opens the customization panel below the
-     row, on the section the tag names. */
-  .card-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+     row, on the section the tag names. The shelf always reserves two tag
+     lines — a tag is exactly 24px tall (14px line + 8px padding + 2px
+     border) and the rows sit 6px apart — so however a card's own tags wrap,
+     one line or two, the buttons standing above the shelf stay level across
+     the row. */
+  .card-tags { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; min-height: 54px; margin: 0; padding: 0; list-style: none; }
   .card-tags a {
     display: block;
-    padding: 3px 8px;
+    padding: 4px 8px;
     border: 1px solid var(--border-strong);
     border-radius: 3px;
     color: var(--muted);
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.03em;
+    line-height: 14px;
     text-decoration: none;
   }
   .card-tags a:hover,
   .card-tags a:focus-visible { border-color: var(--accent); color: #fff; }
   .card-tags a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .card-desc { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
-  .card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 6px; }
+  /* The description holds to one line — the copy is written short enough to
+     fit, and the clamp keeps a narrow viewport from staggering the cards. */
+  .card-desc { margin: 0; overflow: hidden; color: var(--muted); font-size: 13px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+  .card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 2px; }
   .card-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 34px;
-    padding: 0 18px;
+    min-height: 30px;
+    padding: 0 14px;
     border-radius: 3px;
     font-size: 13px;
     font-weight: 700;
@@ -250,7 +286,7 @@
      than the Customize beside it, so a row reads as "start this" first and
      "or change it" second. */
   .verb-watch,
-  .verb-play { min-height: 44px; padding: 0 23px; font-size: 17px; }
+  .verb-play { min-height: 40px; padding: 0 20px; font-size: 16px; }
   .verb-watch { background: var(--watch-bg); color: var(--watch-fg); }
   .verb-play { background: var(--play-bg); color: var(--play-fg); }
   .verb-watch:hover,
@@ -372,6 +408,9 @@
   .picker-empty { padding: 12px; color: var(--faint); font-size: 13px; line-height: 1.5; }
 
   @media (max-width: 760px) {
+    /* One column of cards; the row index turns into a chip row on top. */
+    .home-layout { display: block; }
+    .row-nav { position: static; flex-direction: row; flex-wrap: wrap; margin-bottom: 12px; }
     .quadrants { grid-template-columns: 1fr; }
     .col-head,
     .row-label,
@@ -406,7 +445,7 @@
     <p class="intro">
       CIVVIS is an open source re-implementation of the 4X turn-based strategy
       game <cite>Sid Meier&#8217;s Civilization VI</cite> &#8212; built with a
-      simulator user interface wrapping the headless backend game logic.
+      simulator UI wrapping the headless backend game logic.
       Everything below is a preset starting configuration of settings for the
       simulator, but you can further customize the settings how you like or
       <a href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">clone the code</a>
@@ -428,7 +467,10 @@
          keyboard on the right; the photograph, the name and the card's own
          colour-carrying verb all open the simulator immediately on the
          card's preset. Four buttons stand in a row to begin with — Watch and
-         Customize on the left, Play and Customize on the right. Customize
+         Customize on the left, Play and Customize on the right — and they
+         stand level: the description holds to one line and the tag shelf
+         below the buttons reserves two, so a card whose tags wrap cannot
+         stagger its neighbour's buttons. Customize
          opens the row's shared customization panel in place, directly below
          the row — the battle picker for Tactics, the world picker for the
          full game — and each tag opens that panel on the section the tag
@@ -440,13 +482,22 @@
          preset itself, the stock Tactics world, or the simulator's own Game
          setup drawer (`?setup=1`). Each card's photograph is a real capture
          of its own preset. -->
+    <!-- The row index: every row of the menu in page order, always in view
+         on the left — the whole menu legible in one glance even when the
+         rows below run past the fold, one click to any row. A new row of
+         cards adds one link here. -->
+    <div class="home-layout">
+    <nav class="row-nav" aria-label="Menu rows">
+      <a href="#row-tactics">Tactics</a>
+      <a href="#row-civ">CIVVIS</a>
+    </nav>
     <section class="quadrants" aria-label="Game menu">
       <div class="grid-corner" aria-hidden="true"></div>
       <h2 class="col-head">Design &amp; Watch <span>AI simulations</span></h2>
       <h2 class="col-head">Play <span>Single player</span></h2>
 
       <div class="row-label" aria-hidden="true">Tactics</div>
-      <div class="mode-card">
+      <div class="mode-card" id="row-tactics">
         <a class="card-thumb-link" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20">
           <img class="card-thumb" src="assets/watch-tactics.jpg" alt="Watch CIVVIS Tactics: two AI armies meeting in the middle of a CIVVIS Gettysburg battlefield." fetchpriority="high">
         </a>
@@ -455,7 +506,7 @@
             <h3 class="card-title" id="watch-tactics-title"><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20">Watch CIVVIS Tactics</a></h3>
             <span class="card-mode">AI simulation</span>
           </div>
-          <p class="card-desc">Two AI commanders fight a single battle while you watch, in an era rolled fresh each time.</p>
+          <p class="card-desc">Two AI commanders fight one battle in a fresh era.</p>
           <div class="card-actions">
             <a class="card-btn verb-watch" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20" aria-labelledby="watch-tactics-title">Watch</a>
             <a class="card-btn plain customize" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20" data-pick="watch" aria-label="Customize a watched Tactics battle">Customize</a>
@@ -478,7 +529,7 @@
             <h3 class="card-title" id="play-tactics-title"><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play">Play CIVVIS Tactics</a></h3>
             <span class="card-mode">Single player</span>
           </div>
-          <p class="card-desc">Command one side of a battle against the AI, in an era rolled fresh each time.</p>
+          <p class="card-desc">Command one side against the AI in a fresh era.</p>
           <div class="card-actions">
             <a class="card-btn verb-play" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play" aria-labelledby="play-tactics-title">Play</a>
             <a class="card-btn plain customize" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play" data-pick="play" aria-label="Customize a played Tactics battle">Customize</a>
@@ -523,7 +574,7 @@
       </section>
 
       <div class="row-label" aria-hidden="true">CIVVIS</div>
-      <div class="mode-card">
+      <div class="mode-card" id="row-civ">
         <a class="card-thumb-link" href="../">
           <img class="card-thumb" src="assets/watch-civ.jpg" alt="Watch CIVVIS: a CIVVIS globe at mid-game, AI empires sharing two continents, borders and cities drawn across the planet.">
         </a>
@@ -532,7 +583,7 @@
             <h3 class="card-title" id="watch-civ-title"><a href="../">Watch CIVVIS</a></h3>
             <span class="card-mode">AI simulation</span>
           </div>
-          <p class="card-desc">A full game played end to end by AI civilizations.</p>
+          <p class="card-desc">AI civilizations play a full game end to end.</p>
           <div class="card-actions">
             <a class="card-btn verb-watch" href="../" aria-labelledby="watch-civ-title">Watch</a>
             <a class="card-btn plain customize" href="../?setup=1" data-pick="watch-civ" aria-label="Customize a watched game">Customize</a>
@@ -555,7 +606,7 @@
             <h3 class="card-title" id="play-civ-title"><a href="../?mode=play">Play CIVVIS</a></h3>
             <span class="card-mode">Single player</span>
           </div>
-          <p class="card-desc">A full game — take one civilization against AI rivals.</p>
+          <p class="card-desc">A full game as one civilization against AI rivals.</p>
           <div class="card-actions">
             <a class="card-btn verb-play" href="../?mode=play" aria-labelledby="play-civ-title">Play</a>
             <a class="card-btn plain customize" href="../?mode=play&amp;setup=1" data-pick="play-civ" aria-label="Customize a played game">Customize</a>
@@ -597,6 +648,7 @@
         <div class="picker-groups" id="game-groups"></div>
       </section>
     </section>
+    </div>
   </main>
 
   <!-- The report dialog: feedback straight onto the project's GitHub issue
@@ -610,21 +662,30 @@
       <div class="picker-heading">
         <div>
           <p class="eyebrow">Feedback</p>
-          <h3 id="report-dialog-title">Report an issue or suggest a feature</h3>
+          <h3 id="report-dialog-title">Suggest a feature or report an issue</h3>
         </div>
         <button class="report-close" type="button" id="report-close" aria-label="Close">✕ Close</button>
       </div>
       <div class="report-choices" role="group" aria-label="What kind of report">
-        <button class="report-choice" type="button" data-kind="issue" aria-pressed="true">Report an issue</button>
-        <button class="report-choice" type="button" data-kind="feature" aria-pressed="false">Suggest a feature</button>
+        <button class="report-choice" type="button" data-kind="feature" aria-pressed="true">Suggest a feature</button>
+        <button class="report-choice" type="button" data-kind="issue" aria-pressed="false">Report an issue</button>
       </div>
       <label class="report-field">
         <span>Title</span>
-        <input id="report-title" maxlength="140" required placeholder="One line: what happened, or what should exist?">
+        <input id="report-title" maxlength="140" required placeholder="One line: what should exist, or what happened?">
       </label>
       <label class="report-field">
         <span>Details</span>
-        <textarea id="report-details" maxlength="5000" placeholder="What did you do, what did you expect, and what happened instead? For a feature: what should it do, and when would you use it?"></textarea>
+        <textarea id="report-details" maxlength="5000" placeholder="What should it do, and when would you use it? For an issue: what did you do, what did you expect, and what happened instead?"></textarea>
+      </label>
+      <!-- Device details are recorded only with permission: filing an issue
+           offers this box, and only a tick sends the browser's own
+           description along to be quoted on the filed issue. A feature
+           request never asks, and the GitHub-account path types nothing on
+           anyone's behalf. -->
+      <label class="report-consent" id="report-device-field" hidden>
+        <input type="checkbox" id="report-device" checked>
+        <span>Include my browser details (its user-agent line) on the issue — often the difference between a reproducible bug and a mystery</span>
       </label>
       <div class="report-choices" role="group" aria-label="Sign it as">
         <button class="report-choice" type="button" data-identity="anonymous" aria-pressed="true">Anonymous</button>
@@ -658,7 +719,7 @@
     const hint = field("report-hint");
     const submit = field("report-submit");
     const REPO = "https://github.com/MartinHalvorson/CIVVIS";
-    let kind = "issue";
+    let kind = "feature";
     let identity = "anonymous";
     // The pen name: rolled once per visit, so one visitor's several reports
     // read as the same person without being anyone in particular.
@@ -688,6 +749,10 @@
     const chosenName = () => cleanName(nameField.value) || penName;
     const sync = () => {
       field("report-name-field").hidden = identity !== "random";
+      // The consent box appears only where it means something: an issue the
+      // site itself will file. Features don't need device details, and the
+      // GitHub path records nothing on anyone's behalf.
+      field("report-device-field").hidden = kind !== "issue" || identity === "github";
       hint.textContent = identity === "random"
         ? `The site files this as a GitHub issue, signed “${chosenName()}” — no account needed.`
         : HINTS[identity];
@@ -754,6 +819,10 @@
             title,
             details: field("report-details").value.trim(),
             reporter: identity === "random" ? chosenName() : "anonymous",
+            // Device details go along only with the ticked box on an issue
+            // — the worker quotes `device` on the filed issue and never
+            // reads the request's own headers for it.
+            device: kind === "issue" && field("report-device").checked ? navigator.userAgent : "",
             website: field("report-website").value,
           }),
         });
