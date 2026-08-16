@@ -2339,6 +2339,27 @@ pub struct AdvancedAi {
     /// Settler seat's tally; the native lanes keep their bred weights. Off for
     /// ordinary and frozen controllers.
     pub tally_culture: bool,
+    /// Bank an envoy the plan has no positive use for.
+    ///
+    /// ★★★★ `advanced_envoys` spends EVERY held envoy each turn (`while
+    /// envoys_free > 0`), taking the best-scored placement even when that score
+    /// is negative — a city-state already securely ours and past its 6-envoy
+    /// tier reads "worth −47" and still takes the token. Native seats meet
+    /// their city-states early, so that rarely costs anything; the live seat
+    /// does not. Replay of civvis-20260816T123936Z at t150 (46 held, two
+    /// city-states met): Geneva ×3 → Suzerain, Nan Madol ×2 → Suzerain, both to
+    /// the 6-tier, and then the remaining 34 poured into the same two secure
+    /// city-states — while Preslav was met at t162 with nothing left to bid,
+    /// and this lane's twelve games met their city-states over 250 turns (0–3
+    /// by t50, 2–5 by t100, 3–10 by the end).
+    ///
+    /// With this on, the pass stops at the first placement whose score is
+    /// negative and journals what it banked; the next city-state met (whose
+    /// first-meet envoy is already standing there) can be taken outright. A
+    /// rival bidding a held suzerainty back up makes the defence positive
+    /// again, so held city-states are still defended. Bridge-only
+    /// (`civvis_orders` sets it); off for ordinary and frozen controllers.
+    pub bank_envoys: bool,
     /// Do not found a colony beyond the empire's Loyalty reach on ground the
     /// seat has not explored.
     ///
@@ -3162,6 +3183,7 @@ impl AdvancedAi {
             counter_in_lane: false,
             era_paced_expansion: false,
             tally_culture: false,
+            bank_envoys: false,
             frontier_loyalty: false,
             settler_target_hysteresis: false,
             bounded_recovery: false,
@@ -3293,6 +3315,12 @@ impl AdvancedAi {
     /// only.
     pub fn enable_explore_dead_targets(&mut self) {
         self.base.enable_explore_dead_targets();
+    }
+
+    /// Hold an exploration goal and sweep outward from home (see
+    /// `BasicAi::explore_commit`). Set by the Civilization VI bridge only.
+    pub fn enable_explore_commit(&mut self) {
+        self.base.enable_explore_commit();
     }
 
     /// A city losing hitpoints is besieged, whatever the fog says. See
@@ -4328,6 +4356,15 @@ impl AdvancedAi {
 
     pub fn disable_tally_culture(&mut self) {
         self.tally_culture = false;
+    }
+
+    /// Bank an envoy the plan has no positive use for. See `bank_envoys`.
+    pub fn enable_bank_envoys(&mut self) {
+        self.bank_envoys = true;
+    }
+
+    pub fn disable_bank_envoys(&mut self) {
+        self.bank_envoys = false;
     }
 
     /// Do not found a colony beyond the empire's Loyalty reach on fogged
@@ -12227,6 +12264,18 @@ impl AdvancedAi {
                 .max()
                 .map(|(score, _, _, id)| (id, score));
             let Some((target, score)) = target else { break };
+            // See `bank_envoys`: nothing on the board is worth an envoy, so the
+            // held ones wait for the next city-state met.
+            if self.bank_envoys && score < 0 {
+                think!(self.journal(), Diplomacy, Decision,
+                       "Banking {} envoy{}", g.players[pid].envoys_free,
+                       if g.players[pid].envoys_free == 1 { "" } else { "s" };
+                       "the best placement left is {} at {score}: every met city-state is \
+                        either securely ours past its paying tier or contested beyond its \
+                        worth, so the next city-state met gets them",
+                       g.players[target].civ);
+                break;
+            }
             if self.journal().wants(crate::reasoning::Level::Decision) {
                 let mine = g.envoys_at(pid, target) + 1;
                 let suzerain = g
@@ -39190,6 +39239,82 @@ mod tests {
             "pricing the suzerainty must convert the same envoys into more \
              suzerainties: stock {stock}, priced {priced} over 39 boards"
         );
+    }
+
+    /// ★★★★ See `bank_envoys`: the stock pass takes the best-scored placement
+    /// even when that score is negative, so a seat that has already secured
+    /// every met city-state past its paying tier keeps pouring envoys into
+    /// them; the live seat banks them for the next city-state met, and still
+    /// spends on one that is worth it.
+    #[test]
+    fn the_live_seat_banks_an_envoy_it_has_no_use_for() {
+        let board = || {
+            let mut g = Game::new(2, 24, 16, 4_242, 80, 2);
+            let minors: Vec<usize> = g
+                .players
+                .iter()
+                .filter(|player| player.is_minor && !player.is_barbarian)
+                .map(|player| player.id)
+                .collect();
+            assert!(minors.len() >= 2, "the fixture needs two city-states");
+            for minor in &minors {
+                g.record_contact(0, *minor);
+            }
+            (g, minors)
+        };
+        let secure_everything = |g: &mut Game, minors: &[usize]| {
+            // Suzerain of every met city-state, past the six-envoy tier, with
+            // no rival within reach: nothing left on the board pays.
+            g.players[0].envoys = minors.iter().map(|minor| (*minor, 8)).collect();
+            g.players[0].envoys_free = 3;
+        };
+
+        // Bridge-only: neither the stock nor the frozen controller carries
+        // either of the two bridge flags this PR added.
+        for controller in [AdvancedAi::new(), AdvancedAi::legacy()] {
+            assert!(!controller.bank_envoys);
+            assert!(!controller.base.explore_commit);
+        }
+
+        let (mut stock_game, minors) = board();
+        secure_everything(&mut stock_game, &minors);
+        AdvancedAi::new().advanced_envoys(&mut stock_game, 0, GrandStrategy::Science, None);
+        assert_eq!(
+            stock_game.players[0].envoys_free, 0,
+            "the stock pass spends every held envoy, worth it or not"
+        );
+
+        let (mut live_game, minors) = board();
+        secure_everything(&mut live_game, &minors);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(!live.bank_envoys, "the composite does not carry it; the bridge sets it");
+        live.enable_bank_envoys();
+        live.advanced_envoys(&mut live_game, 0, GrandStrategy::Science, None);
+        assert_eq!(
+            live_game.players[0].envoys_free, 3,
+            "with nothing on the board worth an envoy, the live seat banks all three"
+        );
+        assert!(
+            live_game.players[0].envoys.iter().all(|(_, count)| *count == 8),
+            "and none of the secure city-states took one: {:?}",
+            live_game.players[0].envoys
+        );
+
+        // A fresh city-state is worth opening, and the banked envoys go there.
+        let (mut fresh_game, minors) = board();
+        fresh_game.players[0].envoys = vec![(minors[0], 8)];
+        fresh_game.players[0].envoys_free = 3;
+        let mut live = AdvancedAi::new();
+        live.enable_bank_envoys();
+        live.advanced_envoys(&mut fresh_game, 0, GrandStrategy::Science, None);
+        assert_eq!(
+            fresh_game.envoys_at(0, minors[1]),
+            3,
+            "the unopened city-state takes the bank: {:?}",
+            fresh_game.players[0].envoys
+        );
+        assert_eq!(fresh_game.players[0].envoys_free, 0);
     }
 
     #[test]

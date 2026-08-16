@@ -98,6 +98,44 @@ def is_win(summary: dict) -> bool:
     return bool(outcome.get("kind") == "victory" and outcome.get("won"))
 
 
+def orders_totals(events_path: Path) -> tuple[int, int] | None:
+    """Sum (seen, applied) over the run's agent turn events.
+
+    The bridge's health is how much of what CIVVIS said the engine actually
+    did. It was 79.9% once and nobody noticed for days, because the number
+    lived in a status tool somebody had to think to run; summing it into the
+    summary puts it on the ledger where `check --min-applied` can floor it.
+    Tolerant of a truncated tail line — the game can die mid-write.
+    """
+    if not events_path.is_file():
+        return None
+    seen = applied = 0
+    counted = False
+    with events_path.open() as handle:
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if event.get("kind") != "turn" or event.get("ctx") != "agent":
+                continue
+            if event.get("orders_seen") is None:
+                continue
+            counted = True
+            seen += int(event.get("orders_seen") or 0)
+            applied += int(event.get("orders_applied") or 0)
+    return (seen, applied) if counted else None
+
+
+def applied_pct(summary: dict) -> float | None:
+    """Bridge health as one number: applied orders over issued, in percent."""
+    seen = summary.get("orders_seen")
+    applied = summary.get("orders_applied")
+    if not seen:
+        return None
+    return round(100.0 * (applied or 0) / seen, 1)
+
+
 def entry_from(summary: dict) -> dict:
     return {
         "tag": summary.get("tag"),
@@ -112,6 +150,7 @@ def entry_from(summary: dict) -> dict:
         "map_size": summary.get("map_size"),
         "speed": summary.get("speed"),
         "reason": summary.get("reason"),
+        "applied_pct": applied_pct(summary),
     }
 
 
@@ -210,7 +249,8 @@ def publish(ledger: Path, snapshot: Path | None = None,
 
 
 def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
-          snapshot: Path | None = None, now: datetime | None = None) -> int:
+          snapshot: Path | None = None, now: datetime | None = None,
+          min_applied: float | None = None) -> int:
     """Exit nonzero when the record is behind the truth on disk.
 
     Three separate failures, reported together, because they have three
@@ -259,6 +299,20 @@ def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
                 problems.append(f"newest recorded attempt is {age:.1f}h old "
                                 f"(limit {stale_hours:g}h) — is the supervisor "
                                 f"running?")
+
+    if min_applied is not None:
+        # The newest attempt that measured itself, not the newest attempt: a
+        # run that died before its first turn has no rate and is the
+        # staleness check's problem, not this one's.
+        measured = [a for a in state["attempts"] if a.get("applied_pct") is not None]
+        if measured:
+            latest = max(measured, key=lambda a: a.get("utc") or "")
+            if latest["applied_pct"] < min_applied:
+                problems.append(
+                    f"bridge health regressed: {latest['applied_pct']:g}% of "
+                    f"orders applied on {latest.get('tag')} (floor "
+                    f"{min_applied:g}%) — read the refusal ledger, "
+                    f"docs/CIV6_COMPUTER_CONTROL.md")
 
     for problem in problems:
         print(f"LADDER: {problem}")
@@ -338,6 +392,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("publish")
     chk = sub.add_parser("check")
     chk.add_argument("--stale-hours", type=float, default=None)
+    chk.add_argument("--min-applied", type=float, default=None,
+                     help="fail when the newest measured run applied under "
+                          "this percentage of its orders")
     sub.add_parser("show")
     sub.add_parser("next")
     args = ap.parse_args(argv)
@@ -353,7 +410,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "publish":
         return publish(ledger)
     if args.command == "check":
-        return check(args.runs, ledger, args.stale_hours)
+        return check(args.runs, ledger, args.stale_hours,
+                     min_applied=args.min_applied)
     if args.command == "next":
         return next_rung(ledger)
     return show(ledger)

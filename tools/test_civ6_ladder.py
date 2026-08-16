@@ -45,7 +45,9 @@ def write_run(runs: Path, body: dict) -> Path:
     return path
 
 
-class RecordsItself(unittest.TestCase):
+class LedgerCase(unittest.TestCase):
+    """Shared temp-dir harness: runs dir, live ledger, patched snapshot."""
+
     def setUp(self):
         self._tmp = TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
@@ -65,6 +67,8 @@ class RecordsItself(unittest.TestCase):
     def state(self) -> dict:
         return json.loads(self.ledger.read_text())
 
+
+class RecordsItself(LedgerCase):
     def test_the_ledger_lives_beside_the_runs_it_records(self):
         path = write_run(self.runs, summary("civvis-1"))
         self.assertTrue(civ6_ladder.record_summary(path))
@@ -161,3 +165,62 @@ class RecordsItself(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BridgeHealth(LedgerCase):
+    """applied_pct rides the ledger; check floors it."""
+
+    def test_orders_totals_sums_agent_turns_and_survives_a_torn_tail(self):
+        events = self.runs / "events.jsonl"
+        lines = [
+            json.dumps({"kind": "turn", "ctx": "agent", "turn": 1,
+                        "orders_seen": 4, "orders_applied": 4}),
+            json.dumps({"kind": "turn", "ctx": "agent", "turn": 2,
+                        "orders_seen": 6, "orders_applied": 3}),
+            # A different context and a non-turn row must not count.
+            json.dumps({"kind": "turn", "ctx": "ui", "turn": 2,
+                        "orders_seen": 9, "orders_applied": 9}),
+            json.dumps({"kind": "victory", "orders_seen": 9}),
+            '{"kind": "turn", "ctx": "agent", "orders_se',  # torn tail
+        ]
+        events.write_text("\n".join(lines))
+        self.assertEqual(civ6_ladder.orders_totals(events), (10, 7))
+
+    def test_the_rate_is_recorded_on_the_attempt(self):
+        civ6_ladder.record_summary(write_run(
+            self.runs, summary("measured", orders_seen=200, orders_applied=194)))
+        self.assertEqual(self.state()["attempts"][0]["applied_pct"], 97.0)
+
+    def test_a_run_without_totals_records_no_rate_and_fails_nothing(self):
+        civ6_ladder.record_summary(write_run(self.runs, summary("unmeasured")))
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        self.assertIsNone(self.state()["attempts"][0]["applied_pct"])
+        self.assertEqual(
+            civ6_ladder.check(self.runs, self.ledger, None, self.snapshot,
+                              min_applied=95.0), 0)
+
+    def test_check_floors_the_newest_measured_run(self):
+        civ6_ladder.record_summary(write_run(
+            self.runs, summary("healthy", orders_seen=100, orders_applied=97,
+                               finished="2026-08-15T00:00:00Z")))
+        civ6_ladder.record_summary(write_run(
+            self.runs, summary("regressed", orders_seen=100, orders_applied=80,
+                               finished="2026-08-16T00:00:00Z")))
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        with redirect_stdout(io.StringIO()) as out:
+            code = civ6_ladder.check(self.runs, self.ledger, None,
+                                     self.snapshot, min_applied=95.0)
+        self.assertEqual(code, 1)
+        self.assertIn("refusal ledger", out.getvalue())
+        # And an unmeasured run arriving later must not mask the reading:
+        # the floor reads the newest run that measured itself.
+        civ6_ladder.record_summary(write_run(
+            self.runs, summary("died-early", finished="2026-08-17T00:00:00Z")))
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        with redirect_stdout(io.StringIO()):
+            code = civ6_ladder.check(self.runs, self.ledger, None,
+                                     self.snapshot, min_applied=95.0)
+        self.assertEqual(code, 1)
