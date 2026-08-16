@@ -10603,14 +10603,32 @@ local function tick()
 					-- budgets, counted in `residualAnswers`, overridable by
 					-- CIVVIS at the next export. Only a pass that produced
 					-- nothing falls through to the dismissal ladder below.
+					-- ⚠⚠⚠ AND THE RESIDUAL ANSWER IS BOUNDED TOO, OR IT IS THE WEDGE.
+					--
+					-- Run `civvis-20260816T115139Z` -- the seat's best game, 804
+					-- against 715 and the score leader -- wedged at turn 178 on
+					-- `ENDTURN_BLOCKING_UNITS`: `civvis_complete`, then the ladder's
+					-- `units` answer, `residual_unblock ... forfeits 0`, and the same
+					-- blocker back again -- SEVEN times, because a residual answer
+					-- that is not nil and not `civvis_complete` reset `attempts` and
+					-- never reached the forfeit below, so neither the parking pass,
+					-- the dismissal, the forced end turn nor the 40-attempt drop ever
+					-- ran. The outside watchdog killed the attempt after 900 s.
+					-- The ladder's own per-name `spend` budgets did not bound it,
+					-- and must not be relied on to. Two residual answers that leave
+					-- the blocker standing are the proof; the third sighting-pair
+					-- forfeits like any other inert answer.
 					local residual_pick = nil;
-					if answered == "civvis_complete" then
+					if answered == "civvis_complete"
+							and (seen.residuals or 0) < (cfg.MaxResidualAnswers or 2) then
 						residual_pick = answerBlocker(player, pid, blocker, turn, true);
 					end
 					if residual_pick ~= nil and residual_pick ~= "civvis_complete" then
+						seen.residuals = (seen.residuals or 0) + 1;
 						emit("residual_unblock", { turn = turn, blocker = name,
 						                           answered = residual_pick,
-						                           forfeits = seen.forfeits });
+						                           forfeits = seen.forfeits,
+						                           residuals = seen.residuals });
 						attempts = 0;
 					elseif seen.forfeits < cap then
 						-- BOUNDED RETRY. Re-arming after `bound` more sightings
