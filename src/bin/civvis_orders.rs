@@ -2624,6 +2624,15 @@ fn main() {
     // And give up an exploration target the host accepts but never walks to:
     // see `BasicAi::explore_dead_targets`.
     ai.enable_explore_dead_targets();
+    // And hold an exploration goal, chosen from deeper fog and farthest from
+    // home, instead of re-deriving the nearest fringe every turn: the lone
+    // scout of run civvis-20260816T123936Z paced a ten-by-ten box from t34
+    // to t75. See `BasicAi::explore_commit`.
+    ai.enable_explore_commit();
+    // And bank an envoy the plan has no positive use for, so the next
+    // city-state met can be taken outright — this seat meets its city-states
+    // over 250 turns, not 50. See `AdvancedAi::bank_envoys`.
+    ai.enable_bank_envoys();
     // ★★★ SAY WHICH GENOME IS PLAYING, ALWAYS — INCLUDING "the stock one".
     //
     // An axis nothing reports does not exist, and this project has already shipped a
