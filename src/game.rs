@@ -2463,6 +2463,61 @@ mod city_name_tests {
         );
     }
 
+    /// A Great Person the host has on a plot occupies it in the civilian layer;
+    /// see `great_person_plots`. Measured on run civvis-20260816T003229Z: a
+    /// Builder was ordered onto the founded Prophet's tile 25 turns running.
+    #[test]
+    fn a_great_persons_plot_offers_nothing_and_blocks_the_civilian_layer() {
+        let mut game = Game::new(2, 24, 16, 2, 200, 0);
+        let centre = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| {
+                let tile = &game.map.tiles[pos];
+                !game.rules.is_water(tile)
+                    && game.rules.is_passable(tile)
+                    && !game.tile_is_natural_wonder(tile)
+                    && crate::hex::ring(*pos, 1).iter().all(|n| {
+                        game.map.get(*n).is_some_and(|t| {
+                            !game.rules.is_water(t) && game.rules.is_passable(t)
+                        })
+                    })
+            })
+            .expect("a standard map has open land with open neighbours");
+        game.place_city(0, centre, None);
+        let plot = crate::hex::ring(centre, 1)
+            .into_iter()
+            .find(|pos| !game.valid_improvements(0, *pos).is_empty())
+            .expect("the ground around a capital should contain an improvable tile");
+        let builder = game.spawn_unit("builder", 0, centre);
+        let warrior = game.spawn_unit("warrior", 0, centre);
+        assert!(game.can_move(builder, plot), "the plot is open before anyone stands on it");
+
+        // One of ours: the civilian layer is taken, the military layer is not.
+        game.great_person_plots.insert(plot, 0);
+        assert!(
+            game.valid_improvements(0, plot).is_empty(),
+            "a plot our Great Person holds offers a builder nothing, or it loops on it"
+        );
+        assert!(!game.can_move(builder, plot), "and the builder cannot step onto it");
+        assert!(game.can_move(warrior, plot), "while a military unit still can");
+
+        // A rival's, at peace: nothing of ours may enter.
+        game.great_person_plots.insert(plot, 1);
+        assert!(!game.can_move(builder, plot));
+        assert!(!game.can_move(warrior, plot), "a foreign civilian blocks the step at peace");
+        game.at_war.insert((0, 1));
+        assert!(game.can_move(warrior, plot), "and at war the military step is a capture");
+        assert!(!game.can_move(builder, plot), "which a builder still cannot make");
+
+        // Gone: the plot is ordinary ground again.
+        game.great_person_plots.remove(&plot);
+        assert!(!game.valid_improvements(0, plot).is_empty());
+        assert!(game.can_move(builder, plot));
+    }
+
     #[test]
     fn terrain_route_does_not_build_through_an_incompatible_feature() {
         let mut game = Game::new(2, 24, 16, 2, 200, 0);
@@ -17842,6 +17897,29 @@ pub struct Game {
     /// with seven builders alive against an army of one.
     #[serde(default)]
     pub blocked_improvement_sites: BTreeSet<Pos>,
+    /// ★★★★ GROUND A GREAT PERSON STANDS ON, keyed to its owner. Empty in an
+    /// ordinary game; the live mirror fills it because CIVVIS does not model
+    /// Great People as units and drops them from the board (see
+    /// `mirror::is_great_person`), so a plot the host has occupied read as EMPTY.
+    ///
+    /// Civilization VI stacks one civilian per plot and a Great Person is a
+    /// civilian, so a Builder or Settler cannot end a move on one — exactly as
+    /// this engine treats a plot holding a friendly unit of the same class — and
+    /// a foreign Great Person blocks everything short of a capture. On
+    /// run `civvis-20260816T003229Z` the founded, zero-charge Prophet stood on
+    /// (7,25) beside the capital from turn 73 to the end; a Builder with two
+    /// charges left was ordered `MOVE_TO (7,25)` on 25 consecutive turns
+    /// (t175–t199) and never moved, because CIVVIS chose that tile as its
+    /// improvement target and Firaxis refused the step every time. Nothing on
+    /// the board could tell it otherwise.
+    ///
+    /// Honoured in the two places the board answers "can a unit be here":
+    /// [`Game::valid_improvements`] offers nothing on such a plot (the same
+    /// contract as `blocked_improvement_sites` — a tile a builder cannot reach
+    /// must offer nothing, or the builder loops on it), and `can_enter_past`
+    /// refuses the step for the layers Firaxis refuses it for.
+    #[serde(default)]
+    pub great_person_plots: BTreeMap<Pos, usize>,
     /// ★★★★★ PROMOTIONS THE HOST REFUSED, so CIVVIS stops asking for them again.
     ///
     /// Every other host refusal already had a block set — `blocked_city_sites`,
@@ -18449,6 +18527,7 @@ impl From<GameSer> for Game {
             host_observed: BTreeSet::new(),
             closed_borders: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
+            great_person_plots: BTreeMap::new(),
             blocked_promotions: BTreeMap::new(),
             blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
@@ -19022,6 +19101,7 @@ impl Game {
             host_observed: BTreeSet::new(),
             closed_borders: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
+            great_person_plots: BTreeMap::new(),
             blocked_promotions: BTreeMap::new(),
             blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
@@ -35376,6 +35456,21 @@ impl Game {
                 }
             }
         }
+        // A Great Person the host has on this plot but CIVVIS has no unit for:
+        // the same stacking rules as the units below, read from the plot map. A
+        // foreign one blocks every layer short of a capture; one of ours blocks
+        // the civilian layer. See `great_person_plots`.
+        if !through_units {
+            if let Some(owner) = self.great_person_plots.get(&pos) {
+                if *owner != u.owner {
+                    if spec.class != "military" || !self.is_at_war(u.owner, *owner) {
+                        return false;
+                    }
+                } else if spec.class == "civilian" {
+                    return false;
+                }
+            }
+        }
         for oid in self.units_at(pos) {
             if through_units {
                 break;
@@ -40798,6 +40893,12 @@ impl Game {
         // the single chokepoint every improvement decision passes through, so one
         // check routes the planner around the tile everywhere at once.
         if self.blocked_improvement_sites.contains(&pos) {
+            return vec![];
+        }
+        // A Great Person is standing there. The host will not let a builder end
+        // its move on that plot, so an improvement it "could" build there is one
+        // it walks toward forever; see `great_person_plots`.
+        if self.great_person_plots.contains_key(&pos) {
             return vec![];
         }
         let t = match self.map.get(pos) {
