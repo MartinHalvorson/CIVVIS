@@ -1286,10 +1286,16 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// reach outranks the countryside, the party sized to the camp's defender)
 /// behind `BasicAi::camp_party`; both off for `AdvancedAi::legacy()`
 /// (asserted). Compatibility re-pin; the Elo protocol does not move.
+/// `recon_is_the_missing_arm` counts a recon unit already in a city queue as
+/// the arm being rebuilt (still behind `recon_replacement`, off for
+/// `AdvancedAi::legacy()`), and `BasicAi::skip_opening_book` lets a decider
+/// restarted mid-game leave the four-build book behind it — the frozen
+/// anchor's opening is unchanged. Compatibility re-pin; the Elo protocol does
+/// not move.
 /// The live envoy bank gates both the plan-aware scorer and the later
 /// `BasicAi` fallback, while `AdvancedAi::legacy()` keeps both historical
 /// paths enabled. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6e2f_457c_9d01_1e13;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe347_7a0c_fca4_ba34;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
