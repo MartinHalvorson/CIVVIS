@@ -11004,6 +11004,36 @@ local function tick()
 		end
 		local player, pid = localPlayer();
 		if player == nil then return; end
+		-- ★★★★★ THE BALLOT IS CAST WHEN THE POPUP ASKS, NOT WHEN THE BLOCKER
+		-- APPEARS. `voteWorldCongress` below is also called from the blocker
+		-- ladder, and that call has never registered a vote: `wc_vote` says
+		-- `spent 760` at t201 of civvis-20260816T184500Z and Favor reads
+		-- 822→829→836 across it; `wc_outcome` shows our selection on every
+		-- resolution as the core's default `option 1, votes 1` — the free vote
+		-- cast FOR the diplomatic leader. The shipped screen votes from inside
+		-- the WorldCongressPopup in stage 1; the autoclose shim standing in
+		-- front of that popup raises `LuaEvents.CivvisCongressBallot` right
+		-- before its `OnAccept`, and this is the handler. Registered once, from
+		-- inside `tick` because `voteWorldCongress` is nested here (a file-scope
+		-- local would cross the 200-register ceiling); the flag hangs off
+		-- `envoyTally` for the same reason. `source` on the event tells the two
+		-- call sites apart in the ledger; the popup one is the one that counts.
+		if not envoyTally.ballot_hooked then
+			envoyTally.ballot_hooked = true;
+			pcall(function()
+				LuaEvents.CivvisCongressBallot.Add(function()
+					local ballotPlayer, ballotPid = localPlayer();
+					if ballotPlayer == nil then return; end
+					local ballotTurn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+					local cast, spent, why, leader, leaderPoints, leaderScore =
+						voteWorldCongress(ballotPid);
+					emit("wc_vote", { turn = ballotTurn, cast = cast, spent = spent,
+					                  why = why, leader = leader,
+					                  leader_points = leaderPoints,
+					                  leader_score = leaderScore, source = "popup" });
+				end);
+			end);
+		end
 		if not try(function() return player:IsTurnActive(); end, false) then return; end
 
 		local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
@@ -11220,11 +11250,15 @@ local function tick()
 						if name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"
 								and seen.voted_turn ~= turn then
 							seen.voted_turn = turn;
+							-- ⚠ Kept, and marked: this call has never registered
+							-- (see the popup handler above), and the popup-time
+							-- ballot is the one that should. Both are in the
+							-- ledger so the next `wc_outcome` says which took.
 							local cast, spent, why, leader, leaderPoints, leaderScore = voteWorldCongress(pid);
 							emit("wc_vote", { turn = turn, cast = cast, spent = spent,
 							                  why = why, leader = leader,
 							                  leader_points = leaderPoints,
-							                  leader_score = leaderScore });
+							                  leader_score = leaderScore, source = "blocker" });
 						end
 						local parked = UNIT_BLOCKERS[name] and parkReadyUnits(player) or 0;
 						local dropped = dismissBlocker(pid, blocker);
