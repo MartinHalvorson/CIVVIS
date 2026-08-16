@@ -203,6 +203,12 @@ const SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN: f64 = -8.0;
 /// New-target picks re-asked after a doomed forecast. Exhaustion holds the
 /// Settler rather than routing it through the unfiltered baseline picker.
 const SETTLE_TARGET_FORECAST_RETRIES: usize = 3;
+/// A stalled Settler may finish on the tile it reached, but not when a known
+/// enemy city can support a counterattack before our own nearest city can.
+/// Five tiles is the measured Puteoli/Ostia frontier: close enough for a
+/// defending army to project through, while still outside the immediate
+/// city-strike envelope handled by `settlement_tile_risk`.
+const STALLED_SETTLEMENT_ENEMY_CITY_REACH: i32 = 5;
 const RECOVERY_POSTURE_LIMIT: u32 = 25;
 /// Tiles a rush will march. Measured capital separations on 6p 74x46 run a
 /// median 13 and a p90 17, so 16 covers roughly nine seats in ten while
@@ -19166,14 +19172,49 @@ impl AdvancedAi {
         moved
     }
 
+    /// A stalled fallback must not plant an unsupported outpost in front of a
+    /// known hostile city. Rival city centres in the live export are gated on
+    /// plots the player has revealed, so unlike a full-board scan this uses no
+    /// information the seat has not earned. A city does not move after it has
+    /// been revealed; its last reported owner is refreshed by each revealed
+    /// export, and the current war state decides whether it remains hostile.
+    fn live_stalled_settlement_is_unsupported_frontline(
+        &self,
+        g: &Game,
+        pid: usize,
+        here: Pos,
+    ) -> Option<(i32, i32)> {
+        // `loyalty_rate_alarm` is a live-bridge-only flag. Reuse that boundary
+        // because this is another current-board survival repair, rather than
+        // changing an evaluator or tournament Settler fallback.
+        if !self.base.loyalty_rate_alarm {
+            return None;
+        }
+        let friendly_distance = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|city| g.wdist(here, g.cities[&city].pos))
+            .min()?;
+        g.cities
+            .values()
+            .filter(|city| city.owner != pid && g.is_at_war(pid, city.owner))
+            .map(|city| g.wdist(here, city.pos))
+            .filter(|enemy_distance| {
+                *enemy_distance <= STALLED_SETTLEMENT_ENEMY_CITY_REACH
+                    && *enemy_distance < friendly_distance
+            })
+            .min()
+            .map(|enemy_distance| (enemy_distance, friendly_distance))
+    }
+
     /// A city here beats no city, once the settler has given up on reaching a
     /// better one.
     ///
     /// Only ever reached from the two stall-expiry branches, so it cannot make
     /// a settler settle early — the counter has already run its full length
     /// against a target the unit could not approach. The safety check is the
-    /// same one the ordinary found path applies, so this cannot plant a city
-    /// somewhere `settlement_safety` would refuse.
+    /// same one the ordinary found path applies, plus a live-only guard against
+    /// the unsupported hostile frontier the failed route may have reached.
     fn founds_where_it_stands(&mut self, g: &mut Game, pid: usize, uid: u32, here: Pos) -> bool {
         if !self.settler_founds_when_stalled || !g.can_found_city(uid) {
             return false;
@@ -19183,6 +19224,20 @@ impl AdvancedAi {
             && self.settlement_tile_risk(g, pid, Some(uid), here, &visible)
                 > SETTLER_STEP_RISK_LIMIT
         {
+            return false;
+        }
+        if let Some((enemy_distance, friendly_distance)) =
+            self.live_stalled_settlement_is_unsupported_frontline(g, pid, here)
+        {
+            think!(self.journal(), Expansion, Detail,
+                   "Settler declines an unsupported frontier at {here:?}";
+                   "a known hostile city is {enemy_distance} tiles away, closer than \
+                    the nearest friendly city at {friendly_distance}; the fallback site \
+                    is retired rather than founded"; here);
+            self.settler_dead_sites.entry(uid).or_default().insert(
+                here,
+                g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+            );
             return false;
         }
         self.settler_targets.remove(&uid);
@@ -44077,6 +44132,83 @@ mod research_probe {
             !live.settler_targets.contains_key(&settler),
             "no doomed target is retained after exhaustion"
         );
+    }
+
+    /// A stalled Settler may finish a safe fallback such as Cumae, where its
+    /// own support was closer than Khmer's city. It must not turn the opposite
+    /// geometry into Puteoli: on t175 it stood six tiles from Rome's nearest
+    /// city and five from Khmer's Ostia, then was captured before it paid back.
+    #[test]
+    fn live_stalled_settler_refuses_an_unsupported_hostile_frontier() {
+        let mut game = Game::new_full(2, 40, 24, 91_777, 250, 0, false);
+        game.current = 0;
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        let (here, friendly, hostile) = positions
+            .iter()
+            .copied()
+            .find_map(|here| {
+                game.wring(here, 6).into_iter().find_map(|friendly| {
+                    game.wring(here, 5)
+                        .into_iter()
+                        .find(|hostile| game.wdist(friendly, *hostile) >= 10)
+                        .map(|hostile| (here, friendly, hostile))
+                })
+            })
+            .expect("the fixture needs a settled side of the map with five- and six-tile rings");
+        for position in positions {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            game.players[0].explored.insert(position);
+        }
+        game.found_city_for(0, friendly, None);
+        game.found_city_for(1, hostile, None);
+        game.at_war.insert((0, 1));
+        assert_eq!(game.wdist(here, friendly), 6);
+        assert_eq!(game.wdist(here, hostile), 5);
+        let settler = game.spawn_test_unit("settler", 0, here);
+        assert!(game.can_found_city(settler), "the frontier remains legal to found");
+        let mut control_board = game.clone();
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.settler_founds_when_stalled);
+        assert_eq!(
+            live.live_stalled_settlement_is_unsupported_frontline(&game, 0, here),
+            Some((5, 6)),
+            "the revealed hostile city is closer than friendly support"
+        );
+        let cities_before = game.player_city_ids(0).len();
+        assert!(
+            !live.founds_where_it_stands(&mut game, 0, settler, here),
+            "the live fallback must not found the unsupported outpost"
+        );
+        assert_eq!(game.player_city_ids(0).len(), cities_before);
+        assert!(
+            live.settler_site_is_dead(settler, here),
+            "the exposed fallback is retired long enough to require a genuine re-plan"
+        );
+
+        let mut control = AdvancedAi::new();
+        control.enable_settler_founds_when_stalled();
+        assert_eq!(
+            control.live_stalled_settlement_is_unsupported_frontline(&control_board, 0, here),
+            None,
+            "the evaluator-only fallback preserves its prior behavior without the live gate"
+        );
+        assert!(
+            control.founds_where_it_stands(&mut control_board, 0, settler, here),
+            "outside the live bridge the historical stalled-settler fallback still applies"
+        );
+        assert_eq!(control_board.player_city_ids(0).len(), cities_before + 1);
     }
 
     /// Off by default, set only by the live bridge, holdable off on its own —

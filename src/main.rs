@@ -1164,7 +1164,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The wall-tech research goal is behind `garrison_walls`, the live walls
 /// doctrine, which the frozen anchor never sets (asserted). Compatibility
 /// re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x369d_335e_2c40_805b;
+/// A stalled Settler's known-hostile-frontier rejection is read only under the
+/// live `loyalty_rate_alarm`; the frozen anchor cannot enter the guard, so its
+/// historical fallback remains intact (asserted). Compatibility re-pin; the
+/// Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf202_79c7_3baf_89cd;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
