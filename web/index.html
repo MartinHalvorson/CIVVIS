@@ -3200,6 +3200,45 @@
                 0 var(--hud-row-gap) 0 #0b1714, 0 5px 14px #0009;
   }
   #playerhud .diplomacy-card:hover { transform: none; }
+  /* ── The cities behind a count ──────────────────────────────────────────
+     A CITY figure opens that empire's cities as rows of the same table,
+     directly under the seat: one city per row on the shared tracks, so a
+     city's population, yields and wonders stand under the heads that name
+     them. The rows wear the empire's colour down their left edge and a ↳
+     before the name — that, not a second table, is what says "these belong
+     to the row above". Only one list is open at a time, and the count that
+     opened it stays lit while it is. */
+  #playerhud .diplomacy-card.hud-city-row {
+    border-color: #2b3336;
+    background: linear-gradient(105deg, #0a0c0ef2, #121517ec);
+    box-shadow: inset 3px 0 var(--civ, #4a5f56), inset 0 1px #ffffff08;
+  }
+  #playerhud .diplomacy-card.hud-city-row:hover {
+    border-color: #4a5257;
+    background: linear-gradient(100deg, #0e1113f5, #1a1e21f0);
+  }
+  #playerhud .diplomacy-card.cities-open:not(.at-war) { border-bottom-color: #4a5257; }
+  #playerhud .hud-city-name .diplomacy-identity-field { padding-left: 6px; border-left-color: transparent; }
+  #playerhud .hud-city-tie {
+    flex: 0 0 auto; color: var(--civ, var(--muted)); font-size: var(--type-caption); line-height: 1;
+  }
+  #playerhud .hud-city-name .diplomacy-civ { color: #d9e1dc; font-weight: 700; }
+  #playerhud .hud-city-row.capital .diplomacy-civ { color: var(--gold-bright); }
+  #playerhud .hud-city-blank { min-width: 0; }
+  #playerhud .hud-city-stat { cursor: default; }
+  #playerhud .hud-city-stat:hover { background: none; }
+  #playerhud .hud-city-stat b { font-weight: 700; opacity: .9; }
+  #playerhud .hud-city-note-text {
+    grid-column: 1 / -1; min-width: 0; padding-inline: 10px 4px; overflow: hidden;
+    color: var(--muted); font-size: var(--type-label); font-style: italic;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  #playerhud .hud-city-toggle[aria-expanded="true"] { background: #ffffff10; }
+  #playerhud .hud-city-caret {
+    position: absolute; inset-inline-end: 1px; top: 50%; transform: translateY(-50%);
+    color: var(--stat-color); font-size: var(--type-caption); line-height: 1; opacity: .8;
+    text-shadow: 0 1px 2px #000;
+  }
   #playerhud .watch-as-link {
     width: calc(100% - 2px); height: 22px; margin: 0 1px; font-size: var(--type-micro);
   }
