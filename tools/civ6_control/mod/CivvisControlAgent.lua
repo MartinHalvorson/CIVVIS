@@ -5620,6 +5620,9 @@ local function exportState(player, pid, turn)
 					return diplomacy:CanDeclareWarOn(otherId);
 				end, false),
 				score = try(function() return other:GetScore(); end, -1),
+				-- Diplomatic-victory points, so the denial logic can see the one
+				-- victory that ended three of the last thirteen games early.
+				dvp = try(function() return other:GetStats():GetDiplomaticVictoryPoints(); end, nil),
 				-- ★★★★★ THE NUMBER THE WAR DECISION ACTUALLY NEEDS, and it was never
 				-- exported. The old veto compared SCORE ratios, and on Settler the
 				-- shipped AI always outscores this seat — so "their score is 2.59x ours"
@@ -6213,6 +6216,10 @@ local function exportState(player, pid, turn)
 		science = try(function() return player:GetTechs():GetScienceYield(); end, -1),
 		culture = try(function() return player:GetCulture():GetCultureYield(); end, -1),
 		score = try(function() return player:GetScore(); end, -1),
+		-- Diplomatic-victory points and the Favor that buys congress votes; see
+		-- `voteWorldCongress`.
+		dvp = try(function() return player:GetStats():GetDiplomaticVictoryPoints(); end, nil),
+		favor = try(function() return player:GetFavor(); end, nil),
 		-- Ours, on the same scale as each rival's, so a comparison is possible at all.
 		military = try(function() return player:GetStats():GetMilitaryStrength(); end, -1),
 		-- ★★★★★ THE AGE, WHICH THE BRIDGE HAS NEVER CARRIED.
@@ -10133,6 +10140,120 @@ local function tick()
 	if finished or inTick or cfg.Play == false then return; end
 	inTick = true;
 	local ok, err = pcall(function()
+		-- ★★★★★ THE SEAT FORFEITED EVERY WORLD CONGRESS SESSION. The session is a
+		-- SOFT blocker, so the ladder below dismissed it: run
+		-- civvis-20260816T021044Z logged `dismissed … "forfeit": 1` for all
+		-- nineteen sessions, cast no vote in 242 turns, and ended on turn 242
+		-- to a rival's DIPLOMATIC victory -- the third of the last thirteen
+		-- games to end that way (t224–t242), every one before the turn limit
+		-- the score race needs. Its Diplomatic Favor was never spent either.
+		--
+		-- This is the shipped WorldCongressPopup's own submission path
+		-- (DLC/Expansion2/UI/Additions/WorldCongressPopup.lua, OnAccept):
+		-- one WORLD_CONGRESS_RESOLUTION_VOTE per resolution, then
+		-- WORLD_CONGRESS_SUBMIT_TURN. `GetResolutions(pid)` is a numbered list
+		-- (plus a "Stage" key) of {Type, TargetType, PossibleTargets};
+		-- `GetVotesandFavorCost(pid)` is `[k] = cumulative favor for k+1
+		-- votes` with a `MaxVotes` cap; PossibleTargets of a PlayerType
+		-- resolution are player ids and PARAM_RESOLUTION_SELECTION is the
+		-- 0-based index into them.
+		--
+		-- The votes: on WC_RES_DIPLOVICTORY (Effect1 = +2 points to the
+		-- target, Effect2 = −2), every vote favor affords AGAINST the current
+		-- diplomatic-victory leader -- the same choice Firaxis' own AI makes
+		-- ("PlayerOrDiploLeader"), which is what makes piling on it count.
+		-- On the other PLAYER-targeted resolutions the free vote goes to the
+		-- option that buffs the target, with us as the target. Elsewhere the
+		-- free vote goes to the option that is not a ban. Nothing here is a
+		-- claim about winning a resolution: the point is that a session the
+		-- seat sat out is now one it takes part in, cheaply, every time.
+		local function voteWorldCongress(pid)
+			local wc = Game.GetWorldCongress();
+			if wc == nil then return 0, 0, "no_congress"; end
+			local resolutions = wc:GetResolutions(pid);
+			local costs = wc:GetVotesandFavorCost(pid);
+			if type(resolutions) ~= "table" then return 0, 0, "no_resolutions"; end
+			if type(costs) ~= "table" then costs = {}; end
+			local favor = try(function() return Players[pid]:GetFavor(); end, 0) or 0;
+			-- The diplomatic-victory leader among the others.
+			local leader, leaderPoints = -1, -1;
+			for _, other in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
+				if other ~= pid then
+					local points = try(function()
+						return Players[other]:GetStats():GetDiplomaticVictoryPoints();
+					end, 0) or 0;
+					if points > leaderPoints then leader, leaderPoints = other, points; end
+				end
+			end
+			-- Option 1 of these resolutions is the ban; the free vote goes to 2.
+			local BAN_FIRST = {
+				WC_RES_MERCENARY_COMPANIES = true, WC_RES_GLOBAL_ENERGY_TREATY = true,
+				WC_RES_DEFORESTATION_TREATY = true, WC_RES_PUBLIC_RELATIONS = true,
+			};
+			-- Diplomatic victory first, so its votes get the favor. `Type` may
+			-- arrive as the row name or its hash; the row's own ResolutionType
+			-- is the name either way, and a resolution the DB does not know is
+			-- left alone rather than voted blind.
+			local list = {};
+			for i, r in pairs(resolutions) do
+				if type(i) == "number" and type(r) == "table" and r.Type ~= nil then
+					local info = GameInfo.Resolutions[r.Type];
+					if info ~= nil then
+						list[#list + 1] = { r = r, info = info,
+							rtype = tostring(info.ResolutionType or r.Type) };
+					end
+				end
+			end
+			table.sort(list, function(a, b)
+				local da = a.rtype == "WC_RES_DIPLOVICTORY" and 1 or 0;
+				local db = b.rtype == "WC_RES_DIPLOVICTORY" and 1 or 0;
+				if da ~= db then return da > db; end
+				return a.rtype < b.rtype;
+			end);
+			local cast, spent = 0, 0;
+			for _, entry in ipairs(list) do
+				local r, info, rtype = entry.r, entry.info, entry.rtype;
+				do
+					local option, selection, votes = 1, 1, 1;
+					local targets = r.PossibleTargets or {};
+					if rtype == "WC_RES_DIPLOVICTORY" then
+						option = 2;
+						for idx, t in pairs(targets) do
+							if tonumber(t) == leader then selection = idx; end
+						end
+						local maxVotes = tonumber(costs.MaxVotes) or 1;
+						local n = 1;
+						while n + 1 <= maxVotes and costs[n] ~= nil and costs[n] <= favor do
+							n = n + 1;
+						end
+						votes = n;
+						local cost = (n > 1 and costs[n - 1]) or 0;
+						favor = favor - cost;
+						spent = spent + cost;
+					elseif r.TargetType == "PlayerType" then
+						for idx, t in pairs(targets) do
+							if tonumber(t) == pid then selection = idx; end
+						end
+						if BAN_FIRST[rtype] then option = 2; end
+					elseif BAN_FIRST[rtype] then
+						option = 2;
+					end
+					local params = {};
+					params[PlayerOperations.PARAM_RESOLUTION_TYPE] = info.Hash;
+					params[PlayerOperations.PARAM_WORLD_CONGRESS_VOTES] = votes;
+					params[PlayerOperations.PARAM_RESOLUTION_OPTION] = option;
+					params[PlayerOperations.PARAM_RESOLUTION_SELECTION] = selection - 1;
+					local sent = pcall(function()
+						UI.RequestPlayerOperation(pid, PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE, params);
+					end);
+					if sent then cast = cast + 1; end
+				end
+			end
+			pcall(function()
+				UI.RequestPlayerOperation(pid, PlayerOperations.WORLD_CONGRESS_SUBMIT_TURN, {});
+			end);
+			return cast, spent, nil, leader, leaderPoints;
+		end
 		local player, pid = localPlayer();
 		if player == nil then return; end
 		if not try(function() return player:IsTurnActive(); end, false) then return; end
@@ -10306,6 +10427,18 @@ local function tick()
 						-- without looping the expensive parking pass on every
 						-- batch of game-core events.
 						seen.forfeits = seen.forfeits + 1;
+						-- The congress session gets its votes before it is
+						-- forfeited: see `voteWorldCongress`. Once per turn;
+						-- a session the engine keeps up after the submit falls
+						-- through to the dismissal exactly as before.
+						if name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"
+								and seen.voted_turn ~= turn then
+							seen.voted_turn = turn;
+							local cast, spent, why, leader, leaderPoints = voteWorldCongress(pid);
+							emit("wc_vote", { turn = turn, cast = cast, spent = spent,
+							                  why = why, leader = leader,
+							                  leader_points = leaderPoints });
+						end
 						local parked = UNIT_BLOCKERS[name] and parkReadyUnits(player) or 0;
 						local dropped = dismissBlocker(pid, blocker);
 						emit("dismissed", { turn = turn, blocker = name,
