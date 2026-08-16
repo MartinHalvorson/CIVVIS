@@ -479,6 +479,24 @@ class ProtectedInstallTest(unittest.TestCase):
         for reason in ("levy_target_unmapped", "levy_no_operation", "levy_refused_", "levy_unaffordable"):
             self.assertIn(reason, handler)
 
+    def test_a_stuck_screens_retries_walk_the_whole_exit_ladder_again(self) -> None:
+        # Two leading games died on the 900 s watchdog under a late first-contact
+        # leader scene: after twenty tries every 30 s retry called only the tail
+        # rungs, because the failure count was passed as the rung number. The
+        # rung cycles; the count still drives the desktop/stuck thresholds; and a
+        # diplomacy view reports the mode/session/fade/popup it is stuck in.
+        shim = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+        self.assertIn("local rung = ((closes - 1) % GIVE_UP_AFTER) + 1;", shim)
+        self.assertIn("pcall(function() ended = endScreen(rung); end);", shim)
+        self.assertNotIn("endScreen(closes)", shim)
+        self.assertIn("if closes >= DESKTOP_AFTER and not desktopReported then", shim)
+        self.assertIn("if closes >= GIVE_UP_AFTER then", shim)
+        for field in ('"rung":%d', '"mode":%d', '"session":%d', '"fading":%s', '"popup":%s'):
+            self.assertIn(field, shim)
+        self.assertIn("ms_currentViewMode", shim)
+        self.assertIn("ms_ActiveSessionID", shim)
+        self.assertIn("Controls.BlackFadeAnim:IsStopped()", shim)
+
     def test_controller_votes_in_the_world_congress_before_forfeiting_the_session(self) -> None:
         # The session was a soft blocker the ladder dismissed: nineteen forfeits
         # in one game, no vote in 242 turns, and a rival's diplomatic victory

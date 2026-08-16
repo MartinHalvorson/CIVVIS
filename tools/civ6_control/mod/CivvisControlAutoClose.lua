@@ -480,8 +480,27 @@ else
 		remaining = SECONDS;
 		shown = 0;
 		closes = closes + 1;
+		-- ★★★★★ THE RUNG NUMBER CYCLES; THE FAILURE COUNT DOES NOT.
+		--
+		-- Every bounded rung in `endScreen` is `attempt <= N` with N ≤ 18, and
+		-- `closes` used to be passed straight through — so from the 19th try
+		-- on, and on EVERY 30-second retry after `autoclose_stuck`, the only
+		-- rungs that ran were the tail (`OnHideScreen`/`OnClose`/`Close`), which
+		-- for a diplomacy view is `CloseFocusedState(false)` again and again.
+		-- Measured on civvis-20260816T175306Z (leading a batch-7 game, 731 vs
+		-- 958 at t207) and civvis-20260816T115139Z (leading 804 vs 715 at
+		-- t178): a late FIRST-CONTACT leader scene, the twenty tries spent
+		-- inside ~5 s while the intro was still fading in (`gone:false` on all),
+		-- then `autoclose … ended:true gone:false` every 30 s for the rest of
+		-- the 900 s watchdog — `CloseSession`, the CHOICE_* answers and the
+		-- initial-statement exit never ran again, the forced end turn could not
+		-- take past the open session, and both games died on the clock. The
+		-- rung is now `((closes - 1) % GIVE_UP_AFTER) + 1`, so a retry burst
+		-- walks the whole ladder again; `closes` keeps counting failures for
+		-- the desktop and stuck thresholds and the back-off.
+		local rung = ((closes - 1) % GIVE_UP_AFTER) + 1;
 		local ended = false;
-		pcall(function() ended = endScreen(closes); end);
+		pcall(function() ended = endScreen(rung); end);
 		if NAME == "InGamePopup" then dialogIsAnnouncement = false; end
 		-- ⚠ `ended` IS NOT EVIDENCE THAT THE SCREEN CLOSED. It is whatever
 		-- `endScreen` returned, and every rung in there returns true when its
@@ -498,8 +517,33 @@ else
 		-- because the next tick resets the counter -- so COUNT is the signal:
 		-- one line means closed, twenty mean stuck.
 		local gone = not isUp();
-		report("autoclose", string.format(',"after":%.2f,"ended":%s,"gone":%s',
-		                                  upFor, tostring(ended), tostring(gone)));
+		-- ⚠ SAY WHICH STATE A DIPLOMACY VIEW IS STUCK IN. Twenty `gone:false`
+		-- lines could not tell a first-contact cinema still fading in from a
+		-- conversation waiting on an answer from a session the core has already
+		-- closed — and those need different rungs. `ms_currentViewMode`,
+		-- `ms_ActiveSessionID`, the black-fade animation and the popup dialog
+		-- are the shipped script's own globals/controls, read only.
+		local detail = "";
+		if NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView" then
+			local mode = -1;
+			pcall(function() if type(ms_currentViewMode) == "number" then mode = ms_currentViewMode; end end);
+			local session = -1;
+			pcall(function() if type(ms_ActiveSessionID) == "number" then session = ms_ActiveSessionID; end end);
+			local fading = "nil";
+			pcall(function()
+				if Controls ~= nil and Controls.BlackFadeAnim ~= nil then
+					fading = tostring(not Controls.BlackFadeAnim:IsStopped());
+				end
+			end);
+			local popup = "nil";
+			pcall(function()
+				if m_PopupDialog ~= nil then popup = tostring(m_PopupDialog:IsOpen()); end
+			end);
+			detail = string.format(',"rung":%d,"mode":%d,"session":%d,"fading":%s,"popup":%s',
+			                       rung, mode, session, fading, popup);
+		end
+		report("autoclose", string.format(',"after":%.2f,"ended":%s,"gone":%s%s',
+		                                  upFor, tostring(ended), tostring(gone), detail));
 		-- ★★★★★ A CLOSE THAT WORKED MUST CLEAR THE COUNTER HERE, NOT LATER.
 		--
 		-- `closes` is meant to count consecutive FAILURES, and the `not isUp()`
