@@ -1223,7 +1223,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// which `AdvancedAi::legacy()` leaves off (asserted); the frozen anchor
 /// still links a ship to a settler at sea. Compatibility re-pin; the Elo
 /// protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe048_86b9_e208_5cab;
+/// The turn-limit horizon on the space race and the nuclear lane is behind
+/// `score_horizon`, off for `AdvancedAi::legacy()` (asserted); the frozen
+/// anchor races and arms exactly as before. Compatibility re-pin; the Elo
+/// protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xadce_9004_d522_6461;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
