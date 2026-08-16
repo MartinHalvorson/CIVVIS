@@ -1520,6 +1520,7 @@ fn withhold_live_treatment(
         "era-paced-expansion" => ai.disable_era_paced_expansion(),
         "tally-culture" => ai.disable_tally_culture(),
         "frontier-loyalty" => ai.disable_frontier_loyalty(),
+        "settler-target-hysteresis" => ai.disable_settler_target_hysteresis(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1546,7 +1547,8 @@ fn withhold_live_treatment(
                  amenity-project-preemption, amenity-district-path, governor-every-lane, \
                  live-wonder-race, expansion-before-prophet, no-elective-war, \
                  fog-land-capacity, recon-flight, score-horizon, naval-recon, counter-in-lane, \
-                 era-paced-expansion, tally-culture, frontier-loyalty"
+                 era-paced-expansion, tally-culture, frontier-loyalty, \
+                 settler-target-hysteresis"
             ))
         }
     }
@@ -3719,6 +3721,14 @@ mod tests {
         withhold_live_treatment(&mut ai, "frontier-loyalty")
             .expect("the frontier-loyalty control arm is registered");
         assert!(!ai.frontier_loyalty, "the named frontier-loyalty control must hold it off");
+
+        assert!(ai.settler_target_hysteresis);
+        withhold_live_treatment(&mut ai, "settler-target-hysteresis")
+            .expect("the settler-target-hysteresis control arm is registered");
+        assert!(
+            !ai.settler_target_hysteresis,
+            "the named settler-target-hysteresis control must hold it off"
+        );
 
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
         assert!(

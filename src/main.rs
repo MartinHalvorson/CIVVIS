@@ -1246,7 +1246,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The frontier-loyalty settle rule is behind `frontier_loyalty`, off for
 /// `AdvancedAi::legacy()` (asserted); the frozen anchor's settle forecast is
 /// unchanged. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x612e_a96e_a16e_b596;
+/// The settler-target hysteresis is behind `settler_target_hysteresis`, off
+/// for `AdvancedAi::legacy()` (asserted); the frozen anchor's settler
+/// re-picks exactly as before. Compatibility re-pin; the Elo protocol does
+/// not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8b47_a8a8_8acb_f19a;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -998,6 +998,10 @@ impl EmpireCounts {
 /// and short enough that a genuinely unreachable site cannot hold a settler
 /// hostage — the failure mode #492 was merged to remove.
 const SETTLER_STALL_LIMIT: u32 = 3;
+/// How long (standard turns) a settler target dropped for danger stays out of
+/// the next picks, so a threat that flickers in and out of sight cannot flip
+/// the settler between two sites every frame. See `settler_target_hysteresis`.
+const SETTLER_TARGET_HYSTERESIS_TURNS: u32 = 6;
 
 /// Route-scoring is exact for the valuable prefix, then falls back to the
 /// existing reachability scan if that prefix is disconnected. This bounds the
@@ -2360,6 +2364,29 @@ pub struct AdvancedAi {
     /// before. Firaxis-only: it prices the live mirror's fog. Off for
     /// ordinary and frozen controllers.
     pub frontier_loyalty: bool,
+    /// A settler target dropped for danger is not re-picked the moment the
+    /// danger flickers off.
+    ///
+    /// ★★★★ ONE SETTLER, TWO SITES, TWENTY-NINE TURNS. Run
+    /// civvis-20260816T123936Z, settler 4849688: "marching to (42,22), 9
+    /// tiles" — "8 tiles" — "(41,24), 7 tiles" — "(42,22), 9 tiles" — "8" —
+    /// "(41,24), 8" … from t138 to t146 the journal alternates between two
+    /// sites worth 128 and 117 in different directions, and the settler walked
+    /// a step toward each in turn. `valid_target` drops the cached site when
+    /// its `settlement_tile_risk` reads over `SETTLER_STEP_RISK_LIMIT`, the
+    /// pick loop takes the runner-up, and on the next frame — the danger a
+    /// tile further or out of sight — the first site is valid again and wins
+    /// on value. Twenty-nine turns from birth to founding, at a site that
+    /// then revolted (see `frontier_loyalty`).
+    ///
+    /// With this on, a cached target the validation drops is written to
+    /// `settler_avoid` for `SETTLER_TARGET_HYSTERESIS_TURNS`, exactly as the
+    /// stall path already retires a target it cannot reach, so the next pick
+    /// commits to the runner-up and the first site is only reconsidered once
+    /// the window has passed. Off for ordinary and frozen controllers; on
+    /// for the live bridge and the native repair bundle (a native settler
+    /// flickers the same way beside a wandering barbarian).
+    pub settler_target_hysteresis: bool,
 
     /// Whether the defensive-war posture is BOUNDED in time.
     ///
@@ -3136,6 +3163,7 @@ impl AdvancedAi {
             era_paced_expansion: false,
             tally_culture: false,
             frontier_loyalty: false,
+            settler_target_hysteresis: false,
             bounded_recovery: false,
             counter_stand_down: false,
             price_the_suzerainty: false,
@@ -3665,6 +3693,9 @@ impl AdvancedAi {
         // And the recon it rebuilds must stop walking into barbarians. See
         // `recon_flight`.
         self.enable_recon_flight();
+        // And a settler target dropped for danger stays dropped for a while.
+        // See `settler_target_hysteresis`.
+        self.enable_settler_target_hysteresis();
         // And the last fifty turns are a tally, not a launch window. See
         // `score_horizon`.
         self.enable_score_horizon();
@@ -3989,6 +4020,9 @@ impl AdvancedAi {
         // And the recon it rebuilds must stop walking into barbarians. See
         // `recon_flight`.
         self.enable_recon_flight();
+        // And a settler target dropped for danger stays dropped for a while.
+        // See `settler_target_hysteresis`.
+        self.enable_settler_target_hysteresis();
         // And the last fifty turns are a tally, not a launch window. See
         // `score_horizon`.
         self.enable_score_horizon();
@@ -4304,6 +4338,16 @@ impl AdvancedAi {
 
     pub fn disable_frontier_loyalty(&mut self) {
         self.frontier_loyalty = false;
+    }
+
+    /// Keep a settler target dropped for danger out of the next picks for a
+    /// few turns. See `settler_target_hysteresis`.
+    pub fn enable_settler_target_hysteresis(&mut self) {
+        self.settler_target_hysteresis = true;
+    }
+
+    pub fn disable_settler_target_hysteresis(&mut self) {
+        self.settler_target_hysteresis = false;
     }
 
     /// Let a recon unit step out of a visible hostile's reach before it
@@ -19699,6 +19743,30 @@ impl AdvancedAi {
         // and the default advanced controller retain their established
         // ladders.
         let forecast_loyalty = self.base.loyalty_rate_alarm;
+        // See `settler_target_hysteresis`: a cached site the validation just
+        // dropped stays out of the next picks, so a threat flickering at the
+        // edge of sight cannot flip the settler between two sites every frame.
+        if self.settler_target_hysteresis && valid_target.is_none() {
+            if let Some(dropped) = self.settler_targets.get(&uid).copied() {
+                if Some(dropped) != avoid {
+                    self.settler_avoid.insert(
+                        uid,
+                        (dropped, g.turn + g.standard_duration(SETTLER_TARGET_HYSTERESIS_TURNS)),
+                    );
+                    think!(self.journal(), Expansion, Detail,
+                           "Settler sets {dropped:?} aside";
+                           "the cached site stopped passing its checks; it stays out of the next \
+                            picks for {SETTLER_TARGET_HYSTERESIS_TURNS} standard turns so a threat \
+                            flickering at the edge of sight cannot flip the march every frame";
+                           dropped);
+                }
+            }
+        }
+        let avoid = if self.settler_target_hysteresis {
+            self.settler_avoid.get(&uid).map(|(position, _)| *position)
+        } else {
+            avoid
+        };
         let target = valid_target.or_else(|| {
             // Ask the forecast before the walk. The mirror can only reject a
             // doomed site after the Settler stands on it, which previously
@@ -39784,6 +39852,76 @@ mod tests {
         // Defaults: off for the stock and frozen controllers.
         assert!(!AdvancedAi::new().recon_flight);
         assert!(!AdvancedAi::legacy().recon_flight);
+    }
+
+    /// ★★★★ One settler, two sites, twenty-nine turns (civvis-20260816T123936Z,
+    /// settler 4849688: the journal alternated between (42,22) and (41,24)
+    /// t138–t146 as a threat flickered at the edge of sight). See
+    /// `settler_target_hysteresis`. When the cached target stops passing its
+    /// checks the live seat sets it aside for a few turns and commits to the
+    /// runner-up; the withheld arm walks straight back to the first site the
+    /// frame it is valid again.
+    #[test]
+    fn a_settler_target_dropped_for_danger_is_set_aside_not_re_picked_next_frame() {
+        let (game0, source, _) = stacked_escort_fixture();
+        // The site the picker itself prefers, so the withheld arm's return to
+        // it is the picker's own choice and not a planted cache.
+        let first = {
+            let mut probe = game0.clone();
+            let settler = probe.spawn_test_unit("settler", 0, source);
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_frontier_loyalty();
+            ai.best_settler_target(&probe, 0, settler, 8, None)
+                .map(|(pos, _)| pos)
+                .expect("the fixture offers a settle site")
+        };
+        let run = |hysteresis: bool| -> (Option<Pos>, Option<Pos>, Option<Pos>) {
+            let mut game = game0.clone();
+            let settler = game.spawn_test_unit("settler", 0, source);
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            // Isolate the hysteresis: the fogged-frontier rule would retire a
+            // far site on this small board for its own reason.
+            ai.disable_frontier_loyalty();
+            if !hysteresis {
+                ai.disable_settler_target_hysteresis();
+            }
+            ai.settler_targets.insert(settler, first);
+            // Frame 1: the cached site stops passing its checks (blocked by
+            // the host, the same drop a risk flicker produces).
+            game.blocked_city_sites.insert(first);
+            game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+            let _ = ai.advanced_settler_step(&mut game, 0, settler);
+            let after_drop = ai.settler_targets.get(&settler).copied();
+            let avoided = ai.settler_avoid.get(&settler).map(|(pos, _)| *pos);
+            // Frame 2: the site is valid again — the flicker.
+            game.blocked_city_sites.remove(&first);
+            game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+            ai.settler_targets.remove(&settler);
+            let _ = ai.advanced_settler_step(&mut game, 0, settler);
+            let re_pick = ai.settler_targets.get(&settler).copied();
+            (after_drop, avoided, re_pick)
+        };
+
+        let (_after_drop, avoided, re_pick) = run(true);
+        assert_eq!(avoided, Some(first), "the dropped site is set aside");
+        assert_ne!(
+            re_pick,
+            Some(first),
+            "the frame it is valid again, the live seat does not walk back to it"
+        );
+
+        let (_, avoided_withheld, re_pick_withheld) = run(false);
+        assert_eq!(avoided_withheld, None, "the withheld arm sets nothing aside");
+        assert_eq!(
+            re_pick_withheld,
+            Some(first),
+            "and re-picks the first site the frame it is valid again — the flicker"
+        );
+
+        assert!(!AdvancedAi::new().settler_target_hysteresis);
+        assert!(!AdvancedAi::legacy().settler_target_hysteresis);
     }
 
     #[test]
