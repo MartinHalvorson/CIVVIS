@@ -1779,6 +1779,66 @@ mod tests {
     }
 
     #[test]
+    fn live_diplomatic_totals_reach_rebuild_and_sync_without_legacy_erasure() {
+        // This is the wire shape currently produced by CivvisControlAgent.lua.
+        // Civilization VI already knows all three values, but before this bridge
+        // the reconstructed board silently treated each of them as zero.
+        let raw = r#"{
+            "kind":"state", "ctx":"Gameplay", "run":"contract", "turn":40,
+            "dvp":3, "favor":92.5,
+            "used_governments":["GOVERNMENT_CHIEFDOM", "GOVERNMENT_OLIGARCHY"],
+            "rivals":[{"player":3, "dvp":18}]
+        }"#;
+        let mut state = state_from_json(raw).expect("the live diplomatic wire parses");
+        assert_eq!(state.dvp, Some(3));
+        assert_eq!(state.favor, Some(92.5));
+        assert_eq!(state.rivals[0].dvp, Some(18));
+        assert_eq!(
+            state.used_governments,
+            vec!["GOVERNMENT_CHIEFDOM", "GOVERNMENT_OLIGARCHY"],
+            "government history is a recognized state field, not an unmapped diagnostic"
+        );
+        assert!(
+            state.schema_gaps.is_empty(),
+            "the three diplomatic facts and used_governments must be schema-recognized: {:?}",
+            state.schema_gaps
+        );
+
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![plot(3, 3, "TERRAIN_GRASS")],
+        }]);
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(rebuilt.game.players[0].dvp, 3);
+        assert_eq!(rebuilt.game.players[0].diplomatic_favor, 92.5);
+        assert_eq!(rebuilt.game.players[1].dvp, 18);
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        state.turn = 41;
+        state.dvp = Some(4);
+        state.favor = Some(11.0);
+        state.rivals[0].dvp = Some(19);
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.players[0].dvp, 4);
+        assert_eq!(mirror.game.players[0].diplomatic_favor, 11.0);
+        assert_eq!(mirror.game.players[1].dvp, 19);
+
+        // An already-loaded older control mod omits a new field. Omission means
+        // unknown, not an authoritative zero that should erase live knowledge.
+        state.turn = 42;
+        state.dvp = None;
+        state.favor = None;
+        state.rivals[0].dvp = None;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.players[0].dvp, 4);
+        assert_eq!(mirror.game.players[0].diplomatic_favor, 11.0);
+        assert_eq!(mirror.game.players[1].dvp, 19);
+    }
+
+    #[test]
     fn initializing_host_power_cannot_erase_a_visible_starting_warrior() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
             turn: 1,
@@ -7075,6 +7135,14 @@ pub struct StateRival {
     pub can_declare: bool,
     #[serde(default)]
     pub score: i64,
+    /// Firaxis's current Diplomatic Victory-point total for this rival.
+    ///
+    /// This is public standings information rather than a fogged tactical fact:
+    /// `AdvancedAi` uses it to identify the diplomatic leader for victory denial
+    /// and World Congress targeting. `None` means an older control mod could not
+    /// export the value; a real zero must remain distinguishable from that case.
+    #[serde(default)]
+    pub dvp: Option<i64>,
     #[serde(default = "unknown_strength")]
     pub military: f64,
     #[serde(default)]
@@ -7428,6 +7496,23 @@ pub struct StateSnapshot {
     pub culture: f64,
     #[serde(default)]
     pub score: i64,
+    /// Civilization VI's current Diplomatic Victory-point tally.
+    ///
+    /// The board is reconstructed before each live decision, so leaving this at
+    /// `Player::default()` makes the strategy engine believe Rome has zero points
+    /// even after the host has awarded some. `None` is deliberately distinct from
+    /// zero: it preserves compatibility with an older loaded control mod without
+    /// erasing a value already held by a persistent mirror.
+    #[serde(default)]
+    pub dvp: Option<i64>,
+    /// Civilization VI's current stock of Diplomatic Favor.
+    ///
+    /// Favor decides how many World Congress votes the live seat can actually
+    /// afford. It is a stock, not a yield, so deriving it from a reconstructed
+    /// history loses the fact the host already knows. As with [`Self::dvp`],
+    /// `None` means unavailable rather than an authoritative zero.
+    #[serde(default)]
+    pub favor: Option<f64>,
     #[serde(default = "unknown_strength")]
     pub military: f64,
     /// Era Score and the age it decides, from Firaxis's own `Game.GetEras()`.
@@ -8473,11 +8558,12 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     const STATE: &[&str] = &[
         "kind", "event", "run", "ctx", "turn", "techs", "civics", "research",
         "science_projects", "boosted_techs", "boosted_civics",
-        "research_progress", "civic", "civic_progress", "government", "pantheon",
+        "research_progress", "civic", "civic_progress", "government", "used_governments",
+        "pantheon",
         "founded_religion", "founded_religions", "religion_beliefs",
         "taken_religion_beliefs", "prophet_pending",
         "policies", "policy_slots", "gold", "gold_per_turn", "faith", "science",
-        "culture", "score",
+        "culture", "score", "dvp", "favor",
         "military",
         "trade_capacity",
         "great_person_points",
@@ -8517,7 +8603,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "turns_to_establish", "neutralized_turns", "promotions",
     ];
     const RIVAL: &[&str] = &[
-        "player", "civ", "leader", "can_declare", "score", "military", "at_war",
+        "player", "civ", "leader", "can_declare", "score", "dvp", "military", "at_war",
         "techs", "civics", "cities", "units",
     ];
     const MINOR: &[&str] = &[
@@ -11494,6 +11580,12 @@ pub fn rebuild_from_state(
     if state.faith >= 0 {
         game.players[0].faith = state.faith as f64;
     }
+    if let Some(dvp) = state.dvp {
+        game.players[0].dvp = dvp;
+    }
+    if let Some(favor) = state.favor.filter(|favor| favor.is_finite()) {
+        game.players[0].diplomatic_favor = favor;
+    }
     apply_player_religion(&mut game, state, &mut unmapped);
     // Cheap: `rules` is an Arc. Cloned so the city loop below can consult it while
     // holding a mutable borrow of `game`.
@@ -11964,6 +12056,9 @@ pub fn rebuild_from_state(
         }
         if rival.score >= 0 {
             game.observed_score.insert(owner, rival.score);
+        }
+        if let Some(dvp) = rival.dvp {
+            game.players[owner].dvp = dvp;
         }
         // Same as `LiveMirror::sync`: Civilization VI's own `CanDeclareWarOn` is the
         // permission, and CIVVIS's Formal War wait cannot mature here.
@@ -12845,6 +12940,12 @@ impl LiveMirror {
         if state.faith >= 0 {
             self.game.players[0].faith = state.faith as f64;
         }
+        if let Some(dvp) = state.dvp {
+            self.game.players[0].dvp = dvp;
+        }
+        if let Some(favor) = state.favor.filter(|favor| favor.is_finite()) {
+            self.game.players[0].diplomatic_favor = favor;
+        }
         apply_player_religion(&mut self.game, state, &mut self.unmapped);
         if let Some(civ6) = &state.government {
             if let Some(name) = civvis_node_name(&self.game.rules.governments, civ6, "GOVERNMENT_") {
@@ -13327,6 +13428,9 @@ impl LiveMirror {
             }
             if rival.score >= 0 {
                 self.game.observed_score.insert(owner, rival.score);
+            }
+            if let Some(dvp) = rival.dvp {
+                self.game.players[owner].dvp = dvp;
             }
             // ★★★★★ MIRROR THE WAR PERMISSION, NOT CIVVIS'S BOOKKEEPING.
             //
