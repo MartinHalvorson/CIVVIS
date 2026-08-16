@@ -1862,6 +1862,22 @@ pub struct BasicAi {
     /// chart. Off for the frozen native controllers. See
     /// `recon_is_the_missing_arm`.
     recon_replacement: bool,
+    /// Buy one ship for an empire that has none while unexplored water lies
+    /// off its coast, and let the advanced controller send it exploring.
+    ///
+    /// ★★★★ ONE OF FIVE RIVALS MET BY TURN 142, THIRTEEN PERCENT OF THE MAP
+    /// SEEN. Run civvis-20260816T110555Z (Continents, 3,404 plots): the land
+    /// recon arm charted its own continent — 251 land plots — and stopped at
+    /// the shore; the empire held Sailing, Shipbuilding, Celestial Navigation
+    /// and Cartography, and in 142 turns built exactly one Galley (t91–t101,
+    /// dead at sea in ten turns). The other four rivals, the eventual winner
+    /// among them, stayed unknown; no trade route, no delegation, no coastal
+    /// site across the strait, and `fog_land_capacity` had nothing to read.
+    /// `recon_is_the_missing_arm` asks only about ground a scout could walk to
+    /// — correct for the scout, blind for the sea. Off for the frozen native
+    /// controllers; on for the live bridge and the native repair bundle. See
+    /// `naval_recon_is_the_missing_arm` and `AdvancedAi::naval_explorer`.
+    naval_recon: bool,
     /// Price a revealed natural wonder's ring into the settle scorer, so a
     /// founding site that would work the wonder's neighbours gets credit for
     /// the wonder's modeled appeal and projected yields. Off for the frozen
@@ -3141,6 +3157,7 @@ impl BasicAi {
             siege_muster: false,
             siege_role: false,
             recon_replacement: false,
+            naval_recon: false,
             wonder_ring_settle_value: false,
             come_ashore: false,
             home_defense: false,
@@ -3195,6 +3212,16 @@ impl BasicAi {
         self.explore_dead_targets = true;
     }
 
+    /// Buy one ship for an empire that has none while unexplored water lies
+    /// off its coast. See `naval_recon`.
+    pub fn enable_naval_recon(&mut self) {
+        self.naval_recon = true;
+    }
+
+    pub fn disable_naval_recon(&mut self) {
+        self.naval_recon = false;
+    }
+
     pub fn with_weights(w: Weights) -> BasicAi {
         BasicAi {
             minor: false,
@@ -3210,6 +3237,7 @@ impl BasicAi {
             siege_muster: false,
             siege_role: false,
             recon_replacement: false,
+            naval_recon: false,
             wonder_ring_settle_value: false,
             come_ashore: false,
             home_defense: false,
@@ -5984,6 +6012,55 @@ impl BasicAi {
         })
     }
 
+    /// The sea's `recon_is_the_missing_arm`: no ship at all, and water the
+    /// empire has never seen. One ship is the whole arm — a Continents seat
+    /// with a fleet is not blind, and a fleet is the war lane's business.
+    /// See `naval_recon`.
+    pub(crate) fn naval_recon_is_the_missing_arm(&self, g: &Game, pid: usize) -> bool {
+        if !self.naval_recon || self.minor || self.barb {
+            return false;
+        }
+        let owned_ships = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == pid
+                    && g.rules.units[unit.kind].class == "military"
+                    && g.rules.units[unit.kind].domain.as_deref() == Some("sea")
+            })
+            .count();
+        if owned_ships > 0 {
+            return false;
+        }
+        g.map.tiles.iter().any(|(pos, tile)| {
+            !g.players[pid].explored.contains(pos)
+                && g.rules.is_passable(tile)
+                && g.rules.is_water(tile)
+        })
+    }
+
+    /// The cheapest ship this city can lay down. Exploration wants a hull
+    /// that moves, not a broadside; the cost is the whole price of an eye.
+    fn best_naval_recon(&self, g: &Game, pid: usize, cid: u32) -> Option<String> {
+        if !Self::city_is_coastal(g, cid) {
+            return None;
+        }
+        let mut best: Option<((i64, i64), String)> = None;
+        for (name, spec) in &g.rules.units {
+            if spec.class != "military" || spec.domain.as_deref() != Some("sea") {
+                continue;
+            }
+            if !g.can_produce(pid, cid, &Item::Unit { unit: *name }) {
+                continue;
+            }
+            let rank = (spec.cost as i64, -(spec.moves as i64));
+            if best.as_ref().map(|(b, _)| rank < *b).unwrap_or(true) {
+                best = Some((rank, name.to_string()));
+            }
+        }
+        best.map(|(_, n)| n)
+    }
+
     fn siege_support_unit(&self, g: &Game, pid: usize, cid: u32) -> Option<String> {
         let wall_levels: Vec<usize> = g
             .cities
@@ -7200,8 +7277,13 @@ impl BasicAi {
         // eventual winner on turn 215. Recon is an arm in exactly the sense
         // siege is, and it goes missing the same silent way.
         let missing_recon_arm = self.recon_is_the_missing_arm(g, pid);
+        // And the sea has its own eye. See `naval_recon`.
+        let missing_naval_recon_arm = self.naval_recon_is_the_missing_arm(g, pid);
         if can_add_military
-            && ((military as f64) < military_floor || missing_siege_arm || missing_recon_arm)
+            && ((military as f64) < military_floor
+                || missing_siege_arm
+                || missing_recon_arm
+                || missing_naval_recon_arm)
         {
             // A capability gap is an invitation to build that capability, not
             // a permanent waiver of the standing-army ceiling. A city without
@@ -7216,6 +7298,9 @@ impl BasicAi {
             let recon_pick = missing_recon_arm
                 .then(|| self.best_recon(g, pid, cid))
                 .flatten();
+            let naval_recon_pick = missing_naval_recon_arm
+                .then(|| self.best_naval_recon(g, pid, cid))
+                .flatten();
             let force_pick = if (military as f64) < military_floor {
                 if rushing && melee < self.rush_military_floor {
                     self.best_military(g, pid, cid, Some(false))
@@ -7226,7 +7311,7 @@ impl BasicAi {
             } else {
                 None
             };
-            let picked = siege_pick.or(recon_pick).or(force_pick);
+            let picked = siege_pick.or(recon_pick).or(naval_recon_pick).or(force_pick);
             if let Some(m) = picked {
                 // ⚠ THE BRANCH THAT WINS MUST SAY SO.
                 //
@@ -7237,9 +7322,10 @@ impl BasicAi {
                 // the two disagreed with no way to tell which was wrong.
                 think!(self.journal, Cities, Detail,
                        "Military floor takes the build";
-                       "holding {military} against a floor of {military_floor:.1}{}{}",
+                       "holding {military} against a floor of {military_floor:.1}{}{}{}",
                        if missing_siege_arm { ", and the siege arm is missing" } else { "" },
-                       if missing_recon_arm { ", and the empire has no eyes" } else { "" });
+                       if missing_recon_arm { ", and the empire has no eyes" } else { "" },
+                       if missing_naval_recon_arm { ", and no ship to chart the sea" } else { "" });
                 return Some(Item::Unit { unit: Name::new(&m) });
             }
         }
@@ -14320,6 +14406,71 @@ mod tests {
         let mut shipped = ai.clone();
         shipped.recon_replacement = false;
         assert!(!shipped.recon_is_the_missing_arm(&g, 0));
+    }
+
+    /// ★★★★ One of five rivals met by turn 142 and 13% of the map seen: the
+    /// land recon arm charted its continent and stopped at the shore, and in
+    /// 142 turns the empire built one Galley (civvis-20260816T110555Z). See
+    /// `naval_recon`. An empire with no ship and unexplored water is missing
+    /// the sea's arm; one Galley satisfies it; a charted sea releases it; and
+    /// a coastal city with Sailing buys the cheapest hull for it.
+    #[test]
+    fn an_empire_with_no_ship_and_water_left_to_chart_is_missing_the_naval_arm() {
+        // A coastal capital: search seeds for a start beside water.
+        let mut found = None;
+        for seed in 4_430..4_470u64 {
+            let (g, _) = blind_empire(seed);
+            let cid = g.player_city_ids(0)[0];
+            if BasicAi::city_is_coastal(&g, cid) {
+                found = Some(seed);
+                break;
+            }
+        }
+        let (g, mut ai) = blind_empire(found.expect("some seed starts on the coast"));
+        ai.naval_recon = true;
+        let cid = g.player_city_ids(0)[0];
+        assert!(
+            g.map.tiles.iter().any(|(pos, tile)| !g.players[0].explored.contains(pos)
+                && g.rules.is_passable(tile)
+                && g.rules.is_water(tile)),
+            "fixture precondition: unexplored water exists"
+        );
+        assert!(ai.naval_recon_is_the_missing_arm(&g, 0), "no ship, water unseen: missing");
+
+        // Nothing to buy without Sailing; the cheapest hull once it is known.
+        assert_eq!(ai.best_naval_recon(&g, 0, cid), None);
+        let mut sailing = g.clone();
+        sailing.players[0].techs.insert(crate::name!("sailing"));
+        assert_eq!(
+            ai.best_naval_recon(&sailing, 0, cid).as_deref(),
+            Some("galley"),
+            "the cheapest ship the city can lay down"
+        );
+
+        // A soldier does not satisfy the sea's arm; one Galley does.
+        let mut army = g.clone();
+        let pos = army.cities[&cid].pos;
+        for _ in 0..6 {
+            army.spawn_test_unit("warrior", 0, pos);
+        }
+        assert!(ai.naval_recon_is_the_missing_arm(&army, 0));
+        let mut fleet = g.clone();
+        let water = fleet
+            .nbrs(pos)
+            .into_iter()
+            .find(|n| fleet.map.get(*n).is_some_and(|t| fleet.rules.is_water(t)))
+            .expect("the coastal capital touches water");
+        fleet.spawn_test_unit("galley", 0, water);
+        assert!(!ai.naval_recon_is_the_missing_arm(&fleet, 0), "one hull is the whole arm");
+
+        // A charted sea releases it; and it is off unless turned on.
+        let mut charted = g.clone();
+        let all: Vec<Pos> = charted.map.tiles.keys().copied().collect();
+        charted.players[0].explored.extend(all);
+        assert!(!ai.naval_recon_is_the_missing_arm(&charted, 0));
+        let mut off = ai.clone();
+        off.naval_recon = false;
+        assert!(!off.naval_recon_is_the_missing_arm(&g, 0));
     }
 
     /// The shape live run `civvis-20260807T181839Z` was in at t115 when its

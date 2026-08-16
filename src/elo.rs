@@ -207,7 +207,7 @@ pub const EVAL_ONLY_AIS: [&str; 141] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 51] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 52] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -259,6 +259,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 51] = [
     "no-elective-war",
     "fog-land-capacity",
     "recon-flight",
+    "naval-recon",
 ];
 
 /// Every `live_without_*` control's tag list: the bridge list minus the one
@@ -316,7 +317,7 @@ pub const FIRAXIS_ONLY_TREATMENTS: [&str; 8] = [
 
 /// The military half of the native repair bundle: force assembly, marching,
 /// siege, threat reading, and the war/peace decision.
-pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 25] = [
+pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 26] = [
     "muster-at-command-radius",
     "war-reinforcement",
     "come-ashore",
@@ -341,6 +342,7 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 25] = [
     "ranged-line-of-sight",
     "recon-replacement",
     "recon-flight",
+    "naval-recon",
     "religion-sues-peace",
 ];
 
@@ -370,7 +372,7 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 18] = [
 /// tags — `LIVE_BRIDGE_TREATMENTS` minus `FIRAXIS_ONLY_TREATMENTS`, and the
 /// union of the two halves above. `engine_repair_tags_partition_the_bridge`
 /// fails if any of those three relationships stops holding.
-pub const ENGINE_REPAIR_TREATMENTS: [&str; 43] = [
+pub const ENGINE_REPAIR_TREATMENTS: [&str; 44] = [
     "muster-at-command-radius",
     "war-reinforcement",
     "come-ashore",
@@ -395,6 +397,7 @@ pub const ENGINE_REPAIR_TREATMENTS: [&str; 43] = [
     "ranged-line-of-sight",
     "recon-replacement",
     "recon-flight",
+    "naval-recon",
     "religion-sues-peace",
     "escort-unstick",
     "stacked-escort",

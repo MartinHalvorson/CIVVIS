@@ -3298,6 +3298,22 @@ impl AdvancedAi {
         self.base.recon_replacement = false;
     }
 
+    /// Buy one ship for an empire that has none while unexplored water lies
+    /// off its coast, and send it exploring. See `BasicAi::naval_recon` and
+    /// `naval_explorer`.
+    pub fn enable_naval_recon(&mut self) {
+        self.base.naval_recon = true;
+    }
+
+    pub fn disable_naval_recon(&mut self) {
+        self.base.naval_recon = false;
+    }
+
+    /// Whether the sea's recon arm is on. See `BasicAi::naval_recon`.
+    pub fn naval_recon(&self) -> bool {
+        self.base.naval_recon
+    }
+
     /// Price a revealed natural wonder's ring into the settle scorer. Native
     /// tournament games leave this disabled so their recorded ladders stay
     /// comparable.
@@ -3528,6 +3544,8 @@ impl AdvancedAi {
         // And the recon it rebuilds must stop walking into barbarians. See
         // `recon_flight`.
         self.enable_recon_flight();
+        // And the sea gets one eye of its own. See `BasicAi::naval_recon`.
+        self.enable_naval_recon();
         // ⚠ A revealed natural wonder is priced into founding only through the
         // worked tiles the growth forecast can see and a future Holy Site's
         // adjacency — for the Matterhorn about 2-4 points — while everything
@@ -3835,6 +3853,8 @@ impl AdvancedAi {
         // And the recon it rebuilds must stop walking into barbarians. See
         // `recon_flight`.
         self.enable_recon_flight();
+        // And the sea gets one eye of its own. See `BasicAi::naval_recon`.
+        self.enable_naval_recon();
         // A Religion plan that keeps its wars blockades its own lane.
         self.enable_religion_sues_peace();
     }
@@ -23485,7 +23505,13 @@ impl AdvancedAi {
             return self.base.fortify_or_stop(g, pid, uid);
         }
 
-        if doctrine == UnitDoctrine::Recon && self.base.should_explore(g, pid, uid, true) {
+        // A ship is the sea's scout when it is the empire's only one and there
+        // is water left to chart. See `naval_explorer`.
+        let naval_explorer =
+            self.base.naval_recon && spec.domain.as_deref() == Some("sea") && self.naval_explorer(g, pid) == Some(uid);
+        if (doctrine == UnitDoctrine::Recon && self.base.should_explore(g, pid, uid, true))
+            || naval_explorer
+        {
             if self.recon_flight {
                 if let Some(acted) = self.recon_flight_step(g, pid, uid) {
                     if acted {
@@ -24364,6 +24390,34 @@ impl AdvancedAi {
                     for the same units attacking one at a time ({gain:+.0})",
                    plan.resolved.len(), plan.score, plan.greedy_score);
         }
+    }
+
+    /// The one ship that explores: the empire's lowest-numbered unlinked sea
+    /// military unit, while water it has never seen remains. A fleet keeps
+    /// every other hull for the war lane; an empire with no ship has no
+    /// explorer and `naval_recon_is_the_missing_arm` buys one. See
+    /// `BasicAi::naval_recon`.
+    fn naval_explorer(&self, g: &Game, pid: usize) -> Option<u32> {
+        if !self.base.naval_recon {
+            return None;
+        }
+        let ship = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|uid| {
+                let unit = &g.units[uid];
+                let spec = &g.rules.units[unit.kind];
+                spec.class == "military"
+                    && spec.domain.as_deref() == Some("sea")
+                    && unit.linked_to.is_none()
+            })
+            .min()?;
+        let water_left = g.map.tiles.iter().any(|(pos, tile)| {
+            !g.players[pid].explored.contains(pos)
+                && g.rules.is_passable(tile)
+                && g.rules.is_water(tile)
+        });
+        water_left.then_some(ship)
     }
 
     /// Step a recon unit out of a visible hostile's reach. `Some(acted)` when
@@ -26971,6 +27025,100 @@ mod tests {
             "under the stacked escort the settler is never handed to a ship it will unlink from"
         );
         assert_eq!(game.units[&galley].linked_to, None);
+    }
+
+    /// ★★★★ The one Galley of run civvis-20260816T110555Z sailed ten turns and
+    /// died; nothing else ever charted the sea and one rival of five was met
+    /// by t142. See `BasicAi::naval_recon` and `naval_explorer`. A lone
+    /// unlinked ship on an unexplored sea is the explorer and moves toward
+    /// water it has never seen; a second hull leaves the lowest-numbered one
+    /// as the explorer; a charted sea has none; the withheld arm names none.
+    #[test]
+    fn a_lone_ship_on_an_unexplored_sea_is_the_empires_explorer() {
+        // At war: the wartime unit path is the one the live seat spends most
+        // of its turns in, and it is where a ship never explored before.
+        let mut game = Game::new_full(2, 20, 14, 71_001, 30, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.at_war.insert((0, 1));
+        game.current = 0;
+        game.players[0].techs.insert(crate::name!("sailing"));
+        // A water tile the galley can actually sail out of (coast, not an
+        // ocean it cannot enter yet): probe candidates on the board.
+        let mut waters: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| game.rules.is_water(tile) && game.rules.is_passable(tile))
+            .map(|(position, _)| *position)
+            .collect();
+        waters.sort_unstable();
+        let mut placed = None;
+        for water in waters {
+            let galley = game.spawn_test_unit("galley", 0, water);
+            if game.nbrs(water).into_iter().any(|n| game.can_move(galley, n)) {
+                placed = Some((water, galley));
+                break;
+            }
+            game.remove_unit(galley);
+        }
+        let (water, galley) = placed.expect("some water tile lets a galley sail");
+        // Only the ship's own neighbourhood is known; the rest of the sea is dark.
+        let near: Vec<Pos> = game.wdisk(water, 2);
+        game.players[0].explored.clear();
+        game.players[0].explored.extend(near);
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.naval_recon(), "the live seat carries the treatment");
+        assert_eq!(live.naval_explorer(&game, 0), Some(galley), "the lone ship explores");
+
+        let plan = live.assess(&game, 0);
+        let before = game.units[&galley].pos;
+        let explored_before = game.players[0].explored.len();
+        assert!(
+            live.advanced_military_step_with_decline(&mut game, 0, galley, &plan, false),
+            "the explorer acts"
+        );
+        let after = game.units[&galley].pos;
+        assert!(
+            after != before || game.players[0].explored.len() > explored_before,
+            "it moved toward the dark water ({before:?} -> {after:?})"
+        );
+
+        // The withheld arm at war leaves the same ship where it is: the war
+        // path never explored before this treatment.
+        {
+            let mut idle = game.clone();
+            let idle_galley = idle.units.keys().copied().min().unwrap();
+            let start = idle.units[&idle_galley].pos;
+            let mut withheld = AdvancedAi::new();
+            withheld.enable_live_bridge();
+            withheld.disable_naval_recon();
+            let plan = withheld.assess(&idle, 0);
+            let _ = withheld.advanced_military_step_with_decline(&mut idle, 0, idle_galley, &plan, false);
+            assert_eq!(
+                idle.units[&idle_galley].pos, start,
+                "without the treatment the war path does not send the ship exploring"
+            );
+        }
+
+        // A second hull: the lowest-numbered unlinked ship keeps the job.
+        let second = game.spawn_test_unit("galley", 0, water);
+        assert_eq!(live.naval_explorer(&game, 0), Some(galley.min(second)));
+
+        // A charted sea has no explorer; the withheld arm names none.
+        let mut charted = game.clone();
+        let all: Vec<Pos> = charted.map.tiles.keys().copied().collect();
+        charted.players[0].explored.extend(all);
+        assert_eq!(live.naval_explorer(&charted, 0), None);
+        let mut withheld = AdvancedAi::new();
+        withheld.enable_live_bridge();
+        withheld.disable_naval_recon();
+        assert_eq!(withheld.naval_explorer(&game, 0), None);
+        assert!(!AdvancedAi::new().naval_recon());
+        assert!(!AdvancedAi::legacy().naval_recon());
     }
 
     /// The measured t174 purchase: five gold in the treasury, one turn after
