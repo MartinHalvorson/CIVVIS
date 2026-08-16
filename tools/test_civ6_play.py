@@ -559,6 +559,30 @@ class Civ6PlayTest(unittest.TestCase):
 
         self.assertEqual(current, ("Random Leader", (1134, 142)))
 
+    def test_setup_leader_readback_uses_surrounding_headings_at_full_height(self) -> None:
+        """A full-height window centres the leader row below its old fallback band."""
+        observations = [
+            {
+                "text": "CHOOSE CIVILIZATION", "x": 0.20, "y": 0.359,
+                "width": 0.05, "height": 0.008,
+            },
+            {
+                "text": "?? Random Leader", "x": 0.230, "y": 0.374,
+                "width": 0.010, "height": 0.010,
+            },
+            {
+                "text": "CHOOSE GAME DIFFICULTY", "x": 0.20, "y": 0.389,
+                "width": 0.06, "height": 0.010,
+            },
+        ]
+        bounds = (0, 33, 864, 1084)
+        with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
+             patch.object(civ6_play.macos_ocr, "recognize", return_value=observations), \
+             patch.object(civ6_play, "_menu_crop_ocr", return_value=[]):
+            current = civ6_play._setup_current_leader(Path("setup.png"), bounds)
+
+        self.assertEqual(current, ("Random Leader", (406, 423)))
+
     @needs_pillow
     def test_leader_ocr_maps_the_upscaled_crop_back_to_the_desktop(self) -> None:
         from PIL import Image

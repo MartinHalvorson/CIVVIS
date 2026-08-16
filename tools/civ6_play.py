@@ -1080,6 +1080,20 @@ def _setup_current_leader(path: Path, bounds: tuple[int, int, int, int]
     x, y, w, h = bounds
     observations = macos_ocr.recognize(path)
     observations.extend(_menu_crop_ocr(path, bounds))
+    headings: dict[str, int] = {}
+    for observation in observations:
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = int(point[0] * screen_w), int(point[1] * screen_h)
+        if not (x <= px <= x + w and y <= py <= y + h):
+            continue
+        text = str(observation.get("text", ""))
+        if _menu_label_matches(text, "Choose Civilization"):
+            headings["civilization"] = py
+        elif _menu_label_matches(text, SETUP_HEADINGS["difficulty"]):
+            headings["difficulty"] = py
+
     for observation in observations:
         label = labels.get(_normalized_label(str(observation.get("text", ""))))
         if label is None:
@@ -1089,7 +1103,20 @@ def _setup_current_leader(path: Path, bounds: tuple[int, int, int, int]
             continue
         px, py = int(point[0] * screen_w), int(point[1] * screen_h)
         rx, ry = (px - x) / w, (py - y) / h
-        if 0.38 <= rx <= 0.62 and 0.12 <= ry <= 0.34:
+        civilization_heading = headings.get("civilization")
+        difficulty_heading = headings.get("difficulty")
+        in_civilization_row = (
+            civilization_heading is not None
+            and difficulty_heading is not None
+            and civilization_heading < py < difficulty_heading
+        )
+        # A full-height window vertically centres the Create Game panel lower
+        # than the half-height layout.  Its rendered leader row was at 0.361
+        # of the window in the 2026-08-16 launch, just below the historical
+        # fallback band.  When both surrounding headings are visible, their
+        # interval names this exact row without relaxing the safety guard.
+        if 0.38 <= rx <= 0.62 and (
+                in_civilization_row or 0.12 <= ry <= 0.34):
             return label, (px, py)
     return None
 
