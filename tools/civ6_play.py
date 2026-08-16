@@ -2593,6 +2593,21 @@ def _play(args: argparse.Namespace) -> int:
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
     print(json.dumps(summary, indent=2, sort_keys=True))
 
+    # The ladder records itself. This used to be a by-hand step, and the
+    # by-hand step simply stopped happening: 211 summaries piled up
+    # unrecorded between July 31 and August 16, 2026 while the committed
+    # ladder said the last attempt was July 30. The ledger written here is
+    # the live one beside the runs directory — never the repository copy, so
+    # a finishing game cannot dirty the management worktree it plays from.
+    # A recording failure must not fail the run: the summary on disk is the
+    # evidence, and `civ6_ladder.py sync` recovers it later.
+    try:
+        import civ6_ladder
+        civ6_ladder.record_summary(run_dir / "summary.json")
+    except Exception as exc:  # noqa: BLE001 — deliberately broad, see above
+        print(f"ladder record failed (summary is on disk; "
+              f"`civ6_ladder.py sync` will recover it): {exc}", file=sys.stderr)
+
     if outcome.get("kind") == "victory" and outcome.get("team") == outcome.get("local_team"):
         return 0
     return 1
