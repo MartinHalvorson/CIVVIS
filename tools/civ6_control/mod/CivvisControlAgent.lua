@@ -5843,6 +5843,45 @@ local function exportState(player, pid, turn)
 		end
 	end
 
+	-- ★★★★★ COMPLETED PROGRAMS ARE HISTORY, NOT CITY QUEUES.
+	--
+	-- A `--fresh-board` decision starts from a new CIVVIS player every turn. Its
+	-- `science_projects` set was therefore empty even after a finished Manhattan
+	-- Project, and the live planner selected Manhattan again in city after city.
+	-- City production cannot repair that: a completed project leaves every queue,
+	-- but Firaxis keeps the per-player completion count in `PlayerStats`.
+	--
+	-- This is the exact API used by the shipped World Rankings science screen:
+	-- `GetNumProjectsAdvanced(project.Index) > 0` means the milestone is done.
+	-- Export only strategic one-time programs. District conversion projects are
+	-- repeatable, so treating their nonzero count as a milestone would invent
+	-- science-victory progress and skew the planner's project count.
+	local scienceProjects = {};
+	local playerStats = try(function() return player:GetStats(); end, nil);
+	local function projectAdvanced(projectType)
+		local project = try(function() return GameInfo.Projects[projectType]; end, nil);
+		return playerStats ~= nil and project ~= nil and (try(function()
+			return playerStats:GetNumProjectsAdvanced(project.Index);
+		end, 0) or 0) > 0;
+	end
+	for _, projectType in ipairs({
+		"PROJECT_MANHATTAN_PROJECT",
+		"PROJECT_OPERATION_IVY",
+		"PROJECT_LAUNCH_EARTH_SATELLITE",
+		"PROJECT_LAUNCH_MOON_LANDING",
+		-- Base Civ VI has three Mars parts; Gathering Storm replaces them with
+		-- `PROJECT_LAUNCH_MARS_BASE`. The Rust mirror recognizes both shapes.
+		"PROJECT_LAUNCH_MARS_REACTOR",
+		"PROJECT_LAUNCH_MARS_HABITATION",
+		"PROJECT_LAUNCH_MARS_HYDROPONICS",
+		"PROJECT_LAUNCH_MARS_BASE",
+		"PROJECT_LAUNCH_EXOPLANET_EXPEDITION",
+	}) do
+		if projectAdvanced(projectType) then
+			scienceProjects[#scienceProjects + 1] = projectType;
+		end
+	end
+
 	-- ★★★★★ BARBARIANS, WHICH THE RIVAL EXPORT STRUCTURALLY CANNOT SEE.
 	--
 	-- `rivals` is built from `PlayerManager.GetAliveMajorIDs()`, so barbarians are
@@ -6153,6 +6192,9 @@ local function exportState(player, pid, turn)
 	emit("state", {
 		turn = turn,
 		techs = techs,
+		-- Completed one-time nuclear and space milestones. This stays separate
+		-- from the city's current production because completion is player-wide.
+		science_projects = scienceProjects,
 		-- ⚠ Boosts on technologies and civics the empire does NOT yet hold. A
 		-- triggered boost on something already researched is spent and says
 		-- nothing about what to take next.
