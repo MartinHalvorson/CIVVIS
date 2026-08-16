@@ -394,6 +394,36 @@ class ProtectedInstallTest(unittest.TestCase):
         # The Prophet branch of the Great Person routine retires through the same gate.
         self.assertIn('and commandUnit(unit, CMD["UNITCOMMAND_DELETE"], true) then', source)
 
+    def test_civvis_envoy_orders_place_one_token_through_a_fresh_handle(self) -> None:
+        # The bridge translates CIVVIS's SendEnvoy into an `envoy` order once
+        # `envoys_free` is mirrored; the mod places exactly one token per order
+        # through the shipped CityStates.lua accessors, reads every handle fresh
+        # inside the order, and never writes the prompt-clearing flag — the
+        # stale-handle write is the one defect the old lane's crash was pinned on.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn('if kind == "envoy" then', source)
+        handler = source.split('if kind == "envoy" then', 1)[1].split("\n\t-- ★★★★★ CIVVIS'S OWN POLICY", 1)[0]
+        self.assertIn("PlayerOperations.GIVE_INFLUENCE_TOKEN", handler)
+        self.assertIn("PlayerOperations.PARAM_PLAYER_ONE", handler)
+        self.assertIn("player:GetInfluence()", handler)
+        self.assertIn("influence:GetTokensToGive()", handler)
+        self.assertIn("influence:CanGiveInfluence()", handler)
+        self.assertIn("influence:CanGiveTokensToPlayer(subject)", handler)
+        self.assertIn("UI.RequestPlayerOperation(pid, giveOp, params)", handler)
+        # One token per order: no loop over the held count in this arm.
+        self.assertNotIn("for _ = 1,", handler)
+        # The decision is CIVVIS's — this arm neither chooses a target nor clears the prompt.
+        self.assertNotIn("SetGivingTokensConsidered", handler)
+        self.assertNotIn("envoySpendOrder", handler)
+        self.assertNotIn("cfg.EnvoyEnabled", handler)
+        # Receiving-side telemetry: the count after the request, from a second fresh handle.
+        self.assertIn('emit("envoy"', handler)
+        self.assertIn('source = "civvis"', handler)
+        self.assertIn("player:GetInfluence():GetTokensToGive();", handler)
+        # And a refusal names its reason.
+        for reason in ("envoy_target_unmapped", "envoy_no_operation", "envoy_none_held", "envoy_cannot_give", "envoy_refused_"):
+            self.assertIn(reason, handler)
+
     def test_controller_votes_in_the_world_congress_before_forfeiting_the_session(self) -> None:
         # The session was a soft blocker the ladder dismissed: nineteen forfeits
         # in one game, no vote in 242 turns, and a rival's diplomatic victory
@@ -417,6 +447,29 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('emit("wc_vote"', forfeit)
         # And the state now carries the points and the favor.
         self.assertIn("dvp = try(function() return player:GetStats():GetDiplomaticVictoryPoints(); end, nil)", source)
+
+    def test_favor_is_banked_until_a_congress_leader_is_within_reach(self) -> None:
+        """Run civvis-20260816T123936Z spent 180/220/220/264 Favor against
+        leaders on 8/11/14/15 points and still lost to a diplomatic victory at
+        t239: the extra votes are on a rising cost ladder, so the bank buys the
+        most at the sessions a leader can win from. Below the floor only the
+        free vote is cast against the leader; from the floor the bank is spent.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        voter = source.split("local function voteWorldCongress(pid)", 1)[1].split("local player, pid = localPlayer();", 1)[0]
+        arm = voter.split('if rtype == "WC_RES_DIPLOVICTORY" then', 1)[1].split("elseif r.TargetType", 1)[0]
+        self.assertIn("local floor = cfg.DiploVictoryVoteFloor or 12;", arm)
+        self.assertIn("if (tonumber(leaderPoints) or 0) >= floor then", arm)
+        # The paid ladder sits inside the floor gate; the free vote (n = 1) and
+        # the leader selection do not.
+        gate = arm.index("if (tonumber(leaderPoints) or 0) >= floor then")
+        ladder = arm.index("costs[n] <= favor")
+        free = arm.index("local n = 1;")
+        selection = arm.index("if tonumber(t) == leader then selection = idx; end")
+        self.assertLess(selection, gate)
+        self.assertLess(free, gate)
+        self.assertLess(gate, ladder)
+
         self.assertIn("favor = try(function() return player:GetFavor(); end, nil)", source)
         self.assertIn("dvp = try(function() return other:GetStats():GetDiplomaticVictoryPoints(); end, nil)", source)
 

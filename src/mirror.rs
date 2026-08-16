@@ -2631,6 +2631,74 @@ mod tests {
         );
     }
 
+    /// ★★★★★ The envoys the seat is holding reach the board, so `SendEnvoy` is
+    /// enumerated against a met city-state — the one input the deployed
+    /// `advanced_envoys` pass never had on a live board. Measured on the twelve
+    /// Settler games of 2026-08-15/16: 40–70 unspent at the end, 0 suzerainties
+    /// in 11 of 12. The host's `-1` ("could not answer") and an absent field
+    /// must leave the board's count alone rather than zero it.
+    #[test]
+    fn unspent_envoys_reach_the_board_and_send_envoy_is_enumerated() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(6, 6, "TERRAIN_PLAINS"), plot(12, 12, "TERRAIN_PLAINS")],
+        }]);
+        let minor = StateMinor {
+            player: 9,
+            civ: "CIVILIZATION_GENEVA".to_string(),
+            suzerain: -1,
+            envoys: 1,
+            cities: vec![StateCity {
+                id: 90,
+                name: "Geneva".to_string(),
+                x: 6,
+                y: 6,
+                pop: 4,
+                ..StateCity::default()
+            }],
+            ..StateMinor::default()
+        };
+        let state = StateSnapshot {
+            turn: 60,
+            envoys_free: Some(4),
+            minors: vec![minor.clone()],
+            ..StateSnapshot::default()
+        };
+
+        let recon = rebuild_from_state(&snapshot, &state, 6, 1, 250, 0);
+        let geneva = recon
+            .game
+            .players
+            .iter()
+            .find(|player| player.is_minor && player.civ == "Geneva")
+            .expect("Geneva minor seat");
+        assert_eq!(recon.game.players[0].envoys_free, 4, "the held count is the host's fact");
+        assert!(
+            recon
+                .game
+                .legal_actions(0)
+                .iter()
+                .any(|action| matches!(action, crate::game::Action::SendEnvoy { player } if *player == geneva.id)),
+            "a held envoy and a met city-state must enumerate SendEnvoy"
+        );
+        // Sending one on the planning board spends one and lands on Geneva.
+        let mut planned = recon.game.clone();
+        planned
+            .apply(0, &crate::game::Action::SendEnvoy { player: geneva.id })
+            .expect("the envoy is legal");
+        assert_eq!(planned.players[0].envoys_free, 3);
+        assert_eq!(planned.envoys_at(0, geneva.id), 2);
+
+        // The host that did not answer, in both shapes.
+        let silent = StateSnapshot { turn: 60, envoys_free: None, minors: vec![minor.clone()], ..StateSnapshot::default() };
+        assert_eq!(rebuild_from_state(&snapshot, &silent, 6, 1, 250, 0).game.players[0].envoys_free, 0);
+        let failed = StateSnapshot { turn: 60, envoys_free: Some(-1), minors: vec![minor], ..StateSnapshot::default() };
+        assert_eq!(rebuild_from_state(&snapshot, &failed, 6, 1, 250, 0).game.players[0].envoys_free, 0);
+    }
+
     #[test]
     fn renamed_city_state_uses_exported_capital_instead_of_legacy_type_id() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -7433,7 +7501,9 @@ impl StateMinor {
         self.civ == "CIVILIZATION_BARBARIAN"
     }
 
-    fn is_city_state(&self) -> bool {
+    /// A real city-state actor: not the Free Cities aggregate, not the
+    /// barbarian seat. Public for the order bridge's seat resolution.
+    pub fn is_city_state(&self) -> bool {
         !self.civ.is_empty() && !self.is_free_cities() && !self.is_barbarian()
     }
 
@@ -7462,7 +7532,13 @@ fn minus_one_i64() -> i64 {
 /// planner into conquest before the capital was founded. A present Free Cities
 /// actor uses the dedicated dormant seat; only actual city-states consume the
 /// generated city-state roster.
-fn minor_actor_assignments<'a>(
+/// Which exported minor stands on which mirrored seat: met city-states take
+/// the board's city-state seats in export order, the present Free Cities actor
+/// takes the Free Cities seat. Public so the order bridge can resolve a
+/// city-state seat back to Firaxis's player id by the SAME rule the board was
+/// built with (see `civvis_orders::host_minor_target`), instead of by a city
+/// plot the fog may not have revealed yet.
+pub fn minor_actor_assignments<'a>(
     game: &crate::game::Game,
     state: &'a StateSnapshot,
 ) -> Vec<(&'a StateMinor, usize)> {
@@ -7790,13 +7866,13 @@ pub struct StateSnapshot {
     /// `GetTokensToGive`.
     ///
     /// ★★★★★ `minors[].envoys` has always said where our envoys LANDED. Nothing
-    /// ever said how many were sitting unspent, and that single omission closes
+    /// ever said how many were sitting unspent, and that single omission closed
     /// the whole axis: [`crate::game::Game::legal_actions`] gates
-    /// `Action::SendEnvoy` behind `if p.envoys_free > 0`, `envoys_free` is never
-    /// mirrored, so on every reconstructed live board it reads 0 and **CIVVIS
-    /// never enumerates sending an envoy at all**. That is why `SendEnvoy`
-    /// appears nowhere in the skipped-action tally, while `LevyMilitary` — which
-    /// needs a suzerainty we never hold — appears there 44 times.
+    /// `Action::SendEnvoy` behind `if p.envoys_free > 0`, and while `envoys_free`
+    /// was not mirrored every reconstructed live board read 0 and **CIVVIS
+    /// never enumerated sending an envoy at all**. That is why `SendEnvoy`
+    /// appeared nowhere in the skipped-action tally, while `LevyMilitary` — which
+    /// needs a suzerainty we never hold — appeared there 44 times.
     ///
     /// Measured over 36 live runs past turn 150: median envoys placed **1**,
     /// median suzerainties **0**, 16 of 36 runs ending with none placed anywhere.
@@ -7804,13 +7880,17 @@ pub struct StateSnapshot {
     /// cultural city-state at the 1/3/6 thresholds), so the sim collects it and
     /// the live game collects nothing.
     ///
-    /// ⚠ **CARRIED AND REPORTED, NOT ACTED ON.** This deliberately does not reach
-    /// `Player::envoys_free` on the reconstructed board. The actuation path is a
-    /// known game crasher — `ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN` answered by
-    /// `chooseEnvoy` gave three SIGSEGVs in three runs on a seed that reached
-    /// t92/t106 without it, and `cfg.EnvoyEnabled` is off for that reason.
-    /// Teaching CIVVIS to want something the bridge cannot safely deliver trades
-    /// a silent loss for a crashed run. Size the prize first.
+    /// **Now MIRRORED onto `Player::envoys_free`** (see
+    /// [`apply_mirrored_envoys_free`]), so the deployed `advanced_envoys` pass
+    /// enumerates and prices `SendEnvoy` on the live board exactly as it does
+    /// natively, and `civvis_orders` translates each one into an `envoy` order
+    /// the mod actuates. It was carried-and-reported only, for the crash the
+    /// Lua `chooseEnvoy` lane was blamed for; that lane's own record since —
+    /// the stale-handle write fixed, the governor-appointment prompt found to
+    /// share the crash signature and the t44–47 cluster, and a 250-turn
+    /// `EnvoyEnabled` run that placed 113 envoys without a fault — is why the
+    /// board is allowed to want them now. The Lua chooser stays off; the
+    /// decision is CIVVIS's, the mod only places what it is told to.
     ///
     /// `None`/negative means the host did not answer; a real 0 means we are
     /// genuinely holding none, and the two must not read the same.
@@ -10314,10 +10394,12 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
 
 /// Envoys Civilization VI says we are holding and have not placed.
 ///
-/// ★★★★★ Reported here because the loss is invisible everywhere else. `SendEnvoy`
-/// is gated behind `Player::envoys_free`, which the mirror does not carry, so the
-/// action is never enumerated on a live board and never even reaches the
-/// skipped-action tally. The empire simply never notices it is holding them.
+/// ★★★★★ Reported here because the loss was invisible everywhere else. `SendEnvoy`
+/// is gated behind `Player::envoys_free`, which the mirror did not carry until
+/// [`apply_mirrored_envoys_free`], so the action was never enumerated on a live
+/// board and never even reached the skipped-action tally. The empire simply
+/// never noticed it was holding them. Kept as the per-turn instrument: with the
+/// board spending, `unspent` should fall to 0 within a few turns of any income.
 ///
 /// Measured over 36 live runs past turn 150: median envoys PLACED **1**, median
 /// suzerainties **0**, and 16 of 36 runs finished having placed none at all.
@@ -11210,6 +11292,30 @@ fn apply_unit_observation(
     live.fortify_turns = state.fortify_turns.clamp(0, 2);
 }
 
+/// Seat 0's UNSPENT envoys, from Firaxis's own `GetTokensToGive`.
+///
+/// ★★★★★ THIS IS THE LINE THAT LETS CIVVIS SPEND AN ENVOY AT ALL.
+/// [`crate::game::Game::legal_actions`] enumerates `Action::SendEnvoy` only
+/// behind `if p.envoys_free > 0`, and until now nothing wrote that field on a
+/// reconstructed board — so every live decision ran on an empire correctly
+/// holding zero, and `AdvancedAi::advanced_envoys` (type-aware, suzerainty-
+/// priced, denial-aware, and rated in the deployed bundle) never had a token to
+/// place. Measured on the twelve Settler games of 2026-08-15/16: runs end
+/// holding **40–70 unspent envoys** with 0 suzerainties in 11 of 12.
+///
+/// The field carries every reading, including a real 0; `None` and the mod's
+/// `-1` ("asked, could not answer") leave the board's count alone rather than
+/// zeroing an empire that may be holding envoys — an unknown must not read as
+/// "nothing to spend". The actuation path is the `envoy` order kind
+/// (`civvis_orders` translates `SendEnvoy`; the mod issues one
+/// `GIVE_INFLUENCE_TOKEN` per order through a freshly fetched handle), so what
+/// the board wants, the bridge can now deliver.
+fn apply_mirrored_envoys_free(game: &mut crate::game::Game, state: &StateSnapshot) {
+    if let Some(free) = state.envoys_free.filter(|free| *free >= 0) {
+        game.players[0].envoys_free = free;
+    }
+}
+
 fn set_mirrored_envoys(player: &mut crate::game::Player, minor: usize, count: i64) {
     player.envoys.retain(|(seat, _)| *seat != minor);
     if count > 0 {
@@ -11846,6 +11952,7 @@ pub fn rebuild_from_state(
     if let Some(favor) = state.favor.filter(|favor| favor.is_finite()) {
         game.players[0].diplomatic_favor = favor;
     }
+    apply_mirrored_envoys_free(&mut game, state);
     apply_player_religion(&mut game, state, &mut unmapped);
     // Cheap: `rules` is an Arc. Cloned so the city loop below can consult it while
     // holding a mutable borrow of `game`.
@@ -13207,6 +13314,7 @@ impl LiveMirror {
         if let Some(favor) = state.favor.filter(|favor| favor.is_finite()) {
             self.game.players[0].diplomatic_favor = favor;
         }
+        apply_mirrored_envoys_free(&mut self.game, state);
         apply_player_religion(&mut self.game, state, &mut self.unmapped);
         if let Some(civ6) = &state.government {
             if let Some(name) = civvis_node_name(&self.game.rules.governments, civ6, "GOVERNMENT_") {

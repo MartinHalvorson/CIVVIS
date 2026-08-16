@@ -2247,6 +2247,106 @@ function sortedPlayerHudPlayers(players, statsByPlayer, rankById) {
   });
 }
 
+// ── The cities behind a count ──────────────────────────────────────────────
+//
+// The CITY figure is a count, and a count invites the question "which ones?"
+// Clicking it opens that empire's cities as rows of their own directly under
+// the seat — one city per row, on the same tracks the table uses, so a city's
+// population, yields and wonders stand under the heads that name them. The
+// list follows the table's own sort: whatever fact the standings are ordered
+// by orders the cities too, wherever a city has that fact. A city has a
+// population, six yields, a defensive strength, wonders, a name and something
+// on its production line; it has no rank, Elo, odds, age or score of its own,
+// so under those heads the list falls back to the empire's own reading order,
+// capital first and then the largest.
+//
+// Only one empire's list is open at a time. A second count clicked closes the
+// first: two open lists in a masthead a few rows tall is a scroll, not a
+// comparison, and the count that is lit says whose cities these are.
+let hudOpenCityList = null;
+const PLAYER_HUD_CITY_YIELD_KEYS = new Set(["food", "production", "science", "culture", "faith", "gold"]);
+// The seats always fit the masthead exactly as they did; the open list may
+// grow it further, but only to this share of the map area. Past that the
+// ribbon scrolls, so a twenty-city empire never swallows the world under it.
+const PLAYER_HUD_CITY_LIST_MAP_SHARE = .6;
+
+// A figure, or null when the reading is absent. Another empire's city under
+// fog carries no yields at all, and that absence must not read as nought: it
+// sorts below every observed value and prints as a dash, like any other
+// unavailable observation in this table.
+function playerHudCityFigure(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function playerHudCityWonderCount(city) {
+  return city.wonders && typeof city.wonders === "object"
+    ? Object.keys(city.wonders).length : null;
+}
+
+function playerHudCityProduction(city) {
+  const current = (city.queue || [])[0];
+  return current ? titleCase(itemName(current)) : null;
+}
+
+// A city's reading of a standings fact, for the sort — null where a city has
+// no such fact, or where fog hides it.
+function playerHudCitySortValue(city, key) {
+  if (key === "population") return playerHudCityFigure(city.pop);
+  if (PLAYER_HUD_CITY_YIELD_KEYS.has(key)) return playerHudCityFigure(city.yields?.[key]);
+  if (key === "military") return playerHudCityFigure(city.defense);
+  if (key === "wonders") return playerHudCityWonderCount(city);
+  if (key === "civ" || key === "leader" || key === "player") return city.name || null;
+  if (key === "plan") return playerHudCityProduction(city);
+  return null;
+}
+
+function sortedPlayerHudCities(cities) {
+  const {key, direction} = playerHudSort;
+  const multiplier = direction === "asc" ? 1 : -1;
+  return [...cities].sort((left, right) => {
+    const leftValue = playerHudCitySortValue(left, key);
+    const rightValue = playerHudCitySortValue(right, key);
+    if (leftValue === null || rightValue === null) {
+      if (leftValue !== rightValue) return leftValue === null ? 1 : -1;
+    }
+    const comparison = comparePlayerHudSortValues(leftValue, rightValue);
+    if (comparison) return comparison * multiplier;
+    // The empire's own reading order breaks every tie, and carries the whole
+    // list under a head no city has a reading for: the capital, then the
+    // largest, then the alphabet, then the founding order.
+    return Number(Boolean(right.is_capital)) - Number(Boolean(left.is_capital)) ||
+      (Number(right.pop) || 0) - (Number(left.pop) || 0) ||
+      String(left.name || "").localeCompare(String(right.name || ""), undefined, {sensitivity:"base"}) ||
+      (Number(left.id) || 0) - (Number(right.id) || 0);
+  });
+}
+
+function togglePlayerHudCityList(id) {
+  hudOpenCityList = hudOpenCityList === id ? null : id;
+  if (!state) return;
+  drawPlayerHud();
+  if (hudOpenCityList === null) return;
+  // Bring the opened seat and the rows under it into view. The ribbon keeps
+  // its own scroll position across repaints, which is right for a table
+  // updating under a reader and wrong for a list that just opened below the
+  // fold: show the whole list where it fits, and otherwise the seat itself at
+  // the top with its cities running on beneath.
+  const ribbon = document.getElementById("playerhud")?.querySelector(".diplomacy-ribbon");
+  const card = ribbon?.querySelector(`.hud-city-toggle[aria-expanded="true"]`)?.closest(".diplomacy-card");
+  if (!ribbon || !card) return;
+  let last = card;
+  while (last.nextElementSibling?.classList.contains("hud-city-row")) last = last.nextElementSibling;
+  // Measured against the ribbon's own scroll origin: offsetTop would answer
+  // relative to the positioned masthead around it, heading and all.
+  const origin = ribbon.getBoundingClientRect().top - ribbon.scrollTop;
+  const cardTop = card.getBoundingClientRect().top - origin;
+  const listBottom = last.getBoundingClientRect().bottom - origin;
+  if (listBottom > ribbon.scrollTop + ribbon.clientHeight)
+    ribbon.scrollTop = Math.min(cardTop, listBottom - ribbon.clientHeight);
+}
+
 function togglePlayerHudSort(key) {
   if (!PLAYER_HUD_SORTABLE_COLUMNS.has(key)) return;
   playerHudSort = {
@@ -22595,7 +22695,27 @@ function drawPlayerHud() {
   const statsByPlayer = new Map(scoreRankedMajors.map(p =>
     [p.id, playerHudStats(p, rankById.get(p.id))]));
   const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer, rankById);
-  const rows = Math.max(1, majors.length);
+  // The one open city list belongs to a seat in this table, or to nobody.
+  if (hudOpenCityList !== null && !majors.some(p => p.id === hudOpenCityList))
+    hudOpenCityList = null;
+  const openCityPlayer = majors.find(p => p.id === hudOpenCityList) || null;
+  const openCities = openCityPlayer
+    ? sortedPlayerHudCities((state.cities || []).filter(city => city.owner === openCityPlayer.id))
+    : [];
+  // The count is the empire's true figure; the cities the frame carries may
+  // be fewer under fog, and an empty list still answers with one row.
+  const hiddenCities = openCityPlayer
+    ? Math.max(0, Math.round(Number(openCityPlayer.cities) || 0) - openCities.length) : 0;
+  const cityRows = openCityPlayer
+    ? openCities.length + (!openCities.length || hiddenCities > 0 ? 1 : 0) : 0;
+  const mapArea = document.getElementById("maparea");
+  // The seats always fit as they did; the open list adds its rows to the
+  // masthead's height only as far as its share of the map area allows, and
+  // the rest of the list scrolls inside the ribbon.
+  const cityRowsShown = Math.min(cityRows, Math.max(0, Math.floor(
+    (mapArea.clientHeight * PLAYER_HUD_CITY_LIST_MAP_SHARE - playerHudContentHeight(majors.length)) /
+      playerHudRowPitch())));
+  const rows = Math.max(1, majors.length + cityRowsShown);
   const seats = seatKeysById(majors);
   const repeatedCivs = repeatedCivNames(majors);
   seedOwnSeatLock(seats);
@@ -22605,7 +22725,6 @@ function drawPlayerHud() {
   // 2px gap under it. The fixed chrome and two-seat floor protect the turn
   // counter; every additional civilization gets exactly one more row.
   const requestedHeight = playerHudContentHeight(rows);
-  const mapArea = document.getElementById("maparea");
   if (!HUD_LAYOUT.players) {
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
   } else if (hudLayoutGesture?.name !== "players") {
@@ -22831,6 +22950,17 @@ function drawPlayerHud() {
         const markerHtml = marker
           ? `<span class="founded-religion-marker" aria-hidden="true">${marker}</span>`
           : "";
+        // The count opens the list of the cities it counts, and says so while
+        // it is open: the one figure in the row that answers a question with
+        // more rows rather than with a change of view.
+        if (kind === "cities") {
+          const open = hudOpenCityList === p.id;
+          return `<button class="ribbon-stat cities hud-city-toggle${isLeader ? " category-leader" : ""}" data-hud-col="cities" ` +
+            `data-hud-action="cities" data-hud-civ="${p.id}" aria-expanded="${open}" ` +
+            `title="${label}${isLeader ? " · Category leader" : ""} · ${open ? "Hide" : "List"} the cities of ${escapeAttr(p.civ)}" ` +
+            `aria-label="${label}; ${open ? "hide" : "list"} the cities of ${escapeAttr(p.civ)}">` +
+            `<b>${ribbonStat(value)}</b><span class="hud-city-caret" aria-hidden="true">${open ? "▾" : "▸"}</span></button>`;
+        }
         // The marker is a sibling of the figure, not a child of it: inside
         // <b> its absolute box still counts toward that element's scrollWidth,
         // so the type fitter shrank the number to make room for a mark that
@@ -22842,8 +22972,10 @@ function drawPlayerHud() {
           `aria-label="${label}; watch ${escapeAttr(p.civ)}">` +
           `<b>${kind === "score" ? ribbonScore(value) : ribbonStat(value)}</b>${markerHtml}</button>`;
       };
-      return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
-        visibleColumns.map(rowCell).join("") + `</div>`;
+      const citiesOpen = openCityPlayer?.id === p.id;
+      return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}${citiesOpen ? " cities-open" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
+        visibleColumns.map(rowCell).join("") + `</div>` +
+        (citiesOpen ? playerHudCityRows(p, openCities, hiddenCities, visibleColumns) : "");
     }).join("") + `</div>` + hudResizeHandles("player standings");
   drawDossierWindows(scoreRankedMajors, rankById, relationById);
   // A repaint mid-gesture would take the bar out from under the pointer along
@@ -22882,6 +23014,105 @@ function drawPlayerHud() {
   // destroyed moves the map area's top edge as surely as dragging it does.
   refitMapAreaToChrome();
   reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
+}
+
+// One row per city on the table's own tracks, under the seat that holds them.
+// A city's name starts in the civilization cell — or the nearest identity
+// cell still showing when that one is hidden — and answers with a view of the
+// city as the civilization's answers with its capital. What a city is building
+// stands under PLAN, the one identity fact a city has a reading for. Every
+// other identity cell has nothing to say for a city, so rather than standing
+// empty beside a name crushed into one narrow track, they lend the name their
+// width: it runs on across every empty identity cell that follows it, and
+// stops at the first cell with a reading of its own. The value cells print the
+// city's own figure under each head that names a fact a city has, a dash where
+// fog hides it, and nothing under a head that does not describe a city at all.
+function playerHudCityRows(player, cities, hidden, visibleColumns) {
+  const civ = escapeAttr(player.civ);
+  const rowStyle = `style="--civ:${pcol(player.id)};--civ-border:${pcol2(player.id)}"`;
+  const nameColumn = ["civ", "leader", "player"]
+    .map(key => visibleColumns.find(column => column.key === key)).find(Boolean)
+    || visibleColumns.find(column => !column.fixed);
+  const blank = column =>
+    `<span class="hud-city-blank" data-hud-col="${column.key}" aria-hidden="true"></span>`;
+  const rows = cities.map(city => {
+    const name = escapeAttr(city.name || "City");
+    const capital = Boolean(city.is_capital);
+    const founder = Number.isInteger(city.original_owner) && city.original_owner !== city.owner
+      ? civName(city.original_owner) : null;
+    const focusTitle = `View ${name}, ${capital ? "the capital" : "a city"} of ${civ}` +
+      `${city.religion ? ` · ${escapeAttr(titleCase(city.religion))}` : ""}` +
+      `${founder ? ` · founded by ${escapeAttr(founder)}` : ""}`;
+    const production = playerHudCityProduction(city);
+    // An identity cell with nothing to say for this city.
+    const silent = column => column.block !== "stats" && column !== nameColumn &&
+      !(column.key === "plan" && production);
+    const nameCell = span =>
+      `<button class="diplomacy-identity hud-city-name" style="grid-column:span ${span}" ` +
+        `data-hud-action="city" data-hud-city="${city.id}" data-hud-civ="${player.id}" ` +
+        `title="${focusTitle}" aria-label="${focusTitle}">` +
+        `<span class="diplomacy-identity-field"><span class="hud-city-tie" aria-hidden="true">↳</span>` +
+        `<span class="diplomacy-civ">${name}${capital ? " ♛" : ""}</span></span></button>`;
+    const cell = column => {
+      if (column.key === "plan" && production)
+        return `<span class="diplomacy-identity hud-city-plan" data-hud-col="plan">` +
+          `<span class="diplomacy-identity-field diplomacy-strategy" title="${name} is building ${escapeAttr(production)}">` +
+          `<span class="ai-plan">${escapeAttr(production)}</span></span></span>`;
+      if (column.block !== "stats") return blank(column);
+      const stat = playerHudCityStat(city, column.key);
+      if (!stat) return blank(column);
+      const [figure, title] = stat;
+      return `<span class="ribbon-stat ${column.key} hud-city-stat" data-hud-col="${column.key}" ` +
+        `title="${escapeAttr(title)}"><b>${figure}</b></span>`;
+    };
+    const cells = [];
+    for (let index = 0; index < visibleColumns.length; index++) {
+      const column = visibleColumns[index];
+      if (column !== nameColumn) { cells.push(cell(column)); continue; }
+      let span = 1;
+      while (index + span < visibleColumns.length && silent(visibleColumns[index + span])) span++;
+      cells.push(nameCell(span));
+      index += span - 1;
+    }
+    return `<div class="diplomacy-card hud-city-row${capital ? " capital" : ""}" ${rowStyle} role="listitem" ` +
+      `aria-label="${name}, ${capital ? "capital" : "city"} of ${civ}">` +
+      cells.join("") + `</div>`;
+  });
+  const plural = count => `${count} cit${count === 1 ? "y" : "ies"}`;
+  const note = !cities.length
+    ? hidden > 0 ? `${player.civ} holds ${plural(hidden)} under fog` : `${player.civ} holds no cities`
+    : hidden > 0 ? `${plural(hidden)} more under fog` : "";
+  if (note)
+    rows.push(`<div class="diplomacy-card hud-city-row hud-city-note" ${rowStyle} role="listitem">` +
+      `<span class="hud-city-note-text">${escapeAttr(note)}</span></div>`);
+  return rows.join("");
+}
+
+// The figure and tooltip a city prints under a value head, or null under a
+// head that is not a fact of a city: the city count itself, the nuclear
+// stockpile, suzerainty and score belong to the empire.
+function playerHudCityStat(city, key) {
+  const name = city.name || "City";
+  const fogged = what => ["—", `${name} · ${what} not visible under fog`];
+  if (key === "population")
+    return [ribbonStat(city.pop), `${name} · population ${exactStat(city.pop)}`];
+  if (PLAYER_HUD_CITY_YIELD_KEYS.has(key)) {
+    const value = playerHudCityFigure(city.yields?.[key]);
+    const label = titleCase(key);
+    return value === null ? fogged(label)
+      : [ribbonStat(value), `${name} · ${label}: ${exactStat(value)} per turn`];
+  }
+  if (key === "military") {
+    const value = playerHudCityFigure(city.defense);
+    return value === null ? fogged("defensive strength")
+      : [ribbonStat(value), `${name} · defensive strength ${exactStat(value)}`];
+  }
+  if (key === "wonders") {
+    const count = playerHudCityWonderCount(city);
+    return count === null ? fogged("wonders")
+      : [ribbonStat(count), `${name} · world wonders: ${exactStat(count)}`];
+  }
+  return null;
 }
 
 // Re-aim the size observer after a repaint. Kept apart from the sync so the
@@ -22975,12 +23206,28 @@ function runHudAction(target) {
     spectatePlayer(null);
     return;
   }
+  if (target.dataset.hudAction === "city") {
+    focusHudCity(+target.dataset.hudCity);
+    return;
+  }
   const id = +target.dataset.hudCiv;
   if (!Number.isInteger(id)) return;
   if (target.dataset.hudAction === "lock") toggleSeatLock(id);
   else if (target.dataset.hudAction === "dossier") toggleCivDossier(id);
   else if (target.dataset.hudAction === "capital") focusCapital(id);
+  else if (target.dataset.hudAction === "cities") togglePlayerHudCityList(id);
   else spectatePlayer(id);
+}
+
+// A city row's name answers as the civilization cell does with its capital:
+// the map goes to the city, and the spectator's side panel opens on it.
+function focusHudCity(cityId) {
+  if (!state) return;
+  const city = (state.cities || []).find(candidate => candidate.id === cityId);
+  if (!city) return;
+  takeCameraControl();
+  centerWorld(city.pos);
+  if (SPEC) { selCity = city; drawSide(); }
 }
 
 // The ribbon is rewritten whenever the world it describes changes, and a
