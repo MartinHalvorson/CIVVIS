@@ -1164,3 +1164,166 @@ class PassThroughFlagsReachTheGame(unittest.TestCase):
             self.SOURCE,
             "the envoy lane must stay opt-in while chooseEnvoy has a SIGSEGV history",
         )
+
+
+class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
+    """A frozen attempt is reloaded from its latest autosave, not scored as it fell.
+
+    ★★★★★ Three leading games died on the 900 s watchdog on 2026-08-16 with a
+    turn-fresh `AutoSave_NNNN.Civ6Save` on disk (t178 leading 804 vs 715, t207,
+    t102 leading with the lane's first capture). See `resume_from_autosave`.
+    """
+
+    class _Args:
+        max_resumes = 2
+        resume_min_turn = climb.RESUME_MIN_TURN
+
+    def test_the_policy_resumes_only_a_frozen_mid_game_within_budget(self):
+        args = self._Args()
+        seen = []
+
+        def finder(newer_than=None):
+            seen.append(newer_than)
+            return Path("/saves/AutoSave_0102.Civ6Save")
+
+        frozen = {"last_turn": 102, "last_score": 340}
+        self.assertEqual(
+            climb.resume_from_autosave(frozen, "frozen", 0, args, 1234.5, latest=finder),
+            Path("/saves/AutoSave_0102.Civ6Save"))
+        self.assertEqual(seen, [1234.5], "only autosaves written since the attempt began")
+        # Not frozen: a timeout, a locked screen, a normal exit — no resume.
+        for why in ("timeout", "locked", "exited", None):
+            self.assertIsNone(climb.resume_from_autosave(frozen, why, 0, args, 0.0, latest=finder))
+        # Too early to be worth the load flow.
+        self.assertIsNone(climb.resume_from_autosave(
+            {"last_turn": climb.RESUME_MIN_TURN - 1}, "frozen", 0, args, 0.0, latest=finder))
+        # No turn ever seen.
+        self.assertIsNone(climb.resume_from_autosave({"last_turn": None}, "frozen", 0, args, 0.0, latest=finder))
+        # Already on an end screen: the game is over, whatever the watchdog saw.
+        self.assertIsNone(climb.resume_from_autosave(
+            {"last_turn": 231, "end_screen_turn": 231}, "frozen", 0, args, 0.0, latest=finder))
+        # Budget spent.
+        self.assertIsNone(climb.resume_from_autosave(frozen, "frozen", 2, args, 0.0, latest=finder))
+        # No autosave since the attempt began: nothing to reload.
+        self.assertIsNone(climb.resume_from_autosave(frozen, "frozen", 0, args, 0.0,
+                                                     latest=lambda newer_than=None: None))
+
+    def test_a_frozen_attempt_is_reloaded_under_a_cont_tag_and_scored_from_it(self):
+        spawned = []
+
+        class Recording(FakeProc):
+            def __init__(self, argv, *args, **kwargs):
+                spawned.append(list(argv))
+                super().__init__(argv, *args, **kwargs)
+
+        verdicts = ["frozen", "exited"]
+        saved_wait = climb.wait_watching_the_turn
+        saved_latest = climb._latest_autosave
+        climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
+        climb._latest_autosave = lambda newer_than=None: Path("/saves/AutoSave_0102.Civ6Save")
+        climb.subprocess.Popen = Recording
+        try:
+            code, rows = self.climb_with(
+                [{"last_turn": 102, "last_score": 340, "rival_best": 324},
+                 {"last_turn": 250, "last_score": 910, "rival_best": 880}],
+                attempts=1)
+        finally:
+            climb.wait_watching_the_turn = saved_wait
+            climb._latest_autosave = saved_latest
+            climb.subprocess.Popen = FakeProc
+
+        self.assertEqual(code, 1, "played out, no win")
+        self.assertEqual(len(rows), 1, "one attempt, one row — the freeze is not a row")
+        row = rows[0]
+        self.assertEqual(row["attempt"], 1)
+        self.assertEqual(row["last_turn"], 250, "the score is the continuation's")
+        self.assertEqual(row["last_score"], 910)
+        # (The rig's scripted outcome carries no `reason`, so the climb stamps
+        # the watcher's verdict — "exited" here, as for every rig row.)
+        self.assertNotEqual(row.get("reason"), "attempt frozen",
+                            "a resumed-and-finished game is not 'attempt frozen'")
+        cont = row["resumed_from"] + "-cont1"
+        self.assertEqual(row["resumes"], [{"tag": cont, "from_turn": 102,
+                                           "save": "AutoSave_0102.Civ6Save"}])
+
+        plays = [argv for argv in spawned if any("civ6_play.py" in str(w) for w in argv)]
+        self.assertEqual(len(plays), 2, "the original launch and one continuation")
+        first, second = plays
+        self.assertNotIn("--load-save", first)
+        self.assertIn("--load-save", second)
+        self.assertEqual(second[second.index("--load-save") + 1], "/saves/AutoSave_0102.Civ6Save")
+        self.assertEqual(second[second.index("--tag") + 1], cont)
+        self.assertEqual(first[first.index("--tag") + 1], row["resumed_from"])
+        # Everything else about the continuation is the original command.
+        def without(argv, *flags):
+            out, skip = [], False
+            for word in argv:
+                if skip:
+                    skip = False
+                    continue
+                if word in flags:
+                    skip = True
+                    continue
+                out.append(word)
+            return out
+        self.assertEqual(without(first, "--tag", "--orders-db"),
+                         without(second, "--tag", "--orders-db", "--load-save"))
+
+    def test_the_resume_budget_is_bounded_and_the_last_freeze_is_the_row(self):
+        verdicts = ["frozen", "frozen", "frozen"]
+        saved_wait = climb.wait_watching_the_turn
+        saved_latest = climb._latest_autosave
+        climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
+        climb._latest_autosave = lambda newer_than=None: Path("/saves/AutoSave_0150.Civ6Save")
+        try:
+            code, rows = self.climb_with(
+                [{"last_turn": 102}, {"last_turn": 140}, {"last_turn": 151}],
+                attempts=1)
+        finally:
+            climb.wait_watching_the_turn = saved_wait
+            climb._latest_autosave = saved_latest
+
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual(row["last_turn"], 151)
+        self.assertEqual(row["reason"], "attempt frozen", "still frozen after the budget: say so")
+        self.assertEqual([r["from_turn"] for r in row["resumes"]], [102, 140])
+        self.assertTrue(row["resumes"][-1]["tag"].endswith("-cont2"))
+
+    def test_a_resume_that_never_reaches_a_turn_keeps_the_frozen_row(self):
+        verdicts = ["frozen", "exited"]
+        saved_wait = climb.wait_watching_the_turn
+        saved_latest = climb._latest_autosave
+        climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
+        climb._latest_autosave = lambda newer_than=None: Path("/saves/AutoSave_0102.Civ6Save")
+        try:
+            code, rows = self.climb_with(
+                [{"last_turn": 102, "last_score": 340}, {"last_turn": None}],
+                attempts=1)
+        finally:
+            climb.wait_watching_the_turn = saved_wait
+            climb._latest_autosave = saved_latest
+        self.assertEqual(len(rows), 1, "the frozen game is the row, not a hole")
+        row = rows[0]
+        self.assertEqual(row["attempt"], 1, "and it spends its rung like any played game")
+        self.assertEqual(row["last_turn"], 102)
+        self.assertEqual(row["last_score"], 340)
+        self.assertEqual(row["reason"], "attempt frozen; resume failed")
+        self.assertTrue(row["resume_failed"]["tag"].endswith("-cont1"))
+        self.assertEqual([r["from_turn"] for r in row["resumes"]], [102])
+
+    def test_resumes_can_be_switched_off(self):
+        verdicts = ["frozen"]
+        saved_wait = climb.wait_watching_the_turn
+        saved_latest = climb._latest_autosave
+        climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
+        climb._latest_autosave = lambda newer_than=None: Path("/saves/AutoSave_0102.Civ6Save")
+        try:
+            code, rows = self.climb_with([{"last_turn": 102}], attempts=1,
+                                         argv_extra=("--max-resumes", "0"))
+        finally:
+            climb.wait_watching_the_turn = saved_wait
+            climb._latest_autosave = saved_latest
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["reason"], "attempt frozen")
+        self.assertNotIn("resumes", rows[0])
