@@ -175,6 +175,15 @@ pub struct Plot {
     /// and on empty ground.
     #[serde(default)]
     pub d: Option<String>,
+    /// Whether that district is COMPLETE (`CityManager.GetDistrictAt(x, y):IsComplete()`).
+    /// `GetDistrictType` names a district from the turn it is placed, and a placed
+    /// district is not adjacent to anything until it is built (Puteoli's Commercial
+    /// Hub read +2 beside a placed Campus for eleven turns and +3 the turn it
+    /// completed, run civvis-20260816T223457Z t108-119). `None` on an older export
+    /// or where the district object could not be read — treated as complete, which
+    /// is what every earlier export meant.
+    #[serde(default)]
+    pub dc: Option<bool>,
     /// Wonder type standing here (`Plot:GetWonderType`), any owner, e.g.
     /// `BUILDING_PYRAMIDS`.
     #[serde(default)]
@@ -370,6 +379,7 @@ mod tests {
             cl: -1,
             p: false,
             d: None,
+            dc: None,
             wo: None,
         }
     }
@@ -1576,6 +1586,7 @@ mod tests {
                 cl: -1,
                 p: false,
                 d: None,
+                dc: None,
                 wo: None,
             }],
         }];
@@ -3057,7 +3068,7 @@ mod tests {
                     x, y, im: None, t: Some("TERRAIN_GRASS".to_string()), f: None, r: None,
                     o: if (x, y) == (3, 3) { 0 } else if (x, y) == (11, 11) { 3 } else { -1 },
                     w: false, i: false, fw: false, rv: 0, ri: false, ct: None, cl: -1,
-                    p: false, d: None, wo: None,
+                    p: false, d: None, dc: None, wo: None,
                 })
             })
             .collect();
@@ -3131,7 +3142,7 @@ mod tests {
                     x, y, im: None, t: Some("TERRAIN_GRASS".to_string()), f: None, r: None,
                     o: if (x, y) == (3, 3) { 0 } else if (x, y) == (11, 11) { 3 } else { -1 },
                     w: false, i: false, fw: false, rv: 0, ri: false, ct: None, cl: -1,
-                    p: false, d: None, wo: None,
+                    p: false, d: None, dc: None, wo: None,
                 })
             })
             .collect();
@@ -6395,6 +6406,7 @@ mod tests {
                         cl: -1,
                         p: false,
                         d: None,
+                        dc: None,
                         wo: None,
                     })
                 })
@@ -6462,6 +6474,7 @@ mod tests {
                         cl: -1,
                         p: false,
                         d: None,
+                        dc: None,
                         wo: None,
                     })
                 })
@@ -6630,7 +6643,7 @@ mod tests {
                 (0..side).map(move |y| Plot {
                     x, y, im: None, t: Some("TERRAIN_GRASS".to_string()), f: None, r: None,
                     o: -1, w: false, i: false, fw: false, rv: 0, ri: false, ct: None, cl: -1,
-                    p: false, d: None, wo: None,
+                    p: false, d: None, dc: None, wo: None,
                 })
             })
             .collect();
@@ -6639,9 +6652,14 @@ mod tests {
         for plot in plots.iter_mut() {
             match (plot.x, plot.y) {
                 (10, 10) => { plot.o = 3; plot.d = Some("DISTRICT_CITY_CENTER".to_string()); }
-                (11, 10) => { plot.o = 3; plot.d = Some("DISTRICT_CAMPUS".to_string()); }
+                (11, 10) => { plot.o = 3; plot.d = Some("DISTRICT_CAMPUS".to_string()); plot.dc = Some(true); }
                 (10, 11) => { plot.o = 3; plot.d = Some("DISTRICT_WONDER".to_string()); plot.wo = Some("BUILDING_PYRAMIDS".to_string()); }
-                (9, 10) | (10, 9) | (11, 11) => { plot.o = 3; }
+                // A PLACED Encampment: `GetDistrictType` names it, `IsComplete`
+                // says no. It is not on the board until it is built.
+                (9, 10) => { plot.o = 3; plot.d = Some("DISTRICT_ENCAMPMENT".to_string()); plot.dc = Some(false); }
+                // An older export says nothing about completion: planted.
+                (10, 9) => { plot.o = 3; plot.d = Some("DISTRICT_HOLY_SITE".to_string()); }
+                (11, 11) => { plot.o = 3; }
                 (2, 2) => { plot.o = 0; }
                 _ => {}
             }
@@ -6666,6 +6684,13 @@ mod tests {
         assert_eq!(recon.game.map.tiles[&campus].district.as_deref(), Some("campus"));
         assert_eq!(recon.game.cities[&stirling].wonders.get(&crate::name!("pyramids")), Some(&pyramids));
         assert_eq!(recon.game.map.tiles[&pyramids].wonder.as_deref(), Some("pyramids"));
+        let encampment = crate::hex::offset_to_axial(9, 10);
+        assert!(recon.game.cities[&stirling].districts.get(crate::name!("encampment")).is_none(),
+            "a placed, unbuilt district is not on the board");
+        assert!(recon.game.map.tiles[&encampment].district.is_none());
+        let holy_site = crate::hex::offset_to_axial(10, 9);
+        assert_eq!(recon.game.cities[&stirling].districts.get(crate::name!("holy_site")), Some(&holy_site),
+            "an export without the flag is read as it always was");
         // Our own city takes nothing from this path.
         let rome_id = recon.game.player_city_ids(0)[0];
         assert!(recon.game.cities[&rome_id].districts.is_empty());
@@ -6841,6 +6866,7 @@ mod tests {
                         cl: -1,
                         p: false,
                         d: None,
+                        dc: None,
                         wo: None,
                     })
                 })
@@ -14638,6 +14664,11 @@ fn apply_foreign_infrastructure(game: &mut crate::game::Game, snapshot: &Snapsho
                 continue;
             }
             if let Some(kind) = plot.d.as_deref() {
+                // A placed-but-unbuilt district is not on the board yet: it
+                // pays no adjacency, no route row, no yields of its own.
+                if plot.dc == Some(false) {
+                    continue;
+                }
                 if matches!(kind, "DISTRICT_CITY_CENTER" | "DISTRICT_WONDER") {
                     continue;
                 }
@@ -16220,6 +16251,7 @@ mod host_fact_tests {
             cl: -1,
             p: false,
             d: None,
+            dc: None,
             wo: None,
         }
     }
