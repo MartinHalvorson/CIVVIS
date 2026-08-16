@@ -818,6 +818,68 @@ the fields, or a route the pathfinder could not answer for, walks as before.
 read for the treaty, the seated routes and the path posts with
 `civ6_yield_drift.py`.
 
+### Round 9: the Dark Age cards were guesses (2026-08-16, run `civvis-20260816T223457Z`)
+
+The first game with the round-7 mod opened its Dark Age at t57 with
+Inquisition slotted, and every city's Science ledger read "-25% from
+Modifiers" beside its Amenity band; the model docked 15. `policies.json`
+had -15, with a note that read like a paraphrase, and so did every other
+Dark Age card: they were CIVVIS's own approximations, not the shipped rows.
+Audited against `PolicyModifiers` → `Modifiers`/`ModifierArguments`/
+`RequirementSets` and `Policies_XP1` (era windows) in the live rules
+database — the ordinary cards (adjacency, trade-route, colonial taxes) all
+matched; only the Dark Age set did not:
+
+- **Inquisition** −25% Science (was −15). **Monasticism** −25% Culture in
+  EVERY city (`MONASTICISM_CULTURE_MODIFIER` has no requirement set; the
+  code used to dock only cities without a Holy Site). **Robber Barons** +50%
+  Gold with a Stock Exchange and +25% Production with a Factory
+  (`BUILDING_IS_STOCK_EXCHANGE` / `BUILDING_IS_FACTORY`; the code had
+  rewritten this to Bank-or-Shipyard on a note that names a requirement set
+  which exists nowhere in the Expansion data). **Isolationism** +2 Food and
+  +2 Production on domestic routes that stay on one continent
+  (`Intercontinental=0`) — no route capacity, no Gold, which were both
+  invented. **Letters of Marque** +100% plunder from every unit and −50% Trade
+  Route yields at the origin AND the destination (twelve rows) — no capacity
+  penalty. **Elite Forces** +2 maintenance (was 1) and Industrial–Future (was
+  Classical–Renaissance).
+- **Six cards CIVVIS never carried**, now on the roster with the shipped
+  amounts: Collectivism (Modern–Atomic: +2 Housing, +1 Food per worked
+  Farm, +100% Industrial Zone adjacency, −50% Great Person points), Rogue
+  State (Atomic+: +50% toward the Manhattan Project, Operation Ivy and the
+  nuclear/thermonuclear devices; no Influence), Flower Power (Atomic+: −100%
+  unit Production, +100% unit purchase cost, free Rock Bands, +50% concert
+  Tourism), Cyber Warfare (Information+: +10 Combat against Information-era
+  civilizations; Grievances against you never decay), Automated Workforce
+  (Information+: +20% project Production, −1 Amenity, −5 Loyalty per turn),
+  Disinformation Campaign (Information+: −10% Science, −10% Culture, +3
+  Favor per Broadcast Center).
+
+`Yields::scale`, `Game::same_continent` and the destination-side route
+yields gathered into one figure (`iys`) are the engine's new seams; the
+policy effect vocabulary grows by `domestic_same_continent_trade_*`,
+`trade_route_yield_pct`, `stock_exchange_city_gold_pct`,
+`factory_city_production_pct`, `city_housing`, `farm_food`,
+`great_people_pct`, `nuclear_project_production_pct`,
+`project_production_pct`, `no_influence`, `unit_production_pct`,
+`unit_purchase_cost_pct`, `rock_band_purchase_discount_pct`,
+`rock_band_concert_tourism_pct`, `combat_vs_information_era`,
+`no_grievance_decay`, `city_loyalty`, `favor_per_broadcast_center`.
+Fingerprint re-pinned. The lesson generalises: a `note` that paraphrases
+instead of naming the row it came from is a guess until measured.
+
+**A placed district is not adjacent until it is built.** The same run's
+Ravenna read its Commercial Hub one adjacency point over the host for thirty
+turns (model 3, host 2) beside a city-state Encampment the tiles export
+named — `Plot:GetDistrictType` answers from the turn a district is placed.
+Our own placements — Puteoli's Campus beside its Hub (t108-119), Arpinum's
+Industrial Zone beside its Campus (t131-140), Ostia's Theater beside its
+Campus (t196-198) — held the neighbour's adjacency flat until the turn the
+district completed, then moved it. The tiles export now carries `dc`
+(`CityManager.GetDistrictAt(x, y):IsComplete()`) beside `d`, and
+`apply_foreign_infrastructure` plants only what is built; our own cities'
+records already carried completion.
+
 ### Faith at the empire level: unused Great Person points and a religion's own beliefs (2026-08-16, run `civvis-20260816T123936Z`)
 
 Rome's Faith per turn diverged from the host by more than half, and the

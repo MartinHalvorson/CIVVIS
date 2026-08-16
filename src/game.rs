@@ -26411,7 +26411,9 @@ impl Game {
                 }
             }
         }
-        let mult = 1.0 + self.gov_effects(pid).great_people_pct / 100.0;
+        let mult = 1.0
+            + (self.gov_effects(pid).great_people_pct + self.policy_effect(pid, "great_people_pct"))
+                / 100.0;
         for (t, amt) in earn.iter_mut() {
             let congress_mult = if self.congress_effect_active("patronage", "A", t) {
                 2.0
@@ -28199,6 +28201,8 @@ impl Game {
             Some(Item::Unit { unit }) | Some(Item::Formation { unit, .. }) => {
                 let spec = &self.rules.units[unit];
                 bonus += self.gov_effects(pid).unit_production_pct / 100.0;
+                // Flower Power's ADJUST_UNIT_PRODUCTION_MODIFIER (-100).
+                bonus += self.policy_effect(pid, "unit_production_pct") / 100.0;
                 if spec.class == "military" {
                     bonus += economic.military_unit_production_pct / 100.0;
                 }
@@ -28402,6 +28406,18 @@ impl Game {
                     bonus +=
                         self.governor_effect(pid, cid, "nuclear_armament_production_pct") / 100.0;
                 }
+                // Rogue State: the four ROGUESTATE_*_PRODUCTION rows.
+                if matches!(
+                    project.as_str(),
+                    "manhattan_project"
+                        | "operation_ivy"
+                        | "build_nuclear_device"
+                        | "build_thermonuclear_device"
+                ) {
+                    bonus += self.policy_effect(pid, "nuclear_project_production_pct") / 100.0;
+                }
+                // Automated Workforce: ADJUST_ALL_PROJECTS_PRODUCTION.
+                bonus += self.policy_effect(pid, "project_production_pct") / 100.0;
                 if self.congress_effect_active("public_works_program", "A", project) {
                     bonus += 1.0;
                 } else if self.congress_effect_active("public_works_program", "B", project) {
@@ -29211,6 +29227,8 @@ impl Game {
             h += self.rules.wonders[wonder].housing;
         }
         h += self.empire_wonder_effect(city.owner, "empire_housing");
+        // Collectivism's COLLECTIVISM_ADD_HOUSING: +2 in every city.
+        h += self.policy_effect(city.owner, "city_housing");
         let specialty_districts = self.city_specialty_district_count(city);
         if specialty_districts >= 2 {
             h += self.policy_effect(city.owner, "housing_at_2_districts");
@@ -37505,6 +37523,18 @@ impl Game {
             .and_then(|tile| tile.continent)
     }
 
+    /// Whether two plots share a continent (both known and equal); water and
+    /// unknown ground are on no continent and never match.
+    fn same_continent(&self, a: Pos, b: Pos) -> bool {
+        match (
+            self.map.get(a).and_then(|tile| tile.continent),
+            self.map.get(b).and_then(|tile| tile.continent),
+        ) {
+            (Some(x), Some(y)) => x == y,
+            _ => false,
+        }
+    }
+
     fn on_foreign_continent(&self, pid: usize, position: Pos) -> bool {
         self.home_continent(pid).is_some_and(|home| {
             self.map
@@ -40366,8 +40396,17 @@ impl Game {
         ys.add(center);
         let citizen_plan = self.city_citizen_plan_weighted(cid, weights);
         let employed = citizen_plan.worked_tiles.len() + citizen_plan.specialists.len();
+        // Collectivism's COLLECTIVISM_FARM_FOOD_MODIFIER is a plot yield on
+        // Farm plots, so it is paid where a citizen works one.
+        let farm_food = self.policy_effect(city.owner, "farm_food");
         for pos in citizen_plan.worked_tiles {
             ys.add(self.workable_tile_yields(pos));
+            if farm_food != 0.0 {
+                let tile = &self.map.tiles[&pos];
+                if !tile.pillaged && tile.improvement.as_deref() == Some("farm") {
+                    ys.food += farm_food;
+                }
+            }
         }
         let specialist_jobs = self.city_specialist_jobs(city);
         for family in citizen_plan.specialists {
@@ -40835,6 +40874,14 @@ impl Game {
                 if domestic {
                     // Isolationism pays only at home, and pays all three.
                     rys.food += self.policy_effect(city.owner, "domestic_trade_food");
+                    // Isolationism's rows carry `Intercontinental=0`: only a
+                    // domestic route that stays on one continent pays them.
+                    if self.same_continent(city.pos, dc.pos) {
+                        rys.food +=
+                            self.policy_effect(city.owner, "domestic_same_continent_trade_food");
+                        rys.production += self
+                            .policy_effect(city.owner, "domestic_same_continent_trade_production");
+                    }
                     rys.production += self.policy_effect(city.owner, "domestic_trade_production");
                     rys.gold += self.policy_effect(city.owner, "domestic_trade_gold");
                 }
@@ -41033,6 +41080,10 @@ impl Game {
                     rys.production +=
                         self.policy_effect(city.owner, "allied_suzerain_trade_production");
                 }
+                // Letters of Marque: -50% of what this seat's routes earn at
+                // their origin (twelve `ADJUST_TRADE_ROUTE_YIELD_MODIFIER`
+                // rows, `Origin=1`); the `Destination=1` half is below.
+                rys.scale(1.0 + self.policy_effect(city.owner, "trade_route_yield_pct") / 100.0);
                 ys.add(rys);
             }
         }
@@ -41042,30 +41093,33 @@ impl Game {
             .iter()
             .filter(|route| route.dest == cid && route.owner != city.owner)
             .count() as f64;
+        // What this city earns as a DESTINATION, gathered so Letters of
+        // Marque's `Destination=1` half can dock it as one figure.
+        let mut iys = Yields::default();
         for route in self.routes.iter().filter(|route| route.dest == cid) {
             let government = self.gov_effects(route.owner);
             if self.government_trade_partner(route.owner, city.owner) {
-                ys.food += government.allied_suzerain_trade_food;
-                ys.production += government.allied_suzerain_trade_production;
+                iys.food += government.allied_suzerain_trade_food;
+                iys.production += government.allied_suzerain_trade_production;
                 // ...and the destination half, paid to the city receiving it.
-                ys.food += self.policy_effect(route.owner, "allied_suzerain_trade_food");
-                ys.production +=
+                iys.food += self.policy_effect(route.owner, "allied_suzerain_trade_food");
+                iys.production +=
                     self.policy_effect(route.owner, "allied_suzerain_trade_production");
             }
             if let Some(alliance) = self.alliance_with(city.owner, route.owner) {
                 match alliance.kind.as_str() {
-                    "research" => ys.science += 1.0,
-                    "cultural" => ys.culture += 1.0,
-                    "economic" => ys.gold += 2.0,
-                    "religious" => ys.faith += 1.0,
+                    "research" => iys.science += 1.0,
+                    "cultural" => iys.culture += 1.0,
+                    "economic" => iys.gold += 2.0,
+                    "religious" => iys.faith += 1.0,
                     _ => {}
                 }
             }
             if route.owner != city.owner {
-                ys.gold += city.great_person_foreign_route_gold;
+                iys.gold += city.great_person_foreign_route_gold;
             }
         }
-        ys.gold += incoming_foreign_routes
+        iys.gold += incoming_foreign_routes
             * self.governor_effect(city.owner, city.id, "incoming_foreign_trade_gold");
         // World Congress Trade Policy A. The resolution's text says the SENDER
         // earns +4 Gold; what Firaxis ships is `INCREASES_TRADE_TO_GOLD`, an
@@ -41080,8 +41134,10 @@ impl Game {
         if incoming_foreign_routes > 0.0
             && self.congress_effect_active("trade_policy", "A", &city.owner.to_string())
         {
-            ys.gold += 4.0 * incoming_foreign_routes;
+            iys.gold += 4.0 * incoming_foreign_routes;
         }
+        iys.scale(1.0 + self.policy_effect(city.owner, "trade_route_yield_pct") / 100.0);
+        ys.add(iys);
         if incoming_routes > 0.0 && city.wonders
 .contains_key(&crate::name!("university_of_sankore")) {
             ys.science += incoming_routes
@@ -41294,29 +41350,23 @@ impl Game {
         // Dark Age cards buy their strength with an empire-wide penalty.
         pct.science += self.policy_effect(city.owner, "city_science_pct");
         pct.culture += self.policy_effect(city.owner, "city_culture_pct");
-        // Monasticism's two halves carry the *same* Holy Site requirement, but
-        // the Culture one is inverted: MONASTICISM_HOLYSITE_SCIENCE tests
-        // REQUIREMENT_CITY_HAS_DISTRICT with Inverse 0 and
-        // MONASTICISM_CULTURE_MODIFIER tests it with Inverse 1. So the Science
-        // is paid where there is a Holy Site and the Culture is docked where
-        // there is not — the card pushes Culture out of the cities it makes
-        // Scientific, rather than taxing the same city twice.
+        // Monasticism (shipped GS `PolicyModifiers`): MONASTICISM_HOLYSITE_SCIENCE
+        // is +75% Science under CITY_HAS_HOLY_SITE; MONASTICISM_CULTURE_MODIFIER
+        // is -25% Culture with NO requirement set — every city, Holy Site or
+        // not — and so rides the plain `city_culture_pct` term above.
         if self.city_has_active_district_family(city, crate::name!("holy_site")) {
             pct.science += self.policy_effect(city.owner, "holy_site_city_science_pct");
-        } else {
-            pct.culture += self.policy_effect(city.owner, "no_holy_site_city_culture_pct");
         }
-        // Robber Barons pays both halves on the same condition, and it is a
-        // TEST_ANY over two buildings: ROBBERBARONS_BANK_OR_SHIPYARD_GOLD and
-        // ..._PRODUCTION each require a Bank *or* a Shipyard. CIVVIS keyed the
-        // Gold on a Stock Exchange and the Production on a Factory, so the card
-        // paid in the wrong cities and at the wrong point in the game.
-        if self.city_has_active_building_family(city, crate::name!("bank"))
-            || self.city_has_active_building_family(city, crate::name!("shipyard"))
-        {
-            pct.gold += self.policy_effect(city.owner, "bank_or_shipyard_city_gold_pct");
-            pct.production +=
-                self.policy_effect(city.owner, "bank_or_shipyard_city_production_pct");
+        // Robber Barons, as the shipped rows read: ROBBERBARONS_STOCKEXCHANGE_GOLD
+        // (+50% Gold) requires BUILDING_IS_STOCK_EXCHANGE and
+        // ROBBERBARONS_FACTORY_PRODUCTION (+25% Production) requires
+        // BUILDING_IS_FACTORY. There is no Bank-or-Shipyard set anywhere in
+        // the Expansion data; the note this code used to carry was wrong.
+        if self.city_has_active_building_family(city, crate::name!("stock_exchange")) {
+            pct.gold += self.policy_effect(city.owner, "stock_exchange_city_gold_pct");
+        }
+        if self.city_has_active_building_family(city, crate::name!("factory")) {
+            pct.production += self.policy_effect(city.owner, "factory_city_production_pct");
         }
         let local_wonder_effect = |effect: &str| {
             city.wonders
@@ -42571,7 +42621,9 @@ impl Game {
         };
         let progress = self.game_progress_ratio(pid);
         let city_multiplier = 1.0 + self.governor_effect(pid, cid, "great_people_pct") / 100.0;
-        let empire_multiplier = 1.0 + self.gov_effects(pid).great_people_pct / 100.0;
+        let empire_multiplier = 1.0
+            + (self.gov_effects(pid).great_people_pct + self.policy_effect(pid, "great_people_pct"))
+                / 100.0;
         spec.completion_gpp
             .iter()
             .map(|(kind, base_points)| {
@@ -46020,6 +46072,11 @@ impl Game {
         {
             bonus += self.policy_effect(u.owner, "different_religion_combat");
         }
+        // Cyber Warfare: CYBER_WARFARE_INFO_FUTURE_BUFF, +10 against a
+        // civilization in the Information Era or later.
+        if self.player_era(opponent.owner) >= 7 {
+            bonus += self.policy_effect(u.owner, "combat_vs_information_era");
+        }
         if spec.promotion_class == "anti_cavalry"
             && (matches!(
                 other.promotion_class.as_str(),
@@ -47978,7 +48035,10 @@ impl Game {
             return None;
         }
         self.rock_concert_venue_details(pid, Some(unit), unit.pos)
-            .map(|(tourism, _, _)| tourism)
+            .map(|(tourism, _, _)| {
+                // Flower Power: ROCK_BAND_TOURISM_BOMB_VALUE_PEACE +50%.
+                tourism * (1.0 + self.policy_effect(pid, "rock_band_concert_tourism_pct") / 100.0)
+            })
     }
 
     fn add_targeted_tourism(&mut self, pid: usize, target: usize, tourism: f64) {
@@ -49261,6 +49321,13 @@ impl Game {
             purchase_discount += self.gov_effects(pid).gold_purchase_discount_pct;
         } else {
             purchase_discount += self.gov_effects(pid).faith_purchase_discount_pct;
+        }
+        // Flower Power: every unit costs +100% to buy (ADJUST_UNITS_PURCHASE_COST
+        // -100 with IncludeCivilian) except a Rock Band, which is free.
+        purchase_discount -= self.policy_effect(pid, "unit_purchase_cost_pct");
+        if unit == "rock_band" {
+            purchase_discount += self.policy_effect(pid, "unit_purchase_cost_pct")
+                + self.policy_effect(pid, "rock_band_purchase_discount_pct");
         }
         if religious && currency == "faith" {
             if let Some(religion) = self.city_religion(city) {
@@ -53806,6 +53873,11 @@ impl Game {
             if self.is_at_war(pid, offender) {
                 continue;
             }
+            // Cyber Warfare's DISABLE_GRIEVANCE_DECAY: what others hold
+            // against its bearer never wears off.
+            if self.policy_effect(offender, "no_grievance_decay") > 0.0 {
+                continue;
+            }
             let occupation_modifier = |founder: usize, occupier: usize| {
                 let occupied = self
                     .cities
@@ -54003,6 +54075,15 @@ impl Game {
             + alliance_favor
             + buildings
             + self.policy_effect(pid, "diplomatic_favor_per_turn")
+            + self.policy_effect(pid, "favor_per_broadcast_center")
+                * self
+                    .cities
+                    .values()
+                    .filter(|city| city.owner == pid)
+                    .filter(|city| {
+                        self.city_has_active_building_family(city, crate::name!("broadcast_center"))
+                    })
+                    .count() as f64
             - diplomatic_penalty;
         self.players[pid].diplomatic_favor = (self.players[pid].diplomatic_favor + favor).max(0.0);
         *self.players[pid]
@@ -54042,11 +54123,15 @@ impl Game {
                     .count() as f64
             })
             .unwrap_or(0.0);
-        let influence = (base_influence
+        let mut influence = (base_influence
             + economic_alliance_influence
             + self.policy_effect(pid, "influence_per_turn")
             + building_effect("influence_points"))
             * (1.0 + self.gov_effects(pid).influence_pct / 100.0);
+        // Rogue State: ROGUESTATE_DISABLE_INFLUENCE — no points, no Envoys.
+        if self.policy_effect(pid, "no_influence") > 0.0 {
+            influence = 0.0;
+        }
         let player = &mut self.players[pid];
         player.influence += influence;
         while threshold > 0.0
@@ -54740,6 +54825,8 @@ impl Game {
         if self.on_foreign_continent(pid, cpos) {
             delta += self.policy_effect(pid, "foreign_continent_city_loyalty");
         }
+        // Automated Workforce's ADJUST_IDENTITY_PER_TURN (-5), every city.
+        delta += self.policy_effect(pid, "city_loyalty");
         delta += self
             .cities
             .values()

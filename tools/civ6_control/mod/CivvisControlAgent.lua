@@ -7182,6 +7182,25 @@ local function exportTiles(player, pid, turn)
 							local row = GameInfo.Districts[kind];
 							return row and row.DistrictType or nil;
 						end, nil),
+						-- ★★★★ ...AND WHETHER IT IS FINISHED. `GetDistrictType` answers
+						-- for a district the moment it is PLACED, and a placed
+						-- district is not adjacent to anything until it is built:
+						-- Puteoli's Commercial Hub read "+2" beside a placed Campus
+						-- for eleven turns and "+3" the turn the Campus completed
+						-- (run civvis-20260816T223457Z t108-119; Arpinum's Campus
+						-- 4→6 at t140, Ostia's at t198 the same way). Ravenna's
+						-- Hub read one adjacency point over the host for thirty
+						-- turns beside a city-state Encampment this flag would
+						-- have said was unbuilt. `CityManager.GetDistrictAt` is
+						-- what the shipped CityBannerManager reads for any owner's
+						-- plot; sent only beside `d`, true/false.
+						dc = try(function()
+							local kind = plot:GetDistrictType();
+							if kind == nil or kind < 0 then return nil; end
+							local district = CityManager.GetDistrictAt(x, y);
+							if district == nil then return nil; end
+							return district:IsComplete() and true or false;
+						end, nil),
 						wo = try(function()
 							local kind = plot:GetWonderType();
 							if kind == nil or kind < 0 then return nil; end
