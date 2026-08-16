@@ -515,46 +515,69 @@ impl HostCityAttackCooldowns {
 /// ordered `MOVE_TO (9,11)` on 28 consecutive turns; 193 plots revealed by t50.
 /// #1735 retires an exploration GOAL the unit stands still for, but the goal
 /// varied while the coalesced first step through (9,11) did not, so nothing
-/// fired. This works at the true grain: the DESTINATION the bridge sent, per
-/// host unit. A unit still standing on the tile it was ordered from, one turn
-/// after a `MOVE_TO`, proves that destination unwalkable; if the mirror still
-/// holds it as unknown ground it stops being assumed traversable, and every
-/// path — exploration, settlers, the army — routes around it. Revealed terrain
-/// is never overridden: once the plot is seen, its real terrain governs.
+/// fired. The host receives a coalesced destination, but CIVVIS still knows
+/// each local step that led there. A unit still standing on the tile it was
+/// ordered from, one turn after a `MOVE_TO`, proves the first speculative step
+/// in that walk unwalkable; if the mirror still holds it as unknown ground it
+/// stops being assumed traversable, and every path — exploration, settlers,
+/// the army — routes around it. Revealed terrain is never overridden: once the
+/// plot is seen, its real terrain governs.
 #[derive(Default)]
 struct HostMoveRefusals {
-    /// The last `MOVE_TO` sent per host unit: where it stood and where it was
-    /// sent, on which turn.
-    sent: std::collections::BTreeMap<i64, ((i32, i32), (i32, i32), u32)>,
-    /// Destinations proved unwalkable, in host offset coordinates.
+    /// The last `MOVE_TO` sent per host unit: where it stood, the long
+    /// destination sent to Firaxis, the first unknown local step, and the turn.
+    sent: std::collections::BTreeMap<i64, HostMoveAttempt>,
+    /// Speculative plots proved unwalkable, in host offset coordinates.
     dead: std::collections::BTreeSet<(i32, i32)>,
+}
+
+#[derive(Clone, Copy)]
+struct HostMoveAttempt {
+    from: (i32, i32),
+    destination: (i32, i32),
+    /// The first unrevealed step CIVVIS simulated before coalescing the whole
+    /// path into `destination`, or that destination for a fully revealed route.
+    /// It is the actionable feedback target when the host never starts the
+    /// route at all.
+    frontier_step: (i32, i32),
+    turn: u32,
 }
 
 impl HostMoveRefusals {
     /// Compare this turn's positions with last turn's orders.
     fn observe(&mut self, state: &civvis::mirror::StateSnapshot) {
         let sent = std::mem::take(&mut self.sent);
-        for (unit, (from, dest, turn)) in sent {
+        for (unit, attempt) in sent {
             // The ladder asks several times per turn; a same-turn frame cannot
             // judge last frame's move yet, so keep it for the turn that can.
-            if state.turn <= turn {
-                self.sent.insert(unit, (from, dest, turn));
+            if state.turn <= attempt.turn {
+                self.sent.insert(unit, attempt);
                 continue;
             }
-            if state.turn != turn.saturating_add(1) {
+            if state.turn != attempt.turn.saturating_add(1) {
                 continue;
             }
             let Some(now) = state.units.iter().find(|u| u.id == unit) else {
                 continue;
             };
-            if (now.x, now.y) == from && from != dest {
-                self.dead.insert(dest);
+            if (now.x, now.y) == attempt.from && attempt.from != attempt.destination {
+                self.dead.insert(attempt.frontier_step);
             }
         }
     }
 
     /// Remember where each `MOVE_TO` in `orders` sends which host unit from.
-    fn record(&mut self, orders: &[Order], state: &civvis::mirror::StateSnapshot) {
+    ///
+    /// `frontier_steps` comes from the uncoalesced action log. It identifies the
+    /// first unknown hop along an otherwise long host route; a one-step or fully
+    /// revealed route falls back to its final destination, preserving the ordinary
+    /// refusal behaviour.
+    fn record(
+        &mut self,
+        orders: &[Order],
+        state: &civvis::mirror::StateSnapshot,
+        frontier_steps: &std::collections::BTreeMap<i64, (i32, i32)>,
+    ) {
         for order in orders {
             if order.kind != "unit" || order.verb.as_deref() != Some("MOVE_TO") {
                 continue;
@@ -570,7 +593,15 @@ impl HostMoveRefusals {
             else {
                 continue;
             };
-            self.sent.insert(unit, (from, dest, state.turn));
+            self.sent.insert(
+                unit,
+                HostMoveAttempt {
+                    from,
+                    destination: dest,
+                    frontier_step: frontier_steps.get(&unit).copied().unwrap_or(dest),
+                    turn: state.turn,
+                },
+            );
         }
     }
 
@@ -689,6 +720,53 @@ fn coalesce_unit_paths(orders: Vec<Order>) -> (Vec<Order>, usize, usize) {
         }
     }
     (out, deferred, coalesced)
+}
+
+/// The first unrevealed step in each walk that reaches the host boundary.
+///
+/// `coalesce_unit_paths` deliberately sends a unit's furthest planned hex so
+/// Scouts, settlers and builders spend all of their movement. When the host
+/// refuses that long route without moving at all, retaining only its terminal
+/// hex gives the next mirror no useful terrain fact: the obstacle can be an
+/// intermediate speculative step. Capture that first unknown step before the
+/// command is compressed, but only for a contiguous opening walk — exactly the
+/// prefix that coalescing will actually emit.
+fn first_unknown_coalesced_steps(
+    orders: &[Order],
+    snapshot: &civvis::mirror::Snapshot,
+) -> std::collections::BTreeMap<i64, (i32, i32)> {
+    let mut open_walks: std::collections::BTreeMap<i64, bool> =
+        std::collections::BTreeMap::new();
+    let mut steps = std::collections::BTreeMap::new();
+    for order in orders {
+        if order.kind != "unit" {
+            continue;
+        }
+        let Some(unit) = order.subject else {
+            continue;
+        };
+        let step = (order.verb.as_deref() == Some("MOVE_TO"))
+            .then_some(order.pos)
+            .flatten();
+        match open_walks.get_mut(&unit) {
+            None => {
+                open_walks.insert(unit, step.is_some());
+                if let Some(pos) = step.filter(|pos| !snapshot.is_revealed(*pos)) {
+                    steps.insert(unit, pos);
+                }
+            }
+            Some(open) if *open => {
+                if let Some(pos) = step.filter(|pos| !snapshot.is_revealed(*pos)) {
+                    steps.entry(unit).or_insert(pos);
+                }
+                if step.is_none() {
+                    *open = false;
+                }
+            }
+            Some(_) => {}
+        }
+    }
+    steps
 }
 
 /// Firaxis resolves Governor operations asynchronously. CIVVIS can spend several
@@ -1936,6 +2014,10 @@ fn decide(
         ));
     }
 
+    // Keep the first speculative local step before a whole walk is compressed
+    // into one host operation. `HostMoveRefusals` uses it only if Firaxis then
+    // leaves the unit exactly where it started.
+    let first_unknown_steps = first_unknown_coalesced_steps(&orders, snapshot);
     let (causally_safe, deferred_unit_followups, coalesced_path_steps) =
         coalesce_unit_paths(orders);
     orders = causally_safe;
@@ -1948,7 +2030,7 @@ fn decide(
 
     // Remember where each move sends which host unit, so next turn's positions
     // can prove a destination unwalkable. See `HostMoveRefusals`.
-    host_move_refusals.record(&orders, state);
+    host_move_refusals.record(&orders, state, &first_unknown_steps);
     if !host_move_refusals.dead.is_empty() {
         note_bits.push(format!("host_dead_plots={}", host_move_refusals.dead.len()));
     }
@@ -3965,7 +4047,7 @@ mod tests {
                 pos: Some((7, 7)),
             },
         ];
-        refusals.record(&orders, &state);
+        refusals.record(&orders, &state, &std::collections::BTreeMap::new());
         assert_eq!(refusals.sent.len(), 1, "only the scout's move is remembered");
 
         // A second frame on the SAME turn cannot judge the move yet and must not
@@ -4010,6 +4092,7 @@ mod tests {
                 pos: Some((6, 5)),
             }],
             &state,
+            &std::collections::BTreeMap::new(),
         );
         state.turn = 15;
         state.units[0].x = 5;
@@ -4024,6 +4107,64 @@ mod tests {
             "revealed terrain keeps its own truth"
         );
         assert!(mirror.game.rules.is_passable(&mirror.game.map.tiles[&seen_pos]));
+    }
+
+    /// A coalesced `MOVE_TO` keeps the host fast, but the failure feedback must
+    /// name the first speculative hop that was hidden inside it. Otherwise a
+    /// rejected three-hex Scout route only retires its far endpoint and the next
+    /// fresh mirror can choose the same blocked opening again.
+    #[test]
+    fn a_stalled_coalesced_walk_retires_its_first_unknown_step() {
+        let (snapshot, mut state) = production_board();
+        state.turn = 13;
+        state.units = vec![StateUnit {
+            id: 900,
+            kind: "UNIT_SCOUT".to_string(),
+            x: 6,
+            y: 5,
+            hp: 100.0,
+            moves: 3.0,
+            ..StateUnit::default()
+        }];
+        // The first local step is known ground. The second is the first unknown
+        // frontier plot, then the coalescer carries the Scout a further hex.
+        let planned = vec![
+            unit_order(900, "MOVE_TO", Some((7, 5))),
+            unit_order(900, "MOVE_TO", Some((8, 5))),
+            unit_order(900, "MOVE_TO", Some((9, 5))),
+        ];
+        let probes = first_unknown_coalesced_steps(&planned, &snapshot);
+        assert_eq!(probes.get(&900), Some(&(8, 5)));
+
+        let (orders, deferred, coalesced) = coalesce_unit_paths(planned);
+        assert_eq!(deferred, 0);
+        assert_eq!(coalesced, 2);
+        assert_eq!(orders[0].pos, Some((9, 5)), "the host still gets the full walk");
+
+        let mut refusals = HostMoveRefusals::default();
+        refusals.record(&orders, &state, &probes);
+        state.turn = 14;
+        refusals.observe(&state);
+        assert_eq!(
+            refusals.dead.iter().copied().collect::<Vec<_>>(),
+            vec![(8, 5)],
+            "the hidden unknown hop, not the distant host destination, is retired"
+        );
+
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 2);
+        let first_unknown = civvis::hex::offset_to_axial(8, 5);
+        let host_destination = civvis::hex::offset_to_axial(9, 5);
+        assert!(mirror.game.map.tiles[&first_unknown].assumed_traversable);
+        assert!(mirror.game.map.tiles[&host_destination].assumed_traversable);
+        refusals.apply(&mut mirror);
+        assert!(
+            !mirror.game.map.tiles[&first_unknown].assumed_traversable,
+            "the next fresh mirror routes around the exact failed frontier hop"
+        );
+        assert!(
+            mirror.game.map.tiles[&host_destination].assumed_traversable,
+            "unproven downstream frontier remains available to future exploration"
+        );
     }
 
     fn production_board() -> (Snapshot, StateSnapshot) {
