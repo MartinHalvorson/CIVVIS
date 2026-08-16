@@ -4947,6 +4947,36 @@ local function exportState(player, pid, turn)
 					or { foreign = 0, domestic = 0, origins = {} };
 				incomingRoutes[destinationID].domestic = incomingRoutes[destinationID].domestic + 1;
 			end
+			-- The Trading Posts on the route's OWN path, which is the host's
+			-- pathfinder's and not a straight line: Ostia -> Aquileia (run
+			-- civvis-20260816T200454Z, t144-154) read "+2 from Outgoing Trade
+			-- Routes" against a model that walked the straight line and found
+			-- one post — the road runs through Cumae. `GetTradeRoutePath` is
+			-- what the shipped TradeRouteChooser draws; each city plot on it
+			-- (the origin excluded, the destination included) is asked
+			-- `HasActiveTradingPost(pid)` and filed by owner, since a post at
+			-- home pays only under Rome's trait and a post abroad pays
+			-- `TRADING_POST_GOLD_IN_FOREIGN_CITY`. nil when unreadable.
+			local postsOwn, postsForeign = nil, nil;
+			pcall(function()
+				local manager = Game.GetTradeManager();
+				if manager == nil then return; end
+				local path = manager:GetTradeRoutePath(pid, originID, destinationPlayer, destinationID);
+				if type(path) ~= "table" then return; end
+				local own, foreign = 0, 0;
+				for _, plotIndex in ipairs(path) do
+					local plot = Map.GetPlotByIndex(plotIndex);
+					if plot ~= nil and plot:IsCity() then
+						local there = Cities.GetCityInPlot(plot:GetX(), plot:GetY());
+						if there ~= nil
+							and not (there:GetOwner() == pid and there:GetID() == originID)
+							and there:GetTrade():HasActiveTradingPost(pid) then
+							if there:GetOwner() == pid then own = own + 1; else foreign = foreign + 1; end
+						end
+					end
+				end
+				postsOwn, postsForeign = own, foreign;
+			end);
 			tradeRoutes[#tradeRoutes + 1] = {
 				trader = try(function() return route.TraderUnitID; end, -1),
 				origin = originID,
@@ -4956,6 +4986,8 @@ local function exportState(player, pid, turn)
 				origin_y = try(function() return city:GetY(); end, -1),
 				destination_x = try(function() return destination and destination:GetX(); end, -1),
 				destination_y = try(function() return destination and destination:GetY(); end, -1),
+				posts_own = postsOwn,
+				posts_foreign = postsForeign,
 			};
 		end
 		local queue = try(function()
