@@ -215,6 +215,9 @@ const REGIONAL_AMENITY_REACH_DISCOUNT: f64 = 0.8;
 /// Standard turns a settler avoids a site it stood on and could not found. See
 /// `advanced_settler_step`.
 const SETTLER_DEAD_SITE_AVOID_TURNS: u32 = 30;
+/// Retreats a settler may make while committed to one target before that
+/// target is retired. See `advanced_settler_step`.
+const SETTLER_RETREAT_LIMIT: u32 = 3;
 /// Loyalty per turn at which a forecast city is treated as doomed before its
 /// Settler is sent: -8 empties a full bar in at most thirteen turns. The same
 /// emergency threshold the live mirror uses for a settler's current plot.
@@ -1605,6 +1608,11 @@ pub struct AdvancedAi {
     /// the stall counter overwrites that slot, and a doomed frontier is usually
     /// several adjacent plots. See `advanced_settler_step`.
     settler_dead_sites: BTreeMap<u32, BTreeMap<Pos, u32>>,
+    /// The target a settler was committed to when it last stepped back from a
+    /// threat, and how many times it has stepped back while committed to it.
+    /// See `advanced_settler_step`: a target the settler keeps retreating from
+    /// is retired the way a site it cannot found is.
+    settler_retreats: BTreeMap<u32, (Pos, u32)>,
     /// The target each settler is committed to and the closest it has come to
     /// it. A dodge around a hostile is a legal move but not progress, so the
     /// stall counter is driven from this rather than from whether the unit
@@ -2740,6 +2748,8 @@ impl AdvancedAi {
         self.guard_wait.clear();
         self.settler_blocked_turns.clear();
         self.settler_avoid.clear();
+        self.settler_dead_sites.clear();
+        self.settler_retreats.clear();
         self.settler_closest.clear();
         self.builder_targets.clear();
         self.force_groups.clear();
@@ -2797,6 +2807,20 @@ impl AdvancedAi {
             .settler_closest
             .iter()
             .filter_map(|(uid, progress)| map.get(uid).map(|new| (*new, *progress)))
+            .collect();
+        // ★★★★ Retired sites and retreat counts are settler memory too, and
+        // the live bridge rebuilds its board every turn: without this remap a
+        // site retired on turn N was forgotten on turn N+1 the moment the
+        // unit's id shifted, and the settler re-picked it.
+        self.settler_dead_sites = self
+            .settler_dead_sites
+            .iter()
+            .filter_map(|(uid, sites)| map.get(uid).map(|new| (*new, sites.clone())))
+            .collect();
+        self.settler_retreats = self
+            .settler_retreats
+            .iter()
+            .filter_map(|(uid, retreat)| map.get(uid).map(|new| (*new, *retreat)))
             .collect();
         // Rebuilt from the board every turn regardless, so there is nothing to carry.
         self.force_groups.clear();
@@ -2885,6 +2909,7 @@ impl AdvancedAi {
             settler_blocked_turns: BTreeMap::new(),
             settler_avoid: BTreeMap::new(),
             settler_dead_sites: BTreeMap::new(),
+            settler_retreats: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
             linked_settler_progress: false,
             live_governor_assignment_adapter: false,
@@ -18895,6 +18920,40 @@ impl AdvancedAi {
                                "Settler retreats from {current:?}";
                                "its tile is threatened (risk {here:.0}); stepping to {step:?} \
                                 (risk {risk:.0}) rather than waiting to be taken"; step);
+                        // ★★★★ A TARGET THE SETTLER KEEPS RETREATING FROM IS ONE
+                        // IT WILL NOT REACH. Run civvis-20260816T075807Z: a
+                        // barbarian Galley sat off the coast four tiles from the
+                        // capital from t30 to t80, every site was coastal, and two
+                        // settlers spent t33–t87 stepping back (risk 101 → 48 →
+                        // 5), marching back in and stepping back again — the third
+                        // city came at t84 and the tally read 457 against 847.
+                        // The retreat is right; repeating it forever is not.
+                        // After `SETTLER_RETREAT_LIMIT` retreats while committed
+                        // to one target, that target is retired the way a site
+                        // the settler cannot found is (`settler_dead_sites`),
+                        // and the next pick looks elsewhere.
+                        if let Some(target) = self.settler_targets.get(&uid).copied() {
+                            let count = match self.settler_retreats.get(&uid) {
+                                Some((committed, count)) if *committed == target => count + 1,
+                                _ => 1,
+                            };
+                            self.settler_retreats.insert(uid, (target, count));
+                            if count >= SETTLER_RETREAT_LIMIT {
+                                think!(self.journal(), Expansion, Detail,
+                                       "Settler gives up on {target:?}";
+                                       "retreated {count} times while walking there; the \
+                                        approach is not clearing, so the site is retired for \
+                                        {SETTLER_DEAD_SITE_AVOID_TURNS} standard turns"; target);
+                                self.settler_dead_sites.entry(uid).or_default().insert(
+                                    target,
+                                    g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+                                );
+                                self.settler_targets.remove(&uid);
+                                self.settler_stalls.remove(&uid);
+                                self.settler_blocked_turns.remove(&uid);
+                                self.settler_retreats.remove(&uid);
+                            }
+                        }
                         if g.apply(pid, &Action::Move { unit: uid, to: step }).is_ok() {
                             return true;
                         }
@@ -26892,6 +26951,42 @@ mod tests {
                 .iter()
                 .any(|thought| thought.headline.starts_with("Settler retreats from")),
             "the retreat is journaled"
+        );
+
+        // ★★★★ A target it keeps retreating from is retired. Put it back on
+        // the shore, committed to a target, and let the ship stay: the third
+        // retreat gives the target up (civvis-20260816T075807Z: two settlers
+        // stepped back and marched in again from t33 to t87).
+        let target = inland;
+        live.settler_targets.insert(settler, target);
+        live.settler_retreats.remove(&settler);
+        let mut retreats = 0;
+        for _ in 0..SETTLER_RETREAT_LIMIT {
+            game.relocate(settler, shore);
+            game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+            let before = journal.since(0).thoughts.len();
+            let _ = live.advanced_settler_step(&mut game, 0, settler);
+            let fresh_thoughts = &journal.since(0).thoughts[before..];
+            if fresh_thoughts.iter().any(|t| t.headline.starts_with("Settler retreats from")) {
+                retreats += 1;
+            }
+        }
+        assert_eq!(retreats, SETTLER_RETREAT_LIMIT, "each turn on the shore is a retreat");
+        assert!(
+            live.settler_site_is_dead(settler, target),
+            "the target it kept retreating from is retired"
+        );
+        assert!(
+            !live.settler_targets.contains_key(&settler),
+            "and the commitment is dropped so the next pick looks elsewhere"
+        );
+        assert!(
+            journal
+                .since(0)
+                .thoughts
+                .iter()
+                .any(|thought| thought.headline.starts_with("Settler gives up on")),
+            "the surrender is journaled"
         );
 
         // Inside a city the same threat does not move it.
