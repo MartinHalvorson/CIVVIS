@@ -8004,6 +8004,43 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and "envoy_placed" or "throw";
 	end
 
+	-- ★★★★ CIVVIS'S OWN LEVY. `LevyMilitary` was the single most-skipped
+	-- action of the pre-envoy bridge (44 a game) — moot while the seat held no
+	-- suzerainty, live now that it places its envoys. Firaxis's own quote is
+	-- the price and `CanLevyMilitary` the gate (cooldown, suzerainty, war
+	-- state), exactly as `chooseEnvoy`'s levy scan reads them; one
+	-- `LEVY_MILITARY` request per order, through a fresh handle, nothing
+	-- written through it afterwards. The treasury check is the receiving
+	-- side's, not the mirror's — a levy the plan priced from a partial view
+	-- of the city-state's army is refused by name, not bought blind.
+	if kind == "levy" then
+		if subject < 0 then return false, "levy_target_unmapped"; end
+		local levyOp = try(function() return PlayerOperations.LEVY_MILITARY; end);
+		local oneParam = try(function() return PlayerOperations.PARAM_PLAYER_ONE; end);
+		if levyOp == nil or oneParam == nil then return false, "levy_no_operation"; end
+		local influence = try(function() return player:GetInfluence(); end);
+		if influence == nil then return false, "levy_no_influence"; end
+		if not try(function() return influence:CanLevyMilitary(subject); end, false) then
+			return false, "levy_refused_" .. tostring(subject);
+		end
+		local cost = try(function() return influence:GetLevyMilitaryCost(subject); end, -1) or -1;
+		local purse = try(function()
+			return math.floor(player:GetTreasury():GetGoldBalance());
+		end, 0) or 0;
+		if cost < 0 or purse < cost then
+			return false, "levy_unaffordable";
+		end
+		local params = {};
+		params[oneParam] = subject;
+		local ok = pcall(function()
+			UI.RequestPlayerOperation(pid, levyOp, params);
+		end);
+		if ok then
+			emit("levy", { turn = turn, target = subject, source = "civvis", cost = cost, purse = purse });
+		end
+		return ok, ok and "levy_bought" or "throw";
+	end
+
 	-- ★★★★★ CIVVIS'S OWN POLICY, GOVERNMENT AND PANTHEON CHOICES.
 	--
 	-- These had NO arm at all: CIVVIS issued `SlotPolicy` on every turn from t80 to
