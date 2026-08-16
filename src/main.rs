@@ -1252,7 +1252,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `AdvancedAi::legacy()` (asserted); the frozen anchor spends every envoy
 /// and re-derives its scout's goal each turn as before. Compatibility
 /// re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2f3b_2075_395b_eb64;
+/// The settler-target hysteresis is behind `settler_target_hysteresis`, off
+/// for `AdvancedAi::legacy()` (asserted); the frozen anchor's settler
+/// re-picks exactly as before. Compatibility re-pin; the Elo protocol does
+/// not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa333_ab63_a585_75ea;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
