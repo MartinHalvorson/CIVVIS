@@ -825,6 +825,41 @@ class UnitsBlockerForfeitTest(unittest.TestCase):
         self.assertIn("orderIdle(unit)", self.parking)
         self.assertNotIn("orderFor(", self.parking)
 
+    def test_live_settler_residual_pass_keeps_civvis_settlement_authority(self) -> None:
+        """A post-answer unblock may clear readiness, never invent a city.
+
+        The live planner can deliberately leave a settler unmentioned after
+        rejecting every nearby tile on its loyalty forecast. A lingering unit
+        blocker gets one residual `orderUnits` pass; that pass must idle the
+        settler after either a current or stale CIVVIS answer, while a genuine
+        timeout fallback retains the legacy founder. Explicit approved
+        FOUND_CITY rows still go through `applyOrders`.
+        """
+        order_for = self.source.split("local function orderFor(player, pid, unit, turn)", 1)[
+            1
+        ]
+        settler = order_for.split('if name == "UNIT_SETTLER" then', 1)[1].split(
+            'elseif name == "UNIT_BUILDER"', 1
+        )[0]
+        apply_orders = self.source.split("local function applyOrders", 1)[1].split(
+            "local function reportLostCities", 1
+        )[0]
+
+        self.assertIn("if cfg.CivvisDecides", settler)
+        self.assertIn('awaiting.source == "civvis"', settler)
+        self.assertIn('awaiting.source == "civvis_stale"', settler)
+        self.assertIn("return orderIdle(unit)", settler)
+        self.assertIn("return orderSettler(player, pid, unit, turn)", settler)
+        self.assertLess(
+            settler.index("return orderIdle(unit)"),
+            settler.index("return orderSettler(player, pid, unit, turn)"),
+        )
+        self.assertIn('tostring(row.verb or "") == "FOUND_CITY"', apply_orders)
+        self.assertIn(
+            'local placed = operate(unit, OP["UNITOPERATION_FOUND_CITY"], {});',
+            self.source,
+        )
+
     def test_parking_sweeps_the_roster_after_the_ready_query_jams(self) -> None:
         """`GetFirstReadyUnit` offers an uncooperative unit forever.
 

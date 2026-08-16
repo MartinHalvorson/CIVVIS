@@ -2274,6 +2274,18 @@ local function orderFor(player, pid, unit, turn)
 	local name = unitTypeName(unit);
 	local row = GameInfo.Units[name];
 	if name == "UNIT_SETTLER" then
+		-- A completed CIVVIS pass can still leave the engine's unit prompt up.
+		-- Its bounded residual unblock pass calls `orderUnits` so the turn can
+		-- progress, but `orderSettler` founds immediately on the current tile.
+		-- That must not overturn CIVVIS declining a site -- in particular one its
+		-- loyalty forecast says will revolt. Explicit FOUND_CITY rows have already
+		-- run through `applyOrders`; this only parks a settler CIVVIS left alone.
+		-- Keep the normal founder for a genuine timeout fallback, where CIVVIS did
+		-- not answer and the host must still be able to play the turn.
+		if cfg.CivvisDecides
+				and (awaiting.source == "civvis" or awaiting.source == "civvis_stale") then
+			return orderIdle(unit);
+		end
 		return orderSettler(player, pid, unit, turn);
 	elseif name == "UNIT_BUILDER" then
 		return orderBuilder(unit);
