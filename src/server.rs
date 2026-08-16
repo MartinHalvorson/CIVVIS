@@ -10133,7 +10133,12 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("${citiesOpen ? \" cities-open\" : \"\"}"));
         assert!(EMBEDDED_INDEX.contains("class=\"diplomacy-card hud-city-row${capital ? \" capital\" : \"\"}\""));
-        assert!(EMBEDDED_INDEX.contains("visibleColumns.map(cell).join(\"\") + `</div>`;"));
+        // The name runs on across every silent identity cell after it rather
+        // than being crushed into one narrow track beside a row of blanks.
+        assert!(EMBEDDED_INDEX.contains(
+            "while (index + span < visibleColumns.length && silent(visibleColumns[index + span])) span++;"
+        ));
+        assert!(EMBEDDED_INDEX.contains("style=\"grid-column:span ${span}\""));
         assert!(EMBEDDED_INDEX.contains("#playerhud .diplomacy-card.hud-city-row {"));
         // The list follows the table's sort wherever a city has the fact, and
         // an unavailable reading sorts below every observed one exactly as it

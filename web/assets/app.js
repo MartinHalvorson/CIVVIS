@@ -23017,14 +23017,16 @@ function drawPlayerHud() {
 }
 
 // One row per city on the table's own tracks, under the seat that holds them.
-// A city's name takes the civilization cell — or the nearest identity cell
-// still showing when that one is hidden — and answers with a view of the city
-// as the civilization's answers with its capital. What a city is building
+// A city's name starts in the civilization cell — or the nearest identity
+// cell still showing when that one is hidden — and answers with a view of the
+// city as the civilization's answers with its capital. What a city is building
 // stands under PLAN, the one identity fact a city has a reading for. Every
-// other identity cell stays empty rather than repeating the empire's; the
-// value cells print the city's own figure under each head that names a fact
-// a city has, a dash where fog hides it, and nothing under a head that does
-// not describe a city at all.
+// other identity cell has nothing to say for a city, so rather than standing
+// empty beside a name crushed into one narrow track, they lend the name their
+// width: it runs on across every empty identity cell that follows it, and
+// stops at the first cell with a reading of its own. The value cells print the
+// city's own figure under each head that names a fact a city has, a dash where
+// fog hides it, and nothing under a head that does not describe a city at all.
 function playerHudCityRows(player, cities, hidden, visibleColumns) {
   const civ = escapeAttr(player.civ);
   const rowStyle = `style="--civ:${pcol(player.id)};--civ-border:${pcol2(player.id)}"`;
@@ -23042,13 +23044,16 @@ function playerHudCityRows(player, cities, hidden, visibleColumns) {
       `${city.religion ? ` · ${escapeAttr(titleCase(city.religion))}` : ""}` +
       `${founder ? ` · founded by ${escapeAttr(founder)}` : ""}`;
     const production = playerHudCityProduction(city);
+    // An identity cell with nothing to say for this city.
+    const silent = column => column.block !== "stats" && column !== nameColumn &&
+      !(column.key === "plan" && production);
+    const nameCell = span =>
+      `<button class="diplomacy-identity hud-city-name" style="grid-column:span ${span}" ` +
+        `data-hud-action="city" data-hud-city="${city.id}" data-hud-civ="${player.id}" ` +
+        `title="${focusTitle}" aria-label="${focusTitle}">` +
+        `<span class="diplomacy-identity-field"><span class="hud-city-tie" aria-hidden="true">↳</span>` +
+        `<span class="diplomacy-civ">${name}${capital ? " ♛" : ""}</span></span></button>`;
     const cell = column => {
-      if (column === nameColumn)
-        return `<button class="diplomacy-identity hud-city-name" data-hud-col="${column.key}" ` +
-          `data-hud-action="city" data-hud-city="${city.id}" data-hud-civ="${player.id}" ` +
-          `title="${focusTitle}" aria-label="${focusTitle}">` +
-          `<span class="diplomacy-identity-field"><span class="hud-city-tie" aria-hidden="true">↳</span>` +
-          `<span class="diplomacy-civ">${name}${capital ? " ♛" : ""}</span></span></button>`;
       if (column.key === "plan" && production)
         return `<span class="diplomacy-identity hud-city-plan" data-hud-col="plan">` +
           `<span class="diplomacy-identity-field diplomacy-strategy" title="${name} is building ${escapeAttr(production)}">` +
@@ -23060,9 +23065,18 @@ function playerHudCityRows(player, cities, hidden, visibleColumns) {
       return `<span class="ribbon-stat ${column.key} hud-city-stat" data-hud-col="${column.key}" ` +
         `title="${escapeAttr(title)}"><b>${figure}</b></span>`;
     };
+    const cells = [];
+    for (let index = 0; index < visibleColumns.length; index++) {
+      const column = visibleColumns[index];
+      if (column !== nameColumn) { cells.push(cell(column)); continue; }
+      let span = 1;
+      while (index + span < visibleColumns.length && silent(visibleColumns[index + span])) span++;
+      cells.push(nameCell(span));
+      index += span - 1;
+    }
     return `<div class="diplomacy-card hud-city-row${capital ? " capital" : ""}" ${rowStyle} role="listitem" ` +
       `aria-label="${name}, ${capital ? "capital" : "city"} of ${civ}">` +
-      visibleColumns.map(cell).join("") + `</div>`;
+      cells.join("") + `</div>`;
   });
   const plural = count => `${count} cit${count === 1 ? "y" : "ies"}`;
   const note = !cities.length
