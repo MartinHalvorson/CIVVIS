@@ -1190,7 +1190,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the live bridge and the native repair bundle set; `AdvancedAi::new()` and
 /// `legacy()` keep the historical routing (asserted). Compatibility re-pin; the
 /// Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc869_1998_fe58_e3c0;
+/// A plan-confirmed pre-damage barbarian siege reuses the live-only
+/// `garrison_under_fire` gate; the frozen anchor never enables it and therefore
+/// keeps its historical queue commitments (asserted). Compatibility re-pin; the
+/// Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb452_d6fc_37ab_1fd4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

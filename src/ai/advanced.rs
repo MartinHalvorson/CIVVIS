@@ -14280,14 +14280,23 @@ impl AdvancedAi {
     ///
     /// This is deliberately not a second siege heuristic: the established
     /// evaluator still supplies the visibility/damage proof and the exact
-    /// defensive item. Before damage, that evaluator proves a multi-unit siege;
-    /// this handoff may act on that proof only during an active major war.
+    /// defensive item. Before damage, that evaluator proves a multi-unit siege.
+    /// A major war is sufficient proof on its own; outside one, require that
+    /// the current strategic plan independently names this city as threatened.
+    /// That admits the multi-unit barbarian siege the live seat can actually
+    /// see, without turning two passing scouts near an otherwise healthy city
+    /// into a destructive queue switch.
     /// `release_foreign_production` can also deliberately clear a host-owned
     /// queue just before this pass. The newly empty city needs the same
     /// handoff, or the ordinary governor refills it before the siege evaluator
     /// can act. This is live-only, preserves repairs, walls, and military
     /// production, and claims at most one unsafe queue each turn.
-    fn redirect_unsafe_city_queue_for_defense(&self, g: &mut Game, pid: usize) {
+    fn redirect_unsafe_city_queue_for_defense(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        threatened_city: Option<u32>,
+    ) {
         if !self.base.garrison_under_fire {
             return;
         }
@@ -14317,10 +14326,15 @@ impl AdvancedAi {
                 .saturating_sub(g.cities[&city].wall_hp);
             // Before it is damaged, `besieged_city_item` only supplies a
             // defender after seeing a real multi-unit raiding party. That is
-            // enough proof to reclaim one queue during a major war; without
-            // that war, retain the damage gate so scouts and barbarians cannot
-            // erase committed infrastructure merely by passing nearby.
-            if damage == 0 && wall_damage == 0 && !active_major_war {
+            // enough proof to reclaim one queue during a major war. Outside a
+            // major war, the plan's independent threat call supplies the extra
+            // proof that this is an active siege rather than passing scouts.
+            let confirmed_non_major_siege = threatened_city == Some(city);
+            if damage == 0
+                && wall_damage == 0
+                && !active_major_war
+                && !confirmed_non_major_siege
+            {
                 continue;
             }
             let total_damage = damage.saturating_add(wall_damage);
@@ -14349,11 +14363,11 @@ impl AdvancedAi {
             if let Some(committed) = committed {
                 think!(self.journal(), Economy, Decision,
                     "{} pauses {} for {}", city_name, Self::plain_item(&committed), Self::plain_item(&defence);
-                    "under fire or facing a confirmed major-war siege with {damage} combined city/wall health missing; this is the highest-priority unsafe queue");
+                    "under fire or facing a confirmed siege with {damage} combined city/wall health missing; this is the highest-priority unsafe queue");
             } else {
                 think!(self.journal(), Economy, Decision,
                     "{} starts {}", city_name, Self::plain_item(&defence);
-                    "under fire or facing a confirmed major-war siege with {damage} combined city/wall health missing after a host queue release");
+                    "under fire or facing a confirmed siege with {damage} combined city/wall health missing after a host queue release");
             }
         }
     }
@@ -24868,7 +24882,7 @@ impl AdvancedAi {
         // live-only bleeding response reclaim one unsafe commitment, then let
         // the existing wall doctrine protect the plan's one threatened city
         // before it begins taking damage.
-        self.redirect_unsafe_city_queue_for_defense(g, pid);
+        self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
         self.redirect_threatened_recovery_queue_for_walls(g, pid, &plan);
 
         // Physical Firaxis Great People with no legal activation plot are
@@ -25240,7 +25254,7 @@ mod tests {
         // until an actual major war begins.
         let mut peaceful = game.clone();
         peaceful.at_war.clear();
-        live.redirect_unsafe_city_queue_for_defense(&mut peaceful, 0);
+        live.redirect_unsafe_city_queue_for_defense(&mut peaceful, 0, None);
         assert_eq!(peaceful.cities[&city].queue.first(), Some(&city_campus));
         assert_eq!(peaceful.cities[&other].queue.first(), Some(&other_campus));
 
@@ -25251,7 +25265,7 @@ mod tests {
         // the first wall hit. This is the t84 Cumae shape: waiting for damage
         // gave Nubia a full turn to turn an active Builder into a lost city.
         let mut preventative = game.clone();
-        live.redirect_unsafe_city_queue_for_defense(&mut preventative, 0);
+        live.redirect_unsafe_city_queue_for_defense(&mut preventative, 0, None);
         assert_eq!(preventative.cities[&city].queue.first(), Some(&city_campus));
         assert!(matches!(
             preventative.cities[&other].queue.first(),
@@ -25266,12 +25280,12 @@ mod tests {
         // untouched: damage alone is actionable only when the bridge turns on
         // garrison-under-fire.
         for controller in [AdvancedAi::legacy(), AdvancedAi::new()] {
-            controller.redirect_unsafe_city_queue_for_defense(&mut game, 0);
+            controller.redirect_unsafe_city_queue_for_defense(&mut game, 0, None);
         }
         assert_eq!(game.cities[&city].queue.first(), Some(&city_campus));
         assert_eq!(game.cities[&other].queue.first(), Some(&other_campus));
 
-        live.redirect_unsafe_city_queue_for_defense(&mut game, 0);
+        live.redirect_unsafe_city_queue_for_defense(&mut game, 0, None);
         assert_eq!(game.cities[&city].queue.first(), Some(&city_campus));
         assert!(matches!(
             game.cities[&other].queue.first(),
@@ -25315,8 +25329,73 @@ mod tests {
             },
         )
         .expect("queue the active defender");
-        live.redirect_unsafe_city_queue_for_defense(&mut game, 0);
+        live.redirect_unsafe_city_queue_for_defense(&mut game, 0, None);
         assert_eq!(game.cities[&city].queue.first(), Some(&warrior));
+    }
+
+    #[test]
+    fn plan_confirmed_barbarian_siege_reclaims_a_builder_before_damage() {
+        // Live run civvis-20260816T075807Z: Antium was the plan's threatened
+        // city at t68, with a barbarian galley, two swordsmen, and scouts in
+        // its local ring. It had taken no damage yet, so the major-war-only
+        // preemption left it on a Builder and then a Trader while the two
+        // settlers nearby could not safely found. A two-unit sighting alone
+        // must remain non-destructive; the plan's independent threat call is
+        // what turns this into a confirmed siege.
+        let (mut game, city, _) = empire_with_a_capital(71_117);
+        game.players[0].techs.insert(crate::name!("masonry"));
+        game.players[1].is_barbarian = true;
+        game.barb_pid = Some(1);
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        assert!(game.can_produce(0, city, &builder));
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: builder.clone(),
+            },
+        )
+        .expect("queue the unsafe Builder");
+        let raider_positions: Vec<Pos> = game
+            .wdisk(game.cities[&city].pos, 2)
+            .into_iter()
+            .filter(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                }) && game.units_at(*position).is_empty()
+            })
+            .take(2)
+            .collect();
+        assert_eq!(raider_positions.len(), 2, "fixture needs a raiding party");
+        for position in raider_positions {
+            game.spawn_test_unit("warrior", 1, position);
+        }
+        assert_eq!(game.cities[&city].hp, CITY_MAX_HP, "the siege has not hit yet");
+
+        let mut live = AdvancedAi::new();
+        live.enable_siege_muster();
+        live.enable_garrison_under_fire();
+
+        // The same barbarians without the strategic confirmation retain the
+        // Builder. This is the guard against a passing pair consuming normal
+        // production all over the map.
+        let mut unconfirmed = game.clone();
+        live.redirect_unsafe_city_queue_for_defense(&mut unconfirmed, 0, None);
+        assert_eq!(unconfirmed.cities[&city].queue.first(), Some(&builder));
+
+        // A live-only bridge remains the boundary: the frozen controller
+        // cannot reach even a plan-confirmed barbarian siege.
+        let mut stock = game.clone();
+        AdvancedAi::new().redirect_unsafe_city_queue_for_defense(&mut stock, 0, Some(city));
+        assert_eq!(stock.cities[&city].queue.first(), Some(&builder));
+
+        live.redirect_unsafe_city_queue_for_defense(&mut game, 0, Some(city));
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Building { building }) if building == "walls"
+        ));
     }
 
     #[test]
@@ -25354,12 +25433,12 @@ mod tests {
 
         // The legacy/default path cannot reach the under-fire selector.
         let mut untouched = game.clone();
-        AdvancedAi::new().redirect_unsafe_city_queue_for_defense(&mut untouched, 0);
+        AdvancedAi::new().redirect_unsafe_city_queue_for_defense(&mut untouched, 0, None);
         assert_eq!(untouched.cities[&city].queue.first(), Some(&siege));
 
         let mut live = AdvancedAi::new();
         live.enable_garrison_under_fire();
-        live.redirect_unsafe_city_queue_for_defense(&mut game, 0);
+        live.redirect_unsafe_city_queue_for_defense(&mut game, 0, None);
         let Item::Unit { unit } = game.cities[&city]
             .queue
             .first()
@@ -25398,12 +25477,12 @@ mod tests {
 
         // The frozen/default controller must leave the released queue alone.
         let mut untouched = game.clone();
-        AdvancedAi::new().redirect_unsafe_city_queue_for_defense(&mut untouched, 0);
+        AdvancedAi::new().redirect_unsafe_city_queue_for_defense(&mut untouched, 0, None);
         assert!(untouched.cities[&city].queue.is_empty());
 
         let mut live = AdvancedAi::new();
         live.enable_garrison_under_fire();
-        live.redirect_unsafe_city_queue_for_defense(&mut game, 0);
+        live.redirect_unsafe_city_queue_for_defense(&mut game, 0, None);
         let defender = game.cities[&city]
             .queue
             .first()
