@@ -1150,7 +1150,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// live bridge sets (Firaxis-only); `AdvancedAi::new()` and `legacy()` take
 /// the "strong enough" branch exactly as before (asserted). Compatibility
 /// re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x00fa_6a25_76a3_892d;
+/// Live war patience now starts on the first major-war turn, so a peaceful
+/// observation cannot make a new host war stale immediately. `war_patience`
+/// remains false for the frozen anchor, which keeps its city-count clock
+/// (asserted). Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x057e_5181_16ef_e5d9;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

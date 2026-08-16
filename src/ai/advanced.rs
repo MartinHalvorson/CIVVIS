@@ -4208,8 +4208,8 @@ impl AdvancedAi {
         self.victory_planning
     }
 
-    /// Whether `war_patience` has lapsed: no foreign-city acquisition for
-    /// `WAR_PATIENCE_LIMIT_TURNS` standard turns. See the constant.
+    /// Whether the current major-war window has elapsed without a foreign-city
+    /// acquisition for `WAR_PATIENCE_LIMIT_TURNS` standard turns. See the constant.
     fn war_patience_exhausted(&self, g: &Game) -> bool {
         g.turn.saturating_sub(self.last_campaign_progress)
             >= g.standard_duration(WAR_PATIENCE_LIMIT_TURNS).max(1)
@@ -4222,8 +4222,9 @@ impl AdvancedAi {
             // the live mirror preserves that identity too. A new Roman city has
             // no prior foreign owner, so it must not buy another full patience
             // window for a war that has still captured nothing. The first live
-            // observation establishes a fair window after a controller restart;
-            // later resets require an actual foreign-city acquisition.
+            // observation and the first transition from no major war into one
+            // establish a fair window; later resets require an actual foreign-city
+            // acquisition.
             let captured_city = self.campaign_observed
                 && g.cities.iter().any(|(city, observed)| {
                     observed.owner == pid
@@ -4251,8 +4252,17 @@ impl AdvancedAi {
         let major_war = g.players.iter().any(|p| {
             p.id != pid && p.alive && !p.is_minor && !p.is_barbarian && g.is_at_war(pid, p.id)
         });
+        let starting_major_war = major_war && self.major_war_since.is_none();
         if major_war {
             self.major_war_since.get_or_insert(g.turn);
+            // The planner commonly sees many peaceful frames before another
+            // civilization opens a war. Reusing that old observation makes a
+            // one-turn-old war look stale immediately, even though no campaign
+            // had a chance to make progress. This is live-only: the frozen
+            // controller keeps its historical city-count clock above.
+            if self.war_patience && starting_major_war {
+                self.last_campaign_progress = g.turn;
+            }
         } else {
             self.major_war_since = None;
         }
@@ -44199,6 +44209,53 @@ mod research_probe {
             "a known foreign city changing hands is real campaign progress"
         );
         assert!(!ai.war_patience_exhausted(&game));
+    }
+
+    /// A quiet observation must not spend a war's patience before the war
+    /// exists. The live run `civvis-20260816T030249Z` entered a formal war on
+    /// turn 71, then called it a stalemate on turn 72 because its last campaign
+    /// timestamp came from peacetime.
+    #[test]
+    fn a_new_major_war_starts_live_war_patience() {
+        let mut game = Game::new_full(2, 24, 16, 7_930, 300, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        game.current = 0;
+        game.record_contact(0, 1);
+        game.turn = 30;
+
+        let mut live = AdvancedAi::new();
+        live.enable_war_patience();
+        live.observe_campaign(&game, 0);
+        assert_eq!(live.last_campaign_progress, 30);
+        assert!(live.major_war_since.is_none());
+
+        let mut frozen = AdvancedAi::legacy();
+        frozen.observe_campaign(&game, 0);
+        assert_eq!(frozen.last_campaign_progress, 30);
+
+        game.turn = 71;
+        game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+        live.observe_campaign(&game, 0);
+        assert_eq!(live.major_war_since, Some(71));
+        assert_eq!(
+            live.last_campaign_progress, 71,
+            "the first major-war turn starts the live patience window"
+        );
+        assert!(!live.war_patience_exhausted(&game));
+
+        frozen.observe_campaign(&game, 0);
+        assert_eq!(
+            frozen.last_campaign_progress, 30,
+            "the frozen controller keeps its historical peaceful city-count clock"
+        );
     }
 
     /// A stalled war against an overwhelmed campaign target is neither offered
