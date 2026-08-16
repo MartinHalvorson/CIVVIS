@@ -7101,9 +7101,15 @@ mod tests {
             "data-lens=\"victory\"",
             "data-lens=\"seats\"",
             "data-lens=\"eras\" aria-selected=\"false\">Any era</button>",
-            // The panels are grid rows of the menu itself, spanning it, so
-            // each opens directly below its own row of cards.
-            "grid-column: 1 / -1;",
+            // The panels are grid rows of the menu itself, so each opens
+            // directly below its own row of cards — spanning from the second
+            // column, because the first carries the vertical row labels and
+            // a panel is as wide as the pair of cards it belongs to. On one
+            // column there is no label column to skip. Both are pinned: the
+            // narrow rule alone still leaves `1 / -1` in the file, so a pin
+            // on that string would pass on the wrong rule.
+            "    grid-column: 2 / -1;",
+            "    .picker-panel { grid-column: 1 / -1; }",
             // Two actions per card, four to a row: the card's own verb opens
             // its preset at once — never carrying `data-pick`, because
             // clicking it is meant to leave the page rather than open a
