@@ -3011,9 +3011,21 @@ mod tests {
         // read +1 Gold in the host and 0 in the model for its whole life. A
         // real simulation change for Rome seats only; every other row is
         // untouched.
+        // Moved by two `Improvement_BonusYieldChanges` grants the audit could
+        // not see: `civ6_fidelity.py` keyed that table by `Id`, and the shipped
+        // table carries a duplicate (Id 225 is both Camp/Gold/Synthetic
+        // Materials and Fishing Boats/Production/Colonialism), so Colonialism's
+        // +1 Production on Fishing Boats was never audited and never modelled —
+        // every worked boat read one Production under the host for fifty turns
+        // of run civvis-20260816T115139Z. And the XML route never applied the
+        // expansions' `<Expansion>_RemoveData.xml` (Priority 1 in the modinfo),
+        // so a retired base row — Robotics granting Pasture Production, moved to
+        // Replaceable Parts by Gathering Storm — kept "confirming" a grant the
+        // game no longer makes. Both are corrected in `tree_effects.json`;
+        // confirmed against the compiled gameplay database.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:daa3f93b9b203e23"
+            "fnv1a64:28caa3eb88d53133"
         );
     }
 
