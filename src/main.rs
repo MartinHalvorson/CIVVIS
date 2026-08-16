@@ -1105,7 +1105,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `stacked_escort`, which only the live bridge and the native repair bundle set;
 /// `AdvancedAi::legacy()` never reaches it. Compatibility re-pin; the Elo
 /// protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8614_9618_7676_e4ee;
+/// Naval units now count in `settlement_tile_risk` on coastal tiles, and a
+/// threatened settler retreats before any hold; both live under
+/// `settlement_safety`/`stacked_escort`, which `AdvancedAi::legacy()` leaves off.
+/// Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6d0b_9892_2b5a_ab44;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
