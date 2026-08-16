@@ -8091,28 +8091,24 @@ local function applyOrder(player, pid, row, turn)
 		if not try(function() return influence:CanGiveTokensToPlayer(subject); end, false) then
 			return false, "envoy_refused_" .. tostring(subject);
 		end
-		local before = try(function() return influence:GetTokensToGive(); end, held) or held;
 		local params = {};
 		params[oneParam] = subject;
 		local ok = pcall(function()
 			UI.RequestPlayerOperation(pid, giveOp, params);
 		end);
-		-- ⚠ Reported with the numerator: the token count read AFTER the request
-		-- from a second fresh handle is the receiving-side reading, because
-		-- `applied = true` on the issuing side has fooled this project four
-		-- separate times. An operation the core applies asynchronously can
-		-- still read equal to `before` on this frame, so the authoritative
-		-- check is next turn's `envoys_free` in the state export falling by the
-		-- number placed; `after` staying at `before` across many turns is the
-		-- line that says the requests are being accepted and ignored.
-		local after = try(function()
-			return player:GetInfluence():GetTokensToGive();
-		end, -1);
+		-- ⚠ NO SAME-FRAME "AFTER" COUNT. The first version of this event read
+		-- `GetTokensToGive()` again right after the request and reported it as
+		-- `after`; the core applies the operation later in the frame, so it read
+		-- equal to `held` on every one of the first 23 live placements
+		-- (civvis-20260816T142911Z t49–t196) while the tokens WERE landing —
+		-- `envoys_free` 0 in every export and 28 envoys standing on two
+		-- city-states by t200. A receiving-side reading that cannot tell
+		-- "applied later" from "ignored" is a false alarm waiting to fire, and
+		-- it fired. The receiving side is the NEXT export: `envoys_free` there
+		-- has fallen by the number placed and `minors[].envoys` has risen by
+		-- it; the bridge prints both every turn (`envoys unspent N placed M`).
 		if ok then
-			emit("envoy", {
-				turn = turn, target = subject, source = "civvis",
-				held = before, after = after,
-			});
+			emit("envoy", { turn = turn, target = subject, source = "civvis", held = held });
 		end
 		return ok, ok and "envoy_placed" or "throw";
 	end
