@@ -1126,7 +1126,22 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// bundle set; `AdvancedAi::new()` and `AdvancedAi::legacy()` price the
 /// Entertainment Complex exactly as before (asserted). Compatibility re-pin;
 /// the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x783d_60ea_a1c1_047d;
+/// A live wonder race now rejects a data-marked religion-founding site after
+/// its civilization has already founded a religion. `live_wonder_race` remains
+/// false for the frozen anchor, so its historical wonder choices cannot enter
+/// the new guard. Compatibility re-pin; the Elo protocol does not move.
+/// The Prophet deferral is behind `expansion_before_prophet`, which only the
+/// live bridge sets (Firaxis-only); `AdvancedAi::new()` and `legacy()` enter
+/// the Prophet race with two cities exactly as before (asserted).
+/// A battlefront-observing controller now requires a legal, known enemy city
+/// before a Conquest denial may replace a stalled war's economic plan; raw
+/// leader pressure remains available to Congress and in-lane counters, while
+/// `advanced_v1` retains its historical all-information path (asserted).
+/// The wonder lanes are behind `live_wonder_race`, which only the live bridge
+/// sets; `AdvancedAi::new()` and `legacy()` refuse wonders exactly as before
+/// (asserted).
+/// Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf4b0_54bf_b8ca_8260;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

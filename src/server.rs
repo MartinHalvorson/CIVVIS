@@ -6921,7 +6921,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("syncModeLink();\nboot();"));
         // One Tactics world for the whole site: the chip opens exactly what
         // the home page's Tactics card opens.
-        const TACTICS_QUERY: &str = "map=battlefield&players=2&era=information&arena=20x20";
+        const TACTICS_QUERY: &str = "map=battlefield&players=2&era=random&arena=20x20";
         assert!(EMBEDDED_INDEX
             .contains(&format!("const TACTICS_CHIP_QUERY = \"{TACTICS_QUERY}\";")));
         let landing = include_str!("../beta/landing.html");
@@ -6973,9 +6973,9 @@ mod tests {
             // viewer link is lane-relative (`../` from the lane's /home), so
             // the test lane's home page opens the test lane's viewer.
             "<h3 class=\"card-title\" id=\"play-civ-title\"><a href=\"../?mode=play\">Play CIVVIS</a></h3>",
-            "href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play\" data-pick=\"play\"",
+            "href=\"../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play\" data-pick=\"play\"",
             "<h3 class=\"card-title\" id=\"watch-civ-title\"><a href=\"../\">Watch CIVVIS</a></h3>",
-            "href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\" data-pick=\"watch\"",
+            "href=\"../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20\" data-pick=\"watch\"",
             // The full game's Customized buttons land in the simulator with
             // the Game setup drawer open (`?setup=1`, honoured at the end of
             // app.js) when nothing can open the panel in place.
@@ -6998,6 +6998,13 @@ mod tests {
         let shim = include_str!("../beta/shim.js");
         assert!(shim.contains("if (mode === \"play\") payload.spectate = false;"));
         assert!(shim.contains("else if (mode === \"watch\") payload.spectate = true;"));
+        // And it knows `era`, which the Tactics cards spend on `random`. The
+        // word has to reach `tactics_era` or the armies follow `start_era`
+        // instead and every linked battle is the same era — the whole point
+        // of the cards asking for a roll. `random` is not a start era, so it
+        // travels as the Tactics rule alone.
+        assert!(shim.contains("if (era && era !== \"random\") payload.start_era = era;"));
+        assert!(shim.contains("if (era) payload.tactics_era = era;"));
         // The viewer honours the Customize links' `?setup=1`: it opens the
         // sidebar's Game setup drawer on arrival instead of leaving the
         // visitor to hunt for it.
@@ -7048,7 +7055,7 @@ mod tests {
     #[test]
     fn the_home_cards_link_their_art_and_open_their_panels_in_place() {
         let landing = include_str!("../beta/landing.html");
-        const TACTICS: &str = "../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20";
+        const TACTICS: &str = "../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20";
         for piece in [
             // The art is a way in: each photograph links its card's preset.
             &format!("<a class=\"card-thumb-link\" href=\"{TACTICS}\">") as &str,
@@ -7064,8 +7071,8 @@ mod tests {
             "<h3 class=\"card-title\" id=\"play-civ-title\"><a href=\"../?mode=play\">Play CIVVIS</a></h3>",
             "<span class=\"card-mode\">AI simulation</span>",
             "<span class=\"card-mode\">Single player</span>",
-            ".card-mode { color: var(--muted); font-size: 19px; font-weight: 700;",
-            ".card-title { margin: 0; color: #fff; font-size: 19px; font-weight: 700; }",
+            ".card-mode { color: var(--muted); font-size: 17px; font-weight: 700;",
+            ".card-title { margin: 0; color: #fff; font-size: 17px; font-weight: 700; }",
             // The full game's Customize opens the world picker in place and
             // still names Game setup as its scriptless destination.
             "href=\"../?setup=1\" data-pick=\"watch-civ\"",
@@ -7076,7 +7083,7 @@ mod tests {
             "data-pick=\"watch\" data-lens=\"custom\">Custom Maps</a>",
             "data-pick=\"watch\" data-lens=\"era\">Historical Battles</a>",
             "data-pick=\"watch\" data-lens=\"eras\">Any Era</a>",
-            "data-pick=\"play\" data-lens=\"custom\">You vs Different AI Strategies &amp; Difficulties</a>",
+            "data-pick=\"play\" data-lens=\"custom\">AI Strategies &amp; Difficulties</a>",
             "data-pick=\"play\" data-lens=\"eras\">Any Era</a>",
             "data-pick=\"watch-civ\" data-lens=\"seats\">AI Empires</a>",
             "data-pick=\"watch-civ\" data-lens=\"worlds\">Fresh World Every Visit</a>",
@@ -7101,8 +7108,8 @@ mod tests {
             // its preset at once — never carrying `data-pick`, because
             // clicking it is meant to leave the page rather than open a
             // panel — and Customize beside it opens the row's shared panel.
-            "<a class=\"card-btn verb-watch\" href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\" aria-labelledby=\"watch-tactics-title\">Watch</a>",
-            "<a class=\"card-btn verb-play\" href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play\" aria-labelledby=\"play-tactics-title\">Play</a>",
+            "<a class=\"card-btn verb-watch\" href=\"../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20\" aria-labelledby=\"watch-tactics-title\">Watch</a>",
+            "<a class=\"card-btn verb-play\" href=\"../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play\" aria-labelledby=\"play-tactics-title\">Play</a>",
             "<a class=\"card-btn verb-watch\" href=\"../\" aria-labelledby=\"watch-civ-title\">Watch</a>",
             "<a class=\"card-btn verb-play\" href=\"../?mode=play\" aria-labelledby=\"play-civ-title\">Play</a>",
             "data-pick=\"watch\" aria-label=\"Customize a watched Tactics battle\">Customize</a>",
@@ -7111,7 +7118,25 @@ mod tests {
             "data-pick=\"play-civ\" aria-label=\"Customize a played game\">Customize</a>",
             // The verb is the card's point, so it carries the colour and a
             // third more size than the Customize beside it.
-            ".verb-play { min-height: 44px; padding: 0 23px; font-size: 17px; }",
+            ".verb-play { min-height: 40px; padding: 0 20px; font-size: 16px; }",
+            // The row's four buttons stand level: the description holds to
+            // one line and the tag shelf below the buttons reserves two, so
+            // a card whose tags wrap cannot stagger its neighbour's buttons.
+            ".card-desc { margin: 0; overflow: hidden; color: var(--muted); font-size: 13px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }",
+            ".card-tags { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; min-height: 54px; margin: 0; padding: 0; list-style: none; }",
+            // The row index on the menu's left edge: every row in page
+            // order, each a click that scrolls its row up — so the whole
+            // menu is legible in one glance.
+            // An open panel names who is at the keyboard beside its Back
+            // button, at the verb button's size and in its colour.
+            "<span class=\"picker-mode-badge watch\" id=\"battle-picker-mode\">",
+            "<span class=\"picker-mode-badge watch\" id=\"game-picker-mode\">",
+            ".picker-mode-badge.play { background: var(--play-bg); color: var(--play-fg); }",
+            "<nav class=\"row-nav\" aria-label=\"Menu rows\">",
+            "<a href=\"#row-tactics\">Tactics</a>",
+            "<a href=\"#row-civ\">CIVVIS</a>",
+            "<div class=\"mode-card\" id=\"row-tactics\">",
+            "<div class=\"mode-card\" id=\"row-civ\">",
             // While a row's shared panel is open, its two cards are the mode
             // selector — the selected option highlights, the other mutes —
             // and the panel's own chips switch between them in place. That

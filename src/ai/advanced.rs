@@ -168,9 +168,17 @@ const REINFORCEMENT_FRONT_RADIUS: i32 = 8;
 /// See `live_wonder_race` and the `Item::Wonder` arm of `production_value`.
 const LIVE_WONDER_RACE_BONUS: f64 = 1_500.0;
 
+/// Cities per additional concurrent wonder in the live race: a second lane at
+/// six cities, a third at twelve. See `AdvancedAi::live_wonder_race_lanes`.
+const LIVE_WONDER_RACE_CITIES_PER_LANE: usize = 6;
+
 /// What a district's first-tier amenity building is worth at district-choice
 /// time, as a share of its amenity: it is a second build, not the district.
 /// See `AdvancedAi::amenity_district_path`.
+/// Cities the live seat wants standing before it enters the Prophet race.
+/// See `AdvancedAi::expansion_before_prophet`.
+const EXPANSION_BEFORE_PROPHET_CITIES: usize = 3;
+
 const HOSTED_AMENITY_DISCOUNT: f64 = 0.75;
 
 /// What each further city a regional amenity building reaches is worth, as a
@@ -1858,6 +1866,29 @@ pub struct AdvancedAi {
     /// CIVVIS-vs-CIVVIS wonders are the contested race the stock gate was
     /// written for.
     pub live_wonder_race: bool,
+    /// Let the third city come before the Prophet on the live seat.
+    ///
+    /// ★★★★ EVERY LIVE GAME READS `Grand strategy: religion` FROM TURN 19–26.
+    /// `religious_opening_viable` ranks the seat among the Prophet contenders
+    /// and, on Settler, the rivals found late, so the seat is always one; the
+    /// branch sits ahead of Expansion in the grand-strategy chain, and its
+    /// comment says the race "only occupies one city, so the baseline governor
+    /// can continue settlers in the rest of the empire". With one or two cities
+    /// there is no rest of the empire: the capital IS the producer. Run
+    /// civvis-20260816T011314Z: Religion from t19, Rome built Holy Site →
+    /// Shrine → Holy Site prayers ×2 from t26 to t41 while the second city made
+    /// 2.7 production a turn, and the third city came at t55 (t18→t55 with two
+    /// cities against the Inca's 132 score at t50). T190904Z/T220819Z/T233405Z/
+    /// T003229Z all read Religion t19–26 → t43–75. The Prophet was founded at
+    /// t73 in T003229Z anyway — the slot was never at risk.
+    ///
+    /// With this on, while the empire holds fewer than
+    /// `EXPANSION_BEFORE_PROPHET_CITIES` cities, a site is reachable and the
+    /// expansion window is open, the Prophet branch yields to Expansion; the
+    /// race resumes at the third city. Firaxis-only: it prices the Settler
+    /// seat's slow rivals, and CIVVIS-vs-CIVVIS contenders are the real race
+    /// the stock order was written for. Off for ordinary and frozen controllers.
+    pub expansion_before_prophet: bool,
     /// Price the city ceiling off the land the board actually shows, densely.
     ///
     /// ★★★★ THE STOCK CEILING IS WHAT LOSES SETTLER GAMES, and three live
@@ -2781,6 +2812,7 @@ impl AdvancedAi {
             amenity_project_preemption: false,
             amenity_district_path: false,
             live_wonder_race: false,
+            expansion_before_prophet: false,
             wide_map_capacity: false,
             city_strategy: false,
             city_strategy_emphasis: true,
@@ -3488,6 +3520,7 @@ impl AdvancedAi {
         // Zero wonder orders in twenty live Settler runs that all ended on the
         // host's score tally, 15 points a wonder. See `live_wonder_race`.
         self.enable_live_wonder_race();
+        self.enable_expansion_before_prophet();
         // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
         // live runs the median empire ends on **30 techs of 77**, `engineering`
         // is reached by only **73%** and at a median turn **116** — which is why
@@ -3827,6 +3860,15 @@ impl AdvancedAi {
 
     pub fn disable_live_wonder_race(&mut self) {
         self.live_wonder_race = false;
+    }
+
+    /// Let the third city come before the Prophet. See `expansion_before_prophet`.
+    pub fn enable_expansion_before_prophet(&mut self) {
+        self.expansion_before_prophet = true;
+    }
+
+    pub fn disable_expansion_before_prophet(&mut self) {
+        self.expansion_before_prophet = false;
     }
 
     /// Put `medina_quarter` and `insulae` in the deck when a city is short of
@@ -4248,7 +4290,7 @@ impl AdvancedAi {
         if plan.threatened_city != self.threatened_city(g, pid) {
             return true;
         }
-        if let Some((rival, counter)) = self.victory_denial(g, pid) {
+        if let Some((rival, counter)) = self.actionable_victory_denial(g, pid) {
             let expects_hostile_target = self.campaign_target_legal(g, pid, rival);
             if (expects_hostile_target && plan.target_player != Some(rival))
                 || (!expects_hostile_target && plan.target_player == Some(rival))
@@ -6298,6 +6340,36 @@ impl AdvancedAi {
         self.victory_denial_with_culture_pressures(g, pid, &culture_pressures)
     }
 
+    /// A Conquest denial needs a destination the mirrored army can reach.
+    ///
+    /// Firaxis publishes a rival's score and victory progress before this
+    /// mirror necessarily has a position for any of their cities. That is
+    /// still a useful warning for Congress and in-lane counters, but an army
+    /// cannot answer it. Otherwise a cityless leader can set Conquest while
+    /// the target selector keeps pursuing an unrelated war already under way.
+    /// The frozen anchor retains its historical all-information behaviour.
+    fn conquest_denial_actionable(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+        counter: GrandStrategy,
+    ) -> bool {
+        counter != GrandStrategy::Conquest
+            || !self.battlefront_observation
+            || (self.campaign_target_legal(g, pid, rival)
+                && !g.player_city_ids(rival).is_empty())
+    }
+
+    /// The denial response that can actually change an army plan. Keep the
+    /// raw signal in [`Self::victory_denial`] for pressure reporting and
+    /// non-military counters.
+    fn actionable_victory_denial(&self, g: &Game, pid: usize) -> Option<(usize, GrandStrategy)> {
+        self.victory_denial(g, pid).filter(|(rival, counter)| {
+            self.conquest_denial_actionable(g, pid, *rival, *counter)
+        })
+    }
+
     fn victory_denial_with_culture_pressures(
         &self,
         g: &Game,
@@ -6420,9 +6492,9 @@ impl AdvancedAi {
 
     /// Diagnostic seam: the rival this empire would move against right now and
     /// the counter-strategy it would adopt, or `None` when nobody clears the
-    /// bar. Same call `replan_needed` and `assess` make.
+    /// bar. Same actionable call `replan_needed` and `assess` make.
     pub fn denial_target(&self, g: &Game, pid: usize) -> Option<(usize, GrandStrategy)> {
-        self.victory_denial(g, pid)
+        self.actionable_victory_denial(g, pid)
     }
 
     /// Diagnostic seam: whether `target`'s clock is short enough to skip the
@@ -6581,6 +6653,9 @@ impl AdvancedAi {
         } else {
             self.victory_denial_with_culture_pressures(g, pid, &rival_culture_pressures)
         };
+        let actionable_denial = denial.filter(|(rival, counter)| {
+            self.conquest_denial_actionable(g, pid, *rival, *counter)
+        });
         let emergency_objective = g.emergency_objective(pid).cloned();
         // Each arm carries the reason it fired. The strings are static and
         // cost nothing to build; they exist so the spectator's reasoning log
@@ -6630,7 +6705,7 @@ impl AdvancedAi {
         let impossible_denial = self.battlefront_observation
             && recovery_is_stale
             && !wartime_majors.is_empty()
-            && denial.is_some_and(|(rival, counter)| {
+            && actionable_denial.is_some_and(|(rival, counter)| {
                 counter == GrandStrategy::Conquest
                     && my_power * 2.0 < g.military_power(rival)
             });
@@ -6681,7 +6756,7 @@ impl AdvancedAi {
                     "following the assigned victory lane",
                 )
             }
-        } else if let Some((_, counter)) = denial {
+        } else if let Some((_, counter)) = actionable_denial {
             (
                 counter,
                 "countering a rival close to winning",
@@ -6701,6 +6776,21 @@ impl AdvancedAi {
             (
                 GrandStrategy::Conquest,
                 "strong enough to take what a neighbour has",
+            )
+        } else if self.expansion_before_prophet
+            && cities.len() < EXPANSION_BEFORE_PROPHET_CITIES
+            && has_site
+            && self.adaptive_expansion_window_open(g)
+            && self.religious_opening_viable(g, pid)
+        {
+            // ★★★★ The Prophet branch below assumes "the rest of the empire"
+            // keeps settling while one city races; with one or two cities the
+            // capital is the whole empire, and on the live Settler seat the
+            // race was never close. See `expansion_before_prophet`. Only the
+            // Religion outcome is displaced: every other branch runs as before.
+            (
+                GrandStrategy::Expansion,
+                "the third city comes before the Prophet",
             )
         } else if self.religious_opening_viable(g, pid) {
             // A Prophet is a finite global race, not an economic goal that can
@@ -6767,7 +6857,7 @@ impl AdvancedAi {
             // rival two weeks' march away.
             rush_victim.map(|(target, _)| target).or_else(|| {
             forced_target.or_else(|| {
-                denial
+                actionable_denial
                     .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
                     .map(|(rival, _)| rival)
                     .or_else(|| {
@@ -7148,6 +7238,12 @@ impl AdvancedAi {
     ///
     /// The horizon every research term is scaled by. A game past its turn limit
     /// (the mirror runs one turn beyond it) reports 0 rather than a negative.
+    /// How many wonders the live race keeps in production at once: one, plus
+    /// one per `LIVE_WONDER_RACE_CITIES_PER_LANE` cities. See `live_wonder_race`.
+    fn live_wonder_race_lanes(city_count: usize) -> usize {
+        1 + city_count / LIVE_WONDER_RACE_CITIES_PER_LANE
+    }
+
     /// The amenity a district of `family` unlocks through the first-tier
     /// amenity building the player can already build there (an Arena's +2 for
     /// an Entertainment Complex), discounted because it is a second build.
@@ -16440,6 +16536,20 @@ impl AdvancedAi {
                 let lane_opens = plan.strategy == GrandStrategy::Culture
                     || self.victory_target == Some(VictoryTarget::Score)
                     || (wonder_civ && self.victory_target.is_none());
+                // `religion_founding_site` is the data-level marker for a
+                // Stonehenge-like wonder, rather than a name check. Once this
+                // civilization has founded its religion, that site and its
+                // free-Prophet payoff are spent. In the live trace Rome founded
+                // Buddhism at t41, then put 60/90 production into Stonehenge at
+                // t65--69 before replacing it at t70. Keep this live-only: a
+                // modded equivalent receives the same protection without moving
+                // the frozen controller's historical wonder choices.
+                let spent_religion_founding_site = self.live_wonder_race
+                    && g.players[pid].religion.is_some()
+                    && spec
+                        .effects
+                        .get("religion_founding_site")
+                        .is_some_and(|value| *value > 0.0);
                 // The live seat's race: see `live_wonder_race`. One wonder in
                 // production empire-wide, in a city with three buildings, once
                 // the empire holds three cities — a race the plan does not
@@ -16465,18 +16575,34 @@ impl AdvancedAi {
                             .and_then(|civic| g.rules.civics.get(civic).map(|node| node.era))
                     })
                     .unwrap_or(0);
+                // ★★★★ ONE LANE PER SIX CITIES, NOT ONE EMPIRE-WIDE. Measured on
+                // run civvis-20260816T011314Z (eight cities, t250 tally 740
+                // against 1015): six wonders started, four finished, and a
+                // 56-turn stretch (t128–t184) with no wonder in production
+                // anywhere while the one racing city took 19–22 turns per
+                // wonder. A wonder is fifteen host score points for 400–700
+                // production; a Library is one for 90. With eight developed
+                // cities the single lane is the binding limit, so a second
+                // opens at six cities and a third at twelve — still in cities
+                // with three buildings, still never in the same city twice.
+                let wonders_in_flight = g
+                    .cities
+                    .values()
+                    .filter(|other| {
+                        other.owner == pid
+                            && matches!(other.queue.first(), Some(Item::Wonder { .. }))
+                    })
+                    .count();
                 let live_race_opens = self.live_wonder_race
                     && !lane_opens
                     && plan.strategy != GrandStrategy::Recovery
                     && city_count >= 3
                     && city.buildings.len() >= 3
                     && wonder_era + 2 >= g.world_era
-                    && !g.cities.values().any(|other| {
-                        other.owner == pid
-                            && matches!(other.queue.first(), Some(Item::Wonder { .. }))
-                    });
+                    && wonders_in_flight < Self::live_wonder_race_lanes(city_count);
                 if already_queued
                     || threatened
+                    || spent_religion_founding_site
                     || city.buildings.len() < 2
                     || turns > remaining_turns * 0.65
                     || !(lane_opens || live_race_opens)
@@ -43636,6 +43762,30 @@ mod research_probe {
                 .push(Name::new(building));
         }
         let home = game.cities[&capital].pos;
+        let owned_tiles = game.cities[&capital].owned_tiles.clone();
+        let (stonehenge_site, stone) = owned_tiles
+            .iter()
+            .copied()
+            .filter(|position| *position != home)
+            .find_map(|site| {
+                game.nbrs(site)
+                    .iter()
+                    .copied()
+                    .find(|neighbor| *neighbor != home && owned_tiles.contains(neighbor))
+                    .map(|stone| (site, stone))
+            })
+            .expect("the capital owns neighboring non-center tiles");
+        for position in [stonehenge_site, stone] {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+        }
+        game.map.tiles.get_mut(&stone).unwrap().resource = Some(Name::new("stone"));
         let mut founded = 0;
         let mut sites: Vec<Pos> = game.map.tiles.keys().copied().collect();
         sites.sort_unstable();
@@ -43660,6 +43810,18 @@ mod research_probe {
             .into_iter()
             .find(|item| matches!(item, Item::Wonder { wonder, .. } if wonder == "pyramids"))
             .expect("the desert capital can place the Pyramids");
+        assert!(
+            game.rules.wonders["stonehenge"]
+                .effects
+                .get("religion_founding_site")
+                .is_some_and(|value| *value > 0.0),
+            "the fixture's founding-site marker remains data-driven"
+        );
+        let stonehenge = game
+            .producible_items(0, capital)
+            .into_iter()
+            .find(|item| matches!(item, Item::Wonder { wonder, .. } if wonder == "stonehenge"))
+            .expect("the grassland next to stone permits Stonehenge");
         let plan = StrategicPlan {
             strategy: GrandStrategy::Expansion,
             target_player: None,
@@ -43682,6 +43844,32 @@ mod research_probe {
         let raced =
             live.production_value(&game, 0, capital, &pyramids, &plan, &live.counts(&game, 0));
         assert!(raced > 0.0, "the live seat opens the wonder arm: {raced}");
+        let stonehenge_before_founding = live.production_value(
+            &game,
+            0,
+            capital,
+            &stonehenge,
+            &plan,
+            &live.counts(&game, 0),
+        );
+        assert!(
+            stonehenge_before_founding > 0.0,
+            "the same legal founding-site wonder remains available before religion: {stonehenge_before_founding}"
+        );
+        game.players[0].religion = Some("Already Founded".to_string());
+        let stonehenge_after_founding = live.production_value(
+            &game,
+            0,
+            capital,
+            &stonehenge,
+            &plan,
+            &live.counts(&game, 0),
+        );
+        assert!(
+            stonehenge_after_founding < -1_000.0,
+            "the live race does not sink production into a spent founding effect: {stonehenge_after_founding}"
+        );
+        game.players[0].religion = None;
         let recovery_plan = StrategicPlan {
             strategy: GrandStrategy::Recovery,
             ..plan.clone()
@@ -43726,16 +43914,86 @@ mod research_probe {
                 .buildings
                 .push(Name::new(building));
         }
+        // The cheapest other wonder the second city can place, so a young
+        // city's build time is not what refuses it below.
         let another = game
             .producible_items(0, other)
             .into_iter()
-            .find(|item| matches!(item, Item::Wonder { wonder, .. } if wonder != "pyramids"));
-        if let Some(another) = another {
+            .filter(|item| matches!(item, Item::Wonder { wonder, .. } if wonder != "pyramids"))
+            .min_by(|left, right| {
+                game.item_remaining_cost_for_city(0, other, left)
+                    .total_cmp(&game.item_remaining_cost_for_city(0, other, right))
+            });
+        if let Some(another) = &another {
             assert!(
-                live.production_value(&game, 0, other, &another, &plan, &live.counts(&game, 0))
+                live.production_value(&game, 0, other, another, &plan, &live.counts(&game, 0))
                     < -1_000.0,
-                "one wonder in production empire-wide at a time"
+                "one wonder in production empire-wide at a time in a three-city empire"
             );
+        }
+
+        // ★★★★ A second lane opens at six cities: the same second city may
+        // then race while the capital builds, and a third city may not open a
+        // third. See `live_wonder_race_lanes`.
+        assert_eq!(AdvancedAi::live_wonder_race_lanes(3), 1);
+        assert_eq!(AdvancedAi::live_wonder_race_lanes(5), 1);
+        assert_eq!(AdvancedAi::live_wonder_race_lanes(6), 2);
+        assert_eq!(AdvancedAi::live_wonder_race_lanes(11), 2);
+        assert_eq!(AdvancedAi::live_wonder_race_lanes(12), 3);
+        let mut more_sites: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        more_sites.sort_unstable();
+        for site in more_sites {
+            if game.player_city_ids(0).len() == 6 {
+                break;
+            }
+            let distant = game
+                .player_city_ids(0)
+                .iter()
+                .all(|c| game.wdist(site, game.cities[c].pos) >= 5);
+            let tile = &game.map.tiles[&site];
+            if distant && game.rules.is_passable(tile) && !game.rules.is_water(tile) {
+                game.found_city_for(0, site, None);
+            }
+        }
+        assert_eq!(game.player_city_ids(0).len(), 6, "fixture must reach six cities");
+        if let Some(another) = &another {
+            // The second city is young and slow; lengthen the game so the
+            // wonder's build time, not the lane count, is not what refuses it.
+            let max_turns = game.max_turns;
+            game.max_turns = 1_000;
+            let second_lane =
+                live.production_value(&game, 0, other, another, &plan, &live.counts(&game, 0));
+            assert!(
+                second_lane > 0.0,
+                "six cities open a second wonder lane while the capital builds: {second_lane} \
+                 ({another:?})"
+            );
+            game.cities.get_mut(&other).unwrap().queue = vec![another.clone()];
+            let third = game
+                .player_city_ids(0)
+                .into_iter()
+                .find(|c| *c != capital && *c != other)
+                .unwrap();
+            for building in ["monument", "granary", "water_mill"] {
+                game.cities
+                    .get_mut(&third)
+                    .unwrap()
+                    .buildings
+                    .push(Name::new(building));
+            }
+            if let Some(yet_another) = game
+                .producible_items(0, third)
+                .into_iter()
+                .find(|item| matches!(item, Item::Wonder { .. }))
+            {
+                assert!(
+                    live.production_value(&game, 0, third, &yet_another, &plan, &live.counts(&game, 0))
+                        < -1_000.0,
+                    "two lanes are full: a third city does not open a third race"
+                );
+            }
+            game.cities.get_mut(&other).unwrap().queue.clear();
+            game.max_turns = max_turns;
         }
 
         // A wonder three eras behind the world is one the Firaxis rivals have
@@ -43966,6 +44224,191 @@ mod research_probe {
         frozen.major_war_since = Some(60);
         frozen.last_campaign_progress = 60;
         assert_eq!(frozen.assess(&game, 0).strategy, GrandStrategy::Conquest);
+    }
+
+    /// The live mirror can know a leader's public victory clock before it has
+    /// any city coordinate for that leader. That warning must not turn a
+    /// stalled war with somebody else back into Conquest. See
+    /// `conquest_denial_actionable`.
+    #[test]
+    fn a_live_conquest_denial_needs_a_known_city_target() {
+        let mut game = Game::new_full(3, 24, 16, 7_932, 300, 0, false);
+        for pid in 0..3 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        for _ in 0..3 {
+            game.spawn_test_unit("modern_armor", 0, home);
+        }
+        let leader_capital = game.player_city_ids(2)[0];
+        game.players[2]
+            .science_projects
+            .insert("exoplanet_expedition".to_string());
+        game.current = 0;
+        game.turn = 60;
+        game.record_contact(0, 1);
+        game.record_contact(0, 2);
+        game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+        game.turn = 100;
+
+        // The host has announced player 2's victory progress, but not a city
+        // position. Move its capital into player 1's public city list to model
+        // that omitted rival-city export without leaving a dangling map tile.
+        game.cities.get_mut(&leader_capital).unwrap().owner = 1;
+        assert!(game.player_city_ids(2).is_empty());
+
+        let mut live = AdvancedAi::new();
+        live.enable_war_patience();
+        live.major_war_since = Some(60);
+        live.last_campaign_progress = 60;
+        assert!(live.war_patience_exhausted(&game));
+        assert_eq!(
+            live.victory_denial(&game, 0),
+            Some((2, GrandStrategy::Conquest)),
+            "the raw public warning remains available to non-military responses"
+        );
+        assert_eq!(
+            live.denial_target(&game, 0),
+            None,
+            "a live Conquest response needs a known city to campaign against"
+        );
+        let plan = live.assess(&game, 0);
+        assert_ne!(
+            plan.strategy,
+            GrandStrategy::Conquest,
+            "the cityless leader cannot re-arm a war whose patience expired"
+        );
+        assert_eq!(plan.target_player, Some(1));
+        live.plan = Some(plan);
+        assert!(
+            !live.plan_stale(&game, 0),
+            "the raw warning must not interrupt the economic plan every turn"
+        );
+
+        // Restoring the leader's actual city makes the same emergency a valid
+        // Conquest denial again.
+        game.cities.get_mut(&leader_capital).unwrap().owner = 2;
+        assert_eq!(
+            live.denial_target(&game, 0),
+            Some((2, GrandStrategy::Conquest))
+        );
+        assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Conquest);
+        assert!(
+            live.plan_stale(&game, 0),
+            "an actionable leader still interrupts the cached economic plan"
+        );
+
+        // `advanced_v1` retains the historical all-information response.
+        game.cities.get_mut(&leader_capital).unwrap().owner = 1;
+        assert_eq!(
+            AdvancedAi::legacy().denial_target(&game, 0),
+            Some((2, GrandStrategy::Conquest))
+        );
+    }
+
+    /// Every live game read `Grand strategy: religion` from turn 19–26 with one
+    /// or two cities, and the capital built the Holy Site while the second
+    /// city could not make a settler. See `expansion_before_prophet`.
+    #[test]
+    fn the_third_city_comes_before_the_prophet_on_the_live_seat() {
+        let mut game = Game::new_full(2, 24, 16, 7_931, 300, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        let capital = game.player_city_ids(0)[0];
+        let home = game.cities[&capital].pos;
+        // Sites 4–10 tiles from home, clear of every city, on walkable ground.
+        let mut sites = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                tile.owner_city.is_none()
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && (4..=10).contains(&game.wdist(home, **position))
+            })
+            .map(|(position, _)| *position)
+            .collect::<Vec<_>>();
+        sites.sort();
+        let mut found_next = |game: &mut Game| {
+            let site = sites
+                .iter()
+                .copied()
+                .find(|site| game.cities.values().all(|city| game.wdist(city.pos, *site) >= 4))
+                .expect("the test map has another city site");
+            game.found_city_for(0, site, None)
+        };
+        found_next(&mut game);
+        assert_eq!(game.player_city_ids(0).len(), 2);
+        // The Prophet race is on: a Prophet is already pending for the seat.
+        game.players[0].prophet_pending = true;
+        game.current = 0;
+        game.turn = 26;
+        assert!(AdvancedAi::expansion_window_open(&game));
+
+        let mut stock = AdvancedAi::new();
+        assert!(!stock.expansion_before_prophet);
+        assert!(stock.religious_opening_viable(&game, 0));
+        assert!(
+            stock.best_settle_site(&game, 0, home, 10).is_some(),
+            "the fixture needs a reachable settle site"
+        );
+        let journal = crate::reasoning::Journal::recording();
+        stock.attach_journal(journal.handle());
+        assert_eq!(
+            stock.assess(&game, 0).strategy,
+            GrandStrategy::Religion,
+            "the stock chain enters the Prophet race with two cities"
+        );
+        assert!(journal
+            .since(0)
+            .thoughts
+            .iter()
+            .any(|thought| thought.detail.contains("a Prophet is a finite race")));
+
+        let mut frozen = AdvancedAi::legacy();
+        assert!(!frozen.expansion_before_prophet);
+        assert_eq!(frozen.assess(&game, 0).strategy, GrandStrategy::Religion);
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.expansion_before_prophet);
+        let journal = crate::reasoning::Journal::recording();
+        live.attach_journal(journal.handle());
+        assert_eq!(
+            live.assess(&game, 0).strategy,
+            GrandStrategy::Expansion,
+            "the live seat settles its third city before racing for the Prophet"
+        );
+        assert!(journal
+            .since(0)
+            .thoughts
+            .iter()
+            .any(|thought| thought.detail.contains("the third city comes before the Prophet")));
+
+        // The control arm holds it off.
+        live.disable_expansion_before_prophet();
+        assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Religion);
+        live.enable_expansion_before_prophet();
+        assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Expansion);
+
+        // At three cities the race resumes exactly as before.
+        found_next(&mut game);
+        assert_eq!(game.player_city_ids(0).len(), 3);
+        assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Religion);
     }
 
     #[test]

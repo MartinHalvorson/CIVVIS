@@ -447,6 +447,22 @@ def main(argv: list[str] | None = None) -> int:
         check(problems, "a non-JSON body is refused", unparsed["status"] == 400,
               f"got {unparsed['status']}")
 
+        # The browser line is consent-gated: only a report carrying `device`
+        # — the dialog's ticked checkbox — quotes it on the issue, and a
+        # report without one records no browser line at all, whatever
+        # User-Agent the request itself carried.
+        consented = hit(path="/report", method="POST",
+                        json={**report, "kind": "issue",
+                              "device": "TestBrowser/9.9 (macOS)"},
+                        env=tokened)
+        quoted = (dev.evaluate("githubCalls[2]") or {}).get("payload", {}).get("body", "")
+        check(problems, "a ticked box quotes the browser on the issue",
+              consented["status"] == 201
+              and "Browser: TestBrowser/9.9 (macOS)" in quoted,
+              f"got {consented['status']} {quoted[-120:]!r}")
+        check(problems, "an unticked box records no browser line",
+              "Browser:" not in (dev.evaluate("githubCalls[0]") or {}).get("payload", {}).get("body", ""))
+
         dev.evaluate("githubReply.status = 401")
         refused = hit(path="/report", method="POST", json=report, env=tokened)
         check(problems, "GitHub refusing the token surfaces as 502",
