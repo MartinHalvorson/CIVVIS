@@ -1194,7 +1194,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `garrison_under_fire` gate; the frozen anchor never enables it and therefore
 /// keeps its historical queue commitments (asserted). Compatibility re-pin; the
 /// Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb452_d6fc_37ab_1fd4;
+/// The pre-declaration maintenance reserve is guarded by the live-only
+/// `war_economy` flag, which the frozen anchor never enables. Its Conquest
+/// portfolio therefore keeps the historical order until the live bridge opts
+/// into the named-campaign recovery guard (asserted). Compatibility re-pin; the
+/// Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe33b_1237_5019_3b8a;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
