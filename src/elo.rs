@@ -36,7 +36,7 @@ pub const BUILTIN_AIS: [&str; 8] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 140] = [
+pub const EVAL_ONLY_AIS: [&str; 141] = [
     // One pre-registered point on the production genes #1520 opened.
     "advanced_build_first",
     // The native-safe half of the live-bridge bundle, applied to the stock
@@ -59,6 +59,7 @@ pub const EVAL_ONLY_AIS: [&str; 140] = [
     "live_without_live_wonder_race",
     "live_without_expansion_before_prophet",
     "live_without_no_elective_war",
+    "live_without_fog_land_capacity",
     "live_without_home_defense",
     "live_without_joint_tactics",
     "live_without_loyalty_policy_defence",
@@ -206,7 +207,7 @@ pub const EVAL_ONLY_AIS: [&str; 140] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 49] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 50] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -256,6 +257,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 49] = [
     "live-wonder-race",
     "expansion-before-prophet",
     "no-elective-war",
+    "fog-land-capacity",
 ];
 
 /// Every `live_without_*` control's tag list: the bridge list minus the one
@@ -285,12 +287,12 @@ fn live_without(withheld: &'static str) -> &'static [&'static str] {
         .unwrap_or_else(|| panic!("{withheld} is not a live-bridge treatment"))
 }
 
-/// The seven bridge treatments that stay out of the native bundle, as tags.
+/// The eight bridge treatments that stay out of the native bundle, as tags.
 /// Three encode a rule of Firaxis' game rather than repairing one of ours, one
 /// is excluded on evidence, and the wonder race, the Prophet deferral and the
 /// elective-war stand-down price Firaxis-only records. See
 /// `AdvancedAi::enable_engine_repairs`.
-pub const FIRAXIS_ONLY_TREATMENTS: [&str; 7] = [
+pub const FIRAXIS_ONLY_TREATMENTS: [&str; 8] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -306,6 +308,9 @@ pub const FIRAXIS_ONLY_TREATMENTS: [&str; 7] = [
     // Prices the Settler seat's measured record: eight elective wars, no city
     // ever taken. CIVVIS-vs-CIVVIS wars are the ones the branch was written for.
     "no-elective-war",
+    // Reads the live mirror's fog: a native board carries no unknown terrain,
+    // so the estimate equals the count there and the flag is a no-op.
+    "fog-land-capacity",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
@@ -445,6 +450,7 @@ define_arm_kinds! {
     LiveWithoutLiveWonderRace => "live_without_live_wonder_race",
     LiveWithoutExpansionBeforeProphet => "live_without_expansion_before_prophet",
     LiveWithoutNoElectiveWar => "live_without_no_elective_war",
+    LiveWithoutFogLandCapacity => "live_without_fog_land_capacity",
     LiveWithoutHomeDefense => "live_without_home_defense",
     LiveWithoutJointTactics => "live_without_joint_tactics",
     LiveWithoutLoyaltyPolicyDefence => "live_without_loyalty_policy_defence",
@@ -3023,6 +3029,12 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_no_elective_war();
             Box::new(ai)
         }
+        "live_without_fog_land_capacity" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_fog_land_capacity();
+            Box::new(ai)
+        }
         "live_without_stacked_escort" => {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge();
@@ -3782,6 +3794,7 @@ impl ArmKind {
                 live_without("expansion-before-prophet")
             }
             Self::LiveWithoutNoElectiveWar => live_without("no-elective-war"),
+            Self::LiveWithoutFogLandCapacity => live_without("fog-land-capacity"),
             Self::LiveWithoutStackedEscort => live_without("stacked-escort"),
             Self::LiveWithoutJointTactics => live_without("joint-tactics"),
             Self::LiveWithoutHomeDefense => live_without("home-defense"),
@@ -4315,6 +4328,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             (Vec::new(), "live_without_expansion_before_prophet")
         }
         "live_without_no_elective_war" => (Vec::new(), "live_without_no_elective_war"),
+        "live_without_fog_land_capacity" => (Vec::new(), "live_without_fog_land_capacity"),
         "live_without_home_defense" => (Vec::new(), "live_without_home_defense"),
         "live_without_joint_tactics" => (Vec::new(), "live_without_joint_tactics"),
         "live_without_loyalty_policy_defence" => {
@@ -5575,7 +5589,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 113] = [
+            const SCRIPTED: [&str; 114] = [
                 "advanced_build_first",
                 "advanced_synergy",
                 "advanced_synergy_war",
@@ -5665,6 +5679,7 @@ mod tests {
                 "live_without_live_wonder_race",
                 "live_without_expansion_before_prophet",
                 "live_without_no_elective_war",
+                "live_without_fog_land_capacity",
                 "live_without_home_defense",
                 "live_without_loyalty_policy_defence",
                 "live_without_siege_muster",
@@ -5773,7 +5788,7 @@ mod tests {
         /// one of ours, except the last, which is excluded on evidence: the
         /// deployment-profile run split every map at +0 Elo for 2.5x the
         /// rollout branches.
-        const EXCLUDED: [&str; 7] = [
+        const EXCLUDED: [&str; 8] = [
             "live_trader_route_adapter",
             "live_religious_purchase_guard",
             "solvent_faith_army",
@@ -5789,6 +5804,8 @@ mod tests {
             // Prices the Settler seat's elective-war record (never converted);
             // native wars are the ones the branch was written for.
             "no_elective_war",
+            // Reads the live mirror's fog; a native board has none.
+            "fog_land_capacity",
         ];
         let source = include_str!("ai/advanced.rs");
         let calls = |name: &str| -> BTreeSet<String> {
