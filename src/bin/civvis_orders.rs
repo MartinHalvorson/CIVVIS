@@ -5575,6 +5575,91 @@ mod tests {
         assert_eq!(planned.players[0].envoys_free, 0);
     }
 
+    /// The live planner may intentionally retain envoys after it has secured
+    /// every met city-state past its final yield tier.  That decision has to
+    /// survive the whole order boundary: `BasicAi` runs later in the same
+    /// simulated turn, so its historical "highest count" fallback must not
+    /// turn the bank straight back into `GIVE_INFLUENCE_TOKEN` orders.
+    #[test]
+    fn banked_secure_envoys_do_not_cross_the_live_order_boundary() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 60,
+            envoys_free: Some(2),
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Rome".to_string(),
+                x: 2,
+                y: 2,
+                pop: 5,
+                capital: true,
+                ..StateCity::default()
+            }],
+            minors: vec![StateMinor {
+                player: 9,
+                civ: "CIVILIZATION_AUCKLAND".to_string(),
+                envoys: 8,
+                most_envoys: 8,
+                suzerain: 0,
+                cities: vec![StateCity {
+                    id: 65_537,
+                    name: "Auckland".to_string(),
+                    x: 8,
+                    y: 8,
+                    pop: 3,
+                    capital: true,
+                    ..StateCity::default()
+                }],
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
+        let auckland = mirror
+            .game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian && !player.is_free_city)
+            .map(|player| player.id)
+            .expect("Auckland must occupy a mirrored city-state seat");
+        assert_eq!(mirror.game.envoys_at(0, auckland), 8);
+        assert_eq!(mirror.game.suzerain_of(auckland), Some(0));
+        assert_eq!(mirror.game.players[0].envoys_free, 2);
+
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_bank_envoys();
+        let mut ours = std::collections::BTreeMap::new();
+        let reply: serde_json::Value = serde_json::from_str(&decide(
+            &mut mirror,
+            &mut ai,
+            &snapshot,
+            &state,
+            false,
+            &[],
+            &mut ours,
+            &mut HostPeaceRetries::default(),
+            &mut HostMoveRefusals::default(),
+        ))
+        .expect("the decision is JSON");
+
+        assert!(
+            reply["orders"]
+                .as_array()
+                .expect("orders are an array")
+                .iter()
+                .all(|order| order["kind"] != "envoy"),
+            "a safely owned eight-envoy city-state must retain the two-envoy bank: {reply}"
+        );
+    }
+
     /// A suzerain at war levies the city-state's army through the same seat
     /// resolution as the envoy; a major seat is not a city-state.
     #[test]

@@ -411,6 +411,17 @@ const PRODUCTION_BUILDERS_PER_CITY: f64 = 0.75;
 /// well-aligned fresh city-state, one three envoys away (180/3 = 60) does not.
 const SUZERAIN_PRIZE: i64 = 180;
 
+/// A safely held city-state has no further type-yield tier after six envoys.
+///
+/// In the live bridge, keep its score below every ordinary alignment score at
+/// that point, so a newly discovered city-state or an available 1/3/6 tier
+/// wins the next envoy instead. The largest alignment is `(12 + 15) * 10 =
+/// 270`; the 300 penalty also leaves a clearly negative score when no useful
+/// alternative exists, allowing `bank_envoys` to retain the envoy. A city-state
+/// within one envoy of a rival deliberately does not qualify: defending a
+/// narrow suzerainty remains more valuable than this cap.
+const UNCONTESTED_POST_TIER_ENVOY_PENALTY: i64 = 300;
+
 /// How far above its empire's per-city mean a yield must stand before it names
 /// the city's role. At 1.0 every city would be typed by a coin flip around the
 /// average; 1.15 asks for a real lead, so an empire of interchangeable cities
@@ -4454,10 +4465,12 @@ impl AdvancedAi {
     /// Bank an envoy the plan has no positive use for. See `bank_envoys`.
     pub fn enable_bank_envoys(&mut self) {
         self.bank_envoys = true;
+        self.base.enable_bank_envoys();
     }
 
     pub fn disable_bank_envoys(&mut self) {
         self.bank_envoys = false;
+        self.base.disable_bank_envoys();
     }
 
     /// Do not found a colony beyond the empire's Loyalty reach on fogged
@@ -12327,6 +12340,8 @@ impl AdvancedAi {
                         _ => 2,
                     };
                     let already_secure = g.suzerain_of(minor.id) == Some(pid) && mine > rival + 1;
+                    let overfunded_uncontested =
+                        self.bank_envoys && already_secure && mine >= 6;
                     let shared_from_partner = g.suzerain_of(minor.id).is_some_and(|leader| {
                         leader != pid
                             && g.alliance_with(pid, leader).is_some_and(|alliance| {
@@ -12365,7 +12380,11 @@ impl AdvancedAi {
                         + denial
                         + suzerain_prize
                         - needed * 7
-                        - already_secure as i64 * 80
+                        - if overfunded_uncontested {
+                            UNCONTESTED_POST_TIER_ENVOY_PENALTY
+                        } else {
+                            already_secure as i64 * 80
+                        }
                         - shared_from_partner as i64 * 300;
                     (
                         score,
@@ -39626,6 +39645,77 @@ mod tests {
             fresh_game.players[0].envoys
         );
         assert_eq!(fresh_game.players[0].envoys_free, 0);
+    }
+
+    #[test]
+    fn live_envoys_reach_another_city_states_yield_tier_before_padding_a_secure_suzerain() {
+        let mut game = Game::new(2, 24, 16, 4_243, 80, 2);
+        let city_states: Vec<usize> = game
+            .players
+            .iter()
+            .filter(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        assert!(city_states.len() >= 2, "the fixture needs two city-states");
+        for player in 0..game.players.len() {
+            game.players[player].met.clear();
+        }
+        let nan_madol = city_states[0];
+        let chinguetti = city_states[1];
+        game.record_contact(0, nan_madol);
+        game.record_contact(0, chinguetti);
+        game.players[nan_madol].civ = "Nan Madol".to_string();
+        game.players[chinguetti].civ = "Chinguetti".to_string();
+        // Nan Madol is safely ours and exhausted past its six-envoy yield
+        // tier. Chinguetti is one envoy short of its three-envoy yield tier.
+        game.players[0].envoys = vec![(nan_madol, 8), (chinguetti, 1)];
+        game.players[0].envoys_free = 2;
+
+        let mut live = AdvancedAi::new();
+        live.enable_bank_envoys();
+        live.advanced_envoys(&mut game, 0, GrandStrategy::Culture, None);
+
+        assert_eq!(
+            game.envoys_at(0, nan_madol),
+            8,
+            "a secure suzerain past its final tier must not absorb the bank"
+        );
+        assert_eq!(
+            game.envoys_at(0, chinguetti),
+            3,
+            "the available culture-aligned yield tier should receive both envoys"
+        );
+        assert_eq!(game.players[0].envoys_free, 0);
+    }
+
+    #[test]
+    fn live_envoys_still_defend_a_one_envoy_suzerainty_margin() {
+        let mut game = Game::new(2, 24, 16, 4_244, 80, 2);
+        let city_state = game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .expect("the fixture needs a city-state");
+        for player in 0..game.players.len() {
+            game.players[player].met.clear();
+        }
+        game.record_contact(0, city_state);
+        game.players[city_state].civ = "Nan Madol".to_string();
+        game.players[0].envoys = vec![(city_state, 8)];
+        game.players[1].envoys = vec![(city_state, 7)];
+        game.players[0].envoys_free = 1;
+
+        let mut live = AdvancedAi::new();
+        live.enable_bank_envoys();
+        live.advanced_envoys(&mut game, 0, GrandStrategy::Culture, None);
+
+        assert_eq!(
+            game.envoys_at(0, city_state),
+            9,
+            "a one-envoy suzerainty lead remains a defense priority"
+        );
+        assert_eq!(game.players[0].envoys_free, 0);
     }
 
     #[test]

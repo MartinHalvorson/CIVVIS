@@ -1246,12 +1246,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The frontier-loyalty settle rule is behind `frontier_loyalty`, off for
 /// `AdvancedAi::legacy()` (asserted); the frozen anchor's settle forecast is
 /// unchanged. Compatibility re-pin; the Elo protocol does not move.
-/// The banked envoy is behind `bank_envoys` and the committed outward
-/// exploration goal behind `BasicAi::explore_commit`, both set only by the
-/// Civilization VI bridge and off for `AdvancedAi::new()` and
-/// `AdvancedAi::legacy()` (asserted); the frozen anchor spends every envoy
-/// and re-derives its scout's goal each turn as before. Compatibility
-/// re-pin; the Elo protocol does not move.
+/// The banked envoy and its final-tier, secure-suzerain marginal-return cap
+/// are behind `bank_envoys`, and the committed outward exploration goal
+/// behind `BasicAi::explore_commit`, all set only by the Civilization VI
+/// bridge and off for `AdvancedAi::new()` and `AdvancedAi::legacy()`
+/// (asserted); the frozen anchor spends every envoy and re-derives its
+/// scout's goal each turn as before. Compatibility re-pin; the Elo protocol
+/// does not move.
 /// The settler-target hysteresis is behind `settler_target_hysteresis`, off
 /// for `AdvancedAi::legacy()` (asserted); the frozen anchor's settler
 /// re-picks exactly as before. Compatibility re-pin; the Elo protocol does
@@ -1277,7 +1278,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// off for `AdvancedAi::legacy()` (asserted); the frozen anchor's baseline
 /// still governs its Expansion lane. Compatibility re-pin; the Elo protocol
 /// does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x546d_4f44_8a0f_6eaf;
+/// The live envoy bank gates both the plan-aware scorer and the later
+/// `BasicAi` fallback, while `AdvancedAi::legacy()` keeps both historical
+/// paths enabled. Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x08ad_dff7_8651_48d6;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
