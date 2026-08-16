@@ -71,6 +71,45 @@ def run(cmd: list[str], timeout: float = 60.0) -> str:
         return f"error: {exc}"
 
 
+def refresh_orders_binary(orders_bin: Path, enabled: bool = True) -> str:
+    """Rebuild the decider when it is this checkout's own release build.
+
+    ★★★★ EVERY GAME STARTED ON A STALE PROGRAM. `civ6_play` hands the brain
+    `target/release/civvis_orders` from this checkout, and the brain only hot-swaps
+    to a published build NEWER than the checkout's HEAD at launch — which first has
+    to be compiled, tens of turns into the game. So a checkout that was pulled but
+    not rebuilt plays its first turns on whatever `cargo build --release` last
+    produced here: on 2026-08-16 that binary was six hours and four merged repairs
+    behind HEAD, run civvis-20260816T070212Z was stamped `code=21969cab` yet
+    reported `unmapped: schema:state.dvp` and fired a branch two of those repairs
+    had removed, until its first handoff at turn 101.
+
+    An incremental release build of an unchanged tree costs a second; a changed one
+    costs the minutes the game would otherwise spend on the wrong program. Only the
+    default path is rebuilt — a binary the operator supplied is theirs to manage.
+    """
+    if not enabled:
+        return "decider: --no-build, using the binary as it is"
+    default = (HERE.parent / "target" / "release" / "civvis_orders").resolve()
+    try:
+        supplied = orders_bin.resolve()
+    except OSError:
+        return "decider: unresolvable path; using it as it is"
+    if supplied != default:
+        return "decider: supplied binary; not rebuilt"
+    try:
+        proc = subprocess.run(
+            ["cargo", "build", "--release", "--locked", "--bin", "civvis_orders"],
+            cwd=str(HERE.parent), capture_output=True, text=True, timeout=1800.0,
+        )
+    except (subprocess.SubprocessError, OSError) as exc:
+        return f"decider: rebuild failed to run ({exc}); using the binary as it is"
+    if proc.returncode != 0:
+        tail = ((proc.stderr or proc.stdout or "").strip().splitlines() or ["no output"])[-1]
+        return f"decider: rebuild FAILED ({tail}); using the binary as it is"
+    return f"decider: release build current for {code_state()}"
+
+
 def dismiss_crash_dialogs() -> None:
     """Close the "quit unexpectedly" / "Game configuration unavailable" dialogs.
 
@@ -1158,6 +1197,8 @@ def main() -> int:
     ap.add_argument("--tile-export-every", type=int, default=4,
                     help="turns between map exports; the operator watches this against the game")
     ap.add_argument("--orders-bin", default=str(HERE.parent / "target" / "release" / "civvis_orders"))
+    ap.add_argument("--no-build", dest="build", action="store_false", default=True,
+                    help="do not rebuild the checkout's release decider before attempts")
     ap.add_argument("--logs", default=None, help="directory for per-attempt logs")
     ap.add_argument("--no-pin", action="store_true", default=False,
                     help="allow the code to change mid-batch; rows stop being "
@@ -1298,6 +1339,8 @@ def main() -> int:
                   f"{code_rev}, or pass --no-pin to mix revisions deliberately.",
                   flush=True)
             return 4
+        # ★★★★ The program that will actually play: see `refresh_orders_binary`.
+        print(refresh_orders_binary(orders_bin, args.build), flush=True)
         print(f"\n=== attempt {attempt}/{args.attempts}  {tag}  code={code_rev} ===",
               flush=True)
         # The database path is as much part of a run as its event log.  SQLite
