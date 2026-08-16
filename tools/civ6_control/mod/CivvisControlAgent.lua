@@ -5704,6 +5704,27 @@ local function exportState(player, pid, turn)
 					end
 					return n;
 				end, -1),
+				-- ★★★★ THE RIVAL'S OWN ECONOMY, AS THE HOST REPORTS IT. Counts of
+				-- techs and civics say how far ahead a rival is; these say how
+				-- fast it is moving. Every accessor is one the shipped World
+				-- Rankings and Deal screens call on OTHER players (`GetTechs():
+				-- GetScienceYield`, `GetCulture():GetCultureYield`, `GetStats():
+				-- GetTourism`, `GetTreasury():GetGoldBalance`), so the seat learns
+				-- nothing a player at the keyboard could not read. Without them
+				-- the mirror's rival science and culture were CIVVIS's own guess
+				-- from a rival's visible cities — the one part of the standings a
+				-- viewer could never trust. -1 on failure, as everywhere here.
+				science = try(function() return other:GetTechs():GetScienceYield(); end, -1),
+				culture = try(function() return other:GetCulture():GetCultureYield(); end, -1),
+				tourism = try(function() return other:GetStats():GetTourism(); end, -1),
+				gold = try(function() return other:GetTreasury():GetGoldBalance(); end, -1),
+				-- Net, like our own `gold_per_turn` below (yield minus maintenance).
+				gold_per_turn = try(function()
+					local treasury = other:GetTreasury();
+					return treasury:GetGoldYield() - treasury:GetTotalMaintenance();
+				end, -1),
+				faith = try(function() return other:GetReligion():GetFaithBalance(); end, -1),
+				faith_per_turn = try(function() return other:GetReligion():GetFaithYield(); end, -1),
 				cities = theirCities,
 				units = theirUnits,
 			};
