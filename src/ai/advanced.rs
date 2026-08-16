@@ -348,6 +348,9 @@ const SETTLER_ESCORT_SEARCH_RADIUS: i32 = 8;
 /// guard was pulled one tile away); anything longer is a livelocked guard,
 /// and waiting for one of those is how an expansion window closes.
 const STACKED_ESCORT_PATIENCE: u8 = 2;
+/// A guard this close behind a settler on quiet ground is one the settler
+/// marches ahead of rather than waits for. See `stacked_escort_pace`.
+const ADJACENT_GUARD_MARCH_DISTANCE: i32 = 1;
 
 /// The per-tile discount `settle_sites` already applies inside the search
 /// radius. Named here because a census that scores siting against raw
@@ -18813,8 +18816,8 @@ impl AdvancedAi {
         if self.settlement_safety {
             let visible = self.battlefront_visibility(g, pid);
             let risk = self.settlement_tile_risk(g, pid, Some(uid), current, &visible);
+            let guard_pos = g.units[&guard].pos;
             if risk > 0.0 {
-                let guard_pos = g.units[&guard].pos;
                 think!(self.journal(), Expansion, Detail, "Settler falls back toward its guard";
                        "its tile is threatened (risk {risk:.0}) and the guard is {} tiles \
                         away — waiting here is how the last settler was captured",
@@ -18822,6 +18825,19 @@ impl AdvancedAi {
                 if self.settler_step_toward_safe(g, pid, uid, guard_pos) {
                     return Some(true);
                 }
+            } else if g.wdist(current, guard_pos) <= ADJACENT_GUARD_MARCH_DISTANCE {
+                // ★★★★ QUIET GROUND, GUARD ONE STEP BEHIND: MARCH. The wait
+                // exists so a civilian is never left alone in reach of a
+                // threat, and `settlement_tile_risk` has just said nothing
+                // visible can reach it; a guard one tile back re-stacks on
+                // its own move. Waiting anyway cost the first settler of run
+                // civvis-20260816T084206Z three desyncs of two turns each on a
+                // four-tile walk (t27–t37): ten turns for a city four tiles
+                // from the capital, and the second city at t37 against t20 in
+                // the game before. Two or more tiles behind, or any visible
+                // risk, keeps the hold and the fallback exactly as they were.
+                self.guard_wait.remove(&uid);
+                return None;
             }
         }
         think!(self.journal(), Expansion, Detail, "Settler waits for its guard";
@@ -38319,6 +38335,56 @@ mod tests {
         calm.units.get_mut(&settler).unwrap().moves_left = 2.0;
         let _ = ai.advanced_settler_step(&mut calm, 0, settler);
         assert_eq!(calm.units[&settler].pos, source, "on a quiet tile the settler holds for its guard");
+    }
+
+    /// On quiet ground with the guard one step behind, the settler marches;
+    /// the guard re-stacks on its own move. civvis-20260816T084206Z spent ten
+    /// turns on a four-tile walk holding for a guard one tile back.
+    #[test]
+    fn a_settler_on_quiet_ground_marches_with_its_guard_one_step_behind() {
+        let (mut game, source, target) = stacked_escort_fixture();
+        let settler = game.spawn_test_unit("settler", 0, source);
+        // The guard one tile behind, out of moves this turn.
+        let behind = game
+            .nbrs(source)
+            .into_iter()
+            .find(|position| {
+                game.map
+                    .get(*position)
+                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                    && game.wdist(*position, target) >= game.wdist(source, target)
+            })
+            .expect("fixture has a tile one step behind the settler");
+        let guard = game.spawn_test_unit("warrior", 0, behind);
+        game.units.get_mut(&guard).unwrap().moves_left = 0.0;
+        let mut ai = AdvancedAi::new();
+        ai.enable_stacked_escort();
+        assert!(ai.settlement_safety);
+        ai.settler_targets.insert(settler, target);
+        ai.settler_guards.insert(settler, guard);
+        let visible = ai.battlefront_visibility(&game, 0);
+        assert_eq!(
+            ai.settlement_tile_risk(&game, 0, Some(settler), source, &visible),
+            0.0,
+            "the fixture's ground is quiet"
+        );
+        game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+        let journal = crate::reasoning::Journal::recording();
+        ai.attach_journal(journal.handle());
+        let _ = ai.advanced_settler_step(&mut game, 0, settler);
+        assert_ne!(
+            game.units[&settler].pos, source,
+            "with the guard one step behind and nothing in reach the settler marches"
+        );
+        assert!(
+            !journal
+                .since(0)
+                .thoughts
+                .iter()
+                .any(|thought| thought.headline.starts_with("Settler waits for its guard")),
+            "no wait is journaled"
+        );
+        assert!(!ai.guard_wait.contains_key(&settler));
     }
 
     #[test]
