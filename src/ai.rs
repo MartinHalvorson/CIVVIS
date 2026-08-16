@@ -226,6 +226,10 @@ const DISTRICT_PRIORITY: [&str; 4] = ["campus", "commercial_hub", "holy_site", "
 /// and they disappear entirely from the ranking once the city has headroom.
 const HOUSING_DISTRICTS: [&str; 2] = ["aqueduct", "neighborhood"];
 
+/// The population at which Civilization VI lets a city start a Settler. See
+/// `BasicAi::host_settler_pop`.
+const HOST_SETTLER_MIN_POP: f64 = 2.0;
+
 /// The headroom a city is steered to keep. `Game::housing_growth_mult` pays
 /// full growth at 2 and half at 1, so 2 is the first value that is not a
 /// penalty — not a margin of comfort, the break-even point.
@@ -1958,6 +1962,19 @@ pub struct BasicAi {
     /// (the Civilization VI bridge); every native constructor and the frozen
     /// `advanced_v1` anchor keep the one-at-a-time gate. See `pick_item`.
     pub(crate) parallel_settlers: bool,
+    /// Build a Settler at the host's own population floor. Civilization VI
+    /// lets a city start a Settler at population 2 (it drops to 1); the
+    /// evolved genome the live seat plays (`g56-48`) carries
+    /// `settler_min_pop` 2.456, which reads as "wait for population 3". Run
+    /// civvis-20260816T021044Z: the capital reached population 2 on t12 and
+    /// "the city is below settler_min_pop" refused a Settler on t12/17/21/23/27
+    /// while it built a slinger, a galley, a builder, a trader, a granary and a
+    /// slinger; population 3 came on t32, the second city on t40, and the
+    /// empire read one city against Babylon's 164 score at t50. Set only
+    /// through `AdvancedAi::enable_host_settler_pop` (the Civilization VI
+    /// bridge); native constructors and the frozen anchor keep the genome's
+    /// figure. See `pick_item`.
+    pub(crate) host_settler_pop: bool,
     /// Each owned Settler's last seen tile and how many consecutive turns it
     /// has stood on it. See [`BasicAi::stranded_settlers`] for why the
     /// expansion gate needs this and nothing else does.
@@ -3101,6 +3118,7 @@ impl BasicAi {
             housing_buildings: false,
             settler_strand_discount: false,
             parallel_settlers: false,
+            host_settler_pop: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
             journal: Journal::default(),
@@ -3112,6 +3130,14 @@ impl BasicAi {
     /// exposed here so the bridge's `--explain-settler` probe can play the same gate.
     pub fn enable_parallel_settlers(&mut self) {
         self.parallel_settlers = true;
+    }
+
+    /// Build a Settler at the host's population floor (see `host_settler_pop`).
+    /// The Civilization VI bridge sets this through
+    /// `AdvancedAi::enable_host_settler_pop`; exposed here so the bridge's
+    /// `--explain-settler` probe can play the same gate.
+    pub fn enable_host_settler_pop(&mut self) {
+        self.host_settler_pop = true;
     }
 
     pub fn with_weights(w: Weights) -> BasicAi {
@@ -3151,6 +3177,7 @@ impl BasicAi {
             housing_buildings: false,
             settler_strand_discount: false,
             parallel_settlers: false,
+            host_settler_pop: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
             journal: Journal::default(),
@@ -7221,7 +7248,16 @@ impl BasicAi {
                 1
             };
             let none_in_flight = settlers.saturating_sub(stranded) < pipeline;
-            let grown = (city_pop as f64) >= self.w.settler_min_pop;
+            // ★★★★ THE HOST'S FLOOR, NOT THE GENOME'S. See `host_settler_pop`:
+            // Civilization VI starts a Settler at population 2, and the live
+            // genome's 2.456 held a food-poor capital at one city for forty
+            // turns waiting for population 3.
+            let settler_min_pop = if self.host_settler_pop {
+                self.w.settler_min_pop.min(HOST_SETTLER_MIN_POP)
+            } else {
+                self.w.settler_min_pop
+            };
+            let grown = (city_pop as f64) >= settler_min_pop;
             let in_window = (g.turn as f64) < self.w.settler_stop_turn;
             if room && none_in_flight && grown && in_window {
                 if self.has_practical_settle_site(g, pid) {
@@ -12384,6 +12420,65 @@ mod tests {
             !matches!(ask(&treated), Some(Item::Unit { unit }) if unit == "settler"),
             "the target is the hard cap"
         );
+    }
+
+    /// Civilization VI starts a Settler at population 2; the live genome's
+    /// `settler_min_pop` 2.456 waited for population 3 and held a food-poor
+    /// capital at one city for forty turns (civvis-20260816T021044Z). See
+    /// `host_settler_pop`.
+    #[test]
+    fn the_live_seat_builds_a_settler_at_the_hosts_population_floor() {
+        let mut game = Game::new_full(
+            1, 24, 16, crate::rng::fixture_seed("HOSTPOP", 91_778), 250, 0, false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let capital = game.player_city_ids(0)[0];
+        game.cities.get_mut(&capital).unwrap().pop = 2;
+        game.turn = 20;
+        let home = game.cities[&capital].pos;
+        game.spawn_unit("scout", 0, home);
+        game.spawn_unit("warrior", 0, home);
+        // No settler in flight, room to expand, inside the window: only the
+        // population gate can refuse.
+        let ask = |game: &Game, ai: &BasicAi| {
+            ai.pick_item(game, 0, capital, 2, 0, 6, 2, 1, 20, 10, 10)
+        };
+
+        // The genome's figure, as the live seat plays it.
+        let mut stock = BasicAi::new();
+        stock.w.city_target = 8.0;
+        stock.w.settler_min_pop = 2.456;
+        assert!(!stock.host_settler_pop, "off unless the bridge asks");
+        assert!(
+            !matches!(ask(&game, &stock), Some(Item::Unit { unit }) if unit == "settler"),
+            "stock: population 2 is below the genome's 2.456"
+        );
+
+        let mut treated = BasicAi::new();
+        treated.w.city_target = 8.0;
+        treated.w.settler_min_pop = 2.456;
+        treated.enable_host_settler_pop();
+        assert!(
+            matches!(ask(&game, &treated), Some(Item::Unit { unit }) if unit == "settler"),
+            "the live seat starts the Settler at the host's floor of 2: {:?}",
+            ask(&game, &treated)
+        );
+        // Population 1 still cannot: the host's floor is a floor.
+        game.cities.get_mut(&capital).unwrap().pop = 1;
+        assert!(
+            !matches!(ask(&game, &treated), Some(Item::Unit { unit }) if unit == "settler"),
+            "population 1 cannot start a Settler on the host either"
+        );
+        // A genome that already asks for less than the host's floor keeps its
+        // own figure: the floor never raises the bar.
+        game.cities.get_mut(&capital).unwrap().pop = 2;
+        treated.w.settler_min_pop = 1.5;
+        assert!(matches!(ask(&game, &treated), Some(Item::Unit { unit }) if unit == "settler"));
     }
 
     /// The frozen `advanced_v1` anchor and every native tournament game keep

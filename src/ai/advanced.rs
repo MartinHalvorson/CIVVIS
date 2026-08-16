@@ -2940,6 +2940,13 @@ impl AdvancedAi {
         self.base.parallel_settlers = true;
     }
 
+    /// Build a Settler at the host's population floor (see
+    /// `BasicAi::host_settler_pop`). Set by the Civilization VI bridge only;
+    /// native constructors and the frozen anchor keep the genome's figure.
+    pub fn enable_host_settler_pop(&mut self) {
+        self.base.enable_host_settler_pop();
+    }
+
     /// A city losing hitpoints is besieged, whatever the fog says. See
     /// `BasicAi::garrison_under_fire` for the t115 measurement.
     pub fn enable_garrison_under_fire(&mut self) {
