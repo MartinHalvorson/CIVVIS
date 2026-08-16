@@ -797,7 +797,7 @@ Farm was noise, not a finding. `state_changes` names `resolutions` and
 Replayed on the run with the round-7 binary: persistent Food 21→0,
 Production 8→0, Science 20→0, Gold 99→70 — 60 of the 70 is Cumae's Trade Policy
 Gold, which this run's export cannot carry (no `resolutions`, no route
-origins) and the first game launched with the new mod will.
+origins) and the first game launched with the new mod will; the other 10 is Ostia's path.
 
 **Open after round 7**: Ostia's domestic route Gold reads 2 in the host and 1
 in the model (t144-154; the second own-city trading post on the path — the
