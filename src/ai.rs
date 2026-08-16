@@ -148,6 +148,11 @@ const SIEGE_MUSTER_CAP: usize = 3;
 /// long term and answer the short one. One is a scout passing through; two is
 /// a raiding party.
 const SIEGE_PRESSURE_MIN: usize = 2;
+/// Own military units within `GARRISON_HOLD_RADIUS` of an unhurt city that
+/// make one more raid-response defender unnecessary. See `besieged_city_item`.
+const GARRISON_HOLD_UNITS: usize = 2;
+/// How close to the centre a unit must stand to count toward that garrison.
+const GARRISON_HOLD_RADIUS: i32 = 1;
 
 /// How many wall-breaking units the empire will ask for before it stops. Two
 /// is a siege train, not a doctrine; past this the ordinary melee/ranged
@@ -6690,6 +6695,33 @@ impl BasicAi {
             && g.cities.get(&cid).is_some_and(|city| city.hp < 200);
         if !bleeding && self.visible_besiegers(g, pid, cid) < SIEGE_PRESSURE_MIN {
             return None;
+        }
+        // ★★★★ A CITY THAT IS ALREADY GARRISONED AND UNHURT DOES NOT NEED ONE
+        // MORE DEFENDER FOR EVERY RAIDER IT SEES. Two visible hostiles within
+        // the muster radius is the raid test above, and early barbarians
+        // satisfy it every few turns. Run civvis-20260816T084206Z: Rome held
+        // three, then five military units and no damage, and this path built a
+        // Warrior on t15 and again on t21 (a Galley from the navy floor between)
+        // — the first Settler waited until t23, the second city until t37,
+        // and the tally read 204 against 352 at t97. Behind
+        // `garrison_under_fire`, the live doctrine that owns this path; the
+        // frozen controllers keep the raid test as it was.
+        if self.garrison_under_fire && !bleeding {
+            let Some(city) = g.cities.get(&cid) else {
+                return None;
+            };
+            let garrison = g
+                .units
+                .values()
+                .filter(|unit| {
+                    unit.owner == pid
+                        && g.rules.units[unit.kind].class == "military"
+                        && g.wdist(city.pos, unit.pos) <= GARRISON_HOLD_RADIUS
+                })
+                .count();
+            if garrison >= GARRISON_HOLD_UNITS {
+                return None;
+            }
         }
         for building in ["walls", "medieval_walls", "renaissance_walls"] {
             let wall = Item::Building {
@@ -14014,6 +14046,83 @@ mod tests {
             Some(&besieged),
             "the siege branch should release once nothing hostile is in reach"
         );
+    }
+
+    /// A garrisoned, unhurt city does not build one more defender for every
+    /// raider it sees: civvis-20260816T084206Z built Warriors on t15 and t21
+    /// for barbarian raiders while holding three to five units, and its
+    /// first Settler waited until t23. Live doctrine only.
+    #[test]
+    fn a_garrisoned_unhurt_city_skips_the_raid_defender_on_the_live_seat() {
+        let (mut g, city, raider) = barbarian_at_the_gates_game(80);
+        let cpos = g.cities[&city].pos;
+        // A raiding party: two visible hostiles.
+        let second = {
+            let template = g.units[&raider].clone();
+            let spot = g
+                .nbrs(cpos)
+                .into_iter()
+                .find(|p| {
+                    let t = &g.map.tiles[p];
+                    g.rules.is_passable(t)
+                        && !g.rules.is_water(t)
+                        && g.units_at(*p).is_empty()
+                        && g.city_at(*p).is_none()
+                })
+                .expect("a second open tile beside the city");
+            let mut extra = template;
+            extra.id = g.next_id;
+            g.next_id += 1;
+            extra.pos = spot;
+            let id = extra.id;
+            g.units.insert(id, extra);
+            id
+        };
+        let _ = second;
+        // Round-trip to rebuild occupancy after the manual insert.
+        let snapshot = serde_json::to_value(&g).unwrap();
+        let mut g: Game = serde_json::from_value(snapshot).unwrap();
+        // And a garrison of two on the centre (the fixture's own starting
+        // warrior may stand elsewhere).
+        let guard_a = g.spawn_unit("warrior", 0, cpos);
+        let guard_b = g.spawn_unit("slinger", 0, cpos);
+        let garrison = g
+            .units
+            .values()
+            .filter(|u| u.owner == 0 && g.rules.units[u.kind].class == "military" && g.wdist(cpos, u.pos) <= GARRISON_HOLD_RADIUS)
+            .count();
+        assert!(garrison >= GARRISON_HOLD_UNITS, "the fixture garrisons the city: {garrison}");
+
+        let mut native = BasicAi::new();
+        native.siege_muster = true;
+        assert_eq!(native.visible_besiegers(&g, 0, city), 2);
+        assert!(!native.garrison_under_fire);
+        assert!(
+            native.besieged_city_item(&g, 0, city).is_some(),
+            "the frozen doctrine still answers the raid with walls or a defender"
+        );
+
+        let mut live = BasicAi::new();
+        live.siege_muster = true;
+        live.garrison_under_fire = true;
+        assert!(
+            live.besieged_city_item(&g, 0, city).is_none(),
+            "a garrisoned, unhurt city on the live seat builds no extra defender"
+        );
+        // Bleeding: the raid is real, and the answer returns.
+        g.cities.get_mut(&city).unwrap().hp = 150;
+        assert!(live.besieged_city_item(&g, 0, city).is_some());
+        g.cities.get_mut(&city).unwrap().hp = 200;
+        // A thin garrison: the answer returns too.
+        g.remove_unit(guard_a);
+        g.remove_unit(guard_b);
+        let left = g
+            .units
+            .values()
+            .filter(|u| u.owner == 0 && g.rules.units[u.kind].class == "military" && g.wdist(cpos, u.pos) <= GARRISON_HOLD_RADIUS)
+            .count();
+        assert!(left < GARRISON_HOLD_UNITS, "the fixture thins the garrison: {left}");
+        assert!(live.besieged_city_item(&g, 0, city).is_some());
     }
 
     #[test]

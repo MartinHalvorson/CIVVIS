@@ -1204,7 +1204,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// into the named-campaign recovery guard (asserted). Compatibility re-pin; the
 /// Elo protocol does not move.
 /// The value below is recomputed after both live-only changes are combined.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3aff_0662_4feb_c7b3;
+/// The garrisoned-city raid gate is behind `garrison_under_fire`, the live
+/// doctrine that owns the besieged-city path; frozen controllers keep the raid
+/// test as it was (asserted). Compatibility re-pin; the Elo protocol does not
+/// move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4abc_388a_4532_2365;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
