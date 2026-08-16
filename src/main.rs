@@ -1231,7 +1231,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// behind `naval_recon`, off for `AdvancedAi::legacy()` (asserted); the
 /// frozen anchor's ships and production are unchanged. Compatibility re-pin;
 /// the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x91e3_3c03_0864_6c66;
+/// The era-paced city cadence is behind `era_paced_expansion`, off for
+/// `AdvancedAi::legacy()` (asserted); the frozen anchor still adds a city
+/// per ninety standard turns. Compatibility re-pin; the Elo protocol does
+/// not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbbf5_076f_fa65_f5c2;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

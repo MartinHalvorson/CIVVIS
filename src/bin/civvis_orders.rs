@@ -1463,6 +1463,7 @@ fn withhold_live_treatment(
         "recon-flight" => ai.disable_recon_flight(),
         "score-horizon" => ai.disable_score_horizon(),
         "naval-recon" => ai.disable_naval_recon(),
+        "era-paced-expansion" => ai.disable_era_paced_expansion(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1488,7 +1489,8 @@ fn withhold_live_treatment(
                  siege-commitment, wonder-ring-settle-value, garrison-walls, \
                  amenity-project-preemption, amenity-district-path, governor-every-lane, \
                  live-wonder-race, expansion-before-prophet, no-elective-war, \
-                 fog-land-capacity, recon-flight, score-horizon, naval-recon"
+                 fog-land-capacity, recon-flight, score-horizon, naval-recon, \
+                 era-paced-expansion"
             ))
         }
     }
@@ -3606,6 +3608,11 @@ mod tests {
         withhold_live_treatment(&mut ai, "naval-recon")
             .expect("the naval-recon control arm is registered");
         assert!(!ai.naval_recon(), "the named naval-recon control must hold it off");
+
+        assert!(ai.era_paced_expansion);
+        withhold_live_treatment(&mut ai, "era-paced-expansion")
+            .expect("the era-paced-expansion control arm is registered");
+        assert!(!ai.era_paced_expansion, "the named era-pace control must hold it off");
 
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
         assert!(
