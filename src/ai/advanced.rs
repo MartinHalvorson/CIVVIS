@@ -133,6 +133,17 @@ const RUSH_WINDOW_CLOSES: u32 = 60;
 /// 0.62 outmatched trigger and Recovery trigger keep their shape: the moment
 /// the advantage is gone, so is the patience.
 const OVERWHELMING_WAR_RATIO: f64 = 2.5;
+/// Combined hostile-major power relative to ours at which Recovery stops
+/// protecting its current campaign target from peace proposals.
+///
+/// A single threatened city can transiently put a winning campaign into
+/// Recovery, so its target normally remains worth fighting. Two independent
+/// major fronts whose combined army is this far ahead are different: keeping
+/// one target excluded leaves a live coalition war open while the other peace
+/// proposals are considered. The t180 Rome replay had 646 power against
+/// Zulu's 1,436 plus Nubia's 420, then lost Rome and Mediolanum before either
+/// front was negotiated out.
+const MULTI_FRONT_RECOVERY_PEACE_RATIO: f64 = 1.5;
 /// Standard turns without a foreign-city acquisition after which `war_patience`
 /// lapses and the stall clause fires again even over an overwhelmed target.
 ///
@@ -11397,6 +11408,27 @@ impl AdvancedAi {
             }
         }
         let my_power = g.military_power(pid);
+        let (major_war_fronts, combined_major_war_power) = g
+            .players
+            .iter()
+            .filter(|player| {
+                player.id != pid
+                    && player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && g.is_at_war(pid, player.id)
+            })
+            .fold((0usize, 0.0), |(fronts, power), player| {
+                (fronts + 1, power + g.military_power(player.id))
+            });
+        // This is a Firaxis live-bridge repair. Native tournament controllers
+        // retain their recorded single-target recovery behavior until it is
+        // deliberately repriced; `war_patience` is the existing live-only
+        // war-conversion gate and is set by `enable_live_bridge`.
+        let overwhelmed_on_multiple_fronts = self.war_patience
+            && plan.strategy == GrandStrategy::Recovery
+            && major_war_fronts >= 2
+            && combined_major_war_power > my_power * MULTI_FRONT_RECOVERY_PEACE_RATIO;
         let rivals: Vec<usize> = g
             .players
             .iter()
@@ -11454,7 +11486,8 @@ impl AdvancedAi {
                 && !peace_pending
                 && (my_power < g.military_power(*other) * 0.62
                     || (plan.strategy == GrandStrategy::Recovery
-                        && plan.target_player != Some(*other))
+                        && (plan.target_player != Some(*other)
+                            || overwhelmed_on_multiple_fronts))
                     || (self.religion_sues_peace
                         && plan.strategy == GrandStrategy::Religion
                         && !appointed_objective)
@@ -11467,6 +11500,8 @@ impl AdvancedAi {
                     let their_power = g.military_power(*other);
                     let because = if my_power < their_power * 0.62 {
                         "outmatched"
+                    } else if overwhelmed_on_multiple_fronts {
+                        "multiple major fronts overwhelm the recovery army"
                     } else if plan.strategy == GrandStrategy::Recovery {
                         "this is not the war the recovery plan is fighting"
                     } else if self.religion_sues_peace
@@ -28976,6 +29011,90 @@ mod tests {
         assert!(!game.is_at_war(0, 1));
         assert_eq!(accepting.peace_until, game.turn + 30);
         assert!(accepting.major_war_since.is_none());
+    }
+
+    #[test]
+    fn overwhelmed_multi_front_recovery_offers_peace_to_its_campaign_target() {
+        // Live run civvis-20260816T070212Z at t180: Rome entered Recovery at
+        // 646 power against Zulu's 1,436 and Nubia's 420. The plan asked Zulu
+        // for peace, but kept Nubia exempt because it was the current target;
+        // Rome and Mediolanum fell before the war ended. A coalition that far
+        // beyond the empire's army must be able to negotiate every front.
+        let mut game = Game::new_full(3, 24, 16, 7_923, 300, 0, false);
+        for pid in 0..3 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("every major starts with a settler");
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        for _ in 0..2 {
+            game.spawn_test_unit("modern_armor", 0, home);
+        }
+        for enemy in [1, 2] {
+            let staging = game.cities[&game.player_city_ids(enemy)[0]].pos;
+            let bodies = if enemy == 1 { 1 } else { 5 };
+            for _ in 0..bodies {
+                game.spawn_test_unit("modern_armor", enemy, staging);
+            }
+            game.record_contact(0, enemy);
+            game.at_war.insert((0, enemy));
+        }
+        game.turn = 60;
+        game.current = 0;
+        assert!(
+            game.military_power(1) + game.military_power(2)
+                > game.military_power(0) * MULTI_FRONT_RECOVERY_PEACE_RATIO,
+            "precondition: the two major fronts overwhelm the recovery army"
+        );
+        assert!(
+            game.military_power(0) >= game.military_power(1) * 0.62,
+            "precondition: the campaign target alone does not trigger ordinary outmatched peace"
+        );
+        let recovery = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            target_player: Some(1),
+            target_city: Some(game.player_city_ids(1)[0]),
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        let mut single_front = game.clone();
+        single_front.at_war.remove(&(0, 2));
+        let mut single_front_ai = AdvancedAi::new();
+        single_front_ai.enable_live_bridge();
+        single_front_ai.advanced_diplomacy(&mut single_front, 0, &recovery);
+        assert!(
+            !single_front_ai.peace_offers.contains(&1),
+            "a live single-front recovery still protects its active campaign target"
+        );
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_live_bridge();
+        ai.major_war_since = Some(40);
+        ai.advanced_diplomacy(&mut game, 0, &recovery);
+
+        assert!(
+            ai.peace_offers.contains(&1),
+            "the recovery target joins the peace negotiation in a catastrophic multi-front war"
+        );
+        assert!(
+            ai.peace_offers.contains(&2),
+            "the other major front remains eligible for the same negotiation"
+        );
+        for enemy in [1, 2] {
+            assert!(
+                game.pending_deals
+                    .iter()
+                    .any(|deal| deal.from == 0 && deal.to == enemy && deal.peace),
+                "the eligible peace offer becomes an outbound deal for player {enemy}"
+            );
+        }
     }
 
     #[test]

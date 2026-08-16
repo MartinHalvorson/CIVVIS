@@ -1158,6 +1158,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The war-patience reference is read only under `war_patience`, which the
 /// frozen anchor never sets. Compatibility re-pin; the Elo protocol does not
 /// move.
+/// A catastrophic multi-front Recovery peace proposal is also behind that
+/// same live-only `war_patience` gate: with it false, the anchor keeps
+/// protecting its active campaign target exactly as before. Compatibility
+/// re-pin; the Elo protocol does not move.
 /// The wonder-race scale is read only under `live_wonder_race`, which the
 /// frozen anchor never sets. Compatibility re-pin; the Elo protocol does not
 /// move.
@@ -1186,7 +1190,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the live bridge and the native repair bundle set; `AdvancedAi::new()` and
 /// `legacy()` keep the historical routing (asserted). Compatibility re-pin; the
 /// Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xfd1d_bb07_5a20_0ba6;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc869_1998_fe58_e3c0;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
