@@ -5704,6 +5704,27 @@ local function exportState(player, pid, turn)
 					end
 					return n;
 				end, -1),
+				-- ★★★★ THE RIVAL'S OWN ECONOMY, AS THE HOST REPORTS IT. Counts of
+				-- techs and civics say how far ahead a rival is; these say how
+				-- fast it is moving. Every accessor is one the shipped World
+				-- Rankings and Deal screens call on OTHER players (`GetTechs():
+				-- GetScienceYield`, `GetCulture():GetCultureYield`, `GetStats():
+				-- GetTourism`, `GetTreasury():GetGoldBalance`), so the seat learns
+				-- nothing a player at the keyboard could not read. Without them
+				-- the mirror's rival science and culture were CIVVIS's own guess
+				-- from a rival's visible cities — the one part of the standings a
+				-- viewer could never trust. -1 on failure, as everywhere here.
+				science = try(function() return other:GetTechs():GetScienceYield(); end, -1),
+				culture = try(function() return other:GetCulture():GetCultureYield(); end, -1),
+				tourism = try(function() return other:GetStats():GetTourism(); end, -1),
+				gold = try(function() return other:GetTreasury():GetGoldBalance(); end, -1),
+				-- Net, like our own `gold_per_turn` below (yield minus maintenance).
+				gold_per_turn = try(function()
+					local treasury = other:GetTreasury();
+					return treasury:GetGoldYield() - treasury:GetTotalMaintenance();
+				end, -1),
+				faith = try(function() return other:GetReligion():GetFaithBalance(); end, -1),
+				faith_per_turn = try(function() return other:GetReligion():GetFaithYield(); end, -1),
 				cities = theirCities,
 				units = theirUnits,
 			};
@@ -8011,6 +8032,73 @@ local function applyOrder(player, pid, row, turn)
 		end);
 		if ok then peaceAsked[key] = turn; end
 		return ok, ok and "delegation_asked" or "throw";
+	end
+
+	-- ★★★★★ CIVVIS'S OWN ENVOY, PLACED. One order = one influence token on one
+	-- met city-state, decided on the reconstructed board by `advanced_envoys`
+	-- (type-aware, suzerainty-priced, denial-aware) now that `envoys_free`
+	-- crosses the export into the mirror. Until this arm existed the seat
+	-- finished every Settler game holding 40–70 unspent envoys with no
+	-- suzerainty — the largest measured headroom in the project (an oracle
+	-- suzerainty wins 56.7% against 22.7%) forfeited for free.
+	--
+	-- ⚠⚠ THIS IS NOT `chooseEnvoy`. That lane decides in Lua and stays behind
+	-- `cfg.EnvoyEnabled` (off) as the isolation experiment its comment asks
+	-- for; running both would have two deciders bidding the same purse. Here
+	-- the mod places what it is told and reports what happened, nothing more.
+	--
+	-- ⚠⚠ A FRESH `GetInfluence()` HANDLE PER ORDER, READ THEN DROPPED. The one
+	-- concrete defect ever pinned on the crash that took the old lane out of
+	-- deployment was a gameplay sub-object pointer held across the
+	-- `UI.RequestPlayerOperation` calls that rewrite it. Every read here goes
+	-- through a handle fetched inside this order and nothing is written
+	-- through it after the operation is issued. The prompt-clearing write
+	-- (`SetGivingTokensConsidered`) is deliberately NOT made: with the tokens
+	-- spent the `GIVE_INFLUENCE_TOKEN` blocker is not raised, and when CIVVIS
+	-- keeps one back the known-stable skip in SOFT_BLOCKERS still stands.
+	--
+	-- Every accessor is the shipped `CityStates.lua`'s: `GetTokensToGive`,
+	-- `CanGiveInfluence`, `CanGiveTokensToPlayer`, and one
+	-- `GIVE_INFLUENCE_TOKEN` request per token with `PARAM_PLAYER_ONE`.
+	if kind == "envoy" then
+		if subject < 0 then return false, "envoy_target_unmapped"; end
+		local giveOp = try(function() return PlayerOperations.GIVE_INFLUENCE_TOKEN; end);
+		local oneParam = try(function() return PlayerOperations.PARAM_PLAYER_ONE; end);
+		if giveOp == nil or oneParam == nil then return false, "envoy_no_operation"; end
+		local influence = try(function() return player:GetInfluence(); end);
+		if influence == nil then return false, "envoy_no_influence"; end
+		local held = try(function() return influence:GetTokensToGive(); end, 0) or 0;
+		if held < 1 then return false, "envoy_none_held"; end
+		if not try(function() return influence:CanGiveInfluence(); end, false) then
+			return false, "envoy_cannot_give";
+		end
+		if not try(function() return influence:CanGiveTokensToPlayer(subject); end, false) then
+			return false, "envoy_refused_" .. tostring(subject);
+		end
+		local before = try(function() return influence:GetTokensToGive(); end, held) or held;
+		local params = {};
+		params[oneParam] = subject;
+		local ok = pcall(function()
+			UI.RequestPlayerOperation(pid, giveOp, params);
+		end);
+		-- ⚠ Reported with the numerator: the token count read AFTER the request
+		-- from a second fresh handle is the receiving-side reading, because
+		-- `applied = true` on the issuing side has fooled this project four
+		-- separate times. An operation the core applies asynchronously can
+		-- still read equal to `before` on this frame, so the authoritative
+		-- check is next turn's `envoys_free` in the state export falling by the
+		-- number placed; `after` staying at `before` across many turns is the
+		-- line that says the requests are being accepted and ignored.
+		local after = try(function()
+			return player:GetInfluence():GetTokensToGive();
+		end, -1);
+		if ok then
+			emit("envoy", {
+				turn = turn, target = subject, source = "civvis",
+				held = before, after = after,
+			});
+		end
+		return ok, ok and "envoy_placed" or "throw";
 	end
 
 	-- ★★★★★ CIVVIS'S OWN POLICY, GOVERNMENT AND PANTHEON CHOICES.
@@ -10510,10 +10598,28 @@ local function tick()
 						for idx, t in pairs(targets) do
 							if tonumber(t) == leader then selection = idx; end
 						end
+						-- ★★★★ FAVOR IS BANKED UNTIL A LEADER IS WITHIN REACH.
+						--
+						-- Run `civvis-20260816T123936Z` ended at turn 239 on a rival's
+						-- Diplomatic Victory -- the sixth early diplomatic loss on the
+						-- Settler seat -- and the ledger of this voter reads: 180 Favor
+						-- spent at t161 against a leader on 8 points, 220 at t181 (11),
+						-- 220 at t201 (14), 264 at t221 (15); the leader then went 15
+						-- -> 19 -> 20 in the two sessions that decided it while the
+						-- treasury it faced was whatever had trickled in since the
+						-- last spend. Extra votes cost Favor on a rising ladder, so the
+						-- same Favor buys the most votes when spent at once, and it
+						-- only matters at the sessions a leader can win from. Below
+						-- `DiploVictoryVoteFloor` points (12: four sessions of +2 from
+						-- twenty) the free vote is still cast against the leader and
+						-- nothing is spent; from there every session spends the bank.
+						local floor = cfg.DiploVictoryVoteFloor or 12;
 						local maxVotes = tonumber(costs.MaxVotes) or 1;
 						local n = 1;
-						while n + 1 <= maxVotes and costs[n] ~= nil and costs[n] <= favor do
-							n = n + 1;
+						if (tonumber(leaderPoints) or 0) >= floor then
+							while n + 1 <= maxVotes and costs[n] ~= nil and costs[n] <= favor do
+								n = n + 1;
+							end
 						end
 						votes = n;
 						local cost = (n > 1 and costs[n - 1]) or 0;

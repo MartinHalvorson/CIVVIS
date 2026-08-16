@@ -1243,7 +1243,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `AdvancedAi::legacy()` (asserted); the frozen anchor's lanes keep their
 /// bred yield weights and district table. Compatibility re-pin; the Elo
 /// protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2a71_65d4_ad9c_b5a4;
+/// The frontier-loyalty settle rule is behind `frontier_loyalty`, off for
+/// `AdvancedAi::legacy()` (asserted); the frozen anchor's settle forecast is
+/// unchanged. Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x612e_a96e_a16e_b596;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -2908,6 +2911,37 @@ fn main() {
                 }
             }
         }
+        "arena" => {
+            // A batch rating event: refit the corrected contextual model over
+            // the league's standardized games and publish an anchored table
+            // that moves only when an arena runs. `src/arena.rs` says why.
+            let dir = arg_text(
+                &args,
+                "--dir",
+                &std::env::var("CIVVIS_LEAGUE_DIR").unwrap_or_else(|_| "league".into()),
+            );
+            // 0 = the history's modal table size, printed in the report.
+            let seats = arg(&args, "--seats", 0).max(0) as usize;
+            let anchors: Vec<String> = arg_text(&args, "--anchors", "advanced,basic")
+                .split(',')
+                .map(|a| a.trim().to_string())
+                .filter(|a| !a.is_empty())
+                .collect();
+            let anchor_elo = arg_f64(&args, "--anchor-elo", 1500.0);
+            match civvis::arena::run_dir(
+                &dir,
+                seats,
+                &anchors,
+                anchor_elo,
+                std::time::SystemTime::now(),
+            ) {
+                Ok(report) => print!("{report}"),
+                Err(error) => {
+                    eprintln!("arena failed: {error}");
+                    std::process::exit(1);
+                }
+            }
+        }
         "league" => {
             let players = arg(&args, "--players", 4).max(2);
             let defaults = civvis::league::LeagueCfg::default();
@@ -3420,7 +3454,7 @@ fn main() {
         }
         _ => {
             println!(
-                "usage: civvis <simulate|soak|odds-audit|benchmark|tournament|league|league-init|rate-game|rating|play|evolve|validate|pedia> \
+                "usage: civvis <simulate|soak|odds-audit|benchmark|tournament|league|league-init|arena|rate-game|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais [identity=]controller,...] [--anchor identity|none] [--ratings path] [--standings] [--port N] [--no-open] \
                       [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield|tactics_planet|tactics_ocean|trafalgar] \

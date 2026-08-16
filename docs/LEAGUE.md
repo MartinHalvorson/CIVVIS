@@ -138,6 +138,51 @@ period and cumulative metrics. Lower is better for both. Old snapshots begin
 with an empty audit and measure forward, because reconstructing predictions
 from final ratings would leak future results.
 
+## Arena: batch rating events on standardized games
+
+```bash
+civvis arena --dir league/                 # rate, publish league/arena.json
+civvis arena --dir league/ --seats 6       # pin the standardized table size
+civvis arena --anchors advanced,basic --anchor-elo 1500
+```
+
+The continuous league above is the right engine for matchmaking and
+selection, and the wrong artifact to publish as strength: settings drift
+between rounds, small updates churn the table daily, and a closed pool's
+scale slowly walks. An **arena** is the batch alternative — a rating
+*event*. It refits the corrected contextual model (`civvis rating`'s staged
+placement credit + shared civilization edge, `src/rating.rs`) from scratch
+over only the games at one standardized table size, and publishes
+`arena.json`: an anchored table that moves **only when an arena runs**, with
+each strategy's whole step since the previous event shown as one delta.
+
+Three properties, by construction rather than by policy:
+
+- **Batched.** Ratings change at arena events, nowhere else. Between events
+  the league keeps playing and selecting exactly as before; an arena is a
+  reading of its accumulated evidence, not a fork of it.
+- **Standardized.** Every rated game was played at the same table size
+  (`--seats`, defaulting to the history's modal size, always printed in the
+  report). Cross-profile games stay in the history but out of the fit —
+  profile-specific gains are the recorded norm here, not the exception.
+- **Normalized.** The anchor strategies' mean rating *is* 1500
+  (`--anchors advanced,basic`, `--anchor-elo`). The founders can churn out
+  of the roster entirely and 1500 keeps meaning the same thing, so two
+  arenas years apart stay comparable.
+
+The scale is internal for now. `arena.json` carries an `external_anchor`
+field, deliberately present and null: the day the live Civilization VI
+bridge has enough recorded games to place the deployed agent against
+Firaxis' own AI at a named difficulty, that measurement becomes a labelled
+offset — e.g. "the Firaxis Prince AI plays at 1500 on this scale" — and the
+whole table reads in real-Civ 6-relative terms without refitting anything.
+Until that measurement exists the field stays null, because writing an
+aspiration into a schema is fine and writing one into a number is not.
+
+The committed snapshot lives at `data/league/arena.json`, beside the
+league snapshot, refreshed the same way: run the event against the runtime
+directory and land the artifact.
+
 ## Leader/civilization-specific ratings
 
 Besides its overall summary, every player keeps a nested **per-leader and

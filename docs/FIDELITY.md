@@ -561,6 +561,61 @@ Culture per citizen (the tooltip truncates 0.29688 to "+0.2" — read totals, no
 the printed decimals), and the Monument's "+1 from Modifiers" is its
 full-loyalty Culture, which CIVVIS pays as `full_loyalty_culture`.
 
+### Round 3: the audit's blind row, and the other civilizations (2026-08-16, run `civvis-20260816T115139Z`)
+
+The next per-plot game put a new signature on top — every worked Fishing Boat
+one Production under the host from the turn Colonialism landed — and chasing it
+found two defects in **this audit**, not in the engine:
+
+- **A duplicate Id in the shipped table.** `Improvement_BonusYieldChanges` keys
+  its rows by `Id`, and Firaxis ships Id 225 twice (Camp/Gold/Synthetic
+  Materials and Fishing Boats/Production/Colonialism). Keyed by Id, the loader
+  kept one and dropped the other, so Colonialism's grant was never compared,
+  never listed as "only in Civ VI", and never modelled. The table is now keyed
+  by (improvement, yield, tech, civic) and `compare` treats a grant we pay that
+  the game does not as a divergence rather than an unmeasured field.
+- **The XML route never applied `<Expansion>_RemoveData.xml`.** The core
+  directories are filtered by `FILE_PATTERN`, which names the rules files and
+  not the retirement file each expansion ships at modinfo `Priority="1"` (394
+  and 572 `<Delete>` rows). Every retired base row therefore stayed in the XML
+  reference: Robotics granting Pasture Production (moved to Replaceable Parts by
+  Gathering Storm) "confirmed" a CIVVIS grant the game no longer makes;
+  Cartography and Mass Production kept a Shipbuilding prerequisite the game
+  removed; Niter kept a Floodplains feature; the Sphinx kept Snow; the
+  Industrial Zone kept a 1.5 mine adjacency; every base Boost was compared
+  against a row the expansion re-declares. Applied first, as the modinfo does,
+  the XML route now agrees with the compiled cache on all of them, and the
+  four "divergences" the earlier fingerprint notes had recorded as CIVVIS
+  corrections were CIVVIS being right against a stale reference. What remains
+  between the two routes (12 fields, all matching the compiled cache: Pike and
+  Shot upkeep, the Tagma, three unique buildings, Eyjafjallajökull's adjacent
+  Food) is content-pack rebalancing the XML route still misses; the cache
+  route — `--cache`, which now also finds the Aspyr build's nested path — is
+  the reference for the running game.
+
+Both engine-side corrections that fell out are in `tree_effects.json`:
+Colonialism `fishing_boats_production: 1` (and the engine's Fishing Boats
+branch reads it), Robotics loses `pasture_production`. Fingerprint re-pinned.
+
+**The other civilizations.** The standings' rival Science and Culture were
+CIVVIS's own derivation from whichever rival cities happened to be visible —
+usually none — the one column of the mirror a viewer could never trust. The
+host reads them for every player (its World Rankings and Deal screens call
+`GetTechs():GetScienceYield`, `GetCulture():GetCultureYield`,
+`GetStats():GetTourism`, `GetTreasury():GetGoldBalance` on other players), so
+the rival record now carries `science`, `culture`, `tourism`, `gold`,
+`gold_per_turn` (net), `faith`, `faith_per_turn`, and the mirror puts them on
+the rival's seat: treasury and Faith directly, per-turn Science and Culture as
+the same host-to-model delta seat 0 carries. `civ6_mirror_check.py` PUBLIC
+compares them per rival seat.
+
+Still open on the other civilizations, in order of value: rival cities'
+districts and buildings are not exported (a rival city record is name, size,
+health, walls, capital), so a rival's economy and defence are modelled from
+population alone — `Plot:GetDistrictType` on every revealed plot would carry the
+districts at least; a rival's techs and civics cross as counts, not names;
+city-state envoy totals from all players (only ours cross today).
+
 ### Faith at the empire level: unused Great Person points and a religion's own beliefs (2026-08-16, run `civvis-20260816T123936Z`)
 
 Rome's Faith per turn diverged from the host by more than half, and the

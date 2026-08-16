@@ -360,6 +360,25 @@ def public_fact_mismatches(state, board):
             if isinstance(want, (int, float)) and want >= 0 \
                     and (not isinstance(got, (int, float)) or abs(got - want) > 0.51):
                 mismatches.append(f"seat {seat} {key} Civ6={want:g} CIVVIS={got!r}")
+        # A rival's per-turn Science and Culture and its treasury cross the
+        # bridge too (the host reads them for every player, as its World
+        # Rankings does); the board carries them the same way as seat 0's, so
+        # a rival seat must agree to the rounding as well. Seat 0's own are
+        # compared below from the state's top-level fields.
+        if seat > 0:
+            rival_yields = player.get("yields") or {}
+            for key in ("science", "culture"):
+                want = source.get(key)
+                got = rival_yields.get(key)
+                if isinstance(want, (int, float)) and want >= 0 \
+                        and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
+                    mismatches.append(f"seat {seat} {key}/turn Civ6={want:g} CIVVIS={got!r}")
+            for key in ("gold", "faith"):
+                want = source.get(key)
+                got = player.get(key)
+                if isinstance(want, (int, float)) and want >= 0 \
+                        and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
+                    mismatches.append(f"seat {seat} {key} Civ6={want:g} CIVVIS={got!r}")
 
     ours = players.get(0, {})
     yields = ours.get("yields") or {}

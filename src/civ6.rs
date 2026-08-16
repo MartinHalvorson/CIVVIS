@@ -665,12 +665,28 @@ pub fn start(request: &Request, tag: &str) -> Result<Started, String> {
 /// `tools/civ6_play.py` names its directory after and what the game lock
 /// reports as its holder.
 pub fn new_tag(now: std::time::SystemTime) -> String {
+    format!("civvis-{}", compact_utc(now))
+}
+
+/// The same UTC second as an ISO-8601 instant, for artifacts that record
+/// when they were generated (the arena report). Kept beside `new_tag` so the
+/// crate's one date conversion stays in one place.
+pub fn utc_stamp(now: std::time::SystemTime) -> String {
     let secs = now
         .duration_since(std::time::UNIX_EPOCH)
         .map(|since| since.as_secs())
         .unwrap_or(0);
     let (year, month, day, hour, minute, second) = civil_from_unix(secs as i64);
-    format!("civvis-{year:04}{month:02}{day:02}T{hour:02}{minute:02}{second:02}Z")
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+fn compact_utc(now: std::time::SystemTime) -> String {
+    let secs = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs())
+        .unwrap_or(0);
+    let (year, month, day, hour, minute, second) = civil_from_unix(secs as i64);
+    format!("{year:04}{month:02}{day:02}T{hour:02}{minute:02}{second:02}Z")
 }
 
 /// Days-to-civil-date, Howard Hinnant's algorithm. The crate has no date
