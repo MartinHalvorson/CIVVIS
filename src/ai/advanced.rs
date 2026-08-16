@@ -2484,6 +2484,14 @@ impl AdvancedAi {
     /// `AdvancedAi::campus_every_city`: live end-of-game Campus coverage is
     /// exactly 50 of 100 cities, which is what `balanced_core`'s half-empire
     /// cliff asks for.
+    /// Let a city with no Campus order one before a Builder or Trader.
+    /// See `BasicAi::campus_before_builder` — the cascade in `pick_item` puts
+    /// districts below Settler/Builder/Trader, and that function makes 78% of
+    /// live production decisions.
+    pub fn enable_campus_before_builder(&mut self) {
+        self.base.campus_before_builder = true;
+    }
+
     pub fn enable_campus_every_city(&mut self) {
         self.campus_every_city = true;
     }
