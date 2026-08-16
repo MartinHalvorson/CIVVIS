@@ -183,6 +183,15 @@ Other properties worth knowing:
   mean rating fixed, so a leader's margin stays comparable across hundreds of
   rounds even after every founder has been replaced.
 
+## Arena events consume this model
+
+`civvis arena` is where this measurement layer becomes a published number:
+a batch rating event that refits the staged-credit + civ-edge model from
+scratch over one standardized table size and writes an anchored table
+(`arena.json`) that moves only when an event runs. The design rationale —
+batched, standardized, normalized, and the reserved external
+(Firaxis-relative) anchor — is in `docs/LEAGUE.md` under "Arena".
+
 ## Reading a backtest honestly
 
 The report prints a `(random guess)` row on every table. Read it first.
