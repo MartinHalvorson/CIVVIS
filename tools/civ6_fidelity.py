@@ -129,7 +129,17 @@ TABLE_KEYS = {
     "Improvement_ValidFeatures": ("ImprovementType", "FeatureType"),
     "Improvement_ValidResources": ("ImprovementType", "ResourceType"),
     "Improvement_ValidBuildUnits": ("ImprovementType", "UnitType"),
-    "Improvement_BonusYieldChanges": ("Id",),
+    # ⚠ NOT keyed by `Id`. The shipped table carries a duplicate: Id 225 is
+    # both `CAMP / GOLD / TECH_SYNTHETIC_MATERIALS` and `FISHING_BOATS /
+    # PRODUCTION / CIVIC_COLONIALISM`, so an Id key silently kept one row and
+    # dropped the other, and Colonialism's +1 Production on Fishing Boats went
+    # unaudited for the life of this tool — CIVVIS never modelled it, and the
+    # first per-plot export (run civvis-20260816T115139Z) showed every worked
+    # boat one Production under the host for fifty turns. The prerequisite
+    # columns are alternately NULL, so `_key` fills the absent one with "".
+    "Improvement_BonusYieldChanges": (
+        "ImprovementType", "YieldType", "PrereqTech", "PrereqCivic",
+    ),
     "Resource_Harvests": ("ResourceType", "YieldType"),
     "Feature_Removes": ("FeatureType", "YieldType"),
     "District_Adjacencies": ("DistrictType", "YieldChangeId"),
@@ -179,6 +189,9 @@ FILE_PATTERN = re.compile(
     r"(_Major)?\.xml$",
     re.IGNORECASE,
 )
+
+# The expansions' retirement files: `<Delete>` rows against base tables.
+REMOVE_DATA = re.compile(r"^Expansion[12]_RemoveData\.xml$", re.IGNORECASE)
 
 ERAS = [
     "ERA_ANCIENT",
@@ -230,6 +243,11 @@ class Database:
             node = row.get("TechnologyType") or row.get("CivicType")
             return (node,) if node else None
         columns = spec if isinstance(spec, tuple) else (spec,)
+        if table == "Improvement_BonusYieldChanges":
+            # One of the two prerequisite columns is always NULL (absent).
+            if not all(column in row for column in columns[:2]):
+                return None
+            return tuple(row.get(column, "") for column in columns)
         if not all(column in row for column in columns):
             return None
         return tuple(row[column] for column in columns)
@@ -291,6 +309,9 @@ class Database:
 
 CACHE_DATABASE_PATHS = (
     "~/Library/Application Support/Sid Meier's Civilization VI/Cache/DebugGameplay.sqlite",
+    # The Aspyr build nests the user directory one level deeper.
+    "~/Library/Application Support/Sid Meier's Civilization VI/Firaxis Games/"
+    "Sid Meier's Civilization VI/Cache/DebugGameplay.sqlite",
     "~/AppData/Local/Firaxis Games/Sid Meier's Civilization VI/Cache/DebugGameplay.sqlite",
 )
 
@@ -356,8 +377,29 @@ def load_database(install: Path) -> Database:
                 print(f"warning: missing load-order directory {relative}", file=sys.stderr)
             continue
         core = relative in LOAD_ORDER[:3]
+        # ⚠ AN EXPANSION RETIRES BASE ROWS IN `<Expansion>_RemoveData.xml`, AND
+        # THAT FILE NEVER MATCHED `FILE_PATTERN`. Expansion1 ships 394 `<Delete>`
+        # rows and Expansion2 572 — TechnologyPrereqs, Policies, Resource_
+        # ValidFeatures, Improvement_BonusYieldChanges, District_Adjacencies
+        # among them — and none was ever applied, so this route's reference
+        # kept rows the shipped game deleted: Robotics still granting Pasture
+        # Production (Id 9, retired for Replaceable Parts) "confirmed" a wrong
+        # CIVVIS grant, Cartography and Mass Production kept a Shipbuilding
+        # prerequisite the game removed, Niter kept a Floodplains feature, the
+        # Sphinx kept Snow, and Colonialism's Fishing Boats Production sat
+        # behind a duplicate Id (see TABLE_KEYS). The modinfo loads the file
+        # at `Priority="1"` — FIRST in its expansion — so the base rows it
+        # retires are gone before the expansion re-adds its own (every base
+        # Boost is deleted here and re-declared in Expansion2_Technologies);
+        # it is applied first here for the same reason.
+        if core:
+            for path in sorted(directory.rglob("*.xml")):
+                if REMOVE_DATA.match(path.name):
+                    database.apply_file(path)
         for path in sorted(directory.rglob("*.xml")):
             if core:
+                if REMOVE_DATA.match(path.name):
+                    continue
                 if not FILE_PATTERN.match(path.name) and CROSS_EXPANSION.search(path.name):
                     deferred.append(path)
                 elif FILE_PATTERN.match(path.name):
@@ -2188,6 +2230,11 @@ def waived(table: str, entry: str, field: str) -> bool:
     )
 
 
+# Tables whose rows are grants: a field on our side with no row on theirs is a
+# grant the game does not make, and is reported rather than skipped.
+STRICT_TABLES = {"ImprovementUpgrades"}
+
+
 def compare(table: str, ours: dict[str, dict], theirs: dict[str, dict]) -> dict:
     divergences = []
     waived_count = 0
@@ -2203,6 +2250,18 @@ def compare(table: str, ours: dict[str, dict], theirs: dict[str, dict]) -> dict:
                     "field": field,
                     "ours": sorted(value),
                     "theirs": sorted(reference or ()),
+                }
+            elif reference is None and table in STRICT_TABLES:
+                # For a grant table the absence IS the reference: an effect
+                # CIVVIS pays that the game never grants (Robotics paying
+                # Pasture Production, which the game reserves for Replaceable
+                # Parts) is a divergence, not an unmeasured field.
+                divergence = {
+                    "table": table,
+                    "entry": name,
+                    "field": field,
+                    "ours": value,
+                    "theirs": 0,
                 }
             elif reference is None or value == reference:
                 # A field the game database does not carry for this entry (or
