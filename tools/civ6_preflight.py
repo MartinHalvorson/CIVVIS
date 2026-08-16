@@ -153,7 +153,17 @@ def check_installed(report: Report) -> None:
     for path in sorted(MOD.glob("*.lua")):
         live = INSTALLED / path.name
         if not live.exists():
-            report.fail(path.name, "not installed")
+            # A warning for exactly the reason a differing file is one: the
+            # harness re-installs the whole mod at attempt start, so a file
+            # that landed on main since the last install is normal, not
+            # broken. Failing here made it a chicken-and-egg that halted the
+            # ladder: only an attempt installs the file, and preflight
+            # refused every attempt until the file was installed (measured
+            # 2026-08-16 — four instant "PLAYED NO TURNS" failures over two
+            # newly merged test scripts, then a by-hand install to unwedge).
+            # A wholly absent install dir is already a warn above; one absent
+            # file must not be stricter than all of them absent.
+            report.warn(path.name, "not installed; harness installs at attempt start")
         elif not installed_source_matches(live.read_bytes(), path.read_bytes()):
             # Not a failure: the harness re-syncs at attempt start, so a difference
             # before a run is normal. It is only fatal if someone is reading the
