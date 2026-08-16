@@ -1256,7 +1256,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// for `AdvancedAi::legacy()` (asserted); the frozen anchor's settler
 /// re-picks exactly as before. Compatibility re-pin; the Elo protocol does
 /// not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8b47_a8a8_8acb_f19a;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa333_ab63_a585_75ea;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
