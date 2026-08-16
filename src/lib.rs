@@ -19,6 +19,7 @@ pub mod fractal;
 pub mod game;
 pub mod hex;
 pub mod historical_scenarios;
+pub mod historical_terrain;
 pub mod league;
 pub mod leader_roster;
 pub mod mapgen;

@@ -28,7 +28,6 @@
 
   * { box-sizing: border-box; }
   html { background: var(--bg); }
-  @media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
   body {
     min-width: 320px;
     margin: 0;
@@ -78,6 +77,12 @@
   .utility-link:hover,
   .utility-link:focus-visible { background: var(--panel-raised); border-color: var(--accent); color: #fff; }
   .utility-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* The one link in this row that starts a game rather than leaving the
+     site, tinted like the picker's selected lens so it reads as the action
+     it is without competing with the cards below. */
+  .utility-link.lucky { border-color: var(--accent); color: #cfe9fb; }
+  .utility-link.lucky:hover,
+  .utility-link.lucky:focus-visible { background: #2a3f52; }
 
   /* The report dialog: a visitor's bug or feature request, headed for the
      project's GitHub issue tracker — filed by the site itself for anonymous
@@ -110,9 +115,6 @@
   .report-choice[aria-pressed="true"] { border-color: var(--accent); background: #2a3f52; color: #fff; }
   .report-choices { display: flex; flex-wrap: wrap; gap: 8px; }
   .report-field { display: grid; gap: 5px; }
-  /* `display: grid` above outranks the hidden attribute's own display rule,
-     so the pen-name field needs this to stay shut until it is chosen. */
-  .report-field[hidden] { display: none; }
   .report-field span { color: var(--faint); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
   .report-field input,
   .report-field textarea {
@@ -128,11 +130,6 @@
   .report-field input:focus-visible,
   .report-field textarea:focus-visible { border-color: var(--accent); outline: none; }
   .report-hint { margin: 0; color: var(--faint); font-size: 12px; line-height: 1.5; }
-  /* The consent line: a checkbox, not a form field — device details ride
-     along only when the reporter ticks it, and only a bug report asks. */
-  .report-consent { display: flex; gap: 8px; align-items: flex-start; color: var(--muted); font-size: 12.5px; line-height: 1.45; cursor: pointer; }
-  .report-consent[hidden] { display: none; }
-  .report-consent input { flex: none; margin-top: 2px; accent-color: var(--accent); }
   .report-footer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .report-submit {
     min-height: 36px;
@@ -154,82 +151,15 @@
   /* The honeypot: a field no person ever sees or fills; a filled one is a bot. */
   .report-nectar { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
 
-  .intro { max-width: 860px; margin: 14px 0 18px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+  .intro { max-width: 860px; margin: 18px 0 26px; color: var(--muted); font-size: 14.5px; line-height: 1.6; }
   .intro a { color: var(--accent); }
 
   /* The menu: which game runs down the rows — Tactics above, Civ below —
      and who is at the keyboard across the columns — Watch (AI simulations)
      on the left, Play (single player) on the right. */
-  /* The row index rides the menu's left edge and stays put while the page
-     scrolls: every row, in page order, one click away — so the whole menu
-     is legible in one glance even when its lower rows sit past the fold.
-
-     Two pieces of furniture stand to the left of the cards — the index and
-     the column of vertical row labels — and between them they were taking
-     147 of the shell's 996 pixels, which is a seventh of the menu spent on
-     signposting rather than on the two cards it points at. Where the
-     viewport is wide enough to have a margin, the whole menu slides left by
-     exactly that much (`--menu-inset`) so the furniture rides in the margin
-     and the cards keep the shell to themselves.
-
-     The inset is computed from the two widths rather than written down
-     beside them, so it cannot drift out of step with what it is insetting:
-     change a width and the slide follows. Both widths are therefore fixed
-     rather than content-sized. */
-  :root {
-    --menu-gap: 16px;
-    --row-nav-w: 80px;
-    /* One line box of the vertical label: `.row-label`'s own font size
-       through the body's line height. Bump one, bump this. */
-    --row-label-w: 35px;
-    --menu-inset: calc(var(--row-nav-w) + var(--row-label-w) + 2 * var(--menu-gap));
-  }
-  .home-layout { display: flex; align-items: flex-start; gap: var(--menu-gap); }
-  /* Wide enough for the whole rail to clear the viewport edge with room to
-     spare: the shell's 1060, plus twice what the rail needs past the shell's
-     own padding, plus a margin of its own. Below that, and above the
-     one-column layout, the index alone goes out — it is the wider of the two
-     and the easier to spare. Below that again the rail stands in the menu as
-     it did, because there is no margin for it to stand in. */
-  @media (min-width: 1340px) { .home-layout { margin-left: calc(-1 * var(--menu-inset)); } }
-  @media (min-width: 1240px) and (max-width: 1339.98px) {
-    .home-layout { margin-left: calc(-1 * (var(--row-nav-w) + var(--menu-gap))); }
-  }
-  .row-nav {
-    position: sticky;
-    top: 14px;
-    display: flex;
-    flex: none;
-    flex-direction: column;
-    gap: 6px;
-    width: var(--row-nav-w);
-  }
-  .row-nav a {
-    padding: 6px 10px;
-    text-align: center;
-    border: 1px solid var(--border);
-    border-radius: 3px;
-    background: var(--panel);
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-decoration: none;
-    text-transform: uppercase;
-  }
-  .row-nav a:hover,
-  .row-nav a:focus-visible { border-color: var(--accent); color: #fff; }
-  .row-nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* A narrow first column carries the vertical row labels; the two card
-     columns share the rest. Fixed rather than `auto` so `--menu-inset` can
-     be computed from it. */
-  .quadrants {
-    display: grid;
-    flex: 1;
-    grid-template-columns: var(--row-label-w) minmax(0, 1fr) minmax(0, 1fr);
-    gap: 12px var(--menu-gap);
-    min-width: 0;
-  }
+     columns share the rest. */
+  .quadrants { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); gap: 14px 18px; }
   .col-head {
     display: flex;
     flex-direction: column;
@@ -251,7 +181,7 @@
     writing-mode: vertical-rl;
     transform: rotate(180deg);
     color: var(--faint);
-    font-size: 22.5px;
+    font-size: 15px;
     font-weight: 700;
     letter-spacing: 0.2em;
     text-transform: uppercase;
@@ -265,9 +195,6 @@
     border: 1px solid var(--border);
     border-radius: 4px;
     background: var(--panel);
-    /* The row index scrolls to a row's first card; land it just clear of
-       the viewport edge. */
-    scroll-margin-top: 14px;
   }
   /* The photograph is a way in, not decoration: it opens the same preset the
      verb button does. */
@@ -282,61 +209,46 @@
     object-fit: cover;
     background: #0d1117;
   }
-  /* An opening panel scrolls the row's card bodies to the top of the
-     screen; the margin keeps the very bottom of the photographs visible
-     above them. */
-  .card-body { display: flex; flex: 1; flex-direction: column; gap: 6px; min-width: 0; padding: 10px 12px 12px; scroll-margin-top: 26px; }
+  .card-body { display: flex; flex: 1; flex-direction: column; gap: 8px; min-width: 0; padding: 14px 16px 16px; }
   /* One line: the card's name on the left, who is at the keyboard on the
      right, in the same font and size. */
   .card-title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 2px 14px; flex-wrap: wrap; }
-  .card-title { margin: 0; color: #fff; font-size: 17px; font-weight: 700; }
+  .card-title { margin: 0; color: #fff; font-size: 19px; font-weight: 700; }
   .card-title a { color: inherit; text-decoration: none; }
   .card-title a:hover,
   .card-title a:focus-visible { color: var(--accent); }
   .card-title a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .card-mode { color: var(--muted); font-size: 17px; font-weight: 700; white-space: nowrap; }
+  .card-mode { color: var(--muted); font-size: 19px; font-weight: 700; white-space: nowrap; }
   /* The tags are shortcuts: each one opens the customization panel below the
-     row, on the section the tag names. The shelf always reserves two tag
-     lines — a tag is exactly 24px tall (14px line + 8px padding + 2px
-     border) and the rows sit 6px apart — so however a card's own tags wrap,
-     one line or two, the buttons standing above the shelf stay level across
-     the row. */
-  .card-tags { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; min-height: 54px; margin: 0; padding: 0; list-style: none; }
+     row, on the section the tag names. */
+  .card-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
   .card-tags a {
     display: block;
-    padding: 4px 8px;
+    padding: 3px 8px;
     border: 1px solid var(--border-strong);
     border-radius: 3px;
     color: var(--muted);
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.03em;
-    line-height: 14px;
     text-decoration: none;
   }
   .card-tags a:hover,
   .card-tags a:focus-visible { border-color: var(--accent); color: #fff; }
   .card-tags a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  /* The description holds to one line — the copy is written short enough to
-     fit, and the clamp keeps a narrow viewport from staggering the cards. */
-  .card-desc { margin: 0; overflow: hidden; color: var(--muted); font-size: 13px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
-  .card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 2px; }
+  .card-desc { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 6px; }
   .card-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 30px;
-    padding: 0 14px;
+    min-height: 34px;
+    padding: 0 18px;
     border-radius: 3px;
     font-size: 13px;
     font-weight: 700;
     text-decoration: none;
   }
-  /* The verb is the card's point — one colour-carrying button a third larger
-     than the Customize beside it, so a row reads as "start this" first and
-     "or change it" second. */
-  .verb-watch,
-  .verb-play { min-height: 40px; padding: 0 20px; font-size: 16px; }
   .verb-watch { background: var(--watch-bg); color: var(--watch-fg); }
   .verb-play { background: var(--play-bg); color: var(--play-fg); }
   .verb-watch:hover,
@@ -354,12 +266,6 @@
      switches who is at the keyboard. */
   .mode-card { transition: opacity 0.15s ease; }
   .mode-card.picking { border-color: var(--accent); }
-  /* Opening a row's panel merges its two pairs of buttons into one set: the
-     panel below now holds the customization, and its own mode chips do what
-     the two Customize buttons did, so those retire and each card is left
-     with the verb that starts the game. They come back when the panel
-     closes. */
-  .mode-card.merged .card-btn.customize { display: none; }
   .mode-card.muted { opacity: 0.55; }
   .mode-card.muted:hover,
   .mode-card.muted:focus-within { opacity: 1; }
@@ -368,15 +274,10 @@
      full-width row directly below the pair of cards it customizes — the
      battle picker below the Tactics row, the world picker below the CIVVIS
      row — so Customize and the tags open options in place rather than
-     leaving the menu.
-
-     From the second column, not the first: a panel is as wide as the pair of
-     cards it belongs to, and the label column is furniture beside them.
-     Spanning that column too would hang the panel out past the cards' left
-     edge — into the margin the labels ride in, once the menu is inset. */
+     leaving the menu. */
   .picker-panel {
     display: grid;
-    grid-column: 2 / -1;
+    grid-column: 1 / -1;
     gap: 14px;
     min-width: 0;
     padding: 18px;
@@ -388,9 +289,6 @@
   .picker-panel[hidden] { display: none; }
   .picker-panel:focus { outline: none; }
   .picker-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-  /* The title block yields width instead of forcing Back and the mode badge
-     to wrap under it: the copy reflows, the controls keep the top right. */
-  .picker-heading > div:first-child { flex: 1 1 320px; min-width: 0; }
   .eyebrow { margin: 0 0 4px; color: var(--faint); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
   .picker-heading h3 { margin: 0; color: #fff; font-size: 20px; }
   .picker-heading p:not(.eyebrow) { max-width: 640px; margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
@@ -406,13 +304,6 @@
     font: 600 12.5px/1 var(--sans);
   }
   .picker-back { flex: none; color: var(--text); }
-  .picker-controls { display: flex; align-items: center; gap: 10px; flex: none; }
-  /* The badge names who is at the keyboard — Watch or Play — at the verb
-     button's own size and in its colour, so an open panel always says which
-     of the row's two games it is customizing. */
-  .picker-mode-badge { display: inline-flex; align-items: center; min-height: 34px; padding: 0 14px; border-radius: 3px; font-size: 16px; font-weight: 700; white-space: nowrap; }
-  .picker-mode-badge.watch { background: var(--watch-bg); color: var(--watch-fg); }
-  .picker-mode-badge.play { background: var(--play-bg); color: var(--play-fg); }
   .picker-back:hover,
   .picker-lens:hover { border-color: var(--accent); color: #fff; }
   .picker-lens[aria-selected="true"],
@@ -473,13 +364,7 @@
   .picker-empty { padding: 12px; color: var(--faint); font-size: 13px; line-height: 1.5; }
 
   @media (max-width: 760px) {
-    /* One column of cards; the row index turns into a chip row on top, so it
-       gives up the fixed width it is given for the inset arithmetic. With no
-       label column left there is nothing beside a panel to skip either. */
-    .home-layout { display: block; }
-    .row-nav { position: static; flex-direction: row; flex-wrap: wrap; width: auto; margin-bottom: 12px; }
     .quadrants { grid-template-columns: 1fr; }
-    .picker-panel { grid-column: 1 / -1; }
     .col-head,
     .row-label,
     .grid-corner { display: none; }
@@ -494,6 +379,17 @@
       <p class="site-tagline">An open source Civilization VI Simulator for AI strategy development</p>
     </div>
     <nav class="utility-nav" aria-label="CIVVIS links">
+      <!-- A coin flip into one of the two watched presets, held in data
+           attributes so the roll below never has to spell a destination the
+           cards do not. The href is the un-rolled fallback: without
+           scripting this still opens the watched full game. -->
+      <a class="utility-link lucky" id="lucky" href="../"
+         data-watch-civ="../"
+         data-watch-tactics="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20"
+         aria-label="I&#8217;m feeling lucky: watch a random CIVVIS simulation">
+        <svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="M5 2h14a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3ZM8.5 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM15.5 6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM12 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM8.5 15a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM15.5 15a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z"/></svg>
+        I&#8217;m Feeling Lucky
+      </a>
       <a class="utility-link" href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5.1 18.3 5.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
         GitHub
@@ -504,7 +400,7 @@
       </a>
       <button class="utility-link" type="button" id="report-open">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M12 2C6.5 2 2 5.9 2 10.7c0 2.8 1.5 5.3 3.9 6.9L5 22l4.6-2.4c.8.2 1.6.3 2.4.3 5.5 0 10-3.9 10-8.7S17.5 2 12 2zm-1 4.5h2v6h-2v-6zm0 7.5h2v2h-2v-2z"/></svg>
-        Suggest Feature / Report Issue
+        Report Issue / Suggest Feature
       </button>
     </nav>
   </header>
@@ -513,7 +409,7 @@
     <p class="intro">
       CIVVIS is an open source re-implementation of the 4X turn-based strategy
       game <cite>Sid Meier&#8217;s Civilization VI</cite> &#8212; built with a
-      simulator UI wrapping the headless backend game logic.
+      simulator user interface wrapping the headless backend game logic.
       Everything below is a preset starting configuration of settings for the
       simulator, but you can further customize the settings how you like or
       <a href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">clone the code</a>
@@ -532,81 +428,64 @@
          simulations) on the left, Play (single player) on the right. Each
          card reads top to bottom as name, description, actions, tags: the
          title line carries the card's name on the left and who is at the
-         keyboard on the right; the photograph, the name and the card's own
-         colour-carrying verb all open the simulator immediately on the
-         card's preset. Four buttons stand in a row to begin with — Watch and
-         Customize on the left, Play and Customize on the right — and they
-         stand level: the description holds to one line and the tag shelf
-         below the buttons reserves two, so a card whose tags wrap cannot
-         stagger its neighbour's buttons. Customize
-         opens the row's shared customization panel in place, directly below
-         the row — the battle picker for Tactics, the world picker for the
-         full game — and each tag opens that panel on the section the tag
-         names. Opening it merges the row's two pairs into one set: both
-         Customize buttons retire into the panel (whose own chips now switch
-         who is at the keyboard), the selected card highlights and the other
-         is muted, and the pairs come back when the panel closes. Without
-         scripting, the buttons and tags still land somewhere honest: the
-         preset itself, the stock Tactics world, or the simulator's own Game
-         setup drawer (`?setup=1`). Each card's photograph is a real capture
-         of its own preset. -->
-    <!-- The row index: every row of the menu in page order, always in view
-         on the left — the whole menu legible in one glance even when the
-         rows below run past the fold, one click to any row. A new row of
-         cards adds one link here. -->
-    <div class="home-layout">
-    <nav class="row-nav" aria-label="Menu rows">
-      <a href="#row-tactics">Tactics</a>
-      <a href="#row-civ">CIVVIS</a>
-    </nav>
+         keyboard on the right; the photograph and the name both open the
+         simulator immediately on the card's preset; the one Watch/Play
+         Customized button opens the row's shared customization panel in
+         place, directly below the row — the battle picker for Tactics, the
+         world picker for the full game — and each tag opens that panel on
+         the section the tag names. While a row's panel is open its two
+         cards are the mode selector: the selected option — AI simulation or
+         Single player — highlights and the other is muted, and the panel's
+         own chips switch between them in place. Without scripting, the
+         buttons and tags still land somewhere honest: the stock Tactics
+         world, or the simulator's own Game setup drawer (`?setup=1`). Each
+         card's photograph is a real capture of its own preset. -->
     <section class="quadrants" aria-label="Game menu">
       <div class="grid-corner" aria-hidden="true"></div>
       <h2 class="col-head">Design &amp; Watch <span>AI simulations</span></h2>
       <h2 class="col-head">Play <span>Single player</span></h2>
 
       <div class="row-label" aria-hidden="true">Tactics</div>
-      <div class="mode-card" id="row-tactics">
-        <a class="card-thumb-link" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20">
+      <div class="mode-card">
+        <a class="card-thumb-link" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20">
           <img class="card-thumb" src="assets/watch-tactics.jpg" alt="Watch CIVVIS Tactics: two AI armies meeting in the middle of a CIVVIS Gettysburg battlefield." fetchpriority="high">
         </a>
         <div class="card-body">
           <div class="card-title-row">
-            <h3 class="card-title" id="watch-tactics-title"><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20">Watch CIVVIS Tactics</a></h3>
+            <h3 class="card-title" id="watch-tactics-title"><a href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20">Watch CIVVIS Tactics</a></h3>
             <span class="card-mode">AI simulation</span>
           </div>
-          <p class="card-desc">Two AI commanders battle in a fresh era.</p>
+          <p class="card-desc">Two AI commanders fight a single battle while you watch.</p>
           <div class="card-actions">
-            <a class="card-btn verb-watch" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20" aria-labelledby="watch-tactics-title">Watch</a>
-            <a class="card-btn plain customize" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20" data-pick="watch" aria-label="Customize a watched Tactics battle">Customize</a>
+            <a class="card-btn verb-watch" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" aria-label="Customize and watch a Tactics battle">Watch Customized</a>
           </div>
           <ul class="card-tags" aria-label="Watch CIVVIS Tactics features">
-            <li><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20" data-pick="watch" data-lens="custom">AI vs AI</a></li>
-            <li><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20" data-pick="watch" data-lens="custom">Custom Maps</a></li>
-            <li><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20" data-pick="watch" data-lens="era">Historical Battles</a></li>
-            <li><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20" data-pick="watch" data-lens="eras">Any Era</a></li>
+            <li><a href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" data-lens="custom">AI vs AI</a></li>
+            <li><a href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" data-lens="custom">Custom Maps</a></li>
+            <li><a href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" data-lens="era">Historical Battles</a></li>
+            <li><a href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20" data-pick="watch" data-lens="eras">Any Era</a></li>
           </ul>
         </div>
       </div>
 
       <div class="mode-card">
-        <a class="card-thumb-link" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play">
+        <a class="card-thumb-link" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play">
           <img class="card-thumb" src="assets/play-tactics.jpg" alt="Play CIVVIS Tactics: a CIVVIS naval battle at Lepanto, the player's galleys closing with the Ottoman line.">
         </a>
         <div class="card-body">
           <div class="card-title-row">
-            <h3 class="card-title" id="play-tactics-title"><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play">Play CIVVIS Tactics</a></h3>
+            <h3 class="card-title" id="play-tactics-title"><a href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play">Play CIVVIS Tactics</a></h3>
             <span class="card-mode">Single player</span>
           </div>
-          <p class="card-desc">Command one side vs the AI in a fresh era.</p>
+          <p class="card-desc">Command one side of a battle against the AI.</p>
           <div class="card-actions">
-            <a class="card-btn verb-play" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play" aria-labelledby="play-tactics-title">Play</a>
-            <a class="card-btn plain customize" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play" data-pick="play" aria-label="Customize a played Tactics battle">Customize</a>
+            <a class="card-btn verb-play" href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" aria-label="Customize and play a Tactics battle">Play Customized</a>
           </div>
           <ul class="card-tags" aria-label="Play CIVVIS Tactics features">
-            <li><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play" data-pick="play" data-lens="custom">AI Strategies &amp; Difficulties</a></li>
-            <li><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play" data-pick="play" data-lens="custom">Custom Maps</a></li>
-            <li><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play" data-pick="play" data-lens="era">Historical Battles</a></li>
-            <li><a href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20&amp;mode=play" data-pick="play" data-lens="eras">Any Era</a></li>
+            <li><a href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" data-lens="custom">You vs Different AI Strategies &amp; Difficulties</a></li>
+            <li><a href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" data-lens="custom">Custom Maps</a></li>
+            <li><a href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" data-lens="era">Historical Battles</a></li>
+            <li><a href="../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play" data-pick="play" data-lens="eras">Any Era</a></li>
           </ul>
         </div>
       </div>
@@ -621,15 +500,11 @@
       <section class="picker-panel" id="battle-picker" hidden aria-labelledby="battle-picker-title" tabindex="-1">
         <div class="picker-heading">
           <div>
+            <p class="eyebrow" id="battle-picker-mode">Watch CIVVIS Tactics · AI simulation</p>
             <h3 id="battle-picker-title">Choose the battle</h3>
-            <p id="battle-picker-copy">Two AI commanders fight it out while you watch. A named battle opens on its own ground with its historical forces, era and clock; Custom opens a 20×20 field with two even armies, their era rolled fresh for every battle, and every other setting is yours in the simulator&#8217;s Game setup.</p>
+            <p id="battle-picker-copy">Two AI commanders fight it out while you watch. A named battle opens on its own ground with its historical forces, era and clock; Custom opens a 20×20 field with two even armies, and every other setting is yours in the simulator&#8217;s Game setup.</p>
           </div>
-          <!-- Who is at the keyboard, said large and in the verb button's
-               own colour, riding beside Back at the panel's top right. -->
-          <div class="picker-controls">
-            <button class="picker-back" type="button" id="battle-picker-back">← Back</button>
-            <span class="picker-mode-badge watch" id="battle-picker-mode">Watch CIVVIS Tactics · AI simulation</span>
-          </div>
+          <button class="picker-back" type="button" id="battle-picker-back">← Back</button>
         </div>
         <div class="picker-modes" id="battle-modes" role="group" aria-label="Who is at the keyboard">
           <button class="picker-lens" type="button" data-mode="watch" aria-pressed="true">AI simulation</button>
@@ -646,7 +521,7 @@
       </section>
 
       <div class="row-label" aria-hidden="true">CIVVIS</div>
-      <div class="mode-card" id="row-civ">
+      <div class="mode-card">
         <a class="card-thumb-link" href="../">
           <img class="card-thumb" src="assets/watch-civ.jpg" alt="Watch CIVVIS: a CIVVIS globe at mid-game, AI empires sharing two continents, borders and cities drawn across the planet.">
         </a>
@@ -655,10 +530,9 @@
             <h3 class="card-title" id="watch-civ-title"><a href="../">Watch CIVVIS</a></h3>
             <span class="card-mode">AI simulation</span>
           </div>
-          <p class="card-desc">AI civilizations play a full game end to end.</p>
+          <p class="card-desc">A full game played end to end by AI civilizations.</p>
           <div class="card-actions">
-            <a class="card-btn verb-watch" href="../" aria-labelledby="watch-civ-title">Watch</a>
-            <a class="card-btn plain customize" href="../?setup=1" data-pick="watch-civ" aria-label="Customize a watched game">Customize</a>
+            <a class="card-btn verb-watch" href="../?setup=1" data-pick="watch-civ" aria-label="Customize and watch a full game">Watch Customized</a>
           </div>
           <ul class="card-tags" aria-label="Watch CIVVIS features">
             <li><a href="../?setup=1" data-pick="watch-civ" data-lens="seats">AI Empires</a></li>
@@ -678,10 +552,9 @@
             <h3 class="card-title" id="play-civ-title"><a href="../?mode=play">Play CIVVIS</a></h3>
             <span class="card-mode">Single player</span>
           </div>
-          <p class="card-desc">A full game as one civilization vs AI rivals.</p>
+          <p class="card-desc">A full game — take one civilization against AI rivals.</p>
           <div class="card-actions">
-            <a class="card-btn verb-play" href="../?mode=play" aria-labelledby="play-civ-title">Play</a>
-            <a class="card-btn plain customize" href="../?mode=play&amp;setup=1" data-pick="play-civ" aria-label="Customize a played game">Customize</a>
+            <a class="card-btn verb-play" href="../?mode=play&amp;setup=1" data-pick="play-civ" aria-label="Customize and play a full game">Play Customized</a>
           </div>
           <ul class="card-tags" aria-label="Play CIVVIS features">
             <li><a href="../?mode=play&amp;setup=1" data-pick="play-civ" data-lens="seats">Your Seat</a></li>
@@ -701,13 +574,11 @@
       <section class="picker-panel" id="game-picker" hidden aria-labelledby="game-picker-title" tabindex="-1">
         <div class="picker-heading">
           <div>
+            <p class="eyebrow" id="game-picker-mode">Watch CIVVIS · AI simulation</p>
             <h3 id="game-picker-title">Set up the world</h3>
             <p id="game-picker-copy"></p>
           </div>
-          <div class="picker-controls">
-            <button class="picker-back" type="button" id="game-picker-back">← Back</button>
-            <span class="picker-mode-badge watch" id="game-picker-mode">Watch CIVVIS · AI simulation</span>
-          </div>
+          <button class="picker-back" type="button" id="game-picker-back">← Back</button>
         </div>
         <div class="picker-modes" id="game-modes" role="group" aria-label="Who is at the keyboard">
           <button class="picker-lens" type="button" data-mode="watch-civ" aria-pressed="true">AI simulation</button>
@@ -722,7 +593,6 @@
         <div class="picker-groups" id="game-groups"></div>
       </section>
     </section>
-    </div>
   </main>
 
   <!-- The report dialog: feedback straight onto the project's GitHub issue
@@ -736,43 +606,27 @@
       <div class="picker-heading">
         <div>
           <p class="eyebrow">Feedback</p>
-          <h3 id="report-dialog-title">Suggest a feature or report an issue</h3>
+          <h3 id="report-dialog-title">Report an issue or suggest a feature</h3>
         </div>
         <button class="report-close" type="button" id="report-close" aria-label="Close">✕ Close</button>
       </div>
       <div class="report-choices" role="group" aria-label="What kind of report">
-        <button class="report-choice" type="button" data-kind="feature" aria-pressed="true">Suggest a feature</button>
-        <button class="report-choice" type="button" data-kind="issue" aria-pressed="false">Report an issue</button>
+        <button class="report-choice" type="button" data-kind="issue" aria-pressed="true">Report an issue</button>
+        <button class="report-choice" type="button" data-kind="feature" aria-pressed="false">Suggest a feature</button>
       </div>
       <label class="report-field">
         <span>Title</span>
-        <input id="report-title" maxlength="140" required placeholder="One line: what should exist, or what happened?">
+        <input id="report-title" maxlength="140" required placeholder="One line: what happened, or what should exist?">
       </label>
       <label class="report-field">
         <span>Details</span>
-        <textarea id="report-details" maxlength="5000" placeholder="What should it do, and when would you use it? For an issue: what did you do, what did you expect, and what happened instead?"></textarea>
-      </label>
-      <!-- Device details are recorded only with permission: filing an issue
-           offers this box, and only a tick sends the browser's own
-           description along to be quoted on the filed issue. A feature
-           request never asks, and the GitHub-account path types nothing on
-           anyone's behalf. -->
-      <label class="report-consent" id="report-device-field" hidden>
-        <input type="checkbox" id="report-device" checked>
-        <span>Include my browser details (its user-agent line) on the issue — often the difference between a reproducible bug and a mystery</span>
+        <textarea id="report-details" maxlength="5000" placeholder="What did you do, what did you expect, and what happened instead? For a feature: what should it do, and when would you use it?"></textarea>
       </label>
       <div class="report-choices" role="group" aria-label="Sign it as">
         <button class="report-choice" type="button" data-identity="anonymous" aria-pressed="true">Anonymous</button>
         <button class="report-choice" type="button" data-identity="random" aria-pressed="false">Pick a name</button>
         <button class="report-choice" type="button" data-identity="github" aria-pressed="false">My GitHub account</button>
       </div>
-      <!-- Choosing a name opens this with one already rolled, so a visitor
-           who only wanted "not anonymous" is done, and one who wanted to be
-           somebody in particular types over it. -->
-      <label class="report-field" id="report-name-field" hidden>
-        <span>Name on the issue</span>
-        <input id="report-name" maxlength="60" autocomplete="off" spellcheck="false" placeholder="Whatever you would like this signed">
-      </label>
       <p class="report-hint" id="report-hint">The site files this as a GitHub issue, signed &#8220;anonymous&#8221; — no account needed.</p>
       <label class="report-nectar" aria-hidden="true">Website<input id="report-website" tabindex="-1" autocomplete="off"></label>
       <div class="report-footer">
@@ -781,6 +635,25 @@
       </div>
     </form>
   </dialog>
+
+  <script>
+  // "I'm Feeling Lucky": a coin flip between the two watched presets, rolled
+  // into the anchor's own href rather than intercepted on click, so the thing
+  // stays an ordinary link — middle-click and ⌘-click open a random world in
+  // a new tab, and the status bar names a destination that is really where
+  // the click goes. `pageshow` re-rolls because coming back from the viewer
+  // restores this page from the back/forward cache with the old roll still in
+  // the href, which would make the button look stuck on one game.
+  (() => {
+    const lucky = document.getElementById("lucky");
+    if (!lucky) return;
+    const worlds = [lucky.dataset.watchCiv, lucky.dataset.watchTactics].filter(Boolean);
+    if (!worlds.length) return;
+    const roll = () => { lucky.href = worlds[Math.floor(Math.random() * worlds.length)]; };
+    roll();
+    window.addEventListener("pageshow", roll);
+  })();
+  </script>
 
   <script>
   (() => {
@@ -793,7 +666,7 @@
     const hint = field("report-hint");
     const submit = field("report-submit");
     const REPO = "https://github.com/MartinHalvorson/CIVVIS";
-    let kind = "feature";
+    let kind = "issue";
     let identity = "anonymous";
     // The pen name: rolled once per visit, so one visitor's several reports
     // read as the same person without being anyone in particular.
@@ -811,28 +684,13 @@
       });
     const HINTS = {
       anonymous: "The site files this as a GitHub issue, signed “anonymous” — no account needed.",
+      random: `The site files this as a GitHub issue, signed “${penName}” — no account needed.`,
       github: "Submitting opens GitHub’s new-issue form in a new tab with this filled in; you press Create there under your own name.",
     };
-    // beta/_worker.js's own filter on the reporter, mirrored here so the hint
-    // states the name that will really be on the issue rather than the one
-    // being typed — the worker is still the one that enforces it. An emptied
-    // box falls back to the rolled name, so the choice always signs
-    // something.
-    const nameField = field("report-name");
-    const cleanName = value => String(value).replace(/[^\w. -]/g, "").trim().slice(0, 60);
-    const chosenName = () => cleanName(nameField.value) || penName;
     const sync = () => {
-      field("report-name-field").hidden = identity !== "random";
-      // The consent box appears only where it means something: an issue the
-      // site itself will file. Features don't need device details, and the
-      // GitHub path records nothing on anyone's behalf.
-      field("report-device-field").hidden = kind !== "issue" || identity === "github";
-      hint.textContent = identity === "random"
-        ? `The site files this as a GitHub issue, signed “${chosenName()}” — no account needed.`
-        : HINTS[identity];
+      hint.textContent = HINTS[identity];
       submit.textContent = identity === "github" ? "Open GitHub issue form" : "Submit report";
     };
-    nameField.addEventListener("input", sync);
     // Status is built from nodes, never markup: the fallback link carries the
     // visitor's own text in its URL.
     const say = (text, link) => {
@@ -855,15 +713,7 @@
       sync();
     });
     choose("[data-kind]", button => { kind = button.dataset.kind; });
-    choose("[data-identity]", button => {
-      identity = button.dataset.identity;
-      // Opening the box is the invitation to type in it, and the rolled name
-      // is only a starting point — so hand it over ready to be overwritten.
-      if (identity === "random") {
-        if (!nameField.value) nameField.value = penName;
-        requestAnimationFrame(() => { nameField.focus(); nameField.select(); });
-      }
-    });
+    choose("[data-identity]", button => { identity = button.dataset.identity; });
     opener.addEventListener("click", () => {
       // No <dialog> support: GitHub's plain form is the whole feature.
       if (typeof dialog.showModal !== "function") { window.open(`${REPO}/issues/new/choose`, "_blank", "noopener"); return; }
@@ -892,11 +742,7 @@
             kind,
             title,
             details: field("report-details").value.trim(),
-            reporter: identity === "random" ? chosenName() : "anonymous",
-            // Device details go along only with the ticked box on an issue
-            // — the worker quotes `device` on the filed issue and never
-            // reads the request's own headers for it.
-            device: kind === "issue" && field("report-device").checked ? navigator.userAgent : "",
+            reporter: identity === "random" ? penName : "anonymous",
             website: field("report-website").value,
           }),
         });
@@ -925,15 +771,15 @@
        the module is loaded, so it carries the answer. -->
   <script id="battle-catalog" type="application/json">
 [
-{"civs":["Egypt","Gaul"],"date":"1274 BCE","disasters":[],"era":"Ancient","era_index":0,"forces":[{"commander":"Ramesses II","label":"Egyptian field army","units":["heavy_chariot","archer","spearman","warrior"]},{"commander":"Muwatalli II","label":"Hittite coalition","units":["heavy_chariot","heavy_chariot","swordsman","archer"]}],"height":16,"id":"kadesh","location":"Orontes river valley","map":"River valley · chariot lanes and a defended crossing","name":"Kadesh","objective":"Break the Hittite counterattack before it reaches the Egyptian camp.","summary":"Ramesses II's expeditionary army is surprised beside the Orontes while Muwatalli II's chariots sweep in from the north. Hold the crossing, then turn the ambush into a withdrawal.","terrain":"land_water","turns":34,"width":22},
-{"civs":["Greece","Persia"],"date":"490 BCE","disasters":[],"era":"Ancient","era_index":0,"forces":[{"commander":"Miltiades","label":"Athenian hoplite line","units":["hoplite","hoplite","spearman","archer"]},{"commander":"Datis","label":"Persian landing force","units":["archer","archer","horseman","spearman"]}],"height":14,"id":"marathon","location":"Marathon coastal plain","map":"Coastal plain · marsh, beach, and open running ground","name":"Marathon","objective":"Cross the killing ground and break the Persian landing force.","summary":"Miltiades refuses to wait behind the Athenian wall. Hoplites must cross the open plain quickly enough to deny Persian archery its full advantage while the wings close on the center.","terrain":"land_water","turns":28,"width":20},
-{"civs":["Greece","Persia"],"date":"480 BCE","disasters":[],"era":"Ancient","era_index":0,"forces":[{"commander":"Leonidas","label":"Hellenic rearguard","units":["hoplite","hoplite","spearman","archer"]},{"commander":"Xerxes I","label":"Persian expedition","units":["spearman","archer","horseman","swordsman"]}],"height":14,"id":"thermopylae","location":"The Gates of Thermopylae","map":"Mountain pass · a narrow road below the ridge","name":"Thermopylae","objective":"Hold the pass long enough for the allied army to withdraw.","summary":"Leonidas turns a bottleneck into a force multiplier. The Persian host has numbers, but only a few can fight at once—until the mountain path opens a second front.","terrain":"land","turns":24,"width":18},
-{"civs":["Macedon","Persia"],"date":"331 BCE","disasters":[],"era":"Classical","era_index":1,"forces":[{"commander":"Alexander the Great","label":"Macedonian army","units":["horseman","swordsman","spearman","archer","heavy_chariot"]},{"commander":"Darius III","label":"Achaemenid host","units":["horseman","heavy_chariot","archer","spearman","swordsman"]}],"height":18,"id":"gaugamela","location":"Nineveh plain","map":"Open plain · prepared lanes for cavalry and chariots","name":"Gaugamela","objective":"Punch through to the Persian center without losing the flanks.","summary":"Alexander pulls the Persian line apart with a feint, then drives the Companion cavalry at Darius. The wings must survive the numerical tide while the center makes the decisive charge.","terrain":"land","turns":40,"width":24},
+{"civs":["Egypt","Gaul"],"date":"1274 BCE","disasters":[],"era":"Ancient","era_index":0,"forces":[{"commander":"Ramesses II","label":"Egyptian field army","units":["maryannu_chariot_archer","archer","spearman","warrior"]},{"commander":"Muwatalli II","label":"Hittite coalition","units":["heavy_chariot","heavy_chariot","swordsman","archer"]}],"height":16,"id":"kadesh","location":"Orontes river valley","map":"River valley · chariot lanes and a defended crossing","name":"Kadesh","objective":"Break the Hittite counterattack before it reaches the Egyptian camp.","summary":"Ramesses II's expeditionary army is surprised beside the Orontes while Muwatalli II's chariots sweep in from the north. Hold the crossing, then turn the ambush into a withdrawal.","terrain":"land_water","turns":34,"width":22},
+{"civs":["Greece","Persia"],"date":"490 BCE","disasters":[],"era":"Ancient","era_index":0,"forces":[{"commander":"Miltiades","label":"Athenian hoplite line","units":["hoplite","hoplite","spearman","archer"]},{"commander":"Datis","label":"Persian landing force","units":["archer","archer","spearman","spearman"]}],"height":14,"id":"marathon","location":"Marathon coastal plain","map":"Coastal plain · marsh, beach, and open running ground","name":"Marathon","objective":"Cross the killing ground and break the Persian landing force.","summary":"Miltiades refuses to wait behind the Athenian wall. Hoplites must cross the open plain quickly enough to deny Persian archery its full advantage while the wings close on the center.","terrain":"land_water","turns":28,"width":20},
+{"civs":["Greece","Persia"],"date":"480 BCE","disasters":[],"era":"Ancient","era_index":0,"forces":[{"commander":"Leonidas","label":"Hellenic rearguard","units":["hoplite","hoplite","spearman","archer"]},{"commander":"Xerxes I","label":"Persian expedition","units":["spearman","archer","horseman","swordsman"]}],"height":14,"id":"thermopylae","location":"The Gates of Thermopylae","map":"Mountain pass · a narrow road below the ridge","name":"Thermopylae","objective":"Hold the pass long enough for the allied army to withdraw.","summary":"Leonidas turns a bottleneck into a force multiplier. The Persian host has numbers, but only a few can fight at once—until the mountain path opens a second front.","terrain":"land","turns":24,"width":26},
+{"civs":["Macedon","Persia"],"date":"331 BCE","disasters":[],"era":"Classical","era_index":1,"forces":[{"commander":"Alexander the Great","label":"Macedonian army","units":["horseman","pikeman","swordsman","spearman","archer"]},{"commander":"Darius III","label":"Achaemenid host","units":["horseman","heavy_chariot","archer","spearman","swordsman"]}],"height":18,"id":"gaugamela","location":"Nineveh plain","map":"Open plain · prepared lanes for cavalry and chariots","name":"Gaugamela","objective":"Punch through to the Persian center without losing the flanks.","summary":"Alexander pulls the Persian line apart with a feint, then drives the Companion cavalry at Darius. The wings must survive the numerical tide while the center makes the decisive charge.","terrain":"land","turns":40,"width":24},
 {"civs":["Phoenicia","Rome"],"date":"216 BCE","disasters":[],"era":"Classical","era_index":1,"forces":[{"commander":"Hannibal Barca","label":"Carthaginian army","units":["swordsman","horseman","horseman","spearman","archer"]},{"commander":"Varro","label":"Roman consular army","units":["legion","legion","spearman","archer","horseman"]}],"height":16,"id":"cannae","location":"Aufidus river plain","map":"Windy plain · river bend and enveloping wings","name":"Cannae","objective":"Complete the double envelopment before the Roman legions escape.","summary":"Hannibal offers a deliberately yielding center and holds his veteran African infantry on the wings. Rome's mass becomes its trap when the cavalry closes the rear.","terrain":"land","turns":38,"width":22},
 {"civs":["Rome","Egypt"],"date":"31 BCE","disasters":[],"era":"Classical","era_index":1,"forces":[{"commander":"Agrippa","label":"Octavian's fleet","units":["galley","galley","quadrireme","archer"]},{"commander":"Mark Antony","label":"Antonian fleet","units":["quadrireme","quadrireme","galley","archer"]}],"height":18,"id":"actium","location":"Ambracian Gulf","map":"Gulf and headlands · fleets fighting for the channel","name":"Actium","objective":"Force a passage through the strait while keeping the shore army covered.","summary":"Octavian seals the gulf and waits for Antony and Cleopatra to break out. The fleet battle is decided by the channel, the wind, and the moment the flagship squadron commits.","terrain":"land_water","turns":36,"width":24},
-{"civs":["England","France"],"date":"1066","disasters":[],"era":"Medieval","era_index":2,"forces":[{"commander":"Harold Godwinson","label":"English shieldwall","units":["man_at_arms","man_at_arms","crossbowman","spearman"]},{"commander":"William the Conqueror","label":"Norman host","units":["knight","knight","crossbowman","man_at_arms"]}],"height":16,"id":"hastings","location":"Senlac Hill","map":"Ridge and open slope · shieldwall frontage","name":"Hastings","objective":"Break the English shieldwall without letting the pursuit destroy the army.","summary":"Harold's housecarls hold the ridge while William alternates pressure with feigned retreats. A single undisciplined pursuit can open the gate the Norman cavalry needs.","terrain":"land","turns":34,"width":20},
+{"civs":["England","France"],"date":"1066","disasters":[],"era":"Medieval","era_index":2,"forces":[{"commander":"Harold Godwinson","label":"English shieldwall","units":["man_at_arms","man_at_arms","spearman","spearman"]},{"commander":"William the Conqueror","label":"Norman host","units":["knight","knight","crossbowman","man_at_arms"]}],"height":16,"id":"hastings","location":"Senlac Hill","map":"Ridge and open slope · shieldwall frontage","name":"Hastings","objective":"Break the English shieldwall without letting the pursuit destroy the army.","summary":"Harold's housecarls hold the ridge while William alternates pressure with feigned retreats. A single undisciplined pursuit can open the gate the Norman cavalry needs.","terrain":"land","turns":34,"width":20},
 {"civs":["Arabia","England"],"date":"1187","disasters":["drought"],"era":"Medieval","era_index":2,"forces":[{"commander":"Saladin","label":"Ayyubid field army","units":["horseman","horseman","crossbowman","man_at_arms"]},{"commander":"Guy of Lusignan","label":"Crusader host","units":["knight","knight","man_at_arms","crossbowman"]}],"height":16,"id":"hattin","location":"Horns of Hattin","map":"Dry hills · smoke, heat, and a blocked spring","name":"Hattin","objective":"Cut the crusader army off from water and close around the True Cross.","summary":"Saladin turns thirst into a weapon. The crusader host must cross broken ground toward the lake while mounted archers and disciplined reserves deny every clean escape.","terrain":"land","turns":36,"width":22},
-{"civs":["England","France"],"date":"1415","disasters":[],"era":"Medieval","era_index":2,"forces":[{"commander":"Henry V","label":"English army","units":["man_at_arms","crossbowman","crossbowman","knight"]},{"commander":"Charles d'Albret","label":"French host","units":["knight","knight","man_at_arms","crossbowman"]}],"height":16,"id":"agincourt","location":"Pas de Calais","map":"Mudbound corridor · hedges, stakes, and two woods","name":"Agincourt","objective":"Let the mud and stakes break the French charge, then survive the crush.","summary":"Henry V's exhausted army occupies the narrowest ground it can find. English longbow fire turns the French advantage in armor and numbers into a series of isolated collisions.","terrain":"land","turns":35,"width":20},
+{"civs":["England","France"],"date":"1415","disasters":[],"era":"Medieval","era_index":2,"forces":[{"commander":"Henry V","label":"English army","units":["crossbowman","crossbowman","crossbowman","man_at_arms"]},{"commander":"Charles d'Albret","label":"French host","units":["knight","knight","man_at_arms","crossbowman"]}],"height":16,"id":"agincourt","location":"Pas de Calais","map":"Mudbound corridor · hedges, stakes, and two woods","name":"Agincourt","objective":"Let the mud and stakes break the French charge, then survive the crush.","summary":"Henry V's exhausted army occupies the narrowest ground it can find. English longbow fire turns the French advantage in armor and numbers into a series of isolated collisions.","terrain":"land","turns":35,"width":20},
 {"civs":["Ottomans","Byzantium"],"date":"1453","disasters":[],"era":"Renaissance","era_index":3,"forces":[{"commander":"Mehmed II","label":"Ottoman besieging army","units":["bombard","man_at_arms","knight","crossbowman"]},{"commander":"Constantine XI","label":"Constantinopolitan garrison","units":["crossbowman","man_at_arms","spearman","bombard"]}],"height":18,"id":"constantinople_1453","location":"Theodosian Walls","map":"Walled city · sea walls, land walls, and the Golden Horn","name":"Constantinople","objective":"Open a breach before the defenders can shift the reserve across the walls.","summary":"Mehmed II brings the new age of gunpowder to the oldest walls in Europe. The defenders have a narrow inner line, a chain across the harbor, and no depth once the breach opens.","terrain":"land_water","turns":42,"width":24},
 {"civs":["Venice","Ottomans"],"date":"1571","disasters":[],"era":"Renaissance","era_index":3,"forces":[{"commander":"Don John of Austria","label":"Holy League fleet","units":["galley","galley","quadrireme","quadrireme"]},{"commander":"Ali Pasha","label":"Ottoman fleet","units":["galley","galley","quadrireme","quadrireme"]}],"height":18,"id":"lepanto","location":"Gulf of Patras","map":"Enclosed sea · three squadrons and a crowded center","name":"Lepanto","objective":"Break the opposing center before the flank galleys can turn inward.","summary":"The Holy League and Ottoman fleet meet in the last great galley battle. The board is all formation: hold the line, protect the flagship, and use the wings before the center locks.","terrain":"water","turns":32,"width":24},
 {"civs":["Spain","England"],"date":"1588","disasters":["hurricane"],"era":"Renaissance","era_index":3,"forces":[{"commander":"Alonso Pérez de Guzmán","label":"Spanish Armada","units":["frigate","frigate","caravel","galley"]},{"commander":"Charles Howard","label":"English fleet","units":["frigate","frigate","caravel","galley"]}],"height":18,"id":"spanish_armada","location":"English Channel","map":"Channel sea lanes · shoals, wind, and a lee shore","name":"Spanish Armada","objective":"Escort the invasion fleet through the channel while denying English fire ships.","summary":"The Armada's crescent tries to preserve a tight formation and reach the rendezvous in the Netherlands. English ships need distance, weather, and one opening in the line.","terrain":"water","turns":34,"width":26},
@@ -966,7 +812,7 @@
     // Tactics chip opens, so a Custom pick here and a Custom pick there agree.
     // Lane-relative like every link on this page (the page lives at
     // <lane>/home/), so the test lane's picker opens the test viewer.
-    const CUSTOM = "../?map=battlefield&players=2&era=random&arena=20x20";
+    const CUSTOM = "../?map=battlefield&players=2&era=information&arena=20x20";
     const HASH = { play: "#play-tactics", watch: "#watch-tactics", "play-civ": "#play-civ", "watch-civ": "#watch-civ" };
     const ERAS = ["Ancient", "Classical", "Medieval", "Renaissance", "Industrial", "Modern", "Atomic", "Information", "Future"];
     const TERRAINS = [["land", "Land"], ["land_water", "Land & Water"], ["water", "Water"],
@@ -1012,8 +858,8 @@
       `<a class="battle-card custom" href="${esc(into(CUSTOM))}">` +
       `<span class="battle-card-name">Custom battlefield</span>` +
       `<span class="battle-card-meta">Field · 20×20 · two even armies</span>` +
-      `<span class="battle-card-detail">A bounded field of open ground, mountains, rivers, woods and water, both sides dealt the same army — its era rolled fresh for every battle, so a match runs from spearmen to modern armour and back. Any Era beside this picks one rung and keeps it. Every other setting — the world type, map and size, fog, the flag, the arena economy — is yours in the simulator&#8217;s Game setup.</span>` +
-      `<span class="battle-card-badges"><span class="battle-badge">Land</span><span class="battle-badge">Era rolled per battle</span><span class="battle-badge">Even sides</span></span></a>` +
+      `<span class="battle-card-detail">A bounded field of open ground, mountains, rivers, woods and water, both sides dealt the same Information-era army. Every other setting — the world type, map and size, fog, the flag, the arena economy — is yours in the simulator&#8217;s Game setup.</span>` +
+      `<span class="battle-card-badges"><span class="battle-badge">Land</span><span class="battle-badge">Information</span><span class="battle-badge">Even sides</span></span></a>` +
       `</div>`;
     // Any era: the same custom field, dealt in whichever era is chosen —
     // both sides get even armies of that era's units.
@@ -1112,9 +958,9 @@
     };
     const heading = {
       play: ["Play CIVVIS Tactics · single player", "Choose your battle",
-        "You take the first seat and the AI takes the other. A named battle opens on its own ground with its historical forces, era and clock; Custom opens a 20×20 field with two even armies, their era rolled fresh for every battle, and every other setting is yours in the simulator’s Game setup."],
+        "You take the first seat and the AI takes the other. A named battle opens on its own ground with its historical forces, era and clock; Custom opens a 20×20 field with two even armies, and every other setting is yours in the simulator’s Game setup."],
       watch: ["Watch CIVVIS Tactics · AI simulation", "Choose the battle",
-        "Two AI commanders fight it out while you watch. A named battle opens on its own ground with its historical forces, era and clock; Custom opens a 20×20 field with two even armies, their era rolled fresh for every battle, and every other setting is yours in the simulator’s Game setup."],
+        "Two AI commanders fight it out while you watch. A named battle opens on its own ground with its historical forces, era and clock; Custom opens a 20×20 field with two even armies, and every other setting is yours in the simulator’s Game setup."],
       "play-civ": ["Play CIVVIS · single player", "Set up your game",
         "Take one civilization against AI rivals. Each card starts that game with you in the first chair; your leader, difficulty and every other setting are in the simulator’s Game setup."],
       "watch-civ": ["Watch CIVVIS · AI simulation", "Set up the world",
@@ -1124,10 +970,7 @@
     // The two cards of a row are their shared panel's mode selector. While
     // the row's panel is open, the card whose mode is selected highlights
     // and the row's other option is muted; the panel's own mode chips say
-    // the same thing in place. `merged` is the same fact told to the
-    // buttons: with the panel open the row's two Customize buttons have
-    // become the panel and its chips, so both retire until it closes and
-    // each card keeps only the verb that starts the game.
+    // the same thing in place.
     const markPicking = () => {
       for (const card of document.querySelectorAll(".mode-card")) {
         const pick = card.querySelector("[data-pick]")?.dataset.pick;
@@ -1136,7 +979,6 @@
         const selected = shown && pick === (isCiv(pick) ? civMode : mode);
         card.classList.toggle("picking", selected);
         card.classList.toggle("muted", shown && !selected);
-        card.classList.toggle("merged", shown);
       }
       for (const chip of document.querySelectorAll(".picker-modes [data-mode]"))
         chip.setAttribute("aria-pressed",
@@ -1151,10 +993,7 @@
         civMode = which;
         civLens = section || "worlds";
         const [eyebrow, title, copy] = heading[civMode];
-        const badge = document.getElementById("game-picker-mode");
-        badge.textContent = eyebrow;
-        badge.classList.toggle("watch", civMode === "watch-civ");
-        badge.classList.toggle("play", civMode === "play-civ");
+        document.getElementById("game-picker-mode").textContent = eyebrow;
         document.getElementById("game-picker-title").textContent = title;
         document.getElementById("game-picker-copy").textContent = copy;
         gamePicker.hidden = false;
@@ -1163,10 +1002,7 @@
         mode = which === "play" ? "play" : "watch";
         lens = section || "custom";
         const [eyebrow, title, copy] = heading[mode];
-        const badge = document.getElementById("battle-picker-mode");
-        badge.textContent = eyebrow;
-        badge.classList.toggle("watch", mode === "watch");
-        badge.classList.toggle("play", mode === "play");
+        document.getElementById("battle-picker-mode").textContent = eyebrow;
         document.getElementById("battle-picker-title").textContent = title;
         document.getElementById("battle-picker-copy").textContent = copy;
         picker.hidden = false;
@@ -1176,15 +1012,7 @@
       const panel = isCiv(which) ? gamePicker : picker;
       if (location.hash !== HASH[which]) history.replaceState(null, "", location.pathname + location.search + HASH[which]);
       if (focus) {
-        // Land the row, not just the panel: the bottom of the row's
-        // photographs at the top of the screen, so the card titles, verbs
-        // and tags stay readable above and the customization sits roughly
-        // mid-screen. The one-column phone layout stacks the row, so there
-        // the panel itself is the only honest target.
-        const anchor = matchMedia("(max-width: 760px)").matches
-          ? panel
-          : document.getElementById(isCiv(which) ? "row-civ" : "row-tactics").querySelector(".card-body");
-        anchor.scrollIntoView({ behavior: "smooth", block: "start" });
+        panel.scrollIntoView({ behavior: "smooth", block: "start" });
         panel.focus({ preventScroll: true });
       }
     };

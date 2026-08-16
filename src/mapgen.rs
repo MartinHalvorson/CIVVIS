@@ -1298,9 +1298,15 @@ fn flat_land(
         | MapScript::DesertStorm
         | MapScript::Fallujah
         | MapScript::Mosul => {
+            // Which cells of a real place are dry is a fact about that place,
+            // so it comes off the battle's own drawn chart in
+            // [`crate::historical_terrain`] — the same plan that paints it —
+            // rather than from a rule about where water tends to go.
             let scenario = crate::historical_scenarios::by_script(script)
                 .expect("every scenario map script has a catalogue row");
-            crate::historical_scenarios::land_tiles(wm, scenario)
+            let plan = crate::historical_terrain::by_id(scenario.id)
+                .expect("every catalogue battle has a drawn chart");
+            crate::historical_terrain::land_tiles(wm, plan)
         }
         // Answered before the shape was dispatched on, because Earth's
         // coastlines are read rather than rolled and are the same coastlines
@@ -3987,7 +3993,9 @@ pub fn generate_with_script_and_leader_starts(
     } else if script.is_scenario() {
         let scenario = crate::historical_scenarios::by_script(script)
             .expect("every scenario map script has a catalogue row");
-        crate::historical_scenarios::paint_ground(&mut wm, scenario);
+        let plan = crate::historical_terrain::by_id(scenario.id)
+            .expect("every catalogue battle has a drawn chart");
+        crate::historical_terrain::paint(&mut wm, plan);
     }
 
     // --- spawns. Civilization VI does not search for good plots and hope they
@@ -4179,7 +4187,10 @@ pub fn generate_with_script_and_leader_starts(
         } else {
             let scenario = crate::historical_scenarios::by_script(script)
                 .expect("every scenario map script has a catalogue row");
-            crate::historical_scenarios::major_starts(&wm, scenario)
+            let plan = crate::historical_terrain::by_id(scenario.id)
+                .expect("every catalogue battle has a drawn chart");
+            let afloat = crate::historical_terrain::sides_afloat(rules, scenario);
+            crate::historical_terrain::major_starts(&wm, plan, afloat)
         }
     } else {
         None

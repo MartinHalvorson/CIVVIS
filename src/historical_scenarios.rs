@@ -7,16 +7,34 @@
 //! promise, and pieces from drifting apart between the briefing and the
 //! board.
 
-use std::collections::BTreeSet;
-
 use serde::Serialize;
 
-use crate::hex;
 use crate::setup::MapScript;
-use crate::world::WorldMap;
-use crate::Pos;
 
 /// One side of a historical order of battle.
+///
+/// The pieces are the engine's, and one of them stands for a whole wing: a
+/// `hoplite` is the Athenian line, not eight men. What the list is answerable
+/// for is the *composition* — which arms a commander actually had, and in what
+/// proportion — because that is what a reader takes away from the briefing.
+/// Five were corrected when the fields were drawn (2026-08-16), each because
+/// the arm it named belonged to the other side or to another century:
+///
+/// - **Marathon** listed Persian cavalry. It was not on the field; the ancient
+///   sources' "the cavalry are away" is the standard explanation for why
+///   Miltiades attacked on that morning at all.
+/// - **Gaugamela** gave Alexander a scythed chariot. The chariots were Darius'
+///   — the ground was levelled for them — and Alexander's answer was the
+///   sarissa phalanx, which the list now carries instead.
+/// - **Hastings** gave Harold crossbowmen. The missile arm at Senlac was
+///   William's; the English fought as a shieldwall of housecarls and fyrd,
+///   which is exactly why the feigned retreats mattered.
+/// - **Agincourt** gave Henry a mounted knight and two archers. His army was
+///   five or six archers to every man-at-arms and every man-at-arms fought on
+///   foot.
+/// - **Kadesh** gave both sides the same chariot. The Egyptian machine was a
+///   light two-man archery platform and the Hittite a heavier three-man shock
+///   vehicle, and that difference is the battle.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct HistoricalForce {
     pub label: &'static str,
@@ -84,7 +102,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         summary: "Ramesses II's expeditionary army is surprised beside the Orontes while Muwatalli II's chariots sweep in from the north. Hold the crossing, then turn the ambush into a withdrawal.",
         civs: ["Egypt", "Gaul"],
         forces: [
-            HistoricalForce { label: "Egyptian field army", commander: "Ramesses II", units: &["heavy_chariot", "archer", "spearman", "warrior"] },
+            HistoricalForce { label: "Egyptian field army", commander: "Ramesses II", units: &["maryannu_chariot_archer", "archer", "spearman", "warrior"] },
             HistoricalForce { label: "Hittite coalition", commander: "Muwatalli II", units: &["heavy_chariot", "heavy_chariot", "swordsman", "archer"] },
         ],
         turns: 34,
@@ -106,7 +124,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         civs: ["Greece", "Persia"],
         forces: [
             HistoricalForce { label: "Athenian hoplite line", commander: "Miltiades", units: &["hoplite", "hoplite", "spearman", "archer"] },
-            HistoricalForce { label: "Persian landing force", commander: "Datis", units: &["archer", "archer", "horseman", "spearman"] },
+            HistoricalForce { label: "Persian landing force", commander: "Datis", units: &["archer", "archer", "spearman", "spearman"] },
         ],
         turns: 28,
         width: 20,
@@ -130,7 +148,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
             HistoricalForce { label: "Persian expedition", commander: "Xerxes I", units: &["spearman", "archer", "horseman", "swordsman"] },
         ],
         turns: 24,
-        width: 18,
+        width: 26,
         height: 14,
         disasters: &[],
     },
@@ -147,7 +165,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         summary: "Alexander pulls the Persian line apart with a feint, then drives the Companion cavalry at Darius. The wings must survive the numerical tide while the center makes the decisive charge.",
         civs: ["Macedon", "Persia"],
         forces: [
-            HistoricalForce { label: "Macedonian army", commander: "Alexander the Great", units: &["horseman", "swordsman", "spearman", "archer", "heavy_chariot"] },
+            HistoricalForce { label: "Macedonian army", commander: "Alexander the Great", units: &["horseman", "pikeman", "swordsman", "spearman", "archer"] },
             HistoricalForce { label: "Achaemenid host", commander: "Darius III", units: &["horseman", "heavy_chariot", "archer", "spearman", "swordsman"] },
         ],
         turns: 40,
@@ -212,7 +230,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         summary: "Harold's housecarls hold the ridge while William alternates pressure with feigned retreats. A single undisciplined pursuit can open the gate the Norman cavalry needs.",
         civs: ["England", "France"],
         forces: [
-            HistoricalForce { label: "English shieldwall", commander: "Harold Godwinson", units: &["man_at_arms", "man_at_arms", "crossbowman", "spearman"] },
+            HistoricalForce { label: "English shieldwall", commander: "Harold Godwinson", units: &["man_at_arms", "man_at_arms", "spearman", "spearman"] },
             HistoricalForce { label: "Norman host", commander: "William the Conqueror", units: &["knight", "knight", "crossbowman", "man_at_arms"] },
         ],
         turns: 34,
@@ -257,7 +275,7 @@ pub const SCENARIOS: [HistoricalScenario; 24] = [
         summary: "Henry V's exhausted army occupies the narrowest ground it can find. English longbow fire turns the French advantage in armor and numbers into a series of isolated collisions.",
         civs: ["England", "France"],
         forces: [
-            HistoricalForce { label: "English army", commander: "Henry V", units: &["man_at_arms", "crossbowman", "crossbowman", "knight"] },
+            HistoricalForce { label: "English army", commander: "Henry V", units: &["crossbowman", "crossbowman", "crossbowman", "man_at_arms"] },
             HistoricalForce { label: "French host", commander: "Charles d'Albret", units: &["knight", "knight", "man_at_arms", "crossbowman"] },
         ],
         turns: 35,
@@ -654,123 +672,12 @@ pub fn size(script: MapScript) -> Option<(i32, i32)> {
     by_script(script).map(|scenario| (scenario.width, scenario.height))
 }
 
-/// A deterministic coordinate hash for scenario scenery.  It deliberately
-/// does not consume the gameplay RNG: changing a shrub on a battle map must
-/// not change which unit gets its first attack roll.
-fn tile_hash(pos: Pos) -> u64 {
-    let x = pos.0 as i64 as u64;
-    let y = pos.1 as i64 as u64;
-    let mut value = x.wrapping_mul(0x9E37_79B9_7F4A_7C15)
-        ^ y.wrapping_mul(0xBF58_476D_1CE4_E5B9)
-        ^ 0xC1C1_5B47_7A3C_0DE5_u64;
-    value = (value ^ (value >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    value ^ (value >> 31)
-}
-
-fn offset(pos: Pos) -> (i32, i32) {
-    hex::axial_to_offset(pos.0, pos.1)
-}
-
-/// The dry tiles of a generic historical chart.  A water battle keeps two
-/// shore/island bands for deployment; a land-water battle cuts a river or
-/// inlet across the middle; the other profiles remain connected ground.
-pub fn land_tiles(wm: &WorldMap, scenario: &HistoricalScenario) -> BTreeSet<Pos> {
-    wm.tiles
-        .keys()
-        .copied()
-        .filter(|pos| {
-            let (col, row) = offset(*pos);
-            let edge = col < 4 || col >= wm.width - 4;
-            match scenario.terrain {
-                "water" | "water_air" => edge,
-                "land_water" | "land_water_air" => {
-                    let channel = (wm.width / 2 - 1..=wm.width / 2 + 1).contains(&col);
-                    !channel || row < 3 || row >= wm.height - 3
-                }
-                _ => true,
-            }
-        })
-        .collect()
-}
-
-/// Paint a deterministic scenario palette over the generic world passes.
-pub fn paint_ground(wm: &mut WorldMap, scenario: &HistoricalScenario) {
-    let land = land_tiles(wm, scenario);
-    let all: Vec<Pos> = wm.tiles.keys().copied().collect();
-    for pos in all {
-        let (col, row) = offset(pos);
-        let hash = tile_hash(pos);
-        let tile = wm.tiles.get_mut(&pos).unwrap();
-        tile.hills = false;
-        tile.feature = None;
-        tile.resource = None;
-        tile.improvement = None;
-        tile.district = None;
-        tile.wonder = None;
-        tile.river_edges = [false; 6];
-        tile.cliff_edges = [false; 6];
-        tile.coastal_lowland = 0;
-        tile.continent = Some(0);
-        if !land.contains(&pos) {
-            tile.terrain = "coast".into();
-            tile.feature = (scenario.terrain == "water_air" && hash % 17 == 0)
-                .then(|| "reef".into());
-            continue;
-        }
-        tile.terrain = match scenario.id {
-            "hattin" | "six_day_war" | "desert_storm" => "desert",
-            "kadesh" | "marathon" | "actium" | "inchon" | "mosul" => {
-                if hash % 3 == 0 { "plains" } else { "grassland" }
-            }
-            _ if hash % 11 == 0 => "plains",
-            _ => "grassland",
-        }
-        .into();
-        if hash % 13 == 0 && scenario.id != "thermopylae" {
-            tile.hills = true;
-        }
-        if hash % 19 == 0 && matches!(scenario.id, "thermopylae" | "hattin" | "dien_bien_phu") {
-            tile.terrain = "mountain".into();
-        } else if hash % 7 == 0 && !matches!(scenario.id, "desert_storm" | "six_day_war") {
-            tile.feature = Some("forest".into());
-        }
-        // The river/inlet is a terrain cue, not a random gameplay event. The
-        // hex edge direction is the same one the renderer and movement code
-        // consume, and the two banks are enough to make the crossing legible.
-        if matches!(scenario.id, "kadesh" | "cannae" | "actium" | "inchon" | "mosul")
-            && (col == wm.width / 2 || col == wm.width / 2 - 1)
-            && row + col % 2 < wm.height
-        {
-            tile.river_edges[2] = true;
-        }
-    }
-}
-
-fn closest_tile(wm: &WorldMap, target: (i32, i32), water: bool) -> Option<Pos> {
-    wm.tiles
-        .values()
-        .filter(|tile| {
-            let tile_water = matches!(tile.terrain.as_str(), "coast" | "ocean" | "lake");
-            tile_water == water
-        })
-        .min_by_key(|tile| {
-            let (col, row) = offset(tile.pos);
-            ((col - target.0).abs() + (row - target.1).abs(), tile.pos)
-        })
-        .map(|tile| tile.pos)
-}
-
-/// Fixed, opposite-side anchors for a generic chart.  The detailed Trafalgar
-/// module supplies its own flagships; every other scenario gets the same
-/// auditable left/right chart convention, with naval battles anchored on water.
-pub fn major_starts(wm: &WorldMap, scenario: &HistoricalScenario) -> Option<Vec<Pos>> {
-    let naval = matches!(scenario.terrain, "water" | "water_air");
-    let left = closest_tile(wm, (2, wm.height / 2), naval)?;
-    let right = closest_tile(wm, (wm.width - 3, wm.height / 2), naval)?;
-    (left != right).then_some(vec![left, right])
-}
-
+/// A scenario's ground, its water and its two anchors are drawn per battle in
+/// [`crate::historical_terrain`]. They used to be generated here from a
+/// coordinate hash — grassland with a scatter of hills, a few mountains at
+/// `hash % 19`, and a straight river down the middle column for five battles —
+/// which meant every field in this catalogue was the same field with a
+/// different tint, and the `map` line above was a promise nothing kept.
 /// A scenario's forces are already sorted in the intended tactical order.
 pub fn force_units(script: MapScript, pid: usize) -> Option<&'static [&'static str]> {
     by_script(script).map(|scenario| scenario.forces[pid.min(1)].units)
@@ -818,7 +725,16 @@ mod tests {
                 crate::setup::MapPoles::Poles,
                 &mut rng,
             );
-            assert_eq!(major_starts(&map, scenario).unwrap().len(), 2, "{}", scenario.id);
+            let plan = crate::historical_terrain::by_id(scenario.id).unwrap();
+            let afloat = crate::historical_terrain::sides_afloat(&rules, scenario);
+            assert_eq!(
+                crate::historical_terrain::major_starts(&map, plan, afloat)
+                    .unwrap()
+                    .len(),
+                2,
+                "{}",
+                scenario.id
+            );
         }
     }
 
