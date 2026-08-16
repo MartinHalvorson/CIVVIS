@@ -1227,7 +1227,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `score_horizon`, off for `AdvancedAi::legacy()` (asserted); the frozen
 /// anchor races and arms exactly as before. Compatibility re-pin; the Elo
 /// protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xadce_9004_d522_6461;
+/// The sea's recon arm — the one-ship purchase and the naval explorer — is
+/// behind `naval_recon`, off for `AdvancedAi::legacy()` (asserted); the
+/// frozen anchor's ships and production are unchanged. Compatibility re-pin;
+/// the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x91e3_3c03_0864_6c66;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
