@@ -559,7 +559,17 @@
       }
     }
     if (wantsNextTurn && !paused) {
-      const owed = pace - (performance.now() - started);
+      // The engine prices the frame it just played: a seat's share of the
+      // whole-turn budget, so Blitz here is the socket server's two turns a
+      // second whether the frame is one army of two or one seat of twenty.
+      // Waiting the whole `pace` per frame was wrong twice over — every seat
+      // frame charged the full turn budget, and until a hand touched the
+      // control this clock still held its opening zero while the module
+      // reported Blitz, so the exhibition ran unpaced under a Blitz label.
+      // An engine too old to price frames keeps the prior whole-pace wait.
+      const budget = answer && typeof answer.frame_budget_ms === "number"
+        ? answer.frame_budget_ms : pace;
+      const owed = budget - (performance.now() - started);
       if (owed > 0) await sleep(owed);
     }
 

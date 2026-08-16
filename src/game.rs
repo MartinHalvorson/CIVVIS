@@ -13472,6 +13472,82 @@ mod district_building_wonder_runtime_tests {
         assert!(game.map.tiles[&position].pillaged);
     }
 
+    /// A battlefield is decided by the fighting: the arena runs no random
+    /// disasters — except the one class a named battle is actually remembered
+    /// for, which stays exactly as historical as the rest of its briefing.
+    #[test]
+    fn a_battlefield_runs_only_the_disasters_its_battle_is_remembered_for() {
+        let classes = [
+            "volcanic_eruption",
+            "river_flood",
+            "drought",
+            "hurricane",
+            "tornado",
+            "blizzard",
+            "dust_storm",
+        ];
+        // A civ world is unrestricted; a generic arena — and a named battle
+        // with calm weather on its record — allows nothing.
+        for class in classes {
+            assert!(Game::script_disaster_allowed(MapScript::Pangaea, class));
+            for script in [
+                MapScript::Battlefield,
+                MapScript::TacticsPlanet,
+                MapScript::TacticsOcean,
+                MapScript::Kadesh,
+                MapScript::Agincourt,
+                MapScript::Waterloo,
+            ] {
+                assert!(
+                    !Game::script_disaster_allowed(script, class),
+                    "{script:?} should not run {class}"
+                );
+            }
+        }
+        // The remembered weather, battle by battle — and only that class.
+        let remembered = [
+            (MapScript::Hattin, "drought"),
+            (MapScript::SpanishArmada, "hurricane"),
+            (MapScript::Stalingrad, "blizzard"),
+            (MapScript::Normandy, "hurricane"),
+            (MapScript::DienBienPhu, "river_flood"),
+            (MapScript::DesertStorm, "dust_storm"),
+            (MapScript::Mosul, "dust_storm"),
+        ];
+        for (script, kept) in remembered {
+            for class in classes {
+                assert_eq!(
+                    Game::script_disaster_allowed(script, class),
+                    class == kept,
+                    "{script:?} {class}"
+                );
+            }
+        }
+        // Every class a scenario lists is one the shipped rules actually
+        // roll, so an allowance cannot be a typo that silently never fires.
+        let (game, _, _) = one_city(774_410);
+        for scenario in crate::historical_scenarios::all() {
+            for &class in scenario.disasters {
+                assert!(
+                    game.rules.disasters.get(class).is_some(),
+                    "{} lists unknown disaster {class}",
+                    scenario.id
+                );
+            }
+        }
+        // And the gate reaches the rate itself: the same intensity that gives
+        // a civ world its storms leaves the arena becalmed.
+        assert!(game.disaster_rate("blizzard") > 0.0);
+        let mut arena = Game::new_with(GameOptions {
+            map_script: MapScript::Battlefield,
+            ..GameOptions::new(2, 20, 14, 774_411, 60, 0)
+        });
+        arena.disaster_intensity = 4;
+        for class in classes {
+            assert_eq!(arena.disaster_rate(class), 0.0, "arena rolled {class}");
+        }
+    }
+
     #[test]
     fn nuclear_plants_age_recommission_and_resolve_all_accident_state() {
         let (mut game, city, position) = one_city(774_409);
@@ -29504,10 +29580,30 @@ impl Game {
         self.disaster_intensity.min(4)
     }
 
+    /// Whether this class of random disaster may strike a world of this
+    /// script. A battlefield is decided by the fighting, so the arena runs no
+    /// random disasters at all — a tornado deciding a posed engagement is
+    /// noise, not history — except the one class a named battle is actually
+    /// remembered for: the thirst at Hattin, the storms that broke the
+    /// Armada, the winter at Stalingrad. Each named battle's allowance, and
+    /// the near-misses deliberately left out, are recorded on
+    /// [`crate::historical_scenarios::HistoricalScenario::disasters`]. A
+    /// generic arena — Battlefield, the Tactics globes — allows none.
+    pub(crate) fn script_disaster_allowed(script: MapScript, class: &str) -> bool {
+        if !script.is_battlefield() {
+            return true;
+        }
+        crate::historical_scenarios::by_script(script)
+            .is_some_and(|scenario| scenario.disasters.contains(&class))
+    }
+
     /// Expected occurrences of one disaster class over a whole game, after the
     /// intensity setting and the warming already banked. Gathering Storm makes
     /// a hotter world a stormier one, so every phase adds to the rate.
     fn disaster_rate(&self, class: &str) -> f64 {
+        if !Self::script_disaster_allowed(self.map_script, class) {
+            return 0.0;
+        }
         let Some(spec) = self.rules.disasters.get(class) else {
             return 0.0;
         };

@@ -7013,6 +7013,39 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("searchParams.get(\"setup\") === \"1\""));
     }
 
+    /// The browser build's watch pace is a contract between two files that
+    /// never compile together: the wasm router prices every delivered frame
+    /// in wall-clock milliseconds — the socket stepper's own seat shares,
+    /// summed over the steps the frame contains — and the shim, the only
+    /// clock that build has, spends exactly that price before answering the
+    /// page. Before this pairing the shim slept its own `pace` variable,
+    /// which was wrong twice over: it charged the whole turn budget to every
+    /// per-seat frame, and it still held its opening zero while the module
+    /// reported the Blitz default — the page saw agreement, never pushed
+    /// `/pace`, and a Tactics battle ran unpaced under a Blitz label.
+    #[test]
+    fn the_browser_build_prices_every_frame_for_the_shims_clock() {
+        let router = include_str!("wasm.rs");
+        // The router prices with the stepper's own arithmetic, not a copy.
+        assert!(router.contains("seat_delay_ms(pace, majors, minors, p.is_minor || p.is_barbarian)"));
+        assert!(
+            router.contains("== TurnStructure::Simultaneous"),
+            "a simultaneous step is the whole round and spends the whole budget"
+        );
+        assert!(router.contains("o[\"frame_budget_ms\"] = json!(budget);"));
+        assert!(
+            router.contains("let budget = held.map_or(0, |held| advance_one_frame(session, held));"),
+            "only a step that actually played owes anything; a boot read is free"
+        );
+        // And the shim spends what the engine priced, keeping its own `pace`
+        // only for a module too old to say.
+        let shim = include_str!("../beta/shim.js");
+        assert!(shim.contains(
+            "const budget = answer && typeof answer.frame_budget_ms === \"number\"\n        ? answer.frame_budget_ms : pace;"
+        ));
+        assert!(shim.contains("const owed = budget - (performance.now() - started);"));
+    }
+
     /// The home page's cards are rows a visitor can act on anywhere: the
     /// photograph and the title open the card's preset exactly as the verb
     /// button does; the title line carries who is at the keyboard on its
@@ -8739,6 +8772,13 @@ mod tests {
             !EMBEDDED_INDEX.contains("data-scenario-view="),
             "the scenario browser was retired for the Scenario select"
         );
+        // A battle remembered for its weather says so in its briefing — and
+        // only such a battle: the arena runs no random disasters otherwise
+        // (`Game::script_disaster_allowed`), so a brief that said "calm"
+        // everywhere would be noise and one that said nothing here would hide
+        // the one storm that is history.
+        assert!(EMBEDDED_APP_JS.contains("const SCENARIO_WEATHER_LABELS = {"));
+        assert!(EMBEDDED_APP_JS.contains("Historical weather: ${escapeAttr(weather)}"));
     }
 
     /// Nothing the setup panel runs during page load may read a module
