@@ -127,6 +127,30 @@ def orders_totals(events_path: Path) -> tuple[int, int] | None:
     return (seen, applied) if counted else None
 
 
+def final_standing(events_path: Path) -> tuple[int, int] | None:
+    """(our score, best rival score) from the last agent turn that saw both.
+
+    The outcome event's `score` is the LOCAL seat's score at the victory
+    moment — reading it as the winner's margin made a 469-point gap look
+    like a two-point near miss (2026-08-16). The mirror's per-turn
+    `rival_best` is the honest comparison, so the ledger carries it.
+    """
+    if not events_path.is_file():
+        return None
+    last = None
+    with events_path.open() as handle:
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (event.get("kind") == "turn" and event.get("ctx") == "agent"
+                    and event.get("rival_best") is not None
+                    and event.get("score") is not None):
+                last = (int(event["score"]), int(event["rival_best"]))
+    return last
+
+
 def applied_pct(summary: dict) -> float | None:
     """Bridge health as one number: applied orders over issued, in percent."""
     seen = summary.get("orders_seen")
@@ -151,6 +175,10 @@ def entry_from(summary: dict) -> dict:
         "speed": summary.get("speed"),
         "reason": summary.get("reason"),
         "applied_pct": applied_pct(summary),
+        "rival_best": summary.get("rival_best"),
+        "lead": (summary["last_score"] - summary["rival_best"]
+                 if summary.get("last_score") is not None
+                 and summary.get("rival_best") is not None else None),
     }
 
 
