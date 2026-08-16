@@ -424,6 +424,25 @@ class ProtectedInstallTest(unittest.TestCase):
         for reason in ("envoy_target_unmapped", "envoy_no_operation", "envoy_none_held", "envoy_cannot_give", "envoy_refused_"):
             self.assertIn(reason, handler)
 
+    def test_civvis_levy_orders_pay_the_host_quote_through_a_fresh_handle(self) -> None:
+        # LevyMilitary crosses as a `levy` order once the seat holds a
+        # suzerainty; the mod gates on CanLevyMilitary and Firaxis's own cost
+        # against the treasury, one LEVY_MILITARY request per order.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn('if kind == "levy" then', source)
+        handler = source.split('if kind == "levy" then', 1)[1].split("\n\t-- ★★★★★ CIVVIS'S OWN POLICY", 1)[0]
+        self.assertIn("PlayerOperations.LEVY_MILITARY", handler)
+        self.assertIn("PlayerOperations.PARAM_PLAYER_ONE", handler)
+        self.assertIn("influence:CanLevyMilitary(subject)", handler)
+        self.assertIn("influence:GetLevyMilitaryCost(subject)", handler)
+        self.assertIn("player:GetTreasury():GetGoldBalance()", handler)
+        self.assertIn("UI.RequestPlayerOperation(pid, levyOp, params)", handler)
+        self.assertNotIn("SetGivingTokensConsidered", handler)
+        self.assertNotIn("cfg.EnvoyLevy", handler)
+        self.assertIn('emit("levy"', handler)
+        for reason in ("levy_target_unmapped", "levy_no_operation", "levy_refused_", "levy_unaffordable"):
+            self.assertIn(reason, handler)
+
     def test_controller_votes_in_the_world_congress_before_forfeiting_the_session(self) -> None:
         # The session was a soft blocker the ladder dismissed: nineteen forfeits
         # in one game, no vote in 242 turns, and a rival's diplomatic victory

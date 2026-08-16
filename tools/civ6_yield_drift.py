@@ -40,6 +40,19 @@ compares the thing the correction hides.
            tooltip), the host's ledger for each city in a persistent gap.
 - HOUSING / AMENITIES  host count against the model's own derivation (the
            board applies a correction; the model does not).
+- PLAYER   Faith PER TURN at the empire level: the host's top-bar figure
+           (`faith_per_turn`, `GetFaithYield`) against the model's — the
+           cities plus what the empire collects beside them: founder-belief
+           income and the Faith Civilization VI pays for every Great Person
+           point of a class the empire can no longer earn (the last Great
+           Scientist anywhere claimed; a Holy Site's Prophet points once the
+           empire has a religion or the map has run out of them). On an
+           export older than `faith_per_turn` the host income is read from
+           the balance's next-turn change where no purchase intervened —
+           the one place this tool reads across turns, and it says so. With
+           `great_person_points_per_turn` in the export the model's per-class
+           rate is checked against the host's, and the host's own ledger
+           (`faith_sources`) is printed for the last turn.
 
 ## What it deliberately does not do
 
@@ -301,6 +314,122 @@ def parse_yield_sources(text: str) -> list:
     return rows
 
 
+# ------------------------------------------------------------ player level
+
+def host_faith_income(states: dict, turn: int) -> tuple:
+    """The host's Faith per turn at `turn`, and where the figure came from.
+
+    `faith_per_turn` is the top bar's own number and is used whenever the
+    export carries it. Older exports have only the balance; there the income
+    is the balance's change to the NEXT turn's record when nothing was bought
+    in between (a drop, or a change far below the model, is a purchase and
+    yields no reading) — the one cross-turn read in this tool, labelled so.
+    Returns `(income, source)` with source `"faith_per_turn"`, `"balance"` or
+    `None` when nothing can be said.
+    """
+    state = states[turn]
+    rate = state.get("faith_per_turn")
+    if isinstance(rate, (int, float)) and rate >= 0:
+        return float(rate), "faith_per_turn"
+    nxt = states.get(turn + 1)
+    balance, later = state.get("faith"), (nxt or {}).get("faith")
+    if isinstance(balance, (int, float)) and isinstance(later, (int, float)) \
+            and balance >= 0 and later >= 0 and later >= balance:
+        return float(later - balance), "balance"
+    return None, None
+
+
+def player_comparison(states: dict, turn: int, dump: dict) -> dict | None:
+    """Model versus host Faith per turn for the empire, with the model's own
+    split (cities / unused Great Person points / founder beliefs), the
+    per-class Great Person rates on both sides where the host exports its
+    own, and the host's ledger. `None` when the host income cannot be read.
+    """
+    model = dump.get("model_empire_yields") or {}
+    if "faith" not in model:
+        return None
+    host, source = host_faith_income(states, turn)
+    if host is None:
+        return None
+    extras = dump.get("player_extras") or {}
+    unused = float(dump.get("unused_great_person_faith") or 0.0)
+    beliefs = float(extras.get("faith", 0.0)) - unused
+    model_faith = float(model["faith"])
+    delta = round(model_faith - host, 2)
+    # The balance is an integer (`math.floor` in the mod), so a next-turn
+    # change cannot resolve below one Faith: a sub-point gap there is the
+    # floor, not the model.
+    if source == "balance" and abs(delta) < 1.0:
+        delta = 0.0
+    record = {
+        "host": host, "source": source, "model": model_faith,
+        "delta": delta,
+        "cities": round(model_faith - float(extras.get("faith", 0.0)), 2),
+        "unused_gpp": round(unused, 2), "beliefs": round(beliefs, 2),
+        "unused_classes": list(dump.get("unused_great_person_classes") or []),
+        "gpp_model": {k: round(float(v), 2)
+                      for k, v in (dump.get("great_person_points_per_turn") or {}).items()},
+    }
+    host_gpp = states[turn].get("great_person_points_per_turn")
+    if isinstance(host_gpp, dict):
+        record["gpp_host"] = {
+            k.replace("GREAT_PERSON_CLASS_", "").lower(): round(float(v), 2)
+            for k, v in host_gpp.items() if isinstance(v, (int, float))
+        }
+    sources = states[turn].get("faith_sources")
+    if isinstance(sources, str) and sources.strip():
+        record["sources"] = sources
+    return record
+
+
+def report_player_faith(player_turns: dict, min_len: int) -> list:
+    """Print the PLAYER block and return its persistent episodes."""
+    rows = {t: r for t, r in player_turns.items() if r}
+    if not rows:
+        print("PLAYER   no host Faith income readable (no `faith_per_turn`, no next-turn balance)")
+        return []
+    sources = collections.Counter(r["source"] for r in rows.values())
+    series = {("empire", "faith"): {t: r["delta"] for t, r in rows.items()}}
+    all_episodes = episodes(series, min_len)
+    persistent = [e for e in all_episodes if e["persistent"]]
+    transient = [e for e in all_episodes if not e["persistent"]]
+    weight = lambda items: round(sum(abs(e["delta"]) * e["turns"] for e in items), 1)
+    print("PLAYER   Faith per turn, empire level: model (cities + unused Great Person points "
+          "+ founder beliefs) against the host")
+    if sources.get("balance"):
+        print(f"  host income read from the balance's next-turn change on {sources['balance']} "
+              f"turn(s) (export older than `faith_per_turn`; purchases hide the reading)"
+              + (f", from `faith_per_turn` on {sources['faith_per_turn']}"
+                 if sources.get("faith_per_turn") else ""))
+    else:
+        print(f"  host income from `faith_per_turn` on {len(rows)} turn(s)")
+    print(f"  |model-host| x turns: persistent (>= {min_len} turns) {weight(persistent)}, "
+          f"transient {weight(transient)}")
+    for episode in persistent[:12]:
+        first = rows[episode["start"]]
+        print(f"  t{episode['start']}-{episode['end']} model-host {episode['delta']:+.2f} "
+              f"(host {first['host']:.2f} model {first['model']:.2f} = cities {first['cities']:.2f}"
+              f" + unused GPP {first['unused_gpp']:.2f} {first['unused_classes']}"
+              f" + beliefs {first['beliefs']:.2f})")
+    if len(persistent) > 12:
+        print(f"  ({len(persistent) - 12} more persistent episodes)")
+    last = max(rows)
+    final = rows[last]
+    print(f"  at turn {last}: host {final['host']:.2f} / model {final['model']:.2f} "
+          f"(cities {final['cities']:.2f} + unused GPP {final['unused_gpp']:.2f} "
+          f"{final['unused_classes']} + beliefs {final['beliefs']:.2f})")
+    if final.get("gpp_host"):
+        pairs = sorted(set(final["gpp_model"]) | set(final["gpp_host"]))
+        print("  Great Person points per turn, model/host: "
+              + "  ".join(f"{kind} {final['gpp_model'].get(kind, 0.0):g}/"
+                          f"{final['gpp_host'].get(kind, 0.0):g}" for kind in pairs))
+    if final.get("sources"):
+        ledger = parse_yield_sources(final["sources"])
+        if ledger:
+            print("  host ledger: " + "; ".join(f"{v:+g} {label}" for v, label in ledger))
+    return persistent
+
+
 # ------------------------------------------------------------------ report
 
 def fmt_yields(values: dict) -> str:
@@ -319,6 +448,7 @@ def run_report(run: str, binary: str, lo: int, hi: int, step: int, min_len: int,
     housing_series: dict = collections.defaultdict(dict)
     amenity_series: dict = collections.defaultdict(dict)
     per_turn = {}
+    player_turns = {}
     tile_reports = []
     failed = []
     for turn in turns:
@@ -330,6 +460,7 @@ def run_report(run: str, binary: str, lo: int, hi: int, step: int, min_len: int,
         plots = {(p.get("x"), p.get("y")): p for p in dump.get("plots") or []}
         comparisons = city_comparisons(states[turn], dump)
         per_turn[turn] = comparisons
+        player_turns[turn] = player_comparison(states, turn, dump)
         for record in comparisons:
             name = record["name"]
             if only_city and name != only_city:
@@ -439,6 +570,10 @@ def run_report(run: str, binary: str, lo: int, hi: int, step: int, min_len: int,
                             f"(last {off[-1][0]}: model-host {off[-1][1]:+g})")
         print(f"{label:9}" + ("; ".join(rows) if rows else "model agrees with host on every turn"))
 
+    # --- PLAYER ---------------------------------------------------------
+    print()
+    player_episodes = report_player_faith(player_turns, min_len)
+
     if json_out:
         payload = {
             "run": run, "binary": binary, "turns": sorted(per_turn),
@@ -446,6 +581,8 @@ def run_report(run: str, binary: str, lo: int, hi: int, step: int, min_len: int,
             "tiles": [{"turn": t, "city": n, **d} for t, n, d in tile_reports],
             "housing": {n: v for n, v in housing_series.items()},
             "amenities": {n: v for n, v in amenity_series.items()},
+            "player": {str(t): v for t, v in player_turns.items() if v},
+            "player_episodes": player_episodes,
         }
         with open(json_out, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=1, sort_keys=True)

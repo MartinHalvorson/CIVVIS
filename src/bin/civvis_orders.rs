@@ -1127,8 +1127,9 @@ fn release_foreign_production(
 }
 
 #[derive(Default)]
-struct BarbarianFinishingVolley {
-    /// Barbarians the exact planning model removed before ordinary movement.
+struct WarFinishingVolley {
+    /// Wounded military enemies at war that the exact planning model removed
+    /// before ordinary movement.
     targets: usize,
     /// Direct attacks to send from the exported frame, including one reserve
     /// attacker when Firaxis may leave a modelled kill alive.
@@ -1291,7 +1292,7 @@ fn live_finishing_candidates(
     candidates
 }
 
-/// Finish exposed barbarians before their attackers receive campaign moves.
+/// Finish exposed wounded enemies before their attackers receive campaign moves.
 ///
 /// The old live-only repair rewrote every wounded barbarian to 100 HP on the
 /// planning board. That kept a second defender from being released after a
@@ -1300,43 +1301,37 @@ fn live_finishing_candidates(
 /// barbarians survive successive exported frames on 1, 3, 6, 8, 16 and 20 HP
 /// while nearby units promoted or marched. The reserve was firing throughout.
 ///
-/// Keep the exported HP. For a wounded barbarian inside the existing six-tile
-/// home-defense ring, prove a kill using only attacks legal *right now*, apply
-/// that shortest volley before the normal AI turn, and reserve one additional
-/// direct attacker when one is available. The extra order preserves the old
-/// host/model safety margin: if Firaxis leaves the predicted kill alive it gets
-/// the second blow; if the first blow killed it, a ranged order is refused and
-/// a melee order can only enter the cleared tile or be blocked by the first
-/// attacker. Rivals remain entirely on the ordinary campaign path.
-fn finish_live_barbarians(
+/// Keep the exported HP. For every wounded military unit belonging to a player
+/// we are currently at war with, prove a kill using only attacks legal *right
+/// now*, apply that shortest volley before the normal AI turn, and reserve one
+/// additional direct attacker when one is available. This covers barbarians,
+/// rivals, city-states, and Free Cities without treating a visible peacetime
+/// unit as a target. Damage-only opportunities remain the normal tactical
+/// planner's decision.
+///
+/// The extra order preserves the host/model safety margin: if Firaxis leaves a
+/// predicted kill alive it gets the second blow; if the first blow killed it, a
+/// ranged order is refused and a melee order can only enter the cleared tile or
+/// be blocked by the first attacker.
+fn finish_live_war_units(
     planned_game: &mut civvis::game::Game,
     pid: usize,
     mapped: &std::collections::BTreeMap<u32, i64>,
-) -> BarbarianFinishingVolley {
-    let Some(barbarian) = planned_game.barb_pid else {
-        return BarbarianFinishingVolley::default();
-    };
-    let cities = planned_game
-        .player_city_ids(pid)
-        .into_iter()
-        .filter_map(|city| planned_game.cities.get(&city).map(|city| city.pos))
-        .collect::<Vec<_>>();
+) -> WarFinishingVolley {
     let mut targets = planned_game
         .units
         .values()
         .filter(|unit| {
-            unit.owner == barbarian
+            unit.owner != pid
+                && planned_game.is_at_war(pid, unit.owner)
                 && planned_game.rules.units[unit.kind].class == "military"
                 && unit.hp < 100
-                && cities
-                    .iter()
-                    .any(|city| planned_game.wdist(*city, unit.pos) <= 6)
         })
         .map(|unit| (unit.hp, unit.pos, unit.id))
         .collect::<Vec<_>>();
     targets.sort_unstable();
 
-    let mut result = BarbarianFinishingVolley::default();
+    let mut result = WarFinishingVolley::default();
     let mut committed = std::collections::BTreeSet::new();
     for (_, _, target) in targets {
         if !planned_game.units.contains_key(&target) {
@@ -1520,6 +1515,7 @@ fn withhold_live_treatment(
         "era-paced-expansion" => ai.disable_era_paced_expansion(),
         "tally-culture" => ai.disable_tally_culture(),
         "frontier-loyalty" => ai.disable_frontier_loyalty(),
+        "settler-target-hysteresis" => ai.disable_settler_target_hysteresis(),
         "housing-cards" => ai.disable_housing_cards(),
         "housing-research" => ai.disable_housing_research(),
         "campus-every-city" => ai.disable_campus_every_city(),
@@ -1546,7 +1542,8 @@ fn withhold_live_treatment(
                  amenity-project-preemption, amenity-district-path, governor-every-lane, \
                  live-wonder-race, expansion-before-prophet, no-elective-war, \
                  fog-land-capacity, recon-flight, score-horizon, naval-recon, counter-in-lane, \
-                 era-paced-expansion, tally-culture, frontier-loyalty"
+                 era-paced-expansion, tally-culture, frontier-loyalty, \
+                 settler-target-hysteresis"
             ))
         }
     }
@@ -1596,8 +1593,7 @@ fn decide(
     let released =
         release_foreign_production(&mut planned_game, &mirror_state.cid_of, state, ours);
     let before = planned_game.log.len();
-    let barbarian_finishers =
-        finish_live_barbarians(&mut planned_game, 0, &mirror_state.civ6_of);
+    let war_finishers = finish_live_war_units(&mut planned_game, 0, &mirror_state.civ6_of);
     // Finishing attacks are translated explicitly below, including the reserve
     // order that was intentionally not applied to the planning board. Ordinary
     // AI actions start after the attacks that were applied there.
@@ -1657,7 +1653,7 @@ fn decide(
         .count();
     ai.take_turn(&mut planned_game, 0);
 
-    let mut orders: Vec<Order> = barbarian_finishers
+    let mut orders: Vec<Order> = war_finishers
         .actions
         .iter()
         .filter_map(|action| translate(action, mirror_state, state))
@@ -1703,12 +1699,12 @@ fn decide(
             pre_traders.join("; ")
         ));
     }
-    if barbarian_finishers.targets > 0 {
+    if war_finishers.targets > 0 {
         note_bits.push(format!(
-            "barbarian_finishing_volleys={} attacks={} reserves={}",
-            barbarian_finishers.targets,
-            barbarian_finishers.actions.len(),
-            barbarian_finishers.reserves,
+            "war_unit_finishing_volleys={} attacks={} reserves={}",
+            war_finishers.targets,
+            war_finishers.actions.len(),
+            war_finishers.reserves,
         ));
     }
 
@@ -2550,6 +2546,25 @@ fn translate(
                 pos: None,
             })
         }
+        // ★★★★ THE LEVY, WHICH THE PLAN ASKED FOR 44 TIMES A GAME AND NEVER GOT.
+        // `levy_city_state_military` fires at war (and urgently under
+        // Conquest/Recovery) for the suzerained city-state whose visible army
+        // is the most strength per gold, and `LevyMilitary` was the single
+        // most-skipped action in the pre-#1765 tally — moot while the seat held
+        // no suzerainty, live now that it spends its envoys. A levied army is
+        // the one force that does not have to be built first, on a seat whose
+        // dominant loss mode is a tech-superior rival's siege. The mod pays
+        // Firaxis's own quote (`GetLevyMilitaryCost`) against the treasury and
+        // refuses on `CanLevyMilitary`, so a mirror-priced levy the host will
+        // not sell is a named refusal, not a phantom army.
+        Action::LevyMilitary { player } => {
+            host_minor_target(mirror_state, state, *player).map(|minor| Order {
+                kind: "levy",
+                subject: Some(minor),
+                verb: Some("LEVY_MILITARY".to_string()),
+                pos: None,
+            })
+        }
         _ => None,
     }
 }
@@ -2714,6 +2729,15 @@ fn main() {
     // And give up an exploration target the host accepts but never walks to:
     // see `BasicAi::explore_dead_targets`.
     ai.enable_explore_dead_targets();
+    // And hold an exploration goal, chosen from deeper fog and farthest from
+    // home, instead of re-deriving the nearest fringe every turn: the lone
+    // scout of run civvis-20260816T123936Z paced a ten-by-ten box from t34
+    // to t75. See `BasicAi::explore_commit`.
+    ai.enable_explore_commit();
+    // And bank an envoy the plan has no positive use for, so the next
+    // city-state met can be taken outright — this seat meets its city-states
+    // over 250 turns, not 50. See `AdvancedAi::bank_envoys`.
+    ai.enable_bank_envoys();
     // ★★★ SAY WHICH GENOME IS PLAYING, ALWAYS — INCLUDING "the stock one".
     //
     // An axis nothing reports does not exist, and this project has already shipped a
@@ -3288,15 +3312,32 @@ fn main() {
             empire_yields.add(game.city_yields(city.id));
             model_empire_yields.add(game.city_yields_model(city.id));
         }
+        // What the empire collects beside its cities — founder beliefs and
+        // the Faith Firaxis pays for Great Person points nobody can spend —
+        // is part of the model's per-turn figure and of the board's, and the
+        // player-level correction (`observed_yield_adjustments`) is measured
+        // against the same sum, so the board reads the host's number.
+        let player_extras = game.player_yield_extras(0);
+        empire_yields.add(player_extras);
+        model_empire_yields.add(player_extras);
         if let Some(adjustment) = game.observed_yield_adjustments.get(&0) {
             empire_yields.add(*adjustment);
         }
+        let great_person_points_per_turn = game.great_person_points_per_turn(0);
+        let unused_great_person_classes = great_person_points_per_turn
+            .keys()
+            .filter(|kind| !game.great_person_class_earnable(0, kind))
+            .cloned()
+            .collect::<Vec<_>>();
         println!(
             "{{\"turn\":{},\"width\":{},\"height\":{},\"revealed\":{},\
              \"unresolved_terrain\":{{{}}},\"plots\":[{}],\"cities\":{},\
              \"great_works\":{},\"governors\":{},\"governor_points\":{},\
              \"governor_points_spent\":{},\"governor_points_available\":{},\
-             \"empire_yields\":{},\"model_empire_yields\":{}}}",
+             \"empire_yields\":{},\"model_empire_yields\":{},\
+             \"player_extras\":{},\"unused_great_person_faith\":{},\
+             \"great_person_points_per_turn\":{},\"unused_great_person_classes\":{},\
+             \"host_faith_per_turn\":{}}}",
             state.turn,
             width,
             height,
@@ -3311,6 +3352,11 @@ fn main() {
             game.governor_titles_available(0),
             serde_json::to_string(&empire_yields).unwrap(),
             serde_json::to_string(&model_empire_yields).unwrap(),
+            serde_json::to_string(&player_extras).unwrap(),
+            game.unused_great_person_faith(0),
+            serde_json::to_string(&great_person_points_per_turn).unwrap(),
+            serde_json::to_string(&unused_great_person_classes).unwrap(),
+            serde_json::to_string(&state.faith_per_turn).unwrap(),
         );
         return;
     }
@@ -3719,6 +3765,14 @@ mod tests {
         withhold_live_treatment(&mut ai, "frontier-loyalty")
             .expect("the frontier-loyalty control arm is registered");
         assert!(!ai.frontier_loyalty, "the named frontier-loyalty control must hold it off");
+
+        assert!(ai.settler_target_hysteresis);
+        withhold_live_treatment(&mut ai, "settler-target-hysteresis")
+            .expect("the settler-target-hysteresis control arm is registered");
+        assert!(
+            !ai.settler_target_hysteresis,
+            "the named settler-target-hysteresis control must hold it off"
+        );
 
         let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
         assert!(
@@ -4160,6 +4214,23 @@ mod tests {
         (snapshot, state)
     }
 
+    /// The same exposed-defender geometry, but a current war against a rival
+    /// supplies the defender rather than the aggregate barbarian export.
+    fn local_war_enemy_board() -> (Snapshot, StateSnapshot) {
+        let (snapshot, mut state) = local_barbarian_defense_board();
+        let hostile = state
+            .hostiles
+            .pop()
+            .expect("the local defense fixture carries one barbarian");
+        state.rivals.push(StateRival {
+            player: 3,
+            at_war: true,
+            units: vec![hostile],
+            ..StateRival::default()
+        });
+        (snapshot, state)
+    }
+
     #[test]
     fn local_barbarian_finishing_volley_keeps_exported_hp_and_proves_the_kill() {
         let (snapshot, state) = local_barbarian_defense_board();
@@ -4174,7 +4245,7 @@ mod tests {
             .id;
         let mut planned = mirror.game.clone();
 
-        let volley = finish_live_barbarians(&mut planned, 0, &mirror.civ6_of);
+        let volley = finish_live_war_units(&mut planned, 0, &mirror.civ6_of);
         assert_eq!(volley.targets, 1);
         assert!(
             volley.actions.len() >= 2,
@@ -4230,7 +4301,97 @@ mod tests {
         assert!(reply["note"]
             .as_str()
             .unwrap()
-            .contains("barbarian_finishing_volleys=1 attacks=2 reserves=1"));
+            .contains("war_unit_finishing_volleys=1 attacks=2 reserves=1"));
+    }
+
+    #[test]
+    fn dying_war_enemy_gets_a_direct_attack_and_a_reserve_before_any_movement() {
+        let (snapshot, mut state) = local_war_enemy_board();
+        state.rivals[0].units[0].hp = 8.0;
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let (target, owner, target_pos) = mirror
+            .game
+            .units
+            .values()
+            .find(|unit| unit.owner != 0)
+            .map(|unit| (unit.id, unit.owner, unit.pos))
+            .expect("the rival warrior is mirrored");
+        assert_ne!(Some(owner), mirror.game.barb_pid);
+        assert!(mirror.game.is_at_war(0, owner));
+
+        let mut planned = mirror.game.clone();
+        let volley = finish_live_war_units(&mut planned, 0, &mirror.civ6_of);
+        assert_eq!(volley.targets, 1);
+        assert!(
+            volley.actions.len() >= 2,
+            "one modelled kill and one host-side reserve must be retained: {:?}",
+            volley.actions
+        );
+        assert!(
+            !planned.units.contains_key(&target),
+            "a current-war unit on 8 health must be removed on the private board before movement"
+        );
+
+        let mut ai = civvis::ai::AdvancedAi::new();
+        let mut ours = std::collections::BTreeMap::new();
+        let reply: serde_json::Value = serde_json::from_str(&decide(
+            &mut mirror,
+            &mut ai,
+            &snapshot,
+            &state,
+            false,
+            &[],
+            &mut ours,
+            &mut HostPeaceRetries::default(),
+            &mut HostMoveRefusals::default(),
+        ))
+        .unwrap();
+        let (x, y) = civvis::hex::axial_to_offset(target_pos.0, target_pos.1);
+        let attacks = reply["orders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .take_while(|order| {
+                matches!(order["verb"].as_str(), Some("ATTACK" | "RANGE_ATTACK"))
+                    && order["x"] == x
+                    && order["y"] == y
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            attacks.len(),
+            2,
+            "the finishing volley must lead every ordinary movement order: {}",
+            reply["orders"]
+        );
+        assert!(reply["note"]
+            .as_str()
+            .unwrap()
+            .contains("war_unit_finishing_volleys=1 attacks=2 reserves=1"));
+    }
+
+    #[test]
+    fn a_wounded_peacetime_enemy_does_not_preempt_the_tactical_planner() {
+        let (snapshot, mut state) = local_war_enemy_board();
+        state.rivals[0].at_war = false;
+        state.rivals[0].units[0].hp = 8.0;
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let target = mirror
+            .game
+            .units
+            .values()
+            .find(|unit| unit.owner != 0)
+            .expect("the rival warrior is mirrored");
+        assert!(!mirror.game.is_at_war(0, target.owner));
+        let target = target.id;
+        let mut planned = mirror.game.clone();
+
+        let volley = finish_live_war_units(&mut planned, 0, &mirror.civ6_of);
+        assert_eq!(volley.targets, 0);
+        assert!(volley.actions.is_empty());
+        assert!(
+            planned.units.contains_key(&target),
+            "an enemy outside a current war must stay with the ordinary planner"
+        );
     }
 
     #[test]
@@ -4248,7 +4409,7 @@ mod tests {
         let mut planned = mirror.game.clone();
         planned.units.get_mut(&hostile).unwrap().hp = 100;
 
-        let volley = finish_live_barbarians(&mut planned, 0, &mirror.civ6_of);
+        let volley = finish_live_war_units(&mut planned, 0, &mirror.civ6_of);
         assert_eq!(volley.targets, 0);
         assert!(volley.actions.is_empty());
         assert_eq!(planned.units[&hostile].hp, 100);
@@ -4278,7 +4439,7 @@ mod tests {
         );
         let mut planned = mirror.game.clone();
 
-        let volley = finish_live_barbarians(&mut planned, 0, &mirror.civ6_of);
+        let volley = finish_live_war_units(&mut planned, 0, &mirror.civ6_of);
         assert_eq!(volley.targets, 1);
         assert_eq!(
             volley.actions,
@@ -5390,6 +5551,56 @@ mod tests {
         assert_eq!(sent.len(), 3, "every held envoy is spent on the planning board: {sent:?}");
         assert!(sent.iter().all(|host| *host == 9 || *host == 12), "{sent:?}");
         assert_eq!(planned.players[0].envoys_free, 0);
+    }
+
+    /// A suzerain at war levies the city-state's army through the same seat
+    /// resolution as the envoy; a major seat is not a city-state.
+    #[test]
+    fn a_levy_names_the_firaxis_city_state() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 120,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 120,
+            minors: vec![StateMinor {
+                player: 11,
+                civ: "CIVILIZATION_KABUL".to_string(),
+                envoys: 4,
+                suzerain: 0,
+                cities: vec![StateCity {
+                    id: 65_536,
+                    name: "Kabul".to_string(),
+                    x: 8,
+                    y: 8,
+                    pop: 5,
+                    capital: true,
+                    ..StateCity::default()
+                }],
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
+        let kabul = mirror
+            .game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian && !player.is_free_city)
+            .expect("Kabul occupies the mirrored city-state seat")
+            .id;
+        assert_eq!(mirror.game.suzerain_of(kabul), Some(0));
+        let levy = translate(&Action::LevyMilitary { player: kabul }, &mirror, &state)
+            .expect("a levy of a suzerained city-state crosses");
+        assert_eq!(levy.kind, "levy");
+        assert_eq!(levy.subject, Some(11));
+        assert_eq!(levy.verb.as_deref(), Some("LEVY_MILITARY"));
+        assert!(translate(&Action::LevyMilitary { player: 1 }, &mirror, &state).is_none());
     }
 
     /// The first turn the lane opens on a seat holding fifty envoys must not

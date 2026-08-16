@@ -3023,9 +3023,23 @@ mod tests {
         // Replaceable Parts by Gathering Storm — kept "confirming" a grant the
         // game no longer makes. Both are corrected in `tree_effects.json`;
         // confirmed against the compiled gameplay database.
+        // Moved by four beliefs the shipped database has and `beliefs.json`
+        // did not: Divine Inspiration (follower, +4 Faith per Wonder in a
+        // following city — `MODIFIER_SINGLE_CITY_ADJUST_WONDER_YIELD_CHANGE`
+        // 4), Reliquaries (follower, Relics ×4 Faith and Tourism —
+        // `MODIFIER_SINGLE_CITY_ADJUST_GREATWORK_YIELD` ScalingFactor 300),
+        // Lay Ministry (founder, +1 Faith per Holy Site and +1 Culture per
+        // Theater Square in following cities — `BELIEF_YIELD_PER_DISTRICT`)
+        // and Sacred Places (founder, +2 of each yield per following city
+        // with a Wonder — `BELIEF_YIELD_PER_CITY_WITH_WONDER`). Measured
+        // first on live run civvis-20260816T123936Z: Rome followed a
+        // Catholicism it had not founded and read 35 Faith in the host, 23 in
+        // the model, for its last twenty turns — three Wonders under Divine
+        // Inspiration. A real change for every simulated seat: the Prophet
+        // has four more beliefs to choose from.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:28caa3eb88d53133"
+            "fnv1a64:f263eb04f59973a4"
         );
     }
 

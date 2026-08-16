@@ -414,6 +414,16 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         empire[4] += adjustment.culture;
         empire[5] += adjustment.faith;
     }
+    // Founder-belief income and the Faith paid for unused Great Person
+    // points are collected by the empire, not by any city; the top bar
+    // shows them with the city sum, and so does this.
+    {
+        let extras = g.player_yield_extras(pid);
+        empire[2] += extras.gold;
+        empire[3] += extras.science;
+        empire[4] += extras.culture;
+        empire[5] += extras.faith;
+    }
 
     enum KnownCity<'a> {
         Live(&'a City),
@@ -796,6 +806,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             if let Some(adjustment) = g.observed_yield_adjustments.get(&o.id) {
                 output.add(*adjustment);
             }
+            output.add(g.player_yield_extras(o.id));
             // An arena grants Gold and Science to the side rather than to a
             // city, so summing cities alone would report zero of both while
             // the treasury filled and the tree opened — and would report a

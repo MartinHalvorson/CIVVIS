@@ -388,6 +388,17 @@ def public_fact_mismatches(state, board):
         if isinstance(want, (int, float)) and want > 0 \
                 and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
             mismatches.append(f"seat 0 {key}/turn Civ6={want:g} CIVVIS={got!r}")
+    # Faith per turn is a RATE like science and culture, and it is NOT the
+    # sum of the cities: the host pays the Great Person points of a class the
+    # empire can no longer earn out as Faith (run civvis-20260816T123936Z: 100+
+    # a turn banked against 49 from every city together). The mod exports it
+    # from `GetReligion():GetFaithYield()`; an older export has no key, and a
+    # missing answer is `null` — neither is a disagreement.
+    want = state.get("faith_per_turn")
+    got = yields.get("faith")
+    if isinstance(want, (int, float)) and want >= 0 \
+            and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
+        mismatches.append(f"seat 0 faith/turn Civ6={want:g} CIVVIS={got!r}")
     for key in ("gold", "faith"):
         want = state.get(key)
         got = ours.get(key)

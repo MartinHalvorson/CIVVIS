@@ -998,6 +998,10 @@ impl EmpireCounts {
 /// and short enough that a genuinely unreachable site cannot hold a settler
 /// hostage — the failure mode #492 was merged to remove.
 const SETTLER_STALL_LIMIT: u32 = 3;
+/// How long (standard turns) a settler target dropped for danger stays out of
+/// the next picks, so a threat that flickers in and out of sight cannot flip
+/// the settler between two sites every frame. See `settler_target_hysteresis`.
+const SETTLER_TARGET_HYSTERESIS_TURNS: u32 = 6;
 
 /// Route-scoring is exact for the valuable prefix, then falls back to the
 /// existing reachability scan if that prefix is disconnected. This bounds the
@@ -2335,6 +2339,27 @@ pub struct AdvancedAi {
     /// Settler seat's tally; the native lanes keep their bred weights. Off for
     /// ordinary and frozen controllers.
     pub tally_culture: bool,
+    /// Bank an envoy the plan has no positive use for.
+    ///
+    /// ★★★★ `advanced_envoys` spends EVERY held envoy each turn (`while
+    /// envoys_free > 0`), taking the best-scored placement even when that score
+    /// is negative — a city-state already securely ours and past its 6-envoy
+    /// tier reads "worth −47" and still takes the token. Native seats meet
+    /// their city-states early, so that rarely costs anything; the live seat
+    /// does not. Replay of civvis-20260816T123936Z at t150 (46 held, two
+    /// city-states met): Geneva ×3 → Suzerain, Nan Madol ×2 → Suzerain, both to
+    /// the 6-tier, and then the remaining 34 poured into the same two secure
+    /// city-states — while Preslav was met at t162 with nothing left to bid,
+    /// and this lane's twelve games met their city-states over 250 turns (0–3
+    /// by t50, 2–5 by t100, 3–10 by the end).
+    ///
+    /// With this on, the pass stops at the first placement whose score is
+    /// negative and journals what it banked; the next city-state met (whose
+    /// first-meet envoy is already standing there) can be taken outright. A
+    /// rival bidding a held suzerainty back up makes the defence positive
+    /// again, so held city-states are still defended. Bridge-only
+    /// (`civvis_orders` sets it); off for ordinary and frozen controllers.
+    pub bank_envoys: bool,
     /// Do not found a colony beyond the empire's Loyalty reach on ground the
     /// seat has not explored.
     ///
@@ -2360,6 +2385,29 @@ pub struct AdvancedAi {
     /// before. Firaxis-only: it prices the live mirror's fog. Off for
     /// ordinary and frozen controllers.
     pub frontier_loyalty: bool,
+    /// A settler target dropped for danger is not re-picked the moment the
+    /// danger flickers off.
+    ///
+    /// ★★★★ ONE SETTLER, TWO SITES, TWENTY-NINE TURNS. Run
+    /// civvis-20260816T123936Z, settler 4849688: "marching to (42,22), 9
+    /// tiles" — "8 tiles" — "(41,24), 7 tiles" — "(42,22), 9 tiles" — "8" —
+    /// "(41,24), 8" … from t138 to t146 the journal alternates between two
+    /// sites worth 128 and 117 in different directions, and the settler walked
+    /// a step toward each in turn. `valid_target` drops the cached site when
+    /// its `settlement_tile_risk` reads over `SETTLER_STEP_RISK_LIMIT`, the
+    /// pick loop takes the runner-up, and on the next frame — the danger a
+    /// tile further or out of sight — the first site is valid again and wins
+    /// on value. Twenty-nine turns from birth to founding, at a site that
+    /// then revolted (see `frontier_loyalty`).
+    ///
+    /// With this on, a cached target the validation drops is written to
+    /// `settler_avoid` for `SETTLER_TARGET_HYSTERESIS_TURNS`, exactly as the
+    /// stall path already retires a target it cannot reach, so the next pick
+    /// commits to the runner-up and the first site is only reconsidered once
+    /// the window has passed. Off for ordinary and frozen controllers; on
+    /// for the live bridge and the native repair bundle (a native settler
+    /// flickers the same way beside a wandering barbarian).
+    pub settler_target_hysteresis: bool,
 
     /// Whether the defensive-war posture is BOUNDED in time.
     ///
@@ -3135,7 +3183,9 @@ impl AdvancedAi {
             counter_in_lane: false,
             era_paced_expansion: false,
             tally_culture: false,
+            bank_envoys: false,
             frontier_loyalty: false,
+            settler_target_hysteresis: false,
             bounded_recovery: false,
             counter_stand_down: false,
             price_the_suzerainty: false,
@@ -3265,6 +3315,12 @@ impl AdvancedAi {
     /// only.
     pub fn enable_explore_dead_targets(&mut self) {
         self.base.enable_explore_dead_targets();
+    }
+
+    /// Hold an exploration goal and sweep outward from home (see
+    /// `BasicAi::explore_commit`). Set by the Civilization VI bridge only.
+    pub fn enable_explore_commit(&mut self) {
+        self.base.enable_explore_commit();
     }
 
     /// A city losing hitpoints is besieged, whatever the fog says. See
@@ -3665,6 +3721,9 @@ impl AdvancedAi {
         // And the recon it rebuilds must stop walking into barbarians. See
         // `recon_flight`.
         self.enable_recon_flight();
+        // And a settler target dropped for danger stays dropped for a while.
+        // See `settler_target_hysteresis`.
+        self.enable_settler_target_hysteresis();
         // And the last fifty turns are a tally, not a launch window. See
         // `score_horizon`.
         self.enable_score_horizon();
@@ -3989,6 +4048,9 @@ impl AdvancedAi {
         // And the recon it rebuilds must stop walking into barbarians. See
         // `recon_flight`.
         self.enable_recon_flight();
+        // And a settler target dropped for danger stays dropped for a while.
+        // See `settler_target_hysteresis`.
+        self.enable_settler_target_hysteresis();
         // And the last fifty turns are a tally, not a launch window. See
         // `score_horizon`.
         self.enable_score_horizon();
@@ -4296,6 +4358,15 @@ impl AdvancedAi {
         self.tally_culture = false;
     }
 
+    /// Bank an envoy the plan has no positive use for. See `bank_envoys`.
+    pub fn enable_bank_envoys(&mut self) {
+        self.bank_envoys = true;
+    }
+
+    pub fn disable_bank_envoys(&mut self) {
+        self.bank_envoys = false;
+    }
+
     /// Do not found a colony beyond the empire's Loyalty reach on fogged
     /// ground. See `frontier_loyalty`.
     pub fn enable_frontier_loyalty(&mut self) {
@@ -4304,6 +4375,16 @@ impl AdvancedAi {
 
     pub fn disable_frontier_loyalty(&mut self) {
         self.frontier_loyalty = false;
+    }
+
+    /// Keep a settler target dropped for danger out of the next picks for a
+    /// few turns. See `settler_target_hysteresis`.
+    pub fn enable_settler_target_hysteresis(&mut self) {
+        self.settler_target_hysteresis = true;
+    }
+
+    pub fn disable_settler_target_hysteresis(&mut self) {
+        self.settler_target_hysteresis = false;
     }
 
     /// Let a recon unit step out of a visible hostile's reach before it
@@ -12183,6 +12264,18 @@ impl AdvancedAi {
                 .max()
                 .map(|(score, _, _, id)| (id, score));
             let Some((target, score)) = target else { break };
+            // See `bank_envoys`: nothing on the board is worth an envoy, so the
+            // held ones wait for the next city-state met.
+            if self.bank_envoys && score < 0 {
+                think!(self.journal(), Diplomacy, Decision,
+                       "Banking {} envoy{}", g.players[pid].envoys_free,
+                       if g.players[pid].envoys_free == 1 { "" } else { "s" };
+                       "the best placement left is {} at {score}: every met city-state is \
+                        either securely ours past its paying tier or contested beyond its \
+                        worth, so the next city-state met gets them",
+                       g.players[target].civ);
+                break;
+            }
             if self.journal().wants(crate::reasoning::Level::Decision) {
                 let mine = g.envoys_at(pid, target) + 1;
                 let suzerain = g
@@ -19699,6 +19792,30 @@ impl AdvancedAi {
         // and the default advanced controller retain their established
         // ladders.
         let forecast_loyalty = self.base.loyalty_rate_alarm;
+        // See `settler_target_hysteresis`: a cached site the validation just
+        // dropped stays out of the next picks, so a threat flickering at the
+        // edge of sight cannot flip the settler between two sites every frame.
+        if self.settler_target_hysteresis && valid_target.is_none() {
+            if let Some(dropped) = self.settler_targets.get(&uid).copied() {
+                if Some(dropped) != avoid {
+                    self.settler_avoid.insert(
+                        uid,
+                        (dropped, g.turn + g.standard_duration(SETTLER_TARGET_HYSTERESIS_TURNS)),
+                    );
+                    think!(self.journal(), Expansion, Detail,
+                           "Settler sets {dropped:?} aside";
+                           "the cached site stopped passing its checks; it stays out of the next \
+                            picks for {SETTLER_TARGET_HYSTERESIS_TURNS} standard turns so a threat \
+                            flickering at the edge of sight cannot flip the march every frame";
+                           dropped);
+                }
+            }
+        }
+        let avoid = if self.settler_target_hysteresis {
+            self.settler_avoid.get(&uid).map(|(position, _)| *position)
+        } else {
+            avoid
+        };
         let target = valid_target.or_else(|| {
             // Ask the forecast before the walk. The mirror can only reject a
             // doomed site after the Settler stands on it, which previously
@@ -39124,6 +39241,82 @@ mod tests {
         );
     }
 
+    /// ★★★★ See `bank_envoys`: the stock pass takes the best-scored placement
+    /// even when that score is negative, so a seat that has already secured
+    /// every met city-state past its paying tier keeps pouring envoys into
+    /// them; the live seat banks them for the next city-state met, and still
+    /// spends on one that is worth it.
+    #[test]
+    fn the_live_seat_banks_an_envoy_it_has_no_use_for() {
+        let board = || {
+            let mut g = Game::new(2, 24, 16, 4_242, 80, 2);
+            let minors: Vec<usize> = g
+                .players
+                .iter()
+                .filter(|player| player.is_minor && !player.is_barbarian)
+                .map(|player| player.id)
+                .collect();
+            assert!(minors.len() >= 2, "the fixture needs two city-states");
+            for minor in &minors {
+                g.record_contact(0, *minor);
+            }
+            (g, minors)
+        };
+        let secure_everything = |g: &mut Game, minors: &[usize]| {
+            // Suzerain of every met city-state, past the six-envoy tier, with
+            // no rival within reach: nothing left on the board pays.
+            g.players[0].envoys = minors.iter().map(|minor| (*minor, 8)).collect();
+            g.players[0].envoys_free = 3;
+        };
+
+        // Bridge-only: neither the stock nor the frozen controller carries
+        // either of the two bridge flags this PR added.
+        for controller in [AdvancedAi::new(), AdvancedAi::legacy()] {
+            assert!(!controller.bank_envoys);
+            assert!(!controller.base.explore_commit);
+        }
+
+        let (mut stock_game, minors) = board();
+        secure_everything(&mut stock_game, &minors);
+        AdvancedAi::new().advanced_envoys(&mut stock_game, 0, GrandStrategy::Science, None);
+        assert_eq!(
+            stock_game.players[0].envoys_free, 0,
+            "the stock pass spends every held envoy, worth it or not"
+        );
+
+        let (mut live_game, minors) = board();
+        secure_everything(&mut live_game, &minors);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(!live.bank_envoys, "the composite does not carry it; the bridge sets it");
+        live.enable_bank_envoys();
+        live.advanced_envoys(&mut live_game, 0, GrandStrategy::Science, None);
+        assert_eq!(
+            live_game.players[0].envoys_free, 3,
+            "with nothing on the board worth an envoy, the live seat banks all three"
+        );
+        assert!(
+            live_game.players[0].envoys.iter().all(|(_, count)| *count == 8),
+            "and none of the secure city-states took one: {:?}",
+            live_game.players[0].envoys
+        );
+
+        // A fresh city-state is worth opening, and the banked envoys go there.
+        let (mut fresh_game, minors) = board();
+        fresh_game.players[0].envoys = vec![(minors[0], 8)];
+        fresh_game.players[0].envoys_free = 3;
+        let mut live = AdvancedAi::new();
+        live.enable_bank_envoys();
+        live.advanced_envoys(&mut fresh_game, 0, GrandStrategy::Science, None);
+        assert_eq!(
+            fresh_game.envoys_at(0, minors[1]),
+            3,
+            "the unopened city-state takes the bank: {:?}",
+            fresh_game.players[0].envoys
+        );
+        assert_eq!(fresh_game.players[0].envoys_free, 0);
+    }
+
     #[test]
     fn diplomatic_strategy_concentrates_envoys_into_a_suzerainty() {
         let mut g = Game::new(2, 24, 16, 77, 80, 2);
@@ -39784,6 +39977,76 @@ mod tests {
         // Defaults: off for the stock and frozen controllers.
         assert!(!AdvancedAi::new().recon_flight);
         assert!(!AdvancedAi::legacy().recon_flight);
+    }
+
+    /// ★★★★ One settler, two sites, twenty-nine turns (civvis-20260816T123936Z,
+    /// settler 4849688: the journal alternated between (42,22) and (41,24)
+    /// t138–t146 as a threat flickered at the edge of sight). See
+    /// `settler_target_hysteresis`. When the cached target stops passing its
+    /// checks the live seat sets it aside for a few turns and commits to the
+    /// runner-up; the withheld arm walks straight back to the first site the
+    /// frame it is valid again.
+    #[test]
+    fn a_settler_target_dropped_for_danger_is_set_aside_not_re_picked_next_frame() {
+        let (game0, source, _) = stacked_escort_fixture();
+        // The site the picker itself prefers, so the withheld arm's return to
+        // it is the picker's own choice and not a planted cache.
+        let first = {
+            let mut probe = game0.clone();
+            let settler = probe.spawn_test_unit("settler", 0, source);
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_frontier_loyalty();
+            ai.best_settler_target(&probe, 0, settler, 8, None)
+                .map(|(pos, _)| pos)
+                .expect("the fixture offers a settle site")
+        };
+        let run = |hysteresis: bool| -> (Option<Pos>, Option<Pos>, Option<Pos>) {
+            let mut game = game0.clone();
+            let settler = game.spawn_test_unit("settler", 0, source);
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            // Isolate the hysteresis: the fogged-frontier rule would retire a
+            // far site on this small board for its own reason.
+            ai.disable_frontier_loyalty();
+            if !hysteresis {
+                ai.disable_settler_target_hysteresis();
+            }
+            ai.settler_targets.insert(settler, first);
+            // Frame 1: the cached site stops passing its checks (blocked by
+            // the host, the same drop a risk flicker produces).
+            game.blocked_city_sites.insert(first);
+            game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+            let _ = ai.advanced_settler_step(&mut game, 0, settler);
+            let after_drop = ai.settler_targets.get(&settler).copied();
+            let avoided = ai.settler_avoid.get(&settler).map(|(pos, _)| *pos);
+            // Frame 2: the site is valid again — the flicker.
+            game.blocked_city_sites.remove(&first);
+            game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+            ai.settler_targets.remove(&settler);
+            let _ = ai.advanced_settler_step(&mut game, 0, settler);
+            let re_pick = ai.settler_targets.get(&settler).copied();
+            (after_drop, avoided, re_pick)
+        };
+
+        let (_after_drop, avoided, re_pick) = run(true);
+        assert_eq!(avoided, Some(first), "the dropped site is set aside");
+        assert_ne!(
+            re_pick,
+            Some(first),
+            "the frame it is valid again, the live seat does not walk back to it"
+        );
+
+        let (_, avoided_withheld, re_pick_withheld) = run(false);
+        assert_eq!(avoided_withheld, None, "the withheld arm sets nothing aside");
+        assert_eq!(
+            re_pick_withheld,
+            Some(first),
+            "and re-picks the first site the frame it is valid again — the flicker"
+        );
+
+        assert!(!AdvancedAi::new().settler_target_hysteresis);
+        assert!(!AdvancedAi::legacy().settler_target_hysteresis);
     }
 
     #[test]

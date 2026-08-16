@@ -616,6 +616,66 @@ population alone — `Plot:GetDistrictType` on every revealed plot would carry t
 districts at least; a rival's techs and civics cross as counts, not names;
 city-state envoy totals from all players (only ours cross today).
 
+### Faith at the empire level: unused Great Person points and a religion's own beliefs (2026-08-16, run `civvis-20260816T123936Z`)
+
+Rome's Faith per turn diverged from the host by more than half, and the
+city-by-city instrument could not see most of it because most of it is not in
+any city. From t231 the host banked 100–113 Faith a turn while every city
+together made 49 and the model read 33; Rome itself read 35 in the host and 23
+in the model. Three causes:
+
+- **Civilization VI pays the Great Person points of a class the empire can no
+  longer earn out again as Faith, one for one.** The game core's
+  `GetFaithFromUnusedGreatPeoplePoints` (`Player::GreatPeoplePoints`, visible in
+  the shipped `.map` symbols); the top-bar tooltip files it under "from Other".
+  A class is exhausted once the last named individual anywhere is claimed —
+  the mod now says so outright (`great_person_exhausted`, a list so that
+  "nobody exhausted" and "everybody exhausted" both encode; before it, a class
+  with points and no `great_person_costs` entry was the same answer except
+  on the turn every class was gone) — and the Prophet the moment the empire holds a
+  religion, has one pending, or the map's religions are all founded. Measured
+  across seven live games as the balance's next-turn change minus the city
+  sum: after the last Great Scientist was claimed the empire gained the Campus
+  rate to the point (ratio 0.97–1.10, 19–32 turns per game), a Holy Site's
+  Prophet points arrived as Faith from the turn we founded a religion (with
+  other Prophets still on offer) or the map ran out of them, and by t239 the
+  five exhausted classes paid 60 a turn. `Game::great_person_class_earnable`,
+  `unused_great_person_faith` and `player_yield_extras` carry it; the mirror
+  reads the host's roster into `live_great_person_exhausted`; the HUD, the
+  `--dump-mirror` JSON and the player-level correction all add the extras.
+- **A religion's follower beliefs belong to the city that follows it, whoever
+  founded it, and the mirror could not say which religion held which belief.**
+  Rome and Ostia followed a Catholicism founded elsewhere; Divine Inspiration
+  (`MODIFIER_SINGLE_CITY_ADJUST_WONDER_YIELD_CHANGE`, +4 Faith per Wonder in a
+  following city) was neither in `beliefs.json` nor attributable from the
+  union `taken_religion_beliefs`. The mod now exports each religion with its
+  founder and beliefs (`religions`), the mirror seats them on the founder's
+  seat (rivals hold seats in host order), and Divine Inspiration, Reliquaries
+  (`MODIFIER_SINGLE_CITY_ADJUST_GREATWORK_YIELD` ScalingFactor 300 on Relics),
+  Lay Ministry (`BELIEF_YIELD_PER_DISTRICT`: +1 Faith per Holy Site, +1
+  Culture per Theater Square in following cities, to the founder) and Sacred
+  Places (`BELIEF_YIELD_PER_CITY_WITH_WONDER`: +2 of each yield per following
+  city with a Wonder) are modelled from the database's own modifier rows.
+- **The export carried no host Faith rate to be corrected to.** `science` and
+  `culture` were per-turn rates from the host; `faith` was a balance.
+  `faith_per_turn` (`GetFaithYield`, the top bar's figure) and `faith_sources`
+  (`GetFaithYieldToolTip`) now join the player-level correction,
+  `great_person_points_per_turn` lets the model's per-class rate be judged
+  against the host's, `civ6_mirror_check.py` guards the board's faith/turn,
+  and `civ6_yield_drift.py` gains a PLAYER block — reading the host income
+  from `faith_per_turn`, or on an older export from the balance's next-turn
+  change where no purchase intervened.
+
+Replayed with the new decider on the recorded run: Rome 35/35, Ostia
+12.6/12.6, the empire 114.6 against a host income of 113 at t238 (the model's
+Scientist rate is 31 to the host's 30 and its Writer 17 to 16 — the per-class
+export will name that next), and the city-level Faith residual over t100–239
+falls from 58.8 persistent + 94.8 transient to 0. Two smaller readings from
+the same instrument stand open: the model's Great Person rates against the
+host's once `great_person_points_per_turn` is in the export, and whether
+Anarchy suspends the payout (the whole Faith line reads "No Faith due to
+anarchy"; the engine follows that).
+
 ## What exactness can mean
 
 Civilization VI's rules live in a closed DLL. Bit-identical random streams are

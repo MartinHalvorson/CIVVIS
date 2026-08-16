@@ -131,6 +131,22 @@ class MirrorCheckTest(unittest.TestCase):
         self.assertIn(
             "trade_capacity", civ6_mirror_check.public_fact_mismatches(state, board)[0]
         )
+        board["me"]["trade_capacity"] = 3
+
+        # Faith PER TURN is a rate like science and culture, and it is not the
+        # city sum: the host pays unrecruitable Great Person points as Faith.
+        # An older export has no key and a missing host answer is null; both
+        # are silence, not disagreement.
+        self.assertEqual(civ6_mirror_check.public_fact_mismatches(state, board), [])
+        state["faith_per_turn"] = None
+        self.assertEqual(civ6_mirror_check.public_fact_mismatches(state, board), [])
+        state["faith_per_turn"] = 114.6
+        self.assertIn(
+            "seat 0 faith/turn Civ6=114.6",
+            civ6_mirror_check.public_fact_mismatches(state, board)[0],
+        )
+        board["players"][0]["yields"]["faith"] = 114.6
+        self.assertEqual(civ6_mirror_check.public_fact_mismatches(state, board), [])
 
     def test_a_stronger_own_strength_model_is_not_a_bridge_disagreement(self) -> None:
         """`military_power` is max(observed, our own sum), so for our OWN seat it
