@@ -2544,6 +2544,25 @@ fn translate(
                 pos: None,
             })
         }
+        // ★★★★ THE LEVY, WHICH THE PLAN ASKED FOR 44 TIMES A GAME AND NEVER GOT.
+        // `levy_city_state_military` fires at war (and urgently under
+        // Conquest/Recovery) for the suzerained city-state whose visible army
+        // is the most strength per gold, and `LevyMilitary` was the single
+        // most-skipped action in the pre-#1765 tally — moot while the seat held
+        // no suzerainty, live now that it spends its envoys. A levied army is
+        // the one force that does not have to be built first, on a seat whose
+        // dominant loss mode is a tech-superior rival's siege. The mod pays
+        // Firaxis's own quote (`GetLevyMilitaryCost`) against the treasury and
+        // refuses on `CanLevyMilitary`, so a mirror-priced levy the host will
+        // not sell is a named refusal, not a phantom army.
+        Action::LevyMilitary { player } => {
+            host_minor_target(mirror_state, state, *player).map(|minor| Order {
+                kind: "levy",
+                subject: Some(minor),
+                verb: Some("LEVY_MILITARY".to_string()),
+                pos: None,
+            })
+        }
         _ => None,
     }
 }
@@ -5522,6 +5541,56 @@ mod tests {
         assert_eq!(sent.len(), 3, "every held envoy is spent on the planning board: {sent:?}");
         assert!(sent.iter().all(|host| *host == 9 || *host == 12), "{sent:?}");
         assert_eq!(planned.players[0].envoys_free, 0);
+    }
+
+    /// A suzerain at war levies the city-state's army through the same seat
+    /// resolution as the envoy; a major seat is not a city-state.
+    #[test]
+    fn a_levy_names_the_firaxis_city_state() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 120,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 120,
+            minors: vec![StateMinor {
+                player: 11,
+                civ: "CIVILIZATION_KABUL".to_string(),
+                envoys: 4,
+                suzerain: 0,
+                cities: vec![StateCity {
+                    id: 65_536,
+                    name: "Kabul".to_string(),
+                    x: 8,
+                    y: 8,
+                    pop: 5,
+                    capital: true,
+                    ..StateCity::default()
+                }],
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
+        let kabul = mirror
+            .game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian && !player.is_free_city)
+            .expect("Kabul occupies the mirrored city-state seat")
+            .id;
+        assert_eq!(mirror.game.suzerain_of(kabul), Some(0));
+        let levy = translate(&Action::LevyMilitary { player: kabul }, &mirror, &state)
+            .expect("a levy of a suzerained city-state crosses");
+        assert_eq!(levy.kind, "levy");
+        assert_eq!(levy.subject, Some(11));
+        assert_eq!(levy.verb.as_deref(), Some("LEVY_MILITARY"));
+        assert!(translate(&Action::LevyMilitary { player: 1 }, &mirror, &state).is_none());
     }
 
     /// The first turn the lane opens on a seat holding fifty envoys must not
