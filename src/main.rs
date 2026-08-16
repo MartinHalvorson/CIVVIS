@@ -1211,7 +1211,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The adjacent-guard march is behind `stacked_escort`/`settlement_safety`,
 /// which `AdvancedAi::legacy()` leaves off. Compatibility re-pin; the Elo
 /// protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4abc_388a_4532_2365;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x11ae_cdbd_98b7_8d2a;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
