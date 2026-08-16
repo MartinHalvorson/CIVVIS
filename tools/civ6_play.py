@@ -2590,6 +2590,17 @@ def _play(args: argparse.Namespace) -> int:
         "outcome": outcome or None,
         "game_stopped": game_stopped,
     }
+    # Bridge health rides in the summary: how much of what CIVVIS said the
+    # engine actually did. Summed from this run's own turn events so the
+    # number describes the run being recorded, not a tool's later reading of
+    # it; `civ6_ladder.py check --min-applied` floors it on the ledger.
+    try:
+        import civ6_ladder
+        totals = civ6_ladder.orders_totals(run_dir / "events.jsonl")
+        if totals:
+            summary["orders_seen"], summary["orders_applied"] = totals
+    except Exception as exc:  # noqa: BLE001 — health must not fail the run
+        print(f"bridge-health totals unavailable: {exc}", file=sys.stderr)
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
     print(json.dumps(summary, indent=2, sort_keys=True))
 

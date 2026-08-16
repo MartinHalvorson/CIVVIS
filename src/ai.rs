@@ -69,6 +69,23 @@ const EXPLORE_STUCK_TURNS: u32 = 2;
 /// How long a written-off exploration goal stays retired. See
 /// `BasicAi::explore_dead_targets`.
 const EXPLORE_DEAD_TARGET_TURNS: u32 = 40;
+/// How many turns a committed exploration goal is held before it is chosen
+/// afresh, if it is not reached, revealed or written off first. See
+/// `BasicAi::explore_commit`.
+const EXPLORE_COMMIT_TURNS: u32 = 20;
+/// How many rings past the first fogged one a committed explorer looks when it
+/// picks a goal — twice the stock lookahead, because a goal within a scout's
+/// own sight of the fringe is revealed by the walk toward it and re-chosen
+/// next turn, which is the pacing this replaces. See `BasicAi::explore_commit`.
+const EXPLORE_COMMIT_LOOKAHEAD: i32 = 8;
+/// Another explorer's committed goal keeps this one out of the ground around
+/// it, so two scouts fan out instead of shaving the same fringe. See
+/// `BasicAi::explore_commit`.
+const EXPLORE_COMMIT_SEPARATION: i32 = 4;
+/// A visible hostile this close to a goal takes the goal off the table — a
+/// scout that has just slipped out of a barbarian's reach must not be sent
+/// straight back at the same fog behind it. See `BasicAi::explore_commit`.
+const EXPLORE_COMMIT_THREAT_RADIUS: i32 = 3;
 
 /// A sighting that makes the next tile a bad commitment is useful for longer
 /// than the individual movement choice that discovered it. Keep it just long
@@ -1994,6 +2011,52 @@ pub struct BasicAi {
     /// Per unit: exploration goals proved unreachable, with the turn each
     /// expires. See `explore_dead_targets`.
     explore_dead: RefCell<HashMap<u32, HashMap<Pos, u32>>>,
+    /// Hold an exploration goal until it is reached, revealed, written off or
+    /// `EXPLORE_COMMIT_TURNS` old; choose it from twice the fog lookahead,
+    /// farthest from home among the most revealing; keep out of the ground
+    /// around another explorer's committed goal.
+    ///
+    /// ★★★★ THE LONE SCOUT PACED A TEN-BY-TEN BOX FOR FORTY TURNS. Live run
+    /// civvis-20260816T123936Z: the only Scout stood inside (41–50, 25–36) from
+    /// t34 to t75 — (46,27)→(45,27)→(44,26)→(45,26)→(43,25)→(43,25)→(45,26)→
+    /// (46,27) is one week of it — moving 1.21 tiles a turn over its life, and
+    /// the empire had revealed 197 plots at t50 and 391 at t100 of 3,404. It
+    /// met its second city-state at t99 and its first major at t90; the twelve
+    /// Settler games of 2026-08-15/16 met 0–3 city-states by t50 and 2–5 by
+    /// t100 of the nine on the map. Every first meeting is a free envoy, every
+    /// tribal village a free reward, and every unmet major a war we cannot see
+    /// coming.
+    ///
+    /// The stock goal is re-derived every turn from the first fogged ring plus
+    /// four, ties to the nearest — so a goal two tiles into the fog is inside
+    /// the scout's own sight, revealed by the walk toward it, and replaced by
+    /// whatever fog is nearest from the new tile, which is as often behind as
+    /// ahead; and a scout that `recon_flight` has just stepped out of a
+    /// barbarian's reach is aimed straight back at the same fog behind it,
+    /// which is the other half of the box (11 flight steps in that run's t36–47).
+    /// With this on, a chosen goal is held (`explore_goal`) until it is
+    /// reached, revealed, written off (`explore_dead_targets`), within
+    /// `EXPLORE_COMMIT_THREAT_RADIUS` of a visible hostile, or twenty turns
+    /// old; a fresh one is picked from eight rings past the first fogged one,
+    /// the most revealing first and, among those, the one FARTHEST FROM HOME —
+    /// so the walk sweeps outward and along the frontier instead of hugging
+    /// it; ground around a visible hostile is not a goal; and ground within
+    /// four tiles of another own explorer's held goal is left to that explorer.
+    ///
+    /// Measured (`explore_commit_sweeps_more_ground`, 16 six-seat Continents
+    /// boards at the live size, seat 0 the bridge controller, everyone else
+    /// stock): revealed plots at t30/t50/t70 **208/333/474 against 181/284/384**
+    /// (+15%/+17%/+23%), city-states met 1.62/2.56/3.31 against 1.69/2.25/3.06,
+    /// majors met level. Commitment alone measured level with stock
+    /// (178/277/387) and commitment + depth + outward without the threat rule
+    /// 180/289/419: the box is the flee-and-return loop as much as the churn.
+    /// Set only through `AdvancedAi::enable_explore_commit` (the Civilization
+    /// VI bridge); the native constructors and the frozen anchor keep the
+    /// stock rule.
+    pub(crate) explore_commit: bool,
+    /// Per unit: the committed exploration goal and the turn it was chosen.
+    /// See `explore_commit`.
+    explore_goal: RefCell<HashMap<u32, (Pos, u32)>>,
     /// The same round trip spread over two turns instead of one, which nothing
     /// inside a single turn's reasoning can see. Each unit's recent
     /// whereabouts are remembered here, and a unit found circling is priced
@@ -3178,6 +3241,8 @@ impl BasicAi {
             explore_dead_targets: false,
             explore_last: RefCell::new(HashMap::new()),
             explore_dead: RefCell::new(HashMap::new()),
+            explore_commit: false,
+            explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
             housing_buildings: false,
@@ -3210,6 +3275,13 @@ impl BasicAi {
     /// through `AdvancedAi::enable_explore_dead_targets`.
     pub fn enable_explore_dead_targets(&mut self) {
         self.explore_dead_targets = true;
+    }
+
+    /// Hold an exploration goal and sweep outward from home (see
+    /// `explore_commit`). The Civilization VI bridge sets this through
+    /// `AdvancedAi::enable_explore_commit`.
+    pub fn enable_explore_commit(&mut self) {
+        self.explore_commit = true;
     }
 
     /// Buy one ship for an empire that has none while unexplored water lies
@@ -3258,6 +3330,8 @@ impl BasicAi {
             explore_dead_targets: false,
             explore_last: RefCell::new(HashMap::new()),
             explore_dead: RefCell::new(HashMap::new()),
+            explore_commit: false,
+            explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
             housing_buildings: false,
@@ -3556,6 +3630,7 @@ impl BasicAi {
         self.unit_motion.clear();
         self.explore_last.get_mut().clear();
         self.explore_dead.get_mut().clear();
+        self.explore_goal.get_mut().clear();
     }
 
     /// Carry unit-keyed memory across a board that was rebuilt underneath it.
@@ -3616,6 +3691,11 @@ impl BasicAi {
             .collect();
         let explore_dead = std::mem::take(self.explore_dead.get_mut());
         *self.explore_dead.get_mut() = explore_dead
+            .into_iter()
+            .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
+            .collect();
+        let explore_goal = std::mem::take(self.explore_goal.get_mut());
+        *self.explore_goal.get_mut() = explore_goal
             .into_iter()
             .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
             .collect();
@@ -9958,6 +10038,78 @@ impl BasicAi {
             HashSet::new()
         };
         let origin = g.units[&uid].pos;
+        // Visible hostiles at war with us: ground around them is not a goal.
+        // Live vision only — a threat the seat cannot see does not steer it.
+        let threats: Vec<Pos> = if self.explore_commit && !g.players[pid].is_barbarian {
+            let visible = g.player_vision_now(pid);
+            g.units
+                .values()
+                .filter(|unit| {
+                    unit.owner != pid
+                        && g.is_at_war(pid, unit.owner)
+                        && g.rules.units[unit.kind].class == "military"
+                        && g.sees(&visible, unit.pos)
+                })
+                .map(|unit| unit.pos)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let threatened =
+            |pos: Pos| threats.iter().any(|t| g.wdist(*t, pos) <= EXPLORE_COMMIT_THREAT_RADIUS);
+        // A held goal is kept while it is still worth walking to; see
+        // `explore_commit`. Reached, revealed, written off, threatened, or
+        // aged out, it is dropped here and a fresh one chosen below.
+        if self.explore_commit {
+            let held = self.explore_goal.borrow().get(&uid).copied();
+            if let Some((goal, since)) = held {
+                let wanted = g.turn.saturating_sub(since) <= EXPLORE_COMMIT_TURNS
+                    && goal != origin
+                    && !g.players[pid].explored.contains(&goal)
+                    && !dead.contains(&goal)
+                    && !threatened(goal)
+                    && g.unit_can_traverse(uid, goal)
+                    && (!dry_only
+                        || g.map.get(goal).is_some_and(|tile| !g.rules.is_water(tile)));
+                if wanted {
+                    return Some(goal);
+                }
+                self.explore_goal.borrow_mut().remove(&uid);
+            }
+        }
+        // Ground another own explorer is already committed to. See
+        // `explore_commit`.
+        let reserved: Vec<Pos> = if self.explore_commit {
+            self.explore_goal
+                .borrow()
+                .iter()
+                .filter(|(other, (_, since))| {
+                    **other != uid
+                        && g.turn.saturating_sub(*since) <= EXPLORE_COMMIT_TURNS
+                        && g.units.get(other).is_some_and(|unit| unit.owner == pid)
+                })
+                .map(|(_, (goal, _))| *goal)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let lookahead = if self.explore_commit {
+            EXPLORE_COMMIT_LOOKAHEAD
+        } else {
+            EXPLORATION_FRONTIER_LOOKAHEAD
+        };
+        // Home is the capital (the palace), or the oldest city, or — before
+        // the first city — where the unit stands, so the first goal is simply
+        // the deepest fog.
+        let home = if self.explore_commit {
+            g.player_city_ids(pid)
+                .into_iter()
+                .filter_map(|cid| g.cities.get(&cid))
+                .min_by_key(|city| (std::cmp::Reverse(g.city_has_palace(city)), city.id))
+                .map(|city| city.pos)
+        } else {
+            None
+        };
         let mut candidates = Vec::new();
         let mut first_candidate_ring = None;
         let mut radius = 1;
@@ -9981,6 +10133,10 @@ impl BasicAi {
                         && g.unit_can_traverse(uid, *pos)
                         && (!dry_only
                             || g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile)))
+                        && !reserved
+                            .iter()
+                            .any(|held| g.wdist(*pos, *held) <= EXPLORE_COMMIT_SEPARATION)
+                        && !threatened(*pos)
                 })
                 .collect();
             if !ring_candidates.is_empty() {
@@ -9991,12 +10147,24 @@ impl BasicAi {
                 radius += 1;
                 continue;
             };
-            if !self.tactical_strategy || radius >= first + EXPLORATION_FRONTIER_LOOKAHEAD {
+            if !self.tactical_strategy || radius >= first + lookahead {
                 break;
             }
             radius += 1;
         }
-        if self.tactical_strategy {
+        let chosen = if self.explore_commit {
+            // The most revealing goal, and among those the one farthest from
+            // home: the walk sweeps outward and along the frontier instead of
+            // hugging the fringe nearest the unit. See `explore_commit`.
+            candidates.into_iter().max_by_key(|target| {
+                (
+                    Self::frontier_reveal_value(g, pid, uid, *target),
+                    home.map_or(0, |home| g.wdist(home, *target)),
+                    std::cmp::Reverse(g.wdist(origin, *target)),
+                    std::cmp::Reverse(*target),
+                )
+            })
+        } else if self.tactical_strategy {
             candidates.into_iter().max_by_key(|target| {
                 (
                     Self::frontier_reveal_value(g, pid, uid, *target),
@@ -10008,7 +10176,13 @@ impl BasicAi {
             candidates
                 .into_iter()
                 .min_by_key(|target| (g.wdist(origin, *target), *target))
+        };
+        if self.explore_commit {
+            if let Some(goal) = chosen {
+                self.explore_goal.borrow_mut().insert(uid, (goal, g.turn));
+            }
         }
+        chosen
     }
 
     fn explore_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
@@ -12880,6 +13054,98 @@ mod tests {
         assert!(plain.explore_dead.borrow().is_empty());
     }
 
+    /// ★★★★ See `explore_commit`: a goal is held across turns until it is
+    /// revealed or aged out, a second explorer keeps out of the first one's
+    /// ground, the pick reaches deeper than the stock rule and prefers the
+    /// ground farthest from home, and the plain controllers keep re-deriving
+    /// theirs every turn.
+    #[test]
+    fn a_committed_explorer_holds_its_goal_and_sweeps_outward() {
+        let mut game = Game::new_full(
+            1, 24, 16, crate::rng::fixture_seed("COMMITGOAL", 91_781), 250, 0, false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let scout = game.spawn_unit("scout", 0, home);
+        game.turn = 10;
+
+        // The plain controllers hold nothing.
+        let plain = BasicAi::new();
+        assert!(!plain.explore_commit);
+        let _ = plain.exploration_goal(&game, 0, scout, false);
+        assert!(plain.explore_goal.borrow().is_empty());
+
+        let mut ai = BasicAi::new();
+        ai.enable_explore_commit();
+        let goal = ai
+            .exploration_goal(&game, 0, scout, false)
+            .expect("a fresh map has unexplored ground to aim at");
+        assert_eq!(ai.explore_goal.borrow().get(&scout).copied(), Some((goal, 10)));
+        // The committed goal lies beyond the stock lookahead's reach: at least
+        // as far as the stock rule's own pick, and never nearer to home than it.
+        let stock = plain.exploration_goal(&game, 0, scout, false).unwrap();
+        assert!(
+            game.wdist(home, goal) >= game.wdist(home, stock),
+            "the committed pick is the farther-from-home one: commit {goal:?} at {} vs stock {stock:?} at {}",
+            game.wdist(home, goal), game.wdist(home, stock)
+        );
+
+        // Held on the following turns, whatever the nearest fringe now is.
+        game.turn = 11;
+        assert_eq!(ai.exploration_goal(&game, 0, scout, false), Some(goal), "held on turn 11");
+        game.turn = 10 + EXPLORE_COMMIT_TURNS;
+        assert_eq!(ai.exploration_goal(&game, 0, scout, false), Some(goal), "held to its age limit");
+        // Aged out: re-chosen (and re-stamped) rather than kept forever.
+        game.turn = 11 + EXPLORE_COMMIT_TURNS;
+        let again = ai.exploration_goal(&game, 0, scout, false).expect("still ground to aim at");
+        assert_eq!(ai.explore_goal.borrow().get(&scout).map(|(_, since)| *since), Some(game.turn));
+        // Revealed: dropped and re-chosen.
+        game.players[0].explored.insert(again);
+        let after = ai.exploration_goal(&game, 0, scout, false).expect("still ground to aim at");
+        assert_ne!(after, again, "a revealed goal is not held");
+
+        // A second explorer keeps out of the first one's ground.
+        let second = game.spawn_unit("scout", 0, home);
+        let other = ai
+            .exploration_goal(&game, 0, second, false)
+            .expect("the second scout has ground of its own");
+        assert!(
+            game.wdist(other, after) > EXPLORE_COMMIT_SEPARATION,
+            "the second scout's goal {other:?} lies clear of the first's {after:?}"
+        );
+
+        // A dead board (`explore_dead_targets`) drops the held goal too.
+        let mut bridge = BasicAi::new();
+        bridge.enable_explore_commit();
+        bridge.enable_explore_dead_targets();
+        game.turn = 40;
+        let held = bridge.exploration_goal(&game, 0, scout, false).unwrap();
+        bridge
+            .explore_dead
+            .borrow_mut()
+            .entry(scout)
+            .or_default()
+            .insert(held, game.turn + EXPLORE_DEAD_TARGET_TURNS);
+        let replaced = bridge.exploration_goal(&game, 0, scout, false).unwrap();
+        assert_ne!(replaced, held, "a written-off goal is not held");
+
+        // And the memory rides a rebuilt board like the other unit-keyed maps.
+        let mut carried = BasicAi::new();
+        carried.enable_explore_commit();
+        game.turn = 50;
+        let before = carried.exploration_goal(&game, 0, scout, false).unwrap();
+        let map = std::collections::BTreeMap::from([(scout, 999u32)]);
+        carried.remap_unit_memory(&map);
+        assert_eq!(carried.explore_goal.borrow().get(&999).map(|(goal, _)| *goal), Some(before));
+        carried.forget_unit_memory();
+        assert!(carried.explore_goal.borrow().is_empty());
+    }
+
     /// The frozen `advanced_v1` anchor and every native tournament game keep
     /// the historical gate: without the treatment a parked settler is still
     /// "in flight", so their recorded ladders stay comparable.
@@ -14340,6 +14606,97 @@ mod tests {
     /// arm is missing. See `recon_is_the_missing_arm`: this is the state live
     /// run `civvis-20260808T142724Z` sat in for 150 turns while its army grew
     /// to 22 units and 77% of the map stayed dark.
+    /// The measurement behind `BasicAi::explore_commit`, kept runnable:
+    /// `CIVVIS_EXPLORE_AB_SEEDS=16 cargo test --profile ci --lib explore_commit_sweeps_more_ground -- --ignored --nocapture`.
+    /// Six-seat Continents boards at the live seat's size, seat 0 the deployed
+    /// bridge controller with and without the treatment, everyone else stock;
+    /// prints revealed plots and contacts at t30/t50/t70 per arm. Ignored
+    /// because it plays whole early games (~2 min per 16 seeds); the assertion
+    /// is the mean, so a single map cannot pass or fail it. 2026-08-16, 16
+    /// seeds: stock 181/284/384, treated 208/333/474 revealed; city-states met
+    /// 1.69/2.25/3.06 against 1.62/2.56/3.31.
+    #[test]
+    #[ignore]
+    fn explore_commit_sweeps_more_ground() {
+        let arms = ["stock-bridge", "explore-commit"];
+        let count: u64 = std::env::var("CIVVIS_EXPLORE_AB_SEEDS")
+            .ok()
+            .and_then(|n| n.parse().ok())
+            .unwrap_or(8);
+        let seeds: Vec<u64> = (1..=count).map(|n| 26_081_600 + n).collect();
+        let mut summary: Vec<(String, [f64; 3], [f64; 3], [f64; 3])> = Vec::new();
+        for (arm, commit) in arms.iter().zip([false, true]) {
+            let mut revealed = [0.0f64; 3];
+            let mut minors_met = [0.0f64; 3];
+            let mut majors_met = [0.0f64; 3];
+            for seed in &seeds {
+                let mut game = Game::new_with(crate::game::GameOptions {
+                    speed: "online".to_string(),
+                    map_script: crate::setup::MapScript::Continents,
+                    ..crate::game::GameOptions::new(6, 74, 46, *seed, 70, 9)
+                });
+                let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+                    .map(|seat| {
+                        let mut ai = AdvancedAi::new();
+                        if seat == 0 {
+                            ai.enable_live_bridge();
+                            if commit {
+                                ai.enable_explore_commit();
+                            }
+                        }
+                        ai
+                    })
+                    .collect();
+                game.set_fog_memory(false);
+                let mut marks = [30u32, 50, 70].into_iter().peekable();
+                while game.winner.is_none() && game.turn <= game.max_turns {
+                    let pid = game.current;
+                    ais[pid].take_turn(&mut game, pid);
+                    if game.winner.is_none() && game.current == pid {
+                        let _ = game.apply(pid, &Action::EndTurn);
+                    }
+                    if pid == game.players.len() - 1 {
+                        if let Some(mark) = marks.peek().copied() {
+                            if game.turn >= mark {
+                                let slot = [30u32, 50, 70].iter().position(|m| *m == mark).unwrap();
+                                revealed[slot] += game.players[0].explored.len() as f64;
+                                minors_met[slot] += game
+                                    .players
+                                    .iter()
+                                    .filter(|p| p.is_minor && !p.is_barbarian && game.has_met(0, p.id))
+                                    .count() as f64;
+                                majors_met[slot] += game
+                                    .players
+                                    .iter()
+                                    .filter(|p| !p.is_minor && p.id != 0 && game.has_met(0, p.id))
+                                    .count() as f64;
+                                marks.next();
+                            }
+                        }
+                    }
+                }
+            }
+            let n = seeds.len() as f64;
+            for slot in 0..3 {
+                revealed[slot] /= n;
+                minors_met[slot] /= n;
+                majors_met[slot] /= n;
+            }
+            eprintln!(
+                "{arm}: revealed t30/t50/t70 = {:.0}/{:.0}/{:.0}  city-states met = {:.2}/{:.2}/{:.2}  majors met = {:.2}/{:.2}/{:.2}",
+                revealed[0], revealed[1], revealed[2],
+                minors_met[0], minors_met[1], minors_met[2],
+                majors_met[0], majors_met[1], majors_met[2]
+            );
+            summary.push((arm.to_string(), revealed, minors_met, majors_met));
+        }
+        assert!(
+            summary[1].1[1] > summary[0].1[1],
+            "the committed sweep must reveal more ground by t50 on average: {:?}",
+            summary
+        );
+    }
+
     #[test]
     fn an_empire_with_no_eyes_and_ground_left_to_walk_is_missing_the_recon_arm() {
         let (g, ai) = blind_empire(4_411);
