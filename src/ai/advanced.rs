@@ -4248,6 +4248,8 @@ impl AdvancedAi {
 
     pub fn disable_era_paced_expansion(&mut self) {
         self.era_paced_expansion = false;
+    }
+
     /// Price a point of culture at the lane's price of a point of science.
     /// See `tally_culture`.
     pub fn enable_tally_culture(&mut self) {
