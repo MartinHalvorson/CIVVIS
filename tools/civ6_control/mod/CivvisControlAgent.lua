@@ -6873,6 +6873,61 @@ local function exportState(player, pid, turn)
 		envoys_free = try(function()
 			return player:GetInfluence():GetTokensToGive();
 		end, -1),
+		-- ★★★★ THE EMERGENCIES AND SCORED COMPETITIONS, WHICH DECIDE THE
+		-- DIPLOMATIC RACE AS MUCH AS THE VOTES DO. `wc_outcome` on
+		-- civvis-20260816T205104Z: the leader's +8 in one session (12→20,
+		-- victory at t202) was +2 from the victory resolution and the rest from
+		-- WORLD_FAIR (passed t162) and WORLD_GAMES (passed t182) resolving —
+		-- competitions the seat, the production and gold leader of that game,
+		-- never entered. Nothing said they were running. This is Firaxis's own
+		-- crisis table (`GetEmergencyInfoTable`, what the World Crisis popup
+		-- and tracker read): per emergency its type, target, turns left (<0 =
+		-- completed), whether it has begun/succeeded, every member's score and
+		-- tier, our own standing, the goals with their completion, and how
+		-- score is earned. Read-only; membership and the aid gold are the
+		-- agent's or CIVVIS's decision, made elsewhere.
+		emergencies = try(function()
+			local out = {};
+			local crises = Game.GetEmergencyManager():GetEmergencyInfoTable(pid);
+			for _, crisis in ipairs(crises or {}) do
+				local members, scores = {}, {};
+				local ourScore, ourTier, member = nil, nil, false;
+				for _, id in ipairs(crisis.MemberIDs or {}) do
+					local mid = tonumber(id) or -1;
+					members[#members + 1] = mid;
+					local score = tonumber((crisis.ScoresTables or {})[mid]) or 0;
+					local tier = tonumber((crisis.MemberTiers or {})[mid]);
+					scores[#scores + 1] = { player = mid, score = score, tier = tier };
+					if mid == pid then ourScore, ourTier, member = score, tier, true; end
+				end
+				local goals = {};
+				local goalTable = (tonumber(crisis.TargetID) == pid)
+					and crisis.TargetGoalsTable or crisis.GoalsTable;
+				for _, goal in ipairs(goalTable or {}) do
+					if type(goal) == "table" and goal.Name ~= nil and goal.Name ~= "" then
+						goals[#goals + 1] = { name = tostring(goal.Name), done = goal.Completed == true };
+					end
+				end
+				local sources = {};
+				for _, line in ipairs(crisis.ScoreSourcesTable or {}) do
+					sources[#sources + 1] = tostring(line);
+				end
+				out[#out + 1] = {
+					type = tostring(crisis.EmergencyType),
+					name = tostring(crisis.NameText or ""),
+					target = tonumber(crisis.TargetID) or -1,
+					target_city = tostring(crisis.TargetCityName or ""),
+					turns_left = tonumber(crisis.TurnsLeft) or -1,
+					begun = crisis.HasBegun == true,
+					success = crisis.bSuccess == true,
+					members = members, scores = scores,
+					ours = { member = member, target = tonumber(crisis.TargetID) == pid,
+					         score = ourScore, tier = ourTier },
+					goals = goals, score_sources = sources,
+				};
+			end
+			return out;
+		end, nil),
 	});
 end
 

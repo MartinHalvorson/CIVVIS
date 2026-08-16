@@ -230,9 +230,25 @@ impl JointTactics {
     /// Plan the engagement for `pid`, or return `None` when there is no
     /// multi-unit engagement to plan. A single attacker has no joint problem
     /// to solve and is left to the cheaper per-unit path.
+    #[cfg(test)]
     pub(crate) fn plan(&self, g: &Game, pid: usize, base: &BasicAi) -> Option<TacticalPlan> {
+        self.plan_excluding(g, pid, base, &BTreeSet::new())
+    }
+
+    /// [`JointTactics::plan`] with `excluded` units left out of the
+    /// engagement altogether — neither attackers nor withdrawers, and not
+    /// counted toward the two-portfolio threshold. The caller keeps its own
+    /// claim on them; see `AdvancedAi::settler_stack_discipline`, which keeps
+    /// a settler's bound guard on the settler.
+    pub(crate) fn plan_excluding(
+        &self,
+        g: &Game,
+        pid: usize,
+        base: &BasicAi,
+        excluded: &BTreeSet<u32>,
+    ) -> Option<TacticalPlan> {
         let w = &base.w;
-        let portfolios = self.portfolios(g, pid, base);
+        let portfolios = self.portfolios(g, pid, base, excluded);
         if portfolios.len() < 2 {
             return None;
         }
@@ -383,7 +399,13 @@ impl JointTactics {
 
     /// Build the candidate lines for every unit that can bring an attack to
     /// bear this turn, either from where it stands or after one step.
-    fn portfolios(&self, g: &Game, pid: usize, base: &BasicAi) -> Vec<Portfolio> {
+    fn portfolios(
+        &self,
+        g: &Game,
+        pid: usize,
+        base: &BasicAi,
+        excluded: &BTreeSet<u32>,
+    ) -> Vec<Portfolio> {
         let w = &base.w;
         // Every enemy attacker and its strike envelope, computed once for the
         // whole engagement. Withdrawal candidates are ranked against this the
@@ -402,12 +424,12 @@ impl JointTactics {
         let vacatable: BTreeSet<Pos> = g
             .player_unit_ids(pid)
             .iter()
-            .filter(|uid| Self::engagement_candidate(g, **uid))
+            .filter(|uid| !excluded.contains(uid) && Self::engagement_candidate(g, **uid))
             .map(|uid| g.units[uid].pos)
             .collect();
         let mut built: Vec<Portfolio> = Vec::new();
         for uid in g.player_unit_ids(pid) {
-            if !Self::engagement_candidate(g, uid) {
+            if excluded.contains(&uid) || !Self::engagement_candidate(g, uid) {
                 continue;
             }
             let unit = &g.units[&uid];
@@ -1379,6 +1401,59 @@ mod tests {
         );
     }
 
+    /// An excluded unit is left out of the engagement altogether: it neither
+    /// attacks nor withdraws, and it does not count toward the two-portfolio
+    /// threshold. See `AdvancedAi::settler_stack_discipline`, which keeps a
+    /// settler's bound guard out of the joint plan so the guard is not spent
+    /// one tile away from the civilian it shields.
+    #[test]
+    fn an_excluded_unit_takes_no_part_in_the_engagement() {
+        let (g, mine, _) = firing_line(8, 100);
+        let excluded: BTreeSet<u32> = [mine[0]].into_iter().collect();
+        assert!(
+            JointTactics::default()
+                .plan_excluding(&g, 0, &BasicAi::new(), &excluded)
+                .is_none(),
+            "one archer left is no joint problem"
+        );
+        let plan = JointTactics::default()
+            .plan(&g, 0, &BasicAi::new())
+            .expect("both archers are a joint problem when neither is excluded");
+        assert!(plan.resolved.contains(&mine[0]));
+        // Three of ours: exclude one and the other two still plan, without it.
+        let (mut g, mine, theirs) = firing_line(8, 100);
+        let extra_pos = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| {
+                g.wdist(*pos, g.units[&theirs[1]].pos) == 2
+                    && g.units_at(*pos).is_empty()
+                    && g.map.get(*pos).is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
+            })
+            .min()
+            .expect("open ground two tiles from the healthy warrior");
+        let extra = g.spawn_unit("archer", 0, extra_pos);
+        let excluded: BTreeSet<u32> = [mine[0]].into_iter().collect();
+        if let Some(plan) = JointTactics::default().plan_excluding(&g, 0, &BasicAi::new(), &excluded)
+        {
+            assert!(!plan.resolved.contains(&mine[0]), "the excluded archer is not resolved");
+            assert!(!plan.withdrawn.contains(&mine[0]), "nor withdrawn");
+            for action in &plan.actions {
+                let actor = match action {
+                    Action::Attack { unit, .. }
+                    | Action::Ranged { unit, .. }
+                    | Action::PriorityTarget { unit, .. }
+                    | Action::Move { unit, .. } => Some(*unit),
+                    _ => None,
+                };
+                assert_ne!(actor, Some(mine[0]), "the excluded archer issues no action: {action:?}");
+            }
+        }
+        let _ = extra;
+    }
+
     /// A searching agent that answers the same position differently on
     /// different runs cannot be measured — the repository's evaluators rely on
     /// the same game replaying bit-identically.
@@ -1455,7 +1530,7 @@ mod tests {
             ..JointTactics::default()
         };
         let portfolio = search
-            .portfolios(&g, 0, &base)
+            .portfolios(&g, 0, &base, &BTreeSet::new())
             .into_iter()
             .find(|portfolio| portfolio.unit == cavalry)
             .unwrap();
@@ -1515,7 +1590,7 @@ mod tests {
             .expect("the pocket has a rear tile");
         let follower = g.spawn_unit("warrior", 0, rear);
         let search = JointTactics::default();
-        let portfolios = search.portfolios(&g, 0, &BasicAi::new());
+        let portfolios = search.portfolios(&g, 0, &BasicAi::new(), &BTreeSet::new());
         let Some(portfolio) = portfolios.iter().find(|p| p.unit == follower) else {
             // The warrior may be out of contact on this map; the property
             // under test is only that occupied tiles are not filtered.
@@ -1583,7 +1658,7 @@ mod tests {
         assert!(!JointTactics::engagement_candidate(&g, embarked));
         assert!(
             JointTactics::default()
-                .portfolios(&g, 0, &BasicAi::new())
+                .portfolios(&g, 0, &BasicAi::new(), &BTreeSet::new())
                 .iter()
                 .all(|portfolio| portfolio.unit != embarked),
             "an embarked land unit leaked into the joint attack portfolio"

@@ -1938,6 +1938,34 @@ pub struct BasicAi {
     /// and the native repair bundle (a native camp seven tiles out raids the
     /// same way).
     camp_reach: bool,
+    /// In peacetime the whole field army answers home threats, and a camp
+    /// inside the camp reach ranks above raiders in the countryside.
+    ///
+    /// ★★★★ A CAMP SEVEN TILES FROM ROME STOOD FOR 130 TURNS WITH THE REACH
+    /// ON. Run civvis-20260816T200454Z: the camp at (1,43) was on the board
+    /// from t20 (#1786) and inside the nine-tile reach (#1789), the barbarian
+    /// seat was admitted as an enemy at home every turn, and still no unit
+    /// ever walked toward it — the second city came at t39, the third at t68,
+    /// three Settlers were carried off within sight of the capital, and the
+    /// game read 381 against 609 at t154. Two gates in
+    /// `home_defense_objective` did it. The recall budget is HALF the army
+    /// with the garrison charged against it: a three-unit peacetime army with
+    /// one unit holding the capital has a cap of ZERO responders, and five
+    /// units yield one. And the camp ranks below every raider inside the
+    /// six-tile ring — which, with the camp raising a new raider every few
+    /// turns, is always. The one responder there was chased raiders for a
+    /// hundred turns while the tap ran.
+    ///
+    /// The half share exists so an empire at war does not strip its
+    /// offensive to chase raiders. In peacetime — the enemy list holds only
+    /// the barbarian seat — there is no offensive to protect, so every field
+    /// unit not garrisoned or healing may answer. And the camp ranks as a
+    /// raider three tiles out: below anything at the gates, above the
+    /// countryside. The party is sized to the camp's visible defender rather
+    /// than to zero, so a spearman-held camp draws two units, not one that
+    /// declines the attack forever. Off for the frozen native controllers;
+    /// on for the live bridge and the native repair bundle.
+    camp_party: bool,
     /// Price a revealed natural wonder's ring into the settle scorer, so a
     /// founding site that would work the wonder's neighbours gets credit for
     /// the wonder's modeled appeal and projected yields. Off for the frozen
@@ -3354,6 +3382,7 @@ impl BasicAi {
             recon_replacement: false,
             naval_recon: false,
             camp_reach: false,
+            camp_party: false,
             wonder_ring_settle_value: false,
             come_ashore: false,
             home_defense: false,
@@ -3447,6 +3476,21 @@ impl BasicAi {
         self.camp_reach = false;
     }
 
+    /// The whole peacetime field army answers home threats and a camp in
+    /// reach outranks the countryside. See `camp_party`.
+    pub fn enable_camp_party(&mut self) {
+        self.camp_party = true;
+    }
+
+    pub fn disable_camp_party(&mut self) {
+        self.camp_party = false;
+    }
+
+    /// Whether the peacetime camp party is on. See `camp_party`.
+    pub fn camp_party(&self) -> bool {
+        self.camp_party
+    }
+
     /// The radius inside which a barbarian camp counts as home ground:
     /// `HOME_CAMP_RADIUS` under `camp_reach`, the raider radius otherwise.
     pub(crate) fn camp_radius(&self) -> i32 {
@@ -3475,6 +3519,7 @@ impl BasicAi {
             recon_replacement: false,
             naval_recon: false,
             camp_reach: false,
+            camp_party: false,
             wonder_ring_settle_value: false,
             come_ashore: false,
             home_defense: false,
@@ -9924,12 +9969,44 @@ impl BasicAi {
         // measured raiders all came from one. Rank it just under a live raider at
         // the same range so a unit already in the empire clears it once the
         // shooting stops rather than leaving the tap running.
+        // Peacetime is when the enemy list holds nothing but the barbarian
+        // seat: there is no offensive to protect. See `camp_party`.
+        let peacetime = self.camp_party
+            && !enemy_ids.is_empty()
+            && enemy_ids
+                .iter()
+                .all(|enemy| g.players.get(*enemy).is_some_and(|p| p.is_barbarian));
         if let Some(barb) = g.barb_pid {
             if enemy_ids.contains(&barb) {
                 let camp_radius = self.camp_radius();
                 for camp in g.barb_camps.keys() {
                     let distance = home_distance(*camp);
                     if distance > camp_radius {
+                        continue;
+                    }
+                    if peacetime {
+                        // ★★★★ THE CAMP IS THE TAP. See `camp_party`: it
+                        // ranks as a raider three tiles out — below anything
+                        // at the gates, above the countryside — and the party
+                        // is sized to whoever is standing on it.
+                        let ranked = distance.min(3);
+                        let defender = g
+                            .units_at(*camp)
+                            .into_iter()
+                            .filter_map(|other| g.units.get(&other))
+                            .filter(|other| {
+                                enemy_ids.contains(&other.owner)
+                                    && g.rules.units[other.kind].class == "military"
+                            })
+                            .map(|other| {
+                                effective_strength(g.unit_strength(other, true), other.hp)
+                            })
+                            .fold(0.0_f64, f64::max);
+                        threats.push((
+                            (HOME_THREAT_RADIUS - ranked) as i64 * 1_000 - 1,
+                            *camp,
+                            defender,
+                        ));
                         continue;
                     }
                     // A camp past the raider radius ranks below every raider
@@ -9966,6 +10043,11 @@ impl BasicAi {
                 })
                 .filter(|unit| !self.recovering_units.contains(&unit.id))
                 .filter(|unit| !garrisoned.iter().any(|(held, _)| *held == unit.id))
+                // The peacetime party is the field ARMY: a scout is not sent
+                // to clear a camp. See `camp_party`.
+                .filter(|unit| {
+                    !(peacetime && g.rules.units[unit.kind].promotion_class == "recon")
+                })
                 .map(|unit| unit.id)
                 .collect();
             ids.sort_unstable();
@@ -9989,7 +10071,15 @@ impl BasicAi {
         // and subtract what the garrison spent.
         let eligible = responders.len() + garrisoned.len();
         let budget = ((eligible as f64 * HOME_DEFENSE_MAX_SHARE).floor() as usize).max(1);
-        let cap = budget.saturating_sub(garrisoned.len());
+        // ★★★★ IN PEACETIME THE WHOLE FIELD ARMY IS THE BUDGET. See
+        // `camp_party`: the half share protects an offensive, and there is
+        // none; a three-unit army with one garrisoned used to read a cap of
+        // zero here and leave the raiders and their camp to nobody.
+        let cap = if peacetime {
+            responders.len()
+        } else {
+            budget.saturating_sub(garrisoned.len())
+        };
         if cap == 0 || !responders.contains(&uid) {
             return None;
         }

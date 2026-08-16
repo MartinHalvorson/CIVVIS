@@ -224,7 +224,7 @@ pub const EVAL_ONLY_AIS: [&str; 158] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 61] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 63] = [
     "joint-tactics",
     "live-trader-route",
     "live-religious-purchase",
@@ -286,6 +286,8 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 61] = [
     "tally-great-people",
     "barbarian-scouts-are-scouts",
     "camp-reach",
+    "settler-stack-discipline",
+    "camp-party",
 ];
 
 /// Every `live_without_*` control's tag list: the bridge list minus the one
@@ -362,7 +364,7 @@ pub const FIRAXIS_ONLY_TREATMENTS: [&str; 14] = [
 
 /// The military half of the native repair bundle: force assembly, marching,
 /// siege, threat reading, and the war/peace decision.
-pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 27] = [
+pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 28] = [
     "muster-at-command-radius",
     "war-reinforcement",
     "come-ashore",
@@ -389,13 +391,15 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: [&str; 27] = [
     "recon-flight",
     "naval-recon",
     "camp-reach",
+    "camp-party",
     "religion-sues-peace",
 ];
 
 /// The economic half: settlement, growth, districts, and the policy deck.
-pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 20] = [
+pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 21] = [
     "escort-unstick",
     "stacked-escort",
+    "settler-stack-discipline",
     "wonder-ring-settle-value",
     "stranded-settler-discount",
     "wide-map-capacity",
@@ -420,7 +424,7 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: [&str; 20] = [
 /// tags — `LIVE_BRIDGE_TREATMENTS` minus `FIRAXIS_ONLY_TREATMENTS`, and the
 /// union of the two halves above. `engine_repair_tags_partition_the_bridge`
 /// fails if any of those three relationships stops holding.
-pub const ENGINE_REPAIR_TREATMENTS: [&str; 47] = [
+pub const ENGINE_REPAIR_TREATMENTS: [&str; 49] = [
     "muster-at-command-radius",
     "war-reinforcement",
     "come-ashore",
@@ -447,9 +451,11 @@ pub const ENGINE_REPAIR_TREATMENTS: [&str; 47] = [
     "recon-flight",
     "naval-recon",
     "camp-reach",
+    "camp-party",
     "religion-sues-peace",
     "escort-unstick",
     "stacked-escort",
+    "settler-stack-discipline",
     "wonder-ring-settle-value",
     "stranded-settler-discount",
     "wide-map-capacity",
