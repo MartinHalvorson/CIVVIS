@@ -3040,6 +3040,88 @@ mod tests {
         assert_eq!(mirror.game.players[0].age, "dark");
     }
 
+    /// ★★★★★ A CORRECTION IS MEASURED AFTER EVERYTHING IT CORRECTS FOR IS ON THE BOARD.
+    ///
+    /// The rival's per-turn correction was derived before the loop that writes
+    /// a rival city's Population (planted at one) — measured against a size-one
+    /// city, paid on the size-eleven one: Nubia read 174 Science against the
+    /// host's 141 on run civvis-20260816T175306Z. And the seat's own Dedications
+    /// were applied after its correction: Ravenna read 14.5 Science against 9.5.
+    /// Both boards must read the host's figure exactly, rebuild and sync alike.
+    #[test]
+    fn corrections_are_measured_after_population_and_dedications_are_on_the_board() {
+        let side = 16;
+        let plots: Vec<Plot> = (0..side)
+            .flat_map(|x| {
+                (0..side).map(move |y| Plot {
+                    x, y, im: None, t: Some("TERRAIN_GRASS".to_string()), f: None, r: None,
+                    o: if (x, y) == (3, 3) { 0 } else if (x, y) == (11, 11) { 3 } else { -1 },
+                    w: false, i: false, fw: false, rv: 0, ri: false, ct: None, cl: -1,
+                    p: false, d: None, wo: None,
+                })
+            })
+            .collect();
+        let snapshot = Snapshot::from_chunks(&[TilesChunk { turn: 90, width: side, height: side, chunk: 1, plots }]);
+        let mut state = StateSnapshot {
+            turn: 90,
+            science: 30.0,
+            culture: 12.0,
+            golden_age: Some(true),
+            dark_age: Some(false),
+            heroic_golden_age: Some(false),
+            dedications: Some(vec!["COMMEMORATION_SCIENTIFIC".to_string()]),
+            cities: vec![StateCity {
+                id: 1, name: "Rome".to_string(), x: 3, y: 3, pop: 6, loyalty: 100.0, capital: true,
+                districts: vec![StateDistrict {
+                    kind: "DISTRICT_COMMERCIAL_HUB".to_string(), x: 4, y: 3, complete: true,
+                    ..StateDistrict::default()
+                }],
+                yields: Some(crate::rules::Yields { food: 20.0, production: 9.0, gold: 8.0, science: 9.5, culture: 6.0, faith: 0.0 }),
+                ..StateCity::default()
+            }],
+            rivals: vec![StateRival {
+                player: 3, civ: "CIVILIZATION_NUBIA".to_string(),
+                science: 41.0, culture: 22.0,
+                cities: vec![StateCity {
+                    id: 3, name: "Meroe".to_string(), x: 11, y: 11, pop: 11, loyalty: 100.0, capital: true,
+                    ..StateCity::default()
+                }],
+                ..StateRival::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let seat_yields = |game: &crate::game::Game, seat: usize| {
+            let mut total = crate::rules::Yields::default();
+            for cid in game.player_city_ids(seat) {
+                total.add(game.city_yields(cid));
+            }
+            if let Some(adjustment) = game.observed_yield_adjustments.get(&seat) {
+                total.add(*adjustment);
+            }
+            total.add(game.player_yield_extras(seat));
+            total
+        };
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let rome = mirror.game.player_city_ids(0)[0];
+        assert!((mirror.game.city_yields(rome).science - 9.5).abs() < 1e-9,
+            "the city reads the host after its Dedication is on the seat: {:?}", mirror.game.city_yields(rome));
+        assert!((seat_yields(&mirror.game, 0).science - 30.0).abs() < 1e-9);
+        let meroe = mirror.game.player_city_ids(1)[0];
+        assert_eq!(mirror.game.cities[&meroe].pop, 11);
+        assert!((seat_yields(&mirror.game, 1).science - 41.0).abs() < 1e-9,
+            "the rival seat reads the host after its city's Population is on the board: {:?}", seat_yields(&mirror.game, 1));
+
+        // And after a sync that grows the rival and moves our Dedication.
+        state.turn = 91;
+        state.rivals[0].cities[0].pop = 14;
+        state.rivals[0].science = 47.0;
+        state.dedications = Some(vec!["COMMEMORATION_INDUSTRIAL".to_string()]);
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.cities[&meroe].pop, 14);
+        assert!((seat_yields(&mirror.game, 1).science - 47.0).abs() < 1e-9);
+        assert!((mirror.game.city_yields(rome).science - 9.5).abs() < 1e-9);
+    }
+
     #[test]
     fn observed_worker_swap_overrides_the_nearest_city_guess() {
         let mut first_center = plot(2, 2, "TERRAIN_PLAINS");
@@ -12919,18 +13001,6 @@ fn apply_observed_host_metrics(
     {
         game.observed_yield_adjustments.insert(0, adjustment);
     }
-    // The rivals' seats, the same way (their yields, treasury and Faith).
-    // Here, after the clear above, so the deltas survive the turn; seats are
-    // 1..n in export order, as the rival loops in `rebuild_from_state` and
-    // `LiveMirror::sync` assign them.
-    for (index, rival) in state.rivals.iter().enumerate() {
-        let owner = index + 1;
-        if owner >= game.players.len() {
-            break;
-        }
-        apply_rival_public_economy(game, owner, rival, unmapped);
-    }
-
     // Which seats the export names a capital for. A record that flags none
     // (an older export, or a fixture) keeps `place_city`'s own choice rather
     // than clearing every flag and leaving the seat capital-less.
@@ -12986,6 +13056,27 @@ fn apply_observed_host_metrics(
         if observed.defense.is_finite() && observed.defense >= 0.0 {
             game.observed_city_strength.insert(cid, observed.defense);
         }
+    }
+
+    // ★★★★★ THE RIVALS' SEATS LAST, AFTER THEIR CITIES ARE FINISHED.
+    //
+    // A correction is `host − model`, and the model of a rival city moves
+    // with every fact the loop above writes onto it — above all its
+    // Population, which is the term every yield is a linear function of and
+    // which arrives here (rival cities are planted at population one). Derived
+    // before that loop, the delta was measured against a size-one city and
+    // then paid on the size-eleven one: on run civvis-20260816T175306Z the
+    // board read Nubia at 174 Science against the host's 141, 329 Food against
+    // 229, every rival over by its own growth. Same reason the seat's own
+    // Dedications are applied before this function runs (`apply_player_ages`
+    // in both callers). Seats are 1..n in export order, as the rival loops in
+    // `rebuild_from_state` and `LiveMirror::sync` assign them.
+    for (index, rival) in state.rivals.iter().enumerate() {
+        let owner = index + 1;
+        if owner >= game.players.len() {
+            break;
+        }
+        apply_rival_public_economy(game, owner, rival, unmapped);
     }
 }
 
@@ -13806,6 +13897,15 @@ pub fn rebuild_from_state(
     apply_governor_state(&mut game, state, &mut unmapped);
     apply_great_person_points(&mut game, state, &mut unmapped);
     apply_strategic_stockpiles(&mut game, state, &mut unmapped);
+    // The age and its Dedications change what the model pays (Heartbeat of
+    // Steam's Campus Production, Free Inquiry's Science), so they must be on
+    // the seat BEFORE the host-to-model corrections are measured, or the
+    // correction is taken against a Normal-Age model and paid on top of a
+    // Golden-Age one — Ravenna read 14.5 Science against the host's 9.5 on
+    // run civvis-20260816T175306Z. The call at the end of this function
+    // repeats it for the era score, which must be written after the cities
+    // are planted; this early call is idempotent with it.
+    apply_player_ages(&mut game, state);
     apply_observed_host_metrics(&mut game, state, &mut unmapped);
     block_loyalty_doomed_settler_sites(&mut game);
 
@@ -15330,6 +15430,9 @@ impl LiveMirror {
         apply_governor_state(&mut self.game, state, &mut self.unmapped);
         apply_great_person_points(&mut self.game, state, &mut self.unmapped);
         apply_strategic_stockpiles(&mut self.game, state, &mut self.unmapped);
+        // Age and Dedications before the corrections are measured — see the
+        // rebuild path for why; the trailing call repeats it for era score.
+        apply_player_ages(&mut self.game, state);
         apply_observed_host_metrics(&mut self.game, state, &mut self.unmapped);
         block_loyalty_doomed_settler_sites(&mut self.game);
         // After the city passes, for the same reason as on the rebuild path:
