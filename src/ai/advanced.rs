@@ -133,8 +133,8 @@ const RUSH_WINDOW_CLOSES: u32 = 60;
 /// 0.62 outmatched trigger and Recovery trigger keep their shape: the moment
 /// the advantage is gone, so is the patience.
 const OVERWHELMING_WAR_RATIO: f64 = 2.5;
-/// Standard turns without a campaign gain after which `war_patience` lapses and
-/// the stall clause fires again even over an overwhelmed target.
+/// Standard turns without a foreign-city acquisition after which `war_patience`
+/// lapses and the stall clause fires again even over an overwhelmed target.
 ///
 /// ★★★★ AN OVERWHELMING WAR THAT NEVER TAKES A CITY IS NOT A WALKOVER, IT IS A
 /// TAX. Patience was written for a slow wall taking its time to fall; on the
@@ -145,10 +145,10 @@ const OVERWHELMING_WAR_RATIO: f64 = 2.5;
 /// on 72 of 88 assessments, no city was ever taken, and the economy bought
 /// 98 city-turns of AT Crews for it. Runs T182350Z and T190904Z carried
 /// 140- and 200-turn wars the same way, without a capture. Forty standard
-/// turns (twenty at Online) with no city gained is longer than any siege that
-/// is actually working; after that the empire sues, the plan leaves
-/// Conquest, and production goes back to development. A city gained resets
-/// the clock, so a war that IS progressing keeps its patience.
+/// turns (twenty at Online) with no city captured is longer than any siege
+/// that is actually working; after that the empire sues, the plan leaves
+/// Conquest, and production goes back to development. A foreign city changing
+/// hands resets the clock, so a war that IS progressing keeps its patience.
 const WAR_PATIENCE_LIMIT_TURNS: u32 = 40;
 /// Distance from the campaign objective inside which a force group counts as
 /// the front rather than a rear reinforcement, used by
@@ -1028,6 +1028,11 @@ pub struct AdvancedAi {
     builder_targets: BTreeMap<u32, Pos>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
+    /// Owners from the preceding live observation. Firaxis keeps a captured
+    /// city's identity, so an ownership transition distinguishes a campaign
+    /// gain from a newly founded city without guessing from its name or size.
+    campaign_city_owners: BTreeMap<u32, usize>,
+    campaign_observed: bool,
     last_city_count: usize,
     peace_until: u32,
     /// Rivals offered peace in the current diplomacy pass, for `plan_report`.
@@ -1210,8 +1215,8 @@ pub struct AdvancedAi {
     /// campaign target, the stall clause stands down and the ordinary
     /// outmatched (0.62) and Recovery triggers keep the war endable. **Off by
     /// default, live-bridge only.** Bounded by `WAR_PATIENCE_LIMIT_TURNS`
-    /// standard turns without a campaign gain — see that constant for the
-    /// live wars that never landed a city.
+    /// standard turns without a foreign-city acquisition — see that constant
+    /// for the live wars that never landed a city.
     pub war_patience: bool,
     /// Do not open a fresh direct war once the shared endgame reserve leaves
     /// no time to turn a declaration into a capture. Timed attacks already
@@ -2674,6 +2679,8 @@ impl AdvancedAi {
             builder_targets: BTreeMap::new(),
             major_war_since: None,
             last_campaign_progress: 0,
+            campaign_city_owners: BTreeMap::new(),
+            campaign_observed: false,
             last_city_count: 0,
             peace_until: 0,
             peace_offers: BTreeSet::new(),
@@ -4067,7 +4074,7 @@ impl AdvancedAi {
         self.victory_planning
     }
 
-    /// Whether `war_patience` has lapsed: no campaign gain for
+    /// Whether `war_patience` has lapsed: no foreign-city acquisition for
     /// `WAR_PATIENCE_LIMIT_TURNS` standard turns. See the constant.
     fn war_patience_exhausted(&self, g: &Game) -> bool {
         g.turn.saturating_sub(self.last_campaign_progress)
@@ -4076,7 +4083,34 @@ impl AdvancedAi {
 
     fn observe_campaign(&mut self, g: &Game, pid: usize) {
         let cities = g.player_city_ids(pid).len();
-        if cities > self.last_city_count {
+        if self.war_patience {
+            // Civilization VI preserves a city's id when it changes hands, and
+            // the live mirror preserves that identity too. A new Roman city has
+            // no prior foreign owner, so it must not buy another full patience
+            // window for a war that has still captured nothing. The first live
+            // observation establishes a fair window after a controller restart;
+            // later resets require an actual foreign-city acquisition.
+            let captured_city = self.campaign_observed
+                && g.cities.iter().any(|(city, observed)| {
+                    observed.owner == pid
+                        && self
+                            .campaign_city_owners
+                            .get(city)
+                            .is_some_and(|owner| *owner != pid)
+                });
+            if !self.campaign_observed || captured_city {
+                self.last_campaign_progress = g.turn;
+            }
+            self.campaign_city_owners = g
+                .cities
+                .iter()
+                .map(|(city, observed)| (*city, observed.owner))
+                .collect();
+            self.campaign_observed = true;
+        } else if cities > self.last_city_count {
+            // `last_campaign_progress` also powers the frozen controller's
+            // existing diplomacy fatigue. Keep that historical count-based
+            // behavior intact; the ownership-aware clock is live-only.
             self.last_campaign_progress = g.turn;
         }
         self.last_city_count = cities;
@@ -6410,9 +6444,10 @@ impl AdvancedAi {
         // stalemate the empire cannot end and should stop paying for: the plan
         // falls through to the economic lanes, and the local-defence
         // treatments — home defence, garrison under fire, garrison walls —
-        // answer raids whatever the grand strategy says. A city gained
-        // (`last_campaign_progress`) or a critical threat restores the war
-        // posture. Behind `war_patience`, which the frozen anchor never sets.
+        // answer raids whatever the grand strategy says. A foreign city
+        // acquired (`last_campaign_progress`) or a critical threat restores
+        // the war posture. Behind `war_patience`, which the frozen anchor
+        // never sets.
         let stalemate = at_war
             && self.war_patience
             && threatened_city.is_none()
@@ -6661,7 +6696,7 @@ impl AdvancedAi {
         if stalemate && strategy != GrandStrategy::Conquest {
             think!(self.journal(), Strategy, Strategy,
                    "The war is a stalemate the plan stops paying for";
-                   "still at war, but no city gained in {} turns and none of ours in \
+                   "still at war, but no foreign city captured in {} turns and none of ours in \
                     danger — the economy runs as in peacetime while local defence answers raids",
                    g.turn.saturating_sub(self.last_campaign_progress));
         }
@@ -10989,7 +11024,7 @@ impl AdvancedAi {
                     think!(self.journal(), Diplomacy, Decision,
                            "Patience with the war on {} has run out", g.players[*other].civ;
                            "{my_power:.0} power against their {their_power:.0} and still no \
-                            city gained in {} turns — a walkover that never lands is a tax on \
+                            foreign city captured in {} turns — a walkover that never lands is a tax on \
                             the economy, so peace is offered and the plan may leave Conquest",
                            g.turn.saturating_sub(self.last_campaign_progress));
                 }
@@ -43435,12 +43470,87 @@ mod research_probe {
         );
     }
 
+    /// War patience measures a campaign, not ordinary expansion.
+    ///
+    /// On live run `civvis-20260816T003229Z`, Rome was at war with Indonesia
+    /// without taking a city, then founded population-1 Arretium on turn 201.
+    /// The former city-count clock read that settlement as campaign progress
+    /// and gave the stalled war another full patience window.
+    #[test]
+    fn only_a_foreign_city_acquisition_refreshes_live_war_patience() {
+        let mut game = Game::new_full(2, 24, 16, 7_924, 300, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.found_city_for(pid, game.units[&settler].pos, None);
+            game.remove_unit(settler);
+        }
+        let enemy_city = game.player_city_ids(1)[0];
+        game.current = 0;
+        game.turn = 60;
+        game.record_contact(0, 1);
+        game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_war_patience();
+        ai.observe_campaign(&game, 0);
+        assert_eq!(ai.last_campaign_progress, 60);
+        let mut frozen = AdvancedAi::legacy();
+        frozen.observe_campaign(&game, 0);
+        assert_eq!(frozen.last_campaign_progress, 60);
+
+        game.turn = 100;
+        let founded_site = game
+            .map
+            .tiles
+            .values()
+            .find(|tile| {
+                game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && tile.owner_city.is_none()
+                    && game.city_at(tile.pos).is_none()
+                    && game.units_at(tile.pos).is_empty()
+                    && game
+                        .cities
+                        .values()
+                        .all(|city| game.wdist(city.pos, tile.pos) >= 4)
+            })
+            .map(|tile| tile.pos)
+            .expect("open site for a fresh Roman settlement");
+        let founded = game.found_city_for(0, founded_site, None);
+        assert_eq!(game.cities[&founded].owner, 0);
+        ai.observe_campaign(&game, 0);
+        assert_eq!(
+            ai.last_campaign_progress, 60,
+            "founding a new city cannot make an unproductive war patient again"
+        );
+        assert!(ai.war_patience_exhausted(&game));
+        frozen.observe_campaign(&game, 0);
+        assert_eq!(
+            frozen.last_campaign_progress, 100,
+            "the frozen controller retains its historical city-count clock"
+        );
+
+        game.turn = 101;
+        game.cities.get_mut(&enemy_city).unwrap().owner = 0;
+        ai.observe_campaign(&game, 0);
+        assert_eq!(
+            ai.last_campaign_progress, 101,
+            "a known foreign city changing hands is real campaign progress"
+        );
+        assert!(!ai.war_patience_exhausted(&game));
+    }
+
     /// A stalled war against an overwhelmed campaign target is neither offered
     /// away nor accepted away while `war_patience` is on; a stalled war
     /// against anyone else keeps the shipped fatigue shape.
     /// Once a war's patience has lapsed and no city of ours is in danger, the
     /// plan stops reading Conquest merely because the enemy will not make
-    /// peace; a city gained (recent campaign progress) keeps the war posture.
+    /// peace; a foreign city acquired (recent campaign progress) keeps the war
+    /// posture.
     #[test]
     fn a_stalemated_war_no_longer_sets_the_grand_strategy() {
         let mut game = Game::new_full(2, 24, 16, 7_923, 300, 0, false);
@@ -43464,7 +43574,7 @@ mod research_probe {
         game.turn = 100;
         assert!(game.military_power(0) >= game.military_power(1) * OVERWHELMING_WAR_RATIO);
 
-        // Patience lapsed: no city gained in forty turns.
+        // Patience lapsed: no foreign city acquired in forty turns.
         let mut stale = AdvancedAi::new();
         stale.enable_war_patience();
         stale.major_war_since = Some(60);
@@ -43595,8 +43705,8 @@ mod research_probe {
 
         // With the flag: the stall clause stands down against the overwhelmed
         // campaign target, and the denied-partner guard refuses the deal —
-        // while the campaign is still gaining ground (a city gained fifteen
-        // turns ago is inside the patience window).
+        // while the campaign is still gaining ground (a foreign city acquired
+        // fifteen turns ago is inside the patience window).
         let mut patient = AdvancedAi::new();
         patient.enable_war_patience();
         patient.major_war_since = Some(60);
@@ -43613,8 +43723,9 @@ mod research_probe {
             "with the flag, no stall offer goes to the overwhelmed target"
         );
 
-        // ★ Patience is bounded: forty standard turns without a city gained
-        // and the same overwhelming attacker sues, accepts, and journals why.
+        // ★ Patience is bounded: forty standard turns without a foreign city
+        // acquired and the same overwhelming attacker sues, accepts, and
+        // journals why.
         let mut worn_out = AdvancedAi::new();
         worn_out.enable_war_patience();
         worn_out.major_war_since = Some(60);
