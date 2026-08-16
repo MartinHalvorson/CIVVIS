@@ -1194,6 +1194,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `garrison_under_fire` gate; the frozen anchor never enables it and therefore
 /// keeps its historical queue commitments (asserted). Compatibility re-pin; the
 /// Elo protocol does not move.
+/// The settler retreat limit lives inside the retreat step, behind
+/// `stacked_escort`/`settlement_safety`, which `AdvancedAi::legacy()` leaves
+/// off; carrying retired sites across rebuilds touches only unit-keyed memory.
+/// Compatibility re-pin; the Elo protocol does not move.
 const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb452_d6fc_37ab_1fd4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
