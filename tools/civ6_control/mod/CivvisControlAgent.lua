@@ -9396,19 +9396,17 @@ CivvisApplyOrder = applyOrder;
 --
 -- Exposed for the offline Lua regression.  This must remain a bare global:
 -- another file-scope `local` would exceed Civ 6's 200-register chunk ceiling.
-CivvisSelectCongressLeader = function(pid)
+CivvisSelectCongressLeader = function(candidates)
 	local leader, leaderPoints, leaderScore = -1, -1, -1;
-	for _, other in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
-		other = tonumber(other);
-		if other ~= nil and other ~= pid then
-			local points = tonumber(try(function()
-				return Players[other]:GetStats():GetDiplomaticVictoryPoints();
-			end, 0)) or 0;
-			local score = tonumber(try(function() return Players[other]:GetScore(); end, -1)) or -1;
-			if points > leaderPoints
+	for _, candidate in ipairs(candidates or {}) do
+		if type(candidate) == "table" then
+			local other = tonumber(candidate.id);
+			local points = tonumber(candidate.points) or 0;
+			local score = tonumber(candidate.score) or -1;
+			if other ~= nil and (points > leaderPoints
 				or (points == leaderPoints and score > leaderScore)
 				or (points == leaderPoints and score == leaderScore
-					and (leader < 0 or other < leader)) then
+					and (leader < 0 or other < leader))) then
 				leader, leaderPoints, leaderScore = other, points, score;
 			end
 		end
@@ -10332,9 +10330,24 @@ local function tick()
 			if type(resolutions) ~= "table" then return 0, 0, "no_resolutions"; end
 			if type(costs) ~= "table" then costs = {}; end
 			local favor = try(function() return Players[pid]:GetFavor(); end, 0) or 0;
-			-- The diplomatic-victory leader among the others.  Equal DVP totals use
-			-- score rather than arbitrary PlayerManager enumeration order.
-			local leader, leaderPoints, leaderScore = CivvisSelectCongressLeader(pid);
+			-- The diplomatic-victory leader among the others.  Keep this sampling
+			-- beside the actual vote: it is the host API contract and exposes a
+			-- useful DVP/score snapshot to the pure selector below.
+			local candidates = {};
+			for _, other in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
+				local otherID = tonumber(other);
+				if otherID ~= nil and otherID ~= pid then
+					candidates[#candidates + 1] = {
+						id = otherID,
+						points = tonumber(try(function()
+							return Players[otherID]:GetStats():GetDiplomaticVictoryPoints();
+						end, 0)) or 0,
+						score = tonumber(try(function() return Players[otherID]:GetScore(); end, -1)) or -1,
+					};
+				end
+			end
+			-- Equal DVP totals use score rather than arbitrary PlayerManager order.
+			local leader, leaderPoints, leaderScore = CivvisSelectCongressLeader(candidates);
 			-- Option 1 of these resolutions is the ban; the free vote goes to 2.
 			local BAN_FIRST = {
 				WC_RES_MERCENARY_COMPANIES = true, WC_RES_GLOBAL_ENERGY_TREATY = true,

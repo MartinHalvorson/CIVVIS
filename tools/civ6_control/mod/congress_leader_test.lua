@@ -40,25 +40,15 @@ local function check(name, got, want)
 	end
 end
 
-local function rival(points, score)
-	return {
-		GetStats = function()
-			return { GetDiplomaticVictoryPoints = function() return points end }
-		end,
-		GetScore = function() return score end,
-	}
-end
-
-local function choose(pid, ids, rivals)
-	PlayerManager = { GetAliveMajorIDs = function() return ids end }
-	Players = rivals
-	return selectLeader(pid)
+local function choose(candidates)
+	return selectLeader(candidates)
 end
 
 -- This is the live loss: America must win the equal-DVP tie, even when the
 -- engine lists Sweden first, because America has the higher score.
-local leader, points, score = choose(0, { 1, 3, 0 }, {
-	[0] = rival(6, 655), [1] = rival(17, 968), [3] = rival(17, 995),
+local leader, points, score = choose({
+	{ id = 1, points = 17, score = 968 },
+	{ id = 3, points = 17, score = 995 },
 })
 check("equal DVP chooses higher score", leader, 3)
 check("equal DVP keeps the tied points", points, 17)
@@ -66,8 +56,9 @@ check("equal DVP reports selected score", score, 995)
 
 -- DVP remains the primary target: a lower-score rival on 18 points is closer
 -- to victory than a higher-score rival on 17 points.
-leader, points, score = choose(0, { 3, 1, 0 }, {
-	[0] = rival(6, 655), [1] = rival(18, 100), [3] = rival(17, 2000),
+leader, points, score = choose({
+	{ id = 3, points = 17, score = 2000 },
+	{ id = 1, points = 18, score = 100 },
 })
 check("higher DVP beats score", leader, 1)
 check("higher DVP is retained", points, 18)
@@ -75,9 +66,10 @@ check("higher DVP reports its score", score, 100)
 
 -- A complete tie must stay deterministic across PlayerManager order, so replay
 -- analysis and repeated sessions agree on the same target.
-leader, points, score = choose(0, { 7, 5, 3, 0 }, {
-	[0] = rival(6, 655), [3] = rival(12, 500), [5] = rival(12, 500),
-	[7] = rival(11, 999),
+leader, points, score = choose({
+	{ id = 7, points = 11, score = 999 },
+	{ id = 5, points = 12, score = 500 },
+	{ id = 3, points = 12, score = 500 },
 })
 check("full tie chooses lower player id", leader, 3)
 check("full tie keeps DVP", points, 12)
@@ -87,7 +79,9 @@ check("full tie keeps score", score, 500)
 -- leave the chosen score in telemetry, rather than becoming a dead test hook.
 local src = assert(io.open(here .. "/CivvisControlAgent.lua")):read("*a")
 check("world congress calls tested selector",
-	src:find("CivvisSelectCongressLeader(pid);", 1, true) ~= nil, true)
+	src:find("CivvisSelectCongressLeader(candidates);", 1, true) ~= nil, true)
+check("world congress samples DVP in the vote handler",
+	src:find("GetDiplomaticVictoryPoints()", 1, true) ~= nil, true)
 check("world congress returns selected score",
 	src:find("return cast, spent, nil, leader, leaderPoints, leaderScore;", 1, true) ~= nil,
 	true)
