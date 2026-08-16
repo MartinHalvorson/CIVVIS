@@ -168,6 +168,10 @@ const REINFORCEMENT_FRONT_RADIUS: i32 = 8;
 /// See `live_wonder_race` and the `Item::Wonder` arm of `production_value`.
 const LIVE_WONDER_RACE_BONUS: f64 = 1_500.0;
 
+/// Cities per additional concurrent wonder in the live race: a second lane at
+/// six cities, a third at twelve. See `AdvancedAi::live_wonder_race_lanes`.
+const LIVE_WONDER_RACE_CITIES_PER_LANE: usize = 6;
+
 /// What a district's first-tier amenity building is worth at district-choice
 /// time, as a share of its amenity: it is a second build, not the district.
 /// See `AdvancedAi::amenity_district_path`.
@@ -7201,6 +7205,12 @@ impl AdvancedAi {
     ///
     /// The horizon every research term is scaled by. A game past its turn limit
     /// (the mirror runs one turn beyond it) reports 0 rather than a negative.
+    /// How many wonders the live race keeps in production at once: one, plus
+    /// one per `LIVE_WONDER_RACE_CITIES_PER_LANE` cities. See `live_wonder_race`.
+    fn live_wonder_race_lanes(city_count: usize) -> usize {
+        1 + city_count / LIVE_WONDER_RACE_CITIES_PER_LANE
+    }
+
     /// The amenity a district of `family` unlocks through the first-tier
     /// amenity building the player can already build there (an Arena's +2 for
     /// an Entertainment Complex), discounted because it is a second build.
@@ -16532,16 +16542,31 @@ impl AdvancedAi {
                             .and_then(|civic| g.rules.civics.get(civic).map(|node| node.era))
                     })
                     .unwrap_or(0);
+                // ★★★★ ONE LANE PER SIX CITIES, NOT ONE EMPIRE-WIDE. Measured on
+                // run civvis-20260816T011314Z (eight cities, t250 tally 740
+                // against 1015): six wonders started, four finished, and a
+                // 56-turn stretch (t128–t184) with no wonder in production
+                // anywhere while the one racing city took 19–22 turns per
+                // wonder. A wonder is fifteen host score points for 400–700
+                // production; a Library is one for 90. With eight developed
+                // cities the single lane is the binding limit, so a second
+                // opens at six cities and a third at twelve — still in cities
+                // with three buildings, still never in the same city twice.
+                let wonders_in_flight = g
+                    .cities
+                    .values()
+                    .filter(|other| {
+                        other.owner == pid
+                            && matches!(other.queue.first(), Some(Item::Wonder { .. }))
+                    })
+                    .count();
                 let live_race_opens = self.live_wonder_race
                     && !lane_opens
                     && plan.strategy != GrandStrategy::Recovery
                     && city_count >= 3
                     && city.buildings.len() >= 3
                     && wonder_era + 2 >= g.world_era
-                    && !g.cities.values().any(|other| {
-                        other.owner == pid
-                            && matches!(other.queue.first(), Some(Item::Wonder { .. }))
-                    });
+                    && wonders_in_flight < Self::live_wonder_race_lanes(city_count);
                 if already_queued
                     || threatened
                     || spent_religion_founding_site
@@ -43856,16 +43881,86 @@ mod research_probe {
                 .buildings
                 .push(Name::new(building));
         }
+        // The cheapest other wonder the second city can place, so a young
+        // city's build time is not what refuses it below.
         let another = game
             .producible_items(0, other)
             .into_iter()
-            .find(|item| matches!(item, Item::Wonder { wonder, .. } if wonder != "pyramids"));
-        if let Some(another) = another {
+            .filter(|item| matches!(item, Item::Wonder { wonder, .. } if wonder != "pyramids"))
+            .min_by(|left, right| {
+                game.item_remaining_cost_for_city(0, other, left)
+                    .total_cmp(&game.item_remaining_cost_for_city(0, other, right))
+            });
+        if let Some(another) = &another {
             assert!(
-                live.production_value(&game, 0, other, &another, &plan, &live.counts(&game, 0))
+                live.production_value(&game, 0, other, another, &plan, &live.counts(&game, 0))
                     < -1_000.0,
-                "one wonder in production empire-wide at a time"
+                "one wonder in production empire-wide at a time in a three-city empire"
             );
+        }
+
+        // ★★★★ A second lane opens at six cities: the same second city may
+        // then race while the capital builds, and a third city may not open a
+        // third. See `live_wonder_race_lanes`.
+        assert_eq!(AdvancedAi::live_wonder_race_lanes(3), 1);
+        assert_eq!(AdvancedAi::live_wonder_race_lanes(5), 1);
+        assert_eq!(AdvancedAi::live_wonder_race_lanes(6), 2);
+        assert_eq!(AdvancedAi::live_wonder_race_lanes(11), 2);
+        assert_eq!(AdvancedAi::live_wonder_race_lanes(12), 3);
+        let mut more_sites: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        more_sites.sort_unstable();
+        for site in more_sites {
+            if game.player_city_ids(0).len() == 6 {
+                break;
+            }
+            let distant = game
+                .player_city_ids(0)
+                .iter()
+                .all(|c| game.wdist(site, game.cities[c].pos) >= 5);
+            let tile = &game.map.tiles[&site];
+            if distant && game.rules.is_passable(tile) && !game.rules.is_water(tile) {
+                game.found_city_for(0, site, None);
+            }
+        }
+        assert_eq!(game.player_city_ids(0).len(), 6, "fixture must reach six cities");
+        if let Some(another) = &another {
+            // The second city is young and slow; lengthen the game so the
+            // wonder's build time, not the lane count, is not what refuses it.
+            let max_turns = game.max_turns;
+            game.max_turns = 1_000;
+            let second_lane =
+                live.production_value(&game, 0, other, another, &plan, &live.counts(&game, 0));
+            assert!(
+                second_lane > 0.0,
+                "six cities open a second wonder lane while the capital builds: {second_lane} \
+                 ({another:?})"
+            );
+            game.cities.get_mut(&other).unwrap().queue = vec![another.clone()];
+            let third = game
+                .player_city_ids(0)
+                .into_iter()
+                .find(|c| *c != capital && *c != other)
+                .unwrap();
+            for building in ["monument", "granary", "water_mill"] {
+                game.cities
+                    .get_mut(&third)
+                    .unwrap()
+                    .buildings
+                    .push(Name::new(building));
+            }
+            if let Some(yet_another) = game
+                .producible_items(0, third)
+                .into_iter()
+                .find(|item| matches!(item, Item::Wonder { .. }))
+            {
+                assert!(
+                    live.production_value(&game, 0, third, &yet_another, &plan, &live.counts(&game, 0))
+                        < -1_000.0,
+                    "two lanes are full: a third city does not open a third race"
+                );
+            }
+            game.cities.get_mut(&other).unwrap().queue.clear();
+            game.max_turns = max_turns;
         }
 
         // A wonder three eras behind the world is one the Firaxis rivals have
