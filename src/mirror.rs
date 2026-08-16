@@ -168,6 +168,17 @@ pub struct Plot {
     /// civvis-20260816T040537Z.
     #[serde(default)]
     pub p: bool,
+    /// District type standing here (`Plot:GetDistrictType`), any owner, e.g.
+    /// `DISTRICT_CAMPUS`; `DISTRICT_CITY_CENTER` on a centre, `DISTRICT_WONDER`
+    /// under a wonder. Read for rival and city-state cities, whose records carry
+    /// no districts; our own come from the city record. Absent on older exports
+    /// and on empty ground.
+    #[serde(default)]
+    pub d: Option<String>,
+    /// Wonder type standing here (`Plot:GetWonderType`), any owner, e.g.
+    /// `BUILDING_PYRAMIDS`.
+    #[serde(default)]
+    pub wo: Option<String>,
     /// This plot's own river edges as a bitmask: 1 = W, 2 = NW, 4 = NE.
     ///
     /// Civilization VI records a river on three of a plot's six edges; the other
@@ -358,6 +369,8 @@ mod tests {
             ct: None,
             cl: -1,
             p: false,
+            d: None,
+            wo: None,
         }
     }
 
@@ -1562,6 +1575,8 @@ mod tests {
                 ct: None,
                 cl: -1,
                 p: false,
+                d: None,
+                wo: None,
             }],
         }];
         let snapshot = Snapshot::from_chunks(&chunks);
@@ -6153,6 +6168,8 @@ mod tests {
                         ct: None,
                         cl: -1,
                         p: false,
+                        d: None,
+                        wo: None,
                     })
                 })
                 .collect(),
@@ -6218,6 +6235,8 @@ mod tests {
                         ct: None,
                         cl: -1,
                         p: false,
+                        d: None,
+                        wo: None,
                     })
                 })
                 .collect(),
@@ -6368,6 +6387,62 @@ mod tests {
             mirror.game.can_found_city(control),
             "exactly four tiles from Kabul remains a legal city site"
         );
+    }
+
+    /// ★★★★ WHAT STANDS ON A RIVAL'S GROUND CROSSES WITH THE PLOTS.
+    ///
+    /// A rival city record carries no districts, so a rival's economy and
+    /// defence were modelled from population alone. The tiles export now names
+    /// the district (`d`) and wonder (`wo`) on any revealed plot; the mirror
+    /// puts them on the owning rival city and rebuilds them from every export,
+    /// so a razed district does not linger.
+    #[test]
+    fn a_rivals_districts_and_wonders_cross_with_the_plots() {
+        let side = 20;
+        let mut plots: Vec<Plot> = (0..side)
+            .flat_map(|x| {
+                (0..side).map(move |y| Plot {
+                    x, y, im: None, t: Some("TERRAIN_GRASS".to_string()), f: None, r: None,
+                    o: -1, w: false, i: false, fw: false, rv: 0, ri: false, ct: None, cl: -1,
+                    p: false, d: None, wo: None,
+                })
+            })
+            .collect();
+        // The rival (Civ 6 player 3) owns a centre at (10,10), a Campus at
+        // (11,10) and the Pyramids at (10,11); we sit far away at (2,2).
+        for plot in plots.iter_mut() {
+            match (plot.x, plot.y) {
+                (10, 10) => { plot.o = 3; plot.d = Some("DISTRICT_CITY_CENTER".to_string()); }
+                (11, 10) => { plot.o = 3; plot.d = Some("DISTRICT_CAMPUS".to_string()); }
+                (10, 11) => { plot.o = 3; plot.d = Some("DISTRICT_WONDER".to_string()); plot.wo = Some("BUILDING_PYRAMIDS".to_string()); }
+                (9, 10) | (10, 9) | (11, 11) => { plot.o = 3; }
+                (2, 2) => { plot.o = 0; }
+                _ => {}
+            }
+        }
+        let snapshot = Snapshot::from_chunks(&[TilesChunk { turn: 60, width: side, height: side, chunk: 1, plots }]);
+        let city = |id, name: &str, x, y| StateCity {
+            id, name: name.to_string(), x, y, pop: 5, loyalty: 100.0, ..StateCity::default()
+        };
+        let mut state = StateSnapshot { turn: 60, ..StateSnapshot::default() };
+        let mut rome = city(1, "Rome", 2, 2);
+        rome.capital = true;
+        state.cities.push(rome);
+        state.rivals.push(StateRival {
+            player: 3, civ: "CIVILIZATION_SCOTLAND".to_string(),
+            cities: vec![city(3, "Stirling", 10, 10)], ..StateRival::default()
+        });
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        let stirling = recon.known_city_ids[&3];
+        let campus = crate::hex::offset_to_axial(11, 10);
+        let pyramids = crate::hex::offset_to_axial(10, 11);
+        assert_eq!(recon.game.cities[&stirling].districts.get(crate::name!("campus")), Some(&campus));
+        assert_eq!(recon.game.map.tiles[&campus].district.as_deref(), Some("campus"));
+        assert_eq!(recon.game.cities[&stirling].wonders.get(&crate::name!("pyramids")), Some(&pyramids));
+        assert_eq!(recon.game.map.tiles[&pyramids].wonder.as_deref(), Some("pyramids"));
+        // Our own city takes nothing from this path.
+        let rome_id = recon.game.player_city_ids(0)[0];
+        assert!(recon.game.cities[&rome_id].districts.is_empty());
     }
 
     #[test]
@@ -6539,6 +6614,8 @@ mod tests {
                         ct: None,
                         cl: -1,
                         p: false,
+                        d: None,
+                        wo: None,
                     })
                 })
                 .collect(),
@@ -14002,6 +14079,80 @@ fn apply_territory(
             }
         }
     }
+    apply_foreign_infrastructure(game, snapshot);
+}
+
+/// Put the districts and wonders the tiles export shows on rival and
+/// city-state ground onto the city that owns it.
+///
+/// A rival city record carries no districts, so until the plot export named
+/// them (`d`, `wo`) a rival's economy and defence were modelled from
+/// population alone. Our own cities are left to their city record, which
+/// carries completion and pillage; here a plot with a district is a standing
+/// district. Rebuilt from the export each time it arrives, so a razed or
+/// captured district does not linger.
+fn apply_foreign_infrastructure(game: &mut crate::game::Game, snapshot: &Snapshot) {
+    let mut placed: std::collections::BTreeMap<u32, (Vec<(Name, crate::Pos)>, Vec<(Name, crate::Pos)>)> =
+        Default::default();
+    let mut any_seen: std::collections::BTreeSet<u32> = Default::default();
+    for y in 0..snapshot.height.max(1) {
+        for x in 0..snapshot.width.max(1) {
+            let Some(plot) = snapshot.plot((x, y)) else { continue };
+            if plot.d.is_none() && plot.wo.is_none() {
+                continue;
+            }
+            let pos = crate::hex::offset_to_axial(x, y);
+            let Some(cid) = game.map.get(pos).and_then(|tile| tile.owner_city) else { continue };
+            let Some(city) = game.cities.get(&cid) else { continue };
+            if city.owner == 0 {
+                continue;
+            }
+            any_seen.insert(cid);
+            let entry = placed.entry(cid).or_default();
+            if let Some(kind) = plot.wo.as_deref() {
+                if let Some(name) = civvis_node_name(&game.rules.wonders, kind, "BUILDING_") {
+                    entry.1.push((Name::new(&name), pos));
+                }
+                continue;
+            }
+            if let Some(kind) = plot.d.as_deref() {
+                if matches!(kind, "DISTRICT_CITY_CENTER" | "DISTRICT_WONDER") {
+                    continue;
+                }
+                if let Some(name) = civvis_node_name(&game.rules.districts, kind, "DISTRICT_") {
+                    entry.0.push((Name::new(&name), pos));
+                }
+            }
+        }
+    }
+    for cid in any_seen {
+        let (districts, wonders) = placed.remove(&cid).unwrap_or_default();
+        let Some(city) = game.cities.get_mut(&cid) else { continue };
+        city.districts.clear();
+        city.wonders.clear();
+        for (name, pos) in &districts {
+            city.districts.insert(*name, *pos);
+        }
+        for (name, pos) in &wonders {
+            city.wonders.insert(*name, *pos);
+        }
+        for (name, pos) in districts {
+            if let Some(tile) = game.map.tiles.get_mut(&pos) {
+                tile.improvement = None;
+                tile.district = Some(name);
+                tile.district_foundation = None;
+                tile.wonder = None;
+            }
+        }
+        for (name, pos) in wonders {
+            if let Some(tile) = game.map.tiles.get_mut(&pos) {
+                tile.improvement = None;
+                tile.district = None;
+                tile.district_foundation = None;
+                tile.wonder = Some(name);
+            }
+        }
+    }
 }
 
 /// Refuse a founding plot whose modeled population pressure will erase the city
@@ -15539,6 +15690,8 @@ mod host_fact_tests {
             ct: None,
             cl: -1,
             p: false,
+            d: None,
+            wo: None,
         }
     }
 

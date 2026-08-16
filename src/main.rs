@@ -1270,7 +1270,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `AdvancedAi::legacy()` (asserted); the frozen anchor's home guard keeps
 /// the six-tile radius for camps and raiders alike. Compatibility re-pin;
 /// the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xeec3_e7bc_ad22_faac;
+/// The frontier-loyalty reach moves from nine to seven tiles, still behind
+/// `frontier_loyalty` and off for `AdvancedAi::legacy()` (asserted).
+/// Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7ec0_9769_4b34_a574;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -5843,6 +5843,8 @@ mod tests {
             ct: None,
             cl: -1,
             p: false,
+            d: None,
+            wo: None,
         }
     }
 
