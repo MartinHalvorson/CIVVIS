@@ -1246,12 +1246,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The frontier-loyalty settle rule is behind `frontier_loyalty`, off for
 /// `AdvancedAi::legacy()` (asserted); the frozen anchor's settle forecast is
 /// unchanged. Compatibility re-pin; the Elo protocol does not move.
-/// The banked envoy is behind `bank_envoys` and the committed outward
-/// exploration goal behind `BasicAi::explore_commit`, both set only by the
-/// Civilization VI bridge and off for `AdvancedAi::new()` and
-/// `AdvancedAi::legacy()` (asserted); the frozen anchor spends every envoy
-/// and re-derives its scout's goal each turn as before. Compatibility
-/// re-pin; the Elo protocol does not move.
+/// The banked envoy and its final-tier, secure-suzerain marginal-return cap
+/// are behind `bank_envoys`, and the committed outward exploration goal
+/// behind `BasicAi::explore_commit`, all set only by the Civilization VI
+/// bridge and off for `AdvancedAi::new()` and `AdvancedAi::legacy()`
+/// (asserted); the frozen anchor spends every envoy and re-derives its
+/// scout's goal each turn as before. Compatibility re-pin; the Elo protocol
+/// does not move.
 /// The settler-target hysteresis is behind `settler_target_hysteresis`, off
 /// for `AdvancedAi::legacy()` (asserted); the frozen anchor's settler
 /// re-picks exactly as before. Compatibility re-pin; the Elo protocol does
@@ -1273,7 +1274,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The frontier-loyalty reach moves from nine to seven tiles, still behind
 /// `frontier_loyalty` and off for `AdvancedAi::legacy()` (asserted).
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7ec0_9769_4b34_a574;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6ccf_f451_058d_b174;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
