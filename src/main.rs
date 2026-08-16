@@ -1235,7 +1235,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `counter_in_lane`, which the live bridge now enables and
 /// `AdvancedAi::legacy()` leaves off (asserted); the frozen anchor still
 /// declares. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4700_242b_2524_1cfd;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2c3c_de43_3a0a_34fc;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
