@@ -1841,8 +1841,8 @@ mod tests {
     /// The standings' rival Science and Culture were CIVVIS's own derivation from
     /// whichever rival cities happened to be visible — usually none. The host reads
     /// them for every player (as its World Rankings screen does), and now so does
-    /// the mirror: per-turn Science/Culture as the seat's own kind of delta,
-    /// treasury and Faith directly, refreshed by every sync.
+    /// the mirror: per-turn Science/Culture/Faith as the seat's own kind of
+    /// delta, treasury and banked Faith directly, refreshed by every sync.
     #[test]
     fn rival_economy_reaches_the_rival_seat_and_survives_sync() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -1863,6 +1863,7 @@ mod tests {
                 gold: 512.0,
                 gold_per_turn: -3.0,
                 faith: 88.0,
+                faith_per_turn: f64::NAN,
                 ..StateRival::default()
             }],
             ..StateSnapshot::default()
@@ -1893,14 +1894,177 @@ mod tests {
         assert_eq!(mirror.game.players[1].gold, 530.0);
 
         // An older export (NaN) or a refused read (-1) leaves the model's own
-        // derivation alone rather than zeroing the seat.
+        // derivation alone rather than zeroing the seat. The struct literal's
+        // derived Default is zero for a scalar, so make the absent Faith rate
+        // explicit too.
         state.turn = 42;
         state.rivals[0].science = -1.0;
         state.rivals[0].culture = f64::NAN;
+        state.rivals[0].faith_per_turn = f64::NAN;
         state.rivals[0].gold = -1.0;
         mirror.sync(&snapshot, &state, 0);
         assert!(mirror.game.observed_yield_adjustments.get(&1).is_none());
         assert_eq!(mirror.game.players[1].gold, 530.0);
+    }
+
+    /// The player HUD must use the host's public empire totals for every
+    /// civilization, even when fog deliberately leaves the rival with no
+    /// reconstructed city or unit records.
+    #[test]
+    fn public_empire_hud_totals_reach_every_civilization_and_refresh() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![plot(3, 3, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 40,
+            science: 12.0,
+            culture: 9.0,
+            faith_per_turn: Some(7.0),
+            gold: 75,
+            gold_per_turn: Some(-4.0),
+            faith: 44,
+            score: 120,
+            military: 80.0,
+            public_stats: StatePublicEmpireStats {
+                city_count: Some(4),
+                population: Some(31),
+                food: Some(48.0),
+                production: Some(29.0),
+                wonder_count: Some(2),
+                suzerain_count: Some(1),
+                nuclear_devices: Some(3),
+                thermonuclear_devices: Some(2),
+            },
+            rivals: vec![StateRival {
+                player: 3,
+                military: 670.0,
+                score: 926,
+                techs: 53.0,
+                civics: 44.0,
+                science: 41.5,
+                culture: 23.0,
+                tourism: 61.0,
+                gold: 512.0,
+                gold_per_turn: -3.0,
+                faith: 88.0,
+                faith_per_turn: 19.0,
+                public_stats: StatePublicEmpireStats {
+                    city_count: Some(7),
+                    population: Some(49),
+                    food: Some(76.0),
+                    production: Some(43.0),
+                    wonder_count: Some(5),
+                    suzerain_count: Some(2),
+                    nuclear_devices: Some(4),
+                    thermonuclear_devices: Some(1),
+                },
+                ..StateRival::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        assert!(
+            mirror.game.player_city_ids(1).is_empty(),
+            "the aggregate must not fabricate fogged rival cities"
+        );
+
+        let observed = crate::obs::observation_spectator(&mirror.game, 0);
+        let mine = &observed["players"][0];
+        let rival = &observed["players"][1];
+        assert_eq!(mine["cities"], serde_json::json!(4));
+        assert_eq!(mine["population"], serde_json::json!(31));
+        assert_eq!(mine["yields"]["food"], serde_json::json!(48.0));
+        assert_eq!(mine["yields"]["production"], serde_json::json!(29.0));
+        assert_eq!(mine["yields"]["science"], serde_json::json!(12.0));
+        assert_eq!(mine["yields"]["culture"], serde_json::json!(9.0));
+        assert_eq!(mine["yields"]["faith"], serde_json::json!(7.0));
+        assert_eq!(mine["gold"], serde_json::json!(75.0));
+        assert_eq!(mine["gold_per_turn"], serde_json::json!(-4.0));
+        assert_eq!(mine["faith"], serde_json::json!(44.0));
+        assert_eq!(mine["military"], serde_json::json!(80));
+        assert_eq!(mine["score"], serde_json::json!(120));
+        assert_eq!(mine["wonder_count"], serde_json::json!(2));
+        assert_eq!(mine["suzerain_count"], serde_json::json!(1));
+        assert_eq!(mine["nuclear_devices"], serde_json::json!(3));
+        assert_eq!(mine["thermonuclear_devices"], serde_json::json!(2));
+
+        assert_eq!(rival["cities"], serde_json::json!(7));
+        assert_eq!(rival["population"], serde_json::json!(49));
+        assert_eq!(rival["yields"]["food"], serde_json::json!(76.0));
+        assert_eq!(rival["yields"]["production"], serde_json::json!(43.0));
+        assert_eq!(rival["yields"]["science"], serde_json::json!(41.5));
+        assert_eq!(rival["yields"]["culture"], serde_json::json!(23.0));
+        assert_eq!(rival["yields"]["faith"], serde_json::json!(19.0));
+        assert_eq!(rival["gold"], serde_json::json!(512.0));
+        assert_eq!(rival["gold_per_turn"], serde_json::json!(-3.0));
+        assert_eq!(rival["faith"], serde_json::json!(88.0));
+        assert_eq!(rival["military"], serde_json::json!(670));
+        assert_eq!(rival["nuclear_devices"], serde_json::json!(4));
+        assert_eq!(rival["thermonuclear_devices"], serde_json::json!(1));
+        assert_eq!(rival["wonder_count"], serde_json::json!(5));
+        assert_eq!(rival["suzerain_count"], serde_json::json!(2));
+        assert_eq!(rival["score"], serde_json::json!(926));
+        assert_eq!(rival["tourism_per_turn"], serde_json::json!(61.0));
+        assert_eq!(rival["victories"]["science"]["techs"], serde_json::json!(53));
+        assert_eq!(rival["victories"]["culture"]["civics"], serde_json::json!(44));
+
+        let saved = serde_json::to_string(&mirror.game).expect("save mirrored game");
+        let loaded: crate::game::Game = serde_json::from_str(&saved).expect("load mirrored game");
+        assert_eq!(
+            crate::obs::observation_spectator(&loaded, 0)["players"][1]["cities"],
+            serde_json::json!(7),
+            "the public totals survive a saved spectator frame"
+        );
+
+        state.turn = 41;
+        state.public_stats.city_count = Some(5);
+        state.public_stats.nuclear_devices = Some(0);
+        state.rivals[0].public_stats.population = Some(55);
+        state.rivals[0].public_stats.food = Some(80.0);
+        state.rivals[0].public_stats.nuclear_devices = Some(0);
+        state.rivals[0].faith_per_turn = 23.0;
+        state.rivals[0].techs = 54.0;
+        mirror.sync(&snapshot, &state, 0);
+        let refreshed = crate::obs::observation_spectator(&mirror.game, 0);
+        assert_eq!(refreshed["players"][0]["cities"], serde_json::json!(5));
+        assert_eq!(refreshed["players"][0]["nuclear_devices"], serde_json::json!(0));
+        assert_eq!(refreshed["players"][1]["population"], serde_json::json!(55));
+        assert_eq!(refreshed["players"][1]["yields"]["food"], serde_json::json!(80.0));
+        assert_eq!(refreshed["players"][1]["yields"]["faith"], serde_json::json!(23.0));
+        assert_eq!(refreshed["players"][1]["nuclear_devices"], serde_json::json!(0));
+        assert_eq!(
+            refreshed["players"][1]["victories"]["science"]["techs"],
+            serde_json::json!(54)
+        );
+    }
+
+    #[test]
+    fn public_empire_stats_are_recognized_on_the_live_wire() {
+        let state = state_from_json(
+            r#"{
+                "kind":"state", "turn":40,
+                "public_stats":{"city_count":4,"population":31,"food":48.0,
+                  "production":29.0,"wonder_count":2,"suzerain_count":1,
+                  "nuclear_devices":3,"thermonuclear_devices":2},
+                "rivals":[{"player":3,"public_stats":{"city_count":7,"population":49,
+                  "food":76.0,"production":43.0,"wonder_count":5,"suzerain_count":2,
+                  "nuclear_devices":4,"thermonuclear_devices":1}}]
+            }"#,
+        )
+        .expect("the live public standings wire parses");
+        assert_eq!(state.public_stats.city_count, Some(4));
+        assert_eq!(state.public_stats.thermonuclear_devices, Some(2));
+        assert_eq!(state.rivals[0].public_stats.population, Some(49));
+        assert_eq!(state.rivals[0].public_stats.wonder_count, Some(5));
+        assert!(
+            state.schema_gaps.is_empty(),
+            "recognized public standings must not become unmapped diagnostics: {:?}",
+            state.schema_gaps
+        );
     }
 
     #[test]
@@ -4201,9 +4365,11 @@ mod tests {
     /// field with no entry.
     #[test]
     fn the_schema_allowlists_cover_every_declared_field() {
-        for (struct_name, allowed) in
-            [("StateCity", CITY_KEYS), ("StateUnit", UNIT_KEYS)]
-        {
+        for (struct_name, allowed) in [
+            ("StateCity", CITY_KEYS),
+            ("StateUnit", UNIT_KEYS),
+            ("StatePublicEmpireStats", PUBLIC_STATS_KEYS),
+        ] {
             let declared = declared_fields(struct_name);
             assert!(
                 !declared.is_empty(),
@@ -7860,6 +8026,33 @@ pub struct StateTradeRoute {
     pub destination_y: i32,
 }
 
+/// Empire-wide facts Civilization VI exposes in standings without exposing
+/// where the underlying cities, wonders, or weapons are located.
+///
+/// The values are optional because an older control mod has no `public_stats`
+/// object, while `-1` remains the live export's per-field "could not read"
+/// sentinel. Keeping the aggregate separate from `StateRival::cities` lets the
+/// mirror remain fog-honest while the player HUD stays complete.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StatePublicEmpireStats {
+    #[serde(default)]
+    pub city_count: Option<i64>,
+    #[serde(default)]
+    pub population: Option<i64>,
+    #[serde(default)]
+    pub food: Option<f64>,
+    #[serde(default)]
+    pub production: Option<f64>,
+    #[serde(default)]
+    pub wonder_count: Option<i64>,
+    #[serde(default)]
+    pub suzerain_count: Option<i64>,
+    #[serde(default)]
+    pub nuclear_devices: Option<i64>,
+    #[serde(default)]
+    pub thermonuclear_devices: Option<i64>,
+}
+
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateRival {
     #[serde(default)]
@@ -7927,6 +8120,10 @@ pub struct StateRival {
     pub faith: f64,
     #[serde(default = "unknown_metric")]
     pub faith_per_turn: f64,
+    /// Public empire totals for the player HUD. These never contain positions
+    /// or identity of unseen cities, units, or wonders.
+    #[serde(default)]
+    pub public_stats: StatePublicEmpireStats,
     #[serde(default)]
     pub cities: Vec<StateCity>,
     #[serde(default)]
@@ -8283,6 +8480,12 @@ pub struct StateSnapshot {
     pub science: f64,
     #[serde(default)]
     pub culture: f64,
+    /// Exact public empire totals for the active seat. Its city records remain
+    /// the source of detailed state; this is the fog-safe aggregate shared with
+    /// every rival so a standing never becomes zero merely because the mirror
+    /// does not retain every city.
+    #[serde(default)]
+    pub public_stats: StatePublicEmpireStats,
     #[serde(default)]
     pub score: i64,
     /// Civilization VI's current Diplomatic Victory-point tally.
@@ -8546,16 +8749,58 @@ pub struct StateSnapshot {
     pub schema_gaps: Vec<String>,
 }
 
-/// Put a rival's host-reported economy on its seat: treasury and Faith
-/// balances and rates directly, per-turn Science and Culture as the same
-/// host-to-model delta the seat itself carries (`observed_yield_adjustments`),
-/// so the standings read the host's figures for every civilization and a
-/// planner comparing science races is not comparing against a guess made
-/// from whichever rival cities happen to be visible. Fields the host could
-/// not read (`-1`) or an older export never sent (NaN) leave the model's own
-/// derivation in place.
+/// Put fog-safe host standings on a reconstructed seat without manufacturing
+/// the hidden cities, wonders, or weapons that produced them.
+fn apply_public_empire_stats(
+    game: &mut crate::game::Game,
+    owner: usize,
+    source: &StatePublicEmpireStats,
+) {
+    let count = |value: Option<i64>| {
+        value
+            .filter(|value| *value >= 0)
+            .and_then(|value| usize::try_from(value).ok())
+    };
+    let population = source
+        .population
+        .filter(|value| *value >= 0)
+        .and_then(|value| i32::try_from(value).ok());
+    let observed = game
+        .observed_public_empire_stats
+        .entry(owner)
+        .or_default();
+    observed.city_count = count(source.city_count);
+    observed.population = population;
+    observed.wonder_count = count(source.wonder_count);
+    observed.suzerain_count = count(source.suzerain_count);
+    observed.nuclear_devices = source.nuclear_devices.filter(|value| *value >= 0);
+    observed.thermonuclear_devices = source
+        .thermonuclear_devices
+        .filter(|value| *value >= 0);
+}
+
+/// Put a rival's host-reported public standings and economy on its seat:
+/// treasury and Faith balances directly, all five top-bar yields as a
+/// host-to-model delta, and aggregate HUD totals separately. This makes the
+/// standings exact even when the city and unit records are intentionally
+/// fog-limited. Fields the host could not read (`-1`) or an older export never
+/// sent (NaN) leave the model's own derivation in place.
 fn apply_rival_public_economy(game: &mut crate::game::Game, owner: usize, rival: &StateRival) {
     let known = |value: f64| value.is_finite() && value >= 0.0;
+    apply_public_empire_stats(game, owner, &rival.public_stats);
+    let count = |value: f64| {
+        (value.is_finite() && value >= 0.0 && value <= usize::MAX as f64)
+            .then(|| value.round() as usize)
+    };
+    {
+        let observed = game
+            .observed_public_empire_stats
+            .entry(owner)
+            .or_default();
+        observed.techs = count(rival.techs);
+        observed.civics = count(rival.civics);
+        observed.tourism_per_turn = known(rival.tourism).then_some(rival.tourism);
+    }
     if known(rival.gold) {
         game.players[owner].gold = rival.gold;
     }
@@ -8568,7 +8813,13 @@ fn apply_rival_public_economy(game: &mut crate::game::Game, owner: usize, rival:
     if known(rival.faith) {
         game.players[owner].faith = rival.faith;
     }
-    if !known(rival.science) && !known(rival.culture) {
+    let stats = &rival.public_stats;
+    if !known(rival.science)
+        && !known(rival.culture)
+        && !stats.food.is_some_and(known)
+        && !stats.production.is_some_and(known)
+        && !known(rival.faith_per_turn)
+    {
         game.observed_yield_adjustments.remove(&owner);
         return;
     }
@@ -8576,12 +8827,23 @@ fn apply_rival_public_economy(game: &mut crate::game::Game, owner: usize, rival:
     for cid in game.player_city_ids(owner) {
         derived.add(game.city_yields(cid));
     }
+    derived.add(game.player_yield_extras(owner));
+    derived.add(game.arena_side_yields(owner));
     let mut adjustment = crate::rules::Yields::default();
+    if let Some(food) = stats.food.filter(|value| known(*value)) {
+        adjustment.food = food - derived.food;
+    }
+    if let Some(production) = stats.production.filter(|value| known(*value)) {
+        adjustment.production = production - derived.production;
+    }
     if known(rival.science) {
         adjustment.science = rival.science - derived.science;
     }
     if known(rival.culture) {
         adjustment.culture = rival.culture - derived.culture;
+    }
+    if known(rival.faith_per_turn) {
+        adjustment.faith = rival.faith_per_turn - derived.faith;
     }
     game.observed_yield_adjustments.insert(owner, adjustment);
 }
@@ -9409,6 +9671,11 @@ const UNIT_KEYS: &[&str] = &[
     "religion", "fortified", "fortify_turns", "formation_count", "great_person",
 ];
 
+const PUBLIC_STATS_KEYS: &[&str] = &[
+    "city_count", "population", "food", "production", "wonder_count", "suzerain_count",
+    "nuclear_devices", "thermonuclear_devices",
+];
+
 /// The field names `state_schema_gaps` will accept for one struct, extracted from
 /// this file's own source.
 ///
@@ -9454,7 +9721,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "taken_religion_beliefs", "religions", "prophet_pending",
         "policies", "policy_slots", "gold", "gold_per_turn", "faith", "faith_per_turn",
         "faith_sources", "science",
-        "culture", "score", "dvp", "favor",
+        "culture", "public_stats", "score", "dvp", "favor",
         "military",
         "trade_capacity",
         "great_person_points",
@@ -9499,6 +9766,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "player", "civ", "leader", "can_declare", "score", "dvp", "military", "at_war",
         "techs", "civics", "cities", "units",
         "science", "culture", "tourism", "gold", "gold_per_turn", "faith", "faith_per_turn",
+        "public_stats",
     ];
     const MINOR: &[&str] = &[
         "player", "civ", "score", "military", "at_war", "suzerain", "envoys",
@@ -9531,9 +9799,19 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
             keys(unit, UNIT, "unit", gaps);
         }
     }
+    fn public_stats(
+        value: Option<&serde_json::Value>,
+        path: &str,
+        gaps: &mut std::collections::BTreeSet<String>,
+    ) {
+        if let Some(value) = value {
+            keys(value, PUBLIC_STATS_KEYS, path, gaps);
+        }
+    }
 
     let mut gaps = std::collections::BTreeSet::new();
     keys(value, STATE, "state", &mut gaps);
+    public_stats(value.get("public_stats"), "public_stats", &mut gaps);
     cities(value.get("cities"), &mut gaps);
     units(value.get("units"), &mut gaps);
     units(value.get("hostiles"), &mut gaps);
@@ -9545,6 +9823,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     }
     for rival in value.get("rivals").and_then(|v| v.as_array()).into_iter().flatten() {
         keys(rival, RIVAL, "rival", &mut gaps);
+        public_stats(rival.get("public_stats"), "rival.public_stats", &mut gaps);
         cities(rival.get("cities"), &mut gaps);
         units(rival.get("units"), &mut gaps);
     }
@@ -12402,12 +12681,14 @@ fn apply_observed_host_metrics(
 ) {
     game.observed_trade_capacity.clear();
     game.observed_yield_adjustments.clear();
+    game.observed_public_empire_stats.clear();
     game.observed_city_loyalty_per_turn.clear();
     game.observed_city_strength.clear();
     game.observed_city_max_wall_hp.clear();
     if let Some(capacity) = state.trade_capacity.filter(|capacity| *capacity >= 0) {
         game.observed_trade_capacity.insert(0, capacity);
     }
+    apply_public_empire_stats(game, 0, &state.public_stats);
 
     apply_observed_city_economy(game, state, unmapped);
 
@@ -12420,7 +12701,22 @@ fn apply_observed_host_metrics(
     // figure adds them (`player_yield_extras`), so the residual measured here
     // is only what CIVVIS still cannot derive.
     derived.add(game.player_yield_extras(0));
+    derived.add(game.arena_side_yields(0));
     let mut adjustment = crate::rules::Yields::default();
+    if let Some(host_food) = state
+        .public_stats
+        .food
+        .filter(|value| value.is_finite() && *value >= 0.0)
+    {
+        adjustment.food = host_food - derived.food;
+    }
+    if let Some(host_production) = state
+        .public_stats
+        .production
+        .filter(|value| value.is_finite() && *value >= 0.0)
+    {
+        adjustment.production = host_production - derived.production;
+    }
     if state.science.is_finite() && state.science > 0.0 {
         adjustment.science = state.science - derived.science;
     }
@@ -12433,7 +12729,12 @@ fn apply_observed_host_metrics(
     if let Some(host_faith) = state.faith_per_turn.filter(|value| value.is_finite() && *value >= 0.0) {
         adjustment.faith = host_faith - derived.faith;
     }
-    if adjustment.science != 0.0 || adjustment.culture != 0.0 || adjustment.faith != 0.0 {
+    if adjustment.food != 0.0
+        || adjustment.production != 0.0
+        || adjustment.science != 0.0
+        || adjustment.culture != 0.0
+        || adjustment.faith != 0.0
+    {
         game.observed_yield_adjustments.insert(0, adjustment);
     }
     // The rivals' seats, the same way (their yields, treasury and Faith).
