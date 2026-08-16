@@ -4905,8 +4905,23 @@ local function exportState(player, pid, turn)
 						for _, route in ipairs(theirRoutes or {}) do
 							if try(function() return route.DestinationCityPlayer; end, -1) == pid then
 								local dest = try(function() return route.DestinationCityID; end, -1);
-								incomingRoutes[dest] = incomingRoutes[dest] or { foreign = 0, domestic = 0 };
+								incomingRoutes[dest] = incomingRoutes[dest]
+									or { foreign = 0, domestic = 0, origins = {} };
 								incomingRoutes[dest].foreign = incomingRoutes[dest].foreign + 1;
+								-- The ORIGIN city and its owner, so the mirror can seat
+								-- the route on the board (owner = the rival's seat, origin
+								-- = the rival city at these coordinates) instead of only
+								-- counting it: alliance/treaty/Great-Merchant yields at
+								-- the destination all read `game.routes`, which carried
+								-- only OUR routes until run civvis-20260816T200454Z showed
+								-- Cumae's "+4 from Incoming Trade Routes" (World Congress
+								-- Trade Policy A) that the model could not see.
+								local origins = incomingRoutes[dest].origins;
+								origins[#origins + 1] = {
+									x = try(function() return theirCity:GetX(); end, -1),
+									y = try(function() return theirCity:GetY(); end, -1),
+									player = otherId,
+								};
 							end
 						end
 					end
@@ -4929,7 +4944,7 @@ local function exportState(player, pid, turn)
 			end, nil);
 			if destinationPlayer == pid and destinationID ~= nil and destinationID >= 0 then
 				incomingRoutes[destinationID] = incomingRoutes[destinationID]
-					or { foreign = 0, domestic = 0 };
+					or { foreign = 0, domestic = 0, origins = {} };
 				incomingRoutes[destinationID].domestic = incomingRoutes[destinationID].domestic + 1;
 			end
 			tradeRoutes[#tradeRoutes + 1] = {
@@ -6538,6 +6553,50 @@ local function exportState(player, pid, turn)
 				names[#names + 1] = row and row.CommemorationType or tostring(active);
 			end
 			return names;
+		end, nil),
+		-- ★★★★ THE WORLD CONGRESS RESOLUTIONS IN EFFECT, every turn. The
+		-- `wc_outcome` event says what the last session decided; this says what
+		-- is binding NOW, in the shape the mirror maps onto its own
+		-- `active_congress_effects` (`Game::congress_effect_active`). Run
+		-- civvis-20260816T200454Z: Trade Policy A on us for t82-101 paid Cumae
+		-- "+4 from Incoming Trade Routes" per foreign route and +1 route
+		-- capacity, and the model, with no Congress on the board, could not
+		-- explain either. `GetResolutions(pid)` is what the shipped
+		-- CityPanel_Expansion2 reads between sessions (it checks Border Control
+		-- B against `ChosenOption`/`ChosenThing`); the same call returns the
+		-- ballot DURING a session, whose entries have no `ChosenOption` yet, so
+		-- only entries with a chosen option are in effect. `option` is 1 (A) /
+		-- 2 (B) by matching the chosen LOC key against the resolution's two
+		-- effect descriptions; `target` is `ChosenThing` verbatim (a player id
+		-- for PLAYER-targeted resolutions, a type name otherwise).
+		resolutions = try(function()
+			local out = {};
+			local wc = Game.GetWorldCongress();
+			if wc == nil then return out; end
+			for i, r in pairs(wc:GetResolutions(pid) or {}) do
+				if type(i) == "number" and type(r) == "table" and r.Type ~= nil
+					and type(r.ChosenOption) == "string" and r.ChosenOption ~= "" then
+					local info = GameInfo.Resolutions[r.Type];
+					local option = 0;
+					if info ~= nil then
+						if r.ChosenOption == info.Effect1Description then option = 1;
+						elseif r.ChosenOption == info.Effect2Description then option = 2; end
+					end
+					out[#out + 1] = {
+						type = tostring(info and info.ResolutionType or r.Type),
+						option = option,
+						target = tostring(r.ChosenThing or ""),
+					};
+				end
+			end
+			return out;
+		end, nil),
+		-- Turns until the next regular session, i.e. how long the resolutions
+		-- above stay binding (`GetMeetingStatus().TurnsLeft`, the number the
+		-- shipped congress button counts down).
+		congress_turns_left = try(function()
+			local status = Game.GetWorldCongress():GetMeetingStatus();
+			return status and tonumber(status.TurnsLeft) or nil;
 		end, nil),
 		-- Great Person POINTS, not the Great People already earned. The planner
 		-- prices every district project against the live race -- how close we
