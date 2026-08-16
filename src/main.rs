@@ -1202,7 +1202,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// doctrine that owns the besieged-city path; frozen controllers keep the raid
 /// test as it was (asserted). Compatibility re-pin; the Elo protocol does not
 /// move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb1c4_e396_cd1c_fd3f;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe6ca_4305_0ad7_9c69;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
