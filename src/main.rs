@@ -1182,7 +1182,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The Amenity-repair band gate sits inside `amenity_districts`, which every
 /// native constructor and the frozen anchor leave off. Compatibility re-pin;
 /// the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb10d_8796_6bbf_3c80;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8970_263e_f49a_f070;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
