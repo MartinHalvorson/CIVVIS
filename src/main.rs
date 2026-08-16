@@ -1227,6 +1227,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `score_horizon`, off for `AdvancedAi::legacy()` (asserted); the frozen
 /// anchor races and arms exactly as before. Compatibility re-pin; the Elo
 /// protocol does not move.
+/// The sea's recon arm — the one-ship purchase and the naval explorer — is
+/// behind `naval_recon`, off for `AdvancedAi::legacy()` (asserted); the
+/// frozen anchor's ships and production are unchanged. Compatibility re-pin;
+/// the Elo protocol does not move.
 /// The in-lane answer to a Science or score leader is behind
 /// `counter_in_lane`, which the live bridge now enables and
 /// `AdvancedAi::legacy()` leaves off (asserted); the frozen anchor still
