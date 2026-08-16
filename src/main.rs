@@ -1299,7 +1299,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `explore_dead_targets`, which the Firaxis order bridge explicitly enables;
 /// `AdvancedAi::legacy()` keeps that flag off. Compatibility re-pin; the Elo
 /// protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe62c_ef31_7890_19a3;
+/// The idle Entertainment Complex reservation is behind
+/// `amenity_project_preemption`, which both `AdvancedAi::legacy()` and the
+/// stock constructor keep off (asserted in
+/// `the_repair_bundle_cannot_reach_the_frozen_anchor`). Compatibility re-pin;
+/// the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbd7a_8ddd_e2cc_237c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

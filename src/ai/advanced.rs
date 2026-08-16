@@ -15685,19 +15685,20 @@ impl AdvancedAi {
         }
     }
 
-    /// Give one idle city the next direct Entertainment Complex building when
-    /// a host-observed deficit is widespread. The existing crisis handoff
+    /// Give one idle city the next Entertainment Complex stage when a
+    /// host-observed deficit is widespread. The existing crisis handoff
     /// intentionally leaves Conquest and active wars alone because it would
     /// replace an in-flight project; this narrower route has no such trade:
     /// it only fills a queue that the higher-priority defense and Great Person
     /// passes already left empty.
     ///
-    /// One reservation at a time matters here. An Arena resolves its city's
-    /// immediate shortfall, but asking every eligible city to start one in the
-    /// same callback would turn an empire-wide penalty into a blanket wartime
-    /// infrastructure pivot. The next queue can be considered after the first
-    /// building is observed complete.
-    fn reserve_idle_amenity_building_for_widespread_crisis(
+    /// One reservation at a time matters here. If the empire has not started
+    /// an Entertainment Complex, its first reservation is the district;
+    /// otherwise it is the next direct building (normally an Arena). That
+    /// makes the already-priced regional path reachable before ordinary
+    /// strategic production fills every queue, without turning a broad -10%
+    /// yield band into a blanket infrastructure pivot.
+    fn reserve_idle_entertainment_path_for_widespread_crisis(
         &self,
         g: &mut Game,
         pid: usize,
@@ -15744,22 +15745,34 @@ impl AdvancedAi {
             }
             _ => false,
         };
-        // An Arena, Zoo, or Stadium already underway owns this one repair
-        // reservation. Do not create a competing copy while Firaxis still
-        // reports the earlier build as current.
+        let has_entertainment_complex = city_ids.iter().any(|cid| {
+            g.cities[cid]
+                .districts
+                .keys()
+                .any(|district| g.district_family(*district) == "entertainment_complex")
+        });
+        // An Entertainment Complex, Arena, Zoo, or Stadium already underway
+        // owns this one path reservation. Do not create a competing copy while
+        // Firaxis still reports the earlier build as current.
         if city_ids.iter().any(|cid| {
             g.cities[cid]
                 .queue
                 .first()
-                .is_some_and(is_direct_entertainment_repair)
+                .is_some_and(|item| {
+                    is_direct_entertainment_repair(item)
+                        || matches!(item, Item::District { district, .. }
+                            if g.district_family(*district) == "entertainment_complex")
+                })
         }) {
             return;
         }
 
-        // Prefer the deepest local shortfall, then the greatest immediate
-        // amenity lift, then the fastest legal completion. This makes a normal
-        // Arena the first stage of a chain without hard-coding its name.
-        let mut best: Option<(i64, f64, f64, u32, String, Item)> = None;
+        // Prefer a direct building when the district already exists. Otherwise
+        // reserve precisely one legal Entertainment Complex; it is the missing
+        // first stage that lets the existing Arena/Zoo path ever bind. Within a
+        // stage prefer the deepest local shortfall, then the greatest immediate
+        // amenity lift, then the fastest legal completion.
+        let mut best: Option<(u8, i64, f64, f64, u32, String, Item)> = None;
         for (cid, shortfall) in shortfalls {
             if shortfall == 0 || g.cities[&cid].queue.first().is_some() {
                 continue;
@@ -15772,34 +15785,41 @@ impl AdvancedAi {
             }
             let production = g.city_yields(cid).production.max(1.0);
             for item in g.producible_items(pid, cid) {
-                let Item::Building { building } = &item else {
-                    continue;
+                let (stage, amenity) = match &item {
+                    Item::Building { building } if is_direct_entertainment_repair(&item) => {
+                        (1, g.rules.buildings[building].amenity)
+                    }
+                    Item::District { district, pos }
+                        if !has_entertainment_complex
+                            && g.district_family(*district) == "entertainment_complex" =>
+                    {
+                        (0, g.district_amenity(district, *pos))
+                    }
+                    _ => continue,
                 };
-                if !is_direct_entertainment_repair(&item) {
-                    continue;
-                }
-                let amenity = g.rules.buildings[building].amenity;
                 let turns = g.item_remaining_cost_for_city(pid, cid, &item) / production;
                 let key = format!("{item:?}");
                 let replace = best.as_ref().is_none_or(
-                    |(old_shortfall, old_amenity, old_turns, old_city, old_key, _)| {
-                        shortfall > *old_shortfall
-                            || (shortfall == *old_shortfall
-                                && (amenity > *old_amenity + f64::EPSILON
-                                    || ((amenity - *old_amenity).abs() <= f64::EPSILON
-                                        && (turns + f64::EPSILON < *old_turns
-                                            || ((turns - *old_turns).abs() <= f64::EPSILON
-                                                && (cid, key.as_str())
-                                                    < (*old_city, old_key.as_str()))))))
+                    |(old_stage, old_shortfall, old_amenity, old_turns, old_city, old_key, _)| {
+                        stage > *old_stage
+                            || (stage == *old_stage
+                                && (shortfall > *old_shortfall
+                                    || (shortfall == *old_shortfall
+                                        && (amenity > *old_amenity + f64::EPSILON
+                                            || ((amenity - *old_amenity).abs() <= f64::EPSILON
+                                                && (turns + f64::EPSILON < *old_turns
+                                                    || ((turns - *old_turns).abs() <= f64::EPSILON
+                                                        && (cid, key.as_str())
+                                                            < (*old_city, old_key.as_str()))))))))
                     },
                 );
                 if replace {
-                    best = Some((shortfall, amenity, turns, cid, key, item));
+                    best = Some((stage, shortfall, amenity, turns, cid, key, item));
                 }
             }
         }
 
-        let Some((_, _, _, city, _, item)) = best else {
+        let Some((_, _, _, _, city, _, item)) = best else {
             return;
         };
         let city_name = g.cities[&city].name.clone();
@@ -15816,7 +15836,7 @@ impl AdvancedAi {
         {
             think!(self.journal(), Economy, Decision,
                 "{} starts {} for widespread Amenity pressure", city_name, Self::plain_item(&item);
-                "{} of {} cities short, {} total Amenities missing; no direct repair was underway",
+                "{} of {} cities short, {} total Amenities missing; no Entertainment Complex stage was underway",
                 short_cities, city_ids.len(), total_shortfall);
         }
     }
@@ -26293,7 +26313,7 @@ impl AdvancedAi {
             // Science reservations, then claims only an idle, non-threatened
             // city before the generic strategic scorer can refill it with a
             // Builder or unit.
-            self.reserve_idle_amenity_building_for_widespread_crisis(g, pid, &plan);
+            self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);
             // ★★★★ And under every victory lane on the treated seat: see
             // `governor_every_lane` — the pricing was absent exactly where the
             // strong games spend their mid-game.
@@ -35502,7 +35522,7 @@ mod tests {
         };
 
         let ordinary = AdvancedAi::new();
-        ordinary.reserve_idle_amenity_building_for_widespread_crisis(&mut game, 0, &plan);
+        ordinary.reserve_idle_entertainment_path_for_widespread_crisis(&mut game, 0, &plan);
         assert_eq!(game.cities[&capital].queue.first(), Some(&builder));
         assert!(
             cities[1..]
@@ -35525,7 +35545,7 @@ mod tests {
             .insert(local_city, -4 - modeled);
         let mut local_live = AdvancedAi::new();
         local_live.enable_live_bridge();
-        local_live.reserve_idle_amenity_building_for_widespread_crisis(&mut local, 0, &plan);
+        local_live.reserve_idle_entertainment_path_for_widespread_crisis(&mut local, 0, &plan);
         assert_eq!(local.cities[&capital].queue.first(), Some(&builder));
         assert!(
             cities[1..]
@@ -35536,7 +35556,7 @@ mod tests {
 
         let mut live = AdvancedAi::new();
         live.enable_live_bridge();
-        live.reserve_idle_amenity_building_for_widespread_crisis(&mut game, 0, &plan);
+        live.reserve_idle_entertainment_path_for_widespread_crisis(&mut game, 0, &plan);
         assert_eq!(game.cities[&capital].queue.first(), Some(&builder));
         let reserved = cities[1..]
             .iter()
@@ -35558,7 +35578,107 @@ mod tests {
         );
 
         // The in-flight Arena owns the reservation until it completes.
-        live.reserve_idle_amenity_building_for_widespread_crisis(&mut game, 0, &plan);
+        live.reserve_idle_entertainment_path_for_widespread_crisis(&mut game, 0, &plan);
+        assert_eq!(
+            cities[1..]
+                .iter()
+                .filter(|city| game.cities[city].queue.first().is_some())
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn widespread_live_amenity_pressure_starts_one_idle_entertainment_complex() {
+        // The live Rome at t171 had eight cities at -1/-2, no Entertainment
+        // Complex, and every strategic queue preferred a Bath, project, or
+        // ordinary development. The direct-building reservation could not
+        // fire because there was no district to host an Arena. Reproduce that
+        // broad-but-not-severe shape while preserving a non-idle queue.
+        let (mut game, capital, home) = empire_with_a_capital(71_115);
+        let mut cities = vec![capital];
+        for _ in 0..3 {
+            cities.push(found_nearby_test_city(&mut game, 0, home));
+        }
+        game.players[0]
+            .civics
+            .insert(crate::name!("games_recreation"));
+        for city in &cities {
+            game.cities.get_mut(city).unwrap().pop = 7;
+            install_ai_test_district(&mut game, *city, "campus");
+            let modeled = game.city_amenity_surplus(&game.cities[city]);
+            game.observed_city_amenity_adjustments
+                .insert(*city, -1 - modeled);
+        }
+        assert!(cities.iter().all(|city| {
+            !game.cities[city]
+                .districts
+                .keys()
+                .any(|district| game.district_family(*district) == "entertainment_complex")
+        }));
+        assert!(cities[1..].iter().any(|city| {
+            game.producible_items(0, *city).iter().any(|item| {
+                matches!(item, Item::District { district, .. }
+                    if game.district_family(*district) == "entertainment_complex")
+            })
+        }));
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        game.apply(
+            0,
+            &Action::Produce {
+                city: capital,
+                item: builder.clone(),
+            },
+        )
+        .expect("queue the active Builder that the Amenity path must preserve");
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 5,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        let ordinary = AdvancedAi::new();
+        ordinary.reserve_idle_entertainment_path_for_widespread_crisis(&mut game, 0, &plan);
+        assert_eq!(game.cities[&capital].queue.first(), Some(&builder));
+        assert!(
+            cities[1..]
+                .iter()
+                .all(|city| game.cities[city].queue.first().is_none()),
+            "the frozen/live-disabled controller must not reserve a district"
+        );
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        live.reserve_idle_entertainment_path_for_widespread_crisis(&mut game, 0, &plan);
+        assert_eq!(game.cities[&capital].queue.first(), Some(&builder));
+        let reserved = cities[1..]
+            .iter()
+            .filter(|city| {
+                matches!(
+                    game.cities[city].queue.first(),
+                    Some(Item::District { district, .. })
+                        if game.district_family(*district) == "entertainment_complex"
+                )
+            })
+            .count();
+        assert_eq!(reserved, 1, "one idle city opens the Entertainment path");
+        assert_eq!(
+            cities[1..]
+                .iter()
+                .filter(|city| game.cities[city].queue.first().is_some())
+                .count(),
+            1,
+            "the broad deficit reserves one queue, not every eligible city"
+        );
+
+        // The in-flight district owns the reservation until it completes.
+        live.reserve_idle_entertainment_path_for_widespread_crisis(&mut game, 0, &plan);
         assert_eq!(
             cities[1..]
                 .iter()
