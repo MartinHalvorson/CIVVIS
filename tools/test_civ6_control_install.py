@@ -417,6 +417,29 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('emit("wc_vote"', forfeit)
         # And the state now carries the points and the favor.
         self.assertIn("dvp = try(function() return player:GetStats():GetDiplomaticVictoryPoints(); end, nil)", source)
+
+    def test_favor_is_banked_until_a_congress_leader_is_within_reach(self) -> None:
+        """Run civvis-20260816T123936Z spent 180/220/220/264 Favor against
+        leaders on 8/11/14/15 points and still lost to a diplomatic victory at
+        t239: the extra votes are on a rising cost ladder, so the bank buys the
+        most at the sessions a leader can win from. Below the floor only the
+        free vote is cast against the leader; from the floor the bank is spent.
+        """
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        voter = source.split("local function voteWorldCongress(pid)", 1)[1].split("local player, pid = localPlayer();", 1)[0]
+        arm = voter.split('if rtype == "WC_RES_DIPLOVICTORY" then', 1)[1].split("elseif r.TargetType", 1)[0]
+        self.assertIn("local floor = cfg.DiploVictoryVoteFloor or 12;", arm)
+        self.assertIn("if (tonumber(leaderPoints) or 0) >= floor then", arm)
+        # The paid ladder sits inside the floor gate; the free vote (n = 1) and
+        # the leader selection do not.
+        gate = arm.index("if (tonumber(leaderPoints) or 0) >= floor then")
+        ladder = arm.index("costs[n] <= favor")
+        free = arm.index("local n = 1;")
+        selection = arm.index("if tonumber(t) == leader then selection = idx; end")
+        self.assertLess(selection, gate)
+        self.assertLess(free, gate)
+        self.assertLess(gate, ladder)
+
         self.assertIn("favor = try(function() return player:GetFavor(); end, nil)", source)
         self.assertIn("dvp = try(function() return other:GetStats():GetDiplomaticVictoryPoints(); end, nil)", source)
 
