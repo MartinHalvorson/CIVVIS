@@ -761,9 +761,13 @@ pub static PLANS: &[Plan] = &[
                    &[Terrain("plains"), Hills(true), Improvement(Some("fort"))]),
         ],
         fronts: [
-            // The landing force, still afloat in the channel. (Seat 0 is
-            // X Corps.)
-            front(p(0.30, 0.50), p(0.24, 0.36)),
+            // The landing force at the head of the channel, against Wolmi-do's
+            // western face — Green Beach, which had to be taken on the morning
+            // tide before anything could go in at the city. The front touches
+            // both elements on purpose: the assault companies come ashore on
+            // the island while the gunfire-support ship stays in the water
+            // beside them. (Seat 0 is X Corps.)
+            front(p(0.46, 0.50), p(0.34, 0.42)),
             // The garrison, on the wall and in the streets behind it.
             front(p(0.82, 0.50), p(0.82, 0.24)),
         ],

@@ -610,6 +610,105 @@ mod tests {
         }
     }
 
+    /// An army that stood in a line opens in a line. Every piece of a force
+    /// has to come down on that side's own front rather than in a clump around
+    /// one tile — and, at Thermopylae in particular, the Greeks have to be in
+    /// the gate and the Persians outside it, because a rearguard that opens
+    /// west of the wall is not holding anything.
+    #[test]
+    fn each_force_forms_up_along_its_own_front() {
+        for scenario in crate::historical_scenarios::generic_scenarios() {
+            let mut options = crate::game::GameOptions::new(
+                2,
+                scenario.width,
+                scenario.height,
+                2026,
+                scenario.turns,
+                0,
+            );
+            options.map_script =
+                crate::historical_scenarios::script_from_id(scenario.id).unwrap();
+            options.start_era = scenario.era_index;
+            options.barbarians = false;
+            let game = crate::game::Game::new_with(options);
+            let plan = by_id(scenario.id).unwrap();
+            let rules = crate::rules::Rules::embedded();
+            for side in 0..2 {
+                // Aircraft are based rather than drawn up: a squadron belongs
+                // to whatever can carry it, not to a place in the line, so it
+                // is not held to the front the ground and the ships form on.
+                let placed: Vec<Pos> = game
+                    .player_unit_ids(side)
+                    .iter()
+                    .filter_map(|uid| game.units.get(uid))
+                    .filter(|unit| {
+                        rules
+                            .units
+                            .get(unit.kind.as_str())
+                            .is_none_or(|spec| spec.domain.as_deref() != Some("air"))
+                    })
+                    .map(|unit| unit.pos)
+                    .collect();
+                assert!(!placed.is_empty(), "{} side {side} deployed nothing", scenario.id);
+                // Every piece within reach of the segment its side formed on.
+                // Four hexes is loose on purpose: a line spills backward when
+                // its own front is short, and some of these fronts are two
+                // tiles wide by design.
+                let front = plan.fronts[side];
+                let (fx, fy) = chart_point(&game.map, front.from);
+                let (tx, ty) = chart_point(&game.map, front.to);
+                for pos in &placed {
+                    let (col, row) = hex::axial_to_offset(pos.0, pos.1);
+                    let off =
+                        distance_to_segment((col as f32, row as f32), (fx, fy), (tx, ty));
+                    assert!(
+                        off <= 4.5,
+                        "{} side {side} put a unit {off:.1} from its front at {pos:?}",
+                        scenario.id
+                    );
+                }
+            }
+        }
+    }
+
+    /// The Greeks hold the gate and the Persians are outside it: the one
+    /// arrangement that makes Thermopylae the battle it was, checked on the
+    /// board rather than in the briefing.
+    #[test]
+    fn leonidas_opens_inside_the_gate_and_xerxes_outside_it() {
+        let scenario = crate::historical_scenarios::by_id("thermopylae").unwrap();
+        let mut options = crate::game::GameOptions::new(
+            2,
+            scenario.width,
+            scenario.height,
+            2026,
+            scenario.turns,
+            0,
+        );
+        options.map_script = crate::historical_scenarios::script_from_id("thermopylae").unwrap();
+        options.start_era = scenario.era_index;
+        options.barbarians = false;
+        let game = crate::game::Game::new_with(options);
+        let column = |side: usize| {
+            game.player_unit_ids(side)
+                .iter()
+                .filter_map(|uid| game.units.get(uid))
+                .map(|unit| hex::axial_to_offset(unit.pos.0, unit.pos.1).0)
+                .collect::<Vec<_>>()
+        };
+        let greeks = column(0);
+        let persians = column(1);
+        let gate = game.map.width / 2;
+        assert!(
+            greeks.iter().all(|col| *col >= gate),
+            "the Hellenic rearguard must stand at or east of the Middle Gate, got {greeks:?}"
+        );
+        assert!(
+            persians.iter().all(|col| *col < gate),
+            "the Persian host must still be west of the gate, got {persians:?}"
+        );
+    }
+
     /// Thermopylae is the battle whose whole military content is the width of
     /// the ground, and it is the one the old noise painter flattered worst.
     /// The claims: the Malian Gulf is north, Kallidromos is south, and the
