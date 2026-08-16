@@ -360,6 +360,32 @@ class ProtectedInstallTest(unittest.TestCase):
         # The Prophet branch of the Great Person routine retires through the same gate.
         self.assertIn('and commandUnit(unit, CMD["UNITCOMMAND_DELETE"], true) then', source)
 
+    def test_controller_votes_in_the_world_congress_before_forfeiting_the_session(self) -> None:
+        # The session was a soft blocker the ladder dismissed: nineteen forfeits
+        # in one game, no vote in 242 turns, and a rival's diplomatic victory
+        # ended it. The votes go through the shipped popup's own operations.
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn("local function voteWorldCongress(pid)", source)
+        voter = source.split("local function voteWorldCongress(pid)", 1)[1].split("local player, pid = localPlayer();", 1)[0]
+        self.assertIn("wc:GetResolutions(pid)", voter)
+        self.assertIn("wc:GetVotesandFavorCost(pid)", voter)
+        self.assertIn("GetDiplomaticVictoryPoints()", voter)
+        # Against the leader on the diplomatic-victory resolution, with all the favor affords.
+        self.assertIn('if rtype == "WC_RES_DIPLOVICTORY" then', voter)
+        self.assertIn("option = 2;", voter)
+        self.assertIn("costs[n] <= favor", voter)
+        self.assertIn("PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE", voter)
+        self.assertIn("PlayerOperations.WORLD_CONGRESS_SUBMIT_TURN", voter)
+        # Wired into the soft-blocker forfeit path, once per turn, before the dismissal.
+        forfeit = source.split('if name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"', 1)[1].split("local dropped = dismissBlocker(pid, blocker);", 1)[0]
+        self.assertIn("seen.voted_turn ~= turn", forfeit)
+        self.assertIn("voteWorldCongress(pid)", forfeit)
+        self.assertIn('emit("wc_vote"', forfeit)
+        # And the state now carries the points and the favor.
+        self.assertIn("dvp = try(function() return player:GetStats():GetDiplomaticVictoryPoints(); end, nil)", source)
+        self.assertIn("favor = try(function() return player:GetFavor(); end, nil)", source)
+        self.assertIn("dvp = try(function() return other:GetStats():GetDiplomaticVictoryPoints(); end, nil)", source)
+
     def test_controller_protects_damaged_unwalled_cities_and_retires_spent_prophets(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
 
