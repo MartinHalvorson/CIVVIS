@@ -1256,7 +1256,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// for `AdvancedAi::legacy()` (asserted); the frozen anchor's settler
 /// re-picks exactly as before. Compatibility re-pin; the Elo protocol does
 /// not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa333_ab63_a585_75ea;
+/// The tally price of a Great Person is behind `tally_great_people`, off for
+/// `AdvancedAi::legacy()` (asserted); the frozen anchor's patronage keeps its
+/// closeness limit. Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd6e4_3b40_1e3f_e90a;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
