@@ -46,6 +46,7 @@ class ProtectedInstallTest(unittest.TestCase):
         rivals = exporter.split("-- Rivals:", 1)[1].split(
             "-- Met city-states", 1
         )[0]
+        rival_record = rivals.split("rivals[#rivals + 1] = {", 1)[1]
 
         self.assertIn("local function publicEmpireStats(subject, suzerainCounts)", exporter)
         self.assertIn("city:GetYield(YieldTypes.FOOD)", exporter)
@@ -54,6 +55,11 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("local function publicSuzerainCounts()", exporter)
         self.assertIn("public_stats = publicStats,", exporter)
         self.assertIn("public_stats = otherPublicStats,", rivals)
+        self.assertIn("government = try(function()", rival_record)
+        self.assertIn("culture:GetCurrentGovernment()", rival_record)
+        self.assertIn("Game.GetEras():HasDarkAge(otherId)", rival_record)
+        self.assertIn("Game.GetEras():HasGoldenAge(otherId)", rival_record)
+        self.assertIn("Game.GetEras():HasHeroicGoldenAge(otherId)", rival_record)
         self.assertLess(
             rivals.index("local otherPublicStats = publicEmpireStats(other, suzerainCounts);"),
             rivals.index("for _, city in other:GetCities():Members() do"),

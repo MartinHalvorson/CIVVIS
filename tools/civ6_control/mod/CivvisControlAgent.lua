@@ -5735,6 +5735,26 @@ local function exportState(player, pid, turn)
 				leader = try(function()
 					return PlayerConfigurations[otherId]:GetLeaderTypeName();
 				end, ""),
+				-- These are the rival's public diplomacy-ribbon facts. They carry no
+				-- city, unit or research detail, but without them CivVis renders every
+				-- fogged rival as Normal Age with an unformed government.
+				government = try(function()
+					local culture = other:GetCulture();
+					if culture == nil then return nil; end
+					local index = culture:GetCurrentGovernment();
+					if type(index) ~= "number" or index < 0 then return nil; end
+					local row = GameInfo.Governments[index];
+					return row ~= nil and row.GovernmentType or nil;
+				end, nil),
+				dark_age = try(function()
+					return Game.GetEras():HasDarkAge(otherId);
+				end, nil),
+				golden_age = try(function()
+					return Game.GetEras():HasGoldenAge(otherId);
+				end, nil),
+				heroic_golden_age = try(function()
+					return Game.GetEras():HasHeroicGoldenAge(otherId);
+				end, nil),
 				at_war = try(function() return diplomacy:IsAtWarWith(otherId); end, false),
 				-- ★★★ THE GAME'S OWN ANSWER TO "MAY WE DECLARE ON THEM". CIVVIS gates a
 				-- war on its own diplomatic bookkeeping — it wants a casus belli, and
