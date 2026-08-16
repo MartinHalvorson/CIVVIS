@@ -1983,6 +1983,227 @@ mod tests {
         assert_eq!(recon.game.city_religion(city), Some("Orthodoxy"));
     }
 
+    /// Each founded religion's beliefs land on its founder's seat, and a city
+    /// following that religion reads exactly those follower beliefs. Rome
+    /// followed a Catholicism it did not found and read 23 Faith in the
+    /// model against the host's 35 for the last twenty turns of run
+    /// civvis-20260816T123936Z: three Wonders under Divine Inspiration, a
+    /// belief the union `taken_religion_beliefs` could not place.
+    #[test]
+    fn each_religions_beliefs_sit_on_its_founders_seat() {
+        let mut center = plot(5, 4, "TERRAIN_PLAINS");
+        center.o = 0;
+        let mut wonder = plot(6, 4, "TERRAIN_GRASS");
+        wonder.o = 0;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 120,
+            width: 10,
+            height: 10,
+            chunk: 1,
+            plots: vec![center, wonder, plot(2, 2, "TERRAIN_PLAINS")],
+        }]);
+        let state = StateSnapshot {
+            turn: 120,
+            founded_religions: vec![
+                "RELIGION_CATHOLICISM".to_string(),
+                "RELIGION_ISLAM".to_string(),
+                "RELIGION_JUDAISM".to_string(),
+            ],
+            taken_religion_beliefs: vec![
+                "BELIEF_DIVINE_INSPIRATION".to_string(),
+                "BELIEF_FEED_THE_WORLD".to_string(),
+                "BELIEF_TITHE".to_string(),
+                "BELIEF_WORK_ETHIC".to_string(),
+            ],
+            religions: vec![
+                StateReligion {
+                    religion: "RELIGION_CATHOLICISM".to_string(),
+                    founder: 4,
+                    beliefs: vec![
+                        "BELIEF_DIVINE_INSPIRATION".to_string(),
+                        "BELIEF_TITHE".to_string(),
+                    ],
+                },
+                StateReligion {
+                    religion: "RELIGION_ISLAM".to_string(),
+                    founder: 2,
+                    beliefs: vec!["BELIEF_FEED_THE_WORLD".to_string()],
+                },
+                // A founder this seat has never met: still counted, still
+                // carrying its own beliefs, on a seat nobody else took.
+                StateReligion {
+                    religion: "RELIGION_JUDAISM".to_string(),
+                    founder: 9,
+                    beliefs: vec!["BELIEF_WORK_ETHIC".to_string()],
+                },
+            ],
+            rivals: vec![
+                StateRival {
+                    player: 2,
+                    civ: "CIVILIZATION_ARABIA".to_string(),
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 4,
+                    civ: "CIVILIZATION_SPAIN".to_string(),
+                    ..StateRival::default()
+                },
+            ],
+            cities: vec![StateCity {
+                id: 10,
+                name: "Rome".to_string(),
+                x: 5,
+                y: 4,
+                pop: 6,
+                loyalty: 100.0,
+                religion: Some("RELIGION_CATHOLICISM".to_string()),
+                wonders: vec![StateWonder {
+                    kind: "BUILDING_STONEHENGE".to_string(),
+                    x: 6,
+                    y: 4,
+                }],
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        let game = &recon.game;
+        // Rivals hold seats in host order: Arabia (host 2) is seat 1, Spain
+        // (host 4) is seat 2; Judaism's unmet founder takes seat 3.
+        assert_eq!(game.players[2].religion.as_deref(), Some("Catholicism"));
+        assert_eq!(
+            game.players[2].religion_beliefs,
+            vec!["divine_inspiration".to_string(), "tithe".to_string()]
+        );
+        assert_eq!(game.players[1].religion.as_deref(), Some("Islam"));
+        assert_eq!(game.players[1].religion_beliefs, vec!["feed_the_world".to_string()]);
+        assert_eq!(game.players[3].religion.as_deref(), Some("Judaism"));
+        assert_eq!(game.players[3].religion_beliefs, vec!["work_ethic".to_string()]);
+        assert_eq!(game.religions_founded(), 3);
+        assert!(game.players[0].religion.is_none());
+        assert!(game.players[0].religion_beliefs.is_empty());
+        // Rome follows Catholicism, so its Wonder pays Divine Inspiration's
+        // four Faith in the model itself, not in a correction.
+        let rome = game.player_city_ids(0)[0];
+        let city = &game.cities[&rome];
+        assert_eq!(game.city_religion(city), Some("Catholicism"));
+        assert!(city.wonders.contains_key(&crate::name!("stonehenge")));
+        let mut without = recon.game.clone();
+        without.players[2].religion_beliefs.clear();
+        assert_eq!(
+            game.city_yields_model(rome).faith,
+            without.city_yields_model(rome).faith + 4.0,
+            "Divine Inspiration reaches a following city's own Faith"
+        );
+    }
+
+    /// The host's Faith per turn is a correction on the empire figure, like
+    /// science and culture; the Faith paid for unused Great Person points is
+    /// part of the model's figure and so of what the correction is measured
+    /// against — and a class absent from the host's cost map is what makes
+    /// its points unused.
+    #[test]
+    fn host_faith_per_turn_and_unused_great_person_classes_reach_the_board() {
+        let mut center = plot(5, 4, "TERRAIN_PLAINS");
+        center.o = 0;
+        let mut campus = plot(6, 4, "TERRAIN_GRASS");
+        campus.o = 0;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 220,
+            width: 10,
+            height: 10,
+            chunk: 1,
+            plots: vec![center, campus],
+        }]);
+        let mut points = BTreeMap::new();
+        points.insert("GREAT_PERSON_CLASS_SCIENTIST".to_string(), 700.0);
+        points.insert("GREAT_PERSON_CLASS_MERCHANT".to_string(), 40.0);
+        let mut costs = BTreeMap::new();
+        costs.insert("GREAT_PERSON_CLASS_MERCHANT".to_string(), 660.0);
+        let state = StateSnapshot {
+            turn: 220,
+            faith_per_turn: Some(61.5),
+            faith_sources: Some("+35 from Cities\n+26.5 from Other".to_string()),
+            great_person_points: Some(points),
+            great_person_costs: Some(costs),
+            cities: vec![StateCity {
+                id: 10,
+                name: "Rome".to_string(),
+                x: 5,
+                y: 4,
+                pop: 8,
+                loyalty: 100.0,
+                districts: vec![StateDistrict {
+                    kind: "DISTRICT_CAMPUS".to_string(),
+                    x: 6,
+                    y: 4,
+                    complete: true,
+                    ..StateDistrict::default()
+                }],
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let game = &recon.game;
+        assert_eq!(
+            game.players[0].live_great_person_exhausted,
+            Some(["scientist".to_string()].into_iter().collect()),
+            "points without a cost: the class has nobody left on the host's timeline"
+        );
+        assert!(!game.great_person_class_earnable(0, "scientist"));
+        assert!(game.great_person_class_earnable(0, "merchant"));
+        let rate = game.great_person_points_per_turn(0);
+        let scientist = rate.get("scientist").copied().unwrap_or(0.0);
+        assert!(scientist > 0.0, "the Campus pays Scientist points: {rate:?}");
+        assert_eq!(game.unused_great_person_faith(0), scientist);
+        // Cities plus the empire's extras plus the correction equal the host.
+        let mut yields = crate::rules::Yields::default();
+        for cid in game.player_city_ids(0) {
+            yields.add(game.city_yields(cid));
+        }
+        yields.add(game.player_yield_extras(0));
+        yields.add(game.observed_yield_adjustments[&0]);
+        assert!((yields.faith - 61.5).abs() < 1e-9, "board faith {} vs host 61.5", yields.faith);
+        assert_eq!(state.faith_sources.as_deref(), Some("+35 from Cities\n+26.5 from Other"));
+
+        // An older export without the cost map leaves the engine's own roster
+        // in charge, and without a host figure leaves the model's Faith alone.
+        let older = StateSnapshot {
+            great_person_costs: None,
+            faith_per_turn: None,
+            ..state.clone()
+        };
+        let recon = rebuild_from_state(&snapshot, &older, 2, 1, 250, 0);
+        assert_eq!(recon.game.players[0].live_great_person_exhausted, None);
+        assert_eq!(
+            recon.game.observed_yield_adjustments.get(&0).map(|adjustment| adjustment.faith),
+            None
+        );
+
+        // The mod's own list wins over the cost-map inference, and an empty
+        // list is the real answer "everyone is still available" — even when
+        // the cost map is `nil`, which alone could not tell that from an old export.
+        let explicit = StateSnapshot {
+            great_person_exhausted: Some(vec!["GREAT_PERSON_CLASS_WRITER".to_string()]),
+            great_person_costs: None,
+            ..state.clone()
+        };
+        let recon = rebuild_from_state(&snapshot, &explicit, 2, 1, 250, 0);
+        assert_eq!(
+            recon.game.players[0].live_great_person_exhausted,
+            Some(["writer".to_string()].into_iter().collect())
+        );
+        assert!(recon.game.great_person_class_earnable(0, "scientist"));
+        let nobody = StateSnapshot {
+            great_person_exhausted: Some(Vec::new()),
+            great_person_costs: None,
+            ..state.clone()
+        };
+        let recon = rebuild_from_state(&snapshot, &nobody, 2, 1, 250, 0);
+        assert_eq!(recon.game.players[0].live_great_person_exhausted, Some(BTreeSet::new()));
+    }
+
     #[test]
     fn host_economy_loyalty_and_city_defense_survive_the_mirror_save() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -7440,6 +7661,32 @@ pub struct StateGreatPersonOffer {
     pub required_district: Option<String>,
 }
 
+/// One founded religion as the host's Religion screen lists it: its type, the
+/// host player id of its founder, and every belief it holds.
+///
+/// `taken_religion_beliefs` is the union across religions and says only what
+/// is no longer available; it cannot say WHICH religion Divine Inspiration
+/// belongs to. A city following Catholicism gets Catholicism's follower
+/// beliefs — Rome's three Wonders paid twelve Faith under Divine Inspiration
+/// in run civvis-20260816T123936Z while the mirror had that belief parked on
+/// whichever seat happened to be zipped with the religion — so each religion's
+/// beliefs have to sit on its founder's seat, and only there.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateReligion {
+    /// `RELIGION_CATHOLICISM` and the like.
+    #[serde(rename = "type", default)]
+    pub religion: String,
+    /// The founder's host player id; `-1` when the host could not say.
+    #[serde(default = "unknown_player")]
+    pub founder: i64,
+    #[serde(default)]
+    pub beliefs: Vec<String>,
+}
+
+fn unknown_player() -> i64 {
+    -1
+}
+
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateActivationPlot {
     #[serde(default)]
@@ -7818,6 +8065,10 @@ pub struct StateSnapshot {
     /// Every belief already claimed worldwide, including religions outside vision.
     #[serde(default)]
     pub taken_religion_beliefs: Vec<String>,
+    /// Every founded religion with its founder and its own beliefs. Empty on
+    /// an older control mod, when the union above is all the mirror has.
+    #[serde(default)]
+    pub religions: Vec<StateReligion>,
     #[serde(default)]
     pub prophet_pending: bool,
     /// Civ 6 policy types currently slotted, e.g. `POLICY_DISCIPLINE`.
@@ -7860,6 +8111,23 @@ pub struct StateSnapshot {
     /// crosses directly, exactly like gold.
     #[serde(default)]
     pub faith: i64,
+    /// Civilization VI's own Faith PER TURN — `Player:GetReligion():GetFaithYield()`,
+    /// the top bar's figure — applied like `science` and `culture` below: a
+    /// correction on the reconstructed empire yield, never a replacement.
+    ///
+    /// Until it was exported the board could not be right by construction:
+    /// on run civvis-20260816T123936Z the host banked 100–113 Faith a turn
+    /// from t231 while every city together made 49 (the rest is the Faith
+    /// paid for unused Great Person points, `unused_great_person_faith`), and
+    /// the mirror had no host figure to measure that against. `None` on an
+    /// older control mod.
+    #[serde(default)]
+    pub faith_per_turn: Option<f64>,
+    /// The host's own Faith ledger, `GetFaithYieldToolTip` compacted — "+N from
+    /// Cities / Beliefs / Envoys / city-states you are Suzerain of / Other" —
+    /// so a gap between the two games is named, not guessed at.
+    #[serde(default)]
+    pub faith_sources: Option<String>,
     /// Civilization VI's own science and culture PER TURN.
     ///
     /// Applied as a correction to the reconstructed empire yield, not as a flat
@@ -7994,6 +8262,20 @@ pub struct StateSnapshot {
     /// (Great Scientist points) is invisible to the planner that chooses it.
     #[serde(default, deserialize_with = "map_or_empty_sequence")]
     pub great_person_points: Option<BTreeMap<String, f64>>,
+    /// The same classes' points PER TURN (`GetPointsPerTurn`), the host's own
+    /// figure for what the districts, buildings, wonders, policies and
+    /// Governors add each turn. Nothing plans on it yet; it is exported so the
+    /// Faith Firaxis pays for an unrecruitable class can be checked against
+    /// the host's rate rather than the model's.
+    #[serde(default, deserialize_with = "map_or_empty_sequence")]
+    pub great_person_points_per_turn: Option<BTreeMap<String, f64>>,
+    /// The classes with nobody left to recruit anywhere on the host's
+    /// timeline (`GREAT_PERSON_CLASS_SCIENTIST` once the last Great Scientist
+    /// is claimed by anyone). Their points are what Firaxis pays out as
+    /// Faith. An empty list is a real answer — everyone still available;
+    /// `None` is an older control mod, and the cost map stands in.
+    #[serde(default)]
+    pub great_person_exhausted: Option<Vec<String>>,
     /// The seat's strategic stockpiles by host resource type
     /// (`RESOURCE_IRON` → amount). Without them `Game::strategic_stockpile`
     /// read 0 for everything on the live seat: no unit that costs a strategic
@@ -8311,6 +8593,37 @@ fn apply_great_person_points(
             }
         }
     }
+    // Which classes have nobody left to recruit anywhere on the host's
+    // timeline — the last Great Scientist claimed by anyone — because
+    // Firaxis pays such a class's points out as Faith from then on. The mod
+    // says so outright (`great_person_exhausted`); before that field, the
+    // cost map named every class with an unclaimed entry, so a class with
+    // points and no cost was the same answer — except on the turn every
+    // class is gone, when the map is `nil` and says nothing. Carry the host's
+    // roster rather than CIVVIS's, whose named list is not the host's; `None`
+    // on an older export keeps the engine's own answer.
+    let kind_of = |class: &str| {
+        class
+            .strip_prefix("GREAT_PERSON_CLASS_")
+            .filter(|kind| !kind.is_empty())
+            .map(str::to_ascii_lowercase)
+    };
+    game.players[0].live_great_person_exhausted = match (
+        state.great_person_exhausted.as_ref(),
+        state.great_person_costs.as_ref(),
+    ) {
+        (Some(exhausted), _) => Some(exhausted.iter().filter_map(|class| kind_of(class)).collect()),
+        (None, Some(costs)) => Some(
+            state
+                .great_person_points
+                .iter()
+                .flat_map(|points| points.keys())
+                .filter(|class| !costs.contains_key(*class))
+                .filter_map(|class| kind_of(class))
+                .collect(),
+        ),
+        (None, None) => None,
+    };
     apply_live_great_person_offer_blockers(game, state, unmapped);
 }
 
@@ -9000,12 +9313,15 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "research_progress", "civic", "civic_progress", "government", "used_governments",
         "pantheon",
         "founded_religion", "founded_religions", "religion_beliefs",
-        "taken_religion_beliefs", "prophet_pending",
-        "policies", "policy_slots", "gold", "gold_per_turn", "faith", "science",
+        "taken_religion_beliefs", "religions", "prophet_pending",
+        "policies", "policy_slots", "gold", "gold_per_turn", "faith", "faith_per_turn",
+        "faith_sources", "science",
         "culture", "score", "dvp", "favor",
         "military",
         "trade_capacity",
         "great_person_points",
+        "great_person_points_per_turn",
+        "great_person_exhausted",
         "great_person_costs",
         "great_person_offers",
         "governor_points",
@@ -9050,6 +9366,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "player", "civ", "score", "military", "at_war", "suzerain", "envoys",
         "most_envoys", "cities", "units",
     ];
+    const RELIGION: &[&str] = &["type", "founder", "beliefs"];
 
     fn cities(value: Option<&serde_json::Value>, gaps: &mut std::collections::BTreeSet<String>) {
         for city in value.and_then(|v| v.as_array()).into_iter().flatten() {
@@ -9097,6 +9414,9 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         keys(minor, MINOR, "minor", &mut gaps);
         cities(minor.get("cities"), &mut gaps);
         units(minor.get("units"), &mut gaps);
+    }
+    for religion in value.get("religions").and_then(|v| v.as_array()).into_iter().flatten() {
+        keys(religion, RELIGION, "religion", &mut gaps);
     }
     gaps.into_iter().collect()
 }
@@ -11012,6 +11332,90 @@ fn apply_player_religion(
     }
     game.players[0].religion_beliefs = local.clone();
 
+    // With the host's per-religion list, every religion's beliefs sit on its
+    // founder's seat and nowhere else: a city following Catholicism then reads
+    // exactly Catholicism's follower beliefs (`city_religion_belief_effect`),
+    // whoever founded it and whether or not the mirror has met them. Rivals
+    // hold seats 1..n in the order the host lists them (see the rival loop in
+    // `reconstruct`), so a founder id maps straight onto a seat; a founder the
+    // seat has not met keeps the anonymous seat `founded_religions` gave the
+    // religion above. Every belief named here is also globally claimed, which
+    // is all `taken_religion_beliefs` ever said.
+    if !state.religions.is_empty() {
+        let seat_of_host: BTreeMap<i64, usize> = state
+            .rivals
+            .iter()
+            .enumerate()
+            .map(|(index, rival)| (rival.player as i64, index + 1))
+            .collect();
+        let foreign_seats: Vec<usize> = game
+            .players
+            .iter()
+            .enumerate()
+            .skip(1)
+            .filter(|(_, player)| !player.is_minor && !player.is_barbarian)
+            .map(|(seat, _)| seat)
+            .collect();
+        let mut translated: Vec<(String, Option<usize>, Vec<String>)> = Vec::new();
+        for religion in &state.religions {
+            let Some(name) = civvis_religion_name(&religion.religion) else {
+                continue;
+            };
+            if translated.iter().any(|(known, _, _)| *known == name) {
+                continue;
+            }
+            let mut beliefs = Vec::new();
+            for civ6 in &religion.beliefs {
+                match civvis_belief_name(&game.rules, civ6) {
+                    Some(belief) if !beliefs.contains(&belief) => beliefs.push(belief),
+                    Some(_) => {}
+                    None => {
+                        let gap = format!("{civ6}:belief");
+                        if !unmapped.contains(&gap) {
+                            unmapped.push(gap);
+                        }
+                    }
+                }
+            }
+            let seat = if local_religion.as_ref() == Some(&name) {
+                Some(0)
+            } else {
+                seat_of_host
+                    .get(&religion.founder)
+                    .copied()
+                    .filter(|seat| foreign_seats.contains(seat))
+            };
+            translated.push((name, seat, beliefs));
+        }
+        // Founders the seat has met take their religion onto their own seat;
+        // the rest go to whatever foreign seats are left, so the count the
+        // engine gates Prophets on (`religions_founded`) stays the host's.
+        for &seat in &foreign_seats {
+            game.players[seat].religion = None;
+            game.players[seat].religion_beliefs.clear();
+        }
+        let mut spare = foreign_seats
+            .iter()
+            .copied()
+            .filter(|seat| !translated.iter().any(|(_, taken, _)| *taken == Some(*seat)))
+            .collect::<Vec<_>>()
+            .into_iter();
+        for (name, seat, beliefs) in translated {
+            let seat = match seat {
+                Some(seat) => seat,
+                None => match spare.next() {
+                    Some(seat) => seat,
+                    None => continue,
+                },
+            };
+            if seat != 0 {
+                game.players[seat].religion = Some(name);
+            }
+            game.players[seat].religion_beliefs = beliefs;
+        }
+        return;
+    }
+
     // Firaxis belief availability is global. One non-local seat can retain the
     // union without pretending we know which unseen founder owns which belief.
     if game.players.len() > 1 {
@@ -11829,6 +12233,11 @@ fn apply_observed_host_metrics(
     for cid in game.player_city_ids(0) {
         derived.add(game.city_yields(cid));
     }
+    // The empire collects founder-belief income and the Faith for unused
+    // Great Person points beside its cities, and every reader of the per-turn
+    // figure adds them (`player_yield_extras`), so the residual measured here
+    // is only what CIVVIS still cannot derive.
+    derived.add(game.player_yield_extras(0));
     let mut adjustment = crate::rules::Yields::default();
     if state.science.is_finite() && state.science > 0.0 {
         adjustment.science = state.science - derived.science;
@@ -11836,7 +12245,13 @@ fn apply_observed_host_metrics(
     if state.culture.is_finite() && state.culture > 0.0 {
         adjustment.culture = state.culture - derived.culture;
     }
-    if adjustment.science != 0.0 || adjustment.culture != 0.0 {
+    // Faith per turn: the host's top-bar figure against the same sum, applied
+    // as a delta like science and culture. Only when the export carries it —
+    // an older control mod leaves the model's own figure standing.
+    if let Some(host_faith) = state.faith_per_turn.filter(|value| value.is_finite() && *value >= 0.0) {
+        adjustment.faith = host_faith - derived.faith;
+    }
+    if adjustment.science != 0.0 || adjustment.culture != 0.0 || adjustment.faith != 0.0 {
         game.observed_yield_adjustments.insert(0, adjustment);
     }
     // The rivals' seats, the same way (their yields, treasury and Faith).

@@ -12,7 +12,9 @@
     "world_church": {"note":"+1 Culture per 4 followers","effects":{"culture_per_followers":0.25}},
     "cross_cultural_dialogue": {"note":"+1 Science per 4 followers of this religion in other civilizations","effects":{"science_per_foreign_followers":0.25}},
     "pilgrimage": {"note":"+2 Faith for each city following this religion","effects":{"faith_per_city":2}},
-    "religious_unity": {"note":"first conversion of a city-state grants an Envoy","effects":{"envoy_first_city_state_conversion":1}}
+    "religious_unity": {"note":"first conversion of a city-state grants an Envoy","effects":{"envoy_first_city_state_conversion":1}},
+    "lay_ministry": {"note":"+1 Faith for each Holy Site and +1 Culture for each Theater Square in cities following this religion","effects":{"faith_per_holy_site":1,"culture_per_theater_square":1}},
+    "sacred_places": {"note":"+2 Science, Culture, Gold and Faith for each city following this religion that has a Wonder","effects":{"yield_per_wonder_city":2}}
   },
   "follower": {
     "choral_music": {"note":"Shrines and Temples provide Culture equal to Faith","effects":{"holy_building_culture":1}},
@@ -20,7 +22,9 @@
     "feed_the_world": {"note":"Shrines and Temples each provide +3 Food and +2 Housing","effects":{"shrine_food":3,"temple_food":3,"shrine_housing":2,"temple_housing":2}},
     "jesuit_education": {"note":"Campus and Theater buildings may be purchased with Faith","effects":{"faith_purchase_science_culture_buildings":1}},
     "religious_community": {"note":"international routes gain +2 Gold from the origin Holy Site and each of its buildings","effects":{"trade_gold_per_holy_building":2}},
-    "zen_meditation": {"note":"+1 Amenity in cities with two specialty districts","effects":{"amenity_two_specialty":1}}
+    "zen_meditation": {"note":"+1 Amenity in cities with two specialty districts","effects":{"amenity_two_specialty":1}},
+    "divine_inspiration": {"note":"Wonders provide +4 Faith","effects":{"wonder_faith":4}},
+    "reliquaries": {"note":"Relics provide triple Faith and Tourism","effects":{"relic_faith_pct":300,"relic_tourism_pct":300}}
   },
   "enhancer": {
     "holy_order": {"note":"Missionaries and Apostles are 30% cheaper","effects":{"religious_unit_faith_discount_pct":30}},

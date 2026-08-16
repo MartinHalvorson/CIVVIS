@@ -6138,6 +6138,16 @@ local function exportState(player, pid, turn)
 	local founded_religions = {};
 	local religion_beliefs = {};
 	local taken_religion_beliefs = {};
+	-- ★★★★ EACH RELIGION WITH ITS OWN BELIEFS AND FOUNDER. `taken_religion_beliefs`
+	-- is the union and says only what is no longer available; it cannot say
+	-- WHICH religion holds Divine Inspiration. A city following Catholicism gets
+	-- Catholicism's follower beliefs whoever founded it, and the mirror had that
+	-- belief parked on whichever seat happened to be zipped with the religion —
+	-- Rome's three Wonders paid 12 Faith under Divine Inspiration for the whole
+	-- of run civvis-20260816T123936Z while the model saw none of it. Same source
+	-- as the Religion screen: `Game.GetReligion():GetReligions()`, each entry
+	-- {Religion, Founder, Beliefs}. Empty list when nothing is founded.
+	local religions = {};
 	local allReligions = try(function() return Game.GetReligion():GetReligions(); end, {}) or {};
 	for _, religion in ipairs(allReligions) do
 		local religionRow = GameInfo.Religions[religion.Religion];
@@ -6148,20 +6158,29 @@ local function exportState(player, pid, turn)
 			if religion.Founder == pid then
 				founded_religion = religionRow.ReligionType;
 			end
+			local own = {};
 			for _, beliefIndex in ipairs(religion.Beliefs or {}) do
 				local beliefRow = GameInfo.Beliefs[beliefIndex];
 				if beliefRow ~= nil then
 					taken_religion_beliefs[#taken_religion_beliefs + 1] = beliefRow.BeliefType;
+					own[#own + 1] = beliefRow.BeliefType;
 					if religion.Founder == pid then
 						religion_beliefs[#religion_beliefs + 1] = beliefRow.BeliefType;
 					end
 				end
 			end
+			table.sort(own);
+			religions[#religions + 1] = {
+				type = religionRow.ReligionType,
+				founder = religion.Founder,
+				beliefs = own,
+			};
 		end
 	end
 	table.sort(founded_religions);
 	table.sort(religion_beliefs);
 	table.sort(taken_religion_beliefs);
+	table.sort(religions, function(a, b) return a.type < b.type; end);
 	-- ★★★★ THE POLICY CARDS ALREADY SLOTTED, and how many slots exist at all.
 	--
 	-- The third instance of one shape tonight, after the government and the pantheon:
@@ -6277,6 +6296,7 @@ local function exportState(player, pid, turn)
 		founded_religions = founded_religions,
 		religion_beliefs = religion_beliefs,
 		taken_religion_beliefs = taken_religion_beliefs,
+		religions = religions,
 		prophet_pending = prophet_pending,
 		policies = policies,
 		policy_slots = policy_slots,
@@ -6313,6 +6333,28 @@ local function exportState(player, pid, turn)
 			return treasury:GetGoldYield() - treasury:GetTotalMaintenance();
 		end, nil),
 		faith = try(function() return math.floor(player:GetReligion():GetFaithBalance()); end, -1),
+		-- ★★★★ FAITH PER TURN, THE TOP BAR'S OWN FIGURE. `GetFaithYield()` is
+		-- what TopPanel prints beside the Faith balance, and it is NOT the sum
+		-- of the cities: Firaxis pays every Great Person point of a class the
+		-- empire can no longer earn out again as Faith
+		-- (`GetFaithFromUnusedGreatPeoplePoints` in the game core), and adds
+		-- founder-belief, envoy and suzerain income at the player level. On
+		-- run civvis-20260816T123936Z the balance grew 100–113 a turn from
+		-- t231 while every city together made 49; without this field the
+		-- mirror had no host figure to be corrected to. Same nil-not-0 rule as
+		-- `gold_per_turn`: a missing answer is not break-even.
+		faith_per_turn = try(function() return player:GetReligion():GetFaithYield(); end, nil),
+		-- The host's own Faith ledger — "+N from Cities / Beliefs / Envoys /
+		-- city-states you are Suzerain of / Other" — compacted the same way as
+		-- the per-city `yield_sources`, so a gap between the two games is named
+		-- rather than guessed at.
+		faith_sources = try(function()
+			local text = player:GetReligion():GetFaithYieldToolTip();
+			if text == nil then return nil; end
+			text = tostring(text):gsub("%[ICON_[%w_]+%]", "");
+			text = text:gsub("%[NEWLINE%]", "\n"):gsub("[ \t]+", " ");
+			return (text:gsub("^%s+", ""):gsub("%s+$", "")):sub(1, 400);
+		end, nil),
 		science = try(function() return player:GetTechs():GetScienceYield(); end, -1),
 		culture = try(function() return player:GetCulture():GetCultureYield(); end, -1),
 		score = try(function() return player:GetScore(); end, -1),
@@ -6431,6 +6473,61 @@ local function exportState(player, pid, turn)
 			-- player has zero Great Person points on turn 1, so this fired in
 			-- every game immediately.
 			if not any then return nil; end
+			return out;
+		end, nil),
+		-- The same classes' points PER TURN, the host's own rate: what the
+		-- Great People screen prints under each class. It is the figure the
+		-- Faith above is paid from once a class runs out of people, so the
+		-- model's own derivation can be checked against it. Same `Index`
+		-- rule and the same nil-not-`{}` rule as `great_person_points`.
+		great_person_points_per_turn = try(function()
+			local points = player:GetGreatPeoplePoints();
+			if points == nil then return nil; end
+			local out = {};
+			local any = false;
+			for row in GameInfo.GreatPersonClasses() do
+				local rate = points:GetPointsPerTurn(row.Index);
+				if rate ~= nil and rate > 0 then
+					out[row.GreatPersonClassType] = rate;
+					any = true;
+				end
+			end
+			if not any then return nil; end
+			return out;
+		end, nil),
+		-- ★★★★ THE CLASSES WITH NOBODY LEFT TO RECRUIT. Civilization VI pays
+		-- every Great Person point of such a class out again as Faith, one for
+		-- one (`GetFaithFromUnusedGreatPeoplePoints` in the game core; the
+		-- top bar's "from Other"): the last Great Scientist anywhere claimed,
+		-- and the Campus keeps paying, in Faith. Run civvis-20260816T123936Z
+		-- banked 100–113 Faith a turn from t231 against 49 from every city.
+		-- A class is exhausted when the timeline has no unclaimed entry for
+		-- it. `great_person_costs` below already implies this (a class with
+		-- points and no cost) — except on the turn EVERY class is gone, when
+		-- that map is nil and cannot be told from an older export. So say it
+		-- outright, and as a LIST: an empty list encodes as `[]`, which is a
+		-- real answer here ("everyone still available"), unlike the maps.
+		great_person_exhausted = try(function()
+			local greatPeople = Game.GetGreatPeople();
+			if greatPeople == nil then return nil; end
+			local timeline = greatPeople:GetTimeline();
+			if timeline == nil then return nil; end
+			local available = {};
+			for _, entry in ipairs(timeline) do
+				if entry.Individual ~= nil and entry.Claimant == nil then
+					local info = GameInfo.GreatPersonIndividuals[entry.Individual];
+					if info ~= nil and info.GreatPersonClassType ~= nil then
+						available[info.GreatPersonClassType] = true;
+					end
+				end
+			end
+			local out = {};
+			for row in GameInfo.GreatPersonClasses() do
+				if not available[row.GreatPersonClassType] then
+					out[#out + 1] = row.GreatPersonClassType;
+				end
+			end
+			table.sort(out);
 			return out;
 		end, nil),
 		-- The live RECRUIT COST of each class's current unclaimed Great

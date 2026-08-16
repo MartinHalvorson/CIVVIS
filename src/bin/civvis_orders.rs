@@ -3291,15 +3291,32 @@ fn main() {
             empire_yields.add(game.city_yields(city.id));
             model_empire_yields.add(game.city_yields_model(city.id));
         }
+        // What the empire collects beside its cities — founder beliefs and
+        // the Faith Firaxis pays for Great Person points nobody can spend —
+        // is part of the model's per-turn figure and of the board's, and the
+        // player-level correction (`observed_yield_adjustments`) is measured
+        // against the same sum, so the board reads the host's number.
+        let player_extras = game.player_yield_extras(0);
+        empire_yields.add(player_extras);
+        model_empire_yields.add(player_extras);
         if let Some(adjustment) = game.observed_yield_adjustments.get(&0) {
             empire_yields.add(*adjustment);
         }
+        let great_person_points_per_turn = game.great_person_points_per_turn(0);
+        let unused_great_person_classes = great_person_points_per_turn
+            .keys()
+            .filter(|kind| !game.great_person_class_earnable(0, kind))
+            .cloned()
+            .collect::<Vec<_>>();
         println!(
             "{{\"turn\":{},\"width\":{},\"height\":{},\"revealed\":{},\
              \"unresolved_terrain\":{{{}}},\"plots\":[{}],\"cities\":{},\
              \"great_works\":{},\"governors\":{},\"governor_points\":{},\
              \"governor_points_spent\":{},\"governor_points_available\":{},\
-             \"empire_yields\":{},\"model_empire_yields\":{}}}",
+             \"empire_yields\":{},\"model_empire_yields\":{},\
+             \"player_extras\":{},\"unused_great_person_faith\":{},\
+             \"great_person_points_per_turn\":{},\"unused_great_person_classes\":{},\
+             \"host_faith_per_turn\":{}}}",
             state.turn,
             width,
             height,
@@ -3314,6 +3331,11 @@ fn main() {
             game.governor_titles_available(0),
             serde_json::to_string(&empire_yields).unwrap(),
             serde_json::to_string(&model_empire_yields).unwrap(),
+            serde_json::to_string(&player_extras).unwrap(),
+            game.unused_great_person_faith(0),
+            serde_json::to_string(&great_person_points_per_turn).unwrap(),
+            serde_json::to_string(&unused_great_person_classes).unwrap(),
+            serde_json::to_string(&state.faith_per_turn).unwrap(),
         );
         return;
     }
