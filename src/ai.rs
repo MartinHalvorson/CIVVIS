@@ -1867,6 +1867,15 @@ pub struct BasicAi {
     /// Break a production COST TIE by which great-work slots can actually be filled.
     pub(crate) slot_kind_tiebreak: bool,
     pursue_religion: bool,
+    /// The advanced live envoy planner has already chosen whether a held envoy
+    /// has a productive destination this turn.  Its ancillary baseline pass
+    /// must not replace that deliberate bank with a blind "highest count"
+    /// placement.
+    ///
+    /// Off for normal and frozen controllers, which retain the historical
+    /// baseline fallback.  The Civilization VI bridge enables it through
+    /// [`AdvancedAi::enable_bank_envoys`](crate::ai::AdvancedAi::enable_bank_envoys).
+    pub(crate) bank_envoys: bool,
     /// Enforce the live Firaxis rule that a religious unit inherits its
     /// purchase city's majority. Off for the frozen native controllers and
     /// enabled explicitly by the Civilization VI bridge.
@@ -3244,6 +3253,7 @@ impl BasicAi {
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
+            bank_envoys: false,
             live_religious_purchase_guard: false,
             siege_muster: false,
             siege_role: false,
@@ -3313,6 +3323,16 @@ impl BasicAi {
         self.explore_commit = true;
     }
 
+    /// Let the plan-aware live envoy pass retain an envoy when no productive
+    /// city-state placement is available this turn.
+    pub(crate) fn enable_bank_envoys(&mut self) {
+        self.bank_envoys = true;
+    }
+
+    pub(crate) fn disable_bank_envoys(&mut self) {
+        self.bank_envoys = false;
+    }
+
     /// Buy one ship for an empire that has none while unexplored water lies
     /// off its coast. See `naval_recon`.
     pub fn enable_naval_recon(&mut self) {
@@ -3354,6 +3374,7 @@ impl BasicAi {
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
+            bank_envoys: false,
             live_religious_purchase_guard: false,
             siege_muster: false,
             siege_role: false,
@@ -4506,7 +4527,7 @@ impl BasicAi {
         // governor pass first, so this is an emergency backstop rather than a
         // second strategy fighting the first one.
         self.reassign_governor_for_loyalty(g, pid);
-        while g.players[pid].envoys_free > 0 {
+        while !self.bank_envoys && g.players[pid].envoys_free > 0 {
             // consolidate on the city-state we already lead in (suzerain push)
             let target = g
                 .players

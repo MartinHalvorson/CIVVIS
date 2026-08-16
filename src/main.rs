@@ -1278,7 +1278,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// off for `AdvancedAi::legacy()` (asserted); the frozen anchor's baseline
 /// still governs its Expansion lane. Compatibility re-pin; the Elo protocol
 /// does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x546d_4f44_8a0f_6eaf;
+/// The live envoy bank gates both the plan-aware scorer and the later
+/// `BasicAi` fallback, while `AdvancedAi::legacy()` keeps both historical
+/// paths enabled. Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x08ad_dff7_8651_48d6;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -4465,10 +4465,12 @@ impl AdvancedAi {
     /// Bank an envoy the plan has no positive use for. See `bank_envoys`.
     pub fn enable_bank_envoys(&mut self) {
         self.bank_envoys = true;
+        self.base.enable_bank_envoys();
     }
 
     pub fn disable_bank_envoys(&mut self) {
         self.bank_envoys = false;
+        self.base.disable_bank_envoys();
     }
 
     /// Do not found a colony beyond the empire's Loyalty reach on fogged
