@@ -1,205 +1,114 @@
 # Roadmap
 
-## v0.6 (shipped) — pure Rust
+Where the project actually is, and what it is doing next. History below is
+kept for orientation; the current-state section is the part to trust, and
+`docs/AI_GAPS.md` is the always-current assessment of the AI specifically.
 
-Python reference implementation removed (2026-07-21); the Rust crate is now
-the single engine at full v0.5 rules parity, moved to the repo root, with the
-GUI server, observation builder, and Elo harness all in Rust (serde-only
-deps). External agents use the HTTP JSON protocol; in-process agents use the
-`Ai` trait. This release also adds class-specific promotion trees, Corps/
-Armies and linked escorts, theological combat and its religious-unit roster,
-and independent Encampment defenses and ranged strikes.
+## Where the project is (2026-08-16)
 
-## v0.1 (shipped)
+Everything the old roadmap called planned has shipped and then some:
 
-Headless engine: hex map + mapgen, cities/growth/borders, districts with
-adjacency, buildings/improvements, tech + civic trees, melee/ranged/city
-combat, war/peace, three victory types, fog of war, JSON saves, gym-style
-env, scripted AIs, CLI, tests.
+- **The engine** is a single pure-Rust crate (serde-only deps) at full rules
+  depth — religion, governors, ages, World Congress, aircraft, alliances,
+  unique units, the lot. The rules-completion pass closed 2026-07; remaining
+  engine work is fidelity against real Civilization VI (`docs/FIDELITY.md`),
+  not activation of dormant systems.
+- **civvis.ai is live**: the WebAssembly client shipped, with a `/test` lane
+  redeployed from head half-hourly, a stable front page moved by operator
+  judgment (`docs/SPECTATOR_DEPLOY.md`), native/wasm build-parity gates, and
+  a home page selling two products — full-game simulations and Tactics
+  battles (historical scenarios on real terrain, an era rolled per battle).
+- **The AI is scripted and measured**: `AdvancedAi` plus a league of bred
+  genome variants, rated by a Glicko-2 selection league, priced by a paired
+  evaluator at the deployment shape, and published in batch by `civvis arena`
+  (anchored Elo; standardized table size). No learned policy ships; search
+  wins offline but is not live-eligible. `docs/AI_GAPS.md` ranks the gaps.
+- **The live bridge plays real Civilization VI**: a Lua control mod + macOS
+  harness drives full Settler-difficulty games end to end, self-records every
+  attempt on the difficulty ladder (`docs/CIV6_LADDER.md`), and carries its
+  bridge health (orders-applied rate, ~97%) on the ledger. No rung has been
+  claimed yet — games complete but do not win inside the 250-turn cap. This
+  is the project's front line.
 
-## v0.2 (shipped)
+## Active objectives (ranked 2026-08-16)
 
+1. **Win Settler, recorded.** The ladder loop is live and self-recording;
+   the first claimed rung is the milestone everything else serves.
+2. **Close the actuation gap.** Applied-rate floored on the ledger; envoy
+   spending and the built-in production ladder's ~27% share are the open
+   holes.
+3. **Price the shipped live-seat bundle by withholding.** `live_without_*`
+   arms exist for every withholdable treatment; run the unpriced ones
+   through the paired evaluator before the next `city_target_floor` hides
+   in a composite (`docs/EVAL.md` is the ledger).
+4. **A tactics-grade controller for the arena.** Bounded search on the
+   20×20 battlefield, measured on the skirmish benchmark — the one live
+   surface where search's cost objection collapses.
+5. **Split the three conflict hotspots** (`src/game.rs`, `src/ai/advanced.rs`,
+   `web/assets/app.js`) along existing seams; they tax every concurrent PR.
+6. **Delete measured-null code.** Both cleanup audits paid; the off-flags
+   and netless experiment arms documented as negative results are next.
+7. **wasm/native viewer parity.** Panels that read native-only state are
+   silently dead on civvis.ai; implement or hide, and gate the contract.
+8. **Headless empire actuation repairs** (housing/loyalty cards, eureka
+   asks) — screen first, then gate at the deployment shape.
+9. **Drain the stranded-work queue** (`tools/stranded_work_report.py`).
+10. **Keep the paper trail true** — this file, retired docs to
+    `docs/closed/`, generated ledgers current.
+
+The measurement doctrine behind that ordering, in one line each: actuation
+repairs pay and valuation tunes do not; a composite gate licenses the
+composite, never its parts; gate on the deployment shape; one seed is never
+a result; `audit` detects defects but does not estimate value.
+
+## History (shipped)
+
+### v0.1 — headless engine
+Hex map + mapgen, cities/growth/borders, districts with adjacency,
+buildings/improvements, tech + civic trees, melee/ranged/city combat,
+war/peace, three victory types, fog of war, JSON saves, gym-style env,
+scripted AIs, CLI, tests.
+
+### v0.2 — soak
 City-states (pre-founded defensive minors, conquerable, excluded from
-victory); `soak` command playing many full AI games across seeds with anomaly
-flags — end-to-end games verified at 2-8 players, 100-200 turns.
+victory); `soak` playing many full AI games across seeds with anomaly flags.
 
-## v0.3 (shipped) — Rust performance core
+### v0.3 — Rust performance core
+Ported the Python engine to Rust: ~16x single-core (36k vs 2.3k turns/sec),
+parallel across cores. (The once-planned PyO3 bindings eventually became
+unnecessary: the Python engine was removed instead.)
 
-`rust/` crate ports the full engine (map/cities/districts/tech/combat/
-city-states/AI/CLI) with the same embedded ruleset JSONs and action protocol.
-~16x single-core over Python (36k vs 2.3k turns/sec), parallel across cores
-with no GIL. Python engine remains the reference spec.
+### v0.4 — rules depth + browser GUI
+Housing/amenities, eurekas & inspirations, unit XP/fortify, city strikes,
+barbarians, governments, medieval/renaissance content, and `civvis play` —
+a zero-dep local web GUI over the JSON action protocol.
 
-Next for the Rust core:
-- PyO3 bindings (maturin) so Python agents/env drive the Rust engine
-- Ruleset ID interning + yield caching (est. several-fold further speedup)
-- Observation builder + fog in Rust for RL feature extraction
+### v0.5 — content and systems breadth
+Religion, Great People, trade routes, envoys, expanded diplomacy, per-civ
+uniques, era score; ruleset data pass.
 
-## v0.4 (shipped) — rules depth + browser GUI
+### v0.6 — pure Rust, rules completion
+Python reference implementation removed (2026-07-21); the crate moved to the
+repo root with GUI server, observation builder, and Elo harness all in Rust.
+The completion pass activated every deferred tactical and world system:
+pillaging/repairs, coastal raids, cliffs, aircraft, named Great People and
+Governors, belief categories and Apostle promotions, Ages and Dedications,
+Quick Deals, grievances, formal wars, alliances, Diplomatic Favor, World
+Congress, conquest decisions.
 
-Housing/amenities, eurekas & inspirations, unit XP/levels/fortify, city
-ranged strikes, barbarian camps & raiders, governments, medieval/renaissance
-content (29 techs, 14 civics), and `civvis play` — a zero-dep local web GUI
-for human-vs-AI over the JSON action protocol. Rust core still at v0.3 rules;
-batch-port these systems next.
+### The browser client (shipped)
+What an earlier revision of this file scoped as "planned" is the live site:
+a `wasm32-unknown-unknown` build of the engine behind a Worker shim
+(`beta/shim.js`), deterministic native/wasm parity checks in CI
+(`docs/FLOAT_DETERMINISM.md`), immutable content-hashed static artifacts,
+and Cloudflare Pages serving `/` (stable tag) and `/test` (head).
+`docs/SPECTATOR_DEPLOY.md` owns the deploy contract. The acceptance gates
+that section demanded — parity across seeds, green-only deployment, explicit
+lane provenance (`build.json`) — are the shipped `published-build` +
+`to-test-auto-30` machinery.
 
-## v0.6 rules-completion pass (shipped)
-
-The previously deferred tactical and world systems are active: pillaging and
-repairs, coastal raids, cliffs, aircraft basing/combat/interception/anti-air,
-named Great People and patronage, complete belief categories and Apostle
-promotions, named Governors and promotion trees, barbarian scout alerts,
-multi-tile Natural Wonders, Golden/Dark/Heroic Ages and Dedications, bilateral
-Quick Deals, grievances, formal wars, friendships, leveled Alliances,
-Diplomatic Favor, World Congress voting, and keep/raze/liberate conquest
-decisions. Future roadmap work is content expansion or client/tooling work,
-not activation of dormant engine systems.
-
-## Browser-local WebAssembly client (planned)
-
-**Status:** approved direction, not started. Preserve the native CLI/server;
-the browser client is an additional target, not a replacement.
-
-The goal is a Paperclips-style deployment at `civvis.ai`: GitHub Actions tests
-and builds one immutable static release, a CDN serves HTML/JavaScript/art/wasm,
-and every game runs on the visitor's CPU inside the browser. The production URL
-must always point to the newest commit for which the native suite, WebAssembly
-build, deterministic parity checks, and real-browser smoke tests all passed. A
-red or cancelled successor leaves the previous green deployment live.
-
-### Feasibility snapshot
-
-Measured on `864f0ce` on 2026-07-25; rerun these measurements before setting
-final CI budgets because the game is still moving quickly:
-
-- 20.69 MB tracked repository content; 118,909 raw lines of Rust.
-- 11.67 MB of current web files, including 10.60 MB of PNG atlases. Because
-  every atlas is currently assigned to an `Image.src` at startup, the present
-  static first load is about 10.9 MB after text compression.
-- 21.72 MB optimized native executable, 20.40 MB stripped, 15.03 MB gzipped.
-  It embeds the UI and all art, so it is a useful upper-scale comparison, not
-  the future `.wasm` size.
-- A six-player 250-turn game took 9.27 seconds and about 35 MB peak resident
-  memory on an M5 Max. Browser and low-power-device performance still require
-  measurement; do not present this native result as a browser guarantee.
-- A complete save was 1.79 MB raw / 30 KB gzipped. A full spectator observation
-  was 1.92 MB raw / 43 KB gzipped. Compression makes HTTP cheap, but repeatedly
-  structured-cloning the raw object across a Worker boundary would not be.
-
-The core is a good WebAssembly candidate: `game`, `ai`, `mapgen`, `obs`,
-`rules`, `rng`, and `setup` do not depend on networking, files, OS clocks, or
-OS threads in their main paths; the rules are embedded; randomness is seeded;
-and `Game` already round-trips through serde. Native coupling is concentrated
-in `server`, the CLI, league/rating persistence, evolution/self-play output,
-parallel multi-game runners, mods, and action logging. There is no existing
-wasm target, binding, Worker, browser storage layer, or browser CI yet.
-
-### Target architecture
-
-```text
-GitHub main commit
-  -> native tests + wasm build + parity/browser/size gates
-  -> immutable static artifact stamped with the exact Git SHA
-  -> static CDN at civvis.ai
-  -> UI/main thread <-> dedicated Worker <-> Rust/wasm Game + AIs
-                                      `-> IndexedDB/local export saves
-```
-
-- Keep rendering and DOM work on the main thread. Run the game and AI in a
-  dedicated Worker so a long AI turn cannot freeze input or animation.
-- Preserve the JSON action/state contract. Replace the page's single
-  `fetchJSON` implementation with a transport interface: HTTP for the native
-  `civvis play` server and Worker messages for the hosted client. Do not fork
-  the 20k-line UI or couple it directly to engine internals.
-- Extract or build a browser-sized session layer around `Game`; do not port the
-  TCP listener, supervisor handoffs, host health endpoints, filesystem league
-  recording, or native multi-game worker fleet.
-- Preserve the existing tile-baseline/patch protocol. Bound simulation batches
-  so pause/cancel messages are serviced, transfer encoded buffers where that is
-  measurably better, and publish fewer render snapshots during flat-out
-  headless runs. Never copy a full ~2 MB spectator observation every turn by
-  default.
-- Store autosaves and named saves in IndexedDB and retain JSON import/export.
-  Stamp every save with the engine version and build SHA. A running tab stays
-  on the code it loaded; announce a newer green build and reload only after the
-  player has saved.
-- Keep assets same-origin. Content-hash immutable wasm/JS/art; revalidate the
-  small HTML/version manifest. Lazy-load strategic map atlases so the initial
-  command surface remains quick to open.
-
-### Implementation sequence
-
-1. **Platform boundary.** Add `native`/`web` Cargo features or target gates.
-   Keep the portable engine available without compiling `server`, CLI, file
-   persistence, league runners, or native parallelism. Add a wasm compile check
-   without weakening the native build.
-2. **Browser session crate.** Add a small `cdylib` wrapper using
-   `wasm-bindgen`, exporting new game, state, action, route, step, autoplay,
-   save/load, rules, and pedia operations. Use the same engine methods and
-   serde formats as native CIVVIS.
-3. **Deterministic parity harness.** Feed identical setup/actions to native and
-   wasm builds and compare normalized serialized state at checkpoints across
-   multiple seeds. Any platform-only nondeterminism blocks deployment.
-4. **Worker transport.** Implement request IDs and typed success/error replies,
-   then route the existing UI endpoint calls through HTTP or Worker transport.
-   Keep server and hosted modes behaviorally aligned where the feature exists;
-   return explicit capability information for native-only features.
-5. **Scheduling and persistence.** Port single-game AI stepping and map patches,
-   add IndexedDB autosaves/import/export, and handle build-update prompts. One
-   game may use one Worker initially; parallel browser tournaments can use
-   multiple Workers only after memory and throttling tests.
-6. **Performance and delivery.** Measure Chromium, Firefox, and WebKit on desktop
-   and at least one constrained/mobile device. Optimize release wasm, lazy-load
-   art, and set CI budgets from measurements. Planning targets are a `.wasm`
-   asset below 25 MiB and a roughly 15-20 MB or smaller first load, not promises.
-7. **Green-only deployment.** On pull requests, build and smoke-test without
-   production credentials. On a `main` push, deploy the exact tested artifact
-   only after every required job succeeds. Include `version.json` and expose
-   the abbreviated SHA in the UI. Keep the prior deployment available for
-   rollback.
-
-### Production acceptance gates
-
-- Existing native CLI, local server, JSON clients, saves, and deterministic
-  outcomes remain supported and pass the locked release/CI suite.
-- A browser can start, play, spectate, autoplay, save, reload, export, and
-  import a representative game without a simulation API call to the host.
-- Native/wasm parity passes across fixed seeds and action traces; browser tests
-  cover at least Chromium, Firefox, and WebKit.
-- A standard six-player browser game has documented load size, peak memory,
-  turns/second, long-task behavior, and state-transfer volume. Mobile limits
-  are explicit rather than silently hanging or exhausting memory.
-- Production is static-only by default. Multiplayer, trusted tournament
-  rankings, shared accounts/saves, and simulations that continue after a tab
-  closes require an authoritative backend and are separate projects. Results
-  uploaded from a local browser are untrusted.
-- Static hosting should use a CDN without GitHub Pages' traffic ceiling;
-  GitHub remains the source/build authority. Cloudflare Pages is the current
-  candidate, but the green-artifact contract must remain host-independent.
-
-## v0.3 — systems breadth
-
-- Religion (pantheons, beliefs, religious combat)
-- Great people; trade routes; city-states + envoys
-- Expand diplomacy beyond the shipped economic/relationship deals
-- Per-civ unique abilities/units (data-driven, like everything else)
-- Era score / golden ages
-
-## v0.4 — clients
-
-- Web client (canvas hex renderer) speaking the JSON action protocol to a
-  local server wrapper around `Game`
-- Terminal TUI client
-- Multiplayer via the same protocol (engine is already lockstep-friendly)
-
-## v0.5 — mod ecosystem
-
-- Ruleset validation + mod loader (multiple data dirs, overrides)
-- Full Civ 6 base-game content pass in `data/`
-
-## AI track (parallel)
-
-- PettingZoo-style multi-agent wrapper
-- Action-masked observation tensors for RL
-- MCTS baseline using dict-state cloning
-- Seeded tournament harness + Elo for agent evaluation
+### The live Civilization VI bridge (shipped, climbing)
+`tools/civ6_control` (a Lua mod + macOS input/vision harness) configures and
+plays real Civ 6 games unattended: `docs/CIV6_COMPUTER_CONTROL.md` is the
+contract, `docs/CIV6_LADDER.md` the record, and a supervisor loop plays one
+game per fresh build of head.
