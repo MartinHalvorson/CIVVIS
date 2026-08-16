@@ -515,6 +515,25 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("GetDiplomaticVictoryPoints()", block)
         self.assertNotIn("RequestPlayerOperation", block)
 
+    def test_the_congress_ballot_is_cast_from_the_popup_moment(self) -> None:
+        # The blocker-time votes never registered (favor never fell, wc_outcome
+        # read the core's default `option 1, votes 1` on every resolution); the
+        # shim asks the agent to vote from inside the popup right before its
+        # OnAccept, through a LuaEvent, and the agent answers with the same voter.
+        shim = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+        rung = shim.split('if NAME == "WorldCongressPopup" and type(OnAccept) == "function" then', 1)[1].split("return true;", 1)[0]
+        self.assertIn("LuaEvents.CivvisCongressBallot()", rung)
+        self.assertLess(rung.index("LuaEvents.CivvisCongressBallot()"), rung.index("OnAccept();"),
+                        "the ballot goes in before the submission")
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn("LuaEvents.CivvisCongressBallot.Add(function()", source)
+        handler = source.split("LuaEvents.CivvisCongressBallot.Add(function()", 1)[1].split("end);", 1)[0]
+        self.assertIn("voteWorldCongress(ballotPid)", handler)
+        self.assertIn('source = "popup"', handler)
+        self.assertIn("envoyTally.ballot_hooked", source)
+        # The blocker-time call stays, marked, so the ledger tells the two apart.
+        self.assertIn('source = "blocker"', source)
+
     def test_controller_votes_in_the_world_congress_before_forfeiting_the_session(self) -> None:
         # The session was a soft blocker the ladder dismissed: nineteen forfeits
         # in one game, no vote in 242 turns, and a rival's diplomatic victory

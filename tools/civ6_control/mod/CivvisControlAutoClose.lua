@@ -262,6 +262,23 @@ local function endScreen(attempt)
 	-- shape of the decline-everything policy every diplomacy closer here
 	-- already applies, and the measured alternative is a dead attempt.
 	if NAME == "WorldCongressPopup" and type(OnAccept) == "function" then
+		-- ★★★★★ THE AGENT'S BALLOT IS CAST HERE, NOW — THE MOMENT A PERSON VOTES.
+		--
+		-- The agent used to vote when it first saw the WORLD_CONGRESS_SESSION
+		-- blocker, before this popup (or even the intro) had opened, and every
+		-- one of those votes was silently refused: across
+		-- civvis-20260816T184500Z and T205104Z the `wc_vote` ledger read
+		-- `spent 760 / 924 / 420` while Favor never fell (822→829→836), and the
+		-- `wc_outcome` review showed our selection on EVERY resolution — the
+		-- diplomatic-victory one included — as `option 1, votes 1`: the core's
+		-- default free vote, cast FOR the leader gaining two points. The
+		-- shipped screen votes from inside this popup in stage 1 and submits
+		-- with `OnAccept`; so the agent is asked to vote from exactly here,
+		-- through a LuaEvent (the contexts do not share globals; LuaEvents are
+		-- what crosses them, synchronously), and `OnAccept` submits what it
+		-- cast. `pcall`, so an agent that is not loaded still gets the
+		-- abstain-and-submit this rung always did.
+		pcall(function() LuaEvents.CivvisCongressBallot(); end);
 		OnAccept();
 		return true;
 	end
