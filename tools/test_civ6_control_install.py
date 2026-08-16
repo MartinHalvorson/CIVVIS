@@ -337,9 +337,28 @@ class ProtectedInstallTest(unittest.TestCase):
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         self.assertIn('if verb == "DELETE" then', source)
         delete_block = source.split('if verb == "DELETE" then', 1)[1].split('if verb == "ENTER_FORMATION" then', 1)[0]
-        self.assertIn('commandUnit(unit, CMD["UNITCOMMAND_DELETE"])', delete_block)
+        # Through the shipped UnitPanel's own gate (`loose`), not the strict form:
+        # that form refused every DELETE ever asked (495 across three runs, zero
+        # retirements) and the founded Prophet stood on its hex all game.
+        self.assertIn(
+            'local deleted, why = commandUnit(unit, CMD["UNITCOMMAND_DELETE"], true)',
+            delete_block,
+        )
+        self.assertNotIn('commandUnit(unit, CMD["UNITCOMMAND_DELETE"])\n', delete_block)
         self.assertIn('emit("delete_refused"', delete_block)
+        self.assertIn("why = why", delete_block)
         self.assertIn('action = "retired_by_civvis"', delete_block)
+        helper = source.split("local function commandUnit(unit, hash, loose)", 1)[1].split("\nend\n", 1)[0]
+        # The loose form is the one UnitPanel.lua gates its Delete button on;
+        # then RequestCommand outright, exactly as OnDeleteUnit does. The strict
+        # form stays the default for every other command.
+        self.assertIn("UnitManager.CanStartCommand(unit, hash, true)", helper)
+        self.assertIn("UnitManager.CanStartCommand(unit, hash, false, true)", helper)
+        self.assertIn("UnitManager.RequestCommand(unit, hash)", helper)
+        # And a refusal names its reason through the results table.
+        self.assertIn("UnitCommandResults.FAILURE_REASONS", helper)
+        # The Prophet branch of the Great Person routine retires through the same gate.
+        self.assertIn('and commandUnit(unit, CMD["UNITCOMMAND_DELETE"], true) then', source)
 
     def test_controller_protects_damaged_unwalled_cities_and_retires_spent_prophets(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()

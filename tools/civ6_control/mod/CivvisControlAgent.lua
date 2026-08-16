@@ -985,17 +985,51 @@ end
 -- them with `(unit, hash, false, true)` and requests them with exactly two
 -- arguments. Supplying `{}` as a third RequestCommand argument made the call
 -- return without throwing but left Great Writers alive and upgrades undone.
-local function commandUnit(unit, hash)
+-- `loose` asks the shipped UnitPanel's BUTTON gate instead of the strict
+-- "right now" one, and names the reason when even that refuses.
+--
+-- ★★★★ THE STRICT GATE NEVER LET A DELETE THROUGH. `CanStartCommand(unit,
+-- hash, false, true)` answered `false` to UNITCOMMAND_DELETE on every one of
+-- the 495 attempts across runs civvis-20260815T220819Z (178), 233405Z (202)
+-- and 20260816T003229Z (115): zero `retired_*` events exist in any run, and
+-- the founded Prophet stood on its hex beside the capital all game. The
+-- shipped UnitPanel.lua never asks the strict question for DELETE at all: it
+-- gates the Delete button on the LOOSE form, `CanStartCommand(pUnit, DELETE,
+-- true)`, then calls `RequestCommand` outright (OnPromptToDeleteUnit /
+-- OnDeleteUnit). `loose == true` does exactly that. RequestCommand is
+-- asynchronous, so `true` means "requested": the unit vanishing from the next
+-- export is the confirmation, and one still there is asked again by the bridge
+-- and shows up as a repeat under the same id.
+local function commandUnit(unit, hash, loose)
 	if hash == nil then return false; end
 	local ok, can = pcall(function()
+		if loose == true then
+			return UnitManager.CanStartCommand(unit, hash, true);
+		end
 		return UnitManager.CanStartCommand(unit, hash, false, true);
 	end);
-	if not (ok and can == true) then return false; end
+	if not (ok and can == true) then
+		if loose ~= true then return false; end
+		-- Name the refusal through the results table, the way `upgradeUnit`
+		-- does, so "asked and declined" is never anonymous.
+		local why = "loose CanStartCommand refused";
+		pcall(function()
+			local _, results = UnitManager.CanStartCommand(unit, hash, false, true);
+			if UnitCommandResults ~= nil and type(results) == "table" then
+				local reasons = results[UnitCommandResults.FAILURE_REASONS];
+				if type(reasons) == "table" and #reasons > 0 then
+					why = table.concat(reasons, "; ");
+				end
+			end
+		end);
+		return false, why;
+	end
 	return pcall(function()
 		UnitManager.RequestCommand(unit, hash);
 	end);
 end
 
+-- Spend gold to bring a unit up to date before spending its life.
 -- Spend gold to bring a unit up to date before spending its life.
 --
 -- ⚠ The agent fielded WARRIORs and SPEARMEN in 1100 AD against swordsmen and
@@ -8349,7 +8383,10 @@ local function applyOrder(player, pid, row, turn)
 			-- CanStartCommand by `commandUnit`, so a unit the engine still values
 			-- is refused rather than lost; the refusal is named so the ledger can
 			-- tell "asked and declined" from "never asked".
-			local deleted = commandUnit(unit, CMD["UNITCOMMAND_DELETE"]);
+			-- Through the shipped UnitPanel's own gate (`loose`): the strict form
+			-- refused every DELETE ever asked (495 across three runs, zero
+			-- retirements) and the ghost stood on its hex all game.
+			local deleted, why = commandUnit(unit, CMD["UNITCOMMAND_DELETE"], true);
 			if deleted then
 				emit("gp", { turn = turn, unit = subject, action = "retired_by_civvis",
 					kind_name = unitTypeName(unit) });
@@ -8359,6 +8396,7 @@ local function applyOrder(player, pid, row, turn)
 					unit_kind = unitTypeName(unit),
 					x = try(function() return unit:GetX(); end, -1),
 					y = try(function() return unit:GetY(); end, -1),
+					why = why,
 				});
 			end
 			return deleted, verb;
@@ -9107,13 +9145,14 @@ local function orderGreatPerson(player, unit, id, turn)
 		-- Founding consumes the Prophet's useful action, but this build can leave
 		-- the zero-charge unit on the map after the religion is created.  It can no
 		-- longer activate or spread; retire it only after the engine confirms both
-		-- facts and still gates deletion through CanStartCommand.
+		-- facts, through the shipped UnitPanel's own delete gate (`commandUnit`
+		-- with `loose`; the strict gate refused every DELETE ever asked).
 		local religionCreated = try(function()
 			return player:GetReligion():GetReligionTypeCreated();
 		end, -1);
 		local charges = try(function() return gp:GetActionCharges(); end, -1);
 		if religionCreated ~= nil and religionCreated >= 0 and charges == 0
-				and commandUnit(unit, CMD["UNITCOMMAND_DELETE"]) then
+				and commandUnit(unit, CMD["UNITCOMMAND_DELETE"], true) then
 			gpPending[id] = nil;
 			gpIdleReported[id] = turn;
 			emit("gp", { turn = turn, unit = id, individual = individual,
