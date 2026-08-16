@@ -1164,7 +1164,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The wall-tech research goal is behind `garrison_walls`, the live walls
 /// doctrine, which the frozen anchor never sets (asserted). Compatibility
 /// re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x89c5_4d41_e792_24a2;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x369d_335e_2c40_805b;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
