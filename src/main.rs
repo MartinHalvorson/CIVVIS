@@ -1227,7 +1227,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `score_horizon`, off for `AdvancedAi::legacy()` (asserted); the frozen
 /// anchor races and arms exactly as before. Compatibility re-pin; the Elo
 /// protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xadce_9004_d522_6461;
+/// The in-lane answer to a Science or score leader is behind
+/// `counter_in_lane`, which the live bridge now enables and
+/// `AdvancedAi::legacy()` leaves off (asserted); the frozen anchor still
+/// declares. Compatibility re-pin; the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4700_242b_2524_1cfd;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
