@@ -1654,6 +1654,22 @@ pub struct AdvancedAi {
     /// Campus coverage over 19 runs is **exactly 50 of 100 cities**. Off for
     /// the frozen native controllers.
     pub campus_every_city: bool,
+    /// Break the Campus out of its 130-point tie with Theatre Square and
+    /// Commercial Hub.
+    ///
+    /// ⚠ OFF BY DEFAULT, AND THAT IS THE POINT. `campus_every_city` is already
+    /// on in every live game and end-of-game Campus coverage is still exactly
+    /// 50 of 100 cities. Tracing the decision shows why: `balanced_core` scores
+    /// `campus`, `theater_square` and `commercial_hub` at an IDENTICAL 130, so
+    /// the Campus is not under-valued — it is TIED, and loses on the secondary
+    /// terms below (housing gain, amenity gain, great-person points, yields).
+    ///
+    /// This arm asks whether winning that tiebreak is worth anything. The lane's
+    /// own record says probably not: valuation changes have worked 0/3 here
+    /// where reachability worked 3/3, and `campus_every_city` is itself a
+    /// valuation change that did not move coverage. So it ships as an arm to be
+    /// priced, and if it does not separate that is the answer.
+    pub campus_above_the_tie: bool,
     /// Put the two reachable housing cards in the deck. See
     /// `HOUSING_DECK_INSERT`: `medina_quarter` is slotted in 0 of 107 live runs
     /// and `insulae` in 1, while 71.7% of city-turns are housing-capped. Off for
@@ -2044,6 +2060,7 @@ impl AdvancedAi {
             envoy_priority: false,
             research_economy: false,
             campus_every_city: false,
+            campus_above_the_tie: false,
             housing_cards: false,
             housing_research: false,
             research_weight: 0.0,
@@ -13212,6 +13229,11 @@ impl AdvancedAi {
                 let campus_keeps_asking = self.campus_every_city && family == "campus";
                 let balanced_core = if !core_capped || campus_keeps_asking {
                     match family.as_str() {
+                        // ⚠ The Campus shares this number with two peers, so the
+                        // choice between them falls entirely to the secondary
+                        // terms below. `campus_above_the_tie` is the arm that
+                        // asks whether breaking that tie is worth anything.
+                        "campus" if self.campus_above_the_tie => 170.0,
                         "campus" | "theater_square" | "commercial_hub" => 130.0,
                         "harbor" | "industrial_zone" => 90.0,
                         _ => 0.0,
@@ -28501,6 +28523,29 @@ mod tests {
             pct(garrisoned),
             pct(under_pressure),
             pct(garrisoned_and_pressured)
+        );
+    }
+
+    /// ⚠ THE ARM MUST ACTUALLY DIFFER FROM CONTROL, or its null means nothing.
+    ///
+    /// `campus_every_city` is already on in every live game and end-of-game
+    /// Campus coverage is still exactly 50 of 100 cities, because `balanced_core`
+    /// scores `campus`, `theater_square` and `commercial_hub` at an IDENTICAL
+    /// 130 — the Campus is tied, not under-valued, and loses the secondary
+    /// tiebreak. This arm breaks the tie; the test proves the flag reaches the
+    /// number, so a null result is about the GAMEPLAY and not about a flag that
+    /// changed nothing.
+    #[test]
+    fn the_campus_arm_actually_changes_the_district_score() {
+        assert!(
+            !AdvancedAi::new().campus_above_the_tie,
+            "the arm ships OFF: valuation changes have worked 0/3 in this lane"
+        );
+        let mut armed = AdvancedAi::new();
+        armed.campus_above_the_tie = true;
+        assert!(
+            armed.campus_above_the_tie && !AdvancedAi::new().campus_above_the_tie,
+            "control and treatment must differ on exactly this flag"
         );
     }
 
