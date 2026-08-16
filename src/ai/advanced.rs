@@ -222,12 +222,20 @@ const SETTLER_RETREAT_LIMIT: u32 = 3;
 /// Settler is sent: -8 empties a full bar in at most thirteen turns. The same
 /// emergency threshold the live mirror uses for a settler's current plot.
 const SETTLE_TARGET_DOOMED_LOYALTY_PER_TURN: f64 = -8.0;
-/// The domestic Loyalty pressure below which a site is "beyond the empire's
-/// reach": Σ pop × (10 − distance) over own cities within nine tiles, the
-/// same term the loyalty model uses. Twenty is a pop-5 city six tiles away.
+/// How far a city's citizens press: the loyalty model's nine-tile radius. A
+/// site with no own city inside it receives no domestic pressure at all.
 /// See `frontier_loyalty`.
-const FRONTIER_LOYALTY_MIN_DOMESTIC: f64 = 20.0;
-/// How far a city's citizens press: the loyalty model's nine-tile radius.
+///
+/// ⚠⚠ THIS WAS A POP-WEIGHTED PRESSURE SUM FOR ONE BATCH AND IT STOPPED THE
+/// SEAT SETTLING. #1768 doomed a site whose Σ pop × (10 − distance) over own
+/// cities read under twenty — right for a mature empire, and impossible for
+/// a pop-2 capital, whose every site reads under twenty. Run
+/// civvis-20260816T142911Z: ONE city until turn 100, forty-one "beyond the
+/// empire's Loyalty reach" refusals from t28, six settlers walked past every
+/// near site toward the horizon and fell. The measured revolts (#1768) were
+/// eleven and eighteen tiles from the nearest own city and every city that
+/// held stood four to six; the distance is the whole signal, and it does not
+/// depend on how big the capital is.
 const FRONTIER_LOYALTY_RADIUS: i32 = 9;
 /// New-target picks re-asked after a doomed forecast. Exhaustion holds the
 /// Settler rather than routing it through the unfiltered baseline picker.
@@ -2375,10 +2383,9 @@ pub struct AdvancedAi {
     /// unexplored plots lay within nine tiles of them. Two settlers, two
     /// founding bonuses and sixteen city-turns bought two revolts.
     ///
-    /// With this on, a site whose own domestic pressure — Σ pop × (10 −
-    /// distance) over own cities within nine tiles, the loyalty model's own
-    /// term — is under `FRONTIER_LOYALTY_MIN_DOMESTIC` while unexplored plots
-    /// lie within nine tiles is treated as doomed: retired before the walk
+    /// With this on, a site with no own city within nine tiles — the loyalty
+    /// model's pressure radius, so no domestic pressure at all — while
+    /// unexplored plots lie within nine tiles is treated as doomed: retired before the walk
     /// and refused on arrival, exactly as a forecast revolt is, and journaled
     /// as "beyond the empire's loyalty reach". A site inside the empire's
     /// halo, or on fully explored ground, is judged by the forecast as
@@ -19515,23 +19522,15 @@ impl AdvancedAi {
     }
 
     /// Whether `site` is beyond the empire's Loyalty reach on fogged ground:
-    /// own domestic pressure under `FRONTIER_LOYALTY_MIN_DOMESTIC` while any
-    /// plot within nine tiles is unexplored. See `frontier_loyalty`.
+    /// no own city within `FRONTIER_LOYALTY_RADIUS` — so no domestic pressure
+    /// at all — while any plot within nine tiles is unexplored. See
+    /// `frontier_loyalty` and the note on the radius constant.
     pub(crate) fn beyond_loyalty_reach(g: &Game, pid: usize, site: Pos) -> bool {
-        let domestic: f64 = g
+        let inside_reach = g
             .cities
             .values()
-            .filter(|city| city.owner == pid)
-            .map(|city| {
-                let distance = g.wdist(city.pos, site);
-                if distance > FRONTIER_LOYALTY_RADIUS {
-                    0.0
-                } else {
-                    city.pop as f64 * (10 - distance) as f64
-                }
-            })
-            .sum();
-        if domestic >= FRONTIER_LOYALTY_MIN_DOMESTIC {
+            .any(|city| city.owner == pid && g.wdist(city.pos, site) <= FRONTIER_LOYALTY_RADIUS);
+        if inside_reach {
             return false;
         }
         g.wdisk(site, FRONTIER_LOYALTY_RADIUS)
@@ -35555,13 +35554,17 @@ mod tests {
     #[test]
     fn a_colony_beyond_the_empires_loyalty_reach_on_fogged_ground_is_not_founded() {
         let (mut game, capital, home) = empire_with_a_capital(71_119);
-        game.cities.get_mut(&capital).unwrap().pop = 6;
+        // ⚠ A pop-1 capital: the rule must not depend on how big it is (the
+        // pressure-sum version refused every site of a young empire and
+        // stopped run civvis-20260816T142911Z at one city until turn 100).
+        game.cities.get_mut(&capital).unwrap().pop = 1;
         // The seat has explored only the capital's neighbourhood.
         let known: Vec<Pos> = game.wdisk(home, 6);
         game.players[0].explored.clear();
         game.players[0].explored.extend(known);
         let far = anchor_at(&game, home, 14);
         let near = anchor_at(&game, home, 4);
+        let edge = anchor_at(&game, home, 7);
 
         let mut live = AdvancedAi::new();
         live.enable_live_bridge();
@@ -35572,7 +35575,15 @@ mod tests {
         );
         assert!(
             !AdvancedAi::beyond_loyalty_reach(&game, 0, near),
-            "four tiles from a pop-6 capital is inside the halo (36 pressure)"
+            "four tiles from the capital is inside its reach, whatever its size"
+        );
+        assert!(
+            !AdvancedAi::beyond_loyalty_reach(&game, 0, edge),
+            "seven tiles from a pop-1 capital is still inside its nine-tile reach"
+        );
+        assert!(
+            live.settle_site_loyalty_verdict(&game, 0, edge).is_none(),
+            "a young empire's ordinary sites are not refused"
         );
         let why = live
             .settle_site_loyalty_verdict(&game, 0, far)
