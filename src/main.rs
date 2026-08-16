@@ -338,6 +338,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the historical raw apply on the flag before it reaches `path_move` at all,
 /// so `advanced_v1` takes byte-for-byte the arm it always took. A
 /// compatibility re-pin.
+/// #1727 lets a coordinated Advance/Engage unit that has proven a multi-turn
+/// livelock use its A* route through one recorded square. The exception still
+/// keeps same-turn reversal and all normal movement guards, and requires
+/// `recorded_tactical_step`, which the frozen anchor never enables. A
+/// compatibility re-pin.
 ///
 /// #974 adds a `Cities/Decision` journal line to `advanced_production`, which
 /// had none. It is inside `if self.journal().wants(Decision)` and writes only
@@ -1156,7 +1161,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The wonder-race scale is read only under `live_wonder_race`, which the
 /// frozen anchor never sets. Compatibility re-pin; the Elo protocol does not
 /// move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa70a_9422_8f48_daad;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc144_6363_b1c2_dcb3;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
