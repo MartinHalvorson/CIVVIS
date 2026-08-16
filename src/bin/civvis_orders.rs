@@ -474,6 +474,47 @@ fn queue_city_state_envoy_reclaim(
     Some((target, needed))
 }
 
+/// Pair an already-planned major peace with the city-state suzerainty it frees.
+///
+/// A city-state at war through its hostile Suzerain cannot accept a direct
+/// peace operation or an Envoy.  The major's peace, unlike a direct minor
+/// peace, is a bilateral offer that can be refused and later ask for Gold.  Do
+/// not manufacture that strategic trade merely to spend Envoys: wait until the
+/// planner has already chosen the peace, then retain the exact takeover cost
+/// for the authoritative post-peace frame.  A successful deal is the only
+/// event that makes the minor legal again.
+///
+/// Returns `(suzerain, minor, needed)`, choosing the cheapest immediately
+/// affordable reclaim.  The caller deliberately keeps the direct-city-state
+/// reclaim ahead of this one: a minor peace is a unilateral, lower-risk path.
+fn planned_suzerain_peace_envoy_reclaim(
+    orders: &[Order],
+    state: &civvis::mirror::StateSnapshot,
+) -> Option<(i64, i64, i64)> {
+    let held = state.envoys_free.filter(|held| *held > 0)?;
+    state
+        .minors
+        .iter()
+        .filter(|minor| minor.is_city_state() && minor.at_war)
+        .filter(|minor| city_state_war_is_derived(state, minor))
+        .filter_map(|minor| {
+            let suzerain = i64::from(minor.suzerain);
+            let peace_is_planned = orders.iter().any(|order| {
+                order.kind == "peace" && order.subject == Some(suzerain)
+            });
+            let war_is_planned = orders.iter().any(|order| {
+                order.kind == "war" && order.subject == Some(suzerain)
+            });
+            (peace_is_planned && !war_is_planned).then_some((
+                suzerain,
+                minor.player as i64,
+                envoys_to_take_suzerainty(minor),
+            ))
+        })
+        .filter(|(_, _, needed)| held >= *needed)
+        .min_by_key(|(suzerain, minor, needed)| (*needed, *minor, *suzerain))
+}
+
 /// Keep the exact cost of a submitted city-state peace available for the next
 /// authoritative frame, while still investing any surplus Envoys immediately.
 ///
@@ -2219,6 +2260,13 @@ fn decide(
     }
 
     let envoy_reclaim = queue_city_state_envoy_reclaim(&mut orders, state);
+    // A direct city-state peace remains the preferred reclaim: it cannot cost
+    // a major-war concession.  If none is available, turn a peace the planner
+    // already chose against the hostile Suzerain into an Envoy reservation.
+    let suzerain_envoy_reclaim = envoy_reclaim
+        .is_none()
+        .then(|| planned_suzerain_peace_envoy_reclaim(&orders, state))
+        .flatten();
 
     let (host_legal, deferred_peace_retries) =
         defer_host_peace_retries(orders, state, host_peace_retries);
@@ -2236,6 +2284,22 @@ fn decide(
             );
             note_bits.push(format!(
                 "envoy_reclaim_peace={target} needed={needed} deferred_envoys={deferred}"
+            ));
+        }
+    } else if let Some((suzerain, minor, needed)) = suzerain_envoy_reclaim {
+        let submitted = orders.iter().any(|order| {
+            order.kind == "peace" && order.subject == Some(suzerain)
+        });
+        if submitted {
+            let deferred = reserve_envoys_for_submitted_reclaim(
+                &mut orders,
+                minor,
+                state.envoys_free.unwrap_or_default(),
+                needed,
+            );
+            note_bits.push(format!(
+                "envoy_suzerain_reclaim_peace={suzerain} minor={minor} needed={needed} \
+                 deferred_envoys={deferred}"
             ));
         }
     }
@@ -4365,6 +4429,96 @@ mod tests {
             "a city-state follows its hostile Suzerain; direct peace would not unlock envoys"
         );
         assert!(proposed.is_empty());
+    }
+
+    #[test]
+    fn planned_major_peace_reserves_envoys_to_reclaim_its_derived_city_state() {
+        let state = StateSnapshot {
+            turn: 58,
+            envoys_free: Some(5),
+            rivals: vec![StateRival {
+                player: 2,
+                at_war: true,
+                ..StateRival::default()
+            }],
+            minors: vec![StateMinor {
+                player: 9,
+                civ: "CIVILIZATION_GENEVA".to_string(),
+                at_war: true,
+                suzerain: 2,
+                envoys: 1,
+                most_envoys: 4,
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let peace = Order {
+            kind: "peace",
+            subject: Some(2),
+            verb: Some("MAKE_PEACE".to_string()),
+            pos: None,
+        };
+        let envoy = |subject| Order {
+            kind: "envoy",
+            subject: Some(subject),
+            verb: Some("GIVE_INFLUENCE_TOKEN".to_string()),
+            pos: None,
+        };
+        let mut proposed = vec![peace, envoy(7), envoy(9)];
+
+        assert_eq!(
+            planned_suzerain_peace_envoy_reclaim(&proposed, &state),
+            Some((2, 9, 4)),
+            "the existing peace offer releases Geneva only after it succeeds"
+        );
+        let mut retries = HostPeaceRetries::default();
+        let (submitted, deferred_peace) =
+            defer_host_peace_retries(proposed, &state, &mut retries);
+        assert!(deferred_peace.is_empty());
+        proposed = submitted;
+        assert_eq!(
+            reserve_envoys_for_submitted_reclaim(&mut proposed, 9, 5, 4),
+            1,
+            "the invalid envoy to the still-hostile minor waits with the four-token claim"
+        );
+        let retained: Vec<i64> = proposed
+            .iter()
+            .filter(|order| order.kind == "envoy")
+            .filter_map(|order| order.subject)
+            .collect();
+        assert_eq!(retained, vec![7], "the one surplus envoy may still invest now");
+        assert!(
+            proposed
+                .iter()
+                .any(|order| order.kind == "peace" && order.subject == Some(2)),
+            "the planner's major peace, rather than a fabricated city-state peace, crosses the host boundary"
+        );
+
+        let no_peace = vec![envoy(7)];
+        assert_eq!(
+            planned_suzerain_peace_envoy_reclaim(&no_peace, &state),
+            None,
+            "a valuable city-state alone never asks a major to end a campaign"
+        );
+        let conflicting_orders = vec![
+            Order {
+                kind: "peace",
+                subject: Some(2),
+                verb: Some("MAKE_PEACE".to_string()),
+                pos: None,
+            },
+            Order {
+                kind: "war",
+                subject: Some(2),
+                verb: Some("DECLARE".to_string()),
+                pos: None,
+            },
+        ];
+        assert_eq!(
+            planned_suzerain_peace_envoy_reclaim(&conflicting_orders, &state),
+            None,
+            "a contradictory order set cannot turn an Envoy reserve into a war-ending decision"
+        );
     }
 
     #[test]
