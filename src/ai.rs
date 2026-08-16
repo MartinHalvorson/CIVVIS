@@ -192,6 +192,12 @@ const SIEGE_TARGET_REACH: i32 = 20;
 /// resumes, so it cannot become an endless appetite.
 const RECON_ARM_MAX: usize = 1;
 
+/// A naval scout needs room for a complete Galley move after launch: the
+/// launch tile plus its three movement points. Anything smaller is commonly
+/// a lake where the only available order is to turn straight back, which
+/// spends production without opening another contact or frontier.
+const NAVAL_RECON_MIN_WATERWAY_TILES: usize = 4;
+
 /// Once a scout reaches the nearest fog, inspect this many additional rings
 /// before choosing where to go.  A short horizon is enough to distinguish a
 /// dead-end nibble of fog from the edge of a broad unexplored region, without
@@ -2423,6 +2429,94 @@ impl BasicAi {
                 .into_iter()
                 .any(|pos| g.map.get(pos).is_some_and(|tile| g.rules.is_water(tile)))
         })
+    }
+
+    /// Whether this civilization's naval units can cross Ocean tiles. This
+    /// mirrors the sea portion of `Game::traversal_class`: a Galley penned
+    /// behind deep water before Cartography has not found an open route.
+    fn naval_recon_can_cross_ocean(g: &Game, pid: usize) -> bool {
+        g.has_ability(pid, "mana")
+            || g.tree_effect(pid, "ocean_navigation") > 0.0
+            || (g.has_ability(pid, "knarr")
+                && g.players[pid].techs.contains(&crate::name!("shipbuilding")))
+    }
+
+    /// The navigable, known-water component reached from `starts`. Unknown
+    /// terrain is deliberately not treated as water here: it may be a useful
+    /// frontier to probe, but cannot turn a visible two-hex lake into an open
+    /// sea by assumption.
+    fn naval_recon_waterway<I>(g: &Game, pid: usize, starts: I) -> BTreeSet<Pos>
+    where
+        I: IntoIterator<Item = Pos>,
+    {
+        let can_cross_ocean = Self::naval_recon_can_cross_ocean(g, pid);
+        let navigable_water = |pos: Pos| {
+            g.map.get(pos).is_some_and(|tile| {
+                g.rules.is_passable(tile)
+                    && g.rules.is_water(tile)
+                    && (tile.terrain != "ocean" || can_cross_ocean)
+            })
+        };
+        let mut waterway = BTreeSet::new();
+        let mut frontier = VecDeque::new();
+        for pos in starts {
+            if navigable_water(pos) && waterway.insert(pos) {
+                frontier.push_back(pos);
+            }
+        }
+        while let Some(pos) = frontier.pop_front() {
+            for neighbor in g.nbrs(pos) {
+                if navigable_water(neighbor) && waterway.insert(neighbor) {
+                    frontier.push_back(neighbor);
+                }
+            }
+        }
+        waterway
+    }
+
+    /// A waterway pays for a dedicated scout only when it is genuinely roomy
+    /// and has either unseen water or a live-mirror frontier at its edge.
+    fn naval_recon_waterway_can_chart(g: &Game, pid: usize, waterway: &BTreeSet<Pos>) -> bool {
+        waterway.len() >= NAVAL_RECON_MIN_WATERWAY_TILES
+            && waterway.iter().any(|pos| {
+                !g.players[pid].explored.contains(pos)
+                    || g.nbrs(*pos).into_iter().any(|neighbor| {
+                        g.map.get(neighbor).is_some_and(|tile| {
+                            g.rules.is_unknown(tile) && g.rules.is_passable(tile)
+                        })
+                    })
+            })
+    }
+
+    /// Whether a city can launch a naval scout into water that can still
+    /// reveal something useful. General coastal logic intentionally remains
+    /// broad — a two-tile lake is coastal for yields and harbor rules — while
+    /// reconnaissance needs an actual route.
+    fn city_has_naval_recon_launch(g: &Game, pid: usize, cid: u32) -> bool {
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        let waterway = Self::naval_recon_waterway(g, pid, g.nbrs(city.pos));
+        Self::naval_recon_waterway_can_chart(g, pid, &waterway)
+    }
+
+    /// A ship stranded in a small lake is not the empire's naval eye. Keep
+    /// this separate from a ship's combat availability: a linked escort or a
+    /// hull with no fresh-water route must not suppress a real explorer.
+    pub(crate) fn naval_recon_ship_can_chart(g: &Game, pid: usize, uid: u32) -> bool {
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        let spec = &g.rules.units[unit.kind];
+        if unit.owner != pid || spec.class != "military" || spec.domain.as_deref() != Some("sea") {
+            return false;
+        }
+        let waterway = Self::naval_recon_waterway(
+            g,
+            pid,
+            std::iter::once(unit.pos).chain(g.nbrs(unit.pos)),
+        );
+        Self::naval_recon_waterway_can_chart(g, pid, &waterway)
     }
 
     pub(crate) fn empire_is_coastal(g: &Game, pid: usize) -> bool {
@@ -6163,37 +6257,46 @@ impl BasicAi {
         })
     }
 
-    /// The sea's `recon_is_the_missing_arm`: no ship at all, and water the
-    /// empire has never seen. One ship is the whole arm — a Continents seat
-    /// with a fleet is not blind, and a fleet is the war lane's business.
+    /// The sea's `recon_is_the_missing_arm`: no usable explorer, and water the
+    /// empire has never seen. A hull trapped in a lake or linked to a Settler
+    /// does not answer it. One free ship with an open route is the whole arm —
+    /// a Continents seat with a fleet is not blind, and a fleet is the war
+    /// lane's business.
     /// See `naval_recon`.
     pub(crate) fn naval_recon_is_the_missing_arm(&self, g: &Game, pid: usize) -> bool {
         if !self.naval_recon || self.minor || self.barb {
             return false;
         }
-        let owned_ships = g
-            .units
-            .values()
-            .filter(|unit| {
-                unit.owner == pid
-                    && g.rules.units[unit.kind].class == "military"
-                    && g.rules.units[unit.kind].domain.as_deref() == Some("sea")
-            })
-            .count();
-        if owned_ships > 0 {
-            return false;
-        }
-        g.map.tiles.iter().any(|(pos, tile)| {
+        let water_left = g.map.tiles.iter().any(|(pos, tile)| {
             !g.players[pid].explored.contains(pos)
                 && g.rules.is_passable(tile)
                 && g.rules.is_water(tile)
-        })
+        });
+        if !water_left {
+            return false;
+        }
+        let has_naval_eye = g
+            .units
+            .values()
+            .any(|unit| {
+                unit.owner == pid
+                    && g.rules.units[unit.kind].class == "military"
+                    && g.rules.units[unit.kind].domain.as_deref() == Some("sea")
+                    && unit.linked_to.is_none()
+                    && Self::naval_recon_ship_can_chart(g, pid, unit.id)
+            });
+        if has_naval_eye {
+            return false;
+        }
+        g.player_city_ids(pid)
+            .into_iter()
+            .any(|cid| Self::city_has_naval_recon_launch(g, pid, cid))
     }
 
     /// The cheapest ship this city can lay down. Exploration wants a hull
     /// that moves, not a broadside; the cost is the whole price of an eye.
     fn best_naval_recon(&self, g: &Game, pid: usize, cid: u32) -> Option<String> {
-        if !Self::city_is_coastal(g, cid) {
+        if !Self::city_has_naval_recon_launch(g, pid, cid) {
             return None;
         }
         let mut best: Option<((i64, i64), String)> = None;
@@ -14699,6 +14802,63 @@ mod tests {
         (g, ai)
     }
 
+    fn dry_map(g: &mut Game) {
+        for tile in g.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+    }
+
+    /// Lay a straight, four-or-more-hex coastal route from a city. The final
+    /// tile is deliberately kept unseen, giving a native-test fixture the
+    /// same fresh-water objective the live mirror supplies at its fog edge.
+    fn coastal_waterway(g: &mut Game, origin: Pos, length: usize) -> Vec<Pos> {
+        let mut waterway = Vec::new();
+        let mut current = origin;
+        for distance in 1..=length {
+            current = g
+                .nbrs(current)
+                .into_iter()
+                .find(|pos| {
+                    g.map.tiles.contains_key(pos) && g.wdist(origin, *pos) == distance as i32
+                })
+                .expect("an interior city has an outward coastal path");
+            g.map.tiles.get_mut(&current).unwrap().terrain = crate::name!("coast");
+            waterway.push(current);
+        }
+        g.players[0].explored.remove(waterway.last().unwrap());
+        waterway
+    }
+
+    /// Cut a two-hex lake into otherwise dry ground. The caller chooses a
+    /// centre away from cities, so this is a small, deterministic stand-in for
+    /// the live Durocortorum lake that trapped a Galley.
+    fn two_tile_lake(g: &mut Game, centre: Pos) -> [Pos; 2] {
+        for pos in g.wdisk(centre, 2) {
+            let Some(tile) = g.map.tiles.get_mut(&pos) else {
+                continue;
+            };
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+        let neighbors = g.nbrs(centre);
+        let first = neighbors[0];
+        let second = neighbors
+            .into_iter()
+            .find(|pos| *pos != first && g.wdist(first, *pos) == 1)
+            .expect("a hex has adjacent neighbors");
+        for pos in [first, second] {
+            g.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("coast");
+        }
+        [first, second]
+    }
+
     /// The empire owns no recon and there is ground it has never walked, so the
     /// arm is missing. See `recon_is_the_missing_arm`: this is the state live
     /// run `civvis-20260808T142724Z` sat in for 150 turns while its army grew
@@ -14866,27 +15026,19 @@ mod tests {
     /// land recon arm charted its continent and stopped at the shore, and in
     /// 142 turns the empire built one Galley (civvis-20260816T110555Z). See
     /// `naval_recon`. An empire with no ship and unexplored water is missing
-    /// the sea's arm; one Galley satisfies it; a charted sea releases it; and
-    /// a coastal city with Sailing buys the cheapest hull for it.
+    /// the sea's arm; one Galley with an open route satisfies it; a charted
+    /// sea releases it; and a viable coastal city with Sailing buys the
+    /// cheapest hull for it.
     #[test]
     fn an_empire_with_no_ship_and_water_left_to_chart_is_missing_the_naval_arm() {
-        // A coastal capital: search seeds for a start beside water.
-        let mut found = None;
-        for seed in 4_430..4_470u64 {
-            let (g, _) = blind_empire(seed);
-            let cid = g.player_city_ids(0)[0];
-            if BasicAi::city_is_coastal(&g, cid) {
-                found = Some(seed);
-                break;
-            }
-        }
-        let (g, mut ai) = blind_empire(found.expect("some seed starts on the coast"));
+        let (mut g, mut ai) = blind_empire(4_430);
         ai.naval_recon = true;
         let cid = g.player_city_ids(0)[0];
+        let city_pos = g.cities[&cid].pos;
+        dry_map(&mut g);
+        let waterway = coastal_waterway(&mut g, city_pos, NAVAL_RECON_MIN_WATERWAY_TILES);
         assert!(
-            g.map.tiles.iter().any(|(pos, tile)| !g.players[0].explored.contains(pos)
-                && g.rules.is_passable(tile)
-                && g.rules.is_water(tile)),
+            BasicAi::city_has_naval_recon_launch(&g, 0, cid),
             "fixture precondition: unexplored water exists"
         );
         assert!(ai.naval_recon_is_the_missing_arm(&g, 0), "no ship, water unseen: missing");
@@ -14909,13 +15061,38 @@ mod tests {
         }
         assert!(ai.naval_recon_is_the_missing_arm(&army, 0));
         let mut fleet = g.clone();
-        let water = fleet
-            .nbrs(pos)
-            .into_iter()
-            .find(|n| fleet.map.get(*n).is_some_and(|t| fleet.rules.is_water(t)))
-            .expect("the coastal capital touches water");
-        fleet.spawn_test_unit("galley", 0, water);
+        let free_galley = fleet.spawn_test_unit("galley", 0, waterway[0]);
+        assert!(
+            BasicAi::naval_recon_ship_can_chart(&fleet, 0, free_galley),
+            "the Galley can reach the uncharted open water"
+        );
         assert!(!ai.naval_recon_is_the_missing_arm(&fleet, 0), "one hull is the whole arm");
+
+        // A Galley that is physically present but caught in a two-hex lake
+        // must not stop the empire from repairing its actual naval eye.
+        let mut stranded = sailing.clone();
+        let city_pos = stranded.cities[&cid].pos;
+        let lake_centre = stranded
+            .map
+            .tiles
+            .values()
+            .find(|tile| {
+                stranded.wdist(city_pos, tile.pos) >= 5
+                    && !stranded.rules.is_water(tile)
+                    && stranded.wdisk(tile.pos, 2).len() == 19
+            })
+            .map(|tile| tile.pos)
+            .expect("a dry patch well away from the coastal capital");
+        let lake = two_tile_lake(&mut stranded, lake_centre);
+        let trapped_galley = stranded.spawn_test_unit("galley", 0, lake[0]);
+        assert!(
+            !BasicAi::naval_recon_ship_can_chart(&stranded, 0, trapped_galley),
+            "a two-hex lake is not a route to new contacts"
+        );
+        assert!(
+            ai.naval_recon_is_the_missing_arm(&stranded, 0),
+            "the stranded Galley cannot mask the missing sea explorer"
+        );
 
         // A charted sea releases it; and it is off unless turned on.
         let mut charted = g.clone();
@@ -14925,6 +15102,37 @@ mod tests {
         let mut off = ai.clone();
         off.naval_recon = false;
         assert!(!off.naval_recon_is_the_missing_arm(&g, 0));
+    }
+
+    #[test]
+    fn naval_recon_never_launches_from_a_two_tile_lake() {
+        let (mut lake, mut ai) = blind_empire(4_531);
+        ai.naval_recon = true;
+        let cid = lake.player_city_ids(0)[0];
+        let city_pos = lake.cities[&cid].pos;
+        dry_map(&mut lake);
+        let shore = two_tile_lake(&mut lake, city_pos);
+        lake.players[0].techs.insert(crate::name!("sailing"));
+
+        assert!(BasicAi::city_is_coastal(&lake, cid), "the lake still makes the city coastal");
+        assert!(
+            !BasicAi::city_has_naval_recon_launch(&lake, 0, cid),
+            "coastal yields do not imply a viable sea-scout launch"
+        );
+        assert_eq!(
+            ai.best_naval_recon(&lake, 0, cid),
+            None,
+            "do not spend a Galley on a lake-bound reconnaissance job"
+        );
+        let galley = lake.spawn_test_unit("galley", 0, shore[0]);
+        assert!(
+            !BasicAi::naval_recon_ship_can_chart(&lake, 0, galley),
+            "a lake-bound hull is not a naval reconnaissance arm"
+        );
+        assert!(
+            !ai.naval_recon_is_the_missing_arm(&lake, 0),
+            "with no viable launch, do not keep forcing a naval build"
+        );
     }
 
     /// The shape live run `civvis-20260807T181839Z` was in at t115 when its
