@@ -1175,7 +1175,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The foreign-border settle penalty is behind `settlement_safety`, which
 /// `AdvancedAi::legacy()` leaves off (asserted). Compatibility re-pin; the Elo
 /// protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6074_9dac_f012_64e3;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc3ad_2eec_7d6a_dc71;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
