@@ -7071,8 +7071,8 @@ mod tests {
             "<h3 class=\"card-title\" id=\"play-civ-title\"><a href=\"../?mode=play\">Play CIVVIS</a></h3>",
             "<span class=\"card-mode\">AI simulation</span>",
             "<span class=\"card-mode\">Single player</span>",
-            ".card-mode { color: var(--muted); font-size: 19px; font-weight: 700;",
-            ".card-title { margin: 0; color: #fff; font-size: 19px; font-weight: 700; }",
+            ".card-mode { color: var(--muted); font-size: 17px; font-weight: 700;",
+            ".card-title { margin: 0; color: #fff; font-size: 17px; font-weight: 700; }",
             // The full game's Customize opens the world picker in place and
             // still names Game setup as its scriptless destination.
             "href=\"../?setup=1\" data-pick=\"watch-civ\"",
@@ -7083,7 +7083,7 @@ mod tests {
             "data-pick=\"watch\" data-lens=\"custom\">Custom Maps</a>",
             "data-pick=\"watch\" data-lens=\"era\">Historical Battles</a>",
             "data-pick=\"watch\" data-lens=\"eras\">Any Era</a>",
-            "data-pick=\"play\" data-lens=\"custom\">You vs Different AI Strategies &amp; Difficulties</a>",
+            "data-pick=\"play\" data-lens=\"custom\">AI Strategies &amp; Difficulties</a>",
             "data-pick=\"play\" data-lens=\"eras\">Any Era</a>",
             "data-pick=\"watch-civ\" data-lens=\"seats\">AI Empires</a>",
             "data-pick=\"watch-civ\" data-lens=\"worlds\">Fresh World Every Visit</a>",
@@ -7118,7 +7118,25 @@ mod tests {
             "data-pick=\"play-civ\" aria-label=\"Customize a played game\">Customize</a>",
             // The verb is the card's point, so it carries the colour and a
             // third more size than the Customize beside it.
-            ".verb-play { min-height: 44px; padding: 0 23px; font-size: 17px; }",
+            ".verb-play { min-height: 40px; padding: 0 20px; font-size: 16px; }",
+            // The row's four buttons stand level: the description holds to
+            // one line and the tag shelf below the buttons reserves two, so
+            // a card whose tags wrap cannot stagger its neighbour's buttons.
+            ".card-desc { margin: 0; overflow: hidden; color: var(--muted); font-size: 13px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }",
+            ".card-tags { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 6px; min-height: 54px; margin: 0; padding: 0; list-style: none; }",
+            // The row index on the menu's left edge: every row in page
+            // order, each a click that scrolls its row up — so the whole
+            // menu is legible in one glance.
+            // An open panel names who is at the keyboard beside its Back
+            // button, at the verb button's size and in its colour.
+            "<span class=\"picker-mode-badge watch\" id=\"battle-picker-mode\">",
+            "<span class=\"picker-mode-badge watch\" id=\"game-picker-mode\">",
+            ".picker-mode-badge.play { background: var(--play-bg); color: var(--play-fg); }",
+            "<nav class=\"row-nav\" aria-label=\"Menu rows\">",
+            "<a href=\"#row-tactics\">Tactics</a>",
+            "<a href=\"#row-civ\">CIVVIS</a>",
+            "<div class=\"mode-card\" id=\"row-tactics\">",
+            "<div class=\"mode-card\" id=\"row-civ\">",
             // While a row's shared panel is open, its two cards are the mode
             // selector — the selected option highlights, the other mutes —
             // and the panel's own chips switch between them in place. That

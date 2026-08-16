@@ -117,8 +117,10 @@ function askForIt(wrong) {
 ///
 /// The issue carries a `from-site` label (plus `bug` or `enhancement`), so
 /// triage is one filter, and the body states the reporter's chosen name, the
-/// deployed build and the browser — the context a bug report from a stranger
-/// otherwise never has.
+/// deployed build and — only with the reporter's permission — the browser:
+/// the dialog sends `device` when its checkbox is ticked, and a report
+/// without one records nothing about the machine it came from. The request's
+/// own User-Agent header is deliberately never quoted.
 async function fileReport(request, env, url) {
   const token = env.GITHUB_ISSUE_TOKEN;
   const answer = (status, payload) =>
@@ -173,11 +175,15 @@ async function fileReport(request, env, url) {
     if (shipped.ok) build = (await shipped.json()).short || "";
   } catch {}
 
+  // The browser line is consent-gated: `device` arrives only when the
+  // dialog's checkbox was ticked. Control characters out, length capped —
+  // it is quoted verbatim on a public issue.
+  const device = String(report.device || "").replace(/[^\x20-\x7E]/g, " ").trim().slice(0, 400);
   const body =
     `${details || "(no details given)"}\n\n---\n` +
     `Reported from civvis.ai by **${reporter}** via the site's report dialog (no GitHub account).\n` +
     (build ? `Build: \`${build}\`\n` : "") +
-    `Browser: ${request.headers.get("User-Agent") || "unknown"}`;
+    (device ? `Browser: ${device}` : "");
   const filed = await fetch("https://api.github.com/repos/MartinHalvorson/CIVVIS/issues", {
     method: "POST",
     headers: {
