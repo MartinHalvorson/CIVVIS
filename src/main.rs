@@ -1168,7 +1168,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// live `loyalty_rate_alarm`; the frozen anchor cannot enter the guard, so its
 /// historical fallback remains intact (asserted). Compatibility re-pin; the
 /// Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf202_79c7_3baf_89cd;
+/// The exploration dead-target memory is behind `BasicAi::explore_dead_targets`,
+/// set only by the Civilization VI bridge; native constructors and
+/// `AdvancedAi::legacy()` keep the plain goal (asserted). Compatibility re-pin;
+/// the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6074_9dac_f012_64e3;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -2507,6 +2507,9 @@ fn main() {
     // And build the Settler at Civilization VI's own population floor rather
     // than the genome's: see `BasicAi::host_settler_pop`.
     ai.enable_host_settler_pop();
+    // And give up an exploration target the host accepts but never walks to:
+    // see `BasicAi::explore_dead_targets`.
+    ai.enable_explore_dead_targets();
     // ★★★ SAY WHICH GENOME IS PLAYING, ALWAYS — INCLUDING "the stock one".
     //
     // An axis nothing reports does not exist, and this project has already shipped a
