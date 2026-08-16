@@ -1231,6 +1231,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// behind `naval_recon`, off for `AdvancedAi::legacy()` (asserted); the
 /// frozen anchor's ships and production are unchanged. Compatibility re-pin;
 /// the Elo protocol does not move.
+/// The in-lane answer to a Science or score leader is behind
+/// `counter_in_lane`, which the live bridge now enables and
+/// `AdvancedAi::legacy()` leaves off (asserted); the frozen anchor still
+/// declares. Compatibility re-pin; the Elo protocol does not move.
 /// The era-paced city cadence is behind `era_paced_expansion`, off for
 /// `AdvancedAi::legacy()` (asserted); the frozen anchor still adds a city
 /// per ninety standard turns. Compatibility re-pin; the Elo protocol does
