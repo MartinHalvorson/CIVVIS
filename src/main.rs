@@ -1198,6 +1198,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `stacked_escort`/`settlement_safety`, which `AdvancedAi::legacy()` leaves
 /// off; carrying retired sites across rebuilds touches only unit-keyed memory.
 /// Compatibility re-pin; the Elo protocol does not move.
+/// The garrisoned-city raid gate is behind `garrison_under_fire`, the live
+/// doctrine that owns the besieged-city path; frozen controllers keep the raid
+/// test as it was (asserted). Compatibility re-pin; the Elo protocol does not
+/// move.
 const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb1c4_e396_cd1c_fd3f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
