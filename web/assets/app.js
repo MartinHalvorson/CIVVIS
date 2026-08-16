@@ -6752,8 +6752,13 @@ document.addEventListener("visibilitychange", () => {
 const PACE_KEY = "civvis-watch-pace";
 let paceRealigned = false;
 let paceDisagreed = 0;
-let paceChoice = null;   // the pace the viewer picked, null until they pick one
+let paceChoice = null;   // the pace this world is being held at
 let paceAsserted = null; // the server pace we have already answered with a push
+// The viewer's own pace, null until they pick one. Distinct from paceChoice,
+// which is what the world on screen is being held at: the two differ exactly
+// while a Tactics battle borrows Blitz over a slower preference, and this is
+// what the next full game goes back to.
+let pacePreference = null;
 function paceHeldOpen() {
   return [document.getElementById("specspeed"), document.querySelector("[data-hud-pace]")]
     .some(select => select && document.activeElement === select);
@@ -6772,6 +6777,7 @@ function paceOffered(select, ms) {
 }
 function rememberPace(ms) {
   paceChoice = ms;
+  pacePreference = ms;
   paceAsserted = null;
   paceDisagreed = 0;
   try { localStorage.setItem(PACE_KEY, String(ms)); } catch (e) {}
@@ -6785,7 +6791,30 @@ function restorePace() {
   const ms = +stored;
   if (!Number.isFinite(ms) || !paceOffered(select, ms)) return;
   paceChoice = ms;
+  pacePreference = ms;
   select.value = String(ms);
+}
+// A Tactics battle is decided in a couple of minutes, so every Tactics world
+// opens at Blitz — a pace remembered from a full game makes a skirmish crawl,
+// and the pace select is right there for anyone who wants to slow it down.
+// The viewer's own pace waits in pacePreference and comes back with the next
+// full game. Held as a soft choice exactly like the between-game countdown's
+// default: written into paceChoice so the ordinary assert path tells a fresh
+// server about it once, and never into localStorage, where a later session
+// would read it back as a preference nobody expressed. Called once per world,
+// so a pace picked during a battle stands for that battle and the next
+// Tactics world opens at Blitz again.
+const TACTICS_PACE_MS = 500;
+function applyWorldPaceDefault(tactics) {
+  const select = document.getElementById("specspeed");
+  if (!select || paceHeldOpen()) return;
+  const ms = tactics ? TACTICS_PACE_MS : pacePreference;
+  if (ms === null || !paceOffered(select, ms) || paceChoice === ms) return;
+  paceChoice = ms;
+  paceAsserted = null;
+  paceDisagreed = 0;
+  select.value = String(ms);
+  setPace({ms});
 }
 function specPace() {
   const select = document.getElementById("specspeed");
@@ -7464,6 +7493,9 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     // So does the between-game default: a Tactics world counts down in 3s
     // unless the viewer has picked an interval by hand.
     applyBetweenGameCountdownDefault(tactics);
+    // And the watch pace: a Tactics world opens at Blitz, a full game at
+    // whatever the viewer's own pace is.
+    applyWorldPaceDefault(tactics);
     const majors = st.players.filter(p => !p.is_minor && !p.is_barbarian).length;
     const playerSelect = document.getElementById("np");
     if (!tactics && [...playerSelect.options].some(o => +o.value === majors)) {

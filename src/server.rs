@@ -6967,24 +6967,15 @@ mod tests {
         assert!(!block.contains('<'), "the catalog block must not be able to close its own element");
         for piece in [
             // Rows: Tactics above, the full game below. Columns: Watch left,
-            // Play right. The immediate ways in are the photograph and the
-            // title; each card's one Watch/Play Customized button carries
-            // `data-pick` and falls back to an honest destination without
-            // scripting. Every viewer link is lane-relative (`../` from the
-            // lane's /home), so the test lane's home page opens the test
-            // lane's viewer.
+            // Play right. The immediate ways in are the photograph, the title
+            // and the card's own verb; Customize carries `data-pick` and
+            // falls back to an honest destination without scripting. Every
+            // viewer link is lane-relative (`../` from the lane's /home), so
+            // the test lane's home page opens the test lane's viewer.
             "<h3 class=\"card-title\" id=\"play-civ-title\"><a href=\"../?mode=play\">Play CIVVIS</a></h3>",
             "href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play\" data-pick=\"play\"",
             "<h3 class=\"card-title\" id=\"watch-civ-title\"><a href=\"../\">Watch CIVVIS</a></h3>",
             "href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\" data-pick=\"watch\"",
-            // "I'm Feeling Lucky" rolls between the two watched destinations
-            // the cards already offer. Its href is rolled by script, so the
-            // two candidates live in data attributes — pinned here beside the
-            // cards because a viewer link that stopped being lane-relative
-            // would send the test lane's visitors to the stable lane's game.
-            "id=\"lucky\"",
-            "data-watch-civ=\"../\"",
-            "data-watch-tactics=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\"",
             // The full game's Customized buttons land in the simulator with
             // the Game setup drawer open (`?setup=1`, honoured at the end of
             // app.js) when nothing can open the panel in place.
@@ -7106,18 +7097,31 @@ mod tests {
             // The panels are grid rows of the menu itself, spanning it, so
             // each opens directly below its own row of cards.
             "grid-column: 1 / -1;",
-            // One action per card: the verb and Customize merged into a
-            // single Watch/Play Customized button that opens the row's
-            // shared panel.
-            "data-pick=\"watch\" aria-label=\"Customize and watch a Tactics battle\">Watch Customized</a>",
-            "data-pick=\"play\" aria-label=\"Customize and play a Tactics battle\">Play Customized</a>",
-            "data-pick=\"watch-civ\" aria-label=\"Customize and watch a full game\">Watch Customized</a>",
-            "data-pick=\"play-civ\" aria-label=\"Customize and play a full game\">Play Customized</a>",
+            // Two actions per card, four to a row: the card's own verb opens
+            // its preset at once — never carrying `data-pick`, because
+            // clicking it is meant to leave the page rather than open a
+            // panel — and Customize beside it opens the row's shared panel.
+            "<a class=\"card-btn verb-watch\" href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20\" aria-labelledby=\"watch-tactics-title\">Watch</a>",
+            "<a class=\"card-btn verb-play\" href=\"../?map=battlefield&amp;players=2&amp;era=information&amp;arena=20x20&amp;mode=play\" aria-labelledby=\"play-tactics-title\">Play</a>",
+            "<a class=\"card-btn verb-watch\" href=\"../\" aria-labelledby=\"watch-civ-title\">Watch</a>",
+            "<a class=\"card-btn verb-play\" href=\"../?mode=play\" aria-labelledby=\"play-civ-title\">Play</a>",
+            "data-pick=\"watch\" aria-label=\"Customize a watched Tactics battle\">Customize</a>",
+            "data-pick=\"play\" aria-label=\"Customize a played Tactics battle\">Customize</a>",
+            "data-pick=\"watch-civ\" aria-label=\"Customize a watched game\">Customize</a>",
+            "data-pick=\"play-civ\" aria-label=\"Customize a played game\">Customize</a>",
+            // The verb is the card's point, so it carries the colour and a
+            // third more size than the Customize beside it.
+            ".verb-play { min-height: 44px; padding: 0 23px; font-size: 17px; }",
             // While a row's shared panel is open, its two cards are the mode
             // selector — the selected option highlights, the other mutes —
-            // and the panel's own chips switch between them in place.
+            // and the panel's own chips switch between them in place. That
+            // is also when the row's four buttons merge into one set: the
+            // panel and its chips are now the customization, so both
+            // Customize buttons retire until it closes.
             "card.classList.toggle(\"picking\", selected);",
             "card.classList.toggle(\"muted\", shown && !selected);",
+            "card.classList.toggle(\"merged\", shown);",
+            ".mode-card.merged .card-btn.customize { display: none; }",
             ".mode-card.muted { opacity: 0.55; }",
             "id=\"battle-modes\"",
             "id=\"game-modes\"",
@@ -7129,12 +7133,13 @@ mod tests {
         ] {
             assert!(landing.contains(piece), "the home page lost {piece}");
         }
-        // The merged button replaced the two-button pair everywhere: no card
-        // offers a bare verb or a bare Customize any more.
-        for gone in [">Customize</a>", ">Watch</a>", ">Play</a>"] {
+        // The pair is back: no card offers the single merged button that
+        // stood in for it, and merging is now something the open panel does
+        // rather than something the markup ships.
+        for gone in [">Watch Customized</a>", ">Play Customized</a>"] {
             assert!(
                 !landing.contains(gone),
-                "the home page grew a separate {gone} action back"
+                "the home page grew the merged {gone} button back"
             );
         }
         // Reading order inside a card: title row, description, actions, tags
