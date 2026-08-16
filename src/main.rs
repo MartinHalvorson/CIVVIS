@@ -1198,7 +1198,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `stacked_escort`/`settlement_safety`, which `AdvancedAi::legacy()` leaves
 /// off; carrying retired sites across rebuilds touches only unit-keyed memory.
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb452_d6fc_37ab_1fd4;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb1c4_e396_cd1c_fd3f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
