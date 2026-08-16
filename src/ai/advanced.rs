@@ -372,6 +372,10 @@ const STACKED_ESCORT_PATIENCE: u8 = 2;
 /// A guard this close behind a settler on quiet ground is one the settler
 /// marches ahead of rather than waits for. See `stacked_escort_pace`.
 const ADJACENT_GUARD_MARCH_DISTANCE: i32 = 1;
+/// The health below which a guard on a settler's tile no longer counts as a
+/// shield in the settler's risk model: a raider that kills the guard takes
+/// the settler with it. See `settler_stack_discipline`.
+const STACKED_GUARD_MIN_HP: i32 = 40;
 
 /// The per-tile discount `settle_sites` already applies inside the search
 /// radius. Named here because a census that scores siting against raw
@@ -1103,6 +1107,18 @@ impl SettlementAtlas {
     }
 }
 
+/// One hostile as it stood at the start of the turn. See
+/// `AdvancedAi::turn_start_hostiles`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct TurnStartHostile {
+    id: u32,
+    pos: Pos,
+    /// Tiles the unit can enter next turn: its movement, rounded up.
+    capture_reach: i32,
+    strength: f64,
+    sea: bool,
+}
+
 #[derive(Clone)]
 pub struct AdvancedAi {
     base: BasicAi,
@@ -1607,6 +1623,46 @@ pub struct AdvancedAi {
     /// that starts a turn stacked can always mirror the settler's step: it
     /// pays the same terrain costs from the same tile.
     stacked_escort: bool,
+    /// A Settler decides on the board as it really stands, prices capture
+    /// as capture, and trusts only a guard ON its tile.
+    ///
+    /// ★★★★ THREE SETTLERS CARRIED OFF WITHIN SIGHT OF THE CAPITAL, EACH
+    /// WITH ITS GUARD ONE TILE AWAY. Run civvis-20260816T200454Z, t23, t61,
+    /// t71 — the second city at t39, the third at t68, 381 against 609 at
+    /// t154. Replayed step by step, three things did it, all in the
+    /// settler's own safety model:
+    ///
+    /// 1. The joint engagement plays BEFORE the settler moves. On the board
+    ///    a guard's attack kills the raider and the guard walks into its
+    ///    tile; the settler then reads the tile beside the (dead) raider as
+    ///    risk 0.0 and steps there — t60, `planned_risk 0.0` beside a slinger
+    ///    the host had not touched (the chariot's attack never executed —
+    ///    the export read `moves: 0`; even had it landed, a strike that
+    ///    fails to kill leaves the settler on the doorstep). Under this
+    ///    treatment settlers act before the engagement, on the position
+    ///    every hostile still occupies, and a bound guard is kept out of the
+    ///    joint plan so it is not spent attacking away from its settler.
+    /// 2. `nearby_escort` discounted risk by 0.55 for a guard on an ADJACENT
+    ///    tile. An adjacent guard prevents nothing — capture is a move onto
+    ///    the civilian's tile — so 36 became 16, under the 30 step limit,
+    ///    and the settler walked in. Only a unit ON the tile counts now, and
+    ///    then the discount is 0.15 (a stacked civilian cannot be taken while
+    ///    its guard stands).
+    /// 3. A hostile that could REACH the tile next turn was priced at
+    ///    12 + 0.15·strength — the "approach" tier, half the step limit —
+    ///    while only a hostile already in ATTACK range paid the 34 tier. For
+    ///    a civilian reach IS capture: any military land unit that can enter
+    ///    the tile takes it, slinger or swordsman alike (the t61 captor was a
+    ///    slinger). So for a civilian mover a hostile within its movement is
+    ///    priced at the capture tier, one tile beyond that at the approach
+    ///    tier, and a tile inside one of our own cities at nothing.
+    ///
+    /// The step limit itself is unchanged: with capture priced as capture a
+    /// single hostile in reach refuses the step unless the tile holds a guard
+    /// or a city, which is exactly the rule a careful player follows. Behind
+    /// `stacked_escort`; off for the frozen native controllers, on for the
+    /// live bridge and the native repair bundle.
+    settler_stack_discipline: bool,
     /// The military unit assigned to shadow each settler under
     /// `stacked_escort`, keyed by settler id. Values are unique: a guard
     /// serves one settler. No `linked_to` is involved, so this survives the
@@ -1622,6 +1678,18 @@ pub struct AdvancedAi {
     /// quo) while the guard keeps chasing; a livelocked guard must never
     /// freeze expansion, which is this empire's binding constraint.
     guard_wait: BTreeMap<u32, (u32, u8)>,
+    /// Every visible hostile military unit as it stood BEFORE anything of
+    /// ours acted this turn, under `settler_stack_discipline`. The live
+    /// bridge's finishing volley (`civvis_orders::finish_live_war_units`)
+    /// kills wounded raiders on the planning board before the AI turn, and
+    /// the host has been measured leaving such kills alive on 1, 3, 6, 8, 16
+    /// and 20 HP; a civilian's step must keep pricing a raider the board
+    /// merely predicts dead. Recorded once per turn — by the bridge before
+    /// its volley, or by `take_turn` when nothing recorded earlier — and read
+    /// only for entries whose unit is no longer on the board.
+    turn_start_hostiles: Vec<TurnStartHostile>,
+    /// The turn `turn_start_hostiles` was recorded for.
+    turn_start_hostiles_turn: Option<u32>,
     /// A Religion strategy sues for peace instead of holding wars that starve
     /// its own lane.
     ///
@@ -3207,8 +3275,11 @@ impl AdvancedAi {
             escort_march: BTreeMap::new(),
             escort_unstick: false,
             stacked_escort: false,
+            settler_stack_discipline: false,
             settler_guards: BTreeMap::new(),
             guard_wait: BTreeMap::new(),
+            turn_start_hostiles: Vec::new(),
+            turn_start_hostiles_turn: None,
             religion_sues_peace: false,
             settler_blocked_turns: BTreeMap::new(),
             settler_avoid: BTreeMap::new(),
@@ -3442,6 +3513,97 @@ impl AdvancedAi {
         self.stacked_escort = false;
         self.settler_guards.clear();
         self.guard_wait.clear();
+    }
+
+    /// Settlers decide before the engagement, price capture as capture and
+    /// trust only a guard on their tile. See `settler_stack_discipline`.
+    pub fn enable_settler_stack_discipline(&mut self) {
+        self.settler_stack_discipline = true;
+    }
+
+    pub fn disable_settler_stack_discipline(&mut self) {
+        self.settler_stack_discipline = false;
+    }
+
+    /// Whether the settler stack discipline is on. See
+    /// `settler_stack_discipline`.
+    pub fn settler_stack_discipline(&self) -> bool {
+        self.settler_stack_discipline
+    }
+
+    /// The peacetime camp party. See `BasicAi::camp_party`.
+    pub fn enable_camp_party(&mut self) {
+        self.base.enable_camp_party();
+    }
+
+    pub fn disable_camp_party(&mut self) {
+        self.base.disable_camp_party();
+    }
+
+    /// Whether the peacetime camp party is on. See `BasicAi::camp_party`.
+    pub fn camp_party(&self) -> bool {
+        self.base.camp_party()
+    }
+
+    /// Record every visible hostile military unit as it stands right now, so
+    /// a civilian's step keeps pricing one the planning board kills before
+    /// the civilian moves. Idempotent within a turn: the first caller wins —
+    /// the live bridge calls it before its finishing volley, `take_turn`
+    /// calls it as a fallback. A no-op unless `settler_stack_discipline`.
+    pub fn observe_turn_start_hostiles(&mut self, g: &Game, pid: usize) {
+        if !self.settler_stack_discipline || self.turn_start_hostiles_turn == Some(g.turn) {
+            return;
+        }
+        self.turn_start_hostiles_turn = Some(g.turn);
+        self.turn_start_hostiles.clear();
+        for unit in g.units.values() {
+            if unit.owner == pid
+                || !g.is_at_war(pid, unit.owner)
+                || !g.unit_visible_to(unit.id, pid)
+            {
+                continue;
+            }
+            let spec = &g.rules.units[unit.kind];
+            if spec.class != "military" || spec.domain.as_deref() == Some("air") {
+                continue;
+            }
+            if self.barbarian_scouts_are_scouts
+                && g.players[unit.owner].is_barbarian
+                && spec.promotion_class == "recon"
+            {
+                continue;
+            }
+            self.turn_start_hostiles.push(TurnStartHostile {
+                id: unit.id,
+                pos: unit.pos,
+                capture_reach: spec.moves.ceil() as i32,
+                strength: crate::game::effective_strength(g.unit_strength(unit, false), unit.hp)
+                    .max(1.0),
+                sea: spec.domain.as_deref() == Some("sea"),
+            });
+        }
+    }
+
+    /// The guards currently bound to a living settler of `pid` under
+    /// `stacked_escort`. Under `settler_stack_discipline` these are kept out
+    /// of every attack plan that runs before the settler moves — the joint
+    /// engagement and the live bridge's finishing volley — so a guard is not
+    /// spent one tile away from the civilian it shields. Empty when the
+    /// discipline is off.
+    pub fn bound_settler_guards(&self, g: &Game, pid: usize) -> BTreeSet<u32> {
+        if !self.settler_stack_discipline {
+            return BTreeSet::new();
+        }
+        self.settler_guards
+            .iter()
+            .filter(|(settler, _)| {
+                g.units
+                    .get(*settler)
+                    .is_some_and(|unit| unit.owner == pid && unit.kind == "settler")
+            })
+            .map(|(_, guard)| *guard)
+            .filter(|guard| g.units.get(guard).is_some_and(|unit| unit.owner == pid))
+            .collect()
     }
 
     /// A Religion strategy offers peace to unblock its spread lane. See
@@ -3778,6 +3940,10 @@ impl AdvancedAi {
         // the live bridge while two unescorted settlers were captured one
         // turn short of founding; see stacked_escort.
         self.enable_stacked_escort();
+        // And the settler decides on the real board, prices capture as
+        // capture and trusts only a guard on its tile; see
+        // settler_stack_discipline.
+        self.enable_settler_stack_discipline();
         // The religion lane was structurally blocked by its own wars; see
         // religion_sues_peace.
         self.enable_religion_sues_peace();
@@ -3824,6 +3990,9 @@ impl AdvancedAi {
         // And a camp within nine tiles of a city is home ground the guard clears.
         // See `BasicAi::camp_reach`.
         self.enable_camp_reach();
+        // And in peacetime the whole field army clears it. See
+        // `BasicAi::camp_party`.
+        self.enable_camp_party();
         // ⚠ A revealed natural wonder is priced into founding only through the
         // worked tiles the growth forecast can see and a future Holy Site's
         // adjacency — for the Matterhorn about 2-4 points — while everything
@@ -4160,6 +4329,9 @@ impl AdvancedAi {
         // And a camp within nine tiles of a city is home ground the guard clears.
         // See `BasicAi::camp_reach`.
         self.enable_camp_reach();
+        // And in peacetime the whole field army clears it. See
+        // `BasicAi::camp_party`.
+        self.enable_camp_party();
         // A Religion plan that keeps its wars blockades its own lane.
         self.enable_religion_sues_peace();
     }
@@ -4170,6 +4342,7 @@ impl AdvancedAi {
         // Getting a settler to a site it can keep.
         self.enable_escort_unstick();
         self.enable_stacked_escort();
+        self.enable_settler_stack_discipline();
         self.enable_wonder_ring_settle_value();
         self.enable_stranded_settler_discount();
         self.enable_wide_map_capacity();
@@ -18496,13 +18669,51 @@ impl AdvancedAi {
                     && g.rules.units[escort.kind].class == "military"
                     && g.rules.units[escort.kind].domain.as_deref() != Some("air")
             });
-        let nearby_escort = discount_support && g.units.values().any(|unit| {
-            unit.owner == pid
-                && g.rules.units[unit.kind].class == "military"
-                && g.rules.units[unit.kind].domain.as_deref() != Some("air")
-                && g.rules.units[unit.kind].domain.as_deref() != Some("sea")
-                && g.wdist(unit.pos, pos) <= 1
-        });
+        // See `settler_stack_discipline`: a civilian mover — a Settler, not the
+        // military leader of a formation — is captured by any hostile that can
+        // enter its tile, and is protected only by a unit standing ON it.
+        let civilian_mover = self.settler_stack_discipline
+            && uid
+                .and_then(|unit| g.units.get(&unit))
+                .is_some_and(|unit| g.rules.units[unit.kind].class != "military");
+        let escort_reach = if civilian_mover { 0 } else { 1 };
+        // A stacked guard mirrors the settler's step (`stacked_guard_step`
+        // runs after the settler and walks onto its tile), so a settler that
+        // starts the move with its bound guard on its own tile is priced as
+        // if the guard will stand on the destination too — which is how a
+        // pair walks through raider country at all. A guard too hurt to
+        // survive an attack is no shield.
+        let stacked_guard = civilian_mover
+            && uid.is_some_and(|settler| {
+                let settler_pos = g.units[&settler].pos;
+                self.settler_guards.get(&settler).is_some_and(|guard| {
+                    g.units.get(guard).is_some_and(|guard| {
+                        guard.owner == pid
+                            && guard.pos == settler_pos
+                            && guard.hp >= STACKED_GUARD_MIN_HP
+                            && g.rules.units[guard.kind].class == "military"
+                            && !matches!(
+                                g.rules.units[guard.kind].domain.as_deref(),
+                                Some("sea" | "air")
+                            )
+                    })
+                })
+            });
+        let nearby_escort = discount_support
+            && (stacked_guard
+                || g.units.values().any(|unit| {
+                    unit.owner == pid
+                        && g.rules.units[unit.kind].class == "military"
+                        && g.rules.units[unit.kind].domain.as_deref() != Some("air")
+                        && g.rules.units[unit.kind].domain.as_deref() != Some("sea")
+                        && g.wdist(unit.pos, pos) <= escort_reach
+                        && (!civilian_mover || unit.hp >= STACKED_GUARD_MIN_HP)
+                }));
+        // A civilian inside one of our own cities cannot be taken until the
+        // city is.
+        if civilian_mover && g.city_at(pos).is_some_and(|cid| g.cities[&cid].owner == pid) {
+            return 0.0;
+        }
         // ★★★★ A WARSHIP OFF THE COAST IS A THREAT TO A SETTLER ON THE SHORE.
         // Sea units were skipped outright, so a settler's step safety, its
         // site risk and its guard-wait fallback all read the shoreline as
@@ -18551,6 +18762,20 @@ impl AdvancedAi {
             let approach_range = attack_range + spec.moves.ceil() as i32;
             let strength = crate::game::effective_strength(g.unit_strength(unit, false), unit.hp)
                 .max(1.0);
+            // ★★★★ FOR A CIVILIAN, REACH IS CAPTURE. See
+            // `settler_stack_discipline`: a hostile land unit that can enter
+            // the tile next turn takes the civilian whatever its range, so it
+            // is priced at the capture tier; one tile beyond its movement it
+            // is a threat to the turn after, the approach tier.
+            if civilian_mover && domain != Some("sea") {
+                let capture_reach = spec.moves.ceil() as i32;
+                if distance <= capture_reach {
+                    risk += 34.0 + strength * 0.45;
+                } else if distance <= capture_reach + 1 {
+                    risk += 12.0 + strength * 0.15;
+                }
+                continue;
+            }
             if domain == Some("sea") {
                 // A ship moves and strikes in one turn and a civilian on the
                 // shore cannot answer it: anything the ship can reach this
@@ -18564,6 +18789,31 @@ impl AdvancedAi {
                 risk += 34.0 + strength * 0.45;
             } else if distance <= approach_range {
                 risk += 12.0 + strength * 0.15;
+            }
+        }
+        // ★★★★ A KILL THE BOARD PREDICTS IS NOT A KILL THE HOST MADE. See
+        // `turn_start_hostiles`: a hostile that stood here at the start of
+        // the turn and is gone from the board now was removed by our own
+        // planning — the finishing volley, an earlier unit's strike — and the
+        // host may well leave it standing on a few hit points. For a
+        // civilian's step it is priced exactly as if it were still there.
+        if civilian_mover && self.turn_start_hostiles_turn == Some(g.turn) {
+            for gone in &self.turn_start_hostiles {
+                if g.units.contains_key(&gone.id) || !g.sees(visible, gone.pos) {
+                    continue;
+                }
+                let distance = g.wdist(gone.pos, pos);
+                if gone.sea {
+                    if coastal && distance <= gone.capture_reach + 1 {
+                        risk += 34.0 + gone.strength * 0.45;
+                    }
+                    continue;
+                }
+                if distance <= gone.capture_reach {
+                    risk += 34.0 + gone.strength * 0.45;
+                } else if distance <= gone.capture_reach + 1 {
+                    risk += 12.0 + gone.strength * 0.15;
+                }
             }
         }
         for city in g.cities.values() {
@@ -18588,6 +18838,9 @@ impl AdvancedAi {
         }
         risk * if escorted {
             0.25
+        } else if nearby_escort && civilian_mover {
+            // A unit on the tile: the civilian cannot be taken while it stands.
+            0.15
         } else if nearby_escort {
             0.45
         } else {
@@ -25037,7 +25290,14 @@ impl AdvancedAi {
     /// so the seeded combat rolls land exactly as they were evaluated.
     fn plan_engagement(&mut self, g: &mut Game, pid: usize) {
         let search = super::tactics::JointTactics::default();
-        let Some(plan) = search.plan(g, pid, &self.base) else {
+        // ★★★★ A BOUND GUARD IS NOT AN ATTACKER. See
+        // `settler_stack_discipline`: the joint plan spent the settler's guard
+        // on a strike one tile away, and whether the host executed it or not
+        // the settler was alone at the end of the turn. The guard's per-unit
+        // path (`stacked_guard_step`) runs before the attack scan and keeps
+        // it on the settler; the joint plan has to leave it there too.
+        let excluded = self.bound_settler_guards(g, pid);
+        let Some(plan) = search.plan_excluding(g, pid, &self.base, &excluded) else {
             return;
         };
         let mut played = 0usize;
@@ -25179,6 +25439,36 @@ impl AdvancedAi {
         // counts up to eight times for every military unit in the same turn.
         let decline_settlers = self.counts(g, pid).settlers > 0
             || !self.base.has_practical_settle_site(g, pid);
+        // ★★★★ SETTLERS DECIDE BEFORE THE ENGAGEMENT. See
+        // `settler_stack_discipline`: the joint plan below kills raiders on
+        // the board and walks guards into their tiles, and a settler that
+        // reads the board afterwards steps beside a raider the host may not
+        // have touched (t60 of civvis-20260816T200454Z, `planned_risk 0.0`
+        // beside a live slinger). Settlers already lead the unit order; this
+        // only moves them ahead of the one thing that used to run first.
+        let mut settled_first: Vec<u32> = Vec::new();
+        if self.settler_stack_discipline {
+            let mut settlers: Vec<u32> = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .filter(|uid| g.units[uid].kind == "settler")
+                .collect();
+            settlers.sort_unstable();
+            for uid in settlers {
+                let took_a_turn = self.advance_unit_serial(
+                    g,
+                    pid,
+                    uid,
+                    plan,
+                    religious_offensive,
+                    decline_settlers,
+                );
+                if !took_a_turn {
+                    self.base.hold_stood_down_unit(g, pid, uid);
+                }
+                settled_first.push(uid);
+            }
+        }
         // Decide the engagement as one problem before any unit commits. Units
         // this resolves keep their own movement logic below; only the choice
         // of what to attack is taken out of the greedy per-unit path.
@@ -25188,6 +25478,7 @@ impl AdvancedAi {
             self.plan_engagement(g, pid);
         }
         let mut ids = g.player_unit_ids(pid);
+        ids.retain(|uid| !settled_first.contains(uid));
         ids.sort_by_key(|uid| {
             let u = &g.units[uid];
             let spec = &g.rules.units[u.kind];
@@ -25814,6 +26105,10 @@ impl AdvancedAi {
             self.base.take_turn(g, pid);
             return;
         }
+        // The fallback record for `turn_start_hostiles`: nothing of ours has
+        // acted yet on a native turn. The live bridge records earlier, before
+        // its finishing volley, and this call then does nothing.
+        self.observe_turn_start_hostiles(g, pid);
         self.capture_battlefront_frame(g, pid);
         // Campaign and battlefront planning share this fog-safe history. A
         // refresh sees only the acting seat's current vision, so a hidden
@@ -40248,6 +40543,250 @@ mod tests {
         assert_eq!(calm.units[&settler].pos, source, "on a quiet tile the settler holds for its guard");
     }
 
+    /// The t60 geometry of run civvis-20260816T200454Z, reduced: a settler
+    /// with its guard on the next tile and a hostile Slinger two tiles off,
+    /// its patience for the guard spent. The old model let it march to the
+    /// tile beside the Slinger (approach tier 12, guard-adjacent discount ×0.45
+    /// — "risk 16" under the 30 limit) and the Slinger carried it off. Under
+    /// `settler_stack_discipline` reach is capture: the tile beside the
+    /// Slinger prices at the capture tier, the guard's tile — the only tile
+    /// the settler cannot be taken from — is where it goes.
+    #[test]
+    fn a_settler_beside_its_guard_and_two_tiles_from_a_slinger_stacks_rather_than_marches() {
+        let build = || -> (Game, u32, u32, u32, Pos, Pos) {
+            let mut game = Game::new_full(2, 30, 20, 8_121, 120, 0, false);
+            for pid in 0..2 {
+                let settler = game
+                    .player_unit_ids(pid)
+                    .into_iter()
+                    .find(|unit| game.units[unit].kind == "settler")
+                    .unwrap();
+                let pos = game.units[&settler].pos;
+                game.remove_unit(settler);
+                game.found_city_for(pid, pos, None);
+            }
+            for unit in game.player_unit_ids(0).into_iter().chain(game.player_unit_ids(1)) {
+                game.remove_unit(unit);
+            }
+            let home = game.cities[&game.player_city_ids(0)[0]].pos;
+            let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+            for position in positions {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = crate::name!("plains");
+                tile.feature = None;
+                tile.hills = false;
+                tile.district = None;
+                tile.district_foundation = None;
+                tile.wonder = None;
+                game.players[0].explored.insert(position);
+            }
+            game.current = 0;
+            game.turn = 60;
+            game.record_contact(0, 1);
+            game.at_war.insert((0, 1));
+            // Settler four from home; guard adjacent to it, one tile further
+            // out; slinger adjacent to the guard, two tiles from the settler.
+            let mut ring: Vec<Pos> = game
+                .wdisk(home, 4)
+                .into_iter()
+                .filter(|p| game.wdist(*p, home) == 4)
+                .collect();
+            ring.sort_unstable();
+            let source = ring[0];
+            let mut guard_ring: Vec<Pos> = game
+                .nbrs(source)
+                .into_iter()
+                .filter(|p| game.wdist(*p, home) == 5)
+                .collect();
+            guard_ring.sort_unstable();
+            let guard_pos = guard_ring[0];
+            // Off the straight line, so a tile beside the slinger other than
+            // the guard's is within the settler's two moves.
+            let mut slinger_ring: Vec<Pos> = game
+                .nbrs(guard_pos)
+                .into_iter()
+                .filter(|p| {
+                    game.wdist(*p, source) == 2
+                        && game.wdist(*p, home) >= 5
+                        && game
+                            .nbrs(source)
+                            .into_iter()
+                            .any(|n| n != guard_pos && game.wdist(n, *p) == 1)
+                })
+                .collect();
+            slinger_ring.sort_unstable();
+            let slinger_pos = slinger_ring[0];
+            let settler = game.spawn_test_unit("settler", 0, source);
+            let guard = game.spawn_test_unit("warrior", 0, guard_pos);
+            game.units.get_mut(&guard).unwrap().moves_left = 0.0;
+            let slinger = game.spawn_test_unit("slinger", 1, slinger_pos);
+            game.units.get_mut(&slinger).unwrap().moves_left = 2.0;
+            game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+            (game, settler, guard, slinger, source, guard_pos)
+        };
+
+        // The step limit is unchanged; the price of the tile beside the
+        // slinger is not.
+        let (game, settler, _guard, slinger, source, guard_pos) = build();
+        let beside_slinger = game
+            .nbrs(source)
+            .into_iter()
+            .filter(|p| game.wdist(*p, game.units[&slinger].pos) == 1 && *p != guard_pos)
+            .min()
+            .expect("a tile beside both the settler and the slinger");
+        let mut disciplined = AdvancedAi::new();
+        disciplined.enable_stacked_escort();
+        disciplined.enable_settler_stack_discipline();
+        disciplined.settler_guards.insert(settler, _guard);
+        let mut lax = AdvancedAi::new();
+        lax.enable_stacked_escort();
+        lax.settler_guards.insert(settler, _guard);
+        let visible = disciplined.battlefront_visibility(&game, 0);
+        let lax_price = lax.settlement_tile_risk(&game, 0, Some(settler), beside_slinger, &visible);
+        let strict_price =
+            disciplined.settlement_tile_risk(&game, 0, Some(settler), beside_slinger, &visible);
+        assert!(
+            lax_price <= SETTLER_STEP_RISK_LIMIT,
+            "the old model let the settler walk beside the slinger (risk {lax_price:.1})"
+        );
+        assert!(
+            strict_price > SETTLER_STEP_RISK_LIMIT,
+            "reach is capture: {strict_price:.1} must exceed the step limit"
+        );
+        let on_guard = disciplined.settlement_tile_risk(&game, 0, Some(settler), guard_pos, &visible);
+        assert!(
+            on_guard <= SETTLER_STEP_RISK_LIMIT,
+            "the guard's tile is where a settler cannot be taken (risk {on_guard:.1})"
+        );
+
+        // With its patience for the guard spent, the settler still ends the
+        // turn on the guard's tile, not beside the slinger.
+        let (mut game, settler, guard, slinger, source, guard_pos) = build();
+        let mut ai = AdvancedAi::new();
+        ai.enable_stacked_escort();
+        ai.enable_settler_stack_discipline();
+        ai.settler_guards.insert(settler, guard);
+        ai.guard_wait.insert(settler, (game.turn - 1, STACKED_ESCORT_PATIENCE));
+        let _ = ai.advanced_settler_step(&mut game, 0, settler);
+        let after = game.units[&settler].pos;
+        let slinger_pos = game.units[&slinger].pos;
+        assert_eq!(
+            after, guard_pos,
+            "the settler stacks with its guard — the one tile it cannot be taken from \
+             (source {source:?}, slinger {slinger_pos:?})"
+        );
+
+        // The withheld arm keeps the measured behaviour: patience spent, it
+        // marches, and the tile beside the slinger is open to it.
+        let (mut game, settler, guard, slinger, source, guard_pos) = build();
+        let mut ai = AdvancedAi::new();
+        ai.enable_stacked_escort();
+        ai.settler_guards.insert(settler, guard);
+        ai.guard_wait.insert(settler, (game.turn - 1, STACKED_ESCORT_PATIENCE));
+        let _ = ai.advanced_settler_step(&mut game, 0, settler);
+        let lax_after = game.units[&settler].pos;
+        assert!(
+            lax_after != guard_pos && lax_after != source,
+            "the withheld arm marches on: {lax_after:?}"
+        );
+        let _ = slinger;
+        assert!(!AdvancedAi::new().settler_stack_discipline());
+        assert!(!AdvancedAi::legacy().settler_stack_discipline());
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.settler_stack_discipline(), "the live seat carries the discipline");
+    }
+
+    /// A kill the planning board predicts is not a kill the host made. With
+    /// `turn_start_hostiles` recorded before a hostile is removed from the
+    /// board, a settler still prices the tile it stood on as capture ground;
+    /// once the record is stale (another turn) or the discipline is off, the
+    /// board is believed.
+    #[test]
+    fn a_settler_keeps_pricing_a_hostile_the_board_killed_this_turn() {
+        let mut game = Game::new_full(2, 30, 20, 8_121, 120, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            let pos = game.units[&settler].pos;
+            game.remove_unit(settler);
+            game.found_city_for(pid, pos, None);
+        }
+        for unit in game.player_unit_ids(0).into_iter().chain(game.player_unit_ids(1)) {
+            game.remove_unit(unit);
+        }
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        for position in positions {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+            game.players[0].explored.insert(position);
+        }
+        game.current = 0;
+        game.turn = 40;
+        game.record_contact(0, 1);
+        game.at_war.insert((0, 1));
+        let mut ring: Vec<Pos> = game
+            .wdisk(home, 4)
+            .into_iter()
+            .filter(|p| game.wdist(*p, home) == 4)
+            .collect();
+        ring.sort_unstable();
+        let source = ring[0];
+        let mut two_out: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|p| game.wdist(*p, source) == 2 && game.wdist(*p, home) == 6)
+            .collect();
+        two_out.sort_unstable();
+        let raider_pos = two_out[0];
+        let settler = game.spawn_test_unit("settler", 0, source);
+        let raider = game.spawn_test_unit("warrior", 1, raider_pos);
+        let step = game
+            .nbrs(source)
+            .into_iter()
+            .filter(|p| game.wdist(*p, raider_pos) == 1)
+            .min()
+            .expect("a tile beside both");
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_stacked_escort();
+        ai.enable_settler_stack_discipline();
+        ai.observe_turn_start_hostiles(&game, 0);
+        let visible = ai.battlefront_visibility(&game, 0);
+        let alive = ai.settlement_tile_risk(&game, 0, Some(settler), step, &visible);
+        assert!(alive > SETTLER_STEP_RISK_LIMIT, "a raider beside the tile: {alive:.1}");
+        // The board kills the raider before the settler moves.
+        game.remove_unit(raider);
+        let remembered = ai.settlement_tile_risk(&game, 0, Some(settler), step, &visible);
+        assert!(
+            remembered > SETTLER_STEP_RISK_LIMIT,
+            "the record keeps the price up after the board's kill: {remembered:.1}"
+        );
+        // Next turn the record is stale and the empty tile is quiet.
+        game.turn += 1;
+        let quiet = ai.settlement_tile_risk(&game, 0, Some(settler), step, &visible);
+        assert_eq!(quiet, 0.0, "a stale record is not consulted");
+        // And with the discipline off nothing is recorded at all.
+        let mut lax = AdvancedAi::new();
+        lax.enable_stacked_escort();
+        game.turn -= 1;
+        let raider = game.spawn_test_unit("warrior", 1, raider_pos);
+        lax.observe_turn_start_hostiles(&game, 0);
+        game.remove_unit(raider);
+        assert_eq!(lax.settlement_tile_risk(&game, 0, Some(settler), step, &visible), 0.0);
+    }
+
     /// On quiet ground with the guard one step behind, the settler marches;
     /// the guard re-stacks on its own move. civvis-20260816T084206Z spent ten
     /// turns on a four-tile walk holding for a guard one tile back.
@@ -42965,6 +43504,140 @@ mod tests {
 
         assert!(!AdvancedAi::new().camp_reach());
         assert!(!AdvancedAi::legacy().camp_reach());
+    }
+
+    /// ★★★★ A camp seven tiles from Rome stood for 130 turns WITH the reach
+    /// on (civvis-20260816T200454Z): the home guard's recall budget is half
+    /// the army with the garrison charged against it — a three-unit
+    /// peacetime army with one unit in the capital has a cap of zero — and
+    /// the camp ranks below every raider inside the six-tile ring, which with
+    /// a camp raising raiders is always. See `BasicAi::camp_party`. In
+    /// peacetime the whole field army answers: with one unit garrisoned and
+    /// two in the field, both field units get an objective, and with a
+    /// raider five tiles out and the camp at seven, the camp — ranked as a
+    /// raider three tiles out — is answered first and the raider by the next
+    /// unit; a raider at the gates still comes first; a scout is never sent;
+    /// the withheld arm keeps its cap of zero.
+    #[test]
+    fn in_peacetime_the_whole_field_army_answers_and_the_camp_outranks_the_countryside() {
+        let mut game = Game::new_full(2, 30, 20, 90_078, 60, 0, true);
+        for player in 0..2 {
+            let settler = game
+                .player_unit_ids(player)
+                .into_iter()
+                .find(|uid| game.units[uid].kind == "settler")
+                .expect("each player opens with a settler");
+            game.current = player;
+            game.apply(player, &Action::FoundCity { unit: settler }).unwrap();
+        }
+        for player in 0..2 {
+            for uid in game.player_unit_ids(player) {
+                game.remove_unit(uid);
+            }
+        }
+        let barb = game.barb_pid.expect("a barbarian-seated game has barb_pid");
+        for uid in game.units.keys().copied().collect::<Vec<_>>() {
+            if game.units[&uid].owner == barb {
+                game.remove_unit(uid);
+            }
+        }
+        game.barb_camps.clear();
+        game.current = 0;
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let open = |g: &Game, pos: Pos| {
+            g.map
+                .get(pos)
+                .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                && g.city_at(pos).is_none()
+                && g.units_at(pos).is_empty()
+        };
+        let ring_at = |g: &Game, distance: i32| -> Vec<Pos> {
+            let mut ring: Vec<Pos> = g
+                .map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|pos| g.wdist(*pos, home) == distance && open(g, *pos))
+                .collect();
+            ring.sort_unstable();
+            ring
+        };
+        let camp = ring_at(&game, 7)[0];
+        game.barb_camps.insert(camp, game.turn);
+        game.map.tiles.get_mut(&camp).unwrap().improvement = Some(crate::name!("barbarian_camp"));
+        // A spearman holds the camp: the party is sized to it, so one warrior
+        // is not enough.
+        let _defender = game.spawn_test_unit("spearman", barb, camp);
+        // Four warriors — one in the capital, three a tile out — and a scout.
+        let mut field: Vec<u32> = vec![game.spawn_test_unit("warrior", 0, home)];
+        let field_ring: Vec<Pos> = ring_at(&game, 1);
+        field.extend(
+            field_ring
+                .iter()
+                .take(3)
+                .map(|pos| game.spawn_test_unit("warrior", 0, *pos)),
+        );
+        let scout = game.spawn_test_unit("scout", 0, ring_at(&game, 2)[0]);
+        let objectives = |ai: &AdvancedAi, g: &Game| -> Vec<Option<Pos>> {
+            field
+                .iter()
+                .map(|uid| ai.base.home_defense_objective(g, 0, *uid, &[barb]))
+                .collect()
+        };
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.camp_party(), "the live seat carries the party");
+        let sent = objectives(&live, &game);
+        assert_eq!(
+            sent.iter().filter(|o| **o == Some(camp)).count(),
+            2,
+            "two warriors answer a spearman-held camp (25 × 1.25 = 31 > one warrior's 20): {sent:?}"
+        );
+        assert_eq!(
+            live.base.home_defense_objective(&game, 0, scout, &[barb]),
+            None,
+            "a scout is not sent to clear a camp"
+        );
+
+        // The withheld arm sizes a camp party at zero — exactly one unit —
+        // and would send nobody at all had the capital's warrior been counted
+        // as garrison (the measured game: floor(3 × 0.5) − 1 = 0).
+        let mut withheld = AdvancedAi::new();
+        withheld.enable_live_bridge();
+        withheld.disable_camp_party();
+        let held = objectives(&withheld, &game);
+        assert!(
+            held.iter().filter(|o| **o == Some(camp)).count() <= 1,
+            "the withheld arm sends at most one unit to a camp: {held:?}"
+        );
+
+        // A raider five tiles out ranks below the camp; one at the gates above.
+        let far_pos = ring_at(&game, 5)
+            .into_iter()
+            .find(|pos| game.wdist(*pos, camp) >= 3)
+            .expect("open ground five out, away from the camp");
+        let far = game.spawn_test_unit("warrior", barb, far_pos);
+        let sent = objectives(&live, &game);
+        assert!(
+            sent.contains(&Some(camp)) && sent.contains(&Some(far_pos)),
+            "the camp is answered before a raider in the countryside, and the raider by \
+             the next unit: {sent:?}"
+        );
+        game.remove_unit(far);
+        let gate_pos = ring_at(&game, 2)
+            .into_iter()
+            .find(|pos| game.units_at(*pos).is_empty())
+            .expect("open ground at the gates");
+        let _gate = game.spawn_test_unit("warrior", barb, gate_pos);
+        let sent = objectives(&live, &game);
+        assert!(
+            sent.contains(&Some(gate_pos)),
+            "a raider at the gates is answered first: {sent:?}"
+        );
+
+        assert!(!AdvancedAi::new().camp_party());
+        assert!(!AdvancedAi::legacy().camp_party());
     }
 
     /// `home_defense_objective` before the campaign march, mirroring the

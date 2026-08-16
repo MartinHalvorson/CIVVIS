@@ -1278,10 +1278,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// off for `AdvancedAi::legacy()` (asserted); the frozen anchor's baseline
 /// still governs its Expansion lane. Compatibility re-pin; the Elo protocol
 /// does not move.
+/// The settler stack discipline (settlers decide before the engagement,
+/// capture priced as capture, only a guard on the tile counts, bound guards
+/// kept out of the joint plan) is behind `settler_stack_discipline`, and the
+/// peacetime camp party (the whole field army answers home threats, a camp in
+/// reach outranks the countryside, the party sized to the camp's defender)
+/// behind `BasicAi::camp_party`; both off for `AdvancedAi::legacy()`
+/// (asserted). Compatibility re-pin; the Elo protocol does not move.
 /// The live envoy bank gates both the plan-aware scorer and the later
 /// `BasicAi` fallback, while `AdvancedAi::legacy()` keeps both historical
 /// paths enabled. Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x08ad_dff7_8651_48d6;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb2a6_cbaf_123d_ad05;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
