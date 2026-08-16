@@ -2080,9 +2080,9 @@ mod tests {
         let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
         let game = &recon.game;
         assert_eq!(
-            game.players[0].live_great_person_offered,
-            Some(["merchant".to_string()].into_iter().collect()),
-            "the cost map is the host's roster of classes with someone left"
+            game.players[0].live_great_person_exhausted,
+            Some(["scientist".to_string()].into_iter().collect()),
+            "points without a cost: the class has nobody left on the host's timeline"
         );
         assert!(!game.great_person_class_earnable(0, "scientist"));
         assert!(game.great_person_class_earnable(0, "merchant"));
@@ -2108,11 +2108,33 @@ mod tests {
             ..state.clone()
         };
         let recon = rebuild_from_state(&snapshot, &older, 2, 1, 250, 0);
-        assert_eq!(recon.game.players[0].live_great_person_offered, None);
+        assert_eq!(recon.game.players[0].live_great_person_exhausted, None);
         assert_eq!(
             recon.game.observed_yield_adjustments.get(&0).map(|adjustment| adjustment.faith),
             None
         );
+
+        // The mod's own list wins over the cost-map inference, and an empty
+        // list is the real answer "everyone is still available" — even when
+        // the cost map is `nil`, which alone could not tell that from an old export.
+        let explicit = StateSnapshot {
+            great_person_exhausted: Some(vec!["GREAT_PERSON_CLASS_WRITER".to_string()]),
+            great_person_costs: None,
+            ..state.clone()
+        };
+        let recon = rebuild_from_state(&snapshot, &explicit, 2, 1, 250, 0);
+        assert_eq!(
+            recon.game.players[0].live_great_person_exhausted,
+            Some(["writer".to_string()].into_iter().collect())
+        );
+        assert!(recon.game.great_person_class_earnable(0, "scientist"));
+        let nobody = StateSnapshot {
+            great_person_exhausted: Some(Vec::new()),
+            great_person_costs: None,
+            ..state.clone()
+        };
+        let recon = rebuild_from_state(&snapshot, &nobody, 2, 1, 250, 0);
+        assert_eq!(recon.game.players[0].live_great_person_exhausted, Some(BTreeSet::new()));
     }
 
     #[test]
@@ -8080,6 +8102,13 @@ pub struct StateSnapshot {
     /// the host's rate rather than the model's.
     #[serde(default, deserialize_with = "map_or_empty_sequence")]
     pub great_person_points_per_turn: Option<BTreeMap<String, f64>>,
+    /// The classes with nobody left to recruit anywhere on the host's
+    /// timeline (`GREAT_PERSON_CLASS_SCIENTIST` once the last Great Scientist
+    /// is claimed by anyone). Their points are what Firaxis pays out as
+    /// Faith. An empty list is a real answer — everyone still available;
+    /// `None` is an older control mod, and the cost map stands in.
+    #[serde(default)]
+    pub great_person_exhausted: Option<Vec<String>>,
     /// The seat's strategic stockpiles by host resource type
     /// (`RESOURCE_IRON` → amount). Without them `Game::strategic_stockpile`
     /// read 0 for everything on the live seat: no unit that costs a strategic
@@ -8357,20 +8386,37 @@ fn apply_great_person_points(
             }
         }
     }
-    // The cost map names every class with someone left to recruit anywhere on
-    // the host's timeline (its lowest-cost unclaimed entry). A class with
-    // points but no cost has nobody left — the last Great Scientist claimed by
-    // anyone — and Firaxis pays that class's points out as Faith from then
-    // on. Carry the host's roster rather than CIVVIS's, whose named list is
-    // not the host's; `None` on an older export keeps the engine's own answer.
-    game.players[0].live_great_person_offered = state.great_person_costs.as_ref().map(|costs| {
-        costs
-            .keys()
-            .filter_map(|class| class.strip_prefix("GREAT_PERSON_CLASS_"))
+    // Which classes have nobody left to recruit anywhere on the host's
+    // timeline — the last Great Scientist claimed by anyone — because
+    // Firaxis pays such a class's points out as Faith from then on. The mod
+    // says so outright (`great_person_exhausted`); before that field, the
+    // cost map named every class with an unclaimed entry, so a class with
+    // points and no cost was the same answer — except on the turn every
+    // class is gone, when the map is `nil` and says nothing. Carry the host's
+    // roster rather than CIVVIS's, whose named list is not the host's; `None`
+    // on an older export keeps the engine's own answer.
+    let kind_of = |class: &str| {
+        class
+            .strip_prefix("GREAT_PERSON_CLASS_")
             .filter(|kind| !kind.is_empty())
             .map(str::to_ascii_lowercase)
-            .collect()
-    });
+    };
+    game.players[0].live_great_person_exhausted = match (
+        state.great_person_exhausted.as_ref(),
+        state.great_person_costs.as_ref(),
+    ) {
+        (Some(exhausted), _) => Some(exhausted.iter().filter_map(|class| kind_of(class)).collect()),
+        (None, Some(costs)) => Some(
+            state
+                .great_person_points
+                .iter()
+                .flat_map(|points| points.keys())
+                .filter(|class| !costs.contains_key(*class))
+                .filter_map(|class| kind_of(class))
+                .collect(),
+        ),
+        (None, None) => None,
+    };
     apply_live_great_person_offer_blockers(game, state, unmapped);
 }
 
@@ -9068,6 +9114,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "trade_capacity",
         "great_person_points",
         "great_person_points_per_turn",
+        "great_person_exhausted",
         "great_person_costs",
         "great_person_offers",
         "governor_points",

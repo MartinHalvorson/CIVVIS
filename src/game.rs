@@ -6421,8 +6421,8 @@ mod governor_runtime_tests {
         // The host's timeline no longer lists a Great Scientist: the Campus
         // points are still counted (Firaxis's `GetPointsTotal` keeps growing)
         // and are paid out as Faith as well.
-        game.players[0].live_great_person_offered =
-            Some(["prophet", "writer", "merchant"].map(str::to_string).into_iter().collect());
+        game.players[0].live_great_person_exhausted =
+            Some(["scientist".to_string()].into_iter().collect());
         assert!(!game.great_person_class_earnable(0, "scientist"));
         assert!(game.great_person_class_earnable(0, "prophet"));
         assert_eq!(game.unused_great_person_faith(0), scientist);
@@ -16552,15 +16552,15 @@ pub struct Player {
     /// engine and old-save behavior.
     #[serde(default)]
     pub live_great_person_activation_needs: Vec<LiveGreatPersonActivationNeed>,
-    /// The Great Person classes the mirrored Civilization VI game still has
-    /// an unclaimed individual for, when the host says. `None` in headless
-    /// games and on older exports: the engine then falls back to its own
-    /// roster (`current_great_person`). `Some(set)` is the host's timeline —
-    /// a class absent from it has no one left to recruit anywhere, and its
+    /// The Great Person classes the mirrored Civilization VI game has nobody
+    /// left to recruit in, when the host says. `None` in headless games and
+    /// on older exports: the engine then falls back to its own roster
+    /// (`current_great_person`). `Some(set)` is the host's answer — a class in
+    /// it has no unclaimed individual anywhere on the timeline, and its
     /// points are the ones Firaxis turns into Faith
     /// (`great_person_class_earnable`, `unused_great_person_faith`).
     #[serde(default)]
-    pub live_great_person_offered: Option<BTreeSet<String>>,
+    pub live_great_person_exhausted: Option<BTreeSet<String>>,
     #[serde(default)]
     pub gp_claimed: BTreeMap<String, i64>,
     /// IDs of named Great People recruited from the global market.
@@ -16788,7 +16788,7 @@ impl Player {
             gpp: BTreeMap::new(),
             live_great_person_offer_blockers: BTreeMap::new(),
             live_great_person_activation_needs: Vec::new(),
-            live_great_person_offered: None,
+            live_great_person_exhausted: None,
             gp_claimed: BTreeMap::new(),
             great_people: Vec::new(),
             pantheon: None,
@@ -25994,8 +25994,8 @@ impl Game {
     /// religion (or one is pending, or every religion the map allows has been
     /// founded), and any other class once the last named individual anywhere
     /// has been claimed. On a mirrored seat the host's own timeline is the
-    /// authority for the latter (`live_great_person_offered`); headless games
-    /// ask CIVVIS's roster. What such a class earns is not lost — see
+    /// authority for the latter (`live_great_person_exhausted`); headless
+    /// games ask CIVVIS's roster. What such a class earns is not lost — see
     /// [`Self::unused_great_person_faith`].
     pub fn great_person_class_earnable(&self, pid: usize, kind: &str) -> bool {
         if kind == "prophet" {
@@ -26007,8 +26007,8 @@ impl Game {
                 + self.players.iter().filter(|player| player.prophet_pending).count();
             return claimed < self.max_religions();
         }
-        if let Some(offered) = self.players[pid].live_great_person_offered.as_ref() {
-            return offered.contains(kind);
+        if let Some(exhausted) = self.players[pid].live_great_person_exhausted.as_ref() {
+            return !exhausted.contains(kind);
         }
         self.current_great_person(kind).is_some()
     }

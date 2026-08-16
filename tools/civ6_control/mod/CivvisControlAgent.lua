@@ -6474,6 +6474,41 @@ local function exportState(player, pid, turn)
 			if not any then return nil; end
 			return out;
 		end, nil),
+		-- ★★★★ THE CLASSES WITH NOBODY LEFT TO RECRUIT. Civilization VI pays
+		-- every Great Person point of such a class out again as Faith, one for
+		-- one (`GetFaithFromUnusedGreatPeoplePoints` in the game core; the
+		-- top bar's "from Other"): the last Great Scientist anywhere claimed,
+		-- and the Campus keeps paying, in Faith. Run civvis-20260816T123936Z
+		-- banked 100–113 Faith a turn from t231 against 49 from every city.
+		-- A class is exhausted when the timeline has no unclaimed entry for
+		-- it. `great_person_costs` below already implies this (a class with
+		-- points and no cost) — except on the turn EVERY class is gone, when
+		-- that map is nil and cannot be told from an older export. So say it
+		-- outright, and as a LIST: an empty list encodes as `[]`, which is a
+		-- real answer here ("everyone still available"), unlike the maps.
+		great_person_exhausted = try(function()
+			local greatPeople = Game.GetGreatPeople();
+			if greatPeople == nil then return nil; end
+			local timeline = greatPeople:GetTimeline();
+			if timeline == nil then return nil; end
+			local available = {};
+			for _, entry in ipairs(timeline) do
+				if entry.Individual ~= nil and entry.Claimant == nil then
+					local info = GameInfo.GreatPersonIndividuals[entry.Individual];
+					if info ~= nil and info.GreatPersonClassType ~= nil then
+						available[info.GreatPersonClassType] = true;
+					end
+				end
+			end
+			local out = {};
+			for row in GameInfo.GreatPersonClasses() do
+				if not available[row.GreatPersonClassType] then
+					out[#out + 1] = row.GreatPersonClassType;
+				end
+			end
+			table.sort(out);
+			return out;
+		end, nil),
 		-- The live RECRUIT COST of each class's current unclaimed Great
 		-- Person, from the same timeline the recruit order is judged by.
 		-- Points without costs made the planner price the claim against
