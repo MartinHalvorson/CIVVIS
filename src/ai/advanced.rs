@@ -23827,8 +23827,8 @@ impl AdvancedAi {
 
         // Under `stacked_escort` no land settler is ever linked: the guard
         // shadows it with plain moves instead, because the formation channel
-        // went 0-for-7 on the live bridge. Sea links below stay — an embarked
-        // settler has no tile to share and naval carry is a different lane.
+        // went 0-for-7 on the live bridge. (Sea links used to stay; see the
+        // measured fight below — they go too.)
         let land_settlers: Vec<u32> = if self.settlement_safety && !self.stacked_escort {
             g.player_unit_ids(pid)
                 .into_iter()
@@ -23878,18 +23878,34 @@ impl AdvancedAi {
             }
         }
 
-        let embarked_settlers: Vec<u32> = g
-            .player_unit_ids(pid)
-            .into_iter()
-            .filter(|uid| {
-                let unit = &g.units[uid];
-                unit.kind == "settler"
-                    && unit.linked_to.is_none()
-                    && g.map
-                        .get(unit.pos)
-                        .is_some_and(|tile| g.rules.is_water(tile))
-            })
-            .collect();
+        // ★★★★ AND UNDER `stacked_escort` NO EMBARKED SETTLER IS LINKED TO A
+        // SHIP EITHER. The comment above kept the sea link because "naval carry
+        // is a different lane" — but `stacked_escort_pace` sheds EVERY link the
+        // settler carries, so the two fought: run civvis-20260816T101521Z,
+        // settler 2818058 embarked on (18,35) from t92 to t105, every turn the
+        // Galley on its tile ordered `ENTER_FORMATION` from this loop and the
+        // settler `EXIT_FORMATION` from the pace step; the unlink is a
+        // non-move command, so the settler's own `MOVE_TO` was deferred to the
+        // next frame — where the host still reported the pair in formation and
+        // the same two orders went out again. Fourteen turns motionless one
+        // tile off the shore, a 37-turn walk that founded four tiles from where
+        // it had stood. A settler at sea marches on its own movement, exactly
+        // as it does on land under this treatment; the guard follows.
+        let embarked_settlers: Vec<u32> = if self.stacked_escort {
+            Vec::new()
+        } else {
+            g.player_unit_ids(pid)
+                .into_iter()
+                .filter(|uid| {
+                    let unit = &g.units[uid];
+                    unit.kind == "settler"
+                        && unit.linked_to.is_none()
+                        && g.map
+                            .get(unit.pos)
+                            .is_some_and(|tile| g.rules.is_water(tile))
+                })
+                .collect()
+        };
         for with in embarked_settlers {
             let escort = g.units_at(g.units[&with].pos).into_iter().find(|uid| {
                 let unit = &g.units[uid];
@@ -26904,6 +26920,57 @@ mod tests {
         assert_eq!(game.units[&ram].linked_to, Some(spear));
         assert_eq!(game.units[&spear].linked_to, Some(ram));
         assert_eq!(game.units[&cavalry].linked_to, None);
+    }
+
+    /// ★★★★ The sea link and the stacked escort fought over one settler for
+    /// fourteen turns (civvis-20260816T101521Z, settler 2818058 on (18,35)
+    /// t92–t105: `ENTER_FORMATION` from the Galley, `EXIT_FORMATION` from the
+    /// settler, its own move deferred behind the unlink every frame). Under
+    /// `stacked_escort` an embarked settler is left unlinked; the historical
+    /// controllers still link it to the ship on its tile.
+    #[test]
+    fn an_embarked_settler_under_the_stacked_escort_is_not_linked_to_a_ship() {
+        let mut game = Game::new_full(1, 20, 14, 71_001, 30, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        // Any water tile serves: the settler is planted there embarked, the
+        // galley beside it on the same tile.
+        let water = *game
+            .map
+            .tiles
+            .iter()
+            .find(|(_, tile)| game.rules.is_water(tile) && game.rules.is_passable(tile))
+            .map(|(position, _)| position)
+            .expect("the board has water");
+        game.players[0].techs.insert(crate::name!("shipbuilding"));
+        let settler = game.spawn_test_unit("settler", 0, water);
+        let galley = game.spawn_test_unit("galley", 0, water);
+        assert!(game.is_embarked(&game.units[&settler]), "fixture precondition: the settler is at sea");
+
+        let mut historical = AdvancedAi::new();
+        historical.enable_tactical_strategy();
+        historical.settlement_safety = true;
+        assert!(!historical.stacked_escort);
+        historical.advanced_formations(&mut game, 0);
+        assert_eq!(
+            game.units[&settler].linked_to,
+            Some(galley),
+            "the historical controller still links the ship to the embarked settler"
+        );
+        let _ = game.apply(0, &Action::UnlinkUnits { unit: settler });
+        assert_eq!(game.units[&settler].linked_to, None);
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.stacked_escort);
+        live.advanced_formations(&mut game, 0);
+        assert_eq!(
+            game.units[&settler].linked_to,
+            None,
+            "under the stacked escort the settler is never handed to a ship it will unlink from"
+        );
+        assert_eq!(game.units[&galley].linked_to, None);
     }
 
     /// The measured t174 purchase: five gold in the treasury, one turn after
