@@ -1109,7 +1109,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// threatened settler retreats before any hold; both live under
 /// `settlement_safety`/`stacked_escort`, which `AdvancedAi::legacy()` leaves off.
 /// Compatibility re-pin; the Elo protocol does not move.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf3cb_99aa_590f_dbf1;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6d0b_9892_2b5a_ab44;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
