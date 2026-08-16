@@ -2528,6 +2528,32 @@ pub struct AdvancedAi {
     /// prices the Settler seat's tally; the native lanes keep the bred limit.
     /// Off for ordinary and frozen controllers.
     pub tally_great_people: bool,
+    /// A city's repeatable district project waits behind the science and
+    /// production buildings the city can already build.
+    ///
+    /// ★★★★ SEVEN CAMPUSES, THREE LIBRARIES, ONE UNIVERSITY. Run
+    /// civvis-20260816T223457Z at t150: eight cities, seven Campuses, and the
+    /// chooser's own ranking read `commercial_hub_investment = 124` against
+    /// `university = 44` and `workshop = 26` in Rome (t120), and `= 48`
+    /// against `library = 26` in Arpinum (t140) — a Campus city with no
+    /// Library choosing a Great Merchant race over the 90-production
+    /// building. The same shape in civvis-20260816T205104Z: 64 city-turns of
+    /// the investment project, six Great Merchants, and at t202 two
+    /// Universities in ten cities against Maori's 61 techs to our 52; here
+    /// Aztec held 37 techs to our 32 with half the cities. The project's
+    /// value is dominated by its Great Person race terms (`useful × (5 +
+    /// 5·affinity)`, the crossing bonus of 620·affinity) and it is cheap, so
+    /// the (7 + turns) normalisation favours it further; a University's four
+    /// beakers at the lane's weight cannot reach it.
+    ///
+    /// With this on, `district_project_value` is capped at
+    /// `PROJECT_BEHIND_BUILDINGS_CAP` while the city can produce a Library,
+    /// University, Research Lab or Workshop it has not built — the compounding
+    /// half of a research city comes before the race, and the race resumes at
+    /// full value once those stand. Nothing else in the project's pricing
+    /// moves. Off for the frozen native controllers; on for the live bridge
+    /// and the native repair bundle's economy half.
+    pub buildings_before_projects: bool,
     /// A Firaxis barbarian scout is not a threat the settler retreats from or
     /// the scout flees.
     ///
@@ -2889,6 +2915,15 @@ const RESEARCH_CAMPUS_PAYBACK: f64 = 0.16;
 /// missing copy and independent of the lane, unlike `wartime_infrastructure_debt`
 /// which pays the same shape only while the empire is fighting.
 const RESEARCH_BUILDING_DEBT: f64 = 240.0;
+/// The most a repeatable district project is worth, before the (7 + turns)
+/// normalisation, while its city can still build a Library, University,
+/// Research Lab or Workshop it lacks. See `buildings_before_projects`. Low
+/// enough that any of those buildings (raw 300–600) outranks it, positive so a
+/// city with nothing else to do still runs it.
+const PROJECT_BEHIND_BUILDINGS_CAP: f64 = 120.0;
+/// The buildings a district project waits behind. See
+/// `buildings_before_projects`.
+const BUILDINGS_BEFORE_PROJECTS: [&str; 4] = ["library", "university", "research_lab", "workshop"];
 
 /// Where the Campus policy multipliers enter a lane's own preference list.
 ///
@@ -3346,6 +3381,7 @@ impl AdvancedAi {
             frontier_loyalty: false,
             settler_target_hysteresis: false,
             tally_great_people: false,
+            buildings_before_projects: false,
             barbarian_scouts_are_scouts: false,
             bounded_recovery: false,
             counter_stand_down: false,
@@ -4228,6 +4264,9 @@ impl AdvancedAi {
         // And banked Faith buys the Great People the tally pays five for. See
         // `tally_great_people`.
         self.enable_tally_great_people();
+        // And the Library and University come before the Great Merchant race.
+        // See `buildings_before_projects`.
+        self.enable_buildings_before_projects();
         // And a barbarian scout does not pin the opening. See
         // `barbarian_scouts_are_scouts`.
         self.enable_barbarian_scouts_are_scouts();
@@ -4357,6 +4396,9 @@ impl AdvancedAi {
         self.enable_stacked_escort();
         self.enable_settler_stack_discipline();
         self.enable_wonder_ring_settle_value();
+        // The cheap half of a research city before the race in it. See
+        // `buildings_before_projects`.
+        self.enable_buildings_before_projects();
         self.enable_stranded_settler_discount();
         self.enable_wide_map_capacity();
         // Growing what was founded. Housing is gated by a tech the argmax
@@ -4687,6 +4729,16 @@ impl AdvancedAi {
 
     pub fn disable_tally_great_people(&mut self) {
         self.tally_great_people = false;
+    }
+
+    /// A district project waits behind the science and production buildings
+    /// the city can already build. See `buildings_before_projects`.
+    pub fn enable_buildings_before_projects(&mut self) {
+        self.buildings_before_projects = true;
+    }
+
+    pub fn disable_buildings_before_projects(&mut self) {
+        self.buildings_before_projects = false;
     }
 
     /// Stop pricing a Firaxis barbarian scout as a threat. See
@@ -8452,6 +8504,23 @@ impl AdvancedAi {
         }
         if threatened {
             value -= 360.0;
+        }
+        // ★★★★ THE CHEAP HALF OF A RESEARCH CITY BEFORE THE RACE IN IT. See
+        // `buildings_before_projects`.
+        if self.buildings_before_projects && spec.repeatable {
+            let owed = BUILDINGS_BEFORE_PROJECTS.iter().any(|building| {
+                g.rules.buildings.contains_key(*building)
+                    && g.can_produce(
+                        pid,
+                        cid,
+                        &Item::Building {
+                            building: Name::new(building),
+                        },
+                    )
+            });
+            if owed {
+                value = value.min(PROJECT_BEHIND_BUILDINGS_CAP);
+            }
         }
         value
     }
@@ -29528,6 +29597,93 @@ mod tests {
             "an unrelated building must not collect the research debt: \
              {treated_monument} vs {control_monument}"
         );
+    }
+
+    /// ★★★★ Seven Campuses, three Libraries, one University at t150 of run
+    /// civvis-20260816T223457Z: the Great Merchant race outranked the Campus
+    /// buildings in every city (`commercial_hub_investment = 124` vs
+    /// `university = 44` in Rome; `48` vs `library = 26` in Arpinum). See
+    /// `buildings_before_projects`: while the city can produce a Library,
+    /// University, Research Lab or Workshop it lacks, its repeatable project
+    /// is capped below them; once nothing is owed the project is priced as
+    /// before; the frozen and stock controllers never cap.
+    #[test]
+    fn a_district_project_waits_behind_the_science_buildings_the_city_can_build() {
+        let mut game = Game::new(2, 32, 24, 5_414, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        let city = game.player_city_ids(0)[0];
+        // The measured shape: a Commercial Hub WITH its Market (so the
+        // project's own family owes nothing) beside a Campus WITHOUT its
+        // Library.
+        install_ai_test_district(&mut game, city, "campus");
+        install_ai_test_district(&mut game, city, "commercial_hub");
+        game.cities.get_mut(&city).unwrap().buildings.push(crate::name!("market"));
+        game.players[0].techs.insert(crate::name!("writing"));
+        game.players[0].techs.insert(crate::name!("currency"));
+        game.turn = 60;
+        // A race worth running: the empire is close to a Great Merchant.
+        game.players[0].gpp.insert("merchant".to_string(), 30.0);
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let library = Item::Building {
+            building: crate::name!("library"),
+        };
+        let project = Item::Project {
+            project: crate::name!("commercial_hub_investment"),
+        };
+        assert!(game.can_produce(0, city, &library), "the Library is owed");
+        assert!(game.can_produce(0, city, &project), "the race is open");
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.buildings_before_projects, "the live seat carries the treatment");
+        live.refresh_research_weight(&game);
+        let mut lax = AdvancedAi::new();
+        lax.enable_live_bridge();
+        lax.disable_buildings_before_projects();
+        lax.refresh_research_weight(&game);
+        let counts = live.counts(&game, 0);
+
+        let capped = live.district_project_value(&game, 0, city, "commercial_hub_investment", &plan);
+        let free = lax.district_project_value(&game, 0, city, "commercial_hub_investment", &plan);
+        assert!(capped <= PROJECT_BEHIND_BUILDINGS_CAP, "capped while the Library is owed: {capped}");
+        assert!(free > capped, "the withheld arm prices the race in full: {free}");
+        let library_value = live.production_value(&game, 0, city, &library, &plan, &counts);
+        let project_value = live.production_value(&game, 0, city, &project, &plan, &counts);
+        assert!(
+            library_value > project_value,
+            "the Library outranks the race while it is owed: {library_value} vs {project_value}"
+        );
+        assert!(project_value > 0.0, "the project stays a positive fallback");
+
+        // Library built, University not yet reachable: nothing owed, the race
+        // is priced as before.
+        game.cities.get_mut(&city).unwrap().buildings.push(crate::name!("library"));
+        assert!(!game.can_produce(0, city, &library));
+        let university = Item::Building {
+            building: crate::name!("university"),
+        };
+        assert!(!game.can_produce(0, city, &university), "no Education yet");
+        let uncapped = live.district_project_value(&game, 0, city, "commercial_hub_investment", &plan);
+        let control = lax.district_project_value(&game, 0, city, "commercial_hub_investment", &plan);
+        assert_eq!(uncapped, control, "with nothing owed the treatment is a no-op");
+
+        assert!(!AdvancedAi::new().buildings_before_projects);
+        assert!(!AdvancedAi::legacy().buildings_before_projects);
     }
 
     #[test]
