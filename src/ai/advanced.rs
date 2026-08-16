@@ -25325,9 +25325,10 @@ impl AdvancedAi {
     }
 
     /// The one ship that explores: the empire's lowest-numbered unlinked sea
-    /// military unit, while water it has never seen remains. A fleet keeps
-    /// every other hull for the war lane; an empire with no ship has no
-    /// explorer and `naval_recon_is_the_missing_arm` buys one. See
+    /// military unit with an open route, while water it has never seen
+    /// remains. A lake-bound hull cannot hold the job over a real scout. A
+    /// fleet keeps every other hull for the war lane; an empire with no ship
+    /// has no explorer and `naval_recon_is_the_missing_arm` buys one. See
     /// `BasicAi::naval_recon`.
     fn naval_explorer(&self, g: &Game, pid: usize) -> Option<u32> {
         if !self.base.naval_recon {
@@ -25342,6 +25343,7 @@ impl AdvancedAi {
                 spec.class == "military"
                     && spec.domain.as_deref() == Some("sea")
                     && unit.linked_to.is_none()
+                    && BasicAi::naval_recon_ship_can_chart(g, pid, *uid)
             })
             .min()?;
         let water_left = g.map.tiles.iter().any(|(pos, tile)| {
@@ -28223,6 +28225,81 @@ mod tests {
         assert_eq!(withheld.naval_explorer(&game, 0), None);
         assert!(!AdvancedAi::new().naval_recon());
         assert!(!AdvancedAi::legacy().naval_recon());
+    }
+
+    #[test]
+    fn a_lake_bound_ship_yields_the_naval_explorer_job_to_an_open_water_hull() {
+        let mut game = Game::new_full(2, 20, 14, 71_002, 30, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.current = 0;
+        game.players[0].techs.insert(crate::name!("sailing"));
+        game.players[0].explored.clear();
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+        let city_positions: Vec<Pos> = game.cities.values().map(|city| city.pos).collect();
+        let interiors: Vec<Pos> = game
+            .map
+            .tiles
+            .values()
+            .filter(|tile| {
+                game.wdisk(tile.pos, 4).len() == 61
+                    && city_positions.iter().all(|city| game.wdist(*city, tile.pos) >= 5)
+            })
+            .map(|tile| tile.pos)
+            .collect();
+        let lake_centre = interiors[0];
+        let open_origin = interiors
+            .iter()
+            .copied()
+            .find(|pos| game.wdist(lake_centre, *pos) >= 8)
+            .expect("a separate interior patch for open water");
+
+        let lake_neighbors = game.nbrs(lake_centre);
+        let lake_first = lake_neighbors[0];
+        let lake_second = lake_neighbors
+            .into_iter()
+            .find(|pos| *pos != lake_first && game.wdist(lake_first, *pos) == 1)
+            .expect("the lake has two adjacent shore tiles");
+        for pos in [lake_first, lake_second] {
+            game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("coast");
+        }
+
+        let mut open_water = Vec::new();
+        let mut current = open_origin;
+        for distance in 1..=super::super::NAVAL_RECON_MIN_WATERWAY_TILES {
+            current = game
+                .nbrs(current)
+                .into_iter()
+                .find(|pos| game.wdist(open_origin, *pos) == distance as i32)
+                .expect("the open route stays inside the map");
+            game.map.tiles.get_mut(&current).unwrap().terrain = crate::name!("coast");
+            open_water.push(current);
+        }
+
+        // Spawn the stranded hull first: it has the smaller id, which is the
+        // exact ordering that used to starve the later, useful scout.
+        let trapped = game.spawn_test_unit("galley", 0, lake_first);
+        let free = game.spawn_test_unit("galley", 0, open_water[0]);
+        assert!(
+            !BasicAi::naval_recon_ship_can_chart(&game, 0, trapped)
+                && BasicAi::naval_recon_ship_can_chart(&game, 0, free),
+            "the fixture separates a two-hex lake from an open coastal route"
+        );
+
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert_eq!(
+            live.naval_explorer(&game, 0),
+            Some(free),
+            "a trapped lower-id Galley cannot take the explorer job from the open-water hull"
+        );
     }
 
     /// The measured t174 purchase: five gold in the treasury, one turn after
