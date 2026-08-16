@@ -371,7 +371,7 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("wc:GetVotesandFavorCost(pid)", voter)
         self.assertIn("GetDiplomaticVictoryPoints()", voter)
         # Against the leader on the diplomatic-victory resolution, with all the favor affords.
-        self.assertIn('if r.Type == "WC_RES_DIPLOVICTORY" then', voter)
+        self.assertIn('if rtype == "WC_RES_DIPLOVICTORY" then', voter)
         self.assertIn("option = 2;", voter)
         self.assertIn("costs[n] <= favor", voter)
         self.assertIn("PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE", voter)
