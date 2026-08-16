@@ -720,6 +720,91 @@ from every export so a razed district does not linger; our own cities keep the
 city record, which carries completion and pillage). A rival's Encampment,
 Campus or wonder is on the board from the turn it is seen.
 
+### Round 7: the World Congress, incoming routes, and three rules the ledgers taught (2026-08-16, run `civvis-20260816T200454Z`)
+
+The instrument's largest remaining episode was Cumae's Gold, four under the
+host for fifteen turns, against a host ledger line the model had never heard
+of: "+4 from Incoming Trade Routes", opening the turn a Maori route arrived and
+closing at t102 while the route still ran. The rules database names the
+figure — `TRADE_ROUTE_GOLD_CULTURAL_DOMINANCE` is 4 too, but the modifier that
+actually carries an incoming-route Gold of 4 is `INCREASES_TRADE_TO_GOLD`, an
+`EFFECT_ADJUST_TRADE_ROUTE_YIELD_FROM_OTHERS` owned by no game table because
+`Expansion2_Congress.xml` attaches it: World Congress resolution
+`WC_RES_TRADE_TREATY` ("Trade Policy"), option A, alongside
+`TARGET_ADD_TRADE_ROUTE`. Our own trade capacity had gone 1→2 at t82 and 2→1 at
+t102 for the same reason. Four things follow, all shipped:
+
+- **The mod exports what the Congress has in force**, every turn: `resolutions`
+  (`GetResolutions(pid)`, the call the shipped CityPanel makes between
+  sessions; only entries with a `ChosenOption` are in effect, the same call
+  returns the unfinished ballot during a session) as `{type, option 1|2,
+  target}` plus `congress_turns_left`. The mirror maps them onto the model's
+  own `active_congress_effects` (`civvis_congress_effect`: player targets
+  become seats, `RESOURCE_`/`DISTRICT_`/`BUILDING_`/`PROJECT_`/`FEATURE_`
+  targets their CIVVIS node names, class-like targets the engine's own
+  suffixes; Sovereignty, Arms Control and the victory resolution have no model
+  rule and are reported as `congress:…` in the unmapped list) — and applies
+  them BEFORE the host-to-model corrections, for the round-6 reason. An export
+  without the field leaves the model's simulated Congress alone.
+- **Trade Policy A pays the chosen player's destination city, not the sender.**
+  The resolution's text says "+4 Gold to the sender"; what Firaxis ships is a
+  FROM_OTHERS effect on the chosen player, the same shape as Zhang Qian's
+  destination Gold and Cleopatra's, and the host's ledger agrees (a domestic
+  incoming route paid nothing, the sender's origin nothing extra). The engine
+  used to pay the origin +4 in `route_yields`; it now pays the destination +4
+  per incoming international route.
+- **Rival routes into our cities are on the board.** `game.routes` carried only
+  our own, so every destination-side rule (Zhang Qian, alliances, this one)
+  paid nothing on a mirrored seat. `incoming_routes.origins[]` now names each
+  foreign route's origin city and owner; the mirror seats the route on the
+  rival's city with the rival's seat as owner (`restore_incoming_foreign_routes`),
+  reporting rather than guessing an origin that is not on the board.
+- **Three more rules from the same run's ledgers, each measured on its opening
+  and closing turn.** (1) A pillaged destination district still pays its
+  `District_TradeRouteYields` row: Rome's pillaged Holy Site and Campus kept
+  Cumae's domestic route at "+6 from Outgoing Trade Routes" (t81-95) while the
+  model, skipping them, paid 4–5, and the gap closed district by district as
+  each was repaired; and a route made to Aquileia while its Diplomatic Quarter
+  lay pillaged paid the Quarter's Food and Production from its first turn
+  (t144) — the row is for the district's existence, not a figure frozen at
+  the route's creation. (2) A pillaged district is not adjacent to anything: Rome's
+  Campus read "+8 from Campus" beside a Government Plaza and a Holy Site and
+  "+6" from the turn after the Holy Site was pillaged (t82) until its repair
+  (t96) — Natural Philosophy doubling a base that had lost its district pair;
+  Aquileia's Industrial Zone and Campus lost the same point while the
+  Diplomatic Quarter between them lay pillaged (t142-145). The count excludes
+  pillaged neighbours in the live rule and the planner's cached count alike.
+  (3) An unemployed citizen pays half a Gold: with every workable plot taken
+  and no specialist slot, Rome's Gold ledger read "+0.5 from Population" for
+  one idle citizen (t81-96), "+1" for two (t97-106) and nothing once new plots
+  were worked (t107); no other ledger moved (Science and Culture per citizen
+  are paid regardless). The model now pays `0.5 × (pop − employed)`.
+  (4) Percentage modifiers SUM; they do not chain. Rome under Merchant
+  Republic (10% Gold with a Governor) with Kilwa Kisiwani (15% for a Trade
+  suzerainty) read "+25 (+4.5) from Modifiers" on a base of 18 → 22.5, where
+  the model's ×1.10 × ×1.15 read 22.77 (t146-149); and "-10 (-2) from
+  Amenities | +10 (+2) from Modifiers" on 21 read exactly 21.0 (t150), which
+  ×0.9 × ×1.1 would have made 20.79. Every `ADJUST_CITY_YIELD_MODIFIER`-shaped
+  term in `city_yields_inner` — government, policy, wonder, Governor, suzerain
+  bonus, industry, the Amenity band, Loyalty, the difficulty handicap — now
+  lands in one per-yield sum applied once (floored at −100%).
+
+Housing in the instrument now compares the floor of the model's figure, since
+the host never reports a fraction; the persistent half-Housing offset of a
+Farm was noise, not a finding. `state_changes` names `resolutions` and
+`dedications` changes on an episode's opening turn.
+
+Replayed on the run with the round-7 binary: persistent Food 21→0,
+Production 8→0, Science 20→0, Gold 99→70 — 60 of the 70 is Cumae's Trade Policy
+Gold, which this run's export cannot carry (no `resolutions`, no route
+origins) and the first game launched with the new mod will; the other 10 is Ostia's path.
+
+**Open after round 7**: Ostia's domestic route Gold reads 2 in the host and 1
+in the model (t144-154; the second own-city trading post on the path — the
+greedy `route_path_cities` walk misses an intermediate city); the first game
+launched with the new mod should be read for the treaty and the routes with
+`civ6_yield_drift.py`.
+
 ### Faith at the empire level: unused Great Person points and a religion's own beliefs (2026-08-16, run `civvis-20260816T123936Z`)
 
 Rome's Faith per turn diverged from the host by more than half, and the

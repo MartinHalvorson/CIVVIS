@@ -1094,14 +1094,22 @@ fn kilwa_scales_total_type_yields_and_matching_production_categories() {
         .unwrap()
         .wonders
         .remove(&Name::new("kilwa_kisiwani"));
-    assert_close(
-        game.city_yields(host).science,
-        without_kilwa.city_yields(host).science * 1.30,
-    );
-    assert_close(
-        game.city_yields(second).science,
-        without_kilwa.city_yields(second).science * 1.15,
-    );
+    // Percentage modifiers SUM (Firaxis's `ADJUST_CITY_YIELD_MODIFIER`), so
+    // Kilwa's 30 / 15 join whatever band and handicap the city already
+    // carries rather than multiplying on top of them.
+    let other_pct = |game: &Game, city: u32| {
+        (game.amenity_yield_mult(&game.cities[&city]) - 1.0) * 100.0
+            + (Game::loyalty_yield_mult(game.cities[&city].loyalty) - 1.0) * 100.0
+            + game.handicap_yield_pct(0).science
+    };
+    for (city, kilwa_pct) in [(host, 30.0), (second, 15.0)] {
+        let other = other_pct(&without_kilwa, city);
+        let base = without_kilwa.city_yields(city).science / (1.0 + other / 100.0);
+        assert_close(
+            game.city_yields(city).science,
+            base * (1.0 + (other + kilwa_pct) / 100.0),
+        );
+    }
 
     game.players[first_state].civ = "Kabul".to_string();
     game.players[second_state].civ = "Carthage".to_string();

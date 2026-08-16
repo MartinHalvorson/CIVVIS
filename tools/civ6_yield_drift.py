@@ -72,6 +72,7 @@ import argparse
 import collections
 import glob
 import json
+import math
 import os
 import re
 import subprocess
@@ -169,7 +170,10 @@ def city_comparisons(state: dict, dump: dict) -> list:
         housing = host.get("housing")
         if isinstance(housing, (int, float)) and housing >= 0 \
                 and isinstance(city.get("model_housing"), (int, float)):
-            record["housing_delta"] = round(city["model_housing"] - housing, 2)
+            # The host reports Housing as a whole number (never a fraction in
+            # any export), while the model carries the half-Housing of Farms
+            # and Pastures; compare what the host would show.
+            record["housing_delta"] = round(math.floor(city["model_housing"] + 1e-9) - housing, 2)
         amenities = host.get("amenities")
         if isinstance(amenities, (int, float)) and amenities >= 0 \
                 and isinstance(city.get("model_amenities"), (int, float)):
@@ -268,7 +272,8 @@ def state_changes(before: dict | None, after: dict, city_name: str) -> list:
         if pw != cw:
             lines.append(f"worked: -{sorted(pw - cw)} +{sorted(cw - pw)}")
     for key in ("policies", "government", "pantheon", "religion_beliefs", "governors",
-                "trade_routes", "techs", "civics", "golden_age", "dark_age", "trade_capacity"):
+                "trade_routes", "techs", "civics", "golden_age", "dark_age", "trade_capacity",
+                "dedications", "resolutions"):
         a, b = before.get(key), after.get(key)
         if a == b:
             continue
